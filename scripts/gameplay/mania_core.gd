@@ -45,6 +45,10 @@ var n100 := 0
 var n50 := 0
 var n_miss := 0
 var score := 0
+## ScoreV2-Prinzip: Praezisions-/Combo-Anteile akkumulieren als float.
+const ACC_WEIGHT := [1.0, 1.0, 2.0 / 3.0, 1.0 / 3.0, 1.0 / 6.0, 0.0]
+var _score_f := 0.0
+var _total_notes := 0
 var hp := 1.0
 var no_fail := false
 var failed := false
@@ -79,6 +83,8 @@ func setup(p_beatmap: Beatmap, _ar_override: float = -1.0, scroll_scale: float =
 	w_miss = DifficultyCalc.mania_window_miss(od)
 	_hp_miss_damage = 0.04 + 0.04 * (beatmap.hp() / 10.0)
 	no_fail = false
+	_score_f = 0.0
+	_total_notes = beatmap.hit_objects.size()
 	_lane_notes.clear()
 	_lane_head.clear()
 	_active_hold.clear()
@@ -94,8 +100,21 @@ func setup(p_beatmap: Beatmap, _ar_override: float = -1.0, scroll_scale: float =
 			_lane_notes[(obj as ManiaNote).column].append(i)
 
 
+## Combo-Anteil des Scores: ab 100er-Combo zaehlt eine Note voll.
 func score_multiplier() -> float:
-	return 1.0 + minf(float(combo), 300.0) / 100.0
+	return minf(float(combo), 100.0) / 100.0
+
+
+## Map-Maximum ist IMMER exakt 1.000.000 (SS + Full Combo):
+## 80% Praezision (gleiche Gewichte wie die Accuracy-Formel) + 20% Combo.
+## Der Combo-Term ist auf das jeweils bestmoegliche normiert — sonst wuerde
+## selbst ein perfektes Play wegen der Anlauf-Rampe keine glatte Million.
+func _add_score(q: int) -> void:
+	var note_i := minf(float(_judged_count + 1), 100.0)
+	var combo_term := clampf(minf(float(combo), 100.0) / note_i, 0.0, 1.0)
+	_score_f += 1000000.0 / maxf(float(_total_notes), 1.0) \
+			* (0.8 * ACC_WEIGHT[q] + 0.2 * combo_term)
+	score = int(round(_score_f))
 
 
 func update(t_ms: float) -> void:
@@ -185,6 +204,7 @@ func _finish_hold(c: int, held_to_end: bool) -> void:
 		# Stable-Verhalten: zu fruehes Loslassen einer LN bricht die Combo.
 		combo = 0
 	_count_quality(q)
+	_add_score(q)
 	hp = minf(hp + _hp_heal[q], 1.0)
 	hp_changed.emit(hp)
 	var result := {
@@ -226,8 +246,9 @@ func _count_quality(q: int) -> void:
 		Quality.MEH:
 			n50 += 1
 			base = 50
-	var bonus := (score_multiplier() - 1.0) * float(base)
-	score += base + int(bonus * (1.0 if q <= Quality.PERFECT else 0.5))
+	# base wird nicht mehr direkt gutgeschrieben — der Score laeuft ueber
+	# das 1M-System in _add_score (Acc 80% + Combo 20%).
+	var _unused := base
 
 
 func _apply_hit(idx: int, q: int, dt: float) -> void:
@@ -235,6 +256,7 @@ func _apply_hit(idx: int, q: int, dt: float) -> void:
 	_count_quality(q)
 	combo += 1
 	max_combo = maxi(max_combo, combo)
+	_add_score(q)
 	hp = minf(hp + _hp_heal[q], 1.0)
 	hp_changed.emit(hp)
 	var result := {

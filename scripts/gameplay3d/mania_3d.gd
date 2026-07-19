@@ -102,8 +102,8 @@ var _warp_level := 0.0
 # Letzter Eintrag = Ziel-Planet (steigt auf, Docking-Finale zieht ihn mittig).
 var _planet_base: Array = []
 const PLANET_DRIFT := [
-	Vector3(4.5, -1.4, 0.0), Vector3(-5.5, 1.6, 0.0),
-	Vector3(3.2, 0.9, 0.0), Vector3(-2.0, 8.5, 0.0)]
+	Vector3(9.0, -2.6, 0.0), Vector3(-10.5, 2.8, 0.0),
+	Vector3(6.0, 1.8, 0.0), Vector3(-2.0, 9.0, 0.0)]
 # KOSMOS: der komplette Hintergrund haengt unter diesem frei beweglichen
 # Node — die Bahn bleibt fix, das UNIVERSUM fliegt (Roll/Bank/Climb).
 var _cosmos: Node3D
@@ -1534,7 +1534,7 @@ func _process(delta: float) -> void:
 		if pi < _planet_base.size() and pi < PLANET_DRIFT.size():
 			var ppos: Vector3 = _planet_base[pi] + PLANET_DRIFT[pi] * journey_p
 			if pi == _planet_nodes.size() - 1:
-				journey_scale = 0.55 + pow(journey_p, 1.55) * 0.95 + dock_mix * 1.6
+				journey_scale = 0.55 + pow(journey_p, 1.35) * 1.35 + dock_mix * 1.5
 				ppos = ppos.lerp(Vector3(0.0, 6.2, Z_FAR - 6.0), dock_mix)
 			pn.position = ppos
 		pn.scale = Vector3.ONE * journey_scale \
@@ -1581,6 +1581,8 @@ func _process(delta: float) -> void:
 		if not is_instance_valid(fnode):
 			continue
 		fnode.position.z += delta * float(fb.speed) * (1.0 + _beat_env * 0.25)
+		# Beim Naeherkommen nach aussen ziehen — Passage bleibt seitlich sichtbar.
+		fnode.position.x += delta * float(fb.side) * 1.4
 		if fnode.has_meta("lamp"):
 			(fnode.get_meta("lamp") as ShaderMaterial).set_shader_parameter(
 				"intensity", 0.35 + 1.0 * float(int(t * 0.004) % 2))
@@ -1813,10 +1815,9 @@ func _build_flight_plan() -> void:
 	var k := 0
 	var pt := t0 + bar * 8.0
 	while pt < t_end - 4000.0:
-		if _window_density(pt, 2600.0) <= 6:
-			_flight_plan.append({ "t": pt - 2600.0, "type": "flyby",
-				"side": (-1.0 if (seed_h + k) % 2 == 0 else 1.0),
-				"kind": (seed_h / 7 + k) % 2 })
+		_flight_plan.append({ "t": pt - 2600.0, "type": "flyby",
+			"side": (-1.0 if (seed_h + k) % 2 == 0 else 1.0),
+			"kind": (seed_h / 7 + k) % 2 })
 		k += 1
 		pt += bar * 8.0
 	# 2) Ueberkopf-Roll beim ersten Kiai (6 Takte kopfueber, dann zurueck).
@@ -1856,7 +1857,7 @@ func _run_flight_event(ev: Dictionary, t: float) -> void:
 			_spawn_flyby(float(ev.side), int(ev.kind))
 		"roll":
 			# Nur kopfueber gehen, wenn gerade wenig los ist.
-			if bool(ev.on) and _density < 0.55:
+			if bool(ev.on) and _density < 0.85:
 				_cosmos_roll_target = PI
 			else:
 				_cosmos_roll_target = 0.0
@@ -1878,15 +1879,15 @@ func _run_flight_event(ev: Dictionary, t: float) -> void:
 ## rauscht seitlich-oben an der Kamera vorbei.
 func _spawn_flyby(side: float, kind: int) -> void:
 	var root := Node3D.new()
-	root.position = Vector3(side * 13.0, 4.5 + randf() * 3.0, Z_FAR - 16.0)
+	root.position = Vector3(side * 9.0, 4.0 + randf() * 2.5, Z_FAR - 16.0)
 	_cosmos.add_child(root)
 	if kind == 0:
 		# WRACK: dunkle Rumpf-Silhouette + rot blinkendes Notlicht.
 		for b in 3:
 			var hull := MeshInstance3D.new()
 			var bm := BoxMesh.new()
-			bm.size = Vector3(1.6 + randf() * 2.6, 0.5 + randf() * 1.1,
-					2.0 + randf() * 3.0)
+			bm.size = Vector3(2.4 + randf() * 3.4, 0.8 + randf() * 1.5,
+					3.0 + randf() * 4.2)
 			hull.mesh = bm
 			var hmat := StandardMaterial3D.new()
 			hmat.albedo_color = Color(0.06, 0.07, 0.09)

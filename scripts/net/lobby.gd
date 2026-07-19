@@ -619,7 +619,10 @@ func ranked_players() -> Array:
 		var e: Dictionary = players[id].duplicate()
 		e["id"] = id
 		list.append(e)
-	list.sort_custom(func(a, b): return int(a.score) > int(b.score))
+	list.sort_custom(func(a, b):
+		if int(a.score) != int(b.score):
+			return int(a.score) > int(b.score)
+		return float(a.acc) > float(b.acc))
 	return list
 
 
