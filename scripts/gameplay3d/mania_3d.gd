@@ -113,6 +113,9 @@ var _cosmos_bank := 0.0
 var _cosmos_bank_target := 0.0
 var _cosmos_lift := 0.0
 var _cosmos_lift_target := 0.0
+# Easing-Phasen (0..1) fuer butterweiche Roll-/Climb-Bewegungen.
+var _roll_phase := 0.0
+var _lift_phase := 0.0
 # Beat-Schub-Reise: akkumulierte Distanz statt linearer Zeit.
 var _travel := 0.0
 # Screen-FX (Aberration/Schockwelle/Glitch/Vignette).
@@ -1582,12 +1585,12 @@ func _process(delta: float) -> void:
 			continue
 		fnode.position.z += delta * float(fb.speed) * (1.0 + _beat_env * 0.25)
 		# Beim Naeherkommen nach aussen ziehen — Passage bleibt seitlich sichtbar.
-		fnode.position.x += delta * float(fb.side) * 1.4
+		fnode.position.x += delta * float(fb.side) * 2.0
 		if fnode.has_meta("lamp"):
 			(fnode.get_meta("lamp") as ShaderMaterial).set_shader_parameter(
 				"intensity", 0.35 + 1.0 * float(int(t * 0.004) % 2))
 		if fnode.position.z > -16.0 and fnode.position.z < 4.0:
-			bank_req = -float(fb.side) * 0.055
+			bank_req = -float(fb.side) * 0.038
 		if not bool(fb.whooshed) and fnode.position.z > -7.0:
 			fb.whooshed = true
 			if _whoosh_player != null and fx > 0.0:
@@ -1604,9 +1607,15 @@ func _process(delta: float) -> void:
 		_cosmos_roll_target = 0.0
 		_cosmos_bank_target = 0.0
 		_cosmos_lift_target = 0.0
-	_cosmos_roll = lerpf(_cosmos_roll, _cosmos_roll_target, minf(delta * 0.9, 1.0))
-	_cosmos_bank = lerpf(_cosmos_bank, _cosmos_bank_target, minf(delta * 1.6, 1.0))
-	_cosmos_lift = lerpf(_cosmos_lift, _cosmos_lift_target, minf(delta * 0.8, 1.0))
+	# BUTTERWEICH: feste Phasen-Dauern + Smoothstep-Easing — der Roll baut
+	# sich langsam auf, gleitet und laeuft weich aus (kein Ruck mehr).
+	_roll_phase = move_toward(_roll_phase,
+			1.0 if _cosmos_roll_target > 0.5 else 0.0, delta / 6.0)
+	_cosmos_roll = smoothstep(0.0, 1.0, _roll_phase) * PI
+	_lift_phase = move_toward(_lift_phase,
+			1.0 if _cosmos_lift_target > 0.1 else 0.0, delta / 4.0)
+	_cosmos_lift = smoothstep(0.0, 1.0, _lift_phase) * 2.4
+	_cosmos_bank = lerpf(_cosmos_bank, _cosmos_bank_target, minf(delta * 1.1, 1.0))
 	if _cosmos != null:
 		var piv := Vector3(0, 3.6, Z_FAR * 0.5)
 		_cosmos.transform = Transform3D(Basis(Vector3(0, 0, 1), _cosmos_roll + _cosmos_bank),
@@ -1817,7 +1826,7 @@ func _build_flight_plan() -> void:
 	while pt < t_end - 4000.0:
 		_flight_plan.append({ "t": pt - 2600.0, "type": "flyby",
 			"side": (-1.0 if (seed_h + k) % 2 == 0 else 1.0),
-			"kind": (seed_h / 7 + k) % 2 })
+			"kind": (seed_h / 7 + k) % 3 })
 		k += 1
 		pt += bar * 8.0
 	# 2) Ueberkopf-Roll beim ersten Kiai (6 Takte kopfueber, dann zurueck).
@@ -1879,7 +1888,9 @@ func _run_flight_event(ev: Dictionary, t: float) -> void:
 ## rauscht seitlich-oben an der Kamera vorbei.
 func _spawn_flyby(side: float, kind: int) -> void:
 	var root := Node3D.new()
-	root.position = Vector3(side * 9.0, 4.0 + randf() * 2.5, Z_FAR - 16.0)
+	# IMMER oben-seitlich: hoch genug ueber dem Horizont und weit genug
+	# aussen — die Flugbahn kreuzt NIE den Noten-Korridor.
+	root.position = Vector3(side * 11.0, 6.0 + randf() * 2.5, Z_FAR - 16.0)
 	_cosmos.add_child(root)
 	if kind == 0:
 		# WRACK: dunkle Rumpf-Silhouette + rot blinkendes Notlicht.
@@ -1911,6 +1922,45 @@ func _spawn_flyby(side: float, kind: int) -> void:
 		lamp.position = Vector3(0, 0.9, 0)
 		root.add_child(lamp)
 		root.set_meta("lamp", lmat)
+	elif kind == 2:
+		# RAUMSTATION: Ring-Modul mit Solarpanels und Positionslicht.
+		var ring := MeshInstance3D.new()
+		var rt := TorusMesh.new()
+		rt.inner_radius = 0.9
+		rt.outer_radius = 1.5
+		ring.mesh = rt
+		var rm2 := StandardMaterial3D.new()
+		rm2.albedo_color = Color(0.10, 0.11, 0.14)
+		rm2.emission_enabled = true
+		rm2.emission = Color(0.75, 0.85, 1.0) * 0.10
+		ring.material_override = rm2
+		ring.rotation_degrees = Vector3(62, 0, 18)
+		root.add_child(ring)
+		for pside in [-1.0, 1.0]:
+			var panel := MeshInstance3D.new()
+			var pb := BoxMesh.new()
+			pb.size = Vector3(2.6, 0.06, 1.1)
+			panel.mesh = pb
+			var pmat := StandardMaterial3D.new()
+			pmat.albedo_color = Color(0.05, 0.08, 0.16)
+			pmat.emission_enabled = true
+			pmat.emission = Color(0.25, 0.45, 0.9) * 0.25
+			panel.material_override = pmat
+			panel.position = Vector3(pside * 2.3, 0, 0)
+			panel.rotation_degrees = Vector3(0, 0, pside * 8.0)
+			root.add_child(panel)
+		var plight := MeshInstance3D.new()
+		var plq := QuadMesh.new()
+		plq.size = Vector2(0.55, 0.55)
+		plight.mesh = plq
+		var plmat := ShaderMaterial.new()
+		plmat.shader = _glow_shader
+		plmat.set_shader_parameter("base_color", Color(0.4, 1.0, 0.6))
+		plmat.set_shader_parameter("intensity", 1.0)
+		plight.material_override = plmat
+		plight.position = Vector3(0, 1.1, 0)
+		root.add_child(plight)
+		root.set_meta("lamp", plmat)
 	else:
 		# ASTEROID: grauer Brocken mit dem Planeten-Shader.
 		var rock := MeshInstance3D.new()

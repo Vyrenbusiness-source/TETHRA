@@ -654,6 +654,15 @@ func _picker_card(ms: MapSet, list: VBoxContainer, overlay: Control) -> Control:
 	sub_l.add_theme_font_size_override("font_size", 12)
 	sub_l.add_theme_color_override("font_color", COL_DIM)
 	info.add_child(sub_l)
+	# Schon zusammen gespielt? Gruenes Badge direkt auf der Karte.
+	if Lobby.set_was_played(ms.osz_path.get_file()):
+		var pl := Label.new()
+		pl.text = "✓ gespielt"
+		pl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		pl.add_theme_font_size_override("font_size", 12)
+		pl.add_theme_color_override("font_color", Color(0.5, 1.0, 0.65))
+		pl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		hb.add_child(pl)
 	wrap.add_child(card)
 	# Klick: Diff-Zeilen ein-/ausklappen.
 	var diff_box := VBoxContainer.new()
@@ -671,11 +680,15 @@ func _picker_card(ms: MapSet, list: VBoxContainer, overlay: Control) -> Control:
 				if int(ms.meta_at(i).get("mode", 0)) != 3:
 					continue
 				var d := Button.new()
-				d.text = "     [%s]   ★ %.2f" % [ms.version_name_at(i), ms.stars_at(i)]
+				var was := Lobby.was_played(ms.osz_path.get_file(), ms.version_name_at(i))
+				d.text = "     [%s]   ★ %.2f%s" % [ms.version_name_at(i),
+					ms.stars_at(i), "   ✓ gespielt" if was else ""]
 				d.custom_minimum_size = Vector2(0, 34)
 				d.alignment = HORIZONTAL_ALIGNMENT_LEFT
 				d.add_theme_font_size_override("font_size", 13)
 				UiTheme.style_button(d)
+				if was:
+					d.add_theme_color_override("font_color", Color(0.55, 1.0, 0.7))
 				var pick_diff := i
 				d.pressed.connect(func():
 					_pick(ms, pick_diff)

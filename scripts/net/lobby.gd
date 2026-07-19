@@ -49,6 +49,8 @@ var sel_map: Dictionary = {}
 var lan_rooms: Dictionary = {}
 ## Intro-Skip: peer_id -> true; erst wenn ALLE gedrueckt haben, wird gesprungen.
 var skip_votes: Dictionary = {}
+## In dieser Session bereits ZUSAMMEN gespielte Maps ("file|version").
+var played: Array = []
 
 var _bcast: PacketPeerUDP
 var _listen: PacketPeerUDP
@@ -224,6 +226,7 @@ func _reset() -> void:
 	_join_pw = ""
 	players = {}
 	sel_map = {}
+	played = []
 	crown_id = 1
 
 
@@ -279,6 +282,19 @@ func _process(delta: float) -> void:
 				changed = true
 		if changed:
 			rooms_changed.emit()
+
+
+## Wurde diese Diff in dieser Session schon zusammen gespielt?
+func was_played(file: String, version: String) -> bool:
+	return played.has("%s|%s" % [file, version])
+
+
+## Wurde IRGENDEINE Diff dieses Sets schon zusammen gespielt?
+func set_was_played(file: String) -> bool:
+	for pk in played:
+		if str(pk).begins_with(file + "|"):
+			return true
+	return false
 
 
 # ---------------------------------------------------------------------------
@@ -451,7 +467,7 @@ func start_game() -> void:
 func _sync() -> void:
 	if not is_host:
 		return
-	rpc("cl_state", players, crown_id, sel_map, room_name)
+	rpc("cl_state", players, crown_id, sel_map, room_name, played)
 	players_changed.emit()
 
 
@@ -460,12 +476,13 @@ func _sync() -> void:
 # ---------------------------------------------------------------------------
 
 @rpc("authority", "call_remote", "reliable")
-func cl_state(p: Dictionary, crown: int, m: Dictionary, rname: String) -> void:
+func cl_state(p: Dictionary, crown: int, m: Dictionary, rname: String, played_list: Array = []) -> void:
 	var map_was := sel_map.duplicate()
 	players = p
 	crown_id = crown
 	sel_map = m
 	room_name = rname
+	played = played_list
 	players_changed.emit()
 	if map_was != sel_map:
 		map_changed.emit()
@@ -479,6 +496,10 @@ func cl_start() -> void:
 		return
 	in_game = true
 	skip_votes = {}
+	if not sel_map.is_empty():
+		var pk := "%s|%s" % [str(sel_map.get("file", "")), str(sel_map.get("version", ""))]
+		if not played.has(pk):
+			played.append(pk)
 	for id in players:
 		players[id].score = 0
 		players[id].combo = 0
