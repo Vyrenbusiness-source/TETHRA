@@ -49,6 +49,17 @@ var _overdrive := 0.0
 var _shake := 0.0
 var _was_kiai := false
 var _pitch_smooth := 0.0
+# FLUG-CHOREO v2: Feder-Daempfer-Zustaende (Traegheit + leichter Overshoot),
+# Phrasen-Phase, Break-Ruhe und Kurven-Drift des Kosmos.
+var _pitch_vel := 0.0
+var _bank_smooth := 0.0
+var _bank_vel := 0.0
+var _lift_vel := 0.0
+var _bank_phase := 0.0
+var _last_beats := 0.0
+var _calm := 0.0
+var _reentry_armed := false
+var _cosmos_yaw := 0.0
 var _lift_smooth := 0.0
 
 var _edge_mats: Array[StandardMaterial3D] = []
@@ -1634,20 +1645,55 @@ func _process(delta: float) -> void:
 	# (BPM/Kiai skaliert), Bass-Kicks druecken die Nase kurz runter, und bei
 	# Combo-Milestones/Kiai-Start gibt's einen Barrel-Roll-Looping.
 	# Kamera bleibt fix — Judgement voellig unberuehrt.
-	# BPM-SYNC: Die Choreografie folgt Takt-Phrasen statt freier Sinuswellen —
-	# gebankt wird ueber 8 Beats, gestiegen ueber 16, Lift ueber 32. Die Welt
-	# bewegt sich dadurch MUSIKALISCH, nicht zufaellig.
-	# WICHTIG: Neigung HART begrenzen. Kippt die Welt nach oben, hebt sie den
-	# Kamerawinkel auf und die Strecke wird brettflach/unlesbar. Nach unten
-	# (mehr Draufsicht) ist ok, nach oben fast nichts.
+	# FLUG-CHOREO v2 — Feder-Physik statt Animation:
+	#  · Traegheit + leichter Overshoot (Masse-Gefuehl)
+	#  · Phrasen-LEANS (alle 8 Beats Seitenwechsel; Kiai: 4 = Angriffsflug)
+	#  · Hold-Notes ziehen die Nase hoch (Input steuert das Schiff!)
+	#  · Breaks = stilles Gleiten, danach kraeftiger Wiedereinstiegs-Lean
+	#  · Docking = Flare: Nase hoch, alles laeuft aus.
+	# WICHTIG: Neigung HART begrenzen (nach oben kippt die Lesbarkeit).
 	var beats := _song_beats(t)
-	var climb := sin(TAU * beats / 16.0) * (0.5 + _kiai_mix * 0.35) * fx
-	var pitch_target := clampf(climb - _punch * 0.3, -1.4, 0.5)
-	_pitch_smooth = lerpf(_pitch_smooth, pitch_target, minf(delta * 2.2, 1.0))
-	_lift_smooth = lerpf(_lift_smooth, sin(TAU * beats / 32.0) * 0.12 * fx, minf(delta * 2.0, 1.0))
-	var bank_deg := sin(TAU * beats / 8.0 + 1.3) * (1.0 + _kiai_mix * 0.6) * fx
+	var dbeats := clampf(beats - _last_beats, 0.0, 1.0)
+	_last_beats = beats
+	var dock_pre := clampf((t - (_song_len_ms - 5000.0)) / 5000.0, 0.0, 1.0)
+	# Ruhe-Faktor: keine Noten in der Naehe -> das Schiff gleitet still.
+	_calm = lerpf(_calm, 1.0 if _density < 0.05 else 0.0, minf(delta * 1.2, 1.0))
+	var act := (1.0 - _calm * 0.85) * (1.0 - dock_pre)
+	# Wiedereinstieg nach einem Break: einmaliger kraeftiger Lean.
+	if _calm > 0.55 and _density > 0.2 and not _reentry_armed:
+		_reentry_armed = true
+		_bank_vel += 7.0 * fx
+	elif _calm < 0.2:
+		_reentry_armed = false
+	# Phrasen-Lean: die Schraeglage wechselt an Phrasengrenzen die Seite.
+	_bank_phase += dbeats / (8.0 - 4.0 * roundf(_kiai_mix))
+	var lean_dir := 1.0 if int(floor(_bank_phase)) % 2 == 0 else -1.0
+	var bank_target := lean_dir * (1.1 + _kiai_mix * 0.7) * fx * act
+	# Hold-Steigflug: gehaltene Long Notes ziehen sanft hoch.
+	var held_n := 0
+	for hc in core.columns:
+		if core.active_hold(hc) >= 0:
+			held_n += 1
+	var hold_lift := minf(float(held_n), 2.0) * 0.4 * fx
+	# Pitch: Takt-Atmung + Kiai-Angriffshaltung + Hold-Lift + Docking-Flare.
+	var pitch_target := clampf(sin(TAU * beats / 16.0) * (0.5 + _kiai_mix * 0.3)
+			* fx * act - _kiai_mix * 0.4 * fx + hold_lift
+			+ dock_pre * 0.8 * fx, -1.6, 0.9)
+	var lift_target := sin(TAU * beats / 32.0) * 0.12 * fx * act + hold_lift * 0.10
+	# Feder-Daempfer (leicht unterdaempft -> minimaler Overshoot).
+	_pitch_vel += (pitch_target - _pitch_smooth) * 16.0 * delta
+	_pitch_vel *= exp(-5.5 * delta)
+	_pitch_smooth += _pitch_vel * delta
+	_bank_vel += (bank_target - _bank_smooth) * 14.0 * delta
+	_bank_vel *= exp(-5.0 * delta)
+	_bank_smooth += _bank_vel * delta
+	_lift_vel += (lift_target - _lift_smooth) * 10.0 * delta
+	_lift_vel *= exp(-6.0 * delta)
+	_lift_smooth += _lift_vel * delta
 	_world.position.y = _lift_smooth
-	_world.rotation_degrees = Vector3(_pitch_smooth, 0.0, bank_deg)
+	_world.rotation_degrees = Vector3(clampf(_pitch_smooth, -1.8, 1.0), 0.0, _bank_smooth)
+	# Kurvenflug-Illusion: der Kosmos driftet seitlich zur Kurvenaussenseite.
+	_cosmos_yaw = lerpf(_cosmos_yaw, -deg_to_rad(_bank_smooth) * 1.6, minf(delta * 1.5, 1.0))
 	# DROP: Kiai-Start feuert den Warp (Streifen + Flash + Sternen-Schub).
 	if kiai_now and not _was_kiai:
 		_start_drop_warp()
@@ -1692,7 +1738,8 @@ func _process(delta: float) -> void:
 	# fuehlt sich wie ein Antriebsstoss durchs All an (rein visuell).
 	_camera.fov = 72.0 + (_kiai_mix * 5.0 + _bass * 2.6 + _density * 2.0 \
 			+ _fov_kick + _beat_env * 1.6) * fx
-	_camera.position.z = 6.8 - (_beat_env * 0.10 + _warp_level * 0.25) * fx
+	_camera.position.z = 6.8 - (_beat_env * 0.10 + _warp_level * 0.25 \
+			+ _punch * 0.12) * fx
 
 	# HYPERSPACE: Der Drop reisst die Sterne ~1.5s zu Lichtfaeden.
 	_warp_level = move_toward(_warp_level, 0.0, delta * 0.7)
@@ -1926,7 +1973,9 @@ func _process(delta: float) -> void:
 	_cosmos_bank = lerpf(_cosmos_bank, _cosmos_bank_target, minf(delta * 1.1, 1.0))
 	if _cosmos != null:
 		var piv := Vector3(0, 3.6, Z_FAR * 0.5)
-		_cosmos.transform = Transform3D(Basis(Vector3(0, 0, 1), _cosmos_roll + _cosmos_bank),
+		_cosmos.transform = Transform3D(
+				Basis(Vector3(0, 0, 1), _cosmos_roll + _cosmos_bank) \
+				* Basis(Vector3(0, 1, 0), _cosmos_yaw),
 				piv + Vector3(0, -_cosmos_lift, 0)) * Transform3D(Basis.IDENTITY, -piv)
 	if _star_mat != null:
 		# Im Hyperspace brennen die Lichtfaeden deutlich heller.
