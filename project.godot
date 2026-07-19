@@ -1,0 +1,66 @@
+; Engine configuration file.
+; HOOKLINE — Grappling-Hook-Rhythm-Game (siehe HOOKLINE_MASTERPLAN.md)
+; Godot 4.7
+
+config_version=5
+
+[application]
+
+config/name="TETHRA"
+config/description="3D-Tunnel-Rhythm-Game. Liest osu!-Beatmaps."
+run/main_scene="res://scenes/main_menu.tscn"
+config/features=PackedStringArray("4.7", "Forward Plus")
+config/icon="res://icon.svg"
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=720
+
+[autoload]
+
+; Globale Sync-Clock: die EINZIGE Zeitquelle des Spiels (Abschnitt 5)
+SyncClock="*res://scripts/audio/sync_clock.gd"
+; Traegt die Auswahl aus dem Song-Browser in die Gameplay-Szene
+GameSession="*res://scripts/game_session.gd"
+; Persistente Einstellungen (nach SyncClock laden, wendet Offset/Volume an)
+Settings="*res://scripts/settings.gd"
+; Multiplayer-Lobby (UPnP-Hosting, Raum-Code, Krone, Live-Scores)
+Lobby="*res://scripts/net/lobby.gd"
+; Globaler Map-Downloader: parallele Downloads, ueberleben Szenenwechsel
+Mirror="*res://scripts/net/beatmap_mirror.gd"
+; Auto-Updater: prueft GitHub-Releases, laedt Updates automatisch
+Updater="*res://scripts/net/updater.gd"
+
+[input]
+
+; Primaerer Hook-Button (Abschnitt 8)
+hook={
+"deadzone": 0.5,
+"events": [{
+"button_index": 1,
+"device": -1,
+"type": "InputEventMouseButton"
+}]
+}
+hook_alt={
+"deadzone": 0.5,
+"events": [{
+"button_index": 2,
+"device": -1,
+"type": "InputEventMouseButton"
+}]
+}
+
+[physics]
+
+; Deterministischer Physik-Tick 240 Hz (Abschnitt 4)
+common/physics_ticks_per_second=240
+common/max_physics_steps_per_frame=16
+
+[rendering]
+
+renderer/rendering_method="forward_plus"
+anti_aliasing/quality/msaa_3d=3
+anti_aliasing/quality/msaa_2d=3
+environment/defaults/default_clear_color=Color(0, 0, 0, 1)

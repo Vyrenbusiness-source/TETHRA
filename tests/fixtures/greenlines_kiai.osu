@@ -1,0 +1,32 @@
+osu file format v14
+
+[General]
+AudioFilename: a.mp3
+AudioLeadIn: 1000
+Mode: 0
+
+[Metadata]
+Title: Kiai Map
+Artist: X
+Creator: Y
+Version: Insane
+
+[Difficulty]
+HPDrainRate: 6
+CircleSize: 3.5
+OverallDifficulty: 8
+ApproachRate: 9
+SliderMultiplier: 1.6
+SliderTickRate: 1
+
+[TimingPoints]
+0,250,4,1,0,100,1,0
+0,-100,4,1,0,100,0,0
+1000,-50,4,1,0,100,0,1
+2000,-200,4,1,0,100,0,1
+3000,-125,4,1,0,100,0,0
+4000,-100,4,1,0,100,0,0
+
+[HitObjects]
+50,50,1500,2,0,L|300:50,1,250,0:0|0:0,
+100,100,2500,2,0,L|100:300,1,200,0:0|0:0,

@@ -1,0 +1,18 @@
+# Godot-Cache
+.godot/
+
+# Build-Artefakte (gehen als GitHub-Release-Assets raus, nicht ins Repo)
+release/
+TETHRA_v1.zip
+*.pck
+
+# Beatmaps (3.5 GB — niemals ins Repo)
+maps/
+
+# Godot-Engine-Binaries
+Godot_v*.exe
+Godot_v*.exe.zip
+
+# Sonstiges
+*.tmp
+tethra_update.bat

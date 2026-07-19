@@ -1,0 +1,24 @@
+osu file format v9
+
+[General]
+AudioFilename: song.ogg
+Mode: 0
+
+[Metadata]
+Title: Old Map
+Artist: Old
+Version: Easy
+
+[Difficulty]
+HPDrainRate: 3
+CircleSize: 5
+OverallDifficulty: 6
+SliderMultiplier: 1.2
+SliderTickRate: 1
+
+[TimingPoints]
+500,461.538461538462
+
+[HitObjects]
+128,96,600,1,0
+256,192,1100,5,0

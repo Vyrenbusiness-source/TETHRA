@@ -1,0 +1,8 @@
+[gd_scene load_steps=2 format=3 uid="uid://b1hooklinesong0"]
+
+[ext_resource type="Script" path="res://scripts/song_select.gd" id="1_song"]
+
+[node name="SongSelect" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+script = ExtResource("1_song")

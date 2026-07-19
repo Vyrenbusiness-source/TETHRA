@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://b1tethramania00"]
+
+[ext_resource type="Script" path="res://scripts/gameplay3d/mania_3d.gd" id="1_mania"]
+
+[node name="Mania3D" type="Node3D"]
+script = ExtResource("1_mania")
