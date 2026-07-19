@@ -98,7 +98,6 @@ var _fire_level := 0.0
 var _fire_heat := 0.0
 # HYPERSPACE-Drop: 1.0 beim Kiai-Start, zieht die Sterne zu Lichtfaeden.
 var _warp_level := 0.0
-var _warp_shock_fired := true
 # REISE-ROUTE: Basis-Positionen + Drift der Planeten ueber die Songdauer.
 # Letzter Eintrag = Ziel-Planet (steigt auf, Docking-Finale zieht ihn mittig).
 var _planet_base: Array = []
@@ -909,6 +908,26 @@ func _fire_laser(column: int, target: Vector3, power: float = 1.0) -> void:
 		func(v): fm.set_shader_parameter("intensity", v), peak, 0.0, 0.15)
 	tw.tween_callback(flash.queue_free)
 
+	# Weicher Halo hinter dem Kern: groesser, schwaecher, langsamer — gibt
+	# dem Einschlag Tiefe statt nur eines flachen Blitzes.
+	var halo := MeshInstance3D.new()
+	var hq2 := QuadMesh.new()
+	hq2.size = Vector2(2.3, 2.3)
+	halo.mesh = hq2
+	var hm2 := ShaderMaterial.new()
+	hm2.shader = _glow_shader
+	hm2.set_shader_parameter("base_color", col)
+	hm2.set_shader_parameter("intensity", peak * 0.30)
+	halo.material_override = hm2
+	halo.position = target + Vector3(0, 0, -0.05)
+	halo.rotation_degrees = Vector3(-9, 0, 0)
+	_world.add_child(halo)
+	var htw := create_tween()
+	htw.tween_property(halo, "scale", Vector3.ONE * 1.6, 0.24)
+	htw.parallel().tween_method(
+		func(v): hm2.set_shader_parameter("intensity", v), peak * 0.30, 0.0, 0.24)
+	htw.tween_callback(halo.queue_free)
+
 	# Shockwave: flacher Ring rollt vom Einschlag ueber die Bahn nach aussen.
 	var ring := MeshInstance3D.new()
 	var rq := QuadMesh.new()
@@ -1385,14 +1404,10 @@ func _process(delta: float) -> void:
 	# fuehlt sich wie ein Antriebsstoss durchs All an (rein visuell).
 	_camera.fov = 72.0 + (_kiai_mix * 5.0 + _bass * 2.6 + _density * 2.0 \
 			+ _fov_kick + _beat_env * 1.6) * fx
-	_camera.position.z = 6.8 - _beat_env * 0.10 * fx
+	_camera.position.z = 6.8 - (_beat_env * 0.10 + _warp_level * 0.25) * fx
 
-	# HYPERSPACE: Der Drop reisst die Sterne zu Lichtfaeden; klingt der Warp
-	# ab, schnappt eine grosse Shockwave am Horizont zurueck.
+	# HYPERSPACE: Der Drop reisst die Sterne ~1.5s zu Lichtfaeden.
 	_warp_level = move_toward(_warp_level, 0.0, delta * 0.7)
-	if not _warp_shock_fired and _warp_level < 0.30:
-		_warp_shock_fired = true
-		_spawn_warp_shock()
 
 	# Sterne rasen vorbei — jeder Beat gibt einen Warp-Schub obendrauf,
 	# das Docking-Finale bremst die Reise sanft aus.
@@ -1426,8 +1441,9 @@ func _process(delta: float) -> void:
 				0.4 + (_bass * 0.4 + _kiai_mix * 0.4) * fx + _beat_env * 0.15)
 	# Horizont atmet mit Takt und Bass — verankert den Beat im ganzen Bild.
 	if _horizon_mat != null:
+		# Beim Docking glueht der Horizont waermer auf — Ankunftslicht.
 		_horizon_mat.set_shader_parameter("intensity",
-			0.10 + _beat_env * 0.10 + _bass * 0.05)
+			0.10 + _beat_env * 0.10 + _bass * 0.05 + dock_mix * 0.15)
 	if _aurora_mat != null:
 		_aurora_mat.set_shader_parameter("drift", t / 1000.0)
 		_aurora_mat.set_shader_parameter("pulse", _beat_env)
@@ -1461,8 +1477,10 @@ func _process(delta: float) -> void:
 		_sheet_cd = 0.5 + randf() * 0.8
 		_spawn_sheet_lightning()
 	if _star_mat != null:
+		# Im Hyperspace brennen die Lichtfaeden deutlich heller.
 		_star_mat.set_shader_parameter("intensity",
-			0.35 + (_treble * 0.30 + _star_burst * 0.15) * fx + _beat_env * 0.07)
+			0.35 + (_treble * 0.30 + _star_burst * 0.15 + _warp_level * 0.5) * fx \
+			+ _beat_env * 0.07)
 
 	if _skip_label != null:
 		var can_skip: bool = _can_skip_intro() and Settings.lane_for_key(KEY_SPACE) == -1
@@ -1527,9 +1545,8 @@ func _start_drop_warp() -> void:
 	if fx <= 0.0:
 		return
 	_star_burst = 1.0
-	# Hyperspace: Sterne ziehen sich ~1.5s zu Lichtfaeden, dann Shockwave.
+	# Hyperspace: Sterne ziehen sich ~1.5s zu Lichtfaeden.
 	_warp_level = 1.0
-	_warp_shock_fired = false
 	_fov_kick = maxf(_fov_kick, 5.0)
 	var flash := ColorRect.new()
 	flash.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -1555,45 +1572,45 @@ func _start_drop_warp() -> void:
 
 
 func _spawn_shooting_star(seed_i: int) -> void:
-	# Sternschnuppe zieht waehrend Kiai diagonal ueber den Himmel.
+	# Sternschnuppe v2: heller Kopf mit langem Glow-Schweif, brennt kurz auf
+	# und verglueht beschleunigend (wie ein echter Meteor).
 	var h1 := _hash01(float(seed_i) * 4.7)
-	var streak := MeshInstance3D.new()
-	var box := BoxMesh.new()
-	box.size = Vector3(2.6, 0.03, 0.03)
-	streak.mesh = box
-	streak.material_override = _emissive_mat(Color(1, 1, 1), 1.5)
-	streak.position = Vector3((h1 - 0.5) * 40.0, 10.0 + h1 * 5.0, Z_FAR - 4.0)
-	streak.rotation_degrees = Vector3(0, 0, -18)
-	add_child(streak)
-	var tw := create_tween()
-	tw.set_parallel(true)
-	tw.tween_property(streak, "position", streak.position + Vector3(9.0, -3.0, 0.0), 0.7)
-	tw.tween_property(streak, "scale", Vector3(0.1, 1, 1), 0.7)
-	tw.chain().tween_callback(streak.queue_free)
-
-
-## Ende des Hyperspace-Schubs: grosse Shockwave schnappt am Horizont zurueck.
-func _spawn_warp_shock() -> void:
-	var fx := _fx_level()
-	if fx <= 0.0:
-		return
-	var ring := MeshInstance3D.new()
-	var rq := QuadMesh.new()
-	rq.size = Vector2(34, 34)
-	ring.mesh = rq
-	var rm := ShaderMaterial.new()
-	rm.shader = _ring_shader
-	rm.set_shader_parameter("base_color", _theme_kiai.lerp(Color(1, 1, 1), 0.5))
-	rm.set_shader_parameter("intensity", 1.1 * fx)
-	rm.set_shader_parameter("radius", 0.04)
-	ring.material_override = rm
-	ring.position = Vector3(0, 4.5, Z_FAR - 3.0)
-	add_child(ring)
+	var h2 := _hash01(float(seed_i) * 9.3)
+	var root := Node3D.new()
+	root.position = Vector3((h1 - 0.5) * 40.0, 9.0 + h2 * 6.0, Z_FAR - 4.0)
+	add_child(root)
+	var trail := MeshInstance3D.new()
+	var tq := QuadMesh.new()
+	tq.size = Vector2(4.4, 0.30)
+	trail.mesh = tq
+	var tm := ShaderMaterial.new()
+	tm.shader = _glow_shader
+	tm.set_shader_parameter("base_color", Color(0.82, 0.90, 1.0))
+	tm.set_shader_parameter("intensity", 0.0)
+	trail.material_override = tm
+	# Schweif hinter dem Kopf, entgegen der Flugrichtung (links-unten).
+	trail.position = Vector3(2.1, 0.74, 0.0)
+	trail.rotation_degrees = Vector3(0, 0, 19.5)
+	root.add_child(trail)
+	var head := MeshInstance3D.new()
+	var hq := QuadMesh.new()
+	hq.size = Vector2(0.55, 0.55)
+	head.mesh = hq
+	var hm := ShaderMaterial.new()
+	hm.shader = _glow_shader
+	hm.set_shader_parameter("base_color", Color(1, 1, 1))
+	hm.set_shader_parameter("intensity", 0.0)
+	head.material_override = hm
+	root.add_child(head)
 	var tw := create_tween().set_parallel(true)
-	tw.tween_method(func(v): rm.set_shader_parameter("radius", v), 0.04, 0.47, 0.7) \
-			.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	tw.tween_method(func(v): rm.set_shader_parameter("intensity", v), 1.1 * fx, 0.0, 0.7)
-	tw.chain().tween_callback(ring.queue_free)
+	tw.tween_property(root, "position",
+			root.position + Vector3(-13.0, -4.6, 0.0), 1.1) \
+			.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	tw.tween_method(func(v): hm.set_shader_parameter("intensity", v), 0.0, 1.3, 0.22)
+	tw.tween_method(func(v): tm.set_shader_parameter("intensity", v), 0.0, 0.55, 0.22)
+	tw.chain().tween_method(func(v): hm.set_shader_parameter("intensity", v), 1.3, 0.0, 0.7)
+	tw.tween_method(func(v): tm.set_shader_parameter("intensity", v), 0.55, 0.0, 0.7)
+	tw.finished.connect(root.queue_free)
 
 
 ## Downbeat-Welle: dezentes Lichtband, das im Noten-Tempo (preempt) vom
@@ -1601,12 +1618,17 @@ func _spawn_warp_shock() -> void:
 func _spawn_beat_wave() -> void:
 	var wave := MeshInstance3D.new()
 	var wq := QuadMesh.new()
-	wq.size = Vector2(8.6, 1.5)
+	wq.size = Vector2(8.6, 1.2)
 	wave.mesh = wq
 	var wm := ShaderMaterial.new()
 	wm.shader = _glow_shader
-	wm.set_shader_parameter("base_color", _theme_col.lerp(_theme_kiai, _kiai_mix))
-	var peak := 0.12 * _fx_level()
+	# Farbe folgt dem Zustand: Kiai kippt sie zur Komplementaerfarbe,
+	# brennende Kanten (On Fire) faerben die Welle in Glut/Plasma.
+	var wcol := _theme_col.lerp(_theme_kiai, _kiai_mix)
+	if _fire_level > 0.3:
+		wcol = wcol.lerp(Color(1.0, 0.6, 0.25).lerp(Color(0.72, 0.92, 1.0), _fire_heat), 0.6)
+	wm.set_shader_parameter("base_color", wcol)
+	var peak := (0.11 + _kiai_mix * 0.08) * _fx_level()
 	wm.set_shader_parameter("intensity", peak)
 	wave.material_override = wm
 	wave.rotation_degrees = Vector3(-90, 0, 0)
@@ -1634,9 +1656,13 @@ func _spawn_sheet_lightning() -> void:
 	sheet.material_override = sm
 	sheet.position = Vector3((randf() - 0.5) * 36.0, 5.0 + randf() * 6.0, Z_FAR - 8.5)
 	add_child(sheet)
+	# Doppel-Zucken wie echtes Wetterleuchten: hell — kurz dunkel — nachzucken.
+	var set_i := func(v): sm.set_shader_parameter("intensity", v)
 	var tw := create_tween()
-	tw.tween_method(func(v): sm.set_shader_parameter("intensity", v), 0.0, peak, 0.06)
-	tw.tween_method(func(v): sm.set_shader_parameter("intensity", v), peak, 0.0, 0.28)
+	tw.tween_method(set_i, 0.0, peak, 0.05)
+	tw.tween_method(set_i, peak, peak * 0.22, 0.08)
+	tw.tween_method(set_i, peak * 0.22, peak * 0.8, 0.06)
+	tw.tween_method(set_i, peak * 0.8, 0.0, 0.30)
 	tw.tween_callback(sheet.queue_free)
 
 
