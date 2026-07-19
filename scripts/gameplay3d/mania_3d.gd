@@ -104,8 +104,6 @@ var _planet_base: Array = []
 const PLANET_DRIFT := [
 	Vector3(4.5, -1.4, 0.0), Vector3(-5.5, 1.6, 0.0),
 	Vector3(3.2, 0.9, 0.0), Vector3(-2.0, 8.5, 0.0)]
-# Wetterleuchten-Cooldown (Bass-Kicks zucken im Nebel).
-var _sheet_cd := 0.0
 # KOSMOS: der komplette Hintergrund haengt unter diesem frei beweglichen
 # Node — die Bahn bleibt fix, das UNIVERSUM fliegt (Roll/Bank/Climb).
 var _cosmos: Node3D
@@ -894,11 +892,11 @@ func _trigger_overdrive() -> void:
 	# Vollbild-Blitz.
 	var flash := ColorRect.new()
 	flash.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	flash.color = Color(1, 1, 1, 0.8)
+	flash.color = Color(1, 1, 1, 0.35)
 	flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_hud.add_child(flash)
 	var tw := create_tween()
-	tw.tween_property(flash, "color:a", 0.0, 0.18)
+	tw.tween_property(flash, "color:a", 0.0, 0.12)
 	tw.tween_callback(flash.queue_free)
 	# Zackenblitze ueber dem Feld.
 	for i in 6:
@@ -1542,13 +1540,6 @@ func _process(delta: float) -> void:
 		pn.scale = Vector3.ONE * journey_scale \
 				* (1.0 + (_bass * 0.09 + _nebula_kick * 0.04) * fx)
 
-	# Wetterleuchten: starke Bass-Kicks zucken als diffuses Aufleuchten
-	# irgendwo tief im Nebel — der Himmel antwortet auf die Musik.
-	_sheet_cd -= delta
-	if fx > 0.0 and _bass > 0.72 and _sheet_cd <= 0.0:
-		_sheet_cd = 0.5 + randf() * 0.8
-		_spawn_sheet_lightning()
-
 	# SCREEN-FX: Aberration auf Bass-Kicks, Overdrive-Schockwelle, Glitch.
 	if _screen_mat != null:
 		if _shock >= 0.0:
@@ -1781,188 +1772,6 @@ func _spawn_beat_wave() -> void:
 	tw.tween_property(wave, "position:z", Z_LINE, dur)
 	tw.tween_method(func(v): wm.set_shader_parameter("intensity", v), peak, 0.02, dur)
 	tw.chain().tween_callback(wave.queue_free)
-
-
-## Wetterleuchten: diffuses, warmes Aufleuchten tief im Nebel (Bass-Kick).
-func _spawn_sheet_lightning() -> void:
-	var sheet := MeshInstance3D.new()
-	var sq := QuadMesh.new()
-	sq.size = Vector2(11.0, 6.5)
-	sheet.mesh = sq
-	var sm := ShaderMaterial.new()
-	sm.shader = _glow_shader
-	sm.set_shader_parameter("base_color",
-			_theme_col.lerp(Color(1.0, 0.95, 0.85), 0.6))
-	var peak := 0.5 * _fx_level()
-	sm.set_shader_parameter("intensity", 0.0)
-	sheet.material_override = sm
-	sheet.position = Vector3((randf() - 0.5) * 36.0, 5.0 + randf() * 6.0, Z_FAR - 8.5)
-	add_child(sheet)
-	# Doppel-Zucken wie echtes Wetterleuchten: hell — kurz dunkel — nachzucken.
-	var set_i := func(v): sm.set_shader_parameter("intensity", v)
-	var tw := create_tween()
-	tw.tween_method(set_i, 0.0, peak, 0.05)
-	tw.tween_method(set_i, peak, peak * 0.22, 0.08)
-	tw.tween_method(set_i, peak * 0.22, peak * 0.8, 0.06)
-	tw.tween_method(set_i, peak * 0.8, 0.0, 0.30)
-	tw.tween_callback(sheet.queue_free)
-
-
-## Fullscreen-Post-FX-Ebene UNTER dem HUD: verzerrt nur das Spielbild,
-## alle Anzeigen bleiben gestochen scharf.
-func _build_screen_fx() -> void:
-	var fx_layer := CanvasLayer.new()
-	fx_layer.layer = 0
-	add_child(fx_layer)
-	var fx_rect := ColorRect.new()
-	fx_rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	fx_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_screen_mat = ShaderMaterial.new()
-	_screen_mat.shader = load("res://shaders/screen_fx.gdshader")
-	fx_rect.material = _screen_mat
-	fx_layer.add_child(fx_rect)
-
-
-# ---------------------------------------------------------------------------
-# FLUG-CHOREOGRAFIE: deterministisch aus der Map geplant (Phrasengrenzen,
-# Kiai-Start, Breaks) und mit dem Dateinamen geseedet — jedes Replay fliegt
-# exakt dieselbe Route. Grosse Manoever nur in ruhigen Passagen.
-# ---------------------------------------------------------------------------
-
-func _build_flight_plan() -> void:
-	_flight_plan = []
-	_flight_idx = 0
-	if _beatmap == null or _beatmap.hit_objects.is_empty():
-		return
-	var bar := 4.0 * 500.0
-	for tp in _beatmap.timing_points:
-		if tp.uninherited and tp.beat_length > 0.0:
-			bar = tp.beat_length * float(maxi(tp.meter, 1))
-			break
-	var seed_h: int = hash(GameSession.osu_filename)
-	var objs := _beatmap.hit_objects
-	var t0: float = objs[0].time
-	var t_end: float = objs[objs.size() - 1].time
-	# 1) Vorbeifluege an 8-Takt-Grenzen — nur wenn das Fenster ruhig ist.
-	var k := 0
-	var pt := t0 + bar * 8.0
-	while pt < t_end - 4000.0:
-		if _window_density(pt, 2600.0) <= 6:
-			_flight_plan.append({ "t": pt - 2600.0, "type": "flyby",
-				"side": (-1.0 if (seed_h + k) % 2 == 0 else 1.0),
-				"kind": (seed_h / 7 + k) % 2 })
-		k += 1
-		pt += bar * 8.0
-	# 2) Ueberkopf-Roll beim ersten Kiai (6 Takte kopfueber, dann zurueck).
-	var kiai_t := -1.0
-	var scan := 0.0
-	var scan_end := maxf(_beatmap.duration_ms(), 1.0)
-	while scan < scan_end:
-		if _beatmap.is_kiai(scan):
-			kiai_t = scan
-			break
-		scan += 400.0
-	if kiai_t > 0.0:
-		_flight_plan.append({ "t": kiai_t, "type": "roll", "on": true })
-		_flight_plan.append({ "t": kiai_t + bar * 6.0, "type": "roll", "on": false })
-	# 3) Breaks (>4.5s ohne Noten): Hochziehen + Kometensturm.
-	for i in range(1, objs.size()):
-		var gap: float = objs[i].time - objs[i - 1].time
-		if gap > 4500.0:
-			_flight_plan.append({ "t": objs[i - 1].time + 600.0,
-				"type": "break_show", "until": objs[i].time - 1500.0 })
-	_flight_plan.sort_custom(func(a, b): return float(a.t) < float(b.t))
-
-
-func _window_density(t: float, half: float) -> int:
-	var n := 0
-	for o in _beatmap.hit_objects:
-		if absf(o.time - t) <= half:
-			n += 1
-	return n
-
-
-func _run_flight_event(ev: Dictionary, t: float) -> void:
-	if _fx_level() <= 0.0:
-		return
-	match str(ev.type):
-		"flyby":
-			_spawn_flyby(float(ev.side), int(ev.kind))
-		"roll":
-			# Nur kopfueber gehen, wenn gerade wenig los ist.
-			if bool(ev.on) and _density < 0.55:
-				_cosmos_roll_target = PI
-			else:
-				_cosmos_roll_target = 0.0
-		"break_show":
-			_cosmos_lift_target = 2.4
-			var dur: float = maxf((float(ev.until) - t) / 1000.0, 1.2)
-			for i in 7:
-				var st := get_tree().create_timer(0.35 * float(i) + 0.2, false)
-				var comet_seed := int(t) + i * 41
-				st.timeout.connect(func():
-					if is_inside_tree() and not _ended:
-						_spawn_shooting_star(comet_seed))
-			get_tree().create_timer(dur, false).timeout.connect(func():
-				if is_inside_tree():
-					_cosmos_lift_target = 0.0)
-
-
-## Wrack/Asteroid: spawnt weit hinten AUSSERHALB des Noten-Korridors und
-## rauscht seitlich-oben an der Kamera vorbei.
-func _spawn_flyby(side: float, kind: int) -> void:
-	var root := Node3D.new()
-	root.position = Vector3(side * 13.0, 4.5 + randf() * 3.0, Z_FAR - 16.0)
-	_cosmos.add_child(root)
-	if kind == 0:
-		# WRACK: dunkle Rumpf-Silhouette + rot blinkendes Notlicht.
-		for b in 3:
-			var hull := MeshInstance3D.new()
-			var bm := BoxMesh.new()
-			bm.size = Vector3(1.6 + randf() * 2.6, 0.5 + randf() * 1.1,
-					2.0 + randf() * 3.0)
-			hull.mesh = bm
-			var hmat := StandardMaterial3D.new()
-			hmat.albedo_color = Color(0.06, 0.07, 0.09)
-			hmat.emission_enabled = true
-			hmat.emission = _theme_col * 0.06
-			hull.material_override = hmat
-			hull.position = Vector3((randf() - 0.5) * 2.4,
-					(randf() - 0.5) * 1.4, (randf() - 0.5) * 3.0)
-			hull.rotation_degrees = Vector3(randf() * 20.0 - 10.0,
-					randf() * 360.0, randf() * 16.0 - 8.0)
-			root.add_child(hull)
-		var lamp := MeshInstance3D.new()
-		var lq := QuadMesh.new()
-		lq.size = Vector2(0.7, 0.7)
-		lamp.mesh = lq
-		var lmat := ShaderMaterial.new()
-		lmat.shader = _glow_shader
-		lmat.set_shader_parameter("base_color", Color(1.0, 0.25, 0.2))
-		lmat.set_shader_parameter("intensity", 1.0)
-		lamp.material_override = lmat
-		lamp.position = Vector3(0, 0.9, 0)
-		root.add_child(lamp)
-		root.set_meta("lamp", lmat)
-	else:
-		# ASTEROID: grauer Brocken mit dem Planeten-Shader.
-		var rock := MeshInstance3D.new()
-		var rq2 := QuadMesh.new()
-		var rs := 2.0 + randf() * 2.5
-		rq2.size = Vector2(rs, rs)
-		rock.mesh = rq2
-		var rmat := ShaderMaterial.new()
-		rmat.shader = load("res://shaders/planet.gdshader")
-		rmat.set_shader_parameter("base_col", Color(0.45, 0.43, 0.41))
-		rmat.set_shader_parameter("band_col", Color(0.30, 0.29, 0.28))
-		rmat.set_shader_parameter("atmo_col", Color(0.5, 0.5, 0.55))
-		rmat.set_shader_parameter("band_freq", 17.0)
-		rmat.set_shader_parameter("seed", randf() * 40.0)
-		rmat.set_shader_parameter("ring_amount", 0.0)
-		rock.material_override = rmat
-		root.add_child(rock)
-	_flybys.append({ "node": root, "side": side,
-		"speed": 16.0 + randf() * 8.0, "whooshed": false })
 
 
 ## Fortlaufende Beat-Zahl der Song-Zeit (fuer BPM-synchrone Choreografie).
