@@ -94,6 +94,9 @@ var _dl_query := ""
 var _dl_offset := 0
 var _dl_end_reached := false
 var _dl_loading_more := false
+## Automatisch nachgeladene Seiten seit letzter Suche/Filterwahl (Kappung,
+## damit ein sehr restriktiver Filter nicht endlos Seiten zieht).
+var _dl_auto_pages := 0
 
 
 func _ready() -> void:
@@ -133,8 +136,33 @@ func _ready() -> void:
 		push_warning("--mania: keine 4K-Diff gefunden")
 	elif OS.get_cmdline_args().has("--autoplay"):
 		_on_play_pressed.call_deferred()
+	elif OS.get_cmdline_args().has("--shot-dl"):
+		# Harness: Online-Panel oeffnen, restriktiven Sternfilter setzen und
+		# nach dem Auto-Nachladen Kartenzahl + Screenshot festhalten.
+		_open_download_panel.call_deferred()
+		_shot_dl_after.call_deferred()
 	elif OS.get_cmdline_args().has("--shot"):
 		_capture_screenshot_and_quit()
+
+
+func _shot_dl_after() -> void:
+	await get_tree().create_timer(2.0).timeout
+	if _dl_overlay == null:
+		get_tree().quit(1)
+		return
+	_dl_star_filter = 3
+	_dl_auto_pages = 0
+	_render_dl_results()
+	await get_tree().create_timer(8.0).timeout
+	print("DL-KARTEN: %d (auto_pages=%d, end=%s)" % [
+		_dl_rows.size(), _dl_auto_pages, _dl_end_reached])
+	await RenderingServer.frame_post_draw
+	if is_inside_tree():
+		var img := get_viewport().get_texture().get_image()
+		var path := "C:/Users/Gexanx/AppData/Local/Temp/claude/c--Users-Gexanx-Desktop-rhyg/b9d5e593-aabc-4b4b-a882-a5835e187db3/scratchpad/dl_panel.png"
+		img.save_png(path)
+		print("SHOT gespeichert: " + path)
+	get_tree().quit(0)
 
 
 func _capture_screenshot_and_quit() -> void:
@@ -1108,10 +1136,10 @@ func _open_download_panel() -> void:
 	panel.anchor_top = 0.5
 	panel.anchor_right = 0.5
 	panel.anchor_bottom = 0.5
-	panel.offset_left = -420
-	panel.offset_right = 420
-	panel.offset_top = -320
-	panel.offset_bottom = 320
+	panel.offset_left = -600
+	panel.offset_right = 600
+	panel.offset_top = -335
+	panel.offset_bottom = 335
 	_dl_overlay.add_child(panel)
 
 	var vb := VBoxContainer.new()
@@ -1182,6 +1210,7 @@ func _open_download_panel() -> void:
 		UiTheme.style_button(chip, fi == _dl_star_filter)
 		chip.pressed.connect(func():
 			_dl_star_filter = fi
+			_dl_auto_pages = 0
 			_render_dl_results())
 		filter_row.add_child(chip)
 
@@ -1228,6 +1257,7 @@ func _run_mirror_search() -> void:
 	_dl_query = q
 	_dl_offset = 0
 	_dl_end_reached = false
+	_dl_auto_pages = 0
 	_dl_loading_more = true
 	_dl_status.text = ("Suche \"%s\"…" % q) if q != "" else "Lade Vorschläge…"
 	for c in _dl_results_box.get_children():
@@ -1275,6 +1305,22 @@ func _on_mirror_search_done(results: Array, raw_count: int, offset: int) -> void
 		_dl_results_box.add_child(_make_online_card(r))
 	_dl_status.text = "%d Sets geladen%s" % [_dl_rows.size(),
 		"  ·  Ende der Liste" if _dl_end_reached else " — weiter scrollen fuer mehr"]
+	_maybe_load_more()
+
+
+## Zu wenige sichtbare Karten (Filter/Besitz frisst viel raus)? Dann sofort
+## weitere Server-Seiten holen — sonst gibt es keinen Scrollbalken und das
+## unendliche Scrollen kaeme nie in Gang ("nur 3 Songs"-Bug).
+func _maybe_load_more() -> void:
+	if _dl_loading_more or _dl_end_reached or _dl_overlay == null:
+		return
+	if _dl_rows.size() >= 16 or _dl_auto_pages >= 8:
+		return
+	_dl_auto_pages += 1
+	_dl_loading_more = true
+	_dl_offset += 50
+	_dl_status.text = "%d Sets  ·  lade mehr passende…" % _dl_rows.size()
+	_mirror.search(_dl_query, _dl_offset)
 
 
 ## Am Listenende angekommen -> naechste Server-Seite anfordern.
@@ -1323,15 +1369,17 @@ func _render_dl_results() -> void:
 		if _dl_last_results.is_empty():
 			_dl_status.text = "Keine Ergebnisse."
 		elif _dl_star_filter != 0:
-			_dl_status.text = "Nichts im Bereich %s — Filter anpassen." % STAR_FILTERS[_dl_star_filter][0]
+			_dl_status.text = "Suche Sets im Bereich %s…" % STAR_FILTERS[_dl_star_filter][0]
 		else:
-			_dl_status.text = "Keine neuen Ergebnisse (alles schon in deiner Bibliothek)."
+			_dl_status.text = "Suche neue Sets…"
+		_maybe_load_more()
 		return
 	var hidden := _dl_last_results.size() - fresh.size()
 	var hidden_txt := ("  ·  %d ausgeblendet" % hidden) if hidden > 0 else ""
 	_dl_status.text = "%d neue 4K-Sets%s" % [fresh.size(), hidden_txt]
 	for r in fresh:
 		_dl_results_box.add_child(_make_online_card(r))
+	_maybe_load_more()
 
 
 ## Set-IDs aller lokalen .osz (fuehrende Zahl im Dateinamen oder mirror_<id>).
@@ -1358,7 +1406,7 @@ func _owned_set_ids() -> Dictionary:
 func _make_online_card(r: Dictionary) -> Control:
 	var set_id: int = r.id
 	var card := Button.new()
-	card.custom_minimum_size = Vector2(0, 88)
+	card.custom_minimum_size = Vector2(0, 96)
 	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	card.clip_contents = true
 	var accent := _star_color(r.stars)
@@ -1379,7 +1427,7 @@ func _make_online_card(r: Dictionary) -> Control:
 	card.add_child(hb)
 
 	var thumb := TextureRect.new()
-	thumb.custom_minimum_size = Vector2(116, 66)
+	thumb.custom_minimum_size = Vector2(136, 76)
 	thumb.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	thumb.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 	thumb.size_flags_vertical = Control.SIZE_SHRINK_CENTER
@@ -1394,7 +1442,7 @@ func _make_online_card(r: Dictionary) -> Control:
 	hb.add_child(vb)
 	var t := Label.new()
 	t.text = "%s — %s" % [str(r.artist), str(r.title)]
-	t.add_theme_font_size_override("font_size", 16)
+	t.add_theme_font_size_override("font_size", 17)
 	t.add_theme_color_override("font_color", COL_TEXT)
 	t.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	t.mouse_filter = Control.MOUSE_FILTER_IGNORE
