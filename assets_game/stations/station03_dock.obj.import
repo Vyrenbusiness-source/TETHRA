@@ -1,0 +1,25 @@
+[remap]
+
+importer="wavefront_obj"
+importer_version=1
+type="Mesh"
+uid="uid://xp53b0tuqgw8"
+path="res://.godot/imported/station03_dock.obj-e2260f9fae33f982ce8b4829c6ce033d.mesh"
+
+[deps]
+
+files=["res://.godot/imported/station03_dock.obj-e2260f9fae33f982ce8b4829c6ce033d.mesh"]
+
+source_file="res://assets_game/stations/station03_dock.obj"
+dest_files=["res://.godot/imported/station03_dock.obj-e2260f9fae33f982ce8b4829c6ce033d.mesh", "res://.godot/imported/station03_dock.obj-e2260f9fae33f982ce8b4829c6ce033d.mesh"]
+
+[params]
+
+generate_tangents=true
+generate_lods=true
+generate_shadow_mesh=true
+generate_lightmap_uv2=false
+generate_lightmap_uv2_texel_size=0.2
+scale_mesh=Vector3(1, 1, 1)
+offset_mesh=Vector3(0, 0, 0)
+force_disable_mesh_compression=false

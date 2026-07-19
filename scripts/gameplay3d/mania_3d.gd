@@ -142,6 +142,21 @@ var _flight_plan: Array = []
 var _flight_idx := 0
 var _flybys: Array = []
 var _whoosh_player: AudioStreamPlayer
+## Stations-Assets werden beim Map-Start EINMAL geladen (Preload-Cache) —
+## nie Disk-I/O mitten im Spiel (Latenz!). Eintrag = Liste von [Mesh, Tex].
+var _station_pool: Array = []
+var _dock_station: Node3D
+const STATION_DEFS := [
+	[["station01.obj", "station01_diffuse"]],
+	[["station02_base.obj", "station02_base_diffuse"],
+		["station02_ring.obj", "station02_ring_diffuse"]],
+	[["station03_base.obj", "station03_base_diffuse"],
+		["station03_ring.obj", "station03_ring_diffuse"]],
+	[["station05.obj", "station05_diffuse"],
+		["station05_ring.obj", "station05_ring_diffuse"]],
+	[["station06_base.obj", "station06_base_diffuse"],
+		["station06_ring.obj", "station06_ring_diffuse"]],
+]
 var _star_mat: ShaderMaterial
 var _nebula_mat: ShaderMaterial
 var _nebula_mat2: ShaderMaterial
@@ -232,6 +247,7 @@ func _ready() -> void:
 	_glow_shader = load("res://shaders/glow_dot.gdshader")
 	_ring_shader = load("res://shaders/hit_ring.gdshader")
 	_extract_theme_color()
+	_preload_stations()
 	_build_world()
 	_build_hud()
 	_build_screen_fx()
@@ -693,12 +709,22 @@ func _build_starfield() -> void:
 				var epath := "res://assets_game/planets/%s_emission.webp" % str(pdef[8])
 				if ResourceLoader.exists(epath):
 					pm.set_shader_parameter("tex_emission", load(epath))
+				if str(pdef[8]) == "earth_like" or str(pdef[8]) == "ocean_planet":
+					pm.set_shader_parameter("clouds_amount", 0.85)
 		planet.material_override = pm
 		planet.position = pdef[0]
 		_cosmos.add_child(planet)
 		_planet_mats.append(pm)
 		_planet_nodes.append(planet)
 		_planet_base.append(pdef[0])
+
+	# DOCKING-STATION: schwebt im Finale neben dem Zielplaneten ein.
+	if not _station_pool.is_empty():
+		_dock_station = _build_station_node(
+				_station_pool[hash(GameSession.osu_filename) % _station_pool.size()])
+		_dock_station.position = Vector3(9.5, 4.5, Z_FAR - 5.0)
+		_dock_station.visible = false
+		_cosmos.add_child(_dock_station)
 
 	# Glut-Partikel-Pool: Funken fallen EXAKT auf den Beat (Spawn an der
 	# Beat-Kante), schweben langsam zu Boden.
@@ -1627,6 +1653,16 @@ func _process(delta: float) -> void:
 	for pm2 in _planet_mats:
 		pm2.set_shader_parameter("light_dir", sun_dir)
 
+	# DOCKING-STATION: gleitet in den letzten Sekunden neben den Zielplaneten,
+	# waechst weich mit und rotiert traege (Ankunftsbild).
+	if _dock_station != null:
+		_dock_station.visible = dock_mix > 0.01 and fx > 0.0
+		if _dock_station.visible:
+			_dock_station.position = Vector3(9.5, 4.5, Z_FAR - 5.0).lerp(
+					Vector3(4.6, 5.2, Z_FAR - 4.0), dock_mix)
+			_dock_station.scale = Vector3.ONE * (0.4 + dock_mix * 0.8)
+			_dock_station.rotation.y += delta * 0.15
+
 	# FLUGPLAN abarbeiten (Vorbeifluege, Ueberkopf-Roll, Break-Kino).
 	while _flight_idx < _flight_plan.size() and t >= float(_flight_plan[_flight_idx].t):
 		_run_flight_event(_flight_plan[_flight_idx], t)
@@ -1842,6 +1878,48 @@ func _spawn_beat_wave() -> void:
 	tw.tween_property(wave, "position:z", Z_LINE, dur)
 	tw.tween_method(func(v): wm.set_shader_parameter("intensity", v), peak, 0.02, dur)
 	tw.chain().tween_callback(wave.queue_free)
+
+
+## Alle Stations-Meshes/Texturen einmalig laden — _spawn_flyby und das
+## Docking-Finale greifen nur noch auf den Cache zu (keine Frame-Hitches).
+func _preload_stations() -> void:
+	_station_pool = []
+	for sdef in STATION_DEFS:
+		var parts: Array = []
+		for p in sdef:
+			var mp := "res://assets_game/stations/%s" % str(p[0])
+			if not ResourceLoader.exists(mp):
+				parts = []
+				break
+			var tex: Texture2D = null
+			var tp := "res://assets_game/stations/%s.webp" % str(p[1])
+			if ResourceLoader.exists(tp):
+				tex = load(tp)
+			parts.append([load(mp), tex])
+		if not parts.is_empty():
+			_station_pool.append(parts)
+
+
+## Stations-Node aus vorab geladenen Teilen bauen (auf ~5 Einheiten normiert).
+func _build_station_node(parts: Array) -> Node3D:
+	var st := Node3D.new()
+	var norm := 0.0
+	for part in parts:
+		var mi := MeshInstance3D.new()
+		mi.mesh = part[0]
+		var mmat := StandardMaterial3D.new()
+		mmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		if part[1] != null:
+			mmat.albedo_texture = part[1]
+		mmat.albedo_color = Color(0.95, 1.0, 1.1)
+		mi.material_override = mmat
+		if norm == 0.0:
+			var aabb: AABB = (part[0] as Mesh).get_aabb()
+			norm = 5.0 / maxf(maxf(aabb.size.x, aabb.size.y),
+					maxf(aabb.size.z, 0.001))
+		mi.scale = Vector3.ONE * norm
+		st.add_child(mi)
+	return st
 
 
 ## Fullscreen-Post-FX-Ebene UNTER dem HUD: verzerrt nur das Spielbild,
@@ -2090,33 +2168,11 @@ func _spawn_flyby(side: float, kind: int) -> void:
 	elif kind == 2:
 		# RAUMSTATION: echtes 3D-Modell (Community-Asset), unshaded texturiert,
 		# auf einheitliche Groesse normiert. Fallback: einfacher Ring.
-		var choice := randi() % 2
-		var base_path := "res://assets_game/stations/station01.obj" if choice == 0 \
-				else "res://assets_game/stations/station06_base.obj"
-		if ResourceLoader.exists(base_path):
-			var parts: Array = [[base_path,
-				"station01_diffuse" if choice == 0 else "station06_base_diffuse"]]
-			if choice == 1:
-				parts.append(["res://assets_game/stations/station06_ring.obj",
-					"station06_ring_diffuse"])
-			var norm := 0.0
-			for part in parts:
-				var mi := MeshInstance3D.new()
-				mi.mesh = load(str(part[0]))
-				var mmat := StandardMaterial3D.new()
-				mmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-				var dt := "res://assets_game/stations/%s.webp" % str(part[1])
-				if ResourceLoader.exists(dt):
-					mmat.albedo_texture = load(dt)
-				mmat.albedo_color = Color(0.95, 1.0, 1.1)
-				mi.material_override = mmat
-				if norm == 0.0:
-					var aabb: AABB = mi.mesh.get_aabb()
-					norm = 5.0 / maxf(maxf(aabb.size.x, aabb.size.y),
-							maxf(aabb.size.z, 0.001))
-				mi.scale = Vector3.ONE * norm
-				mi.rotation_degrees = Vector3(12, randf() * 360.0, 6)
-				root.add_child(mi)
+		if not _station_pool.is_empty():
+			var st := _build_station_node(
+					_station_pool[randi() % _station_pool.size()])
+			st.rotation_degrees = Vector3(10, randf() * 360.0, 5)
+			root.add_child(st)
 		else:
 			var ring := MeshInstance3D.new()
 			var rt := TorusMesh.new()

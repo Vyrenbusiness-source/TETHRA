@@ -16,6 +16,8 @@ uniform vec3 light_dir = vec3(-0.55, 0.35, 0.75);
 // ECHTE Planeten-Texturen (equirectangular): diffuse + Nachtseiten-Emission
 // (Stadtlichter/Lava). use_texture schaltet vom prozeduralen Look um.
 uniform float use_texture = 0.0;
+// Wolkenschicht fuer Erd-/Ozean-Planeten (driftet ueber die Oberflaeche).
+uniform float clouds_amount = 0.0;
 uniform sampler2D tex_diffuse: source_color, filter_linear_mipmap;
 uniform sampler2D tex_emission: source_color, hint_default_black, filter_linear_mipmap;
 uniform float intensity = 1.0;
@@ -78,6 +80,12 @@ void fragment() {
 					acos(clamp(n.y, -1.0, 1.0)) / PI);
 			surf = texture(tex_diffuse, tuv).rgb;
 			night = texture(tex_emission, tuv).rgb;
+			if (clouds_amount > 0.01) {
+				float cl = fbm(vec2(tuv.x * 8.0 + t * 0.012, tuv.y * 4.0 + seed));
+				cl = smoothstep(0.52, 0.78, cl) * clouds_amount;
+				surf = mix(surf, vec3(0.98), cl);
+				night = mix(night, vec3(0.0), cl * 0.85);
+			}
 		}
 		// Sonne von schraeg links: Terminator + Limb-Darkening.
 		float diff = clamp(dot(n, l), 0.0, 1.0);
