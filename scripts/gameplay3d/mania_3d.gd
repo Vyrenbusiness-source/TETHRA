@@ -126,6 +126,17 @@ var _miss_streak := 0
 # Schwarzes Loch + God-Rays.
 var _bh_mat: ShaderMaterial
 var _rays_mat: ShaderMaterial
+# GALAXIEN-REISE: der Song ist in Kapitel geteilt — jede "Galaxie" hat ihr
+# eigenes Farbklima, Nebelbild und Sternendichte. Uebergaenge crossfaden
+# butterweich (~2s) und der Kapitelwechsel feuert einen Hyperspace-Sprung.
+var _gal_chapters: Array = []
+var _gal_idx := -1
+var _gal_col := Color(0.2, 0.5, 1.0)
+var _gal_col2 := Color(1.0, 0.4, 0.8)
+var _gal_stars := 1.0
+var _gal_scale := 1.0
+## Grund-Reisetempo aus dem BPM der Map (140 BPM = neutral).
+var _bpm_factor := 1.0
 # Flug-Choreografie (aus der Map geplant) + aktive Vorbeifluege.
 var _flight_plan: Array = []
 var _flight_idx := 0
@@ -225,6 +236,7 @@ func _ready() -> void:
 	_build_hud()
 	_build_screen_fx()
 	_build_flight_plan()
+	_build_galaxy_chapters()
 	_build_sound()
 	_beat_player = AudioStreamPlayer.new()
 	_beat_player.stream = Sfx.beat_thump_stream()
@@ -1480,8 +1492,9 @@ func _process(delta: float) -> void:
 
 	# Sterne rasen vorbei — jeder Beat gibt einen Warp-Schub obendrauf,
 	# das Docking-Finale bremst die Reise sanft aus.
-	_star_scroll += delta * (9.0 + (_treble * 20.0 + _kiai_mix * 10.0 \
-			+ _star_burst * 30.0 + _beat_env * 26.0 + _warp_level * 55.0) * fx) \
+	_star_scroll += delta * (9.0 * _bpm_factor + (_treble * 20.0 \
+			+ _kiai_mix * 10.0 + _star_burst * 30.0 + _beat_env * 26.0 \
+			+ _warp_level * 55.0 + _density * 9.0) * fx) \
 			* (1.0 - dock_mix * 0.75)
 	var warp_stretch := 1.0 + _warp_level * 16.0 * fx
 	for i in _star_seeds.size():
@@ -1491,18 +1504,42 @@ func _process(delta: float) -> void:
 				_star_scales[i], _star_scales[i], _star_scales[i] * warp_stretch))
 		_star_mm.set_instance_transform(i, Transform3D(basis, Vector3(seed.x, seed.y, z)))
 
+	# GALAXIEN-REISE: aktuelles Kapitel bestimmen — der Wechsel feuert
+	# einen Hyperspace-Sprung, die Farbwelt crossfadet butterweich.
+	var gal_target := _gal_idx
+	for ci in _gal_chapters.size():
+		if t >= float(_gal_chapters[ci].t):
+			gal_target = ci
+	if gal_target != _gal_idx:
+		if _gal_idx >= 0 and fx > 0.0:
+			_warp_level = 1.0
+			_fov_kick = maxf(_fov_kick, 4.0)
+		_gal_idx = gal_target
+	if _gal_idx >= 0 and fx > 0.0:
+		var gch: Dictionary = _gal_chapters[_gal_idx]
+		var gk := minf(delta * 0.5, 1.0)
+		_gal_col = _gal_col.lerp(gch.col, gk)
+		_gal_col2 = _gal_col2.lerp(gch.col2, gk)
+		_gal_stars = lerpf(_gal_stars, float(gch.stars), gk)
+		_gal_scale = lerpf(_gal_scale, float(gch.scale), gk)
+
 	# Nebel driftet und atmet mit Bass/Kiai — und beschleunigt im Beat,
 	# als wuerde das Schiff durch die Wolken schieben.
-	_nebula_drift += delta * (1.0 + (_beat_env * 1.1 + _kiai_mix * 0.5) * fx)
+	_nebula_drift += delta * (1.0 + (_beat_env * 1.1 + _kiai_mix * 0.5) * fx) * _bpm_factor
 	if _nebula_mat != null:
 		_nebula_mat.set_shader_parameter("drift", _nebula_drift)
 		_nebula_mat.set_shader_parameter("pulse", _beat_env * (1.0 - dock_mix * 0.5))
-		# Kiai faerbt den Himmel Richtung Komplementaerfarbe; ueber die
-		# Songdauer verschiebt sich der Farbton langsam (Reise-Etappen).
-		var jc := Color.from_hsv(fposmod(_theme_col.h + journey_p * 0.14, 1.0),
-				_theme_col.s, _theme_col.v)
+		# Farbklima der AKTUELLEN Galaxie; Kiai kippt zur Komplementaerfarbe.
+		var jc := _gal_col
 		_nebula_mat.set_shader_parameter("col_a",
 			jc.lerp(_theme_kiai, _kiai_mix * 0.45))
+		_nebula_mat.set_shader_parameter("col_b", _gal_col2)
+		_nebula_mat.set_shader_parameter("star_amount", _gal_stars)
+		_nebula_mat.set_shader_parameter("scale", _gal_scale)
+		if _aurora_mat != null:
+			_aurora_mat.set_shader_parameter("col_a",
+				_gal_col.lerp(Color(0.3, 1.0, 0.7), 0.4))
+			_aurora_mat.set_shader_parameter("col_b", _gal_col2)
 		# NASSE BAHN: der Himmel spiegelt sich Richtung Horizont.
 		if _road_mat != null:
 			_road_mat.set_shader_parameter("sky_color", jc.lerp(_theme_kiai, _kiai_mix))
@@ -1809,6 +1846,54 @@ func _build_screen_fx() -> void:
 # Kiai-Start, Breaks) und mit dem Dateinamen geseedet — jedes Replay fliegt
 # exakt dieselbe Route. Grosse Manoever nur in ruhigen Passagen.
 # ---------------------------------------------------------------------------
+
+## Galaxie-Kapitel aus der Map: 3-4 Abschnitte, an den Kiai-Start
+## ausgerichtet, Farb-/Nebel-Identitaet aus dem Map-Seed — jede Map ist
+## eine eigene, wiedererkennbare Route durch verschiedene Galaxien.
+func _build_galaxy_chapters() -> void:
+	_gal_chapters = []
+	_gal_idx = -1
+	_gal_col = _theme_col
+	_gal_col2 = _theme_kiai
+	if _beatmap == null or _beatmap.hit_objects.is_empty():
+		return
+	var seed_h: int = hash(GameSession.osu_filename)
+	var dur := maxf(_beatmap.duration_ms(), 1.0)
+	for tp in _beatmap.timing_points:
+		if tp.uninherited and tp.beat_length > 0.0:
+			_bpm_factor = clampf((60000.0 / tp.beat_length) / 140.0, 0.7, 1.5)
+			break
+	var n_ch := 4 if dur > 90000.0 else 3
+	var bounds: Array = []
+	for i in n_ch:
+		bounds.append(dur * float(i) / float(n_ch))
+	# Der Kiai-Start ersetzt die naechstgelegene Grenze (musikalischer Schnitt).
+	var scan := 0.0
+	while scan < dur:
+		if _beatmap.is_kiai(scan):
+			var best := 1
+			var bd := 1.0e12
+			for i in range(1, bounds.size()):
+				if absf(float(bounds[i]) - scan) < bd:
+					bd = absf(float(bounds[i]) - scan)
+					best = i
+			bounds[best] = scan
+			break
+		scan += 400.0
+	bounds.sort()
+	var base_h := _theme_col.h
+	var hue_step := 0.16 + float(seed_h % 23) * 0.008
+	for i in bounds.size():
+		var hh := fposmod(base_h + float(i) * hue_step, 1.0)
+		var sat := 0.55 + 0.30 * _hash01(float(seed_h % 977) + float(i) * 3.3)
+		_gal_chapters.append({
+			"t": bounds[i],
+			"col": Color.from_hsv(hh, sat, 0.95),
+			"col2": Color.from_hsv(fposmod(hh + 0.45, 1.0), 0.8, 1.0),
+			"stars": 0.6 + _hash01(float(seed_h) + float(i) * 7.7) * 0.9,
+			"scale": 0.85 + _hash01(float(seed_h) * 2.0 + float(i)) * 0.9,
+		})
+
 
 func _build_flight_plan() -> void:
 	_flight_plan = []
