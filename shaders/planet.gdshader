@@ -90,7 +90,8 @@ void fragment() {
 		// Sonne von schraeg links: Terminator + Limb-Darkening.
 		float diff = clamp(dot(n, l), 0.0, 1.0);
 		float limb = pow(z, 0.45);
-		col = surf * (0.05 + diff) * limb + night * (1.0 - diff) * 0.9 * limb;
+		col = surf * (0.04 + pow(diff, 1.15) * 1.05) * limb
+				+ night * (1.0 - diff) * 0.9 * limb;
 		// Warmes Streiflicht ENTLANG des Terminators (Daemmerungszone).
 		float term = smoothstep(0.02, 0.18, diff) * (1.0 - smoothstep(0.18, 0.5, diff));
 		col += atmo_col.rgb * term * 0.22;

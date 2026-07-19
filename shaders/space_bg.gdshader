@@ -75,11 +75,11 @@ void fragment() {
 	// Dunkle Staubbaender fressen sich durch die hellen Wolken.
 	float dust = smoothstep(0.42, 0.72, fbm(uv * 1.45 - q * 1.3 + 90.0));
 	// Wolken: dichte Kerne leuchten, Raender verlaufen weich.
-	float clouds = smoothstep(0.38, 0.85, f1) * 0.85 + smoothstep(0.5, 0.92, f2) * 0.5;
+	float clouds = smoothstep(0.40, 0.88, f1) * 0.78 + smoothstep(0.52, 0.94, f2) * 0.45;
 	clouds *= 1.0 - dust * 0.6;
 	// Silberkante: Raender dichter Wolken leuchten fein auf (Astro-Look).
 	float rim = smoothstep(0.5, 0.62, f1) * (1.0 - smoothstep(0.62, 0.8, f1));
-	clouds += rim * 0.35;
+	clouds += rim * 0.26;
 	// Drei-Farb-Verlauf: tiefes Violett -> Songfarbe -> Kiai-Akzente in Kernen.
 	vec3 deep = vec3(0.05, 0.03, 0.11);
 	vec3 neb = mix(deep, col_a, smoothstep(0.15, 0.8, f1));
@@ -88,7 +88,7 @@ void fragment() {
 	float band_d = UV.y - 0.40 - (UV.x - 0.5) * 0.22;
 	float band = exp(-band_d * band_d * 34.0);
 	vec3 band_col = vec3(0.82, 0.80, 0.95) * band * (0.25 + 0.55 * f2)
-			* 0.35 * (1.0 + pulse * 0.7);
+			* 0.28 * (1.0 + pulse * 0.7);
 	// Randfade des Quads + zentrale Abdunklung (Strecke bleibt lesbar).
 	vec2 c = UV * 2.0 - 1.0;
 	float vig = (1.0 - smoothstep(0.55, 1.0, abs(c.x))) * (1.0 - smoothstep(0.45, 1.0, abs(c.y)));

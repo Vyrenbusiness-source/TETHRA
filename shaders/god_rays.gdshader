@@ -14,7 +14,7 @@ void fragment() {
 	float r = length(p);
 	float ang = atan(p.y, p.x);
 	// Zwei ueberlagerte Strahlen-Frequenzen — wirkt organisch statt Zahnrad.
-	float rays = pow(0.5 + 0.5 * sin(ang * 14.0 + rot), 3.0)
+	float rays = pow(0.5 + 0.5 * sin(ang * 14.0 + rot), 3.8)
 			* (0.55 + 0.45 * sin(ang * 5.0 - rot * 0.7));
 	float fall = exp(-r * 2.2) * smoothstep(1.0, 0.35, r);
 	float a = rays * fall * intensity;

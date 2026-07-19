@@ -40,7 +40,7 @@ void fragment() {
 		uv = vec2(0.5) + (uv - vec2(0.5)) * (1.0 - warp_tunnel * wmask * 0.22);
 	}
 	// Chromatische Aberration am Rand (RGB-Kanaele trennen sich).
-	vec2 off = c * (aberration * 0.012 + glitch * 0.008) * edge;
+	vec2 off = c * (aberration * 0.008 + glitch * 0.008) * edge;
 	float r = texture(screen_tex, uv + off).r;
 	float g = texture(screen_tex, uv).g;
 	float b = texture(screen_tex, uv - off).b;

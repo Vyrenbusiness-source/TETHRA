@@ -35,7 +35,7 @@ void fragment() {
 	float sep = exp(-pow((UV.x - 0.25) * 90.0, 2.0))
 			+ exp(-pow((UV.x - 0.50) * 90.0, 2.0))
 			+ exp(-pow((UV.x - 0.75) * 90.0, 2.0));
-	glow += sep * 0.05 * energy;
+	glow += sep * 0.035 * energy;
 	// Naehe-Gradient: die Road wird zur Abfanglinie hin sanft heller.
 	glow += pow(y, 3.0) * 0.10 * energy;
 	// Seitlicher Fade (nicht ueber die Rails hinausbrennen).

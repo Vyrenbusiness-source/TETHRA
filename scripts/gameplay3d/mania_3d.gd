@@ -655,7 +655,7 @@ func _build_starfield() -> void:
 	# Schwarzen Loch — rotiert unmerklich, atmet mit dem Kiai.
 	var gal := MeshInstance3D.new()
 	var galq := QuadMesh.new()
-	galq.size = Vector2(17, 12)
+	galq.size = Vector2(13.5, 9.5)
 	gal.mesh = galq
 	_galaxy_mat = ShaderMaterial.new()
 	_galaxy_mat.shader = load("res://shaders/spiral_galaxy.gdshader")
@@ -689,12 +689,12 @@ func _build_starfield() -> void:
 	# (wie der Erdrand von der ISS) — verankert die Bahn im Raum.
 	var edge_band := MeshInstance3D.new()
 	var ebq := QuadMesh.new()
-	ebq.size = Vector2(120, 2.4)
+	ebq.size = Vector2(120, 1.7)
 	edge_band.mesh = ebq
 	var ebm := ShaderMaterial.new()
 	ebm.shader = _glow_shader
 	ebm.set_shader_parameter("base_color", _theme_col.lerp(Color(1, 1, 1), 0.55))
-	ebm.set_shader_parameter("intensity", 0.16)
+	ebm.set_shader_parameter("intensity", 0.12)
 	edge_band.material_override = ebm
 	edge_band.position = Vector3(0, 0.55, Z_FAR - 3.7)
 	_cosmos.add_child(edge_band)
@@ -991,12 +991,12 @@ func _on_note_spawned(index: int) -> void:
 	root.add_child(ring)
 	var glow := MeshInstance3D.new()
 	var q := QuadMesh.new()
-	q.size = Vector2(2.3, 2.3)
+	q.size = Vector2(2.05, 2.05)
 	glow.mesh = q
 	var gm := ShaderMaterial.new()
 	gm.shader = _glow_shader
 	gm.set_shader_parameter("base_color", col)
-	gm.set_shader_parameter("intensity", 0.35 if clean else 0.95)
+	gm.set_shader_parameter("intensity", 0.32 if clean else 0.68)
 	glow.material_override = gm
 	glow.rotation_degrees = Vector3(-90, 0, 0)
 	glow.position = Vector3(0, -0.02, 0)
@@ -1124,12 +1124,12 @@ func _trigger_overdrive() -> void:
 	if fx <= 0.0:
 		return
 	_overdrive = 2.0 * fx
-	_shake = 0.28 * fx
+	_shake = 0.18 * fx
 	_shock = 0.0
 	# Vollbild-Blitz.
 	var flash := ColorRect.new()
 	flash.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	flash.color = Color(1, 1, 1, 0.20)
+	flash.color = Color(1, 1, 1, 0.05)
 	flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_hud.add_child(flash)
 	var tw := create_tween()
@@ -1151,7 +1151,7 @@ func _spawn_bolt(seed_i: int) -> void:
 		var k := float(s) / float(steps)
 		var p := top.lerp(bottom, k)
 		p.x += (_hash01(float(seed_i) * 31.7 + float(s) * 5.1) - 0.5) * 0.9 * (1.0 - absf(k - 0.5) * 2.0 + 0.2)
-		im.surface_set_color(Color(1, 1, 1, 0.95))
+		im.surface_set_color(Color(1, 1, 1, 0.55))
 		im.surface_add_vertex(p)
 	im.surface_end()
 	var mesh := MeshInstance3D.new()
@@ -1751,7 +1751,7 @@ func _process(delta: float) -> void:
 	if _galaxy_mat != null:
 		_galaxy_mat.set_shader_parameter("t", t / 1000.0)
 		_galaxy_mat.set_shader_parameter("intensity",
-			(0.34 + _kiai_mix * 0.16 + _beat_env * 0.05) * maxf(fx, 0.25))
+			(0.26 + _kiai_mix * 0.13 + _beat_env * 0.04) * maxf(fx, 0.25))
 	# Vordergrund-Nebelfetzen driften deutlich schneller (Nah-Parallaxe).
 	for fgm2 in _fg_neb_mats:
 		fgm2.set_shader_parameter("drift", _nebula_drift * 3.4)
@@ -1859,11 +1859,11 @@ func _process(delta: float) -> void:
 				_shock = -1.0
 		_glitch = maxf(_glitch - delta * 2.2, 0.0)
 		_screen_mat.set_shader_parameter("aberration",
-				(clampf((_bass - 0.45) * 1.4, 0.0, 1.0) + _beat_env * 0.12) * fx)
+				(clampf((_bass - 0.5) * 1.2, 0.0, 1.0) + _beat_env * 0.07) * fx)
 		_screen_mat.set_shader_parameter("shock", _shock)
 		_screen_mat.set_shader_parameter("shock_str", fx)
 		_screen_mat.set_shader_parameter("glitch", _glitch * fx)
-		_screen_mat.set_shader_parameter("vignette", 0.26 * fx)
+		_screen_mat.set_shader_parameter("vignette", 0.22 * fx)
 
 	# Schwarzes Loch + God-Rays atmen mit Musik und Reise.
 	if _bh_mat != null:
@@ -2095,7 +2095,7 @@ func _spawn_beat_wave() -> void:
 	if _fire_level > 0.3:
 		wcol = wcol.lerp(Color(1.0, 0.6, 0.25).lerp(Color(0.72, 0.92, 1.0), _fire_heat), 0.6)
 	wm.set_shader_parameter("base_color", wcol)
-	var peak := (0.11 + _kiai_mix * 0.08) * _fx_level()
+	var peak := (0.09 + _kiai_mix * 0.07) * _fx_level()
 	wm.set_shader_parameter("intensity", peak)
 	wave.material_override = wm
 	wave.rotation_degrees = Vector3(-90, 0, 0)
@@ -2257,7 +2257,7 @@ func _build_galaxy_chapters() -> void:
 	var hue_step := 0.16 + float(seed_h % 23) * 0.008
 	for i in bounds.size():
 		var hh := fposmod(base_h + float(i) * hue_step, 1.0)
-		var sat := 0.55 + 0.30 * _hash01(float(seed_h % 977) + float(i) * 3.3)
+		var sat := 0.45 + 0.25 * _hash01(float(seed_h % 977) + float(i) * 3.3)
 		_gal_chapters.append({
 			"t": bounds[i],
 			"col": Color.from_hsv(hh, sat, 0.95),
@@ -2286,7 +2286,7 @@ func _build_flight_plan() -> void:
 	var pt := t0 + bar * 8.0
 	while pt < t_end - 4000.0:
 		var fkind := (seed_h / 7 + k) % 2
-		if k % 3 == 1:
+		if k % 5 == 2:
 			fkind = 3
 		_flight_plan.append({ "t": pt - 2600.0, "type": "flyby",
 			"side": (-1.0 if (seed_h + k) % 2 == 0 else 1.0),
