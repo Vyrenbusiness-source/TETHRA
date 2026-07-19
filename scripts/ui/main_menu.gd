@@ -86,6 +86,9 @@ func _ready() -> void:
 		# Harness: Profil-Ansicht oeffnen und abfotografieren.
 		add_child(ProfilePanel.new())
 		_capture()
+	elif OS.get_cmdline_args().has("--shot-settings"):
+		add_child(SettingsPanel.new())
+		_capture()
 	elif OS.get_cmdline_args().has("--autoplay"):
 		# Test-Durchreiche in den Song-Browser.
 		_play.call_deferred()

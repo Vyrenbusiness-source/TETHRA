@@ -102,6 +102,9 @@ func _ready() -> void:
 	_migrate_from_hookline()
 	load_settings()
 	_setup_audio_enhance()
+	# Globales Glass-Theme: ALLE Controls (Slider, Dropdowns, Scrollbalken,
+	# Popups …) verlieren die graue Godot-Standard-Optik.
+	get_window().theme = UiTheme.build_theme()
 	apply()
 
 

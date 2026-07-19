@@ -9,7 +9,7 @@ extends Node
 ## Release-Ablauf (Entwickler): CURRENT_VERSION hochzaehlen, PCK bauen,
 ## `gh release create vX.Y.Z release/TETHRA.pck` — fertig.
 
-const CURRENT_VERSION := "1.0.4"
+const CURRENT_VERSION := "1.0.5"
 const REPO := "Vyrenbusiness-source/TETHRA"
 const API_LATEST := "https://api.github.com/repos/" + REPO + "/releases/latest"
 const HEADERS := ["User-Agent: TETHRA-Updater", "Accept: application/vnd.github+json"]

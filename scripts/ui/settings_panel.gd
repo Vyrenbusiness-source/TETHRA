@@ -215,6 +215,7 @@ func _section(vb: VBoxContainer, text: String) -> void:
 	vb.add_child(spacer)
 	var l := Label.new()
 	l.text = text
+	l.add_theme_font_override("font", UiTheme.heading_font(2))
 	l.add_theme_font_size_override("font_size", 13)
 	l.add_theme_color_override("font_color", COL_SECTION)
 	vb.add_child(l)
