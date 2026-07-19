@@ -148,6 +148,17 @@ var _station_pool: Array = []
 var _dock_station: Node3D
 ## Planeten-Texturen fuer Nahvorbeifluege (vorab geladen).
 var _planet_tex_cache: Array = []
+# Reise v2: Warp-Tunnel-Huellkurve, Nah-Staub, Landmarks, Sonnenaufgang,
+# HUD-Reiseroute.
+var _tunnel_fx := 0.0
+var _dust_mm: MultiMesh
+var _dust_seeds: Array = []
+var _dust_mat: ShaderMaterial
+var _landmarks: Array = []
+var _sun_mat: ShaderMaterial
+var _route_ui: Control
+var _route_p := 0.0
+var _sunrise := 0.0
 const STATION_DEFS := [
 	[["station01.obj", "station01_diffuse"]],
 	[["station02_base.obj", "station02_base_diffuse"],
@@ -253,6 +264,7 @@ func _ready() -> void:
 	_build_world()
 	_build_hud()
 	_build_screen_fx()
+	_build_route_ui()
 	_build_flight_plan()
 	_build_galaxy_chapters()
 	_build_sound()
@@ -727,6 +739,100 @@ func _build_starfield() -> void:
 		_dock_station.position = Vector3(9.5, 4.5, Z_FAR - 5.0)
 		_dock_station.visible = false
 		_cosmos.add_child(_dock_station)
+
+	# NAH-STAUB: feine Partikel ziehen dicht an der Kamera vorbei —
+	# nahe Parallaxe ist das staerkste Tempo-Signal (strikt seitlich).
+	_dust_mm = MultiMesh.new()
+	_dust_mm.transform_format = MultiMesh.TRANSFORM_3D
+	var dq := QuadMesh.new()
+	dq.size = Vector2(0.055, 0.055)
+	_dust_mm.mesh = dq
+	_dust_mm.instance_count = 90
+	for di in 90:
+		var dh1 := _hash01(float(di) * 17.3)
+		var dh2 := _hash01(float(di) * 5.9)
+		var dh3 := _hash01(float(di) * 47.1)
+		var dside := -1.0 if dh1 < 0.5 else 1.0
+		_dust_seeds.append(Vector3(dside * (5.2 + dh2 * 9.0), dh3 * 8.0, dh1 * 42.0))
+		_dust_mm.set_instance_transform(di, Transform3D(Basis.IDENTITY, Vector3(0, -100, 0)))
+	var dinst := MultiMeshInstance3D.new()
+	dinst.multimesh = _dust_mm
+	_dust_mat = ShaderMaterial.new()
+	_dust_mat.shader = _glow_shader
+	_dust_mat.set_shader_parameter("base_color", Color(0.85, 0.9, 1.0))
+	_dust_mat.set_shader_parameter("intensity", 0.0)
+	dinst.material_override = _dust_mat
+	add_child(dinst)
+
+	# LANDMARKS: jedes Galaxie-Kapitel hat ein Erkennungszeichen am Himmel.
+	# L0: Asteroidenguertel-Band.
+	var belt := MultiMeshInstance3D.new()
+	var belt_mm := MultiMesh.new()
+	belt_mm.transform_format = MultiMesh.TRANSFORM_3D
+	var bq3 := QuadMesh.new()
+	bq3.size = Vector2(0.5, 0.5)
+	belt_mm.mesh = bq3
+	belt_mm.instance_count = 40
+	for bi in 40:
+		var bx := -30.0 + 60.0 * _hash01(float(bi) * 7.7)
+		var by := 10.5 + sin(bx * 0.22) * 1.3 + (_hash01(float(bi) * 3.1) - 0.5) * 0.8
+		var bs := 0.4 + _hash01(float(bi) * 11.3) * 1.1
+		belt_mm.set_instance_transform(bi, Transform3D(
+			Basis.IDENTITY.scaled(Vector3.ONE * bs), Vector3(bx, by, Z_FAR - 12.0)))
+	belt.multimesh = belt_mm
+	var belt_mat := StandardMaterial3D.new()
+	belt_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	belt_mat.albedo_color = Color(0.30, 0.29, 0.30)
+	belt.material_override = belt_mat
+	belt.visible = false
+	_cosmos.add_child(belt)
+	_landmarks.append(belt)
+	# L1: Doppelstern (zwei umeinander kreisende Sonnen).
+	var binary := Node3D.new()
+	binary.position = Vector3(13.0, 12.0, Z_FAR - 10.0)
+	for bi2 in 2:
+		var star := MeshInstance3D.new()
+		var sq3 := QuadMesh.new()
+		sq3.size = Vector2(2.6 if bi2 == 0 else 1.7, 2.6 if bi2 == 0 else 1.7)
+		star.mesh = sq3
+		var smat3 := ShaderMaterial.new()
+		smat3.shader = _glow_shader
+		smat3.set_shader_parameter("base_color",
+			Color(1.0, 0.72, 0.35) if bi2 == 0 else Color(0.55, 0.75, 1.0))
+		smat3.set_shader_parameter("intensity", 0.75)
+		star.material_override = smat3
+		star.position = Vector3(-1.6 if bi2 == 0 else 2.0, 0, 0)
+		binary.add_child(star)
+	binary.visible = false
+	_cosmos.add_child(binary)
+	_landmarks.append(binary)
+	# L2: Stationscluster (drei kleine Stationen).
+	var cluster := Node3D.new()
+	cluster.position = Vector3(-14.5, 11.0, Z_FAR - 9.0)
+	if not _station_pool.is_empty():
+		for ci2 in 3:
+			var cst := _build_station_node(_station_pool[ci2 % _station_pool.size()])
+			cst.scale = Vector3.ONE * 0.4
+			cst.position = Vector3(float(ci2 - 1) * 3.4, float(ci2 % 2) * 1.6 - 0.8, 0)
+			cst.rotation_degrees = Vector3(8, ci2 * 120.0, 4)
+			cluster.add_child(cst)
+	cluster.visible = false
+	_cosmos.add_child(cluster)
+	_landmarks.append(cluster)
+	_apply_landmark(0)
+
+	# SONNENAUFGANG: waechst ueber das letzte Galaxie-Kapitel hinterm Ziel.
+	var sun2 := MeshInstance3D.new()
+	var sunq := QuadMesh.new()
+	sunq.size = Vector2(22, 22)
+	sun2.mesh = sunq
+	_sun_mat = ShaderMaterial.new()
+	_sun_mat.shader = _glow_shader
+	_sun_mat.set_shader_parameter("base_color", Color(1.0, 0.88, 0.62))
+	_sun_mat.set_shader_parameter("intensity", 0.0)
+	sun2.material_override = _sun_mat
+	sun2.position = Vector3(3.0, 3.2, Z_FAR - 9.5)
+	_cosmos.add_child(sun2)
 
 	# Glut-Partikel-Pool: Funken fallen EXAKT auf den Beat (Spawn an der
 	# Beat-Kante), schweben langsam zu Boden.
@@ -1559,8 +1665,10 @@ func _process(delta: float) -> void:
 	if gal_target != _gal_idx:
 		if _gal_idx >= 0 and fx > 0.0:
 			_warp_level = 1.0
+			_tunnel_fx = 1.0
 			_fov_kick = maxf(_fov_kick, 4.0)
 		_gal_idx = gal_target
+		_apply_landmark(_gal_idx)
 	if _gal_idx >= 0 and fx > 0.0:
 		var gch: Dictionary = _gal_chapters[_gal_idx]
 		var gk := minf(delta * 0.5, 1.0)
@@ -1568,6 +1676,35 @@ func _process(delta: float) -> void:
 		_gal_col2 = _gal_col2.lerp(gch.col2, gk)
 		_gal_stars = lerpf(_gal_stars, float(gch.stars), gk)
 		_gal_scale = lerpf(_gal_scale, float(gch.scale), gk)
+
+	# SONNENAUFGANG: waechst ueber das letzte Kapitel — Ankunft im Licht.
+	_sunrise = 0.0
+	if _gal_chapters.size() >= 2 and _gal_idx >= _gal_chapters.size() - 1:
+		var last_t := float(_gal_chapters[_gal_chapters.size() - 1].t)
+		_sunrise = clampf((t - last_t) / maxf(_song_len_ms - last_t, 1.0), 0.0, 1.0)
+	if _sun_mat != null:
+		_sun_mat.set_shader_parameter("intensity",
+			(_sunrise * 0.34 + dock_mix * 0.14) * fx)
+	# HUD-Route + Warp-Tunnel-Huellkurve + Doppelstern-Kreisen.
+	_route_p = journey_p
+	if _route_ui != null:
+		_route_ui.queue_redraw()
+	_tunnel_fx = maxf(_tunnel_fx - delta * 0.65, 0.0)
+	if _screen_mat != null:
+		_screen_mat.set_shader_parameter("warp_tunnel",
+			sin(PI * clampf(_tunnel_fx, 0.0, 1.0)) * fx)
+	if _landmarks.size() > 1 and is_instance_valid(_landmarks[1]) and _landmarks[1].visible:
+		_landmarks[1].rotation.y += delta * 0.35
+	# NAH-STAUB: rast mit dem Reisetempo an der Kamera vorbei.
+	if _dust_mm != null:
+		_dust_mat.set_shader_parameter("intensity",
+			(0.16 + _beat_env * 0.10 + _warp_level * 0.4) * fx)
+		if fx > 0.0:
+			for di2 in _dust_seeds.size():
+				var ds: Vector3 = _dust_seeds[di2]
+				var dz := fmod(ds.z + _star_scroll * 2.4, 42.0) - 34.0
+				_dust_mm.set_instance_transform(di2, Transform3D(
+					Basis.IDENTITY, Vector3(ds.x, ds.y, dz)))
 
 	# Nebel driftet und atmet mit Bass/Kiai — und beschleunigt im Beat,
 	# als wuerde das Schiff durch die Wolken schieben.
@@ -1580,15 +1717,23 @@ func _process(delta: float) -> void:
 		_nebula_mat.set_shader_parameter("col_a",
 			jc.lerp(_theme_kiai, _kiai_mix * 0.45))
 		_nebula_mat.set_shader_parameter("col_b", _gal_col2)
-		_nebula_mat.set_shader_parameter("star_amount", _gal_stars)
+		# DRAMATURGIE: der Drop reisst den Nebel auf — sternenklarer Blick,
+		# nach dem Kiai zieht er wieder zu.
+		_nebula_mat.set_shader_parameter("alpha_mul", 1.0 - _kiai_mix * 0.55)
+		_nebula_mat.set_shader_parameter("star_amount",
+			_gal_stars + _kiai_mix * 0.5)
 		_nebula_mat.set_shader_parameter("scale", _gal_scale)
+		if _nebula_mat2 != null:
+			_nebula_mat2.set_shader_parameter("alpha_mul",
+				0.45 * (1.0 - _kiai_mix * 0.6))
 		if _aurora_mat != null:
 			_aurora_mat.set_shader_parameter("col_a",
 				_gal_col.lerp(Color(0.3, 1.0, 0.7), 0.4))
 			_aurora_mat.set_shader_parameter("col_b", _gal_col2)
 		# NASSE BAHN: der Himmel spiegelt sich Richtung Horizont.
 		if _road_mat != null:
-			_road_mat.set_shader_parameter("sky_color", jc.lerp(_theme_kiai, _kiai_mix))
+			_road_mat.set_shader_parameter("sky_color",
+				jc.lerp(_theme_kiai, _kiai_mix).lerp(Color(1.0, 0.85, 0.6), _sunrise * 0.5))
 			_road_mat.set_shader_parameter("refl_amount", (0.20 + _beat_env * 0.08) * fx)
 		if _nebula_mat2 != null:
 			_nebula_mat2.set_shader_parameter("drift", _nebula_drift * 1.8)
@@ -1599,7 +1744,7 @@ func _process(delta: float) -> void:
 	if _horizon_mat != null:
 		# Beim Docking glueht der Horizont waermer auf — Ankunftslicht.
 		_horizon_mat.set_shader_parameter("intensity",
-			0.10 + _beat_env * 0.10 + _bass * 0.05 + dock_mix * 0.15)
+			0.10 + _beat_env * 0.10 + _bass * 0.05 + dock_mix * 0.15 + _sunrise * 0.08)
 	if _aurora_mat != null:
 		_aurora_mat.set_shader_parameter("drift", t / 1000.0)
 		_aurora_mat.set_shader_parameter("pulse", _beat_env)
@@ -1648,7 +1793,8 @@ func _process(delta: float) -> void:
 	if _rays_mat != null:
 		_rays_mat.set_shader_parameter("rot", t / 4300.0)
 		_rays_mat.set_shader_parameter("intensity",
-				(0.05 + _beat_env * 0.05 + _kiai_mix * 0.04 + dock_mix * 0.22) * fx)
+				(0.05 + _beat_env * 0.05 + _kiai_mix * 0.04 + dock_mix * 0.22 \
+				+ _sunrise * 0.11) * fx)
 
 	# SONNENWANDERUNG: die Lichtrichtung aller Planeten wandert ueber den Song.
 	var sun_dir := Vector3(-0.55 + journey_p * 1.15, 0.35 - journey_p * 0.05, 0.75).normalized()
@@ -1931,6 +2077,45 @@ func _build_station_node(parts: Array) -> Node3D:
 		mi.scale = Vector3.ONE * norm
 		st.add_child(mi)
 	return st
+
+
+## HUD-REISEROUTE: feine Linie mit Galaxie-Punkten, der Marker wandert
+## mit dem Song-Fortschritt — die Reise als sichtbare Route.
+func _build_route_ui() -> void:
+	_route_ui = Control.new()
+	_route_ui.anchor_left = 0.5
+	_route_ui.anchor_right = 0.5
+	_route_ui.anchor_top = 1.0
+	_route_ui.anchor_bottom = 1.0
+	_route_ui.offset_left = -120
+	_route_ui.offset_right = 120
+	_route_ui.offset_top = -30
+	_route_ui.offset_bottom = -14
+	_route_ui.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_route_ui.draw.connect(_draw_route)
+	_hud.add_child(_route_ui)
+
+
+func _draw_route() -> void:
+	if _gal_chapters.is_empty() or _route_ui == null:
+		return
+	var w := _route_ui.size.x
+	var ry := _route_ui.size.y * 0.5
+	_route_ui.draw_line(Vector2(0, ry), Vector2(w, ry), Color(1, 1, 1, 0.10), 1.5)
+	var dur := maxf(_song_len_ms, 1.0)
+	for ci in _gal_chapters.size():
+		var rx := clampf(float(_gal_chapters[ci].t) / dur, 0.0, 1.0) * w
+		_route_ui.draw_circle(Vector2(rx, ry), 3.0,
+			Color(0.2, 0.85, 1.0, 0.9) if ci <= _gal_idx else Color(1, 1, 1, 0.22))
+	_route_ui.draw_circle(Vector2(w, ry), 3.0, Color(0.5, 1.0, 0.75, 0.6))
+	_route_ui.draw_circle(Vector2(_route_p * w, ry), 4.5, Color(1, 1, 1, 0.9))
+
+
+## Landmark des aktuellen Kapitels einblenden (Rest verstecken).
+func _apply_landmark(idx: int) -> void:
+	for li in _landmarks.size():
+		if is_instance_valid(_landmarks[li]):
+			_landmarks[li].visible = (maxi(idx, 0) % 3) == li
 
 
 ## Fullscreen-Post-FX-Ebene UNTER dem HUD: verzerrt nur das Spielbild,
