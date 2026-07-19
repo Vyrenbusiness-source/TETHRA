@@ -16,6 +16,10 @@ var _browser_box: VBoxContainer
 var _room_box: VBoxContainer
 var _rooms_list: VBoxContainer
 var _code_edit: LineEdit
+var _name_edit: LineEdit
+var _pw_edit: LineEdit
+var _join_pw_edit: LineEdit
+var _fetch_timer: Timer
 var _players_box: VBoxContainer
 var _map_label: Label
 var _status_label: Label
@@ -70,7 +74,7 @@ func _ready() -> void:
 	var sb := UiTheme.glass_box(18, 0.7)
 	sb.set_content_margin_all(26)
 	panel.add_theme_stylebox_override("panel", sb)
-	panel.custom_minimum_size = Vector2(640, 520)
+	panel.custom_minimum_size = Vector2(880, 560)
 	center.add_child(panel)
 
 	var root := VBoxContainer.new()
@@ -126,8 +130,19 @@ func _ready() -> void:
 			_update_preview()
 	else:
 		Lobby.start_discovery()
+		Lobby.fetch_online_rooms()
+	# Oeffentliche Raumliste regelmaessig aktualisieren (nur im Browser).
+	_fetch_timer = Timer.new()
+	_fetch_timer.wait_time = 8.0
+	_fetch_timer.autostart = true
+	_fetch_timer.timeout.connect(func():
+		if not Lobby.active:
+			Lobby.fetch_online_rooms())
+	add_child(_fetch_timer)
 	_refresh_room()
 
+	if OS.get_cmdline_args().has("--shot-mp"):
+		_capture_shot()
 	# Headless-Smoke: zwei Prozesse verbinden sich ueber localhost.
 	if OS.get_cmdline_args().has("--mp-host-test"):
 		Lobby.host_room()
@@ -156,6 +171,18 @@ func _mp_smoke(host: bool) -> void:
 	get_tree().quit(1)
 
 
+func _capture_shot() -> void:
+	await get_tree().create_timer(1.4).timeout
+	await RenderingServer.frame_post_draw
+	if not is_inside_tree():
+		return
+	var img := get_viewport().get_texture().get_image()
+	var path := "C:/Users/Gexanx/AppData/Local/Temp/claude/c--Users-Gexanx-Desktop-rhyg/b9d5e593-aabc-4b4b-a882-a5835e187db3/scratchpad/mp_browser.png"
+	img.save_png(path)
+	print("SHOT gespeichert: " + path)
+	get_tree().quit(0)
+
+
 func _exit_tree() -> void:
 	Lobby.stop_discovery()
 
@@ -165,53 +192,168 @@ func _exit_tree() -> void:
 # ---------------------------------------------------------------------------
 
 func _build_browser() -> void:
-	var create := Button.new()
-	create.text = "+ Raum erstellen (Port oeffnet automatisch)"
-	create.custom_minimum_size = Vector2(0, 52)
-	create.add_theme_font_size_override("font_size", 18)
-	UiTheme.style_button(create, true)
-	create.pressed.connect(func():
-		if Lobby.host_room():
-			_show_room())
-	_browser_box.add_child(create)
+	var cols := HBoxContainer.new()
+	cols.add_theme_constant_override("separation", 18)
+	cols.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_browser_box.add_child(cols)
 
-	var code_row := HBoxContainer.new()
-	code_row.add_theme_constant_override("separation", 8)
-	_browser_box.add_child(code_row)
-	_code_edit = LineEdit.new()
-	_code_edit.placeholder_text = "Raum-Code eingeben (z.B. 7K3F9-A2QXM)…"
-	_code_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_code_edit.custom_minimum_size = Vector2(0, 44)
-	_code_edit.add_theme_stylebox_override("normal", UiTheme.glass_box(10, 0.55))
-	_code_edit.text_submitted.connect(func(_t): _join_by_code())
-	code_row.add_child(_code_edit)
-	var join := Button.new()
-	join.text = "Beitreten"
-	join.custom_minimum_size = Vector2(120, 44)
-	UiTheme.style_button(join, true)
-	join.pressed.connect(_join_by_code)
-	code_row.add_child(join)
+	# ---------------- Links: offene Raeume (weltweit + LAN) -----------------
+	var left_col := VBoxContainer.new()
+	left_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	left_col.add_theme_constant_override("separation", 8)
+	cols.add_child(left_col)
 
+	var rooms_head := HBoxContainer.new()
+	left_col.add_child(rooms_head)
 	var lan_head := Label.new()
-	lan_head.text = "RAEUME IN DEINEM NETZWERK (automatisch)"
-	lan_head.add_theme_font_size_override("font_size", 13)
+	lan_head.text = "OFFENE RAEUME"
+	lan_head.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	lan_head.add_theme_font_override("font", UiTheme.heading_font(2))
+	lan_head.add_theme_font_size_override("font_size", 14)
 	lan_head.add_theme_color_override("font_color", COL_ACCENT)
-	_browser_box.add_child(lan_head)
+	rooms_head.add_child(lan_head)
+	var refresh := Button.new()
+	refresh.text = "⟳"
+	refresh.tooltip_text = "Liste aktualisieren"
+	refresh.custom_minimum_size = Vector2(34, 30)
+	UiTheme.style_button(refresh)
+	refresh.pressed.connect(func(): Lobby.fetch_online_rooms())
+	rooms_head.add_child(refresh)
 
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	_browser_box.add_child(scroll)
+	left_col.add_child(scroll)
 	_rooms_list = VBoxContainer.new()
 	_rooms_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_rooms_list.add_theme_constant_override("separation", 6)
 	scroll.add_child(_rooms_list)
 	_refresh_rooms()
 
+	# ---------------- Rechts: Erstellen + Code-Beitritt ---------------------
+	var right_col := VBoxContainer.new()
+	right_col.custom_minimum_size = Vector2(316, 0)
+	right_col.add_theme_constant_override("separation", 12)
+	cols.add_child(right_col)
+
+	var create_card := PanelContainer.new()
+	var cb := UiTheme.glass_box(12, 0.5)
+	cb.set_content_margin_all(14)
+	create_card.add_theme_stylebox_override("panel", cb)
+	right_col.add_child(create_card)
+	var cv := VBoxContainer.new()
+	cv.add_theme_constant_override("separation", 8)
+	create_card.add_child(cv)
+	var ch := Label.new()
+	ch.text = "RAUM ERSTELLEN"
+	ch.add_theme_font_override("font", UiTheme.heading_font(2))
+	ch.add_theme_font_size_override("font_size", 14)
+	ch.add_theme_color_override("font_color", COL_ACCENT)
+	cv.add_child(ch)
+	_name_edit = LineEdit.new()
+	_name_edit.text = "%s's Raum" % Settings.profile_name
+	_name_edit.max_length = 28
+	_name_edit.custom_minimum_size = Vector2(0, 40)
+	_name_edit.add_theme_stylebox_override("normal", UiTheme.glass_box(10, 0.55))
+	cv.add_child(_name_edit)
+	_pw_edit = LineEdit.new()
+	_pw_edit.placeholder_text = "Passwort (leer = oeffentlich sichtbar)"
+	_pw_edit.custom_minimum_size = Vector2(0, 40)
+	_pw_edit.add_theme_stylebox_override("normal", UiTheme.glass_box(10, 0.55))
+	cv.add_child(_pw_edit)
+	var create := Button.new()
+	create.text = "+ Raum erstellen"
+	create.custom_minimum_size = Vector2(0, 46)
+	create.add_theme_font_size_override("font_size", 16)
+	UiTheme.style_button(create, true)
+	create.pressed.connect(func():
+		if Lobby.host_room(_name_edit.text, _pw_edit.text):
+			_show_room())
+	cv.add_child(create)
+	var hint := Label.new()
+	hint.text = "Ohne Passwort erscheint dein Raum automatisch\nbei allen Spielern in der Liste."
+	hint.add_theme_font_size_override("font_size", 11)
+	hint.add_theme_color_override("font_color", COL_DIM)
+	cv.add_child(hint)
+
+	var code_card := PanelContainer.new()
+	var kb := UiTheme.glass_box(12, 0.5)
+	kb.set_content_margin_all(14)
+	code_card.add_theme_stylebox_override("panel", kb)
+	right_col.add_child(code_card)
+	var kv := VBoxContainer.new()
+	kv.add_theme_constant_override("separation", 8)
+	code_card.add_child(kv)
+	var kh := Label.new()
+	kh.text = "MIT CODE BEITRETEN"
+	kh.add_theme_font_override("font", UiTheme.heading_font(2))
+	kh.add_theme_font_size_override("font_size", 14)
+	kh.add_theme_color_override("font_color", COL_ACCENT)
+	kv.add_child(kh)
+	_code_edit = LineEdit.new()
+	_code_edit.placeholder_text = "Code (z.B. 7K3F9-A2QXM)"
+	_code_edit.custom_minimum_size = Vector2(0, 40)
+	_code_edit.add_theme_stylebox_override("normal", UiTheme.glass_box(10, 0.55))
+	_code_edit.text_submitted.connect(func(_t): _join_by_code())
+	kv.add_child(_code_edit)
+	_join_pw_edit = LineEdit.new()
+	_join_pw_edit.placeholder_text = "Passwort (falls gesetzt)"
+	_join_pw_edit.custom_minimum_size = Vector2(0, 40)
+	_join_pw_edit.add_theme_stylebox_override("normal", UiTheme.glass_box(10, 0.55))
+	_join_pw_edit.text_submitted.connect(func(_t): _join_by_code())
+	kv.add_child(_join_pw_edit)
+	var join := Button.new()
+	join.text = "Beitreten"
+	join.custom_minimum_size = Vector2(0, 44)
+	UiTheme.style_button(join, true)
+	join.pressed.connect(_join_by_code)
+	kv.add_child(join)
+
 
 func _join_by_code() -> void:
-	if Lobby.join_code(_code_edit.text):
+	if Lobby.join_code(_code_edit.text, _join_pw_edit.text):
 		_show_room()
+
+
+## Eine Raum-Karte: Badge (🌐/🏠), Name, Spielerzahl, JOIN.
+func _room_card(badge: String, rname: String, players_n: int, sub: String, on_join: Callable) -> Control:
+	var card := PanelContainer.new()
+	var rb := UiTheme.glass_box(10, 0.42, 0.10)
+	rb.shadow_size = 0
+	rb.set_content_margin_all(9)
+	card.add_theme_stylebox_override("panel", rb)
+	var hb := HBoxContainer.new()
+	hb.add_theme_constant_override("separation", 12)
+	card.add_child(hb)
+	var ic := Label.new()
+	ic.text = badge
+	ic.add_theme_font_size_override("font_size", 22)
+	ic.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	hb.add_child(ic)
+	var mid := VBoxContainer.new()
+	mid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	mid.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	mid.add_theme_constant_override("separation", 0)
+	hb.add_child(mid)
+	var nl := Label.new()
+	nl.text = rname
+	nl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	nl.add_theme_font_size_override("font_size", 16)
+	nl.add_theme_color_override("font_color", COL_TEXT)
+	mid.add_child(nl)
+	var sl := Label.new()
+	sl.text = "%d Spieler  ·  %s" % [players_n, sub]
+	sl.add_theme_font_size_override("font_size", 12)
+	sl.add_theme_color_override("font_color", COL_DIM)
+	mid.add_child(sl)
+	var jb := Button.new()
+	jb.text = "JOIN"
+	jb.custom_minimum_size = Vector2(76, 40)
+	jb.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	UiTheme.style_button(jb, true)
+	jb.pressed.connect(on_join)
+	hb.add_child(jb)
+	return card
 
 
 func _refresh_rooms() -> void:
@@ -219,24 +361,35 @@ func _refresh_rooms() -> void:
 		return
 	for c in _rooms_list.get_children():
 		c.queue_free()
-	if Lobby.lan_rooms.is_empty():
+	# LAN-Raeume zuerst (schnellste Route); weltweite danach, ohne Dubletten
+	# (gleicher Raum-Code ueber beide Wege).
+	var lan_codes := {}
+	var count := 0
+	for ip in Lobby.lan_rooms:
+		var r: Dictionary = Lobby.lan_rooms[ip]
+		lan_codes[str(r.get("code", ""))] = true
+		var target_ip := str(ip)
+		_rooms_list.add_child(_room_card("🏠", str(r.name), int(r.players),
+			"Dein Netzwerk", func():
+				if Lobby.join_lan(target_ip):
+					_show_room()))
+		count += 1
+	for code in Lobby.online_rooms:
+		if lan_codes.has(str(code)):
+			continue
+		var o: Dictionary = Lobby.online_rooms[code]
+		var jcode := str(code)
+		_rooms_list.add_child(_room_card("🌐", str(o.name), int(o.players),
+			"Online  ·  " + jcode, func():
+				if Lobby.join_code(jcode):
+					_show_room()))
+		count += 1
+	if count == 0:
 		var empty := Label.new()
-		empty.text = "Keine Raeume im Netzwerk — erstelle einen oder nutze einen Code."
+		empty.text = "Gerade keine offenen Raeume.\nErstelle einen — er erscheint hier automatisch bei allen."
 		empty.add_theme_font_size_override("font_size", 13)
 		empty.add_theme_color_override("font_color", COL_DIM)
 		_rooms_list.add_child(empty)
-		return
-	for ip in Lobby.lan_rooms:
-		var r: Dictionary = Lobby.lan_rooms[ip]
-		var b := Button.new()
-		b.text = "%s   ·   %d Spieler" % [str(r.name), int(r.players)]
-		b.custom_minimum_size = Vector2(0, 44)
-		UiTheme.style_button(b)
-		var target_ip := str(ip)
-		b.pressed.connect(func():
-			if Lobby.join_lan(target_ip):
-				_show_room())
-		_rooms_list.add_child(b)
 
 
 # ---------------------------------------------------------------------------

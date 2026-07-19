@@ -13,6 +13,10 @@ extends Node
 const GAME_PORT := 47810
 const DISCOVERY_PORT := 47811
 const CODE_ALPHABET := "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
+## Oeffentliches Raum-Verzeichnis (ntfy.sh-Topic als kostenloses Rendezvous):
+## Hosts OHNE Passwort announcen Code+Name+Spielerzahl, Browser pollen die
+## Liste — offene Raeume erscheinen weltweit automatisch.
+const ROOMS_URL := "https://ntfy.sh/tethra-rooms-v1"
 
 signal rooms_changed
 signal players_changed
@@ -28,6 +32,14 @@ var is_host := false
 var in_game := false
 var room_name := ""
 var room_code := ""
+## Optionales Raum-Passwort: gesetzt -> Raum NICHT oeffentlich gelistet,
+## Beitritt nur mit Passwort (Code-Feld + Passwort).
+var password := ""
+var _join_pw := ""
+## Oeffentliche Raeume: code -> {name, players, t (unix)}.
+var online_rooms: Dictionary = {}
+var _announce_t := 0.0
+var _fetch_req: HTTPRequest
 ## peer_id -> {name, ready, score, combo, acc, final}
 var players: Dictionary = {}
 var crown_id := 1
@@ -66,7 +78,7 @@ func _new_player(pname: String) -> Dictionary:
 # Hosten
 # ---------------------------------------------------------------------------
 
-func host_room() -> bool:
+func host_room(rname: String = "", pw: String = "") -> bool:
 	var peer := ENetMultiplayerPeer.new()
 	if peer.create_server(GAME_PORT, 7) != OK:
 		status.emit("Port %d belegt — laeuft schon ein Raum?" % GAME_PORT)
@@ -74,7 +86,11 @@ func host_room() -> bool:
 	multiplayer.multiplayer_peer = peer
 	is_host = true
 	active = true
-	room_name = "%s's Raum" % Settings.profile_name
+	room_name = rname.strip_edges().substr(0, 28)
+	if room_name == "":
+		room_name = "%s's Raum" % Settings.profile_name
+	password = pw.strip_edges()
+	_announce_t = 0.0
 	crown_id = 1
 	players = { 1: _new_player(Settings.profile_name) }
 	players[1].ready = true
@@ -145,11 +161,12 @@ func _fetch_external_ip() -> void:
 # Beitreten (Code oder LAN)
 # ---------------------------------------------------------------------------
 
-func join_code(code: String) -> bool:
+func join_code(code: String, pw: String = "") -> bool:
 	var dec := _decode_code(code)
 	if dec.is_empty():
 		status.emit("Ungueltiger Raum-Code.")
 		return false
+	_join_pw = pw.strip_edges()
 	return _join(dec.ip, dec.port)
 
 
@@ -170,7 +187,7 @@ func _join(ip: String, port: int) -> bool:
 
 
 func _on_connected_to_server() -> void:
-	rpc_id(1, "srv_register", Settings.profile_name)
+	rpc_id(1, "srv_register", Settings.profile_name, _join_pw)
 
 
 func leave() -> void:
@@ -203,6 +220,8 @@ func _reset() -> void:
 	is_host = false
 	in_game = false
 	room_code = ""
+	password = ""
+	_join_pw = ""
 	players = {}
 	sel_map = {}
 	crown_id = 1
@@ -226,15 +245,22 @@ func stop_discovery() -> void:
 
 
 func _process(delta: float) -> void:
-	# Host: Raum im LAN ansagen (1x pro Sekunde).
-	if is_host and active and _bcast != null and not in_game:
-		_bcast_t -= delta
-		if _bcast_t <= 0.0:
-			_bcast_t = 1.0
-			var msg := JSON.stringify({ "tethra": 1, "name": room_name,
-				"players": players.size() })
-			_bcast.set_dest_address("255.255.255.255", DISCOVERY_PORT)
-			_bcast.put_packet(msg.to_utf8_buffer())
+	# Host: Raum im LAN ansagen (1x pro Sekunde; nur ohne Passwort).
+	if is_host and active and not in_game and password == "":
+		if _bcast != null:
+			_bcast_t -= delta
+			if _bcast_t <= 0.0:
+				_bcast_t = 1.0
+				var msg := JSON.stringify({ "tethra": 1, "name": room_name,
+					"players": players.size(), "code": room_code })
+				_bcast.set_dest_address("255.255.255.255", DISCOVERY_PORT)
+				_bcast.put_packet(msg.to_utf8_buffer())
+		# Weltweit ansagen (alle 20s), sobald der Raum-Code steht.
+		if room_code != "" and DisplayServer.get_name() != "headless":
+			_announce_t -= delta
+			if _announce_t <= 0.0:
+				_announce_t = 20.0
+				_announce_room()
 	# Browser: Ansagen einsammeln, alte Eintraege verwerfen.
 	if _listen != null:
 		var changed := false
@@ -256,6 +282,62 @@ func _process(delta: float) -> void:
 
 
 # ---------------------------------------------------------------------------
+# Oeffentliches Raum-Verzeichnis (ntfy.sh)
+# ---------------------------------------------------------------------------
+
+## Raum weltweit ansagen (Fire-and-forget POST).
+func _announce_room() -> void:
+	var req := HTTPRequest.new()
+	req.timeout = 8.0
+	add_child(req)
+	req.request_completed.connect(func(_r, _c, _h, _b): req.queue_free())
+	var body := JSON.stringify({ "c": room_code, "n": room_name,
+		"p": players.size() })
+	if req.request(ROOMS_URL, [], HTTPClient.METHOD_POST, body) != OK:
+		req.queue_free()
+
+
+## Oeffentliche Raeume abrufen (Ansagen der letzten ~70s, neueste pro Code).
+func fetch_online_rooms() -> void:
+	if _fetch_req != null or DisplayServer.get_name() == "headless":
+		return
+	_fetch_req = HTTPRequest.new()
+	_fetch_req.timeout = 8.0
+	add_child(_fetch_req)
+	_fetch_req.request_completed.connect(func(result, code, _h, body):
+		_fetch_req.queue_free()
+		_fetch_req = null
+		if result != HTTPRequest.RESULT_SUCCESS or code != 200:
+			return
+		# Zeitfenster filtert der SERVER (since=70s) — die eigene Uhr kann
+		# gegenueber ntfy um Minuten abweichen, lokale Filter waeren falsch.
+		# Pro Code gewinnt die neueste Ansage (aktuellste Spielerzahl).
+		var found := {}
+		var newest := {}
+		for line in body.get_string_from_utf8().split("\n"):
+			if line.strip_edges() == "":
+				continue
+			var ev: Variant = JSON.parse_string(line)
+			if not (ev is Dictionary) or str(ev.get("event", "")) != "message":
+				continue
+			var d: Variant = JSON.parse_string(str(ev.get("message", "")))
+			if d is Dictionary and str(d.get("c", "")) != "":
+				var t := float(ev.get("time", 0))
+				if t >= float(newest.get(str(d.c), 0.0)):
+					newest[str(d.c)] = t
+					found[str(d.c)] = { "name": str(d.get("n", "Raum")),
+						"players": int(d.get("p", 1)), "t": t }
+		# Eigenen (gerade verlassenen) Raum nicht listen.
+		if room_code != "":
+			found.erase(room_code)
+		online_rooms = found
+		rooms_changed.emit())
+	if _fetch_req.request(ROOMS_URL + "/json?poll=1&since=70s") != OK:
+		_fetch_req.queue_free()
+		_fetch_req = null
+
+
+# ---------------------------------------------------------------------------
 # Server-Seite (laeuft nur beim Host)
 # ---------------------------------------------------------------------------
 
@@ -273,12 +355,25 @@ func _on_peer_disconnected(id: int) -> void:
 
 
 @rpc("any_peer", "call_remote", "reliable")
-func srv_register(pname: String) -> void:
+func srv_register(pname: String, pw: String = "") -> void:
 	if not is_host:
 		return
 	var id := multiplayer.get_remote_sender_id()
+	if password != "" and pw != password:
+		rpc_id(id, "cl_kicked", "Falsches Passwort.")
+		# Kurz warten, damit der Kick-Grund noch ankommt, dann trennen.
+		get_tree().create_timer(0.4, true).timeout.connect(func():
+			if multiplayer.multiplayer_peer != null:
+				multiplayer.multiplayer_peer.disconnect_peer(id))
+		return
 	players[id] = _new_player(pname.strip_edges().substr(0, 20))
 	_sync()
+
+
+@rpc("authority", "call_remote", "reliable")
+func cl_kicked(reason: String) -> void:
+	_reset()
+	left.emit(reason)
 
 
 @rpc("any_peer", "call_remote", "reliable")
