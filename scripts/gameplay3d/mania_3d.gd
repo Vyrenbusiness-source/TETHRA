@@ -1084,6 +1084,9 @@ func _on_note_judged(index: int, result: Dictionary) -> void:
 		_notes.erase(index)
 		var node: Node3D = entry.root
 		if q != ManiaCore.Quality.MISS:
+			# Mikro-Lean: jeder Treffer lehnt das Schiff hauchduenn in
+			# seine Spurseite (Feder-gedaempft, summiert sich nie auf).
+			_bank_vel += [-1.0, -0.45, 0.45, 1.0][mini(col, 3)] * 0.28 * _fx_level()
 			# Hit-Lighting IMMER exakt am Ring — nicht an der Notenposition
 			# (die haengt beim fruehen Druecken noch weit vor der Linie).
 			_fire_laser(col, Vector3(RAIL_X[col], ROAD_Y + 0.32, Z_LINE),
@@ -1169,6 +1172,8 @@ func _on_hold_started(index: int, _quality: int) -> void:
 	if _notes.has(index):
 		var obj := _beatmap.hit_objects[index] as ManiaNote
 		_pad_flash[obj.column] = 1.0
+		# Das Schiff schwingt kurz in die Spurseite der Long Note ein.
+		_bank_vel += [-1.0, -0.45, 0.45, 1.0][mini(obj.column, 3)] * 1.3 * _fx_level()
 		_fire_laser(obj.column, Vector3(RAIL_X[obj.column], ROAD_Y + 0.32, Z_LINE))
 
 
@@ -1669,12 +1674,18 @@ func _process(delta: float) -> void:
 	_bank_phase += dbeats / (8.0 - 4.0 * roundf(_kiai_mix))
 	var lean_dir := 1.0 if int(floor(_bank_phase)) % 2 == 0 else -1.0
 	var bank_target := lean_dir * (1.1 + _kiai_mix * 0.7) * fx * act
-	# Hold-Steigflug: gehaltene Long Notes ziehen sanft hoch.
+	# Hold-Steigflug + SEITEN-ZUG: Holds ziehen hoch UND in ihre Spurseite —
+	# linke Spuren lehnen das Schiff links, rechte rechts (Aussenspuren
+	# staerker). Links+rechts gleichzeitig = neutral, nur Steigen.
 	var held_n := 0
+	var held_side := 0.0
 	for hc in core.columns:
 		if core.active_hold(hc) >= 0:
 			held_n += 1
+			held_side += [-1.0, -0.45, 0.45, 1.0][mini(hc, 3)]
 	var hold_lift := minf(float(held_n), 2.0) * 0.4 * fx
+	var hold_bank := clampf(held_side, -1.5, 1.5) * 1.1 * fx
+	bank_target += hold_bank
 	# Pitch: Takt-Atmung + Kiai-Angriffshaltung + Hold-Lift + Docking-Flare.
 	var pitch_target := clampf(sin(TAU * beats / 16.0) * (0.5 + _kiai_mix * 0.3)
 			* fx * act - _kiai_mix * 0.4 * fx + hold_lift
