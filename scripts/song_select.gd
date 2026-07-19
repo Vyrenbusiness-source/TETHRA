@@ -83,7 +83,29 @@ const STAR_FILTERS := [
 	["4–6★", 4.0, 6.0],
 	["6★ +", 6.0, 999.0],
 ]
+## Feinere Filter fuer den Online-Browser (inkl. Anfaenger-Stufe).
+const DL_STAR_FILTERS := [
+	["Alle", 0.0, 999.0],
+	["Anfänger ≤1,5★", 0.0, 1.5],
+	["1,5–2★", 1.5, 2.0],
+	["2–3★", 2.0, 3.0],
+	["3–4★", 3.0, 4.0],
+	["4–6★", 4.0, 6.0],
+	["6★ +", 6.0, 999.0],
+]
 var _dl_star_filter := 0
+## PACK-Download: laedt automatisch N noch fehlende Sets in einem frei
+## waehlbaren Sternbereich (z.B. 2.0–2.9).
+var _pack_active := false
+var _pack_lo := 2.0
+var _pack_hi := 2.9
+var _pack_want := 10
+var _pack_pages := 0
+var _pack_started: Dictionary = {}
+var _pack_done := 0
+var _pack_lo_spin: SpinBox
+var _pack_hi_spin: SpinBox
+var _pack_n_opt: OptionButton
 var _dl_last_results: Array = []
 # Falls der Mirror auf die leere Vorschlags-Query nichts liefert, einmal
 # breit mit "4k" nachfassen.
@@ -156,6 +178,17 @@ func _shot_dl_after() -> void:
 	await get_tree().create_timer(8.0).timeout
 	print("DL-KARTEN: %d (auto_pages=%d, end=%s)" % [
 		_dl_rows.size(), _dl_auto_pages, _dl_end_reached])
+	if OS.get_cmdline_args().has("--pack-test"):
+		_pack_lo_spin.value = 2.0
+		_pack_hi_spin.value = 2.9
+		_pack_n_opt.select(0)
+		_start_pack()
+		var waited := 0.0
+		while _pack_active and waited < 90.0:
+			await get_tree().create_timer(0.5).timeout
+			waited += 0.5
+		print("DL-PACK: started=%d done=%d active=%s status=[%s]" % [
+			_pack_started.size(), _pack_done, _pack_active, _dl_status.text])
 	await RenderingServer.frame_post_draw
 	if is_inside_tree():
 		var img := get_viewport().get_texture().get_image()
@@ -1199,9 +1232,9 @@ func _open_download_panel() -> void:
 	fcap.add_theme_color_override("font_color", COL_DIM)
 	filter_row.add_child(fcap)
 	var group := ButtonGroup.new()
-	for fi in STAR_FILTERS.size():
+	for fi in DL_STAR_FILTERS.size():
 		var chip := Button.new()
-		chip.text = STAR_FILTERS[fi][0]
+		chip.text = DL_STAR_FILTERS[fi][0]
 		chip.toggle_mode = true
 		chip.button_group = group
 		chip.button_pressed = fi == _dl_star_filter
@@ -1213,6 +1246,49 @@ func _open_download_panel() -> void:
 			_dl_auto_pages = 0
 			_render_dl_results())
 		filter_row.add_child(chip)
+
+	# PACK-DOWNLOAD: N fehlende Sets in einem freien Sternbereich auf einmal.
+	var pack_row := HBoxContainer.new()
+	pack_row.add_theme_constant_override("separation", 8)
+	vb.add_child(pack_row)
+	var pcap := Label.new()
+	pcap.text = "Pack-Download:"
+	pcap.add_theme_font_size_override("font_size", 13)
+	pcap.add_theme_color_override("font_color", COL_DIM)
+	pack_row.add_child(pcap)
+	_pack_lo_spin = SpinBox.new()
+	_pack_lo_spin.min_value = 0.0
+	_pack_lo_spin.max_value = 10.0
+	_pack_lo_spin.step = 0.1
+	_pack_lo_spin.value = 2.0
+	_pack_lo_spin.custom_minimum_size = Vector2(84, 32)
+	pack_row.add_child(_pack_lo_spin)
+	var pdash := Label.new()
+	pdash.text = "–"
+	pack_row.add_child(pdash)
+	_pack_hi_spin = SpinBox.new()
+	_pack_hi_spin.min_value = 0.0
+	_pack_hi_spin.max_value = 10.0
+	_pack_hi_spin.step = 0.1
+	_pack_hi_spin.value = 2.9
+	_pack_hi_spin.custom_minimum_size = Vector2(84, 32)
+	pack_row.add_child(_pack_hi_spin)
+	var pstar := Label.new()
+	pstar.text = "★  ·"
+	pack_row.add_child(pstar)
+	_pack_n_opt = OptionButton.new()
+	_pack_n_opt.add_item("5 Maps", 5)
+	_pack_n_opt.add_item("10 Maps", 10)
+	_pack_n_opt.add_item("20 Maps", 20)
+	_pack_n_opt.select(1)
+	_pack_n_opt.custom_minimum_size = Vector2(0, 32)
+	pack_row.add_child(_pack_n_opt)
+	var pack_btn := Button.new()
+	pack_btn.text = "⤓ Pack herunterladen"
+	pack_btn.custom_minimum_size = Vector2(0, 34)
+	UiTheme.style_button(pack_btn, true)
+	pack_btn.pressed.connect(_start_pack)
+	pack_row.add_child(pack_btn)
 
 	_dl_status = Label.new()
 	_dl_status.text = "Lade Vorschläge…"
@@ -1294,9 +1370,11 @@ func _on_mirror_search_done(results: Array, raw_count: int, offset: int) -> void
 		return
 	# Naechste Seite: nur NEUE Karten anhaengen — Scrollposition bleibt.
 	_dl_last_results.append_array(results)
+	if _pack_active:
+		_pack_fill()
 	var owned := _owned_set_ids()
-	var lo: float = STAR_FILTERS[_dl_star_filter][1]
-	var hi: float = STAR_FILTERS[_dl_star_filter][2]
+	var lo: float = DL_STAR_FILTERS[_dl_star_filter][1]
+	var hi: float = DL_STAR_FILTERS[_dl_star_filter][2]
 	for r in results:
 		if _dl_rows.has(int(r.id)):
 			continue
@@ -1306,6 +1384,71 @@ func _on_mirror_search_done(results: Array, raw_count: int, offset: int) -> void
 	_dl_status.text = "%d Sets geladen%s" % [_dl_rows.size(),
 		"  ·  Ende der Liste" if _dl_end_reached else " — weiter scrollen fuer mehr"]
 	_maybe_load_more()
+
+
+# ---------------------------------------------------------------------------
+# PACK-Download: N fehlende Sets im gewaehlten Sternbereich automatisch laden.
+# ---------------------------------------------------------------------------
+
+func _start_pack() -> void:
+	if _pack_active:
+		return
+	_pack_lo = minf(_pack_lo_spin.value, _pack_hi_spin.value)
+	_pack_hi = maxf(_pack_lo_spin.value, _pack_hi_spin.value)
+	_pack_want = _pack_n_opt.get_selected_id()
+	_pack_active = true
+	_pack_started = {}
+	_pack_done = 0
+	_pack_pages = 0
+	_dl_status.text = "Pack: suche Sets im Bereich %.1f–%.1f★…" % [_pack_lo, _pack_hi]
+	_pack_fill()
+
+
+## Passende Sets aus den geladenen Ergebnissen starten; reichen sie nicht,
+## weitere Server-Seiten holen (max. 12 fuers Pack).
+func _pack_fill() -> void:
+	if not _pack_active:
+		return
+	var owned := _owned_set_ids()
+	for r in _dl_last_results:
+		if _pack_started.size() >= _pack_want:
+			break
+		var sid := int(r.id)
+		if _pack_started.has(sid) or _mirror.is_downloading(sid):
+			continue
+		if not _dl_passes(r, owned, _pack_lo, _pack_hi + 0.0001):
+			continue
+		_pack_started[sid] = true
+		_mirror.download(sid, _library.maps_dir)
+		if _dl_rows.has(sid):
+			var btn: Button = _dl_rows[sid].btn
+			if is_instance_valid(btn):
+				btn.disabled = true
+				btn.text = "0 %"
+	if _pack_started.size() < _pack_want and not _dl_end_reached \
+			and not _dl_loading_more and _pack_pages < 12:
+		_pack_pages += 1
+		_dl_loading_more = true
+		_dl_offset += 50
+		_mirror.search(_dl_query, _dl_offset)
+	_update_pack_status()
+
+
+func _update_pack_status() -> void:
+	if not _pack_active:
+		return
+	if _pack_started.is_empty() and (_dl_end_reached or _pack_pages >= 12):
+		_pack_active = false
+		_dl_status.text = "Pack: nichts Passendes im Bereich %.1f–%.1f★ gefunden." % [_pack_lo, _pack_hi]
+		return
+	_dl_status.text = "Pack (%.1f–%.1f★): %d/%d fertig  ·  %d laufen" % [
+		_pack_lo, _pack_hi, _pack_done, _pack_started.size(),
+		_pack_started.size() - _pack_done]
+	if _pack_done >= _pack_started.size() \
+			and (_pack_started.size() >= _pack_want or _dl_end_reached or _pack_pages >= 12):
+		_pack_active = false
+		_dl_status.text = "Pack fertig: %d Maps geladen (%.1f–%.1f★) — viel Spass!" % [
+			_pack_done, _pack_lo, _pack_hi]
 
 
 ## Zu wenige sichtbare Karten (Filter/Besitz frisst viel raus)? Dann sofort
@@ -1341,6 +1484,8 @@ func _on_dl_scrolled(_v: float) -> void:
 func _dl_passes(r: Dictionary, owned: Dictionary, lo: float, hi: float) -> bool:
 	if owned.has(int(r.id)):
 		return false
+	if owned.has(_at_key(str(r.get("artist", "")), str(r.get("title", "")))):
+		return false
 	var star_list: Array = r.get("star_list", [])
 	if star_list.is_empty():
 		star_list = [float(r.get("stars", 0.0))]
@@ -1359,8 +1504,8 @@ func _render_dl_results() -> void:
 		c.queue_free()
 	_dl_rows.clear()
 	var owned := _owned_set_ids()
-	var lo: float = STAR_FILTERS[_dl_star_filter][1]
-	var hi: float = STAR_FILTERS[_dl_star_filter][2]
+	var lo: float = DL_STAR_FILTERS[_dl_star_filter][1]
+	var hi: float = DL_STAR_FILTERS[_dl_star_filter][2]
 	var fresh: Array = []
 	for r in _dl_last_results:
 		if _dl_passes(r, owned, lo, hi):
@@ -1369,7 +1514,7 @@ func _render_dl_results() -> void:
 		if _dl_last_results.is_empty():
 			_dl_status.text = "Keine Ergebnisse."
 		elif _dl_star_filter != 0:
-			_dl_status.text = "Suche Sets im Bereich %s…" % STAR_FILTERS[_dl_star_filter][0]
+			_dl_status.text = "Suche Sets im Bereich %s…" % DL_STAR_FILTERS[_dl_star_filter][0]
 		else:
 			_dl_status.text = "Suche neue Sets…"
 		_maybe_load_more()
@@ -1382,25 +1527,33 @@ func _render_dl_results() -> void:
 	_maybe_load_more()
 
 
-## Set-IDs aller lokalen .osz (fuehrende Zahl im Dateinamen oder mirror_<id>).
+## Besitz-Erkennung: Set-IDs aus Dateinamen (fuehrende Zahl oder mirror_<id>)
+## PLUS "artist|titel"-Schluessel aus der Bibliothek — erkennt auch Maps,
+## deren Dateiname keine Set-ID traegt.
 func _owned_set_ids() -> Dictionary:
 	var owned := {}
 	var dir := DirAccess.open(_library.maps_dir)
-	if dir == null:
-		return owned
-	for fname in dir.get_files():
-		if not fname.to_lower().ends_with(".osz"):
-			continue
-		var base := fname.get_basename()
-		if base.begins_with("mirror_"):
-			var id_str := base.substr(7)
-			if id_str.is_valid_int():
-				owned[int(id_str)] = true
-		else:
-			var head := base.split(" ")[0]
-			if head.is_valid_int():
-				owned[int(head)] = true
+	if dir != null:
+		for fname in dir.get_files():
+			if not fname.to_lower().ends_with(".osz"):
+				continue
+			var base := fname.get_basename()
+			if base.begins_with("mirror_"):
+				var id_str := base.substr(7)
+				if id_str.is_valid_int():
+					owned[int(id_str)] = true
+			else:
+				var head := base.split(" ")[0]
+				if head.is_valid_int():
+					owned[int(head)] = true
+	for ms in _library.mapsets:
+		if ms.title != "":
+			owned[_at_key(ms.artist, ms.title)] = true
 	return owned
+
+
+static func _at_key(artist: String, title: String) -> String:
+	return "%s|%s" % [artist.strip_edges().to_lower(), title.strip_edges().to_lower()]
 
 
 func _make_online_card(r: Dictionary) -> Control:
@@ -1526,6 +1679,10 @@ func _on_mirror_download_failed(set_id: int, message: String) -> void:
 		if is_instance_valid(btn):
 			btn.disabled = false
 			btn.text = "Erneut"
+	if _pack_active and _pack_started.has(set_id):
+		_pack_done += 1
+		_update_pack_status()
+		return
 	if _dl_status != null:
 		_dl_status.text = message
 
@@ -1535,11 +1692,15 @@ func _on_mirror_download_done(set_id: int, osz_path: String) -> void:
 		var btn: Button = _dl_rows[set_id].btn
 		if is_instance_valid(btn):
 			btn.text = "✓ Fertig"
-	if _dl_status != null:
-		_dl_status.text = "Heruntergeladen — Bibliothek wird aktualisiert…"
-	# Bibliothek neu scannen und die neue Map auswaehlen.
+	# Bibliothek neu scannen; beim Pack-Download NICHT staendig umselektieren.
 	_library.scan()
 	_refresh_filter(_search.text)
+	if _pack_active and _pack_started.has(set_id):
+		_pack_done += 1
+		_update_pack_status()
+		return
+	if _dl_status != null:
+		_dl_status.text = "Heruntergeladen — Bibliothek wird aktualisiert…"
 	for ms in _filtered:
 		if ms.osz_path == osz_path:
 			_select_set(ms, ms.difficulty_count() - 1)
