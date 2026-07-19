@@ -146,6 +146,8 @@ var _whoosh_player: AudioStreamPlayer
 ## nie Disk-I/O mitten im Spiel (Latenz!). Eintrag = Liste von [Mesh, Tex].
 var _station_pool: Array = []
 var _dock_station: Node3D
+## Planeten-Texturen fuer Nahvorbeifluege (vorab geladen).
+var _planet_tex_cache: Array = []
 const STATION_DEFS := [
 	[["station01.obj", "station01_diffuse"]],
 	[["station02_base.obj", "station02_base_diffuse"],
@@ -946,19 +948,19 @@ func _trigger_overdrive() -> void:
 	if fx <= 0.0:
 		return
 	_overdrive = 2.0 * fx
-	_shake = 0.45 * fx
+	_shake = 0.28 * fx
 	_shock = 0.0
 	# Vollbild-Blitz.
 	var flash := ColorRect.new()
 	flash.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	flash.color = Color(1, 1, 1, 0.35)
+	flash.color = Color(1, 1, 1, 0.20)
 	flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_hud.add_child(flash)
 	var tw := create_tween()
 	tw.tween_property(flash, "color:a", 0.0, 0.12)
 	tw.tween_callback(flash.queue_free)
-	# Zackenblitze ueber dem Feld.
-	for i in 6:
+	# Zackenblitze ueber dem Feld (dezent — 3 statt 6).
+	for i in 3:
 		_spawn_bolt(i)
 
 
@@ -1898,6 +1900,15 @@ func _preload_stations() -> void:
 			parts.append([load(mp), tex])
 		if not parts.is_empty():
 			_station_pool.append(parts)
+	# Planeten-Texturen fuer Nahvorbeifluege cachen.
+	for tname in ["earth_like", "ocean_planet", "desert_planet", "lava_planet",
+			"mining_planet", "ecumenopolis", "moon_like"]:
+		var dp := "res://assets_game/planets/%s_diffuse.webp" % tname
+		if ResourceLoader.exists(dp):
+			var ep := "res://assets_game/planets/%s_emission.webp" % tname
+			_planet_tex_cache.append([load(dp),
+				load(ep) if ResourceLoader.exists(ep) else null,
+				tname == "earth_like" or tname == "ocean_planet"])
 
 
 ## Stations-Node aus vorab geladenen Teilen bauen (auf ~5 Einheiten normiert).
@@ -2009,9 +2020,12 @@ func _build_flight_plan() -> void:
 	var k := 0
 	var pt := t0 + bar * 8.0
 	while pt < t_end - 4000.0:
+		var fkind := (seed_h / 7 + k) % 3
+		if k % 4 == 2:
+			fkind = 3
 		_flight_plan.append({ "t": pt - 2600.0, "type": "flyby",
 			"side": (-1.0 if (seed_h + k) % 2 == 0 else 1.0),
-			"kind": (seed_h / 7 + k) % 3 })
+			"kind": fkind })
 		k += 1
 		pt += bar * 8.0
 	# 2) Ueberkopf-Roll beim ersten Kiai (6 Takte kopfueber, dann zurueck).
@@ -2196,6 +2210,30 @@ func _spawn_flyby(side: float, kind: int) -> void:
 		plight.position = Vector3(0, 1.4, 0)
 		root.add_child(plight)
 		root.set_meta("lamp", plmat)
+	elif kind == 3 and not _planet_tex_cache.is_empty():
+		# PLANETEN-NAHVORBEIFLUG: ein riesiger Textur-Planet zieht
+		# majestaetisch knapp am Spielfeld vorbei — der Wow-Moment.
+		var ptex: Array = _planet_tex_cache[randi() % _planet_tex_cache.size()]
+		var pp3 := MeshInstance3D.new()
+		var pq3 := QuadMesh.new()
+		var psize := 14.0 + randf() * 6.0
+		pq3.size = Vector2(psize, psize)
+		pp3.mesh = pq3
+		var pmat3 := ShaderMaterial.new()
+		pmat3.shader = load("res://shaders/planet.gdshader")
+		pmat3.set_shader_parameter("use_texture", 1.0)
+		pmat3.set_shader_parameter("tex_diffuse", ptex[0])
+		if ptex[1] != null:
+			pmat3.set_shader_parameter("tex_emission", ptex[1])
+		if bool(ptex[2]):
+			pmat3.set_shader_parameter("clouds_amount", 0.85)
+		pmat3.set_shader_parameter("seed", randf() * 30.0)
+		pmat3.set_shader_parameter("atmo_col", _theme_col.lerp(Color(0.7, 0.85, 1.0), 0.5))
+		pp3.material_override = pmat3
+		root.add_child(pp3)
+		# Weiter aussen + hoeher als Wracks, damit er trotz Groesse nie
+		# ueber dem Spielfeld haengt.
+		root.position = Vector3(side * 19.0, 9.5 + randf() * 2.0, Z_FAR - 26.0)
 	else:
 		# ASTEROID: grauer Brocken mit dem Planeten-Shader.
 		var rock := MeshInstance3D.new()
@@ -2213,9 +2251,14 @@ func _spawn_flyby(side: float, kind: int) -> void:
 		rmat.set_shader_parameter("ring_amount", 0.0)
 		rock.material_override = rmat
 		root.add_child(rock)
-	_flybys.append({ "node": root, "side": side,
-		"speed": 16.0 + randf() * 8.0, "whooshed": false,
-		"tumble": (randf() - 0.5) * 0.3 })
+	# Planeten gleiten langsam und lautlos (majestaetisch), Rest rauscht.
+	var spd := 16.0 + randf() * 8.0
+	var tmb := (randf() - 0.5) * 0.3
+	if kind == 3:
+		spd = 9.0 + randf() * 3.0
+		tmb = 0.0
+	_flybys.append({ "node": root, "side": side, "speed": spd,
+		"whooshed": kind == 3, "tumble": tmb })
 
 
 ## Fortlaufende Beat-Zahl der Song-Zeit (fuer BPM-synchrone Choreografie).
@@ -3284,6 +3327,7 @@ func _capture_after_first_note() -> void:
 	# Screenshot die Vorbeiflug-Optik mitprueft.
 	_spawn_flyby(-1.0, 0)
 	_spawn_flyby(1.0, 2)
+	_spawn_flyby(1.0, 3)
 	for fb in _flybys:
 		if is_instance_valid(fb.node):
 			fb.node.position.z = -26.0
