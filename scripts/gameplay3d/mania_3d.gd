@@ -156,6 +156,8 @@ var _dust_seeds: Array = []
 var _dust_mat: ShaderMaterial
 var _landmarks: Array = []
 var _sun_mat: ShaderMaterial
+var _galaxy_mat: ShaderMaterial
+var _fg_neb_mats: Array = []
 var _route_ui: Control
 var _route_p := 0.0
 var _sunrise := 0.0
@@ -649,6 +651,70 @@ func _build_starfield() -> void:
 	au.position = Vector3(0, 6.8, Z_FAR - 5.5)
 	_cosmos.add_child(au)
 
+	# FERNE SPIRALGALAXIE: das Astro-Wahrzeichen, gegenueber vom
+	# Schwarzen Loch — rotiert unmerklich, atmet mit dem Kiai.
+	var gal := MeshInstance3D.new()
+	var galq := QuadMesh.new()
+	galq.size = Vector2(17, 12)
+	gal.mesh = galq
+	_galaxy_mat = ShaderMaterial.new()
+	_galaxy_mat.shader = load("res://shaders/spiral_galaxy.gdshader")
+	_galaxy_mat.set_shader_parameter("col_arm",
+		_theme_col.lerp(Color(0.6, 0.72, 1.0), 0.5))
+	gal.material_override = _galaxy_mat
+	gal.position = Vector3(-21.0, 14.5, Z_FAR - 11.0)
+	gal.rotation_degrees = Vector3(0, 0, -14)
+	_cosmos.add_child(gal)
+
+	# VORDERGRUND-NEBELFETZEN: zwei nahe, schnell driftende Schleier
+	# seitlich — geben dem Raum zwischen Bahn und Fernnebel Tiefe.
+	for fgi in 2:
+		var fgn := MeshInstance3D.new()
+		var fgq := QuadMesh.new()
+		fgq.size = Vector2(62, 24)
+		fgn.mesh = fgq
+		var fgm := ShaderMaterial.new()
+		fgm.shader = load("res://shaders/space_bg.gdshader")
+		fgm.set_shader_parameter("col_a", _theme_col.lerp(Color(0.1, 0.08, 0.16), 0.45))
+		fgm.set_shader_parameter("col_b", _theme_kiai)
+		fgm.set_shader_parameter("scale", 3.6)
+		fgm.set_shader_parameter("alpha_mul", 0.20)
+		fgm.set_shader_parameter("star_amount", 0.0)
+		fgn.material_override = fgm
+		fgn.position = Vector3(-24.0 if fgi == 0 else 24.0, 4.5, Z_FAR + 13.0)
+		_fg_neb_mats.append(fgm)
+		_cosmos.add_child(fgn)
+
+	# ATMOSPHAEREN-KANTE: duennes, helles Scattering-Band direkt am Horizont
+	# (wie der Erdrand von der ISS) — verankert die Bahn im Raum.
+	var edge_band := MeshInstance3D.new()
+	var ebq := QuadMesh.new()
+	ebq.size = Vector2(120, 2.4)
+	edge_band.mesh = ebq
+	var ebm := ShaderMaterial.new()
+	ebm.shader = _glow_shader
+	ebm.set_shader_parameter("base_color", _theme_col.lerp(Color(1, 1, 1), 0.55))
+	ebm.set_shader_parameter("intensity", 0.16)
+	edge_band.material_override = ebm
+	edge_band.position = Vector3(0, 0.55, Z_FAR - 3.7)
+	_cosmos.add_child(edge_band)
+
+	# STERNHAUFEN: zwei weiche Kugelhaufen-Glows als Fern-Deko.
+	for chi in 2:
+		var cl2 := MeshInstance3D.new()
+		var clq := QuadMesh.new()
+		var cls := 1.7 if chi == 0 else 2.6
+		clq.size = Vector2(cls, cls)
+		cl2.mesh = clq
+		var clm := ShaderMaterial.new()
+		clm.shader = _glow_shader
+		clm.set_shader_parameter("base_color", Color(0.95, 0.93, 0.85))
+		clm.set_shader_parameter("intensity", 0.16)
+		cl2.material_override = clm
+		cl2.position = Vector3(7.5 if chi == 0 else -26.0,
+				16.0 if chi == 0 else 8.0, Z_FAR - 10.5)
+		_cosmos.add_child(cl2)
+
 	# SCHWARZES LOCH: Gravitationslinse verbiegt Nebel/Sterne dahinter,
 	# heisse Akkretionsscheibe rotiert (Kiai beschleunigt sie).
 	var bh := MeshInstance3D.new()
@@ -725,6 +791,10 @@ func _build_starfield() -> void:
 					pm.set_shader_parameter("tex_emission", load(epath))
 				if str(pdef[8]) == "earth_like" or str(pdef[8]) == "ocean_planet":
 					pm.set_shader_parameter("clouds_amount", 0.85)
+				# Manche Reisen haben Ringplaneten — aus dem Seed gewuerfelt.
+				if str(pdef[8]) != "moon_like" \
+						and _hash01(float(seed_p % 997) + float(pdef[6])) > 0.55:
+					pm.set_shader_parameter("ring_amount", 0.85)
 		planet.material_override = pm
 		planet.position = pdef[0]
 		_cosmos.add_child(planet)
@@ -1677,6 +1747,16 @@ func _process(delta: float) -> void:
 		_gal_stars = lerpf(_gal_stars, float(gch.stars), gk)
 		_gal_scale = lerpf(_gal_scale, float(gch.scale), gk)
 
+	# Spiralgalaxie: traege Rotation, im Kiai etwas heller.
+	if _galaxy_mat != null:
+		_galaxy_mat.set_shader_parameter("t", t / 1000.0)
+		_galaxy_mat.set_shader_parameter("intensity",
+			(0.34 + _kiai_mix * 0.16 + _beat_env * 0.05) * maxf(fx, 0.25))
+	# Vordergrund-Nebelfetzen driften deutlich schneller (Nah-Parallaxe).
+	for fgm2 in _fg_neb_mats:
+		fgm2.set_shader_parameter("drift", _nebula_drift * 3.4)
+		fgm2.set_shader_parameter("energy", 0.35 + (_bass * 0.3 + _beat_env * 0.2) * fx)
+
 	# SONNENAUFGANG: waechst ueber das letzte Kapitel — Ankunft im Licht.
 	_sunrise = 0.0
 	if _gal_chapters.size() >= 2 and _gal_idx >= _gal_chapters.size() - 1:
@@ -2205,8 +2285,8 @@ func _build_flight_plan() -> void:
 	var k := 0
 	var pt := t0 + bar * 8.0
 	while pt < t_end - 4000.0:
-		var fkind := (seed_h / 7 + k) % 3
-		if k % 4 == 2:
+		var fkind := (seed_h / 7 + k) % 2
+		if k % 3 == 1:
 			fkind = 3
 		_flight_plan.append({ "t": pt - 2600.0, "type": "flyby",
 			"side": (-1.0 if (seed_h + k) % 2 == 0 else 1.0),
@@ -3511,7 +3591,6 @@ func _capture_after_first_note() -> void:
 	# Harness: je ein Wrack + eine Station sichtbar platzieren, damit der
 	# Screenshot die Vorbeiflug-Optik mitprueft.
 	_spawn_flyby(-1.0, 0)
-	_spawn_flyby(1.0, 2)
 	_spawn_flyby(1.0, 3)
 	for fb in _flybys:
 		if is_instance_valid(fb.node):
