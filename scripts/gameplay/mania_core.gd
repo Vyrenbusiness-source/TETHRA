@@ -45,9 +45,17 @@ var n100 := 0
 var n50 := 0
 var n_miss := 0
 var score := 0
-## ScoreV2-Prinzip: Praezisions-/Combo-Anteile akkumulieren als float.
-const ACC_WEIGHT := [1.0, 1.0, 2.0 / 3.0, 1.0 / 3.0, 1.0 / 6.0, 0.0]
+## EXAKTE osu!mania-ScoreV1-Formel (max 1.000.000):
+##   Score = Base + Bonus, je Note:
+##   Base  = (500000/Total) * HitValue/320
+##   Bonus = (500000/Total) * HitBonusValue * sqrt(BonusZaehler)/320
+##   BonusZaehler startet bei 100, MAX+2 / 300+1 / 200-8 / 100-24 / 50-44 /
+##   Miss-100, geklemmt auf 0..100.
+const HIT_VALUE := [320.0, 300.0, 200.0, 100.0, 50.0, 0.0]
+const HIT_BONUS_VALUE := [32.0, 32.0, 16.0, 8.0, 4.0, 0.0]
+const BONUS_DELTA := [2.0, 1.0, -8.0, -24.0, -44.0, -100.0]
 var _score_f := 0.0
+var _bonus := 100.0
 var _total_notes := 0
 var hp := 1.0
 var no_fail := false
@@ -84,6 +92,7 @@ func setup(p_beatmap: Beatmap, _ar_override: float = -1.0, scroll_scale: float =
 	_hp_miss_damage = 0.04 + 0.04 * (beatmap.hp() / 10.0)
 	no_fail = false
 	_score_f = 0.0
+	_bonus = 100.0
 	_total_notes = beatmap.hit_objects.size()
 	_lane_notes.clear()
 	_lane_head.clear()
@@ -105,15 +114,12 @@ func score_multiplier() -> float:
 	return minf(float(combo), 100.0) / 100.0
 
 
-## Map-Maximum ist IMMER exakt 1.000.000 (SS + Full Combo):
-## 80% Praezision (gleiche Gewichte wie die Accuracy-Formel) + 20% Combo.
-## Der Combo-Term ist auf das jeweils bestmoegliche normiert — sonst wuerde
-## selbst ein perfektes Play wegen der Anlauf-Rampe keine glatte Million.
+## Original osu!mania ScoreV1: Basis- + Bonus-Anteil, Maximum 1.000.000.
 func _add_score(q: int) -> void:
-	var note_i := minf(float(_judged_count + 1), 100.0)
-	var combo_term := clampf(minf(float(combo), 100.0) / note_i, 0.0, 1.0)
-	_score_f += 1000000.0 / maxf(float(_total_notes), 1.0) \
-			* (0.8 * ACC_WEIGHT[q] + 0.2 * combo_term)
+	var unit := 500000.0 / maxf(float(_total_notes), 1.0)
+	_bonus = clampf(_bonus + BONUS_DELTA[q], 0.0, 100.0)
+	_score_f += unit * (HIT_VALUE[q] / 320.0) \
+			+ unit * (HIT_BONUS_VALUE[q] * sqrt(_bonus) / 320.0)
 	score = int(round(_score_f))
 
 
@@ -272,6 +278,7 @@ func _miss(idx: int) -> void:
 	var obj := beatmap.hit_objects[idx]
 	n_miss += 1
 	combo = 0
+	_add_score(Quality.MISS)
 	hp = maxf(hp - _hp_miss_damage, 0.0)
 	hp_changed.emit(hp)
 	if hp <= 0.0 and not no_fail:

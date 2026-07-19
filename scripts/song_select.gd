@@ -103,6 +103,7 @@ var _pack_want := 10
 var _pack_pages := 0
 var _pack_started: Dictionary = {}
 var _pack_done := 0
+var _pack_retries := 0
 var _pack_lo_spin: SpinBox
 var _pack_hi_spin: SpinBox
 var _pack_n_opt: OptionButton
@@ -712,6 +713,27 @@ func _rebuild_cards() -> void:
 		_card_buttons.append(card)
 
 
+## Rechtsklick auf eine Karte: .osz nach Bestaetigung loeschen.
+func _confirm_delete(ms: MapSet) -> void:
+	var dlg := ConfirmationDialog.new()
+	dlg.title = "Map loeschen"
+	dlg.dialog_text = "\"%s — %s\" wirklich loeschen?\nDie .osz-Datei wird vom Datentraeger entfernt." % [ms.artist, ms.title]
+	dlg.ok_button_text = "Loeschen"
+	dlg.cancel_button_text = "Abbrechen"
+	add_child(dlg)
+	dlg.confirmed.connect(func():
+		if FileAccess.file_exists(ms.osz_path):
+			DirAccess.remove_absolute(ms.osz_path)
+		var was_selected := _selected_set == ms
+		_library.scan()
+		_refresh_filter(_search.text)
+		if was_selected and not _filtered.is_empty():
+			_select_set(_filtered[0], 0)
+		dlg.queue_free())
+	dlg.canceled.connect(dlg.queue_free)
+	dlg.popup_centered()
+
+
 func _make_card(ms: MapSet) -> Button:
 	var card := Button.new()
 	card.custom_minimum_size = Vector2(0, 88)
@@ -724,6 +746,11 @@ func _make_card(ms: MapSet) -> Button:
 	card.add_theme_stylebox_override("focus", _card_box(COL_CARD_SEL, accent))
 	card.pressed.connect(func(): _on_card_pressed(ms))
 	UiTheme.attach_hover(card, 1.015)
+	# Rechtsklick: Map nach Bestaetigung vom Datentraeger loeschen.
+	card.gui_input.connect(func(e):
+		if e is InputEventMouseButton and e.pressed \
+				and e.button_index == MOUSE_BUTTON_RIGHT:
+			_confirm_delete(ms))
 
 	# Cover schwach als Kartenhintergrund — LAZY: Thumbnails werden ueber
 	# Frames verteilt geladen (UI erscheint sofort, kein Ruckeln).
@@ -1344,6 +1371,21 @@ func _run_mirror_search() -> void:
 
 func _on_mirror_search_failed(message: String) -> void:
 	_dl_loading_more = false
+	# Pack-Download: Mirror-Aussetzer nicht als Absturz werten — kurz warten
+	# und dieselbe Seite erneut anfordern (max. 5 Versuche).
+	if _pack_active:
+		_pack_retries += 1
+		if _pack_retries <= 5 and _dl_overlay != null:
+			_dl_status.text = "Mirror kurz nicht erreichbar — versuche erneut…"
+			get_tree().create_timer(1.5, true).timeout.connect(func():
+				if _pack_active and _dl_overlay != null:
+					_dl_loading_more = true
+					_mirror.search(_dl_query, _dl_offset))
+		else:
+			_pack_active = false
+			if _dl_status != null:
+				_dl_status.text = "Pack abgebrochen: Mirror nicht erreichbar — spaeter erneut versuchen."
+		return
 	if _dl_suggest_fallback:
 		_dl_suggest_fallback = false
 		_dl_query = "4k"
@@ -1400,6 +1442,7 @@ func _start_pack() -> void:
 	_pack_started = {}
 	_pack_done = 0
 	_pack_pages = 0
+	_pack_retries = 0
 	_dl_status.text = "Pack: suche Sets im Bereich %.1f–%.1f★…" % [_pack_lo, _pack_hi]
 	_pack_fill()
 
@@ -1430,7 +1473,12 @@ func _pack_fill() -> void:
 		_pack_pages += 1
 		_dl_loading_more = true
 		_dl_offset += 50
-		_mirror.search(_dl_query, _dl_offset)
+		# Den Mirror nicht mit Request-Bursts fluten (drosselt sonst: HTTP 0).
+		get_tree().create_timer(0.45, true).timeout.connect(func():
+			if _pack_active and _dl_overlay != null:
+				_mirror.search(_dl_query, _dl_offset)
+			else:
+				_dl_loading_more = false)
 	_update_pack_status()
 
 
@@ -1553,7 +1601,14 @@ func _owned_set_ids() -> Dictionary:
 
 
 static func _at_key(artist: String, title: String) -> String:
-	return "%s|%s" % [artist.strip_edges().to_lower(), title.strip_edges().to_lower()]
+	# Nur Buchstaben/Ziffern vergleichen — Klammern, Spaces und
+	# Sonderzeichen unterscheiden sich zwischen Mirror und Datei oft.
+	var raw := ("%s|%s" % [artist, title]).to_lower()
+	var out := ""
+	for ch in raw:
+		if (ch >= "a" and ch <= "z") or (ch >= "0" and ch <= "9") or ch == "|":
+			out += ch
+	return out
 
 
 func _make_online_card(r: Dictionary) -> Control:
