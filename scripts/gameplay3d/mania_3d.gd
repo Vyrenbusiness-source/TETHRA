@@ -876,19 +876,6 @@ func _build_starfield() -> void:
 	binary.visible = false
 	_cosmos.add_child(binary)
 	_landmarks.append(binary)
-	# L2: Stationscluster (drei kleine Stationen).
-	var cluster := Node3D.new()
-	cluster.position = Vector3(-14.5, 11.0, Z_FAR - 9.0)
-	if not _station_pool.is_empty():
-		for ci2 in 3:
-			var cst := _build_station_node(_station_pool[ci2 % _station_pool.size()])
-			cst.scale = Vector3.ONE * 0.4
-			cst.position = Vector3(float(ci2 - 1) * 3.4, float(ci2 % 2) * 1.6 - 0.8, 0)
-			cst.rotation_degrees = Vector3(8, ci2 * 120.0, 4)
-			cluster.add_child(cst)
-	cluster.visible = false
-	_cosmos.add_child(cluster)
-	_landmarks.append(cluster)
 	_apply_landmark(0)
 
 	# SONNENAUFGANG: waechst ueber das letzte Galaxie-Kapitel hinterm Ziel.
@@ -1135,9 +1122,7 @@ func _trigger_overdrive() -> void:
 	var tw := create_tween()
 	tw.tween_property(flash, "color:a", 0.0, 0.12)
 	tw.tween_callback(flash.queue_free)
-	# Zackenblitze ueber dem Feld (dezent — 3 statt 6).
-	for i in 3:
-		_spawn_bolt(i)
+	# (Zackenblitze entfernt — nervten; Schockwelle + Puls reichen.)
 
 
 func _spawn_bolt(seed_i: int) -> void:
@@ -1673,7 +1658,7 @@ func _process(delta: float) -> void:
 	var od := clampf(_overdrive, 0.0, 1.0)
 	if _overdrive > 0.0:
 		var flicker := _hash01(floor(t * 0.05)) * 2.4
-		_line_mat.emission_energy_multiplier += flicker * od
+		_line_mat.emission_energy_multiplier += flicker * od * 0.25
 	for i in _pad_mats.size():
 		var base_col := _pad_color(i)
 		if i < _pad_judge_col.size():
@@ -2195,7 +2180,7 @@ func _draw_route() -> void:
 func _apply_landmark(idx: int) -> void:
 	for li in _landmarks.size():
 		if is_instance_valid(_landmarks[li]):
-			_landmarks[li].visible = (maxi(idx, 0) % 3) == li
+			_landmarks[li].visible = (maxi(idx, 0) % 2) == li
 
 
 ## Fullscreen-Post-FX-Ebene UNTER dem HUD: verzerrt nur das Spielbild,
@@ -2209,6 +2194,9 @@ func _build_screen_fx() -> void:
 	fx_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_screen_mat = ShaderMaterial.new()
 	_screen_mat.shader = load("res://shaders/screen_fx.gdshader")
+	# Warp-Streifen in gedimmter Songfarbe statt grellem Weiss.
+	_screen_mat.set_shader_parameter("tunnel_color",
+		_theme_col.lerp(Color(0.7, 0.8, 1.0), 0.3) * 0.8)
 	fx_rect.material = _screen_mat
 	fx_layer.add_child(fx_rect)
 
