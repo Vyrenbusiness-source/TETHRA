@@ -1641,11 +1641,11 @@ func _process(delta: float) -> void:
 	# Kamerawinkel auf und die Strecke wird brettflach/unlesbar. Nach unten
 	# (mehr Draufsicht) ist ok, nach oben fast nichts.
 	var beats := _song_beats(t)
-	var climb := sin(TAU * beats / 16.0) * (1.0 + _kiai_mix * 0.8) * fx
-	var pitch_target := clampf(climb - _punch * 0.5, -2.4, 0.8)
+	var climb := sin(TAU * beats / 16.0) * (0.5 + _kiai_mix * 0.35) * fx
+	var pitch_target := clampf(climb - _punch * 0.3, -1.4, 0.5)
 	_pitch_smooth = lerpf(_pitch_smooth, pitch_target, minf(delta * 2.2, 1.0))
-	_lift_smooth = lerpf(_lift_smooth, sin(TAU * beats / 32.0) * 0.22 * fx, minf(delta * 2.0, 1.0))
-	var bank_deg := sin(TAU * beats / 8.0 + 1.3) * (2.2 + _kiai_mix * 1.4) * fx
+	_lift_smooth = lerpf(_lift_smooth, sin(TAU * beats / 32.0) * 0.12 * fx, minf(delta * 2.0, 1.0))
+	var bank_deg := sin(TAU * beats / 8.0 + 1.3) * (1.0 + _kiai_mix * 0.6) * fx
 	_world.position.y = _lift_smooth
 	_world.rotation_degrees = Vector3(_pitch_smooth, 0.0, bank_deg)
 	# DROP: Kiai-Start feuert den Warp (Streifen + Flash + Sternen-Schub).
@@ -1721,7 +1721,9 @@ func _process(delta: float) -> void:
 		if _gal_idx >= 0 and fx > 0.0:
 			_warp_level = 1.0
 			_tunnel_fx = 1.0
-			_fov_kick = maxf(_fov_kick, 4.0)
+			# Kein Bild-Sog + nur kleiner FOV-Kick — der Sprung soll gleiten,
+			# nicht wabern.
+			_fov_kick = maxf(_fov_kick, 1.6)
 		_gal_idx = gal_target
 		_apply_landmark(_gal_idx)
 	if _gal_idx >= 0 and fx > 0.0:
@@ -1896,7 +1898,7 @@ func _process(delta: float) -> void:
 			(fnode.get_meta("lamp") as ShaderMaterial).set_shader_parameter(
 				"intensity", 0.35 + 1.0 * float(int(t * 0.004) % 2))
 		if fnode.position.z > -16.0 and fnode.position.z < 4.0:
-			bank_req = -float(fb.side) * 0.038
+			bank_req = -float(fb.side) * 0.022
 		if not bool(fb.whooshed) and fnode.position.z > -7.0:
 			fb.whooshed = true
 			if _whoosh_player != null and fx > 0.0:

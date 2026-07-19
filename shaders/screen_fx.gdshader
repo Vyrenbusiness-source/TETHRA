@@ -35,11 +35,6 @@ void fragment() {
 		float tear = step(0.62, hash11(row * 3.7 + floor(TIME * 14.0)));
 		uv.x += (hash11(row + floor(TIME * 14.0) * 13.0) - 0.5) * 0.030 * glitch * tear;
 	}
-	// Warp-Sog: das Bild zieht leicht Richtung Fluchtpunkt.
-	if (warp_tunnel > 0.001) {
-		float wmask = smoothstep(0.12, 0.7, d);
-		uv = vec2(0.5) + (uv - vec2(0.5)) * (1.0 - warp_tunnel * wmask * 0.13);
-	}
 	// Chromatische Aberration am Rand (RGB-Kanaele trennen sich).
 	vec2 off = c * (aberration * 0.008 + glitch * 0.008) * edge;
 	float r = texture(screen_tex, uv + off).r;
