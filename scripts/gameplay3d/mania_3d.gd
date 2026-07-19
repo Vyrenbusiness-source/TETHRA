@@ -1584,6 +1584,8 @@ func _process(delta: float) -> void:
 		if not is_instance_valid(fnode):
 			continue
 		fnode.position.z += delta * float(fb.speed) * (1.0 + _beat_env * 0.25)
+		fnode.rotation.z += delta * float(fb.get("tumble", 0.0))
+		fnode.rotation.y += delta * float(fb.get("tumble", 0.0)) * 0.6
 		# Beim Naeherkommen nach aussen ziehen — Passage bleibt seitlich sichtbar.
 		fnode.position.x += delta * float(fb.side) * 2.0
 		if fnode.has_meta("lamp"):
@@ -1665,7 +1667,9 @@ func _on_beat_edge(beat_idx: int) -> void:
 		_ember_next += 1
 		var h := _hash01(float(beat_idx) * 13.7 + float(k) * 3.1)
 		var h2 := _hash01(float(beat_idx) * 7.3 + float(k) * 11.9)
-		_ember_pos[i] = Vector3((h - 0.5) * 9.0, 3.0 + h2 * 2.5, Z_LINE - 2.0 - h2 * 14.0)
+		# Glut NUR seitlich der Bahn — nie ueber dem Spielfeld.
+		var eside := -1.0 if h < 0.5 else 1.0
+		_ember_pos[i] = Vector3(eside * (4.4 + h2 * 3.4), 3.0 + h * 2.5, Z_LINE - 2.0 - h2 * 14.0)
 		_ember_vel[i] = 0.5 + h * 0.8
 		_ember_life[i] = 1.6 + h2 * 1.2
 	# Nebel + Planeten ticken, Linie blitzt (Takt-Anfang staerker).
@@ -1893,23 +1897,81 @@ func _spawn_flyby(side: float, kind: int) -> void:
 	root.position = Vector3(side * 11.0, 6.0 + randf() * 2.5, Z_FAR - 16.0)
 	_cosmos.add_child(root)
 	if kind == 0:
-		# WRACK: dunkle Rumpf-Silhouette + rot blinkendes Notlicht.
-		for b in 3:
+		# WRACK v2: aufgerissener Frachter als BELEUCHTETE Silhouette —
+		# unshaded-Materialien mit per-Teil-Helligkeit (die Szene hat kein
+		# echtes Licht; Standard-Shading rendert sonst pechschwarz),
+		# warme Fensterreihen, Sonnen-Streiflicht, Antenne, Truemmerfeld.
+		var hull_col := Color(0.15, 0.17, 0.22)
+		var parts := [
+			[Vector3(0, 0, 0), Vector3(4.4, 1.3, 1.6), 1.0],
+			[Vector3(-1.7, 0.95, 0.0), Vector3(1.5, 0.9, 1.1), 1.35],
+			[Vector3(2.1, -0.35, 0.2), Vector3(1.7, 0.8, 1.2), 0.7],
+		]
+		for part in parts:
 			var hull := MeshInstance3D.new()
 			var bm := BoxMesh.new()
-			bm.size = Vector3(2.4 + randf() * 3.4, 0.8 + randf() * 1.5,
-					3.0 + randf() * 4.2)
+			bm.size = part[1]
 			hull.mesh = bm
 			var hmat := StandardMaterial3D.new()
-			hmat.albedo_color = Color(0.06, 0.07, 0.09)
-			hmat.emission_enabled = true
-			hmat.emission = _theme_col * 0.06
+			hmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+			hmat.albedo_color = hull_col * float(part[2])
 			hull.material_override = hmat
-			hull.position = Vector3((randf() - 0.5) * 2.4,
-					(randf() - 0.5) * 1.4, (randf() - 0.5) * 3.0)
-			hull.rotation_degrees = Vector3(randf() * 20.0 - 10.0,
-					randf() * 360.0, randf() * 16.0 - 8.0)
+			hull.position = part[0]
+			hull.rotation_degrees = Vector3(randf() * 6.0 - 3.0,
+					randf() * 10.0 - 5.0, randf() * 6.0 - 3.0)
 			root.add_child(hull)
+		# Fensterreihe: warme Lichtpunkte, ein Teil ist "ausgefallen".
+		for w in 8:
+			if randf() < 0.3:
+				continue
+			var win := MeshInstance3D.new()
+			var wq := QuadMesh.new()
+			wq.size = Vector2(0.17, 0.11)
+			win.mesh = wq
+			var wmat := StandardMaterial3D.new()
+			wmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+			wmat.albedo_color = Color(1.0, 0.86, 0.55)
+			win.position = Vector3(-1.9 + float(w) * 0.55, 0.12, 0.82)
+			root.add_child(win)
+		# Abgeknickte Antenne.
+		var ant := MeshInstance3D.new()
+		var am := BoxMesh.new()
+		am.size = Vector3(0.06, 1.5, 0.06)
+		ant.mesh = am
+		var amat := StandardMaterial3D.new()
+		amat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		amat.albedo_color = hull_col * 1.2
+		ant.material_override = amat
+		ant.position = Vector3(1.3, 1.2, 0)
+		ant.rotation_degrees = Vector3(0, 0, 34)
+		root.add_child(ant)
+		# Sonnen-Streiflicht: warmer Glow verkauft die Beleuchtung.
+		var sun := MeshInstance3D.new()
+		var sq2 := QuadMesh.new()
+		sq2.size = Vector2(4.4, 4.4)
+		sun.mesh = sq2
+		var smat2 := ShaderMaterial.new()
+		smat2.shader = _glow_shader
+		smat2.set_shader_parameter("base_color", Color(1.0, 0.82, 0.55))
+		smat2.set_shader_parameter("intensity", 0.10)
+		sun.material_override = smat2
+		sun.position = Vector3(-1.6, 0.7, -0.4)
+		root.add_child(sun)
+		# Truemmerfeld: kleine Fragmente driften um das Wrack.
+		for dtri in 5:
+			var deb := MeshInstance3D.new()
+			var dm := BoxMesh.new()
+			var dsz := 0.14 + randf() * 0.24
+			dm.size = Vector3(dsz, dsz * 0.7, dsz)
+			deb.mesh = dm
+			var dmat := StandardMaterial3D.new()
+			dmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+			dmat.albedo_color = hull_col * (0.7 + randf() * 0.7)
+			deb.material_override = dmat
+			deb.position = Vector3((randf() - 0.5) * 6.5,
+					(randf() - 0.5) * 4.0, (randf() - 0.5) * 3.0)
+			deb.rotation_degrees = Vector3(randf() * 360.0, randf() * 360.0, 0)
+			root.add_child(deb)
 		var lamp := MeshInstance3D.new()
 		var lq := QuadMesh.new()
 		lq.size = Vector2(0.7, 0.7)
@@ -1919,7 +1981,7 @@ func _spawn_flyby(side: float, kind: int) -> void:
 		lmat.set_shader_parameter("base_color", Color(1.0, 0.25, 0.2))
 		lmat.set_shader_parameter("intensity", 1.0)
 		lamp.material_override = lmat
-		lamp.position = Vector3(0, 0.9, 0)
+		lamp.position = Vector3(-1.7, 1.7, 0)
 		root.add_child(lamp)
 		root.set_meta("lamp", lmat)
 	elif kind == 2:
@@ -1930,9 +1992,8 @@ func _spawn_flyby(side: float, kind: int) -> void:
 		rt.outer_radius = 1.5
 		ring.mesh = rt
 		var rm2 := StandardMaterial3D.new()
-		rm2.albedo_color = Color(0.10, 0.11, 0.14)
-		rm2.emission_enabled = true
-		rm2.emission = Color(0.75, 0.85, 1.0) * 0.10
+		rm2.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		rm2.albedo_color = Color(0.22, 0.25, 0.32)
 		ring.material_override = rm2
 		ring.rotation_degrees = Vector3(62, 0, 18)
 		root.add_child(ring)
@@ -1942,9 +2003,8 @@ func _spawn_flyby(side: float, kind: int) -> void:
 			pb.size = Vector3(2.6, 0.06, 1.1)
 			panel.mesh = pb
 			var pmat := StandardMaterial3D.new()
-			pmat.albedo_color = Color(0.05, 0.08, 0.16)
-			pmat.emission_enabled = true
-			pmat.emission = Color(0.25, 0.45, 0.9) * 0.25
+			pmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+			pmat.albedo_color = Color(0.16, 0.30, 0.62)
 			panel.material_override = pmat
 			panel.position = Vector3(pside * 2.3, 0, 0)
 			panel.rotation_degrees = Vector3(0, 0, pside * 8.0)
@@ -1979,7 +2039,8 @@ func _spawn_flyby(side: float, kind: int) -> void:
 		rock.material_override = rmat
 		root.add_child(rock)
 	_flybys.append({ "node": root, "side": side,
-		"speed": 16.0 + randf() * 8.0, "whooshed": false })
+		"speed": 16.0 + randf() * 8.0, "whooshed": false,
+		"tumble": (randf() - 0.5) * 0.3 })
 
 
 ## Fortlaufende Beat-Zahl der Song-Zeit (fuer BPM-synchrone Choreografie).
@@ -3044,6 +3105,14 @@ func _capture_results_shot() -> void:
 
 
 func _capture_after_first_note() -> void:
+	# Harness: je ein Wrack + eine Station sichtbar platzieren, damit der
+	# Screenshot die Vorbeiflug-Optik mitprueft.
+	_spawn_flyby(-1.0, 0)
+	_spawn_flyby(1.0, 2)
+	for fb in _flybys:
+		if is_instance_valid(fb.node):
+			fb.node.position.z = -26.0
+		fb.speed = 0.0
 	var idx := mini(6, _beatmap.hit_objects.size() - 1)
 	var target := _beatmap.hit_objects[idx].time - 150.0
 	var guard := 0
