@@ -2273,7 +2273,9 @@ func _build_flight_plan() -> void:
 	var k := 0
 	var pt := t0 + bar * 8.0
 	while pt < t_end - 4000.0:
-		var fkind := (seed_h / 7 + k) % 2
+		# Nur noch Asteroiden + (jeder 5.) Planeten-Pass — Wracks und
+		# Stationen sind auf Nutzerwunsch komplett raus.
+		var fkind := 1
 		if k % 5 == 2:
 			fkind = 3
 		_flight_plan.append({ "t": pt - 2600.0, "type": "flyby",
@@ -3578,7 +3580,7 @@ func _capture_results_shot() -> void:
 func _capture_after_first_note() -> void:
 	# Harness: je ein Wrack + eine Station sichtbar platzieren, damit der
 	# Screenshot die Vorbeiflug-Optik mitprueft.
-	_spawn_flyby(-1.0, 0)
+	_spawn_flyby(-1.0, 1)
 	_spawn_flyby(1.0, 3)
 	for fb in _flybys:
 		if is_instance_valid(fb.node):
