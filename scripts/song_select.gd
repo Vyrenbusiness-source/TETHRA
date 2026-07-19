@@ -1318,7 +1318,7 @@ func _open_download_panel() -> void:
 	pack_row.add_child(pack_btn)
 
 	_dl_status = Label.new()
-	_dl_status.text = "Lade Vorschläge…"
+	_dl_say("Lade Vorschläge…")
 	_dl_status.add_theme_font_size_override("font_size", 13)
 	_dl_status.add_theme_color_override("font_color", COL_DIM)
 	vb.add_child(_dl_status)
@@ -1345,11 +1345,23 @@ func _open_download_panel() -> void:
 	_mirror.search("")
 
 
+## Status-Zeile sicher setzen — das Panel kann laengst geschlossen sein,
+## waehrend Pack-Downloads im Hintergrund weiterlaufen (freed-Guard!).
+func _dl_say(msg: String) -> void:
+	if _dl_status != null and is_instance_valid(_dl_status):
+		_dl_status.text = msg
+
+
 func _close_download_panel() -> void:
 	_preview.stop()
 	if _dl_overlay != null:
 		_dl_overlay.queue_free()
 		_dl_overlay = null
+	# Dangling-Referenzen kappen: nach queue_free sind sie NICHT null,
+	# aber tot — Callbacks laufender Downloads muessen das ueberleben.
+	_dl_status = null
+	_dl_results_box = null
+	_dl_scroll = null
 	_dl_rows.clear()
 
 
@@ -1362,7 +1374,7 @@ func _run_mirror_search() -> void:
 	_dl_end_reached = false
 	_dl_auto_pages = 0
 	_dl_loading_more = true
-	_dl_status.text = ("Suche \"%s\"…" % q) if q != "" else "Lade Vorschläge…"
+	_dl_say(("Suche \"%s\"…" % q) if q != "" else "Lade Vorschläge…")
 	for c in _dl_results_box.get_children():
 		c.queue_free()
 	_dl_rows.clear()
@@ -1375,28 +1387,32 @@ func _on_mirror_search_failed(message: String) -> void:
 	# und dieselbe Seite erneut anfordern (max. 5 Versuche).
 	if _pack_active:
 		_pack_retries += 1
-		if _pack_retries <= 5 and _dl_overlay != null:
-			_dl_status.text = "Mirror kurz nicht erreichbar — versuche erneut…"
+		if _pack_retries <= 5:
+			_dl_say("Mirror kurz nicht erreichbar — versuche erneut…")
 			get_tree().create_timer(1.5, true).timeout.connect(func():
-				if _pack_active and _dl_overlay != null:
+				if _pack_active:
 					_dl_loading_more = true
 					_mirror.search(_dl_query, _dl_offset))
 		else:
 			_pack_active = false
-			if _dl_status != null:
-				_dl_status.text = "Pack abgebrochen: Mirror nicht erreichbar — spaeter erneut versuchen."
+			_dl_say("Pack abgebrochen: Mirror nicht erreichbar — spaeter erneut versuchen.")
 		return
 	if _dl_suggest_fallback:
 		_dl_suggest_fallback = false
 		_dl_query = "4k"
 		_mirror.search("4k")
 		return
-	if _dl_status != null:
-		_dl_status.text = message
+	_dl_say(message)
 
 
 func _on_mirror_search_done(results: Array, raw_count: int, offset: int) -> void:
-	if _dl_results_box == null:
+	if _dl_results_box == null or not is_instance_valid(_dl_results_box):
+		# Panel zu — aber ein laufendes Pack braucht die Ergebnisse weiter.
+		if _pack_active:
+			_dl_loading_more = false
+			_dl_end_reached = raw_count < 50
+			_dl_last_results.append_array(results)
+			_pack_fill()
 		return
 	_dl_loading_more = false
 	_dl_end_reached = raw_count < 50
@@ -1422,9 +1438,10 @@ func _on_mirror_search_done(results: Array, raw_count: int, offset: int) -> void
 			continue
 		if not _dl_passes(r, owned, lo, hi):
 			continue
-		_dl_results_box.add_child(_make_online_card(r))
-	_dl_status.text = "%d Sets geladen%s" % [_dl_rows.size(),
-		"  ·  Ende der Liste" if _dl_end_reached else " — weiter scrollen fuer mehr"]
+		if is_instance_valid(_dl_results_box):
+			_dl_results_box.add_child(_make_online_card(r))
+	_dl_say("%d Sets geladen%s" % [_dl_rows.size(),
+		"  ·  Ende der Liste" if _dl_end_reached else " — weiter scrollen fuer mehr"])
 	_maybe_load_more()
 
 
@@ -1443,7 +1460,7 @@ func _start_pack() -> void:
 	_pack_done = 0
 	_pack_pages = 0
 	_pack_retries = 0
-	_dl_status.text = "Pack: suche Sets im Bereich %.1f–%.1f★…" % [_pack_lo, _pack_hi]
+	_dl_say("Pack: suche Sets im Bereich %.1f–%.1f★…" % [_pack_lo, _pack_hi])
 	_pack_fill()
 
 
@@ -1475,7 +1492,7 @@ func _pack_fill() -> void:
 		_dl_offset += 50
 		# Den Mirror nicht mit Request-Bursts fluten (drosselt sonst: HTTP 0).
 		get_tree().create_timer(0.45, true).timeout.connect(func():
-			if _pack_active and _dl_overlay != null:
+			if _pack_active:
 				_mirror.search(_dl_query, _dl_offset)
 			else:
 				_dl_loading_more = false)
@@ -1487,16 +1504,16 @@ func _update_pack_status() -> void:
 		return
 	if _pack_started.is_empty() and (_dl_end_reached or _pack_pages >= 12):
 		_pack_active = false
-		_dl_status.text = "Pack: nichts Passendes im Bereich %.1f–%.1f★ gefunden." % [_pack_lo, _pack_hi]
+		_dl_say("Pack: nichts Passendes im Bereich %.1f–%.1f★ gefunden." % [_pack_lo, _pack_hi])
 		return
-	_dl_status.text = "Pack (%.1f–%.1f★): %d/%d fertig  ·  %d laufen" % [
+	_dl_say("Pack (%.1f–%.1f★): %d/%d fertig  ·  %d laufen" % [
 		_pack_lo, _pack_hi, _pack_done, _pack_started.size(),
-		_pack_started.size() - _pack_done]
+		_pack_started.size() - _pack_done])
 	if _pack_done >= _pack_started.size() \
 			and (_pack_started.size() >= _pack_want or _dl_end_reached or _pack_pages >= 12):
 		_pack_active = false
-		_dl_status.text = "Pack fertig: %d Maps geladen (%.1f–%.1f★) — viel Spass!" % [
-			_pack_done, _pack_lo, _pack_hi]
+		_dl_say("Pack fertig: %d Maps geladen (%.1f–%.1f★) — viel Spass!" % [
+			_pack_done, _pack_lo, _pack_hi])
 
 
 ## Zu wenige sichtbare Karten (Filter/Besitz frisst viel raus)? Dann sofort
@@ -1510,7 +1527,7 @@ func _maybe_load_more() -> void:
 	_dl_auto_pages += 1
 	_dl_loading_more = true
 	_dl_offset += 50
-	_dl_status.text = "%d Sets  ·  lade mehr passende…" % _dl_rows.size()
+	_dl_say("%d Sets  ·  lade mehr passende…" % _dl_rows.size())
 	_mirror.search(_dl_query, _dl_offset)
 
 
@@ -1524,7 +1541,7 @@ func _on_dl_scrolled(_v: float) -> void:
 		return
 	_dl_loading_more = true
 	_dl_offset += 50
-	_dl_status.text = "Lade mehr…"
+	_dl_say("Lade mehr…")
 	_mirror.search(_dl_query, _dl_offset)
 
 
@@ -1560,16 +1577,16 @@ func _render_dl_results() -> void:
 			fresh.append(r)
 	if fresh.is_empty():
 		if _dl_last_results.is_empty():
-			_dl_status.text = "Keine Ergebnisse."
+			_dl_say("Keine Ergebnisse.")
 		elif _dl_star_filter != 0:
-			_dl_status.text = "Suche Sets im Bereich %s…" % DL_STAR_FILTERS[_dl_star_filter][0]
+			_dl_say("Suche Sets im Bereich %s…" % DL_STAR_FILTERS[_dl_star_filter][0])
 		else:
-			_dl_status.text = "Suche neue Sets…"
+			_dl_say("Suche neue Sets…")
 		_maybe_load_more()
 		return
 	var hidden := _dl_last_results.size() - fresh.size()
 	var hidden_txt := ("  ·  %d ausgeblendet" % hidden) if hidden > 0 else ""
-	_dl_status.text = "%d neue 4K-Sets%s" % [fresh.size(), hidden_txt]
+	_dl_say("%d neue 4K-Sets%s" % [fresh.size(), hidden_txt])
 	for r in fresh:
 		_dl_results_box.add_child(_make_online_card(r))
 	_maybe_load_more()
@@ -1738,8 +1755,7 @@ func _on_mirror_download_failed(set_id: int, message: String) -> void:
 		_pack_done += 1
 		_update_pack_status()
 		return
-	if _dl_status != null:
-		_dl_status.text = message
+	_dl_say(message)
 
 
 func _on_mirror_download_done(set_id: int, osz_path: String) -> void:
@@ -1755,7 +1771,7 @@ func _on_mirror_download_done(set_id: int, osz_path: String) -> void:
 		_update_pack_status()
 		return
 	if _dl_status != null:
-		_dl_status.text = "Heruntergeladen — Bibliothek wird aktualisiert…"
+		_dl_say("Heruntergeladen — Bibliothek wird aktualisiert…")
 	for ms in _filtered:
 		if ms.osz_path == osz_path:
 			_select_set(ms, ms.difficulty_count() - 1)
@@ -1779,15 +1795,15 @@ func _preview_online(url: String, set_id: int = -1) -> void:
 		_dl_preview_req.request_completed.connect(_on_preview_bytes)
 	_dl_preview_req.cancel_request()
 	if _dl_status != null:
-		_dl_status.text = "♪ Vorschau laedt…"
+		_dl_say("♪ Vorschau laedt…")
 	if _dl_preview_req.request(url) != OK and _dl_status != null:
-		_dl_status.text = "Vorschau nicht verfuegbar."
+		_dl_say("Vorschau nicht verfuegbar.")
 
 
 func _on_preview_bytes(result: int, code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
 	if result != HTTPRequest.RESULT_SUCCESS or code != 200 or body.is_empty():
 		if _dl_status != null:
-			_dl_status.text = "Vorschau nicht verfuegbar."
+			_dl_say("Vorschau nicht verfuegbar.")
 		return
 	# b.ppy.sh liefert trotz .mp3-Endung OGG Vorbis — Magic-Bytes pruefen.
 	var stream: AudioStream = null
@@ -1801,12 +1817,12 @@ func _on_preview_bytes(result: int, code: int, _headers: PackedStringArray, body
 			stream = mp3
 	if stream == null:
 		if _dl_status != null:
-			_dl_status.text = "Vorschau nicht abspielbar."
+			_dl_say("Vorschau nicht abspielbar.")
 		return
 	_preview.stream = stream
 	_fade_in_preview(0.0)
 	if _dl_status != null:
-		_dl_status.text = "♪ Vorschau laeuft"
+		_dl_say("♪ Vorschau laeuft")
 
 
 
