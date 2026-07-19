@@ -643,24 +643,33 @@ func _build_starfield() -> void:
 	gr.position = Vector3(0, 2.5, Z_FAR - 3.6)
 	_cosmos.add_child(gr)
 
-	# Ferne Planeten: prozedural (Kugel-Licht, Baender, Terminator, Ring)
-	# in natuerlichen Farben — keine Glow-Discs mehr.
+	# Ferne Planeten: ECHTE Textur-Planeten (Community-PBR-Maps, seed-gewaehlt
+	# pro Map) + prozeduraler Ringplanet. Nachtseiten zeigen Stadtlichter/Lava.
 	var planet_shader: Shader = load("res://shaders/planet.gdshader")
+	var tex_pool := ["earth_like", "ocean_planet", "desert_planet",
+			"lava_planet", "mining_planet", "ecumenopolis"]
+	var seed_p: int = hash(GameSession.osu_filename)
+	var anchor_tex: String = tex_pool[seed_p % tex_pool.size()]
+	var dest_tex: String = tex_pool[(seed_p / 7 + 2) % tex_pool.size()]
+	if dest_tex == anchor_tex:
+		dest_tex = tex_pool[(seed_p / 7 + 3) % tex_pool.size()]
 	var pdefs := [
-		# [Pos, Groesse, Basis, Baender, Atmosphaere, Bandfreq, Seed, Ring]
-		# Grosser Gasriese tief am Horizont (Anker der Komposition) …
+		# [Pos, Groesse, Basis, Baender, Atmosphaere, Bandfreq, Seed, Ring, Tex]
+		# Grosser Planet tief am Horizont (Anker der Komposition) …
 		[Vector3(-15.5, 4.8, Z_FAR - 7.5), 10.5, Color(0.72, 0.56, 0.40),
-			Color(0.47, 0.32, 0.22), Color(0.95, 0.78, 0.58), 11.0, 3.7, 0.0],
-		# … Ringplanet hoch rechts …
+			Color(0.47, 0.32, 0.22), Color(0.95, 0.78, 0.58), 11.0, 3.7, 0.0,
+			anchor_tex],
+		# … Ringplanet hoch rechts (bleibt prozedural — der Ring-Look sitzt) …
 		[Vector3(14.5, 10.0, Z_FAR - 6.0), 5.8, Color(0.62, 0.72, 0.86),
-			Color(0.34, 0.46, 0.66), Color(0.70, 0.82, 1.0), 6.0, 9.2, 0.85],
-		# … und ein kleiner grauer Mond nahe dem Gasriesen.
+			Color(0.34, 0.46, 0.66), Color(0.70, 0.82, 1.0), 6.0, 9.2, 0.85, ""],
+		# … und ein ECHTER Mond nahe dem Anker.
 		[Vector3(-9.0, 8.6, Z_FAR - 5.0), 1.7, Color(0.62, 0.60, 0.58),
-			Color(0.42, 0.41, 0.40), Color(0.75, 0.75, 0.78), 3.0, 21.4, 0.0],
-		# ZIEL der Reise: tuerkiser Ringplanet, startet tief unterm Horizont
-		# und steigt ueber die Songdauer auf (Docking-Finale).
+			Color(0.42, 0.41, 0.40), Color(0.75, 0.75, 0.78), 3.0, 21.4, 0.0,
+			"moon_like"],
+		# ZIEL der Reise: echter Planet, steigt ueber die Songdauer auf.
 		[Vector3(2.0, -2.5, Z_FAR - 8.0), 6.5, Color(0.45, 0.62, 0.60),
-			Color(0.28, 0.42, 0.44), Color(0.65, 0.95, 0.90), 8.0, 14.6, 0.9],
+			Color(0.28, 0.42, 0.44), Color(0.65, 0.95, 0.90), 8.0, 14.6, 0.9,
+			dest_tex],
 	]
 	for pdef in pdefs:
 		var planet := MeshInstance3D.new()
@@ -675,6 +684,15 @@ func _build_starfield() -> void:
 		pm.set_shader_parameter("band_freq", pdef[5])
 		pm.set_shader_parameter("seed", pdef[6])
 		pm.set_shader_parameter("ring_amount", pdef[7])
+		# Echte Textur zuweisen, wenn das Asset existiert (sonst prozedural).
+		if pdef.size() > 8 and str(pdef[8]) != "":
+			var dpath := "res://assets_game/planets/%s_diffuse.webp" % str(pdef[8])
+			if ResourceLoader.exists(dpath):
+				pm.set_shader_parameter("use_texture", 1.0)
+				pm.set_shader_parameter("tex_diffuse", load(dpath))
+				var epath := "res://assets_game/planets/%s_emission.webp" % str(pdef[8])
+				if ResourceLoader.exists(epath):
+					pm.set_shader_parameter("tex_emission", load(epath))
 		planet.material_override = pm
 		planet.position = pdef[0]
 		_cosmos.add_child(planet)
@@ -2070,30 +2088,46 @@ func _spawn_flyby(side: float, kind: int) -> void:
 		root.add_child(lamp)
 		root.set_meta("lamp", lmat)
 	elif kind == 2:
-		# RAUMSTATION: Ring-Modul mit Solarpanels und Positionslicht.
-		var ring := MeshInstance3D.new()
-		var rt := TorusMesh.new()
-		rt.inner_radius = 0.9
-		rt.outer_radius = 1.5
-		ring.mesh = rt
-		var rm2 := StandardMaterial3D.new()
-		rm2.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		rm2.albedo_color = Color(0.22, 0.25, 0.32)
-		ring.material_override = rm2
-		ring.rotation_degrees = Vector3(62, 0, 18)
-		root.add_child(ring)
-		for pside in [-1.0, 1.0]:
-			var panel := MeshInstance3D.new()
-			var pb := BoxMesh.new()
-			pb.size = Vector3(2.6, 0.06, 1.1)
-			panel.mesh = pb
-			var pmat := StandardMaterial3D.new()
-			pmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-			pmat.albedo_color = Color(0.16, 0.30, 0.62)
-			panel.material_override = pmat
-			panel.position = Vector3(pside * 2.3, 0, 0)
-			panel.rotation_degrees = Vector3(0, 0, pside * 8.0)
-			root.add_child(panel)
+		# RAUMSTATION: echtes 3D-Modell (Community-Asset), unshaded texturiert,
+		# auf einheitliche Groesse normiert. Fallback: einfacher Ring.
+		var choice := randi() % 2
+		var base_path := "res://assets_game/stations/station01.obj" if choice == 0 \
+				else "res://assets_game/stations/station06_base.obj"
+		if ResourceLoader.exists(base_path):
+			var parts: Array = [[base_path,
+				"station01_diffuse" if choice == 0 else "station06_base_diffuse"]]
+			if choice == 1:
+				parts.append(["res://assets_game/stations/station06_ring.obj",
+					"station06_ring_diffuse"])
+			var norm := 0.0
+			for part in parts:
+				var mi := MeshInstance3D.new()
+				mi.mesh = load(str(part[0]))
+				var mmat := StandardMaterial3D.new()
+				mmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+				var dt := "res://assets_game/stations/%s.webp" % str(part[1])
+				if ResourceLoader.exists(dt):
+					mmat.albedo_texture = load(dt)
+				mmat.albedo_color = Color(0.95, 1.0, 1.1)
+				mi.material_override = mmat
+				if norm == 0.0:
+					var aabb: AABB = mi.mesh.get_aabb()
+					norm = 5.0 / maxf(maxf(aabb.size.x, aabb.size.y),
+							maxf(aabb.size.z, 0.001))
+				mi.scale = Vector3.ONE * norm
+				mi.rotation_degrees = Vector3(12, randf() * 360.0, 6)
+				root.add_child(mi)
+		else:
+			var ring := MeshInstance3D.new()
+			var rt := TorusMesh.new()
+			rt.inner_radius = 0.9
+			rt.outer_radius = 1.5
+			ring.mesh = rt
+			var rm2 := StandardMaterial3D.new()
+			rm2.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+			rm2.albedo_color = Color(0.22, 0.25, 0.32)
+			ring.material_override = rm2
+			root.add_child(ring)
 		var plight := MeshInstance3D.new()
 		var plq := QuadMesh.new()
 		plq.size = Vector2(0.55, 0.55)
@@ -2103,7 +2137,7 @@ func _spawn_flyby(side: float, kind: int) -> void:
 		plmat.set_shader_parameter("base_color", Color(0.4, 1.0, 0.6))
 		plmat.set_shader_parameter("intensity", 1.0)
 		plight.material_override = plmat
-		plight.position = Vector3(0, 1.1, 0)
+		plight.position = Vector3(0, 1.4, 0)
 		root.add_child(plight)
 		root.set_meta("lamp", plmat)
 	else:

@@ -13,6 +13,11 @@ uniform float seed = 0.0;
 uniform float ring_amount = 0.0;
 // Sonnenrichtung — wandert ueber die Songdauer (Reise-Beleuchtung).
 uniform vec3 light_dir = vec3(-0.55, 0.35, 0.75);
+// ECHTE Planeten-Texturen (equirectangular): diffuse + Nachtseiten-Emission
+// (Stadtlichter/Lava). use_texture schaltet vom prozeduralen Look um.
+uniform float use_texture = 0.0;
+uniform sampler2D tex_diffuse: source_color, filter_linear_mipmap;
+uniform sampler2D tex_emission: source_color, hint_default_black, filter_linear_mipmap;
 uniform float intensity = 1.0;
 uniform float t = 0.0;
 
@@ -65,10 +70,19 @@ void fragment() {
 		surf *= 1.0 + detail * 0.18;
 		// Pole leicht abdunkeln (wirkt sofort planetarer).
 		surf *= 0.82 + 0.18 * (1.0 - abs(n.y) * abs(n.y));
+		// ECHTE Textur: Kugel-UV (equirectangular), langsame Rotation;
+		// die Nachtseite zeigt die Emission (Stadtlichter, Lavastroeme).
+		vec3 night = vec3(0.0);
+		if (use_texture > 0.5) {
+			vec2 tuv = vec2(fract(atan(n.x, n.z) / TAU + t * 0.004 + seed * 0.1),
+					acos(clamp(n.y, -1.0, 1.0)) / PI);
+			surf = texture(tex_diffuse, tuv).rgb;
+			night = texture(tex_emission, tuv).rgb;
+		}
 		// Sonne von schraeg links: Terminator + Limb-Darkening.
 		float diff = clamp(dot(n, l), 0.0, 1.0);
 		float limb = pow(z, 0.45);
-		col = surf * (0.05 + diff) * limb;
+		col = surf * (0.05 + diff) * limb + night * (1.0 - diff) * 0.9 * limb;
 		// Warmes Streiflicht ENTLANG des Terminators (Daemmerungszone).
 		float term = smoothstep(0.02, 0.18, diff) * (1.0 - smoothstep(0.18, 0.5, diff));
 		col += atmo_col.rgb * term * 0.22;
