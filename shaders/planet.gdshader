@@ -11,6 +11,8 @@ uniform vec4 atmo_col: source_color = vec4(0.65, 0.75, 0.95, 1.0);
 uniform float band_freq = 9.0;
 uniform float seed = 0.0;
 uniform float ring_amount = 0.0;
+// Sonnenrichtung — wandert ueber die Songdauer (Reise-Beleuchtung).
+uniform vec3 light_dir = vec3(-0.55, 0.35, 0.75);
 uniform float intensity = 1.0;
 uniform float t = 0.0;
 
@@ -44,7 +46,7 @@ void fragment() {
 	float r = length(pp);
 	vec3 col = vec3(0.0);
 	float alpha = 0.0;
-	vec3 l = normalize(vec3(-0.55, 0.35, 0.75));
+	vec3 l = normalize(light_dir);
 	if (r < 1.0) {
 		float z = sqrt(max(1.0 - r * r, 0.0));
 		vec3 n = vec3(pp, z);

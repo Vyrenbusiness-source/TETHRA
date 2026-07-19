@@ -26,6 +26,27 @@ static func hit_stream() -> AudioStreamWAV:
 	return _wav(data)
 
 
+## Vorbeiflug-Whoosh: tiefpass-gefiltertes Rauschen mit An-/Abschwellen.
+static func whoosh_stream() -> AudioStreamWAV:
+	var dur := 0.55
+	var n := int(RATE * dur)
+	var data := PackedByteArray()
+	data.resize(n * 2)
+	var noise_state := 777
+	var last := 0.0
+	for i in n:
+		var t := float(i) / RATE
+		noise_state = (noise_state * 1103515245 + 12345) & 0x7FFFFFFF
+		var raw := float(noise_state) / float(0x7FFFFFFF) * 2.0 - 1.0
+		# Doppler-Gefuehl: Filter oeffnet sich zur Mitte hin und schliesst.
+		var k := 0.86 - 0.10 * sin(PI * t / dur)
+		last = last * k + raw * (1.0 - k)
+		var env := pow(sin(PI * t / dur), 1.6)
+		var v := int(clampf(last * env * 1.6, -1.0, 1.0) * 32767.0)
+		data.encode_s16(i * 2, v)
+	return _wav(data)
+
+
 ## Dumpfer Noise-Burst fuer Misses.
 static func miss_stream() -> AudioStreamWAV:
 	var dur := 0.12

@@ -106,6 +106,30 @@ const PLANET_DRIFT := [
 	Vector3(3.2, 0.9, 0.0), Vector3(-2.0, 8.5, 0.0)]
 # Wetterleuchten-Cooldown (Bass-Kicks zucken im Nebel).
 var _sheet_cd := 0.0
+# KOSMOS: der komplette Hintergrund haengt unter diesem frei beweglichen
+# Node — die Bahn bleibt fix, das UNIVERSUM fliegt (Roll/Bank/Climb).
+var _cosmos: Node3D
+var _cosmos_roll := 0.0
+var _cosmos_roll_target := 0.0
+var _cosmos_bank := 0.0
+var _cosmos_bank_target := 0.0
+var _cosmos_lift := 0.0
+var _cosmos_lift_target := 0.0
+# Beat-Schub-Reise: akkumulierte Distanz statt linearer Zeit.
+var _travel := 0.0
+# Screen-FX (Aberration/Schockwelle/Glitch/Vignette).
+var _screen_mat: ShaderMaterial
+var _shock := -1.0
+var _glitch := 0.0
+var _miss_streak := 0
+# Schwarzes Loch + God-Rays.
+var _bh_mat: ShaderMaterial
+var _rays_mat: ShaderMaterial
+# Flug-Choreografie (aus der Map geplant) + aktive Vorbeifluege.
+var _flight_plan: Array = []
+var _flight_idx := 0
+var _flybys: Array = []
+var _whoosh_player: AudioStreamPlayer
 var _star_mat: ShaderMaterial
 var _nebula_mat: ShaderMaterial
 var _nebula_mat2: ShaderMaterial
@@ -198,12 +222,19 @@ func _ready() -> void:
 	_extract_theme_color()
 	_build_world()
 	_build_hud()
+	_build_screen_fx()
+	_build_flight_plan()
 	_build_sound()
 	_beat_player = AudioStreamPlayer.new()
 	_beat_player.stream = Sfx.beat_thump_stream()
 	_beat_player.bus = "Master"
 	_beat_player.volume_db = -16.0
 	add_child(_beat_player)
+	_whoosh_player = AudioStreamPlayer.new()
+	_whoosh_player.stream = Sfx.whoosh_stream()
+	_whoosh_player.bus = "Master"
+	_whoosh_player.volume_db = -13.0
+	add_child(_whoosh_player)
 	if GameSession.tutorial:
 		core.no_fail = true
 		_build_tutorial_steps()
@@ -478,6 +509,10 @@ func _build_horizon() -> void:
 
 
 func _build_starfield() -> void:
+	# KOSMOS-Traeger: alles Himmlische haengt hier drunter und kann als
+	# Ganzes rollen/banken/sinken, ohne die Bahn anzufassen.
+	_cosmos = Node3D.new()
+	add_child(_cosmos)
 	# Breites, hash-gestreutes Sternenfeld (kein "abgeschnittener" Rand)
 	# mit unterschiedlichen Sterngroessen.
 	_star_mm = MultiMesh.new()
@@ -512,7 +547,7 @@ func _build_starfield() -> void:
 	_star_mat.set_shader_parameter("base_color", Color(1, 1, 1))
 	_star_mat.set_shader_parameter("intensity", 0.35)
 	inst.material_override = _star_mat
-	add_child(inst)
+	_cosmos.add_child(inst)
 
 	# Nebel v2: zwei Parallaxe-Ebenen (fern: gross + ruhig, nah: feiner und
 	# schneller driftend) — Domain-Warp-Wolken, Milchstrasse, Sternenstaub.
@@ -528,7 +563,7 @@ func _build_starfield() -> void:
 	_nebula_mat.set_shader_parameter("star_amount", 1.0)
 	neb.material_override = _nebula_mat
 	neb.position = Vector3(0, 7.5, Z_FAR - 9.0)
-	add_child(neb)
+	_cosmos.add_child(neb)
 	var neb2 := MeshInstance3D.new()
 	var nq2 := QuadMesh.new()
 	nq2.size = Vector2(140, 46)
@@ -542,7 +577,7 @@ func _build_starfield() -> void:
 	_nebula_mat2.set_shader_parameter("star_amount", 0.0)
 	neb2.material_override = _nebula_mat2
 	neb2.position = Vector3(4.0, 6.0, Z_FAR - 7.0)
-	add_child(neb2)
+	_cosmos.add_child(neb2)
 
 	# Horizont-Glow: weicher Schein in Songfarbe, verankert die Strecke.
 	var hg := MeshInstance3D.new()
@@ -555,7 +590,7 @@ func _build_starfield() -> void:
 	hm.set_shader_parameter("intensity", 0.13)
 	hg.material_override = hm
 	hg.position = Vector3(0, 1.2, Z_FAR - 4.0)
-	add_child(hg)
+	_cosmos.add_child(hg)
 	_horizon_mat = hm
 
 	# AURORA: wehende Polarlicht-Vorhaenge ueber dem Horizont.
@@ -569,7 +604,31 @@ func _build_starfield() -> void:
 	_aurora_mat.set_shader_parameter("col_b", _theme_kiai)
 	au.material_override = _aurora_mat
 	au.position = Vector3(0, 6.8, Z_FAR - 5.5)
-	add_child(au)
+	_cosmos.add_child(au)
+
+	# SCHWARZES LOCH: Gravitationslinse verbiegt Nebel/Sterne dahinter,
+	# heisse Akkretionsscheibe rotiert (Kiai beschleunigt sie).
+	var bh := MeshInstance3D.new()
+	var bhq := QuadMesh.new()
+	bhq.size = Vector2(7.5, 7.5)
+	bh.mesh = bhq
+	_bh_mat = ShaderMaterial.new()
+	_bh_mat.shader = load("res://shaders/black_hole.gdshader")
+	bh.material_override = _bh_mat
+	bh.position = Vector3(19.5, 13.5, Z_FAR - 6.5)
+	_cosmos.add_child(bh)
+
+	# GOD-RAYS: Lichtfaecher aus dem Fluchtpunkt, atmet im Takt.
+	var gr := MeshInstance3D.new()
+	var gq := QuadMesh.new()
+	gq.size = Vector2(64, 26)
+	gr.mesh = gq
+	_rays_mat = ShaderMaterial.new()
+	_rays_mat.shader = load("res://shaders/god_rays.gdshader")
+	_rays_mat.set_shader_parameter("base_color", _theme_col.lerp(Color(1, 1, 1), 0.3))
+	gr.material_override = _rays_mat
+	gr.position = Vector3(0, 2.5, Z_FAR - 3.6)
+	_cosmos.add_child(gr)
 
 	# Ferne Planeten: prozedural (Kugel-Licht, Baender, Terminator, Ring)
 	# in natuerlichen Farben — keine Glow-Discs mehr.
@@ -605,7 +664,7 @@ func _build_starfield() -> void:
 		pm.set_shader_parameter("ring_amount", pdef[7])
 		planet.material_override = pm
 		planet.position = pdef[0]
-		add_child(planet)
+		_cosmos.add_child(planet)
 		_planet_mats.append(pm)
 		_planet_nodes.append(planet)
 		_planet_base.append(pdef[0])
@@ -697,12 +756,12 @@ func _on_note_spawned(index: int) -> void:
 	root.add_child(ring)
 	var glow := MeshInstance3D.new()
 	var q := QuadMesh.new()
-	q.size = Vector2(1.8, 1.8)
+	q.size = Vector2(2.3, 2.3)
 	glow.mesh = q
 	var gm := ShaderMaterial.new()
 	gm.shader = _glow_shader
 	gm.set_shader_parameter("base_color", col)
-	gm.set_shader_parameter("intensity", 0.35 if clean else 0.7)
+	gm.set_shader_parameter("intensity", 0.35 if clean else 0.95)
 	glow.material_override = gm
 	glow.rotation_degrees = Vector3(-90, 0, 0)
 	glow.position = Vector3(0, -0.02, 0)
@@ -767,7 +826,12 @@ func _on_note_judged(index: int, result: Dictionary) -> void:
 	var q: int = result.quality
 	if q == ManiaCore.Quality.MISS:
 		_play_miss()
+		# 3 Misses in Folge: kurzer Schadens-Glitch (Screen-FX).
+		_miss_streak += 1
+		if _miss_streak >= 3:
+			_glitch = 1.0
 	else:
+		_miss_streak = 0
 		_play_hit([1.0, 1.0, 0.944, 0.891, 0.794][q])
 	var col: int = result.get("column", 0)
 	var sub := ""
@@ -826,6 +890,7 @@ func _trigger_overdrive() -> void:
 		return
 	_overdrive = 2.0 * fx
 	_shake = 0.45 * fx
+	_shock = 0.0
 	# Vollbild-Blitz.
 	var flash := ColorRect.new()
 	flash.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -1394,8 +1459,11 @@ func _process(delta: float) -> void:
 		_camera.position.x = 0.0
 		_camera.position.y = 1.78
 
-	# REISE-UHR: Song-Fortschritt (0..1) + Docking-Fenster (letzte 5s).
-	var journey_p := clampf(t / _song_len_ms, 0.0, 1.0)
+	# REISE-UHR: Beat-Schub-Distanz — jeder Downbeat schiebt sichtbar an,
+	# dazwischen gleitet man aus. Bei Effekte=Aus laeuft die Reise linear
+	# (gleiches Ziel, ohne Ruckeln). Docking bleibt zeitbasiert.
+	_travel += delta * ((0.55 + _beat_env * 1.1) if fx > 0.0 else 0.82)
+	var journey_p := clampf(_travel * 1000.0 / (_song_len_ms * 0.82), 0.0, 1.0)
 	var dock_mix := clampf((t - (_song_len_ms - 5000.0)) / 5000.0, 0.0, 1.0)
 	dock_mix = dock_mix * dock_mix * (3.0 - 2.0 * dock_mix)
 
@@ -1434,6 +1502,10 @@ func _process(delta: float) -> void:
 				_theme_col.s, _theme_col.v)
 		_nebula_mat.set_shader_parameter("col_a",
 			jc.lerp(_theme_kiai, _kiai_mix * 0.45))
+		# NASSE BAHN: der Himmel spiegelt sich Richtung Horizont.
+		if _road_mat != null:
+			_road_mat.set_shader_parameter("sky_color", jc.lerp(_theme_kiai, _kiai_mix))
+			_road_mat.set_shader_parameter("refl_amount", (0.20 + _beat_env * 0.08) * fx)
 		if _nebula_mat2 != null:
 			_nebula_mat2.set_shader_parameter("drift", _nebula_drift * 1.8)
 			_nebula_mat2.set_shader_parameter("pulse", _beat_env * 0.6)
@@ -1464,7 +1536,7 @@ func _process(delta: float) -> void:
 		if pi < _planet_base.size() and pi < PLANET_DRIFT.size():
 			var ppos: Vector3 = _planet_base[pi] + PLANET_DRIFT[pi] * journey_p
 			if pi == _planet_nodes.size() - 1:
-				journey_scale = 0.55 + journey_p * 0.75 + dock_mix * 1.6
+				journey_scale = 0.55 + pow(journey_p, 1.55) * 0.95 + dock_mix * 1.6
 				ppos = ppos.lerp(Vector3(0.0, 6.2, Z_FAR - 6.0), dock_mix)
 			pn.position = ppos
 		pn.scale = Vector3.ONE * journey_scale \
@@ -1476,6 +1548,76 @@ func _process(delta: float) -> void:
 	if fx > 0.0 and _bass > 0.72 and _sheet_cd <= 0.0:
 		_sheet_cd = 0.5 + randf() * 0.8
 		_spawn_sheet_lightning()
+
+	# SCREEN-FX: Aberration auf Bass-Kicks, Overdrive-Schockwelle, Glitch.
+	if _screen_mat != null:
+		if _shock >= 0.0:
+			_shock += delta * 1.6
+			if _shock > 1.5:
+				_shock = -1.0
+		_glitch = maxf(_glitch - delta * 2.2, 0.0)
+		_screen_mat.set_shader_parameter("aberration",
+				(clampf((_bass - 0.45) * 1.4, 0.0, 1.0) + _beat_env * 0.12) * fx)
+		_screen_mat.set_shader_parameter("shock", _shock)
+		_screen_mat.set_shader_parameter("shock_str", fx)
+		_screen_mat.set_shader_parameter("glitch", _glitch * fx)
+		_screen_mat.set_shader_parameter("vignette", 0.26 * fx)
+
+	# Schwarzes Loch + God-Rays atmen mit Musik und Reise.
+	if _bh_mat != null:
+		_bh_mat.set_shader_parameter("t", t / 1000.0)
+		_bh_mat.set_shader_parameter("spin", 0.25 + _kiai_mix * 0.9)
+		_bh_mat.set_shader_parameter("strength", fx)
+	if _rays_mat != null:
+		_rays_mat.set_shader_parameter("rot", t / 4300.0)
+		_rays_mat.set_shader_parameter("intensity",
+				(0.05 + _beat_env * 0.05 + _kiai_mix * 0.04 + dock_mix * 0.22) * fx)
+
+	# SONNENWANDERUNG: die Lichtrichtung aller Planeten wandert ueber den Song.
+	var sun_dir := Vector3(-0.55 + journey_p * 1.15, 0.35 - journey_p * 0.05, 0.75).normalized()
+	for pm2 in _planet_mats:
+		pm2.set_shader_parameter("light_dir", sun_dir)
+
+	# FLUGPLAN abarbeiten (Vorbeifluege, Ueberkopf-Roll, Break-Kino).
+	while _flight_idx < _flight_plan.size() and t >= float(_flight_plan[_flight_idx].t):
+		_run_flight_event(_flight_plan[_flight_idx], t)
+		_flight_idx += 1
+	# Aktive Vorbeifluege bewegen; kurz vor der Passage bankt der Kosmos weg
+	# und das Notlicht der Wracks blinkt.
+	var bank_req := 0.0
+	for fb in _flybys:
+		var fnode: Node3D = fb.node
+		if not is_instance_valid(fnode):
+			continue
+		fnode.position.z += delta * float(fb.speed) * (1.0 + _beat_env * 0.25)
+		if fnode.has_meta("lamp"):
+			(fnode.get_meta("lamp") as ShaderMaterial).set_shader_parameter(
+				"intensity", 0.35 + 1.0 * float(int(t * 0.004) % 2))
+		if fnode.position.z > -16.0 and fnode.position.z < 4.0:
+			bank_req = -float(fb.side) * 0.055
+		if not bool(fb.whooshed) and fnode.position.z > -7.0:
+			fb.whooshed = true
+			if _whoosh_player != null and fx > 0.0:
+				_whoosh_player.play()
+		if fnode.position.z > 18.0:
+			fnode.queue_free()
+	_flybys = _flybys.filter(func(fb2):
+		return is_instance_valid(fb2.node) and fb2.node.position.z <= 18.0)
+	_cosmos_bank_target = bank_req
+
+	# KOSMOS-Transform: Roll (Ueberkopf-Flug), Bank (Ausweichen), Lift
+	# (Hochziehen) — Pivot nahe dem Fluchtpunkt, Bahn bleibt unberuehrt.
+	if fx <= 0.0:
+		_cosmos_roll_target = 0.0
+		_cosmos_bank_target = 0.0
+		_cosmos_lift_target = 0.0
+	_cosmos_roll = lerpf(_cosmos_roll, _cosmos_roll_target, minf(delta * 0.9, 1.0))
+	_cosmos_bank = lerpf(_cosmos_bank, _cosmos_bank_target, minf(delta * 1.6, 1.0))
+	_cosmos_lift = lerpf(_cosmos_lift, _cosmos_lift_target, minf(delta * 0.8, 1.0))
+	if _cosmos != null:
+		var piv := Vector3(0, 3.6, Z_FAR * 0.5)
+		_cosmos.transform = Transform3D(Basis(Vector3(0, 0, 1), _cosmos_roll + _cosmos_bank),
+				piv + Vector3(0, -_cosmos_lift, 0)) * Transform3D(Basis.IDENTITY, -piv)
 	if _star_mat != null:
 		# Im Hyperspace brennen die Lichtfaeden deutlich heller.
 		_star_mat.set_shader_parameter("intensity",
@@ -1664,6 +1806,163 @@ func _spawn_sheet_lightning() -> void:
 	tw.tween_method(set_i, peak * 0.22, peak * 0.8, 0.06)
 	tw.tween_method(set_i, peak * 0.8, 0.0, 0.30)
 	tw.tween_callback(sheet.queue_free)
+
+
+## Fullscreen-Post-FX-Ebene UNTER dem HUD: verzerrt nur das Spielbild,
+## alle Anzeigen bleiben gestochen scharf.
+func _build_screen_fx() -> void:
+	var fx_layer := CanvasLayer.new()
+	fx_layer.layer = 0
+	add_child(fx_layer)
+	var fx_rect := ColorRect.new()
+	fx_rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	fx_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_screen_mat = ShaderMaterial.new()
+	_screen_mat.shader = load("res://shaders/screen_fx.gdshader")
+	fx_rect.material = _screen_mat
+	fx_layer.add_child(fx_rect)
+
+
+# ---------------------------------------------------------------------------
+# FLUG-CHOREOGRAFIE: deterministisch aus der Map geplant (Phrasengrenzen,
+# Kiai-Start, Breaks) und mit dem Dateinamen geseedet — jedes Replay fliegt
+# exakt dieselbe Route. Grosse Manoever nur in ruhigen Passagen.
+# ---------------------------------------------------------------------------
+
+func _build_flight_plan() -> void:
+	_flight_plan = []
+	_flight_idx = 0
+	if _beatmap == null or _beatmap.hit_objects.is_empty():
+		return
+	var bar := 4.0 * 500.0
+	for tp in _beatmap.timing_points:
+		if tp.uninherited and tp.beat_length > 0.0:
+			bar = tp.beat_length * float(maxi(tp.meter, 1))
+			break
+	var seed_h: int = hash(GameSession.osu_filename)
+	var objs := _beatmap.hit_objects
+	var t0: float = objs[0].time
+	var t_end: float = objs[objs.size() - 1].time
+	# 1) Vorbeifluege an 8-Takt-Grenzen — nur wenn das Fenster ruhig ist.
+	var k := 0
+	var pt := t0 + bar * 8.0
+	while pt < t_end - 4000.0:
+		if _window_density(pt, 2600.0) <= 6:
+			_flight_plan.append({ "t": pt - 2600.0, "type": "flyby",
+				"side": (-1.0 if (seed_h + k) % 2 == 0 else 1.0),
+				"kind": (seed_h / 7 + k) % 2 })
+		k += 1
+		pt += bar * 8.0
+	# 2) Ueberkopf-Roll beim ersten Kiai (6 Takte kopfueber, dann zurueck).
+	var kiai_t := -1.0
+	var scan := 0.0
+	var scan_end := maxf(_beatmap.duration_ms(), 1.0)
+	while scan < scan_end:
+		if _beatmap.is_kiai(scan):
+			kiai_t = scan
+			break
+		scan += 400.0
+	if kiai_t > 0.0:
+		_flight_plan.append({ "t": kiai_t, "type": "roll", "on": true })
+		_flight_plan.append({ "t": kiai_t + bar * 6.0, "type": "roll", "on": false })
+	# 3) Breaks (>4.5s ohne Noten): Hochziehen + Kometensturm.
+	for i in range(1, objs.size()):
+		var gap: float = objs[i].time - objs[i - 1].time
+		if gap > 4500.0:
+			_flight_plan.append({ "t": objs[i - 1].time + 600.0,
+				"type": "break_show", "until": objs[i].time - 1500.0 })
+	_flight_plan.sort_custom(func(a, b): return float(a.t) < float(b.t))
+
+
+func _window_density(t: float, half: float) -> int:
+	var n := 0
+	for o in _beatmap.hit_objects:
+		if absf(o.time - t) <= half:
+			n += 1
+	return n
+
+
+func _run_flight_event(ev: Dictionary, t: float) -> void:
+	if _fx_level() <= 0.0:
+		return
+	match str(ev.type):
+		"flyby":
+			_spawn_flyby(float(ev.side), int(ev.kind))
+		"roll":
+			# Nur kopfueber gehen, wenn gerade wenig los ist.
+			if bool(ev.on) and _density < 0.55:
+				_cosmos_roll_target = PI
+			else:
+				_cosmos_roll_target = 0.0
+		"break_show":
+			_cosmos_lift_target = 2.4
+			var dur: float = maxf((float(ev.until) - t) / 1000.0, 1.2)
+			for i in 7:
+				var st := get_tree().create_timer(0.35 * float(i) + 0.2, false)
+				var comet_seed := int(t) + i * 41
+				st.timeout.connect(func():
+					if is_inside_tree() and not _ended:
+						_spawn_shooting_star(comet_seed))
+			get_tree().create_timer(dur, false).timeout.connect(func():
+				if is_inside_tree():
+					_cosmos_lift_target = 0.0)
+
+
+## Wrack/Asteroid: spawnt weit hinten AUSSERHALB des Noten-Korridors und
+## rauscht seitlich-oben an der Kamera vorbei.
+func _spawn_flyby(side: float, kind: int) -> void:
+	var root := Node3D.new()
+	root.position = Vector3(side * 13.0, 4.5 + randf() * 3.0, Z_FAR - 16.0)
+	_cosmos.add_child(root)
+	if kind == 0:
+		# WRACK: dunkle Rumpf-Silhouette + rot blinkendes Notlicht.
+		for b in 3:
+			var hull := MeshInstance3D.new()
+			var bm := BoxMesh.new()
+			bm.size = Vector3(1.6 + randf() * 2.6, 0.5 + randf() * 1.1,
+					2.0 + randf() * 3.0)
+			hull.mesh = bm
+			var hmat := StandardMaterial3D.new()
+			hmat.albedo_color = Color(0.06, 0.07, 0.09)
+			hmat.emission_enabled = true
+			hmat.emission = _theme_col * 0.06
+			hull.material_override = hmat
+			hull.position = Vector3((randf() - 0.5) * 2.4,
+					(randf() - 0.5) * 1.4, (randf() - 0.5) * 3.0)
+			hull.rotation_degrees = Vector3(randf() * 20.0 - 10.0,
+					randf() * 360.0, randf() * 16.0 - 8.0)
+			root.add_child(hull)
+		var lamp := MeshInstance3D.new()
+		var lq := QuadMesh.new()
+		lq.size = Vector2(0.7, 0.7)
+		lamp.mesh = lq
+		var lmat := ShaderMaterial.new()
+		lmat.shader = _glow_shader
+		lmat.set_shader_parameter("base_color", Color(1.0, 0.25, 0.2))
+		lmat.set_shader_parameter("intensity", 1.0)
+		lamp.material_override = lmat
+		lamp.position = Vector3(0, 0.9, 0)
+		root.add_child(lamp)
+		root.set_meta("lamp", lmat)
+	else:
+		# ASTEROID: grauer Brocken mit dem Planeten-Shader.
+		var rock := MeshInstance3D.new()
+		var rq2 := QuadMesh.new()
+		var rs := 2.0 + randf() * 2.5
+		rq2.size = Vector2(rs, rs)
+		rock.mesh = rq2
+		var rmat := ShaderMaterial.new()
+		rmat.shader = load("res://shaders/planet.gdshader")
+		rmat.set_shader_parameter("base_col", Color(0.45, 0.43, 0.41))
+		rmat.set_shader_parameter("band_col", Color(0.30, 0.29, 0.28))
+		rmat.set_shader_parameter("atmo_col", Color(0.5, 0.5, 0.55))
+		rmat.set_shader_parameter("band_freq", 17.0)
+		rmat.set_shader_parameter("seed", randf() * 40.0)
+		rmat.set_shader_parameter("ring_amount", 0.0)
+		rock.material_override = rmat
+		root.add_child(rock)
+	_flybys.append({ "node": root, "side": side,
+		"speed": 16.0 + randf() * 8.0, "whooshed": false })
 
 
 ## Fortlaufende Beat-Zahl der Song-Zeit (fuer BPM-synchrone Choreografie).

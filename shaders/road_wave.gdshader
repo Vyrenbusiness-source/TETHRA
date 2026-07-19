@@ -13,6 +13,9 @@ uniform float bar_phase = 0.0;
 uniform float punch = 0.0;
 uniform float energy = 1.0;
 uniform float wave_amount = 1.0;
+// NASSE BAHN: der Himmel spiegelt sich Richtung Horizont (Fresnel-artig).
+uniform vec3 sky_color: source_color = vec3(0.2, 0.4, 0.8);
+uniform float refl_amount = 0.0;
 
 float band(float x, float center, float width) {
 	float d = (x - center) / width;
@@ -37,6 +40,8 @@ void fragment() {
 	glow += pow(y, 3.0) * 0.10 * energy;
 	// Seitlicher Fade (nicht ueber die Rails hinausbrennen).
 	float sx = 1.0 - smoothstep(0.72, 1.0, abs(UV.x * 2.0 - 1.0));
-	ALBEDO = base_color * glow * sx;
-	ALPHA = clamp(glow * sx, 0.0, 1.0) * 0.6;
+	// Nass-Reflexion: flacher Blick zum Horizont spiegelt den Himmel.
+	float refl = pow(1.0 - y, 2.2) * refl_amount;
+	ALBEDO = base_color * glow * sx + sky_color * refl * sx;
+	ALPHA = clamp(glow * sx + refl * sx * 0.8, 0.0, 1.0) * 0.6;
 }
