@@ -46,6 +46,35 @@ float fbm(vec2 p) {
 	return v;
 }
 
+// 3D-Noise ohne sin()-Hash (keine Quadrat-Artefakte), fuer Wolken auf der Kugel.
+float hash3(vec3 p) {
+	p = fract(p * 0.3183099 + vec3(0.1, 0.2, 0.3));
+	p *= 17.0;
+	return fract(p.x * p.y * p.z * (p.x + p.y + p.z));
+}
+
+float vnoise3(vec3 p) {
+	vec3 i = floor(p);
+	vec3 f = fract(p);
+	f = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+	float a = mix(mix(hash3(i), hash3(i + vec3(1.0, 0.0, 0.0)), f.x),
+			mix(hash3(i + vec3(0.0, 1.0, 0.0)), hash3(i + vec3(1.0, 1.0, 0.0)), f.x), f.y);
+	float b = mix(mix(hash3(i + vec3(0.0, 0.0, 1.0)), hash3(i + vec3(1.0, 0.0, 1.0)), f.x),
+			mix(hash3(i + vec3(0.0, 1.0, 1.0)), hash3(i + vec3(1.0, 1.0, 1.0)), f.x), f.y);
+	return mix(a, b, f.z);
+}
+
+float fbm3(vec3 p) {
+	float v = 0.0;
+	float a = 0.5;
+	for (int i = 0; i < 4; i++) {
+		v += a * vnoise3(p);
+		p = p * 2.03 + vec3(1.7, 9.2, 4.3);
+		a *= 0.5;
+	}
+	return v;
+}
+
 void fragment() {
 	vec2 p = UV * 2.0 - 1.0;
 	// Scheibe belegt 62% des Quads; aussen bleibt Platz fuer den Ring.
@@ -81,23 +110,25 @@ void fragment() {
 			surf = texture(tex_diffuse, tuv).rgb;
 			night = texture(tex_emission, tuv).rgb;
 			if (clouds_amount > 0.01) {
-				float cl = fbm(vec2(tuv.x * 8.0 + t * 0.012, tuv.y * 4.0 + seed));
-				cl = smoothstep(0.52, 0.78, cl) * clouds_amount;
-				surf = mix(surf, vec3(0.98), cl);
+				float ca = t * 0.012 + seed;
+				vec3 cp = vec3(n.x * cos(ca) - n.z * sin(ca), n.y, n.x * sin(ca) + n.z * cos(ca));
+				float cl = fbm3(cp * 3.2 + vec3(seed));
+				cl = smoothstep(0.42, 0.85, cl) * clouds_amount * 0.85;
+				surf = mix(surf, vec3(0.88, 0.9, 0.93), cl);
 				night = mix(night, vec3(0.0), cl * 0.85);
 			}
 		}
 		// Sonne von schraeg links: Terminator + Limb-Darkening.
-		float diff = clamp(dot(n, l), 0.0, 1.0);
+		float diff = smoothstep(-0.08, 0.6, dot(n, l));
 		float limb = pow(z, 0.45);
 		col = surf * (0.04 + pow(diff, 1.15) * 1.05) * limb
 				+ night * (1.0 - diff) * 0.9 * limb;
 		// Warmes Streiflicht ENTLANG des Terminators (Daemmerungszone).
 		float term = smoothstep(0.02, 0.18, diff) * (1.0 - smoothstep(0.18, 0.5, diff));
-		col += atmo_col.rgb * term * 0.22;
+		col += atmo_col.rgb * term * 0.12;
 		// Atmosphaeren-Rand, auf der Lichtseite staerker.
-		float atmo = smoothstep(0.80, 1.0, r);
-		col += atmo_col.rgb * atmo * 0.4 * (0.2 + diff * 0.8);
+		float atmo = pow(smoothstep(0.88, 1.0, r), 2.0);
+		col += atmo_col.rgb * atmo * 0.16 * (0.2 + diff * 0.8);
 		alpha = 1.0;
 	}
 	// Geneigter Ring: vor dem Planeten unten sichtbar, oben dahinter verdeckt.
