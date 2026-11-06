@@ -6,6 +6,9 @@ extends Control
 
 const COL_ACCENT := Color(0.20, 0.85, 1.0)
 const COL_DIM := Color(0.6, 0.63, 0.72)
+const CARD_H := 94.0
+const CARD_R := 12
+const CARD_PAD := 12
 const GRADE_COLOR := {
 	"S": Color(1.0, 0.85, 0.25), "A": Color(0.4, 1.0, 0.5),
 	"B": Color(0.35, 0.75, 1.0), "C": Color(0.9, 0.6, 1.0),
@@ -35,6 +38,8 @@ var _dim_overlay: ColorRect
 var _bass_avg: float = 0.0
 var _bass_smooth: float = 0.0
 var _kick: float = 0.0
+var _pulse: float = 0.0 ## einheitlicher Puls: BeatClock, sonst Spektrum-Kick
+const MUSIC_DB := -14.0
 var _logo_t: float = 0.0
 # Ken-Burns-Zoom fuer das Hintergrund-Cover.
 var _bg_rect: TextureRect
@@ -43,6 +48,9 @@ var _kb_t: float = 0.0
 var _np_bar: Control
 var _np_progress: ColorRect
 var _np_track: Control
+var _np_title: Label
+var _np_clip: Control
+var _np_t: float = 0.0
 var _btns: Array[Button] = []
 
 
@@ -61,6 +69,7 @@ func _ready() -> void:
 		bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		add_child(bg)
 
+	_build_calm()
 	_build_logo()
 	_build_buttons()
 	_build_profile_card()
@@ -85,16 +94,19 @@ func _ready() -> void:
 	# Dezentes Versions-Tag unten rechts.
 	var ver := Label.new()
 	ver.text = "TETHRA  ·  v" + Updater.CURRENT_VERSION
+	ver.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.8))
+	ver.add_theme_constant_override("shadow_offset_x", 1)
+	ver.add_theme_constant_override("shadow_offset_y", 1)
 	ver.anchor_left = 1.0
 	ver.anchor_right = 1.0
 	ver.anchor_top = 1.0
 	ver.anchor_bottom = 1.0
-	ver.offset_left = -220
-	ver.offset_right = -20
+	ver.offset_left = -260
+	ver.offset_right = -24
 	ver.offset_top = -34
 	ver.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	ver.add_theme_font_size_override("font_size", 12)
-	ver.add_theme_color_override("font_color", Color(0.5, 0.53, 0.62, 0.7))
+	ver.add_theme_font_size_override("font_size", 13)
+	ver.add_theme_color_override("font_color", Color(0.78, 0.82, 0.9, 0.9))
 	add_child(ver)
 
 	if DisplayServer.get_name() == "headless":
@@ -133,11 +145,13 @@ func _start_menu_music() -> void:
 	_music = AudioStreamPlayer.new()
 	_music.stream = stream
 	_music.bus = "Music"
-	_music.volume_db = -40.0
+	_music.volume_db = -80.0
 	add_child(_music)
 	_music.finished.connect(func():
 		if is_instance_valid(_music):
-			_music.play(from_sec))
+			_music.volume_db = -80.0
+			_music.play(from_sec)
+			_fade_music_in())
 	_music.play(from_sec)
 	var cover := _load_cover(str(last.osz_path), bm)
 	if _viz != null:
@@ -146,9 +160,20 @@ func _start_menu_music() -> void:
 		_beat_clock = BeatClock.new()
 		_beat_clock.setup(bm.timing_points)
 	_build_now_playing(bm, cover)
-	# Sanft auf "leise" hochfahren statt hart einzusetzen.
+	_fade_music_in()
+
+
+## Klickfrei: 250 ms Fade-in beim Start/Loop.
+func _fade_music_in() -> void:
 	var tw := create_tween()
-	tw.tween_property(_music, "volume_db", -14.0, 1.6)
+	tw.tween_property(_music, "volume_db", MUSIC_DB, 0.25)
+
+
+## Klickfrei: 120 ms Fade-out vor Szenenwechsel/Beenden.
+func _fade_music_out() -> void:
+	if _music != null and is_instance_valid(_music) and _music.playing:
+		var tw := create_tween()
+		tw.tween_property(_music, "volume_db", -80.0, 0.12)
 
 
 ## Bass-Onset gegen gleitenden Mittelwert -> Kick-Puls; ruhig ohne Musik.
@@ -172,24 +197,50 @@ func _process(delta: float) -> void:
 		var len_s: float = maxf(_music.stream.get_length(), 1.0)
 		var frac: float = clampf(_music.get_playback_position() / len_s, 0.0, 1.0)
 		_np_progress.size.x = _np_track.size.x * frac
+	if _np_title != null and _np_clip != null:
+		var over: float = _np_title.get_minimum_size().x - _np_clip.size.x
+		if over > 1.0:
+			_np_t += delta
+			var travel: float = over / 32.0
+			var pause := 1.6
+			var cyc: float = 2.0 * (travel + pause)
+			var t: float = fposmod(_np_t, cyc)
+			var u: float
+			if t < pause:
+				u = 0.0
+			elif t < pause + travel:
+				u = (t - pause) / travel
+			elif t < 2.0 * pause + travel:
+				u = 1.0
+			else:
+				u = 1.0 - (t - 2.0 * pause - travel) / travel
+			_np_title.position.x = -over * u
+		else:
+			_np_title.position.x = 0.0
+	var idle: float = 0.009 * (1.0 + sin(_logo_t * TAU / 4.4))  # 0..0.018
+	var pulse_k: float = _kick
+	if _beat_clock != null and playing and _beat_clock.bpm > 0.0:
+		# Exakt auf dem Beat: Position + Mix-Offset - Ausgabe-Latenz.
+		var t_ms: float = _music.get_playback_position() * 1000.0 + AudioServer.get_time_since_last_mix() * 1000.0 - AudioServer.get_output_latency() * 1000.0
+		_beat_clock.update(t_ms, delta)
+		pulse_k = _beat_clock.beat_env
+	_pulse = pulse_k
+	if _viz != null:
+		_viz.modulate.a = 0.6 + 0.2 * pulse_k
 	if _logo != null:
-		var idle: float = 0.009 * (1.0 + sin(_logo_t * TAU / 4.4))
-		var pulse_k: float = _kick
-		if _beat_clock != null and playing and _beat_clock.bpm > 0.0:
-			_beat_clock.update(_music.get_playback_position() * 1000.0, delta)
-			pulse_k = _beat_clock.beat_env
-		_logo.scale = Vector2.ONE * (1.0 + idle + 0.03 * pulse_k)
+		# Nur sanfter Glow-Puls (Alpha), kein Groessen-Puls.
 		_logo.add_theme_color_override("font_shadow_color",
-			Color(COL_ACCENT.r, COL_ACCENT.g, COL_ACCENT.b, 0.5 + 0.25 * pulse_k))
+			Color(COL_ACCENT.r, COL_ACCENT.g, COL_ACCENT.b,
+				clampf(0.45 + 0.25 * idle * 50.0 + 0.2 * pulse_k, 0.0, 1.0)))
 	if _bg_mat != null:
 		_bg_mat.set_shader_parameter("bass", bass_lvl)
 		_bg_mat.set_shader_parameter("kick", _kick)
 	if _dim_overlay != null:
-		_dim_overlay.color.a = 0.60 - 0.04 * bass_lvl - 0.03 * _kick
+		_dim_overlay.color.a = 0.60 - 0.04 * bass_lvl - 0.03 * _pulse
 	# Dezenter Bass-Puls nur am gehoverten/fokussierten Button.
 	for b in _btns:
 		if b.is_hovered() or b.has_focus():
-			b.scale = Vector2.ONE * (1.0 + 0.02 * _kick)
+			b.scale = Vector2.ONE * (1.0 + 0.02 * _pulse)
 
 
 ## Geblurrtes Hintergrundbild der zuletzt gespielten Map. false wenn keins da.
@@ -223,6 +274,7 @@ func _add_blur_layers(tex: Texture2D) -> void:
 	rect.texture = UiTheme.blurred_texture(tex)
 	rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	rect.resized.connect(func(): rect.pivot_offset = rect.size * 0.5)
+	rect.modulate = Color(0.55, 0.55, 0.55, 1.0)
 	add_child(rect)
 	_bg_rect = rect
 	var overlay := ColorRect.new()
@@ -252,6 +304,27 @@ func _add_blur_layers(tex: Texture2D) -> void:
 	add_child(vr)
 
 
+## Radiale Beruhigung hinter der Button-Saeule: dunkler weicher Fleck.
+func _build_calm() -> void:
+	var g := Gradient.new()
+	g.set_color(0, Color(0, 0, 0, 0.5))
+	g.set_color(1, Color(0, 0, 0, 0.0))
+	var t := GradientTexture2D.new()
+	t.gradient = g
+	t.fill = GradientTexture2D.FILL_RADIAL
+	t.fill_from = Vector2(0.5, 0.6)
+	t.fill_to = Vector2(0.86, 0.6)
+	t.width = 256
+	t.height = 256
+	var r := TextureRect.new()
+	r.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	r.texture = t
+	r.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	r.stretch_mode = TextureRect.STRETCH_SCALE
+	r.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(r)
+
+
 func _build_logo() -> void:
 	var logo := Label.new()
 	logo.text = "TETHRA"
@@ -267,31 +340,26 @@ func _build_logo() -> void:
 	logo.anchor_right = 0.5
 	logo.anchor_top = 0.16
 	logo.anchor_bottom = 0.16
-	logo.offset_left = -400
-	logo.offset_right = 400
+	# Glyph-Spacing haengt nach dem letzten Buchstaben 10px an: +5px ausgleichen.
+	logo.offset_left = -395
+	logo.offset_right = 405
 	logo.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	logo.add_theme_font_size_override("font_size", 110)
 	logo.add_theme_color_override("font_color", Color(0.95, 0.98, 1.0))
 	logo.add_theme_color_override("font_shadow_color", Color(COL_ACCENT.r, COL_ACCENT.g, COL_ACCENT.b, 0.6))
 	logo.add_theme_constant_override("shadow_offset_x", 0)
 	logo.add_theme_constant_override("shadow_offset_y", 0)
-	logo.add_theme_constant_override("shadow_outline_size", 24)
+	logo.add_theme_constant_override("shadow_outline_size", 10)
 	add_child(logo)
 
-	# Leichter Logo-Effekt: sanftes Atmen (Scale) + pulsierender Glow.
+	# Glow-Puls laeuft in _process (Schatten-Alpha), Outline bleibt fix.
 	logo.pivot_offset = Vector2(400, 70)
-	var pulse := create_tween().set_loops()
-	pulse.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 	_logo = logo
-	pulse.tween_method(
-		func(v): logo.add_theme_constant_override("shadow_outline_size", int(v)), 24.0, 38.0, 2.2)
-	pulse.tween_method(
-		func(v): logo.add_theme_constant_override("shadow_outline_size", int(v)), 38.0, 24.0, 2.2)
 
 	# Untertitel auf Japanisch (Katakana) — Systemfont, da der Godot-Default
 	# keine CJK-Glyphen mitbringt.
 	var sub := Label.new()
-	sub.text = "テトラ ・ リズムの彼方へ"
+	sub.text = "テトラ・リズムの彼方へ"
 	sub.anchor_left = 0.5
 	sub.anchor_right = 0.5
 	sub.anchor_top = 0.16
@@ -320,8 +388,8 @@ func _build_visualizer_slot() -> void:
 	slot.anchor_right = 1.0
 	slot.anchor_top = 1.0
 	slot.anchor_bottom = 1.0
-	slot.offset_top = -90
-	slot.offset_bottom = 0
+	slot.offset_top = -190
+	slot.offset_bottom = -44
 	slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(slot)
 	var viz := AudioVisualizer.new()
@@ -329,14 +397,14 @@ func _build_visualizer_slot() -> void:
 	viz.anchor_right = 0.5
 	viz.anchor_top = 0.0
 	viz.anchor_bottom = 1.0
-	viz.offset_left = -400
-	viz.offset_right = 400
-	viz.offset_top = 10
-	viz.offset_bottom = -6
+	viz.offset_left = -560
+	viz.offset_right = 560
+	viz.offset_top = 0
+	viz.offset_bottom = 0
 	viz.color = UiTheme.ACCENT
 	_viz = viz
 	viz.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	viz.modulate.a = 0.55
+	viz.modulate.a = 0.7
 	slot.add_child(viz)
 
 
@@ -376,8 +444,9 @@ func _build_now_playing(bm: Beatmap, cover: Texture2D) -> void:
 	bar.offset_left = -364
 	bar.offset_right = -24
 	bar.offset_top = 20
-	var sb := UiTheme.glass_box(12, 0.45)
-	sb.set_content_margin_all(10)
+	bar.custom_minimum_size = Vector2(0, CARD_H)
+	var sb := UiTheme.glass_box(CARD_R, 0.45)
+	sb.set_content_margin_all(CARD_PAD)
 	bar.add_theme_stylebox_override("panel", sb)
 	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(bar)
@@ -393,7 +462,8 @@ func _build_now_playing(bm: Beatmap, cover: Texture2D) -> void:
 	vb.add_child(hb)
 
 	var thumb := TextureRect.new()
-	thumb.custom_minimum_size = Vector2(48, 48)
+	thumb.custom_minimum_size = Vector2(44, 44)
+	thumb.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	thumb.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	thumb.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 	thumb.texture = cover
@@ -410,19 +480,25 @@ func _build_now_playing(bm: Beatmap, cover: Texture2D) -> void:
 
 	var cap := Label.new()
 	cap.text = "JETZT LÄUFT"
-	cap.add_theme_font_size_override("font_size", 10)
-	cap.add_theme_color_override("font_color", COL_ACCENT)
+	cap.add_theme_font_size_override("font_size", 12)
+	cap.add_theme_color_override("font_color", Color(0.45, 0.92, 1.0))
 	cap.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	tv.add_child(cap)
 
 	var title := Label.new()
 	title.text = "%s - %s" % [bm.title(), bm.artist()]
-	title.clip_text = true
-	title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	title.custom_minimum_size = Vector2(240, 0)
-	title.add_theme_font_size_override("font_size", 14)
+	title.add_theme_font_size_override("font_size", 15)
 	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	tv.add_child(title)
+	# Lauftext statt Ellipse: Clip-Container, Label wird in _process gescrollt.
+	var clip := Control.new()
+	clip.clip_contents = true
+	clip.custom_minimum_size = Vector2(240, 22)
+	clip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	clip.add_child(title)
+	title.position = Vector2.ZERO
+	tv.add_child(clip)
+	_np_title = title
+	_np_clip = clip
 
 	_np_track = Control.new()
 	_np_track.custom_minimum_size = Vector2(0, 2)
@@ -474,8 +550,8 @@ func _build_buttons() -> void:
 	vb.anchor_right = 0.5
 	vb.anchor_top = 0.44
 	vb.anchor_bottom = 0.44
-	vb.offset_left = -170
-	vb.offset_right = 170
+	vb.offset_left = -180
+	vb.offset_right = 180
 	vb.add_theme_constant_override("separation", 14)
 	add_child(vb)
 
@@ -484,7 +560,7 @@ func _build_buttons() -> void:
 	_add_wrapped(vb, _btn_play)
 
 	_btn_mp = _menu_button("MULTIPLAYER", false)
-	_btn_mp.pressed.connect(func(): SceneFader.go("res://scenes/mp_lobby.tscn"))
+	_btn_mp.pressed.connect(func(): _fade_music_out(); SceneFader.go("res://scenes/mp_lobby.tscn"))
 	_add_wrapped(vb, _btn_mp)
 
 	var tut := _menu_button("TUTORIAL", false)
@@ -496,7 +572,7 @@ func _build_buttons() -> void:
 	_add_wrapped(vb, _btn_settings)
 
 	var quit := _menu_button("BEENDEN", false)
-	quit.pressed.connect(func(): get_tree().quit())
+	quit.pressed.connect(func(): _fade_music_out(); get_tree().quit())
 	_add_wrapped(vb, quit)
 
 
@@ -558,7 +634,10 @@ func _menu_button(text: String, primary: bool) -> Button:
 	b.custom_minimum_size = Vector2(360, 58)
 	b.add_theme_font_override("font", UiTheme.heading_font(3))
 	b.add_theme_font_size_override("font_size", 20)
-	UiTheme.style_button(b, primary)
+	if primary:
+		UiTheme.style_button(b, true)
+	else:
+		UiTheme.style_ghost_button(b)
 	return b
 
 
@@ -567,9 +646,9 @@ func _build_profile_card() -> void:
 	var card := PanelContainer.new()
 	_profile_card = card
 	card.position = Vector2(24, 20)
-	card.custom_minimum_size = Vector2(232, 0)
-	var sb := UiTheme.glass_box(12, 0.45)
-	sb.set_content_margin_all(10)
+	card.custom_minimum_size = Vector2(250, CARD_H)
+	var sb := UiTheme.glass_box(CARD_R, 0.45)
+	sb.set_content_margin_all(CARD_PAD)
 	card.add_theme_stylebox_override("panel", sb)
 	card.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	card.gui_input.connect(func(e):
@@ -607,7 +686,7 @@ func _build_profile_card() -> void:
 	vb.add_child(_pp_label)
 
 	_plays_label = Label.new()
-	_plays_label.add_theme_font_size_override("font_size", 11)
+	_plays_label.add_theme_font_size_override("font_size", 13)
 	_plays_label.add_theme_color_override("font_color", COL_DIM)
 	_plays_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vb.add_child(_plays_label)
@@ -802,8 +881,8 @@ func _start_practice() -> void:
 
 func _refresh_profile() -> void:
 	_name_label.text = Settings.profile_name
-	_pp_label.text = "%.0f pp" % ScoreStore.profile_pp()
-	_plays_label.text = "%d Plays" % ScoreStore.total_plays()
+	_pp_label.text = UiTheme.fmt_pp(ScoreStore.profile_pp())
+	_plays_label.text = "%s Spiele" % UiTheme.fmt_score(ScoreStore.total_plays())
 	# Avatar-Kreis: eigenes Bild oder Initial.
 	for c in _card_avatar.get_children():
 		c.queue_free()
@@ -864,7 +943,7 @@ func _build_recent() -> void:
 	var recent := ScoreStore.recent_plays(6)
 	if recent.is_empty():
 		var empty := Label.new()
-		empty.text = "Noch keine Plays — leg los!"
+		empty.text = "Noch keine Spiele — leg los!"
 		empty.add_theme_font_size_override("font_size", 14)
 		empty.add_theme_color_override("font_color", COL_DIM)
 		vb.add_child(empty)
@@ -896,8 +975,8 @@ func _recent_row(e: Dictionary) -> Control:
 	info.add_child(map_label)
 	var detail := Label.new()
 	var pp := float(e.get("pp", -1.0))
-	var pp_txt := ("  ·  %.1fpp" % pp) if pp >= 0.0 else ""
-	detail.text = "%.2f%%  ·  %d%s" % [float(e.get("accuracy", 0.0)) * 100.0, int(e.get("score", 0)), pp_txt]
+	var pp_txt := ("  ·  " + UiTheme.fmt_num(pp, 1) + " pp") if pp >= 0.0 else ""
+	detail.text = "%s  ·  %s%s" % [UiTheme.fmt_pct(float(e.get("accuracy", 0.0)) * 100.0), UiTheme.fmt_score(int(e.get("score", 0))), pp_txt]
 	detail.add_theme_font_size_override("font_size", 12)
 	detail.add_theme_color_override("font_color", COL_DIM)
 	info.add_child(detail)
@@ -906,6 +985,7 @@ func _recent_row(e: Dictionary) -> Control:
 
 
 func _play() -> void:
+	_fade_music_out()
 	SceneFader.go("res://scenes/song_select.tscn")
 
 
