@@ -232,7 +232,7 @@ var _time_label: Label
 var _top_fill: ColorRect
 var _bottom_fill: ColorRect
 var _hp_fill: ColorRect
-var _pause_menu: Control
+var _pause_menu: PauseMenu
 var _song_len_ms := 1.0
 
 
@@ -2484,14 +2484,24 @@ func _fmt_time(ms: float) -> String:
 func _toggle_pause(paused: bool) -> void:
 	if paused:
 		if _pause_menu == null:
-			_build_pause_menu()
-		_pause_menu.visible = true
+			_pause_menu = PauseMenu.new()
+			_hud.add_child(_pause_menu)
+			_pause_menu.resume_pressed.connect(func(): _toggle_pause(false))
+			_pause_menu.restart_pressed.connect(_restart)
+			_pause_menu.quit_pressed.connect(_back_to_browser)
+		_pause_menu.open({
+			"title": "%s — %s" % [_beatmap.artist(), _beatmap.title()],
+			"progress": clampf(_time_ms() / maxf(_song_len_ms, 1.0), 0.0, 1.0),
+			"score": core.score,
+			"acc": core.accuracy() * 100.0,
+			"difficulty": _beatmap.version_name(),
+		})
 		get_tree().paused = true
 		SyncClock.pause()
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	else:
-		if _pause_menu != null:
-			_pause_menu.visible = false
+		if _pause_menu != null and _pause_menu.visible:
+			_pause_menu.close()
 		_resume_with_countdown()
 
 
@@ -2544,49 +2554,6 @@ func _resume_with_countdown(step: float = 0.4) -> void:
 	get_tree().paused = false
 	SyncClock.resume()
 	Input.mouse_mode = Input.MOUSE_MODE_CONFINED_HIDDEN
-
-
-func _build_pause_menu() -> void:
-	_pause_menu = Control.new()
-	_pause_menu.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_pause_menu.process_mode = Node.PROCESS_MODE_WHEN_PAUSED
-	_hud.add_child(_pause_menu)
-	var dim := ColorRect.new()
-	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	dim.color = Color(0, 0, 0, 0.65)
-	_pause_menu.add_child(dim)
-	var center := CenterContainer.new()
-	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_pause_menu.add_child(center)
-	var panel := PanelContainer.new()
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color(0.07, 0.07, 0.11, 0.97)
-	sb.set_corner_radius_all(16)
-	sb.set_content_margin_all(30)
-	panel.add_theme_stylebox_override("panel", sb)
-	center.add_child(panel)
-	var vb := VBoxContainer.new()
-	vb.add_theme_constant_override("separation", 10)
-	panel.add_child(vb)
-	var title := Label.new()
-	title.text = "Pause"
-	title.add_theme_font_size_override("font_size", 34)
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	vb.add_child(title)
-	for def in [
-		["Weiter", func(): _toggle_pause(false)],
-		["Retry", func(): _restart()],
-		["Einstellungen", func(): _hud.add_child(SettingsPanel.new())],
-		["Song-Browser", func(): _back_to_browser()],
-	]:
-		var b := Button.new()
-		b.text = def[0]
-		b.custom_minimum_size = Vector2(260, 46)
-		b.pressed.connect(def[1])
-		vb.add_child(b)
-	_pause_menu.gui_input.connect(func(ev):
-		if ev is InputEventKey and ev.pressed and ev.keycode == KEY_ESCAPE:
-			_toggle_pause(false))
 
 
 func _restart() -> void:
