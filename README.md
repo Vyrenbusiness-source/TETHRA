@@ -75,7 +75,7 @@ All keys can be rebound in Settings.
 
 1. Install [Godot 4.7](https://godotengine.org/download).
 2. Clone this repository and open `project.godot`, or run it directly: `godot --path .`
-3. Export a pack: `godot --headless --path . --export-pack "Windows Desktop" TETHRA.pck`
+3. Export a pack: `godot --headless --path . --export-pack "Windows" TETHRA.pck`
 
 ## Credits
 
