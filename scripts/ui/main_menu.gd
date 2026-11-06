@@ -52,9 +52,32 @@ var _np_title: Label
 var _np_clip: Control
 var _np_t: float = 0.0
 var _btns: Array[Button] = []
+# Menue-Musik wartet auf die Hintergrund-Vorbereitung dieser .osz.
+var _music_wait := ""
+var _music_wait_t := 0
+# Shader-Warmup (einmal pro Prozess): Gameplay-Shader im Hintergrund laden,
+# dann ein paar Frames unsichtbar in einem SubViewport rendern. Die geladenen
+# Shader bleiben referenziert -> load() in der Gameplay-Szene ist sofort fertig,
+# und beim ersten Song kommt kein Kompilier-Haenger.
+const WARMUP_SPATIAL := [
+	"aurora", "glow_dot", "god_rays", "hit_ring", "hold_beam", "note_disc",
+	"note_square", "planet", "plasma_line", "rail_fire", "road_wave",
+	"skill_stream", "slider_body", "space_bg", "spark", "spiral_galaxy", "tunnel",
+]
+const WARMUP_CANVAS := ["screen_fx", "screen_glow"]
+const WARMUP_FRAMES := 3
+static var _warm_shaders: Array[Shader] = []
+const BROWSER_SCENE := "res://scenes/song_select.tscn"
+static var _browser_scene: PackedScene = null
+static var _browser_req := false
+var _warm_pending: Array[String] = []
+var _warm_vp: SubViewport = null
+var _warm_frames := 0
+var _warm_t := 0
 
 
 func _ready() -> void:
+	var t_ready := Time.get_ticks_usec()
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
 	# Hintergrund: geblurrtes Cover der zuletzt gespielten Map — clean.
@@ -75,7 +98,8 @@ func _ready() -> void:
 	_build_profile_card()
 	_build_visualizer_slot()
 	if DisplayServer.get_name() != "headless":
-		_start_menu_music()
+		_begin_menu_music()
+		_begin_shader_warmup()
 	_play_intro()
 
 	# Update-Banner unten links: zeigt Fortschritt des Auto-Updaters.
@@ -108,6 +132,7 @@ func _ready() -> void:
 	ver.add_theme_font_size_override("font_size", 13)
 	ver.add_theme_color_override("font_color", Color(0.78, 0.82, 0.9, 0.9))
 	add_child(ver)
+	GameSession.perf_since("Hauptmenue: _ready gesamt", t_ready)
 
 	if DisplayServer.get_name() == "headless":
 		print("=== MainMenu Headless OK (pp=%.1f, plays=%d) ===" % [
@@ -122,9 +147,110 @@ func _ready() -> void:
 	elif OS.get_cmdline_args().has("--shot-settings"):
 		add_child(SettingsPanel.new())
 		_capture()
+	elif GameSession.perf_enabled:
+		# Lade-Messung: 1 s Menue zeigen, dann in den Song-Browser.
+		await get_tree().create_timer(1.0).timeout
+		GameSession.perf_request("Hauptmenue -> Song-Browser")
+		_play()
 	elif OS.get_cmdline_args().has("--autoplay"):
 		# Test-Durchreiche in den Song-Browser.
 		_play.call_deferred()
+
+
+func _begin_shader_warmup() -> void:
+	# Song-Browser-Szene (song_select.gd ~2600 Zeilen) schon im Hintergrund
+	# laden + kompilieren; die Referenz haelt sie im ResourceCache, sodass
+	# SceneFader.go() -> change_scene_to_file() sie sofort bekommt.
+	if _browser_scene == null and not _browser_req:
+		_browser_req = ResourceLoader.load_threaded_request(BROWSER_SCENE, "PackedScene", true) == OK
+	if not _warm_shaders.is_empty():
+		return
+	_warm_t = Time.get_ticks_usec()
+	for n in WARMUP_SPATIAL + WARMUP_CANVAS:
+		var path := "res://shaders/%s.gdshader" % n
+		if ResourceLoader.exists(path):
+			ResourceLoader.load_threaded_request(path, "Shader")
+			_warm_pending.append(path)
+
+
+func _shader_warmup_step() -> void:
+	if _browser_req and ResourceLoader.load_threaded_get_status(BROWSER_SCENE) != ResourceLoader.THREAD_LOAD_IN_PROGRESS:
+		_browser_req = false
+		_browser_scene = ResourceLoader.load_threaded_get(BROWSER_SCENE) as PackedScene
+	if _warm_vp != null:
+		_warm_frames += 1
+		if _warm_frames > WARMUP_FRAMES:
+			_warm_vp.queue_free()
+			_warm_vp = null
+			GameSession.perf_since("Hauptmenue: Shader-Warmup fertig (seit _ready)", _warm_t)
+		return
+	if _warm_pending.is_empty():
+		return
+	for path in _warm_pending:
+		var st := ResourceLoader.load_threaded_get_status(path)
+		if st == ResourceLoader.THREAD_LOAD_IN_PROGRESS:
+			return
+	var shaders: Array[Shader] = []
+	for path in _warm_pending:
+		var sh := ResourceLoader.load_threaded_get(path) as Shader
+		if sh != null:
+			shaders.append(sh)
+	_warm_pending.clear()
+	_warm_shaders = shaders
+	_build_warmup_viewport(shaders)
+
+
+## Winziger, unsichtbarer SubViewport (nie auf dem Bildschirm): je Shader ein
+## Quad vor der Kamera, Umgebung mit Glow wie im Gameplay.
+func _build_warmup_viewport(shaders: Array[Shader]) -> void:
+	var vp := SubViewport.new()
+	vp.size = Vector2i(64, 64)
+	vp.own_world_3d = true
+	vp.transparent_bg = false
+	vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	var env := Environment.new()
+	env.background_mode = Environment.BG_COLOR
+	env.glow_enabled = true
+	var we := WorldEnvironment.new()
+	we.environment = env
+	vp.add_child(we)
+	var cam := Camera3D.new()
+	cam.position = Vector3(0, 0, 4)
+	vp.add_child(cam)
+	var quad := QuadMesh.new()
+	var i := 0
+	for sh in shaders:
+		var mat := ShaderMaterial.new()
+		mat.shader = sh
+		if sh.get_mode() == Shader.MODE_CANVAS_ITEM:
+			var r := ColorRect.new()
+			r.size = Vector2(8, 8)
+			r.position = Vector2(i % 8, i / 8) * 8.0
+			r.material = mat
+			vp.add_child(r)
+		else:
+			var mi := MeshInstance3D.new()
+			mi.mesh = quad
+			mi.material_override = mat
+			mi.position = Vector3(float(i % 6) - 2.5, float(i / 6) - 1.5, 0.0) * 0.6
+			mi.scale = Vector3.ONE * 0.5
+			vp.add_child(mi)
+		i += 1
+	add_child(vp)
+	_warm_vp = vp
+	_warm_frames = 0
+
+
+## Menue-Musik vorbereiten: .osz im Hintergrund parsen (WorkerThreadPool), damit
+## der erste Menue-Frame nicht auf Entpacken + Parsen wartet; _process startet
+## die Musik, sobald das Fertige bereitliegt.
+func _begin_menu_music() -> void:
+	var last := GameSession.load_last_played()
+	if last.is_empty():
+		return
+	_music_wait = str(last.osz_path)
+	_music_wait_t = Time.get_ticks_usec()
+	OszImporter.prepare(_music_wait, "", str(last.get("bg_file", "")), "")
 
 
 ## Leise Hintergrundmusik: zuletzt gespielter Song ab der Preview-Stelle,
@@ -178,6 +304,13 @@ func _fade_music_out() -> void:
 
 ## Bass-Onset gegen gleitenden Mittelwert -> Kick-Puls; ruhig ohne Musik.
 func _process(delta: float) -> void:
+	_shader_warmup_step()
+	if _music_wait != "" and OszImporter.is_prepared(_music_wait):
+		_music_wait = ""
+		var t_music := Time.get_ticks_usec()
+		_start_menu_music()
+		GameSession.perf_since("Hauptmenue: Musik + Cover starten (Hauptthread)", t_music)
+		GameSession.perf_since("Hauptmenue: Musik hoerbar (seit _ready)", _music_wait_t)
 	_logo_t += delta
 	var playing := _music != null and is_instance_valid(_music) and _music.playing
 	var raw: float = SyncClock.band_energy(30.0, 120.0) if playing else 0.0
