@@ -3082,19 +3082,41 @@ func _resume_with_countdown(step: float = 0.4) -> void:
 		lbl.pivot_offset = Vector2(100, 48)
 		for c in hint:
 			_pad_mats[c].set_shader_parameter("rim_color", _pad_color(c) * 1.25)
-		await get_tree().create_timer(step * 0.5, true).timeout
-		if not is_inside_tree():
+		if not await _countdown_wait(step * 0.5):
 			return
 		for c in hint:
 			_pad_mats[c].set_shader_parameter("rim_color", _pad_color(c) * PAD_IDLE)
-		await get_tree().create_timer(step * 0.5, true).timeout
-		if not is_inside_tree():
+		if not await _countdown_wait(step * 0.5):
 			return
 	lbl.queue_free()
 	_countdown_running = false
+	if _autoplay:
+		print("COUNTDOWN fertig")
 	get_tree().paused = false
 	SyncClock.resume()
 	Input.mouse_mode = Input.MOUSE_MODE_CONFINED_HIDDEN
+
+
+## Wartet sec Sekunden, auch bei pausiertem Tree, Fenster ohne Fokus und
+## --write-movie: zaehlt pro SceneTree.process_frame (feuert immer) die
+## Frame-Zeit hoch, Echtzeit (Time.get_ticks_msec) als Sicherung — der
+## Countdown kann nie haengen bleiben. false = Szene verlassen.
+func _countdown_wait(sec: float) -> bool:
+	var t0 := Time.get_ticks_msec()
+	var acc := 0.0
+	var tree := get_tree()
+	var last := t0
+	while acc < sec and float(Time.get_ticks_msec() - t0) < sec * 2000.0:
+		await tree.process_frame
+		if not is_inside_tree():
+			return false
+		var now := Time.get_ticks_msec()
+		var d := get_process_delta_time()
+		if d <= 0.0:
+			d = float(now - last) / 1000.0
+		last = now
+		acc += clampf(d, 0.0, 0.1)
+	return is_inside_tree()
 
 
 func _restart() -> void:
