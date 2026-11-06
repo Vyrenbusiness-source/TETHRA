@@ -34,20 +34,81 @@ static var _players: Array = []
 static var _next_player := 0
 
 
-## Warmer, weicher Pluck (angenehm, mischt sich in die Musik statt zu klicken).
-## Pitch pro Qualitaet skaliert die Szene in musikalischen Intervallen.
-static func hit_stream() -> AudioStreamWAV:
-	# Sehr cleanes, weiches "Tick": kurz, tief, kaum Obertoene.
-	var dur := 0.075
+## Namen der Hitsound-Sets (Index = Settings.hitsound_set).
+const HIT_SET_NAMES := ["Soft", "Clap", "Kick"]
+
+
+## Hitsound des gewaehlten Sets (Settings.hitsound_set). Alle < 80 ms.
+static func hit_stream(set_index: int = -1) -> AudioStreamWAV:
+	if set_index < 0:
+		set_index = _current_set()
+	set_index = clampi(set_index, 0, 2)
+	var key := "hitset_%d" % set_index
+	if not _cache.has(key):
+		_cache[key] = _build_hit(set_index)
+	return _cache[key]
+
+
+static func _current_set() -> int:
+	var tree := Engine.get_main_loop() as SceneTree
+	if tree == null or tree.root == null:
+		return 0
+	var st = tree.root.get_node_or_null("Settings")
+	if st != null and "hitsound_set" in st:
+		return int(st.hitsound_set)
+	return 0
+
+
+## Vorhoer-Klick (Settings-Wechsel): spielt das Set ueber den UI-Player.
+static func preview_hit(set_index: int) -> void:
+	_cache["hit_preview"] = hit_stream(set_index)
+	_play("hit_preview", 1.0)
+
+
+static func _build_hit(set_index: int) -> AudioStreamWAV:
+	var dur := 0.07
 	var n := int(RATE * dur)
 	var data := PackedByteArray()
 	data.resize(n * 2)
+	var ns := 4242
+	var lp1 := 0.0
+	var lp2 := 0.0
+	var hp := 0.0
+	var phase := 0.0
 	for i in n:
 		var t := float(i) / RATE
-		var attack := minf(t / 0.005, 1.0)
-		var s := sin(TAU * 480.0 * t) * exp(-t * 34.0)
-		s += 0.18 * sin(TAU * 960.0 * t) * exp(-t * 55.0)
-		var v := int(clampf(s * attack * 0.34, -1.0, 1.0) * 32767.0)
+		var s := 0.0
+		match set_index:
+			0:
+				# Soft: warmer Sinus-Klick, weicher Attack, kaum Obertoene.
+				s = sin(TAU * 520.0 * t) * exp(-t * 38.0)
+				s += 0.16 * sin(TAU * 780.0 * t) * exp(-t * 60.0)
+				s *= minf(t / 0.003, 1.0) * 0.4
+			1:
+				# Clap: drei kurze, tiefpass-gefilterte Rausch-Bursts + Body.
+				ns = (ns * 1103515245 + 12345) & 0x7FFFFFFF
+				var raw := float(ns) / float(0x7FFFFFFF) * 2.0 - 1.0
+				lp1 += (raw - lp1) * 0.28
+				lp2 += (lp1 - lp2) * 0.28
+				hp += (lp2 - hp) * 0.04
+				var band := lp2 - hp
+				var env := 0.0
+				for off in [0.0, 0.007, 0.014]:
+					if t >= off:
+						env += exp(-(t - off) * 220.0) * 0.45
+				env += exp(-t * 55.0) * 0.55
+				s = band * env * 3.2
+				s += 0.35 * sin(TAU * 190.0 * t) * exp(-t * 45.0)
+				s *= minf(t / 0.001, 1.0) * 0.5
+			_:
+				# Kick: kurzer Punch, Pitch-Drop 150 -> 55 Hz.
+				var f := 55.0 + 95.0 * exp(-t * 55.0)
+				phase += TAU * f / RATE
+				s = sin(phase) * exp(-t * 38.0)
+				s *= minf(t / 0.002, 1.0) * 0.62
+		# Sanftes Ausblenden der letzten 8 ms (kein Knacken).
+		var tail := clampf((dur - t) / 0.008, 0.0, 1.0)
+		var v := int(clampf(s * tail, -1.0, 1.0) * 32767.0)
 		data.encode_s16(i * 2, v)
 	return _wav(data)
 

@@ -51,6 +51,8 @@ var lane_glow: bool = true
 ## Hitsounds an/aus + Lautstaerke (0..1).
 var hitsounds: bool = true
 var hitsound_volume: float = 0.8
+## Hitsound-Set: 0 Soft, 1 Clap, 2 Kick.
+var hitsound_set: int = 0
 ## Echtes Vollbild (auch per F11 umschaltbar).
 var fullscreen: bool = false
 ## Grafik-Qualitaet: 0 Niedrig (kein AA) · 1 Mittel (2x) · 2 Hoch (4x)
@@ -298,6 +300,7 @@ func load_settings() -> void:
 	mania_scroll = clampf(float(cfg.get_value("game", "mania_scroll", 1.0)), 0.5, 3.0)
 	hitsounds = bool(cfg.get_value("game", "hitsounds", true))
 	lane_glow = bool(cfg.get_value("game", "lane_glow", true))
+	hitsound_set = clampi(int(cfg.get_value("game", "hitsound_set", 0)), 0, 2)
 	hitsound_volume = clampf(float(cfg.get_value("game", "hitsound_volume", 0.8)), 0.0, 1.0)
 	fullscreen = bool(cfg.get_value("game", "fullscreen", false))
 	fps_mode = clampi(int(cfg.get_value("game", "fps_mode", 2)), 0, 4)
@@ -320,6 +323,7 @@ func save() -> void:
 	cfg.set_value("game", "mania_scroll", mania_scroll)
 	cfg.set_value("game", "hitsounds", hitsounds)
 	cfg.set_value("game", "lane_glow", lane_glow)
+	cfg.set_value("game", "hitsound_set", hitsound_set)
 	cfg.set_value("game", "hitsound_volume", hitsound_volume)
 	cfg.set_value("game", "fullscreen", fullscreen)
 	cfg.set_value("game", "fps_mode", fps_mode)
