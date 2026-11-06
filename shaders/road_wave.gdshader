@@ -17,6 +17,13 @@ uniform float wave_amount = 1.0;
 uniform vec3 sky_color: source_color = vec3(0.2, 0.4, 0.8);
 uniform float refl_amount = 0.0;
 
+// Groove-Hooks (vom Aufrufer gesetzt, Default 0 = altes Aussehen):
+//  beat_flash 0..1 Licht-Schlag auf dem Beat (schnell abklingend)
+//  downbeat   0..1 Taktanfang · music_energy 0..1 Musik-Intensitaet
+uniform float beat_flash : hint_range(0.0, 1.0) = 0.0;
+uniform float downbeat : hint_range(0.0, 1.0) = 0.0;
+uniform float music_energy : hint_range(0.0, 1.0) = 0.0;
+
 float band(float x, float center, float width) {
 	// Glockenform mit weichem Auslauf (kein harter Rand).
 	float d = (x - center) / width;
@@ -41,14 +48,19 @@ void fragment() {
 	float glow = (w1 + w2) * wave_amount * lift * energy * (1.0 + punch * 0.7);
 	// Spur-Separatoren: drei feine, antialiaste Laengslinien.
 	float sep = aa_line(UV.x, 0.25, 0.012) + aa_line(UV.x, 0.50, 0.012) + aa_line(UV.x, 0.75, 0.012);
-	glow += sep * 0.03 * energy;
+	glow += sep * 0.03 * energy * (1.0 + beat_flash * 2.0 + downbeat * 0.8);
+	// Beat-Querschlag: sitzt auf der Abfanglinie und laeuft in ~0.15 s
+	// nach hinten (beat_flash 1 -> 0 = Linie -> 0.28 UV zurueck).
+	float bar_y = 1.0 - (1.0 - beat_flash) * 0.28;
+	float bar = band(y, bar_y, 0.035) * beat_flash * (0.16 + 0.10 * downbeat);
+	glow += bar * (0.5 + 0.5 * y) * (1.0 + music_energy * 0.4);
 	// Sehr dezentes Energie-Gitter (Querlinien, wandern mit der Beat-Phase).
 	float gy = fract(y * 14.0);
 	float gfw = max(fwidth(y * 14.0), 1e-5);
 	float grid = 1.0 - smoothstep(0.02, 0.02 + gfw * 1.5, min(gy, 1.0 - gy));
 	glow += grid * 0.012 * energy * lift;
 	// Naehe-Gradient: die Road wird zur Abfanglinie hin sanft heller.
-	glow += pow(y, 3.0) * 0.09 * energy;
+	glow += pow(y, 3.0) * 0.09 * energy * (1.0 + music_energy * 0.25);
 	// Tiefen-Fade zum Horizont.
 	glow *= smoothstep(0.0, 0.18, y);
 	// Seitlicher Fade (nicht ueber die Rails hinausbrennen).
