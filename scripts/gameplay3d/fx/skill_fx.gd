@@ -254,7 +254,7 @@ func update(delta: float, beat_phase: float, beat_env: float, combo: int,
 		_plasma_mat.set_shader_parameter(&"env", env)
 		_plasma_mat.set_shader_parameter(&"beat_pulse", beat_pulse)
 		_plasma_mat.set_shader_parameter(&"flow", _flow)
-		_plasma_mat.set_shader_parameter(&"prism", w4)
+		_plasma_mat.set_shader_parameter(&"prism", 0.0)  # kein Prisma: keine bunten Stroeme durchs Spielfeld (Nutzer)
 
 	var a_int := clampf(w3 * 0.75 * kiai_gain, 0.0, 1.0)
 	_aura.visible = a_int > 0.002
@@ -265,7 +265,7 @@ func update(delta: float, beat_phase: float, beat_env: float, combo: int,
 		_aura_mat.set_shader_parameter(&"env", env)
 		_aura_mat.set_shader_parameter(&"beat_pulse", beat_pulse)
 		_aura_mat.set_shader_parameter(&"flow", _flow)
-		_aura_mat.set_shader_parameter(&"prism", w4)
+		_aura_mat.set_shader_parameter(&"prism", 0.0)
 
 
 func _apply_stream(mat: ShaderMaterial, mesh: MeshInstance3D, intensity: float,
@@ -278,7 +278,7 @@ func _apply_stream(mat: ShaderMaterial, mesh: MeshInstance3D, intensity: float,
 	mat.set_shader_parameter(&"beats", beats)
 	mat.set_shader_parameter(&"env", env)
 	mat.set_shader_parameter(&"music_energy", clampf(music_energy, 0.0, 1.0))
-	mat.set_shader_parameter(&"prism", prism)
+	mat.set_shader_parameter(&"prism", 0.0)
 	mat.set_shader_parameter(&"boost", _boost[side_i])
 	mat.set_shader_parameter(&"sweep", _sweep)
 	mat.set_shader_parameter(&"t", _time)

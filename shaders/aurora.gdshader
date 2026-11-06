@@ -9,6 +9,9 @@ uniform vec3 col_a: source_color = vec3(0.2, 0.9, 0.6);
 uniform vec3 col_b: source_color = vec3(0.4, 0.5, 1.0);
 uniform float drift = 0.0;
 uniform float pulse = 0.0;
+// Sichtbarkeit (Kiai = voll) + gemeinsamer Welt-Puls auf dem Beat.
+uniform float amount = 1.0;
+uniform float world_pulse = 0.0;
 
 float hash12(vec2 p) {
 	vec3 p3 = fract(vec3(p.xyx) * 0.1031);
@@ -41,9 +44,9 @@ void fragment() {
 	vec3 col = mix(col_a, col_b, uv.y * 0.85 + wave2 * 0.25) * base;
 	col *= 0.5 + pulse * 0.4;
 	float sx = 1.0 - smoothstep(0.5, 1.0, abs(uv.x * 2.0 - 1.0));
-	vec3 outc = col * sx * 0.45;
+	vec3 outc = col * sx * 0.45 * amount * (1.0 + world_pulse * 0.2);
 	float dn = hash12(FRAGCOORD.xy) + hash12(FRAGCOORD.xy + 17.31) - 1.0;
 	outc += vec3(dn) * (1.0 / 255.0) * step(0.0005, base * sx);
 	ALBEDO = max(outc, vec3(0.0));
-	ALPHA = clamp(base * sx, 0.0, 1.0) * 0.32;
+	ALPHA = clamp(base * sx, 0.0, 1.0) * 0.32 * amount;
 }
