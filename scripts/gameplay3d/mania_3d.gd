@@ -79,6 +79,9 @@ var _ember_pos: Array[Vector3] = []
 var _ember_vel: Array[float] = []
 var _ember_life: Array[float] = []
 var _ember_next := 0
+## Laufende Downbeat-Wellen: {node, mat, time, peak} — Position pro Frame ueber
+## _note_z (folgt der SV wie die Noten).
+var _beat_waves: Array = []
 var _pad_nodes: Array[MeshInstance3D] = []
 var _planet_mats: Array[ShaderMaterial] = []
 var _nebula_kick := 0.0
@@ -1439,6 +1442,7 @@ func _process(delta: float) -> void:
 	if _ended or _beatmap == null:
 		return
 	var t := _time_ms()
+	_update_beat_waves(t)
 	# Replay: aufgezeichnete Inputs mit ihren ORIGINAL-Zeitstempeln einspeisen.
 	if GameSession.is_replay:
 		var evs := GameSession.replay_events
@@ -2167,13 +2171,33 @@ func _spawn_beat_wave() -> void:
 	wm.set_shader_parameter("intensity", peak)
 	wave.material_override = wm
 	wave.rotation_degrees = Vector3(-90, 0, 0)
-	wave.position = Vector3(0, ROAD_Y + 0.015, Z_FAR + 1.0)
+	# Die Welle ist ein "Zeitpunkt" auf der Strecke wie eine Note: sie startet
+	# am fernen Ende (eine Sichtweite voraus) und laeuft mit der Map-SV zur Linie.
+	var t_now := _time_ms()
+	var sm := core.scroll
+	var w_time := sm.time_at(sm.position(t_now) + core.preempt)
+	wave.position = Vector3(0, ROAD_Y + 0.015, _note_z(w_time, t_now))
 	_world.add_child(wave)
-	var dur: float = core.preempt / 1000.0
-	var tw := create_tween().set_parallel(true)
-	tw.tween_property(wave, "position:z", Z_LINE, dur)
-	tw.tween_method(func(v): wm.set_shader_parameter("intensity", v), peak, 0.02, dur)
-	tw.chain().tween_callback(wave.queue_free)
+	_beat_waves.append({"node": wave, "mat": wm, "time": w_time, "peak": peak})
+
+
+func _update_beat_waves(t: float) -> void:
+	var i := _beat_waves.size() - 1
+	while i >= 0:
+		var w: Dictionary = _beat_waves[i]
+		var node: MeshInstance3D = w.node
+		var w_time: float = w.time
+		if t >= w_time or not is_instance_valid(node):
+			if is_instance_valid(node):
+				node.queue_free()
+			_beat_waves.remove_at(i)
+		else:
+			var z := _note_z(w_time, t)
+			node.position.z = z
+			var prog := clampf((z - Z_FAR) / (Z_LINE - Z_FAR), 0.0, 1.0)
+			var peak: float = w.peak
+			(w.mat as ShaderMaterial).set_shader_parameter("intensity", lerpf(peak, 0.02, prog))
+		i -= 1
 
 
 ## Alle Stations-Meshes/Texturen einmalig laden — _spawn_flyby und das
