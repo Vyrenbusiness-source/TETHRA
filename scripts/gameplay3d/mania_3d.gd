@@ -49,6 +49,16 @@ var core := ManiaCore.new()
 var _beatmap: Beatmap
 var _use_audio := false
 var _camera: Camera3D
+# KAMERA-MODUS (Settings.camera_mode, Override per --cam=dyn / --cam=comfort):
+# Komfort = gegen Motion-Sickness: Welt/Kosmos heben/kippen sich nicht,
+# ruhigere Perspektive (kleineres FOV, hoeher + steiler), Vorwaerts-Fluss am
+# Bildrand gedaempft (_flow). Licht-Pulse im Takt bleiben voll.
+var _comfort := true
+var _cam_pos := Vector3(0, 1.78, 6.8)
+var _cam_pitch := -15.2
+var _cam_fov := 72.0
+## Vection-Faktor: Sterne/Staub/Beat-Schub (1.0 Dynamisch, 0.4 Komfort).
+var _flow := 1.0
 var _glow_shader: Shader
 var _ring_shader: Shader
 var _note_shader: Shader
@@ -613,13 +623,14 @@ func _build_world() -> void:
 	we.environment = env
 	add_child(we)
 
+	_setup_camera_mode()
 	# Kamera: hinter/ueber dem Schiff, leicht nach unten auf den Highway.
 	_camera = Camera3D.new()
 	# Etwas hoeher + staerker geneigt: mehr Draufsicht, das Feld wirkt tiefer
 	# und die Notenabstaende bleiben besser lesbar.
-	_camera.position = Vector3(0, 1.78, 6.8)
-	_camera.rotation_degrees = Vector3(-15.2, 0, 0)
-	_camera.fov = 72.0
+	_camera.position = _cam_pos
+	_camera.rotation_degrees = Vector3(_cam_pitch, 0, 0)
+	_camera.fov = _cam_fov
 	_camera.current = true
 	add_child(_camera)
 
@@ -782,6 +793,26 @@ func _build_world() -> void:
 ## Hitzonen-Farbe: bei "Effekte: Aus" neutral grau statt Songfarbe.
 ## Kurzer Tastenname fuer die Pad-Beschriftung: Satzzeichen als Zeichen
 ## ("," statt "Comma"), Buchstaben gross.
+## Kamera-Modus aus den Settings (CLI-Override fuer Vorher/Nachher-Bilder).
+func _setup_camera_mode() -> void:
+	_comfort = Settings.comfort_camera()
+	for a in OS.get_cmdline_args():
+		if a == "--cam=dyn":
+			_comfort = false
+		elif a == "--cam=comfort":
+			_comfort = true
+	if _comfort:
+		_cam_pos = Vector3(0, 2.1, 7.6)
+		_cam_pitch = -16.0
+		_cam_fov = 62.0
+		_flow = 0.4
+	else:
+		_cam_pos = Vector3(0, CAM_Y, CAM_Z)
+		_cam_pitch = -15.2
+		_cam_fov = 72.0
+		_flow = 1.0
+
+
 func _short_key_name(code: int) -> String:
 	match code:
 		KEY_COMMA: return ","
@@ -865,7 +896,7 @@ func _build_starfield() -> void:
 		_star_scales.append(0.5 + h4 * 1.7)
 		# Streifen-Richtung: radial vom Fluchtpunkt weg (Stern fliegt auf
 		# die Kamera zu) — einmal vorberechnet, pro Frame nur skaliert.
-		_star_rot.append(Basis(Vector3.BACK, atan2(y - 1.78, x)))
+		_star_rot.append(Basis(Vector3.BACK, atan2(y - _cam_pos.y, x)))
 		# Farbmix: meist kuehles Weissblau, ein paar warme + Songfarben-Sterne.
 		var ch := _hash01(float(i) * 91.7)
 		var star_col := Color(0.75, 0.85, 1.0)
@@ -2043,15 +2074,16 @@ func _process(delta: float) -> void:
 	# REISE-UHR: Beat-Schub-Distanz — jeder Downbeat schiebt sichtbar an,
 	# dazwischen gleitet man aus. Bei Effekte=Aus laeuft die Reise linear
 	# (gleiches Ziel, ohne Ruckeln). Docking bleibt zeitbasiert.
-	_travel += delta * ((0.55 + _beat_env * 1.1) if fx > 0.0 else 0.82)
+	# Komfort: Reise linear (kein Beat-Ruck der Planeten-Route).
+	_travel += delta * ((0.55 + _beat_env * 1.1) if fx > 0.0 and not _comfort else 0.82)
 	var journey_p := clampf(_travel * 1000.0 / (_song_len_ms * 0.82), 0.0, 1.0)
 	var dock_mix := clampf((t - (_song_len_ms - 5000.0)) / 5000.0, 0.0, 1.0)
 	dock_mix = dock_mix * dock_mix * (3.0 - 2.0 * dock_mix)
 
 	# KAMERA bleibt ruhig: festes FOV, feste Position (kein Zoom-Pumpen,
 	# kein Beat-Schub). Tempo-Gefuehl kommt nur aus Sternen/Staub.
-	_camera.fov = 72.0
-	_camera.position = Vector3(0, 1.78, 6.8)
+	_camera.fov = _cam_fov
+	_camera.position = _cam_pos
 
 	# HYPERSPACE: Der Drop reisst die Sterne ~1.5s zu Lichtfaeden.
 	_warp_level = move_toward(_warp_level, 0.0, delta * 0.7)
@@ -2062,25 +2094,29 @@ func _process(delta: float) -> void:
 	# Docking-Finale bremst die Reise sanft aus.
 	var bpm_live := clampf((_clock.bpm if _clock.bpm > 1.0 else 140.0) / 140.0, 0.7, 1.6)
 	var cruise := 9.0 * bpm_live * (0.75 + (_music_energy * 0.45 + _kiai_mix * 0.5 + _density * 0.2) * fx)
-	_star_scroll += delta * (cruise * (1.0 + _surge) + (_warp_level * 55.0 + _star_burst * 18.0) * fx) * (1.0 - dock_mix * 0.75)
+	# Komfort: Fluss UND Schub auf _flow (~40 %) — weniger Vection am Rand.
+	var surge_m := _surge * _flow
+	_star_scroll += delta * _flow * (cruise * (1.0 + surge_m) + (_warp_level * 55.0 + _star_burst * 18.0) * fx * _flow) * (1.0 - dock_mix * 0.75)
 	# Panorama: ferne Sternen-Ebene stroemt langsamer (Parallaxe), gleicher
 	# Beat-Schub; Welt-Puls + minimaler Warp auf dem Schlag.
 	if _sky_mat != null:
-		_sky_phase += delta * (0.05 * cruise / 9.0 * (1.0 + _surge * fx) + _warp_level * 0.45 * fx) * (1.0 - dock_mix * 0.75)
+		_sky_phase += delta * _flow * (0.05 * cruise / 9.0 * (1.0 + surge_m * fx) + _warp_level * 0.45 * fx * _flow) * (1.0 - dock_mix * 0.75)
 		_sky_mat.set_shader_parameter(&"star_phase", _sky_phase)
 		_sky_mat.set_shader_parameter(&"beat_pulse", clampf(_world_pulse, 0.0, 1.0))
 		var sw := clampf(_warp_level * 0.7 + maxf(_surge, 0.0) * 0.05, 0.0, 1.0) * fx
-		_sky_mat.set_shader_parameter(&"warp", sw if sw > 0.03 else 0.0)
-		_sky_mat.set_shader_parameter(&"stars_rotation", Vector3(0, 0, _sky_phase * 0.02))
+		# Komfort: keine Warp-Streckung, kein Rollen der Sternen-Ebene.
+		_sky_mat.set_shader_parameter(&"warp", sw if sw > 0.03 and not _comfort else 0.0)
+		_sky_mat.set_shader_parameter(&"stars_rotation",
+				Vector3.ZERO if _comfort else Vector3(0, 0, _sky_phase * 0.02))
 	# Kurze Streifen auf dem Schlag (radial, minimal), Hyperspace laenger.
-	var warp_stretch := 1.0 + maxf(_surge, 0.0) * 0.8 + _warp_level * 4.0 * fx
-	var cy := 1.78 + _cosmos_lift
+	var warp_stretch := 1.0 if _comfort else 			1.0 + maxf(_surge, 0.0) * 0.8 + _warp_level * 4.0 * fx
+	var cy := _cam_pos.y + _cosmos_lift
 	for i in _star_seeds.size():
 		var seed := _star_seeds[i]
 		var z := fmod(seed.z + _star_scroll, 60.0) - 52.0
 		# Mitte hinter der Strecke bleibt dunkel: Sterne nahe dem
 		# Fluchtpunkt schrumpfen weg (projizierter Abstand zur Bildmitte).
-		var rr := Vector2(seed.x, seed.y - cy).length() / maxf(6.8 - z, 0.5)
+		var rr := Vector2(seed.x, seed.y - cy).length() / maxf(_cam_pos.z - z, 0.5)
 		var sc := _star_scales[i] * smoothstep(0.07, 0.2, rr)
 		# Streifen werden laenger UND schmaler (Lichtstrich statt Ellipse).
 		var basis := _star_rot[i] * Basis.from_scale(Vector3(sc * warp_stretch, sc / sqrt(warp_stretch), sc))
@@ -2098,7 +2134,8 @@ func _process(delta: float) -> void:
 			(0.26 + _kiai_mix * 0.13 + _ch_kiai_w * 0.10 + _beat_env * 0.04) * maxf(fx, 0.25))
 	# Vordergrund-Nebelfetzen driften deutlich schneller (Nah-Parallaxe).
 	for fgm2 in _fg_neb_mats:
-		fgm2.set_shader_parameter("drift", _nebula_drift * 3.4)
+		# Komfort: Nah-Parallaxe am Rand deutlich ruhiger.
+		fgm2.set_shader_parameter("drift", _nebula_drift * (1.4 if _comfort else 3.4))
 		fgm2.set_shader_parameter("energy", 0.35 + (_bass * 0.3 + _kick * 0.15 + _beat_env * 0.2) * fx)
 
 	# SONNENAUFGANG: waechst ueber das letzte Kapitel — Ankunft im Licht.
@@ -2128,7 +2165,7 @@ func _process(delta: float) -> void:
 
 	# Nebel driftet und atmet mit Bass/Kiai — und beschleunigt im Beat,
 	# als wuerde das Schiff durch die Wolken schieben.
-	_nebula_drift += delta * (1.0 + (_beat_env * 0.4 + _kiai_mix * 0.5) * fx + _surge * 0.45) * _bpm_factor
+	_nebula_drift += delta * (1.0 + (_beat_env * 0.4 + _kiai_mix * 0.5) * fx + surge_m * 0.45) * _bpm_factor
 	if _nebula_mat != null:
 		_nebula_mat.set_shader_parameter("drift", _nebula_drift)
 		_nebula_mat.set_shader_parameter("pulse", _beat_env * (1.0 - dock_mix * 0.5))
@@ -2226,7 +2263,8 @@ func _process(delta: float) -> void:
 		_flight_idx += 1
 	# KOSMOS: kein Roll/Bank mehr (kippte das ganze Bild). Nur in Breaks
 	# sinkt der Hintergrund langsam ab (4s Smoothstep) — wirkt wie Steigflug.
-	if fx <= 0.0:
+	# Komfort: Horizont bleibt stehen (kein Break-Gleiten/Absinken).
+	if fx <= 0.0 or _comfort:
 		_cosmos_lift_target = 0.0
 	_lift_phase = move_toward(_lift_phase,
 			1.0 if _cosmos_lift_target > 0.1 else 0.0, delta / 4.0)
@@ -2634,6 +2672,7 @@ const CH_FADE_BEATS := 4.0   # Ueberblendung ab dem Kapitel-Downbeat
 const CH_MIN_BARS := 8        # kuerzere Abschnitte werden zusammengelegt
 const FLY_D0 := 230.0         # Vorbeiflug: Startdistanz (fern, klein)
 const FLY_D1 := 13.0          # Enddistanz (nah, seitlich aus dem Bild)
+const FLY_D1_COMFORT := 40.0  # Komfort-Kamera: Enddistanz (ruhiger Rand)
 const CAM_Z := 6.8
 const CAM_Y := 1.78
 
@@ -2875,10 +2914,12 @@ func _update_chapters(vt: float, fx: float) -> void:
 		var side: float = c.side
 		var kb := 1.0 if c.kiai else 0.0
 		# Galaxie: exponentielle Annaeherung = gleichmaessiges Tempo-Gefuehl.
-		var d := FLY_D0 * pow(FLY_D1 / FLY_D0, p)
+		# Komfort: Vorbeiflug endet weiter weg -> langsamer im Augenwinkel.
+		var d1 := FLY_D1_COMFORT if _comfort else FLY_D1
+		var d := FLY_D0 * pow(d1 / FLY_D0, p)
 		var r := lerpf(0.40, 1.75, p * p)
 		var gs: float = c.gsize
-		g.position = Vector3(side * r * d, CAM_Y + d * float(c.gh) + gs * 0.3, CAM_Z - d)
+		g.position = Vector3(side * r * d, _cam_pos.y + d * float(c.gh) + gs * 0.3, _cam_pos.z - d)
 		g.visible = true
 		var gm: ShaderMaterial = fb.gm
 		gm.set_shader_parameter("t", vt / 1000.0)
@@ -2887,10 +2928,10 @@ func _update_chapters(vt: float, fx: float) -> void:
 				(0.42 + kb * 0.38) * fin * (1.0 - smoothstep(0.88, 1.0, p)) * fxc)
 		# Planet: gegenueberliegende Seite, etwas spaeter dran.
 		var pp := clampf(p * 1.12 - 0.08, 0.0, 1.0)
-		var d2 := FLY_D0 * 0.85 * pow(FLY_D1 / (FLY_D0 * 0.85), pp)
+		var d2 := FLY_D0 * 0.85 * pow(d1 / (FLY_D0 * 0.85), pp)
 		var r2 := lerpf(0.48, 1.9, pp * pp)
 		var ps: float = c.psize
-		pl.position = Vector3(-side * r2 * d2, CAM_Y + d2 * float(c.ph) + ps * 0.6, CAM_Z - d2)
+		pl.position = Vector3(-side * r2 * d2, _cam_pos.y + d2 * float(c.ph) + ps * 0.6, _cam_pos.z - d2)
 		pl.visible = p * 1.12 - 0.08 > 0.0
 		var pm: ShaderMaterial = fb.pm
 		pm.set_shader_parameter("t", vt / 1000.0)

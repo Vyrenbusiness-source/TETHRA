@@ -36,6 +36,11 @@ var ar_override: float = -1.0
 var offset_ms: float = 0.0
 ## 0 = Aus, 1 = Dezent, 2 = Voll.
 var tunnel_intensity: int = 2
+## Kamera: 0 = Komfort (Default, gegen Uebelkeit: Strecke kippt/rollt/hebt
+## sich nicht, ruhigere Perspektive, gedaempfte Vorwaerts-Bewegung am Rand),
+## 1 = Dynamisch (volle Flug-Bewegung). Der Schluessel ist neu: bestehende
+## Nutzer ohne Eintrag landen dadurch einmalig auf Komfort.
+var camera_mode: int = 0
 ## Master-Lautstaerke in dB.
 var volume_db: float = 0.0
 ## Frei belegbare Hook-Tasten (zusaetzlich zu Maus links/rechts).
@@ -292,6 +297,7 @@ func load_settings() -> void:
 	ar_override = float(cfg.get_value("game", "ar_override", -1.0))
 	offset_ms = float(cfg.get_value("game", "offset_ms", 0.0))
 	tunnel_intensity = int(cfg.get_value("game", "tunnel_intensity", 2))
+	camera_mode = clampi(int(cfg.get_value("game", "camera_mode", 0)), 0, 1)
 	volume_db = float(cfg.get_value("game", "volume_db", 0.0))
 	key_hook1 = int(cfg.get_value("keys", "hook1", KEY_Z))
 	key_hook2 = int(cfg.get_value("keys", "hook2", KEY_X))
@@ -315,6 +321,7 @@ func save() -> void:
 	cfg.set_value("game", "ar_override", ar_override)
 	cfg.set_value("game", "offset_ms", offset_ms)
 	cfg.set_value("game", "tunnel_intensity", tunnel_intensity)
+	cfg.set_value("game", "camera_mode", camera_mode)
 	cfg.set_value("game", "volume_db", volume_db)
 	cfg.set_value("keys", "hook1", key_hook1)
 	cfg.set_value("keys", "hook2", key_hook2)
@@ -472,6 +479,11 @@ func tunnel_intensity_value() -> float:
 		0: return 0.0
 		1: return 0.32
 		_: return 0.62
+
+
+## true = Komfort-Kamera (ruhig, gegen Motion-Sickness).
+func comfort_camera() -> bool:
+	return camera_mode == 0
 
 
 func is_hook_key(keycode: int) -> bool:
