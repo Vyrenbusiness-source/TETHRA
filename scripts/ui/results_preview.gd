@@ -5,6 +5,9 @@ extends Control
 const SHOT_PATH := "C:/Users/Gexanx/AppData/Local/Temp/claude/c--Users-Gexanx-Desktop-rhyg/b9d5e593-aabc-4b4b-a882-a5835e187db3/scratchpad/results_preview.png"
 
 
+const CLIP_MD5 := "c72d6dea5503e90ba12244d54047d5e9"
+
+
 func _ready() -> void:
 	var args := OS.get_cmdline_args() + OS.get_cmdline_user_args()
 	theme = UiTheme.build_theme()
@@ -14,7 +17,17 @@ func _ready() -> void:
 	add_child(rs)
 	rs.retry_pressed.connect(func(): print("retry"))
 	rs.replay_pressed.connect(func(): print("replay"))
-	rs.clip_pressed.connect(func(): print("clip"))
+	var exporter := ClipExporter.new()
+	add_child(exporter)
+	exporter.resolution = "1280x720"
+	exporter.progress.connect(func(sec: float): rs.show_toast("Clip wird aufgenommen … %d s" % int(sec), true))
+	exporter.finished.connect(func(ok: bool, path: String): rs.show_clip_result(ok, path, exporter.last_error))
+	rs.clip_pressed.connect(func():
+		print("clip")
+		var md5: String = CLIP_MD5 if "--realclip" in args else "00000000000000000000000000000000"
+		var out := ClipExporter.clips_dir().path_join("clip_preview.avi")
+		if exporter.export_clip(md5, out):
+			rs.show_toast("Clip wird aufgenommen …", true))
 	rs.back_pressed.connect(func(): print("back"))
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 7
@@ -37,8 +50,19 @@ func _ready() -> void:
 		"player": "VYREN",
 		"date": "2026-11-06T22:37:00",
 	})
+	if "--donetoast" in args:
+		await get_tree().create_timer(1.8).timeout
+		rs.show_clip_result(true, ClipExporter.clips_dir().path_join("clip_preview.avi"))
+	if "--toast" in args:
+		await get_tree().create_timer(2.0).timeout
+		rs.clip_pressed.emit()
+		await get_tree().create_timer(0.1).timeout
 	if "--shot" in args:
-		await get_tree().create_timer(2.6).timeout
+		if "--realclip" in args:
+			await exporter.finished
+			await get_tree().create_timer(0.8).timeout
+		else:
+			await get_tree().create_timer(2.6).timeout
 		await RenderingServer.frame_post_draw
 		get_viewport().get_texture().get_image().save_png(SHOT_PATH)
 		get_tree().quit()

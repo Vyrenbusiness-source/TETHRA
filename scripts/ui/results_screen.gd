@@ -82,6 +82,78 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
 
 
+var _toast: PanelContainer
+var _toast_label: Label
+var _toast_btn: Button
+var _toast_folder := ""
+var _toast_tw: Tween
+
+
+## Glas-Toast oben mittig (Header-Leerraum) (Clip-Export). sticky = bleibt stehen (Fortschritt),
+## sonst blendet er nach 4 s aus (mit Ordner-Button: 12 s). folder != "" zeigt
+## den Button "Ordner oeffnen" (OS.shell_open).
+func show_toast(text: String, sticky: bool, folder: String = "") -> void:
+	if _toast == null or not is_instance_valid(_toast):
+		_toast = PanelContainer.new()
+		_toast.anchor_left = 0.5
+		_toast.anchor_right = 0.5
+		_toast.anchor_top = 0.0
+		_toast.anchor_bottom = 0.0
+		_toast.grow_horizontal = Control.GROW_DIRECTION_BOTH
+		_toast.grow_vertical = Control.GROW_DIRECTION_END
+		_toast.offset_top = 14
+		_toast.offset_bottom = 14
+		_toast.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var sb := UiTheme.glass_box(12, 0.9)
+		sb.set_content_margin_all(10)
+		_toast.add_theme_stylebox_override("panel", sb)
+		var hb := HBoxContainer.new()
+		hb.add_theme_constant_override("separation", 14)
+		hb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_toast.add_child(hb)
+		_toast_label = Label.new()
+		_toast_label.add_theme_font_size_override("font_size", 15)
+		_toast_label.add_theme_color_override("font_color", Color(0.85, 0.92, 1.0))
+		_toast_label.custom_minimum_size.x = 320
+		_toast_label.autowrap_mode = TextServer.AUTOWRAP_ARBITRARY
+		_toast_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		hb.add_child(_toast_label)
+		_toast_btn = Button.new()
+		_toast_btn.text = "Ordner öffnen"
+		UiTheme.style_button(_toast_btn, false)
+		_toast_btn.pressed.connect(func() -> void: open_folder(_toast_folder))
+		hb.add_child(_toast_btn)
+		add_child(_toast)
+	_toast_label.text = text
+	_toast_label.custom_minimum_size.x = clampf(size.x * 0.4, 320.0, 760.0) if size.x > 0.0 else 600.0
+	_toast_folder = folder
+	_toast_btn.visible = folder != ""
+	_toast.modulate.a = 1.0
+	_toast.reset_size()
+	if _toast_tw != null and _toast_tw.is_valid():
+		_toast_tw.kill()
+	if not sticky:
+		_toast_tw = create_tween()
+		_toast_tw.tween_interval(12.0 if folder != "" else 4.0)
+		_toast_tw.tween_property(_toast, "modulate:a", 0.0, 0.5)
+
+
+## Ordner im Explorer oeffnen. Gibt den OS-Fehlercode zurueck (OK = 0).
+func open_folder(folder: String) -> int:
+	if folder == "":
+		return ERR_INVALID_PARAMETER
+	return OS.shell_open(ProjectSettings.globalize_path(folder))
+
+
+## Clip-Export-Ergebnis als Toast: "Clip gespeichert: <Pfad>" + Ordner-Button,
+## bei Fehler der Grund (ClipExporter.last_error).
+func show_clip_result(ok: bool, path: String, error: String = "") -> void:
+	if ok:
+		show_toast("Clip gespeichert: %s" % path, false, path.get_base_dir())
+	else:
+		show_toast("Clip-Export fehlgeschlagen: %s" % (error if error != "" else "unbekannt"), false)
+
+
 func show_results(data: Dictionary) -> void:
 	_data = data
 	_stats = data.get("s", {})
