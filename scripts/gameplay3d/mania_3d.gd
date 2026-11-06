@@ -3207,7 +3207,15 @@ func _on_results_clip() -> void:
 		_clip_exporter.progress.connect(func(sec: float):
 			_results_toast("Clip wird aufgenommen … %d s" % int(sec), true))
 		_clip_exporter.finished.connect(func(ok: bool, path: String):
-			if ok:
+			# Fortschritts-Toast weg, Ergebnis kommt als Results-Toast mit
+			# "Ordner öffnen"-Button (bzw. dem Fehlergrund).
+			if _clip_toast != null and is_instance_valid(_clip_toast):
+				_clip_toast.queue_free()
+				_clip_toast = null
+			if _results_screen != null and is_instance_valid(_results_screen) \
+					and _results_screen.has_method("show_clip_result"):
+				_results_screen.show_clip_result(ok, path, "" if ok else str(_clip_exporter.last_error))
+			elif ok:
 				_results_toast("Clip gespeichert: %s" % path, false)
 			else:
 				_results_toast("Clip-Export fehlgeschlagen", false))
