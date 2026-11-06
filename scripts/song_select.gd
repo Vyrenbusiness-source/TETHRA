@@ -756,10 +756,10 @@ func _layout_stage() -> void:
 	if h > max_h:
 		h = max_h
 		w = h * 16.0 / 9.0
-	var show := w >= 240.0
+	var fits := w >= 240.0
 	for c in _stage.get_children():
-		(c as CanvasItem).visible = show
-	if not show:
+		(c as CanvasItem).visible = fits
+	if not fits:
 		return
 	var total := h + gap + 3.0 + gap + viz_h
 	# Optisch etwas ueber der Mitte: ruhiger Schwerpunkt.
