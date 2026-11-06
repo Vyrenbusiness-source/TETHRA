@@ -87,6 +87,9 @@ var _scan_from := 0
 
 ## index -> {root, glow_mat, rim, beam}
 var _notes: Dictionary = {}
+## Losgelassene/verpasste Hold-Strahlen scrollen entsaettigt weiter:
+## { "beam": HoldBeam, "head": ms, "end": ms, "col": int }
+var _released_beams: Array[Dictionary] = []
 
 var _star_mm: MultiMesh
 var _star_seeds: Array[Vector3] = []
@@ -1014,25 +1017,14 @@ func _on_note_spawned(index: int) -> void:
 	root.position = Vector3(RAIL_X[obj.column], ROAD_Y + 0.32, _note_z(obj.time, _time_ms()))
 	_world.add_child(root)
 
-	# Hold: BREITE Leuchtbahn (fast Spurbreite, halbtransparent) mit hellem
-	# Kernstreifen — unuebersehbar, Project-Sekai-Style.
-	var beam: MeshInstance3D = null
+	# Hold: Energiestrahl (HoldBeam), Laenge pro Frame ueber _note_z (SV-korrekt).
+	var beam: HoldBeam = null
 	if obj.is_hold:
-		beam = MeshInstance3D.new()
-		var bb := BoxMesh.new()
-		bb.size = Vector3(1.02, 0.035, 1.0)
-		beam.mesh = bb
-		var bm := _emissive_mat(col, 0.38 if clean else 0.55)
-		bm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		bm.albedo_color = Color(col.r, col.g, col.b, 0.30 if clean else 0.34)
-		beam.material_override = bm
-		var beam_core := MeshInstance3D.new()
-		var cb := BoxMesh.new()
-		cb.size = Vector3(0.30, 0.05, 1.0)
-		beam_core.mesh = cb
-		beam_core.material_override = _emissive_mat(col.lerp(Color(1, 1, 1), 0.55), 1.1)
-		beam.add_child(beam_core)
+		beam = HoldBeam.new()
 		_world.add_child(beam)
+		beam.setup(0.92, col)
+		beam.set_span(root.position.z, _note_z(obj.end_time(), _time_ms()),
+				RAIL_X[obj.column], ROAD_Y + 0.28)
 
 	# Landelicht: weicher Reflexions-Spot unter der Drohne auf der Road —
 	# verbindet Note und Spur optisch (Tiefenanker).
@@ -1109,8 +1101,18 @@ func _on_note_judged(index: int, result: Dictionary) -> void:
 			tw.tween_property(node, "position:z", SHIP_Z + 6.0, 0.35)
 			tw.parallel().tween_property(node, "scale", Vector3.ONE * 0.3, 0.35)
 			tw.tween_callback(node.queue_free)
-		if entry.beam != null:
-			(entry.beam as MeshInstance3D).queue_free()
+		var hb: HoldBeam = entry.beam
+		if hb != null:
+			var hobj := _beatmap.hit_objects[index] as ManiaNote
+			var dropped: bool = result.get("hold_end", false) and not result.get("held", true)
+			if q == ManiaCore.Quality.MISS or dropped:
+				# Rest des Holds scrollt entsaettigt weiter (Loslassen sichtbar).
+				hb.set_state(HoldBeam.STATE_RELEASED)
+				_released_beams.append({ "beam": hb,
+					"head": maxf(hobj.time, _time_ms()) if dropped else hobj.time,
+					"end": hobj.end_time(), "col": hobj.column })
+			else:
+				hb.queue_free()
 	if q == ManiaCore.Quality.MISS:
 		_last_milestone = 0
 	else:
@@ -1440,30 +1442,27 @@ func _process(delta: float) -> void:
 		nmat.set_shader_parameter("approach",
 				clampf((root.position.z - Z_FAR) / (Z_LINE - Z_FAR), 0.0, 1.0))
 		(entry.glow as ShaderMaterial).set_shader_parameter("intensity", 1.6 if lock else 0.9)
-		var beam: MeshInstance3D = entry.beam
+		var beam: HoldBeam = entry.beam
 		if beam != null:
-			var z1: float = root.position.z
-			var z2 := _note_z(obj.end_time(), t)
-			beam.position = Vector3(RAIL_X[obj.column], ROAD_Y + 0.28, (z1 + z2) * 0.5)
-			# HOLD-GLOW: saettigt in ~0,6 s (auch lange Holds gluehen sofort
-			# sichtbar), pulsiert mit dem Beat; der Kern wird weiss-heiss und
-			# das Pad leuchtet dauerhaft, solange gehalten wird.
-			var wide := 1.0
+			beam.set_span(root.position.z, _note_z(obj.end_time(), t),
+					RAIL_X[obj.column], ROAD_Y + 0.28)
+			beam.set_beat(_beat_env)
+			# Halten: Strahl wird heiss, das Pad leuchtet dauerhaft mit.
 			if core.active_hold(obj.column) == index:
+				if not bool(entry.get("held", false)):
+					entry["held"] = true
+					beam.set_state(HoldBeam.STATE_HELD)
 				var held_t: float = clampf((t - obj.time) / 600.0, 0.0, 1.0)
-				wide = 1.0 + held_t * 0.45
-				var bmat := beam.material_override as StandardMaterial3D
-				if bmat != null:
-					bmat.emission_energy_multiplier = 0.55 \
-							+ held_t * (1.7 + _beat_env * 0.9)
-					bmat.albedo_color.a = 0.34 + held_t * 0.30
-				if beam.get_child_count() > 0:
-					var cmat := (beam.get_child(0) as MeshInstance3D).material_override as StandardMaterial3D
-					if cmat != null:
-						cmat.emission_energy_multiplier = 1.1 \
-								+ held_t * (2.4 + _beat_env * 1.2)
 				_pad_flash[obj.column] = maxf(_pad_flash[obj.column], 0.5 + held_t * 0.3)
-			beam.scale = Vector3(wide, 1, maxf(absf(z1 - z2), 0.05))
+	for ri in range(_released_beams.size() - 1, -1, -1):
+		var rb: Dictionary = _released_beams[ri]
+		var rbeam: HoldBeam = rb.beam
+		var z_end := _note_z(float(rb.end), t)
+		if z_end > Z_LINE + 4.0:
+			rbeam.queue_free()
+			_released_beams.remove_at(ri)
+			continue
+		rbeam.set_span(_note_z(float(rb.head), t), z_end, RAIL_X[int(rb.col)], ROAD_Y + 0.28)
 
 	for c in core.columns:
 		_pad_flash[c] = move_toward(_pad_flash[c], 0.0, delta * 5.0)
