@@ -24,6 +24,11 @@ const QUALITY_COLOR := {
 const CLEAN_PAD := Color(0.52, 0.54, 0.60)
 const CLEAN_NOTE := Color(0.58, 0.76, 0.94)
 const CLEAN_HOLD := Color(0.95, 0.72, 0.38)
+# Noten nach Beat-Teilung faerben (SnapColor); Setting folgt spaeter.
+const SNAP_COLORS_ENABLED := true
+# Beatmap-Hintergrund als ferne, geblurte, abgedunkelte Ebene hinter dem Nebel.
+const MAP_BG_ENABLED := true
+const MAP_BG_ALPHA := 0.18
 
 const GRADE_COLOR := {
 	"S": Color(1.0, 0.85, 0.25), "A": Color(0.4, 1.0, 0.5),
@@ -44,6 +49,10 @@ var _skill_fx: SkillFx
 
 var _theme_col := Color(0.22, 0.68, 0.90)
 var _theme_kiai := Color(0.92, 0.52, 0.20)
+# Snap-Farbe je hit_object (einmal beim Laden berechnet, Index = Note).
+var _snap_cols := PackedColorArray()
+# Map-Hintergrundbild (einmal beim Map-Start geladen, nie im Gameplay).
+var _bg_tex: Texture2D
 
 ## Traeger fuer die komplette Strecke (Rails/Linie/Pads/Notes/Laser).
 ## Bleibt FIX: kein Kippen/Banken/Wippen — die Bahn ist der Ruhepol.
@@ -273,6 +282,7 @@ func _ready() -> void:
 	_ring_shader = load("res://shaders/hit_ring.gdshader")
 	_note_shader = load("res://shaders/note_disc.gdshader")
 	_extract_theme_color()
+	_precompute_snap_colors()
 	_preload_stations()
 	_build_world()
 	_sparks = HitSparks.new()
@@ -384,6 +394,7 @@ func _time_ms() -> float:
 
 func _extract_theme_color() -> void:
 	var tex := OszImporter.load_background_texture(GameSession.osz_path, _beatmap)
+	_bg_tex = tex
 	if tex == null:
 		return
 	var img := tex.get_image()
@@ -405,6 +416,90 @@ func _extract_theme_color() -> void:
 	# wuerde alles nur weisser (= greller) machen.
 	_theme_col = Color.from_hsv(hue, 0.72, 0.84)
 	_theme_kiai = Color.from_hsv(fposmod(hue + 0.5, 1.0), 0.78, 0.86)
+
+
+## Map-Hintergrund: Bild einmal klein rechnen (= starker Blur), abdunkeln,
+## Mitte hinter der Strecke noch dunkler, Raender weich ausblenden. Liegt als
+## riesige ferne Ebene HINTER dem Nebel; alles CPU-seitig, einmal beim Start.
+func _build_map_bg() -> void:
+	if not MAP_BG_ENABLED or _bg_tex == null:
+		return
+	var src := _bg_tex.get_image()
+	if src == null or src.is_empty():
+		return
+	var img := src.duplicate() as Image
+	if img.is_compressed():
+		img.decompress()
+	img.convert(Image.FORMAT_RGBA8)
+	# Zweistufig verkleinern (kein Aliasing), dann 3x Box-Blur.
+	img.resize(128, 72, Image.INTERPOLATE_LANCZOS)
+	img.resize(40, 22, Image.INTERPOLATE_BILINEAR)
+	const W := 40
+	const H := 22
+	for _pass in 3:
+		var blurred := Image.create(W, H, false, Image.FORMAT_RGBA8)
+		for y in H:
+			for x in W:
+				var acc := Color(0, 0, 0, 0)
+				for oy in range(-1, 2):
+					for ox in range(-1, 2):
+						acc += img.get_pixel(clampi(x + ox, 0, W - 1), clampi(y + oy, 0, H - 1))
+				blurred.set_pixel(x, y, acc / 9.0)
+		img = blurred
+	for y in H:
+		for x in W:
+			var u := (float(x) + 0.5) / float(W) * 2.0 - 1.0
+			var v := (float(y) + 0.5) / float(H) * 2.0 - 1.0
+			var c := img.get_pixel(x, y)
+			# Abdunkeln + leicht entsaettigen (nichts grell).
+			c = c.lerp(Color(c.get_luminance(), c.get_luminance(), c.get_luminance()), 0.25)
+			c = c * 0.62
+			# Mitte (hinter der Strecke) dunkler, Raender weich auf 0.
+			var center := clampf(1.0 - Vector2(u * 1.4, v * 1.1).length(), 0.0, 1.0)
+			var edge := clampf((1.0 - absf(u)) * 3.0, 0.0, 1.0) * clampf((1.0 - absf(v)) * 3.0, 0.0, 1.0)
+			c.a = MAP_BG_ALPHA * (1.0 - 0.65 * center) * edge
+			img.set_pixel(x, y, Color(c.r, c.g, c.b, c.a))
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR
+	mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
+	mat.albedo_texture = ImageTexture.create_from_image(img)
+	mat.render_priority = -10
+	var bg := MeshInstance3D.new()
+	var bq := QuadMesh.new()
+	var aspect := float(src.get_width()) / maxf(1.0, float(src.get_height()))
+	var bh := 96.0
+	bq.size = Vector2(maxf(bh * aspect, 170.0), bh)
+	bg.mesh = bq
+	bg.material_override = mat
+	bg.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	bg.position = Vector3(0, 9.0, Z_FAR - 16.0)
+	_cosmos.add_child(bg)
+
+
+## Snap-Teiler aller Noten einmalig -> Farben. Lesbarkeit: Palette hat gleiche
+## Helligkeit; leicht angehoben, damit sie auf dunklem Grund kraeftig bleibt.
+func _precompute_snap_colors() -> void:
+	_snap_cols = PackedColorArray()
+	if not SNAP_COLORS_ENABLED or _beatmap == null:
+		return
+	var divs := SnapColor.precompute(_beatmap)
+	var cache := {}
+	_snap_cols.resize(divs.size())
+	for i in divs.size():
+		var d: int = divs[i]
+		if not cache.has(d):
+			var c := SnapColor.color_for(d, _theme_col)
+			cache[d] = Color.from_hsv(c.h, clampf(c.s * 1.08, 0.0, 0.85),
+					clampf(c.v * 1.04, 0.0, 0.95))
+		_snap_cols[i] = cache[d]
+
+
+func _snap_col(index: int) -> Color:
+	if index < 0 or index >= _snap_cols.size():
+		return Color(0, 0, 0, 0)
+	return _snap_cols[index]
 
 
 # ---------------------------------------------------------------------------
@@ -672,6 +767,8 @@ func _build_starfield() -> void:
 	neb2.material_override = _nebula_mat2
 	neb2.position = Vector3(4.0, 6.0, Z_FAR - 7.0)
 	_cosmos.add_child(neb2)
+
+	_build_map_bg()
 
 	# Horizont-Glow: weicher Schein in Songfarbe, verankert die Strecke.
 	var hg := MeshInstance3D.new()
@@ -1006,6 +1103,11 @@ func _on_note_spawned(index: int) -> void:
 		col = _theme_col.lerp(Color(1, 1, 1), 0.75)
 		if _beatmap.is_kiai(obj.time):
 			col = _theme_kiai.lerp(Color(1, 1, 1), 0.55)
+	# Snap-Farbe: normale Noten komplett, Holds nur als feiner Innenring am Kopf.
+	var snap := _snap_col(index)
+	var has_snap := snap.a > 0.0
+	if has_snap and not obj.is_hold:
+		col = snap
 
 	var root := Node3D.new()
 	# 2D-KONSISTENZ: Die Note ist ein FLACHER Kreis wie das Pad — sie gleitet
@@ -1025,6 +1127,21 @@ func _on_note_spawned(index: int) -> void:
 	disc.material_override = rim
 	disc.rotation_degrees = Vector3(-90, 0, 0)
 	root.add_child(disc)
+	if has_snap and obj.is_hold:
+		var inner := MeshInstance3D.new()
+		var iq := QuadMesh.new()
+		iq.size = Vector2(0.72, 0.72)
+		inner.mesh = iq
+		var im := ShaderMaterial.new()
+		im.shader = _ring_shader
+		im.set_shader_parameter("base_color", snap)
+		im.set_shader_parameter("radius", 0.34)
+		im.set_shader_parameter("approach", 1.0)
+		im.set_shader_parameter("intensity", 0.55 if clean else 0.8)
+		inner.material_override = im
+		inner.rotation_degrees = Vector3(-90, 0, 0)
+		inner.position = Vector3(0, 0.01, 0)
+		root.add_child(inner)
 	var glow := MeshInstance3D.new()
 	var q := QuadMesh.new()
 	q.size = Vector2(2.05, 2.05)
