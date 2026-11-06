@@ -52,6 +52,10 @@ hook_alt={
 }]
 }
 
+[audio]
+
+driver/mix_rate=48000
+
 [physics]
 
 ; Deterministischer Physik-Tick 240 Hz (Abschnitt 4)
