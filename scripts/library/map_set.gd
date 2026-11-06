@@ -11,10 +11,14 @@ var title: String = ""
 var artist: String = ""
 var creator: String = ""
 var background_file: String = ""
+## true, wenn mindestens eine Diff echte SV hat (MapLibrary.detect_sv).
+var sv: bool = false
+## Cache-Version der SV-Erkennung; != MapLibrary.SV_VERSION -> nachrechnen.
+var sv_ver: int = 0
 
 ## Pro Difficulty ein Dictionary (leicht -> schwer sortiert):
 ## { version, osu_filename, stars, max_combo, notes, duration_ms,
-##   cs, ar, od, preview_time, audio_filename }
+##   cs, ar, od, preview_time, audio_filename, sv }
 var diffs: Array = []
 
 var _thumb_cache: Texture2D = null
@@ -49,6 +53,20 @@ func length_ms() -> float:
 	for d in diffs:
 		longest = maxf(longest, float(d.get("duration_ms", 0.0)))
 	return longest
+
+func has_sv() -> bool:
+	return sv
+
+
+## Ergebnis der SV-Erkennung uebernehmen: by_file = { osu_filename: bool }.
+func apply_sv(by_file: Dictionary) -> void:
+	sv = false
+	for d in diffs:
+		var v := bool(by_file.get(str(d.get("osu_filename", "")), false))
+		d["sv"] = v
+		sv = sv or v
+	sv_ver = MapLibrary.SV_VERSION
+
 
 func search_haystack() -> String:
 	return ("%s %s %s" % [artist, title, creator]).to_lower()
@@ -111,6 +129,7 @@ func to_dict() -> Dictionary:
 	return {
 		"title": title, "artist": artist, "creator": creator,
 		"background_file": background_file, "diffs": diffs,
+		"sv": sv, "sv_ver": sv_ver,
 	}
 
 
@@ -122,4 +141,6 @@ static func from_dict(p_osz_path: String, d: Dictionary) -> MapSet:
 	ms.creator = str(d.get("creator", ""))
 	ms.background_file = str(d.get("background_file", ""))
 	ms.diffs = d.get("diffs", [])
+	ms.sv = bool(d.get("sv", false))
+	ms.sv_ver = int(d.get("sv_ver", 0))
 	return ms

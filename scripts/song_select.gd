@@ -132,6 +132,8 @@ var _chips_row: HBoxContainer
 var _star_filter := 0
 var _sort_mode := 0
 var _star_chips: Array[Button] = []
+var _sv_filter := false
+var _sv_chip: Button
 # Max-pp (SS) der ausgewaehlten Diff — rosu-pp im Hintergrund-Thread.
 var _maxpp_label: Label
 var _maxpp_thread: Thread
@@ -167,6 +169,8 @@ const DL_STAR_FILTERS := [
 	["6★ +", 6.0, 999.0],
 ]
 var _dl_star_filter := 0
+var _dl_sv := false
+var _dl_sv_chip: Button
 ## PACK-Download: laedt automatisch N noch fehlende Sets in einem frei
 ## waehlbaren Sternbereich (z.B. 2.0–2.9).
 var _pack_active := false
@@ -201,6 +205,8 @@ func _ready() -> void:
 	_library = MapLibrary.new()
 	_library.scan()
 	GameSession.perf_since("Browser: Library-Scan gesamt", _perf_ready_t)
+	# SV-Erkennung fuer alte Cache-Eintraege im Hintergrund nachrechnen.
+	_library.start_sv_backfill(_on_sv_backfill_done)
 
 	_preview = AudioStreamPlayer.new()
 	_preview.bus = "Music"
@@ -244,6 +250,8 @@ func _ready() -> void:
 		push_warning("--mania: keine 4K-Diff gefunden")
 	elif OS.get_cmdline_args().has("--autoplay"):
 		_on_play_pressed.call_deferred()
+	elif OS.get_cmdline_args().has("--shot-sv"):
+		_shot_sv.call_deferred()
 	elif OS.get_cmdline_args().has("--shot-dl"):
 		# Harness: Online-Panel oeffnen, restriktiven Sternfilter setzen und
 		# nach dem Auto-Nachladen Kartenzahl + Screenshot festhalten.
@@ -275,6 +283,33 @@ func _perf_flow() -> void:
 	await get_tree().create_timer(2.0).timeout
 	GameSession.perf_request("SPIELEN -> Gameplay")
 	_on_play_pressed()
+
+
+## Harness: Browser mit aktivem SV-Chip, danach Online-Panel mit SV-Chip.
+func _shot_sv() -> void:
+	var dir := OS.get_environment("SV_SHOT_DIR")
+	if dir == "":
+		dir = OS.get_user_data_dir()
+	# Backfill abwarten (max. 60 s).
+	var waited := 0.0
+	while _library.sv_backfill_running() and waited < 60.0:
+		await get_tree().create_timer(0.5).timeout
+		waited += 0.5
+	_sv_filter = true
+	_restyle_star_chips()
+	_refresh_filter(_search.text)
+	await get_tree().create_timer(1.5).timeout
+	await RenderingServer.frame_post_draw
+	get_viewport().get_texture().get_image().save_png(dir.path_join("sv_browser.png"))
+	print("SV-Sets lokal: %d von %d" % [_filtered.size(), _library.mapsets.size()])
+	_open_download_panel()
+	await get_tree().create_timer(1.0).timeout
+	_dl_sv_chip.button_pressed = true
+	await get_tree().create_timer(8.0).timeout
+	await RenderingServer.frame_post_draw
+	get_viewport().get_texture().get_image().save_png(dir.path_join("sv_online.png"))
+	print("SV-DL-KARTEN: %d" % _dl_rows.size())
+	get_tree().quit(0)
 
 
 func _shot_dl_after() -> void:
@@ -434,6 +469,14 @@ func _build_header() -> void:
 			_refresh_filter(_search.text))
 		filter_row.add_child(chip)
 		_star_chips.append(chip)
+	_sv_chip = _make_toggle("SV", 13, 16)
+	_sv_chip.custom_minimum_size = Vector2(0, FILTER_H)
+	_sv_chip.tooltip_text = "Nur Maps mit Scroll-Velocity-Wechseln (SV)"
+	_sv_chip.pressed.connect(func():
+		_sv_filter = not _sv_filter
+		_restyle_star_chips()
+		_refresh_filter(_search.text))
+	filter_row.add_child(_sv_chip)
 	_restyle_star_chips()
 	var sort := OptionButton.new()
 	sort.add_item("Titel", 0)
@@ -1052,6 +1095,8 @@ func _open_collection_popup() -> void:
 func _restyle_star_chips() -> void:
 	for i in _star_chips.size():
 		_apply_toggle(_star_chips[i], i == _star_filter)
+	if _sv_chip != null:
+		_apply_toggle(_sv_chip, _sv_filter)
 
 
 func _refresh_filter(query: String) -> void:
@@ -1065,6 +1110,8 @@ func _refresh_filter(query: String) -> void:
 		if _collection_mode:
 			if _active_collection == "" or not CollectionStore.contains(_active_collection, ms.osz_path):
 				continue
+		if _sv_filter and not ms.has_sv():
+			continue
 		# Sterne-Filter: Set passt, wenn IRGENDEINE Diff im Bereich liegt.
 		if _star_filter != 0:
 			var in_range := false
@@ -1333,6 +1380,26 @@ func _confirm_delete(ms: MapSet) -> void:
 	dlg.popup_centered()
 
 
+func _sv_badge() -> Control:
+	var pc := PanelContainer.new()
+	pc.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	var bb := UiTheme.solid_box(Color(COL_ACCENT.r, COL_ACCENT.g, COL_ACCENT.b, 0.9), 8)
+	bb.content_margin_left = 7
+	bb.content_margin_right = 7
+	bb.content_margin_top = 2
+	bb.content_margin_bottom = 2
+	pc.add_theme_stylebox_override("panel", bb)
+	pc.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	pc.tooltip_text = "Enthält Scroll-Velocity-Wechsel (SV)"
+	var l := Label.new()
+	l.text = "SV"
+	l.add_theme_font_size_override("font_size", 12)
+	l.add_theme_color_override("font_color", Color(0.03, 0.05, 0.08))
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	pc.add_child(l)
+	return pc
+
+
 func _make_card(ms: MapSet) -> Button:
 	var card := Button.new()
 	card.custom_minimum_size = Vector2(0, CARD_H)
@@ -1396,6 +1463,10 @@ func _make_card(ms: MapSet) -> Button:
 	m.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	m.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vb.add_child(m)
+
+	# SV-Badge: Set enthaelt mindestens eine Diff mit echter SV.
+	if ms.has_sv():
+		hb.add_child(_sv_badge())
 
 	# Grade-Badge des besten Scores: klein, fester Platz, Notenfarbe.
 	var badge := _best_grade_badge(ms)
@@ -1827,7 +1898,14 @@ func _on_maxpp_done(osz: String, inner: String, v: float) -> void:
 		_update_max_pp(_selected_set.meta_at(_selected_diff))
 
 
+func _on_sv_backfill_done() -> void:
+	if is_inside_tree() and _search != null:
+		_refresh_filter(_search.text)
+
+
 func _exit_tree() -> void:
+	if _library != null:
+		_library.shutdown()
 	if _maxpp_thread != null:
 		_maxpp_thread.wait_to_finish()
 		_maxpp_thread = null
@@ -2099,6 +2177,21 @@ func _open_download_panel() -> void:
 			_dl_auto_pages = 0
 			_render_dl_results())
 		filter_row.add_child(chip)
+	var sv_chip := Button.new()
+	sv_chip.text = "SV"
+	sv_chip.toggle_mode = true
+	sv_chip.button_pressed = _dl_sv
+	sv_chip.custom_minimum_size = Vector2(0, 32)
+	sv_chip.add_theme_font_size_override("font_size", 13)
+	sv_chip.tooltip_text = "Nur Sets mit Scroll-Velocity (SV)"
+	UiTheme.style_button(sv_chip, _dl_sv)
+	sv_chip.toggled.connect(func(on: bool):
+		_dl_sv = on
+		_mirror.sv_mode = on
+		UiTheme.style_button(sv_chip, on)
+		_run_mirror_search())
+	filter_row.add_child(sv_chip)
+	_dl_sv_chip = sv_chip
 
 	# PACK-DOWNLOAD: N fehlende Sets in einem freien Sternbereich auf einmal.
 	var pack_row := HBoxContainer.new()
@@ -2168,6 +2261,7 @@ func _open_download_panel() -> void:
 	_dl_offset = 0
 	_dl_end_reached = false
 	_dl_loading_more = true
+	_mirror.sv_mode = _dl_sv
 	_mirror.search("")
 
 
@@ -2375,6 +2469,8 @@ func _on_dl_scrolled(_v: float) -> void:
 func _dl_passes(r: Dictionary, owned: Dictionary, lo: float, hi: float) -> bool:
 	if owned.has(int(r.id)):
 		return false
+	if _dl_sv and not bool(r.get("sv", false)):
+		return false
 	if owned.has(_at_key(str(r.get("artist", "")), str(r.get("title", "")))):
 		return false
 	var star_list: Array = r.get("star_list", [])
@@ -2527,6 +2623,8 @@ func _make_online_card(r: Dictionary) -> Control:
 	bl.add_theme_font_size_override("font_size", 13)
 	bl.add_theme_color_override("font_color", Color(0.03, 0.05, 0.08))
 	badge.add_child(bl)
+	if bool(r.get("sv", false)):
+		hb.add_child(_sv_badge())
 	hb.add_child(badge)
 
 	var dl := Button.new()
