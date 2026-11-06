@@ -260,6 +260,11 @@ func _build_world() -> void:
 	env.glow_bloom = 0.08
 	env.glow_hdr_threshold = 0.82
 	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_ADDITIVE
+	# Qualitaets-Flags ohne Helligkeitsaenderung: Glow-Level explizit auf
+	# Engine-Standard (Level 3+5, je 1.0), Luminanz-Kappe gegen Ausreisser.
+	for gl in 7:
+		env.set_glow_level(gl, 1.0 if (gl == 2 or gl == 4) else 0.0)
+	env.glow_hdr_luminance_cap = 12.0
 	we.environment = env
 	add_child(we)
 
