@@ -278,7 +278,7 @@ func _build_left_panel() -> void:
 	_reveal.append(hh)
 	_build_histogram_data()
 	_hist_ctrl = Control.new()
-	_hist_ctrl.custom_minimum_size = Vector2(0, 96)
+	_hist_ctrl.custom_minimum_size = Vector2(0, 190)
 	_hist_ctrl.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_hist_ctrl.draw.connect(_draw_histogram)
 	vb.add_child(_hist_ctrl)
@@ -324,7 +324,7 @@ func _build_rank_area() -> void:
 	_rank_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_rank_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_rank_lbl.add_theme_font_override("font", UiTheme.heading_font(0 if grade.length() < 2 else -8))
-	_rank_lbl.add_theme_font_size_override("font_size", 260 if grade.length() < 2 else 220)
+	_rank_lbl.add_theme_font_size_override("font_size", 400 if grade.length() < 2 else 330)
 	_rank_lbl.add_theme_color_override("font_color", rc)
 	_rank_lbl.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.45))
 	_rank_lbl.add_theme_constant_override("shadow_offset_y", 8)

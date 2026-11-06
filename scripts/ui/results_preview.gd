@@ -5,7 +5,7 @@ const SHOT_PATH := "C:/Users/Gexanx/AppData/Local/Temp/claude/c--Users-Gexanx-De
 
 
 func _ready() -> void:
-	var args := OS.get_cmdline_args()
+	var args := OS.get_cmdline_args() + OS.get_cmdline_user_args()
 	theme = UiTheme.build_theme()
 	var fail := "--fail" in args
 	var rs := ResultsScreen.new()
