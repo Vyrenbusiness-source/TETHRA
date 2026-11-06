@@ -24,6 +24,10 @@ signal finished(ok: bool, out_path: String)
 const FPS := 60
 const RESOLUTION := "1920x1080"
 
+## Aufloesung des Clips (Tests nehmen 1280x720).
+var resolution: String = RESOLUTION
+## Letzter Fehlertext (leer = ok), fuer den Toast.
+var last_error: String = ""
 var pid: int = -1
 var out_path: String = ""
 var _t0_ms: int = 0
@@ -45,8 +49,13 @@ static func clips_dir() -> String:
 func export_clip(md5: String, p_out_path: String = "") -> bool:
 	if is_running():
 		return false
+	last_error = ""
 	out_path = p_out_path if p_out_path != "" else clips_dir().path_join("clip_%s.avi" % md5)
 	out_path = ProjectSettings.globalize_path(out_path)
+	if not FileAccess.file_exists("user://replays/%s.json" % md5):
+		last_error = "Kein gespeichertes Replay"
+		finished.emit(false, out_path)
+		return false
 	if FileAccess.file_exists(out_path):
 		DirAccess.remove_absolute(out_path)
 	var args := PackedStringArray()
@@ -57,10 +66,11 @@ func export_clip(md5: String, p_out_path: String = "") -> bool:
 		if FileAccess.file_exists(pck):
 			args.append_array(["--main-pack", pck])
 	args.append_array(["--write-movie", out_path, "--fixed-fps", str(FPS),
-		"--resolution", RESOLUTION, "--clip", md5])
+		"--resolution", resolution, "--position", "-10000,-10000", "--clip", md5])
 	pid = OS.create_process(OS.get_executable_path(), args)
 	if pid <= 0:
 		pid = -1
+		last_error = "Prozess konnte nicht gestartet werden"
 		finished.emit(false, out_path)
 		return false
 	_t0_ms = Time.get_ticks_msec()
@@ -73,7 +83,7 @@ func is_running() -> bool:
 
 
 func _ready() -> void:
-	set_process(false)
+	set_process(pid > 0)
 
 
 func _process(_dt: float) -> void:
@@ -89,4 +99,6 @@ func _process(_dt: float) -> void:
 	if FileAccess.file_exists(out_path):
 		var f := FileAccess.open(out_path, FileAccess.READ)
 		ok = f != null and f.get_length() > 0
+	if not ok:
+		last_error = "Prozess abgebrochen, kein Video erzeugt"
 	finished.emit(ok, out_path)
