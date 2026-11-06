@@ -1909,14 +1909,14 @@ func _process(delta: float) -> void:
 
 	# Die ABFANGLINIE pulsiert im Takt — der Hit-Moment ist hoerbar UND sichtbar.
 	_line_mat.emission_energy_multiplier = 1.1 + pulse * 1.6 + _punch * 1.0 + _kick * 0.35 + _line_flash * 1.0 \
-			+ _groove * 2.6
+			+ _groove * 3.0
 	_line_mat.emission = Color(1, 1, 1).lerp(_theme_kiai, _kiai_mix * 0.6)
 	var pad_energy: Array[float] = []
 	for i in _pad_mats.size():
 		var pf := clampf(_pad_flash[i], 0.0, 1.0)
 		pad_energy.append((PAD_IDLE if fx > 0.0 else 0.75)
 				+ (pulse * 0.08 + _punch * 0.06 + _kick * 0.03) * fx
-				+ pf * PAD_PRESS + _groove * 0.6)
+				+ pf * PAD_PRESS + _groove * 1.0)
 		# Druck-Feedback: Ring waechst dezent (max 1.15), kein Ueberstrahlen.
 		# Der Takt-Schlag hebt nur die Helligkeit, Groesse hoechstens 1.04.
 		if i < _pad_nodes.size():
@@ -1925,7 +1925,7 @@ func _process(delta: float) -> void:
 	for m in _edge_mats:
 		m.emission_energy_multiplier = (0.28 if fx <= 0.0 else 0.4) \
 				+ (_bass * 1.2 + _punch * 0.9 + _kick * 0.35 + _density * 0.6
-				+ _kiai_mix * 0.7) * fx + _groove * 2.0
+				+ _kiai_mix * 0.7) * fx + _groove * 3.0
 
 	# ON FIRE: ab 97% Acc (und min. 30 gewerteten Noten) zuenden die Kanten —
 	# je naeher an 100%, desto hoeher die Flammen. Ab 99.5% kippt das Feuer
@@ -3558,7 +3558,7 @@ func _capture_after_first_note() -> void:
 	if not is_inside_tree():
 		return
 	# Takt-Lage des Bildes (Vergleich auf/zwischen Beats per --shot-lead).
-	print("GROOVE bpm=%.1f phase=%.2f kiai=%.2f" % [_clock.bpm, _clock.beat_phase, _kiai_mix])
+	print("GROOVE bpm=%.1f phase=%.2f kiai=%.2f groove=%.2f energy=%.2f dens=%.2f" % [_clock.bpm, _clock.beat_phase, _kiai_mix, _groove, _music_energy, _density2])
 	var img := get_viewport().get_texture().get_image()
 	var path := "C:/Users/Gexanx/AppData/Local/Temp/claude/c--Users-Gexanx-Desktop-rhyg/b9d5e593-aabc-4b4b-a882-a5835e187db3/scratchpad/mania_3d.png"
 	img.save_png(path)
