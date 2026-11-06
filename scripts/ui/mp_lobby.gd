@@ -260,7 +260,7 @@ func _build_browser() -> void:
 	_name_edit.add_theme_stylebox_override("normal", _field_box())
 	cv.add_child(_name_edit)
 	_pw_edit = LineEdit.new()
-	_pw_edit.placeholder_text = "Passwort (leer = öffentlich sichtbar)"
+	_pw_edit.placeholder_text = "Passwort (leer = öffentlich)"
 	_pw_edit.custom_minimum_size = Vector2(0, 40)
 	_pw_edit.add_theme_stylebox_override("normal", _field_box())
 	cv.add_child(_pw_edit)
@@ -297,7 +297,7 @@ func _build_browser() -> void:
 	_code_edit.placeholder_text = "Code (z.B. 7K3F9-A2QXM)"
 	_code_edit.custom_minimum_size = Vector2(0, 54)
 	_code_edit.alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_code_edit.add_theme_font_size_override("font_size", 20)
+	_code_edit.add_theme_font_size_override("font_size", 16)
 	_code_edit.add_theme_stylebox_override("normal", _field_box())
 	_code_edit.text_submitted.connect(func(_t): _join_by_code())
 	kv.add_child(_code_edit)
