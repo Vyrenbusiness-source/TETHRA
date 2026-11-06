@@ -55,6 +55,8 @@ import wave
 import zlib
 
 FPS = 60
+MIX_RATE = 48000
+MIX_BLOCK = 512
 DEFAULT_GODOT = "C:/Users/Gexanx/Desktop/rhyg/Godot_v4.7-stable_win64.exe"
 HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_CHECKOUT = os.path.dirname(HERE)
@@ -440,8 +442,11 @@ def run(args):
                  / sum((k - mk) ** 2 for k in ks))
     if fp.get("lead_el") is not None and fp["lead"] > 0:
         from_ms = max(fp["lead_el"] - fp["lead"], 0.0)
-        a_off = from_ms - k_play * 1000.0 / FPS
-        a_src = "Lead-In-Ueberhang %.1f ms" % from_ms
+        # AudioServer mischt in Bloecken zu MIX_BLOCK Samples: der Song setzt an
+        # der ersten Blockgrenze >= Beginn des Audio-Blocks von Frame k_play ein.
+        blk = math.ceil(k_play * MIX_RATE / FPS / MIX_BLOCK) * MIX_BLOCK
+        a_off = from_ms - blk * 1000.0 / MIX_RATE
+        a_src = "Lead-In-Ueberhang %.1f ms, Einsatz bei Sample %d" % (from_ms, blk)
     else:
         a_off = pos_off
         a_src = "Fit get_playback_position"
