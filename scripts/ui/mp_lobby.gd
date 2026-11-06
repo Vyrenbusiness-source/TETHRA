@@ -40,7 +40,7 @@ func _ready() -> void:
 	_library.scan()
 	_mirror = Mirror
 	_preview = AudioStreamPlayer.new()
-	_preview.bus = "Master"
+	_preview.bus = "Music"
 	add_child(_preview)
 	_mirror.download_progress.connect(_on_dl_progress)
 	_mirror.download_done.connect(_on_dl_done)
@@ -97,6 +97,9 @@ func _ready() -> void:
 	UiTheme.style_button(close)
 	close.pressed.connect(_back)
 	head.add_child(close)
+	var head_gap := Control.new()
+	head_gap.custom_minimum_size = Vector2(0, 12)
+	root.add_child(head_gap)
 
 	_status_label = Label.new()
 	_status_label.add_theme_font_size_override("font_size", 13)
@@ -217,8 +220,9 @@ func _build_browser() -> void:
 	rooms_head.add_child(lan_head)
 	var refresh := Button.new()
 	refresh.text = "⟳"
+	refresh.add_theme_font_size_override("font_size", 20)
 	refresh.tooltip_text = "Liste aktualisieren"
-	refresh.custom_minimum_size = Vector2(34, 30)
+	refresh.custom_minimum_size = Vector2(38, 34)
 	UiTheme.style_button(refresh)
 	refresh.pressed.connect(func(): Lobby.fetch_online_rooms())
 	rooms_head.add_child(refresh)
@@ -229,6 +233,7 @@ func _build_browser() -> void:
 	left_col.add_child(scroll)
 	_rooms_list = VBoxContainer.new()
 	_rooms_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_rooms_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_rooms_list.add_theme_constant_override("separation", 6)
 	scroll.add_child(_rooms_list)
 	_refresh_rooms()
@@ -254,14 +259,14 @@ func _build_browser() -> void:
 	ch.add_theme_color_override("font_color", COL_ACCENT)
 	cv.add_child(ch)
 	_name_edit = LineEdit.new()
-	_name_edit.text = "%s's Raum" % Settings.profile_name
+	_name_edit.text = _possessive_room(Settings.profile_name)
 	_name_edit.max_length = 28
-	_name_edit.custom_minimum_size = Vector2(0, 40)
+	_name_edit.custom_minimum_size = Vector2(0, 44)
 	_name_edit.add_theme_stylebox_override("normal", _field_box())
 	cv.add_child(_name_edit)
 	_pw_edit = LineEdit.new()
 	_pw_edit.placeholder_text = "Passwort (leer = öffentlich)"
-	_pw_edit.custom_minimum_size = Vector2(0, 40)
+	_pw_edit.custom_minimum_size = Vector2(0, 44)
 	_pw_edit.add_theme_stylebox_override("normal", _field_box())
 	cv.add_child(_pw_edit)
 	var create := Button.new()
@@ -275,7 +280,7 @@ func _build_browser() -> void:
 	cv.add_child(create)
 	var hint := Label.new()
 	hint.text = "Ohne Passwort erscheint dein Raum automatisch\nbei allen Spielern in der Liste."
-	hint.add_theme_font_size_override("font_size", 11)
+	hint.add_theme_font_size_override("font_size", 13)
 	hint.add_theme_color_override("font_color", COL_DIM)
 	cv.add_child(hint)
 
@@ -294,26 +299,35 @@ func _build_browser() -> void:
 	kh.add_theme_color_override("font_color", COL_ACCENT)
 	kv.add_child(kh)
 	_code_edit = LineEdit.new()
-	_code_edit.placeholder_text = "Code (z.B. 7K3F9-A2QXM)"
-	_code_edit.custom_minimum_size = Vector2(0, 54)
-	_code_edit.alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_code_edit.add_theme_font_size_override("font_size", 16)
+	_code_edit.placeholder_text = "Code (z. B. 7K3F9-A2QXM)"
+	_code_edit.custom_minimum_size = Vector2(0, 44)
 	_code_edit.add_theme_stylebox_override("normal", _field_box())
 	_code_edit.text_submitted.connect(func(_t): _join_by_code())
 	kv.add_child(_code_edit)
 	_join_pw_edit = LineEdit.new()
 	_join_pw_edit.placeholder_text = "Passwort (falls gesetzt)"
-	_join_pw_edit.custom_minimum_size = Vector2(0, 40)
+	_join_pw_edit.custom_minimum_size = Vector2(0, 44)
 	_join_pw_edit.add_theme_stylebox_override("normal", _field_box())
 	_join_pw_edit.text_submitted.connect(func(_t): _join_by_code())
 	kv.add_child(_join_pw_edit)
 	var join := Button.new()
 	join.text = "Beitreten"
-	join.custom_minimum_size = Vector2(0, 50)
+	join.custom_minimum_size = Vector2(0, 46)
 	join.add_theme_font_size_override("font_size", 16)
-	UiTheme.style_button(join, true)
+	UiTheme.style_button(join)
 	join.pressed.connect(_join_by_code)
 	kv.add_child(join)
+
+
+## Genitiv: Namen auf s/x/z (auch ss) nur mit Apostroph, sonst "s".
+static func _possessive_room(n: String) -> String:
+	var t := n.strip_edges()
+	if t.is_empty():
+		return "Raum"
+	var last := t.substr(t.length() - 1).to_lower()
+	if last in ["s", "x", "z"]:
+		return "%s' Raum" % t
+	return "%s's Raum" % t
 
 
 func _field_box() -> StyleBoxFlat:
@@ -373,7 +387,7 @@ func _chip(text: String, col: Color) -> Control:
 	p.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	var l := Label.new()
 	l.text = text
-	l.add_theme_font_size_override("font_size", 12)
+	l.add_theme_font_size_override("font_size", 13)
 	l.add_theme_color_override("font_color", col)
 	p.add_child(l)
 	return p
@@ -429,7 +443,7 @@ func _room_card(badge: String, rname: String, players_n: int, sub: String,
 		bottom.add_child(_avatar(rname + str(i), 22))
 	var sl := Label.new()
 	sl.text = "   %d Spieler  ·  %s" % [players_n, sub]
-	sl.add_theme_font_size_override("font_size", 12)
+	sl.add_theme_font_size_override("font_size", 13)
 	sl.add_theme_color_override("font_color", COL_DIM)
 	bottom.add_child(sl)
 	var jb := Button.new()
@@ -441,6 +455,13 @@ func _room_card(badge: String, rname: String, players_n: int, sub: String,
 	hb.add_child(jb)
 	UiTheme.attach_hover(card, 1.015)
 	return card
+
+
+func _draw_headphones(c: Control) -> void:
+	var ctr := Vector2(c.size.x * 0.5, 26.0)
+	c.draw_arc(ctr, 20.0, PI, TAU, 28, COL_DIM, 3.0, true)
+	for sx in [-1.0, 1.0]:
+		c.draw_rect(Rect2(ctr + Vector2(20.0 * sx - 5.0, 0.0), Vector2(10.0, 18.0)), COL_DIM, false, 3.0)
 
 
 func _refresh_rooms() -> void:
@@ -480,10 +501,10 @@ func _refresh_rooms() -> void:
 		empty.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		empty.alignment = BoxContainer.ALIGNMENT_CENTER
 		empty.add_theme_constant_override("separation", 10)
-		var ei := Label.new()
-		ei.text = "🎧"
-		ei.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		ei.add_theme_font_size_override("font_size", 44)
+		var ei := Control.new()
+		ei.custom_minimum_size = Vector2(56, 48)
+		ei.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		ei.draw.connect(func(): _draw_headphones(ei))
 		empty.add_child(ei)
 		var et := Label.new()
 		et.text = "Gerade ist es ruhig hier"
@@ -492,8 +513,10 @@ func _refresh_rooms() -> void:
 		et.add_theme_color_override("font_color", COL_TEXT)
 		empty.add_child(et)
 		var el := Label.new()
-		el.text = "Keine offenen Räume. Erstelle einen, er erscheint
-hier automatisch bei allen Spielern."
+		el.text = "Keine offenen Räume. Erstelle einen, er erscheint hier automatisch bei allen Spielern."
+		el.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		el.custom_minimum_size = Vector2(320, 0)
+		el.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 		el.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		el.add_theme_constant_override("line_spacing", 6)
 		el.add_theme_font_size_override("font_size", 13)
@@ -658,7 +681,7 @@ func _refresh_room() -> void:
 			var give := Button.new()
 			give.text = CROWN + " geben"
 			give.custom_minimum_size = Vector2(0, 32)
-			give.add_theme_font_size_override("font_size", 12)
+			give.add_theme_font_size_override("font_size", 13)
 			UiTheme.style_button(give)
 			var target := int(id)
 			give.pressed.connect(func(): Lobby.give_crown(target))
@@ -822,7 +845,7 @@ func _picker_card(ms: MapSet, list: VBoxContainer, overlay: Control) -> Control:
 	info.add_child(title_l)
 	var sub_l := Label.new()
 	sub_l.text = "Mapped by %s  ·  ★ %.2f" % [ms.creator, ms.max_stars()]
-	sub_l.add_theme_font_size_override("font_size", 12)
+	sub_l.add_theme_font_size_override("font_size", 13)
 	sub_l.add_theme_color_override("font_color", COL_DIM)
 	info.add_child(sub_l)
 	# Schon zusammen gespielt? Gruenes Badge direkt auf der Karte.
@@ -830,7 +853,7 @@ func _picker_card(ms: MapSet, list: VBoxContainer, overlay: Control) -> Control:
 		var pl := Label.new()
 		pl.text = "✓ gespielt"
 		pl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		pl.add_theme_font_size_override("font_size", 12)
+		pl.add_theme_font_size_override("font_size", 13)
 		pl.add_theme_color_override("font_color", Color(0.5, 1.0, 0.65))
 		pl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		hb.add_child(pl)
