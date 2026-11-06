@@ -24,6 +24,7 @@ Settings="*res://scripts/settings.gd"
 Lobby="*res://scripts/net/lobby.gd"
 Mirror="*res://scripts/net/beatmap_mirror.gd"
 Updater="*res://scripts/net/updater.gd"
+SceneFader="*res://scripts/ui/scene_fader.gd"
 
 [display]
 
