@@ -99,7 +99,10 @@ func _process(_dt: float) -> void:
 	if clip_md5 == "":
 		return
 	var sc := get_tree().current_scene
-	if sc == null or not bool(sc.get("_ended")):
+	if sc == null:
+		return
+	var ended = sc.get("_ended") if "_ended" in sc else false
+	if not bool(ended):
 		return
 	if _clip_end_t < 0.0:
 		_clip_end_t = Time.get_ticks_msec() / 1000.0
