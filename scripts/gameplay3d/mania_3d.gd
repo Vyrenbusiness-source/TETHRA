@@ -2691,14 +2691,25 @@ func _build_galaxy_chapters() -> void:
 	var pal_base := _sky_pal_for_hue(_theme_col.h, -1)
 	var pal_alt := _sky_pal_for_hue(_theme_col.h, pal_base)
 	var pal_kiai := _sky_pal_for_hue(_theme_kiai.h, pal_base)
+	# Folge-Kapitel sollen sich klar unterscheiden: ruhige Kapitel rotieren
+	# durch alle drei Nicht-Kiai-Paletten, Kiai-Ketten wechseln zu zweit.
+	var calm_pals: Array = [pal_base, pal_alt]
+	for pi3 in SKY_PALS.size():
+		if pi3 != pal_base and pi3 != pal_alt and pi3 != pal_kiai:
+			calm_pals.append(pi3)
+			break
+	var kiai_pals: Array = [pal_kiai, pal_alt if pal_alt != pal_kiai else pal_base]
+	var kiai_i := 0
 	for i in starts.size():
 		var t0: float = starts[i]
 		var t1: float = dur if i == starts.size() - 1 else float(starts[i + 1])
 		var kiai := _beatmap.is_kiai(t0 + 1.0) or _beatmap.is_kiai(t0 + (t1 - t0) * 0.5)
 		var drop := im.is_drop_at(t0 + 1.0)
 		var hs := float(seed_h % 977) + float(i) * 3.3
-		var hh: float = kh if kiai else float(hues[(calm_i + seed_h) % hues.size()])
-		var pal := pal_kiai if kiai else (pal_base if calm_i % 2 == 0 else pal_alt)
+		var hh: float = fposmod(kh + 0.09 * float(kiai_i % 2), 1.0) if kiai \n				else float(hues[(calm_i + seed_h) % hues.size()])
+		var pal: int = kiai_pals[kiai_i % 2] if kiai else calm_pals[calm_i % calm_pals.size()]
+		if kiai:
+			kiai_i += 1
 		if not kiai:
 			calm_i += 1
 		var big := kiai or drop
@@ -3931,8 +3942,15 @@ func _build_sky(env: Environment) -> bool:
 			_sky_neb = []
 			_sky_stars = []
 			return false
-		_sky_neb.append(load(np))
-		_sky_stars.append(load(tp))
+		var nt: Texture2D = load(np)
+		var st: Texture2D = load(tp)
+		if nt == null or st == null:
+			# Nicht importiert/defekt: alter Nebel-Himmel bleibt.
+			_sky_neb = []
+			_sky_stars = []
+			return false
+		_sky_neb.append(nt)
+		_sky_stars.append(st)
 	_sky_mat = ShaderMaterial.new()
 	_sky_mat.shader = load(sp)
 	_sky_set(true, _sky_pal_for_hue(_theme_col.h, -1))
