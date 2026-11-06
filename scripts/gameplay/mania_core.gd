@@ -28,6 +28,10 @@ var w50: float = 136.5
 var w_miss: float = 173.5
 
 var _next_spawn := 0
+## Scroll-Velocity-Tabelle (lazer) und Spawn-Zeit je Note (distanzbasiert:
+## sichtbar sobald scroll.position(hit) - scroll.position(t) <= preempt).
+var scroll := ScrollMap.new()
+var _spawn_times := PackedFloat64Array()
 ## Pro Spalte: Index-Liste der Notes + Zeiger auf die naechste offene.
 var _lane_notes: Array = []
 var _lane_head: Array[int] = []
@@ -107,6 +111,24 @@ func setup(p_beatmap: Beatmap, _ar_override: float = -1.0, scroll_scale: float =
 		var obj := beatmap.hit_objects[i]
 		if obj is ManiaNote:
 			_lane_notes[(obj as ManiaNote).column].append(i)
+	_build_scroll()
+
+
+## Baut die SV-Positionstabelle und die Spawn-Zeiten (einmal beim Laden).
+func _build_scroll() -> void:
+	var objs := beatmap.hit_objects
+	var last_time := 0.0
+	if objs.is_empty():
+		if not beatmap.timing_points.is_empty():
+			last_time = beatmap.timing_points[beatmap.timing_points.size() - 1].time
+	else:
+		last_time = -INF
+		for obj in objs:
+			last_time = maxf(last_time, obj.end_time())
+	scroll.build(beatmap.timing_points, last_time)
+	_spawn_times.resize(objs.size())
+	for i in objs.size():
+		_spawn_times[i] = scroll.spawn_time(objs[i].time, preempt)
 
 
 ## Combo-Anteil des Scores: ab 100er-Combo zaehlt eine Note voll.
@@ -127,7 +149,7 @@ func update(t_ms: float) -> void:
 	if beatmap == null:
 		return
 	var objs := beatmap.hit_objects
-	while _next_spawn < objs.size() and objs[_next_spawn].time - preempt <= t_ms:
+	while _next_spawn < objs.size() and _spawn_times[_next_spawn] <= t_ms:
 		note_spawned.emit(_next_spawn)
 		_next_spawn += 1
 	# Verpasste Heads pro Spalte.
