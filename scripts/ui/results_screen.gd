@@ -2,8 +2,10 @@ class_name ResultsScreen
 extends Control
 
 ## Results-Screen als eigenstaendige Komponente: geblurtes Cover, hochzaehlender
-## Score, Riesen-Rank mit Glanz-Sweep + weichem Glow, Judgement-Karten mit
-## Anteil-Balken, Stats, Hit-Error-Histogramm, Badges und Buttons.
+## Score, Riesen-Rank im Genauigkeits-Ring mit Glanz-Sweep + weichem Glow,
+## Urteils-Karten mit Anteil-Balken, Stats, Hit-Error-Histogramm, Badges und
+## Buttons mit Keycaps. Panel und Rang bilden eine geschlossene, zentrierte
+## Gruppe auf gemeinsamer Achse (kein Loch in der Mitte).
 ## Aufruf: show_results(data) — Keys: is_fail, s (ManiaCore.stats()), pp,
 ## unranked, new_best, title, artist, version, cover_path, offsets (ms),
 ## player, date. Optional: cover (Texture2D), allow_retry, can_replay,
@@ -14,10 +16,11 @@ signal replay_pressed
 signal clip_pressed
 signal back_pressed
 
-## Judgement-Farben wie im Gameplay (MAX, 300, 200, 100, 50, MISS).
+## Urteilsfarben (MAX, 300, 200, 100, 50, MISS): MAX gold, 300 weiss-cyan,
+## 200 gruen, 100 blau, 50 grau, MISS rot.
 const QUALITY_COLOR := [
-	Color(1.0, 0.92, 0.55), Color(1.0, 1.0, 1.0), Color(0.4, 0.9, 1.0),
-	Color(0.45, 1.0, 0.6), Color(0.75, 0.72, 0.5), Color(1.0, 0.28, 0.28),
+	Color(1.0, 0.85, 0.42), Color(0.84, 0.97, 1.0), Color(0.47, 0.95, 0.62),
+	Color(0.42, 0.64, 1.0), Color(0.64, 0.66, 0.72), Color(1.0, 0.38, 0.42),
 ]
 const GRADE_COLOR := {
 	"SS": Color(1.0, 0.94, 0.72), "S": Color(1.0, 0.85, 0.25),
@@ -25,16 +28,22 @@ const GRADE_COLOR := {
 	"C": Color(0.9, 0.6, 1.0), "D": Color(1.0, 0.4, 0.4),
 }
 const FAIL_COLOR := Color(1.0, 0.34, 0.38)
-const CAPTION := Color(0.5, 0.53, 0.62)
+## Mikro-Labels: hell genug fuer Kontrast auf Glas (nicht unter 12 px nutzen).
+const CAPTION := Color(0.68, 0.71, 0.80)
+const MUTED := Color(0.50, 0.53, 0.60)
 const SCORE_COUNT_TIME := 0.9
 const STAGGER := 0.07
 const HIST_BINS := 41
+const PANEL_W := 640.0
+const RANK_COL_W := 560.0
+const RING := 500.0
+const GROUP_GAP := 48
 
 const SWEEP_SHADER := """
 shader_type canvas_item;
 uniform float sweep = -1.0;
 uniform vec2 box = vec2(400.0, 400.0);
-uniform float strength = 0.65;
+uniform float strength = 0.55;
 varying vec2 lp;
 void vertex() {
 	lp = VERTEX;
@@ -58,8 +67,11 @@ var _acc_lbl: Label
 var _rank_lbl: Label
 var _rank_glow: TextureRect
 var _rank_mat: ShaderMaterial
+var _rank_color := Color.WHITE
+var _ring_ctrl: Control
+var _ring_t := 0.0
 var _left_panel: Control
-var _rank_area: Control
+var _main_row: HBoxContainer
 var _reveal: Array[Control] = []
 var _bars: Array = []  # [Panel fill, float frac]
 var _shown := false
@@ -80,11 +92,50 @@ func show_results(data: Dictionary) -> void:
 	_bars.clear()
 	_build_background()
 	_build_header()
-	_build_left_panel()
-	_build_rank_area()
-	_build_buttons()
+	var group := _build_group()
+	_build_left_panel(_main_row)
+	_build_rank_area(_main_row)
+	_build_buttons(group)
 	_shown = true
 	_play_intro()
+
+
+# ---------------------------------------------------------------------------
+# Formatierung (deutsch)
+# ---------------------------------------------------------------------------
+
+## 923412 -> "923.412" (Tausenderpunkt, keine fuehrenden Nullen).
+static func fmt_int(n: int) -> String:
+	var s := str(absi(n))
+	var out := ""
+	var c := 0
+	for i in range(s.length() - 1, -1, -1):
+		out = s[i] + out
+		c += 1
+		if c % 3 == 0 and i > 0:
+			out = "." + out
+	return ("-" if n < 0 else "") + out
+
+
+## 96.666 -> "96,67" (Dezimalkomma).
+static func fmt_dec(v: float, decimals: int) -> String:
+	return (("%." + str(decimals) + "f") % v).replace(".", ",")
+
+
+## 0.9667 -> "96,67 %".
+static func fmt_pct(frac: float, decimals: int = 2) -> String:
+	return fmt_dec(frac * 100.0, decimals) + " %"
+
+
+## ISO "2026-11-06T22:37:00" -> "06.11.2026 22:37".
+static func fmt_date(iso: String) -> String:
+	if iso.strip_edges() == "":
+		return ""
+	var d := Time.get_datetime_dict_from_datetime_string(iso, false)
+	if int(d.get("year", 0)) <= 0:
+		return iso
+	return "%02d.%02d.%04d %02d:%02d" % [int(d.get("day", 0)), int(d.get("month", 0)),
+		int(d.get("year", 0)), int(d.get("hour", 0)), int(d.get("minute", 0))]
 
 
 # ---------------------------------------------------------------------------
@@ -128,14 +179,14 @@ func _build_header() -> void:
 	var line := TextureRect.new()
 	line.anchor_right = 1.0
 	line.offset_top = 84
-	line.offset_bottom = 86
+	line.offset_bottom = 85
 	line.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	line.stretch_mode = TextureRect.STRETCH_SCALE
 	var g := Gradient.new()
 	g.set_color(0, Color(UiTheme.ACCENT, 0.0))
 	g.set_color(1, Color(UiTheme.ACCENT2, 0.0))
-	g.add_point(0.3, Color(UiTheme.ACCENT, 0.55))
-	g.add_point(0.7, Color(UiTheme.ACCENT2, 0.45))
+	g.add_point(0.3, Color(UiTheme.ACCENT, 0.45))
+	g.add_point(0.7, Color(UiTheme.ACCENT2, 0.35))
 	var gt := GradientTexture2D.new()
 	gt.gradient = g
 	gt.width = 256
@@ -145,83 +196,118 @@ func _build_header() -> void:
 
 	var title := Label.new()
 	title.text = "%s — %s" % [str(_data.get("artist", "")), str(_data.get("title", ""))]
-	title.position = Vector2(32, 12)
+	title.position = Vector2(40, 12)
 	title.add_theme_font_override("font", UiTheme.heading_font(1))
-	title.add_theme_font_size_override("font_size", 24)
+	title.add_theme_font_size_override("font_size", 25)
 	title.add_theme_color_override("font_color", UiTheme.TEXT)
+	title.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.5))
+	title.add_theme_constant_override("shadow_offset_y", 2)
 	strip.add_child(title)
 	var sub := Label.new()
-	sub.text = "[%s] · 4K" % str(_data.get("version", ""))
-	sub.position = Vector2(32, 48)
+	sub.text = "%s  ·  4K" % str(_data.get("version", "")).strip_edges()
+	sub.position = Vector2(41, 48)
+	sub.add_theme_font_override("font", UiTheme.heading_font(1))
 	sub.add_theme_font_size_override("font_size", 15)
-	sub.add_theme_color_override("font_color", UiTheme.ACCENT.lerp(UiTheme.TEXT, 0.4))
+	sub.add_theme_color_override("font_color", UiTheme.ACCENT.lerp(UiTheme.TEXT, 0.35))
 	strip.add_child(sub)
 
 	var who := VBoxContainer.new()
 	who.anchor_left = 1.0
 	who.anchor_right = 1.0
-	who.offset_left = -420
-	who.offset_right = -32
+	who.offset_left = -440
+	who.offset_right = -40
 	who.offset_top = 14
-	who.add_theme_constant_override("separation", 2)
+	who.add_theme_constant_override("separation", 3)
 	strip.add_child(who)
-	var p := Label.new()
-	p.text = "gespielt von %s" % str(_data.get("player", "—"))
-	p.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	p.add_theme_font_size_override("font_size", 16)
-	p.add_theme_color_override("font_color", UiTheme.TEXT)
+	var p := HBoxContainer.new()
+	p.alignment = BoxContainer.ALIGNMENT_END
+	p.add_theme_constant_override("separation", 6)
 	who.add_child(p)
+	var pl := Label.new()
+	pl.text = "gespielt von"
+	pl.add_theme_font_size_override("font_size", 15)
+	pl.add_theme_color_override("font_color", CAPTION)
+	p.add_child(pl)
+	var pn := Label.new()
+	pn.text = str(_data.get("player", "–"))
+	pn.add_theme_font_override("font", UiTheme.heading_font(1))
+	pn.add_theme_font_size_override("font_size", 17)
+	pn.add_theme_color_override("font_color", UiTheme.TEXT)
+	p.add_child(pn)
 	var d := Label.new()
-	d.text = str(_data.get("date", "")).replace("T", " ")
+	d.text = fmt_date(str(_data.get("date", "")))
 	d.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	d.add_theme_font_size_override("font_size", 13)
-	d.add_theme_color_override("font_color", UiTheme.DIM)
+	d.add_theme_font_size_override("font_size", 14)
+	d.add_theme_color_override("font_color", CAPTION)
 	who.add_child(d)
 	_reveal.append(strip)
 
 
-func _build_left_panel() -> void:
+## Zentrierte Gruppe: oben Panel + Rang (gemeinsame Mittelachse), unten die
+## Button-Leiste exakt so breit wie beide zusammen. Im Lobby-Modus links
+## buendig, damit rechts Platz fuer die Rangliste bleibt.
+func _build_group() -> VBoxContainer:
+	var row := HBoxContainer.new()
+	row.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	row.offset_left = 40
+	row.offset_right = -40
+	row.offset_top = 108
+	row.offset_bottom = -28
+	row.alignment = BoxContainer.ALIGNMENT_BEGIN if bool(_data.get("lobby", false)) \
+		else BoxContainer.ALIGNMENT_CENTER
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(row)
+	var group := VBoxContainer.new()
+	group.add_theme_constant_override("separation", 20)
+	group.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(group)
+	_main_row = HBoxContainer.new()
+	_main_row.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_main_row.add_theme_constant_override("separation", GROUP_GAP)
+	_main_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	group.add_child(_main_row)
+	return group
+
+
+func _build_left_panel(parent: Control) -> void:
 	var panel := PanelContainer.new()
-	panel.anchor_bottom = 1.0
-	panel.offset_left = 40
-	panel.offset_top = 104
-	panel.offset_bottom = -92
-	panel.custom_minimum_size = Vector2(620, 0)
+	panel.custom_minimum_size = Vector2(PANEL_W, 0)
 	var psb := UiTheme.glass_box(18, 0.72)
-	psb.set_content_margin_all(22)
+	psb.set_content_margin_all(24)
 	panel.add_theme_stylebox_override("panel", psb)
-	add_child(panel)
+	parent.add_child(panel)
 	_left_panel = panel
 	var vb := VBoxContainer.new()
-	vb.add_theme_constant_override("separation", 10)
+	vb.add_theme_constant_override("separation", 12)
 	panel.add_child(vb)
 
-	# SCORE + Badges.
+	# PUNKTE + Badges.
 	var top := HBoxContainer.new()
 	top.add_theme_constant_override("separation", 8)
 	vb.add_child(top)
-	var cap := _caption("SCORE")
+	var cap := _caption("PUNKTE")
 	cap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	cap.size_flags_vertical = Control.SIZE_SHRINK_END
+	cap.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	top.add_child(cap)
 	for b in _badges():
 		top.add_child(_badge(str(b[0]), b[1]))
 	_reveal.append(top)
 	_score_lbl = Label.new()
-	_score_lbl.text = "00000000"
-	_score_lbl.add_theme_font_override("font", UiTheme.heading_font(5))
-	_score_lbl.add_theme_font_size_override("font_size", 58)
+	_score_lbl.text = "0"
+	_score_lbl.add_theme_font_override("font", UiTheme.heading_font(3))
+	_score_lbl.add_theme_font_size_override("font_size", 64)
 	_score_lbl.add_theme_color_override("font_color", UiTheme.TEXT)
-	_score_lbl.add_theme_color_override("font_shadow_color", Color(UiTheme.ACCENT, 0.18))
+	_score_lbl.add_theme_color_override("font_shadow_color", Color(UiTheme.ACCENT, 0.16))
 	_score_lbl.add_theme_constant_override("shadow_offset_y", 3)
+	_score_lbl.add_theme_constant_override("line_spacing", -6)
 	vb.add_child(_score_lbl)
 	_reveal.append(_score_lbl)
 
-	# Judgement-Karten (3x2) mit Anteil-Balken.
+	# Urteils-Karten (3x2) mit Anteil-Balken.
 	var grid := GridContainer.new()
 	grid.columns = 3
-	grid.add_theme_constant_override("h_separation", 8)
-	grid.add_theme_constant_override("v_separation", 8)
+	grid.add_theme_constant_override("h_separation", 10)
+	grid.add_theme_constant_override("v_separation", 10)
 	vb.add_child(grid)
 	var counts := [int(_stats.get("n_max", 0)), int(_stats.get("n300", 0)),
 		int(_stats.get("n200", 0)), int(_stats.get("n100", 0)),
@@ -235,33 +321,28 @@ func _build_left_panel() -> void:
 		grid.add_child(_judge_card(tags[i], int(counts[i]), frac, QUALITY_COLOR[i]))
 	_reveal.append(grid)
 
-	# Accuracy · Max-Combo · pp.
+	# Genauigkeit · Max. Kombo · PP.
 	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 8)
+	row.add_theme_constant_override("separation", 10)
 	vb.add_child(row)
 	var acc: float = float(_stats.get("accuracy", 0.0))
-	var pp: float = float(_data.get("pp", -1.0))
-	var acc_block := _stat_block("ACCURACY", "%.2f%%" % (acc * 100.0), UiTheme.TEXT)
+	var acc_block := _stat_block("GENAUIGKEIT", fmt_pct(acc), UiTheme.TEXT)
 	_acc_lbl = acc_block.get_meta("value")
 	row.add_child(acc_block)
-	row.add_child(_stat_block("MAX COMBO", "%dx" % int(_stats.get("max_combo", 0)), UiTheme.TEXT))
-	var pp_txt := "—"
-	if bool(_data.get("unranked", false)):
-		pp_txt = "unranked"
-	elif pp >= 0.0:
-		pp_txt = "%.1f pp" % pp
-	row.add_child(_stat_block("PERFORMANCE", pp_txt, UiTheme.ACCENT2))
+	row.add_child(_stat_block("MAX. KOMBO", "%s×" % fmt_int(int(_stats.get("max_combo", 0))),
+		UiTheme.TEXT))
+	row.add_child(_pp_block())
 	_reveal.append(row)
 
-	# Hit-Error: Kopf mit UR/Mittel-Offset + Histogramm.
+	# Timing: Kopf mit UR/Mittel-Offset + Histogramm.
 	var hh := HBoxContainer.new()
 	vb.add_child(hh)
-	var hcap := _caption("HIT ERROR")
+	var hcap := _caption("TIMING")
 	hcap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	hh.add_child(hcap)
 	var tinfo := Label.new()
-	tinfo.add_theme_font_size_override("font_size", 13)
-	tinfo.add_theme_color_override("font_color", UiTheme.DIM)
+	tinfo.add_theme_font_size_override("font_size", 14)
+	tinfo.add_theme_color_override("font_color", CAPTION)
 	if _offsets.size() >= 2:
 		var mean := 0.0
 		var sq := 0.0
@@ -270,114 +351,129 @@ func _build_left_panel() -> void:
 			sq += o * o
 		mean /= float(_offsets.size())
 		var variance := maxf(sq / float(_offsets.size()) - mean * mean, 0.0)
-		tinfo.text = "UR %.0f    Ø %+.1f ms (%s)" % [sqrt(variance) * 10.0, mean,
-			"spaet" if mean > 0.0 else "frueh"]
+		var sign_txt := "+" if mean >= 0.0 else "−"
+		tinfo.text = "UR %s   ·   Ø %s%s ms %s" % [fmt_dec(sqrt(variance) * 10.0, 0),
+			sign_txt, fmt_dec(absf(mean), 1), "zu spät" if mean > 0.0 else "zu früh"]
 	else:
 		tinfo.text = "keine Timing-Daten"
 	hh.add_child(tinfo)
 	_reveal.append(hh)
 	_build_histogram_data()
 	_hist_ctrl = Control.new()
-	_hist_ctrl.custom_minimum_size = Vector2(0, 190)
+	_hist_ctrl.custom_minimum_size = Vector2(0, 150)
 	_hist_ctrl.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_hist_ctrl.draw.connect(_draw_histogram)
 	vb.add_child(_hist_ctrl)
 	_reveal.append(_hist_ctrl)
 
 
-func _build_rank_area() -> void:
-	var area := Control.new()
-	area.anchor_left = 0.0
-	area.anchor_right = 1.0
-	area.anchor_bottom = 1.0
-	area.offset_left = 680
-	area.offset_right = -40
-	area.offset_top = 104
-	area.offset_bottom = -92
-	area.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(area)
-	_rank_area = area
+func _build_rank_area(parent: Control) -> void:
+	var col := VBoxContainer.new()
+	col.custom_minimum_size = Vector2(RANK_COL_W, 0)
+	col.alignment = BoxContainer.ALIGNMENT_CENTER
+	col.add_theme_constant_override("separation", 22)
+	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	parent.add_child(col)
 	var is_fail := bool(_data.get("is_fail", false))
 	var grade := "F" if is_fail else str(_stats.get("grade", "D"))
 	var rc: Color = FAIL_COLOR if is_fail else GRADE_COLOR.get(grade, Color.WHITE)
+	_rank_color = rc
+
+	# Ring = Genauigkeit (fuellt sich im Uhrzeigersinn), Rang mittig darin.
+	_ring_ctrl = Control.new()
+	_ring_ctrl.custom_minimum_size = Vector2(RING, RING)
+	_ring_ctrl.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	_ring_ctrl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_ring_ctrl.draw.connect(_draw_ring)
+	col.add_child(_ring_ctrl)
 
 	# Weicher Glow in Rank-Farbe (statisch, kein Pulsieren).
 	_rank_glow = TextureRect.new()
-	_rank_glow.anchor_left = 0.5
-	_rank_glow.anchor_right = 0.5
-	_rank_glow.anchor_top = 0.45
-	_rank_glow.anchor_bottom = 0.45
-	_rank_glow.offset_left = -300
-	_rank_glow.offset_right = 300
-	_rank_glow.offset_top = -300
-	_rank_glow.offset_bottom = 300
+	_rank_glow.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_rank_glow.offset_left = -90
+	_rank_glow.offset_top = -90
+	_rank_glow.offset_right = 90
+	_rank_glow.offset_bottom = 90
 	_rank_glow.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_rank_glow.stretch_mode = TextureRect.STRETCH_SCALE
-	_rank_glow.texture = _radial_tex(Color(rc, 0.34), Color(rc, 0.0), 0.0)
+	_rank_glow.texture = _radial_tex(Color(rc, 0.26), Color(rc, 0.0), 0.0)
 	_rank_glow.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	area.add_child(_rank_glow)
+	_ring_ctrl.add_child(_rank_glow)
+	# Innenflaeche: dunkles Glas, damit der Rang klar vor dem Cover steht.
+	var disc := TextureRect.new()
+	disc.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	disc.offset_left = 26
+	disc.offset_top = 26
+	disc.offset_right = -26
+	disc.offset_bottom = -26
+	disc.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	disc.stretch_mode = TextureRect.STRETCH_SCALE
+	disc.texture = _disc_tex(Color(0.05, 0.06, 0.10, 0.55))
+	disc.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_ring_ctrl.add_child(disc)
 
 	_rank_lbl = Label.new()
 	_rank_lbl.text = grade
-	_rank_lbl.anchor_right = 1.0
-	_rank_lbl.anchor_bottom = 0.9
+	_rank_lbl.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_rank_lbl.offset_top = -14
+	_rank_lbl.offset_bottom = -14
 	_rank_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_rank_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_rank_lbl.add_theme_font_override("font", UiTheme.heading_font(0 if grade.length() < 2 else -8))
-	_rank_lbl.add_theme_font_size_override("font_size", 400 if grade.length() < 2 else 330)
+	_rank_lbl.add_theme_font_override("font", UiTheme.heading_font(0 if grade.length() < 2 else -10))
+	_rank_lbl.add_theme_font_size_override("font_size", 330 if grade.length() < 2 else 250)
 	_rank_lbl.add_theme_color_override("font_color", rc)
-	_rank_lbl.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.45))
-	_rank_lbl.add_theme_constant_override("shadow_offset_y", 8)
+	# Duenne, farbverwandte Kontur + weicher Schatten statt dicker Kante.
+	_rank_lbl.add_theme_color_override("font_outline_color", Color(rc.lightened(0.45), 0.55))
+	_rank_lbl.add_theme_constant_override("outline_size", 3)
+	_rank_lbl.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.30))
+	_rank_lbl.add_theme_constant_override("shadow_offset_x", 0)
+	_rank_lbl.add_theme_constant_override("shadow_offset_y", 5)
+	_rank_lbl.add_theme_constant_override("shadow_outline_size", 10)
+	_rank_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var sh := Shader.new()
 	sh.code = SWEEP_SHADER
 	_rank_mat = ShaderMaterial.new()
 	_rank_mat.shader = sh
 	_rank_lbl.material = _rank_mat
-	area.add_child(_rank_lbl)
+	_ring_ctrl.add_child(_rank_lbl)
 
 	var tag := Label.new()
-	tag.anchor_top = 0.82
-	tag.anchor_right = 1.0
-	tag.anchor_bottom = 0.92
 	tag.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	tag.add_theme_font_override("font", UiTheme.heading_font(6))
-	tag.add_theme_font_size_override("font_size", 26)
+	tag.add_theme_font_override("font", UiTheme.heading_font(7))
+	tag.add_theme_font_size_override("font_size", 24)
 	if is_fail:
-		tag.text = "FAILED"
+		tag.text = "NICHT GESCHAFFT"
 		tag.add_theme_color_override("font_color", FAIL_COLOR)
 	elif int(_stats.get("n_miss", 0)) == 0:
 		tag.text = "FULL COMBO"
 		tag.add_theme_color_override("font_color", UiTheme.ACCENT)
 	else:
-		tag.text = "CLEAR"
-		tag.add_theme_color_override("font_color", UiTheme.DIM)
-	area.add_child(tag)
+		tag.text = "GESCHAFFT"
+		tag.add_theme_color_override("font_color", UiTheme.TEXT.lerp(CAPTION, 0.4))
+	col.add_child(tag)
 	_reveal.append(tag)
 
 
-func _build_buttons() -> void:
+func _build_buttons(group: Control) -> void:
 	var bar := HBoxContainer.new()
-	bar.anchor_left = 1.0
-	bar.anchor_right = 1.0
-	bar.anchor_top = 1.0
-	bar.anchor_bottom = 1.0
-	bar.offset_left = -900
-	bar.offset_right = -40
-	bar.offset_top = -72
-	bar.offset_bottom = -24
-	bar.alignment = BoxContainer.ALIGNMENT_END
-	bar.add_theme_constant_override("separation", 10)
-	add_child(bar)
+	bar.custom_minimum_size = Vector2(0, 50)
+	bar.add_theme_constant_override("separation", 12)
+	group.add_child(bar)
 	var is_replay := bool(_data.get("is_replay", false))
 	var lobby := bool(_data.get("lobby", false))
-	if bool(_data.get("allow_retry", not lobby)):
-		bar.add_child(_button("Nochmal ansehen  (R)" if is_replay else "Retry  (R)", true,
-			retry_pressed.emit))
+	bar.add_child(_button("Zur Lobby" if lobby else "Zum Song-Browser", false,
+		back_pressed.emit, "Esc"))
+	var spacer := Control.new()
+	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bar.add_child(spacer)
+	bar.add_child(_button("⤓  Clip speichern", false, clip_pressed.emit))
 	if bool(_data.get("can_replay", true)):
-		bar.add_child(_button("Selbst spielen" if is_replay else "▶ Replay", false,
+		bar.add_child(_button("Selbst spielen" if is_replay else "▶  Replay ansehen", false,
 			replay_pressed.emit))
-	bar.add_child(_button("⤓ Clip speichern", false, clip_pressed.emit))
-	bar.add_child(_button("Zur Lobby" if lobby else "Song-Browser", false, back_pressed.emit))
+	if bool(_data.get("allow_retry", not lobby)):
+		bar.add_child(_button("Nochmal ansehen" if is_replay else "Nochmal", true,
+			retry_pressed.emit, "R"))
 	_reveal.append(bar)
 
 
@@ -389,7 +485,7 @@ func _caption(t: String) -> Label:
 	var l := Label.new()
 	l.text = t
 	l.add_theme_font_override("font", UiTheme.heading_font(3))
-	l.add_theme_font_size_override("font_size", 12)
+	l.add_theme_font_size_override("font_size", 13)
 	l.add_theme_color_override("font_color", CAPTION)
 	return l
 
@@ -398,23 +494,24 @@ func _badges() -> Array:
 	var out := []
 	var is_fail := bool(_data.get("is_fail", false))
 	if bool(_data.get("new_best", false)) and not is_fail:
-		out.append(["NEW BEST", Color(1.0, 0.83, 0.25)])
+		out.append(["NEUER REKORD", Color(1.0, 0.83, 0.25)])
 	if not is_fail and str(_stats.get("grade", "")) == "SS":
 		out.append(["SS", UiTheme.ACCENT2])
 	if not is_fail and int(_stats.get("n_miss", 1)) == 0:
 		out.append(["FC", UiTheme.ACCENT])
 	if bool(_data.get("unranked", false)):
-		out.append(["UNRANKED", UiTheme.DIM])
+		out.append(["UNGEWERTET", UiTheme.DIM])
 	return out
 
 
 func _badge(t: String, col: Color) -> PanelContainer:
 	var b := PanelContainer.new()
+	b.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color(col, 0.16)
-	sb.border_color = Color(col, 0.7)
+	sb.bg_color = Color(col, 0.13)
+	sb.border_color = Color(col, 0.55)
 	sb.set_border_width_all(1)
-	sb.set_corner_radius_all(8)
+	sb.set_corner_radius_all(7)
 	sb.content_margin_left = 10
 	sb.content_margin_right = 10
 	sb.content_margin_top = 3
@@ -433,37 +530,38 @@ func _judge_card(tag: String, count: int, frac: float, col: Color) -> PanelConta
 	var card := PanelContainer.new()
 	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var sb := UiTheme.glass_box(12, 0.38, 0.0)
-	sb.border_color = Color(col, 0.28)
+	sb.border_color = Color(col, 0.22)
+	sb.border_width_left = 3
 	sb.shadow_size = 0
-	sb.content_margin_left = 12
-	sb.content_margin_right = 12
-	sb.content_margin_top = 8
-	sb.content_margin_bottom = 9
+	sb.content_margin_left = 14
+	sb.content_margin_right = 14
+	sb.content_margin_top = 9
+	sb.content_margin_bottom = 10
 	card.add_theme_stylebox_override("panel", sb)
 	var vb := VBoxContainer.new()
-	vb.add_theme_constant_override("separation", 4)
+	vb.add_theme_constant_override("separation", 6)
 	card.add_child(vb)
 	var top := HBoxContainer.new()
 	vb.add_child(top)
 	var t := Label.new()
 	t.text = tag
 	t.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	t.add_theme_font_override("font", UiTheme.heading_font(1))
+	t.add_theme_font_override("font", UiTheme.heading_font(2))
 	t.add_theme_font_size_override("font_size", 15)
 	t.add_theme_color_override("font_color", col)
 	top.add_child(t)
 	var n := Label.new()
-	n.text = "%d" % count
+	n.text = fmt_int(count)
 	n.add_theme_font_override("font", UiTheme.heading_font(1))
-	n.add_theme_font_size_override("font_size", 21)
-	n.add_theme_color_override("font_color", UiTheme.TEXT)
+	n.add_theme_font_size_override("font_size", 22)
+	n.add_theme_color_override("font_color", UiTheme.TEXT if count > 0 else MUTED)
 	top.add_child(n)
 	# Anteil-Balken (fuellt sich beim Einblenden).
 	var track := Panel.new()
-	track.custom_minimum_size = Vector2(0, 5)
+	track.custom_minimum_size = Vector2(0, 4)
 	var tsb := StyleBoxFlat.new()
 	tsb.bg_color = Color(1, 1, 1, 0.07)
-	tsb.set_corner_radius_all(3)
+	tsb.set_corner_radius_all(2)
 	track.add_theme_stylebox_override("panel", tsb)
 	vb.add_child(track)
 	var fill := Panel.new()
@@ -471,13 +569,13 @@ func _judge_card(tag: String, count: int, frac: float, col: Color) -> PanelConta
 	fill.anchor_right = 0.0
 	var fsb := StyleBoxFlat.new()
 	fsb.bg_color = Color(col, 0.85)
-	fsb.set_corner_radius_all(3)
+	fsb.set_corner_radius_all(2)
 	fill.add_theme_stylebox_override("panel", fsb)
 	track.add_child(fill)
 	_bars.append([fill, clampf(frac, 0.0, 1.0)])
 	var pct := Label.new()
-	pct.text = "%.1f%%" % (frac * 100.0)
-	pct.add_theme_font_size_override("font_size", 11)
+	pct.text = fmt_pct(frac, 1)
+	pct.add_theme_font_size_override("font_size", 12)
 	pct.add_theme_color_override("font_color", CAPTION)
 	vb.add_child(pct)
 	return card
@@ -490,30 +588,114 @@ func _stat_block(cap: String, value: String, col: Color) -> PanelContainer:
 	sb.shadow_size = 0
 	sb.content_margin_left = 14
 	sb.content_margin_right = 14
-	sb.content_margin_top = 8
-	sb.content_margin_bottom = 8
+	sb.content_margin_top = 10
+	sb.content_margin_bottom = 10
 	p.add_theme_stylebox_override("panel", sb)
 	var vb := VBoxContainer.new()
-	vb.add_theme_constant_override("separation", 1)
+	vb.add_theme_constant_override("separation", 2)
 	p.add_child(vb)
 	vb.add_child(_caption(cap))
 	var v := Label.new()
 	v.text = value
 	v.add_theme_font_override("font", UiTheme.heading_font(1))
-	v.add_theme_font_size_override("font_size", 25)
+	v.add_theme_font_size_override("font_size", 26)
 	v.add_theme_color_override("font_color", col)
 	vb.add_child(v)
 	p.set_meta("value", v)
 	return p
 
 
-func _button(t: String, primary: bool, cb: Callable) -> Button:
+## PP-Block: Wert in ACCENT2; ohne Wertung/unbekannt graues "–" mit Hinweis
+## (Tooltip + kurze Zeile), nie ein nackter Strich.
+func _pp_block() -> PanelContainer:
+	var pp: float = float(_data.get("pp", -1.0))
+	var unranked := bool(_data.get("unranked", false))
+	if not unranked and pp >= 0.0:
+		return _stat_block("PERFORMANCE", "%s pp" % fmt_dec(pp, 1), UiTheme.ACCENT2)
+	var p := _stat_block("PERFORMANCE", "–", MUTED)
+	var why := "Map ist nicht gewertet – keine PP" if unranked \
+		else "PP für diese Map nicht berechenbar"
+	p.tooltip_text = why
+	p.mouse_filter = Control.MOUSE_FILTER_STOP
+	var v: Label = p.get_meta("value")
+	v.add_theme_font_size_override("font_size", 30)
+	var vb := v.get_parent()
+	vb.remove_child(v)
+	var hb := HBoxContainer.new()
+	hb.add_theme_constant_override("separation", 10)
+	hb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vb.add_child(hb)
+	hb.add_child(v)
+	var note := Label.new()
+	note.text = "ungewertet" if unranked else "nicht verfügbar"
+	note.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	note.add_theme_font_size_override("font_size", 13)
+	note.add_theme_color_override("font_color", MUTED)
+	hb.add_child(note)
+	return p
+
+
+## Button mit optionaler Keycap rechts neben dem Text (z. B. "Nochmal [R]").
+func _button(t: String, primary: bool, cb: Callable, key: String = "") -> Button:
 	var b := Button.new()
-	b.text = t
-	b.custom_minimum_size = Vector2(150, 46)
+	b.custom_minimum_size = Vector2(0, 50)
 	UiTheme.style_button(b, primary)
 	b.pressed.connect(cb)
+	if key == "":
+		b.text = t
+		b.custom_minimum_size.x = 170
+		return b
+	var hb := HBoxContainer.new()
+	hb.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	hb.alignment = BoxContainer.ALIGNMENT_CENTER
+	hb.add_theme_constant_override("separation", 12)
+	hb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	b.add_child(hb)
+	var l := Label.new()
+	l.text = t
+	l.add_theme_font_size_override("font_size", 16)
+	l.add_theme_color_override("font_color", Color(0.02, 0.05, 0.08) if primary else UiTheme.TEXT)
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hb.add_child(l)
+	hb.add_child(_keycap(key, primary))
+	_fit_button.call_deferred(b, hb)
 	return b
+
+
+func _fit_button(b: Button, hb: Control) -> void:
+	if is_instance_valid(b) and is_instance_valid(hb):
+		b.custom_minimum_size.x = maxf(170.0, hb.get_combined_minimum_size().x + 40.0)
+
+
+func _keycap(key: String, on_primary: bool) -> PanelContainer:
+	var cap := PanelContainer.new()
+	cap.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	cap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var sb := StyleBoxFlat.new()
+	if on_primary:
+		sb.bg_color = Color(0.0, 0.06, 0.10, 0.14)
+		sb.border_color = Color(0.0, 0.06, 0.10, 0.42)
+	else:
+		sb.bg_color = Color(1, 1, 1, 0.06)
+		sb.border_color = Color(1, 1, 1, 0.30)
+	sb.set_border_width_all(1)
+	sb.border_width_bottom = 2
+	sb.set_corner_radius_all(5)
+	sb.content_margin_left = 7
+	sb.content_margin_right = 7
+	sb.content_margin_top = 1
+	sb.content_margin_bottom = 2
+	cap.add_theme_stylebox_override("panel", sb)
+	var l := Label.new()
+	l.text = key
+	l.custom_minimum_size = Vector2(12, 0)
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.add_theme_font_override("font", UiTheme.heading_font(1))
+	l.add_theme_font_size_override("font_size", 13)
+	l.add_theme_color_override("font_color",
+		Color(0.02, 0.05, 0.08, 0.85) if on_primary else UiTheme.TEXT.lerp(CAPTION, 0.3))
+	cap.add_child(l)
+	return cap
 
 
 ## Radiale Verlaufs-Textur (Mitte -> Rand). inner_stop: ab wo der Verlauf
@@ -536,6 +718,22 @@ func _radial_tex(center: Color, edge: Color, inner_stop: float) -> GradientTextu
 	return gt
 
 
+## Gefuellte Scheibe mit weicher Kante (fuer die Innenflaeche des Rings).
+func _disc_tex(col: Color) -> GradientTexture2D:
+	var g := Gradient.new()
+	g.set_color(0, col)
+	g.set_color(1, Color(col, 0.0))
+	g.add_point(0.96, col)
+	var gt := GradientTexture2D.new()
+	gt.gradient = g
+	gt.fill = GradientTexture2D.FILL_RADIAL
+	gt.fill_from = Vector2(0.5, 0.5)
+	gt.fill_to = Vector2(1.0, 0.5)
+	gt.width = 256
+	gt.height = 256
+	return gt
+
+
 func _load_cover() -> Texture2D:
 	var tex = _data.get("cover", null)
 	if tex is Texture2D:
@@ -547,6 +745,40 @@ func _load_cover() -> Texture2D:
 	if img == null or img.is_empty():
 		return null
 	return ImageTexture.create_from_image(img)
+
+
+# ---------------------------------------------------------------------------
+# Genauigkeits-Ring
+# ---------------------------------------------------------------------------
+
+func _draw_ring() -> void:
+	var c := _ring_ctrl
+	var ctr := c.size * 0.5
+	var r := minf(c.size.x, c.size.y) * 0.5 - 10.0
+	c.draw_arc(ctr, r, 0.0, TAU, 160, Color(1, 1, 1, 0.08), 6.0, true)
+	c.draw_arc(ctr, r - 14.0, 0.0, TAU, 160, Color(1, 1, 1, 0.05), 1.0, true)
+	# Viertel-Ticks am Aussenring.
+	for i in 4:
+		var a := -PI * 0.5 + TAU * 0.25 * i
+		var dir := Vector2(cos(a), sin(a))
+		c.draw_line(ctr + dir * (r + 7.0), ctr + dir * (r + 13.0), Color(1, 1, 1, 0.16), 1.5, true)
+	var acc := clampf(float(_stats.get("accuracy", 0.0)), 0.0, 1.0) * _ring_t
+	if acc <= 0.0:
+		return
+	var a0 := -PI * 0.5
+	var a1 := a0 + TAU * acc
+	var pts := maxi(int(160.0 * acc), 8)
+	# Weicher Unterleger + scharfe Linie; Farbe laeuft von Rang-Farbe zu hell.
+	c.draw_arc(ctr, r, a0, a1, pts, Color(_rank_color, 0.12), 14.0, true)
+	c.draw_arc(ctr, r, a0, a1, pts, Color(_rank_color, 0.88), 5.0, true)
+	var tip := ctr + Vector2(cos(a1), sin(a1)) * r
+	c.draw_circle(tip, 4.5, _rank_color.lerp(Color.WHITE, 0.55))
+
+
+func _set_ring_t(t: float) -> void:
+	_ring_t = t
+	if is_instance_valid(_ring_ctrl):
+		_ring_ctrl.queue_redraw()
 
 
 # ---------------------------------------------------------------------------
@@ -581,12 +813,15 @@ func _build_histogram_data() -> void:
 func _draw_histogram() -> void:
 	var c := _hist_ctrl
 	var w := c.size.x
-	var h := c.size.y - 16.0
+	var h := c.size.y - 20.0
 	if w <= 0.0 or h <= 0.0:
 		return
 	var font := get_theme_default_font()
-	# Grundlinie + Mittelachse.
-	c.draw_line(Vector2(0, h), Vector2(w, h), Color(1, 1, 1, 0.10), 1.0)
+	# Hilfslinien bei 25/50/75 %, Grundlinie + Mittelachse.
+	for f in [0.25, 0.5, 0.75]:
+		var y: float = h - (h - 4.0) * float(f)
+		c.draw_line(Vector2(0, y), Vector2(w, y), Color(1, 1, 1, 0.035), 1.0)
+	c.draw_line(Vector2(0, h), Vector2(w, h), Color(1, 1, 1, 0.12), 1.0)
 	c.draw_line(Vector2(w * 0.5, 0), Vector2(w * 0.5, h), Color(1, 1, 1, 0.16), 1.0)
 	var bw := w / float(HIST_BINS)
 	for i in HIST_BINS:
@@ -595,9 +830,13 @@ func _draw_histogram() -> void:
 			continue
 		var d := absf((float(i) + 0.5) / float(HIST_BINS) - 0.5) * 2.0
 		var col := UiTheme.ACCENT.lerp(UiTheme.ACCENT2, smoothstep(0.15, 0.9, d))
-		col.a = 0.85
+		col.a = 0.82
 		var bh := maxf(v * (h - 4.0), 2.0)
-		c.draw_rect(Rect2(i * bw + 1.0, h - bh, maxf(bw - 2.0, 1.0), bh), col)
+		var rect := Rect2(i * bw + 1.5, h - bh, maxf(bw - 3.0, 1.0), bh)
+		c.draw_rect(rect, col)
+		# Hellere Kappe oben: wirkt wie Glas statt flacher Block.
+		c.draw_rect(Rect2(rect.position, Vector2(rect.size.x, minf(2.0, bh))),
+			col.lerp(Color.WHITE, 0.45))
 	# Mittel-Offset-Marker.
 	if _offsets.size() >= 2:
 		var mean := 0.0
@@ -606,12 +845,12 @@ func _draw_histogram() -> void:
 		mean /= float(_offsets.size())
 		var mx := w * 0.5 + clampf(mean / _hist_range, -1.0, 1.0) * w * 0.5
 		c.draw_line(Vector2(mx, -2), Vector2(mx, h), Color(1, 1, 1, 0.7 * _hist_t), 2.0)
-	var lc := Color(CAPTION, 0.9)
-	c.draw_string(font, Vector2(0, h + 14), "-%d ms  frueh" % int(_hist_range),
-		HORIZONTAL_ALIGNMENT_LEFT, -1, 11, lc)
-	c.draw_string(font, Vector2(w * 0.5 - 4, h + 14), "0", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, lc)
-	c.draw_string(font, Vector2(0, h + 14), "spaet  +%d ms" % int(_hist_range),
-		HORIZONTAL_ALIGNMENT_RIGHT, w, 11, lc)
+	var lc := CAPTION
+	c.draw_string(font, Vector2(0, h + 17), "−%d ms  früh" % int(_hist_range),
+		HORIZONTAL_ALIGNMENT_LEFT, -1, 12, lc)
+	c.draw_string(font, Vector2(w * 0.5 - 20, h + 17), "0 ms", HORIZONTAL_ALIGNMENT_CENTER, 40, 12, lc)
+	c.draw_string(font, Vector2(0, h + 17), "spät  +%d ms" % int(_hist_range),
+		HORIZONTAL_ALIGNMENT_RIGHT, w, 12, lc)
 
 
 # ---------------------------------------------------------------------------
@@ -623,6 +862,9 @@ func _play_intro() -> void:
 		c.modulate.a = 0.0
 	_rank_lbl.modulate.a = 0.0
 	_rank_glow.modulate.a = 0.0
+	_left_panel.modulate.a = 0.0
+	# Zwei Frames: Container-Sortierung ist deferred, erst dann stimmen Positionen.
+	await get_tree().process_frame
 	await get_tree().process_frame
 	if not is_inside_tree():
 		return
@@ -633,12 +875,11 @@ func _play_intro() -> void:
 	# Linkes Panel gleitet weich herein.
 	var lx := _left_panel.position.x
 	_left_panel.position.x = lx - 36.0
-	_left_panel.modulate.a = 0.0
 	tw.tween_property(_left_panel, "position:x", lx, 0.45) \
 		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 	tw.tween_property(_left_panel, "modulate:a", 1.0, 0.3)
 
-	# Score + Accuracy zaehlen hoch.
+	# Score + Genauigkeit zaehlen hoch.
 	var score := float(_stats.get("score", 0))
 	var acc := float(_stats.get("accuracy", 0.0))
 	tw.tween_method(_set_counters.bind(score, acc), 0.0, 1.0, SCORE_COUNT_TIME) \
@@ -650,11 +891,15 @@ func _play_intro() -> void:
 			.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT).set_delay(0.3 + 0.04 * i)
 	tw.tween_method(_set_hist_t, 0.0, 1.0, 0.7) \
 		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT).set_delay(0.45)
+	# Genauigkeits-Ring laeuft synchron zum Zaehler voll.
+	tw.tween_method(_set_ring_t, 0.0, 1.0, 1.1) \
+		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT).set_delay(0.3)
 
 	# Rank: Zoom-Pop, Glow faehrt weich hoch, danach Glanz-Sweep.
-	_rank_lbl.pivot_offset = _rank_lbl.size * 0.5
-	_rank_lbl.scale = Vector2.ONE * 1.3
-	_rank_mat.set_shader_parameter("box", _rank_lbl.size)
+	var box := Vector2(RING, RING)
+	_rank_lbl.pivot_offset = box * 0.5
+	_rank_lbl.scale = Vector2.ONE * 1.25
+	_rank_mat.set_shader_parameter("box", box)
 	_rank_mat.set_shader_parameter("sweep", -1.0)
 	tw.tween_property(_rank_lbl, "scale", Vector2.ONE, 0.45) \
 		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT).set_delay(0.35)
@@ -667,9 +912,9 @@ func _play_intro() -> void:
 
 func _set_counters(t: float, score: float, acc: float) -> void:
 	if is_instance_valid(_score_lbl):
-		_score_lbl.text = "%08d" % int(roundf(score * t))
+		_score_lbl.text = fmt_int(int(roundf(score * t)))
 	if is_instance_valid(_acc_lbl):
-		_acc_lbl.text = "%.2f%%" % (acc * t * 100.0)
+		_acc_lbl.text = fmt_pct(acc * t)
 
 
 func _set_hist_t(t: float) -> void:
@@ -687,7 +932,8 @@ func _set_sweep(v: float) -> void:
 func _start_idle_sweep() -> void:
 	if not is_inside_tree() or _rank_mat == null:
 		return
-	_rank_mat.set_shader_parameter("box", _rank_lbl.size)
+	if is_instance_valid(_main_row):
+		_main_row.queue_sort()
 	var tw := create_tween().set_loops()
 	tw.tween_interval(5.0)
 	tw.tween_method(_set_sweep, -0.2, 1.2, 1.1) \
