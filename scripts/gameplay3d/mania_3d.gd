@@ -110,6 +110,9 @@ var _groove_down := 0.0
 var _groove_peak := 0.0
 var _groove_is_down := false
 var _groove_vt := 0.0
+# Bild-Zeit dieses Frames (SyncClock.visual_time_ms) — Takt der Strecke.
+var _vt := 0.0
+var _comeback_pending := false
 var _music_energy := 0.0
 var _density2 := 0.0
 var _groove_kiai_seen := false
@@ -204,6 +207,24 @@ var _gal_idx := -1
 var _gal_col := Color(0.2, 0.5, 1.0)
 var _gal_col2 := Color(1.0, 0.4, 0.8)
 var _gal_stars := 1.0
+# KAPITEL-UEBERBLENDUNG: Startwerte beim Wechsel, Ziel = Kapitel-Werte;
+# Mischung laeuft CH_FADE_BEATS Schlaege ab dem Kapitel-Downbeat (Bild-Zeit).
+var _gal_from := {}
+var _ch_w := 1.0
+var _ch_kiai_w := 0.0      # 0..1: Kiai-Kapitel (dichter, heller, Aurora)
+var _ch_kiai_from := 0.0
+# VORBEIFLUG: zwei Slots (aktuelles + voriges Kapitel), beim Map-Start gebaut.
+var _flyby: Array = []
+# PANORAMA-HIMMEL (sky_panorama.gdshader): alle Paletten beim Map-Start
+# geladen; Kapitelwechsel blendet tex_a -> tex_b ab dem Downbeat.
+const SKY_PALS := ["violet", "azure", "ember", "emerald"]
+const SKY_HUES := [0.78, 0.58, 0.05, 0.40]
+var _sky_mat: ShaderMaterial
+var _sky_neb: Array = []
+var _sky_stars: Array = []
+var _sky_a := -1
+var _sky_b := -1
+var _sky_phase := 0.0
 var _gal_scale := 1.0
 ## Grund-Reisetempo aus dem BPM der Map (140 BPM = neutral).
 var _bpm_factor := 1.0
@@ -480,6 +501,9 @@ func _extract_theme_color() -> void:
 ## Mitte hinter der Strecke noch dunkler, Raender weich ausblenden. Liegt als
 ## riesige ferne Ebene HINTER dem Nebel; alles CPU-seitig, einmal beim Start.
 func _build_map_bg() -> void:
+	# Panorama-Himmel ist die Basis: die Map-Bild-Ebene wuerde ihn verdecken.
+	if _sky_mat != null:
+		return
 	if not MAP_BG_ENABLED or _bg_tex == null:
 		return
 	var src := _bg_tex.get_image()
@@ -585,6 +609,7 @@ func _build_world() -> void:
 	env.glow_bloom = 0.055
 	env.glow_hdr_threshold = 0.92
 	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_ADDITIVE
+	_build_sky(env)
 	we.environment = env
 	add_child(we)
 
@@ -872,6 +897,8 @@ func _build_starfield() -> void:
 	_nebula_mat.set_shader_parameter("star_amount", 1.0)
 	neb.material_override = _nebula_mat
 	neb.position = Vector3(0, 7.5, Z_FAR - 9.0)
+	# Mit Panorama-Himmel verdecken die Nebel-Quads ihn -> aus.
+	neb.visible = _sky_mat == null
 	_cosmos.add_child(neb)
 	var neb2 := MeshInstance3D.new()
 	var nq2 := QuadMesh.new()
@@ -886,6 +913,7 @@ func _build_starfield() -> void:
 	_nebula_mat2.set_shader_parameter("star_amount", 0.0)
 	neb2.material_override = _nebula_mat2
 	neb2.position = Vector3(4.0, 6.0, Z_FAR - 7.0)
+	neb2.visible = _sky_mat == null
 	_cosmos.add_child(neb2)
 
 	_build_map_bg()
@@ -945,7 +973,8 @@ func _build_starfield() -> void:
 		fgm.set_shader_parameter("col_a", _theme_col.lerp(Color(0.1, 0.08, 0.16), 0.45))
 		fgm.set_shader_parameter("col_b", _theme_kiai)
 		fgm.set_shader_parameter("scale", 3.6)
-		fgm.set_shader_parameter("alpha_mul", 0.20)
+		# Vor dem Panorama nur noch ein dezenter Nah-Schleier.
+		fgm.set_shader_parameter("alpha_mul", 0.20 if _sky_mat == null else 0.10)
 		fgm.set_shader_parameter("star_amount", 0.0)
 		fgn.material_override = fgm
 		fgn.position = Vector3(-24.0 if fgi == 0 else 24.0, 4.5, Z_FAR + 13.0)
@@ -1715,7 +1744,6 @@ func _process(delta: float) -> void:
 	if _ended or _beatmap == null:
 		return
 	var t := _time_ms()
-	_update_beat_waves(t)
 	# Replay: aufgezeichnete Inputs mit ihren ORIGINAL-Zeitstempeln einspeisen.
 	if GameSession.is_replay:
 		var evs := GameSession.replay_events
@@ -1815,6 +1843,7 @@ func _process(delta: float) -> void:
 	# Nur visuelle Pulse: Bild-Latenz-Zeit statt Judgement-Zeit.
 	var vt: float = SyncClock.visual_time_ms() if _use_audio else t + SyncClock.visual_offset_ms()
 	_clock.update(vt, delta)
+	_vt = vt
 	_hp_flash_cd = maxf(_hp_flash_cd - delta, 0.0)
 	if _judge_disp != null:
 		_judge_disp.beat(_clock.beat_env)
@@ -1845,9 +1874,9 @@ func _process(delta: float) -> void:
 	_density2 = lerpf(_density2, clampf(float(upcoming2) / 20.0, 0.0, 1.0), minf(delta * 3.0, 1.0))
 	var now_break := next_gap > 2500.0
 	if _in_break and not now_break:
-		# Comeback: kurzer Flash + Glut-Salve kuendigt den Wiedereinstieg an.
-		_line_flash = 1.0
-		_star_burst = 1.0
+		# Comeback: Flash + Glut-Salve kuendigen den Wiedereinstieg an —
+		# erst auf dem naechsten Schlag (Strecke pulst nur im Takt).
+		_comeback_pending = true
 	_in_break = now_break
 
 	# --- Beat-exakte FX-Simulation ---
@@ -1917,16 +1946,6 @@ func _process(delta: float) -> void:
 	var e_raw := clampf((bass_raw * 0.6 + full_raw * 0.4 - 0.35) / 0.5, 0.0, 1.0)
 	_music_energy = lerpf(_music_energy, e_raw, 1.0 - exp(-delta / beat_s))
 
-	# Beat-/Takt-Wellen: Phase 0..1, Welle trifft die Linie exakt auf dem Schlag.
-	if _road_mat != null:
-		_road_mat.set_shader_parameter("beat_phase", _clock.beat_phase)
-		_road_mat.set_shader_parameter("bar_phase", _clock.bar_phase)
-		_road_mat.set_shader_parameter("punch", _punch)
-		_road_mat.set_shader_parameter("wave_amount", fx)
-		_road_mat.set_shader_parameter("energy", 0.5 + (_bass * 0.5 + _kick * 0.3 + _sub * 0.15 + _kiai_mix * 0.4 + _density * 0.35) * fx)
-		# Strecke bleibt in der Songfarbe (kein Timing-/Kiai-Farbkippen —
-		# wandernde Fremdfarben auf dem Spielfeld stoerten).
-		_road_mat.set_shader_parameter("base_color", _theme_col)
 	# BEAT-KANTE: alles hier feuert EXAKT auf dem Schlag.
 	# Kiai-Eintritt merken: der Licht-Sweep startet genau auf dem naechsten Schlag.
 	if _clock.kiai and not _groove_kiai_seen:
@@ -1935,9 +1954,24 @@ func _process(delta: float) -> void:
 	if _clock.is_beat_edge:
 		_on_beat_edge(_clock.beat_index, _clock.is_downbeat_edge)
 	_update_groove(vt)
+	_update_beat_waves(vt)
+	# STRECKEN-PULS NUR AUS BEATCLOCK-KANTEN (Bild-Zeit): keine Bass-/Kick-
+	# Onsets auf Bahn, Kanten und Linie — die lagen beliebig zwischen den
+	# Schlaegen (gemessen 95 ms Phasenstreuung). Phase/Groove kommen aus
+	# _clock auf SyncClock.visual_time_ms, Energie ist ueber 1 Beat geglaettet.
+	var road_e := 0.5 + (_music_energy * 0.7 + _kiai_mix * 0.4 + _density * 0.35) * fx
+	if _road_mat != null:
+		_road_mat.set_shader_parameter("beat_phase", _clock.beat_phase)
+		_road_mat.set_shader_parameter("bar_phase", _clock.bar_phase)
+		_road_mat.set_shader_parameter("punch", clampf(_groove_down, 0.0, 1.0))
+		_road_mat.set_shader_parameter("wave_amount", fx)
+		_road_mat.set_shader_parameter("energy", road_e)
+		# Strecke bleibt in der Songfarbe (kein Timing-/Kiai-Farbkippen —
+		# wandernde Fremdfarben auf dem Spielfeld stoerten).
+		_road_mat.set_shader_parameter("base_color", _theme_col)
 
 	# Die ABFANGLINIE pulsiert im Takt — der Hit-Moment ist hoerbar UND sichtbar.
-	_line_mat.emission_energy_multiplier = 1.1 + pulse * 1.6 + _punch * 1.0 + _kick * 0.35 + _line_flash * 1.0 \
+	_line_mat.emission_energy_multiplier = 1.1 + _beat_env * 1.6 + _line_flash * 1.0 \
 			+ _groove * 3.0
 	_line_mat.emission = Color(1, 1, 1).lerp(_theme_col, _kiai_mix * 0.4)
 	var pad_energy: Array[float] = []
@@ -1953,7 +1987,7 @@ func _process(delta: float) -> void:
 					1.0 + minf(_groove, 1.0) * 0.04)
 	for m in _edge_mats:
 		m.emission_energy_multiplier = (0.28 if fx <= 0.0 else 0.4) \
-				+ (_bass * 1.2 + _punch * 0.9 + _kick * 0.35 + _density * 0.6
+				+ (_music_energy * 0.9 + _density * 0.6
 				+ _kiai_mix * 0.7) * fx + _groove * 3.0
 
 	# ON FIRE: ab 97% Acc (und min. 30 gewerteten Noten) zuenden die Kanten —
@@ -2029,6 +2063,15 @@ func _process(delta: float) -> void:
 	var bpm_live := clampf((_clock.bpm if _clock.bpm > 1.0 else 140.0) / 140.0, 0.7, 1.6)
 	var cruise := 9.0 * bpm_live * (0.75 + (_music_energy * 0.45 + _kiai_mix * 0.5 + _density * 0.2) * fx)
 	_star_scroll += delta * (cruise * (1.0 + _surge) + (_warp_level * 55.0 + _star_burst * 18.0) * fx) * (1.0 - dock_mix * 0.75)
+	# Panorama: ferne Sternen-Ebene stroemt langsamer (Parallaxe), gleicher
+	# Beat-Schub; Welt-Puls + minimaler Warp auf dem Schlag.
+	if _sky_mat != null:
+		_sky_phase += delta * (0.05 * cruise / 9.0 * (1.0 + _surge * fx) + _warp_level * 0.45 * fx) * (1.0 - dock_mix * 0.75)
+		_sky_mat.set_shader_parameter(&"star_phase", _sky_phase)
+		_sky_mat.set_shader_parameter(&"beat_pulse", clampf(_world_pulse, 0.0, 1.0))
+		var sw := clampf(_warp_level * 0.7 + maxf(_surge, 0.0) * 0.05, 0.0, 1.0) * fx
+		_sky_mat.set_shader_parameter(&"warp", sw if sw > 0.03 else 0.0)
+		_sky_mat.set_shader_parameter(&"stars_rotation", Vector3(0, 0, _sky_phase * 0.02))
 	# Kurze Streifen auf dem Schlag (radial, minimal), Hyperspace laenger.
 	var warp_stretch := 1.0 + maxf(_surge, 0.0) * 0.8 + _warp_level * 4.0 * fx
 	var cy := 1.78 + _cosmos_lift
@@ -2043,31 +2086,16 @@ func _process(delta: float) -> void:
 		var basis := _star_rot[i] * Basis.from_scale(Vector3(sc * warp_stretch, sc / sqrt(warp_stretch), sc))
 		_star_mm.set_instance_transform(i, Transform3D(basis, Vector3(seed.x, seed.y, z)))
 
-	# GALAXIEN-REISE: aktuelles Kapitel bestimmen — der Wechsel feuert
-	# einen Hyperspace-Sprung, die Farbwelt crossfadet butterweich.
-	var gal_target := _gal_idx
-	for ci in _gal_chapters.size():
-		if t >= float(_gal_chapters[ci].t):
-			gal_target = ci
-	if gal_target != _gal_idx:
-		if _gal_idx >= 0 and fx > 0.0:
-			# Nur Sternen-Warp im Hintergrund — kein Tunnel, kein FOV-Wabern.
-			_warp_level = 1.0
-		_gal_idx = gal_target
-		_apply_landmark(_gal_idx)
-	if _gal_idx >= 0 and fx > 0.0:
-		var gch: Dictionary = _gal_chapters[_gal_idx]
-		var gk := minf(delta * 0.5, 1.0)
-		_gal_col = _gal_col.lerp(gch.col, gk)
-		_gal_col2 = _gal_col2.lerp(gch.col2, gk)
-		_gal_stars = lerpf(_gal_stars, float(gch.stars), gk)
-		_gal_scale = lerpf(_gal_scale, float(gch.scale), gk)
+	# GALAXIEN-REISE: Kapitel aus der IntensityMap (Kiai-Start, Break-Ende,
+	# alle 32 Takte), Start immer auf einem Downbeat. Ueberblendung exakt ab
+	# dem Downbeat ueber CH_FADE_BEATS Schlaege, in Bild-Zeit (wie BeatClock).
+	_update_chapters(vt, fx)
 
 	# Spiralgalaxie: traege Rotation, im Kiai etwas heller.
 	if _galaxy_mat != null:
 		_galaxy_mat.set_shader_parameter("t", t / 1000.0)
 		_galaxy_mat.set_shader_parameter("intensity",
-			(0.26 + _kiai_mix * 0.13 + _beat_env * 0.04) * maxf(fx, 0.25))
+			(0.26 + _kiai_mix * 0.13 + _ch_kiai_w * 0.10 + _beat_env * 0.04) * maxf(fx, 0.25))
 	# Vordergrund-Nebelfetzen driften deutlich schneller (Nah-Parallaxe).
 	for fgm2 in _fg_neb_mats:
 		fgm2.set_shader_parameter("drift", _nebula_drift * 3.4)
@@ -2267,6 +2295,10 @@ func _on_beat_edge(beat_idx: int, downbeat: bool) -> void:
 	if _kiai_sweep_pending:
 		_kiai_sweep_pending = false
 		_spawn_kiai_sweep()
+	if _comeback_pending:
+		_comeback_pending = false
+		_line_flash = 1.0
+		_star_burst = 1.0
 	# Sub-Thump auf dem Taktanfang (hoerbar UND fuehlbar, uebertoent die Musik
 	# nicht); die Huellkurve kommt aus BeatClock.
 	if downbeat and _use_audio and _beat_player != null:
@@ -2363,7 +2395,7 @@ func _spawn_kiai_sweep() -> void:
 	_world.add_child(sw)
 	var bl := 60000.0 / _clock.bpm if _clock.bpm > 1.0 else 500.0
 	var dur := maxf(1.0, roundf(800.0 / bl)) * bl
-	_kiai_sweeps.append({"node": sw, "mat": m, "t0": _groove_vt, "dur": dur,
+	_kiai_sweeps.append({"node": sw, "mat": m, "t0": _vt, "dur": dur,
 			"peak": 0.34 * fx})
 
 
@@ -2459,7 +2491,8 @@ func _spawn_beat_wave() -> void:
 	wave.rotation_degrees = Vector3(-90, 0, 0)
 	# Die Welle ist ein "Zeitpunkt" auf der Strecke wie eine Note: sie startet
 	# am fernen Ende (eine Sichtweite voraus) und laeuft mit der Map-SV zur Linie.
-	var t_now := _time_ms()
+	# Bild-Zeit (wie BeatClock): die Welle trifft die Linie exakt auf dem Schlag.
+	var t_now := _vt
 	var sm := core.scroll
 	var w_time := sm.time_at(sm.position(t_now) + core.preempt)
 	# Auf den naechsten Beat rasten: die Welle trifft die Linie genau auf dem Schlag.
@@ -2597,9 +2630,19 @@ func _build_screen_fx() -> void:
 # exakt dieselbe Route. Grosse Manoever nur in ruhigen Passagen.
 # ---------------------------------------------------------------------------
 
-## Galaxie-Kapitel aus der Map: 3-4 Abschnitte, an den Kiai-Start
-## ausgerichtet, Farb-/Nebel-Identitaet aus dem Map-Seed — jede Map ist
-## eine eigene, wiedererkennbare Route durch verschiedene Galaxien.
+const CH_FADE_BEATS := 4.0   # Ueberblendung ab dem Kapitel-Downbeat
+const CH_MIN_BARS := 8        # kuerzere Abschnitte werden zusammengelegt
+const FLY_D0 := 230.0         # Vorbeiflug: Startdistanz (fern, klein)
+const FLY_D1 := 13.0          # Enddistanz (nah, seitlich aus dem Bild)
+const CAM_Z := 6.8
+const CAM_Y := 1.78
+
+
+## Galaxie-Kapitel aus der IntensityMap: ein neues Kapitel beginnt auf dem
+## ersten Downbeat eines neuen Abschnitts (Kiai-Start, Break-Ende, alle
+## 32 Takte), mindestens CH_MIN_BARS Takte lang. Farbe aus der Songpalette,
+## Szenerie (Galaxie + Planet, Seite, Form) aus dem Map-Seed — jede Map ist
+## eine eigene, wiedererkennbare Route. Alles hier, einmal beim Map-Start.
 func _build_galaxy_chapters() -> void:
 	_gal_chapters = []
 	_gal_idx = -1
@@ -2609,40 +2652,250 @@ func _build_galaxy_chapters() -> void:
 		return
 	var seed_h: int = hash(GameSession.osu_filename)
 	var dur := maxf(_beatmap.duration_ms(), 1.0)
+	var reds: Array = []
 	for tp in _beatmap.timing_points:
 		if tp.uninherited and tp.beat_length > 0.0:
-			_bpm_factor = clampf((60000.0 / tp.beat_length) / 140.0, 0.7, 1.5)
+			reds.append(tp)
+	if reds.is_empty():
+		return
+	_bpm_factor = clampf((60000.0 / reds[0].beat_length) / 140.0, 0.7, 1.5)
+	var im := IntensityMap.new()
+	im.build(_beatmap)
+	# Downbeats der Map ablaufen: Abschnittswechsel -> Kapitelstart.
+	var starts: Array = [0.0]
+	var last_sec := im.section_index(0.0)
+	for ri in reds.size():
+		var tp = reds[ri]
+		var bar: float = tp.beat_length * float(maxi(tp.meter, 1))
+		var seg_end: float = dur if ri == reds.size() - 1 else float(reds[ri + 1].time)
+		var tb: float = tp.time
+		while tb < seg_end - 1.0 and tb < dur - bar * 4.0:
+			var sec := im.section_index(tb + 1.0)
+			if sec != last_sec:
+				last_sec = sec
+				var prev: float = starts[starts.size() - 1]
+				if tb - prev >= bar * CH_MIN_BARS:
+					starts.append(tb)
+				elif starts.size() > 1 and _beatmap.is_kiai(tb + 1.0) \
+						and not _beatmap.is_kiai(prev + 1.0):
+					# Kiai gewinnt: zu knapper Vorgaenger rutscht auf den Drop.
+					starts[starts.size() - 1] = tb
+			tb += bar
+	# Palette: Songfarbe + Nachbarn, Kiai-Kapitel in der Kiai-Farbe.
+	var h := _theme_col.h
+	var kh := _theme_kiai.h
+	var hues := [h, fposmod(h + 0.08, 1.0), fposmod(h - 0.08, 1.0),
+			fposmod(h + 0.16, 1.0)]
+	var side := -1.0 if (seed_h % 2) == 0 else 1.0
+	var calm_i := 0
+	var pal_base := _sky_pal_for_hue(_theme_col.h, -1)
+	var pal_alt := _sky_pal_for_hue(_theme_col.h, pal_base)
+	var pal_kiai := _sky_pal_for_hue(_theme_kiai.h, pal_base)
+	# Folge-Kapitel sollen sich klar unterscheiden: ruhige Kapitel rotieren
+	# durch alle drei Nicht-Kiai-Paletten, Kiai-Ketten wechseln zu zweit.
+	var calm_pals: Array = [pal_base, pal_alt]
+	for pi3 in SKY_PALS.size():
+		if pi3 != pal_base and pi3 != pal_alt and pi3 != pal_kiai:
+			calm_pals.append(pi3)
 			break
-	var n_ch := 4 if dur > 90000.0 else 3
-	var bounds: Array = []
-	for i in n_ch:
-		bounds.append(dur * float(i) / float(n_ch))
-	# Der Kiai-Start ersetzt die naechstgelegene Grenze (musikalischer Schnitt).
-	var scan := 0.0
-	while scan < dur:
-		if _beatmap.is_kiai(scan):
-			var best := 1
-			var bd := 1.0e12
-			for i in range(1, bounds.size()):
-				if absf(float(bounds[i]) - scan) < bd:
-					bd = absf(float(bounds[i]) - scan)
-					best = i
-			bounds[best] = scan
-			break
-		scan += 400.0
-	bounds.sort()
-	var base_h := _theme_col.h
-	var hue_step := 0.16 + float(seed_h % 23) * 0.008
-	for i in bounds.size():
-		var hh := fposmod(base_h + float(i) * hue_step, 1.0)
-		var sat := 0.45 + 0.25 * _hash01(float(seed_h % 977) + float(i) * 3.3)
+	var kiai_pals: Array = [pal_kiai, pal_alt if pal_alt != pal_kiai else pal_base]
+	var kiai_i := 0
+	for i in starts.size():
+		var t0: float = starts[i]
+		var t1: float = dur if i == starts.size() - 1 else float(starts[i + 1])
+		var kiai := _beatmap.is_kiai(t0 + 1.0) or _beatmap.is_kiai(t0 + (t1 - t0) * 0.5)
+		var drop := im.is_drop_at(t0 + 1.0)
+		var hs := float(seed_h % 977) + float(i) * 3.3
+		var hh: float = fposmod(kh + 0.09 * float(kiai_i % 2), 1.0) if kiai else float(hues[(calm_i + seed_h) % hues.size()])
+		var pal: int = kiai_pals[kiai_i % 2] if kiai else calm_pals[calm_i % calm_pals.size()]
+		if kiai:
+			kiai_i += 1
+		if not kiai:
+			calm_i += 1
+		var big := kiai or drop
 		_gal_chapters.append({
-			"t": bounds[i],
-			"col": Color.from_hsv(hh, sat, 0.95),
-			"col2": Color.from_hsv(fposmod(hh + 0.45, 1.0), 0.8, 1.0),
-			"stars": 0.6 + _hash01(float(seed_h) + float(i) * 7.7) * 0.9,
+			"t": t0, "t_end": t1, "kiai": kiai, "drop": drop,
+			"col": Color.from_hsv(hh, 0.55 + 0.2 * _hash01(hs), 0.95),
+			"col2": Color.from_hsv(h if kiai else kh, 0.75, 1.0),
+			"stars": (1.25 if kiai else 0.55) + _hash01(hs * 1.7) * 0.5,
 			"scale": 0.85 + _hash01(float(seed_h) * 2.0 + float(i)) * 0.9,
+			"side": side,
+			"arms": 2.0 + float(int(_hash01(hs * 2.3) * 2.99)),
+			"twist": 4.0 + _hash01(hs * 3.1) * 3.5,
+			"squash": 1.2 + _hash01(hs * 4.7) * 0.9,
+			"tilt": (_hash01(hs * 5.3) - 0.5) * 0.9,
+			"gsize": (26.0 if big else 19.0) + _hash01(hs * 6.1) * 6.0,
+			"gh": 0.10 + _hash01(hs * 7.9) * 0.10,
+			"psize": 5.0 + _hash01(hs * 8.3) * 5.0,
+			"ph": 0.05 + _hash01(hs * 9.7) * 0.08,
+			"pcol": Color.from_hsv(fposmod(hh + 0.5 + _hash01(hs * 10.1) * 0.2, 1.0), 0.45, 0.75),
+			"pseed": _hash01(hs * 11.3) * 40.0,
+			"pring": 0.85 if _hash01(hs * 12.7) > 0.5 else 0.0,
+			"pal": pal,
 		})
+		side = -side
+	if OS.get_cmdline_args().has("--shot"):
+		for c in _gal_chapters:
+			print("CHAPTER t=%.0f..%.0f kiai=%s drop=%s" % [float(c.t), float(c.t_end), str(c.kiai), str(c.drop)])
+	_build_flyby()
+
+
+## Zwei Vorbeiflug-Slots (aktuelles + voriges Kapitel): Galaxie + Planet,
+## Materialien einmalig — pro Kapitel werden nur Uniforms umgestellt.
+func _build_flyby() -> void:
+	_flyby = []
+	if _cosmos == null:
+		return
+	var gal_shader: Shader = load("res://shaders/spiral_galaxy.gdshader")
+	var pl_shader: Shader = load("res://shaders/planet.gdshader")
+	for k in 2:
+		var g := MeshInstance3D.new()
+		var gq := QuadMesh.new()
+		gq.size = Vector2(1, 1)
+		g.mesh = gq
+		var gm := ShaderMaterial.new()
+		gm.shader = gal_shader
+		gm.render_priority = 1
+		gm.set_shader_parameter("intensity", 0.0)
+		g.material_override = gm
+		g.visible = false
+		_cosmos.add_child(g)
+		var pl := MeshInstance3D.new()
+		var pq := QuadMesh.new()
+		pq.size = Vector2(1, 1)
+		pl.mesh = pq
+		var pm := ShaderMaterial.new()
+		pm.shader = pl_shader
+		pm.render_priority = 1
+		pm.set_shader_parameter("fade", 0.0)
+		pl.material_override = pm
+		pl.visible = false
+		_cosmos.add_child(pl)
+		_flyby.append({"g": g, "gm": gm, "p": pl, "pm": pm, "ch": -1})
+
+
+## Kapitel ci in seinen Slot laden (nur beim Kapitelwechsel).
+func _setup_flyby(ci: int) -> void:
+	if _flyby.is_empty() or ci < 0:
+		return
+	var fb: Dictionary = _flyby[ci % _flyby.size()]
+	var c: Dictionary = _gal_chapters[ci]
+	fb["ch"] = ci
+	var gm: ShaderMaterial = fb.gm
+	var col: Color = c.col
+	gm.set_shader_parameter("col_arm", col.lerp(Color(0.8, 0.85, 1.0), 0.25))
+	gm.set_shader_parameter("col_core", Color(1.0, 0.93, 0.80).lerp(col, 0.15))
+	gm.set_shader_parameter("arm_n", float(c.arms))
+	gm.set_shader_parameter("twist", float(c.twist))
+	gm.set_shader_parameter("squash", float(c.squash))
+	var gs: float = c.gsize
+	(fb.g as MeshInstance3D).scale = Vector3(gs, gs * 0.72, 1.0)
+	(fb.g as MeshInstance3D).rotation = Vector3(0, 0, float(c.tilt))
+	var pm: ShaderMaterial = fb.pm
+	var pc: Color = c.pcol
+	pm.set_shader_parameter("base_col", pc)
+	pm.set_shader_parameter("band_col", pc.darkened(0.35))
+	pm.set_shader_parameter("atmo_col", col.lerp(Color(1, 1, 1), 0.3))
+	pm.set_shader_parameter("band_freq", 5.0 + float(c.pseed) * 0.2)
+	pm.set_shader_parameter("seed", float(c.pseed))
+	pm.set_shader_parameter("ring_amount", float(c.pring))
+	(fb.p as MeshInstance3D).scale = Vector3.ONE * float(c.psize)
+
+
+## Kapitel pro Frame (Bild-Zeit vt): Wechsel erkennen, Farben/Sterne exakt
+## ab dem Downbeat ueberblenden, Vorbeiflug-Szenerie bewegen. Keine Allokation
+## ausser beim Kapitelwechsel selbst.
+func _update_chapters(vt: float, fx: float) -> void:
+	if _gal_chapters.is_empty():
+		return
+	var target := 0
+	for ci in _gal_chapters.size():
+		if vt >= float(_gal_chapters[ci].t):
+			target = ci
+		else:
+			break
+	if target != _gal_idx:
+		var first := _gal_idx < 0
+		if not first and fx > 0.0:
+			# Nur Sternen-Warp im Hintergrund — kein Tunnel, kein FOV-Wabern.
+			_warp_level = 1.0
+		_gal_from = {"col": _gal_col, "col2": _gal_col2, "stars": _gal_stars,
+				"scale": _gal_scale}
+		_ch_kiai_from = _ch_kiai_w
+		_gal_idx = target
+		_apply_landmark(_gal_idx)
+		_setup_flyby(_gal_idx)
+		_sky_begin_chapter(int(_gal_chapters[_gal_idx].pal), first)
+		if first:
+			var c0: Dictionary = _gal_chapters[_gal_idx]
+			_gal_from = {"col": c0.col, "col2": c0.col2, "stars": c0.stars,
+					"scale": c0.scale}
+			_ch_kiai_from = 1.0 if c0.kiai else 0.0
+	var ch: Dictionary = _gal_chapters[_gal_idx]
+	var bl := 60000.0 / _clock.bpm if _clock.bpm > 1.0 else 500.0
+	var fade_ms := CH_FADE_BEATS * bl
+	var w := smoothstep(0.0, fade_ms, vt - float(ch.t))
+	if _sky_mat != null:
+		if _sky_b >= 0 and w >= 1.0:
+			_sky_set(true, _sky_b)
+			_sky_b = -1
+		_sky_mat.set_shader_parameter(&"palette_mix", w if _sky_b >= 0 else 0.0)
+		_sky_mat.set_shader_parameter(&"brightness", lerpf(0.95, 1.2, _ch_kiai_w))
+	_ch_w = w
+	_gal_col = (_gal_from.col as Color).lerp(ch.col, w)
+	_gal_col2 = (_gal_from.col2 as Color).lerp(ch.col2, w)
+	_gal_stars = lerpf(float(_gal_from.stars), float(ch.stars), w)
+	_gal_scale = lerpf(float(_gal_from.scale), float(ch.scale), w)
+	_ch_kiai_w = lerpf(_ch_kiai_from, 1.0 if ch.kiai else 0.0, w)
+	var fxc := clampf(fx, 0.0, 1.0)
+	# Kiai-Kapitel: dichterer Sternenstrom, volle Aurora.
+	if _star_mm != null:
+		_star_mm.visible_instance_count = int(float(STAR_COUNT) * lerpf(0.7, 1.0, _ch_kiai_w * fxc))
+	if _aurora_mat != null:
+		_aurora_mat.set_shader_parameter("amount", lerpf(0.3, 1.0, _ch_kiai_w) * maxf(fxc, 0.3))
+	# VORBEIFLUG: waechst aus der Ferne heran und zieht weit seitlich oben
+	# vorbei (projizierter Abstand zur Bildmitte >= ~0.35, nie ueber der Bahn).
+	for fb in _flyby:
+		var g: MeshInstance3D = fb.g
+		var pl: MeshInstance3D = fb.p
+		var ci: int = fb.ch
+		if ci < 0 or fx <= 0.0:
+			g.visible = false
+			pl.visible = false
+			continue
+		var c: Dictionary = _gal_chapters[ci]
+		var t0: float = c.t
+		var span := maxf(float(c.t_end) - t0 + fade_ms, 1.0)
+		var p := (vt - t0) / span
+		if p < 0.0 or p > 1.0:
+			g.visible = false
+			pl.visible = false
+			continue
+		var fin := smoothstep(0.0, fade_ms, vt - t0)
+		var side: float = c.side
+		var kb := 1.0 if c.kiai else 0.0
+		# Galaxie: exponentielle Annaeherung = gleichmaessiges Tempo-Gefuehl.
+		var d := FLY_D0 * pow(FLY_D1 / FLY_D0, p)
+		var r := lerpf(0.40, 1.75, p * p)
+		var gs: float = c.gsize
+		g.position = Vector3(side * r * d, CAM_Y + d * float(c.gh) + gs * 0.3, CAM_Z - d)
+		g.visible = true
+		var gm: ShaderMaterial = fb.gm
+		gm.set_shader_parameter("t", vt / 1000.0)
+		gm.set_shader_parameter("world_pulse", _world_pulse)
+		gm.set_shader_parameter("intensity",
+				(0.42 + kb * 0.38) * fin * (1.0 - smoothstep(0.88, 1.0, p)) * fxc)
+		# Planet: gegenueberliegende Seite, etwas spaeter dran.
+		var pp := clampf(p * 1.12 - 0.08, 0.0, 1.0)
+		var d2 := FLY_D0 * 0.85 * pow(FLY_D1 / (FLY_D0 * 0.85), pp)
+		var r2 := lerpf(0.48, 1.9, pp * pp)
+		var ps: float = c.psize
+		pl.position = Vector3(-side * r2 * d2, CAM_Y + d2 * float(c.ph) + ps * 0.6, CAM_Z - d2)
+		pl.visible = p * 1.12 - 0.08 > 0.0
+		var pm: ShaderMaterial = fb.pm
+		pm.set_shader_parameter("t", vt / 1000.0)
+		pm.set_shader_parameter("world_pulse", _world_pulse)
+		pm.set_shader_parameter("fade", fin * (1.0 - smoothstep(0.9, 1.0, pp)) * fxc)
 
 
 func _build_flight_plan() -> void:
@@ -3675,3 +3928,82 @@ func _capture_after_first_note() -> void:
 	img.save_png(path)
 	print("SHOT gespeichert: " + path)
 	get_tree().quit(0)
+
+
+## Panorama-Himmel als Basis (BG_SKY); false, wenn Shader/Texturen fehlen.
+func _build_sky(env: Environment) -> bool:
+	var sp := "res://shaders/sky_panorama.gdshader"
+	if not ResourceLoader.exists(sp):
+		return false
+	for n in SKY_PALS:
+		var np := "res://assets_game/space/sky_%s.webp" % n
+		var tp := "res://assets_game/space/sky_%s_stars.webp" % n
+		if not ResourceLoader.exists(np) or not ResourceLoader.exists(tp):
+			_sky_neb = []
+			_sky_stars = []
+			return false
+		var nt: Texture2D = load(np)
+		var st: Texture2D = load(tp)
+		if nt == null or st == null:
+			# Nicht importiert/defekt: alter Nebel-Himmel bleibt.
+			_sky_neb = []
+			_sky_stars = []
+			return false
+		_sky_neb.append(nt)
+		_sky_stars.append(st)
+	_sky_mat = ShaderMaterial.new()
+	_sky_mat.shader = load(sp)
+	_sky_set(true, _sky_pal_for_hue(_theme_col.h, -1))
+	# Mitte hinter der Strecke bleibt dunkel (Notenlesbarkeit).
+	_sky_mat.set_shader_parameter("readability", 0.7)
+	_sky_mat.set_shader_parameter("star_speed", 0.0)
+	var sky := Sky.new()
+	sky.sky_material = _sky_mat
+	sky.radiance_size = Sky.RADIANCE_SIZE_32
+	sky.process_mode = Sky.PROCESS_MODE_INCREMENTAL
+	env.background_mode = Environment.BG_SKY
+	env.sky = sky
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	env.ambient_light_color = Color(0, 0, 0)
+	env.reflected_light_source = Environment.REFLECTION_SOURCE_DISABLED
+	return true
+
+
+## Naechste Panorama-Palette zum Farbton (zirkulaer), optional ohne `skip`.
+func _sky_pal_for_hue(h: float, skip: int) -> int:
+	var best := 0
+	var bd := 9.0
+	for i in SKY_HUES.size():
+		if i == skip:
+			continue
+		var d := absf(fposmod(h - float(SKY_HUES[i]) + 0.5, 1.0) - 0.5)
+		if d < bd:
+			bd = d
+			best = i
+	return best
+
+
+## Panorama-Slot a oder b auf Palette pal setzen (nur bei Wechsel).
+func _sky_set(slot_a: bool, pal: int) -> void:
+	if _sky_mat == null or pal < 0 or pal >= _sky_neb.size():
+		return
+	_sky_mat.set_shader_parameter(&"tex_a" if slot_a else &"tex_b", _sky_neb[pal])
+	_sky_mat.set_shader_parameter(&"stars_a" if slot_a else &"stars_b", _sky_stars[pal])
+	if slot_a:
+		_sky_a = pal
+
+
+## Kapitelwechsel: neue Palette in Slot b, Mischung laeuft ab dem Downbeat.
+func _sky_begin_chapter(pal: int, first: bool) -> void:
+	if _sky_mat == null:
+		return
+	if _sky_b >= 0:
+		# Wechsel mitten in einer Ueberblendung: b war das Ziel -> wird Basis.
+		_sky_set(true, _sky_b)
+		_sky_b = -1
+	if first:
+		_sky_set(true, pal)
+	elif pal != _sky_a:
+		_sky_set(false, pal)
+		_sky_b = pal
+	_sky_mat.set_shader_parameter(&"palette_mix", 0.0)
