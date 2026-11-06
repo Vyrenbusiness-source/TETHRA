@@ -135,11 +135,16 @@ func _setup_audio_enhance() -> void:
 	comp.gain = 2.5
 	_fx_comp_idx = AudioServer.get_bus_effect_count(bus)
 	AudioServer.add_bus_effect(bus, comp)
-	# Brickwall-Limiter als LETZTER Effekt: kein Clipping. Kein Lookahead-Delay.
-	var lim := AudioEffectHardLimiter.new()
-	lim.ceiling_db = -0.5
-	lim.pre_gain_db = 0.0
-	lim.release = 0.1
+	# Limiter als LETZTER Effekt: Kompressor mit Ratio 20 und 20 us Attack.
+	# NICHT AudioEffectHardLimiter: der arbeitet mit Lookahead-Puffer und
+	# verzoegert das Audio um ~2 ms (verschiebt das Timing). Dieser hier ist
+	# latenzfrei und faengt die Bass-Spitzen vor dem Clipping ab.
+	var lim := AudioEffectCompressor.new()
+	lim.threshold = -1.5
+	lim.ratio = 20.0
+	lim.attack_us = 20.0
+	lim.release_ms = 60.0
+	lim.gain = 0.0
 	AudioServer.add_bus_effect(bus, lim)
 
 
