@@ -68,7 +68,7 @@ uniform float star_phase = 0.0;
 uniform float warp : hint_range(0.0, 1.0) = 0.0;
 uniform float readability : hint_range(0.0, 1.0) = 0.35;
 
-const int WARP_TAPS = 8;
+const int WARP_TAPS = 16;
 
 mat3 euler(vec3 e) {
 	float cx = cos(e.x), sx = sin(e.x);
@@ -163,14 +163,16 @@ void sky() {
 			vec3 acc = vec3(0.0);
 			if (warp > 0.001) {
 				// Strahlenfoermige Streifen: entlang des Zooms mehrfach abtasten.
+				// Jitter je Pixel: aus den Einzel-Abtastungen werden durchgehende Streifen.
 				float wsum = 0.0;
+				float jit = hash12(FRAGCOORD.xy + float(layer) * 17.0);
 				for (int i = 0; i < WARP_TAPS; i++) {
-					float k = float(i) / float(WARP_TAPS - 1);
+					float k = (float(i) + jit) / float(WARP_TAPS);
 					float wk = 1.0 - 0.75 * k;
-					acc += stars_at(zoom_dir(dir, s * (1.0 + warp * 0.32 * k)), srot) * wk;
+					acc += stars_at(zoom_dir(dir, s * (1.0 + warp * 0.14 * k)), srot) * wk;
 					wsum += wk;
 				}
-				acc *= (1.0 + warp * 2.2) / wsum;
+				acc *= (1.0 + warp * 3.0) / wsum;
 			} else {
 				acc = stars_at(zoom_dir(dir, s), srot);
 			}
