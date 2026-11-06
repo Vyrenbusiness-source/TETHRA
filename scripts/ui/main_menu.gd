@@ -26,6 +26,14 @@ var _tour_steps: Array = []
 var _tour_overlay: Control
 # Leise Menue-Musik: der zuletzt gespielte Song ab seiner Preview-Stelle.
 var _music: AudioStreamPlayer
+# Bass-Reaktivitaet: Logo, Shader-Hintergrund, Overlay.
+var _logo: Label
+var _bg_mat: ShaderMaterial
+var _dim_overlay: ColorRect
+var _bass_avg: float = 0.0
+var _bass_smooth: float = 0.0
+var _kick: float = 0.0
+var _logo_t: float = 0.0
 
 
 func _ready() -> void:
@@ -39,6 +47,7 @@ func _ready() -> void:
 		var mat := ShaderMaterial.new()
 		mat.shader = load("res://shaders/menu_bg.gdshader")
 		bg.material = mat
+		_bg_mat = mat
 		bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		add_child(bg)
 
@@ -123,6 +132,28 @@ func _start_menu_music() -> void:
 	tw.tween_property(_music, "volume_db", -14.0, 1.6)
 
 
+## Bass-Onset gegen gleitenden Mittelwert -> Kick-Puls; ruhig ohne Musik.
+func _process(delta: float) -> void:
+	_logo_t += delta
+	var playing := _music != null and is_instance_valid(_music) and _music.playing
+	var raw: float = SyncClock.band_energy(30.0, 120.0) if playing else 0.0
+	_bass_avg = lerpf(_bass_avg, raw, clampf(delta * 1.5, 0.0, 1.0))
+	_bass_smooth = lerpf(_bass_smooth, raw, clampf(delta * 8.0, 0.0, 1.0))
+	var onset: float = raw - _bass_avg
+	if onset > 0.08 and raw > 0.35:
+		_kick = maxf(_kick, clampf(onset * 4.0, 0.0, 1.0))
+	_kick = maxf(_kick - delta * 3.5, 0.0)
+	var bass_lvl: float = clampf((_bass_smooth - 0.3) * 1.5, 0.0, 1.0) if playing else 0.0
+	if _logo != null:
+		var idle: float = 0.009 * (1.0 + sin(_logo_t * TAU / 4.4))
+		_logo.scale = Vector2.ONE * (1.0 + idle + 0.03 * _kick)
+	if _bg_mat != null:
+		_bg_mat.set_shader_parameter("bass", bass_lvl)
+		_bg_mat.set_shader_parameter("kick", _kick)
+	if _dim_overlay != null:
+		_dim_overlay.color.a = 0.30 - 0.05 * bass_lvl - 0.03 * _kick
+
+
 ## Geblurrtes Hintergrundbild der zuletzt gespielten Map. false wenn keins da.
 func _build_blur_bg() -> bool:
 	var last := GameSession.load_last_played()
@@ -159,6 +190,7 @@ func _add_blur_layers(tex: Texture2D) -> void:
 	overlay.color = Color(0, 0, 0, 0.30)
 	overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(overlay)
+	_dim_overlay = overlay
 
 
 func _build_logo() -> void:
@@ -191,11 +223,10 @@ func _build_logo() -> void:
 	logo.pivot_offset = Vector2(400, 70)
 	var pulse := create_tween().set_loops()
 	pulse.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
-	pulse.tween_property(logo, "scale", Vector2.ONE * 1.018, 2.2)
-	pulse.parallel().tween_method(
+	_logo = logo
+	pulse.tween_method(
 		func(v): logo.add_theme_constant_override("shadow_outline_size", int(v)), 24.0, 38.0, 2.2)
-	pulse.tween_property(logo, "scale", Vector2.ONE, 2.2)
-	pulse.parallel().tween_method(
+	pulse.tween_method(
 		func(v): logo.add_theme_constant_override("shadow_outline_size", int(v)), 38.0, 24.0, 2.2)
 
 	# Untertitel auf Japanisch (Katakana) — Systemfont, da der Godot-Default

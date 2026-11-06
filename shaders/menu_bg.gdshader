@@ -4,6 +4,9 @@ shader_type canvas_item;
 // aus dem Fluchtpunkt + dezente Sterne. Passt zum Tunnel-Look des Gameplays.
 
 uniform vec3 base_color: source_color = vec3(0.06, 0.35, 0.80);
+// Musikreaktiv (0..1), gesetzt von main_menu.gd. 0 = ruhig.
+uniform float bass = 0.0;
+uniform float kick = 0.0;
 
 float hash12(vec2 p) {
 	vec3 p3 = fract(vec3(p.xyx) * 0.1031);
@@ -14,7 +17,7 @@ float hash12(vec2 p) {
 void fragment() {
 	vec2 p = UV - vec2(0.5, 0.46);
 	p.x *= 1.78;
-	float d = length(p);
+	float d = length(p) * (1.0 - 0.015 * bass - 0.01 * kick);
 
 	// Ringe, die langsam nach aussen laufen.
 	float rings = pow(abs(sin(d * 14.0 - TIME * 0.9)), 24.0);
@@ -28,6 +31,6 @@ void fragment() {
 
 	// Vignette + Grundton.
 	float vig = 1.0 - smoothstep(0.4, 1.05, d);
-	vec3 col = base_color * (ring_glow * 0.55 + 0.035 * vig) + vec3(stars);
+	vec3 col = base_color * (ring_glow * (0.55 + 0.12 * bass + 0.10 * kick) + (0.035 + 0.012 * bass) * vig) + vec3(stars);
 	COLOR = vec4(col, 1.0);
 }
