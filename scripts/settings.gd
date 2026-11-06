@@ -88,9 +88,11 @@ var _vol_label: Label
 var _vol_fill: ColorRect
 var _vol_tween: Tween
 
-## Klang-Boost: EQ (Bass + Klarheit) und sanfter Kompressor auf dem Master-Bus.
-## Beide Effekte arbeiten OHNE Lookahead/Delay — exakt 0 ms Zusatzlatenz,
-## das Timing bleibt unberuehrt. Abschaltbar in den Settings.
+## Klang: EQ (Bass + Klarheit), sanfter Kompressor und Limiter auf dem Master-Bus.
+## Alle Effekte arbeiten OHNE Lookahead/Delay — exakt 0 ms Zusatzlatenz,
+## das Timing bleibt unberuehrt. Bass wirkt IMMER ueber den Bass-Regler
+## (0% = kein Boost); audio_enhance ("Klarheit") schaltet nur Hoehen/Praesenz
+## und den Kompressor. Der Limiter ist immer an.
 var audio_enhance: bool = true
 var _fx_eq_idx := -1
 var _fx_comp_idx := -1
@@ -155,7 +157,7 @@ func _apply_bass_gains() -> void:
 	for i in _BASS_GAINS.size():
 		_fx_eq.set_band_gain_db(i, _BASS_GAINS[i] * k)
 	for j in _OTHER_GAINS.size():
-		_fx_eq.set_band_gain_db(_BASS_GAINS.size() + j, _OTHER_GAINS[j])
+		_fx_eq.set_band_gain_db(_BASS_GAINS.size() + j, _OTHER_GAINS[j] if audio_enhance else 0.0)
 
 
 ## Einmalige Migration: Projekt hiess frueher HOOKLINE — Settings/Scores/Caches
@@ -225,7 +227,8 @@ func apply() -> void:
 	_apply_bass_gains()
 	if _fx_eq_idx >= 0:
 		var bus := AudioServer.get_bus_index("Master")
-		AudioServer.set_bus_effect_enabled(bus, _fx_eq_idx, audio_enhance)
+		# EQ immer an (Bass-Regler), nur der Kompressor folgt "Klarheit".
+		AudioServer.set_bus_effect_enabled(bus, _fx_eq_idx, true)
 		AudioServer.set_bus_effect_enabled(bus, _fx_comp_idx, audio_enhance)
 	if DisplayServer.get_name() != "headless":
 		# EXCLUSIVE_FULLSCREEN = echtes Vollbild (nicht nur randloses Fenster).

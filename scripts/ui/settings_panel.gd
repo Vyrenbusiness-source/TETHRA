@@ -9,6 +9,15 @@ signal closed
 
 const COL_DIM := Color(0.55, 0.58, 0.66)
 const COL_SECTION := Color(0.45, 0.8, 1.0)
+const VALUE_W := 84.0
+
+const BLUR_SHADER := """shader_type canvas_item;
+uniform sampler2D screen_tex : hint_screen_texture, filter_linear_mipmap;
+void fragment() {
+	vec3 c = textureLod(screen_tex, SCREEN_UV, 3.0).rgb;
+	COLOR = vec4(c * 0.38, 1.0);
+}
+"""
 
 var _capturing := 0   # 0 = keine Aufnahme, 3..6 = Lane 1-4
 var _lane_btns: Array[Button] = []
@@ -23,7 +32,12 @@ func _ready() -> void:
 
 	var dim := ColorRect.new()
 	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	dim.color = Color(0, 0, 0, 0.6)
+	dim.color = Color.WHITE
+	var sh := Shader.new()
+	sh.code = BLUR_SHADER
+	var mat := ShaderMaterial.new()
+	mat.shader = sh
+	dim.material = mat
 	dim.gui_input.connect(func(e):
 		if e is InputEventMouseButton and e.pressed:
 			_close())
@@ -35,7 +49,7 @@ func _ready() -> void:
 	add_child(center)
 
 	var panel := PanelContainer.new()
-	var sb := UiTheme.glass_box(18, 0.75)
+	var sb := UiTheme.glass_box(18, 0.95)
 	sb.set_content_margin_all(28)
 	panel.add_theme_stylebox_override("panel", sb)
 	panel.custom_minimum_size = Vector2(600, 0)
@@ -43,7 +57,7 @@ func _ready() -> void:
 	center.add_child(panel)
 
 	var vb := VBoxContainer.new()
-	vb.add_theme_constant_override("separation", 10)
+	vb.add_theme_constant_override("separation", 12)
 	panel.add_child(vb)
 
 	# Kopfzeile mit Schliessen-Knopf.
@@ -63,7 +77,7 @@ func _ready() -> void:
 	head.add_child(close_x)
 
 	# ------------------------------- GAMEPLAY -------------------------------
-	_section(vb, "GAMEPLAY")
+	var cv_gameplay := _section(vb, "GAMEPLAY")
 
 	var scroll_slider := HSlider.new()
 	scroll_slider.min_value = 0.5
@@ -71,13 +85,13 @@ func _ready() -> void:
 	scroll_slider.step = 0.1
 	scroll_slider.value = Settings.mania_scroll
 	var scroll_value := Label.new()
-	scroll_value.custom_minimum_size = Vector2(66, 0)
+	scroll_value.custom_minimum_size = Vector2(VALUE_W, 0)
 	scroll_value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	scroll_value.text = "x%.1f" % Settings.mania_scroll
 	scroll_slider.value_changed.connect(func(v):
 		Settings.mania_scroll = v
 		scroll_value.text = "x%.1f" % v)
-	_row(vb, "Scroll-Speed", scroll_slider, scroll_value)
+	_row(cv_gameplay, "Scroll-Speed", scroll_slider, scroll_value)
 
 	var lane_row := HBoxContainer.new()
 	lane_row.add_theme_constant_override("separation", 8)
@@ -90,7 +104,7 @@ func _ready() -> void:
 		b.pressed.connect(func(): _start_capture(3 + lane))
 		lane_row.add_child(b)
 		_lane_btns.append(b)
-	_row(vb, "Tasten 1-4", lane_row, null)
+	_row(cv_gameplay, "Tasten 1-4", lane_row, null)
 
 	var offset_slider := HSlider.new()
 	offset_slider.min_value = -200.0
@@ -98,16 +112,16 @@ func _ready() -> void:
 	offset_slider.step = 1.0
 	offset_slider.value = Settings.offset_ms
 	_offset_value = Label.new()
-	_offset_value.custom_minimum_size = Vector2(66, 0)
+	_offset_value.custom_minimum_size = Vector2(VALUE_W, 0)
 	_offset_value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	offset_slider.value_changed.connect(func(v):
 		Settings.offset_ms = v
 		Settings.apply()
 		_offset_value.text = "%+d ms" % int(v))
-	_row(vb, "Audio-Offset", offset_slider, _offset_value)
+	_row(cv_gameplay, "Audio-Offset", offset_slider, _offset_value)
 
 	# -------------------------------- AUDIO ---------------------------------
-	_section(vb, "AUDIO")
+	var cv_audio := _section(vb, "AUDIO")
 
 	var vol_slider := HSlider.new()
 	vol_slider.min_value = -30.0
@@ -115,20 +129,20 @@ func _ready() -> void:
 	vol_slider.step = 1.0
 	vol_slider.value = Settings.volume_db
 	_vol_value = Label.new()
-	_vol_value.custom_minimum_size = Vector2(66, 0)
+	_vol_value.custom_minimum_size = Vector2(VALUE_W, 0)
 	_vol_value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	vol_slider.value_changed.connect(func(v):
 		Settings.volume_db = v
 		Settings.apply()
 		_vol_value.text = "%d dB" % int(v))
-	_row(vb, "Lautstaerke", vol_slider, _vol_value)
+	_row(cv_audio, "Lautstaerke", vol_slider, _vol_value)
 
 	var enh := CheckButton.new()
 	enh.button_pressed = Settings.audio_enhance
 	enh.toggled.connect(func(on):
 		Settings.audio_enhance = on
 		Settings.apply())
-	_row(vb, "Klang-Boost (Bass)", enh, null)
+	_row(cv_audio, "Klarheit (Hoehen)", enh, null)
 
 	var bass_slider := HSlider.new()
 	bass_slider.min_value = 0.0
@@ -136,19 +150,19 @@ func _ready() -> void:
 	bass_slider.step = 0.05
 	bass_slider.value = Settings.bass_boost
 	var bass_value := Label.new()
-	bass_value.custom_minimum_size = Vector2(66, 0)
+	bass_value.custom_minimum_size = Vector2(VALUE_W, 0)
 	bass_value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	bass_value.text = "%d %%" % int(Settings.bass_boost * 100.0)
 	bass_slider.value_changed.connect(func(v):
 		Settings.bass_boost = v
 		Settings.apply()
 		bass_value.text = "%d %%" % int(v * 100.0))
-	_row(vb, "Bass", bass_slider, bass_value)
+	_row(cv_audio, "Bass", bass_slider, bass_value)
 
 	var hs := CheckButton.new()
 	hs.button_pressed = Settings.hitsounds
 	hs.toggled.connect(func(on): Settings.hitsounds = on)
-	_row(vb, "Hitsounds", hs, null)
+	_row(cv_audio, "Hitsounds", hs, null)
 
 	var hs_slider := HSlider.new()
 	hs_slider.min_value = 0.0
@@ -156,16 +170,16 @@ func _ready() -> void:
 	hs_slider.step = 0.05
 	hs_slider.value = Settings.hitsound_volume
 	var hs_value := Label.new()
-	hs_value.custom_minimum_size = Vector2(66, 0)
+	hs_value.custom_minimum_size = Vector2(VALUE_W, 0)
 	hs_value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	hs_value.text = "%d %%" % int(Settings.hitsound_volume * 100.0)
 	hs_slider.value_changed.connect(func(v):
 		Settings.hitsound_volume = v
 		hs_value.text = "%d %%" % int(v * 100.0))
-	_row(vb, "Hitsound-Lautstaerke", hs_slider, hs_value)
+	_row(cv_audio, "Hitsound-Lautstaerke", hs_slider, hs_value)
 
 	# ------------------------------- ANZEIGE --------------------------------
-	_section(vb, "ANZEIGE")
+	var cv_anzeige := _section(vb, "ANZEIGE")
 
 	var fx := OptionButton.new()
 	fx.add_item("Aus", 0)
@@ -174,7 +188,7 @@ func _ready() -> void:
 	fx.select(Settings.tunnel_intensity)
 	fx.custom_minimum_size = Vector2(0, 38)
 	fx.item_selected.connect(func(i): Settings.tunnel_intensity = i)
-	_row(vb, "Effekt-Intensitaet", fx, null)
+	_row(cv_anzeige, "Effekt-Intensitaet", fx, null)
 
 	var gfx := OptionButton.new()
 	gfx.add_item("Niedrig", 0)
@@ -187,7 +201,7 @@ func _ready() -> void:
 	gfx.item_selected.connect(func(i):
 		Settings.graphics_quality = i
 		Settings.apply())
-	_row(vb, "Grafik-Qualitaet", gfx, null)
+	_row(cv_anzeige, "Grafik-Qualitaet", gfx, null)
 
 	var fps := OptionButton.new()
 	fps.add_item("VSync", 0)
@@ -200,17 +214,17 @@ func _ready() -> void:
 	fps.item_selected.connect(func(i):
 		Settings.fps_mode = i
 		Settings.apply())
-	_row(vb, "FPS-Limit", fps, null)
+	_row(cv_anzeige, "FPS-Limit", fps, null)
 
 	var lg := CheckButton.new()
 	lg.button_pressed = Settings.lane_glow
 	lg.toggled.connect(func(on): Settings.lane_glow = on)
-	_row(vb, "Spur-Aufleuchten (Taste)", lg, null)
+	_row(cv_anzeige, "Spur-Aufleuchten (Taste)", lg, null)
 
 	var fs := CheckButton.new()
 	fs.button_pressed = Settings.fullscreen
 	fs.toggled.connect(func(on): Settings.fullscreen = on; Settings.apply())
-	_row(vb, "Vollbild (F11)", fs, null)
+	_row(cv_anzeige, "Vollbild (F11)", fs, null)
 
 	# Fusszeile.
 	var save := Button.new()
@@ -222,28 +236,60 @@ func _ready() -> void:
 
 	_refresh_labels()
 
+	# Sanftes Einblenden: Scale 0.96 -> 1 + Fade, 0.18 s.
+	panel.modulate.a = 0.0
+	panel.scale = Vector2(0.96, 0.96)
+	_intro.call_deferred(panel)
 
-## Sektions-Kopf: kleine Versal-Zeile + Trennlinie.
-func _section(vb: VBoxContainer, text: String) -> void:
-	var spacer := Control.new()
-	spacer.custom_minimum_size = Vector2(0, 6)
-	vb.add_child(spacer)
+
+func _intro(panel: Control) -> void:
+	panel.pivot_offset = panel.size * 0.5
+	var tw := create_tween().set_parallel(true).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	tw.tween_property(panel, "modulate:a", 1.0, 0.18)
+	tw.tween_property(panel, "scale", Vector2.ONE, 0.18)
+
+
+## Sektion als dezente Karte: Kopfzeile + Zeilen-Box. Gibt die Box zurueck.
+func _section(vb: VBoxContainer, text: String) -> VBoxContainer:
+	var card := PanelContainer.new()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(1, 1, 1, 0.035)
+	sb.set_corner_radius_all(12)
+	sb.set_border_width_all(1)
+	sb.border_color = Color(1, 1, 1, 0.07)
+	sb.set_content_margin_all(14)
+	card.add_theme_stylebox_override("panel", sb)
+	vb.add_child(card)
+	var inner := VBoxContainer.new()
+	inner.add_theme_constant_override("separation", 4)
+	card.add_child(inner)
 	var l := Label.new()
 	l.text = text
 	l.add_theme_font_override("font", UiTheme.heading_font(2))
 	l.add_theme_font_size_override("font_size", 13)
 	l.add_theme_color_override("font_color", COL_SECTION)
-	vb.add_child(l)
-	var sep := HSeparator.new()
-	sep.add_theme_color_override("separator", Color(1, 1, 1, 0.08))
-	vb.add_child(sep)
+	inner.add_child(l)
+	return inner
 
 
 ## Einheitliche Zeile: Beschriftung links (feste Breite), Control rechts.
 func _row(vb: VBoxContainer, caption: String, control: Control, value: Label) -> void:
+	var hov := PanelContainer.new()
+	hov.mouse_filter = Control.MOUSE_FILTER_PASS
+	var hn := StyleBoxFlat.new()
+	hn.bg_color = Color(1, 1, 1, 0.0)
+	hn.set_corner_radius_all(8)
+	hn.content_margin_left = 8
+	hn.content_margin_right = 8
+	hn.content_margin_top = 3
+	hn.content_margin_bottom = 3
+	hov.add_theme_stylebox_override("panel", hn)
+	hov.mouse_entered.connect(func(): hn.bg_color = Color(1, 1, 1, 0.06))
+	hov.mouse_exited.connect(func(): hn.bg_color = Color(1, 1, 1, 0.0))
+	vb.add_child(hov)
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 14)
-	vb.add_child(row)
+	hov.add_child(row)
 	var cap := Label.new()
 	cap.text = caption
 	cap.custom_minimum_size = Vector2(160, 0)
@@ -256,6 +302,8 @@ func _row(vb: VBoxContainer, caption: String, control: Control, value: Label) ->
 	if value != null:
 		value.add_theme_font_size_override("font_size", 14)
 		value.add_theme_color_override("font_color", COL_DIM)
+		value.custom_minimum_size = Vector2(VALUE_W, 0)
+		value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		row.add_child(value)
 
 
