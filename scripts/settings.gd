@@ -94,6 +94,12 @@ var _vol_tween: Tween
 var audio_enhance: bool = true
 var _fx_eq_idx := -1
 var _fx_comp_idx := -1
+var _fx_eq: AudioEffectEQ10
+## Bass-Staerke 0..1 (Default 0.75), skaliert die Bassbaender des EQ.
+var bass_boost: float = 0.75
+# EQ-Gains bei bass_boost = 1.0 (31/62/125/250 Hz); Mitten bewusst leicht gesenkt.
+const _BASS_GAINS := [9.0, 8.0, 5.0, 1.5]
+const _OTHER_GAINS := [-1.0, 0.0, 0.6, 1.2, 1.8, 1.6]
 
 
 func _ready() -> void:
@@ -115,21 +121,36 @@ func _setup_audio_enhance() -> void:
 	# 10-Band-EQ: satter, aber nicht droehnender Bass-Schub unten,
 	# neutrale Mitten, etwas Praesenz und "Luft" oben.
 	var eq := AudioEffectEQ10.new()
-	var gains := [4.0, 3.2, 2.0, 0.6, 0.0, 0.0, 0.6, 1.2, 1.8, 1.6]
-	for i in gains.size():
-		eq.set_band_gain_db(i, gains[i])
+	_fx_eq = eq
+	_apply_bass_gains()
 	_fx_eq_idx = AudioServer.get_bus_effect_count(bus)
 	AudioServer.add_bus_effect(bus, eq)
-	# Sanfter Kompressor: faengt die EQ-Spitzen ab (kein Clipping) und gibt
-	# dem Mix Punch. Kein Lookahead -> latenzfrei.
+	# Kompressor: langsamer Attack laesst den Kick-Anschlag durch (Punch),
+	# kurzer Release pumpt nicht. Kein Lookahead -> latenzfrei.
 	var comp := AudioEffectCompressor.new()
-	comp.threshold = -10.0
-	comp.ratio = 2.5
-	comp.attack_us = 40.0
-	comp.release_ms = 200.0
-	comp.gain = 2.0
+	comp.threshold = -14.0
+	comp.ratio = 3.0
+	comp.attack_us = 1500.0
+	comp.release_ms = 120.0
+	comp.gain = 2.5
 	_fx_comp_idx = AudioServer.get_bus_effect_count(bus)
 	AudioServer.add_bus_effect(bus, comp)
+	# Brickwall-Limiter als LETZTER Effekt: kein Clipping. Kein Lookahead-Delay.
+	var lim := AudioEffectHardLimiter.new()
+	lim.ceiling_db = -0.5
+	lim.pre_gain_db = 0.0
+	lim.release = 0.1
+	AudioServer.add_bus_effect(bus, lim)
+
+
+func _apply_bass_gains() -> void:
+	if _fx_eq == null:
+		return
+	var k := clampf(bass_boost, 0.0, 1.0)
+	for i in _BASS_GAINS.size():
+		_fx_eq.set_band_gain_db(i, _BASS_GAINS[i] * k)
+	for j in _OTHER_GAINS.size():
+		_fx_eq.set_band_gain_db(_BASS_GAINS.size() + j, _OTHER_GAINS[j])
 
 
 ## Einmalige Migration: Projekt hiess frueher HOOKLINE — Settings/Scores/Caches
@@ -165,6 +186,7 @@ func load_settings() -> void:
 	fps_mode = clampi(int(cfg.get_value("game", "fps_mode", 2)), 0, 4)
 	graphics_quality = clampi(int(cfg.get_value("game", "graphics_quality", 3)), 0, 4)
 	audio_enhance = bool(cfg.get_value("game", "audio_enhance", true))
+	bass_boost = clampf(float(cfg.get_value("game", "bass_boost", 0.75)), 0.0, 1.0)
 	profile_name = str(cfg.get_value("profile", "name", "Player"))
 
 
@@ -186,6 +208,7 @@ func save() -> void:
 	cfg.set_value("game", "fps_mode", fps_mode)
 	cfg.set_value("game", "graphics_quality", graphics_quality)
 	cfg.set_value("game", "audio_enhance", audio_enhance)
+	cfg.set_value("game", "bass_boost", bass_boost)
 	cfg.set_value("profile", "name", profile_name)
 	cfg.save(PATH)
 
@@ -194,6 +217,7 @@ func save() -> void:
 func apply() -> void:
 	SyncClock.user_offset_ms = offset_ms
 	AudioServer.set_bus_volume_db(0, volume_db)
+	_apply_bass_gains()
 	if _fx_eq_idx >= 0:
 		var bus := AudioServer.get_bus_index("Master")
 		AudioServer.set_bus_effect_enabled(bus, _fx_eq_idx, audio_enhance)

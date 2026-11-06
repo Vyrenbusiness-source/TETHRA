@@ -130,6 +130,21 @@ func _ready() -> void:
 		Settings.apply())
 	_row(vb, "Klang-Boost (Bass)", enh, null)
 
+	var bass_slider := HSlider.new()
+	bass_slider.min_value = 0.0
+	bass_slider.max_value = 1.0
+	bass_slider.step = 0.05
+	bass_slider.value = Settings.bass_boost
+	var bass_value := Label.new()
+	bass_value.custom_minimum_size = Vector2(66, 0)
+	bass_value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	bass_value.text = "%d %%" % int(Settings.bass_boost * 100.0)
+	bass_slider.value_changed.connect(func(v):
+		Settings.bass_boost = v
+		Settings.apply()
+		bass_value.text = "%d %%" % int(v * 100.0))
+	_row(vb, "Bass", bass_slider, bass_value)
+
 	var hs := CheckButton.new()
 	hs.button_pressed = Settings.hitsounds
 	hs.toggled.connect(func(on): Settings.hitsounds = on)
