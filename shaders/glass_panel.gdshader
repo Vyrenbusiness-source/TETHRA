@@ -44,5 +44,10 @@ void fragment() {
 	float edge = smoothstep(-border - 1.0, -border, d);
 	glass = mix(glass, border_color.rgb, edge * border_color.a);
 
+	// Feiner Lichtkanten-Highlight an der Oberkante (faellt nach unten aus).
+	float top = smoothstep(-2.5, -0.5, d) * (1.0 - smoothstep(0.0, 0.18, UV.y));
+	glass += vec3(0.10) * top;
+	glass += vec3(0.025) * (1.0 - smoothstep(0.0, 0.5, UV.y));
+
 	COLOR = vec4(glass, alpha);
 }
