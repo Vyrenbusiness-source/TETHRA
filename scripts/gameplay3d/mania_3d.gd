@@ -2577,6 +2577,8 @@ func _place_hud_to_line() -> void:
 	var line_y := _camera.unproject_position(Vector3(0.0, ROAD_Y, Z_LINE)).y
 	if line_y <= 0.0 or line_y >= vs.y:
 		line_y = vs.y * 0.84
+	# Judge + FRUEH/SPAET ueber den Pads (Pad-Oberkante ~8,5 % Bildhoehe ueber der Linie).
+	_judge_disp.judge_gap = vs.y * 0.085 + 44.0
 	_judge_disp.place(line_y)
 	_err_bar.position = Vector2((vs.x - _err_bar.size.x) * 0.5,
 		minf(line_y + 34.0, vs.y - _err_bar.size.y - 8.0))
