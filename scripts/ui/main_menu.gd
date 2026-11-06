@@ -371,7 +371,7 @@ func _build_now_playing(bm: Beatmap, cover: Texture2D) -> void:
 	hb.add_child(tv)
 
 	var cap := Label.new()
-	cap.text = "JETZT LAEUFT"
+	cap.text = "JETZT LÄUFT"
 	cap.add_theme_font_size_override("font_size", 10)
 	cap.add_theme_color_override("font_color", COL_ACCENT)
 	cap.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -604,11 +604,11 @@ func _start_tour() -> void:
 		{ "target": _profile_card, "click": "profile",
 			"text": "Das ist DEIN PROFIL: Name, pp, Profilbild.\nKlick die Karte an — und danach wieder zu!" },
 		{ "target": _btn_settings, "click": "settings",
-			"text": "Hier stellst du Tasten, Scroll-Speed, Offset und FPS ein.\nKlick auf EINSTELLUNGEN — schau dich um und schliesse wieder!" },
+			"text": "Hier stellst du Tasten, Scroll-Speed, Offset und FPS ein.\nKlick auf EINSTELLUNGEN — schau dich um und schließe wieder!" },
 		{ "target": _btn_play, "click": "",
 			"text": "SPIELEN oeffnet den Song-Browser.\nDort findest du auch den Online-Tab (Maps laden), ★-Filter und Collections." },
 		{ "target": _btn_mp, "click": "",
-			"text": "MULTIPLAYER: Raum erstellen, Code an Freunde schicken,\ndie Krone 👑 waehlt die Map — mit Live-Scoreboard!" },
+			"text": "MULTIPLAYER: Raum erstellen, Code an Freunde schicken,\ndie Krone 👑 wählt die Map — mit Live-Scoreboard!" },
 	]
 	_tour_step = -1
 	_tour_next()
@@ -691,6 +691,7 @@ func _tour_finish() -> void:
 		_tour_overlay.queue_free()
 		_tour_overlay = null
 	_tour_step = -1
+	Sfx.ui_open()
 	var overlay := Control.new()
 	overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(overlay)
@@ -710,16 +711,16 @@ func _tour_finish() -> void:
 	vb.add_theme_constant_override("separation", 12)
 	panel.add_child(vb)
 	var t := Label.new()
-	t.text = "Menue-Tour fertig!"
+	t.text = "Menü-Tour fertig!"
 	t.add_theme_font_size_override("font_size", 24)
 	t.add_theme_color_override("font_color", COL_ACCENT)
 	vb.add_child(t)
 	var b := Label.new()
-	b.text = "Jetzt die Uebungs-Map: sie haelt an und zeigt dir\nNoten, Holds und Doppelnoten direkt im Spiel."
+	b.text = "Jetzt die Übungs-Map: sie hält an und zeigt dir\nNoten, Holds und Doppelnoten direkt im Spiel."
 	b.add_theme_font_size_override("font_size", 15)
 	vb.add_child(b)
 	var go := Button.new()
-	go.text = "🚀 UEBUNGS-MAP STARTEN"
+	go.text = "🚀 ÜBUNGS-MAP STARTEN"
 	go.custom_minimum_size = Vector2(0, 48)
 	UiTheme.style_button(go, true)
 	go.pressed.connect(_start_practice)
@@ -731,10 +732,12 @@ func _tour_finish() -> void:
 	guide.pressed.connect(func(): get_tree().change_scene_to_file("res://scenes/tutorial.tscn"))
 	vb.add_child(guide)
 	var close := Button.new()
-	close.text = "Schliessen"
+	close.text = "Schließen"
 	close.custom_minimum_size = Vector2(0, 38)
 	UiTheme.style_button(close)
-	close.pressed.connect(overlay.queue_free)
+	close.pressed.connect(func():
+		Sfx.ui_close()
+		overlay.queue_free())
 	vb.add_child(close)
 
 
