@@ -64,8 +64,8 @@ const LIST_PAD := 14
 var _preview: AudioStreamPlayer
 var _preview_fade: Tween
 var _preview_gain_db := 0.0
-# Vorschau bewusst leise (Hintergrund-Charakter), mit sanfter Einblendung.
-const PREVIEW_DB := -14.0
+# Vorschau ~3 dB unter Gameplay-Pegel, mit sanfter Einblendung.
+const PREVIEW_DB := -3.0
 
 ## Aktiver No-Fail-Mod: Health kann nicht auf 0 fallen, Play zaehlt unranked.
 var _nf_enabled := false
@@ -152,7 +152,7 @@ func _ready() -> void:
 	_library.scan()
 
 	_preview = AudioStreamPlayer.new()
-	_preview.bus = "Master"
+	_preview.bus = "Music"
 	_preview.volume_db = PREVIEW_DB
 	add_child(_preview)
 

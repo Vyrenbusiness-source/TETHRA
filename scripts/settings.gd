@@ -3,6 +3,26 @@ extends Node
 ## Autoload "Settings": persistente Spieleinstellungen (user://settings.cfg).
 ## AR-Override betrifft NUR die Anflugzeit (preempt) — niemals Timing-Windows
 ## (Spec/Masterplan Regel 9). Scores mit Override sind "unranked".
+##
+## ===== Klang: Mastering-Kette (ALLES latenzfrei: kein Lookahead, kein Delay) =====
+## Bus "Music" (send -> Master) fuer Song + Vorschau:
+##   0 SpectrumAnalyzer      SyncClock, pre-Mastering (Visualizer/Effekte)
+##   1 Capture               SongLoudness-Messung, pre-Mastering
+##   2 HighPass 28 Hz        12 dB/oct, Subsonic gegen Rumpeln/Headroom
+##   3 LowShelf 110 Hz       0..+7 dB (Settings.bass_boost)
+##   4 EQ10                  62 Hz Kick-Punch 0..+1.5 dB (bass_boost),
+##                           250/500 Hz -1/-0.5 (Mud), Klarheit: 2k +0.4,
+##                           4k +0.8, 8k +0.6, 16k +1.5 (Praesenz/Air)
+##   5 Amplify               Bass-Vorkompensation -0.25 dB je +1 dB Bass
+##   6 Distortion ATAN       drive 0.2, post_gain = Kleinsignal-Ausgleich (Waerme)
+##   7 Compressor (Glue)     2:1, 10 ms / 150 ms, -18 dB, Make-up GLUE_MAKEUP_DB
+##   8 StereoEnhance         pan_pullout 1.12, time_pullout 0 (kein Delay)
+##   9 Amplify               +LIMIT_DRIVE_DB in den Limiter
+##  10 Compressor (Limiter)  20:1, 20 us, -0.8 dB Ceiling
+## Bus "Master" (Hitsounds/UI + Music): nur Schutz-Limiter 20:1 / 20 us / -0.3 dB.
+## NIE AudioEffectHardLimiter (Lookahead ~2 ms), NIE StereoEnhance mit time_pullout.
+## Lautheit: SongLoudness normalisiert auf -11 dBFS RMS (-4..+6 dB).
+## Gemessen (tests/run_mastering_tests.gd, Pink-Noise -11 dBFS RMS): MEASURED
 
 const PATH := "user://settings.cfg"
 
@@ -88,21 +108,61 @@ var _vol_label: Label
 var _vol_fill: ColorRect
 var _vol_tween: Tween
 
-## Klang: EQ (Bass + Klarheit), sanfter Kompressor und Limiter auf dem Master-Bus.
-## Alle Effekte arbeiten OHNE Lookahead/Delay — exakt 0 ms Zusatzlatenz,
-## das Timing bleibt unberuehrt. Bass wirkt IMMER ueber den Bass-Regler
-## (0% = kein Boost); audio_enhance ("Klarheit") schaltet nur Hoehen/Praesenz
-## und den Kompressor. Der Limiter ist immer an.
+## Klang: Mastering-Kette auf dem Music-Bus (siehe Kommentarblock oben).
+## Bass wirkt IMMER ueber den Bass-Regler (0% = kein Boost); audio_enhance
+## ("Klarheit") schaltet nur Praesenz/Air im EQ.
 var audio_enhance: bool = true
-var _fx_eq_idx := -1
-var _fx_comp_idx := -1
-var _fx_eq: AudioEffectEQ10
-## Bass-Staerke 0..1 (Default 0.75), skaliert die Bassbaender des EQ.
+## Bass-Staerke 0..1 (Default 0.75), skaliert Low-Shelf + Kick-Peak.
 var bass_boost: float = 0.75
-# EQ-Gains bei bass_boost = 1.0 (31/62/125/250 Hz); Mitten bewusst leicht gesenkt.
-const _BASS_GAINS := [9.0, 8.0, 5.0, 1.5]
-const _OTHER_GAINS := [-1.0, 0.0, 0.6, 1.2, 1.8, 1.6]
 
+const BASS_SHELF_HZ := 110.0
+const BASS_SHELF_MAX_DB := 7.0
+## Sanfter Kick-Punch (EQ10-Band 62 Hz) bei bass_boost = 1.0.
+const KICK_PEAK_MAX_DB := 1.5
+## Vorkompensation: -0.25 dB je +1 dB Bass (Kompressor/Limiter druecken sonst
+## die Zusatzenergie wieder weg -> gefuehlter Verlust).
+const BASS_PRECOMP := -0.25
+const SAT_DRIVE := 0.2
+const GLUE_THRESHOLD_DB := -18.0
+const GLUE_MAKEUP_DB := 3.0
+const LIMIT_DRIVE_DB := 2.5
+const LIMIT_CEIL_DB := -0.8
+const MASTER_CEIL_DB := -0.3
+const STEREO_WIDTH := 1.12
+# EQ10-Baender: 0=31 1=62 2=125 3=250 4=500 5=1k 6=2k 7=4k 8=8k 9=16k
+const _EQ_KICK_BAND := 1
+const _EQ_MUD := {3: -1.0, 4: -0.5}
+const _EQ_CLARITY := {6: 0.4, 7: 0.8, 8: 0.6, 9: 1.5}
+
+var _fx_shelf: AudioEffectLowShelfFilter
+var _fx_eq: AudioEffectEQ10
+var _fx_trim: AudioEffectAmplify
+
+
+## Bass-Shelf in dB fuer bass_boost k (0..1).
+static func bass_shelf_db(k: float) -> float:
+	return BASS_SHELF_MAX_DB * clampf(k, 0.0, 1.0)
+
+
+## Godot-Shelf: gain ist linear, wirkt als 40*log10(gain) dB (gemessen:
+## gain 1.5 -> +6.9 dB bei 40 Hz). Also gain = 10^(dB/40).
+static func shelf_gain_for_db(db: float) -> float:
+	return pow(10.0, db / 40.0)
+
+
+## Pegel-Vorkompensation fuer den Bass-Schub (Shelf + Kick-Peak).
+static func bass_precomp_db(k: float) -> float:
+	var kk := clampf(k, 0.0, 1.0)
+	return BASS_PRECOMP * (bass_shelf_db(kk) + KICK_PEAK_MAX_DB * kk)
+
+
+## Kleinsignal-Verstaerkung von AudioEffectDistortion MODE_ATAN (Engine-Formel:
+## atan(x*m)*d mit m = 10^(3*drive^2)-1+0.001, d = 1/(atan(m)*(1+8*drive))).
+## post_gain = -dieser Wert haelt den Pegel gleich.
+static func atan_gain_db(drive: float) -> float:
+	var m := pow(10.0, drive * drive * 3.0) - 1.0 + 0.001
+	var d := 1.0 / (atan(m) * (1.0 + drive * 8.0))
+	return linear_to_db(m * d)
 
 func _ready() -> void:
 	# ALWAYS: F11 und Alt+Scroll muessen auch im Pausenmenue funktionieren.
@@ -116,48 +176,82 @@ func _ready() -> void:
 	apply()
 
 
-## Master-Bus-Effektkette einmalig aufbauen (nach dem Spektrum-Analyzer der
-## SyncClock, damit dessen Instanz-Index stabil bleibt).
+## Mastering-Kette einmalig hinter Analyzer + Capture der SyncClock haengen
+## (deren Indizes 0/1 bleiben stabil). Alles latenzfrei.
 func _setup_audio_enhance() -> void:
-	var bus := AudioServer.get_bus_index("Master")
-	# 10-Band-EQ: satter, aber nicht droehnender Bass-Schub unten,
-	# neutrale Mitten, etwas Praesenz und "Luft" oben.
-	var eq := AudioEffectEQ10.new()
-	_fx_eq = eq
-	_apply_bass_gains()
-	_fx_eq_idx = AudioServer.get_bus_effect_count(bus)
-	AudioServer.add_bus_effect(bus, eq)
-	# Kompressor: langsamer Attack laesst den Kick-Anschlag durch (Punch),
-	# kurzer Release pumpt nicht. Kein Lookahead -> latenzfrei.
-	var comp := AudioEffectCompressor.new()
-	comp.threshold = -14.0
-	comp.ratio = 3.0
-	comp.attack_us = 1500.0
-	comp.release_ms = 120.0
-	comp.gain = 2.5
-	_fx_comp_idx = AudioServer.get_bus_effect_count(bus)
-	AudioServer.add_bus_effect(bus, comp)
-	# Limiter als LETZTER Effekt: Kompressor mit Ratio 20 und 20 us Attack.
-	# NICHT AudioEffectHardLimiter: der arbeitet mit Lookahead-Puffer und
-	# verzoegert das Audio um ~2 ms (verschiebt das Timing). Dieser hier ist
-	# latenzfrei und faengt die Bass-Spitzen vor dem Clipping ab.
+	var bus: int = SyncClock.ensure_music_bus()
+	var hp := AudioEffectHighPassFilter.new()
+	hp.cutoff_hz = 28.0
+	hp.resonance = 0.5
+	hp.db = AudioEffectFilter.FILTER_12DB
+	AudioServer.add_bus_effect(bus, hp)
+	_fx_shelf = AudioEffectLowShelfFilter.new()
+	_fx_shelf.cutoff_hz = BASS_SHELF_HZ
+	_fx_shelf.resonance = 0.5
+	AudioServer.add_bus_effect(bus, _fx_shelf)
+	_fx_eq = AudioEffectEQ10.new()
+	AudioServer.add_bus_effect(bus, _fx_eq)
+	_fx_trim = AudioEffectAmplify.new()
+	AudioServer.add_bus_effect(bus, _fx_trim)
+	# Waerme: sehr sanfte atan-Saettigung, Kleinsignal-Pegel neutral.
+	var sat := AudioEffectDistortion.new()
+	sat.mode = AudioEffectDistortion.MODE_ATAN
+	sat.drive = SAT_DRIVE
+	sat.pre_gain = 0.0
+	sat.post_gain = -atan_gain_db(SAT_DRIVE)
+	sat.keep_hf_hz = 16000.0
+	AudioServer.add_bus_effect(bus, sat)
+	# Glue: 2:1, Attack 10 ms laesst den Kick-Anschlag durch, Release 150 ms.
+	var glue := AudioEffectCompressor.new()
+	glue.threshold = GLUE_THRESHOLD_DB
+	glue.ratio = 2.0
+	glue.attack_us = 10000.0
+	glue.release_ms = 150.0
+	glue.gain = GLUE_MAKEUP_DB
+	AudioServer.add_bus_effect(bus, glue)
+	# Breite nur ueber M/S-Pegel, time_pullout = 0 -> kein Delay.
+	var width := AudioEffectStereoEnhance.new()
+	width.pan_pullout = STEREO_WIDTH
+	width.time_pullout_ms = 0.0
+	width.surround = 0.0
+	AudioServer.add_bus_effect(bus, width)
+	var drive := AudioEffectAmplify.new()
+	drive.volume_db = LIMIT_DRIVE_DB
+	AudioServer.add_bus_effect(bus, drive)
+	# Limiter: Kompressor 20:1 / 20 us. NIE AudioEffectHardLimiter (Lookahead
+	# verzoegert das Audio um ~2 ms und verschiebt das Timing).
+	AudioServer.add_bus_effect(bus, _limiter(LIMIT_CEIL_DB))
+	# Master bleibt sauber (Hitsounds/UI): nur Schutz-Limiter am Ende.
+	AudioServer.add_bus_effect(AudioServer.get_bus_index(&"Master"), _limiter(MASTER_CEIL_DB))
+	_apply_mastering()
+
+
+static func _limiter(ceil_db: float) -> AudioEffectCompressor:
 	var lim := AudioEffectCompressor.new()
-	lim.threshold = -1.5
+	lim.threshold = ceil_db
 	lim.ratio = 20.0
 	lim.attack_us = 20.0
 	lim.release_ms = 60.0
 	lim.gain = 0.0
-	AudioServer.add_bus_effect(bus, lim)
+	return lim
 
 
-func _apply_bass_gains() -> void:
+## Regler-abhaengige Werte live setzen (Bass-Shelf, Kick, EQ, Vorkompensation).
+func _apply_mastering() -> void:
 	if _fx_eq == null:
 		return
 	var k := clampf(bass_boost, 0.0, 1.0)
-	for i in _BASS_GAINS.size():
-		_fx_eq.set_band_gain_db(i, _BASS_GAINS[i] * k)
-	for j in _OTHER_GAINS.size():
-		_fx_eq.set_band_gain_db(_BASS_GAINS.size() + j, _OTHER_GAINS[j] if audio_enhance else 0.0)
+	_fx_shelf.gain = shelf_gain_for_db(bass_shelf_db(k))
+	for i in 10:
+		var g := 0.0
+		if i == _EQ_KICK_BAND:
+			g = KICK_PEAK_MAX_DB * k
+		elif _EQ_MUD.has(i):
+			g = _EQ_MUD[i]
+		elif audio_enhance and _EQ_CLARITY.has(i):
+			g = _EQ_CLARITY[i]
+		_fx_eq.set_band_gain_db(i, g)
+	_fx_trim.volume_db = bass_precomp_db(k)
 
 
 ## Einmalige Migration: Projekt hiess frueher HOOKLINE — Settings/Scores/Caches
@@ -224,12 +318,7 @@ func save() -> void:
 func apply() -> void:
 	SyncClock.user_offset_ms = offset_ms
 	AudioServer.set_bus_volume_db(0, volume_db)
-	_apply_bass_gains()
-	if _fx_eq_idx >= 0:
-		var bus := AudioServer.get_bus_index("Master")
-		# EQ immer an (Bass-Regler), nur der Kompressor folgt "Klarheit".
-		AudioServer.set_bus_effect_enabled(bus, _fx_eq_idx, true)
-		AudioServer.set_bus_effect_enabled(bus, _fx_comp_idx, audio_enhance)
+	_apply_mastering()
 	if DisplayServer.get_name() != "headless":
 		# EXCLUSIVE_FULLSCREEN = echtes Vollbild (nicht nur randloses Fenster).
 		var target := DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN if fullscreen else DisplayServer.WINDOW_MODE_WINDOWED
