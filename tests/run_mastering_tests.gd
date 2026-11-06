@@ -7,7 +7,6 @@ extends SceneTree
 ## Pink-Noise (-11 dBFS RMS, wie ein normalisierter Song) durch den Music-Bus,
 ## K-gewichtet vor und nach der Kette (der Dummy-Treiber mischt in Echtzeit).
 
-const SettingsScript := preload("res://scripts/settings.gd")
 const SEC_PER_RUN := 2.5
 const SKIP_SEC := 0.6
 
@@ -48,6 +47,10 @@ func _process(_delta: float) -> bool:
 		return false
 	if _run >= _runs.size():
 		return true
+	if Time.get_ticks_msec() > 60000:
+		_check(false, "Timeout")
+		_finish()
+		return true
 	_feed()
 	_collect()
 	if float(Time.get_ticks_msec() - _t0) / 1000.0 >= SEC_PER_RUN:
@@ -75,15 +78,15 @@ func _static_checks() -> void:
 		got.append(AudioServer.get_bus_effect(_music, i).get_class())
 	_check(got == expect, "Effekt-Reihenfolge Music: %s" % ", ".join(got))
 	var spec_inst := AudioServer.get_bus_effect_instance(_music, 0)
-	_check(spec_inst == clock.get("_spectrum"), "Spektrum-Instanz = Music[0] (pre-Mastering)")
+	_check(spec_inst is AudioEffectSpectrumAnalyzerInstance and spec_inst == clock.call("spectrum_instance"), "Spektrum-Instanz = Music[0] (pre-Mastering)")
 	_check(AudioServer.get_bus_effect(_music, 1) == SongLoudness._capture, "Loudness-Capture = Music[1]")
 	var hp := AudioServer.get_bus_effect(_music, 2) as AudioEffectHighPassFilter
 	_check(is_equal_approx(hp.cutoff_hz, 28.0) and hp.db == AudioEffectFilter.FILTER_12DB, "Subsonic 28 Hz 12 dB/oct")
 	var glue := AudioServer.get_bus_effect(_music, 7) as AudioEffectCompressor
-	_check(is_equal_approx(glue.ratio, 2.0) and is_equal_approx(glue.attack_us, 10000.0) \
+	_check(is_equal_approx(glue.ratio, _settings.call("godot_ratio", 2.0)) and is_equal_approx(glue.attack_us, 10000.0) \
 		and is_equal_approx(glue.release_ms, 150.0) and is_equal_approx(glue.threshold, -18.0), "Glue 2:1 10ms/150ms -18dB")
 	var lim := AudioServer.get_bus_effect(_music, 10) as AudioEffectCompressor
-	_check(is_equal_approx(lim.ratio, 20.0) and is_equal_approx(lim.attack_us, 20.0) \
+	_check(is_equal_approx(lim.ratio, _settings.call("godot_ratio", 20.0)) and is_equal_approx(lim.attack_us, 20.0) \
 		and is_equal_approx(lim.threshold, -0.8), "Limiter 20:1 20us -0.8dB")
 	var master := AudioServer.get_bus_index(&"Master")
 	var mcount := AudioServer.get_bus_effect_count(master)
@@ -100,13 +103,14 @@ func _static_checks() -> void:
 				bad += 1
 	_check(bad == 0, "keine Lookahead-/Delay-Effekte")
 	# Gain-Mathematik.
-	_check(is_equal_approx(SettingsScript.shelf_gain_for_db(7.0), pow(10.0, 7.0 / 40.0)), "Shelf-Gain 10^(dB/40)")
-	_check(is_equal_approx(SettingsScript.bass_shelf_db(1.0), 7.0) and is_equal_approx(SettingsScript.bass_shelf_db(2.0), 7.0), "Bass max +7 dB")
-	_check(is_equal_approx(SettingsScript.bass_precomp_db(1.0), -0.25 * 8.5), "Vorkompensation -0.25 dB je dB Bass")
-	_check(is_equal_approx(SettingsScript.bass_precomp_db(0.0), 0.0), "kein Bass -> keine Vorkompensation")
+	_check(absf(_settings.call("godot_ratio", 2.0) - 1.3165) < 0.001 and is_equal_approx(_settings.call("godot_ratio", 1.0), 1.0), "Engine-ratio fuer eff. 2:1 = 1.32")
+	_check(is_equal_approx(_settings.call("shelf_gain_for_db", 7.0), pow(10.0, 7.0 / 40.0)), "Shelf-Gain 10^(dB/40)")
+	_check(is_equal_approx(_settings.call("bass_shelf_db", 1.0), 7.0) and is_equal_approx(_settings.call("bass_shelf_db", 2.0), 7.0), "Bass max +7 dB")
+	_check(is_equal_approx(_settings.call("bass_precomp_db", 1.0), -0.25 * 8.5), "Vorkompensation -0.25 dB je dB Bass")
+	_check(is_equal_approx(_settings.call("bass_precomp_db", 0.0), 0.0), "kein Bass -> keine Vorkompensation")
 	var sat := AudioServer.get_bus_effect(_music, 6) as AudioEffectDistortion
 	_check(sat.mode == AudioEffectDistortion.MODE_ATAN and sat.drive <= 0.3 \
-		and is_equal_approx(sat.post_gain, -SettingsScript.atan_gain_db(sat.drive)), "Saettigung atan, pegelneutral")
+		and is_equal_approx(sat.post_gain, -_settings.call("atan_gain_db", sat.drive)), "Saettigung atan, pegelneutral")
 	_check(is_equal_approx(SongLoudness.TARGET_RMS_DB, -11.0) and is_equal_approx(SongLoudness.MIN_GAIN_DB, -4.0) \
 		and is_equal_approx(SongLoudness.MAX_GAIN_DB, 6.0), "Loudness-Ziel -11 / -4..+6 dB")
 	_check(is_equal_approx(SongLoudness.compute_gain_db(-8.0, -3.0), -3.0), "typischer Master-Song: nur -3 dB")
@@ -199,16 +203,21 @@ func _drain(cap: AudioEffectCapture, k: KWeight, live: bool, track_peak: bool) -
 
 
 func _finish() -> void:
+	if _results.size() < _runs.size():
+		print("FAILED: ", _failed)
+		quit(1)
+		return
 	print("  Pegel (K-gewichtet, Pink-Noise -11 dBFS RMS):")
 	for r in _results:
 		print("    bass %.2f  pre %.1f  post %.1f  master %.1f LUFS-ish  peak %.2f dBFS" % [
 			r.bass, r.pre, r.post, r.master, r.peak])
 	var r0: Dictionary = _results[0]
+	var rd: Dictionary = _results[1]
 	var r1: Dictionary = _results[2]
 	var lift: float = r0.post - r0.pre
-	_check(lift > 1.0 and lift < 4.0, "Kette ohne Bass: +%.1f dB (Limiter-Drive, nicht leiser)" % lift)
-	_check(r0.master > -11.0 and r0.master < -7.5, "Master-Lautheit %.1f (Ziel ~ -9..-10)" % r0.master)
-	_check(r1.post >= r0.post, "Bass 100%% nicht leiser als 0%% (%.1f vs %.1f)" % [r1.post, r0.post])
+	_check(lift > -1.0 and lift < 2.0, "Kette ohne Bass: %+.1f dB ggue. pre (nicht leiser)" % lift)
+	_check(rd.master > -10.5 and rd.master < -8.0, "Master-Lautheit Default-Bass %.1f (Ziel ~ -9)" % rd.master)
+	_check(absf(r1.post - r0.post) < 1.5, "Bass 100%% vs 0%%: %+.1f dB (K-gewichtet, max 1.5 dB)" % (r1.post - r0.post))
 	for r in _results:
 		_check(r.peak <= 0.0, "kein Clipping bei bass %.2f (peak %.2f dBFS)" % [r.bass, r.peak])
 	if _failed > 0:

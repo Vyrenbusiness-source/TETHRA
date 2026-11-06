@@ -29,7 +29,6 @@ var _last_tick_usec: int = 0
 var _finished_emitted: bool = false
 
 
-var _spectrum: AudioEffectSpectrumAnalyzerInstance
 
 ## Bus fuer Song + Vorschau (send -> Master). Master bleibt fuer Hitsounds/UI.
 const MUSIC_BUS := &"Music"
@@ -62,17 +61,27 @@ func _ready() -> void:
 	var eff := AudioEffectSpectrumAnalyzer.new()
 	eff.buffer_length = 0.06
 	AudioServer.add_bus_effect(bus, eff, FX_SPECTRUM)
-	_spectrum = AudioServer.get_bus_effect_instance(bus, FX_SPECTRUM)
 	# Capture direkt danach (Index 1, vor der Mastering-Kette): Lautheitsmessung.
 	SongLoudness.attach_capture(bus, FX_CAPTURE)
+
+
+## Aktuelle Analyzer-Instanz (Music[0]). Jedes add_bus_effect auf dem Bus
+## (z. B. die Mastering-Kette aus Settings) erzeugt NEUE Instanzen, eine
+## gecachte Instanz waere danach tot -> immer frisch holen.
+func spectrum_instance() -> AudioEffectSpectrumAnalyzerInstance:
+	var bus := AudioServer.get_bus_index(MUSIC_BUS)
+	if bus < 0 or AudioServer.get_bus_effect_count(bus) <= FX_SPECTRUM:
+		return null
+	return AudioServer.get_bus_effect_instance(bus, FX_SPECTRUM) as AudioEffectSpectrumAnalyzerInstance
 
 
 ## Normalisierte Energie (0..1) eines Frequenzbands. Bass ~ (30, 250),
 ## Hoehen ~ (2000, 8000).
 func band_energy(from_hz: float, to_hz: float) -> float:
-	if _spectrum == null:
+	var spec := spectrum_instance()
+	if spec == null:
 		return 0.0
-	var mag := _spectrum.get_magnitude_for_frequency_range(from_hz, to_hz).length()
+	var mag := spec.get_magnitude_for_frequency_range(from_hz, to_hz).length()
 	return clampf((linear_to_db(mag + 0.0000001) + 60.0) / 60.0, 0.0, 1.0)
 
 

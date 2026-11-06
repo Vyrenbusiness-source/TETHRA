@@ -15,12 +15,12 @@ func _check(ok: bool, msg: String) -> void:
 
 
 func _init() -> void:
-	# Formel: Ziel -16, RMS -20 -> +4 dB
-	_check(is_equal_approx(SongLoudness.compute_gain_db(-20.0, -10.0), 4.0), "Gain-Formel +4 dB")
-	_check(is_equal_approx(SongLoudness.compute_gain_db(-10.0, -10.0), -6.0), "Gain-Formel -6 dB")
+	# Formel: Ziel -11, RMS -15 -> +4 dB
+	_check(is_equal_approx(SongLoudness.compute_gain_db(-15.0, -6.0), 4.0), "Gain-Formel +4 dB")
+	_check(is_equal_approx(SongLoudness.compute_gain_db(-8.0, -3.0), -3.0), "Gain-Formel -3 dB")
 	# Clamp
 	_check(is_equal_approx(SongLoudness.compute_gain_db(-40.0, -30.0), 6.0), "Clamp oben +6")
-	_check(is_equal_approx(SongLoudness.compute_gain_db(0.0, -30.0), -12.0), "Clamp unten -12")
+	_check(is_equal_approx(SongLoudness.compute_gain_db(0.0, -30.0), -4.0), "Clamp unten -4")
 	# Peak-Begrenzung: Peak+Gain <= -1
 	var g := SongLoudness.compute_gain_db(-20.0, -2.0)
 	_check(is_equal_approx(g, 1.0), "Peak-Begrenzung Gain 1 dB")

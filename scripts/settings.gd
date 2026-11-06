@@ -15,14 +15,16 @@ extends Node
 ##                           4k +0.8, 8k +0.6, 16k +1.5 (Praesenz/Air)
 ##   5 Amplify               Bass-Vorkompensation -0.25 dB je +1 dB Bass
 ##   6 Distortion ATAN       drive 0.2, post_gain = Kleinsignal-Ausgleich (Waerme)
-##   7 Compressor (Glue)     2:1, 10 ms / 150 ms, -18 dB, Make-up GLUE_MAKEUP_DB
+##   7 Compressor (Glue)     eff. 2:1 (Engine-ratio 1.32), 10 ms / 150 ms, -18 dB, Make-up GLUE_MAKEUP_DB
 ##   8 StereoEnhance         pan_pullout 1.12, time_pullout 0 (kein Delay)
 ##   9 Amplify               +LIMIT_DRIVE_DB in den Limiter
-##  10 Compressor (Limiter)  20:1, 20 us, -0.8 dB Ceiling
-## Bus "Master" (Hitsounds/UI + Music): nur Schutz-Limiter 20:1 / 20 us / -0.3 dB.
+##  10 Compressor (Limiter)  eff. 20:1 (Engine-ratio 1.84), 20 us, -0.8 dB Ceiling
+## Bus "Master" (Hitsounds/UI + Music): nur Schutz-Limiter eff. 20:1 / 20 us / -0.3 dB.
+## Godot-Kompressor: ratio NIE direkt setzen, immer godot_ratio() (siehe unten).
 ## NIE AudioEffectHardLimiter (Lookahead ~2 ms), NIE StereoEnhance mit time_pullout.
 ## Lautheit: SongLoudness normalisiert auf -11 dBFS RMS (-4..+6 dB).
-## Gemessen (tests/run_mastering_tests.gd, Pink-Noise -11 dBFS RMS): MEASURED
+## Gemessen (tests/run_mastering_tests.gd, Pink-Noise -11 dBFS RMS, K-gewichtet
+## ~LUFS; pre = -8.7): Bass 0% -> -8.2, 75% -> -9.1, 100% -> -9.4; Peak <= -0.9 dBFS.
 
 const PATH := "user://settings.cfg"
 
@@ -124,8 +126,17 @@ const KICK_PEAK_MAX_DB := 1.5
 const BASS_PRECOMP := -0.25
 const SAT_DRIVE := 0.2
 const GLUE_THRESHOLD_DB := -18.0
-const GLUE_MAKEUP_DB := 3.0
-const LIMIT_DRIVE_DB := 2.5
+## Effektive Verhaeltnisse; ans Engine-ratio uebergeben via godot_ratio().
+const GLUE_RATIO := 2.0
+const LIMIT_RATIO := 20.0
+## Godot-Kompressor rechnet die Ueberschreitung *2.08 (audio_effect_compressor.cpp:
+## overdb = 2.08136898 * linear_to_db(peak / threshold)). Nominell ratio 2 wirkt
+## so schon wie ein Limiter, ratio 20 drueckt laute Stellen WEIT unter die
+## Schwelle (gemessen: Sinus -2 dBFS, Schwelle -18, ratio 20 -> -31 dBFS) -
+## das war der Grund fuer "Musik zu leise". Darum umrechnen.
+const GODOT_COMP_K := 2.08136898
+const GLUE_MAKEUP_DB := 1.5
+const LIMIT_DRIVE_DB := 2.0
 const LIMIT_CEIL_DB := -0.8
 const MASTER_CEIL_DB := -0.3
 const STEREO_WIDTH := 1.12
@@ -148,6 +159,11 @@ static func bass_shelf_db(k: float) -> float:
 ## gain 1.5 -> +6.9 dB bei 40 Hz). Also gain = 10^(dB/40).
 static func shelf_gain_for_db(db: float) -> float:
 	return pow(10.0, db / 40.0)
+
+
+## Engine-ratio fuer ein gewuenschtes effektives Verhaeltnis (2 -> 1.32, 20 -> 1.84).
+static func godot_ratio(effective: float) -> float:
+	return 1.0 / (1.0 - (1.0 - 1.0 / maxf(effective, 1.0)) / GODOT_COMP_K)
 
 
 ## Pegel-Vorkompensation fuer den Bass-Schub (Shelf + Kick-Peak).
@@ -204,7 +220,7 @@ func _setup_audio_enhance() -> void:
 	# Glue: 2:1, Attack 10 ms laesst den Kick-Anschlag durch, Release 150 ms.
 	var glue := AudioEffectCompressor.new()
 	glue.threshold = GLUE_THRESHOLD_DB
-	glue.ratio = 2.0
+	glue.ratio = godot_ratio(GLUE_RATIO)
 	glue.attack_us = 10000.0
 	glue.release_ms = 150.0
 	glue.gain = GLUE_MAKEUP_DB
@@ -218,7 +234,7 @@ func _setup_audio_enhance() -> void:
 	var drive := AudioEffectAmplify.new()
 	drive.volume_db = LIMIT_DRIVE_DB
 	AudioServer.add_bus_effect(bus, drive)
-	# Limiter: Kompressor 20:1 / 20 us. NIE AudioEffectHardLimiter (Lookahead
+	# Limiter: Kompressor effektiv 20:1 / 20 us. NIE AudioEffectHardLimiter (Lookahead
 	# verzoegert das Audio um ~2 ms und verschiebt das Timing).
 	AudioServer.add_bus_effect(bus, _limiter(LIMIT_CEIL_DB))
 	# Master bleibt sauber (Hitsounds/UI): nur Schutz-Limiter am Ende.
@@ -229,7 +245,7 @@ func _setup_audio_enhance() -> void:
 static func _limiter(ceil_db: float) -> AudioEffectCompressor:
 	var lim := AudioEffectCompressor.new()
 	lim.threshold = ceil_db
-	lim.ratio = 20.0
+	lim.ratio = godot_ratio(LIMIT_RATIO)
 	lim.attack_us = 20.0
 	lim.release_ms = 60.0
 	lim.gain = 0.0
