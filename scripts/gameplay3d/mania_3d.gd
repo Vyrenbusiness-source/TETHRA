@@ -861,17 +861,8 @@ func _build_starfield() -> void:
 				16.0 if chi == 0 else 8.0, Z_FAR - 10.5)
 		_cosmos.add_child(cl2)
 
-	# SCHWARZES LOCH: Gravitationslinse verbiegt Nebel/Sterne dahinter,
-	# heisse Akkretionsscheibe rotiert (Kiai beschleunigt sie).
-	var bh := MeshInstance3D.new()
-	var bhq := QuadMesh.new()
-	bhq.size = Vector2(7.5, 7.5)
-	bh.mesh = bhq
-	_bh_mat = ShaderMaterial.new()
-	_bh_mat.shader = load("res://shaders/black_hole.gdshader")
-	bh.material_override = _bh_mat
-	bh.position = Vector3(19.5, 13.5, Z_FAR - 6.5)
-	_cosmos.add_child(bh)
+	# Kein Schwarzes Loch mehr: die Akkretionsscheibe wirkte am Himmel wie ein
+	# Clip-Art-Torus (QA). _bh_mat bleibt null, _process prueft darauf.
 
 	# GOD-RAYS: Lichtfaecher aus dem Fluchtpunkt, atmet im Takt.
 	var gr := MeshInstance3D.new()
