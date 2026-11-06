@@ -545,6 +545,14 @@ func _build_info_panel() -> void:
 	slot.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vb.add_child(slot)
+	# Spektrum der Vorschau-Musik (ruht bei Stille von selbst).
+	var viz := AudioVisualizer.new()
+	viz.set_anchors_preset(Control.PRESET_FULL_RECT)
+	viz.bars = 40
+	viz.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	viz.modulate.a = 0.6
+	viz.set_color(COL_ACCENT)
+	slot.add_child(viz)
 
 
 func _info_chip(parent: Node) -> Label:

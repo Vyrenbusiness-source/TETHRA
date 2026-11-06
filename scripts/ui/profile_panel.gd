@@ -55,7 +55,7 @@ func _ready() -> void:
 	add_child(center)
 
 	var panel := PanelContainer.new()
-	var sb := UiTheme.glass_box(18, 0.78)
+	var sb := UiTheme.glass_box(18, 0.95)
 	sb.set_content_margin_all(24)
 	panel.add_theme_stylebox_override("panel", sb)
 	panel.custom_minimum_size = Vector2(860, 0)
