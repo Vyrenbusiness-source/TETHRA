@@ -89,17 +89,17 @@ func _ready() -> void:
 	var scroll_value := Label.new()
 	scroll_value.custom_minimum_size = Vector2(VALUE_W, 0)
 	scroll_value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	scroll_value.text = "x%.1f" % Settings.mania_scroll
+	scroll_value.text = _fmt_x(Settings.mania_scroll)
 	scroll_slider.value_changed.connect(func(v):
 		Settings.mania_scroll = v
-		scroll_value.text = "x%.1f" % v)
-	_row(cv_gameplay, "Scroll-Speed", scroll_slider, scroll_value)
+		scroll_value.text = _fmt_x(v))
+	_row(cv_gameplay, "Scrollgeschwindigkeit", scroll_slider, scroll_value)
 
 	var lane_row := HBoxContainer.new()
 	lane_row.add_theme_constant_override("separation", 8)
 	for i in 4:
 		var b := Button.new()
-		b.custom_minimum_size = Vector2(0, 40)
+		b.custom_minimum_size = Vector2(0, 36)
 		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		UiTheme.style_button(b)
 		var lane := i
@@ -170,7 +170,17 @@ func _ready() -> void:
 	bass_value.custom_minimum_size = Vector2(VALUE_W, 0)
 	bass_value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	bass_value.text = "%d %%" % int(Settings.bass_boost * 100.0)
+	var no_fill := StyleBoxEmpty.new()
+	var set_bass_fill := func(v: float):
+		if v <= 0.001:
+			bass_slider.add_theme_stylebox_override("grabber_area", no_fill)
+			bass_slider.add_theme_stylebox_override("grabber_area_highlight", no_fill)
+		else:
+			bass_slider.remove_theme_stylebox_override("grabber_area")
+			bass_slider.remove_theme_stylebox_override("grabber_area_highlight")
+	set_bass_fill.call(Settings.bass_boost)
 	bass_slider.value_changed.connect(func(v):
+		set_bass_fill.call(v)
 		Settings.bass_boost = v
 		Settings.apply()
 		bass_value.text = "%d %%" % int(v * 100.0))
@@ -179,7 +189,18 @@ func _ready() -> void:
 	var hs := CheckButton.new()
 	hs.button_pressed = Settings.hitsounds
 	hs.toggled.connect(func(on): Settings.hitsounds = on)
-	_row(cv_audio, "Hitsounds", hs, null)
+	_row(cv_audio, "Treffer-Sounds", hs, null)
+
+	var hset := OptionButton.new()
+	hset.add_item("Soft", 0)
+	hset.add_item("Clap", 1)
+	hset.add_item("Kick", 2)
+	hset.select(Settings.hitsound_set)
+	hset.custom_minimum_size = Vector2(0, 36)
+	hset.item_selected.connect(func(i):
+		Settings.hitsound_set = i
+		Sfx.preview_hit(i))
+	_row(cv_audio, "Hitsound", hset, null)
 
 	var hs_slider := HSlider.new()
 	hs_slider.min_value = 0.0
@@ -193,7 +214,7 @@ func _ready() -> void:
 	hs_slider.value_changed.connect(func(v):
 		Settings.hitsound_volume = v
 		hs_value.text = "%d %%" % int(v * 100.0))
-	_row(cv_audio, "Hitsound-Lautstärke", hs_slider, hs_value)
+	_row(cv_audio, "Treffer-Lautstärke", hs_slider, hs_value)
 
 	# ------------------------------- ANZEIGE --------------------------------
 	var cv_anzeige := _section(vb, "ANZEIGE")
@@ -203,7 +224,7 @@ func _ready() -> void:
 	fx.add_item("Dezent", 1)
 	fx.add_item("Voll", 2)
 	fx.select(Settings.tunnel_intensity)
-	fx.custom_minimum_size = Vector2(0, 38)
+	fx.custom_minimum_size = Vector2(0, 36)
 	fx.item_selected.connect(func(i): Settings.tunnel_intensity = i)
 	_row(cv_anzeige, "Effekt-Intensität", fx, null)
 
@@ -214,7 +235,7 @@ func _ready() -> void:
 	gfx.add_item("Ultra (8x AA)", 3)
 	gfx.add_item("Extrem (8x AA + SSAA)", 4)
 	gfx.select(Settings.graphics_quality)
-	gfx.custom_minimum_size = Vector2(0, 38)
+	gfx.custom_minimum_size = Vector2(0, 36)
 	gfx.item_selected.connect(func(i):
 		Settings.graphics_quality = i
 		Settings.apply())
@@ -222,12 +243,12 @@ func _ready() -> void:
 
 	var fps := OptionButton.new()
 	fps.add_item("VSync", 0)
-	fps.add_item("Unlimited", 1)
+	fps.add_item("Unbegrenzt", 1)
 	fps.add_item("240 FPS", 2)
 	fps.add_item("360 FPS", 3)
 	fps.add_item("480 FPS", 4)
 	fps.select(Settings.fps_mode)
-	fps.custom_minimum_size = Vector2(0, 38)
+	fps.custom_minimum_size = Vector2(0, 36)
 	fps.item_selected.connect(func(i):
 		Settings.fps_mode = i
 		Settings.apply())
@@ -301,6 +322,7 @@ func _row(vb: VBoxContainer, caption: String, control: Control, value: Label) ->
 	hn.content_margin_top = 3
 	hn.content_margin_bottom = 3
 	hov.add_theme_stylebox_override("panel", hn)
+	hov.custom_minimum_size = Vector2(0, 44)
 	hov.mouse_entered.connect(func(): hn.bg_color = Color(1, 1, 1, 0.06))
 	hov.mouse_exited.connect(func(): hn.bg_color = Color(1, 1, 1, 0.0))
 	vb.add_child(hov)
@@ -309,7 +331,7 @@ func _row(vb: VBoxContainer, caption: String, control: Control, value: Label) ->
 	hov.add_child(row)
 	var cap := Label.new()
 	cap.text = caption
-	cap.custom_minimum_size = Vector2(160, 0)
+	cap.custom_minimum_size = Vector2(190, 0)
 	cap.add_theme_font_size_override("font_size", 15)
 	cap.add_theme_color_override("font_color", Color(0.85, 0.88, 0.95))
 	row.add_child(cap)
@@ -324,9 +346,13 @@ func _row(vb: VBoxContainer, caption: String, control: Control, value: Label) ->
 		row.add_child(value)
 
 
+static func _fmt_x(v: float) -> String:
+	return ("%.1f" % v).replace(".", ",") + "×"
+
+
 func _refresh_labels() -> void:
 	for i in _lane_btns.size():
-		_lane_btns[i].text = OS.get_keycode_string(Settings.key_lanes[i])
+		_lane_btns[i].text = UiTheme.key_short(Settings.key_lanes[i])
 	if _capturing >= 3 and _capturing - 3 < _lane_btns.size():
 		_lane_btns[_capturing - 3].text = "…"
 	_offset_value.text = "%+d ms" % int(Settings.offset_ms)
