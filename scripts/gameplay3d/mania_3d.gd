@@ -215,6 +215,16 @@ var _ch_kiai_w := 0.0      # 0..1: Kiai-Kapitel (dichter, heller, Aurora)
 var _ch_kiai_from := 0.0
 # VORBEIFLUG: zwei Slots (aktuelles + voriges Kapitel), beim Map-Start gebaut.
 var _flyby: Array = []
+# PANORAMA-HIMMEL (sky_panorama.gdshader): alle Paletten beim Map-Start
+# geladen; Kapitelwechsel blendet tex_a -> tex_b ab dem Downbeat.
+const SKY_PALS := ["violet", "azure", "ember", "emerald"]
+const SKY_HUES := [0.78, 0.58, 0.05, 0.40]
+var _sky_mat: ShaderMaterial
+var _sky_neb: Array = []
+var _sky_stars: Array = []
+var _sky_a := -1
+var _sky_b := -1
+var _sky_phase := 0.0
 var _gal_scale := 1.0
 ## Grund-Reisetempo aus dem BPM der Map (140 BPM = neutral).
 var _bpm_factor := 1.0
@@ -491,6 +501,9 @@ func _extract_theme_color() -> void:
 ## Mitte hinter der Strecke noch dunkler, Raender weich ausblenden. Liegt als
 ## riesige ferne Ebene HINTER dem Nebel; alles CPU-seitig, einmal beim Start.
 func _build_map_bg() -> void:
+	# Panorama-Himmel ist die Basis: die Map-Bild-Ebene wuerde ihn verdecken.
+	if _sky_mat != null:
+		return
 	if not MAP_BG_ENABLED or _bg_tex == null:
 		return
 	var src := _bg_tex.get_image()
@@ -596,6 +609,7 @@ func _build_world() -> void:
 	env.glow_bloom = 0.055
 	env.glow_hdr_threshold = 0.92
 	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_ADDITIVE
+	_build_sky(env)
 	we.environment = env
 	add_child(we)
 
@@ -883,6 +897,8 @@ func _build_starfield() -> void:
 	_nebula_mat.set_shader_parameter("star_amount", 1.0)
 	neb.material_override = _nebula_mat
 	neb.position = Vector3(0, 7.5, Z_FAR - 9.0)
+	# Mit Panorama-Himmel verdecken die Nebel-Quads ihn -> aus.
+	neb.visible = _sky_mat == null
 	_cosmos.add_child(neb)
 	var neb2 := MeshInstance3D.new()
 	var nq2 := QuadMesh.new()
@@ -897,6 +913,7 @@ func _build_starfield() -> void:
 	_nebula_mat2.set_shader_parameter("star_amount", 0.0)
 	neb2.material_override = _nebula_mat2
 	neb2.position = Vector3(4.0, 6.0, Z_FAR - 7.0)
+	neb2.visible = _sky_mat == null
 	_cosmos.add_child(neb2)
 
 	_build_map_bg()
@@ -956,7 +973,8 @@ func _build_starfield() -> void:
 		fgm.set_shader_parameter("col_a", _theme_col.lerp(Color(0.1, 0.08, 0.16), 0.45))
 		fgm.set_shader_parameter("col_b", _theme_kiai)
 		fgm.set_shader_parameter("scale", 3.6)
-		fgm.set_shader_parameter("alpha_mul", 0.20)
+		# Vor dem Panorama nur noch ein dezenter Nah-Schleier.
+		fgm.set_shader_parameter("alpha_mul", 0.20 if _sky_mat == null else 0.10)
 		fgm.set_shader_parameter("star_amount", 0.0)
 		fgn.material_override = fgm
 		fgn.position = Vector3(-24.0 if fgi == 0 else 24.0, 4.5, Z_FAR + 13.0)
@@ -2045,6 +2063,15 @@ func _process(delta: float) -> void:
 	var bpm_live := clampf((_clock.bpm if _clock.bpm > 1.0 else 140.0) / 140.0, 0.7, 1.6)
 	var cruise := 9.0 * bpm_live * (0.75 + (_music_energy * 0.45 + _kiai_mix * 0.5 + _density * 0.2) * fx)
 	_star_scroll += delta * (cruise * (1.0 + _surge) + (_warp_level * 55.0 + _star_burst * 18.0) * fx) * (1.0 - dock_mix * 0.75)
+	# Panorama: ferne Sternen-Ebene stroemt langsamer (Parallaxe), gleicher
+	# Beat-Schub; Welt-Puls + minimaler Warp auf dem Schlag.
+	if _sky_mat != null:
+		_sky_phase += delta * (0.05 * cruise / 9.0 * (1.0 + _surge * fx) + _warp_level * 0.45 * fx) * (1.0 - dock_mix * 0.75)
+		_sky_mat.set_shader_parameter(&"star_phase", _sky_phase)
+		_sky_mat.set_shader_parameter(&"beat_pulse", clampf(_world_pulse, 0.0, 1.0))
+		var sw := clampf(_warp_level * 0.7 + maxf(_surge, 0.0) * 0.05, 0.0, 1.0) * fx
+		_sky_mat.set_shader_parameter(&"warp", sw if sw > 0.03 else 0.0)
+		_sky_mat.set_shader_parameter(&"stars_rotation", Vector3(0, 0, _sky_phase * 0.02))
 	# Kurze Streifen auf dem Schlag (radial, minimal), Hyperspace laenger.
 	var warp_stretch := 1.0 + maxf(_surge, 0.0) * 0.8 + _warp_level * 4.0 * fx
 	var cy := 1.78 + _cosmos_lift
@@ -2661,6 +2688,9 @@ func _build_galaxy_chapters() -> void:
 			fposmod(h + 0.16, 1.0)]
 	var side := -1.0 if (seed_h % 2) == 0 else 1.0
 	var calm_i := 0
+	var pal_base := _sky_pal_for_hue(_theme_col.h, -1)
+	var pal_alt := _sky_pal_for_hue(_theme_col.h, pal_base)
+	var pal_kiai := _sky_pal_for_hue(_theme_kiai.h, pal_base)
 	for i in starts.size():
 		var t0: float = starts[i]
 		var t1: float = dur if i == starts.size() - 1 else float(starts[i + 1])
@@ -2668,6 +2698,7 @@ func _build_galaxy_chapters() -> void:
 		var drop := im.is_drop_at(t0 + 1.0)
 		var hs := float(seed_h % 977) + float(i) * 3.3
 		var hh: float = kh if kiai else float(hues[(calm_i + seed_h) % hues.size()])
+		var pal := pal_kiai if kiai else (pal_base if calm_i % 2 == 0 else pal_alt)
 		if not kiai:
 			calm_i += 1
 		var big := kiai or drop
@@ -2689,6 +2720,7 @@ func _build_galaxy_chapters() -> void:
 			"pcol": Color.from_hsv(fposmod(hh + 0.5 + _hash01(hs * 10.1) * 0.2, 1.0), 0.45, 0.75),
 			"pseed": _hash01(hs * 11.3) * 40.0,
 			"pring": 0.85 if _hash01(hs * 12.7) > 0.5 else 0.0,
+			"pal": pal,
 		})
 		side = -side
 	if OS.get_cmdline_args().has("--shot"):
@@ -2782,6 +2814,7 @@ func _update_chapters(vt: float, fx: float) -> void:
 		_gal_idx = target
 		_apply_landmark(_gal_idx)
 		_setup_flyby(_gal_idx)
+		_sky_begin_chapter(int(_gal_chapters[_gal_idx].pal), first)
 		if first:
 			var c0: Dictionary = _gal_chapters[_gal_idx]
 			_gal_from = {"col": c0.col, "col2": c0.col2, "stars": c0.stars,
@@ -2791,6 +2824,12 @@ func _update_chapters(vt: float, fx: float) -> void:
 	var bl := 60000.0 / _clock.bpm if _clock.bpm > 1.0 else 500.0
 	var fade_ms := CH_FADE_BEATS * bl
 	var w := smoothstep(0.0, fade_ms, vt - float(ch.t))
+	if _sky_mat != null:
+		if _sky_b >= 0 and w >= 1.0:
+			_sky_set(true, _sky_b)
+			_sky_b = -1
+		_sky_mat.set_shader_parameter(&"palette_mix", w if _sky_b >= 0 else 0.0)
+		_sky_mat.set_shader_parameter(&"brightness", lerpf(0.95, 1.2, _ch_kiai_w))
 	_ch_w = w
 	_gal_col = (_gal_from.col as Color).lerp(ch.col, w)
 	_gal_col2 = (_gal_from.col2 as Color).lerp(ch.col2, w)
@@ -3878,3 +3917,75 @@ func _capture_after_first_note() -> void:
 	img.save_png(path)
 	print("SHOT gespeichert: " + path)
 	get_tree().quit(0)
+
+
+## Panorama-Himmel als Basis (BG_SKY); false, wenn Shader/Texturen fehlen.
+func _build_sky(env: Environment) -> bool:
+	var sp := "res://shaders/sky_panorama.gdshader"
+	if not ResourceLoader.exists(sp):
+		return false
+	for n in SKY_PALS:
+		var np := "res://assets_game/space/sky_%s.webp" % n
+		var tp := "res://assets_game/space/sky_%s_stars.webp" % n
+		if not ResourceLoader.exists(np) or not ResourceLoader.exists(tp):
+			_sky_neb = []
+			_sky_stars = []
+			return false
+		_sky_neb.append(load(np))
+		_sky_stars.append(load(tp))
+	_sky_mat = ShaderMaterial.new()
+	_sky_mat.shader = load(sp)
+	_sky_set(true, _sky_pal_for_hue(_theme_col.h, -1))
+	# Mitte hinter der Strecke bleibt dunkel (Notenlesbarkeit).
+	_sky_mat.set_shader_parameter("readability", 0.7)
+	_sky_mat.set_shader_parameter("star_speed", 0.0)
+	var sky := Sky.new()
+	sky.sky_material = _sky_mat
+	sky.radiance_size = Sky.RADIANCE_SIZE_32
+	sky.process_mode = Sky.PROCESS_MODE_INCREMENTAL
+	env.background_mode = Environment.BG_SKY
+	env.sky = sky
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	env.ambient_light_color = Color(0, 0, 0)
+	env.reflected_light_source = Environment.REFLECTION_SOURCE_DISABLED
+	return true
+
+
+## Naechste Panorama-Palette zum Farbton (zirkulaer), optional ohne `skip`.
+func _sky_pal_for_hue(h: float, skip: int) -> int:
+	var best := 0
+	var bd := 9.0
+	for i in SKY_HUES.size():
+		if i == skip:
+			continue
+		var d := absf(fposmod(h - float(SKY_HUES[i]) + 0.5, 1.0) - 0.5)
+		if d < bd:
+			bd = d
+			best = i
+	return best
+
+
+## Panorama-Slot a oder b auf Palette pal setzen (nur bei Wechsel).
+func _sky_set(slot_a: bool, pal: int) -> void:
+	if _sky_mat == null or pal < 0 or pal >= _sky_neb.size():
+		return
+	_sky_mat.set_shader_parameter(&"tex_a" if slot_a else &"tex_b", _sky_neb[pal])
+	_sky_mat.set_shader_parameter(&"stars_a" if slot_a else &"stars_b", _sky_stars[pal])
+	if slot_a:
+		_sky_a = pal
+
+
+## Kapitelwechsel: neue Palette in Slot b, Mischung laeuft ab dem Downbeat.
+func _sky_begin_chapter(pal: int, first: bool) -> void:
+	if _sky_mat == null:
+		return
+	if _sky_b >= 0:
+		# Wechsel mitten in einer Ueberblendung: b war das Ziel -> wird Basis.
+		_sky_set(true, _sky_b)
+		_sky_b = -1
+	if first:
+		_sky_set(true, pal)
+	elif pal != _sky_a:
+		_sky_set(false, pal)
+		_sky_b = pal
+	_sky_mat.set_shader_parameter(&"palette_mix", 0.0)
