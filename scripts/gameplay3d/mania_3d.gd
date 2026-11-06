@@ -2691,6 +2691,9 @@ func _build_galaxy_chapters() -> void:
 			"pring": 0.85 if _hash01(hs * 12.7) > 0.5 else 0.0,
 		})
 		side = -side
+	if OS.get_cmdline_args().has("--shot"):
+		for c in _gal_chapters:
+			print("CHAPTER t=%.0f..%.0f kiai=%s drop=%s" % [float(c.t), float(c.t_end), str(c.kiai), str(c.drop)])
 	_build_flyby()
 
 
