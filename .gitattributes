@@ -1,0 +1,7 @@
+# Godot schreibt diese Dateien selbst mit LF: gleiche Zeilenenden im Checkout,
+# sonst gilt jeder Worktree nach --import als geaendert.
+*.import text eol=lf
+*.uid text eol=lf
+*.tscn text eol=lf
+*.tres text eol=lf
+project.godot text eol=lf
