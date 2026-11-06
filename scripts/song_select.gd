@@ -1,8 +1,8 @@
 extends Control
 
 ## Song-Browser (Rhythia-Vorlage): Vollbild-Hintergrund der Auswahl, Info-Panel
-## links (Cover, Sterne, Bestwert, PLAY), rechts farbige Karten mit Cover,
-## Star-Reihe und Grade-Badge. Kopfzeile: Profil, Tabs, Suche, Einstellungen.
+## links (Sterne, Bestwert, SPIELEN), Mitte Cover-Buehne mit Visualizer, rechts
+## Karten mit Cover und Grade-Badge. Kopfzeile: Profil, Tabs, Suche, Einstellungen.
 ## Sterne kommen ausschliesslich aus rosu-pp (StarService, Regel 9).
 ## Neue .osz einfach ins Fenster ziehen -> Import + Neuscan.
 
@@ -13,6 +13,16 @@ const COL_CARD_SEL := Color(0.13, 0.13, 0.18, 0.98)
 const COL_ACCENT := Color(0.20, 0.85, 1.0)
 const COL_TEXT := Color(0.95, 0.96, 1.0)
 const COL_DIM := Color(0.62, 0.64, 0.72)
+# Raster: 24 px Aussenrand, rechte Spalte (Toolbar, Filter, Liste) gleich breit.
+const M := 24
+const INFO_W := 400
+const RIGHT_W := 640
+const HEAD_Y := 24
+const HEAD_H := 40
+const FILTER_Y := 76
+const FILTER_H := 32
+const CHIPS_Y := 116
+const CHIPS_H := 30
 const GRADE_COLOR := {
 	"S": Color(1.0, 0.85, 0.25), "A": Color(0.4, 1.0, 0.5),
 	"B": Color(0.35, 0.75, 1.0), "C": Color(0.9, 0.6, 1.0),
@@ -26,6 +36,10 @@ var _selected_diff := 0
 
 var _bg: TextureRect
 var _cover: TextureRect
+var _stage: Control
+var _stage_shadow: Panel
+var _stage_mask: Panel
+var _stage_viz: AudioVisualizer
 var _title_label: Label
 var _artist_label: Label
 var _mapper_label: Label
@@ -39,10 +53,6 @@ var _search: LineEdit
 var _count_label: Label
 var _card_buttons: Array[Button] = []
 # Bass-Reaktion der Vorschau (dezent): Onset gegen gleitenden Mittelwert.
-var _bass_avg := 0.0
-var _bass_punch := 0.0
-var _bass_smooth := 0.0
-var _punch_cd := 0.0
 var _pulse_card: Button = null
 var _play_btn: Button
 # Glow der ausgewaehlten Karte: dieselbe StyleBox wird pro Frame nur
@@ -58,14 +68,31 @@ var _preview_len := 0.0
 var _bpm_cache: Dictionary = {}
 # Weiches Scrollen der Liste beim Kartenwechsel.
 var _scroll_tween: Tween
-const CARD_H := 88.0
+const CARD_H := 76.0
+const CARD_RADIUS := 12
+var _frame_idle: StyleBoxFlat
+var _frame_hover: StyleBoxFlat
+var _frame_sel: StyleBoxFlat
+var _glow_box: StyleBoxFlat
+var _card_cover_mat: ShaderMaterial
+var _card_cover_size := Vector2.ZERO
 const CARD_SLIDE := 8.0
-const LIST_PAD := 14
+const LIST_PAD := 16
+const LIST_TOP := FILTER_Y + FILTER_H
+const LIST_EDGE := 6
+var _list_mask: TextureRect
+var _list_grad: Gradient
 var _preview: AudioStreamPlayer
 var _preview_fade: Tween
 var _preview_gain_db := 0.0
 # Vorschau ~3 dB unter Gameplay-Pegel, mit sanfter Einblendung.
 const PREVIEW_DB := -3.0
+const PREVIEW_SILENT_DB := -60.0
+const PREVIEW_FADE_OUT := 0.12
+const PREVIEW_FADE_IN := 0.25
+var _beat := BeatClock.new()
+var _preview_set: MapSet = null
+var _tp_cache: Dictionary = {}
 
 ## Aktiver No-Fail-Mod: Health kann nicht auf 0 fallen, Play zaehlt unranked.
 var _nf_enabled := false
@@ -102,10 +129,10 @@ var _dl_preview_req: HTTPRequest
 # Schwierigkeits-Filter (client-seitig) + letzte Mirror-Antwort fuer Re-Render.
 const STAR_FILTERS := [
 	["Alle", 0.0, 999.0],
-	["< 2★", 0.0, 2.0],
+	["<2★", 0.0, 2.0],
 	["2–4★", 2.0, 4.0],
 	["4–6★", 4.0, 6.0],
-	["6★ +", 6.0, 999.0],
+	["6★+", 6.0, 999.0],
 ]
 ## Feinere Filter fuer den Online-Browser (inkl. Anfaenger-Stufe).
 const DL_STAR_FILTERS := [
@@ -254,108 +281,116 @@ func _build_ui() -> void:
 	overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(overlay)
 
+	_init_card_styles()
 	_build_header()
 	_build_info_panel()
+	_build_stage()
 	_build_list()
 
 
 func _build_header() -> void:
-	# Profil-Ecke.
+	# Profil-Ecke links oben: Name + pp in einer Zeile, Zahnrad daneben.
+	var left := HBoxContainer.new()
+	left.position = Vector2(M, HEAD_Y)
+	left.add_theme_constant_override("separation", 8)
+	add_child(left)
 	var profile_panel := PanelContainer.new()
-	profile_panel.position = Vector2(16, 12)
-	profile_panel.add_theme_stylebox_override("panel", _rounded_box(Color(0.09, 0.09, 0.13, 0.9), 10))
-	add_child(profile_panel)
-	var pv := VBoxContainer.new()
+	var pbox := UiTheme.glass_box(10, 0.5)
+	pbox.content_margin_left = 14
+	pbox.content_margin_right = 14
+	profile_panel.add_theme_stylebox_override("panel", pbox)
+	profile_panel.custom_minimum_size = Vector2(0, HEAD_H)
+	left.add_child(profile_panel)
+	var pv := HBoxContainer.new()
+	pv.add_theme_constant_override("separation", 10)
 	profile_panel.add_child(pv)
 	var profile := Label.new()
 	profile.text = Settings.profile_name
-	profile.add_theme_font_size_override("font_size", 19)
+	profile.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	profile.add_theme_font_size_override("font_size", 16)
 	profile.add_theme_color_override("font_color", COL_TEXT)
 	pv.add_child(profile)
 	var sub := Label.new()
-	sub.text = "%.0f pp" % ScoreStore.profile_pp()
-	sub.add_theme_font_size_override("font_size", 12)
-	sub.add_theme_color_override("font_color", Color(1.0, 0.6, 0.9))
+	sub.text = UiTheme.fmt_pp(ScoreStore.profile_pp())
+	sub.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	sub.add_theme_font_size_override("font_size", 13)
+	sub.add_theme_color_override("font_color", UiTheme.ACCENT2)
 	pv.add_child(sub)
-
-	# Tab-Leiste + Suche + Zahnrad rechts oben.
-	var top_right := HBoxContainer.new()
-	top_right.anchor_left = 1.0
-	top_right.anchor_right = 1.0
-	top_right.offset_left = -640
-	top_right.offset_right = -16
-	top_right.offset_top = 14
-	top_right.add_theme_constant_override("separation", 8)
-	add_child(top_right)
 
 	var gear := Button.new()
 	gear.text = "⚙"
-	gear.custom_minimum_size = Vector2(42, 38)
-	gear.add_theme_font_size_override("font_size", 20)
-	gear.add_theme_stylebox_override("normal", _rounded_box(Color(0.10, 0.10, 0.14, 0.9), 8))
+	gear.tooltip_text = "Einstellungen"
+	gear.custom_minimum_size = Vector2(HEAD_H, HEAD_H)
+	gear.add_theme_font_size_override("font_size", 18)
+	UiTheme.style_ghost_button(gear, 10)
+	_square_margins(gear)
 	gear.pressed.connect(func(): add_child(SettingsPanel.new()))
-	top_right.add_child(gear)
+	left.add_child(gear)
 
-	_tab_collections = Button.new()
-	_tab_collections.text = "Sammlungen"
-	_tab_collections.custom_minimum_size = Vector2(110, 38)
-	_tab_collections.pressed.connect(func(): _set_collection_mode(true))
-	top_right.add_child(_tab_collections)
+	# Rechte Spalte: Tabs + Online + Suche. Gleiche Kanten wie Filter und Liste.
+	var top_right := HBoxContainer.new()
+	_place_right(top_right, HEAD_Y, HEAD_H)
+	top_right.add_theme_constant_override("separation", 8)
+	add_child(top_right)
 
-	_tab_downloaded = Button.new()
-	_tab_downloaded.text = "Heruntergeladen"
-	_tab_downloaded.custom_minimum_size = Vector2(110, 38)
+	_tab_downloaded = _make_toggle("Heruntergeladen", 15)
+	_tab_downloaded.custom_minimum_size = Vector2(0, HEAD_H)
 	_tab_downloaded.pressed.connect(func(): _set_collection_mode(false))
 	top_right.add_child(_tab_downloaded)
+
+	_tab_collections = _make_toggle("Sammlungen", 15)
+	_tab_collections.custom_minimum_size = Vector2(0, HEAD_H)
+	_tab_collections.pressed.connect(func(): _set_collection_mode(true))
+	top_right.add_child(_tab_collections)
 	_style_tabs()
 
 	_tab_online = Button.new()
-	_tab_online.text = "⤓ Online"
-	_tab_online.custom_minimum_size = Vector2(104, 38)
+	_tab_online.text = "Online"
+	_tab_online.tooltip_text = "Maps online suchen und laden"
+	_tab_online.icon = _download_icon()
+	_tab_online.custom_minimum_size = Vector2(0, HEAD_H)
 	_tab_online.add_theme_font_size_override("font_size", 15)
-	UiTheme.style_button(_tab_online, true)
+	_tab_online.add_theme_constant_override("h_separation", 8)
+	UiTheme.style_ghost_button(_tab_online, 10)
 	_tab_online.pressed.connect(_open_download_panel)
 	top_right.add_child(_tab_online)
 
-	# Filter-Reihe: Anzahl + Sterne-Chips + Sortierung (immer sichtbar).
+	# Filter-Reihe: Anzahl links, Sterne-Chips + Sortierung rechtsbuendig.
 	var filter_row := HBoxContainer.new()
-	filter_row.anchor_left = 1.0
-	filter_row.anchor_right = 1.0
-	filter_row.offset_left = -620
-	filter_row.offset_right = -16
-	filter_row.offset_top = 64
-	filter_row.alignment = BoxContainer.ALIGNMENT_END
+	_place_right(filter_row, FILTER_Y, FILTER_H)
 	filter_row.add_theme_constant_override("separation", 6)
 	add_child(filter_row)
 
 	_count_label = Label.new()
 	_count_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	_count_label.add_theme_font_size_override("font_size", 12)
+	_count_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_count_label.add_theme_font_size_override("font_size", 13)
 	_count_label.add_theme_color_override("font_color", COL_DIM)
 	filter_row.add_child(_count_label)
-	var gap := Control.new()
-	gap.custom_minimum_size = Vector2(8, 0)
-	filter_row.add_child(gap)
 	for fi in STAR_FILTERS.size():
-		var chip := Button.new()
-		chip.text = STAR_FILTERS[fi][0]
-		chip.custom_minimum_size = Vector2(0, 32)
-		chip.add_theme_font_size_override("font_size", 13)
-		UiTheme.style_button(chip, fi == _star_filter, 14)
+		var chip := _make_toggle(STAR_FILTERS[fi][0], 13, 16)
+		chip.custom_minimum_size = Vector2(0, FILTER_H)
 		chip.pressed.connect(func():
 			_star_filter = fi
 			_restyle_star_chips()
 			_refresh_filter(_search.text))
 		filter_row.add_child(chip)
 		_star_chips.append(chip)
+	_restyle_star_chips()
 	var sort := OptionButton.new()
 	sort.add_item("Titel", 0)
-	sort.add_item("Sterne ↑", 1)
-	sort.add_item("Sterne ↓", 2)
+	sort.add_item("Sterne aufsteigend", 1)
+	sort.add_item("Sterne absteigend", 2)
 	sort.select(_sort_mode)
-	sort.custom_minimum_size = Vector2(110, 32)
+	sort.tooltip_text = "Sortierung"
+	sort.fit_to_longest_item = false
+	sort.custom_minimum_size = Vector2(120, FILTER_H)
 	sort.add_theme_font_size_override("font_size", 13)
-	sort.add_theme_stylebox_override("normal", _rounded_box(Color(0.10, 0.10, 0.14, 0.9), 8))
+	sort.add_theme_stylebox_override("normal", _toggle_box(false, 10))
+	sort.add_theme_stylebox_override("hover", _toggle_box(false, 10, true))
+	sort.add_theme_stylebox_override("pressed", _toggle_box(false, 10, true))
+	sort.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	sort.add_theme_color_override("font_color", COL_TEXT)
 	sort.item_selected.connect(func(i):
 		_sort_mode = i
 		_refresh_filter(_search.text))
@@ -363,11 +398,7 @@ func _build_header() -> void:
 
 	# Chip-Reihe fuer Sammlungen (nur im Collections-Modus sichtbar).
 	_chips_row = HBoxContainer.new()
-	_chips_row.anchor_left = 1.0
-	_chips_row.anchor_right = 1.0
-	_chips_row.offset_left = -620
-	_chips_row.offset_right = -16
-	_chips_row.offset_top = 106
+	_place_right(_chips_row, CHIPS_Y, CHIPS_H)
 	_chips_row.alignment = BoxContainer.ALIGNMENT_END
 	_chips_row.add_theme_constant_override("separation", 6)
 	_chips_row.visible = false
@@ -376,50 +407,323 @@ func _build_header() -> void:
 	_search = LineEdit.new()
 	_search.placeholder_text = "Map suchen"
 	_search.clear_button_enabled = true
-	_search.custom_minimum_size = Vector2(220, 38)
+	_search.custom_minimum_size = Vector2(140, HEAD_H)
 	_search.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_search.add_theme_stylebox_override("normal", _rounded_box(Color(0.10, 0.10, 0.14, 0.9), 8))
+	_search.add_theme_stylebox_override("normal", _toggle_box(false, 10))
+	var search_focus := _toggle_box(false, 10, true)
+	search_focus.border_color = Color(COL_ACCENT, 0.55)
+	_search.add_theme_stylebox_override("focus", search_focus)
 	_search.text_changed.connect(_refresh_filter)
 	top_right.add_child(_search)
 
 
+## Rechte Spalte: feste Breite RIGHT_W, rechter Rand M (Toolbar = Liste).
+func _place_right(c: Control, y: float, h: float) -> void:
+	c.anchor_left = 1.0
+	c.anchor_right = 1.0
+	c.offset_left = -M - RIGHT_W
+	c.offset_right = -M
+	c.offset_top = y
+	c.offset_bottom = y + h
+
+
+func _square_margins(b: Button) -> void:
+	for st in ["normal", "hover", "pressed"]:
+		var sb := b.get_theme_stylebox(st) as StyleBoxFlat
+		if sb != null:
+			sb.content_margin_left = 0
+			sb.content_margin_right = 0
+
+
+## Ein Stil fuer aktiv (Akzent-Toenung, Akzentschrift), einer fuer inaktiv (Ghost).
+func _toggle_box(active: bool, radius: int, hover: bool = false) -> StyleBoxFlat:
+	var sb := StyleBoxFlat.new()
+	sb.set_corner_radius_all(radius)
+	sb.set_border_width_all(1)
+	sb.content_margin_left = 14
+	sb.content_margin_right = 14
+	sb.content_margin_top = 4
+	sb.content_margin_bottom = 4
+	if active:
+		sb.bg_color = Color(COL_ACCENT, 0.24 if hover else 0.16)
+		sb.border_color = Color(COL_ACCENT, 0.60)
+	else:
+		sb.bg_color = Color(1, 1, 1, 0.09 if hover else 0.04)
+		sb.border_color = Color(1, 1, 1, 0.22 if hover else 0.12)
+	return sb
+
+
+func _make_toggle(text: String, font_size: int, radius: int = 10) -> Button:
+	var b := Button.new()
+	b.text = text
+	b.focus_mode = Control.FOCUS_NONE
+	b.add_theme_font_size_override("font_size", font_size)
+	b.set_meta("radius", radius)
+	UiTheme._attach_sounds(b)
+	_apply_toggle(b, false)
+	return b
+
+
+func _apply_toggle(b: Button, active: bool) -> void:
+	var r: int = b.get_meta("radius", 10)
+	var n := _toggle_box(active, r)
+	b.add_theme_stylebox_override("normal", n)
+	b.add_theme_stylebox_override("hover", _toggle_box(active, r, true))
+	b.add_theme_stylebox_override("pressed", n)
+	b.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	var fg := COL_ACCENT if active else COL_DIM
+	b.add_theme_color_override("font_color", fg)
+	b.add_theme_color_override("font_pressed_color", fg)
+	b.add_theme_color_override("font_focus_color", fg)
+	b.add_theme_color_override("font_hover_color", COL_ACCENT if active else COL_TEXT)
+
+
+## Download-Symbol (Pfeil nach unten auf Linie), einmal gezeichnet.
+var _dl_icon_tex: ImageTexture
+func _download_icon() -> ImageTexture:
+	if _dl_icon_tex == null:
+		_dl_icon_tex = _line_icon(16, [
+			[Vector2(8, 2), Vector2(8, 10.5)], [Vector2(4.5, 7.5), Vector2(8, 11)],
+			[Vector2(11.5, 7.5), Vector2(8, 11)], [Vector2(3, 14), Vector2(13, 14)]])
+	return _dl_icon_tex
+
+
+## Chevron links (dir -1) / rechts (dir 1) fuer die Diff-Auswahl.
+func _chevron_icon(dir: int) -> ImageTexture:
+	var a := 6.0 if dir > 0 else 10.0
+	var b := 10.0 if dir > 0 else 6.0
+	return _line_icon(16, [[Vector2(a, 3.5), Vector2(b, 8)], [Vector2(b, 8), Vector2(a, 12.5)]])
+
+
+## Kleines Linien-Icon (weiss, ~1,6 px, kantengeglaettet) aus Segmenten.
+func _line_icon(size: int, segs: Array) -> ImageTexture:
+	var img := Image.create(size, size, false, Image.FORMAT_RGBA8)
+	var half_w := 0.85
+	for y in size:
+		for x in size:
+			var p := Vector2(float(x) + 0.5, float(y) + 0.5)
+			var d := 99.0
+			for s in segs:
+				var a: Vector2 = s[0]
+				var b: Vector2 = s[1]
+				var ab := b - a
+				var t := clampf((p - a).dot(ab) / maxf(ab.length_squared(), 0.0001), 0.0, 1.0)
+				d = minf(d, p.distance_to(a + ab * t))
+			var al := clampf(half_w - d + 0.6, 0.0, 1.0)
+			img.set_pixel(x, y, Color(1, 1, 1, al))
+	return ImageTexture.create_from_image(img)
+
 
 func _build_info_panel() -> void:
+	# Hoehe folgt dem Inhalt: kein leerer Glasbereich unter der Bestenliste.
 	var panel := PanelContainer.new()
-	panel.anchor_top = 0.0
-	panel.anchor_bottom = 1.0
-	panel.offset_left = 32
-	panel.offset_top = 96
-	panel.offset_bottom = -32
-	panel.custom_minimum_size = Vector2(400, 0)
+	panel.position = Vector2(M, HEAD_Y + HEAD_H + M)
+	panel.custom_minimum_size = Vector2(INFO_W, 0)
 	panel.add_theme_stylebox_override("panel", UiTheme.glass_box(18, 0.5))
 	add_child(panel)
 
 	var margin := MarginContainer.new()
-	margin.add_theme_constant_override("margin_left", 18)
-	margin.add_theme_constant_override("margin_right", 18)
-	margin.add_theme_constant_override("margin_top", 18)
-	margin.add_theme_constant_override("margin_bottom", 18)
+	for side in ["margin_left", "margin_right", "margin_top", "margin_bottom"]:
+		margin.add_theme_constant_override(side, M)
 	panel.add_child(margin)
 
 	var vb := VBoxContainer.new()
 	vb.add_theme_constant_override("separation", 10)
 	margin.add_child(vb)
 
+	_title_label = _add_label(vb, "", 26, COL_TEXT)
+	_title_label.add_theme_font_override("font", UiTheme.heading_font(1))
+	var by := VBoxContainer.new()
+	by.add_theme_constant_override("separation", 0)
+	vb.add_child(by)
+	_artist_label = _add_label(by, "", 15, COL_TEXT.darkened(0.12))
+	_mapper_label = _add_label(by, "", 13, COL_DIM)
+
+	var gap := Control.new()
+	gap.custom_minimum_size = Vector2(0, 2)
+	vb.add_child(gap)
+
+	var diff_row := HBoxContainer.new()
+	diff_row.add_theme_constant_override("separation", 8)
+	vb.add_child(diff_row)
+	var prev := _icon_button(_chevron_icon(-1), "Vorherige Schwierigkeit")
+	prev.pressed.connect(func(): _cycle_difficulty(-1))
+	diff_row.add_child(prev)
+	_diff_label = Label.new()
+	_diff_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_diff_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_diff_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_diff_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	_diff_label.add_theme_font_size_override("font_size", 16)
+	_diff_label.add_theme_color_override("font_color", COL_TEXT)
+	diff_row.add_child(_diff_label)
+	var next := _icon_button(_chevron_icon(1), "Naechste Schwierigkeit")
+	next.pressed.connect(func(): _cycle_difficulty(1))
+	diff_row.add_child(next)
+
+	# Diff-Farbbalken: ein Segment pro Difficulty in Sternfarbe, Auswahl hell.
+	# Einziger Ort mit Sternfarbe im Panel.
+	_diff_bar = HBoxContainer.new()
+	_diff_bar.custom_minimum_size = Vector2(0, 8)
+	_diff_bar.add_theme_constant_override("separation", 4)
+	vb.add_child(_diff_bar)
+
+	# Sterne + BPM + Laenge als ruhige Glas-Chips in einer Reihe.
+	var chip_row := HBoxContainer.new()
+	chip_row.add_theme_constant_override("separation", 8)
+	vb.add_child(chip_row)
+	_star_label = _info_chip(chip_row)
+	_bpm_label = _info_chip(chip_row)
+	_len_label = _info_chip(chip_row)
+
+	_stats_label = _add_label(vb, "", 14, COL_DIM)
+	_maxpp_label = _add_label(vb, "", 14, UiTheme.ACCENT2)
+
+	var play := Button.new()
+	play.text = "Spielen"
+	play.custom_minimum_size = Vector2(0, 54)
+	play.add_theme_font_size_override("font_size", 22)
+	UiTheme.style_button(play, true)
+	play.add_theme_font_override("font", UiTheme.heading_font(4))
+	# Hover-Glow: weicher Akzent-Schein statt hartem Farbsprung.
+	var play_hover := play.get_theme_stylebox("hover") as StyleBoxFlat
+	if play_hover != null:
+		play_hover = play_hover.duplicate()
+		play_hover.shadow_color = Color(COL_ACCENT, 0.35)
+		play_hover.shadow_size = 14
+		play_hover.shadow_offset = Vector2.ZERO
+		play.add_theme_stylebox_override("hover", play_hover)
+		play.add_theme_stylebox_override("focus", play_hover)
+	play.pressed.connect(_on_play_pressed)
+	vb.add_child(play)
+	_play_btn = play
+
+	# Mods + Sammlung: No-Fail als Schalter, Sammlung als Ghost-Button.
+	var mods_row := HBoxContainer.new()
+	mods_row.add_theme_constant_override("separation", 8)
+	vb.add_child(mods_row)
+
+	var nf := CheckButton.new()
+	nf.text = "No-Fail"
+	nf.tooltip_text = "Kein Abbruch bei leerer Lebensleiste"
+	nf.focus_mode = Control.FOCUS_NONE
+	nf.button_pressed = _nf_enabled
+	nf.custom_minimum_size = Vector2(0, 40)
+	nf.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	nf.add_theme_font_size_override("font_size", 14)
+	var nf_box := _toggle_box(false, 10)
+	nf.add_theme_stylebox_override("normal", nf_box)
+	nf.add_theme_stylebox_override("pressed", nf_box)
+	nf.add_theme_stylebox_override("hover", _toggle_box(false, 10, true))
+	nf.add_theme_stylebox_override("hover_pressed", _toggle_box(false, 10, true))
+	nf.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	for fc in ["font_color", "font_pressed_color", "font_hover_color", "font_hover_pressed_color"]:
+		nf.add_theme_color_override(fc, COL_TEXT)
+	UiTheme._attach_sounds(nf)
+	nf.toggled.connect(_on_nf_toggled)
+	mods_row.add_child(nf)
+	_nf_btn = nf
+
+	var coll_btn := Button.new()
+	coll_btn.text = "+ Sammlung"
+	coll_btn.tooltip_text = "Map zu einer Sammlung hinzufuegen"
+	coll_btn.custom_minimum_size = Vector2(0, 40)
+	coll_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	coll_btn.add_theme_font_size_override("font_size", 14)
+	UiTheme.style_ghost_button(coll_btn, 10)
+	coll_btn.pressed.connect(_open_collection_popup)
+	mods_row.add_child(coll_btn)
+
+	var sep := ColorRect.new()
+	sep.custom_minimum_size = Vector2(0, 1)
+	sep.color = Color(1, 1, 1, 0.08)
+	vb.add_child(sep)
+
+	# BESTE SCORES: Top 5 dieser Diff (pp + Datum) + Replay-Zugriff.
+	var lb_head := HBoxContainer.new()
+	lb_head.add_theme_constant_override("separation", 8)
+	lb_head.custom_minimum_size = Vector2(0, 28)
+	vb.add_child(lb_head)
+	var lb_title := Label.new()
+	lb_title.text = "BESTE SCORES"
+	lb_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	lb_title.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	lb_title.add_theme_font_size_override("font_size", 13)
+	lb_title.add_theme_color_override("font_color", COL_DIM)
+	lb_head.add_child(lb_title)
+	_replay_btn = Button.new()
+	_replay_btn.text = "Replay"
+	_replay_btn.custom_minimum_size = Vector2(0, 28)
+	_replay_btn.add_theme_font_size_override("font_size", 12)
+	UiTheme.style_ghost_button(_replay_btn, 8)
+	_replay_btn.visible = false
+	_replay_btn.pressed.connect(_watch_replay)
+	lb_head.add_child(_replay_btn)
+
+	_lb_box = VBoxContainer.new()
+	_lb_box.add_theme_constant_override("separation", 6)
+	vb.add_child(_lb_box)
+
+
+## Buehne in der Mitte: grosses Cover (abgerundet, Schatten), Vorschau-Linie,
+## Spektrum der Vorschau-Musik. Passt sich der freien Breite an.
+func _build_stage() -> void:
+	_stage = Control.new()
+	_stage.anchor_right = 1.0
+	_stage.anchor_bottom = 1.0
+	_stage.offset_left = M + INFO_W + M
+	_stage.offset_right = -(M + RIGHT_W + M)
+	_stage.offset_top = HEAD_Y + HEAD_H + M
+	_stage.offset_bottom = -M
+	_stage.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_stage)
+
+	_stage_shadow = Panel.new()
+	var sh := StyleBoxFlat.new()
+	sh.bg_color = Color(0, 0, 0, 0.35)
+	sh.set_corner_radius_all(20)
+	sh.shadow_color = Color(0, 0, 0, 0.45)
+	sh.shadow_size = 28
+	sh.shadow_offset = Vector2(0, 10)
+	_stage_shadow.add_theme_stylebox_override("panel", sh)
+	_stage_shadow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_stage.add_child(_stage_shadow)
+
+	# Abgerundete Maske: Panel zeichnet nur Alpha, das Cover wird darauf geclippt.
+	_stage_mask = Panel.new()
+	var mk := StyleBoxFlat.new()
+	mk.bg_color = Color.WHITE
+	mk.set_corner_radius_all(20)
+	mk.anti_aliasing = true
+	_stage_mask.add_theme_stylebox_override("panel", mk)
+	_stage_mask.clip_children = CanvasItem.CLIP_CHILDREN_ONLY
+	_stage_mask.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_stage.add_child(_stage_mask)
 	_cover = TextureRect.new()
-	_cover.custom_minimum_size = Vector2(0, 200)
+	_cover.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_cover.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_cover.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-	vb.add_child(_cover)
+	_cover.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_stage_mask.add_child(_cover)
+	# Feiner Glasrand ueber dem Cover.
+	var rim := Panel.new()
+	var rb := StyleBoxFlat.new()
+	rb.bg_color = Color(0, 0, 0, 0)
+	rb.set_corner_radius_all(20)
+	rb.set_border_width_all(1)
+	rb.border_color = Color(1, 1, 1, 0.14)
+	rim.add_theme_stylebox_override("panel", rb)
+	rim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	rim.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_stage_mask.add_child(rim)
 
-	# Vorschau-Fortschritt: duenne Linie direkt unter dem Cover (Position im Song).
+	# Vorschau-Fortschritt: duenne cyanfarbene Linie unter dem Cover.
 	_progress_bg = Control.new()
-	_progress_bg.custom_minimum_size = Vector2(0, 3)
 	_progress_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	vb.add_child(_progress_bg)
+	_stage.add_child(_progress_bg)
 	var track := ColorRect.new()
 	track.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	track.color = Color(1, 1, 1, 0.10)
+	track.color = Color(1, 1, 1, 0.08)
 	track.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_progress_bg.add_child(track)
 	_progress_fill = ColorRect.new()
@@ -429,131 +733,46 @@ func _build_info_panel() -> void:
 	_progress_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_progress_bg.add_child(_progress_fill)
 
-	_title_label = _add_label(vb, "", 26, COL_TEXT)
-	_title_label.add_theme_font_override("font", UiTheme.heading_font(1))
-	_artist_label = _add_label(vb, "", 15, COL_DIM)
-	_mapper_label = _add_label(vb, "", 13, COL_ACCENT)
-
-	var diff_row := HBoxContainer.new()
-	diff_row.add_theme_constant_override("separation", 8)
-	vb.add_child(diff_row)
-	var prev := _icon_button("<")
-	prev.pressed.connect(func(): _cycle_difficulty(-1))
-	diff_row.add_child(prev)
-	_diff_label = Label.new()
-	_diff_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_diff_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_diff_label.add_theme_font_size_override("font_size", 16)
-	_diff_label.add_theme_color_override("font_color", COL_ACCENT)
-	diff_row.add_child(_diff_label)
-	var next := _icon_button(">")
-	next.pressed.connect(func(): _cycle_difficulty(1))
-	diff_row.add_child(next)
-
-	# Diff-Farbbalken: ein Segment pro Difficulty in Sternfarbe, Auswahl hell.
-	_diff_bar = HBoxContainer.new()
-	_diff_bar.custom_minimum_size = Vector2(0, 8)
-	_diff_bar.add_theme_constant_override("separation", 4)
-	vb.add_child(_diff_bar)
-
-	_star_label = _add_label(vb, "", 17, Color(1.0, 0.85, 0.3))
-
-	# BPM + Laenge als ruhige Glas-Chips.
-	var chip_row := HBoxContainer.new()
-	chip_row.add_theme_constant_override("separation", 8)
-	vb.add_child(chip_row)
-	_bpm_label = _info_chip(chip_row)
-	_len_label = _info_chip(chip_row)
-
-	_maxpp_label = _add_label(vb, "", 14, Color(1.0, 0.6, 0.9))
-	_stats_label = _add_label(vb, "", 14, COL_DIM)
-
-	var play := Button.new()
-	play.text = "PLAY"
-	play.custom_minimum_size = Vector2(0, 54)
-	play.add_theme_font_override("font", UiTheme.heading_font(4))
-	play.add_theme_font_size_override("font_size", 22)
-	UiTheme.style_button(play, true)
-	# Hover-Glow: weicher Akzent-Schein statt hartem Farbsprung.
-	var play_hover := play.get_theme_stylebox("hover") as StyleBoxFlat
-	if play_hover != null:
-		play_hover = play_hover.duplicate()
-		play_hover.shadow_color = Color(COL_ACCENT, 0.45)
-		play_hover.shadow_size = 16
-		play_hover.shadow_offset = Vector2.ZERO
-		play.add_theme_stylebox_override("hover", play_hover)
-		play.add_theme_stylebox_override("focus", play_hover)
-	play.pressed.connect(_on_play_pressed)
-	vb.add_child(play)
-	_play_btn = play
-
-	# Mod-Reihe: aktuell nur No Fail (NF).
-	var mods_row := HBoxContainer.new()
-	mods_row.add_theme_constant_override("separation", 6)
-	vb.add_child(mods_row)
-
-	_nf_btn = Button.new()
-	_nf_btn.toggle_mode = true
-	_nf_btn.button_pressed = _nf_enabled
-	_nf_btn.custom_minimum_size = Vector2(0, 34)
-	_nf_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_nf_btn.add_theme_font_size_override("font_size", 14)
-	_nf_btn.toggled.connect(_on_nf_toggled)
-	mods_row.add_child(_nf_btn)
-	_update_nf_button()
-
-	var coll_btn := Button.new()
-	coll_btn.text = "+ Sammlung"
-	coll_btn.custom_minimum_size = Vector2(0, 36)
-	coll_btn.add_theme_font_size_override("font_size", 14)
-	coll_btn.add_theme_stylebox_override("normal", _rounded_box(Color(0.12, 0.12, 0.17, 0.9), 8))
-	coll_btn.pressed.connect(_open_collection_popup)
-	vb.add_child(coll_btn)
-
-	# BESTE SCORES: Top 5 dieser Diff (pp + Datum) + Replay-Zugriff.
-	var lb_head := HBoxContainer.new()
-	lb_head.add_theme_constant_override("separation", 8)
-	vb.add_child(lb_head)
-	var lb_title := Label.new()
-	lb_title.text = "BESTE SCORES"
-	lb_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	lb_title.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	lb_title.add_theme_font_size_override("font_size", 13)
-	lb_title.add_theme_color_override("font_color", COL_ACCENT)
-	lb_head.add_child(lb_title)
-	_replay_btn = Button.new()
-	_replay_btn.text = "▶ Replay"
-	_replay_btn.custom_minimum_size = Vector2(0, 30)
-	_replay_btn.add_theme_font_size_override("font_size", 12)
-	UiTheme.style_button(_replay_btn, false, 8)
-	_replay_btn.visible = false
-	_replay_btn.pressed.connect(_watch_replay)
-	lb_head.add_child(_replay_btn)
-
-	_lb_box = VBoxContainer.new()
-	_lb_box.add_theme_constant_override("separation", 5)
-	vb.add_child(_lb_box)
-
-	# Platz fuer den Audio-Visualizer (eigenes Modul fuellt ihn): ganz unten,
-	# volle Panelbreite, 60 px. Hier bewusst KEINE eigenen Balken.
-	var push := Control.new()
-	push.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	push.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	vb.add_child(push)
-	var slot := Control.new()
-	slot.name = "VisualizerSlot"
-	slot.custom_minimum_size = Vector2(0, 60)
-	slot.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	vb.add_child(slot)
 	# Spektrum der Vorschau-Musik (ruht bei Stille von selbst).
-	var viz := AudioVisualizer.new()
-	viz.set_anchors_preset(Control.PRESET_FULL_RECT)
-	viz.bars = 40
-	viz.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	viz.modulate.a = 0.6
-	viz.set_color(COL_ACCENT)
-	slot.add_child(viz)
+	_stage_viz = AudioVisualizer.new()
+	_stage_viz.name = "VisualizerSlot"
+	_stage_viz.bars = 48
+	_stage_viz.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_stage_viz.modulate.a = 0.5
+	_stage_viz.set_color(COL_ACCENT)
+	_stage.add_child(_stage_viz)
+
+	_stage.resized.connect(_layout_stage)
+	_layout_stage.call_deferred()
+
+
+func _layout_stage() -> void:
+	var avail := _stage.size
+	var w := minf(avail.x - 2.0 * M, 760.0)
+	var viz_h := 64.0
+	var gap := 18.0
+	var h := w * 9.0 / 16.0
+	var max_h := avail.y - (gap + 3.0 + gap + viz_h)
+	if h > max_h:
+		h = max_h
+		w = h * 16.0 / 9.0
+	var fits := w >= 240.0
+	for c in _stage.get_children():
+		(c as CanvasItem).visible = fits
+	if not fits:
+		return
+	var total := h + gap + 3.0 + gap + viz_h
+	# Optisch etwas ueber der Mitte: ruhiger Schwerpunkt.
+	var top := maxf((avail.y - total) * 0.42, 0.0)
+	var x := (avail.x - w) * 0.5
+	_stage_shadow.position = Vector2(x, top)
+	_stage_shadow.size = Vector2(w, h)
+	_stage_mask.position = Vector2(x, top)
+	_stage_mask.size = Vector2(w, h)
+	_progress_bg.position = Vector2(x, top + h + gap)
+	_progress_bg.size = Vector2(w, 3)
+	_stage_viz.position = Vector2(x, top + h + gap + 3.0 + gap)
+	_stage_viz.size = Vector2(w, viz_h)
 
 
 func _info_chip(parent: Node) -> Label:
@@ -573,32 +792,63 @@ func _info_chip(parent: Node) -> Label:
 
 
 func _build_list() -> void:
+	# Maske mit Alpha-Verlauf: Karten blenden oben/unten weich aus statt hart
+	# abzuschneiden (clip_children nutzt das Alpha der Maske).
+	_list_grad = Gradient.new()
+	_list_grad.offsets = PackedFloat32Array([0.0, 0.02, 0.98, 1.0])
+	_list_grad.colors = PackedColorArray([
+		Color(1, 1, 1, 0), Color(1, 1, 1, 1), Color(1, 1, 1, 1), Color(1, 1, 1, 0)])
+	var gtex := GradientTexture2D.new()
+	gtex.gradient = _list_grad
+	gtex.width = 4
+	gtex.height = 512
+	gtex.fill_from = Vector2(0, 0)
+	gtex.fill_to = Vector2(0, 1)
+	_list_mask = TextureRect.new()
+	_list_mask.texture = gtex
+	_list_mask.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_list_mask.stretch_mode = TextureRect.STRETCH_SCALE
+	_list_mask.clip_children = CanvasItem.CLIP_CHILDREN_ONLY
+	_list_mask.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# Karten-Kante = Toolbar-Kante: links Innenabstand + Hover-Slide, rechts
+	# Scrollbalken im Aussenrand.
+	_list_mask.anchor_left = 1.0
+	_list_mask.anchor_right = 1.0
+	_list_mask.anchor_bottom = 1.0
+	_list_mask.offset_left = -M - RIGHT_W - LIST_PAD - CARD_SLIDE
+	_list_mask.offset_right = -LIST_EDGE
+	_list_mask.offset_top = LIST_TOP
+	_list_mask.offset_bottom = -(M - LIST_PAD)
+	_list_mask.resized.connect(_update_list_fade)
+	add_child(_list_mask)
+
 	_scroll = ScrollContainer.new()
-	_scroll.anchor_left = 1.0
-	_scroll.anchor_right = 1.0
-	_scroll.anchor_top = 0.0
-	_scroll.anchor_bottom = 1.0
-	_scroll.offset_left = -620
-	_scroll.offset_right = -20
-	_scroll.offset_top = 106
-	_scroll.offset_bottom = -20
+	_scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	add_child(_scroll)
+	_list_mask.add_child(_scroll)
 
 	# Innenabstand, damit Glow/Schatten und der Hover-Slide nach links nicht
 	# vom Scroll-Clip abgeschnitten werden (vorher: oberste Karte gekappt).
+	var sbw := int(_scroll.get_v_scroll_bar().get_combined_minimum_size().x)
 	var pad := MarginContainer.new()
 	pad.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	pad.add_theme_constant_override("margin_top", LIST_PAD)
 	pad.add_theme_constant_override("margin_bottom", LIST_PAD)
 	pad.add_theme_constant_override("margin_left", LIST_PAD + int(CARD_SLIDE))
-	pad.add_theme_constant_override("margin_right", LIST_PAD)
+	pad.add_theme_constant_override("margin_right", maxi(M - LIST_EDGE - sbw, 0))
 	_scroll.add_child(pad)
 
 	_list_box = VBoxContainer.new()
 	_list_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_list_box.add_theme_constant_override("separation", 10)
+	_list_box.add_theme_constant_override("separation", 8)
 	pad.add_child(_list_box)
+
+
+## Fade-Laenge in Pixeln konstant halten (Gradient-Offsets nach Hoehe).
+func _update_list_fade() -> void:
+	var h := maxf(_list_mask.size.y, 1.0)
+	var f := clampf(float(LIST_PAD) / h, 0.0, 0.45)
+	_list_grad.offsets = PackedFloat32Array([0.0, f, 1.0 - f, 1.0])
 
 
 # ---------------------------------------------------------------------------
@@ -606,14 +856,8 @@ func _build_list() -> void:
 # ---------------------------------------------------------------------------
 
 func _style_tabs() -> void:
-	var active := _rounded_box(Color(0.95, 0.95, 0.98, 0.95), 8)
-	var inactive := _rounded_box(Color(0.10, 0.10, 0.14, 0.9), 8)
-	_tab_collections.add_theme_stylebox_override("normal", active if _collection_mode else inactive)
-	_tab_collections.add_theme_color_override("font_color",
-		Color(0.05, 0.05, 0.08) if _collection_mode else COL_TEXT)
-	_tab_downloaded.add_theme_stylebox_override("normal", inactive if _collection_mode else active)
-	_tab_downloaded.add_theme_color_override("font_color",
-		COL_TEXT if _collection_mode else Color(0.05, 0.05, 0.08))
+	_apply_toggle(_tab_collections, _collection_mode)
+	_apply_toggle(_tab_downloaded, not _collection_mode)
 
 
 func _set_collection_mode(on: bool) -> void:
@@ -622,7 +866,7 @@ func _set_collection_mode(on: bool) -> void:
 		var names := CollectionStore.list_names()
 		_active_collection = names[0] if not names.is_empty() else ""
 	_chips_row.visible = on
-	_scroll.offset_top = 144 if on else 106
+	_list_mask.offset_top = (CHIPS_Y + CHIPS_H) if on else LIST_TOP
 	_style_tabs()
 	_rebuild_chips()
 	_refresh_filter(_search.text)
@@ -649,14 +893,9 @@ func _rebuild_chips() -> void:
 		for f in CollectionStore.maps_in(name):
 			if have.has(f):
 				present += 1
-		var chip := Button.new()
-		chip.text = "%s (%d)" % [name, present]
-		chip.custom_minimum_size = Vector2(0, 30)
-		var active: bool = name == _active_collection
-		chip.add_theme_stylebox_override("normal",
-			_rounded_box(COL_ACCENT if active else Color(0.12, 0.12, 0.17, 0.9), 14))
-		chip.add_theme_color_override("font_color", Color(0.03, 0.05, 0.08) if active else COL_TEXT)
-		chip.add_theme_font_size_override("font_size", 13)
+		var chip := _make_toggle("%s (%d)" % [name, present], 13, 15)
+		chip.custom_minimum_size = Vector2(0, CHIPS_H)
+		_apply_toggle(chip, name == _active_collection)
 		chip.pressed.connect(func():
 			_active_collection = name
 			_rebuild_chips()
@@ -667,9 +906,10 @@ func _rebuild_chips() -> void:
 		var del := Button.new()
 		del.text = "✕"
 		del.tooltip_text = "Sammlung \"%s\" löschen" % _active_collection
-		del.custom_minimum_size = Vector2(30, 30)
+		del.custom_minimum_size = Vector2(CHIPS_H, CHIPS_H)
 		del.add_theme_font_size_override("font_size", 13)
-		del.add_theme_stylebox_override("normal", _rounded_box(Color(0.30, 0.10, 0.12, 0.9), 14))
+		UiTheme.style_ghost_button(del, 15)
+		_square_margins(del)
 		del.pressed.connect(func():
 			CollectionStore.delete(_active_collection)
 			var rest := CollectionStore.list_names()
@@ -753,7 +993,7 @@ func _open_collection_popup() -> void:
 
 func _restyle_star_chips() -> void:
 	for i in _star_chips.size():
-		UiTheme.style_button(_star_chips[i], i == _star_filter, 14)
+		_apply_toggle(_star_chips[i], i == _star_filter)
 
 
 func _refresh_filter(query: String) -> void:
@@ -800,7 +1040,7 @@ func _refresh_filter(query: String) -> void:
 
 
 func _process(delta: float) -> void:
-	_bass_react(delta)
+	_beat_react(delta)
 	_loudness_step()
 	# Thumbnails haeppchenweise laden — Browser bleibt fluessig.
 	var budget := 2
@@ -812,7 +1052,6 @@ func _process(delta: float) -> void:
 		var tex: Texture2D = (job.ms as MapSet).thumb_texture()
 		if tex != null:
 			bg_rect.texture = tex
-			(job.thumb as TextureRect).texture = tex
 		budget -= 1
 
 
@@ -830,25 +1069,21 @@ func _loudness_step() -> void:
 		_preview_fade.tween_property(_preview, "volume_db", PREVIEW_DB + g, 0.5)
 
 
-## Auswahl-Karte + Hintergrund pulsen dezent mit dem Sub-Bass der Vorschau.
+## Auswahl-Karte, Hintergrund und SPIELEN pulsen exakt auf dem Beat der
+## Vorschau (BeatClock aus den Timing-Points, keine Spektrum-Verzoegerung).
 ## Keine Allokation: nur Skalare, Scale/Modulate bestehender Nodes.
-func _bass_react(delta: float) -> void:
-	var raw := 0.0
-	if _preview != null and _preview.playing:
-		raw = SyncClock.band_energy(30.0, 150.0)
-	_bass_avg = lerpf(_bass_avg, raw, minf(delta * 1.5, 1.0))
-	_punch_cd = maxf(_punch_cd - delta, 0.0)
-	if raw - _bass_avg > 0.10 and _punch_cd <= 0.0:
-		_bass_punch = 1.0
-		_punch_cd = 0.15
-	_bass_punch = move_toward(_bass_punch, 0.0, delta * 4.0)
-	_bass_smooth = lerpf(_bass_smooth, _bass_punch, minf(delta * 18.0, 1.0))
-	var p := _bass_smooth
+func _beat_react(delta: float) -> void:
+	var p := 0.0
+	var t := _preview_ms()
+	if t >= 0.0:
+		_beat.update(t, delta)
+		# Huellkurve aus der Beat-Phase (Downbeat voll, Zwischenschlaege leiser).
+		p = _beat.beat_env
 	if _bg != null:
 		_bg.pivot_offset = _bg.size * 0.5
-		var s := 1.0 + 0.02 * p
+		var s := 1.0 + 0.015 * p
 		_bg.scale = Vector2(s, s)
-		var b := 0.34 + 0.05 * p
+		var b := 0.34 + 0.04 * p
 		_bg.modulate = Color(b, b, b + 0.06)
 	var idx := _filtered.find(_selected_set)
 	var card: Button = null
@@ -857,33 +1092,26 @@ func _bass_react(delta: float) -> void:
 	if card != _pulse_card:
 		if _pulse_card != null and is_instance_valid(_pulse_card):
 			_pulse_card.modulate = Color.WHITE
-			_pulse_card.scale = Vector2.ONE
 			var old_bg := _pulse_card.get_child(0) as TextureRect
 			if old_bg != null:
 				old_bg.self_modulate = Color.WHITE
 		_pulse_card = card
 	if card != null:
-		var c := 1.0 + 0.05 * p
+		var c := 1.0 + 0.04 * p
 		card.modulate = Color(c, c, c)
-		card.pivot_offset = card.size * 0.5
-		var cs := 1.0 + 0.012 * p
-		card.scale = Vector2(cs, cs)
 		var cbg := card.get_child(0) as TextureRect
 		if cbg != null:
-			var g := 1.0 + 0.8 * p
+			var g := 1.0 + 0.25 * p
 			cbg.self_modulate = Color(g, g, g)
-	# Glow der Auswahl atmet mit dem Bass (nur Skalar auf bestehender StyleBox).
+	# Glow der Auswahl atmet mit dem Beat (nur Skalar auf bestehender StyleBox).
 	if _sel_box != null:
-		var gs := 12 + int(round(8.0 * p))
+		var gs := 10 + int(round(6.0 * p))
 		if _sel_box.shadow_size != gs:
 			_sel_box.shadow_size = gs
-	# PLAY-Button: dezenter Bass-Puls (Helligkeit + Mini-Scale).
+	# SPIELEN: dezenter Beat-Puls (nur Helligkeit, kein Wackeln).
 	if _play_btn != null:
-		var pb := 1.0 + 0.10 * p
-		_play_btn.modulate = Color(pb, pb, pb)
-		_play_btn.pivot_offset = _play_btn.size * 0.5
-		var ps := 1.0 + 0.025 * p
-		_play_btn.scale = Vector2(ps, ps)
+		var pb := 1.0 + 0.08 * p
+		_play_btn.self_modulate = Color(pb, pb, pb)
 	# Vorschau-Fortschritt (Position im Song).
 	if _progress_fill != null:
 		var frac := 0.0
@@ -936,6 +1164,7 @@ func _slide_card(card: Button, hovered: bool) -> void:
 		return
 	var idx := _card_buttons.find(card)
 	var is_sel := idx >= 0 and idx < _filtered.size() and _filtered[idx] == _selected_set
+	_update_card_frame(card, hovered, is_sel)
 	var target := -CARD_SLIDE if (hovered or is_sel) else 0.0
 	if is_equal_approx(slider.offset_left, target):
 		return
@@ -975,12 +1204,11 @@ func _make_card(ms: MapSet) -> Button:
 	var card := Button.new()
 	card.custom_minimum_size = Vector2(0, CARD_H)
 	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	card.clip_contents = true
-	var accent := _star_color(ms.max_stars())
-	card.add_theme_stylebox_override("normal", _card_box(COL_CARD, accent))
-	card.add_theme_stylebox_override("hover", _card_box(COL_CARD_SEL, accent))
-	card.add_theme_stylebox_override("pressed", _card_box(COL_CARD_SEL, accent))
-	card.add_theme_stylebox_override("focus", _card_box(COL_CARD_SEL, accent))
+	card.focus_mode = Control.FOCUS_NONE
+	# Schmaler Diff-Streifen in Sternfarbe (einziger Farbakzent der Karte).
+	var base := _card_box(COL_CARD, _star_color(ms.max_stars()))
+	for st in ["normal", "hover", "pressed", "focus"]:
+		card.add_theme_stylebox_override(st, base)
 	card.pressed.connect(func(): _on_card_pressed(ms))
 	# Rechtsklick: Map nach Bestaetigung vom Datenträger loeschen.
 	card.gui_input.connect(func(e):
@@ -988,37 +1216,32 @@ func _make_card(ms: MapSet) -> Button:
 				and e.button_index == MOUSE_BUTTON_RIGHT:
 			_confirm_delete(ms))
 
-	# Cover schwach als Kartenhintergrund — LAZY: Thumbnails werden ueber
-	# Frames verteilt geladen (UI erscheint sofort, kein Ruckeln).
+	# Cover als Kartenhintergrund — LAZY: Thumbnails werden ueber Frames
+	# verteilt geladen (UI erscheint sofort, kein Ruckeln). Kind 0 (Beat-Puls).
+	# Shader: abgerundete Ecken + deckender Verlauf links (Text lesbar).
 	var card_bg := TextureRect.new()
 	card_bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	card_bg.offset_left = 4
 	card_bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	card_bg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-	card_bg.modulate = Color(1, 1, 1, 0.16)
+	card_bg.material = _card_cover_mat
 	card_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	card_bg.resized.connect(_on_card_bg_resized.bind(card_bg))
 	card.add_child(card_bg)
+	_thumb_queue.append({ "ms": ms, "bg": card_bg })
 
 	var hb := HBoxContainer.new()
 	hb.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	hb.offset_left = 12
-	hb.offset_right = -12
-	hb.add_theme_constant_override("separation", 14)
+	hb.offset_left = 20
+	hb.offset_right = -16
+	hb.add_theme_constant_override("separation", 12)
 	hb.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	card.add_child(hb)
-
-	var thumb := TextureRect.new()
-	thumb.custom_minimum_size = Vector2(104, 66)
-	thumb.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	thumb.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-	thumb.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	thumb.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	hb.add_child(thumb)
-	_thumb_queue.append({ "ms": ms, "bg": card_bg, "thumb": thumb })
 
 	var vb := VBoxContainer.new()
 	vb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	vb.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	vb.add_theme_constant_override("separation", 3)
+	vb.add_theme_constant_override("separation", 4)
 	vb.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hb.add_child(vb)
 
@@ -1026,39 +1249,44 @@ func _make_card(ms: MapSet) -> Button:
 	t.text = "%s - %s" % [ms.artist, ms.title]
 	t.add_theme_font_size_override("font_size", 17)
 	t.add_theme_color_override("font_color", COL_TEXT)
+	t.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.6))
+	t.add_theme_constant_override("shadow_offset_y", 1)
 	t.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	t.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vb.add_child(t)
 
 	var m := Label.new()
-	m.text = "Map von %s" % ms.creator
-	m.add_theme_font_size_override("font_size", 12)
-	m.add_theme_color_override("font_color", COL_DIM)
+	m.text = "%s  ·  %s  ·  %s" % [
+		_stars_text(ms.max_stars()), _format_time(ms.length_ms()), ms.creator]
+	m.add_theme_font_size_override("font_size", 13)
+	m.add_theme_color_override("font_color", Color(0.78, 0.80, 0.88))
+	m.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	m.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vb.add_child(m)
 
-	# Star-Reihe wie Vorlage: ★-Icons + "X.XX stars · Laenge".
-	var star_row := Label.new()
-	star_row.text = "%s %s stars · %s" % [
-		_star_icons(ms.max_stars()), _fmt_stars(ms.max_stars()), _format_time(ms.length_ms())]
-	star_row.add_theme_font_size_override("font_size", 13)
-	star_row.add_theme_color_override("font_color", accent.lightened(0.25))
-	star_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	vb.add_child(star_row)
-
-	# Grade-Badge des besten Scores (schwerste Diff mit Bestwert zuerst).
+	# Grade-Badge des besten Scores: klein, fester Platz, Notenfarbe.
 	var badge := _best_grade_badge(ms)
 	if badge != "":
 		var g := Label.new()
 		g.text = badge
-		g.add_theme_font_size_override("font_size", 30)
-		g.add_theme_color_override("font_color", Color(1.0, 0.85, 0.3))
+		g.custom_minimum_size = Vector2(28, 0)
+		g.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		g.add_theme_font_override("font", UiTheme.heading_font(0))
+		g.add_theme_font_size_override("font_size", 18)
+		g.add_theme_color_override("font_color", GRADE_COLOR.get(badge.left(1), COL_TEXT))
 		g.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		g.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		hb.add_child(g)
 
-	return card
+	# Rahmen oben drauf (Auswahl = ACCENT, Hover = hell, sonst fein).
+	var frame := Panel.new()
+	frame.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	frame.add_theme_stylebox_override("panel", _frame_idle)
+	card.add_child(frame)
+	card.set_meta("frame", frame)
 
+	return card
 
 func _best_grade_badge(ms: MapSet) -> String:
 	for i in range(ms.difficulty_count() - 1, -1, -1):
@@ -1121,17 +1349,22 @@ func _update_info_panel() -> void:
 	_artist_label.text = _selected_set.artist
 	_mapper_label.text = "Map von %s" % _selected_set.creator
 	var is_mania := int(m.get("mode", 0)) == 3
-	_diff_label.text = _selected_set.version_name_at(_selected_diff) + ("  ·  4K" if is_mania else "")
-	var stars := _selected_set.stars_at(_selected_diff)
-	_star_label.text = "%s  %s stars" % [_star_icons(stars), _fmt_stars(stars)]
-	_star_label.add_theme_color_override("font_color", _star_color(stars).lightened(0.3))
-	_stats_label.text = "%d Notes · CS %.1f  AR %.1f  OD %.1f" % [
-		int(m.get("notes", 0)),
-		float(m.get("cs", 0.0)), float(m.get("ar", 0.0)), float(m.get("od", 0.0))]
-	_bpm_label.text = "♪ %s BPM" % _bpm_text(_selected_set, _selected_diff)
-	_len_label.text = "◷ %s" % _format_time(float(m.get("duration_ms", 0.0)))
+	var keys := int(round(float(m.get("cs", 4.0))))
+	_diff_label.text = _selected_set.version_name_at(_selected_diff).strip_edges() 		+ (("  ·  %dK" % keys) if is_mania else "")
+	_star_label.text = _stars_text(_selected_set.stars_at(_selected_diff))
+	var notes := "%d Noten" % int(m.get("notes", 0))
+	var od := "OD " + UiTheme.fmt_num(float(m.get("od", 0.0)))
+	if is_mania:
+		# Mania: CS ist die Tastenzahl, AR gibt es nicht.
+		_stats_label.text = "%s  ·  %d Tasten  ·  %s" % [notes, keys, od]
+	else:
+		_stats_label.text = "%s  ·  CS %s  ·  AR %s  ·  %s" % [notes,
+			UiTheme.fmt_num(float(m.get("cs", 0.0))), UiTheme.fmt_num(float(m.get("ar", 0.0))), od]
+	_bpm_label.text = "%s BPM" % _bpm_text(_selected_set, _selected_diff)
+	_len_label.text = _format_time(float(m.get("duration_ms", 0.0)))
 	_rebuild_diff_bar()
-	_progress_fill.color = _star_color(_selected_set.max_stars()).lightened(0.2)
+	if _preview_set == _selected_set:
+		_setup_beat_clock()
 	_update_max_pp(m)
 	# BESTE SCORES: Top 5 dieser Difficulty als cleane Rows.
 	for c in _lb_box.get_children():
@@ -1151,7 +1384,8 @@ func _update_info_panel() -> void:
 	_apply_card_highlight()
 
 
-## Auswahl-Hervorhebung: Akzentrand in Songfarbe + weicher Glow dahinter.
+## Auswahl-Hervorhebung: Rahmen immer in ACCENT + weicher Glow dahinter.
+## Sternfarbe bleibt im schmalen Diff-Streifen.
 func _apply_card_highlight() -> void:
 	_sel_box = null
 	for i in _card_buttons.size():
@@ -1159,22 +1393,73 @@ func _apply_card_highlight() -> void:
 		if not is_instance_valid(card):
 			continue
 		var is_sel := _filtered[i] == _selected_set
-		var accent := _star_color(_filtered[i].max_stars())
-		card.add_theme_stylebox_override(
-			"normal", _card_box(COL_CARD_SEL if is_sel else COL_CARD, accent, is_sel))
 		var glow := card.get_parent().get_child(0) as Panel
 		if glow != null:
 			glow.visible = is_sel
 			if is_sel:
-				var gb := StyleBoxFlat.new()
-				gb.bg_color = Color(0, 0, 0, 0)
-				gb.set_corner_radius_all(10)
-				gb.shadow_color = Color(accent, 0.30)
-				gb.shadow_size = 12
-				gb.shadow_offset = Vector2.ZERO
-				glow.add_theme_stylebox_override("panel", gb)
-				_sel_box = gb
+				glow.add_theme_stylebox_override("panel", _glow_box)
+				_sel_box = _glow_box
 		_slide_card(card, card.is_hovered())
+
+
+## Rahmen-Stil je nach Zustand (geteilte StyleBoxen, keine Allokation).
+func _update_card_frame(card: Button, hovered: bool, is_sel: bool) -> void:
+	var frame := card.get_meta("frame", null) as Panel
+	if frame == null:
+		return
+	var box := _frame_sel if is_sel else (_frame_hover if hovered else _frame_idle)
+	frame.add_theme_stylebox_override("panel", box)
+
+
+const _CARD_COVER_CODE := "shader_type canvas_item;
+uniform vec2 rect_size = vec2(600.0, 76.0);
+uniform float radius = 12.0;
+uniform vec3 shade_col : source_color = vec3(0.06, 0.06, 0.09);
+varying vec2 local;
+void vertex() { local = VERTEX; }
+void fragment() {
+	vec4 c = texture(TEXTURE, UV) * COLOR;
+	float x = clamp(local.x / rect_size.x, 0.0, 1.0);
+	c.rgb = mix(c.rgb, shade_col, mix(0.93, 0.30, smoothstep(0.35, 1.0, x)));
+	vec2 q = abs(local - rect_size * 0.5) - (rect_size * 0.5 - vec2(radius));
+	float d = length(max(q, vec2(0.0))) + min(max(q.x, q.y), 0.0) - radius;
+	c.a *= clamp(0.5 - d, 0.0, 1.0);
+	COLOR = c;
+}
+"
+
+
+## Alle Karten teilen ein Material; nur bei Layout-Aenderung neu setzen.
+func _on_card_bg_resized(bg: TextureRect) -> void:
+	if bg.size.x > 0.0 and not bg.size.is_equal_approx(_card_cover_size):
+		_card_cover_size = bg.size
+		_card_cover_mat.set_shader_parameter("rect_size", bg.size)
+
+
+func _init_card_styles() -> void:
+	var sh := Shader.new()
+	sh.code = _CARD_COVER_CODE
+	_card_cover_mat = ShaderMaterial.new()
+	_card_cover_mat.shader = sh
+	_card_cover_mat.set_shader_parameter("radius", float(CARD_RADIUS))
+	_frame_idle = _frame_box(Color(1, 1, 1, 0.07), 1)
+	_frame_hover = _frame_box(Color(1, 1, 1, 0.24), 1)
+	_frame_sel = _frame_box(COL_ACCENT, 2)
+	_glow_box = StyleBoxFlat.new()
+	_glow_box.bg_color = Color(0, 0, 0, 0)
+	_glow_box.set_corner_radius_all(CARD_RADIUS)
+	_glow_box.shadow_color = Color(COL_ACCENT, 0.22)
+	_glow_box.shadow_size = 10
+	_glow_box.shadow_offset = Vector2.ZERO
+
+
+func _frame_box(col: Color, w: int) -> StyleBoxFlat:
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0, 0, 0, 0)
+	sb.set_corner_radius_all(CARD_RADIUS)
+	sb.set_border_width_all(w)
+	sb.border_color = col
+	return sb
 
 
 ## Ein Segment pro Difficulty in Sternfarbe; Klick waehlt die Diff.
@@ -1190,7 +1475,7 @@ func _rebuild_diff_bar() -> void:
 		seg.custom_minimum_size = Vector2(0, 8 if sel else 4)
 		var col := _star_color(_selected_set.stars_at(i))
 		seg.color = col.lightened(0.15) if sel else Color(col, 0.40)
-		seg.tooltip_text = "%s  %s★" % [_selected_set.version_name_at(i), _fmt_stars(_selected_set.stars_at(i))]
+		seg.tooltip_text = "%s  %s" % [_selected_set.version_name_at(i), _stars_text(_selected_set.stars_at(i))]
 		seg.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 		seg.gui_input.connect(func(e):
 			if e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_LEFT:
@@ -1206,10 +1491,28 @@ func _bpm_text(ms: MapSet, diff: int) -> String:
 	if _bpm_cache.has(key):
 		return str(_bpm_cache[key])
 	var txt := "—"
+	var lo := INF
+	var hi := 0.0
+	for tp in _timing_points(ms, diff):
+		if tp.uninherited and tp.beat_length > 0.0:
+			var b: float = 60000.0 / tp.beat_length
+			lo = minf(lo, b)
+			hi = maxf(hi, b)
+	if hi > 0.0:
+		txt = ("%d" % roundi(hi)) if roundi(lo) == roundi(hi) \
+			else "%d–%d" % [roundi(lo), roundi(hi)]
+	_bpm_cache[key] = txt
+	return txt
+
+
+## Timing-Points der Diff (einmal gelesen, gecacht) — fuer BPM und BeatClock.
+func _timing_points(ms: MapSet, diff: int) -> Array:
+	var key := ms.osz_path + "|" + ms.osu_filename_at(diff)
+	if _tp_cache.has(key):
+		return _tp_cache[key]
+	var out: Array = []
 	var bytes := OszImporter.read_file_bytes(ms.osz_path, ms.osu_filename_at(diff))
 	if not bytes.is_empty():
-		var lo := INF
-		var hi := 0.0
 		var in_tp := false
 		for raw_line in bytes.get_string_from_utf8().split("\n"):
 			var line := raw_line.strip_edges()
@@ -1220,42 +1523,51 @@ func _bpm_text(ms: MapSet, diff: int) -> String:
 				continue
 			if not in_tp or line == "":
 				continue
-			var f := line.split(",")
-			if f.size() < 2:
-				continue
-			var beat_len := float(f[1])
-			var red := f.size() < 7 or f[6].strip_edges() == "1"
-			if red and beat_len > 0.0:
-				var b := 60000.0 / beat_len
-				lo = minf(lo, b)
-				hi = maxf(hi, b)
-		if hi > 0.0:
-			txt = ("%d" % roundi(hi)) if roundi(lo) == roundi(hi) \
-				else "%d–%d" % [roundi(lo), roundi(hi)]
-	_bpm_cache[key] = txt
-	return txt
+			var tp := OsuParser._parse_timing_line(line)
+			if tp != null:
+				out.append(tp)
+	_tp_cache[key] = out
+	return out
+
+
+## Beat-Phase der Vorschau neu aufsetzen (bei Map- oder Diff-Wechsel).
+func _setup_beat_clock() -> void:
+	if _selected_set == null:
+		return
+	_beat.setup(_timing_points(_selected_set, _selected_diff))
+
+
+## Hoerbare Position der Vorschau in ms (Mix-Puffer + Ausgabelatenz korrigiert).
+func _preview_ms() -> float:
+	if _preview == null or not _preview.playing:
+		return -1.0
+	return (_preview.get_playback_position() + AudioServer.get_time_since_last_mix() \
+		- AudioServer.get_output_latency()) * 1000.0
 
 
 ## Eine Leaderboard-Zeile: Rang, Grade, Score/Acc, pp, Datum.
 func _score_row(rank: int, e: Dictionary) -> Control:
 	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 8)
+	row.add_theme_constant_override("separation", 10)
 	var num := Label.new()
 	num.text = "#%d" % (rank + 1)
-	num.custom_minimum_size = Vector2(26, 0)
+	num.custom_minimum_size = Vector2(24, 0)
 	num.add_theme_font_size_override("font_size", 12)
-	num.add_theme_color_override("font_color",
-		Color(1.0, 0.85, 0.3) if rank == 0 else COL_DIM)
+	num.add_theme_color_override("font_color", COL_TEXT if rank == 0 else COL_DIM)
 	row.add_child(num)
+	var g := str(e.get("grade", "?"))
 	var grade := Label.new()
-	grade.text = str(e.get("grade", "?"))
-	grade.custom_minimum_size = Vector2(20, 0)
-	grade.add_theme_font_size_override("font_size", 16)
-	grade.add_theme_color_override("font_color", GRADE_COLOR.get(str(e.get("grade", "")), COL_TEXT))
+	grade.text = g
+	grade.custom_minimum_size = Vector2(28, 0)
+	grade.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	grade.add_theme_font_override("font", UiTheme.heading_font(0))
+	grade.add_theme_font_size_override("font_size", 15)
+	grade.add_theme_color_override("font_color", GRADE_COLOR.get(g.left(1), COL_TEXT))
 	row.add_child(grade)
 	var main := Label.new()
-	main.text = "%d · %.2f%% · %dx" % [
-		int(e.get("score", 0)), float(e.get("accuracy", 0.0)) * 100.0, int(e.get("max_combo", 0))]
+	main.text = "%s  ·  %s  ·  %dx" % [
+		UiTheme.fmt_score(int(e.get("score", 0))),
+		UiTheme.fmt_pct(float(e.get("accuracy", 0.0)) * 100.0), int(e.get("max_combo", 0))]
 	main.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	main.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	main.add_theme_font_size_override("font_size", 13)
@@ -1263,9 +1575,9 @@ func _score_row(rank: int, e: Dictionary) -> Control:
 	row.add_child(main)
 	var pp_lbl := Label.new()
 	var pp_val := float(e.get("pp", -1.0))
-	pp_lbl.text = ("%.1fpp" % pp_val) if pp_val > 0.0 else "—"
+	pp_lbl.text = UiTheme.fmt_pp(pp_val) if pp_val > 0.0 else "—"
 	pp_lbl.add_theme_font_size_override("font_size", 13)
-	pp_lbl.add_theme_color_override("font_color", Color(1.0, 0.6, 0.9))
+	pp_lbl.add_theme_color_override("font_color", UiTheme.ACCENT2)
 	row.add_child(pp_lbl)
 	var date := Label.new()
 	var d := str(e.get("date", "")).split("T")[0]
@@ -1273,7 +1585,7 @@ func _score_row(rank: int, e: Dictionary) -> Control:
 	date.text = "%s.%s.%s" % [parts[2], parts[1], parts[0].substr(2)] if parts.size() == 3 else ""
 	date.custom_minimum_size = Vector2(58, 0)
 	date.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	date.add_theme_font_size_override("font_size", 11)
+	date.add_theme_font_size_override("font_size", 12)
 	date.add_theme_color_override("font_color", COL_DIM)
 	row.add_child(date)
 	return row
@@ -1308,13 +1620,7 @@ func _on_nf_toggled(pressed: bool) -> void:
 func _update_nf_button() -> void:
 	if _nf_btn == null:
 		return
-	_nf_btn.text = "NF: An" if _nf_enabled else "NF: Aus"
-	var col := COL_ACCENT if _nf_enabled else Color(0.12, 0.12, 0.17, 0.9)
-	var fg := Color.BLACK if _nf_enabled else COL_TEXT
-	_nf_btn.add_theme_color_override("font_color", fg)
-	_nf_btn.add_theme_stylebox_override("normal", _rounded_box(col, 8))
-	_nf_btn.add_theme_stylebox_override("hover", _rounded_box(col.lightened(0.1), 8))
-	_nf_btn.add_theme_stylebox_override("pressed", _rounded_box(col.darkened(0.1), 8))
+	_nf_btn.set_pressed_no_signal(_nf_enabled)
 
 
 ## Full-Res-Cover nachladen (nur wenn die Auswahl noch aktuell ist).
@@ -1354,12 +1660,12 @@ func _update_max_pp(m: Dictionary) -> void:
 	var inner := _selected_set.osu_filename_at(_selected_diff)
 	var cached := StarService.max_pp_cached(_selected_set.osz_path, inner)
 	if cached >= 0.0:
-		_maxpp_label.text = "Max %.0f pp bei SS" % cached
+		_maxpp_label.text = "Max. %s bei SS" % UiTheme.fmt_pp(cached)
 		return
 	if cached > -900.0:
 		_maxpp_label.text = ""
 		return
-	_maxpp_label.text = "Max pp wird berechnet…"
+	_maxpp_label.text = "Max. pp wird berechnet …"
 	if _maxpp_thread != null:
 		return  # laeuft bereits — fertige Berechnung triggert Refresh
 	var osz := _selected_set.osz_path
@@ -1377,7 +1683,7 @@ func _on_maxpp_done(osz: String, inner: String, v: float) -> void:
 	if _selected_set == null:
 		return
 	if _selected_set.osz_path == osz and _selected_set.osu_filename_at(_selected_diff) == inner:
-		_maxpp_label.text = ("Max %.0f pp bei SS" % v) if v >= 0.0 else ""
+		_maxpp_label.text = ("Max. %s bei SS" % UiTheme.fmt_pp(v)) if v >= 0.0 else ""
 	else:
 		# Auswahl hat gewechselt — fuer die neue Diff nachziehen.
 		_update_max_pp(_selected_set.meta_at(_selected_diff))
@@ -1396,29 +1702,63 @@ func _play_preview() -> void:
 	var stream := OszImporter.load_audio_stream_named(
 		_selected_set.osz_path, str(m.get("audio_filename", "")))
 	if stream == null:
-		_preview.stop()
+		_stop_preview_soft()
 		return
-	_preview.stream = stream
-	_preview_len = stream.get_length()
 	var song_key := SongLoudness.make_key(_selected_set.osz_path, str(m.get("audio_filename", "")))
-	_preview_gain_db = SongLoudness.gain_db_for(song_key)
-	if is_equal_approx(_preview_gain_db, 0.0) and not SongLoudness.has_key(song_key):
-		SongLoudness.measure_start(song_key)
-	else:
-		SongLoudness.measure_stop()
 	var preview_ms := float(m.get("preview_time", -1.0))
 	if preview_ms < 0:
 		preview_ms = float(m.get("duration_ms", 0.0)) * 0.4
-	_fade_in_preview(preview_ms / 1000.0)
+	_switch_preview(stream, preview_ms / 1000.0, song_key)
 
 
-func _fade_in_preview(from_sec: float) -> void:
+## Klickfreier Wechsel: alte Vorschau 120 ms ausblenden, dann neue starten
+## und 250 ms einblenden. Nie hart stoppen/starten, solange etwas klingt.
+## song_key leer = keine Lautheitsmessung (Online-Vorschau).
+func _switch_preview(stream: AudioStream, from_sec: float, song_key: String) -> void:
 	if _preview_fade != null and _preview_fade.is_valid():
 		_preview_fade.kill()
-	_preview.volume_db = -40.0
+	_preview_fade = create_tween()
+	if _preview.playing and _preview.volume_db > PREVIEW_SILENT_DB + 1.0:
+		_preview_fade.tween_property(_preview, "volume_db", PREVIEW_SILENT_DB, PREVIEW_FADE_OUT)
+	_preview_fade.tween_callback(_start_preview.bind(stream, from_sec, song_key))
+
+
+func _start_preview(stream: AudioStream, from_sec: float, song_key: String) -> void:
+	if not is_inside_tree():
+		return
+	_preview.stop()
+	_preview.stream = stream
+	_preview_len = stream.get_length()
+	if song_key == "":
+		SongLoudness.measure_stop()
+		_preview_gain_db = 0.0
+	else:
+		_preview_gain_db = SongLoudness.gain_db_for(song_key)
+		if is_equal_approx(_preview_gain_db, 0.0) and not SongLoudness.has_key(song_key):
+			SongLoudness.measure_start(song_key)
+		else:
+			SongLoudness.measure_stop()
+	if song_key == "":
+		_preview_set = null
+		_beat.setup([])
+	else:
+		_preview_set = _selected_set
+		_setup_beat_clock()
+	_preview.volume_db = PREVIEW_SILENT_DB
 	_preview.play(from_sec)
 	_preview_fade = create_tween()
-	_preview_fade.tween_property(_preview, "volume_db", PREVIEW_DB + _preview_gain_db, 0.9)
+	_preview_fade.tween_property(_preview, "volume_db", PREVIEW_DB + _preview_gain_db, PREVIEW_FADE_IN)
+
+
+## Vorschau weich ausblenden und erst dann anhalten.
+func _stop_preview_soft() -> void:
+	if _preview_fade != null and _preview_fade.is_valid():
+		_preview_fade.kill()
+	if not _preview.playing:
+		return
+	_preview_fade = create_tween()
+	_preview_fade.tween_property(_preview, "volume_db", PREVIEW_SILENT_DB, PREVIEW_FADE_OUT)
+	_preview_fade.tween_callback(_preview.stop)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -1521,7 +1861,7 @@ func _on_files_dropped(files: PackedStringArray) -> void:
 func _open_download_panel() -> void:
 	if _dl_overlay != null:
 		return
-	_preview.stop()
+	_stop_preview_soft()
 	_dl_rows.clear()
 
 	_dl_overlay = Control.new()
@@ -1698,7 +2038,7 @@ func _dl_say(msg: String) -> void:
 
 
 func _close_download_panel() -> void:
-	_preview.stop()
+	_stop_preview_soft()
 	if _dl_overlay != null:
 		_dl_overlay.queue_free()
 		_dl_overlay = null
@@ -2164,10 +2504,7 @@ func _on_preview_bytes(result: int, code: int, _headers: PackedStringArray, body
 		if _dl_status != null:
 			_dl_say("Vorschau nicht abspielbar.")
 		return
-	_preview.stream = stream
-	SongLoudness.measure_stop()
-	_preview_gain_db = 0.0
-	_fade_in_preview(0.0)
+	_switch_preview(stream, 0.0, "")
 	if _dl_status != null:
 		_dl_say("♪ Vorschau läuft")
 
@@ -2188,22 +2525,14 @@ func _rounded_box(bg: Color, radius: int, border_col: Color = Color.TRANSPARENT,
 	return sb
 
 
-func _card_box(bg: Color, accent: Color, selected: bool = false) -> StyleBoxFlat:
+func _card_box(bg: Color, accent: Color = Color.TRANSPARENT) -> StyleBoxFlat:
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = bg
-	sb.set_corner_radius_all(10)
-	sb.border_width_left = 6
-	sb.border_color = accent
-	# Weicher Schatten unter jeder Karte — die Liste bekommt Tiefe.
-	sb.shadow_size = 7
-	sb.shadow_color = Color(0, 0, 0, 0.35)
-	sb.shadow_offset = Vector2(0, 3)
-	if selected:
-		# Ausgewaehlte Karte: feiner Akzent-Rand + leicht hellere Flaeche
-		# (klar erkennbar, aber ohne Neon-Glow).
-		sb.set_border_width_all(2)
-		sb.border_width_left = 6
-		sb.bg_color = bg.lightened(0.06)
+	sb.set_corner_radius_all(CARD_RADIUS)
+	if accent.a > 0.0:
+		sb.border_width_left = 4
+		sb.border_color = accent
+	sb.anti_aliasing = true
 	sb.set_content_margin_all(6)
 	return sb
 
@@ -2218,12 +2547,18 @@ func _add_label(parent: Node, text: String, size: int, col: Color) -> Label:
 	return l
 
 
-func _icon_button(text: String) -> Button:
+func _icon_button(icon: Texture2D, tip: String) -> Button:
 	var b := Button.new()
-	b.text = text
-	b.custom_minimum_size = Vector2(40, 34)
-	b.add_theme_stylebox_override("normal", _rounded_box(Color(0.14, 0.14, 0.18, 0.9), 8))
-	b.add_theme_stylebox_override("hover", _rounded_box(Color(0.2, 0.2, 0.26, 0.95), 8))
+	b.icon = icon
+	b.tooltip_text = tip
+	b.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	b.custom_minimum_size = Vector2(40, 36)
+	b.focus_mode = Control.FOCUS_NONE
+	UiTheme.style_ghost_button(b, 10)
+	_square_margins(b)
+	b.add_theme_color_override("icon_normal_color", COL_DIM)
+	b.add_theme_color_override("icon_hover_color", COL_TEXT)
+	b.add_theme_color_override("icon_pressed_color", COL_ACCENT)
 	return b
 
 
@@ -2245,14 +2580,9 @@ func _star_color(stars: float) -> Color:
 	return stops[stops.size() - 1][1]
 
 
-func _star_icons(stars: float) -> String:
-	if stars < 0.0:
-		return "—"
-	var n := clampi(int(floor(stars)), 1, 8)
-	var out := ""
-	for i in n:
-		out += "★"
-	return out
+## Sterne fuer die Anzeige: "★ 7,27" (ein Stern, Dezimalkomma).
+func _stars_text(stars: float) -> String:
+	return ("★ " + UiTheme.fmt_num(stars, 2)) if stars >= 0.0 else "★ —"
 
 
 func _fmt_stars(stars: float) -> String:
