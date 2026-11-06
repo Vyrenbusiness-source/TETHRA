@@ -170,7 +170,7 @@ static func _play(key: String, gain: float) -> void:
 		for k in 4:
 			var p := AudioStreamPlayer.new()
 			p.bus = &"Master"
-			tree.root.add_child(p)
+			tree.root.add_child.call_deferred(p)
 			_players.append(p)
 	var vol := 0.8
 	var st = tree.root.get_node_or_null("Settings")
