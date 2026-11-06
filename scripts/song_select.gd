@@ -297,13 +297,13 @@ func _build_header() -> void:
 	top_right.add_child(gear)
 
 	_tab_collections = Button.new()
-	_tab_collections.text = "Collections"
+	_tab_collections.text = "Sammlungen"
 	_tab_collections.custom_minimum_size = Vector2(110, 38)
 	_tab_collections.pressed.connect(func(): _set_collection_mode(true))
 	top_right.add_child(_tab_collections)
 
 	_tab_downloaded = Button.new()
-	_tab_downloaded.text = "Downloaded"
+	_tab_downloaded.text = "Heruntergeladen"
 	_tab_downloaded.custom_minimum_size = Vector2(110, 38)
 	_tab_downloaded.pressed.connect(func(): _set_collection_mode(false))
 	top_right.add_child(_tab_downloaded)
@@ -374,7 +374,7 @@ func _build_header() -> void:
 	add_child(_chips_row)
 
 	_search = LineEdit.new()
-	_search.placeholder_text = "Search map"
+	_search.placeholder_text = "Map suchen"
 	_search.clear_button_enabled = true
 	_search.custom_minimum_size = Vector2(220, 38)
 	_search.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -666,7 +666,7 @@ func _rebuild_chips() -> void:
 	if _active_collection != "":
 		var del := Button.new()
 		del.text = "✕"
-		del.tooltip_text = "Sammlung \"%s\" loeschen" % _active_collection
+		del.tooltip_text = "Sammlung \"%s\" löschen" % _active_collection
 		del.custom_minimum_size = Vector2(30, 30)
 		del.add_theme_font_size_override("font_size", 13)
 		del.add_theme_stylebox_override("normal", _rounded_box(Color(0.30, 0.10, 0.12, 0.9), 14))
@@ -739,7 +739,7 @@ func _open_collection_popup() -> void:
 	new_row.add_child(new_btn)
 
 	var close := Button.new()
-	close.text = "Schliessen"
+	close.text = "Schließen"
 	close.custom_minimum_size = Vector2(0, 40)
 	close.pressed.connect(func():
 		overlay.queue_free()
@@ -795,7 +795,7 @@ func _refresh_filter(query: String) -> void:
 			if not have.has(f):
 				missing += 1
 		if missing > 0:
-			count_txt += "  ·  %d fehlen (geloescht?)" % missing
+			count_txt += "  ·  %d fehlen (gelöscht?)" % missing
 	_count_label.text = count_txt
 
 
@@ -953,9 +953,9 @@ func _slide_card(card: Button, hovered: bool) -> void:
 ## Rechtsklick auf eine Karte: .osz nach Bestaetigung loeschen.
 func _confirm_delete(ms: MapSet) -> void:
 	var dlg := ConfirmationDialog.new()
-	dlg.title = "Map loeschen"
-	dlg.dialog_text = "\"%s — %s\" wirklich loeschen?\nDie .osz-Datei wird vom Datentraeger entfernt." % [ms.artist, ms.title]
-	dlg.ok_button_text = "Loeschen"
+	dlg.title = "Map löschen"
+	dlg.dialog_text = "\"%s — %s\" wirklich löschen?\nDie .osz-Datei wird vom Datenträger entfernt." % [ms.artist, ms.title]
+	dlg.ok_button_text = "Löschen"
 	dlg.cancel_button_text = "Abbrechen"
 	add_child(dlg)
 	dlg.confirmed.connect(func():
@@ -982,7 +982,7 @@ func _make_card(ms: MapSet) -> Button:
 	card.add_theme_stylebox_override("pressed", _card_box(COL_CARD_SEL, accent))
 	card.add_theme_stylebox_override("focus", _card_box(COL_CARD_SEL, accent))
 	card.pressed.connect(func(): _on_card_pressed(ms))
-	# Rechtsklick: Map nach Bestaetigung vom Datentraeger loeschen.
+	# Rechtsklick: Map nach Bestaetigung vom Datenträger loeschen.
 	card.gui_input.connect(func(e):
 		if e is InputEventMouseButton and e.pressed \
 				and e.button_index == MOUSE_BUTTON_RIGHT:
@@ -1031,7 +1031,7 @@ func _make_card(ms: MapSet) -> Button:
 	vb.add_child(t)
 
 	var m := Label.new()
-	m.text = "Mapped by %s" % ms.creator
+	m.text = "Map von %s" % ms.creator
 	m.add_theme_font_size_override("font_size", 12)
 	m.add_theme_color_override("font_color", COL_DIM)
 	m.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -1119,7 +1119,7 @@ func _update_info_panel() -> void:
 	call_deferred("_load_fullres_bg", target_set)
 	_title_label.text = _selected_set.title
 	_artist_label.text = _selected_set.artist
-	_mapper_label.text = "Mapped by %s" % _selected_set.creator
+	_mapper_label.text = "Map von %s" % _selected_set.creator
 	var is_mania := int(m.get("mode", 0)) == 3
 	_diff_label.text = _selected_set.version_name_at(_selected_diff) + ("  ·  4K" if is_mania else "")
 	var stars := _selected_set.stars_at(_selected_diff)
@@ -1740,7 +1740,7 @@ func _on_mirror_search_failed(message: String) -> void:
 					_mirror.search(_dl_query, _dl_offset))
 		else:
 			_pack_active = false
-			_dl_say("Pack abgebrochen: Mirror nicht erreichbar — spaeter erneut versuchen.")
+			_dl_say("Pack abgebrochen: Mirror nicht erreichbar — später erneut versuchen.")
 		return
 	if _dl_suggest_fallback:
 		_dl_suggest_fallback = false
@@ -1786,7 +1786,7 @@ func _on_mirror_search_done(results: Array, raw_count: int, offset: int) -> void
 		if is_instance_valid(_dl_results_box):
 			_dl_results_box.add_child(_make_online_card(r))
 	_dl_say("%d Sets geladen%s" % [_dl_rows.size(),
-		"  ·  Ende der Liste" if _dl_end_reached else " — weiter scrollen fuer mehr"])
+		"  ·  Ende der Liste" if _dl_end_reached else " — weiter scrollen für mehr"])
 	_maybe_load_more()
 
 
@@ -1857,7 +1857,7 @@ func _update_pack_status() -> void:
 	if _pack_done >= _pack_started.size() \
 			and (_pack_started.size() >= _pack_want or _dl_end_reached or _pack_pages >= 12):
 		_pack_active = false
-		_dl_say("Pack fertig: %d Maps geladen (%.1f–%.1f★) — viel Spass!" % [
+		_dl_say("Pack fertig: %d Maps geladen (%.1f–%.1f★) — viel Spaß!" % [
 			_pack_done, _pack_lo, _pack_hi])
 
 
@@ -1984,7 +1984,7 @@ func _make_online_card(r: Dictionary) -> Control:
 	card.add_theme_stylebox_override("hover", _card_box(COL_CARD_SEL, accent))
 	card.add_theme_stylebox_override("pressed", _card_box(COL_CARD_SEL, accent))
 	card.add_theme_stylebox_override("focus", _card_box(COL_CARD_SEL, accent))
-	card.tooltip_text = "Klick = Vorschau anhoeren"
+	card.tooltip_text = "Klick = Vorschau anhören"
 	card.pressed.connect(func(): _preview_online(str(r.preview_url), set_id))
 	UiTheme.attach_hover(card, 1.015)
 
@@ -2018,7 +2018,7 @@ func _make_online_card(r: Dictionary) -> Control:
 	t.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vb.add_child(t)
 	var m := Label.new()
-	m.text = "Mapped by %s  ·  %d Diffs  ·  ▶ Vorschau" % [str(r.creator), int(r.diffs)]
+	m.text = "Map von %s  ·  %d Diffs  ·  ▶ Vorschau" % [str(r.creator), int(r.diffs)]
 	m.add_theme_font_size_override("font_size", 12)
 	m.add_theme_color_override("font_color", COL_DIM)
 	m.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
@@ -2140,15 +2140,15 @@ func _preview_online(url: String, set_id: int = -1) -> void:
 		_dl_preview_req.request_completed.connect(_on_preview_bytes)
 	_dl_preview_req.cancel_request()
 	if _dl_status != null:
-		_dl_say("♪ Vorschau laedt…")
+		_dl_say("♪ Vorschau lädt…")
 	if _dl_preview_req.request(url) != OK and _dl_status != null:
-		_dl_say("Vorschau nicht verfuegbar.")
+		_dl_say("Vorschau nicht verfügbar.")
 
 
 func _on_preview_bytes(result: int, code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
 	if result != HTTPRequest.RESULT_SUCCESS or code != 200 or body.is_empty():
 		if _dl_status != null:
-			_dl_say("Vorschau nicht verfuegbar.")
+			_dl_say("Vorschau nicht verfügbar.")
 		return
 	# b.ppy.sh liefert trotz .mp3-Endung OGG Vorbis — Magic-Bytes pruefen.
 	var stream: AudioStream = null
@@ -2169,7 +2169,7 @@ func _on_preview_bytes(result: int, code: int, _headers: PackedStringArray, body
 	_preview_gain_db = 0.0
 	_fade_in_preview(0.0)
 	if _dl_status != null:
-		_dl_say("♪ Vorschau laeuft")
+		_dl_say("♪ Vorschau läuft")
 
 
 
