@@ -42,8 +42,11 @@ static func solid_box(col: Color, radius: int = 12) -> StyleBoxFlat:
 static func style_button(b: Button, primary: bool = false, radius: int = 12) -> void:
 	var normal: StyleBoxFlat
 	if primary:
-		normal = solid_box(ACCENT, radius)
+		normal = solid_box(primary_fill(), radius)
 		b.add_theme_color_override("font_color", Color(0.02, 0.05, 0.08))
+		# Schrift-Regel: Primaer = Versalien gesperrt, sonst Satzschreibung.
+		b.add_theme_font_override("font", heading_font(2))
+		b.text = b.text.to_upper()
 	else:
 		normal = glass_box(radius, 0.5)
 		b.add_theme_color_override("font_color", TEXT)
@@ -66,6 +69,172 @@ static func style_button(b: Button, primary: bool = false, radius: int = 12) -> 
 	b.add_theme_stylebox_override("focus", _focus_box(radius))
 	attach_hover(b)
 	_attach_sounds(b)
+
+
+## Primary-Fill: 15% dunkler und weniger grell als ACCENT.
+static func primary_fill() -> Color:
+	var c := ACCENT.darkened(0.15)
+	c.s *= 0.9
+	return c
+
+
+## Ghost-Button: transparent, feiner Rand, Hover-Fill. Fuer alle Nicht-Primaer-Aktionen.
+static func style_ghost_button(b: Button, radius: int = 12) -> void:
+	var normal := StyleBoxFlat.new()
+	normal.bg_color = Color(1, 1, 1, 0)
+	normal.set_corner_radius_all(radius)
+	normal.set_border_width_all(1)
+	normal.border_color = Color(1, 1, 1, 0.20)
+	normal.content_margin_left = 14
+	normal.content_margin_right = 14
+	normal.content_margin_top = 5
+	normal.content_margin_bottom = 5
+	var hover: StyleBoxFlat = normal.duplicate()
+	hover.bg_color = Color(1, 1, 1, 0.08)
+	hover.border_color = Color(1, 1, 1, 0.34)
+	var pressed: StyleBoxFlat = normal.duplicate()
+	pressed.bg_color = Color(1, 1, 1, 0.14)
+	b.add_theme_color_override("font_color", TEXT)
+	b.add_theme_stylebox_override("normal", normal)
+	b.add_theme_stylebox_override("hover", hover)
+	b.add_theme_stylebox_override("pressed", pressed)
+	b.add_theme_stylebox_override("focus", _focus_box(radius))
+	attach_hover(b)
+	_attach_sounds(b)
+
+
+## Zahl mit Dezimalkomma: fmt_num(0.8, 2) -> "0,80".
+static func fmt_num(v: float, decimals: int = 1) -> String:
+	var d := maxi(decimals, 0)
+	return (("%." + str(d) + "f") % v).replace(".", ",")
+
+
+## Score mit Tausenderpunkt, ohne fuehrende Nullen: 923412 -> "923.412".
+static func fmt_score(v: int) -> String:
+	var digits := str(absi(v))
+	var out := ""
+	for i in digits.length():
+		if i > 0 and (digits.length() - i) % 3 == 0:
+			out += "."
+		out += digits[i]
+	return ("-" if v < 0 else "") + out
+
+
+## Prozent (Wert schon in %): 85.09 -> "85,09 %".
+static func fmt_pct(v: float) -> String:
+	return fmt_num(v, 2) + " %"
+
+
+## ISO-String ("2026-11-06T14:30:00") oder Unix-Zeit -> "06.11.2026 14:30".
+## Unix wird in Ortszeit gewandelt, ISO-Strings unveraendert gelesen.
+static func fmt_date(iso_or_unix) -> String:
+	var dt: Dictionary
+	if iso_or_unix is String:
+		var s: String = iso_or_unix.strip_edges()
+		if s.is_empty():
+			return "—"
+		dt = Time.get_datetime_dict_from_datetime_string(s, false)
+		if dt.is_empty() or not dt.has("year"):
+			return "—"
+	else:
+		var t := int(iso_or_unix)
+		if t <= 0:
+			return "—"
+		t += int(Time.get_time_zone_from_system().get("bias", 0)) * 60
+		dt = Time.get_datetime_dict_from_unix_time(t)
+	return "%02d.%02d.%04d %02d:%02d" % [dt.day, dt.month, dt.year, dt.get("hour", 0), dt.get("minute", 0)]
+
+
+## Performance-Punkte: 33.6 -> "34 pp".
+static func fmt_pp(v: float) -> String:
+	return "%d pp" % roundi(v)
+
+
+## Kurzer Tastenname fuer Keycaps: Comma -> ",", Period -> ".", Y -> "Y".
+## Nimmt Keycode (int) oder Name (String).
+static func key_short(keycode_or_name) -> String:
+	var n: String
+	if keycode_or_name is int:
+		n = OS.get_keycode_string(keycode_or_name)
+	else:
+		n = str(keycode_or_name)
+	n = n.strip_edges()
+	var map := {
+		"comma": ",", "period": ".", "slash": "/", "backslash": "\\", "minus": "-",
+		"equal": "=", "semicolon": ";", "apostrophe": "'", "bracketleft": "[",
+		"bracketright": "]", "quoteleft": "`", "space": "Leertaste", "escape": "Esc",
+		"enter": "Enter", "tab": "Tab", "backspace": "Rück", "ctrl": "Strg",
+		"left": "←", "right": "→", "up": "↑", "down": "↓",
+	}
+	var k := n.to_lower()
+	if map.has(k):
+		return map[k]
+	return n.to_upper() if n.length() == 1 else n
+
+
+const _BLUR_CODE := "shader_type canvas_item;
+uniform sampler2D scr : hint_screen_texture, filter_linear_mipmap;
+void fragment() {
+	vec4 c = textureLod(scr, SCREEN_UV, 3.0) * 0.4;
+	c += textureLod(scr, SCREEN_UV + vec2(0.004, 0.0), 3.0) * 0.15;
+	c += textureLod(scr, SCREEN_UV - vec2(0.004, 0.0), 3.0) * 0.15;
+	c += textureLod(scr, SCREEN_UV + vec2(0.0, 0.004), 3.0) * 0.15;
+	c += textureLod(scr, SCREEN_UV - vec2(0.0, 0.004), 3.0) * 0.15;
+	COLOR = vec4(c.rgb, 1.0);
+}
+"
+
+
+## Vollbild-Backdrop fuer Modals: Blur des Hintergrunds, Abdunklung 0.72,
+## absorbiert Klicks. Wird an parent gehaengt (falls gesetzt) und zurueckgegeben.
+static func modal_backdrop(parent: Control) -> Control:
+	var root := Control.new()
+	root.name = "ModalBackdrop"
+	root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	root.mouse_filter = Control.MOUSE_FILTER_STOP
+	var blur := ColorRect.new()
+	blur.set_anchors_preset(Control.PRESET_FULL_RECT)
+	blur.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var sh := Shader.new()
+	sh.code = _BLUR_CODE
+	var mat := ShaderMaterial.new()
+	mat.shader = sh
+	blur.material = mat
+	root.add_child(blur)
+	var dim := ColorRect.new()
+	dim.color = Color(0, 0, 0, 0.72)
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(dim)
+	if parent != null:
+		parent.add_child(root)
+	return root
+
+
+## Einheitliche Modal-Titelzeile: Versalien gesperrt, 22px, Close rechts,
+## 24px Abstand zum Inhalt darunter.
+static func modal_header(title: String, on_close: Callable) -> Control:
+	var wrap := MarginContainer.new()
+	wrap.add_theme_constant_override("margin_bottom", 24)
+	var row := HBoxContainer.new()
+	wrap.add_child(row)
+	var l := Label.new()
+	l.text = title.to_upper()
+	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	l.add_theme_font_override("font", heading_font(3))
+	l.add_theme_font_size_override("font_size", 22)
+	l.add_theme_color_override("font_color", TEXT)
+	row.add_child(l)
+	var x := Button.new()
+	x.text = "✕"
+	x.focus_mode = Control.FOCUS_NONE
+	x.custom_minimum_size = Vector2(40, 40)
+	style_ghost_button(x, 10)
+	if on_close.is_valid():
+		x.pressed.connect(on_close)
+	row.add_child(x)
+	return wrap
 
 
 ## UI-Klang einmalig pro Button verbinden (Meta-Flag verhindert Duplikate).
