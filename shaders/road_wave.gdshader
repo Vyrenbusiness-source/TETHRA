@@ -18,28 +18,41 @@ uniform vec3 sky_color: source_color = vec3(0.2, 0.4, 0.8);
 uniform float refl_amount = 0.0;
 
 float band(float x, float center, float width) {
+	// Glockenform mit weichem Auslauf (kein harter Rand).
 	float d = (x - center) / width;
-	return exp(-d * d * 4.0);
+	return exp(-d * d * 3.0);
+}
+
+// Antialiaste feine Linie: Breite folgt der Pixelableitung.
+float aa_line(float x, float center, float w) {
+	float fw = max(fwidth(x), 1e-5);
+	float d = abs(x - center);
+	return 1.0 - smoothstep(w * 0.5, w * 0.5 + fw * 1.5, d);
 }
 
 void fragment() {
 	float y = UV.y;
-	// Beat-Welle: schmal, dezent.
-	float w1 = band(y, beat_phase, 0.055) * 0.28;
-	// Takt-Welle: breiter, aber zurueckhaltend.
-	float w2 = band(y, bar_phase, 0.10) * 0.5;
+	// Beat-Welle: schmal, weich.
+	float w1 = band(y, beat_phase, 0.07) * 0.26;
+	// Takt-Welle: breiter, zurueckhaltend.
+	float w2 = band(y, bar_phase, 0.12) * 0.46;
 	// Naehe zur Linie verstaerkt (Aufmerksamkeit dort).
 	float lift = 0.35 + 0.65 * y;
-	float glow = (w1 + w2) * wave_amount * lift * energy * (1.0 + punch * 0.8);
-	// Spur-Separatoren: drei feine Laengslinien — Struktur ohne Bewegung.
-	float sep = exp(-pow((UV.x - 0.25) * 90.0, 2.0))
-			+ exp(-pow((UV.x - 0.50) * 90.0, 2.0))
-			+ exp(-pow((UV.x - 0.75) * 90.0, 2.0));
-	glow += sep * 0.035 * energy;
+	float glow = (w1 + w2) * wave_amount * lift * energy * (1.0 + punch * 0.7);
+	// Spur-Separatoren: drei feine, antialiaste Laengslinien.
+	float sep = aa_line(UV.x, 0.25, 0.012) + aa_line(UV.x, 0.50, 0.012) + aa_line(UV.x, 0.75, 0.012);
+	glow += sep * 0.03 * energy;
+	// Sehr dezentes Energie-Gitter (Querlinien, wandern mit der Beat-Phase).
+	float gy = fract(y * 14.0);
+	float gfw = max(fwidth(y * 14.0), 1e-5);
+	float grid = 1.0 - smoothstep(0.02, 0.02 + gfw * 1.5, min(gy, 1.0 - gy));
+	glow += grid * 0.012 * energy * lift;
 	// Naehe-Gradient: die Road wird zur Abfanglinie hin sanft heller.
-	glow += pow(y, 3.0) * 0.10 * energy;
+	glow += pow(y, 3.0) * 0.09 * energy;
+	// Tiefen-Fade zum Horizont.
+	glow *= smoothstep(0.0, 0.18, y);
 	// Seitlicher Fade (nicht ueber die Rails hinausbrennen).
-	float sx = 1.0 - smoothstep(0.72, 1.0, abs(UV.x * 2.0 - 1.0));
+	float sx = 1.0 - smoothstep(0.70, 1.0, abs(UV.x * 2.0 - 1.0));
 	// Nass-Reflexion: flacher Blick zum Horizont spiegelt den Himmel.
 	float refl = pow(1.0 - y, 2.2) * refl_amount;
 	ALBEDO = base_color * glow * sx + sky_color * refl * sx;

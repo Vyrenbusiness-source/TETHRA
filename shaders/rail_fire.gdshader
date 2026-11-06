@@ -40,18 +40,20 @@ float fbm(vec2 p) {
 }
 
 void fragment() {
-	// Flammen zuengeln nach oben: Noise scrollt vertikal, leicht horizontal.
-	vec2 uv = vec2(UV.x * 30.0, UV.y * 2.4);
-	float n = fbm(uv + vec2(t * 0.4, -t * 3.0));
-	float n2 = fbm(uv * 1.9 + vec2(-t * 0.25, -t * 4.2) + 17.0);
-	// Unten dichte Glut, oben zerrissen ausfransende Zungen.
-	float fire = clamp((n * 0.72 + n2 * 0.48) * 1.7 - UV.y * 1.45, 0.0, 1.0)
-			* (1.0 - UV.y * 0.55);
-	fire = pow(fire, 1.35);
-	// Kern heisser (heller/gelber) als die Raender.
-	vec3 col = mix(base_color, vec3(1.0, 0.92, 0.62), fire * 0.65);
+	// Weiche Flammen: niedrigere Frequenz, Noise scrollt nach oben.
+	vec2 uv = vec2(UV.x * 18.0, UV.y * 2.0);
+	float n = fbm(uv + vec2(t * 0.3, -t * 2.4));
+	float n2 = fbm(uv * 1.5 + vec2(-t * 0.2, -t * 3.2) + 17.0);
+	float shape = n * 0.7 + n2 * 0.45;
+	// Weicher Verlauf statt hartem Clamp: Zungen laufen sanft aus.
+	float fire = smoothstep(0.0, 1.0, clamp(shape * 1.6 - UV.y * 1.3, 0.0, 1.0))
+			* (1.0 - UV.y * 0.5);
+	fire = pow(fire, 1.2);
+	// Glut am Fuss, weicher Ausklang nach oben.
+	fire *= smoothstep(1.0, 0.55, UV.y);
+	vec3 col = mix(base_color, vec3(1.0, 0.9, 0.6), fire * 0.55);
 	col = mix(col, hot_color, heat);
 	float a = fire * clamp(intensity, 0.0, 1.0);
-	ALBEDO = col * a * 1.7;
+	ALBEDO = col * a * 1.5;
 	ALPHA = clamp(a, 0.0, 1.0);
 }
