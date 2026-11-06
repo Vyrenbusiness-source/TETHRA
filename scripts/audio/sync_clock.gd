@@ -46,6 +46,8 @@ func _ready() -> void:
 	eff.buffer_length = 0.06
 	AudioServer.add_bus_effect(bus, eff)
 	_spectrum = AudioServer.get_bus_effect_instance(bus, AudioServer.get_bus_effect_count(bus) - 1)
+	# Capture direkt danach (Index 1, vor dem EQ aus Settings): Lautheitsmessung.
+	SongLoudness.attach_capture(bus)
 
 
 ## Normalisierte Energie (0..1) eines Frequenzbands. Bass ~ (30, 250),
@@ -63,6 +65,8 @@ func play(stream: AudioStream, lead_in_ms: float = 0.0) -> void:
 		push_warning("SyncClock.play: kein AudioStream uebergeben.")
 		return
 	_player.stream = stream
+	# Lautheits-Normalisierung: nur volume_db, unbekannter Song = 0 dB.
+	_player.volume_db = SongLoudness.gain_db_for_osz(GameSession.osz_path)
 	_lead_in_ms = maxf(lead_in_ms, 0.0)
 	_lead_in_elapsed_ms = 0.0
 	_finished_emitted = false

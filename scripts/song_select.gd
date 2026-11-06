@@ -63,6 +63,7 @@ const CARD_SLIDE := 8.0
 const LIST_PAD := 14
 var _preview: AudioStreamPlayer
 var _preview_fade: Tween
+var _preview_gain_db := 0.0
 # Vorschau bewusst leise (Hintergrund-Charakter), mit sanfter Einblendung.
 const PREVIEW_DB := -14.0
 
@@ -800,6 +801,7 @@ func _refresh_filter(query: String) -> void:
 
 func _process(delta: float) -> void:
 	_bass_react(delta)
+	_loudness_step()
 	# Thumbnails haeppchenweise laden — Browser bleibt fluessig.
 	var budget := 2
 	while budget > 0 and not _thumb_queue.is_empty():
@@ -812,6 +814,20 @@ func _process(delta: float) -> void:
 			bg_rect.texture = tex
 			(job.thumb as TextureRect).texture = tex
 		budget -= 1
+
+
+## Lautheitsmessung der Vorschau; nach >= 6 s Gain speichern und anwenden.
+func _loudness_step() -> void:
+	if not SongLoudness.is_measuring() or _preview == null or not _preview.playing:
+		return
+	SongLoudness.poll(_preview.volume_db)
+	if SongLoudness.measured_sec() < SongLoudness.MIN_MEASURE_SEC:
+		return
+	var g := SongLoudness.measure_stop()
+	if not is_nan(g):
+		_preview_gain_db = g
+		_preview_fade = create_tween()
+		_preview_fade.tween_property(_preview, "volume_db", PREVIEW_DB + g, 0.5)
 
 
 ## Auswahl-Karte + Hintergrund pulsen dezent mit dem Sub-Bass der Vorschau.
@@ -1079,6 +1095,7 @@ func _select_set(ms: MapSet, diff_index: int) -> void:
 	_selected_set = ms
 	_selected_diff = clampi(diff_index, 0, ms.difficulty_count() - 1)
 	_update_info_panel()
+	Sfx.select_chime()
 	_play_preview()
 
 
@@ -1383,6 +1400,12 @@ func _play_preview() -> void:
 		return
 	_preview.stream = stream
 	_preview_len = stream.get_length()
+	var song_key := SongLoudness.make_key(_selected_set.osz_path, str(m.get("audio_filename", "")))
+	_preview_gain_db = SongLoudness.gain_db_for(song_key)
+	if is_equal_approx(_preview_gain_db, 0.0) and not SongLoudness.has_key(song_key):
+		SongLoudness.measure_start(song_key)
+	else:
+		SongLoudness.measure_stop()
 	var preview_ms := float(m.get("preview_time", -1.0))
 	if preview_ms < 0:
 		preview_ms = float(m.get("duration_ms", 0.0)) * 0.4
@@ -1395,7 +1418,7 @@ func _fade_in_preview(from_sec: float) -> void:
 	_preview.volume_db = -40.0
 	_preview.play(from_sec)
 	_preview_fade = create_tween()
-	_preview_fade.tween_property(_preview, "volume_db", PREVIEW_DB, 0.9)
+	_preview_fade.tween_property(_preview, "volume_db", PREVIEW_DB + _preview_gain_db, 0.9)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -2142,6 +2165,8 @@ func _on_preview_bytes(result: int, code: int, _headers: PackedStringArray, body
 			_dl_say("Vorschau nicht abspielbar.")
 		return
 	_preview.stream = stream
+	SongLoudness.measure_stop()
+	_preview_gain_db = 0.0
 	_fade_in_preview(0.0)
 	if _dl_status != null:
 		_dl_say("♪ Vorschau laeuft")
