@@ -1846,10 +1846,10 @@ func _process(delta: float) -> void:
 		var can_skip: bool = _can_skip_intro() and Settings.lane_for_key(KEY_SPACE) == -1
 		_skip_label.visible = can_skip
 		if can_skip and Lobby.active and Lobby.in_game:
-			_skip_label.text = "LEERTASTE  ·  Intro ueberspringen  (%d/%d)" % [
+			_skip_label.text = "LEERTASTE  ·  Intro überspringen  (%d/%d)" % [
 				Lobby.skip_votes.size(), Lobby.players.size()]
 		else:
-			_skip_label.text = "LEERTASTE  ·  Intro ueberspringen"
+			_skip_label.text = "LEERTASTE  ·  Intro überspringen"
 	# Multiplayer: eigenen Live-Score ~4x pro Sekunde teilen.
 	if Lobby.active and Lobby.in_game and not _ended:
 		_mp_send_t -= delta
@@ -2389,7 +2389,7 @@ func _build_hud() -> void:
 
 	# Intro-Skip-Hinweis (nur sichtbar, solange ein langer Vorlauf laeuft).
 	_skip_label = Label.new()
-	_skip_label.text = "LEERTASTE  ·  Intro ueberspringen"
+	_skip_label.text = "LEERTASTE  ·  Intro überspringen"
 	_skip_label.anchor_left = 0.5
 	_skip_label.anchor_right = 0.5
 	_skip_label.anchor_top = 1.0
@@ -2774,7 +2774,7 @@ func _build_results(is_fail: bool, s: Dictionary, pp: float, unranked: bool, new
 		var variance := maxf(_dt_sqsum / float(_dt_n) - mean * mean, 0.0)
 		var timing := Label.new()
 		timing.text = "UR %.0f      Ø %+.1f ms (%s)" % [
-			sqrt(variance) * 10.0, mean, "spaet" if mean > 0.0 else "frueh"]
+			sqrt(variance) * 10.0, mean, "spät" if mean > 0.0 else "früh"]
 		timing.add_theme_font_size_override("font_size", 15)
 		timing.add_theme_color_override("font_color", Color(0.62, 0.66, 0.75))
 		vb.add_child(timing)
@@ -2942,24 +2942,24 @@ func _build_tutorial_steps() -> void:
 			chord_b = (objs[i] as ManiaNote).column
 	_tut_steps = []
 	_tut_steps.append({ "t": objs[0].time - 3000.0, "title": "DEINE TASTEN",
-		"body": "%s  %s  %s  %s — eine Taste pro Spur (Pfeil: die Ringe).\nDruecke GENAU, wenn eine Drohne ihren Ring beruehrt." % [k[0], k[1], k[2], k[3]],
+		"body": "%s  %s  %s  %s — eine Taste pro Spur (Pfeil: die Ringe).\nDrücke GENAU, wenn eine Drohne ihren Ring berührt." % [k[0], k[1], k[2], k[3]],
 		"worlds": [Vector3(0.0, ROAD_Y + 0.3, Z_LINE)] })
 	if first_note >= 0.0:
 		_tut_steps.append({ "t": first_note - 1600.0, "title": "ERSTE NOTE",
-			"body": "Gleich kommt eine Drohne auf DIESEN Ring zu.\nDruecke [%s] genau beim Beruehren.\nDeine Wertung (MAX … 50) erscheint danach in der Bildmitte." % k[note_col],
+			"body": "Gleich kommt eine Drohne auf DIESEN Ring zu.\nDrücke [%s] genau beim Berühren.\nDeine Wertung (MAX … 50) erscheint danach in der Bildmitte." % k[note_col],
 			"worlds": [Vector3(RAIL_X[note_col], ROAD_Y + 0.3, Z_LINE)] })
 	if first_hold >= 0.0:
 		_tut_steps.append({ "t": first_hold - 1600.0, "title": "HOLD-NOTE",
-			"body": "Die Drohne mit dem langen Beam: [%s] druecken und HALTEN,\nbis der Beam vorbei ist. Zu frueh loslassen = Combo weg!" % k[hold_col],
+			"body": "Die Drohne mit dem langen Beam: [%s] drücken und HALTEN,\nbis der Beam vorbei ist. Zu früh loslassen = Combo weg!" % k[hold_col],
 			"worlds": [Vector3(RAIL_X[hold_col], ROAD_Y + 0.3, Z_LINE)] })
 	if first_chord >= 0.0:
 		_tut_steps.append({ "t": first_chord - 1600.0, "title": "DOPPELNOTE",
-			"body": "Zwei Drohnen gleichzeitig — beide Pfeile!\n[%s] + [%s] EXAKT ZUSAMMEN druecken." % [k[chord_a], k[chord_b]],
+			"body": "Zwei Drohnen gleichzeitig — beide Pfeile!\n[%s] + [%s] EXAKT ZUSAMMEN drücken." % [k[chord_a], k[chord_b]],
 			"worlds": [Vector3(RAIL_X[chord_a], ROAD_Y + 0.3, Z_LINE),
 				Vector3(RAIL_X[chord_b], ROAD_Y + 0.3, Z_LINE)] })
 	var span := objs[objs.size() - 1].time - objs[0].time
 	_tut_steps.append({ "t": objs[0].time + span * 0.45, "title": "DEIN HUD",
-		"body": "Der Pfeil zeigt auf die Timing-Leiste: Strich links = zu frueh,\nrechts = zu spaet. Darueber: Combo + Wertung.\nLinks: Accuracy · Rechts: Score · Oben: HP.\nJetzt spiel die Map zu Ende — viel Spass!",
+		"body": "Der Pfeil zeigt auf die Timing-Leiste: Strich links = zu früh,\nrechts = zu spät. Darüber: Combo + Wertung.\nLinks: Accuracy · Rechts: Score · Oben: HP.\nJetzt spiel die Map zu Ende — viel Spaß!",
 		"screen": Vector2(0.5, 0.615) })
 	_tut_steps.sort_custom(func(a, b): return float(a.t) < float(b.t))
 	# Mindestabstand zwischen Stopps, sonst nerven sie.
