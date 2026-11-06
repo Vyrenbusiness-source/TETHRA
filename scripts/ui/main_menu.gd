@@ -34,6 +34,13 @@ var _bass_avg: float = 0.0
 var _bass_smooth: float = 0.0
 var _kick: float = 0.0
 var _logo_t: float = 0.0
+# Ken-Burns-Zoom fuer das Hintergrund-Cover.
+var _bg_rect: TextureRect
+var _kb_t: float = 0.0
+# Now-Playing-Leiste.
+var _np_bar: Control
+var _np_progress: ColorRect
+var _np_track: Control
 
 
 func _ready() -> void:
@@ -54,8 +61,10 @@ func _ready() -> void:
 	_build_logo()
 	_build_buttons()
 	_build_profile_card()
+	_build_visualizer_slot()
 	if DisplayServer.get_name() != "headless":
 		_start_menu_music()
+	_play_intro()
 
 	# Update-Banner unten links: zeigt Fortschritt des Auto-Updaters.
 	var upd := Label.new()
@@ -127,6 +136,7 @@ func _start_menu_music() -> void:
 		if is_instance_valid(_music):
 			_music.play(from_sec))
 	_music.play(from_sec)
+	_build_now_playing(bm, _load_cover(str(last.osz_path), bm))
 	# Sanft auf "leise" hochfahren statt hart einzusetzen.
 	var tw := create_tween()
 	tw.tween_property(_music, "volume_db", -14.0, 1.6)
@@ -144,6 +154,15 @@ func _process(delta: float) -> void:
 		_kick = maxf(_kick, clampf(onset * 4.0, 0.0, 1.0))
 	_kick = maxf(_kick - delta * 3.5, 0.0)
 	var bass_lvl: float = clampf((_bass_smooth - 0.3) * 1.5, 0.0, 1.0) if playing else 0.0
+	_kb_t += delta
+	if _bg_rect != null:
+		var z: float = 1.04 + 0.03 * sin(_kb_t * TAU / 40.0)
+		_bg_rect.scale = Vector2.ONE * z
+		_bg_rect.position = Vector2(sin(_kb_t * TAU / 55.0), cos(_kb_t * TAU / 70.0)) * 8.0
+	if _np_progress != null and playing and _music.stream != null:
+		var len_s: float = maxf(_music.stream.get_length(), 1.0)
+		var frac: float = clampf(_music.get_playback_position() / len_s, 0.0, 1.0)
+		_np_progress.size.x = _np_track.size.x * frac
 	if _logo != null:
 		var idle: float = 0.009 * (1.0 + sin(_logo_t * TAU / 4.4))
 		_logo.scale = Vector2.ONE * (1.0 + idle + 0.03 * _kick)
@@ -184,7 +203,9 @@ func _add_blur_layers(tex: Texture2D) -> void:
 	rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 	rect.texture = UiTheme.blurred_texture(tex)
 	rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	rect.resized.connect(func(): rect.pivot_offset = rect.size * 0.5)
 	add_child(rect)
+	_bg_rect = rect
 	var overlay := ColorRect.new()
 	overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	overlay.color = Color(0, 0, 0, 0.30)
@@ -249,6 +270,125 @@ func _build_logo() -> void:
 	add_child(sub)
 
 
+## Platzhalter: hier haengt spaeter der AudioVisualizer ein.
+func _build_visualizer_slot() -> void:
+	var slot := Control.new()
+	slot.name = "VisualizerSlot"
+	slot.anchor_left = 0.0
+	slot.anchor_right = 1.0
+	slot.anchor_top = 1.0
+	slot.anchor_bottom = 1.0
+	slot.offset_top = -90
+	slot.offset_bottom = 0
+	slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(slot)
+
+
+func _load_cover(osz_path: String, bm: Beatmap) -> Texture2D:
+	return OszImporter.load_background_texture(osz_path, bm)
+
+
+## Now-Playing-Leiste oben rechts: Cover, Titel - Artist, duenne Fortschrittslinie.
+func _build_now_playing(bm: Beatmap, cover: Texture2D) -> void:
+	var bar := PanelContainer.new()
+	_np_bar = bar
+	bar.anchor_left = 1.0
+	bar.anchor_right = 1.0
+	bar.offset_left = -364
+	bar.offset_right = -24
+	bar.offset_top = 20
+	var sb := UiTheme.glass_box(12, 0.45)
+	sb.set_content_margin_all(10)
+	bar.add_theme_stylebox_override("panel", sb)
+	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(bar)
+
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", 8)
+	vb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bar.add_child(vb)
+
+	var hb := HBoxContainer.new()
+	hb.add_theme_constant_override("separation", 12)
+	hb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vb.add_child(hb)
+
+	var thumb := TextureRect.new()
+	thumb.custom_minimum_size = Vector2(48, 48)
+	thumb.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	thumb.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	thumb.texture = cover
+	thumb.clip_contents = true
+	thumb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hb.add_child(thumb)
+
+	var tv := VBoxContainer.new()
+	tv.add_theme_constant_override("separation", 1)
+	tv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	tv.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	tv.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hb.add_child(tv)
+
+	var cap := Label.new()
+	cap.text = "JETZT LAEUFT"
+	cap.add_theme_font_size_override("font_size", 10)
+	cap.add_theme_color_override("font_color", COL_ACCENT)
+	cap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	tv.add_child(cap)
+
+	var title := Label.new()
+	title.text = "%s - %s" % [bm.title(), bm.artist()]
+	title.clip_text = true
+	title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	title.custom_minimum_size = Vector2(240, 0)
+	title.add_theme_font_size_override("font_size", 14)
+	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	tv.add_child(title)
+
+	_np_track = Control.new()
+	_np_track.custom_minimum_size = Vector2(0, 2)
+	_np_track.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vb.add_child(_np_track)
+	var back := ColorRect.new()
+	back.color = Color(1, 1, 1, 0.14)
+	back.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	back.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_np_track.add_child(back)
+	_np_progress = ColorRect.new()
+	_np_progress.color = COL_ACCENT
+	_np_progress.size = Vector2(0, 2)
+	_np_progress.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_np_track.add_child(_np_progress)
+
+	bar.modulate.a = 0.0
+	create_tween().tween_property(bar, "modulate:a", 1.0, 0.8).set_delay(0.9)
+
+
+## Gestaffeltes Einblenden beim Start: Logo, Untertitel, Buttons, Profilkarte.
+func _play_intro() -> void:
+	var targets: Array = []
+	for c in get_children():
+		if (c is Label or c is PanelContainer or c is VBoxContainer) and c != _np_bar:
+			targets.append(c)
+	var i := 0
+	for c in targets:
+		var ctl: Control = c
+		if ctl is VBoxContainer:
+			for w in ctl.get_children():
+				_fade_in(w, 0.25 + 0.08 * i)
+				i += 1
+		else:
+			_fade_in(ctl, 0.05 + 0.08 * i)
+			i += 1
+
+
+func _fade_in(n: Control, delay: float) -> void:
+	n.modulate.a = 0.0
+	var tw := create_tween()
+	tw.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	tw.tween_property(n, "modulate:a", 1.0, 0.55).set_delay(delay)
+
+
 func _build_buttons() -> void:
 	var vb := VBoxContainer.new()
 	vb.anchor_left = 0.5
@@ -262,23 +402,74 @@ func _build_buttons() -> void:
 
 	_btn_play = _menu_button("SPIELEN", true)
 	_btn_play.pressed.connect(_play)
-	vb.add_child(_btn_play)
+	_add_wrapped(vb, _btn_play)
 
 	_btn_mp = _menu_button("MULTIPLAYER", false)
 	_btn_mp.pressed.connect(func(): get_tree().change_scene_to_file("res://scenes/mp_lobby.tscn"))
-	vb.add_child(_btn_mp)
+	_add_wrapped(vb, _btn_mp)
 
 	var tut := _menu_button("TUTORIAL", false)
 	tut.pressed.connect(_start_tour)
-	vb.add_child(tut)
+	_add_wrapped(vb, tut)
 
 	_btn_settings = _menu_button("EINSTELLUNGEN", false)
 	_btn_settings.pressed.connect(_open_settings)
-	vb.add_child(_btn_settings)
+	_add_wrapped(vb, _btn_settings)
 
 	var quit := _menu_button("BEENDEN", false)
 	quit.pressed.connect(func(): get_tree().quit())
-	vb.add_child(quit)
+	_add_wrapped(vb, quit)
+
+
+## Button in Wrapper: links Glow-Kante + Slide bei Hover, kleiner Puls beim Klick.
+func _add_wrapped(parent: Control, b: Button) -> void:
+	var w := Control.new()
+	w.custom_minimum_size = Vector2(360, 58)
+	parent.add_child(w)
+	b.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	w.add_child(b)
+	var glow := TextureRect.new()
+	var grad := Gradient.new()
+	grad.set_color(0, Color(COL_ACCENT.r, COL_ACCENT.g, COL_ACCENT.b, 0.32))
+	grad.set_color(1, Color(COL_ACCENT.r, COL_ACCENT.g, COL_ACCENT.b, 0.0))
+	var gt := GradientTexture2D.new()
+	gt.gradient = grad
+	gt.fill_from = Vector2(0, 0)
+	gt.fill_to = Vector2(1, 0)
+	gt.width = 64
+	gt.height = 8
+	glow.texture = gt
+	glow.stretch_mode = TextureRect.STRETCH_SCALE
+	glow.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	glow.position = Vector2(-4, 4)
+	glow.size = Vector2(56, 50)
+	glow.modulate.a = 0.0
+	glow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	w.add_child(glow)
+	var edge := ColorRect.new()
+	edge.color = COL_ACCENT
+	edge.position = Vector2(-4, 9)
+	edge.size = Vector2(4, 40)
+	edge.modulate.a = 0.0
+	edge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	w.add_child(edge)
+	b.resized.connect(func(): b.pivot_offset = b.size * 0.5)
+	b.mouse_entered.connect(func():
+		var tw := create_tween().set_parallel(true).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+		tw.tween_property(b, "offset_left", 14.0, 0.18)
+		tw.tween_property(b, "offset_right", 14.0, 0.18)
+		tw.tween_property(glow, "modulate:a", 1.0, 0.18)
+		tw.tween_property(edge, "modulate:a", 1.0, 0.18))
+	b.mouse_exited.connect(func():
+		var tw := create_tween().set_parallel(true).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+		tw.tween_property(b, "offset_left", 0.0, 0.25)
+		tw.tween_property(b, "offset_right", 0.0, 0.25)
+		tw.tween_property(glow, "modulate:a", 0.0, 0.25)
+		tw.tween_property(edge, "modulate:a", 0.0, 0.25))
+	b.button_down.connect(func():
+		var tw := create_tween().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+		tw.tween_property(b, "scale", Vector2(1.025, 1.025), 0.07)
+		tw.tween_property(b, "scale", Vector2.ONE, 0.18))
 
 
 func _menu_button(text: String, primary: bool) -> Button:
