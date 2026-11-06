@@ -165,7 +165,6 @@ var _nebula_mat2: ShaderMaterial
 var _aurora_mat: ShaderMaterial
 
 var _kiai_mix := 0.0
-var _red_tp_idx := 0
 var _bass := 0.0
 var _treble := 0.0
 var _bass_avg := 0.0
@@ -175,7 +174,6 @@ var _kick := 0.0
 var _kick_cooldown := 0.0
 var _punch := 0.0
 var _punch_cooldown := 0.0
-var _last_bar := -1
 var _star_burst := 0.0
 # Planeten-Referenzen fuer den Bass-Puls.
 var _planet_nodes: Array = []
@@ -1550,26 +1548,18 @@ func _process(delta: float) -> void:
 		_kick = 1.0
 		_kick_cooldown = 0.16
 	_kick = move_toward(_kick, 0.0, delta * 4.5)
-	var bar := _current_bar(t)
-	if bar != _last_bar:
-		_last_bar = bar
+	if _clock.is_downbeat_edge:
 		_star_burst = 1.0
 	_star_burst = move_toward(_star_burst, 0.0, delta * 2.5)
 
-	var pulse: float = maxf(maxf(_beat_pulse(t), _bass * 1.05), _punch)
-	var kiai_now := _beatmap.is_kiai(t)
-	_kiai_mix = move_toward(_kiai_mix, 1.0 if kiai_now else 0.0, delta * 2.5)
+	var pulse: float = maxf(maxf(_beat_env, _bass * 1.05), _punch)
+	var kiai_now := _clock.kiai
+	_kiai_mix = _clock.kiai_mix
 
 	# Beat-/Takt-Wellen: Phase 0..1, Welle trifft die Linie exakt auf dem Schlag.
-	var tps := _beatmap.timing_points
-	var ri := _red_tp_idx
-	while ri >= 0 and ri < tps.size() and not tps[ri].uninherited:
-		ri -= 1
-	if ri >= 0 and ri < tps.size() and tps[ri].beat_length > 0.0 and _road_mat != null:
-		var bl: float = tps[ri].beat_length
-		var bar_len: float = bl * float(maxi(tps[ri].meter, 1))
-		_road_mat.set_shader_parameter("beat_phase", fposmod(t - tps[ri].time, bl) / bl)
-		_road_mat.set_shader_parameter("bar_phase", fposmod(t - tps[ri].time, bar_len) / bar_len)
+	if _road_mat != null:
+		_road_mat.set_shader_parameter("beat_phase", _clock.beat_phase)
+		_road_mat.set_shader_parameter("bar_phase", _clock.bar_phase)
 		_road_mat.set_shader_parameter("punch", _punch)
 		_road_mat.set_shader_parameter("wave_amount", fx)
 		_road_mat.set_shader_parameter("energy", 0.5 + (_bass * 0.5 + _kick * 0.3 + _sub * 0.15 + _kiai_mix * 0.4 + _density * 0.35) * fx)
@@ -1582,11 +1572,9 @@ func _process(delta: float) -> void:
 		else:
 			road_col = road_col.lerp(Color(0.40, 0.70, 1.0), -trend * 0.16)
 		_road_mat.set_shader_parameter("base_color", road_col)
-		# BEAT-KANTE: alles hier feuert EXAKT auf dem Schlag.
-		var beat_idx := int(floor((t - tps[ri].time) / bl))
-		if beat_idx != _beat_idx_last:
-			_beat_idx_last = beat_idx
-			_on_beat_edge(beat_idx)
+	# BEAT-KANTE: alles hier feuert EXAKT auf dem Schlag.
+	if _clock.is_beat_edge:
+		_on_beat_edge(_clock.beat_index, _clock.is_downbeat_edge)
 
 	# Die ABFANGLINIE pulsiert im Takt — der Hit-Moment ist hoerbar UND sichtbar.
 	_line_mat.emission_energy_multiplier = 1.1 + pulse * 1.6 + _punch * 1.0 + _kick * 0.35 + _line_flash * 1.0
@@ -1861,11 +1849,9 @@ func _process(delta: float) -> void:
 
 ## Feuert EXAKT auf jeder Beat-Kante: Pad-Pulse, Glut-Spawn, Nebel-Tick,
 ## Linien-Blitz (staerker auf Takt-Anfaengen).
-func _on_beat_edge(beat_idx: int) -> void:
-	# Beat-Huellkurve: Taktanfang voll, sonst sanft — plus Sub-Thump (hoerbar
-	# UND fuehlbar, uebertoent die Musik nicht).
-	var downbeat := beat_idx % 4 == 0
-	_beat_env = 1.0 if downbeat else maxf(_beat_env, 0.45)
+func _on_beat_edge(beat_idx: int, downbeat: bool) -> void:
+	# Sub-Thump auf dem Taktanfang (hoerbar UND fuehlbar, uebertoent die Musik
+	# nicht); die Huellkurve kommt aus BeatClock.
 	if downbeat and _use_audio and _beat_player != null:
 		_beat_player.play()
 	# Downbeat-Welle: ein Lichtband rollt im Noten-Tempo vom Horizont zur
@@ -1887,10 +1873,9 @@ func _on_beat_edge(beat_idx: int) -> void:
 	# Nebel + Planeten ticken, Linie blitzt (Takt-Anfang staerker).
 	_nebula_kick = 1.0
 	_line_flash = maxf(_line_flash, 0.45)
-	if beat_idx % 4 == 0:
+	if downbeat:
 		_line_flash = 1.0
-	# Takt-Anfang: der Nebel tickt staerker.
-	if beat_idx % 4 == 0:
+		# Takt-Anfang: der Nebel tickt staerker.
 		_nebula_kick = 1.3
 	# Kiai: gelegentliche Sternschnuppe am Himmel.
 	if (_kiai_mix > 0.5 and beat_idx % 8 == 4 and _fx_level() > 0.0) \
@@ -2194,41 +2179,6 @@ func _run_flight_event(ev: Dictionary, t: float) -> void:
 			get_tree().create_timer(dur, false).timeout.connect(func():
 				if is_inside_tree():
 					_cosmos_lift_target = 0.0)
-
-
-## Fortlaufende Beat-Zahl der Song-Zeit (fuer BPM-synchrone Choreografie).
-func _song_beats(t: float) -> float:
-	var tps := _beatmap.timing_points
-	var i := _red_tp_idx
-	while i >= 0 and i < tps.size() and not tps[i].uninherited:
-		i -= 1
-	if i < 0 or i >= tps.size() or tps[i].beat_length <= 0.0:
-		return t / 500.0
-	return (t - tps[i].time) / tps[i].beat_length
-
-
-func _current_bar(t: float) -> int:
-	var tps := _beatmap.timing_points
-	var i := _red_tp_idx
-	while i >= 0 and i < tps.size() and not tps[i].uninherited:
-		i -= 1
-	if i < 0 or i >= tps.size() or tps[i].beat_length <= 0.0:
-		return -1
-	var bar_len := tps[i].beat_length * float(maxi(tps[i].meter, 1))
-	return int(floor((t - tps[i].time) / bar_len))
-
-
-func _beat_pulse(t: float) -> float:
-	var tps := _beatmap.timing_points
-	while _red_tp_idx + 1 < tps.size() and tps[_red_tp_idx + 1].time <= t:
-		_red_tp_idx += 1
-	var i := _red_tp_idx
-	while i >= 0 and not tps[i].uninherited:
-		i -= 1
-	if i < 0 or tps[i].beat_length <= 0.0:
-		return 0.0
-	var phase := fposmod(t - tps[i].time, tps[i].beat_length) / tps[i].beat_length
-	return pow(1.0 - phase, 2.0)
 
 
 func _play_hit(pitch: float) -> void:
