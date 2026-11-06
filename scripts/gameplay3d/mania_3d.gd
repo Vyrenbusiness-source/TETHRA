@@ -24,6 +24,8 @@ const QUALITY_COLOR := {
 const CLEAN_PAD := Color(0.52, 0.54, 0.60)
 const CLEAN_NOTE := Color(0.58, 0.76, 0.94)
 const CLEAN_HOLD := Color(0.95, 0.72, 0.38)
+# Noten nach Beat-Teilung faerben (SnapColor); Setting folgt spaeter.
+const SNAP_COLORS_ENABLED := true
 
 const GRADE_COLOR := {
 	"S": Color(1.0, 0.85, 0.25), "A": Color(0.4, 1.0, 0.5),
@@ -44,6 +46,8 @@ var _skill_fx: SkillFx
 
 var _theme_col := Color(0.22, 0.68, 0.90)
 var _theme_kiai := Color(0.92, 0.52, 0.20)
+# Snap-Farbe je hit_object (einmal beim Laden berechnet, Index = Note).
+var _snap_cols := PackedColorArray()
 
 ## Traeger fuer die komplette Strecke (Rails/Linie/Pads/Notes/Laser).
 ## Bleibt FIX: kein Kippen/Banken/Wippen — die Bahn ist der Ruhepol.
@@ -273,6 +277,7 @@ func _ready() -> void:
 	_ring_shader = load("res://shaders/hit_ring.gdshader")
 	_note_shader = load("res://shaders/note_disc.gdshader")
 	_extract_theme_color()
+	_precompute_snap_colors()
 	_preload_stations()
 	_build_world()
 	_sparks = HitSparks.new()
@@ -405,6 +410,30 @@ func _extract_theme_color() -> void:
 	# wuerde alles nur weisser (= greller) machen.
 	_theme_col = Color.from_hsv(hue, 0.72, 0.84)
 	_theme_kiai = Color.from_hsv(fposmod(hue + 0.5, 1.0), 0.78, 0.86)
+
+
+## Snap-Teiler aller Noten einmalig -> Farben. Lesbarkeit: Palette hat gleiche
+## Helligkeit; leicht angehoben, damit sie auf dunklem Grund kraeftig bleibt.
+func _precompute_snap_colors() -> void:
+	_snap_cols = PackedColorArray()
+	if not SNAP_COLORS_ENABLED or _beatmap == null:
+		return
+	var divs := SnapColor.precompute(_beatmap)
+	var cache := {}
+	_snap_cols.resize(divs.size())
+	for i in divs.size():
+		var d: int = divs[i]
+		if not cache.has(d):
+			var c := SnapColor.color_for(d, _theme_col)
+			cache[d] = Color.from_hsv(c.h, clampf(c.s * 1.08, 0.0, 0.85),
+					clampf(c.v * 1.04, 0.0, 0.95))
+		_snap_cols[i] = cache[d]
+
+
+func _snap_col(index: int) -> Color:
+	if index < 0 or index >= _snap_cols.size():
+		return Color(0, 0, 0, 0)
+	return _snap_cols[index]
 
 
 # ---------------------------------------------------------------------------
@@ -1006,6 +1035,11 @@ func _on_note_spawned(index: int) -> void:
 		col = _theme_col.lerp(Color(1, 1, 1), 0.75)
 		if _beatmap.is_kiai(obj.time):
 			col = _theme_kiai.lerp(Color(1, 1, 1), 0.55)
+	# Snap-Farbe: normale Noten komplett, Holds nur als feiner Innenring am Kopf.
+	var snap := _snap_col(index)
+	var has_snap := snap.a > 0.0
+	if has_snap and not obj.is_hold:
+		col = snap
 
 	var root := Node3D.new()
 	# 2D-KONSISTENZ: Die Note ist ein FLACHER Kreis wie das Pad — sie gleitet
@@ -1025,6 +1059,21 @@ func _on_note_spawned(index: int) -> void:
 	disc.material_override = rim
 	disc.rotation_degrees = Vector3(-90, 0, 0)
 	root.add_child(disc)
+	if has_snap and obj.is_hold:
+		var inner := MeshInstance3D.new()
+		var iq := QuadMesh.new()
+		iq.size = Vector2(0.72, 0.72)
+		inner.mesh = iq
+		var im := ShaderMaterial.new()
+		im.shader = _ring_shader
+		im.set_shader_parameter("base_color", snap)
+		im.set_shader_parameter("radius", 0.34)
+		im.set_shader_parameter("approach", 1.0)
+		im.set_shader_parameter("intensity", 0.55 if clean else 0.8)
+		inner.material_override = im
+		inner.rotation_degrees = Vector3(-90, 0, 0)
+		inner.position = Vector3(0, 0.01, 0)
+		root.add_child(inner)
 	var glow := MeshInstance3D.new()
 	var q := QuadMesh.new()
 	q.size = Vector2(2.05, 2.05)
