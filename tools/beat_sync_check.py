@@ -73,13 +73,14 @@ var _f: FileAccess
 var _k := 0
 var _tp_done := false
 var _end_ms := 1.0e12
+var _players := ""
 
 func _ready() -> void:
 	process_priority = 1000000
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_f = FileAccess.open(OS.get_environment("BEAT_SYNC_LOG"), FileAccess.WRITE)
 	_end_ms = float(OS.get_environment("BEAT_SYNC_END_MS"))
-	_f.store_line("# k scene state playing pos_ms smooth_ms vis_off_ms lat_ms lead_ms user_off_ms ticks_us phase")
+	_f.store_line("# k scene state playing pos_ms smooth_ms vis_off_ms lat_ms lead_ms user_off_ms ticks_us phase lead_elapsed_ms")
 
 func _process(_d: float) -> void:
 	var sc := get_tree().current_scene
@@ -102,11 +103,20 @@ func _process(_d: float) -> void:
 			for tp in bm.timing_points:
 				if tp.uninherited and tp.beat_length > 0.0:
 					_f.store_line("TP\t%f\t%f\t%d" % [tp.time, tp.beat_length, tp.meter])
-	_f.store_line("F\t%d\t%s\t%d\t%d\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%d\t%.4f" % [
+	_f.store_line("F\t%d\t%s\t%d\t%d\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%d\t%.4f\t%.3f" % [
 			_k, sname, int(SyncClock.get("_state")), int(playing), pos, smooth,
 			SyncClock.visual_offset_ms(), float(SyncClock.get("_latency_ms")),
 			float(SyncClock.get("_lead_in_ms")), float(SyncClock.user_offset_ms),
-			Time.get_ticks_usec(), phase])
+			Time.get_ticks_usec(), phase, float(SyncClock.get("_lead_in_elapsed_ms"))])
+	# Welche Player spielen (Diagnose fuer die Film-Tonspur), nur bei Aenderung.
+	var names := PackedStringArray()
+	for p in get_tree().root.find_children("*", "AudioStreamPlayer", true, false):
+		if p.playing and not p.stream_paused:
+			names.append("%s@%s" % [p.name, p.get_parent().name])
+	var cur := ",".join(names)
+	if cur != _players:
+		_players = cur
+		_f.store_line("P\t%d\t%s" % [_k, cur])
 	_k += 1
 	if playing and pos > _end_ms:
 		_f.flush()
@@ -222,7 +232,7 @@ def render(args, frames_dir):
     env["BEAT_SYNC_END_MS"] = str((args.start + args.seconds) * 1000.0 + 500.0)
     cmd = [args.godot, "--path", checkout, "--write-movie",
            os.path.join(frames_dir, "f.png"), "--fixed-fps", str(FPS),
-           "--audio-driver", "Dummy", "--position", "-10000,-10000", "--verbose",
+           "--audio-driver", "Dummy", "--position", "-1700,120",
            "--quit-after", str(args.max_frames),
            "res://scenes/song_select.tscn", "--mania", "--autoplay"]
     try:
@@ -264,6 +274,7 @@ def read_probe(log_path):
                     "vis_off": float(p[7]), "lat": float(p[8]),
                     "lead": float(p[9]), "user_off": float(p[10]),
                     "ticks": int(p[11]), "phase": float(p[12]),
+                    "lead_el": float(p[13]) if len(p) > 13 else None,
                 }
             elif p[0] == "TP":
                 tps.append((float(p[1]), float(p[2]), int(p[3])))
@@ -408,28 +419,44 @@ def run(args):
     if not tps:
         sys.exit("FEHLER: kein Timing-Point (Probe) - --bpm/--offset angeben")
 
-    # Song-Start im Film: erster Frame mit spielendem Audio. Lineare Audio-Zeit
-    # pro Frame aus der Abspielposition (Movie-Maker: exakt 1000/60 ms/Frame).
+    # Song-Start im Film: erster Frame k_play mit spielendem Audio. Movie-Maker
+    # mischt pro Frame genau rate/60 Samples, der Audio-Block von Frame k_play
+    # beginnt bei der Startposition from_ms (Lead-In-Ueberhang). Damit ist
+    #   t_audio(k) = from_ms + (k - k_play) * 1000/60   (exakt, Frame-Raster).
     play_frames = sorted(k for k, f in probe.items() if f["playing"] and f["pos"] >= 0)
     if not play_frames:
         sys.exit("FEHLER: Song hat im Lauf nicht gespielt")
-    # Ab dem 2. Spiel-Frame ist pos(k) = Position nach (k - k_play) Mix-Bloecken.
-    fit = [(k, probe[k]["pos"] - (k * 1000.0 / FPS)) for k in play_frames[1:]]
-    offs = [o for _k, o in fit]
-    a_off, a_std = mean_std(offs)  # t_audio(k) = k*1000/60 + a_off
     k_play = play_frames[0]
+    fp = probe[k_play]
+    # Gegenprobe: get_playback_position() (dekoderblockweise quantisiert).
+    ks = play_frames[1:]
+    offs = [probe[k]["pos"] - (k * 1000.0 / FPS) for k in ks]
+    pos_off, a_std = mean_std(offs)
+    slope = float("nan")
+    if len(ks) > 2:
+        mk = sum(ks) / len(ks)
+        mp = sum(probe[k]["pos"] for k in ks) / len(ks)
+        slope = (sum((k - mk) * (probe[k]["pos"] - mp) for k in ks)
+                 / sum((k - mk) ** 2 for k in ks))
+    if fp.get("lead_el") is not None and fp["lead"] > 0:
+        from_ms = max(fp["lead_el"] - fp["lead"], 0.0)
+        a_off = from_ms - k_play * 1000.0 / FPS
+        a_src = "Lead-In-Ueberhang %.1f ms" % from_ms
+    else:
+        a_off = pos_off
+        a_src = "Fit get_playback_position"
     song0_frame = -a_off * FPS / 1000.0  # Frame mit Song-Zeit 0
+    countdown = sum(1 for f in probe.values() if f["scene"] == "mania_3d.tscn"
+                    and f["state"] == 1 and f["smooth"] == 0.0)
+    lead_film = sum(1 for f in probe.values() if f["state"] == 1 and f["smooth"] != 0.0)
 
     wav = os.path.join(frames_dir, "f.wav")
     wav_note = "keine WAV"
     if os.path.exists(wav):
-        s, rate = first_nonzero_sample(wav, max(k_play - 2, 0))
-        if s is not None and rate:
-            spf = rate / FPS
-            first_audio_ms = s * 1000.0 / rate + a_off
-            wav_note = ("erstes hoerbares Sample ab Song-Start: Frame %.2f "
-                        "(Probe-Song-Zeit dort %.1f ms; Song-Start-Frame %.2f)"
-                        % (s / spf, first_audio_ms, song0_frame))
+        smp, rate = first_nonzero_sample(wav, max(k_play - 2, 0))
+        if smp is not None and rate:
+            wav_note = ("erstes Song-Sample in der Film-WAV bei Frame %.3f "
+                        "(Audio-Start laut Probe: Frame %d)" % (smp * FPS / rate, k_play))
 
     t_start, t_end = args.start * 1000.0, (args.start + args.seconds) * 1000.0
     sel = []
@@ -451,12 +478,13 @@ def run(args):
         for i, v in enumerate(region_means(pngs[k], REGIONS)):
             vals[i].append(v)
 
-    lead_frames = [k for k, f in probe.items() if f["state"] == 1]
     f0 = probe[sel[0]]
     res = {
         "map": mapname, "tps": tps, "frames_dir": frames_dir,
         "k_play": k_play, "song0_frame": song0_frame, "a_std": a_std,
-        "lead_ms": f0["lead"], "lead_frames": len(lead_frames),
+        "a_src": a_src, "pos_dev": pos_off - a_off, "slope": slope,
+        "countdown": countdown,
+        "lead_ms": f0["lead"], "lead_frames": lead_film,
         "lat": f0["lat"], "vis_off": f0["vis_off"], "user_off": f0["user_off"],
         "dev_mean": dm, "dev_std": ds, "dev_min": min(dev), "dev_max": max(dev),
         "wav_note": wav_note, "sel": (sel[0], sel[-1]), "n_frames": len(sel),
@@ -476,8 +504,12 @@ def fmt_table(res):
     lines.append("Fenster: Song-Zeit %.0f..%.0f ms, Frames %d..%d (%d Frames)"
                  % (res["window"][0], res["window"][1], res["sel"][0], res["sel"][1],
                     res["n_frames"]))
-    lines.append("Song-Zeit 0 im Film bei Frame %.2f (erster Audio-Frame %d, Fit-Streuung %.2f ms)"
-                 % (res["song0_frame"], res["k_play"], res["a_std"]))
+    lines.append("Song-Zeit 0 im Film bei Frame %.2f (Audio-Start Frame %d, Quelle: %s)"
+                 % (res["song0_frame"], res["k_play"], res["a_src"]))
+    lines.append("Gegenprobe Abspielposition: %+.1f ms (Streuung %.1f ms), %.3f ms/Frame (Soll %.3f)"
+                 % (res["pos_dev"], res["a_std"], res["slope"], 1000.0 / FPS))
+    lines.append("Start-Countdown: %d Frames (%.1f s) vor dem Lead-In"
+                 % (res["countdown"], res["countdown"] / FPS))
     lines.append("Lead-In: %.0f ms Soll, %d Frames = %.0f ms im Film | Ausgabelatenz %.1f ms | "
                  "visual_offset %.1f ms | user_offset %.1f ms"
                  % (res["lead_ms"], res["lead_frames"], res["lead_frames"] * 1000.0 / FPS,
@@ -519,7 +551,7 @@ Stand: {datetime.date.today().isoformat()}, erzeugt von `tools/beat_sync_check.p
 
 Rendert `song_select.tscn --mania --autoplay` per Godot Movie-Maker
 (`--write-movie <dir>/f.png --fixed-fps 60 --audio-driver Dummy`, Testfenster
-via `tools/test_override.cfg`, `--position -10000,-10000`), misst die mittlere
+via `tools/test_override.cfg`, `--position -1700,120`), misst die mittlere
 Luma je Region und Frame und setzt sie gegen das Beat-Raster der Map.
 Optionen: `--seconds`, `--start` (Song-Zeit in s), `--frames-dir` + `--keep`,
 `--analyze <dir>` (vorhandene Frames erneut messen), `--bpm/--offset`
