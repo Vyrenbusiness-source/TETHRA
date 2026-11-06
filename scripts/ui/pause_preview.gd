@@ -16,8 +16,8 @@ func _ready() -> void:
 	menu.resume_pressed.connect(func(): print("resume"); menu.open({}))
 	menu.restart_pressed.connect(func(): print("restart"))
 	menu.quit_pressed.connect(func(): print("quit"))
-	menu.open({"title": "Camellia - Example Song [Hard 4K]", "progress": 0.42,
-		"score": 482310, "acc": 96.84})
+	menu.open({"title": "Camellia - Example Song [Hard 4K]", "progress": 0.4526,
+		"score": 482310, "acc": 96.84, "length_ms": 137000.0})
 	if DisplayServer.get_name() == "headless":
 		print("=== PausePreview Headless OK ===")
 		get_tree().quit(0)
