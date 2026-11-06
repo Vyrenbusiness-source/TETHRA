@@ -1,64 +1,68 @@
 shader_type spatial;
-render_mode unshaded, blend_add, depth_draw_never, cull_disabled;
+render_mode unshaded, blend_mix, depth_draw_never, cull_disabled;
 
-// Hold als Energiestrahl: weicher Rand, heller Kern, Fluss entlang der Bahn,
-// prozedurale Energie-Textur, gerundete Kappen (Kapsel-SDF in Weltmassen).
-// UV.x = quer, UV.y = laengs (0 = Kopf/fern, 1 = Schwanz/nah).
+// Hold-Koerper auf LESBARKEIT ausgelegt (VSRG-Stil):
+//  - gleichmaessig deckender Koerper in klarer Hold-Farbe, KEIN Nebel,
+//    KEINE Fluss-Animation (flimmert bei hoher Scroll-Geschwindigkeit)
+//  - scharfe Seitenkanten (abgerundetes Rechteck-SDF in Weltmassen, AA per
+//    fwidth) mit heller Randlinie
+//  - deutliche helle Kappe an beiden Enden (Kopfseite liegt unter der Note)
+//    mit dunkler Trennfuge zum Koerper
+// UV.x = quer, UV.y = laengs. Koerper ist schmaler als die Note (body_frac),
+// damit der Kopf als Note klar heraussticht.
 
 uniform vec4 beam_color: source_color = vec4(1.0, 0.62, 0.22, 1.0);
 uniform float width = 0.8;
 uniform float length_u = 4.0;
-uniform float brightness = 0.6;   // Gesamthelligkeit
-uniform float flow_speed = 0.8;   // Fluss in Einheiten/s
-uniform float pulse = 0.0;        // Puls-Staerke
-uniform float desat = 0.0;        // 0 farbig .. 1 grau
-uniform float beat = 0.0;         // Atmen 0..1
-uniform float flow_pos = 0.0;     // vom Script integrierter Fluss-Offset
+uniform float brightness = 1.0;   // 1 normal, ~1.12 gehalten
+uniform float desat = 0.0;        // 0 farbig .. 1 grau (losgelassen)
+uniform float beat = 0.0;         // Atmen 0..1 (max +2 %)
+uniform float body_alpha = 0.94;  // Deckung Koerper
+// Alt-Uniforms (ohne Wirkung, nur damit bestehende Aufrufer nicht brechen).
+uniform float flow_speed = 0.0;
+uniform float pulse = 0.0;
+uniform float flow_pos = 0.0;
 
-float hash(vec2 p) {
-	p = fract(p * vec2(123.34, 456.21));
-	p += dot(p, p + 45.32);
-	return fract(p.x * p.y);
-}
-
-float vnoise(vec2 p) {
-	vec2 i = floor(p);
-	vec2 f = fract(p);
-	f = f * f * (3.0 - 2.0 * f);
-	float a = hash(i);
-	float b = hash(i + vec2(1.0, 0.0));
-	float c = hash(i + vec2(0.0, 1.0));
-	float d = hash(i + vec2(1.0, 1.0));
-	return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
-}
+const float BODY_FRAC = 0.84;  // Koerperbreite relativ zur Quad-Breite
+const float CORNER = 0.07;     // Eckradius (Welt)
+const float BORDER = 0.055;    // helle Randlinie (Welt)
+const float CAP = 0.16;        // Kappenlaenge (Welt)
 
 void fragment() {
-	float hw = width * 0.5;
-	float p = (UV.x - 0.5) * width;
-	float q = (UV.y - 0.5) * length_u;
-	float h = max(length_u * 0.5 - hw, 0.0);
-	float sd = length(vec2(p, q - clamp(q, -h, h))) - hw;
-	float r = clamp(1.0 + sd / hw, 0.0, 2.0);   // 0 Achse .. 1 Rand
-	float body = 1.0 - smoothstep(0.55, 1.0, r);   // weicher Rand
-	float core = pow(1.0 - clamp(r, 0.0, 1.0), 2.2);
+	float bhw = width * 0.5 * BODY_FRAC;
+	float hl = length_u * 0.5;
+	vec2 pq = vec2((UV.x - 0.5) * width, (UV.y - 0.5) * length_u);
 
-	// Energie-Textur: gestreckte Noise-Baender, fliessen zum Spieler (+q).
-	float fl = flow_pos;
-	vec2 np = vec2(p / hw * 1.6, (q - fl) * 1.3);
-	float n1 = vnoise(np * vec2(1.0, 0.7));
-	float n2 = vnoise(np * vec2(2.3, 1.9) + 7.3);
-	float tex = n1 * 0.6 + n2 * 0.4;
-	float streak = 0.5 + 0.5 * sin((q - fl) * 5.0 + n1 * 3.0);
-	float energy = 0.55 + 0.45 * tex * (0.6 + 0.4 * streak);
+	// Abgerundetes Rechteck.
+	vec2 dq = abs(pq) - vec2(bhw, hl) + CORNER;
+	float sd = length(max(dq, 0.0)) + min(max(dq.x, dq.y), 0.0) - CORNER;
+	float aa = max(fwidth(sd), 0.002);
+	float inside = 1.0 - smoothstep(-aa, aa, sd);
 
-	float pul = 1.0 + pulse * (0.5 + 0.5 * sin(TIME * 9.0));
-	float b = brightness * pul * (1.0 + beat * 0.25);
+	// Randlinie entlang der Seiten (scharf, ~1 px AA).
+	float border = smoothstep(-BORDER - aa, -BORDER + aa, sd);
+	// Kappen an beiden Enden + dunkle Fuge davor.
+	float aq = max(fwidth(pq.y), 0.002);
+	float from_end = hl - abs(pq.y);
+	float cap = 1.0 - smoothstep(CAP - aq, CAP + aq, from_end);
+	float seam = 1.0 - smoothstep(0.0, 0.025 + aq, abs(from_end - CAP - 0.02));
 
-	vec3 hot = mix(beam_color.rgb, vec3(1.0), 0.65);
-	vec3 col = beam_color.rgb * body * energy * 0.9 + hot * core * (0.6 + 0.4 * energy);
+	// Koerper: flache Farbe, nur sehr leichte Woelbung quer (+-4 %).
+	float across = clamp(abs(pq.x) / bhw, 0.0, 1.0);
+	vec3 body = beam_color.rgb * (0.80 - 0.06 * across * across);
+	vec3 light = mix(beam_color.rgb, vec3(1.0), 0.5);
+	vec3 col = body;
+	col = mix(col, light, border);
+	col = mix(col, mix(beam_color.rgb, vec3(1.0), 0.6), cap);
+	col *= 1.0 - 0.55 * seam * (1.0 - cap);
+
+	col *= brightness * (1.0 + 0.02 * clamp(beat, 0.0, 1.0));
+	// Losgelassen: klar grau (Helligkeit vom Farbwert entkoppelt).
 	float lum = dot(col, vec3(0.299, 0.587, 0.114));
-	col = mix(col, vec3(lum), desat);
+	col = mix(col, vec3(lum * 0.62 + 0.06), clamp(desat, 0.0, 1.0));
 
-	ALBEDO = col * b;
-	ALPHA = clamp(body * (0.35 + 0.65 * energy) + core, 0.0, 1.0);
+	float a = mix(body_alpha, 1.0, max(border, cap));
+	a *= mix(1.0, 0.8, clamp(desat, 0.0, 1.0));
+	ALBEDO = col;
+	ALPHA = clamp(inside * a, 0.0, 1.0);
 }
