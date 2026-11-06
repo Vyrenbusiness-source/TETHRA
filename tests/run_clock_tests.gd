@@ -324,7 +324,8 @@ func _live_step() -> void:
 				_mark = v
 				_ok(v > -300.0 and v < -150.0, "Lead-In laeuft (%.1f ms)" % v)
 			if el >= 700:
-				_ok(v > 300.0 and v < 450.0, "nach Lead-In Audio-Zeit ~400 ms (%.1f)" % v)
+				# Relativ zur tatsaechlich vergangenen Zeit pruefen (Frame-Takt schwankt unter Last).
+				_ok(absf(v - (float(el) - 300.0)) < 80.0, "nach Lead-In Audio-Zeit folgt Echtzeit (%.1f ms bei el=%d)" % [v, el])
 				_ok(player.playing, "Audio spielt")
 				_gain = player.volume_db
 				_clock.pause()
