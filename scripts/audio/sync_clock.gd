@@ -42,11 +42,12 @@ extends Node
 ##
 ## Movie-Maker-Modus (--write-movie): die Spielzeit ist die FILM-Zeit, nicht
 ## die Wanduhr (Rendern ist dort langsamer/schneller als Echtzeit). Zeitbasis
-## = Prozess-Frames / feste FPS (--fixed-fps bzw. editor/movie_writer/fps);
-## Lead-In und Rampen laufen darauf. Waehrend der Wiedergabe gilt direkt die
-## Audio-Position (der Movie-Writer mischt pro Frame genau 1/fps Audio), ohne
-## Mix-Zeitstempel, Latenz und Glaettung -> Bild und Ton im Film deckungsgleich.
-## Kein visual_offset im Film (keine Bildschirm-Latenz).
+## = Prozess-Frames / feste FPS (aus dem festen Prozess-Delta); Lead-In und
+## Rampen laufen darauf. Waehrend der Wiedergabe: Film-Zeit + Versatz zur
+## Audio-Position (MovieClock, sample-genau; die rohe Position springt im
+## Film in 512er-Mix-Schritten), ohne Mix-Zeitstempel, Latenz und Glaettung
+## -> Bild und Ton im Film deckungsgleich. Kein visual_offset im Film (keine
+## Bildschirm-Latenz). Judgement-Fenster und user_offset unveraendert.
 
 signal song_started
 signal song_finished
@@ -167,6 +168,31 @@ class Smoother:
 		return raw_ms
 
 
+## Film-Uhr fuer die Wiedergabe im Movie-Modus. Reine Logik (testbar).
+## Der Movie-Writer gibt pro Frame genau mix_rate/fps Samples aus, der Mixer
+## mischt aber in 512er-Schritten vor: get_playback_position() liegt deshalb
+## 0..10.7 ms VOR dem, was im Film gerade zu hoeren ist, wechselnd pro Frame.
+## Exakt ist: Film-Zeit * Tempo + konstanter Versatz. Der Versatz ist das
+## Minimum von (Position - Film-Zeit * Tempo) — erreicht, sobald der Mix-
+## Vorrat leer ist (spaetestens nach 16 Frames). Steht das Audio (Pause),
+## faellt das Minimum mit, die Uhr steht also ebenfalls.
+class MovieClock:
+	var _min := INF
+
+	func reset() -> void:
+		_min = INF
+
+	## Audio startet jetzt (Film-Zeit film_ms) bei pos_ms: Versatz daran
+	## festmachen, damit die Uhr stetig mit Film-Tempo weiterlaeuft (die
+	## erste Mix-Position nach dem Start liegt bis zu 512 Samples voraus).
+	func anchor(pos_ms: float, film_ms: float, rate: float = 1.0) -> void:
+		_min = pos_ms - film_ms * rate
+
+	func sample(pos_ms: float, film_ms: float, rate: float = 1.0) -> float:
+		_min = minf(_min, pos_ms - film_ms * rate)
+		return _min + film_ms * rate
+
+
 ## Globaler Kalibrierungs-Offset in ms (Settings-Slider, +/-200). Wird auf alle
 ## Judgements addiert (Pflicht-Feature — jedes Audio-Setup hat anderen Offset).
 var user_offset_ms: float = 0.0
@@ -187,7 +213,17 @@ const LATENCY_REFRESH_USEC := 2000000
 var _smoother := Smoother.new()
 ## Movie-Maker-Modus (siehe Kopf): Zeitbasis = Frames / _movie_fps.
 var _movie := false
+## true = durch --write-movie aktiviert: FPS dann aus dem festen Prozess-
+## Delta (OS.get_cmdline_args() enthaelt --fixed-fps nicht).
+var _movie_auto := false
 var _movie_fps := 60.0
+## Film-Zeit stetig ueber FPS-Korrekturen: Basis + Frames seit Basis / FPS.
+var _movie_base_usec := 0.0
+var _movie_base_frames := 0
+var _movie_clock := MovieClock.new()
+const MOVIE_FPS_CONFIRM := 5
+var _fps_cand := 0.0
+var _fps_cnt := 0
 ## Letzter ausgegebener Wert im Movie-Modus (Monotonie, Pause-Halt).
 var _movie_last := 0.0
 
@@ -232,6 +268,7 @@ func _ready() -> void:
 	Input.use_accumulated_input = false
 	if Engine.get_write_movie_path() != "":
 		set_movie_mode(true, movie_fps_from_cmdline())
+		_movie_auto = true
 	_refresh_latency()
 	var bus := ensure_music_bus()
 	_player = AudioStreamPlayer.new()
@@ -268,8 +305,10 @@ func band_energy(from_hz: float, to_hz: float) -> float:
 	return clampf((linear_to_db(mag + 0.0000001) + 60.0) / 60.0, 0.0, 1.0)
 
 
-## Feste Film-FPS: --fixed-fps <n> (bzw. --fixed-fps=<n>), sonst
-## editor/movie_writer/fps (Godot-Default 60).
+## Start-Schaetzung der Film-FPS: --fixed-fps <n> (bzw. --fixed-fps=<n>),
+## sonst editor/movie_writer/fps (Godot-Default 60). Godot nimmt --fixed-fps
+## meist aus OS.get_cmdline_args() heraus; massgeblich ist daher das feste
+## Prozess-Delta (_process korrigiert ab dem ersten Frame stetig).
 static func movie_fps_from_cmdline(args: PackedStringArray = OS.get_cmdline_args()) -> float:
 	for i in args.size():
 		var a := args[i]
@@ -288,8 +327,40 @@ static func movie_fps_from_cmdline(args: PackedStringArray = OS.get_cmdline_args
 ## sie direkt). Nur zwischen Songs umschalten.
 func set_movie_mode(enabled: bool, fps: float = 60.0) -> void:
 	_movie = enabled
+	_movie_auto = false
+	_movie_base_usec = 0.0
+	_movie_base_frames = 0
 	_movie_fps = fps if fps > 0.0 else 60.0
+	_movie_base_usec = float(Engine.get_process_frames()) * 1000000.0 / _movie_fps
+	_movie_base_frames = Engine.get_process_frames()
+	_movie_clock.reset()
 	_refresh_latency()
+
+
+## Movie-Modus: Prozess-Delta = 1 / feste FPS (mal time_scale), aber Godots
+## Physik-Jitter-Ausgleich verbiegt einzelne Deltas (gemessen 0.0323 statt
+## 0.0333). Erst uebernehmen, wenn derselbe Wert 5 Frames am Stueck kommt.
+func _track_movie_fps(delta: float) -> void:
+	var est := Engine.time_scale / delta
+	var r := roundf(est)
+	est = r if absf(est - r) < 0.01 else snappedf(est, 0.001)
+	if est == _fps_cand:
+		_fps_cnt += 1
+	else:
+		_fps_cand = est
+		_fps_cnt = 1
+	if _fps_cnt >= MOVIE_FPS_CONFIRM:
+		_set_movie_fps(est)
+
+
+## FPS korrigieren, ohne dass die Film-Zeit springt (neue Basis).
+func _set_movie_fps(fps: float) -> void:
+	if fps <= 0.0 or absf(fps - _movie_fps) < 0.0001:
+		return
+	var frames := Engine.get_process_frames()
+	_movie_base_usec += float(frames - _movie_base_frames) * 1000000.0 / _movie_fps
+	_movie_base_frames = frames
+	_movie_fps = fps
 
 
 func is_movie_mode() -> bool:
@@ -300,7 +371,8 @@ func is_movie_mode() -> bool:
 ## / feste FPS). Gilt fuer Lead-In, Glaettung und Rampen.
 func _now_usec() -> int:
 	if _movie:
-		return int(round(float(Engine.get_process_frames()) * 1000000.0 / _movie_fps))
+		return int(round(_movie_base_usec
+				+ float(Engine.get_process_frames() - _movie_base_frames) * 1000000.0 / _movie_fps))
 	return Time.get_ticks_usec()
 
 
@@ -335,6 +407,7 @@ func play(stream: AudioStream, lead_in_ms: float = 0.0) -> void:
 func _start_audio(from_ms: float) -> void:
 	_state = State.PLAYING
 	_player.play(maxf(from_ms, 0.0) / 1000.0)
+	_movie_clock.anchor(maxf(from_ms, 0.0), float(_now_usec()) / 1000.0, _rate())
 	if _smoother.is_valid():
 		_smoother.settle()
 	song_started.emit()
@@ -419,11 +492,11 @@ func seek_ms(target_ms: float) -> void:
 		return
 	if _state == State.PLAYING:
 		_player.seek(ms / 1000.0)
+		_movie_clock.anchor(ms, float(_now_usec()) / 1000.0, _rate())
 	else:
 		_start_audio(ms)
 	var now := _now_usec()
 	if _movie:
-		_movie_last = ms
 		return
 	# Roh-Zeit direkt nach dem Seek (Position + Zeit seit Mix) ist mit dem
 	# naechsten Mix-Block stetig -> darauf setzen, nie unter den alten Wert.
@@ -470,9 +543,10 @@ func _raw_time_ms(now_usec: int) -> float:
 			return e - _lead_in_ms - _latency_ms
 		State.PLAYING:
 			if _movie:
-				# Movie-Writer mischt pro Frame genau 1/fps: die Position IST
-				# die Film-Zeit (Mix-Zeitstempel waere Wanduhr).
-				return _player.get_playback_position() * 1000.0
+				# Film-Uhr (MovieClock): Film-Zeit + Versatz zur Audio-Position,
+				# kein Mix-Zeitstempel (waere Wanduhr), keine Latenz.
+				return _movie_clock.sample(_player.get_playback_position() * 1000.0,
+						float(now_usec) / 1000.0, _rate())
 			# Position und Mix-Zeitstempel kommen aus dem Mix-Thread: faellt ein
 			# Mix zwischen die beiden Abfragen, liegt die Summe einen Block
 			# daneben. Zeitstempel davor/danach lesen, bei Mix neu lesen.
@@ -525,7 +599,9 @@ func visual_offset_ms() -> float:
 	return float(v)
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	if _movie_auto and delta > 0.0 and Engine.time_scale > 0.0:
+		_track_movie_fps(delta)
 	var now := _now_usec()
 	if _fade_active:
 		_update_fade(now)

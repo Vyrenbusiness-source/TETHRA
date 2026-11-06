@@ -59,6 +59,7 @@ func _run_all() -> void:
 	_test_mix_stall_monotone()
 	_test_settle_forward_smooth()
 	_test_movie_fps_parse()
+	_test_movie_clock()
 	_test_fade_level()
 	_test_project_settings()
 	_test_live_clock()
@@ -338,6 +339,62 @@ func _test_movie_fps_parse() -> void:
 			"ohne Angabe: editor/movie_writer/fps (%.0f)" % def)
 
 
+## Film-Uhr gegen ein nachgebautes Movie-Writer-Mixing: pro Frame 1600
+## Samples Ausgabe (48 kHz / 30 fps), gemischt in 512er-Schritten mit Vorrat.
+## Die rohe Position laeuft 0..10.7 ms vor dem Hoerbaren, die Uhr nicht.
+func _test_movie_clock() -> void:
+	print("- Film-Uhr: 512er-Mix-Vorrat, Pause -> sample-genau, monoton")
+	var mc = SC.MovieClock.new()
+	var spf := 1600
+	# Vorrat im Mix-Puffer beim Start (Stille). Real immer ein Vielfaches von
+	# ggT(1600, 512) = 64, weil der Puffer leer startet.
+	var left := 320
+	var left_song := 0  # davon Song-Samples
+	var pos := 0  # gemischte Song-Samples (= get_playback_position)
+	var heard := 0  # ausgegebene Song-Samples (= Wahrheit im Film)
+	var playing := true
+	var mono := true
+	var ahead_max := 0.0
+	var below := false
+	var last := -INF
+	var dev := INF
+	var raw_jitter := 0.0
+	mc.anchor(0.0, 0.0)
+	for k in 120:
+		var film := float(k) * 1000.0 / 30.0
+		if k == 50:
+			playing = false
+		if k == 70:
+			playing = true
+		var v: float = mc.sample(float(pos) / 48.0, film)
+		var truth := float(heard) / 48.0
+		mono = mono and v >= last
+		last = v
+		below = below or v < truth - 0.0001
+		ahead_max = maxf(ahead_max, v - truth) if k >= 90 else ahead_max
+		raw_jitter = maxf(raw_jitter, float(pos - heard) / 48.0)
+		dev = absf(v - truth)
+		# Frame-Ende: Movie-Writer gibt spf Samples aus, erst den Vorrat.
+		var use := mini(left, spf)
+		var from_left := mini(left_song, use)
+		heard += from_left
+		left -= use
+		left_song -= from_left
+		var out := use
+		while out < spf:
+			var song := 512 if playing else 0
+			pos += song
+			var take := mini(512, spf - out)
+			heard += mini(song, take)
+			out += take
+			left = 512 - take
+			left_song = song - mini(song, take)
+	_ok(raw_jitter > 5.0, "rohe Position laeuft voraus (bis %.2f ms)" % raw_jitter)
+	_ok(mono, "monoton (auch ueber Pause)")
+	_ok(not below, "nie hinter dem Hoerbaren")
+	_ok(ahead_max < 0.001 and dev < 0.001, "nach Resume sample-genau (Abw. %.4f ms)" % maxf(ahead_max, dev))
+
+
 func _test_fade_level() -> void:
 	print("- Lautstaerke-Rampe 12 ms")
 	_ok(SC.FADE_MS >= 10.0 and SC.FADE_MS <= 15.0, "Rampe 10-15 ms")
@@ -516,7 +573,6 @@ func _movie_step(player: AudioStreamPlayer) -> void:
 	var f := frames - _f0
 	# Im Test mischt der Dummy-Treiber in einem eigenen Thread (im echten
 	# Film nicht): Position vor und nach der Abfrage einklammern.
-	var pos0 := player.get_playback_position() * 1000.0
 	var v: float = _clock.song_time_ms()
 	var pos1 := player.get_playback_position() * 1000.0
 	if v < _movie_last:
@@ -532,22 +588,15 @@ func _movie_step(player: AudioStreamPlayer) -> void:
 			_movie_played = true
 			_ok(_movie_worst < 0.01, "Lead-In = Frames/FPS (max Abw. %.4f ms)" % _movie_worst)
 			_ok(f >= 18 and f <= 20, "Audio startet nach 300 ms Film-Zeit (Frame %d)" % f)
-		# Ohne Mix-Zeitstempel/Latenz: Uhr = Audio-Position (monoton geklemmt).
-		var lo := maxf(pos0, _movie_last)
-		var hi := maxf(pos1, _movie_last)
-		var d := 0.0
-		if v < lo - 0.0005:
-			d = lo - v
-		elif v > hi + 0.0005:
-			d = v - hi
-		_movie_play_dev = maxf(_movie_play_dev, d)
+		# Film-Uhr laeuft nie der gemischten Audio-Position voraus.
+		_movie_play_dev = maxf(_movie_play_dev, v - maxf(pos1, _movie_last))
 	_movie_last = v
 	if f == 3:
 		_ok(absf(_clock.judgement_time_ms() - v - _clock.user_offset_ms) < 0.0001,
 				"Judgement = Film-Zeit + Offset")
 	if f >= 45:
 		_ok(_movie_played, "Audio gestartet")
-		_ok(_movie_play_dev < 0.001, "Wiedergabe: Uhr = Audio-Position (Abw. %.4f ms)" % _movie_play_dev)
+		_ok(_movie_play_dev < 0.001, "Wiedergabe: Uhr nie vor der Audio-Position (%.4f ms)" % _movie_play_dev)
 		_ok(_movie_ok, "Film-Zeit monoton")
 		_clock.stop()
 		_clock.set_movie_mode(false)
