@@ -2706,7 +2706,7 @@ func _build_galaxy_chapters() -> void:
 		var kiai := _beatmap.is_kiai(t0 + 1.0) or _beatmap.is_kiai(t0 + (t1 - t0) * 0.5)
 		var drop := im.is_drop_at(t0 + 1.0)
 		var hs := float(seed_h % 977) + float(i) * 3.3
-		var hh: float = fposmod(kh + 0.09 * float(kiai_i % 2), 1.0) if kiai \n				else float(hues[(calm_i + seed_h) % hues.size()])
+		var hh: float = fposmod(kh + 0.09 * float(kiai_i % 2), 1.0) if kiai else float(hues[(calm_i + seed_h) % hues.size()])
 		var pal: int = kiai_pals[kiai_i % 2] if kiai else calm_pals[calm_i % calm_pals.size()]
 		if kiai:
 			kiai_i += 1
