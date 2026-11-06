@@ -2,18 +2,21 @@ class_name SongLoudness
 extends RefCounted
 
 ## Lautheits-Normalisierung pro Song. Misst waehrend der Vorschau im Song-Browser
-## RMS + Peak (AudioEffectCapture auf Master direkt nach dem SpectrumAnalyzer,
-## also VOR EQ/Kompressor/Limiter) und speichert den Ziel-Gain in user://loudness.cfg.
+## RMS + Peak (AudioEffectCapture auf dem Music-Bus direkt nach dem
+## SpectrumAnalyzer, also VOR der Mastering-Kette) und speichert den Ziel-Gain in user://loudness.cfg.
 ## Der Gain wirkt nur ueber volume_db des Players: keine Latenz, Timing unberuehrt.
 
-const TARGET_RMS_DB := -16.0
-const MIN_GAIN_DB := -12.0
+## Ziel wie kommerziell gemasterte Songs (~ -11 dBFS RMS): die meisten Songs
+## werden kaum veraendert, leise Songs angehoben; nur max. -4 dB Absenkung.
+const TARGET_RMS_DB := -11.0
+const MIN_GAIN_DB := -4.0
 const MAX_GAIN_DB := 6.0
 const PEAK_CEIL_DB := -1.0
 const MIN_MEASURE_SEC := 6.0
 const SILENCE_DB := -60.0
 
-static var cache_path := "user://loudness.cfg"
+# v2: Gains aus dem alten Ziel (-16 dBFS, bis -12 dB) werden nicht uebernommen.
+static var cache_path := "user://loudness_v2.cfg"
 
 static var _capture: AudioEffectCapture
 static var _key := ""
@@ -81,10 +84,10 @@ static func gain_db_for_osz(osz_path: String) -> float:
 
 
 ## Von SyncClock aufgerufen: Capture-Effekt direkt hinter den Analyzer haengen.
-static func attach_capture(bus: int) -> void:
+static func attach_capture(bus: int, at_position: int = -1) -> void:
 	_capture = AudioEffectCapture.new()
 	_capture.buffer_length = 0.25
-	AudioServer.add_bus_effect(bus, _capture)
+	AudioServer.add_bus_effect(bus, _capture, at_position)
 	_rate = AudioServer.get_mix_rate()
 
 
