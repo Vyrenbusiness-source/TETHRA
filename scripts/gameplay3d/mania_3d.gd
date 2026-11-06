@@ -193,6 +193,10 @@ var _red_tp_idx := 0
 var _bass := 0.0
 var _treble := 0.0
 var _bass_avg := 0.0
+var _sub := 0.0
+var _sub_avg := 0.0
+var _kick := 0.0
+var _kick_cooldown := 0.0
 var _punch := 0.0
 var _punch_cooldown := 0.0
 var _last_bar := -1
@@ -1108,7 +1112,7 @@ func _on_note_judged(index: int, result: Dictionary) -> void:
 		var c := core.combo
 		if (c == 25 or c == 50 or (c >= 100 and c % 100 == 0)) and c != _last_milestone:
 			_last_milestone = c
-			_fov_kick = 3.0
+			_fov_kick = 2.1
 			# Milestone-Belohnung: Sternschnuppe zieht ueber den Himmel.
 			if c >= 50 and _fx_level() > 0.0:
 				_spawn_shooting_star(c)
@@ -1125,12 +1129,12 @@ func _trigger_overdrive() -> void:
 	if fx <= 0.0:
 		return
 	_overdrive = 2.0 * fx
-	_shake = 0.18 * fx
+	_shake = 0.09 * fx
 	_shock = 0.0
 	# Vollbild-Blitz.
 	var flash := ColorRect.new()
 	flash.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	flash.color = Color(1, 1, 1, 0.05)
+	flash.color = Color(1, 1, 1, 0.025)
 	flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_hud.add_child(flash)
 	var tw := create_tween()
@@ -1530,7 +1534,7 @@ func _process(delta: float) -> void:
 	if _in_break and not now_break:
 		# Comeback: kurzer Flash + Glut-Salve kuendigt den Wiedereinstieg an.
 		_line_flash = 1.0
-		_fov_kick = maxf(_fov_kick, 2.0)
+		_fov_kick = maxf(_fov_kick, 1.4)
 		_star_burst = 1.0
 	_in_break = now_break
 
@@ -1560,9 +1564,9 @@ func _process(delta: float) -> void:
 		# HP-HERZSCHLAG: kritische HP faerbt den Bildschirmrand rot.
 		var alarm := clampf(maxf(0.35 - core.hp, 0.0) * 2.2, 0.0, 1.0)
 		_vignette_mat.set_shader_parameter("intensity",
-			(clampf(float(core.combo) / 200.0, 0.0, 1.0) * 0.4 + _kiai_mix * 0.15
-			+ _overdrive * 0.2) * fx + alarm * 0.3 + _beat_env * 0.07)
-		_vignette_mat.set_shader_parameter("burn", burn)
+			(clampf(float(core.combo) / 200.0, 0.0, 1.0) * 0.26 + _kiai_mix * 0.10
+			+ _overdrive * 0.10) * fx + alarm * 0.2 + _beat_env * 0.045)
+		_vignette_mat.set_shader_parameter("burn", burn * 0.65)
 		_vignette_mat.set_shader_parameter("glow_color", _theme_col.lerp(Color(1.0, 0.18, 0.16), alarm))
 		_vignette_mat.set_shader_parameter("t", t / 1000.0)
 
@@ -1576,8 +1580,18 @@ func _process(delta: float) -> void:
 	if bass_raw - _bass_avg > 0.16 and _punch_cooldown <= 0.0:
 		_punch = 1.0
 		_punch_cooldown = 0.12
-		_fov_kick = maxf(_fov_kick, 1.2)
+		_fov_kick = maxf(_fov_kick, 0.85)
 	_punch = move_toward(_punch, 0.0, delta * 6.0)
+	# SUB-BASS-KICK (30-100 Hz): Onset gegen gleitenden Mittelwert, kurzer
+	# gedeckelter Puls (Analyse bleibt Pre-EQ, Judgement unberuehrt).
+	var sub_raw := SyncClock.band_energy(30.0, 100.0)
+	_sub = maxf(sub_raw, move_toward(_sub, 0.0, delta * 2.6))
+	_sub_avg = lerpf(_sub_avg, sub_raw, minf(delta * 1.2, 1.0))
+	_kick_cooldown = maxf(_kick_cooldown - delta, 0.0)
+	if sub_raw - _sub_avg > 0.10 and _kick_cooldown <= 0.0:
+		_kick = 1.0
+		_kick_cooldown = 0.16
+	_kick = move_toward(_kick, 0.0, delta * 4.5)
 	var bar := _current_bar(t)
 	if bar != _last_bar:
 		_last_bar = bar
@@ -1600,7 +1614,7 @@ func _process(delta: float) -> void:
 		_road_mat.set_shader_parameter("bar_phase", fposmod(t - tps[ri].time, bar_len) / bar_len)
 		_road_mat.set_shader_parameter("punch", _punch)
 		_road_mat.set_shader_parameter("wave_amount", fx)
-		_road_mat.set_shader_parameter("energy", 0.5 + (_bass * 0.5 + _kiai_mix * 0.4 + _density * 0.35) * fx)
+		_road_mat.set_shader_parameter("energy", 0.5 + (_bass * 0.5 + _kick * 0.3 + _sub * 0.15 + _kiai_mix * 0.4 + _density * 0.35) * fx)
 		# Timing-Tint: haengt der Trend spaet, waermt sich die Strecke leicht
 		# auf; zu frueh kuehlt sie ab (peripheres Feedback ohne HUD-Blick).
 		var road_col := _theme_col.lerp(_theme_kiai, _kiai_mix)
@@ -1617,15 +1631,15 @@ func _process(delta: float) -> void:
 			_on_beat_edge(beat_idx)
 
 	# Die ABFANGLINIE pulsiert im Takt — der Hit-Moment ist hoerbar UND sichtbar.
-	_line_mat.emission_energy_multiplier = 1.1 + pulse * 1.6 + _punch * 1.0 + _line_flash * 1.3
+	_line_mat.emission_energy_multiplier = 1.1 + pulse * 1.6 + _punch * 1.0 + _kick * 0.35 + _line_flash * 1.0
 	_line_mat.emission = Color(1, 1, 1).lerp(_theme_kiai, _kiai_mix * 0.6)
 	for i in _pad_mats.size():
 		_pad_mats[i].emission_energy_multiplier = (0.45 if fx <= 0.0 else 0.65) \
-				+ (pulse * 0.5 + _punch * 0.4 + _line_flash * 0.75) * fx \
-				+ _pad_flash[i] * (1.1 if fx <= 0.0 else 1.9)
+				+ (pulse * 0.5 + _punch * 0.4 + _kick * 0.2 + _line_flash * 0.55) * fx \
+				+ _pad_flash[i] * (1.1 if fx <= 0.0 else 1.4)
 	for m in _edge_mats:
 		m.emission_energy_multiplier = (0.28 if fx <= 0.0 else 0.4) \
-				+ (_bass * 1.2 + _punch * 0.9 + _density * 0.6) * fx
+				+ (_bass * 1.2 + _punch * 0.9 + _kick * 0.35 + _density * 0.6) * fx
 
 	# ON FIRE: ab 97% Acc (und min. 30 gewerteten Noten) zuenden die Kanten —
 	# je naeher an 100%, desto hoeher die Flammen. Ab 99.5% kippt das Feuer
@@ -1667,13 +1681,13 @@ func _process(delta: float) -> void:
 	# Wiedereinstieg nach einem Break: einmaliger kraeftiger Lean.
 	if _calm > 0.55 and _density > 0.2 and not _reentry_armed:
 		_reentry_armed = true
-		_bank_vel += 7.0 * fx
+		_bank_vel += 5.0 * fx
 	elif _calm < 0.2:
 		_reentry_armed = false
 	# Phrasen-Lean: die Schraeglage wechselt an Phrasengrenzen die Seite.
 	_bank_phase += dbeats / (8.0 - 4.0 * roundf(_kiai_mix))
 	var lean_dir := 1.0 if int(floor(_bank_phase)) % 2 == 0 else -1.0
-	var bank_target := lean_dir * (1.1 + _kiai_mix * 0.7) * fx * act
+	var bank_target := lean_dir * (0.77 + _kiai_mix * 0.5) * fx * act
 	# Hold-Steigflug + SEITEN-ZUG: Holds ziehen hoch UND in ihre Spurseite —
 	# linke Spuren lehnen das Schiff links, rechte rechts (Aussenspuren
 	# staerker). Links+rechts gleichzeitig = neutral, nur Steigen.
@@ -1684,19 +1698,19 @@ func _process(delta: float) -> void:
 			held_n += 1
 			held_side += [-1.0, -0.45, 0.45, 1.0][mini(hc, 3)]
 	var hold_lift := minf(float(held_n), 2.0) * 0.4 * fx
-	var hold_bank := clampf(held_side, -1.5, 1.5) * 1.1 * fx
+	var hold_bank := clampf(held_side, -1.5, 1.5) * 0.77 * fx
 	bank_target += hold_bank
 	# Pitch: Takt-Atmung + Kiai-Angriffshaltung + Hold-Lift + Docking-Flare.
-	var pitch_target := clampf(sin(TAU * beats / 16.0) * (0.5 + _kiai_mix * 0.3)
-			* fx * act - _kiai_mix * 0.4 * fx + hold_lift
+	var pitch_target := clampf(sin(TAU * beats / 16.0) * (0.35 + _kiai_mix * 0.2)
+			* fx * act - _kiai_mix * 0.28 * fx + hold_lift
 			+ dock_pre * 0.8 * fx, -1.6, 0.9)
 	var lift_target := sin(TAU * beats / 32.0) * 0.12 * fx * act + hold_lift * 0.10
 	# Feder-Daempfer (leicht unterdaempft -> minimaler Overshoot).
 	_pitch_vel += (pitch_target - _pitch_smooth) * 16.0 * delta
-	_pitch_vel *= exp(-5.5 * delta)
+	_pitch_vel *= exp(-6.8 * delta)
 	_pitch_smooth += _pitch_vel * delta
 	_bank_vel += (bank_target - _bank_smooth) * 14.0 * delta
-	_bank_vel *= exp(-5.0 * delta)
+	_bank_vel *= exp(-6.4 * delta)
 	_bank_smooth += _bank_vel * delta
 	_lift_vel += (lift_target - _lift_smooth) * 10.0 * delta
 	_lift_vel *= exp(-6.0 * delta)
@@ -1704,7 +1718,7 @@ func _process(delta: float) -> void:
 	_world.position.y = _lift_smooth
 	_world.rotation_degrees = Vector3(clampf(_pitch_smooth, -1.8, 1.0), 0.0, _bank_smooth)
 	# Kurvenflug-Illusion: der Kosmos driftet seitlich zur Kurvenaussenseite.
-	_cosmos_yaw = lerpf(_cosmos_yaw, -deg_to_rad(_bank_smooth) * 1.6, minf(delta * 1.5, 1.0))
+	_cosmos_yaw = lerpf(_cosmos_yaw, -deg_to_rad(_bank_smooth) * 1.1, minf(delta * 1.5, 1.0))
 	# DROP: Kiai-Start feuert den Warp (Streifen + Flash + Sternen-Schub).
 	if kiai_now and not _was_kiai:
 		_start_drop_warp()
@@ -1715,23 +1729,24 @@ func _process(delta: float) -> void:
 	var od := clampf(_overdrive, 0.0, 1.0)
 	if _overdrive > 0.0:
 		var flicker := _hash01(floor(t * 0.05)) * 2.4
-		_line_mat.emission_energy_multiplier += flicker * od * 0.25
+		_line_mat.emission_energy_multiplier += flicker * od * 0.12
 	for i in _pad_mats.size():
 		var base_col := _pad_color(i)
 		if i < _pad_judge_col.size():
 			base_col = base_col.lerp(_pad_judge_col[i], clampf(_pad_flash[i], 0.0, 1.0) * 0.65)
-		_pad_mats[i].emission = base_col.lerp(_theme_kiai, od * 0.7)
+		_pad_mats[i].emission = base_col.lerp(_theme_kiai, od * 0.45)
 	for em2 in _edge_mats:
 		var edge_col := Color(0.45, 0.47, 0.53) if fx <= 0.0 \
-				else _theme_col.lerp(_theme_kiai, maxf(od * 0.7, _kiai_mix))
+				else _theme_col.lerp(_theme_kiai, maxf(od * 0.45, _kiai_mix))
 		if fx > 0.0 and _fire_level > 0.0:
 			# Brennende Kanten gluehen mit: Glut-Orange, bei Perfection Eisblau.
 			var glow_col := Color(1.0, 0.6, 0.25).lerp(Color(0.72, 0.92, 1.0), _fire_heat)
 			edge_col = edge_col.lerp(glow_col, _fire_level * 0.7)
 		em2.emission = edge_col
-	if _shake > 0.0:
-		_camera.position.x = sin(t * 0.09) * _shake * 0.14
-		_camera.position.y = 1.78 + sin(t * 0.117 + 2.0) * _shake * 0.10
+	if _shake > 0.0 or _kick > 0.01:
+		var kshake := _kick * 0.012 * fx
+		_camera.position.x = sin(t * 0.09) * (_shake * 0.10 + kshake)
+		_camera.position.y = 1.78 + sin(t * 0.117 + 2.0) * (_shake * 0.07 + kshake) - _kick * 0.03 * fx
 	else:
 		_camera.position.x = 0.0
 		_camera.position.y = 1.78
@@ -1747,10 +1762,10 @@ func _process(delta: float) -> void:
 	_fov_kick = move_toward(_fov_kick, 0.0, delta * 9.0)
 	# Beat-Puls im FOV + Mini-Schub der Kamera nach vorn: jeder Downbeat
 	# fuehlt sich wie ein Antriebsstoss durchs All an (rein visuell).
-	_camera.fov = 72.0 + (_kiai_mix * 5.0 + _bass * 2.6 + _density * 2.0 \
-			+ _fov_kick + _beat_env * 1.6) * fx
+	_camera.fov = 72.0 + (_kiai_mix * 3.5 + _bass * 1.8 + _density * 1.4 \
+			+ _fov_kick + _beat_env * 1.1 + minf(_kick * 0.9 + _sub * 0.3, 1.1)) * fx
 	_camera.position.z = 6.8 - (_beat_env * 0.10 + _warp_level * 0.25 \
-			+ _punch * 0.12) * fx
+			+ _punch * 0.12 + _kick * 0.05) * fx
 
 	# HYPERSPACE: Der Drop reisst die Sterne ~1.5s zu Lichtfaeden.
 	_warp_level = move_toward(_warp_level, 0.0, delta * 0.7)
@@ -1758,7 +1773,7 @@ func _process(delta: float) -> void:
 	# Sterne rasen vorbei — jeder Beat gibt einen Warp-Schub obendrauf,
 	# das Docking-Finale bremst die Reise sanft aus.
 	_star_scroll += delta * (9.0 * _bpm_factor + (_treble * 20.0 \
-			+ _kiai_mix * 10.0 + _star_burst * 30.0 + _beat_env * 26.0 \
+			+ _kiai_mix * 10.0 + _star_burst * 30.0 + _beat_env * 26.0 + _kick * 5.0 \
 			+ _warp_level * 55.0 + _density * 9.0) * fx) \
 			* (1.0 - dock_mix * 0.75)
 	var warp_stretch := 1.0 + _warp_level * 16.0 * fx
@@ -1781,7 +1796,7 @@ func _process(delta: float) -> void:
 			_tunnel_fx = 1.0
 			# Kein Bild-Sog + nur kleiner FOV-Kick — der Sprung soll gleiten,
 			# nicht wabern.
-			_fov_kick = maxf(_fov_kick, 1.6)
+			_fov_kick = maxf(_fov_kick, 1.1)
 		_gal_idx = gal_target
 		_apply_landmark(_gal_idx)
 	if _gal_idx >= 0 and fx > 0.0:
@@ -1800,7 +1815,7 @@ func _process(delta: float) -> void:
 	# Vordergrund-Nebelfetzen driften deutlich schneller (Nah-Parallaxe).
 	for fgm2 in _fg_neb_mats:
 		fgm2.set_shader_parameter("drift", _nebula_drift * 3.4)
-		fgm2.set_shader_parameter("energy", 0.35 + (_bass * 0.3 + _beat_env * 0.2) * fx)
+		fgm2.set_shader_parameter("energy", 0.35 + (_bass * 0.3 + _kick * 0.15 + _beat_env * 0.2) * fx)
 
 	# SONNENAUFGANG: waechst ueber das letzte Kapitel — Ankunft im Licht.
 	_sunrise = 0.0
@@ -1864,7 +1879,7 @@ func _process(delta: float) -> void:
 			_nebula_mat2.set_shader_parameter("drift", _nebula_drift * 1.8)
 			_nebula_mat2.set_shader_parameter("pulse", _beat_env * 0.6)
 			_nebula_mat2.set_shader_parameter("energy",
-				0.4 + (_bass * 0.4 + _kiai_mix * 0.4) * fx + _beat_env * 0.15)
+				0.4 + (_bass * 0.4 + _kick * 0.2 + _kiai_mix * 0.4) * fx + _beat_env * 0.15)
 	# Horizont atmet mit Takt und Bass — verankert den Beat im ganzen Bild.
 	if _horizon_mat != null:
 		# Beim Docking glueht der Horizont waermer auf — Ankunftslicht.
@@ -1877,7 +1892,7 @@ func _process(delta: float) -> void:
 			pm2.set_shader_parameter("intensity", 0.85 + (_nebula_kick * 0.12 + _bass * 0.08) * fx)
 			pm2.set_shader_parameter("t", t / 1000.0)
 		_nebula_mat.set_shader_parameter("energy",
-			0.5 + (_bass * 0.6 + _kiai_mix * 0.6 + _nebula_kick * 0.4) * fx
+			0.5 + (_bass * 0.6 + _kick * 0.25 + _sub * 0.1 + _kiai_mix * 0.6 + _nebula_kick * 0.4) * fx
 			+ _beat_env * 0.22)
 	# Planeten atmen mit dem Bass, Sterne glitzern auf Hoehen.
 	# REISE-ROUTE: Planeten wandern ueber die Songdauer vorbei; der letzte
@@ -1991,7 +2006,7 @@ func _process(delta: float) -> void:
 	if _star_mat != null:
 		# Im Hyperspace brennen die Lichtfaeden deutlich heller.
 		_star_mat.set_shader_parameter("intensity",
-			0.35 + (_treble * 0.30 + _star_burst * 0.15 + _warp_level * 0.5) * fx \
+			0.35 + (_treble * 0.30 + _kick * 0.10 + _sub * 0.05 + _star_burst * 0.15 + _warp_level * 0.5) * fx \
 			+ _beat_env * 0.07)
 
 	if _skip_label != null:
@@ -2061,7 +2076,7 @@ func _start_drop_warp() -> void:
 	_star_burst = 1.0
 	# Hyperspace: Sterne ziehen sich ~1.5s zu Lichtfaeden.
 	_warp_level = 1.0
-	_fov_kick = maxf(_fov_kick, 5.0)
+	_fov_kick = maxf(_fov_kick, 3.5)
 	var flash := ColorRect.new()
 	flash.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	flash.color = Color(1, 1, 1, 0.5)
@@ -3514,7 +3529,7 @@ func _refresh_mp_board() -> void:
 			my_rank = i
 	# Ueberhol-Feedback: eigener Rang verbessert -> kurzer FOV-Kick.
 	if _mp_last_rank >= 0 and my_rank >= 0 and my_rank < _mp_last_rank:
-		_fov_kick = maxf(_fov_kick, 1.6)
+		_fov_kick = maxf(_fov_kick, 1.1)
 	_mp_last_rank = my_rank
 	for i in ranked.size():
 		var p: Dictionary = ranked[i]
