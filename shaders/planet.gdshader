@@ -126,22 +126,47 @@ void fragment() {
 		// Warmes Streiflicht ENTLANG des Terminators (Daemmerungszone).
 		float term = smoothstep(0.02, 0.18, diff) * (1.0 - smoothstep(0.18, 0.5, diff));
 		col += atmo_col.rgb * term * 0.12;
-		// Atmosphaeren-Rand, auf der Lichtseite staerker.
-		float atmo = pow(smoothstep(0.88, 1.0, r), 2.0);
-		col += atmo_col.rgb * atmo * 0.16 * (0.2 + diff * 0.8);
+		// Atmosphaeren-Rim: Fresnel-Verlauf (weich statt Kante), auf der
+		// Lichtseite staerker, Rayleigh-Tint zum Rand hin leicht blauer.
+		float fres = pow(1.0 - z, 3.0);
+		float atmo = fres * smoothstep(0.0, 0.5, 1.0 - z + 0.15);
+		vec3 rim_col = mix(atmo_col.rgb, atmo_col.rgb * vec3(0.8, 0.95, 1.2), fres);
+		col += rim_col * atmo * 0.30 * (0.12 + diff * 0.88);
+		// Nachtseiten-Stadtlichter: weicher Einsatz am Terminator, warm getoent.
+		col += night * vec3(1.08, 0.97, 0.82) * smoothstep(0.35, 0.0, diff) * 0.18 * limb;
 		alpha = 1.0;
+	}
+	// Aeusserer Atmosphaerenschleier knapp ueber dem Limb (weich auslaufend).
+	if (r >= 1.0 && r < 1.16) {
+		float halo = pow(1.0 - (r - 1.0) / 0.16, 3.0);
+		float lit = smoothstep(-0.3, 0.7, dot(normalize(vec3(pp, 0.05)), l));
+		col = atmo_col.rgb * 0.9;
+		alpha = halo * 0.22 * (0.15 + 0.85 * lit);
 	}
 	// Geneigter Ring: vor dem Planeten unten sichtbar, oben dahinter verdeckt.
 	if (ring_amount > 0.001) {
 		vec2 rp = vec2(p.x, p.y * 3.6 - p.x * 0.55);
 		float rr = length(rp);
 		float ring = smoothstep(0.70, 0.78, rr) * (1.0 - smoothstep(0.95, 1.02, rr));
-		ring *= 0.55 + 0.45 * vnoise(vec2(rr * 40.0, 0.0));
+		// Feine Bahnen + Cassini-Luecke.
+		float lanes = 0.6 + 0.4 * vnoise(vec2(rr * 40.0, seed)) * (0.6 + 0.4 * vnoise(vec2(rr * 130.0, 3.0)));
+		float gap = 1.0 - 0.7 * smoothstep(0.012, 0.0, abs(rr - 0.87));
+		ring *= lanes * gap;
+		// Schatten des Planeten auf dem Ring: auf der der Sonne abgewandten Seite.
+		vec2 ld2 = normalize(vec2(l.x, l.z) + vec2(0.0001));
+		float along = dot(rp, ld2);
+		float perp = abs(rp.x * ld2.y - rp.y * ld2.x);
+		float shadow = smoothstep(0.0, -0.25, along) * smoothstep(0.66, 0.50, perp);
+		float ring_lit = 1.0 - shadow * 0.78;
 		float behind = (r < 1.0 && rp.y > 0.0) ? 0.0 : 1.0;
 		float ra = ring * ring_amount * behind;
-		col = mix(col, base_col.rgb * 0.9 + vec3(0.08), clamp(ra, 0.0, 1.0));
+		vec3 ring_col = (base_col.rgb * 0.9 + vec3(0.08)) * (0.35 + 0.65 * ring_lit);
+		col = mix(col, ring_col, clamp(ra, 0.0, 1.0));
 		alpha = max(alpha, ra * 0.85);
 	}
+	// Dither gegen Banding in den dunklen Verlaeufen.
+	float dn = fract(sin(dot(FRAGCOORD.xy, vec2(12.9898, 78.233))) * 43758.5453) - 0.5;
+	col += vec3(dn) * (1.5 / 255.0);
 	ALBEDO = col * intensity;
 	ALPHA = clamp(alpha, 0.0, 1.0);
 }
