@@ -39,6 +39,8 @@ var _glow_shader: Shader
 var _ring_shader: Shader
 var _note_shader: Shader
 var _sparks: HitSparks
+# Skill-Belohnung (Lichtstroeme/Plasma/Aura ab Combo 50 bei >= 95 % Acc).
+var _skill_fx: SkillFx
 
 var _theme_col := Color(0.22, 0.68, 0.90)
 var _theme_kiai := Color(0.92, 0.52, 0.20)
@@ -269,6 +271,9 @@ func _ready() -> void:
 	_sparks = HitSparks.new()
 	_world.add_child(_sparks)
 	_sparks.setup(RAIL_X, Z_LINE, ROAD_Y, _theme_col)
+	_skill_fx = SkillFx.new()
+	_world.add_child(_skill_fx)
+	_skill_fx.setup(RAIL_X, Z_LINE, Z_FAR, ROAD_Y, _theme_col, _theme_kiai)
 	_build_hud()
 	_build_screen_fx()
 	_build_route_ui()
@@ -1085,6 +1090,8 @@ func _on_note_judged(index: int, result: Dictionary) -> void:
 		_pad_judge_col[col] = QUALITY_COLOR[q]
 	_spawn_popup(col, QUALITY_TEXT[q], QUALITY_COLOR[q], sub)
 	_sparks.spark(col, q)
+	if _skill_fx != null:
+		_skill_fx.on_judge(col, q)
 	if q != ManiaCore.Quality.MISS:
 		_sparks.lane_shot(col)
 	_ur_tick(result)
@@ -1131,6 +1138,8 @@ func _on_note_judged(index: int, result: Dictionary) -> void:
 			# Milestone-Belohnung: Sternschnuppe zieht ueber den Himmel.
 			if c >= 50 and _fx_level() > 0.0:
 				_spawn_shooting_star(c)
+				if _skill_fx != null:
+					_skill_fx.on_milestone(c)
 			# OVERDRIVE: ab Combo 100 schlaegt alle 100 der Blitz ein.
 			if c >= 100 and c % 100 == 0:
 				_trigger_overdrive()
@@ -1400,6 +1409,30 @@ func _is_on_beat(time_ms: float) -> bool:
 	return ph < 30.0 or ph > tp.beat_length - 30.0
 
 
+## SkillFx pro Frame. Effekt-Intensitaet skaliert: Aus = unsichtbar,
+## Dezent = hoechstens Stufe 2 und gedaempfte Shader-Intensitaet.
+func _update_skill_fx(delta: float, fx: float) -> void:
+	if _skill_fx == null:
+		return
+	_skill_fx.visible = fx > 0.0
+	if fx <= 0.0:
+		return
+	var combo := core.combo
+	if fx < 1.0:
+		combo = mini(combo, SkillFx.COMBO_TIERS[2] - 1)
+	_skill_fx.update(delta, _clock.beat_phase, _clock.beat_env, combo,
+			core.accuracy(), _kiai_mix)
+	if fx < 1.0:
+		for m in _skill_fx.get_children():
+			var mi := m as MeshInstance3D
+			if mi == null or not mi.visible:
+				continue
+			var sm := mi.material_override as ShaderMaterial
+			if sm != null:
+				var inten: float = sm.get_shader_parameter(&"intensity")
+				sm.set_shader_parameter(&"intensity", inten * fx)
+
+
 ## Globaler Effekt-Faktor aus den Einstellungen (Aus/Dezent/Voll).
 func _fx_level() -> float:
 	match Settings.tunnel_intensity:
@@ -1517,6 +1550,7 @@ func _process(delta: float) -> void:
 	# weich (~380 ms — atmet, statt zu blitzen).
 	_clock.update(t, delta)
 	_sparks.update(delta)
+	_update_skill_fx(delta, fx)
 	_beat_env = maxf(_clock.beat_env, _beat_env - delta * 2.6)
 
 	# NOTENDICHTE (naechste Sekunde) -> Intensitaets-Surge bei Bursts;
