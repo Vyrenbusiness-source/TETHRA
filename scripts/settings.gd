@@ -342,8 +342,14 @@ func apply() -> void:
 	if DisplayServer.get_name() != "headless":
 		# EXCLUSIVE_FULLSCREEN = echtes Vollbild (nicht nur randloses Fenster).
 		var target := DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN if fullscreen else DisplayServer.WINDOW_MODE_WINDOWED
+		# Test-/Screenshot-Laeufe: nie Vollbild (sonst landet das Testfenster auf
+		# dem Hauptmonitor, auf dem der Nutzer spielt) und fest auf Monitor 2.
+		if is_test_run():
+			target = DisplayServer.WINDOW_MODE_WINDOWED
 		if DisplayServer.window_get_mode() != target:
 			DisplayServer.window_set_mode(target)
+		if is_test_run():
+			_place_test_window()
 		# Grafik-Qualitaet: MSAA-Stufe + optionales Supersampling.
 		var vp := get_viewport()
 		match graphics_quality:
@@ -478,3 +484,23 @@ func lane_for_key(keycode: int) -> int:
 		if key_lanes[i] == keycode:
 			return i
 	return -1
+
+
+## Laeuft gerade ein automatischer Test (Screenshot, Autoplay, Video)?
+static func is_test_run() -> bool:
+	for a in OS.get_cmdline_args() + OS.get_cmdline_user_args():
+		if a.begins_with("--shot") or a == "--autoplay" or a == "--write-movie" or a == "--clip" or a == "--perf":
+			return true
+	return false
+
+
+## Testfenster auf den Nicht-Hauptmonitor legen (Nutzer spielt auf dem
+## Hauptmonitor). Gibt es nur einen Monitor, bleibt das Fenster, wo es ist.
+func _place_test_window() -> void:
+	var primary := DisplayServer.get_primary_screen()
+	for s in DisplayServer.get_screen_count():
+		if s == primary:
+			continue
+		var pos := DisplayServer.screen_get_position(s)
+		DisplayServer.window_set_position(pos + Vector2i(120, 120))
+		return

@@ -24,6 +24,9 @@ uniform float pulse = 0.0;
 uniform float beat_flash : hint_range(0.0, 1.0) = 0.0;
 uniform float downbeat : hint_range(0.0, 1.0) = 0.0;
 uniform float music_energy : hint_range(0.0, 1.0) = 0.0;
+// WELT-PULS: gemeinsame Beat-Huellkurve der ganzen Umgebung (Attack auf
+// dem Schlag, ~180 ms Decay) — Himmel, Galaxien, Planeten atmen als eines.
+uniform float world_pulse = 0.0;
 
 float hash12(vec2 p) {
 	vec3 p3 = fract(vec3(p.xyx) * 0.1031);
@@ -138,7 +141,7 @@ void fragment() {
 
 	// Dither: +-0.5 LSB triangulaeres Rauschen bricht Banding in dunklen Verlaeufen.
 	float dn = hash12(FRAGCOORD.xy) + hash12(FRAGCOORD.xy + 17.31) - 1.0;
-	vec3 outc = (col * 0.6 + star_col) * alpha_mul;
+	vec3 outc = (col * 0.6 + star_col) * alpha_mul * (1.0 + world_pulse * 0.17);
 	outc += vec3(dn) * (1.5 / 255.0) * step(0.0005, dot(outc, vec3(1.0)));
 	ALBEDO = max(outc, vec3(0.0));
 	ALPHA = clamp(body * vig + band * 0.3 + s_small + s_big + s_dust, 0.0, 1.0) * 0.6 * alpha_mul;

@@ -157,6 +157,24 @@ var _fire_level := 0.0
 var _fire_heat := 0.0
 # HYPERSPACE-Drop: 1.0 beim Kiai-Start, zieht die Sterne zu Lichtfaeden.
 var _warp_level := 0.0
+# BEAT-REISE + WELT-PULS: eine gemeinsame Beat-Huellkurve fuer die ganze
+# Umgebung. _surge = Vorwaerts-Schub (Saegezahn: Stoss genau auf dem Schlag,
+# gleitet bis zum naechsten aus, Downbeat x1.6); _world_pulse = Helligkeit
+# (+12..20 %, Attack sofort, Decay ~180 ms). Beides aus BeatClock (visuelle
+# Zeit), * Musikenergie, Kiai x1.5, * _fx_level().
+const SURGE_DOWN := 1.6
+const SURGE_KIAI := 1.5
+const WORLD_PULSE_DECAY_MS := 62.0  ## exp(-180/62) ~ 5 %
+const STAR_COUNT := 260
+var _edge_peak := 0.0
+var _edge_down := false
+var _surge := 0.0
+var _world_pulse := 0.0
+var _star_rot: Array[Basis] = []
+var _edge_band_mat: ShaderMaterial
+## Alle Materialien mit world_pulse-Uniform (einmal beim Map-Start gesammelt).
+var _pulse_mats: Array[ShaderMaterial] = []
+var _galaxy_node: MeshInstance3D
 # REISE-ROUTE: Basis-Positionen + Drift der Planeten ueber die Songdauer.
 # Letzter Eintrag = Ziel-Planet (steigt auf, Docking-Finale zieht ihn mittig).
 var _planet_base: Array = []
@@ -609,7 +627,7 @@ func _build_world() -> void:
 		var fmat := ShaderMaterial.new()
 		fmat.shader = fire_shader
 		fmat.set_shader_parameter("base_color",
-				_theme_col.lerp(Color(1.0, 0.55, 0.2), 0.65))
+				_theme_col.lerp(Color(1, 1, 1), 0.3))
 		fmat.set_shader_parameter("intensity", 0.0)
 		fmesh.material_override = fmat
 		fmesh.position = Vector3(sx, ROAD_Y + 0.56, (Z_FAR + Z_LINE) * 0.5 + 2.0)
@@ -809,8 +827,8 @@ func _build_starfield() -> void:
 	var q := QuadMesh.new()
 	q.size = Vector2(0.12, 0.12)
 	_star_mm.mesh = q
-	_star_mm.instance_count = 160
-	for i in 160:
+	_star_mm.instance_count = STAR_COUNT
+	for i in STAR_COUNT:
 		var h1 := _hash01(float(i) * 12.9898)
 		var h2 := _hash01(float(i) * 78.233)
 		var h3 := _hash01(float(i) * 39.425)
@@ -820,6 +838,9 @@ func _build_starfield() -> void:
 		var z0 := h3 * 60.0
 		_star_seeds.append(Vector3(x, y, z0))
 		_star_scales.append(0.5 + h4 * 1.7)
+		# Streifen-Richtung: radial vom Fluchtpunkt weg (Stern fliegt auf
+		# die Kamera zu) — einmal vorberechnet, pro Frame nur skaliert.
+		_star_rot.append(Basis(Vector3.BACK, atan2(y - 1.78, x)))
 		# Farbmix: meist kuehles Weissblau, ein paar warme + Songfarben-Sterne.
 		var ch := _hash01(float(i) * 91.7)
 		var star_col := Color(0.75, 0.85, 1.0)
@@ -909,6 +930,7 @@ func _build_starfield() -> void:
 	gal.material_override = _galaxy_mat
 	gal.position = Vector3(-21.0, 14.5, Z_FAR - 11.0)
 	gal.rotation_degrees = Vector3(0, 0, -14)
+	_galaxy_node = gal
 	_cosmos.add_child(gal)
 
 	# VORDERGRUND-NEBELFETZEN: zwei nahe, schnell driftende Schleier
@@ -940,6 +962,7 @@ func _build_starfield() -> void:
 	ebm.shader = _glow_shader
 	ebm.set_shader_parameter("base_color", _theme_col.lerp(Color(1, 1, 1), 0.55))
 	ebm.set_shader_parameter("intensity", 0.12)
+	_edge_band_mat = ebm
 	edge_band.material_override = ebm
 	edge_band.position = Vector3(0, 0.55, Z_FAR - 3.7)
 	_cosmos.add_child(edge_band)
@@ -1153,6 +1176,16 @@ func _build_starfield() -> void:
 	einst.set_meta("mat", emat)
 	add_child(einst)
 	_ember_mat = emat
+	_collect_pulse_mats()
+
+
+func _collect_pulse_mats() -> void:
+	_pulse_mats.clear()
+	for m in [_nebula_mat, _nebula_mat2, _galaxy_mat, _aurora_mat]:
+		if m != null:
+			_pulse_mats.append(m)
+	_pulse_mats.append_array(_fg_neb_mats)
+	_pulse_mats.append_array(_planet_mats)
 
 
 func _hash01(x: float) -> float:
@@ -1351,8 +1384,10 @@ func _on_note_judged(index: int, result: Dictionary) -> void:
 		else:
 			# Drohne rauscht am Schiff vorbei und verglimmt rot.
 			var miss_mat := entry.rim as ShaderMaterial
-			miss_mat.set_shader_parameter("rim_color", Color(1.0, 0.25, 0.25))
-			miss_mat.set_shader_parameter("base_color", Color(0.55, 0.12, 0.12))
+			# Verpasst: entsaettigt grau (kein Rot quer uebers Spielfeld —
+			# Rot gibt es nur auf dem Pad bzw. der HP-Leiste).
+			miss_mat.set_shader_parameter("rim_color", Color(0.42, 0.43, 0.47))
+			miss_mat.set_shader_parameter("base_color", Color(0.16, 0.16, 0.19))
 			var tw := create_tween()
 			tw.tween_property(node, "position:z", SHIP_Z + 6.0, 0.35)
 			tw.parallel().tween_property(node, "scale", Vector3.ONE * 0.3, 0.35)
@@ -1835,16 +1870,16 @@ func _process(delta: float) -> void:
 		else:
 			_ember_mm.set_instance_transform(i, Transform3D(Basis.IDENTITY.scaled(Vector3.ONE * sc), pos))
 	if _ember_mat != null:
-		_ember_mat.set_shader_parameter("base_color", _theme_col.lerp(Color(1.0, 0.5, 0.15), burn))
+		_ember_mat.set_shader_parameter("base_color", _theme_col.lerp(Color(1, 1, 1), burn * 0.5))
 	# Rand-Glut: Combo laesst den Bildschirmrand gluehen, ab ~150 brennt er.
 	if _vignette_mat != null:
-		# HP-HERZSCHLAG: kritische HP faerbt den Bildschirmrand rot.
-		var alarm := clampf(maxf(0.35 - core.hp, 0.0) * 2.2, 0.0, 1.0)
+		# Kein roter HP-Alarm am Bildschirmrand mehr (faerbte das Spielfeld) —
+		# Warnung zeigt nur die HP-Leiste.
 		_vignette_mat.set_shader_parameter("intensity",
 			(clampf(float(core.combo) / 200.0, 0.0, 1.0) * 0.26 + _kiai_mix * 0.10
-			+ _overdrive * 0.10) * fx + alarm * 0.2 + _beat_env * 0.045)
+			+ _overdrive * 0.10) * fx + _beat_env * 0.045)
 		_vignette_mat.set_shader_parameter("burn", burn * 0.65)
-		_vignette_mat.set_shader_parameter("glow_color", _theme_col.lerp(Color(1.0, 0.18, 0.16), alarm))
+		_vignette_mat.set_shader_parameter("glow_color", _theme_col)
 		_vignette_mat.set_shader_parameter("t", t / 1000.0)
 
 	# Musikreaktivitaet.
@@ -1889,15 +1924,9 @@ func _process(delta: float) -> void:
 		_road_mat.set_shader_parameter("punch", _punch)
 		_road_mat.set_shader_parameter("wave_amount", fx)
 		_road_mat.set_shader_parameter("energy", 0.5 + (_bass * 0.5 + _kick * 0.3 + _sub * 0.15 + _kiai_mix * 0.4 + _density * 0.35) * fx)
-		# Timing-Tint: haengt der Trend spaet, waermt sich die Strecke leicht
-		# auf; zu frueh kuehlt sie ab (peripheres Feedback ohne HUD-Blick).
-		var road_col := _theme_col.lerp(_theme_kiai, _kiai_mix)
-		var trend := clampf(_ur_ema / 90.0, -1.0, 1.0)
-		if trend > 0.0:
-			road_col = road_col.lerp(Color(1.0, 0.55, 0.30), trend * 0.16)
-		else:
-			road_col = road_col.lerp(Color(0.40, 0.70, 1.0), -trend * 0.16)
-		_road_mat.set_shader_parameter("base_color", road_col)
+		# Strecke bleibt in der Songfarbe (kein Timing-/Kiai-Farbkippen —
+		# wandernde Fremdfarben auf dem Spielfeld stoerten).
+		_road_mat.set_shader_parameter("base_color", _theme_col)
 	# BEAT-KANTE: alles hier feuert EXAKT auf dem Schlag.
 	# Kiai-Eintritt merken: der Licht-Sweep startet genau auf dem naechsten Schlag.
 	if _clock.kiai and not _groove_kiai_seen:
@@ -1910,7 +1939,7 @@ func _process(delta: float) -> void:
 	# Die ABFANGLINIE pulsiert im Takt — der Hit-Moment ist hoerbar UND sichtbar.
 	_line_mat.emission_energy_multiplier = 1.1 + pulse * 1.6 + _punch * 1.0 + _kick * 0.35 + _line_flash * 1.0 \
 			+ _groove * 3.0
-	_line_mat.emission = Color(1, 1, 1).lerp(_theme_kiai, _kiai_mix * 0.6)
+	_line_mat.emission = Color(1, 1, 1).lerp(_theme_col, _kiai_mix * 0.4)
 	var pad_energy: Array[float] = []
 	for i in _pad_mats.size():
 		var pf := clampf(_pad_flash[i], 0.0, 1.0)
@@ -1969,10 +1998,11 @@ func _process(delta: float) -> void:
 		_pad_mats[i].set_shader_parameter("rim_color", pcol * (pad_energy[i] + pg * 0.5) * dark)
 	for em2 in _edge_mats:
 		var edge_col := Color(0.45, 0.47, 0.53) if fx <= 0.0 \
-				else _theme_col.lerp(_theme_kiai, maxf(od * 0.45, _kiai_mix))
+				else _theme_col
 		if fx > 0.0 and _fire_level > 0.0:
-			# Brennende Kanten gluehen mit: Glut-Orange, bei Perfection Eisblau.
-			var glow_col := Color(1.0, 0.6, 0.25).lerp(Color(0.72, 0.92, 1.0), _fire_heat)
+			# Brennende Kanten gluehen heller in der Songfarbe (kein Orange/Rot
+			# entlang des Spielfelds), bei Perfection fast weiss.
+			var glow_col := _theme_col.lerp(Color(1, 1, 1), 0.45 + _fire_heat * 0.4)
 			edge_col = edge_col.lerp(glow_col, _fire_level * 0.7)
 		em2.emission = edge_col
 
@@ -1991,21 +2021,26 @@ func _process(delta: float) -> void:
 
 	# HYPERSPACE: Der Drop reisst die Sterne ~1.5s zu Lichtfaeden.
 	_warp_level = move_toward(_warp_level, 0.0, delta * 0.7)
+	_update_world_beat(fx)
 
-	# Sterne rasen vorbei — jeder Beat gibt einen Warp-Schub obendrauf,
-	# das Docking-Finale bremst die Reise sanft aus.
-	_star_scroll += delta * (9.0 * _bpm_factor + (_treble * 20.0 \
-			+ _kiai_mix * 10.0 + _star_burst * 30.0 + _beat_env * 26.0 + _kick * 5.0 \
-			+ _warp_level * 55.0 + _density * 9.0) * fx) \
-			* (1.0 - dock_mix * 0.75)
-	# Lichtfaeden nur maessig strecken — lange Streifen zogen sonst quer
-	# durchs Spielfeld.
-	var warp_stretch := 1.0 + _warp_level * 4.0 * fx
+	# REISE IM TAKT: Grundtempo folgt BPM (live aus BeatClock) und
+	# Musikenergie; jeder Schlag stoesst nach vorn (_surge), das
+	# Docking-Finale bremst die Reise sanft aus.
+	var bpm_live := clampf((_clock.bpm if _clock.bpm > 1.0 else 140.0) / 140.0, 0.7, 1.6)
+	var cruise := 9.0 * bpm_live * (0.75 + (_music_energy * 0.45 + _kiai_mix * 0.5 + _density * 0.2) * fx)
+	_star_scroll += delta * (cruise * (1.0 + _surge) + (_warp_level * 55.0 + _star_burst * 18.0) * fx) * (1.0 - dock_mix * 0.75)
+	# Kurze Streifen auf dem Schlag (radial, minimal), Hyperspace laenger.
+	var warp_stretch := 1.0 + maxf(_surge, 0.0) * 0.8 + _warp_level * 4.0 * fx
+	var cy := 1.78 + _cosmos_lift
 	for i in _star_seeds.size():
 		var seed := _star_seeds[i]
 		var z := fmod(seed.z + _star_scroll, 60.0) - 52.0
-		var basis := Basis.IDENTITY.scaled(Vector3(
-				_star_scales[i], _star_scales[i], _star_scales[i] * warp_stretch))
+		# Mitte hinter der Strecke bleibt dunkel: Sterne nahe dem
+		# Fluchtpunkt schrumpfen weg (projizierter Abstand zur Bildmitte).
+		var rr := Vector2(seed.x, seed.y - cy).length() / maxf(6.8 - z, 0.5)
+		var sc := _star_scales[i] * smoothstep(0.07, 0.2, rr)
+		# Streifen werden laenger UND schmaler (Lichtstrich statt Ellipse).
+		var basis := _star_rot[i] * Basis.from_scale(Vector3(sc * warp_stretch, sc / sqrt(warp_stretch), sc))
 		_star_mm.set_instance_transform(i, Transform3D(basis, Vector3(seed.x, seed.y, z)))
 
 	# GALAXIEN-REISE: aktuelles Kapitel bestimmen — der Wechsel feuert
@@ -2065,7 +2100,7 @@ func _process(delta: float) -> void:
 
 	# Nebel driftet und atmet mit Bass/Kiai — und beschleunigt im Beat,
 	# als wuerde das Schiff durch die Wolken schieben.
-	_nebula_drift += delta * (1.0 + (_beat_env * 1.1 + _kiai_mix * 0.5) * fx) * _bpm_factor
+	_nebula_drift += delta * (1.0 + (_beat_env * 0.4 + _kiai_mix * 0.5) * fx + _surge * 0.45) * _bpm_factor
 	if _nebula_mat != null:
 		_nebula_mat.set_shader_parameter("drift", _nebula_drift)
 		_nebula_mat.set_shader_parameter("pulse", _beat_env * (1.0 - dock_mix * 0.5))
@@ -2090,7 +2125,7 @@ func _process(delta: float) -> void:
 		# NASSE BAHN: der Himmel spiegelt sich Richtung Horizont.
 		if _road_mat != null:
 			_road_mat.set_shader_parameter("sky_color",
-				jc.lerp(_theme_kiai, _kiai_mix).lerp(Color(1.0, 0.85, 0.6), _sunrise * 0.5))
+				_theme_col.lerp(Color(1, 1, 1), _sunrise * 0.3))
 			_road_mat.set_shader_parameter("refl_amount", (0.20 + _beat_env * 0.08) * fx)
 		if _nebula_mat2 != null:
 			_nebula_mat2.set_shader_parameter("drift", _nebula_drift * 1.8)
@@ -2101,7 +2136,7 @@ func _process(delta: float) -> void:
 	if _horizon_mat != null:
 		# Beim Docking glueht der Horizont waermer auf — Ankunftslicht.
 		_horizon_mat.set_shader_parameter("intensity",
-			0.10 + _beat_env * 0.10 + _bass * 0.05 + dock_mix * 0.15 + _sunrise * 0.08)
+			(0.10 + _beat_env * 0.10 + _bass * 0.05 + dock_mix * 0.15 + _sunrise * 0.08) * (1.0 + _world_pulse * 0.3))
 	if _aurora_mat != null:
 		_aurora_mat.set_shader_parameter("drift", t / 1000.0)
 		_aurora_mat.set_shader_parameter("pulse", _beat_env)
@@ -2125,7 +2160,7 @@ func _process(delta: float) -> void:
 				journey_scale = 0.55 + pow(journey_p, 1.35) * 1.35 + dock_mix * 1.5
 				ppos = ppos.lerp(Vector3(0.0, 6.2, Z_FAR - 6.0), dock_mix)
 			pn.position = ppos
-		pn.scale = Vector3.ONE * journey_scale
+		pn.scale = Vector3.ONE * journey_scale * (1.0 + _world_pulse * 0.02)
 
 	# SCREEN-FX: nur ruhige Vignette (keine Aberration/Schockwelle/Glitch).
 	if _screen_mat != null:
@@ -2174,7 +2209,7 @@ func _process(delta: float) -> void:
 		# Im Hyperspace brennen die Lichtfaeden deutlich heller.
 		_star_mat.set_shader_parameter("intensity",
 			0.35 + (_treble * 0.30 + _kick * 0.10 + _sub * 0.05 + _star_burst * 0.15 + _warp_level * 0.5) * fx \
-			+ _beat_env * 0.07)
+			+ _beat_env * 0.07 + _world_pulse * 0.14)
 
 	_update_break_overlay(t)
 	# Multiplayer: eigenen Live-Score ~4x pro Sekunde teilen.
@@ -2188,9 +2223,44 @@ func _process(delta: float) -> void:
 	_update_hud()
 
 
+## Gemeinsame Beat-Huellkurven der Umgebung aus der BeatClock-Phase
+## (visuelle Zeit, framerate-unabhaengig, Attack exakt auf dem Schlag):
+## _surge = Vorwaerts-Stoss, Saegezahn (1 - Phase)^3 ueber den ganzen Beat;
+## _world_pulse = Helligkeit, Decay ~180 ms. Effekte=Aus -> beides 0.
+func _update_world_beat(fx: float) -> void:
+	if fx <= 0.0 or _clock.bpm <= 1.0:
+		_surge = 0.0
+		_world_pulse = 0.0
+		_apply_world_pulse()
+		return
+	var ph := clampf(_clock.beat_phase, 0.0, 1.0)
+	var bl := 60000.0 / _clock.bpm
+	var peak := _edge_peak * (SURGE_DOWN if _edge_down else 1.0)
+	# Mittelwert von (1-ph)^3 = 0.25 -> Grundtempo bleibt im Mittel erhalten:
+	# Schub 0.35 .. ~3x direkt auf dem Schlag.
+	_surge = (peak * 2.6 * pow(1.0 - ph, 3.0) - 0.65) * fx
+	_world_pulse = peak * (1.15 if _edge_down else 1.0) * exp(-ph * bl / WORLD_PULSE_DECAY_MS) * fx
+	_apply_world_pulse()
+
+
+## Dieselbe Huellkurve auf alle Himmels-Materialien (Nebel, Galaxien,
+## Aurora, Planeten, Horizontlinie) — die Welt atmet als eines.
+func _apply_world_pulse() -> void:
+	var wp := _world_pulse
+	for m in _pulse_mats:
+		m.set_shader_parameter(&"world_pulse", wp)
+	if _galaxy_node != null:
+		_galaxy_node.scale = Vector3.ONE * (1.0 + wp * 0.02)
+	if _edge_band_mat != null:
+		_edge_band_mat.set_shader_parameter(&"intensity", 0.12 * (1.0 + wp * 0.35))
+
+
 ## Feuert EXAKT auf jeder Beat-Kante: Pad-Pulse, Glut-Spawn, Nebel-Tick,
 ## Linien-Blitz (staerker auf Takt-Anfaengen).
 func _on_beat_edge(beat_idx: int, downbeat: bool) -> void:
+	# BEAT-REISE/WELT-PULS: Hoehe dieses Schlags (Huellkurven in _update_world_beat).
+	_edge_down = downbeat
+	_edge_peak = lerpf(0.55, 1.0, _music_energy) * lerpf(1.0, SURGE_KIAI, _kiai_mix)
 	# GROOVE: Hoehe des Licht-Schlags fuer diesen Beat (Decay in _update_groove).
 	_groove_peak = _groove_strength(downbeat)
 	_groove_is_down = downbeat
@@ -2285,7 +2355,7 @@ func _spawn_kiai_sweep() -> void:
 	sw.mesh = q
 	var m := ShaderMaterial.new()
 	m.shader = _glow_shader
-	m.set_shader_parameter("base_color", _theme_kiai.lerp(Color(1, 1, 1), 0.3))
+	m.set_shader_parameter("base_color", _theme_col.lerp(Color(1, 1, 1), 0.35))
 	m.set_shader_parameter("intensity", 0.0)
 	sw.material_override = m
 	sw.rotation_degrees = Vector3(-90, 0, 0)
@@ -2379,11 +2449,9 @@ func _spawn_beat_wave() -> void:
 	wave.mesh = wq
 	var wm := ShaderMaterial.new()
 	wm.shader = _glow_shader
-	# Farbe folgt dem Zustand: Kiai kippt sie zur Komplementaerfarbe,
-	# brennende Kanten (On Fire) faerben die Welle in Glut/Plasma.
-	var wcol := _theme_col.lerp(_theme_kiai, _kiai_mix)
-	if _fire_level > 0.3:
-		wcol = wcol.lerp(Color(1.0, 0.6, 0.25).lerp(Color(0.72, 0.92, 1.0), _fire_heat), 0.6)
+	# Nur Songfarbe/Weiss auf dem Spielfeld (keine Fremdfarben-Wellen):
+	# Kiai/On Fire machen die Welle nur heller, nie bunter.
+	var wcol := _theme_col.lerp(Color(1, 1, 1), 0.15 + _kiai_mix * 0.2 + _fire_level * 0.2)
 	wm.set_shader_parameter("base_color", wcol)
 	var peak := (0.09 + _kiai_mix * 0.07) * _fx_level() * (0.7 + _music_energy * 0.6)
 	wm.set_shader_parameter("intensity", peak)
@@ -3014,19 +3082,41 @@ func _resume_with_countdown(step: float = 0.4) -> void:
 		lbl.pivot_offset = Vector2(100, 48)
 		for c in hint:
 			_pad_mats[c].set_shader_parameter("rim_color", _pad_color(c) * 1.25)
-		await get_tree().create_timer(step * 0.5, true).timeout
-		if not is_inside_tree():
+		if not await _countdown_wait(step * 0.5):
 			return
 		for c in hint:
 			_pad_mats[c].set_shader_parameter("rim_color", _pad_color(c) * PAD_IDLE)
-		await get_tree().create_timer(step * 0.5, true).timeout
-		if not is_inside_tree():
+		if not await _countdown_wait(step * 0.5):
 			return
 	lbl.queue_free()
 	_countdown_running = false
+	if _autoplay:
+		print("COUNTDOWN fertig")
 	get_tree().paused = false
 	SyncClock.resume()
 	Input.mouse_mode = Input.MOUSE_MODE_CONFINED_HIDDEN
+
+
+## Wartet sec Sekunden, auch bei pausiertem Tree, Fenster ohne Fokus und
+## --write-movie: zaehlt pro SceneTree.process_frame (feuert immer) die
+## Frame-Zeit hoch, Echtzeit (Time.get_ticks_msec) als Sicherung — der
+## Countdown kann nie haengen bleiben. false = Szene verlassen.
+func _countdown_wait(sec: float) -> bool:
+	var t0 := Time.get_ticks_msec()
+	var acc := 0.0
+	var tree := get_tree()
+	var last := t0
+	while acc < sec and float(Time.get_ticks_msec() - t0) < sec * 2000.0:
+		await tree.process_frame
+		if not is_inside_tree():
+			return false
+		var now := Time.get_ticks_msec()
+		var d := get_process_delta_time()
+		if d <= 0.0:
+			d = float(now - last) / 1000.0
+		last = now
+		acc += clampf(d, 0.0, 0.1)
+	return is_inside_tree()
 
 
 func _restart() -> void:
@@ -3552,10 +3642,24 @@ func _capture_after_first_note() -> void:
 	var idx := mini(6, _beatmap.hit_objects.size() - 1)
 	# --shot-lead=<ms>: Vorlauf vor der Note (0 = Note genau auf der Linie).
 	var lead := 150.0
+	# --shot-at=<ms>: Songzeit des Bildes (spaetere Kapitel), --shot-out=<png>.
+	var shot_at := -1.0
+	var path := "C:/Users/Gexanx/AppData/Local/Temp/claude/c--Users-Gexanx-Desktop-rhyg/b9d5e593-aabc-4b4b-a882-a5835e187db3/scratchpad/mania_3d.png"
 	for a in OS.get_cmdline_args():
 		if a.begins_with("--shot-lead="):
 			lead = a.trim_prefix("--shot-lead=").to_float()
+		elif a.begins_with("--shot-at="):
+			shot_at = a.trim_prefix("--shot-at=").to_float()
+		elif a.begins_with("--shot-out="):
+			path = a.trim_prefix("--shot-out=")
 	var target := _beatmap.hit_objects[idx].time - lead
+	if shot_at >= 0.0:
+		# Auf den naechsten Beat ab shot_at, dann --shot-lead als Versatz
+		# (0 = genau auf dem Schlag, halbe Beatlaenge = zwischen Beats).
+		core.no_fail = true
+		target = _beat_ceil(shot_at) - lead
+		if target - _time_ms() > 4000.0:
+			SyncClock.seek_ms(target - 3000.0)
 	var guard := 0
 	while _time_ms() < target and guard < 3600:
 		guard += 1
@@ -3566,9 +3670,8 @@ func _capture_after_first_note() -> void:
 	if not is_inside_tree():
 		return
 	# Takt-Lage des Bildes (Vergleich auf/zwischen Beats per --shot-lead).
-	print("GROOVE bpm=%.1f phase=%.2f kiai=%.2f groove=%.2f energy=%.2f dens=%.2f" % [_clock.bpm, _clock.beat_phase, _kiai_mix, _groove, _music_energy, _density2])
+	print("GROOVE t=%.0f bpm=%.1f phase=%.2f kiai=%.2f groove=%.2f energy=%.2f dens=%.2f surge=%.2f wpulse=%.2f chapter=%d" % [_time_ms(), _clock.bpm, _clock.beat_phase, _kiai_mix, _groove, _music_energy, _density2, _surge, _world_pulse, _gal_idx])
 	var img := get_viewport().get_texture().get_image()
-	var path := "C:/Users/Gexanx/AppData/Local/Temp/claude/c--Users-Gexanx-Desktop-rhyg/b9d5e593-aabc-4b4b-a882-a5835e187db3/scratchpad/mania_3d.png"
 	img.save_png(path)
 	print("SHOT gespeichert: " + path)
 	get_tree().quit(0)
