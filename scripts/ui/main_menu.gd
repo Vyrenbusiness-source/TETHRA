@@ -41,6 +41,7 @@ var _kb_t: float = 0.0
 var _np_bar: Control
 var _np_progress: ColorRect
 var _np_track: Control
+var _btns: Array[Button] = []
 
 
 func _ready() -> void:
@@ -170,7 +171,11 @@ func _process(delta: float) -> void:
 		_bg_mat.set_shader_parameter("bass", bass_lvl)
 		_bg_mat.set_shader_parameter("kick", _kick)
 	if _dim_overlay != null:
-		_dim_overlay.color.a = 0.30 - 0.05 * bass_lvl - 0.03 * _kick
+		_dim_overlay.color.a = 0.60 - 0.04 * bass_lvl - 0.03 * _kick
+	# Dezenter Bass-Puls nur am gehoverten/fokussierten Button.
+	for b in _btns:
+		if b.is_hovered() or b.has_focus():
+			b.scale = Vector2.ONE * (1.0 + 0.02 * _kick)
 
 
 ## Geblurrtes Hintergrundbild der zuletzt gespielten Map. false wenn keins da.
@@ -208,10 +213,29 @@ func _add_blur_layers(tex: Texture2D) -> void:
 	_bg_rect = rect
 	var overlay := ColorRect.new()
 	overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	overlay.color = Color(0, 0, 0, 0.30)
+	overlay.color = Color(0, 0, 0, 0.60)
 	overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(overlay)
 	_dim_overlay = overlay
+	# Weiche Vignette: Raender dunkler, Mitte frei.
+	var vg := Gradient.new()
+	vg.set_color(0, Color(0, 0, 0, 0.0))
+	vg.set_color(1, Color(0, 0, 0, 0.55))
+	vg.set_offset(0, 0.45)
+	var vt := GradientTexture2D.new()
+	vt.gradient = vg
+	vt.fill = GradientTexture2D.FILL_RADIAL
+	vt.fill_from = Vector2(0.5, 0.5)
+	vt.fill_to = Vector2(1.0, 1.0)
+	vt.width = 256
+	vt.height = 256
+	var vr := TextureRect.new()
+	vr.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	vr.texture = vt
+	vr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	vr.stretch_mode = TextureRect.STRETCH_SCALE
+	vr.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(vr)
 
 
 func _build_logo() -> void:
@@ -266,7 +290,11 @@ func _build_logo() -> void:
 	jp_font.font_names = PackedStringArray(["Yu Gothic UI", "Meiryo", "MS Gothic", "Noto Sans CJK JP"])
 	sub.add_theme_font_override("font", jp_font)
 	sub.add_theme_font_size_override("font_size", 19)
-	sub.add_theme_color_override("font_color", COL_DIM)
+	sub.add_theme_color_override("font_color", Color(0.85, 0.88, 0.96))
+	sub.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.85))
+	sub.add_theme_constant_override("shadow_offset_x", 1)
+	sub.add_theme_constant_override("shadow_offset_y", 2)
+	sub.add_theme_constant_override("shadow_outline_size", 6)
 	add_child(sub)
 
 
@@ -282,6 +310,19 @@ func _build_visualizer_slot() -> void:
 	slot.offset_bottom = 0
 	slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(slot)
+	var viz := AudioVisualizer.new()
+	viz.anchor_left = 0.5
+	viz.anchor_right = 0.5
+	viz.anchor_top = 0.0
+	viz.anchor_bottom = 1.0
+	viz.offset_left = -400
+	viz.offset_right = 400
+	viz.offset_top = 10
+	viz.offset_bottom = -6
+	viz.color = UiTheme.ACCENT
+	viz.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	viz.modulate.a = 0.55
+	slot.add_child(viz)
 
 
 func _load_cover(osz_path: String, bm: Beatmap) -> Texture2D:
@@ -453,6 +494,7 @@ func _add_wrapped(parent: Control, b: Button) -> void:
 	edge.modulate.a = 0.0
 	edge.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	w.add_child(edge)
+	_btns.append(b)
 	b.resized.connect(func(): b.pivot_offset = b.size * 0.5)
 	b.mouse_entered.connect(func():
 		var tw := create_tween().set_parallel(true).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
