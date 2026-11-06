@@ -183,7 +183,7 @@ func _capture_shot() -> void:
 	if not is_inside_tree():
 		return
 	var img := get_viewport().get_texture().get_image()
-	var path := "C:/Users/Gexanx/AppData/Local/Temp/claude/a8d2df055934fb12/2690cab5-bd8f-418e-ba0f-9da78692e0cd/scratchpad/mp_browser.png"
+	var path := "C:/Users/Gexanx/AppData/Local/Temp/claude/c--Users-Gexanx-Desktop-rhyg/b9d5e593-aabc-4b4b-a882-a5835e187db3/scratchpad/mp_browser.png"
 	img.save_png(path)
 	print("SHOT gespeichert: " + path)
 	get_tree().quit(0)
