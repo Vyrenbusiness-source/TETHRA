@@ -67,25 +67,25 @@ PALETTES = {
         ramp_b=["#000000", "#060b24", "#142a66", "#2f5fb0", "#8fb8f0", "#eef4ff"],
         knot="#ff6a8e", haze="#1a0b2e", base="#020107", cluster="#9fc0ff",
         dust=(1.25, 1.0, 0.8), hue_amt=0.55, band=((-75, -22), (35, 34)),
-        hero=(-30, 15, 24), second=(42, 9, 16), seed=11),
+        hero=(-36, 5, 27), second=(48, 2, 18), seed=11),
     "azure": dict(
         ramp_a=["#000000", "#03101f", "#08304d", "#11707e", "#5fd0cc", "#e4fffb"],
         ramp_b=["#000000", "#07081f", "#1a1a5c", "#3b3fa8", "#9a9cf0", "#f2f0ff"],
         knot="#ff9a5a", haze="#06142a", base="#010309", cluster="#bfe4ff",
         dust=(1.2, 1.0, 0.85), hue_amt=0.45, band=((70, -20), (-40, 32)),
-        hero=(32, 14, 25), second=(-44, 10, 15), seed=23),
+        hero=(36, 5, 28), second=(-48, 2, 17), seed=23),
     "ember": dict(
         ramp_a=["#000000", "#1a0504", "#4d1008", "#a3360e", "#f09a3a", "#fff0c8"],
         ramp_b=["#000000", "#1a0410", "#4a0b2a", "#9c1f45", "#f0708a", "#ffe6ea"],
         knot="#ffd27a", haze="#1c0806", base="#050102", cluster="#a8c8ff",
         dust=(1.1, 1.0, 0.9), hue_amt=0.5, band=((-70, -24), (40, 30)),
-        hero=(-26, 16, 23), second=(46, 7, 17), seed=37),
+        hero=(-36, 5, 26), second=(48, 2, 19), seed=37),
     "emerald": dict(
         ramp_a=["#000000", "#02140c", "#063a24", "#127a52", "#5fe0a6", "#e6fff2"],
         ramp_b=["#000000", "#031220", "#0a3150", "#16708c", "#6cc8e0", "#e8faff"],
         knot="#e07ad8", haze="#04160f", base="#010503", cluster="#d8f0ff",
         dust=(1.2, 1.0, 0.85), hue_amt=0.5, band=((72, -18), (-36, 33)),
-        hero=(28, 17, 24), second=(-40, 8, 16), seed=53),
+        hero=(36, 5, 27), second=(-48, 2, 18), seed=53),
 }
 
 
@@ -285,10 +285,11 @@ def nebula_rows(args):
     n1 = nz.fbm(pw, 2.1, 7, gain=0.52)
     q2 = [d[i] + F32(0.45) * q[(i + 1) % 3] + F32(0.18) * n1 for i in range(3)]
 
-    gas = smoothstep(-0.22, 0.5, n1 + F32(0.5) * (mask - 0.5))
-    gas = mask * gas ** F32(1.45)
+    # Weich, ohne Plateau: Dichte exponentiell aus dem Rauschen, Ränder laufen aus.
+    dens = np.exp(F32(2.8) * (n1 - F32(0.12)))
+    gas = mask ** F32(1.6) * dens * F32(0.42)
     fil = nz.ridged(q2, 3.4, 5)
-    fil = (fil ** F32(3.0)) * mask * smoothstep(-0.25, 0.35, n1) * F32(0.95)
+    fil = (fil ** F32(2.6)) * mask ** F32(1.3) * smoothstep(-0.35, 0.3, n1) * F32(0.7)
 
     # Ferner Dunst: weich, kuehler, gibt Tiefe hinter dem nahen Gas.
     hz = nz.fbm([d[i] + F32(0.35) * q[i] for i in range(3)], 1.0, 4)
@@ -299,7 +300,12 @@ def nebula_rows(args):
     for c, r, s in comp.knots:
         ang2 = 2 * (1 - np.tensordot(c.astype(F32), d, axes=1))
         knot += F32(s) * np.exp(-ang2 / F32(r * r))
-    knot *= smoothstep(-0.25, 0.45, n1) * F32(1.0) + fil * F32(0.8)
+    knot *= (smoothstep(-0.25, 0.45, n1) + fil * F32(0.8)) * np.clip(mask, 0, 1)
+
+    # Milchstrassen-Leuchten: unaufgeloeste Sternwolken im Band (klumpig, weich),
+    # liegt hinter dem Staub -> dunkle Risse wie in echten Galaxie-Baendern.
+    sc_ = nz.fbm(pw, 4.2, 4)
+    milky = band ** F32(2.4) * (F32(0.25) + smoothstep(-0.35, 0.55, sc_)) * F32(0.03)
 
     E = gas * F32(1.0) + fil * F32(0.8) + knot * F32(0.4)
     hue = smoothstep(-0.28, 0.32, nz.fbm([d[i] + F32(0.5) * q[i] for i in range(3)], 0.85, 3))
@@ -310,12 +316,14 @@ def nebula_rows(args):
     col *= F32(pal.get("gain", 0.85))
     col += hexcol(pal["haze"]).astype(F32) * (haze * F32(0.9))[..., None]
     col += hexcol(pal["knot"]).astype(F32) * (knot ** F32(1.5) * F32(0.55))[..., None]
+    mcol = hexcol("#fff2e6") * 0.35 + hexcol(pal["ramp_b"][3]) * 0.4 + hexcol(pal["ramp_a"][3]) * 0.6
+    col += mcol.astype(F32) * milky[..., None]
 
     # Staub: duenne dunkle Bahnen + breite Absorption, rotet (blau staerker).
     nd = nz.fbm([q2[i] + F32(3.1) for i in range(3)], 2.6, 6)
-    lanes = (1 - np.abs(nd)) ** F32(9.0)
-    broad = smoothstep(0.02, 0.38, nd)
-    A = (lanes * F32(1.6) + broad * F32(0.9)) * np.clip(mask * 1.2 + band * 0.5, 0, 1)
+    lanes = (1 - np.abs(nd)) ** F32(5.0) * smoothstep(-0.2, 0.25, n1)
+    broad = smoothstep(-0.05, 0.45, nz.fbm([q[i] * F32(0.8) + d[i] for i in range(3)], 1.7, 5))
+    A = (lanes * F32(0.75) + broad * F32(1.3)) * np.clip(mask * 1.2 + band * 0.5, 0, 1)
     k = np.asarray(pal["dust"], dtype=F32)
     col *= np.exp(-A[..., None] * k * F32(1.25))
 
@@ -432,12 +440,12 @@ def star_layer(name, W, H, seed):
     sc = (W / 4096.0) ** 2  # Anzahl skaliert mit der Flaeche
 
     # Helligkeit nach Magnitude: N(m) ~ 10^(0.36 m), Fluss perzeptiv gestaucht.
-    n = int(52000 * sc) + 400
+    n = int(30000 * sc) + 400
     m = np.log10(rng.uniform(10 ** (0.36 * 0.0), 10 ** (0.36 * 9.0), n)) / 0.36
     d = band_weighted_dirs(rng, comp, n, 0.42)
     flux = 10 ** (-0.4 * m * 0.62) * front_dim(d)
     temp = sample_temps(rng, n)
-    rgb = star_color(temp) * flux[:, None]
+    rgb = star_color(temp, 0.45 + 0.8 * np.clip(flux / 0.2, 0, 1)[:, None]) * flux[:, None]
 
     # Sternhaufen: offene (jung, blau-weiss) und Kugelhaufen (alt, gelblich).
     cd, cr, cf, ct = [], [], [], []
@@ -459,7 +467,7 @@ def star_layer(name, W, H, seed):
         ct.append(sample_temps(rng, cnt, hot_bias=0.75) if not glob else rng.normal(4800, 500, cnt))
     cd = np.concatenate(cd)
     cflux = np.concatenate(cf) * front_dim(cd)
-    crgb = star_color(np.concatenate(ct)) * cflux[:, None]
+    crgb = star_color(np.concatenate(ct), 0.6 + 0.6 * np.clip(cflux / 0.2, 0, 1)[:, None]) * cflux[:, None]
 
     alld = np.concatenate([d, cd])
     allf = np.concatenate([flux, cflux])
@@ -507,14 +515,14 @@ def nebula_extras(img, name, W, H, seed, comp):
     rng = np.random.default_rng(seed + 200)
     sc = (W / 4096.0) ** 2
     # Milchstrassen-Sternwolken: sehr viele, sehr schwache Punkte -> koerniges Leuchten.
-    n = int(260000 * sc)
-    d = band_weighted_dirs(rng, comp, n, 0.85)
-    f = rng.uniform(0.004, 0.02, n) * front_dim(d)
+    n = int(400000 * sc)
+    d = band_weighted_dirs(rng, comp, n, 0.9)
+    f = rng.uniform(0.002, 0.008, n) * front_dim(d)
     rgb = star_color(sample_temps(rng, n, -0.1), 0.8) * f[:, None]
     dust = np.zeros_like(img)
     deposit(dust, d, rgb, W, H)
-    dust = ndimage.gaussian_filter(dust, sigma=(0.9, 0.9, 0), mode=("nearest", "wrap", "nearest"))
-    img += dust * 2.0
+    dust = ndimage.gaussian_filter(dust, sigma=(2.2 * W / 4096, 2.2 * W / 4096, 0), mode=("nearest", "wrap", "nearest"))
+    img += dust * 0.8
 
     px = PXR
     # Reflexionsnebel-Schein um zwei junge Haufen (blaeulich, weich).
