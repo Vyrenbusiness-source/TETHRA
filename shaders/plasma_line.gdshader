@@ -14,6 +14,7 @@ uniform float env = 0.0;
 uniform float flow = 0.0;        // wird von GDScript hochgezaehlt (Tempo-gekoppelt)
 uniform float prism = 0.0;
 uniform float mode = 0.0;
+uniform float beat_pulse = 0.0;  // 1 auf der Beat-Kante, Decay ~160 ms (GDScript)
 
 float hash12(vec2 p) {
 	vec3 p3 = fract(vec3(p.xyx) * 0.1031);
@@ -68,14 +69,14 @@ void fragment() {
 		float band = exp(-dy * dy * 3.2);
 		float core = exp(-dy * dy * 28.0);
 		a = (fil * band * 1.6 + core * 0.4 + band * 0.07) * edge_x;
-		a *= 0.88 + env * 0.12;
+		a *= 0.74 + beat_pulse * 0.26;
 		c = mix(color, color2, clamp(ridge2 * 0.6 + w * 0.3 - 0.2, 0.0, 1.0) * 0.55);
 		c = mix(c, vec3(1.0), clamp(fil * core, 0.0, 1.0) * 0.5);
 	} else {
 		// Aura: an der Linie am staerksten, zur Kamera hin weich weg.
 		float fall = pow(1.0 - y, 2.6) * smoothstep(0.0, 0.3, y);
 		float n = fbm(vec2(x * 4.0 - flow * 0.15, y * 3.0 + flow * 0.1));
-		a = fall * (0.55 + 0.45 * n) * edge_x * 0.55;
+		a = fall * (0.55 + 0.45 * n) * edge_x * 0.55 * (0.85 + beat_pulse * 0.15);
 		c = mix(color, color2, n * 0.4);
 	}
 

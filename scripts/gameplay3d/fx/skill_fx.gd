@@ -20,6 +20,7 @@ const ACC_OFF := 0.945          # Hysterese: kein Flattern an der Grenze
 const RISE_RATE := 0.85         # Stufen pro Sekunde beim Aufbluehen
 const FALL_TIME := 0.6          # Sekunden fuer eine Stufe nach unten
 const LANE_HALF := 0.75
+const PULSE_DECAY := 0.16        # s: Plasma-Puls auf dem Beat klingt in ~160 ms ab
 const SWEEP_SPEED := 1.25       # Meilenstein-Welle: Strecken-Laengen pro Sekunde
 
 const QUALITY_MAX := 0
@@ -43,6 +44,8 @@ var _held := 0                  # erreichte Stufe seit dem letzten Miss
 var _acc_ok := false
 var _beat_count := 0
 var _prev_phase := 0.0
+var _beat_dur := 0.47           # geschaetzte Beat-Laenge (s), aus Phasenlauf
+var _since_beat := 1.0          # s seit letzter Beat-Kante
 var _time := 0.0
 var _flow := 0.0
 var _boost_t: Array[float] = [0.0, 0.0]   # Ziel-Energie links/rechts
@@ -174,13 +177,21 @@ func set_theme(theme: Color, theme_kiai: Color) -> void:
 
 
 ## Pro Frame. beat_phase 0..1 innerhalb des Schlags, beat_env 0..1 Huellkurve.
+## music_energy 0..1 (optional, Default 1.0) skaliert die Staerke der Beat-Pulse.
 func update(delta: float, beat_phase: float, beat_env: float, combo: int,
-		accuracy: float, kiai_mix: float) -> void:
+		accuracy: float, kiai_mix: float, music_energy: float = 1.0) -> void:
 	if not _ready_ok:
 		return
 	_time += delta
+	_since_beat += delta
 	if beat_phase < _prev_phase - 0.5:
 		_beat_count += 1
+		if _since_beat > 0.15 and _since_beat < 2.0:
+			_beat_dur = lerpf(_beat_dur, _since_beat, 0.5)
+		_since_beat = beat_phase * _beat_dur
+	var energy := 0.6 + 0.4 * clampf(music_energy, 0.0, 1.0)
+	# Attack sofort auf der Kante, danach exponentieller Decay (~160 ms).
+	var beat_pulse := exp(-_since_beat / (PULSE_DECAY * 0.33)) * energy
 	_prev_phase = beat_phase
 	var beats := float(_beat_count) + beat_phase
 
@@ -231,8 +242,8 @@ func update(delta: float, beat_phase: float, beat_env: float, combo: int,
 	var s_int := clampf((w1 * 0.62 + w2 * 0.14 + w3 * 0.12 + w4 * 0.12) * kiai_gain, 0.0, 1.0)
 	var wall_int := clampf(w3 * 0.55 * kiai_gain, 0.0, 1.0)
 	for i in 2:
-		_apply_stream(_stream_mats[i], _streams[i], s_int, col, beats, env, w4, i)
-		_apply_stream(_wall_mats[i], _walls[i], wall_int, col, beats - 0.04, env, w4, i)
+		_apply_stream(_stream_mats[i], _streams[i], s_int, col, beats, env, w4, i, music_energy)
+		_apply_stream(_wall_mats[i], _walls[i], wall_int, col, beats, env, w4, i, music_energy)
 
 	var p_int := clampf(w2 * (0.78 + w4 * 0.17) * kiai_gain, 0.0, 1.0)
 	_plasma.visible = p_int > 0.002
@@ -241,6 +252,7 @@ func update(delta: float, beat_phase: float, beat_env: float, combo: int,
 		_plasma_mat.set_shader_parameter(&"color", col)
 		_plasma_mat.set_shader_parameter(&"color2", col2)
 		_plasma_mat.set_shader_parameter(&"env", env)
+		_plasma_mat.set_shader_parameter(&"beat_pulse", beat_pulse)
 		_plasma_mat.set_shader_parameter(&"flow", _flow)
 		_plasma_mat.set_shader_parameter(&"prism", w4)
 
@@ -251,12 +263,13 @@ func update(delta: float, beat_phase: float, beat_env: float, combo: int,
 		_aura_mat.set_shader_parameter(&"color", col)
 		_aura_mat.set_shader_parameter(&"color2", col2)
 		_aura_mat.set_shader_parameter(&"env", env)
+		_aura_mat.set_shader_parameter(&"beat_pulse", beat_pulse)
 		_aura_mat.set_shader_parameter(&"flow", _flow)
 		_aura_mat.set_shader_parameter(&"prism", w4)
 
 
 func _apply_stream(mat: ShaderMaterial, mesh: MeshInstance3D, intensity: float,
-		col: Color, beats: float, env: float, prism: float, side_i: int) -> void:
+		col: Color, beats: float, env: float, prism: float, side_i: int, music_energy: float = 1.0) -> void:
 	mesh.visible = intensity > 0.002
 	if not mesh.visible:
 		return
@@ -264,6 +277,7 @@ func _apply_stream(mat: ShaderMaterial, mesh: MeshInstance3D, intensity: float,
 	mat.set_shader_parameter(&"color", col)
 	mat.set_shader_parameter(&"beats", beats)
 	mat.set_shader_parameter(&"env", env)
+	mat.set_shader_parameter(&"music_energy", clampf(music_energy, 0.0, 1.0))
 	mat.set_shader_parameter(&"prism", prism)
 	mat.set_shader_parameter(&"boost", _boost[side_i])
 	mat.set_shader_parameter(&"sweep", _sweep)
