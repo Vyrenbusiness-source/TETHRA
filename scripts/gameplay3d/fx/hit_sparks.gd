@@ -2,12 +2,14 @@ class_name HitSparks
 extends Node3D
 ## Treffer-Funken an der Abfanglinie. Alles vorab gepoolt (MultiMesh + feste
 ## Mesh-Instanzen), keine Allokation pro Treffer. Additiv, Helligkeit gedeckelt.
-## Funken fliegen nach oben/aussen/zur Kamera, nie in Richtung der naechsten Noten (-z).
+## LESBARKEIT: Funken bleiben klein, kurz und flach an/unterhalb der Linie
+## (nach aussen + zur Kamera, kaum nach oben, nie Richtung -z), der Ring-Puls
+## zeichnet nur die kameraseitige Haelfte -> nie ueber anfliegenden Noten.
 
 const SPARK_POOL := 96
 const BRIGHT_CAP := 0.75     # Obergrenze Helligkeit (grell tut weh)
 const LANE_TIME := 0.25
-const RING_TIME := 0.28
+const RING_TIME := 0.18
 const LANE_LEN := 22.0
 
 const RING_CODE := "
@@ -19,10 +21,12 @@ uniform float strength = 0.6;
 void fragment() {
 	vec2 p = UV * 2.0 - 1.0;
 	float d = length(p);
-	float r = mix(0.25, 0.95, 1.0 - pow(1.0 - t, 2.0));
-	float w = mix(0.14, 0.05, t);
-	float ring = smoothstep(w, 0.0, abs(d - r));
-	float a = ring * (1.0 - t) * strength;
+	float r = mix(0.22, 0.62, 1.0 - pow(1.0 - t, 2.0));
+	float aa = max(fwidth(d), 0.001);
+	float ring = 1.0 - smoothstep(0.02, 0.02 + aa * 1.5, abs(d - r));
+	// UV.y >= 0.5 = Kamera-Seite der Linie (Quad um -90 Grad gedreht).
+	float near_side = smoothstep(0.49, 0.53, UV.y);
+	float a = ring * near_side * (1.0 - t) * (1.0 - t) * strength;
 	ALBEDO = col * a;
 	ALPHA = 1.0;
 }
@@ -179,30 +183,30 @@ func spark(column: int, quality: int) -> void:
 	var ring := 0.0
 	match quality:
 		0:
-			count = 12
-			ring = 0.55
+			count = 6
+			ring = 0.45
 		1:
-			count = 7
+			count = 4
 		2:
-			count = 3
+			count = 2
 		_:
-			ring = 0.22
+			ring = 0.18
 	var origin := Vector3(_rail_x[column], _road_y + 0.12, _z_line)
 	var side := -1.0 if column < _rail_x.size() / 2 else 1.0
 	var col := _lighten(_theme, 0.2 if quality == 0 else 0.1)
 	for k in count:
 		var i := _cursor
 		_cursor = (_cursor + 1) % SPARK_POOL
-		var spd := _rng.randf_range(1.2, 2.8)
-		# Nach oben, seitlich nach aussen, leicht zur Kamera (+z), nie nach -z.
+		# Flach: seitlich nach aussen und zur Kamera (+z), kaum nach oben,
+		# nie nach -z -> bleibt im Bild an/unterhalb der Abfanglinie.
 		_vel[i] = Vector3(
-			side * _rng.randf_range(0.1, 1.2) + _rng.randf_range(-0.5, 0.5),
-			spd * _rng.randf_range(0.6, 1.0),
-			_rng.randf_range(0.2, 1.4))
-		_pos[i] = origin + Vector3(_rng.randf_range(-0.15, 0.15), 0.0, 0.1)
-		_life0[i] = _rng.randf_range(0.30, 0.5)
+			side * _rng.randf_range(0.2, 1.1) + _rng.randf_range(-0.4, 0.4),
+			_rng.randf_range(0.15, 0.55),
+			_rng.randf_range(1.0, 2.2))
+		_pos[i] = origin + Vector3(_rng.randf_range(-0.15, 0.15), 0.0, 0.15)
+		_life0[i] = _rng.randf_range(0.16, 0.26)
 		_life[i] = _life0[i]
-		_size[i] = _rng.randf_range(0.09, 0.16) * (1.0 if quality == 0 else 0.8)
+		_size[i] = _rng.randf_range(0.05, 0.09) * (1.0 if quality == 0 else 0.8)
 		_tint[i] = col.lerp(Color(1.0, 0.85, 0.6), _rng.randf() * 0.35)
 	if ring > 0.0:
 		_ring_t[column] = 0.0
@@ -211,12 +215,11 @@ func spark(column: int, quality: int) -> void:
 		_rings[column].visible = true
 
 
+## Frueher ein Licht-Schuss die Spur hinauf. Der lief genau ueber die
+## anfliegenden Noten und stoerte das Lesen -> bewusst ohne Wirkung (API bleibt).
 func lane_shot(column: int) -> void:
 	if not _ready_ok or column < 0 or column >= _rail_x.size():
 		return
-	_lane_mats[column].set_shader_parameter("col", _vec(_lighten(_theme, 0.2)))
-	_lane_t[column] = 0.0
-	_lanes[column].visible = true
 
 
 func update(delta: float) -> void:
@@ -230,7 +233,7 @@ func update(delta: float) -> void:
 			_hide_spark(i)
 			continue
 		var v := _vel[i]
-		v.y -= 7.0 * delta
+		v.y -= 9.0 * delta
 		v *= maxf(0.0, 1.0 - 1.8 * delta)
 		var p := _pos[i] + v * delta
 		if p.y < _road_y + 0.03:
