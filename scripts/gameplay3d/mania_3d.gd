@@ -1201,7 +1201,7 @@ func _fire_laser(column: int, target: Vector3, power: float = 1.0) -> void:
 	var fm := ShaderMaterial.new()
 	fm.shader = _glow_shader
 	fm.set_shader_parameter("base_color", col.lerp(Color(1, 1, 1), 0.30))
-	var peak := (1.1 if fx <= 0.0 else 1.8) * power
+	var peak := (1.1 if fx <= 0.0 else 1.35) * power
 	fm.set_shader_parameter("intensity", peak)
 	flash.material_override = fm
 	flash.position = target
@@ -2042,7 +2042,7 @@ func _on_beat_edge(beat_idx: int) -> void:
 	if downbeat and _fx_level() > 0.0:
 		_spawn_beat_wave()
 	# Glut-Funken (mehr bei hoher Combo/Kiai).
-	var n := int((3.0 + _kiai_mix * 3.0 + float(mini(core.combo / 100, 3))) * _fx_level())
+	var n := int((2.2 + _kiai_mix * 2.2 + float(mini(core.combo / 100, 2))) * _fx_level())
 	for k in n:
 		var i := _ember_next % _ember_pos.size()
 		_ember_next += 1
@@ -2055,7 +2055,7 @@ func _on_beat_edge(beat_idx: int) -> void:
 		_ember_life[i] = 1.6 + h2 * 1.2
 	# Nebel + Planeten ticken, Linie blitzt (Takt-Anfang staerker).
 	_nebula_kick = 1.0
-	_line_flash = maxf(_line_flash, 0.6)
+	_line_flash = maxf(_line_flash, 0.45)
 	if beat_idx % 4 == 0:
 		_line_flash = 1.0
 	# Takt-Anfang: der Nebel tickt staerker.
