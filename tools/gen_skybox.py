@@ -522,7 +522,7 @@ def nebula_extras(img, name, W, H, seed, comp):
     dust = np.zeros_like(img)
     deposit(dust, d, rgb, W, H)
     dust = ndimage.gaussian_filter(dust, sigma=(2.2 * W / 4096, 2.2 * W / 4096, 0), mode=("nearest", "wrap", "nearest"))
-    img += dust * 0.8
+    img += dust * 0.35
 
     px = PXR
     # Reflexionsnebel-Schein um zwei junge Haufen (blaeulich, weich).
@@ -617,13 +617,18 @@ def build(name, W, seed, out_dir, preview):
     os.makedirs(out_dir, exist_ok=True)
     pa = os.path.join(out_dir, "sky_%s.webp" % name)
     pb = os.path.join(out_dir, "sky_%s_stars.webp" % name)
-    Image.fromarray(to_u8(neb_t, rng)).save(pa, "WEBP", quality=88, method=6)
-    Image.fromarray(to_u8(star_t, rng)).save(pb, "WEBP", quality=88, method=6)
+    # Wurzel-Kodierung (ENC=2): hebt die Schatten in mehr 8-Bit-Stufen, damit
+    # WebP die dunklen Verlaeufe nicht zu Blöcken quantisiert. Der Shader
+    # dekodiert mit pow(textur_linear, 2.0).
+    Image.fromarray(to_u8(np.sqrt(neb_t), rng)).save(pa, "WEBP", quality=88, method=6)
+    Image.fromarray(to_u8(np.sqrt(star_t), rng)).save(pb, "WEBP", quality=88, method=6)
     msg = "%s: %dx%d  %.1f s  nebula %.2f MB  stars %.2f MB" % (
         name, W, H, time.time() - t0, os.path.getsize(pa) / 1e6, os.path.getsize(pb) / 1e6)
     if preview:
         os.makedirs(preview, exist_ok=True)
-        view = camera_view(neb_t, star_t, W, H)
+        dec = [srgb_to_lin(np.asarray(Image.open(f).convert("RGB"), dtype=np.float64) / 255.0) ** 2
+               for f in (pa, pb)]
+        view = camera_view(dec[0], dec[1], W, H)
         Image.fromarray(to_u8(np.clip(view, 0, 1), rng)).save(os.path.join(preview, "cam_%s.png" % name))
         small = Image.fromarray(to_u8(np.clip(neb_t + star_t, 0, 1), rng)).resize((2048, 1024), Image.LANCZOS)
         small.save(os.path.join(preview, "pano_%s.png" % name))

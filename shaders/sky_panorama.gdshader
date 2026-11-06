@@ -8,6 +8,8 @@ shader_type sky;
 //
 // Abbildung (identisch zum Generator): u = atan(d.x, -d.z)/2pi + 0.5,
 // v = 0.5 - asin(d.y)/pi -> Bildmitte des Panoramas liegt vorn (-Z).
+// Kodierung: Texturen sind wurzel-kodiert (Schatten-Praezision in WebP),
+// linear = pow(textur, 2.0) - eigene Texturen genauso erzeugen.
 // Vorn-unten (hinter Strecke/Noten) ist schon im Bild abgedunkelt,
 // `readability` dunkelt dort zusaetzlich in Weltkoordinaten ab (bleibt auch
 // bei gedrehtem Panorama hinter der Strecke).
@@ -100,15 +102,20 @@ vec3 zoom_dir(vec3 d, float s) {
 	return vec3(perp / l * sn, -cs);
 }
 
+// Wurzel-Kodierung der Texturen aufheben (siehe Kopf).
+vec3 dec(vec3 c) {
+	return c * c;
+}
+
 vec3 stars_at(vec3 d, mat3 srot) {
 	vec2 uv = dir_uv(d * srot, stars_offset);
 	if (palette_mix <= 0.001) {
-		return textureLod(stars_a, uv, 0.0).rgb;
+		return dec(textureLod(stars_a, uv, 0.0).rgb);
 	}
 	if (palette_mix >= 0.999) {
-		return textureLod(stars_b, uv, 0.0).rgb;
+		return dec(textureLod(stars_b, uv, 0.0).rgb);
 	}
-	return mix(textureLod(stars_a, uv, 0.0).rgb, textureLod(stars_b, uv, 0.0).rgb, palette_mix);
+	return mix(dec(textureLod(stars_a, uv, 0.0).rgb), dec(textureLod(stars_b, uv, 0.0).rgb), palette_mix);
 }
 
 float hash12(vec2 p) {
@@ -124,11 +131,11 @@ void sky() {
 	vec2 puv = dir_uv(dir * euler(pano_rotation), pano_offset);
 	vec3 neb;
 	if (palette_mix <= 0.001) {
-		neb = textureLod(tex_a, puv, 0.0).rgb;
+		neb = dec(textureLod(tex_a, puv, 0.0).rgb);
 	} else if (palette_mix >= 0.999) {
-		neb = textureLod(tex_b, puv, 0.0).rgb;
+		neb = dec(textureLod(tex_b, puv, 0.0).rgb);
 	} else {
-		neb = mix(textureLod(tex_a, puv, 0.0).rgb, textureLod(tex_b, puv, 0.0).rgb, palette_mix);
+		neb = mix(dec(textureLod(tex_a, puv, 0.0).rgb), dec(textureLod(tex_b, puv, 0.0).rgb), palette_mix);
 	}
 	// Puls hebt vor allem die hellen Gas-Kerne (Lichter atmen, Schwarz bleibt schwarz).
 	float nl = dot(neb, vec3(0.2126, 0.7152, 0.0722));
