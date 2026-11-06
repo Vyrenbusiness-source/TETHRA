@@ -37,6 +37,7 @@ var _use_audio := false
 var _camera: Camera3D
 var _glow_shader: Shader
 var _ring_shader: Shader
+var _note_shader: Shader
 
 var _theme_col := Color(0.22, 0.68, 0.90)
 var _theme_kiai := Color(0.92, 0.52, 0.20)
@@ -250,6 +251,7 @@ func _ready() -> void:
 
 	_glow_shader = load("res://shaders/glow_dot.gdshader")
 	_ring_shader = load("res://shaders/hit_ring.gdshader")
+	_note_shader = load("res://shaders/note_disc.gdshader")
 	_extract_theme_color()
 	_preload_stations()
 	_build_world()
@@ -978,26 +980,21 @@ func _on_note_spawned(index: int) -> void:
 	var root := Node3D.new()
 	# 2D-KONSISTENZ: Die Note ist ein FLACHER Kreis wie das Pad — sie gleitet
 	# als Hit-Circle heran und landet exakt AUF dem Pad-Ring (kein 3D-Ball).
+	# Kern + Rim in EINEM Quad (note_disc.gdshader): beat/approach pro Frame.
 	var disc := MeshInstance3D.new()
-	var cyl := CylinderMesh.new()
-	cyl.top_radius = 0.37
-	cyl.bottom_radius = 0.37
-	cyl.height = 0.04
-	disc.mesh = cyl
-	var disc_mat := _emissive_mat(col, 0.6 if clean else 1.0)
-	disc.material_override = disc_mat
+	var dq := QuadMesh.new()
+	dq.size = Vector2(1.12, 1.12)
+	disc.mesh = dq
+	var rim := ShaderMaterial.new()
+	rim.shader = _note_shader
+	rim.set_shader_parameter("base_color", col)
+	rim.set_shader_parameter("rim_color", col.lerp(Color(1, 1, 1), 0.35 if clean else 0.6))
+	rim.set_shader_parameter("fill_alpha", 0.75 if clean else 0.85)
+	rim.set_shader_parameter("halo_strength", 0.4 if clean else 0.7)
+	rim.set_shader_parameter("rim_boost", 0.3)
+	disc.material_override = rim
+	disc.rotation_degrees = Vector3(-90, 0, 0)
 	root.add_child(disc)
-	var ring := MeshInstance3D.new()
-	var rtor := TorusMesh.new()
-	rtor.inner_radius = 0.42
-	rtor.outer_radius = 0.54
-	rtor.rings = 96
-	rtor.ring_segments = 40
-	ring.mesh = rtor
-	var rim := _emissive_mat(col.lerp(Color(1, 1, 1), 0.35 if clean else 0.6),
-		0.9 if clean else 1.4)
-	ring.material_override = rim
-	root.add_child(ring)
 	var glow := MeshInstance3D.new()
 	var q := QuadMesh.new()
 	q.size = Vector2(2.05, 2.05)
@@ -1098,7 +1095,9 @@ func _on_note_judged(index: int, result: Dictionary) -> void:
 			node.queue_free()
 		else:
 			# Drohne rauscht am Schiff vorbei und verglimmt rot.
-			(entry.rim as StandardMaterial3D).emission = Color(1.0, 0.25, 0.25)
+			var miss_mat := entry.rim as ShaderMaterial
+			miss_mat.set_shader_parameter("rim_color", Color(1.0, 0.25, 0.25))
+			miss_mat.set_shader_parameter("base_color", Color(0.55, 0.12, 0.12))
 			var tw := create_tween()
 			tw.tween_property(node, "position:z", SHIP_Z + 6.0, 0.35)
 			tw.parallel().tween_property(node, "scale", Vector3.ONE * 0.3, 0.35)
@@ -1200,6 +1199,8 @@ func _fire_laser(column: int, target: Vector3, power: float = 1.0) -> void:
 	var rpeak := (0.8 if fx <= 0.0 else 1.5) * power
 	rm.set_shader_parameter("intensity", rpeak)
 	rm.set_shader_parameter("radius", 0.06)
+	rm.set_shader_parameter("beat", _beat_env * 0.6)
+	rm.set_shader_parameter("approach", 1.0)
 	ring.material_override = rm
 	ring.position = Vector3(target.x, ROAD_Y + 0.02, target.z)
 	ring.rotation_degrees = Vector3(-90, 0, 0)
@@ -1421,10 +1422,14 @@ func _process(delta: float) -> void:
 		var lock: bool = absf(until) <= core.w50
 		# Beat-Anticipation: Noten, die AUF dem Beat landen, glimmen im
 		# Anflug leicht heller und pulsieren mit der Beat-Huellkurve.
-		var rim_base := 1.3
+		var rim_base := 0.3
 		if bool(entry.get("on_beat", false)):
-			rim_base = 1.5 + _beat_env * 0.5
-		(entry.rim as StandardMaterial3D).emission_energy_multiplier = 2.6 if lock else rim_base
+			rim_base = 0.4 + _beat_env * 0.2
+		var nmat := entry.rim as ShaderMaterial
+		nmat.set_shader_parameter("rim_boost", 1.0 if lock else rim_base)
+		nmat.set_shader_parameter("beat", _beat_env * 0.6)
+		nmat.set_shader_parameter("approach",
+				clampf((root.position.z - Z_FAR) / (Z_LINE - Z_FAR), 0.0, 1.0))
 		(entry.glow as ShaderMaterial).set_shader_parameter("intensity", 1.6 if lock else 0.9)
 		var beam: MeshInstance3D = entry.beam
 		if beam != null:
