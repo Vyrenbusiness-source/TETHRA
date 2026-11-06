@@ -1117,6 +1117,8 @@ func _on_note_judged(index: int, result: Dictionary) -> void:
 		var c := core.combo
 		if (c == 25 or c == 50 or (c >= 100 and c % 100 == 0)) and c != _last_milestone:
 			_last_milestone = c
+			if c >= 50 and _use_audio:
+				Sfx.milestone(c)
 			# Milestone-Belohnung: Sternschnuppe zieht ueber den Himmel.
 			if c >= 50 and _fx_level() > 0.0:
 				_spawn_shooting_star(c)
