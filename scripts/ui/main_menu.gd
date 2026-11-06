@@ -26,6 +26,8 @@ var _tour_steps: Array = []
 var _tour_overlay: Control
 # Leise Menue-Musik: der zuletzt gespielte Song ab seiner Preview-Stelle.
 var _music: AudioStreamPlayer
+var _viz: AudioVisualizer
+var _beat_clock: BeatClock
 # Bass-Reaktivitaet: Logo, Shader-Hintergrund, Overlay.
 var _logo: Label
 var _bg_mat: ShaderMaterial
@@ -130,14 +132,20 @@ func _start_menu_music() -> void:
 	var from_sec := maxf(float(bm.general.get("PreviewTime", -1.0)), 0.0) / 1000.0
 	_music = AudioStreamPlayer.new()
 	_music.stream = stream
-	_music.bus = "Master"
+	_music.bus = "Music"
 	_music.volume_db = -40.0
 	add_child(_music)
 	_music.finished.connect(func():
 		if is_instance_valid(_music):
 			_music.play(from_sec))
 	_music.play(from_sec)
-	_build_now_playing(bm, _load_cover(str(last.osz_path), bm))
+	var cover := _load_cover(str(last.osz_path), bm)
+	if _viz != null:
+		_viz.set_color(_cover_color(cover))
+	if not bm.timing_points.is_empty():
+		_beat_clock = BeatClock.new()
+		_beat_clock.setup(bm.timing_points)
+	_build_now_playing(bm, cover)
 	# Sanft auf "leise" hochfahren statt hart einzusetzen.
 	var tw := create_tween()
 	tw.tween_property(_music, "volume_db", -14.0, 1.6)
@@ -166,7 +174,13 @@ func _process(delta: float) -> void:
 		_np_progress.size.x = _np_track.size.x * frac
 	if _logo != null:
 		var idle: float = 0.009 * (1.0 + sin(_logo_t * TAU / 4.4))
-		_logo.scale = Vector2.ONE * (1.0 + idle + 0.03 * _kick)
+		var pulse_k: float = _kick
+		if _beat_clock != null and playing and _beat_clock.bpm > 0.0:
+			_beat_clock.update(_music.get_playback_position() * 1000.0, delta)
+			pulse_k = _beat_clock.beat_env
+		_logo.scale = Vector2.ONE * (1.0 + idle + 0.03 * pulse_k)
+		_logo.add_theme_color_override("font_shadow_color",
+			Color(COL_ACCENT.r, COL_ACCENT.g, COL_ACCENT.b, 0.5 + 0.25 * pulse_k))
 	if _bg_mat != null:
 		_bg_mat.set_shader_parameter("bass", bass_lvl)
 		_bg_mat.set_shader_parameter("kick", _kick)
@@ -320,9 +334,33 @@ func _build_visualizer_slot() -> void:
 	viz.offset_top = 10
 	viz.offset_bottom = -6
 	viz.color = UiTheme.ACCENT
+	_viz = viz
 	viz.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	viz.modulate.a = 0.55
 	slot.add_child(viz)
+
+
+## Songfarbe: Durchschnitt des runterskalierten Covers, Saettigung/Helligkeit angehoben.
+func _cover_color(cover: Texture2D) -> Color:
+	if cover == null:
+		return UiTheme.ACCENT
+	var img := cover.get_image()
+	if img == null or img.is_empty():
+		return UiTheme.ACCENT
+	if img.is_compressed():
+		img.decompress()
+	img.resize(8, 8, Image.INTERPOLATE_BILINEAR)
+	var r := 0.0
+	var g := 0.0
+	var b := 0.0
+	for y in 8:
+		for x in 8:
+			var c := img.get_pixel(x, y)
+			r += c.r
+			g += c.g
+			b += c.b
+	var avg := Color(r / 64.0, g / 64.0, b / 64.0)
+	return Color.from_hsv(avg.h, clampf(avg.s * 1.3, 0.45, 0.9), clampf(avg.v * 1.5, 0.75, 1.0))
 
 
 func _load_cover(osz_path: String, bm: Beatmap) -> Texture2D:
@@ -446,7 +484,7 @@ func _build_buttons() -> void:
 	_add_wrapped(vb, _btn_play)
 
 	_btn_mp = _menu_button("MULTIPLAYER", false)
-	_btn_mp.pressed.connect(func(): get_tree().change_scene_to_file("res://scenes/mp_lobby.tscn"))
+	_btn_mp.pressed.connect(func(): SceneFader.go("res://scenes/mp_lobby.tscn"))
 	_add_wrapped(vb, _btn_mp)
 
 	var tut := _menu_button("TUTORIAL", false)
@@ -729,7 +767,7 @@ func _tour_finish() -> void:
 	guide.text = "📖 Wissens-Guide lesen (pp, Sterne, Acc …)"
 	guide.custom_minimum_size = Vector2(0, 42)
 	UiTheme.style_button(guide)
-	guide.pressed.connect(func(): get_tree().change_scene_to_file("res://scenes/tutorial.tscn"))
+	guide.pressed.connect(func(): SceneFader.go("res://scenes/tutorial.tscn"))
 	vb.add_child(guide)
 	var close := Button.new()
 	close.text = "Schließen"
@@ -758,7 +796,7 @@ func _start_practice() -> void:
 			GameSession.replay_events = []
 			GameSession.set_selection(ms.osz_path, i, ms.version_name_at(i),
 				str(m.get("osu_filename", "")), ms.stars_at(i))
-			get_tree().change_scene_to_file("res://scenes/mania_3d.tscn")
+			SceneFader.go("res://scenes/mania_3d.tscn")
 			return
 
 
@@ -868,7 +906,7 @@ func _recent_row(e: Dictionary) -> Control:
 
 
 func _play() -> void:
-	get_tree().change_scene_to_file("res://scenes/song_select.tscn")
+	SceneFader.go("res://scenes/song_select.tscn")
 
 
 func _capture() -> void:
