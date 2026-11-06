@@ -228,6 +228,16 @@ func _ready() -> void:
 	fx.item_selected.connect(func(i): Settings.tunnel_intensity = i)
 	_row(cv_anzeige, "Effekt-Intensität", fx, null)
 
+	var cam := OptionButton.new()
+	cam.add_item("Komfort", 0)
+	cam.add_item("Dynamisch", 1)
+	cam.select(Settings.camera_mode)
+	cam.custom_minimum_size = Vector2(0, 36)
+	cam.tooltip_text = "Komfort: ruhige Kamera, gegen Übelkeit
+Dynamisch: volle Flug-Bewegung"
+	cam.item_selected.connect(func(i): Settings.camera_mode = i)
+	_row(cv_anzeige, "Kamera", cam, null)
+
 	var gfx := OptionButton.new()
 	gfx.add_item("Niedrig", 0)
 	gfx.add_item("Mittel (2x AA)", 1)
