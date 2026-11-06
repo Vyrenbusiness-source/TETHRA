@@ -78,6 +78,10 @@ var _ember_mat: ShaderMaterial
 
 # Replay: Aufnahme jeder Runde + zeitgenaue Wiedergabe.
 var _recorded: Array = []
+## --autoplay (nur Screenshots/Debug): trifft jede Note exakt, speichert nichts.
+var _autoplay := false
+var _auto_idx := 0
+var _auto_release: Array[float] = []
 var _replay_idx := 0
 
 # Kreative Song-Events: Drop-Warp, Notendichte-Surge, Phrasen-Sweep, Break.
@@ -247,6 +251,9 @@ func _ready() -> void:
 		scroll = minf(scroll, 1.0) * 0.65
 	core.setup(_beatmap, -1.0, scroll)
 	_clock.setup(_beatmap.timing_points)
+	_autoplay = OS.get_cmdline_args().has("--autoplay") 			and not GameSession.is_replay and not Lobby.active
+	_auto_release.resize(core.columns)
+	_auto_release.fill(-1.0)
 	core.note_spawned.connect(_on_note_spawned)
 	core.note_judged.connect(_on_note_judged)
 	core.hold_started.connect(_on_hold_started)
@@ -1319,7 +1326,7 @@ func _ur_tick(result: Dictionary) -> void:
 # ---------------------------------------------------------------------------
 
 func _input(event: InputEvent) -> void:
-	if _ended or GameSession.is_replay:
+	if _ended or GameSession.is_replay or _autoplay:
 		return
 	if event is InputEventKey and not event.echo:
 		var lane := Settings.lane_for_key(event.keycode)
@@ -1331,6 +1338,30 @@ func _input(event: InputEvent) -> void:
 				core.key_down(lane, t)
 			else:
 				core.key_up(lane, t)
+
+
+## Autoplay: Taste exakt zur Notenzeit, Holds bis end_time, sonst 40 ms.
+## Zeitstempel wie beim Replay -> Judgement bleibt unveraendert.
+func _run_autoplay(t: float) -> void:
+	for c in _auto_release.size():
+		var rel := _auto_release[c]
+		if rel >= 0.0 and rel <= t:
+			core.key_up(c, rel)
+			_lane_held[c] = false
+			_auto_release[c] = -1.0
+	var objs := _beatmap.hit_objects
+	while _auto_idx < objs.size() and objs[_auto_idx].time <= t:
+		var n := objs[_auto_idx] as ManiaNote
+		_auto_idx += 1
+		var c := n.column
+		if c < 0 or c >= _auto_release.size():
+			continue
+		if _auto_release[c] >= 0.0:
+			core.key_up(c, minf(_auto_release[c], n.time))
+			_auto_release[c] = -1.0
+		core.key_down(c, n.time)
+		_lane_held[c] = true
+		_auto_release[c] = n.end_time() if n.is_hold else n.time + 40.0
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -1413,6 +1444,8 @@ func _process(delta: float) -> void:
 				core.key_down(int(ev.lane), float(ev.t))
 			else:
 				core.key_up(int(ev.lane), float(ev.t))
+	if _autoplay:
+		_run_autoplay(t)
 	core.update(t)
 	# Tutorial: vor jedem neuen Element anhalten und erklaeren.
 	if GameSession.tutorial and not _ended and not _countdown_running \
@@ -2621,8 +2654,8 @@ func _show_results(is_fail: bool) -> void:
 				pp = maxf(pp, max_pp * pow(acc, 6.0) * 0.8)
 	s["pp"] = pp
 	var new_best := false
-	if GameSession.is_replay or GameSession.tutorial:
-		# Replay-Ansicht/Tutorial: NICHTS werten oder speichern.
+	if GameSession.is_replay or GameSession.tutorial or _autoplay:
+		# Replay-Ansicht/Tutorial/Autoplay: NICHTS werten oder speichern.
 		pp = -1.0
 	else:
 		var save := ScoreStore.submit(GameSession.osz_path, _beatmap.version_name(), s)
