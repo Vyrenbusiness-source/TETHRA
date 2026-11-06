@@ -11,7 +11,7 @@ const MIX_THEME := 0.12 ## wie stark das Theme die Palette tönt
 
 ## Gleiche Helligkeit, gedaempfte Saettigung.
 const PALETTE := {
-	1: Color("e8715f"), ## warmes Rot-Koralle
+	1: Color("6fd08c"), ## Mintgruen (Koralle war mit Miss-Rot verwechselbar)
 	2: Color("5f8ee8"), ## Blau
 	3: Color("a57be8"), ## Violett
 	4: Color("e0bd58"), ## Gelb-Gold

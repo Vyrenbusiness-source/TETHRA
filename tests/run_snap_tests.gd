@@ -82,7 +82,7 @@ func _test_colors() -> void:
 		seen[c.to_html()] = true
 	_check(seen.size() == SnapColor.DIVISORS.size(), "8 Teiler = 8 verschiedene Farben")
 	var c1 := SnapColor.color_for(1, theme)
-	_check(c1.r > c1.b, "1/1 warm")
+	_check(c1.g > c1.r, "1/1 nicht rot (keine Verwechslung mit Miss)")
 	var c2 := SnapColor.color_for(2, theme)
 	_check(c2.b > c2.r, "1/2 blau")
 	_check(SnapColor.color_for(99, theme) == SnapColor.color_for(16, theme), "unbekannt = 1/16")
