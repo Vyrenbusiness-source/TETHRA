@@ -26,6 +26,7 @@ var _vol_value: Label
 
 
 func _ready() -> void:
+	Sfx.ui_open()
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	mouse_filter = Control.MOUSE_FILTER_STOP
@@ -135,14 +136,14 @@ func _ready() -> void:
 		Settings.volume_db = v
 		Settings.apply()
 		_vol_value.text = "%d dB" % int(v))
-	_row(cv_audio, "Lautstaerke", vol_slider, _vol_value)
+	_row(cv_audio, "Lautstärke", vol_slider, _vol_value)
 
 	var enh := CheckButton.new()
 	enh.button_pressed = Settings.audio_enhance
 	enh.toggled.connect(func(on):
 		Settings.audio_enhance = on
 		Settings.apply())
-	_row(cv_audio, "Klarheit (Hoehen)", enh, null)
+	_row(cv_audio, "Klarheit (Höhen)", enh, null)
 
 	var bass_slider := HSlider.new()
 	bass_slider.min_value = 0.0
@@ -176,7 +177,7 @@ func _ready() -> void:
 	hs_slider.value_changed.connect(func(v):
 		Settings.hitsound_volume = v
 		hs_value.text = "%d %%" % int(v * 100.0))
-	_row(cv_audio, "Hitsound-Lautstaerke", hs_slider, hs_value)
+	_row(cv_audio, "Hitsound-Lautstärke", hs_slider, hs_value)
 
 	# ------------------------------- ANZEIGE --------------------------------
 	var cv_anzeige := _section(vb, "ANZEIGE")
@@ -188,7 +189,7 @@ func _ready() -> void:
 	fx.select(Settings.tunnel_intensity)
 	fx.custom_minimum_size = Vector2(0, 38)
 	fx.item_selected.connect(func(i): Settings.tunnel_intensity = i)
-	_row(cv_anzeige, "Effekt-Intensitaet", fx, null)
+	_row(cv_anzeige, "Effekt-Intensität", fx, null)
 
 	var gfx := OptionButton.new()
 	gfx.add_item("Niedrig", 0)
@@ -201,7 +202,7 @@ func _ready() -> void:
 	gfx.item_selected.connect(func(i):
 		Settings.graphics_quality = i
 		Settings.apply())
-	_row(cv_anzeige, "Grafik-Qualitaet", gfx, null)
+	_row(cv_anzeige, "Grafik-Qualität", gfx, null)
 
 	var fps := OptionButton.new()
 	fps.add_item("VSync", 0)
@@ -228,7 +229,7 @@ func _ready() -> void:
 
 	# Fusszeile.
 	var save := Button.new()
-	save.text = "Speichern & Schliessen"
+	save.text = "Speichern & Schließen"
 	save.custom_minimum_size = Vector2(0, 46)
 	UiTheme.style_button(save, true)
 	save.pressed.connect(_close)
@@ -330,11 +331,14 @@ func _input(event: InputEvent) -> void:
 			_refresh_labels()
 			get_viewport().set_input_as_handled()
 		elif event.keycode == KEY_ESCAPE:
-			_close()
+			Sfx.ui_back()
+			_close(false)
 			get_viewport().set_input_as_handled()
 
 
-func _close() -> void:
+func _close(with_sound: bool = true) -> void:
+	if with_sound:
+		Sfx.ui_close()
 	Settings.save()
 	Settings.apply()
 	closed.emit()

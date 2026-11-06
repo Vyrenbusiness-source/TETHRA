@@ -32,6 +32,7 @@ var _thumb_cache: Dictionary = {}
 
 
 func _ready() -> void:
+	Sfx.ui_open()
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	mouse_filter = Control.MOUSE_FILTER_STOP
@@ -84,7 +85,7 @@ func _ready() -> void:
 	_avatar_slot.custom_minimum_size = Vector2(128, 128)
 	_avatar_slot.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_avatar_slot.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	_avatar_slot.tooltip_text = "Klicken: Profilbild aendern"
+	_avatar_slot.tooltip_text = "Klicken: Profilbild ändern"
 	_avatar_slot.gui_input.connect(func(e):
 		if e is InputEventMouseButton and e.pressed:
 			_pick_avatar())
@@ -215,7 +216,7 @@ func _ready() -> void:
 	_file_dialog = FileDialog.new()
 	_file_dialog.access = FileDialog.ACCESS_FILESYSTEM
 	_file_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
-	_file_dialog.title = "Profilbild auswaehlen"
+	_file_dialog.title = "Profilbild auswählen"
 	_file_dialog.filters = ["*.png, *.jpg, *.jpeg, *.webp, *.bmp ; Bilder"]
 	_file_dialog.size = Vector2(760, 520)
 	_file_dialog.file_selected.connect(func(path):
@@ -568,7 +569,8 @@ func _save_name(t: String) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
-		_close()
+		Sfx.ui_back()
+		_close(false)
 		get_viewport().set_input_as_handled()
 
 
@@ -578,7 +580,9 @@ func _exit_tree() -> void:
 		_thumb_thread.wait_to_finish()
 
 
-func _close() -> void:
+func _close(with_sound: bool = true) -> void:
+	if with_sound:
+		Sfx.ui_close()
 	Settings.save()
 	closed.emit()
 	queue_free()

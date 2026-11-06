@@ -65,6 +65,19 @@ static func style_button(b: Button, primary: bool = false, radius: int = 12) -> 
 	b.add_theme_stylebox_override("pressed", pressed)
 	b.add_theme_stylebox_override("focus", _focus_box(radius))
 	attach_hover(b)
+	_attach_sounds(b)
+
+
+## UI-Klang einmalig pro Button verbinden (Meta-Flag verhindert Duplikate).
+## mouse_entered feuert nur bei echter Mausbewegung, nie bei programmatischem Fokus.
+static func _attach_sounds(b: BaseButton) -> void:
+	if b.has_meta("ui_sounds"):
+		return
+	b.set_meta("ui_sounds", true)
+	b.mouse_entered.connect(func():
+		if not b.disabled:
+			Sfx.ui_hover())
+	b.pressed.connect(func(): Sfx.ui_click())
 
 
 ## Marken-Typo (Bahnschrift, fett, leicht gesperrt) fuer Titel/Headings.
@@ -181,8 +194,8 @@ static func build_theme() -> Theme:
 	# Eingabefelder.
 	var le := glass_box(9, 0.5)
 	le.shadow_size = 0
-	le.content_margin_left = 10
-	le.content_margin_right = 10
+	le.content_margin_left = 14
+	le.content_margin_right = 14
 	le.content_margin_top = 5
 	le.content_margin_bottom = 5
 	var lf: StyleBoxFlat = le.duplicate()
