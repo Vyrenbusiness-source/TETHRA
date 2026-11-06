@@ -43,7 +43,7 @@ Gameplay-Bild: `./Godot_v4.7-stable_win64.exe --screen 1 --audio-driver Dummy --
 ## Regeln des Nutzers (verbindlich)
 - Gameplay ist das Wichtigste; Lesbarkeit vor Glanz; nichts grell, kein Wackeln/Blitze.
 - Alles Deutsch mit echten Umlauten, deutsche Zahlen (`UiTheme.fmt_*`).
-- Tests lautlos (`--audio-driver Dummy`) und Fenster auf Bildschirm 2 (`--screen 1`); Szenen-Flags nicht hinter `--`.
+- Tests lautlos (`--audio-driver Dummy`) und Fenster unsichtbar (`--position -10000,-10000`); Szenen-Flags nicht hinter `--`.
 - Bis 15 Agents, Budget 300k/500k (`warmd.conf`); Agents als `general-purpose` mit den Regeln aus `.claude/agents/warmd-worker.md` starten (nach Session-Neustart evtl. direkt `warmd-worker`).
 - Meldungen kurz, Ergebnis zuerst.
 
