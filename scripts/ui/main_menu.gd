@@ -67,6 +67,9 @@ const WARMUP_SPATIAL := [
 const WARMUP_CANVAS := ["screen_fx", "screen_glow"]
 const WARMUP_FRAMES := 3
 static var _warm_shaders: Array[Shader] = []
+const BROWSER_SCENE := "res://scenes/song_select.tscn"
+static var _browser_scene: PackedScene = null
+static var _browser_req := false
 var _warm_pending: Array[String] = []
 var _warm_vp: SubViewport = null
 var _warm_frames := 0
@@ -155,6 +158,11 @@ func _ready() -> void:
 
 
 func _begin_shader_warmup() -> void:
+	# Song-Browser-Szene (song_select.gd ~2600 Zeilen) schon im Hintergrund
+	# laden + kompilieren; die Referenz haelt sie im ResourceCache, sodass
+	# SceneFader.go() -> change_scene_to_file() sie sofort bekommt.
+	if _browser_scene == null and not _browser_req:
+		_browser_req = ResourceLoader.load_threaded_request(BROWSER_SCENE, "PackedScene", true) == OK
 	if not _warm_shaders.is_empty():
 		return
 	_warm_t = Time.get_ticks_usec()
@@ -166,6 +174,9 @@ func _begin_shader_warmup() -> void:
 
 
 func _shader_warmup_step() -> void:
+	if _browser_req and ResourceLoader.load_threaded_get_status(BROWSER_SCENE) != ResourceLoader.THREAD_LOAD_IN_PROGRESS:
+		_browser_req = false
+		_browser_scene = ResourceLoader.load_threaded_get(BROWSER_SCENE) as PackedScene
 	if _warm_vp != null:
 		_warm_frames += 1
 		if _warm_frames > WARMUP_FRAMES:

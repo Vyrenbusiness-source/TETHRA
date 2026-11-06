@@ -110,6 +110,16 @@ const PREPARE_DELAY_MS := 100
 const THUMB_BUDGET_USEC := 4000
 var _prep_due := 0
 var _bg_wait_set: MapSet = null
+# Gameplay-Szenen + ihre schweren Assets im Hintergrund vorladen
+# (ResourceLoader-Threads): SPIELEN wechselt dann per change_scene_to_packed,
+# ohne mania_3d.gd erst zu kompilieren und die Stationen zu laden. Statisch
+# gehalten -> bleiben im ResourceCache, auch fuer Retry/naechsten Song.
+const GAME_SCENES := ["res://scenes/mania_3d.tscn", "res://scenes/gameplay_3d.tscn"]
+const GAME_ASSET_DIRS := ["res://assets_game/stations"]
+const GAME_PRELOAD_DELAY := 0.3
+static var _game_res: Dictionary = {}
+static var _game_req: Array[String] = []   # laufende Requests (ueberleben Szenenwechsel)
+var _game_preload_t := 0
 # scores.cfg einmal pro Kartenaufbau lesen (statt pro Karte und Diff).
 var _scores_cfg: ConfigFile = null
 var _replay_btn: Button
@@ -216,6 +226,7 @@ func _ready() -> void:
 	_select_initial()
 	GameSession.perf_since("Browser: Startauswahl (Info, Cover, Vorschau)", t_ui)
 	GameSession.perf_since("Browser: _ready gesamt", _perf_ready_t)
+	get_tree().create_timer(GAME_PRELOAD_DELAY).timeout.connect(_begin_game_preload)
 
 	if DisplayServer.get_name() == "headless":
 		_headless_report()
@@ -1090,6 +1101,7 @@ func _process(delta: float) -> void:
 	_beat_react(delta)
 	_loudness_step()
 	_prepare_step()
+	_game_preload_step()
 	# Thumbnails haeppchenweise laden (Zeitbudget pro Frame) — Browser bleibt fluessig.
 	var t_end := Time.get_ticks_usec() + THUMB_BUDGET_USEC
 	var budget := 2
@@ -1172,6 +1184,54 @@ func _beat_react(delta: float) -> void:
 		var w := _progress_bg.size.x * frac
 		if not is_equal_approx(_progress_fill.size.x, w):
 			_progress_fill.size = Vector2(w, _progress_bg.size.y)
+
+
+func _begin_game_preload() -> void:
+	if not is_inside_tree():
+		return
+	var paths: Array[String] = []
+	paths.append_array(GAME_SCENES)
+	for d in GAME_ASSET_DIRS:
+		for f in ResourceLoader.list_directory(d):
+			var ext := f.get_extension().to_lower()
+			if ext in ["obj", "webp", "png", "jpg", "glb", "tres", "res"]:
+				paths.append(d.path_join(f))
+	for p in paths:
+		if _game_res.has(p) or _game_req.has(p) or not ResourceLoader.exists(p):
+			continue
+		if ResourceLoader.load_threaded_request(p, "", true) == OK:
+			_game_req.append(p)
+	_game_preload_t = Time.get_ticks_usec()
+
+
+func _game_preload_step() -> void:
+	if _game_req.is_empty():
+		return
+	for p in _game_req.duplicate():
+		var st := ResourceLoader.load_threaded_get_status(p)
+		if st == ResourceLoader.THREAD_LOAD_LOADED:
+			_game_res[p] = ResourceLoader.load_threaded_get(p)
+			_game_req.erase(p)
+		elif st != ResourceLoader.THREAD_LOAD_IN_PROGRESS:
+			_game_req.erase(p)
+	if _game_req.is_empty() and _game_preload_t > 0:
+		GameSession.perf_since("Browser: Gameplay-Szenen vorgeladen (Hintergrund)", _game_preload_t)
+		_game_preload_t = 0
+
+
+## Szenenwechsel ins Gameplay: vorgeladene PackedScene nutzen (laeuft der
+## Ladevorgang noch, auf ihn warten statt doppelt zu laden).
+func _change_to_game(path: String) -> void:
+	if not _game_res.has(path) and _game_req.has(path):
+		_game_req.erase(path)
+		var r := ResourceLoader.load_threaded_get(path)
+		if r != null:
+			_game_res[path] = r
+	var ps := _game_res.get(path) as PackedScene
+	if ps != null:
+		get_tree().change_scene_to_packed(ps)
+	else:
+		get_tree().change_scene_to_file(path)
 
 
 ## Auswahl im Hintergrund vorbereiten, sobald sie stabil ist; das Full-Res-
@@ -1685,9 +1745,9 @@ func _on_play_pressed() -> void:
 	# Auto-Erkennung: Mania-Diffs (Mode 3) starten die 4K-Szene.
 	var mode := int(_selected_set.meta_at(_selected_diff).get("mode", 0))
 	if mode == 3:
-		get_tree().change_scene_to_file("res://scenes/mania_3d.tscn")
+		_change_to_game("res://scenes/mania_3d.tscn")
 	else:
-		get_tree().change_scene_to_file("res://scenes/gameplay_3d.tscn")
+		_change_to_game("res://scenes/gameplay_3d.tscn")
 
 
 func _on_nf_toggled(pressed: bool) -> void:
@@ -1727,7 +1787,7 @@ func _watch_replay() -> void:
 	GameSession.is_replay = true
 	GameSession.replay_events = data.events
 	_preview.stop()
-	get_tree().change_scene_to_file("res://scenes/mania_3d.tscn")
+	_change_to_game("res://scenes/mania_3d.tscn")
 
 
 ## Max-pp (SS) der aktuellen Diff anzeigen; Berechnung laeuft im Thread,
