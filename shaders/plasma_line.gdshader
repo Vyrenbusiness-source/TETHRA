@@ -73,7 +73,7 @@ void fragment() {
 		c = mix(c, vec3(1.0), clamp(fil * core, 0.0, 1.0) * 0.5);
 	} else {
 		// Aura: an der Linie am staerksten, zur Kamera hin weich weg.
-		float fall = pow(1.0 - y, 2.6);
+		float fall = pow(1.0 - y, 2.6) * smoothstep(0.0, 0.3, y);
 		float n = fbm(vec2(x * 4.0 - flow * 0.15, y * 3.0 + flow * 0.1));
 		a = fall * (0.55 + 0.45 * n) * edge_x * 0.55;
 		c = mix(color, color2, n * 0.4);
