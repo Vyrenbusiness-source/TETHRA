@@ -23,7 +23,6 @@ const PAD_MAX_SCALE := 1.15
 # Leuchtfleck unter Noten (vorher 0.9 / Lock 1.6 -> ueberstrahlte Muster).
 const NOTE_GLOW := 0.34
 
-const QUALITY_TEXT := { 0: "MAX", 1: "300", 2: "200", 3: "100", 4: "50", 5: "✕" }
 const QUALITY_COLOR := {
 	0: Color(1.0, 0.92, 0.55), 1: Color(1.0, 1.0, 1.0),
 	2: Color(0.4, 0.9, 1.0), 3: Color(0.45, 1.0, 0.6),
@@ -208,7 +207,6 @@ var _star_burst := 0.0
 # Planeten-Referenzen fuer den Bass-Puls.
 var _planet_nodes: Array = []
 var _last_milestone := 0
-var _last_combo_shown := 0
 var _ended := false
 
 var _hit_player: AudioStreamPlayer
@@ -218,18 +216,22 @@ var _debug_running := false
 var _debug_start_usec := 0
 
 var _hud: CanvasLayer
-var _judge_label: Label
-var _judge_tween: Tween
-var _ur_root: Control
-var _ur_avg: ColorRect
-var _ur_scale := 1.0
+# HUD-Module: Judge + Kombo, Timing-Leiste, HP oben, Intro/Break-Anzeige.
+var _judge_disp: JudgeDisplay
+var _err_bar: HitErrorBar
+var _hp_bar: HpBar
+var _break_ov: BreakOverlay
+# Intro/Breaks als [start_ms, end_ms] (end = naechste Note).
+var _breaks: Array[Vector2] = []
+var _break_cur := -1
+var _break_skip := false
+var _hp_flash_cd := 0.0
 var _ur_ema := 0.0
 # Timing-Statistik fuer den Results-Screen (UR + mittlerer Fehler).
 var _dt_n := 0
 var _dt_sum := 0.0
 var _dt_sqsum := 0.0
 var _countdown_running := false
-var _skip_label: Label
 # Tutorial: geplante Erklaer-Stopps {t, title, body} + aktives Panel.
 var _tut_steps: Array = []
 var _tut_idx := 0
@@ -254,7 +256,6 @@ var _clip_toast_tw: Tween
 # Hit-Fehler (ms) aller Treffer fuer das Histogramm im Results-Screen.
 var _hit_offsets := PackedFloat32Array()
 var _mp_last_rank := -1
-var _combo_label: Label
 var _acc_label: Label
 var _grade_label: Label
 var _score_label: Label
@@ -263,7 +264,6 @@ var _notes_label: Label
 var _time_label: Label
 var _top_fill: ColorRect
 var _bottom_fill: ColorRect
-var _hp_fill: ColorRect
 var _pause_menu: PauseMenu
 var _song_len_ms := 1.0
 
@@ -1241,17 +1241,24 @@ func _on_note_judged(index: int, result: Dictionary) -> void:
 	else:
 		_play_hit([1.0, 1.0, 0.944, 0.891, 0.794][q])
 	var col: int = result.get("column", 0)
-	var sub := ""
-	if q >= ManiaCore.Quality.GOOD and q != ManiaCore.Quality.MISS and not result.get("hold_end", false):
-		sub = "SLOW" if result.get("late", false) else "FAST"
-	if result.get("hold_end", false) and bool(result.get("held", false)):
+	var hold_end: bool = result.get("hold_end", false)
+	if hold_end and bool(result.get("held", false)):
 		_fire_laser(col, Vector3(RAIL_X[col], ROAD_Y + 0.32, Z_LINE))
 		_pad_flash[col] = 1.0
-	if result.get("hold_end", false) and not result.get("held", true):
-		sub = "DROP"
 	if col < _pad_judge_col.size():
 		_pad_judge_col[col] = QUALITY_COLOR[q]
-	_spawn_popup(col, QUALITY_TEXT[q], QUALITY_COLOR[q], sub)
+	# FRUEH/SPAET entscheidet JudgeDisplay (erst ausserhalb des 300-Fensters);
+	# Hold-Enden ohne Zeitfehler bekommen keinen Hinweis.
+	if _judge_disp != null:
+		var off: float = 0.0 if hold_end else float(result.get("dt", 0.0))
+		_judge_disp.show_judge(q, off)
+	if _hp_bar != null:
+		if q == ManiaCore.Quality.MISS:
+			_hp_bar.flash_miss()
+		elif _hp_flash_cd <= 0.0 and core.hp < 0.999:
+			# Ruhiger Glanz nur, solange sich die Leiste erholt (max. alle 0,6 s).
+			_hp_bar.flash_hit()
+			_hp_flash_cd = 0.6
 	_sparks.spark(col, q)
 	if _skill_fx != null:
 		_skill_fx.on_judge(col, q)
@@ -1452,27 +1459,9 @@ func _fire_laser(column: int, target: Vector3, power: float = 1.0) -> void:
 		stw.chain().tween_callback(sp.queue_free)
 
 
-func _spawn_popup(_column: int, text: String, col: Color, sub: String = "") -> void:
-	# Mini-Judgement zentral (klein, ueber der UR-Bar) statt Popups auf den
-	# Noten — die Spielflaeche bleibt frei.
-	if _judge_label == null:
-		return
-	_judge_label.text = text if sub == "" else "%s · %s" % [text, sub]
-	_judge_label.add_theme_color_override("font_color", col)
-	if _judge_tween != null and _judge_tween.is_valid():
-		_judge_tween.kill()
-	_judge_label.modulate.a = 0.95
-	_judge_label.scale = Vector2.ONE * 1.12
-	_judge_label.pivot_offset = Vector2(160, 13)
-	_judge_tween = create_tween()
-	_judge_tween.set_parallel(true)
-	_judge_tween.tween_property(_judge_label, "scale", Vector2.ONE, 0.08)
-	_judge_tween.tween_property(_judge_label, "modulate:a", 0.0, 0.25).set_delay(0.30)
-
-
 func _ur_tick(result: Dictionary) -> void:
-	# Timing-Tick auf der UR-Bar (nur Hits mit bekanntem Fehler).
-	if _ur_root == null or not result.has("dt"):
+	# Timing-Tick auf der HitErrorBar (nur Hits mit bekanntem Fehler).
+	if not result.has("dt"):
 		return
 	var dt: float = result.dt
 	var q: int = result.quality
@@ -1481,19 +1470,10 @@ func _ur_tick(result: Dictionary) -> void:
 	_dt_n += 1
 	_dt_sum += dt
 	_dt_sqsum += dt * dt
-	var x := clampf(dt * _ur_scale, -70.0, 70.0)
-	var tick := ColorRect.new()
-	tick.position = Vector2(x - 1.0, 114)
-	tick.size = Vector2(2, 13)
-	tick.color = QUALITY_COLOR[q]
-	tick.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_ur_root.add_child(tick)
-	var tw := create_tween()
-	tw.tween_property(tick, "modulate:a", 0.0, 2.2)
-	tw.tween_callback(tick.queue_free)
-	# Trend-Pfeil: gleitender Mittelwert (frueh/spaet auf einen Blick).
+	if _err_bar != null:
+		_err_bar.add_hit(dt)
+	# Gleitender Mittelwert fuer die Timing-Toenung der Strecke.
 	_ur_ema = lerpf(_ur_ema, dt, 0.2)
-	_ur_avg.position.x = clampf(_ur_ema * _ur_scale, -70.0, 70.0) - 1.5
 
 
 # ---------------------------------------------------------------------------
@@ -1611,8 +1591,7 @@ func _fx_level() -> float:
 
 func _do_skip() -> void:
 	SyncClock.seek_ms(_beatmap.hit_objects[0].time - 2200.0)
-	if _skip_label != null:
-		_skip_label.visible = false
+	_update_break_overlay(_beatmap.hit_objects[0].time - 2200.0)
 
 
 func _can_skip_intro() -> bool:
@@ -1715,7 +1694,12 @@ func _process(delta: float) -> void:
 	_overdrive = maxf(_overdrive - delta, 0.0)
 	# Takt exakt aus BeatClock: Angriff liegt auf dem Schlag, Release bleibt
 	# weich (~380 ms — atmet, statt zu blitzen).
-	_clock.update(t, delta)
+	# Nur visuelle Pulse: Bild-Latenz-Zeit statt Judgement-Zeit.
+	var vt: float = SyncClock.visual_time_ms() if _use_audio else t + SyncClock.visual_offset_ms()
+	_clock.update(vt, delta)
+	_hp_flash_cd = maxf(_hp_flash_cd - delta, 0.0)
+	if _judge_disp != null:
+		_judge_disp.beat(_clock.beat_env)
 	_sparks.update(delta)
 	_update_skill_fx(delta, fx)
 	_beat_env = maxf(_clock.beat_env, _beat_env - delta * 2.6)
@@ -2083,14 +2067,7 @@ func _process(delta: float) -> void:
 			0.35 + (_treble * 0.30 + _kick * 0.10 + _sub * 0.05 + _star_burst * 0.15 + _warp_level * 0.5) * fx \
 			+ _beat_env * 0.07)
 
-	if _skip_label != null:
-		var can_skip: bool = _can_skip_intro() and Settings.lane_for_key(KEY_SPACE) == -1
-		_skip_label.visible = can_skip
-		if can_skip and Lobby.active and Lobby.in_game:
-			_skip_label.text = "LEERTASTE  ·  Intro überspringen  (%d/%d)" % [
-				Lobby.skip_votes.size(), Lobby.players.size()]
-		else:
-			_skip_label.text = "LEERTASTE  ·  Intro überspringen"
+	_update_break_overlay(t)
 	# Multiplayer: eigenen Live-Score ~4x pro Sekunde teilen.
 	if Lobby.active and Lobby.in_game and not _ended:
 		_mp_send_t -= delta
@@ -2536,16 +2513,7 @@ func _build_hud() -> void:
 	_top_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_hud.add_child(_top_fill)
 
-	# Kombo gross und zentral (wichtigste Live-Info), Rang klein darueber
-	# links bei der Genauigkeit, rechts eine kompakte Zaehler-Gruppe.
-	_combo_label = _stat_value(Vector2(0.5, 0.5), 44)
-	_combo_label.offset_top = 132
-	_combo_label.offset_bottom = 132
-	_combo_label.modulate.a = 0.92
-	_combo_label.add_theme_font_override("font", _tabular_font(_combo_label))
-	_combo_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.6))
-	_combo_label.add_theme_constant_override("shadow_outline_size", 8)
-
+	# Rang links bei der Genauigkeit, rechts eine kompakte Zaehler-Gruppe.
 	var left := _stat_column(Vector2(0.085, 0.42))
 	_grade_label = _stat_block(left, "RANG", 26)
 	_acc_label = _stat_block(left, "GENAUIGKEIT", 28)
@@ -2554,89 +2522,36 @@ func _build_hud() -> void:
 	_miss_label = _stat_block(right, "FEHLER", 24)
 	_notes_label = _stat_block(right, "NOTEN", 24)
 
-	# HP: eigene, beschriftete Leiste mittig oben (Song-Fortschritt ist die
-	# Akzent-Linie ganz oben ueber die volle Breite).
-	var hp_cap := Label.new()
-	hp_cap.text = "HP"
-	hp_cap.anchor_left = 0.5
-	hp_cap.anchor_right = 0.5
-	hp_cap.offset_left = -150
-	hp_cap.offset_right = -118
-	hp_cap.offset_top = 9
-	hp_cap.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	hp_cap.add_theme_font_size_override("font_size", 12)
-	hp_cap.add_theme_color_override("font_color", Color(0.62, 0.65, 0.74))
-	hp_cap.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.7))
-	hp_cap.add_theme_constant_override("shadow_outline_size", 5)
-	_hud.add_child(hp_cap)
-	var hp_bg := ColorRect.new()
-	hp_bg.anchor_left = 0.5
-	hp_bg.anchor_right = 0.5
-	hp_bg.offset_left = -110
-	hp_bg.offset_right = 110
-	hp_bg.offset_top = 15
-	hp_bg.offset_bottom = 21
-	hp_bg.color = Color(1, 1, 1, 0.10)
-	_hud.add_child(hp_bg)
-	_hp_fill = ColorRect.new()
-	_hp_fill.anchor_left = 0.5
-	_hp_fill.anchor_right = 0.5
-	_hp_fill.offset_left = -110
-	_hp_fill.offset_right = 110
-	_hp_fill.offset_top = 15
-	_hp_fill.offset_bottom = 21
-	_hp_fill.color = Color(0.3, 1.0, 0.6, 0.85)
-	_hud.add_child(_hp_fill)
+	# HP: HpBar mittig oben (Song-Fortschritt ist die Akzent-Linie ganz oben).
+	_hp_bar = HpBar.new()
+	_hp_bar.label_text = "HP"
+	_hud.add_child(_hp_bar)
+	_hp_bar.setup(_theme_col)
+	_hp_bar.anchor_left = 0.5
+	_hp_bar.anchor_right = 0.5
+	_hp_bar.offset_left = -160
+	_hp_bar.offset_right = 160
+	_hp_bar.offset_top = 6
+	_hp_bar.offset_bottom = 30
 
-	# UR-BAR: kleine Timing-Leiste mittig unter der Bildmitte. Zonen = echte
-	# Trefferfenster (PF/GD/MEH), pro Hit ein kurzlebiger Tick, Pfeil = Trend.
-	_ur_root = Control.new()
-	_ur_root.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
-	_ur_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_hud.add_child(_ur_root)
-	_ur_scale = 66.0 / maxf(core.w50, 1.0)
-	var zones := [
-		[core.w50, Color(1.0, 0.62, 0.25, 0.20)],
-		[core.w100, Color(0.45, 1.0, 0.6, 0.20)],
-		[core.w200, Color(0.35, 0.75, 1.0, 0.24)],
-		[core.w300, Color(0.95, 0.95, 1.0, 0.28)],
-		[core.w_max, Color(1.0, 0.92, 0.55, 0.45)],
-	]
-	for z in zones:
-		var w: float = z[0] * _ur_scale
-		var zr := ColorRect.new()
-		zr.position = Vector2(-w, 118)
-		zr.size = Vector2(w * 2.0, 5)
-		zr.color = z[1]
-		zr.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		_ur_root.add_child(zr)
-	var mid := ColorRect.new()
-	mid.position = Vector2(-1, 113)
-	mid.size = Vector2(2, 15)
-	mid.color = Color(1, 1, 1, 0.9)
-	mid.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_ur_root.add_child(mid)
-	_ur_avg = ColorRect.new()
-	_ur_avg.position = Vector2(-1.5, 108)
-	_ur_avg.size = Vector2(3, 4)
-	_ur_avg.color = Color(1.0, 0.95, 0.5, 0.95)
-	_ur_avg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_ur_root.add_child(_ur_avg)
+	# Timing-Leiste mittig unter der Abfanglinie, Fenster = echte core.w*-Werte.
+	_err_bar = HitErrorBar.new()
+	_hud.add_child(_err_bar)
+	_err_bar.setup({"max": core.w_max, "w300": core.w300, "w200": core.w200,
+		"w100": core.w100, "w50": core.w50}, 300.0)
 
-	# Mini-Judgement (PF/GD/…) mittig ueber der UR-Bar — nie ueber den Noten.
-	_judge_label = Label.new()
-	_judge_label.anchor_left = 0.5
-	_judge_label.anchor_right = 0.5
-	_judge_label.anchor_top = 0.5
-	_judge_label.anchor_bottom = 0.5
-	_judge_label.offset_left = -160
-	_judge_label.offset_right = 160
-	_judge_label.offset_top = 74
-	_judge_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_judge_label.add_theme_font_size_override("font_size", 26)
-	_judge_label.modulate.a = 0.0
-	_judge_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_hud.add_child(_judge_label)
+	# Judge (MAX/300/…, FRUEH/SPAET) + Kombo knapp ueber der Abfanglinie.
+	_judge_disp = JudgeDisplay.new()
+	_hud.add_child(_judge_disp)
+	_judge_disp.setup(_theme_col)
+	_judge_disp.window_300_ms = core.w300
+
+	# Intro/Breaks: Ring, Countdown, 3-2-1 auf dem Beat, Skip-Hinweis.
+	_break_ov = BreakOverlay.new()
+	_hud.add_child(_break_ov)
+	_build_breaks()
+	_place_hud_to_line()
+	get_viewport().size_changed.connect(_place_hud_to_line)
 
 	# MULTIPLAYER: Live-Scoreboard links (wie osu!mania) — sortiert nach
 	# Score, eigener Eintrag hervorgehoben; Ueberholen sieht man sofort.
@@ -2652,21 +2567,58 @@ func _build_hud() -> void:
 		Lobby.skip_now.connect(_do_skip)
 		_refresh_mp_board()
 
-	# Intro-Skip-Hinweis (nur sichtbar, solange ein langer Vorlauf laeuft).
-	_skip_label = Label.new()
-	_skip_label.text = "LEERTASTE  ·  Intro überspringen"
-	_skip_label.anchor_left = 0.5
-	_skip_label.anchor_right = 0.5
-	_skip_label.anchor_top = 1.0
-	_skip_label.anchor_bottom = 1.0
-	_skip_label.offset_left = -200
-	_skip_label.offset_right = 200
-	_skip_label.offset_top = -92
-	_skip_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_skip_label.add_theme_font_size_override("font_size", 16)
-	_skip_label.add_theme_color_override("font_color", Color(0.85, 0.9, 1.0, 0.85))
-	_skip_label.visible = false
-	_hud.add_child(_skip_label)
+
+
+## Judge/Kombo und Timing-Leiste an der projizierten Abfanglinie ausrichten.
+func _place_hud_to_line() -> void:
+	if _camera == null or _judge_disp == null:
+		return
+	var vs := get_viewport().get_visible_rect().size
+	var line_y := _camera.unproject_position(Vector3(0.0, ROAD_Y, Z_LINE)).y
+	if line_y <= 0.0 or line_y >= vs.y:
+		line_y = vs.y * 0.84
+	_judge_disp.place(line_y)
+	_err_bar.position = Vector2((vs.x - _err_bar.size.x) * 0.5,
+		minf(line_y + 34.0, vs.y - _err_bar.size.y - 8.0))
+
+
+## Intro (lange Vorlaeufe) und Pausen ohne Noten fuer das BreakOverlay.
+func _build_breaks() -> void:
+	_breaks.clear()
+	_break_cur = -1
+	if _beatmap == null or _beatmap.hit_objects.is_empty():
+		return
+	var objs := _beatmap.hit_objects
+	if objs[0].time > 3000.0:
+		_breaks.append(Vector2(0.0, objs[0].time))
+	var last_end: float = objs[0].end_time()
+	for i in range(1, objs.size()):
+		if objs[i].time - last_end > 4500.0:
+			_breaks.append(Vector2(last_end + 500.0, objs[i].time))
+		last_end = maxf(last_end, objs[i].end_time())
+
+
+## Pro Frame: passenden Break suchen, Overlay zeigen/aktualisieren.
+func _update_break_overlay(t: float) -> void:
+	if _break_ov == null:
+		return
+	var idx := -1
+	for i in _breaks.size():
+		if t >= _breaks[i].x and t < _breaks[i].y + BreakOverlay.FADE_OUT_MS:
+			idx = i
+			break
+	if idx < 0:
+		if _break_cur >= 0:
+			_break_ov.hide_break()
+			_break_cur = -1
+		return
+	var can_skip: bool = _breaks[idx].x <= 0.0 and _can_skip_intro() 		and Settings.lane_for_key(KEY_SPACE) == -1 and not _ended
+	if idx != _break_cur or can_skip != _break_skip:
+		var beat_ms := 60000.0 / _clock.bpm if _clock.bpm > 1.0 else 500.0
+		_break_ov.show_break(_breaks[idx].x, _breaks[idx].y, beat_ms, can_skip)
+		_break_cur = idx
+		_break_skip = can_skip
+	_break_ov.update(t)
 
 
 ## HUD-Spalte: vertikal um anchor_pos zentriert, Bloecke mit festem Abstand.
@@ -2751,16 +2703,9 @@ func _stat_value(anchor_pos: Vector2, size: int) -> Label:
 
 
 func _update_hud() -> void:
-	if _combo_label == null:
+	if _judge_disp == null:
 		return
-	_combo_label.text = "%dx" % core.combo
-	_combo_label.visible = core.combo > 0
-	if core.combo > _last_combo_shown and core.combo > 0:
-		_combo_label.pivot_offset = Vector2(120, 30)
-		_combo_label.scale = Vector2.ONE * 1.16
-		var ctw := create_tween()
-		ctw.tween_property(_combo_label, "scale", Vector2.ONE, 0.12)
-	_last_combo_shown = core.combo
+	_judge_disp.set_combo(core.combo)
 	var judged_n := core.n_max + core.n300 + core.n200 + core.n100 + core.n50 + core.n_miss
 	var g := core.grade()
 	if judged_n == 0:
@@ -2788,8 +2733,7 @@ func _update_hud() -> void:
 	var t := clampf(_time_ms(), 0.0, _song_len_ms)
 	_time_label.text = "%s / %s" % [_fmt_time(t), _fmt_time(_song_len_ms)]
 	_top_fill.anchor_right = clampf(t / _song_len_ms, 0.0, 1.0)
-	_hp_fill.offset_right = -110 + 220.0 * core.hp
-	_hp_fill.color = Color(0.3, 1.0, 0.6, 0.85) if core.hp > 0.3 else Color(1.0, 0.35, 0.3, 0.9)
+	_hp_bar.set_hp(core.hp)
 
 
 func _fmt_time(ms: float) -> String:
