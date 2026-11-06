@@ -54,6 +54,8 @@ static func style_button(b: Button, primary: bool = false, radius: int = 12) -> 
 	normal.content_margin_bottom = 5
 	var hover: StyleBoxFlat = normal.duplicate()
 	hover.bg_color = normal.bg_color.lightened(0.14)
+	hover.shadow_size = 9
+	hover.shadow_offset = Vector2(0, 6)
 	if not primary:
 		hover.border_color = Color(1, 1, 1, 0.26)
 	var pressed: StyleBoxFlat = normal.duplicate()
@@ -61,7 +63,7 @@ static func style_button(b: Button, primary: bool = false, radius: int = 12) -> 
 	b.add_theme_stylebox_override("normal", normal)
 	b.add_theme_stylebox_override("hover", hover)
 	b.add_theme_stylebox_override("pressed", pressed)
-	b.add_theme_stylebox_override("focus", hover)
+	b.add_theme_stylebox_override("focus", _focus_box(radius))
 	attach_hover(b)
 
 
@@ -145,6 +147,8 @@ static func build_theme() -> Theme:
 	var bh: StyleBoxFlat = bn.duplicate()
 	bh.bg_color = bn.bg_color.lightened(0.14)
 	bh.border_color = Color(1, 1, 1, 0.26)
+	bh.shadow_size = 8
+	bh.shadow_offset = Vector2(0, 5)
 	var bp: StyleBoxFlat = bn.duplicate()
 	bp.bg_color = bn.bg_color.darkened(0.10)
 	var bd: StyleBoxFlat = bn.duplicate()
@@ -153,7 +157,7 @@ static func build_theme() -> Theme:
 		th.set_stylebox("normal", cls, bn)
 		th.set_stylebox("hover", cls, bh)
 		th.set_stylebox("pressed", cls, bp)
-		th.set_stylebox("focus", cls, bh)
+		th.set_stylebox("focus", cls, _focus_box(10))
 		th.set_stylebox("disabled", cls, bd)
 		th.set_color("font_color", cls, TEXT)
 		th.set_color("font_hover_color", cls, Color(1, 1, 1))
@@ -190,43 +194,53 @@ static func build_theme() -> Theme:
 
 	# Dropdown-Menues + Kontextmenues.
 	var pm := StyleBoxFlat.new()
-	pm.bg_color = Color(0.09, 0.10, 0.15, 0.98)
-	pm.set_corner_radius_all(10)
+	pm.bg_color = Color(0.08, 0.09, 0.14, 0.92)
+	pm.shadow_size = 14
+	pm.shadow_color = Color(0, 0, 0, 0.4)
+	pm.shadow_offset = Vector2(0, 5)
+	pm.set_corner_radius_all(12)
 	pm.set_border_width_all(1)
 	pm.border_color = Color(1, 1, 1, 0.12)
 	pm.set_content_margin_all(6)
 	th.set_stylebox("panel", "PopupMenu", pm)
 	var pmh := StyleBoxFlat.new()
-	pmh.bg_color = Color(ACCENT.r, ACCENT.g, ACCENT.b, 0.18)
-	pmh.set_corner_radius_all(7)
+	pmh.bg_color = Color(ACCENT.r, ACCENT.g, ACCENT.b, 0.15)
+	pmh.set_corner_radius_all(8)
 	th.set_stylebox("hover", "PopupMenu", pmh)
 	th.set_color("font_color", "PopupMenu", TEXT)
 	th.set_color("font_hover_color", "PopupMenu", Color(1, 1, 1))
 
-	# Slider: duenne Bahn, gefuellter Akzent-Teil.
+	# Slider: dicke runde Spur (6px), Akzent-Verlauf, Grabber mit weichem Glow.
 	var track := StyleBoxFlat.new()
-	track.bg_color = Color(1, 1, 1, 0.10)
+	track.bg_color = Color(1, 1, 1, 0.11)
 	track.set_corner_radius_all(3)
+	track.border_color = Color(0, 0, 0, 0.25)
+	track.border_width_top = 1
 	track.content_margin_top = 3
 	track.content_margin_bottom = 3
-	var fill := StyleBoxFlat.new()
-	fill.bg_color = Color(ACCENT.r, ACCENT.g, ACCENT.b, 0.85)
-	fill.set_corner_radius_all(3)
-	fill.content_margin_top = 3
-	fill.content_margin_bottom = 3
+	var fill := _fill_box()
 	th.set_stylebox("slider", "HSlider", track)
 	th.set_stylebox("grabber_area", "HSlider", fill)
 	th.set_stylebox("grabber_area_highlight", "HSlider", fill)
-	th.set_icon("grabber", "HSlider", _dot_icon(14, Color(0.95, 0.97, 1.0)))
-	th.set_icon("grabber_highlight", "HSlider", _dot_icon(16, Color(1, 1, 1)))
+	th.set_icon("grabber", "HSlider", _glow_dot(24, 6.0, 0.28, Color(0.96, 0.98, 1.0)))
+	th.set_icon("grabber_highlight", "HSlider", _glow_dot(30, 8.0, 0.5, Color(1, 1, 1)))
+	th.set_icon("grabber_disabled", "HSlider", _glow_dot(24, 6.0, 0.0, Color(0.6, 0.62, 0.7)))
 
 	# Scrollbalken: schmal + dezent.
 	var sb_bg := StyleBoxFlat.new()
 	sb_bg.bg_color = Color(1, 1, 1, 0.04)
 	sb_bg.set_corner_radius_all(4)
+	sb_bg.content_margin_left = 3
+	sb_bg.content_margin_right = 3
+	sb_bg.content_margin_top = 3
+	sb_bg.content_margin_bottom = 3
 	var sb_grab := StyleBoxFlat.new()
 	sb_grab.bg_color = Color(1, 1, 1, 0.22)
 	sb_grab.set_corner_radius_all(4)
+	sb_grab.content_margin_left = 3
+	sb_grab.content_margin_right = 3
+	sb_grab.content_margin_top = 3
+	sb_grab.content_margin_bottom = 3
 	var sb_grab_h: StyleBoxFlat = sb_grab.duplicate()
 	sb_grab_h.bg_color = Color(1, 1, 1, 0.36)
 	for cls3 in ["VScrollBar", "HScrollBar"]:
@@ -264,6 +278,7 @@ static func _switch_icon(on: bool) -> ImageTexture:
 	var r := 10.0
 	var pill := Color(ACCENT.r, ACCENT.g, ACCENT.b, 0.92) if on \
 			else Color(1, 1, 1, 0.17)
+	var pill2 := Color(0.45, 0.6, 1.0, 0.92) if on else pill
 	var a := Vector2(r + 2.0, h * 0.5)
 	var b := Vector2(w - r - 2.0, h * 0.5)
 	var knob := (b if on else a)
@@ -274,13 +289,73 @@ static func _switch_icon(on: bool) -> ImageTexture:
 			var t := clampf((p - a).dot(b - a) / (b - a).length_squared(), 0.0, 1.0)
 			var d := (p - (a + (b - a) * t)).length()
 			var alpha := clampf(r - d + 0.5, 0.0, 1.0)
-			var col := Color(pill.r, pill.g, pill.b, pill.a * alpha)
+			var pc := pill.lerp(pill2, p.x / float(w))
+			var col := Color(pc.r, pc.g, pc.b, pc.a * alpha)
 			# Weisser Knob drueber.
 			var kd := (p - knob).length()
 			var ka := clampf(kr - kd + 0.5, 0.0, 1.0)
 			col = col.lerp(Color(0.97, 0.98, 1.0, 1.0), ka)
 			col.a = maxf(col.a, ka)
 			img.set_pixel(x, y, col)
+	return ImageTexture.create_from_image(img)
+
+
+## Fokus-Rahmen im Akzent (nur Kontur).
+static func _focus_box(radius: int) -> StyleBoxFlat:
+	var sb := StyleBoxFlat.new()
+	sb.draw_center = false
+	sb.set_corner_radius_all(radius)
+	sb.set_border_width_all(2)
+	sb.border_color = Color(ACCENT.r, ACCENT.g, ACCENT.b, 0.85)
+	return sb
+
+
+## Gefuellter Slider-Teil: 6px Pille mit horizontalem ACCENT->Blau-Verlauf.
+static func _fill_box() -> StyleBoxTexture:
+	var w := 64
+	var h := 6
+	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	var c1 := ACCENT
+	var c2 := Color(0.45, 0.6, 1.0)
+	for y in h:
+		for x in w:
+			var col := c1.lerp(c2, float(x) / float(w - 1))
+			# Oben leicht heller -> gewoelbte Optik.
+			col = col.lightened(0.18 * (1.0 - float(y) / float(h - 1)))
+			var dx := maxf(maxf(3.0 - (x + 0.5), (x + 0.5) - (w - 3.0)), 0.0)
+			var a := 1.0
+			if dx > 0.0:
+				var cy := (y + 0.5) - h * 0.5
+				a = clampf(3.0 - sqrt(dx * dx + cy * cy) + 0.5, 0.0, 1.0)
+			img.set_pixel(x, y, Color(col.r, col.g, col.b, a))
+	var sb := StyleBoxTexture.new()
+	sb.texture = ImageTexture.create_from_image(img)
+	sb.texture_margin_left = 3
+	sb.texture_margin_right = 3
+	sb.texture_margin_top = 0
+	sb.texture_margin_bottom = 0
+	sb.content_margin_top = 3
+	sb.content_margin_bottom = 3
+	return sb
+
+
+## Runder Grabber mit weichem Akzent-Glow (glow = 0..1 Staerke).
+static func _glow_dot(size: int, core_r: float, glow: float, col: Color) -> ImageTexture:
+	var img := Image.create(size, size, false, Image.FORMAT_RGBA8)
+	var c := (float(size) - 1.0) * 0.5
+	var outer := float(size) * 0.5
+	for y in size:
+		for x in size:
+			var d := Vector2(float(x) - c, float(y) - c).length()
+			var a := clampf(core_r - d + 0.5, 0.0, 1.0)
+			var out := Color(col.r, col.g, col.b, a)
+			if glow > 0.0 and d > core_r - 1.0:
+				var t := clampf((d - core_r) / maxf(outer - core_r, 1.0), 0.0, 1.0)
+				var ga := glow * pow(1.0 - t, 2.0) * (1.0 - a)
+				out = Color(ACCENT.r, ACCENT.g, ACCENT.b, ga + a).lerp(
+						Color(col.r, col.g, col.b, a + ga), a)
+				out.a = clampf(a + ga, 0.0, 1.0)
+			img.set_pixel(x, y, out)
 	return ImageTexture.create_from_image(img)
 
 
