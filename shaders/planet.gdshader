@@ -22,6 +22,9 @@ uniform sampler2D tex_diffuse: source_color, filter_linear_mipmap;
 uniform sampler2D tex_emission: source_color, hint_default_black, filter_linear_mipmap;
 uniform float intensity = 1.0;
 uniform float t = 0.0;
+// Ein-/Ausblenden (Kapitel-Vorbeiflug) + gemeinsamer Welt-Puls.
+uniform float fade = 1.0;
+uniform float world_pulse = 0.0;
 
 float hash(vec2 p) {
 	return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
@@ -167,6 +170,6 @@ void fragment() {
 	// Dither gegen Banding in den dunklen Verlaeufen.
 	float dn = fract(sin(dot(FRAGCOORD.xy, vec2(12.9898, 78.233))) * 43758.5453) - 0.5;
 	col += vec3(dn) * (1.5 / 255.0);
-	ALBEDO = col * intensity;
-	ALPHA = clamp(alpha, 0.0, 1.0);
+	ALBEDO = col * intensity * (1.0 + world_pulse * 0.15);
+	ALPHA = clamp(alpha, 0.0, 1.0) * fade;
 }

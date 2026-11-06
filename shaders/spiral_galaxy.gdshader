@@ -9,6 +9,11 @@ uniform vec3 col_core: source_color = vec3(1.0, 0.92, 0.78);
 uniform vec3 col_arm: source_color = vec3(0.55, 0.68, 1.0);
 uniform float intensity = 0.5;
 uniform float t = 0.0;
+// Form-Varianten pro Kapitel: Neigung (y-Stauchung), Armzahl, Verdrillung.
+uniform float squash = 1.55;
+uniform float arm_n = 2.0;
+uniform float twist = 5.5;
+uniform float world_pulse = 0.0;
 
 float hash12(vec2 p) {
 	vec3 p3 = fract(vec3(p.xyx) * 0.1031);
@@ -38,12 +43,12 @@ float fbm(vec2 p) {
 
 void fragment() {
 	vec2 p = UV * 2.0 - 1.0;
-	p.y *= 1.55;
+	p.y *= squash;
 	float r = length(p);
 	float ang = atan(p.y, p.x);
 	float spin = t * 0.045;
 	// Zwei log-Spiralarme; leichte Phasenverschiebung durch Noise = organisch.
-	float ph = ang * 2.0 - log(max(r, 0.02)) * 5.5 + spin
+	float ph = ang * arm_n - log(max(r, 0.02)) * twist + spin
 			+ (fbm(p * 2.2 + 3.0) - 0.5) * 1.1;
 	float arm = sin(ph);
 	float arms = smoothstep(-0.1, 0.95, arm) * smoothstep(1.0, 0.18, r);
@@ -60,7 +65,7 @@ void fragment() {
 	vec3 col = col_core * (core + knots * 0.4) + col_arm * (arms + haze);
 	float a = (core + arms + haze + knots) * intensity;
 	float edge = smoothstep(1.0, 0.55, r);
-	vec3 outc = col * intensity * 1.3;
+	vec3 outc = col * intensity * 1.3 * (1.0 + world_pulse * 0.2);
 	float dn = hash12(FRAGCOORD.xy) + hash12(FRAGCOORD.xy + 17.31) - 1.0;
 	outc += vec3(dn) * (1.5 / 255.0) * step(0.0005, a);
 	ALBEDO = max(outc, vec3(0.0));
