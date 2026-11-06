@@ -18,6 +18,13 @@ uniform float alpha_mul = 1.0;
 uniform float star_amount = 1.0;
 uniform float pulse = 0.0;
 
+// Groove-Hooks (vom Aufrufer gesetzt, Default 0 = altes Aussehen):
+//  beat_flash 0..1 Licht-Schlag auf dem Beat (schnell abklingend)
+//  downbeat   0..1 Taktanfang · music_energy 0..1 Musik-Intensitaet
+uniform float beat_flash : hint_range(0.0, 1.0) = 0.0;
+uniform float downbeat : hint_range(0.0, 1.0) = 0.0;
+uniform float music_energy : hint_range(0.0, 1.0) = 0.0;
+
 float hash12(vec2 p) {
 	vec3 p3 = fract(vec3(p.xyx) * 0.1031);
 	p3 += dot(p3, p3.yzx + 33.33);
@@ -126,6 +133,8 @@ void fragment() {
 
 	vec3 col = (neb * body * energy + band_col) * vig * (0.45 + 0.55 * center);
 	col *= 1.0 + pulse * 0.10;
+	// Nebel hebt auf Downbeats ganz leicht an.
+	col *= 1.0 + downbeat * 0.10 + beat_flash * 0.03 + music_energy * 0.05;
 
 	// Dither: +-0.5 LSB triangulaeres Rauschen bricht Banding in dunklen Verlaeufen.
 	float dn = hash12(FRAGCOORD.xy) + hash12(FRAGCOORD.xy + 17.31) - 1.0;

@@ -11,6 +11,13 @@ uniform float intensity = 0.0;
 uniform float heat = 0.0;
 uniform float t = 0.0;
 
+// Groove-Hooks (vom Aufrufer gesetzt, Default 0 = altes Aussehen):
+//  beat_flash 0..1 Licht-Schlag auf dem Beat (schnell abklingend)
+//  downbeat   0..1 Taktanfang · music_energy 0..1 Musik-Intensitaet
+uniform float beat_flash : hint_range(0.0, 1.0) = 0.0;
+uniform float downbeat : hint_range(0.0, 1.0) = 0.0;
+uniform float music_energy : hint_range(0.0, 1.0) = 0.0;
+
 float hash12(vec2 p) {
 	vec3 p3 = fract(vec3(p.xyx) * 0.1031);
 	p3 += dot(p3, p3.yzx + 33.33);
@@ -53,7 +60,8 @@ void fragment() {
 	fire *= smoothstep(1.0, 0.55, UV.y);
 	vec3 col = mix(base_color, vec3(1.0, 0.9, 0.6), fire * 0.55);
 	col = mix(col, hot_color, heat);
+	float pulse = 1.0 + beat_flash * 0.5 + downbeat * 0.25 + music_energy * 0.1;
 	float a = fire * clamp(intensity, 0.0, 1.0);
-	ALBEDO = col * a * 1.5;
+	ALBEDO = col * a * 1.5 * pulse;
 	ALPHA = clamp(a, 0.0, 1.0);
 }
