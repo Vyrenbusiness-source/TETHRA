@@ -17,3 +17,4 @@ Godot_v*.exe.zip
 *.tmp
 tethra_update.bat
 assets/
+override.cfg
