@@ -227,6 +227,13 @@ var _pad_judge_col: Array = []
 var _mp_board: VBoxContainer
 var _mp_send_t := 0.0
 var _mp_rank_box: VBoxContainer
+# Results-Screen (Komponente) + Clip-Export mit Fortschritt-Toast.
+var _results_screen: ResultsScreen
+var _clip_exporter: ClipExporter
+var _clip_toast: PanelContainer
+var _clip_toast_tw: Tween
+# Hit-Fehler (ms) aller Treffer fuer das Histogramm im Results-Screen.
+var _hit_offsets := PackedFloat32Array()
 var _mp_last_rank := -1
 var _combo_label: Label
 var _acc_label: Label
@@ -312,6 +319,10 @@ func _ready() -> void:
 		_dt_n = 300
 		_dt_sum = 950.0
 		_dt_sqsum = 90000.0
+		var rng := RandomNumberGenerator.new()
+		rng.seed = 7
+		for _i in 300:
+			_hit_offsets.append(rng.randfn(3.2, 17.0))
 		_show_results(false)
 		_capture_results_shot()
 	elif OS.get_cmdline_args().has("--shot"):
@@ -1095,6 +1106,8 @@ func _on_note_judged(index: int, result: Dictionary) -> void:
 	if q != ManiaCore.Quality.MISS:
 		_sparks.lane_shot(col)
 	_ur_tick(result)
+	if q != ManiaCore.Quality.MISS and result.has("dt"):
+		_hit_offsets.append(float(result.dt))
 	if _notes.has(index):
 		var entry: Dictionary = _notes[index]
 		_notes.erase(index)
@@ -2703,169 +2716,47 @@ func _show_results(is_fail: bool) -> void:
 	_build_results(is_fail, s, pp, unranked, new_best)
 
 
-## Results im osu-Stil: Cover-Header, Score gross links, Judgement-Grid,
-## riesiger Rank rechts, Combo/Accuracy unten.
+## Results-Screen: eigenstaendige Komponente ResultsScreen (scripts/ui/
+## results_screen.gd). Hier nur Daten befuellen und Signale verdrahten.
 func _build_results(is_fail: bool, s: Dictionary, pp: float, unranked: bool, new_best: bool) -> void:
-	var screen := Control.new()
-	screen.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_hud.add_child(screen)
-
-	# Abgedunkeltes Cover als Vollbild-Hintergrund.
+	var rs := ResultsScreen.new()
+	_hud.add_child(rs)
+	_results_screen = rs
+	rs.retry_pressed.connect(_restart)
+	rs.back_pressed.connect(_back_to_browser)
+	rs.replay_pressed.connect(_on_results_replay)
+	rs.clip_pressed.connect(_on_results_clip)
 	var cover := OszImporter.load_background_texture(GameSession.osz_path, _beatmap)
+	var data := {
+		"is_fail": is_fail,
+		"s": s,
+		"pp": pp,
+		"unranked": unranked,
+		"new_best": new_best,
+		"title": _beatmap.title(),
+		"artist": _beatmap.artist(),
+		"version": _beatmap.version_name(),
+		# Das Cover liegt im .osz (kein Dateipfad) -> direkt als Textur.
+		"cover_path": "",
+		"offsets": _hit_offsets,
+		"player": Settings.profile_name,
+		"date": Time.get_datetime_string_from_system(),
+		"allow_retry": not Lobby.active,
+		"can_replay": GameSession.is_replay or _recorded.size() > 0,
+		"is_replay": GameSession.is_replay,
+		"lobby": Lobby.active,
+	}
 	if cover != null:
-		var bg_tex := TextureRect.new()
-		bg_tex.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		bg_tex.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		bg_tex.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-		bg_tex.texture = UiTheme.blurred_texture(cover)
-		bg_tex.modulate = Color(0.55, 0.55, 0.6)
-		screen.add_child(bg_tex)
-	var dim := ColorRect.new()
-	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	dim.color = Color(0.01, 0.01, 0.03, 0.62)
-	screen.add_child(dim)
-
-	# Kopfzeile: Map + Spieler + Datum (wie osu).
-	var head_strip := ColorRect.new()
-	head_strip.anchor_right = 1.0
-	head_strip.offset_bottom = 92
-	head_strip.color = Color(0, 0, 0, 0.55)
-	screen.add_child(head_strip)
-	var title := Label.new()
-	title.text = "%s — %s" % [_beatmap.artist(), _beatmap.title()]
-	title.position = Vector2(28, 12)
-	title.add_theme_font_override("font", UiTheme.heading_font(1))
-	title.add_theme_font_size_override("font_size", 24)
-	screen.add_child(title)
-	var sub := Label.new()
-	sub.text = "[%s] · 4K   —   gespielt von %s · %s" % [
-		_beatmap.version_name(), Settings.profile_name,
-		Time.get_datetime_string_from_system().replace("T", " ")]
-	sub.position = Vector2(28, 50)
-	sub.add_theme_font_size_override("font_size", 15)
-	sub.add_theme_color_override("font_color", Color(0.75, 0.78, 0.86))
-	screen.add_child(sub)
-
-	# Linkes Panel: Score + Judgement-Grid + Combo/Accuracy.
-	var panel := PanelContainer.new()
-	panel.anchor_top = 0.5
-	panel.anchor_bottom = 0.5
-	panel.offset_left = 60
-	panel.offset_top = -190
-	panel.offset_bottom = 190
-	panel.custom_minimum_size = Vector2(520, 0)
-	var psb := UiTheme.glass_box(18, 0.82)
-	psb.set_content_margin_all(26)
-	panel.add_theme_stylebox_override("panel", psb)
-	screen.add_child(panel)
-	var vb := VBoxContainer.new()
-	vb.add_theme_constant_override("separation", 12)
-	panel.add_child(vb)
-
-	# SCORE-Block: Caption klein, Zahl in Marken-Typo.
-	var score_cap := Label.new()
-	score_cap.text = "SCORE"
-	score_cap.add_theme_font_size_override("font_size", 12)
-	score_cap.add_theme_color_override("font_color", Color(0.5, 0.53, 0.62))
-	vb.add_child(score_cap)
-	var score_lbl := Label.new()
-	score_lbl.text = "%08d" % int(s.score)
-	score_lbl.add_theme_font_override("font", UiTheme.heading_font(4))
-	score_lbl.add_theme_font_size_override("font_size", 50)
-	vb.add_child(score_lbl)
-
-	var sep1 := HSeparator.new()
-	sep1.add_theme_color_override("separator", Color(1, 1, 1, 0.08))
-	vb.add_child(sep1)
-
-	# Judgement-Grid: Tags farbig, Zahlen rechtsbuendig — sauber ausgerichtet.
-	var grid := GridContainer.new()
-	grid.columns = 2
-	grid.add_theme_constant_override("h_separation", 56)
-	grid.add_theme_constant_override("v_separation", 7)
-	vb.add_child(grid)
-	for def in [
-		["MAX", s.n_max, QUALITY_COLOR[0]], ["100", s.n100, QUALITY_COLOR[3]],
-		["300", s.n300, QUALITY_COLOR[1]], ["50", s.n50, QUALITY_COLOR[4]],
-		["200", s.n200, QUALITY_COLOR[2]], ["✕", s.n_miss, QUALITY_COLOR[5]],
-	]:
-		var row := HBoxContainer.new()
-		row.custom_minimum_size = Vector2(200, 0)
-		row.add_theme_constant_override("separation", 10)
-		var tag := Label.new()
-		tag.text = str(def[0])
-		tag.custom_minimum_size = Vector2(52, 0)
-		tag.add_theme_font_override("font", UiTheme.heading_font(1))
-		tag.add_theme_font_size_override("font_size", 18)
-		tag.add_theme_color_override("font_color", def[2])
-		row.add_child(tag)
-		var num := Label.new()
-		num.text = "%d" % int(def[1])
-		num.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		num.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-		num.add_theme_font_size_override("font_size", 21)
-		row.add_child(num)
-		grid.add_child(row)
-
-	var sep2 := HSeparator.new()
-	sep2.add_theme_color_override("separator", Color(1, 1, 1, 0.08))
-	vb.add_child(sep2)
-
-	# Drei Stat-Bloecke nebeneinander: Accuracy · Max-Combo · pp.
-	var stats_row := HBoxContainer.new()
-	stats_row.add_theme_constant_override("separation", 8)
-	vb.add_child(stats_row)
-	var pp_text := ("%.1f" % pp) if pp >= 0.0 else "—"
-	for st in [["ACCURACY", "%.2f%%" % (s.accuracy * 100.0), Color(0.95, 0.97, 1.0)],
-			["MAX COMBO", "%dx" % int(s.max_combo), Color(0.95, 0.97, 1.0)],
-			["PP", pp_text, Color(1.0, 0.6, 0.9)]]:
-		var block := VBoxContainer.new()
-		block.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		block.add_theme_constant_override("separation", 2)
-		var cap := Label.new()
-		cap.text = str(st[0])
-		cap.add_theme_font_size_override("font_size", 11)
-		cap.add_theme_color_override("font_color", Color(0.5, 0.53, 0.62))
-		block.add_child(cap)
-		var val := Label.new()
-		val.text = str(st[1])
-		val.add_theme_font_override("font", UiTheme.heading_font(1))
-		val.add_theme_font_size_override("font_size", 23)
-		val.add_theme_color_override("font_color", st[2])
-		block.add_child(val)
-		stats_row.add_child(block)
-
-	# Timing-Qualitaet: Unstable Rate + mittlerer Fehler (frueh/spaet).
-	if _dt_n >= 2:
-		var mean := _dt_sum / float(_dt_n)
-		var variance := maxf(_dt_sqsum / float(_dt_n) - mean * mean, 0.0)
-		var timing := Label.new()
-		timing.text = "UR %.0f      Ø %+.1f ms (%s)" % [
-			sqrt(variance) * 10.0, mean, "spät" if mean > 0.0 else "früh"]
-		timing.add_theme_font_size_override("font_size", 15)
-		timing.add_theme_color_override("font_color", Color(0.62, 0.66, 0.75))
-		vb.add_child(timing)
-
-	if new_best or unranked:
-		var badge_wrap := HBoxContainer.new()
-		vb.add_child(badge_wrap)
-		var badge := PanelContainer.new()
-		var bsb := UiTheme.solid_box(Color(1.0, 0.83, 0.25), 9)
-		bsb.content_margin_left = 12
-		bsb.content_margin_right = 12
-		bsb.content_margin_top = 4
-		bsb.content_margin_bottom = 4
-		badge.add_theme_stylebox_override("panel", bsb)
-		badge_wrap.add_child(badge)
-		var badge_l := Label.new()
-		badge_l.text = ("NEW BEST!" if new_best else "") + (" UNRANKED" if unranked else "")
-		badge_l.add_theme_font_override("font", UiTheme.heading_font(1))
-		badge_l.add_theme_font_size_override("font_size", 15)
-		badge_l.add_theme_color_override("font_color", Color(0.1, 0.08, 0.02))
-		badge.add_child(badge_l)
+		data["cover"] = cover
+	rs.show_results(data)
+	# Rank-Reveal-Sound synchron zum Zoom-Pop der Komponente (~0.35 s).
+	var grade := "F" if is_fail else str(s.get("grade", "D"))
+	get_tree().create_timer(0.38, true).timeout.connect(func():
+		if is_inside_tree() and _use_audio:
+			Sfx.rank_reveal(grade))
 
 	# MULTIPLAYER-Endscreen: Rangliste (traeufelt live ein, wenn andere
-	# fertig werden).
+	# fertig werden). Nach show_results anhaengen (das leert die Kinder).
 	if Lobby.active:
 		var rank_panel := PanelContainer.new()
 		rank_panel.anchor_left = 1.0
@@ -2876,7 +2767,7 @@ func _build_results(is_fail: bool, s: Dictionary, pp: float, unranked: bool, new
 		var rsb := UiTheme.glass_box(16, 0.85)
 		rsb.set_content_margin_all(20)
 		rank_panel.add_theme_stylebox_override("panel", rsb)
-		screen.add_child(rank_panel)
+		rs.add_child(rank_panel)
 		var rvb := VBoxContainer.new()
 		rvb.add_theme_constant_override("separation", 8)
 		rank_panel.add_child(rvb)
@@ -2892,86 +2783,82 @@ func _build_results(is_fail: bool, s: Dictionary, pp: float, unranked: bool, new
 		Lobby.scores_changed.connect(_refresh_mp_ranking)
 		_refresh_mp_ranking()
 
-	var btns := HBoxContainer.new()
-	btns.add_theme_constant_override("separation", 12)
-	vb.add_child(btns)
-	var retry := Button.new()
-	retry.text = "Nochmal ansehen" if GameSession.is_replay else "Retry  (R)"
-	retry.visible = not Lobby.active
-	retry.custom_minimum_size = Vector2(160, 46)
-	UiTheme.style_button(retry, true)
-	retry.pressed.connect(_restart)
-	btns.add_child(retry)
-	if GameSession.is_replay:
-		var play_self := Button.new()
-		play_self.text = "Selbst spielen"
-		play_self.custom_minimum_size = Vector2(160, 46)
-		UiTheme.style_button(play_self)
-		play_self.pressed.connect(func():
-			GameSession.is_replay = false
-			GameSession.replay_events = []
-			_restart())
-		btns.add_child(play_self)
-	elif _recorded.size() > 0:
-		var watch := Button.new()
-		watch.text = "▶ Replay ansehen"
-		watch.custom_minimum_size = Vector2(170, 46)
-		UiTheme.style_button(watch)
-		watch.pressed.connect(func():
-			GameSession.is_replay = true
-			GameSession.replay_events = _recorded.duplicate()
-			_restart())
-		btns.add_child(watch)
-	var back := Button.new()
-	back.text = "Zur Lobby" if Lobby.active else "Song-Browser"
-	back.custom_minimum_size = Vector2(160, 46)
-	UiTheme.style_button(back)
-	back.pressed.connect(_back_to_browser)
-	btns.add_child(back)
 
-	# Riesiger Rank rechts (osu-Look) mit Glow.
-	var rank := Label.new()
-	rank.text = "F" if is_fail else str(s.grade)
-	rank.anchor_left = 1.0
-	rank.anchor_right = 1.0
-	rank.anchor_top = 0.5
-	rank.anchor_bottom = 0.5
-	rank.offset_left = -480
-	rank.offset_right = -80
-	rank.offset_top = -190
-	rank.offset_bottom = 190
-	rank.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	rank.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	rank.add_theme_font_override("font", UiTheme.heading_font(0))
-	rank.add_theme_font_size_override("font_size", 280)
-	var rc: Color = Color(1.0, 0.3, 0.3) if is_fail else GRADE_COLOR.get(str(s.grade), Color.WHITE)
-	rank.add_theme_color_override("font_color", rc)
-	rank.add_theme_color_override("font_shadow_color", Color(rc.r, rc.g, rc.b, 0.4))
-	rank.add_theme_constant_override("shadow_outline_size", 28)
-	screen.add_child(rank)
-	# Auftritt: kurzer Zoom-Pop des Ranks.
-	rank.pivot_offset = Vector2(200, 190)
-	rank.scale = Vector2.ONE * 1.35
-	rank.modulate.a = 0.0
-	var rtw := create_tween()
-	rtw.set_parallel(true)
-	rtw.tween_property(rank, "scale", Vector2.ONE, 0.35) \
-		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	rtw.tween_property(rank, "modulate:a", 1.0, 0.22)
-	if is_fail:
-		var failed_lbl := Label.new()
-		failed_lbl.text = "FAILED"
-		failed_lbl.anchor_left = 1.0
-		failed_lbl.anchor_right = 1.0
-		failed_lbl.anchor_top = 0.5
-		failed_lbl.anchor_bottom = 0.5
-		failed_lbl.offset_left = -480
-		failed_lbl.offset_right = -80
-		failed_lbl.offset_top = 160
-		failed_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		failed_lbl.add_theme_font_size_override("font_size", 34)
-		failed_lbl.add_theme_color_override("font_color", Color(1.0, 0.35, 0.35))
-		screen.add_child(failed_lbl)
+## Replay-Button: im Replay "Selbst spielen", sonst den eben gespielten Lauf
+## als Replay ansehen.
+func _on_results_replay() -> void:
+	if GameSession.is_replay:
+		GameSession.is_replay = false
+		GameSession.replay_events = []
+	elif _recorded.size() > 0:
+		GameSession.is_replay = true
+		GameSession.replay_events = _recorded.duplicate()
+	else:
+		return
+	_restart()
+
+
+## Clip-Button: gespeichertes Replay dieser Diff als Video exportieren
+## (zweiter Prozess, siehe ClipExporter) — Fortschritt als Toast.
+func _on_results_clip() -> void:
+	var version := _beatmap.version_name()
+	if not ReplayStore.exists(GameSession.osz_path, version):
+		_results_toast("Kein gespeichertes Replay für diese Map", false)
+		return
+	if _clip_exporter != null and _clip_exporter.is_running():
+		_results_toast("Clip wird bereits aufgenommen …", true)
+		return
+	if _clip_exporter == null:
+		_clip_exporter = ClipExporter.new()
+		add_child(_clip_exporter)
+		_clip_exporter.progress.connect(func(sec: float):
+			_results_toast("Clip wird aufgenommen … %d s" % int(sec), true))
+		_clip_exporter.finished.connect(func(ok: bool, path: String):
+			if ok:
+				_results_toast("Clip gespeichert: %s" % path, false)
+			else:
+				_results_toast("Clip-Export fehlgeschlagen", false))
+	var md5 := ("%s|%s" % [GameSession.osz_path.get_file(), version]).md5_text()
+	var out := ClipExporter.clips_dir().path_join("clip_%s.avi" % md5)
+	if _clip_exporter.export_clip(md5, out):
+		_results_toast("Clip wird aufgenommen …", true)
+
+
+## Kleiner Glas-Toast unten mittig auf dem Results-Screen. sticky = bleibt
+## stehen (Fortschritt), sonst nach 4 s weich ausblenden.
+func _results_toast(text: String, sticky: bool) -> void:
+	if _results_screen == null or not is_instance_valid(_results_screen):
+		return
+	if _clip_toast == null or not is_instance_valid(_clip_toast):
+		_clip_toast = PanelContainer.new()
+		_clip_toast.anchor_left = 0.5
+		_clip_toast.anchor_right = 0.5
+		_clip_toast.anchor_top = 1.0
+		_clip_toast.anchor_bottom = 1.0
+		_clip_toast.offset_left = -320
+		_clip_toast.offset_right = 320
+		_clip_toast.offset_top = -138
+		_clip_toast.offset_bottom = -94
+		_clip_toast.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var sb := UiTheme.glass_box(12, 0.85)
+		sb.set_content_margin_all(10)
+		_clip_toast.add_theme_stylebox_override("panel", sb)
+		var lbl := Label.new()
+		lbl.name = "Text"
+		lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		lbl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		lbl.add_theme_font_size_override("font_size", 15)
+		lbl.add_theme_color_override("font_color", Color(0.85, 0.92, 1.0))
+		_clip_toast.add_child(lbl)
+		_results_screen.add_child(_clip_toast)
+	(_clip_toast.get_node("Text") as Label).text = text
+	_clip_toast.modulate.a = 1.0
+	if _clip_toast_tw != null and _clip_toast_tw.is_valid():
+		_clip_toast_tw.kill()
+	if not sticky:
+		_clip_toast_tw = create_tween()
+		_clip_toast_tw.tween_interval(4.0)
+		_clip_toast_tw.tween_property(_clip_toast, "modulate:a", 0.0, 0.5)
 
 
 # ---------------------------------------------------------------------------
@@ -3249,7 +3136,8 @@ func _run_smoke_test() -> void:
 
 
 func _capture_results_shot() -> void:
-	await get_tree().create_timer(1.0, true).timeout
+	# Intro der Results-Komponente (Zaehler, Rank-Pop, Sweep) abwarten.
+	await get_tree().create_timer(2.6, true).timeout
 	await RenderingServer.frame_post_draw
 	if not is_inside_tree():
 		return
