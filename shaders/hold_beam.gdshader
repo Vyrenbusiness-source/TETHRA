@@ -26,7 +26,7 @@ uniform float flow_pos = 0.0;
 const float BODY_FRAC = 0.84;  // Koerperbreite relativ zur Quad-Breite
 const float CORNER = 0.07;     // Eckradius (Welt)
 const float BORDER = 0.055;    // helle Randlinie (Welt)
-const float CAP = 0.16;        // Kappenlaenge (Welt)
+const float CAP = 0.22;        // Kappenlaenge (Welt)
 
 void fragment() {
 	float bhw = width * 0.5 * BODY_FRAC;
@@ -53,7 +53,7 @@ void fragment() {
 	vec3 light = mix(beam_color.rgb, vec3(1.0), 0.5);
 	vec3 col = body;
 	col = mix(col, light, border);
-	col = mix(col, mix(beam_color.rgb, vec3(1.0), 0.6), cap);
+	col = mix(col, mix(beam_color.rgb, vec3(1.0), 0.72), cap);
 	col *= 1.0 - 0.55 * seam * (1.0 - cap);
 
 	col *= brightness * (1.0 + 0.02 * clamp(beat, 0.0, 1.0));
