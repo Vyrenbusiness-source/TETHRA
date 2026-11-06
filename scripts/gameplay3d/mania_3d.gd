@@ -12,6 +12,16 @@ const Z_LINE := 3.0         # Abfanglinie (Hit-Moment) — nah an der Kamera
 const SHIP_Z := 3.8
 const ROAD_Y := -1.6
 const RAIL_X: Array[float] = [-2.55, -0.85, 0.85, 2.55]
+# Receptor: gleiche Quad-Groesse wie die Note (dq.size), knapp unter ihr.
+const NOTE_SIZE := 1.12
+const PAD_SIZE := NOTE_SIZE
+const PAD_Y := 0.30
+# Ring-Helligkeit: Ruhe unter der Glow-Schwelle (0.92), Druck nur leicht drueber.
+const PAD_IDLE := 0.85
+const PAD_PRESS := 0.35
+const PAD_MAX_SCALE := 1.15
+# Leuchtfleck unter Noten (vorher 0.9 / Lock 1.6 -> ueberstrahlte Muster).
+const NOTE_GLOW := 0.34
 
 const QUALITY_TEXT := { 0: "MAX", 1: "300", 2: "200", 3: "100", 4: "50", 5: "✕" }
 const QUALITY_COLOR := {
@@ -62,7 +72,7 @@ var _overdrive := 0.0
 var _was_kiai := false
 
 var _edge_mats: Array[StandardMaterial3D] = []
-var _pad_mats: Array[StandardMaterial3D] = []
+var _pad_mats: Array[ShaderMaterial] = []
 var _pad_flash: Array[float] = []
 var _line_mat: StandardMaterial3D
 var _ship: Node3D
@@ -583,16 +593,35 @@ func _build_world() -> void:
 	_line_mat = _emissive_mat(Color(1, 1, 1), 1.4)
 
 	# Receptor-Pads auf der Linie + Tasten-Labels davor.
+	var lane_grad := Gradient.new()
+	lane_grad.set_color(0, Color(1, 1, 1, 0.0))
+	lane_grad.set_color(1, Color(1, 1, 1, 1.0))
+	lane_grad.add_point(0.55, Color(1, 1, 1, 0.25))
+	var lane_fade := GradientTexture2D.new()
+	lane_fade.gradient = lane_grad
+	lane_fade.width = 4
+	lane_fade.height = 128
+	lane_fade.fill_from = Vector2(0, 0)
+	lane_fade.fill_to = Vector2(0, 1)
 	for i in RAIL_X.size():
+		# Receptor = exakt die Notenform: gleiches Quad (PAD_SIZE), gleicher
+		# Shader (note_disc, fill_alpha 0 -> reiner Ring), knapp unter der
+		# Notenhoehe -> gleicher Durchmesser und gleiche Strichstaerke wie
+		# eine ankommende Note an der Linie.
 		var pad := MeshInstance3D.new()
-		var tor := TorusMesh.new()
-		tor.inner_radius = 0.44
-		tor.outer_radius = 0.58
-		tor.rings = 128
-		tor.ring_segments = 48
-		pad.mesh = tor
-		pad.position = Vector3(RAIL_X[i], ROAD_Y + 0.02, Z_LINE)
-		var pm := _emissive_mat(_pad_color(i), 0.8)
+		var pq := QuadMesh.new()
+		pq.size = Vector2(PAD_SIZE, PAD_SIZE)
+		pad.mesh = pq
+		pad.rotation_degrees = Vector3(-90, 0, 0)
+		pad.position = Vector3(RAIL_X[i], ROAD_Y + PAD_Y, Z_LINE)
+		var pm := ShaderMaterial.new()
+		pm.shader = _note_shader
+		pm.set_shader_parameter("base_color", _pad_color(i))
+		pm.set_shader_parameter("rim_color", _pad_color(i) * PAD_IDLE)
+		pm.set_shader_parameter("fill_alpha", 0.0)
+		pm.set_shader_parameter("halo_strength", 0.7)
+		pm.set_shader_parameter("rim_boost", 0.0)
+		pm.render_priority = -1
 		_pad_mats.append(pm)
 		_pad_flash.append(0.0)
 		pad.material_override = pm
@@ -605,7 +634,9 @@ func _build_world() -> void:
 		var lq := QuadMesh.new()
 		# Exakt von der Hit-Linie bis zum Horizont — vorher fehlten vorne
 		# ~3 Einheiten, der Balken "startete" sichtbar hinter dem Ring.
-		lq.size = Vector2(1.5, absf(Z_FAR - Z_LINE))
+		# Breite = Ring-Aussendurchmesser; liegt flach auf der Bahn und laeuft
+		# damit exakt mit den Schienen zum Fluchtpunkt (perspektivisch).
+		lq.size = Vector2(PAD_SIZE * 0.93, absf(Z_FAR - Z_LINE))
 		lg.mesh = lq
 		lg.rotation_degrees = Vector3(-90, 0, 0)
 		lg.position = Vector3(RAIL_X[i], ROAD_Y + 0.006, (Z_LINE + Z_FAR) * 0.5)
@@ -614,6 +645,8 @@ func _build_world() -> void:
 		lgm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 		var lane_c := _pad_color(i)
 		lgm.albedo_color = Color(lane_c.r, lane_c.g, lane_c.b, 0.0)
+		# Verlauf: am Receptor sichtbar, zum Horizont hin weg (UV v=0 = fern).
+		lgm.albedo_texture = lane_fade
 		lg.material_override = lgm
 		_world.add_child(lg)
 		_lane_glow_mats.append(lgm)
@@ -639,7 +672,7 @@ func _build_world() -> void:
 			label.pixel_size = 0.0019 * 2.3
 		# Mittig IM Pad-Ring statt auf dessen vorderem Rand. Satzzeichen sitzen
 		# auf der Schrift-Grundlinie -> etwas anheben, damit sie mittig wirken.
-		label.position = Vector3(RAIL_X[i], ROAD_Y + (0.2 if is_punct else 0.12), Z_LINE)
+		label.position = Vector3(RAIL_X[i], ROAD_Y + PAD_Y + (0.18 if is_punct else 0.10), Z_LINE)
 		_world.add_child(label)
 
 	_build_ship()
@@ -674,9 +707,9 @@ func _pad_color(i: int) -> Color:
 
 
 func _lane_color(i: int) -> Color:
-	# Innen hell, aussen Themenfarbe — Spuren sofort unterscheidbar.
-	var inner := i == 1 or i == 2
-	return _theme_col.lerp(Color(1, 1, 1), 0.5 if inner else 0.15)
+	# Alle Spuren gleich kraeftig (QA: Spur 1 kraeftig, 2-3 blass war
+	# irritierend) — Trennung kommt ueber Position + Tastenlabel.
+	return _theme_col.lerp(Color(1, 1, 1), 0.3)
 
 
 func _build_ship() -> void:
@@ -1116,7 +1149,7 @@ func _on_note_spawned(index: int) -> void:
 	# Kern + Rim in EINEM Quad (note_disc.gdshader): beat/approach pro Frame.
 	var disc := MeshInstance3D.new()
 	var dq := QuadMesh.new()
-	dq.size = Vector2(1.12, 1.12)
+	dq.size = Vector2(NOTE_SIZE, NOTE_SIZE)
 	disc.mesh = dq
 	var rim := ShaderMaterial.new()
 	rim.shader = _note_shader
@@ -1145,12 +1178,13 @@ func _on_note_spawned(index: int) -> void:
 		root.add_child(inner)
 	var glow := MeshInstance3D.new()
 	var q := QuadMesh.new()
-	q.size = Vector2(2.05, 2.05)
+	# Weicher Leuchtfleck: dezent, damit dichte Muster lesbar bleiben.
+	q.size = Vector2(1.55, 1.55)
 	glow.mesh = q
 	var gm := ShaderMaterial.new()
 	gm.shader = _glow_shader
 	gm.set_shader_parameter("base_color", col)
-	gm.set_shader_parameter("intensity", 0.32 if clean else 0.68)
+	gm.set_shader_parameter("intensity", NOTE_GLOW * (0.5 if clean else 1.0))
 	glow.material_override = gm
 	glow.rotation_degrees = Vector3(-90, 0, 0)
 	glow.position = Vector3(0, -0.02, 0)
@@ -1176,7 +1210,7 @@ func _on_note_spawned(index: int) -> void:
 	var sm2 := ShaderMaterial.new()
 	sm2.shader = _glow_shader
 	sm2.set_shader_parameter("base_color", col)
-	sm2.set_shader_parameter("intensity", 0.10 if clean else 0.20)
+	sm2.set_shader_parameter("intensity", 0.06 if clean else 0.10)
 	spot.material_override = sm2
 	spot.rotation_degrees = Vector3(-90, 0, 0)
 	spot.position = Vector3(0, -0.30, 0)
@@ -1314,14 +1348,15 @@ func _fire_laser(column: int, target: Vector3, power: float = 1.0) -> void:
 	var fm := ShaderMaterial.new()
 	fm.shader = _glow_shader
 	fm.set_shader_parameter("base_color", col.lerp(Color(1, 1, 1), 0.30))
-	var peak := (1.1 if fx <= 0.0 else 1.35) * power
+	# Halbiert ggue. frueher (1.1/1.35): Treffer bestaetigen, nicht blenden.
+	var peak := (0.55 if fx <= 0.0 else 0.68) * power
 	fm.set_shader_parameter("intensity", peak)
 	flash.material_override = fm
 	flash.position = target
 	flash.rotation_degrees = Vector3(-9, 0, 0)
 	_world.add_child(flash)
 	var tw := create_tween()
-	tw.tween_property(flash, "scale", Vector3.ONE * (1.4 + 0.5 * power), 0.15)
+	tw.tween_property(flash, "scale", Vector3.ONE * PAD_MAX_SCALE, 0.15)
 	tw.parallel().tween_method(
 		func(v): fm.set_shader_parameter("intensity", v), peak, 0.0, 0.15)
 	tw.tween_callback(flash.queue_free)
@@ -1330,7 +1365,7 @@ func _fire_laser(column: int, target: Vector3, power: float = 1.0) -> void:
 	# dem Einschlag Tiefe statt nur eines flachen Blitzes.
 	var halo := MeshInstance3D.new()
 	var hq2 := QuadMesh.new()
-	hq2.size = Vector2(2.3, 2.3)
+	hq2.size = Vector2(1.6, 1.6)
 	halo.mesh = hq2
 	var hm2 := ShaderMaterial.new()
 	hm2.shader = _glow_shader
@@ -1341,7 +1376,7 @@ func _fire_laser(column: int, target: Vector3, power: float = 1.0) -> void:
 	halo.rotation_degrees = Vector3(-9, 0, 0)
 	_world.add_child(halo)
 	var htw := create_tween()
-	htw.tween_property(halo, "scale", Vector3.ONE * 1.6, 0.24)
+	htw.tween_property(halo, "scale", Vector3.ONE * PAD_MAX_SCALE, 0.24)
 	htw.parallel().tween_method(
 		func(v): hm2.set_shader_parameter("intensity", v), peak * 0.30, 0.0, 0.24)
 	htw.tween_callback(halo.queue_free)
@@ -1354,7 +1389,7 @@ func _fire_laser(column: int, target: Vector3, power: float = 1.0) -> void:
 	var rm := ShaderMaterial.new()
 	rm.shader = _ring_shader
 	rm.set_shader_parameter("base_color", col.lerp(Color(1, 1, 1), 0.45))
-	var rpeak := (0.8 if fx <= 0.0 else 1.5) * power
+	var rpeak := (0.4 if fx <= 0.0 else 0.75) * power
 	rm.set_shader_parameter("intensity", rpeak)
 	rm.set_shader_parameter("radius", 0.06)
 	rm.set_shader_parameter("beat", _beat_env * 0.6)
@@ -1380,7 +1415,7 @@ func _fire_laser(column: int, target: Vector3, power: float = 1.0) -> void:
 	var bm := ShaderMaterial.new()
 	bm.shader = _glow_shader
 	bm.set_shader_parameter("base_color", col)
-	var bpeak := 0.9 * power * fx
+	var bpeak := 0.35 * power * fx
 	bm.set_shader_parameter("intensity", bpeak)
 	beam.material_override = bm
 	beam.position = Vector3(target.x, ROAD_Y + 1.0, target.z)
@@ -1388,7 +1423,7 @@ func _fire_laser(column: int, target: Vector3, power: float = 1.0) -> void:
 	var btw := create_tween().set_parallel(true)
 	btw.tween_property(beam, "position:y", ROAD_Y + 1.7, 0.22) \
 			.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	btw.tween_property(beam, "scale:y", 1.5, 0.22)
+	btw.tween_property(beam, "scale:y", PAD_MAX_SCALE, 0.22)
 	btw.tween_method(func(v): bm.set_shader_parameter("intensity", v), bpeak, 0.0, 0.22)
 	btw.chain().tween_callback(beam.queue_free)
 
@@ -1638,7 +1673,8 @@ func _process(delta: float) -> void:
 		nmat.set_shader_parameter("beat", _beat_env * 0.6)
 		nmat.set_shader_parameter("approach",
 				clampf((root.position.z - Z_FAR) / (Z_LINE - Z_FAR), 0.0, 1.0))
-		(entry.glow as ShaderMaterial).set_shader_parameter("intensity", 1.6 if lock else 0.9)
+		(entry.glow as ShaderMaterial).set_shader_parameter("intensity",
+				NOTE_GLOW * (1.4 if lock else 1.0) * (0.5 if _fx_level() <= 0.0 else 1.0))
 		var beam: HoldBeam = entry.beam
 		if beam != null:
 			beam.set_span(root.position.z, _note_z(obj.end_time(), t),
@@ -1667,7 +1703,7 @@ func _process(delta: float) -> void:
 		# in den Einstellungen abschaltbar.
 		if c < _lane_glow_mats.size():
 			var lm: StandardMaterial3D = _lane_glow_mats[c]
-			var target := 0.10 if _lane_held[c] and Settings.lane_glow else 0.0
+			var target := 0.16 if _lane_held[c] and Settings.lane_glow else 0.0
 			lm.albedo_color.a = move_toward(lm.albedo_color.a, target,
 				delta * (1.4 if _lane_held[c] else 0.5))
 
@@ -1791,10 +1827,15 @@ func _process(delta: float) -> void:
 	# Die ABFANGLINIE pulsiert im Takt — der Hit-Moment ist hoerbar UND sichtbar.
 	_line_mat.emission_energy_multiplier = 1.1 + pulse * 1.6 + _punch * 1.0 + _kick * 0.35 + _line_flash * 1.0
 	_line_mat.emission = Color(1, 1, 1).lerp(_theme_kiai, _kiai_mix * 0.6)
+	var pad_energy: Array[float] = []
 	for i in _pad_mats.size():
-		_pad_mats[i].emission_energy_multiplier = (0.45 if fx <= 0.0 else 0.65) \
-				+ (pulse * 0.5 + _punch * 0.4 + _kick * 0.2 + _line_flash * 0.55) * fx \
-				+ _pad_flash[i] * (1.1 if fx <= 0.0 else 1.4)
+		var pf := clampf(_pad_flash[i], 0.0, 1.0)
+		pad_energy.append((PAD_IDLE if fx > 0.0 else 0.75)
+				+ (pulse * 0.08 + _punch * 0.06 + _kick * 0.03) * fx
+				+ pf * PAD_PRESS)
+		# Druck-Feedback: Ring waechst dezent (max 1.15), kein Ueberstrahlen.
+		if i < _pad_nodes.size():
+			_pad_nodes[i].scale = Vector3.ONE * (1.0 + (PAD_MAX_SCALE - 1.0) * pf)
 	for m in _edge_mats:
 		m.emission_energy_multiplier = (0.28 if fx <= 0.0 else 0.4) \
 				+ (_bass * 1.2 + _punch * 0.9 + _kick * 0.35 + _density * 0.6) * fx
@@ -1830,7 +1871,9 @@ func _process(delta: float) -> void:
 		var base_col := _pad_color(i)
 		if i < _pad_judge_col.size():
 			base_col = base_col.lerp(_pad_judge_col[i], clampf(_pad_flash[i], 0.0, 1.0) * 0.65)
-		_pad_mats[i].emission = base_col.lerp(_theme_kiai, od * 0.45)
+		var pcol := base_col.lerp(_theme_kiai, od * 0.45)
+		_pad_mats[i].set_shader_parameter("base_color", pcol)
+		_pad_mats[i].set_shader_parameter("rim_color", pcol * pad_energy[i])
 	for em2 in _edge_mats:
 		var edge_col := Color(0.45, 0.47, 0.53) if fx <= 0.0 \
 				else _theme_col.lerp(_theme_kiai, maxf(od * 0.45, _kiai_mix))
@@ -2739,12 +2782,12 @@ func _resume_with_countdown(step: float = 0.4) -> void:
 		lbl.scale = Vector2.ONE * 1.25
 		lbl.pivot_offset = Vector2(100, 48)
 		for c in hint:
-			_pad_mats[c].emission_energy_multiplier = 3.2
+			_pad_mats[c].set_shader_parameter("rim_color", _pad_color(c) * 1.25)
 		await get_tree().create_timer(step * 0.5, true).timeout
 		if not is_inside_tree():
 			return
 		for c in hint:
-			_pad_mats[c].emission_energy_multiplier = 0.9
+			_pad_mats[c].set_shader_parameter("rim_color", _pad_color(c) * PAD_IDLE)
 		await get_tree().create_timer(step * 0.5, true).timeout
 		if not is_inside_tree():
 			return
@@ -3268,7 +3311,12 @@ func _capture_results_shot() -> void:
 
 func _capture_after_first_note() -> void:
 	var idx := mini(6, _beatmap.hit_objects.size() - 1)
-	var target := _beatmap.hit_objects[idx].time - 150.0
+	# --shot-lead=<ms>: Vorlauf vor der Note (0 = Note genau auf der Linie).
+	var lead := 150.0
+	for a in OS.get_cmdline_args():
+		if a.begins_with("--shot-lead="):
+			lead = a.trim_prefix("--shot-lead=").to_float()
+	var target := _beatmap.hit_objects[idx].time - lead
 	var guard := 0
 	while _time_ms() < target and guard < 3600:
 		guard += 1
