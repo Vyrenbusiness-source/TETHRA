@@ -1154,9 +1154,12 @@ func _on_note_spawned(index: int) -> void:
 	var rim := ShaderMaterial.new()
 	rim.shader = _note_shader
 	rim.set_shader_parameter("base_color", col)
-	rim.set_shader_parameter("rim_color", col.lerp(Color(1, 1, 1), 0.35 if clean else 0.6))
-	rim.set_shader_parameter("fill_alpha", 0.75 if clean else 0.85)
-	rim.set_shader_parameter("halo_strength", 0.4 if clean else 0.7)
+	# Gleicher Ring wie das Receptor-Pad (Quad, Shader, Kontur), nur in
+	# Notenfarbe und mit zart getoentem Kern -> landet deckungsgleich aufs Pad.
+	# Gilt auch fuer Hold-Koepfe (in Hold-Farbe).
+	rim.set_shader_parameter("rim_color", col * 1.15)
+	rim.set_shader_parameter("fill_alpha", 0.22)
+	rim.set_shader_parameter("halo_strength", 0.7)
 	rim.set_shader_parameter("rim_boost", 0.3)
 	disc.material_override = rim
 	disc.rotation_degrees = Vector3(-90, 0, 0)
