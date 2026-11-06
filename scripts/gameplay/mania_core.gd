@@ -117,18 +117,26 @@ func setup(p_beatmap: Beatmap, _ar_override: float = -1.0, scroll_scale: float =
 ## Baut die SV-Positionstabelle und die Spawn-Zeiten (einmal beim Laden).
 func _build_scroll() -> void:
 	var objs := beatmap.hit_objects
+	scroll = build_scroll_map(beatmap)
+	_spawn_times.resize(objs.size())
+	for i in objs.size():
+		_spawn_times[i] = scroll.spawn_time(objs[i].time, preempt)
+
+
+## SV-Tabelle einer Map (lastTime = groesste Endzeit aller Objekte, lazer).
+static func build_scroll_map(bm: Beatmap) -> ScrollMap:
+	var objs := bm.hit_objects
 	var last_time := 0.0
 	if objs.is_empty():
-		if not beatmap.timing_points.is_empty():
-			last_time = beatmap.timing_points[beatmap.timing_points.size() - 1].time
+		if not bm.timing_points.is_empty():
+			last_time = bm.timing_points[bm.timing_points.size() - 1].time
 	else:
 		last_time = -INF
 		for obj in objs:
 			last_time = maxf(last_time, obj.end_time())
-	scroll.build(beatmap.timing_points, last_time)
-	_spawn_times.resize(objs.size())
-	for i in objs.size():
-		_spawn_times[i] = scroll.spawn_time(objs[i].time, preempt)
+	var sm := ScrollMap.new()
+	sm.build(bm.timing_points, last_time)
+	return sm
 
 
 ## Combo-Anteil des Scores: ab 100er-Combo zaehlt eine Note voll.

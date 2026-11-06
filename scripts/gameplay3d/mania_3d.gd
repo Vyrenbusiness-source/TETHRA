@@ -361,6 +361,10 @@ func _load_beatmap() -> bool:
 		var preempt := ManiaCore.BASE_PREEMPT / clampf(scroll, 0.5, 3.0)
 		var lead := _beatmap.audio_lead_in()
 		var first_t: float = _beatmap.hit_objects[0].time
+		# SV: Anflugzeit der ersten Note folgt der Scroll-Position (lazer).
+		var sm := ManiaCore.build_scroll_map(_beatmap)
+		if not sm.is_identity():
+			preempt = first_t - sm.spawn_time(first_t, preempt)
 		var need := preempt + 600.0
 		if first_t + lead < need:
 			lead = need - first_t
@@ -945,11 +949,13 @@ func _emissive_mat(col: Color, energy: float) -> StandardMaterial3D:
 
 
 # ---------------------------------------------------------------------------
-# Noten auf den Schienen (konstante Geschwindigkeit -> klares Timing)
+# Noten auf den Schienen (Scroll-Velocity wie osu!lazer: Abstand ueber
+# core.scroll.position, ohne SV/BPM-Wechsel exakt konstante Geschwindigkeit)
 # ---------------------------------------------------------------------------
 
 func _note_z(hit_time: float, t: float) -> float:
-	return Z_LINE - (hit_time - t) / core.preempt * (Z_LINE - Z_FAR)
+	var sm := core.scroll
+	return Z_LINE - (sm.position(hit_time) - sm.position(t)) / core.preempt * (Z_LINE - Z_FAR)
 
 
 func _on_note_spawned(index: int) -> void:
