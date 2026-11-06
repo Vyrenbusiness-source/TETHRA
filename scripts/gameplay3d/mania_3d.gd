@@ -38,6 +38,7 @@ var _camera: Camera3D
 var _glow_shader: Shader
 var _ring_shader: Shader
 var _note_shader: Shader
+var _sparks: HitSparks
 
 var _theme_col := Color(0.22, 0.68, 0.90)
 var _theme_kiai := Color(0.92, 0.52, 0.20)
@@ -255,6 +256,9 @@ func _ready() -> void:
 	_extract_theme_color()
 	_preload_stations()
 	_build_world()
+	_sparks = HitSparks.new()
+	_world.add_child(_sparks)
+	_sparks.setup(RAIL_X, Z_LINE, ROAD_Y, _theme_col)
 	_build_hud()
 	_build_screen_fx()
 	_build_route_ui()
@@ -1081,6 +1085,9 @@ func _on_note_judged(index: int, result: Dictionary) -> void:
 	if col < _pad_judge_col.size():
 		_pad_judge_col[col] = QUALITY_COLOR[q]
 	_spawn_popup(col, QUALITY_TEXT[q], QUALITY_COLOR[q], sub)
+	_sparks.spark(col, q)
+	if q != ManiaCore.Quality.MISS:
+		_sparks.lane_shot(col)
 	_ur_tick(result)
 	if _notes.has(index):
 		var entry: Dictionary = _notes[index]
@@ -1475,6 +1482,7 @@ func _process(delta: float) -> void:
 	# Takt exakt aus BeatClock: Angriff liegt auf dem Schlag, Release bleibt
 	# weich (~380 ms — atmet, statt zu blitzen).
 	_clock.update(t, delta)
+	_sparks.update(delta)
 	_beat_env = maxf(_clock.beat_env, _beat_env - delta * 2.6)
 
 	# NOTENDICHTE (naechste Sekunde) -> Intensitaets-Surge bei Bursts;
