@@ -282,13 +282,13 @@ def nebula_rows(args):
     # Domain-Warp (zweistufig): q verbiegt die Gaswolken, q2 die Filamente.
     q = [nz.fbm(d + F32(k * 7.3), 1.4, 3) for k in range(3)]
     pw = [d[i] + F32(0.6) * q[i] for i in range(3)]
-    n1 = nz.fbm(pw, 2.1, 7, gain=0.52)
+    n1 = nz.fbm(pw, 2.1, 8, gain=0.54)
     q2 = [d[i] + F32(0.45) * q[(i + 1) % 3] + F32(0.18) * n1 for i in range(3)]
 
     # Weich, ohne Plateau: Dichte exponentiell aus dem Rauschen, Ränder laufen aus.
     dens = np.exp(F32(2.8) * (n1 - F32(0.12)))
     gas = mask ** F32(1.6) * dens * F32(0.42)
-    fil = nz.ridged(q2, 3.4, 5)
+    fil = nz.ridged(q2, 4.4, 6)
     fil = (fil ** F32(2.6)) * mask ** F32(1.3) * smoothstep(-0.35, 0.3, n1) * F32(0.7)
 
     # Ferner Dunst: weich, kuehler, gibt Tiefe hinter dem nahen Gas.
@@ -443,7 +443,7 @@ def star_layer(name, W, H, seed):
     n = int(30000 * sc) + 400
     m = np.log10(rng.uniform(10 ** (0.36 * 0.0), 10 ** (0.36 * 9.0), n)) / 0.36
     d = band_weighted_dirs(rng, comp, n, 0.42)
-    flux = 10 ** (-0.4 * m * 0.62) * front_dim(d)
+    flux = 10 ** (-0.4 * m * 0.7) * front_dim(d)
     temp = sample_temps(rng, n)
     rgb = star_color(temp, 0.45 + 0.8 * np.clip(flux / 0.2, 0, 1)[:, None]) * flux[:, None]
 
@@ -472,7 +472,7 @@ def star_layer(name, W, H, seed):
     alld = np.concatenate([d, cd])
     allf = np.concatenate([flux, cflux])
     allc = np.concatenate([rgb, crgb])
-    bright = allf > 0.16
+    bright = allf > 0.2
     faint = ~bright
     deposit(img, alld[faint], allc[faint] * 1.35, W, H)
     px = PXR
@@ -487,15 +487,15 @@ def star_layer(name, W, H, seed):
         f = float(bf[i])
         col = bc[i] / max(f, 1e-6)
         sc_ = s_core * (1.0 + 0.9 * f)
-        sh = px * (2.5 + 9.0 * f)
-        sw = px * (8 + 34 * f * f)
+        sh = px * (1.8 + 4.5 * f)
+        sw = px * (6 + 22 * f * f)
         top = i < 10
 
         def prof(x, y, f=f, sc_=sc_, sh=sh, sw=sw, top=top):
             r2 = x * x + y * y
             v = 1.15 * f * np.exp(-r2 / (2 * sc_ * sc_))
-            v += 0.11 * f * np.exp(-r2 / (2 * sh * sh))
-            v += 0.035 * f * f * np.exp(-np.sqrt(r2) / sw)
+            v += 0.07 * f * np.exp(-r2 / (2 * sh * sh))
+            v += 0.02 * f * f * np.exp(-np.sqrt(r2) / sw)
             if top:  # sehr feine, kurze Beugungs-Andeutung nur bei den hellsten
                 ax = np.exp(-(y / (px * 0.55)) ** 2) * np.exp(-np.abs(x) / (px * 14))
                 ay = np.exp(-(x / (px * 0.55)) ** 2) * np.exp(-np.abs(y) / (px * 14))
@@ -534,7 +534,7 @@ def nebula_extras(img, name, W, H, seed, comp):
 
     # Ferne Galaxien: kleine Spiral-/Elliptik-Flecken, dazu eine groessere im Blickfeld.
     gals = []
-    for _ in range(int(26 * max(sc, 0.3))):
+    for _ in range(int(14 * max(sc, 0.3))):
         gals.append((random_dirs(rng, 1)[0], px * rng.uniform(1.0, 3.2), rng.uniform(0.012, 0.04), False))
     hl = pal["hero"][0]
     gd = lonlat_dir(-hl * 0.55 + rng.uniform(-6, 6), rng.uniform(17, 21))

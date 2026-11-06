@@ -55,7 +55,7 @@ uniform float palette_mix : hint_range(0.0, 1.0) = 0.0;
 uniform vec3 tint : source_color = vec3(1.0);
 uniform float brightness : hint_range(0.0, 4.0) = 1.0;
 uniform float star_brightness : hint_range(0.0, 4.0) = 1.0;
-uniform float star_hdr : hint_range(1.0, 4.0) = 1.8;
+uniform float star_hdr : hint_range(1.0, 4.0) = 1.5;
 uniform float beat_pulse : hint_range(0.0, 1.0) = 0.0;
 
 uniform vec3 pano_rotation = vec3(0.0);
@@ -178,7 +178,7 @@ void sky() {
 		}
 		// Helle Kerne ueber die Glow-Schwelle heben, schwache Sterne bleiben fein.
 		float sl = dot(st, vec3(0.2126, 0.7152, 0.0722));
-		st *= star_brightness * mix(1.0, star_hdr, smoothstep(0.35, 0.9, sl));
+		st *= star_brightness * mix(1.0, star_hdr, smoothstep(0.55, 1.0, sl));
 		st *= 1.0 + beat_pulse * 0.55;
 
 		vec3 col = (neb + st) * tint * brightness;
