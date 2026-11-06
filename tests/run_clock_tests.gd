@@ -18,6 +18,16 @@ var _last_v := -INF
 var _mono := true
 var _mark := 0.0
 var _gain := 0.0
+var _seek_checked := false
+var _dev_sum := 0.0
+var _dev_n := 0
+## Movie-Phase (Film-Zeit statt Wanduhr).
+var _f0 := 0
+var _movie_ok := true
+var _movie_worst := 0.0
+var _movie_last := -INF
+var _movie_play_dev := 0.0
+var _movie_played := false
 
 var _passed := 0
 var _failed := 0
@@ -45,6 +55,11 @@ func _run_all() -> void:
 	_test_restart_backward()
 	_test_hold()
 	_test_latency_step()
+	_test_resume_behind_monotone()
+	_test_mix_stall_monotone()
+	_test_settle_forward_smooth()
+	_test_movie_fps_parse()
+	_test_movie_clock()
 	_test_fade_level()
 	_test_project_settings()
 	_test_live_clock()
@@ -230,6 +245,156 @@ func _test_latency_step() -> void:
 	_ok(mono, "monoton waehrend Nachfuehrung")
 
 
+## Simuliert: Uhr haelt (Pause), Audio-Rohzeit liegt nach Resume bis zu
+## einen Mix-Block (85 ms, Dummy-Treiber) HINTER der gehaltenen Zeit (Godots
+## Pause-Blende mischt nur ein Stueck). Frueher: harter Reset rueckwaerts.
+func _test_resume_behind_monotone() -> void:
+	print("- Resume mit Audio 20..85 ms hinter der Uhr: nie rueckwaerts, holt auf")
+	var all_mono := true
+	var worst_dev := 0.0
+	for behind in [20.0, 49.0, 51.0, 60.0, 85.0]:
+		var sm = SC.Smoother.new()
+		var t_us := 0
+		var last := -INF
+		for i in 60:
+			last = sm.sample(float(t_us) / 1000.0, t_us)
+			t_us += 16667
+		var held: float = last
+		for i in 20:
+			var h: float = sm.hold(t_us)
+			all_mono = all_mono and h >= last
+			last = h
+			t_us += 16667
+		var audio_ms: float = held - behind
+		var out := 0.0
+		for i in 90:
+			out = sm.sample(audio_ms, t_us)
+			all_mono = all_mono and out >= last
+			last = out
+			audio_ms += 16.667
+			t_us += 16667
+		worst_dev = maxf(worst_dev, absf(out - (audio_ms - 16.667)))
+	_ok(all_mono, "monoton fuer alle Rueckstaende")
+	_ok(worst_dev <= 1.0, "nach 1.5 s wieder an der Audio-Uhr (Abw. %.3f)" % worst_dev)
+
+
+## Mix-Thread haengt (Last): Rohzeit = Position + Zeit seit Mix laeuft
+## 150 ms weiter, dann kommt ein einzelner Block -> Rohzeit faellt ~120 ms.
+func _test_mix_stall_monotone() -> void:
+	print("- Mix-Stau: Rohzeit faellt 120 ms zurueck -> nie rueckwaerts, keine Drift")
+	var sm = SC.Smoother.new()
+	var t_us := 0
+	var last := -INF
+	var mono := true
+	var audio := 0.0
+	for i in 400:
+		var raw := audio
+		if i == 109:
+			audio -= 120.0  # Treiber hat Zeit verloren: Audio liegt zurueck
+			raw = audio
+		var out: float = sm.sample(raw, t_us)
+		mono = mono and out >= last
+		last = out
+		audio += 16.667
+		t_us += 16667
+	_ok(mono, "monoton ueber Stau und Rueckfall")
+	var dev := absf(last - (audio - 16.667))
+	_ok(dev <= 1.0, "danach wieder an der Audio-Uhr (Abw. %.3f)" % dev)
+
+
+## Lead-In -> Audio: Rohzeit springt um den veralteten Mix-Zeitstempel
+## (bis zu einen Block) vor. settle(): weich nachfuehren, kein harter Sprung.
+func _test_settle_forward_smooth() -> void:
+	print("- Lead-In -> Audio (+70 ms Rohsprung): weich, monoton, holt auf")
+	var sm = SC.Smoother.new()
+	var t_us := 0
+	var last := -INF
+	for i in 30:
+		last = sm.sample(float(t_us) / 1000.0 - 300.0, t_us)
+		t_us += 16667
+	sm.settle()
+	var mono := true
+	var max_step := 0.0
+	var out := 0.0
+	var tr := 0.0
+	for i in 60:
+		tr = float(t_us) / 1000.0 - 300.0 + 70.0
+		out = sm.sample(tr, t_us)
+		mono = mono and out >= last
+		max_step = maxf(max_step, out - last)
+		last = out
+		t_us += 16667
+	_ok(mono, "monoton")
+	_ok(max_step < 16.667 + 35.0, "kein harter Sprung (groesster Schritt %.2f ms)" % max_step)
+	_ok(absf(out - tr) <= 1.0, "nach 1 s an der Audio-Uhr (Abw. %.3f)" % absf(out - tr))
+
+
+func _test_movie_fps_parse() -> void:
+	print("- Movie-FPS aus der Kommandozeile")
+	_ok(is_equal_approx(SC.movie_fps_from_cmdline(PackedStringArray(["--write-movie", "a.avi", "--fixed-fps", "30"])), 30.0),
+			"--fixed-fps 30")
+	_ok(is_equal_approx(SC.movie_fps_from_cmdline(PackedStringArray(["--fixed-fps=24"])), 24.0), "--fixed-fps=24")
+	var def := float(ProjectSettings.get_setting("editor/movie_writer/fps", 60))
+	_ok(is_equal_approx(SC.movie_fps_from_cmdline(PackedStringArray()), def),
+			"ohne Angabe: editor/movie_writer/fps (%.0f)" % def)
+
+
+## Film-Uhr gegen ein nachgebautes Movie-Writer-Mixing: pro Frame 1600
+## Samples Ausgabe (48 kHz / 30 fps), gemischt in 512er-Schritten mit Vorrat.
+## Die rohe Position laeuft 0..10.7 ms vor dem Hoerbaren, die Uhr nicht.
+func _test_movie_clock() -> void:
+	print("- Film-Uhr: 512er-Mix-Vorrat, Pause -> sample-genau, monoton")
+	var mc = SC.MovieClock.new()
+	var spf := 1600
+	# Vorrat im Mix-Puffer beim Start (Stille). Real immer ein Vielfaches von
+	# ggT(1600, 512) = 64, weil der Puffer leer startet.
+	var left := 320
+	var left_song := 0  # davon Song-Samples
+	var pos := 0  # gemischte Song-Samples (= get_playback_position)
+	var heard := 0  # ausgegebene Song-Samples (= Wahrheit im Film)
+	var playing := true
+	var mono := true
+	var ahead_max := 0.0
+	var below := false
+	var last := -INF
+	var dev := INF
+	var raw_jitter := 0.0
+	mc.anchor(0.0, 0.0)
+	for k in 120:
+		var film := float(k) * 1000.0 / 30.0
+		if k == 50:
+			playing = false
+		if k == 70:
+			playing = true
+		var v: float = mc.sample(float(pos) / 48.0, film)
+		var truth := float(heard) / 48.0
+		mono = mono and v >= last
+		last = v
+		below = below or v < truth - 0.0001
+		ahead_max = maxf(ahead_max, v - truth) if k >= 90 else ahead_max
+		raw_jitter = maxf(raw_jitter, float(pos - heard) / 48.0)
+		dev = absf(v - truth)
+		# Frame-Ende: Movie-Writer gibt spf Samples aus, erst den Vorrat.
+		var use := mini(left, spf)
+		var from_left := mini(left_song, use)
+		heard += from_left
+		left -= use
+		left_song -= from_left
+		var out := use
+		while out < spf:
+			var song := 512 if playing else 0
+			pos += song
+			var take := mini(512, spf - out)
+			heard += mini(song, take)
+			out += take
+			left = 512 - take
+			left_song = song - mini(song, take)
+	_ok(raw_jitter > 5.0, "rohe Position laeuft voraus (bis %.2f ms)" % raw_jitter)
+	_ok(mono, "monoton (auch ueber Pause)")
+	_ok(not below, "nie hinter dem Hoerbaren")
+	_ok(ahead_max < 0.001 and dev < 0.001, "nach Resume sample-genau (Abw. %.4f ms)" % maxf(ahead_max, dev))
+
+
 func _test_fade_level() -> void:
 	print("- Lautstaerke-Rampe 12 ms")
 	_ok(SC.FADE_MS >= 10.0 and SC.FADE_MS <= 15.0, "Rampe 10-15 ms")
@@ -323,9 +488,27 @@ func _live_step() -> void:
 			if el >= 100 and _mark == 0.0:
 				_mark = v
 				_ok(v > -300.0 and v < -150.0, "Lead-In laeuft (%.1f ms)" % v)
+			if el >= 450 and el < 700:
+				# Abstand zur Audio-Rohzeit mitteln: die Rohzeit des Dummy-
+				# Treibers ist ein Saegezahn (Mix-Thread schlaeft ungenau,
+				# Mix-Race), die Uhr folgt ihrem Mittel.
+				var near := INF
+				for i in 3:
+					var d: float = v - _clock.raw_time_ms()
+					if absf(d) < absf(near):
+						near = d
+				_dev_sum += near
+				_dev_n += 1
 			if el >= 700:
-				# Relativ zur tatsaechlich vergangenen Zeit pruefen (Frame-Takt schwankt unter Last).
-				_ok(absf(v - (float(el) - 300.0)) < 80.0, "nach Lead-In Audio-Zeit folgt Echtzeit (%.1f ms bei el=%d)" % [v, el])
+				# Relativ zur tatsaechlich vergangenen Zeit pruefen (Frame-Takt
+				# schwankt unter Last). Die Audio-Konvention (Position + Zeit seit
+				# Mix) liegt bis zu einen Mix-Block (Dummy: 85 ms) vor der
+				# Wanduhr des Lead-In -> Band statt fester Toleranz.
+				var ahead := v - (float(el) - 300.0)
+				_ok(ahead > -40.0 and ahead < 130.0, "nach Lead-In Audio-Zeit folgt Echtzeit (%.1f ms bei el=%d)" % [v, el])
+				var mean := _dev_sum / maxf(float(_dev_n), 1.0)
+				_ok(_dev_n > 0 and absf(mean) < 10.0,
+						"an der Audio-Uhr (mittlere Abw. %.2f ms, %d Frames)" % [mean, _dev_n])
 				_ok(player.playing, "Audio spielt")
 				_gain = player.volume_db
 				_clock.pause()
@@ -344,6 +527,11 @@ func _live_step() -> void:
 				_step = 3
 		3:
 			var v := _sample_mono()
+			if el >= 1300 and not _seek_checked:
+				_seek_checked = true
+				_clock.seek_ms(v - 200.0)
+				var after := _sample_mono()
+				_ok(after >= v and after - v < 20.0, "seek_ms rueckwaerts ignoriert (%.2f -> %.2f)" % [v, after])
 			if el >= 1100 and _mark >= 0.0:
 				_ok(is_equal_approx(player.volume_db, _gain),
 						"Rampe nach Resume fertig (volume_db %.2f)" % player.volume_db)
@@ -358,5 +546,60 @@ func _live_step() -> void:
 		4:
 			if el >= 1700:
 				_ok(not player.playing, "nach Stopp-Rampe gestoppt")
-				_live = false
-				_finish()
+				_start_movie()
+		5:
+			_movie_step(player)
+
+
+## Movie-Modus: Zeit = Frames / FPS, unabhaengig von der Wanduhr. Einzelne
+## Frames werden kuenstlich verzoegert (langsames Rendern beim Film).
+func _start_movie() -> void:
+	print("- Movie-Modus (60 fps): Lead-In und Uhr laufen nach Film-Zeit")
+	_clock.set_movie_mode(true, 60.0)
+	_ok(_clock.is_movie_mode(), "Movie-Modus aktiv")
+	_ok(_clock.visual_offset_ms() == 0.0, "kein visual_offset im Film")
+	_clock.play(_silence(4.0), 300.0)
+	_f0 = Engine.get_process_frames()
+	_movie_last = -INF
+	_step = 5
+
+
+func _movie_us(frames: int) -> float:
+	return roundf(float(frames) * 1000000.0 / 60.0)
+
+
+func _movie_step(player: AudioStreamPlayer) -> void:
+	var frames := Engine.get_process_frames()
+	var f := frames - _f0
+	# Im Test mischt der Dummy-Treiber in einem eigenen Thread (im echten
+	# Film nicht): Position vor und nach der Abfrage einklammern.
+	var v: float = _clock.song_time_ms()
+	var pos1 := player.get_playback_position() * 1000.0
+	if v < _movie_last:
+		_movie_ok = false
+	if not player.playing:
+		# Lead-In: exakt Frames * 1000/60 - 300, egal wie lange der Frame dauerte.
+		var want := (_movie_us(frames) - _movie_us(_f0)) / 1000.0 - 300.0
+		_movie_worst = maxf(_movie_worst, absf(v - want))
+		if f % 3 == 1:
+			OS.delay_msec(25)  # langsamer Frame: Wanduhr laeuft davon
+	else:
+		if not _movie_played:
+			_movie_played = true
+			_ok(_movie_worst < 0.01, "Lead-In = Frames/FPS (max Abw. %.4f ms)" % _movie_worst)
+			_ok(f >= 18 and f <= 20, "Audio startet nach 300 ms Film-Zeit (Frame %d)" % f)
+		# Film-Uhr laeuft nie der gemischten Audio-Position voraus.
+		_movie_play_dev = maxf(_movie_play_dev, v - maxf(pos1, _movie_last))
+	_movie_last = v
+	if f == 3:
+		_ok(absf(_clock.judgement_time_ms() - v - _clock.user_offset_ms) < 0.0001,
+				"Judgement = Film-Zeit + Offset")
+	if f >= 45:
+		_ok(_movie_played, "Audio gestartet")
+		_ok(_movie_play_dev < 0.001, "Wiedergabe: Uhr nie vor der Audio-Position (%.4f ms)" % _movie_play_dev)
+		_ok(_movie_ok, "Film-Zeit monoton")
+		_clock.stop()
+		_clock.set_movie_mode(false)
+		_ok(not _clock.is_movie_mode(), "Movie-Modus wieder aus")
+		_live = false
+		_finish()
