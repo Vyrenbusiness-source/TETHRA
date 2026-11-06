@@ -451,13 +451,19 @@ func _build_map_bg() -> void:
 			var u := (float(x) + 0.5) / float(W) * 2.0 - 1.0
 			var v := (float(y) + 0.5) / float(H) * 2.0 - 1.0
 			var c := img.get_pixel(x, y)
-			# Abdunkeln + leicht entsaettigen (nichts grell).
+			# Abdunkeln + leicht entsaettigen (nichts grell, kein Grau-Lift).
 			c = c.lerp(Color(c.get_luminance(), c.get_luminance(), c.get_luminance()), 0.25)
-			c = c * 0.62
-			# Mitte (hinter der Strecke) dunkler, Raender weich auf 0.
-			var center := clampf(1.0 - Vector2(u * 1.4, v * 1.1).length(), 0.0, 1.0)
-			var edge := clampf((1.0 - absf(u)) * 3.0, 0.0, 1.0) * clampf((1.0 - absf(v)) * 3.0, 0.0, 1.0)
-			c.a = MAP_BG_ALPHA * (1.0 - 0.65 * center) * edge
+			c = c * 0.55
+			# Mitte (hinter der Strecke) dunkler.
+			var center := clampf(1.0 - Vector2(u * 2.6, v * 2.2).length(), 0.0, 1.0)
+			# Weiche elliptische Maske: erreicht 0 schon bei r = 0.92, also weit vor
+			# dem Quad-Rand -> nie eine sichtbare Kante, auch nicht beim Kurven.
+			var r := Vector2(u, v).length()
+			var edge := 1.0 - smoothstep(0.38, 0.92, r)
+			# Unterhalb des Horizonts (v > 0, Bildzeile ~360) liegt die Strecke:
+			# dort fast ausblenden, damit der schwarze Raum schwarz bleibt.
+			var below := smoothstep(-0.02, 0.10, v)
+			c.a = MAP_BG_ALPHA * (1.0 - 0.65 * center) * edge * (1.0 - 0.85 * below)
 			img.set_pixel(x, y, Color(c.r, c.g, c.b, c.a))
 	var mat := StandardMaterial3D.new()
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -465,16 +471,20 @@ func _build_map_bg() -> void:
 	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR
 	mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
 	mat.albedo_texture = ImageTexture.create_from_image(img)
+	# Kein Wrap: sonst blutet der gegenueberliegende Rand als Kante ein.
+	mat.texture_repeat = false
 	mat.render_priority = -10
 	var bg := MeshInstance3D.new()
 	var bq := QuadMesh.new()
 	var aspect := float(src.get_width()) / maxf(1.0, float(src.get_height()))
-	var bh := 96.0
-	bq.size = Vector2(maxf(bh * aspect, 170.0), bh)
+	# Deutlich groesser als der Sicht-Kegel in dieser Tiefe (~180 x 100):
+	# Quad-Rand liegt immer ausserhalb, die Maske blendet vorher aus.
+	var bh := 240.0
+	bq.size = Vector2(maxf(bh * aspect, 420.0), bh)
 	bg.mesh = bq
 	bg.material_override = mat
 	bg.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	bg.position = Vector3(0, 9.0, Z_FAR - 16.0)
+	bg.position = Vector3(0, 0.0, Z_FAR - 16.0)
 	_cosmos.add_child(bg)
 
 
