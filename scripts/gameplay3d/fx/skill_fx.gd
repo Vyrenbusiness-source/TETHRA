@@ -49,6 +49,7 @@ var _boost_t: Array[float] = [0.0, 0.0]   # Ziel-Energie links/rechts
 var _boost: Array[float] = [0.0, 0.0]     # geglaettet
 var _sweep := -1.0
 var _rail_mid := 0.0
+var _columns := 4
 
 
 func setup(rail_x: Array[float] = [-2.55, -0.85, 0.85, 2.55], z_line: float = 3.0,
@@ -67,6 +68,7 @@ func setup(rail_x: Array[float] = [-2.55, -0.85, 0.85, 2.55], z_line: float = 3.
 			min_x = minf(min_x, x)
 			max_x = maxf(max_x, x)
 	_rail_mid = (min_x + max_x) * 0.5
+	_columns = maxi(1, rail_x.size())
 	var half := (max_x - min_x) * 0.5 + LANE_HALF   # Aussenkante der Bahnen
 	var stream_shader: Shader = load("res://shaders/skill_stream.gdshader")
 	var plasma_shader: Shader = load("res://shaders/plasma_line.gdshader")
@@ -290,12 +292,8 @@ func on_judge(column: int, quality: int) -> void:
 	if gain <= 0.0:
 		return
 	# Spalten links der Mitte speisen den linken Strom, rechts den rechten.
-	var side_i := 0 if column * 2 < _column_count() else 1
+	var side_i := 0 if column * 2 < _columns else 1
 	_boost_t[side_i] = minf(1.0, _boost_t[side_i] + gain)
-
-
-func _column_count() -> int:
-	return 4
 
 
 ## Meilenstein (z. B. alle 100 Combo): eine weiche Welle laeuft die Stroeme hinab.
