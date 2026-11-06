@@ -627,7 +627,7 @@ func _build_world() -> void:
 		var fmat := ShaderMaterial.new()
 		fmat.shader = fire_shader
 		fmat.set_shader_parameter("base_color",
-				_theme_col.lerp(Color(1.0, 0.55, 0.2), 0.65))
+				_theme_col.lerp(Color(1, 1, 1), 0.3))
 		fmat.set_shader_parameter("intensity", 0.0)
 		fmesh.material_override = fmat
 		fmesh.position = Vector3(sx, ROAD_Y + 0.56, (Z_FAR + Z_LINE) * 0.5 + 2.0)
@@ -1384,8 +1384,10 @@ func _on_note_judged(index: int, result: Dictionary) -> void:
 		else:
 			# Drohne rauscht am Schiff vorbei und verglimmt rot.
 			var miss_mat := entry.rim as ShaderMaterial
-			miss_mat.set_shader_parameter("rim_color", Color(1.0, 0.25, 0.25))
-			miss_mat.set_shader_parameter("base_color", Color(0.55, 0.12, 0.12))
+			# Verpasst: entsaettigt grau (kein Rot quer uebers Spielfeld —
+			# Rot gibt es nur auf dem Pad bzw. der HP-Leiste).
+			miss_mat.set_shader_parameter("rim_color", Color(0.42, 0.43, 0.47))
+			miss_mat.set_shader_parameter("base_color", Color(0.16, 0.16, 0.19))
 			var tw := create_tween()
 			tw.tween_property(node, "position:z", SHIP_Z + 6.0, 0.35)
 			tw.parallel().tween_property(node, "scale", Vector3.ONE * 0.3, 0.35)
@@ -1868,16 +1870,16 @@ func _process(delta: float) -> void:
 		else:
 			_ember_mm.set_instance_transform(i, Transform3D(Basis.IDENTITY.scaled(Vector3.ONE * sc), pos))
 	if _ember_mat != null:
-		_ember_mat.set_shader_parameter("base_color", _theme_col.lerp(Color(1.0, 0.5, 0.15), burn))
+		_ember_mat.set_shader_parameter("base_color", _theme_col.lerp(Color(1, 1, 1), burn * 0.5))
 	# Rand-Glut: Combo laesst den Bildschirmrand gluehen, ab ~150 brennt er.
 	if _vignette_mat != null:
-		# HP-HERZSCHLAG: kritische HP faerbt den Bildschirmrand rot.
-		var alarm := clampf(maxf(0.35 - core.hp, 0.0) * 2.2, 0.0, 1.0)
+		# Kein roter HP-Alarm am Bildschirmrand mehr (faerbte das Spielfeld) —
+		# Warnung zeigt nur die HP-Leiste.
 		_vignette_mat.set_shader_parameter("intensity",
 			(clampf(float(core.combo) / 200.0, 0.0, 1.0) * 0.26 + _kiai_mix * 0.10
-			+ _overdrive * 0.10) * fx + alarm * 0.2 + _beat_env * 0.045)
+			+ _overdrive * 0.10) * fx + _beat_env * 0.045)
 		_vignette_mat.set_shader_parameter("burn", burn * 0.65)
-		_vignette_mat.set_shader_parameter("glow_color", _theme_col.lerp(Color(1.0, 0.18, 0.16), alarm))
+		_vignette_mat.set_shader_parameter("glow_color", _theme_col)
 		_vignette_mat.set_shader_parameter("t", t / 1000.0)
 
 	# Musikreaktivitaet.
@@ -1922,15 +1924,9 @@ func _process(delta: float) -> void:
 		_road_mat.set_shader_parameter("punch", _punch)
 		_road_mat.set_shader_parameter("wave_amount", fx)
 		_road_mat.set_shader_parameter("energy", 0.5 + (_bass * 0.5 + _kick * 0.3 + _sub * 0.15 + _kiai_mix * 0.4 + _density * 0.35) * fx)
-		# Timing-Tint: haengt der Trend spaet, waermt sich die Strecke leicht
-		# auf; zu frueh kuehlt sie ab (peripheres Feedback ohne HUD-Blick).
-		var road_col := _theme_col.lerp(_theme_kiai, _kiai_mix)
-		var trend := clampf(_ur_ema / 90.0, -1.0, 1.0)
-		if trend > 0.0:
-			road_col = road_col.lerp(Color(1.0, 0.55, 0.30), trend * 0.16)
-		else:
-			road_col = road_col.lerp(Color(0.40, 0.70, 1.0), -trend * 0.16)
-		_road_mat.set_shader_parameter("base_color", road_col)
+		# Strecke bleibt in der Songfarbe (kein Timing-/Kiai-Farbkippen —
+		# wandernde Fremdfarben auf dem Spielfeld stoerten).
+		_road_mat.set_shader_parameter("base_color", _theme_col)
 	# BEAT-KANTE: alles hier feuert EXAKT auf dem Schlag.
 	# Kiai-Eintritt merken: der Licht-Sweep startet genau auf dem naechsten Schlag.
 	if _clock.kiai and not _groove_kiai_seen:
@@ -1943,7 +1939,7 @@ func _process(delta: float) -> void:
 	# Die ABFANGLINIE pulsiert im Takt — der Hit-Moment ist hoerbar UND sichtbar.
 	_line_mat.emission_energy_multiplier = 1.1 + pulse * 1.6 + _punch * 1.0 + _kick * 0.35 + _line_flash * 1.0 \
 			+ _groove * 3.0
-	_line_mat.emission = Color(1, 1, 1).lerp(_theme_kiai, _kiai_mix * 0.6)
+	_line_mat.emission = Color(1, 1, 1).lerp(_theme_col, _kiai_mix * 0.4)
 	var pad_energy: Array[float] = []
 	for i in _pad_mats.size():
 		var pf := clampf(_pad_flash[i], 0.0, 1.0)
@@ -2002,10 +1998,11 @@ func _process(delta: float) -> void:
 		_pad_mats[i].set_shader_parameter("rim_color", pcol * (pad_energy[i] + pg * 0.5) * dark)
 	for em2 in _edge_mats:
 		var edge_col := Color(0.45, 0.47, 0.53) if fx <= 0.0 \
-				else _theme_col.lerp(_theme_kiai, maxf(od * 0.45, _kiai_mix))
+				else _theme_col
 		if fx > 0.0 and _fire_level > 0.0:
-			# Brennende Kanten gluehen mit: Glut-Orange, bei Perfection Eisblau.
-			var glow_col := Color(1.0, 0.6, 0.25).lerp(Color(0.72, 0.92, 1.0), _fire_heat)
+			# Brennende Kanten gluehen heller in der Songfarbe (kein Orange/Rot
+			# entlang des Spielfelds), bei Perfection fast weiss.
+			var glow_col := _theme_col.lerp(Color(1, 1, 1), 0.45 + _fire_heat * 0.4)
 			edge_col = edge_col.lerp(glow_col, _fire_level * 0.7)
 		em2.emission = edge_col
 
@@ -2128,7 +2125,7 @@ func _process(delta: float) -> void:
 		# NASSE BAHN: der Himmel spiegelt sich Richtung Horizont.
 		if _road_mat != null:
 			_road_mat.set_shader_parameter("sky_color",
-				jc.lerp(_theme_kiai, _kiai_mix).lerp(Color(1.0, 0.85, 0.6), _sunrise * 0.5))
+				_theme_col.lerp(Color(1, 1, 1), _sunrise * 0.3))
 			_road_mat.set_shader_parameter("refl_amount", (0.20 + _beat_env * 0.08) * fx)
 		if _nebula_mat2 != null:
 			_nebula_mat2.set_shader_parameter("drift", _nebula_drift * 1.8)
@@ -2358,7 +2355,7 @@ func _spawn_kiai_sweep() -> void:
 	sw.mesh = q
 	var m := ShaderMaterial.new()
 	m.shader = _glow_shader
-	m.set_shader_parameter("base_color", _theme_kiai.lerp(Color(1, 1, 1), 0.3))
+	m.set_shader_parameter("base_color", _theme_col.lerp(Color(1, 1, 1), 0.35))
 	m.set_shader_parameter("intensity", 0.0)
 	sw.material_override = m
 	sw.rotation_degrees = Vector3(-90, 0, 0)
@@ -2452,11 +2449,9 @@ func _spawn_beat_wave() -> void:
 	wave.mesh = wq
 	var wm := ShaderMaterial.new()
 	wm.shader = _glow_shader
-	# Farbe folgt dem Zustand: Kiai kippt sie zur Komplementaerfarbe,
-	# brennende Kanten (On Fire) faerben die Welle in Glut/Plasma.
-	var wcol := _theme_col.lerp(_theme_kiai, _kiai_mix)
-	if _fire_level > 0.3:
-		wcol = wcol.lerp(Color(1.0, 0.6, 0.25).lerp(Color(0.72, 0.92, 1.0), _fire_heat), 0.6)
+	# Nur Songfarbe/Weiss auf dem Spielfeld (keine Fremdfarben-Wellen):
+	# Kiai/On Fire machen die Welle nur heller, nie bunter.
+	var wcol := _theme_col.lerp(Color(1, 1, 1), 0.15 + _kiai_mix * 0.2 + _fire_level * 0.2)
 	wm.set_shader_parameter("base_color", wcol)
 	var peak := (0.09 + _kiai_mix * 0.07) * _fx_level() * (0.7 + _music_energy * 0.6)
 	wm.set_shader_parameter("intensity", peak)
