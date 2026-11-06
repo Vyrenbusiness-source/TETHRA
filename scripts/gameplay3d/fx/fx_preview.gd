@@ -6,7 +6,7 @@ extends Node3D
 ## --shot speichert nach SHOT_SEC ein PNG nach SHOT_PATH und beendet.
 
 const SHOT_PATH := "C:/Users/Gexanx/AppData/Local/Temp/claude/c--Users-Gexanx-Desktop-rhyg/b9d5e593-aabc-4b4b-a882-a5835e187db3/scratchpad/fx_preview.png"
-const SHOT_SEC := 3.4
+const SHOT_SEC := 5.2
 const BPM := 128.0
 const Z_LINE := 3.0
 const Z_FAR := -46.0
