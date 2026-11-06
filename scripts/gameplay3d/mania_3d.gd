@@ -94,6 +94,28 @@ var _pad_nodes: Array[MeshInstance3D] = []
 var _planet_mats: Array[ShaderMaterial] = []
 var _nebula_kick := 0.0
 var _line_flash := 0.0
+## Hitsound-Basispegel; der Hitsound-Regler (Settings.hitsound_volume) kommt dazu.
+const HIT_DB := -7.0
+const MISS_DB := -6.0
+# GROOVE: kurzer Licht-Schlag auf jeder Beat-Kante (Attack sofort, Decay
+# ~140 ms). Hoehe = Musikenergie (Bass/Gesamt, ~1 Beat geglaettet) + Noten-
+# dichte; Downbeat staerker, Kiai x1.6, alles * _fx_level(). Nur Licht —
+# kein Wackeln, keine Kamera, nichts ueber den Noten.
+const GROOVE_DECAY_MS := 48.0  ## exp(-140/48) ~ 5 %: nach ~140 ms verklungen
+const GROOVE_DOWN := 1.0
+const GROOVE_BEAT := 0.6
+const GROOVE_KIAI := 1.6
+var _groove := 0.0
+var _groove_down := 0.0
+var _groove_peak := 0.0
+var _groove_is_down := false
+var _groove_vt := 0.0
+var _music_energy := 0.0
+var _density2 := 0.0
+var _groove_kiai_seen := false
+var _kiai_sweep_pending := false
+## Kiai-Licht-Sweeps: {node, mat, t0, dur, peak}
+var _kiai_sweeps: Array = []
 var _ember_mat: ShaderMaterial
 
 # Replay: Aufnahme jeder Runde + zeitgenaue Wiedergabe.
@@ -1570,7 +1592,7 @@ func _update_skill_fx(delta: float, fx: float) -> void:
 	if fx < 1.0:
 		combo = mini(combo, SkillFx.COMBO_TIERS[2] - 1)
 	_skill_fx.update(delta, _clock.beat_phase, _clock.beat_env, combo,
-			core.accuracy(), _kiai_mix)
+			core.accuracy(), _kiai_mix, lerpf(0.4, 1.0, _music_energy))
 	if fx < 1.0:
 		for m in _skill_fx.get_children():
 			var mi := m as MeshInstance3D
@@ -1588,7 +1610,7 @@ func _fx_level() -> float:
 		0:
 			return 0.0
 		1:
-			return 0.45
+			return 0.5
 	return 1.0
 
 
@@ -1710,6 +1732,7 @@ func _process(delta: float) -> void:
 	# NOTENDICHTE (naechste Sekunde) -> Intensitaets-Surge bei Bursts;
 	# keine Note in 2.5s -> Break/Cruise, Rueckkehr mit Flash.
 	var upcoming := 0
+	var upcoming2 := 0
 	var next_gap := 999999.0
 	while _scan_from < _beatmap.hit_objects.size() 			and (_beatmap.hit_objects[_scan_from].time < t - 300.0 or core.is_judged(_scan_from)):
 		_scan_from += 1
@@ -1720,9 +1743,13 @@ func _process(delta: float) -> void:
 		next_gap = minf(next_gap, obj2.time - t)
 		if obj2.time <= t + 1000.0:
 			upcoming += 1
+		if obj2.time <= t + 2000.0:
+			upcoming2 += 1
 		else:
 			break
 	_density = lerpf(_density, clampf(float(upcoming) / 8.0, 0.0, 1.0), minf(delta * 4.0, 1.0))
+	# Groove-Dichte: Noten pro Sekunde der naechsten 2 s (10 NPS = voll).
+	_density2 = lerpf(_density2, clampf(float(upcoming2) / 20.0, 0.0, 1.0), minf(delta * 3.0, 1.0))
 	var now_break := next_gap > 2500.0
 	if _in_break and not now_break:
 		# Comeback: kurzer Flash + Glut-Salve kuendigt den Wiedereinstieg an.
@@ -1790,6 +1817,12 @@ func _process(delta: float) -> void:
 	var pulse: float = maxf(maxf(_beat_env, _bass * 1.05), _punch)
 	var kiai_now := _clock.kiai
 	_kiai_mix = _clock.kiai_mix
+	# STAERKE = MUSIK: Bass + Gesamtenergie, ueber ~1 Beat geglaettet —
+	# leise Parts bleiben ruhig, der Drop knallt.
+	var beat_s := 60.0 / _clock.bpm if _clock.bpm > 1.0 else 0.5
+	var full_raw := SyncClock.band_energy(30.0, 8000.0)
+	var e_raw := clampf((bass_raw * 0.6 + full_raw * 0.4 - 0.35) / 0.5, 0.0, 1.0)
+	_music_energy = lerpf(_music_energy, e_raw, 1.0 - exp(-delta / beat_s))
 
 	# Beat-/Takt-Wellen: Phase 0..1, Welle trifft die Linie exakt auf dem Schlag.
 	if _road_mat != null:
@@ -1808,24 +1841,33 @@ func _process(delta: float) -> void:
 			road_col = road_col.lerp(Color(0.40, 0.70, 1.0), -trend * 0.16)
 		_road_mat.set_shader_parameter("base_color", road_col)
 	# BEAT-KANTE: alles hier feuert EXAKT auf dem Schlag.
+	# Kiai-Eintritt merken: der Licht-Sweep startet genau auf dem naechsten Schlag.
+	if _clock.kiai and not _groove_kiai_seen:
+		_kiai_sweep_pending = true
+	_groove_kiai_seen = _clock.kiai
 	if _clock.is_beat_edge:
 		_on_beat_edge(_clock.beat_index, _clock.is_downbeat_edge)
+	_update_groove(vt)
 
 	# Die ABFANGLINIE pulsiert im Takt — der Hit-Moment ist hoerbar UND sichtbar.
-	_line_mat.emission_energy_multiplier = 1.1 + pulse * 1.6 + _punch * 1.0 + _kick * 0.35 + _line_flash * 1.0
+	_line_mat.emission_energy_multiplier = 1.1 + pulse * 1.6 + _punch * 1.0 + _kick * 0.35 + _line_flash * 1.0 \
+			+ _groove * 2.6
 	_line_mat.emission = Color(1, 1, 1).lerp(_theme_kiai, _kiai_mix * 0.6)
 	var pad_energy: Array[float] = []
 	for i in _pad_mats.size():
 		var pf := clampf(_pad_flash[i], 0.0, 1.0)
 		pad_energy.append((PAD_IDLE if fx > 0.0 else 0.75)
 				+ (pulse * 0.08 + _punch * 0.06 + _kick * 0.03) * fx
-				+ pf * PAD_PRESS)
+				+ pf * PAD_PRESS + _groove * 0.6)
 		# Druck-Feedback: Ring waechst dezent (max 1.15), kein Ueberstrahlen.
+		# Der Takt-Schlag hebt nur die Helligkeit, Groesse hoechstens 1.04.
 		if i < _pad_nodes.size():
-			_pad_nodes[i].scale = Vector3.ONE * (1.0 + (PAD_MAX_SCALE - 1.0) * pf)
+			_pad_nodes[i].scale = Vector3.ONE * maxf(1.0 + (PAD_MAX_SCALE - 1.0) * pf,
+					1.0 + minf(_groove, 1.0) * 0.04)
 	for m in _edge_mats:
 		m.emission_energy_multiplier = (0.28 if fx <= 0.0 else 0.4) \
-				+ (_bass * 1.2 + _punch * 0.9 + _kick * 0.35 + _density * 0.6) * fx
+				+ (_bass * 1.2 + _punch * 0.9 + _kick * 0.35 + _density * 0.6
+				+ _kiai_mix * 0.7) * fx + _groove * 2.0
 
 	# ON FIRE: ab 97% Acc (und min. 30 gewerteten Noten) zuenden die Kanten —
 	# je naeher an 100%, desto hoeher die Flammen. Ab 99.5% kippt das Feuer
@@ -1970,7 +2012,7 @@ func _process(delta: float) -> void:
 		_nebula_mat.set_shader_parameter("col_b", _gal_col2)
 		# DRAMATURGIE: der Drop reisst den Nebel auf — sternenklarer Blick,
 		# nach dem Kiai zieht er wieder zu.
-		_nebula_mat.set_shader_parameter("alpha_mul", 1.0 - _kiai_mix * 0.55)
+		_nebula_mat.set_shader_parameter("alpha_mul", 1.0 - _kiai_mix * 0.25)
 		_nebula_mat.set_shader_parameter("star_amount",
 			_gal_stars + _kiai_mix * 0.5)
 		_nebula_mat.set_shader_parameter("scale", _gal_scale)
@@ -2003,8 +2045,8 @@ func _process(delta: float) -> void:
 			pm2.set_shader_parameter("intensity", 0.85 + (_nebula_kick * 0.12 + _bass * 0.08) * fx)
 			pm2.set_shader_parameter("t", t / 1000.0)
 		_nebula_mat.set_shader_parameter("energy",
-			0.5 + (_bass * 0.6 + _kick * 0.25 + _sub * 0.1 + _kiai_mix * 0.6 + _nebula_kick * 0.4) * fx
-			+ _beat_env * 0.22)
+			0.5 + (_bass * 0.6 + _kick * 0.25 + _sub * 0.1 + _kiai_mix * 0.9 + _nebula_kick * 0.4) * fx
+			+ _beat_env * 0.22 + _groove * 0.35)
 	# Planeten atmen mit dem Bass, Sterne glitzern auf Hoehen.
 	# REISE-ROUTE: Planeten wandern ueber die Songdauer vorbei; der letzte
 	# ist das ZIEL — er steigt auf und schiebt sich im Docking gross mittig.
@@ -2085,6 +2127,12 @@ func _process(delta: float) -> void:
 ## Feuert EXAKT auf jeder Beat-Kante: Pad-Pulse, Glut-Spawn, Nebel-Tick,
 ## Linien-Blitz (staerker auf Takt-Anfaengen).
 func _on_beat_edge(beat_idx: int, downbeat: bool) -> void:
+	# GROOVE: Hoehe des Licht-Schlags fuer diesen Beat (Decay in _update_groove).
+	_groove_peak = _groove_strength(downbeat)
+	_groove_is_down = downbeat
+	if _kiai_sweep_pending:
+		_kiai_sweep_pending = false
+		_spawn_kiai_sweep()
 	# Sub-Thump auf dem Taktanfang (hoerbar UND fuehlbar, uebertoent die Musik
 	# nicht); die Huellkurve kommt aus BeatClock.
 	if downbeat and _use_audio and _beat_player != null:
@@ -2116,6 +2164,95 @@ func _on_beat_edge(beat_idx: int, downbeat: bool) -> void:
 	if (_kiai_mix > 0.5 and beat_idx % 8 == 4 and _fx_level() > 0.0) \
 			or _hash01(float(beat_idx) * 7.77) > 0.94:
 		_spawn_shooting_star(beat_idx)
+
+
+## Hoehe des Takt-Schlags: Grundwert * Musikenergie (+ Notendichte),
+## Downbeat staerker, Kiai x1.6, Effekt-Stufe (Dezent ~50 %).
+func _groove_strength(downbeat: bool) -> float:
+	var s := lerpf(0.4, 1.0, _music_energy) + _density2 * 0.3
+	return s * (GROOVE_DOWN if downbeat else GROOVE_BEAT) \
+			* lerpf(1.0, GROOVE_KIAI, _kiai_mix) * _fx_level()
+
+
+## Takt-Schlag pro Frame: Attack exakt auf der Beat-Kante, exponentieller
+## Decay aus der Beat-Phase (framerate-unabhaengig), plus Shader-Uniforms.
+func _update_groove(vt: float) -> void:
+	_groove_vt = vt
+	var bl := 60000.0 / _clock.bpm if _clock.bpm > 1.0 else 500.0
+	_groove = _groove_peak * exp(-_clock.beat_phase * bl / GROOVE_DECAY_MS)
+	_groove_down = _groove if _groove_is_down else 0.0
+	var flash := clampf(_groove, 0.0, 1.0)
+	var down := clampf(_groove_down, 0.0, 1.0)
+	var me := clampf(_music_energy * _fx_level(), 0.0, 1.0)
+	var mats: Array = [_road_mat, _vignette_mat, _nebula_mat, _nebula_mat2]
+	mats.append_array(_fire_mats)
+	for m in mats:
+		var sm := m as ShaderMaterial
+		if sm == null:
+			continue
+		sm.set_shader_parameter(&"beat_flash", flash)
+		sm.set_shader_parameter(&"downbeat", down)
+		sm.set_shader_parameter(&"music_energy", me)
+	_update_kiai_sweeps(vt)
+
+
+## Naechste Beat-Zeit >= time_ms auf dem Raster der Map.
+func _beat_ceil(time_ms: float) -> float:
+	var tp = null
+	for p in _beatmap.timing_points:
+		if p.uninherited and p.time <= time_ms + 1.0:
+			tp = p
+	if tp == null or tp.beat_length <= 0.0:
+		return time_ms
+	var bl: float = tp.beat_length
+	return tp.time + ceilf((time_ms - tp.time) / bl - 0.001) * bl
+
+
+## KIAI-Eintritt: ein weicher Licht-Sweep rollt auf dem Beat von hinten nach
+## vorne ueber die Strecke (flach auf der Bahn, unter den Noten) und erreicht
+## die Linie genau auf einem spaeteren Schlag.
+func _spawn_kiai_sweep() -> void:
+	var fx := _fx_level()
+	if fx <= 0.0 or _glow_shader == null:
+		return
+	var sw := MeshInstance3D.new()
+	var q := QuadMesh.new()
+	q.size = Vector2(8.6, 3.4)
+	sw.mesh = q
+	var m := ShaderMaterial.new()
+	m.shader = _glow_shader
+	m.set_shader_parameter("base_color", _theme_kiai.lerp(Color(1, 1, 1), 0.3))
+	m.set_shader_parameter("intensity", 0.0)
+	sw.material_override = m
+	sw.rotation_degrees = Vector3(-90, 0, 0)
+	sw.position = Vector3(0, ROAD_Y + 0.02, Z_FAR)
+	_world.add_child(sw)
+	var bl := 60000.0 / _clock.bpm if _clock.bpm > 1.0 else 500.0
+	var dur := maxf(1.0, roundf(800.0 / bl)) * bl
+	_kiai_sweeps.append({"node": sw, "mat": m, "t0": _groove_vt, "dur": dur,
+			"peak": 0.34 * fx})
+
+
+func _update_kiai_sweeps(vt: float) -> void:
+	var i := _kiai_sweeps.size() - 1
+	while i >= 0:
+		var w: Dictionary = _kiai_sweeps[i]
+		var node: MeshInstance3D = w.node
+		var prog := (vt - float(w.t0)) / float(w.dur)
+		if prog >= 1.0 or prog < -0.05 or not is_instance_valid(node):
+			if is_instance_valid(node):
+				node.queue_free()
+			_kiai_sweeps.remove_at(i)
+			if prog >= 1.0:
+				# Ankunft auf dem Schlag: die Linie leuchtet einmal auf.
+				_line_flash = 1.0
+		else:
+			var pr := clampf(prog, 0.0, 1.0)
+			# Leicht beschleunigend (Perspektive): hinten langsam, vorne zuegig.
+			node.position.z = lerpf(Z_FAR, Z_LINE, pr * pr * 0.35 + pr * 0.65)
+			var a := smoothstep(0.0, 0.12, pr) * (1.0 - smoothstep(0.8, 1.0, pr))
+			(w.mat as ShaderMaterial).set_shader_parameter("intensity", float(w.peak) * a)
+		i -= 1
 
 
 ## DROP-Warp beim Kiai-Start: Sterne springen kurz auf Warp-Tempo —
@@ -2184,7 +2321,7 @@ func _spawn_beat_wave() -> void:
 	if _fire_level > 0.3:
 		wcol = wcol.lerp(Color(1.0, 0.6, 0.25).lerp(Color(0.72, 0.92, 1.0), _fire_heat), 0.6)
 	wm.set_shader_parameter("base_color", wcol)
-	var peak := (0.09 + _kiai_mix * 0.07) * _fx_level()
+	var peak := (0.09 + _kiai_mix * 0.07) * _fx_level() * (0.7 + _music_energy * 0.6)
 	wm.set_shader_parameter("intensity", peak)
 	wave.material_override = wm
 	wave.rotation_degrees = Vector3(-90, 0, 0)
@@ -2193,6 +2330,8 @@ func _spawn_beat_wave() -> void:
 	var t_now := _time_ms()
 	var sm := core.scroll
 	var w_time := sm.time_at(sm.position(t_now) + core.preempt)
+	# Auf den naechsten Beat rasten: die Welle trifft die Linie genau auf dem Schlag.
+	w_time = _beat_ceil(w_time)
 	wave.position = Vector3(0, ROAD_Y + 0.015, _note_z(w_time, t_now))
 	_world.add_child(wave)
 	_beat_waves.append({"node": wave, "mat": wm, "time": w_time, "peak": peak})
@@ -2213,7 +2352,11 @@ func _update_beat_waves(t: float) -> void:
 			node.position.z = z
 			var prog := clampf((z - Z_FAR) / (Z_LINE - Z_FAR), 0.0, 1.0)
 			var peak: float = w.peak
-			(w.mat as ShaderMaterial).set_shader_parameter("intensity", lerpf(peak, 0.02, prog))
+			# Wellen erst ab dem Horizont zeigen (auf den Schlag gerastet, s. Spawn);
+			# der Takt-Schlag laesst sie kurz aufleuchten.
+			node.visible = z >= Z_FAR
+			(w.mat as ShaderMaterial).set_shader_parameter("intensity",
+					lerpf(peak, 0.02, prog) * (1.0 + _groove * 1.6))
 		i -= 1
 
 
@@ -2419,7 +2562,7 @@ func _run_flight_event(ev: Dictionary, t: float) -> void:
 func _play_hit(pitch: float) -> void:
 	if not Settings.hitsounds or Settings.hitsound_volume <= 0.01:
 		return
-	_hit_player.volume_db = linear_to_db(Settings.hitsound_volume)
+	_hit_player.volume_db = linear_to_db(Settings.hitsound_volume) + HIT_DB
 	_hit_player.pitch_scale = pitch
 	_hit_player.play()
 
@@ -2427,18 +2570,18 @@ func _play_hit(pitch: float) -> void:
 func _play_miss() -> void:
 	if not Settings.hitsounds or Settings.hitsound_volume <= 0.01:
 		return
-	_miss_player.volume_db = linear_to_db(Settings.hitsound_volume)
+	_miss_player.volume_db = linear_to_db(Settings.hitsound_volume) + MISS_DB
 	_miss_player.play()
 
 
 func _build_sound() -> void:
 	_hit_player = AudioStreamPlayer.new()
 	_hit_player.stream = Sfx.hit_stream()
-	_hit_player.volume_db = -7.0
+	_hit_player.volume_db = HIT_DB
 	add_child(_hit_player)
 	_miss_player = AudioStreamPlayer.new()
 	_miss_player.stream = Sfx.miss_stream()
-	_miss_player.volume_db = -6.0
+	_miss_player.volume_db = MISS_DB
 	add_child(_miss_player)
 
 
@@ -3350,6 +3493,8 @@ func _capture_after_first_note() -> void:
 	await RenderingServer.frame_post_draw
 	if not is_inside_tree():
 		return
+	# Takt-Lage des Bildes (Vergleich auf/zwischen Beats per --shot-lead).
+	print("GROOVE bpm=%.1f phase=%.2f kiai=%.2f" % [_clock.bpm, _clock.beat_phase, _kiai_mix])
 	var img := get_viewport().get_texture().get_image()
 	var path := "C:/Users/Gexanx/AppData/Local/Temp/claude/c--Users-Gexanx-Desktop-rhyg/b9d5e593-aabc-4b4b-a882-a5835e187db3/scratchpad/mania_3d.png"
 	img.save_png(path)
