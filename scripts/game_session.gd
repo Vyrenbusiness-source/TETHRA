@@ -35,6 +35,7 @@ var _clip_end_t := -1.0
 
 func _ready() -> void:
 	set_process(false)
+	_arm_test_watchdog()
 	var args := OS.get_cmdline_args()
 	var i := args.find("--clip")
 	if i >= 0 and i + 1 < args.size():
@@ -120,3 +121,27 @@ func load_last_played() -> Dictionary:
 		"difficulty_index": int(cfg.get_value("last_played", "difficulty_index", 0)),
 		"bg_file": str(cfg.get_value("last_played", "bg_file", "")),
 	}
+
+
+## Test-Watchdog: jeder Debug-/Screenshot-Lauf (--shot*, --autoplay) beendet sich
+## spaetestens nach 45 s, Headless-Test-Runner (--script) nach 120 s selbst, damit keine
+## Testfenster offen haengen bleiben. Prueft auch User-Args nach "--".
+func _arm_test_watchdog() -> void:
+	var all := OS.get_cmdline_args() + OS.get_cmdline_user_args()
+	var limit := 0.0
+	for a in all:
+		if a.begins_with("--shot") or a == "--autoplay" or a == "--smoke":
+			limit = 45.0
+		elif (a == "--script" or a == "-s") and limit == 0.0:
+			limit = 120.0   # Headless-Test-Runner: grosszuegiger, haengt aber nie ewig
+	if limit <= 0.0 or all.has("--clip"):
+		return
+	var t := Timer.new()
+	t.one_shot = true
+	t.wait_time = limit
+	t.process_mode = Node.PROCESS_MODE_ALWAYS
+	t.timeout.connect(func() -> void:
+		push_warning("Test-Watchdog: Lauf nach %d s beendet." % int(limit))
+		get_tree().quit(3))
+	add_child(t)
+	t.start()

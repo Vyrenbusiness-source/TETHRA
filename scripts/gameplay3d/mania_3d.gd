@@ -12,6 +12,16 @@ const Z_LINE := 3.0         # Abfanglinie (Hit-Moment) — nah an der Kamera
 const SHIP_Z := 3.8
 const ROAD_Y := -1.6
 const RAIL_X: Array[float] = [-2.55, -0.85, 0.85, 2.55]
+# Receptor: gleiche Quad-Groesse wie die Note (dq.size), knapp unter ihr.
+const NOTE_SIZE := 1.12
+const PAD_SIZE := NOTE_SIZE
+const PAD_Y := 0.30
+# Ring-Helligkeit: Ruhe unter der Glow-Schwelle (0.92), Druck nur leicht drueber.
+const PAD_IDLE := 0.85
+const PAD_PRESS := 0.35
+const PAD_MAX_SCALE := 1.15
+# Leuchtfleck unter Noten (vorher 0.9 / Lock 1.6 -> ueberstrahlte Muster).
+const NOTE_GLOW := 0.34
 
 const QUALITY_TEXT := { 0: "MAX", 1: "300", 2: "200", 3: "100", 4: "50", 5: "✕" }
 const QUALITY_COLOR := {
@@ -62,7 +72,7 @@ var _overdrive := 0.0
 var _was_kiai := false
 
 var _edge_mats: Array[StandardMaterial3D] = []
-var _pad_mats: Array[StandardMaterial3D] = []
+var _pad_mats: Array[ShaderMaterial] = []
 var _pad_flash: Array[float] = []
 var _line_mat: StandardMaterial3D
 var _ship: Node3D
@@ -293,7 +303,7 @@ func _ready() -> void:
 	_skill_fx.setup(RAIL_X, Z_LINE, Z_FAR, ROAD_Y, _theme_col, _theme_kiai)
 	_build_hud()
 	_build_screen_fx()
-	_build_route_ui()
+	# Kapitel-Punkte unten entfernt (QA: unklar, doppelt zum Song-Fortschritt).
 	_build_flight_plan()
 	_build_galaxy_chapters()
 	_build_sound()
@@ -451,13 +461,19 @@ func _build_map_bg() -> void:
 			var u := (float(x) + 0.5) / float(W) * 2.0 - 1.0
 			var v := (float(y) + 0.5) / float(H) * 2.0 - 1.0
 			var c := img.get_pixel(x, y)
-			# Abdunkeln + leicht entsaettigen (nichts grell).
+			# Abdunkeln + leicht entsaettigen (nichts grell, kein Grau-Lift).
 			c = c.lerp(Color(c.get_luminance(), c.get_luminance(), c.get_luminance()), 0.25)
-			c = c * 0.62
-			# Mitte (hinter der Strecke) dunkler, Raender weich auf 0.
-			var center := clampf(1.0 - Vector2(u * 1.4, v * 1.1).length(), 0.0, 1.0)
-			var edge := clampf((1.0 - absf(u)) * 3.0, 0.0, 1.0) * clampf((1.0 - absf(v)) * 3.0, 0.0, 1.0)
-			c.a = MAP_BG_ALPHA * (1.0 - 0.65 * center) * edge
+			c = c * 0.55
+			# Mitte (hinter der Strecke) dunkler.
+			var center := clampf(1.0 - Vector2(u * 2.6, v * 2.2).length(), 0.0, 1.0)
+			# Weiche elliptische Maske: erreicht 0 schon bei r = 0.92, also weit vor
+			# dem Quad-Rand -> nie eine sichtbare Kante, auch nicht beim Kurven.
+			var r := Vector2(u, v).length()
+			var edge := 1.0 - smoothstep(0.38, 0.92, r)
+			# Unterhalb des Horizonts (v > 0, Bildzeile ~360) liegt die Strecke:
+			# dort fast ausblenden, damit der schwarze Raum schwarz bleibt.
+			var below := smoothstep(-0.02, 0.10, v)
+			c.a = MAP_BG_ALPHA * (1.0 - 0.65 * center) * edge * (1.0 - 0.85 * below)
 			img.set_pixel(x, y, Color(c.r, c.g, c.b, c.a))
 	var mat := StandardMaterial3D.new()
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -465,16 +481,20 @@ func _build_map_bg() -> void:
 	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR
 	mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
 	mat.albedo_texture = ImageTexture.create_from_image(img)
+	# Kein Wrap: sonst blutet der gegenueberliegende Rand als Kante ein.
+	mat.texture_repeat = false
 	mat.render_priority = -10
 	var bg := MeshInstance3D.new()
 	var bq := QuadMesh.new()
 	var aspect := float(src.get_width()) / maxf(1.0, float(src.get_height()))
-	var bh := 96.0
-	bq.size = Vector2(maxf(bh * aspect, 170.0), bh)
+	# Deutlich groesser als der Sicht-Kegel in dieser Tiefe (~180 x 100):
+	# Quad-Rand liegt immer ausserhalb, die Maske blendet vorher aus.
+	var bh := 240.0
+	bq.size = Vector2(maxf(bh * aspect, 420.0), bh)
 	bg.mesh = bq
 	bg.material_override = mat
 	bg.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	bg.position = Vector3(0, 9.0, Z_FAR - 16.0)
+	bg.position = Vector3(0, 0.0, Z_FAR - 16.0)
 	_cosmos.add_child(bg)
 
 
@@ -573,16 +593,35 @@ func _build_world() -> void:
 	_line_mat = _emissive_mat(Color(1, 1, 1), 1.4)
 
 	# Receptor-Pads auf der Linie + Tasten-Labels davor.
+	var lane_grad := Gradient.new()
+	lane_grad.set_color(0, Color(1, 1, 1, 0.0))
+	lane_grad.set_color(1, Color(1, 1, 1, 1.0))
+	lane_grad.add_point(0.55, Color(1, 1, 1, 0.25))
+	var lane_fade := GradientTexture2D.new()
+	lane_fade.gradient = lane_grad
+	lane_fade.width = 4
+	lane_fade.height = 128
+	lane_fade.fill_from = Vector2(0, 0)
+	lane_fade.fill_to = Vector2(0, 1)
 	for i in RAIL_X.size():
+		# Receptor = exakt die Notenform: gleiches Quad (PAD_SIZE), gleicher
+		# Shader (note_disc, fill_alpha 0 -> reiner Ring), knapp unter der
+		# Notenhoehe -> gleicher Durchmesser und gleiche Strichstaerke wie
+		# eine ankommende Note an der Linie.
 		var pad := MeshInstance3D.new()
-		var tor := TorusMesh.new()
-		tor.inner_radius = 0.44
-		tor.outer_radius = 0.58
-		tor.rings = 128
-		tor.ring_segments = 48
-		pad.mesh = tor
-		pad.position = Vector3(RAIL_X[i], ROAD_Y + 0.02, Z_LINE)
-		var pm := _emissive_mat(_pad_color(i), 0.8)
+		var pq := QuadMesh.new()
+		pq.size = Vector2(PAD_SIZE, PAD_SIZE)
+		pad.mesh = pq
+		pad.rotation_degrees = Vector3(-90, 0, 0)
+		pad.position = Vector3(RAIL_X[i], ROAD_Y + PAD_Y, Z_LINE)
+		var pm := ShaderMaterial.new()
+		pm.shader = _note_shader
+		pm.set_shader_parameter("base_color", _pad_color(i))
+		pm.set_shader_parameter("rim_color", _pad_color(i) * PAD_IDLE)
+		pm.set_shader_parameter("fill_alpha", 0.0)
+		pm.set_shader_parameter("halo_strength", 0.7)
+		pm.set_shader_parameter("rim_boost", 0.0)
+		pm.render_priority = -1
 		_pad_mats.append(pm)
 		_pad_flash.append(0.0)
 		pad.material_override = pm
@@ -595,7 +634,9 @@ func _build_world() -> void:
 		var lq := QuadMesh.new()
 		# Exakt von der Hit-Linie bis zum Horizont — vorher fehlten vorne
 		# ~3 Einheiten, der Balken "startete" sichtbar hinter dem Ring.
-		lq.size = Vector2(1.5, absf(Z_FAR - Z_LINE))
+		# Breite = Ring-Aussendurchmesser; liegt flach auf der Bahn und laeuft
+		# damit exakt mit den Schienen zum Fluchtpunkt (perspektivisch).
+		lq.size = Vector2(PAD_SIZE * 0.93, absf(Z_FAR - Z_LINE))
 		lg.mesh = lq
 		lg.rotation_degrees = Vector3(-90, 0, 0)
 		lg.position = Vector3(RAIL_X[i], ROAD_Y + 0.006, (Z_LINE + Z_FAR) * 0.5)
@@ -604,6 +645,8 @@ func _build_world() -> void:
 		lgm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 		var lane_c := _pad_color(i)
 		lgm.albedo_color = Color(lane_c.r, lane_c.g, lane_c.b, 0.0)
+		# Verlauf: am Receptor sichtbar, zum Horizont hin weg (UV v=0 = fern).
+		lgm.albedo_texture = lane_fade
 		lg.material_override = lgm
 		_world.add_child(lg)
 		_lane_glow_mats.append(lgm)
@@ -629,7 +672,7 @@ func _build_world() -> void:
 			label.pixel_size = 0.0019 * 2.3
 		# Mittig IM Pad-Ring statt auf dessen vorderem Rand. Satzzeichen sitzen
 		# auf der Schrift-Grundlinie -> etwas anheben, damit sie mittig wirken.
-		label.position = Vector3(RAIL_X[i], ROAD_Y + (0.2 if is_punct else 0.12), Z_LINE)
+		label.position = Vector3(RAIL_X[i], ROAD_Y + PAD_Y + (0.18 if is_punct else 0.10), Z_LINE)
 		_world.add_child(label)
 
 	_build_ship()
@@ -664,9 +707,9 @@ func _pad_color(i: int) -> Color:
 
 
 func _lane_color(i: int) -> Color:
-	# Innen hell, aussen Themenfarbe — Spuren sofort unterscheidbar.
-	var inner := i == 1 or i == 2
-	return _theme_col.lerp(Color(1, 1, 1), 0.5 if inner else 0.15)
+	# Alle Spuren gleich kraeftig (QA: Spur 1 kraeftig, 2-3 blass war
+	# irritierend) — Trennung kommt ueber Position + Tastenlabel.
+	return _theme_col.lerp(Color(1, 1, 1), 0.3)
 
 
 func _build_ship() -> void:
@@ -861,17 +904,8 @@ func _build_starfield() -> void:
 				16.0 if chi == 0 else 8.0, Z_FAR - 10.5)
 		_cosmos.add_child(cl2)
 
-	# SCHWARZES LOCH: Gravitationslinse verbiegt Nebel/Sterne dahinter,
-	# heisse Akkretionsscheibe rotiert (Kiai beschleunigt sie).
-	var bh := MeshInstance3D.new()
-	var bhq := QuadMesh.new()
-	bhq.size = Vector2(7.5, 7.5)
-	bh.mesh = bhq
-	_bh_mat = ShaderMaterial.new()
-	_bh_mat.shader = load("res://shaders/black_hole.gdshader")
-	bh.material_override = _bh_mat
-	bh.position = Vector3(19.5, 13.5, Z_FAR - 6.5)
-	_cosmos.add_child(bh)
+	# Kein Schwarzes Loch mehr: die Akkretionsscheibe wirkte am Himmel wie ein
+	# Clip-Art-Torus (QA). _bh_mat bleibt null, _process prueft darauf.
 
 	# GOD-RAYS: Lichtfaecher aus dem Fluchtpunkt, atmet im Takt.
 	var gr := MeshInstance3D.new()
@@ -1115,7 +1149,7 @@ func _on_note_spawned(index: int) -> void:
 	# Kern + Rim in EINEM Quad (note_disc.gdshader): beat/approach pro Frame.
 	var disc := MeshInstance3D.new()
 	var dq := QuadMesh.new()
-	dq.size = Vector2(1.12, 1.12)
+	dq.size = Vector2(NOTE_SIZE, NOTE_SIZE)
 	disc.mesh = dq
 	var rim := ShaderMaterial.new()
 	rim.shader = _note_shader
@@ -1144,12 +1178,13 @@ func _on_note_spawned(index: int) -> void:
 		root.add_child(inner)
 	var glow := MeshInstance3D.new()
 	var q := QuadMesh.new()
-	q.size = Vector2(2.05, 2.05)
+	# Weicher Leuchtfleck: dezent, damit dichte Muster lesbar bleiben.
+	q.size = Vector2(1.55, 1.55)
 	glow.mesh = q
 	var gm := ShaderMaterial.new()
 	gm.shader = _glow_shader
 	gm.set_shader_parameter("base_color", col)
-	gm.set_shader_parameter("intensity", 0.32 if clean else 0.68)
+	gm.set_shader_parameter("intensity", NOTE_GLOW * (0.5 if clean else 1.0))
 	glow.material_override = gm
 	glow.rotation_degrees = Vector3(-90, 0, 0)
 	glow.position = Vector3(0, -0.02, 0)
@@ -1175,7 +1210,7 @@ func _on_note_spawned(index: int) -> void:
 	var sm2 := ShaderMaterial.new()
 	sm2.shader = _glow_shader
 	sm2.set_shader_parameter("base_color", col)
-	sm2.set_shader_parameter("intensity", 0.10 if clean else 0.20)
+	sm2.set_shader_parameter("intensity", 0.06 if clean else 0.10)
 	spot.material_override = sm2
 	spot.rotation_degrees = Vector3(-90, 0, 0)
 	spot.position = Vector3(0, -0.30, 0)
@@ -1313,14 +1348,15 @@ func _fire_laser(column: int, target: Vector3, power: float = 1.0) -> void:
 	var fm := ShaderMaterial.new()
 	fm.shader = _glow_shader
 	fm.set_shader_parameter("base_color", col.lerp(Color(1, 1, 1), 0.30))
-	var peak := (1.1 if fx <= 0.0 else 1.35) * power
+	# Halbiert ggue. frueher (1.1/1.35): Treffer bestaetigen, nicht blenden.
+	var peak := (0.55 if fx <= 0.0 else 0.68) * power
 	fm.set_shader_parameter("intensity", peak)
 	flash.material_override = fm
 	flash.position = target
 	flash.rotation_degrees = Vector3(-9, 0, 0)
 	_world.add_child(flash)
 	var tw := create_tween()
-	tw.tween_property(flash, "scale", Vector3.ONE * (1.4 + 0.5 * power), 0.15)
+	tw.tween_property(flash, "scale", Vector3.ONE * PAD_MAX_SCALE, 0.15)
 	tw.parallel().tween_method(
 		func(v): fm.set_shader_parameter("intensity", v), peak, 0.0, 0.15)
 	tw.tween_callback(flash.queue_free)
@@ -1329,7 +1365,7 @@ func _fire_laser(column: int, target: Vector3, power: float = 1.0) -> void:
 	# dem Einschlag Tiefe statt nur eines flachen Blitzes.
 	var halo := MeshInstance3D.new()
 	var hq2 := QuadMesh.new()
-	hq2.size = Vector2(2.3, 2.3)
+	hq2.size = Vector2(1.6, 1.6)
 	halo.mesh = hq2
 	var hm2 := ShaderMaterial.new()
 	hm2.shader = _glow_shader
@@ -1340,7 +1376,7 @@ func _fire_laser(column: int, target: Vector3, power: float = 1.0) -> void:
 	halo.rotation_degrees = Vector3(-9, 0, 0)
 	_world.add_child(halo)
 	var htw := create_tween()
-	htw.tween_property(halo, "scale", Vector3.ONE * 1.6, 0.24)
+	htw.tween_property(halo, "scale", Vector3.ONE * PAD_MAX_SCALE, 0.24)
 	htw.parallel().tween_method(
 		func(v): hm2.set_shader_parameter("intensity", v), peak * 0.30, 0.0, 0.24)
 	htw.tween_callback(halo.queue_free)
@@ -1353,7 +1389,7 @@ func _fire_laser(column: int, target: Vector3, power: float = 1.0) -> void:
 	var rm := ShaderMaterial.new()
 	rm.shader = _ring_shader
 	rm.set_shader_parameter("base_color", col.lerp(Color(1, 1, 1), 0.45))
-	var rpeak := (0.8 if fx <= 0.0 else 1.5) * power
+	var rpeak := (0.4 if fx <= 0.0 else 0.75) * power
 	rm.set_shader_parameter("intensity", rpeak)
 	rm.set_shader_parameter("radius", 0.06)
 	rm.set_shader_parameter("beat", _beat_env * 0.6)
@@ -1379,7 +1415,7 @@ func _fire_laser(column: int, target: Vector3, power: float = 1.0) -> void:
 	var bm := ShaderMaterial.new()
 	bm.shader = _glow_shader
 	bm.set_shader_parameter("base_color", col)
-	var bpeak := 0.9 * power * fx
+	var bpeak := 0.35 * power * fx
 	bm.set_shader_parameter("intensity", bpeak)
 	beam.material_override = bm
 	beam.position = Vector3(target.x, ROAD_Y + 1.0, target.z)
@@ -1387,7 +1423,7 @@ func _fire_laser(column: int, target: Vector3, power: float = 1.0) -> void:
 	var btw := create_tween().set_parallel(true)
 	btw.tween_property(beam, "position:y", ROAD_Y + 1.7, 0.22) \
 			.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	btw.tween_property(beam, "scale:y", 1.5, 0.22)
+	btw.tween_property(beam, "scale:y", PAD_MAX_SCALE, 0.22)
 	btw.tween_method(func(v): bm.set_shader_parameter("intensity", v), bpeak, 0.0, 0.22)
 	btw.chain().tween_callback(beam.queue_free)
 
@@ -1637,7 +1673,8 @@ func _process(delta: float) -> void:
 		nmat.set_shader_parameter("beat", _beat_env * 0.6)
 		nmat.set_shader_parameter("approach",
 				clampf((root.position.z - Z_FAR) / (Z_LINE - Z_FAR), 0.0, 1.0))
-		(entry.glow as ShaderMaterial).set_shader_parameter("intensity", 1.6 if lock else 0.9)
+		(entry.glow as ShaderMaterial).set_shader_parameter("intensity",
+				NOTE_GLOW * (1.4 if lock else 1.0) * (0.5 if _fx_level() <= 0.0 else 1.0))
 		var beam: HoldBeam = entry.beam
 		if beam != null:
 			beam.set_span(root.position.z, _note_z(obj.end_time(), t),
@@ -1666,7 +1703,7 @@ func _process(delta: float) -> void:
 		# in den Einstellungen abschaltbar.
 		if c < _lane_glow_mats.size():
 			var lm: StandardMaterial3D = _lane_glow_mats[c]
-			var target := 0.10 if _lane_held[c] and Settings.lane_glow else 0.0
+			var target := 0.16 if _lane_held[c] and Settings.lane_glow else 0.0
 			lm.albedo_color.a = move_toward(lm.albedo_color.a, target,
 				delta * (1.4 if _lane_held[c] else 0.5))
 
@@ -1790,10 +1827,15 @@ func _process(delta: float) -> void:
 	# Die ABFANGLINIE pulsiert im Takt — der Hit-Moment ist hoerbar UND sichtbar.
 	_line_mat.emission_energy_multiplier = 1.1 + pulse * 1.6 + _punch * 1.0 + _kick * 0.35 + _line_flash * 1.0
 	_line_mat.emission = Color(1, 1, 1).lerp(_theme_kiai, _kiai_mix * 0.6)
+	var pad_energy: Array[float] = []
 	for i in _pad_mats.size():
-		_pad_mats[i].emission_energy_multiplier = (0.45 if fx <= 0.0 else 0.65) \
-				+ (pulse * 0.5 + _punch * 0.4 + _kick * 0.2 + _line_flash * 0.55) * fx \
-				+ _pad_flash[i] * (1.1 if fx <= 0.0 else 1.4)
+		var pf := clampf(_pad_flash[i], 0.0, 1.0)
+		pad_energy.append((PAD_IDLE if fx > 0.0 else 0.75)
+				+ (pulse * 0.08 + _punch * 0.06 + _kick * 0.03) * fx
+				+ pf * PAD_PRESS)
+		# Druck-Feedback: Ring waechst dezent (max 1.15), kein Ueberstrahlen.
+		if i < _pad_nodes.size():
+			_pad_nodes[i].scale = Vector3.ONE * (1.0 + (PAD_MAX_SCALE - 1.0) * pf)
 	for m in _edge_mats:
 		m.emission_energy_multiplier = (0.28 if fx <= 0.0 else 0.4) \
 				+ (_bass * 1.2 + _punch * 0.9 + _kick * 0.35 + _density * 0.6) * fx
@@ -1829,7 +1871,9 @@ func _process(delta: float) -> void:
 		var base_col := _pad_color(i)
 		if i < _pad_judge_col.size():
 			base_col = base_col.lerp(_pad_judge_col[i], clampf(_pad_flash[i], 0.0, 1.0) * 0.65)
-		_pad_mats[i].emission = base_col.lerp(_theme_kiai, od * 0.45)
+		var pcol := base_col.lerp(_theme_kiai, od * 0.45)
+		_pad_mats[i].set_shader_parameter("base_color", pcol)
+		_pad_mats[i].set_shader_parameter("rim_color", pcol * pad_energy[i])
 	for em2 in _edge_mats:
 		var edge_col := Color(0.45, 0.47, 0.53) if fx <= 0.0 \
 				else _theme_col.lerp(_theme_kiai, maxf(od * 0.45, _kiai_mix))
@@ -2452,6 +2496,10 @@ func _build_hud() -> void:
 	title.position = Vector2(24, 14)
 	title.add_theme_font_size_override("font_size", 14)
 	title.add_theme_color_override("font_color", Color(0.78, 0.82, 0.92))
+	title.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.75))
+	title.add_theme_constant_override("shadow_offset_x", 0)
+	title.add_theme_constant_override("shadow_offset_y", 2)
+	title.add_theme_constant_override("shadow_outline_size", 6)
 	title.modulate.a = 0.75
 	_hud.add_child(title)
 	var ttw := create_tween()
@@ -2468,46 +2516,66 @@ func _build_hud() -> void:
 	_time_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_time_label.add_theme_font_size_override("font_size", 14)
 	_time_label.add_theme_color_override("font_color", Color(0.7, 0.74, 0.85, 0.85))
+	_time_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.75))
+	_time_label.add_theme_constant_override("shadow_offset_y", 2)
+	_time_label.add_theme_constant_override("shadow_outline_size", 6)
+	_time_label.add_theme_font_override("font", _tabular_font(_time_label))
 	_hud.add_child(_time_label)
 
 	# Song-Fortschritt: Haarlinie ganz oben ueber die volle Breite.
 	var top_bg := ColorRect.new()
 	top_bg.anchor_right = 1.0
-	top_bg.offset_bottom = 3
-	top_bg.color = Color(1, 1, 1, 0.06)
+	top_bg.offset_bottom = 4
+	top_bg.color = Color(1, 1, 1, 0.08)
 	top_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_hud.add_child(top_bg)
 	_top_fill = ColorRect.new()
 	_top_fill.anchor_right = 0.0
-	_top_fill.offset_bottom = 3
-	_top_fill.color = Color(0.9, 0.92, 1.0, 0.55)
+	_top_fill.offset_bottom = 4
+	_top_fill.color = Color(UiTheme.ACCENT.r, UiTheme.ACCENT.g, UiTheme.ACCENT.b, 0.75)
 	_top_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_hud.add_child(_top_fill)
 
-	# Combo gross und mittig (klassisch Mania), Grade + Accuracy links als
-	# ruhige Spalte, Zaehler rechts.
-	_combo_label = _stat_value(Vector2(0.5, 0.5), 26)
-	_combo_label.offset_top = 142
-	_combo_label.offset_bottom = 142
+	# Kombo gross und zentral (wichtigste Live-Info), Rang klein darueber
+	# links bei der Genauigkeit, rechts eine kompakte Zaehler-Gruppe.
+	_combo_label = _stat_value(Vector2(0.5, 0.5), 44)
+	_combo_label.offset_top = 132
+	_combo_label.offset_bottom = 132
 	_combo_label.modulate.a = 0.92
-	_grade_label = _stat_value(Vector2(0.085, 0.32), 40)
-	_stat_caption(Vector2(0.085, 0.44), "ACCURACY")
-	_acc_label = _stat_value(Vector2(0.085, 0.48), 26)
-	_stat_caption(Vector2(0.915, 0.28), "SCORE")
-	_score_label = _stat_value(Vector2(0.915, 0.32), 30)
-	_stat_caption(Vector2(0.915, 0.50), "MISSES")
-	_miss_label = _stat_value(Vector2(0.915, 0.54), 26)
-	_stat_caption(Vector2(0.915, 0.72), "NOTES")
-	_notes_label = _stat_value(Vector2(0.915, 0.76), 26)
+	_combo_label.add_theme_font_override("font", _tabular_font(_combo_label))
+	_combo_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.6))
+	_combo_label.add_theme_constant_override("shadow_outline_size", 8)
 
-	# HP: KLEINE cleane Bar mittig oben (nichts liegt ueber den Noten).
+	var left := _stat_column(Vector2(0.085, 0.42))
+	_grade_label = _stat_block(left, "RANG", 26)
+	_acc_label = _stat_block(left, "GENAUIGKEIT", 28)
+	var right := _stat_column(Vector2(0.915, 0.42))
+	_score_label = _stat_block(right, "PUNKTE", 30)
+	_miss_label = _stat_block(right, "FEHLER", 24)
+	_notes_label = _stat_block(right, "NOTEN", 24)
+
+	# HP: eigene, beschriftete Leiste mittig oben (Song-Fortschritt ist die
+	# Akzent-Linie ganz oben ueber die volle Breite).
+	var hp_cap := Label.new()
+	hp_cap.text = "HP"
+	hp_cap.anchor_left = 0.5
+	hp_cap.anchor_right = 0.5
+	hp_cap.offset_left = -150
+	hp_cap.offset_right = -118
+	hp_cap.offset_top = 9
+	hp_cap.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	hp_cap.add_theme_font_size_override("font_size", 12)
+	hp_cap.add_theme_color_override("font_color", Color(0.62, 0.65, 0.74))
+	hp_cap.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.7))
+	hp_cap.add_theme_constant_override("shadow_outline_size", 5)
+	_hud.add_child(hp_cap)
 	var hp_bg := ColorRect.new()
 	hp_bg.anchor_left = 0.5
 	hp_bg.anchor_right = 0.5
 	hp_bg.offset_left = -110
 	hp_bg.offset_right = 110
-	hp_bg.offset_top = 14
-	hp_bg.offset_bottom = 18
+	hp_bg.offset_top = 15
+	hp_bg.offset_bottom = 21
 	hp_bg.color = Color(1, 1, 1, 0.10)
 	_hud.add_child(hp_bg)
 	_hp_fill = ColorRect.new()
@@ -2515,8 +2583,8 @@ func _build_hud() -> void:
 	_hp_fill.anchor_right = 0.5
 	_hp_fill.offset_left = -110
 	_hp_fill.offset_right = 110
-	_hp_fill.offset_top = 14
-	_hp_fill.offset_bottom = 18
+	_hp_fill.offset_top = 15
+	_hp_fill.offset_bottom = 21
 	_hp_fill.color = Color(0.3, 1.0, 0.6, 0.85)
 	_hud.add_child(_hp_fill)
 
@@ -2601,6 +2669,57 @@ func _build_hud() -> void:
 	_hud.add_child(_skip_label)
 
 
+## HUD-Spalte: vertikal um anchor_pos zentriert, Bloecke mit festem Abstand.
+func _stat_column(anchor_pos: Vector2) -> VBoxContainer:
+	var v := VBoxContainer.new()
+	v.anchor_left = anchor_pos.x
+	v.anchor_right = anchor_pos.x
+	v.anchor_top = anchor_pos.y
+	v.anchor_bottom = anchor_pos.y
+	v.offset_left = -120
+	v.offset_right = 120
+	v.grow_vertical = Control.GROW_DIRECTION_BOTH
+	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	v.add_theme_constant_override("separation", 22)
+	_hud.add_child(v)
+	return v
+
+
+## Label (13 px, gedimmt) direkt ueber dem Wert (~8 px Luft), Wert mit
+## tabellarischen Ziffern, damit Zahlen beim Hochzaehlen nicht springen.
+func _stat_block(column: VBoxContainer, caption: String, size: int) -> Label:
+	var block := VBoxContainer.new()
+	block.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	block.add_theme_constant_override("separation", -2)
+	column.add_child(block)
+	var cap := Label.new()
+	cap.text = caption
+	cap.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	cap.add_theme_font_size_override("font_size", 13)
+	cap.add_theme_color_override("font_color", Color(0.58, 0.61, 0.70))
+	cap.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.6))
+	cap.add_theme_constant_override("shadow_outline_size", 5)
+	block.add_child(cap)
+	var val := Label.new()
+	val.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	val.add_theme_font_size_override("font_size", size)
+	val.add_theme_color_override("font_color", Color(0.97, 0.98, 1.0))
+	val.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.6))
+	val.add_theme_constant_override("shadow_outline_size", 6)
+	val.add_theme_font_override("font", _tabular_font(val))
+	block.add_child(val)
+	return val
+
+
+## Gleiche Schrift wie das Theme, aber mit OpenType "tnum" (feste Ziffernbreite).
+func _tabular_font(ref: Control) -> Font:
+	var fv := FontVariation.new()
+	fv.base_font = ref.get_theme_default_font() if ref.get_theme_default_font() != null else ThemeDB.fallback_font
+	var ts := TextServerManager.get_primary_interface()
+	fv.opentype_features = { ts.name_to_tag("tnum"): 1 }
+	return fv
+
+
 func _stat_caption(anchor_pos: Vector2, text: String) -> void:
 	var l := Label.new()
 	l.text = text
@@ -2637,7 +2756,7 @@ func _update_hud() -> void:
 	_combo_label.text = "%dx" % core.combo
 	_combo_label.visible = core.combo > 0
 	if core.combo > _last_combo_shown and core.combo > 0:
-		_combo_label.pivot_offset = Vector2(120, 15)
+		_combo_label.pivot_offset = Vector2(120, 30)
 		_combo_label.scale = Vector2.ONE * 1.16
 		var ctw := create_tween()
 		ctw.tween_property(_combo_label, "scale", Vector2.ONE, 0.12)
@@ -2648,11 +2767,11 @@ func _update_hud() -> void:
 		# Vor der ersten gewerteten Note: kein "D" und keine 0.0%.
 		_grade_label.text = "-"
 		_grade_label.add_theme_color_override("font_color", Color(1, 1, 1, 0.35))
-		_acc_label.text = "100.0%"
+		_acc_label.text = "100,00 %"
 	else:
 		_grade_label.text = g
 		_grade_label.add_theme_color_override("font_color", GRADE_COLOR.get(g, Color.WHITE))
-		_acc_label.text = "%.1f%%" % (core.accuracy() * 100.0)
+		_acc_label.text = ("%.2f %%" % (core.accuracy() * 100.0)).replace(".", ",")
 	# Farbecho des On-Fire-Zustands: Gold ab 97%, Eisblau ab 99.5%.
 	var hud_j := core.n_max + core.n300 + core.n200 + core.n100 + core.n50 + core.n_miss
 	var hud_acc := core.accuracy()
@@ -2662,10 +2781,10 @@ func _update_hud() -> void:
 		_acc_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.45))
 	else:
 		_acc_label.add_theme_color_override("font_color", Color(0.95, 0.96, 1.0))
-	_score_label.text = "%d" % core.score
+	_score_label.text = PauseMenu.fmt_int(core.score)
 	_miss_label.text = str(core.n_miss)
 	var judged := core.n_max + core.n300 + core.n200 + core.n100 + core.n50 + core.n_miss
-	_notes_label.text = "%d/%d" % [judged, _beatmap.hit_objects.size()]
+	_notes_label.text = "%s / %s" % [PauseMenu.fmt_int(judged), PauseMenu.fmt_int(_beatmap.hit_objects.size())]
 	var t := clampf(_time_ms(), 0.0, _song_len_ms)
 	_time_label.text = "%s / %s" % [_fmt_time(t), _fmt_time(_song_len_ms)]
 	_top_fill.anchor_right = clampf(t / _song_len_ms, 0.0, 1.0)
@@ -2692,6 +2811,7 @@ func _toggle_pause(paused: bool) -> void:
 			"score": core.score,
 			"acc": core.accuracy() * 100.0,
 			"difficulty": _beatmap.version_name(),
+			"length_ms": _song_len_ms,
 		})
 		get_tree().paused = true
 		SyncClock.pause()
@@ -2737,12 +2857,12 @@ func _resume_with_countdown(step: float = 0.4) -> void:
 		lbl.scale = Vector2.ONE * 1.25
 		lbl.pivot_offset = Vector2(100, 48)
 		for c in hint:
-			_pad_mats[c].emission_energy_multiplier = 3.2
+			_pad_mats[c].set_shader_parameter("rim_color", _pad_color(c) * 1.25)
 		await get_tree().create_timer(step * 0.5, true).timeout
 		if not is_inside_tree():
 			return
 		for c in hint:
-			_pad_mats[c].emission_energy_multiplier = 0.9
+			_pad_mats[c].set_shader_parameter("rim_color", _pad_color(c) * PAD_IDLE)
 		await get_tree().create_timer(step * 0.5, true).timeout
 		if not is_inside_tree():
 			return
@@ -3266,7 +3386,12 @@ func _capture_results_shot() -> void:
 
 func _capture_after_first_note() -> void:
 	var idx := mini(6, _beatmap.hit_objects.size() - 1)
-	var target := _beatmap.hit_objects[idx].time - 150.0
+	# --shot-lead=<ms>: Vorlauf vor der Note (0 = Note genau auf der Linie).
+	var lead := 150.0
+	for a in OS.get_cmdline_args():
+		if a.begins_with("--shot-lead="):
+			lead = a.trim_prefix("--shot-lead=").to_float()
+	var target := _beatmap.hit_objects[idx].time - lead
 	var guard := 0
 	while _time_ms() < target and guard < 3600:
 		guard += 1

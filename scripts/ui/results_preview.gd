@@ -1,5 +1,6 @@
 extends Control
-## Demo des ResultsScreen mit Fake-Daten. --shot speichert ein Bild und beendet; --fail zeigt Fail.
+## Demo des ResultsScreen mit Fake-Daten. --shot speichert ein Bild und beendet; --fail zeigt Fail,
+## --unranked zeigt PP ohne Wertung, --lobby den Lobby-Modus.
 
 const SHOT_PATH := "C:/Users/Gexanx/AppData/Local/Temp/claude/c--Users-Gexanx-Desktop-rhyg/b9d5e593-aabc-4b4b-a882-a5835e187db3/scratchpad/results_preview.png"
 
@@ -8,6 +9,7 @@ func _ready() -> void:
 	var args := OS.get_cmdline_args() + OS.get_cmdline_user_args()
 	theme = UiTheme.build_theme()
 	var fail := "--fail" in args
+	var unranked := "--unranked" in args
 	var rs := ResultsScreen.new()
 	add_child(rs)
 	rs.retry_pressed.connect(func(): print("retry"))
@@ -22,9 +24,10 @@ func _ready() -> void:
 	rs.show_results({
 		"is_fail": fail,
 		"s": {"n_max": 1210, "n300": 402, "n200": 96, "n100": 31, "n50": 7, "n_miss": 3 if not fail else 40,
-			"max_combo": 842, "accuracy": 0.9731, "grade": "S", "score": 1284560},
+			"max_combo": 842, "accuracy": 0.9667, "grade": "S", "score": 923412},
 		"pp": 287.4,
-		"unranked": false,
+		"unranked": unranked,
+		"lobby": "--lobby" in args,
 		"new_best": not fail,
 		"title": "Preview Song",
 		"artist": "Test Artist",
@@ -32,7 +35,7 @@ func _ready() -> void:
 		"cover_path": _fake_cover(),
 		"offsets": offs,
 		"player": "VYREN",
-		"date": "2026-11-06T22:30:00",
+		"date": "2026-11-06T22:37:00",
 	})
 	if "--shot" in args:
 		await get_tree().create_timer(2.6).timeout
