@@ -303,7 +303,7 @@ func _ready() -> void:
 	_skill_fx.setup(RAIL_X, Z_LINE, Z_FAR, ROAD_Y, _theme_col, _theme_kiai)
 	_build_hud()
 	_build_screen_fx()
-	_build_route_ui()
+	# Kapitel-Punkte unten entfernt (QA: unklar, doppelt zum Song-Fortschritt).
 	_build_flight_plan()
 	_build_galaxy_chapters()
 	_build_sound()
@@ -2496,6 +2496,10 @@ func _build_hud() -> void:
 	title.position = Vector2(24, 14)
 	title.add_theme_font_size_override("font_size", 14)
 	title.add_theme_color_override("font_color", Color(0.78, 0.82, 0.92))
+	title.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.75))
+	title.add_theme_constant_override("shadow_offset_x", 0)
+	title.add_theme_constant_override("shadow_offset_y", 2)
+	title.add_theme_constant_override("shadow_outline_size", 6)
 	title.modulate.a = 0.75
 	_hud.add_child(title)
 	var ttw := create_tween()
@@ -2512,46 +2516,66 @@ func _build_hud() -> void:
 	_time_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_time_label.add_theme_font_size_override("font_size", 14)
 	_time_label.add_theme_color_override("font_color", Color(0.7, 0.74, 0.85, 0.85))
+	_time_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.75))
+	_time_label.add_theme_constant_override("shadow_offset_y", 2)
+	_time_label.add_theme_constant_override("shadow_outline_size", 6)
+	_time_label.add_theme_font_override("font", _tabular_font(_time_label))
 	_hud.add_child(_time_label)
 
 	# Song-Fortschritt: Haarlinie ganz oben ueber die volle Breite.
 	var top_bg := ColorRect.new()
 	top_bg.anchor_right = 1.0
-	top_bg.offset_bottom = 3
-	top_bg.color = Color(1, 1, 1, 0.06)
+	top_bg.offset_bottom = 4
+	top_bg.color = Color(1, 1, 1, 0.08)
 	top_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_hud.add_child(top_bg)
 	_top_fill = ColorRect.new()
 	_top_fill.anchor_right = 0.0
-	_top_fill.offset_bottom = 3
-	_top_fill.color = Color(0.9, 0.92, 1.0, 0.55)
+	_top_fill.offset_bottom = 4
+	_top_fill.color = Color(UiTheme.ACCENT.r, UiTheme.ACCENT.g, UiTheme.ACCENT.b, 0.75)
 	_top_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_hud.add_child(_top_fill)
 
-	# Combo gross und mittig (klassisch Mania), Grade + Accuracy links als
-	# ruhige Spalte, Zaehler rechts.
-	_combo_label = _stat_value(Vector2(0.5, 0.5), 26)
-	_combo_label.offset_top = 142
-	_combo_label.offset_bottom = 142
+	# Kombo gross und zentral (wichtigste Live-Info), Rang klein darueber
+	# links bei der Genauigkeit, rechts eine kompakte Zaehler-Gruppe.
+	_combo_label = _stat_value(Vector2(0.5, 0.5), 44)
+	_combo_label.offset_top = 132
+	_combo_label.offset_bottom = 132
 	_combo_label.modulate.a = 0.92
-	_grade_label = _stat_value(Vector2(0.085, 0.32), 40)
-	_stat_caption(Vector2(0.085, 0.44), "ACCURACY")
-	_acc_label = _stat_value(Vector2(0.085, 0.48), 26)
-	_stat_caption(Vector2(0.915, 0.28), "SCORE")
-	_score_label = _stat_value(Vector2(0.915, 0.32), 30)
-	_stat_caption(Vector2(0.915, 0.50), "MISSES")
-	_miss_label = _stat_value(Vector2(0.915, 0.54), 26)
-	_stat_caption(Vector2(0.915, 0.72), "NOTES")
-	_notes_label = _stat_value(Vector2(0.915, 0.76), 26)
+	_combo_label.add_theme_font_override("font", _tabular_font(_combo_label))
+	_combo_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.6))
+	_combo_label.add_theme_constant_override("shadow_outline_size", 8)
 
-	# HP: KLEINE cleane Bar mittig oben (nichts liegt ueber den Noten).
+	var left := _stat_column(Vector2(0.085, 0.42))
+	_grade_label = _stat_block(left, "RANG", 26)
+	_acc_label = _stat_block(left, "GENAUIGKEIT", 28)
+	var right := _stat_column(Vector2(0.915, 0.42))
+	_score_label = _stat_block(right, "PUNKTE", 30)
+	_miss_label = _stat_block(right, "FEHLER", 24)
+	_notes_label = _stat_block(right, "NOTEN", 24)
+
+	# HP: eigene, beschriftete Leiste mittig oben (Song-Fortschritt ist die
+	# Akzent-Linie ganz oben ueber die volle Breite).
+	var hp_cap := Label.new()
+	hp_cap.text = "HP"
+	hp_cap.anchor_left = 0.5
+	hp_cap.anchor_right = 0.5
+	hp_cap.offset_left = -150
+	hp_cap.offset_right = -118
+	hp_cap.offset_top = 9
+	hp_cap.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	hp_cap.add_theme_font_size_override("font_size", 12)
+	hp_cap.add_theme_color_override("font_color", Color(0.62, 0.65, 0.74))
+	hp_cap.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.7))
+	hp_cap.add_theme_constant_override("shadow_outline_size", 5)
+	_hud.add_child(hp_cap)
 	var hp_bg := ColorRect.new()
 	hp_bg.anchor_left = 0.5
 	hp_bg.anchor_right = 0.5
 	hp_bg.offset_left = -110
 	hp_bg.offset_right = 110
-	hp_bg.offset_top = 14
-	hp_bg.offset_bottom = 18
+	hp_bg.offset_top = 15
+	hp_bg.offset_bottom = 21
 	hp_bg.color = Color(1, 1, 1, 0.10)
 	_hud.add_child(hp_bg)
 	_hp_fill = ColorRect.new()
@@ -2559,8 +2583,8 @@ func _build_hud() -> void:
 	_hp_fill.anchor_right = 0.5
 	_hp_fill.offset_left = -110
 	_hp_fill.offset_right = 110
-	_hp_fill.offset_top = 14
-	_hp_fill.offset_bottom = 18
+	_hp_fill.offset_top = 15
+	_hp_fill.offset_bottom = 21
 	_hp_fill.color = Color(0.3, 1.0, 0.6, 0.85)
 	_hud.add_child(_hp_fill)
 
@@ -2645,6 +2669,57 @@ func _build_hud() -> void:
 	_hud.add_child(_skip_label)
 
 
+## HUD-Spalte: vertikal um anchor_pos zentriert, Bloecke mit festem Abstand.
+func _stat_column(anchor_pos: Vector2) -> VBoxContainer:
+	var v := VBoxContainer.new()
+	v.anchor_left = anchor_pos.x
+	v.anchor_right = anchor_pos.x
+	v.anchor_top = anchor_pos.y
+	v.anchor_bottom = anchor_pos.y
+	v.offset_left = -120
+	v.offset_right = 120
+	v.grow_vertical = Control.GROW_DIRECTION_BOTH
+	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	v.add_theme_constant_override("separation", 22)
+	_hud.add_child(v)
+	return v
+
+
+## Label (13 px, gedimmt) direkt ueber dem Wert (~8 px Luft), Wert mit
+## tabellarischen Ziffern, damit Zahlen beim Hochzaehlen nicht springen.
+func _stat_block(column: VBoxContainer, caption: String, size: int) -> Label:
+	var block := VBoxContainer.new()
+	block.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	block.add_theme_constant_override("separation", -2)
+	column.add_child(block)
+	var cap := Label.new()
+	cap.text = caption
+	cap.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	cap.add_theme_font_size_override("font_size", 13)
+	cap.add_theme_color_override("font_color", Color(0.58, 0.61, 0.70))
+	cap.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.6))
+	cap.add_theme_constant_override("shadow_outline_size", 5)
+	block.add_child(cap)
+	var val := Label.new()
+	val.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	val.add_theme_font_size_override("font_size", size)
+	val.add_theme_color_override("font_color", Color(0.97, 0.98, 1.0))
+	val.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.6))
+	val.add_theme_constant_override("shadow_outline_size", 6)
+	val.add_theme_font_override("font", _tabular_font(val))
+	block.add_child(val)
+	return val
+
+
+## Gleiche Schrift wie das Theme, aber mit OpenType "tnum" (feste Ziffernbreite).
+func _tabular_font(ref: Control) -> Font:
+	var fv := FontVariation.new()
+	fv.base_font = ref.get_theme_default_font() if ref.get_theme_default_font() != null else ThemeDB.fallback_font
+	var ts := TextServerManager.get_primary_interface()
+	fv.opentype_features = { ts.name_to_tag("tnum"): 1 }
+	return fv
+
+
 func _stat_caption(anchor_pos: Vector2, text: String) -> void:
 	var l := Label.new()
 	l.text = text
@@ -2681,7 +2756,7 @@ func _update_hud() -> void:
 	_combo_label.text = "%dx" % core.combo
 	_combo_label.visible = core.combo > 0
 	if core.combo > _last_combo_shown and core.combo > 0:
-		_combo_label.pivot_offset = Vector2(120, 15)
+		_combo_label.pivot_offset = Vector2(120, 30)
 		_combo_label.scale = Vector2.ONE * 1.16
 		var ctw := create_tween()
 		ctw.tween_property(_combo_label, "scale", Vector2.ONE, 0.12)
@@ -2692,11 +2767,11 @@ func _update_hud() -> void:
 		# Vor der ersten gewerteten Note: kein "D" und keine 0.0%.
 		_grade_label.text = "-"
 		_grade_label.add_theme_color_override("font_color", Color(1, 1, 1, 0.35))
-		_acc_label.text = "100.0%"
+		_acc_label.text = "100,00 %"
 	else:
 		_grade_label.text = g
 		_grade_label.add_theme_color_override("font_color", GRADE_COLOR.get(g, Color.WHITE))
-		_acc_label.text = "%.1f%%" % (core.accuracy() * 100.0)
+		_acc_label.text = ("%.2f %%" % (core.accuracy() * 100.0)).replace(".", ",")
 	# Farbecho des On-Fire-Zustands: Gold ab 97%, Eisblau ab 99.5%.
 	var hud_j := core.n_max + core.n300 + core.n200 + core.n100 + core.n50 + core.n_miss
 	var hud_acc := core.accuracy()
@@ -2706,10 +2781,10 @@ func _update_hud() -> void:
 		_acc_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.45))
 	else:
 		_acc_label.add_theme_color_override("font_color", Color(0.95, 0.96, 1.0))
-	_score_label.text = "%d" % core.score
+	_score_label.text = PauseMenu.fmt_int(core.score)
 	_miss_label.text = str(core.n_miss)
 	var judged := core.n_max + core.n300 + core.n200 + core.n100 + core.n50 + core.n_miss
-	_notes_label.text = "%d/%d" % [judged, _beatmap.hit_objects.size()]
+	_notes_label.text = "%s / %s" % [PauseMenu.fmt_int(judged), PauseMenu.fmt_int(_beatmap.hit_objects.size())]
 	var t := clampf(_time_ms(), 0.0, _song_len_ms)
 	_time_label.text = "%s / %s" % [_fmt_time(t), _fmt_time(_song_len_ms)]
 	_top_fill.anchor_right = clampf(t / _song_len_ms, 0.0, 1.0)
