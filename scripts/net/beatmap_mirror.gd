@@ -27,6 +27,8 @@ signal download_failed(set_id: int, message: String)
 
 var _search_req: HTTPRequest
 var _search_offset := 0
+## SV-Filter: hängt "sv" an die Suche an und markiert Treffer (Feld "sv").
+var sv_mode := false
 ## Aktive Downloads: set_id -> {req: HTTPRequest, dest: String, idx: int}.
 var _downloads: Dictionary = {}
 
@@ -45,6 +47,8 @@ func _ready() -> void:
 
 func search(query: String, offset: int = 0) -> void:
 	var q := query.strip_edges()
+	if sv_mode and not is_sv_text(q):
+		q = (q + " sv").strip_edges()
 	_search_offset = offset
 	# mode=3: osu!mania · status=1: nur RANKED · offset: Seiten fuer
 	# unendliches Scrollen.
@@ -87,8 +91,35 @@ func _on_search_completed(result: int, code: int, _headers: PackedStringArray, b
 			"cover_url": str(covers.get("card", covers.get("cover", ""))),
 			"preview_url": _https(str(item.get("preview_url", ""))),
 			"status": str(item.get("status", "")),
+			"sv": is_sv_item(item),
 		})
 	search_done.emit(results, data.size(), _search_offset)
+
+
+## Text nennt SV: Wort "sv" oder "slider velocity"/"scroll velocity".
+static func is_sv_text(text: String) -> bool:
+	var t := text.to_lower()
+	if t.contains("slider velocity") or t.contains("scroll velocity") 			or t.contains("sv gimmick"):
+		return true
+	var word := ""
+	for ch in t + " ":
+		if ch.unicode_at(0) < 128 and (ch >= "a" and ch <= "z" or ch >= "0" and ch <= "9"):
+			word += ch
+		else:
+			if word == "sv" or word == "svs":
+				return true
+			word = ""
+	return false
+
+
+## Set ist ein SV-Set: Titel, Tags oder Diff-Namen (4K) nennen SV.
+static func is_sv_item(item: Dictionary) -> bool:
+	if is_sv_text(str(item.get("title", ""))) or is_sv_text(str(item.get("tags", ""))):
+		return true
+	for bm in item.get("beatmaps", []):
+		if bm is Dictionary and int(bm.get("mode_int", -1)) == 3 				and is_sv_text(str(bm.get("version", ""))):
+			return true
+	return false
 
 
 ## Hoechste 4K-Mania-Difficulty eines Sets (oder leer, wenn keine).

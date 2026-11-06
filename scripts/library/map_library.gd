@@ -11,6 +11,16 @@ const CACHE_PATH := "user://library.cfg"
 ## Version der "unbrauchbar"-Markierung: hochzaehlen, wenn der Importer neue
 ## Modi/Keycounts unterstuetzt, damit alte Skip-Eintraege neu geprueft werden.
 const SKIP_VERSION := 1
+## Version der SV-Erkennung: hochzaehlen -> alle Cache-Eintraege werden einmal
+## im Hintergrund nachgerechnet (start_sv_backfill).
+const SV_VERSION := 1
+## Mindestanzahl gruener Linien mit SV != 1.0 fuer "echte SV".
+const SV_MIN_LINES := 10
+
+## Sets aus dem Cache ohne aktuelle SV-Erkennung (siehe start_sv_backfill).
+var sv_pending: Array[String] = []
+var _sv_thread: Thread = null
+var _sv_cancel := false
 
 var maps_dir: String = ""
 var mapsets: Array[MapSet] = []
@@ -33,6 +43,7 @@ func _init(dir: String = "") -> void:
 ## Ordner (neu) scannen. Gibt die Anzahl gefundener Mapsets zurueck.
 func scan() -> int:
 	mapsets.clear()
+	sv_pending.clear()
 	var dir := DirAccess.open(maps_dir)
 	if dir == null:
 		push_warning("MapLibrary: maps-Ordner nicht gefunden: " + maps_dir)
@@ -63,6 +74,8 @@ func scan() -> int:
 				var ms := MapSet.from_dict(path, cached)
 				if ms.difficulty_count() > 0:
 					mapsets.append(ms)
+					if ms.sv_ver != SV_VERSION:
+						sv_pending.append(path)
 				continue
 		fresh.append(path)
 	OszImporter._perf("Library: %d Sets aus Cache" % mapsets.size(), t0, maps_dir)
@@ -126,6 +139,7 @@ func _build_mapset_full(osz_path: String) -> MapSet:
 			"preview_time": float(bm.general.get("PreviewTime", -1.0)),
 			"audio_filename": bm.audio_filename(),
 			"_sort_notes": bm.note_count(),
+			"sv": detect_sv(bm.timing_points),
 		})
 		if ms.background_file == "" and bm.background_file != "":
 			ms.background_file = bm.background_file
@@ -136,12 +150,86 @@ func _build_mapset_full(osz_path: String) -> MapSet:
 			return float(a.stars) < float(b.stars)
 		return int(a._sort_notes) < int(b._sort_notes))
 	ms.diffs = entries
+	ms.sv = false
+	for e in entries:
+		ms.sv = ms.sv or bool(e.sv)
+	ms.sv_ver = SV_VERSION
 	var first: Beatmap = imp.difficulties[0].beatmap
 	ms.title = first.title()
 	ms.artist = first.artist()
 	ms.creator = str(first.metadata.get("Creator", ""))
 	ms.build_thumb()
 	return ms
+
+
+## Echte SV: mindestens SV_MIN_LINES gruene Linien mit SV != 1.0 (auf 3
+## Stellen gerundet). Reine Tempo-Wechsel (rote Linien) zaehlen nicht.
+static func detect_sv(timing_points: Array) -> bool:
+	var n := 0
+	for tp in timing_points:
+		if tp.uninherited:
+			continue
+		if absf(roundf(ScrollMap.green_sv(tp) * 1000.0) / 1000.0 - 1.0) > 0.0005:
+			n += 1
+			if n >= SV_MIN_LINES:
+				return true
+	return false
+
+
+func sv_backfill_running() -> bool:
+	return _sv_thread != null
+
+
+## Rechnet die SV-Erkennung fuer Cache-Eintraege ohne aktuelle Version im
+## Hintergrund nach. on_done() kommt im Hauptthread, nachdem Sets und
+## library.cfg aktualisiert sind.
+func start_sv_backfill(on_done: Callable) -> void:
+	if _sv_thread != null or sv_pending.is_empty():
+		return
+	var todo: Array[String] = sv_pending.duplicate()
+	sv_pending.clear()
+	_sv_cancel = false
+	_sv_thread = Thread.new()
+	_sv_thread.start(_sv_worker.bind(todo, on_done))
+
+
+func _sv_worker(paths: Array[String], on_done: Callable) -> void:
+	var out := {}
+	for path in paths:
+		if _sv_cancel:
+			break
+		var imp := OszImporter._import_uncached(path)
+		var by_file := {}
+		if imp.get("ok", false):
+			for d in imp.difficulties:
+				by_file[str(d.osu_filename)] = detect_sv(d.beatmap.timing_points)
+		out[path] = by_file
+	_sv_finish.call_deferred(out, on_done)
+
+
+func _sv_finish(results: Dictionary, on_done: Callable) -> void:
+	if _sv_thread != null:
+		_sv_thread.wait_to_finish()
+		_sv_thread = null
+	if _sv_cancel:
+		return
+	var cfg := ConfigFile.new()
+	cfg.load(CACHE_PATH)
+	for ms in mapsets:
+		if results.has(ms.osz_path):
+			ms.apply_sv(results[ms.osz_path])
+			cfg.set_value("sets", _cache_key(ms.osz_path), ms.to_dict())
+	cfg.save(CACHE_PATH)
+	if on_done.is_valid():
+		on_done.call()
+
+
+## Thread beim Szenenende abwarten.
+func shutdown() -> void:
+	_sv_cancel = true
+	if _sv_thread != null:
+		_sv_thread.wait_to_finish()
+		_sv_thread = null
 
 
 ## Eine externe .osz in den maps-Ordner importieren (Drag&Drop/Download).
