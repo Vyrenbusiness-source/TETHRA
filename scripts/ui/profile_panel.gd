@@ -2,7 +2,7 @@ class_name ProfilePanel
 extends Control
 
 ## Profil-Ansicht im osu-Web-Stil: grosser Kopf (Avatar, Name, pp, Plays),
-## darunter scrollbare Sektionen BESTE PLAYS / LETZTE PLAYS / MEISTGESPIELT.
+## darunter scrollbare Sektionen TOP-LEISTUNGEN / LETZTE SPIELE / MEISTGESPIELT.
 ## Jede Zeile zeigt das Song-Cover (lazy im Thread geladen), Grade, Acc, pp
 ## und Datum — und startet die Map per Klick direkt.
 
@@ -11,6 +11,15 @@ signal closed
 const COL_ACCENT := UiTheme.ACCENT
 const COL_DIM := Color(0.6, 0.63, 0.72)
 const COL_PP := UiTheme.ACCENT2
+const BLUR_SHADER := """shader_type canvas_item;
+uniform sampler2D screen_tex : hint_screen_texture, filter_linear_mipmap;
+uniform float amount : hint_range(0.0, 1.0) = 1.0;
+void fragment() {
+	vec3 c = textureLod(screen_tex, SCREEN_UV, 3.0).rgb;
+	COLOR = vec4(mix(texture(screen_tex, SCREEN_UV).rgb, c * 0.38, amount), 1.0);
+}
+"""
+const PANEL_BG := Color(0.08, 0.09, 0.14, 0.95)
 const GRADE_COLOR := {
 	"SS": Color(1.0, 0.92, 0.55), "S": Color(1.0, 0.82, 0.38),
 	"A": Color(0.5, 0.92, 0.6), "B": Color(0.45, 0.72, 0.95),
@@ -44,7 +53,13 @@ func _ready() -> void:
 
 	var dim := ColorRect.new()
 	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	dim.color = Color(0.01, 0.01, 0.03, 0.0)
+	dim.color = Color.WHITE
+	var blur_sh := Shader.new()
+	blur_sh.code = BLUR_SHADER
+	var blur_mat := ShaderMaterial.new()
+	blur_mat.shader = blur_sh
+	blur_mat.set_shader_parameter("amount", 0.0)
+	dim.material = blur_mat
 	dim.gui_input.connect(func(e):
 		if e is InputEventMouseButton and e.pressed:
 			_close())
@@ -57,14 +72,14 @@ func _ready() -> void:
 
 	var panel := PanelContainer.new()
 	var sb := UiTheme.glass_box(18, 0.95)
-	sb.set_content_margin_all(24)
+	sb.set_content_margin_all(28)
 	panel.add_theme_stylebox_override("panel", sb)
 	panel.custom_minimum_size = Vector2(860, 0)
 	panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	center.add_child(panel)
 
 	var vb := VBoxContainer.new()
-	vb.add_theme_constant_override("separation", 14)
+	vb.add_theme_constant_override("separation", 18)
 	panel.add_child(vb)
 
 	# Sanftes Einblenden: Abdunklung + Panel faden, Panel waechst leicht.
@@ -72,13 +87,13 @@ func _ready() -> void:
 	panel.pivot_offset = Vector2(430, 300)
 	panel.scale = Vector2(0.98, 0.98)
 	var tw := create_tween().set_parallel(true).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-	tw.tween_property(dim, "color:a", 0.72, 0.28)
+	tw.tween_property(blur_mat, "shader_parameter/amount", 1.0, 0.28)
 	tw.tween_property(panel, "modulate:a", 1.0, 0.28)
 	tw.tween_property(panel, "scale", Vector2.ONE, 0.28)
 
 	# ------------------------------ Kopfzeile -------------------------------
 	var head := HBoxContainer.new()
-	head.add_theme_constant_override("separation", 18)
+	head.add_theme_constant_override("separation", 24)
 	vb.add_child(head)
 
 	_avatar_slot = Control.new()
@@ -94,7 +109,7 @@ func _ready() -> void:
 
 	var info := VBoxContainer.new()
 	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	info.add_theme_constant_override("separation", 2)
+	info.add_theme_constant_override("separation", 6)
 	info.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	head.add_child(info)
 
@@ -139,17 +154,26 @@ func _ready() -> void:
 			acc_n += 1
 	var chips := HBoxContainer.new()
 	chips.add_theme_constant_override("separation", 8)
+	chips.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	info.add_child(chips)
 	for gk in ["SS", "S", "A", "B"]:
 		chips.add_child(_rank_chip(gk, int(counts[gk])))
 
-	var stat_row := HBoxContainer.new()
-	stat_row.add_theme_constant_override("separation", 26)
-	info.add_child(stat_row)
-	_head_stat(stat_row, str(ScoreStore.total_plays()), "Plays", UiTheme.TEXT)
-	_head_stat(stat_row, ("%.2f%%" % (acc_sum / acc_n * 100.0)) if acc_n > 0 else "—",
-			"Accuracy", UiTheme.TEXT)
-	_head_stat(stat_row, _fmt_playtime(), "Spielzeit", UiTheme.TEXT)
+	# Rechte Statistik-Spalte mit feiner Trennlinie.
+	var vline := ColorRect.new()
+	vline.color = Color(1, 1, 1, 0.08)
+	vline.custom_minimum_size = Vector2(1, 96)
+	vline.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	head.add_child(vline)
+	var stat_col := VBoxContainer.new()
+	stat_col.add_theme_constant_override("separation", 10)
+	stat_col.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	stat_col.custom_minimum_size = Vector2(150, 0)
+	head.add_child(stat_col)
+	_head_stat(stat_col, _fmt_int(ScoreStore.total_plays()), "Spiele", UiTheme.TEXT)
+	_head_stat(stat_col, _fmt_pct(acc_sum / acc_n) if acc_n > 0 else "—",
+			"Genauigkeit", UiTheme.TEXT)
+	_head_stat(stat_col, _fmt_playtime(), "Spielzeit", UiTheme.TEXT)
 
 	var head_btns := VBoxContainer.new()
 	head_btns.add_theme_constant_override("separation", 8)
@@ -177,23 +201,50 @@ func _ready() -> void:
 	vb.add_child(sep)
 
 	# --------------------------- Scroll-Sektionen ---------------------------
+	var scroll_wrap := Control.new()
+	scroll_wrap.custom_minimum_size = Vector2(0, 520)
+	vb.add_child(scroll_wrap)
 	var scroll := ScrollContainer.new()
-	scroll.custom_minimum_size = Vector2(0, 520)
+	scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	vb.add_child(scroll)
+	scroll_wrap.add_child(scroll)
+	var pad := MarginContainer.new()
+	pad.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	pad.add_theme_constant_override("margin_right", 16)
+	pad.add_theme_constant_override("margin_bottom", 40)
+	scroll.add_child(pad)
 	var list := VBoxContainer.new()
 	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	list.add_theme_constant_override("separation", 6)
-	scroll.add_child(list)
+	pad.add_child(list)
+	# Weicher Fade am unteren Rand statt harter Kappung.
+	var grad := Gradient.new()
+	grad.set_color(0, Color(PANEL_BG.r, PANEL_BG.g, PANEL_BG.b, 0.0))
+	grad.set_color(1, Color(PANEL_BG.r, PANEL_BG.g, PANEL_BG.b, 1.0))
+	var gtex := GradientTexture2D.new()
+	gtex.gradient = grad
+	gtex.fill_from = Vector2(0, 0)
+	gtex.fill_to = Vector2(0, 1)
+	gtex.width = 4
+	gtex.height = 64
+	var fade := TextureRect.new()
+	fade.texture = gtex
+	fade.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	fade.stretch_mode = TextureRect.STRETCH_SCALE
+	fade.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	fade.offset_top = -56
+	fade.offset_right = -14
+	fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	scroll_wrap.add_child(fade)
 
-	_section(list, "TOP PLAYS")
+	_section(list, "TOP-LEISTUNGEN")
 	var best := ScoreStore.best_plays(8)
 	if best.is_empty():
 		_empty_hint(list)
 	for e in best:
 		list.add_child(_play_row(e, "best"))
 
-	_section(list, "LETZTE PLAYS")
+	_section(list, "LETZTE SPIELE")
 	var recent := ScoreStore.recent_plays(6)
 	if recent.is_empty():
 		_empty_hint(list)
@@ -241,15 +292,19 @@ func _rank_chip(g: String, n: int) -> Control:
 	chip.add_theme_stylebox_override("panel", cb)
 	var hb := HBoxContainer.new()
 	hb.add_theme_constant_override("separation", 8)
+	hb.alignment = BoxContainer.ALIGNMENT_CENTER
 	chip.add_child(hb)
 	var lg := Label.new()
 	lg.text = g
+	lg.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	lg.add_theme_font_override("font", UiTheme.heading_font(1))
 	lg.add_theme_font_size_override("font_size", 15)
 	lg.add_theme_color_override("font_color", col if n > 0 else COL_DIM)
 	hb.add_child(lg)
 	var ln := Label.new()
 	ln.text = str(n)
+	ln.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	ln.add_theme_font_override("font", UiTheme.heading_font(1))
 	ln.add_theme_font_size_override("font_size", 15)
 	ln.add_theme_color_override("font_color", UiTheme.TEXT if n > 0 else COL_DIM)
 	hb.add_child(ln)
@@ -267,6 +322,11 @@ func _fmt_int(v: int) -> String:
 	return ("-" + out) if v < 0 else out
 
 
+## Deutsches Prozentformat: 0.8509 -> "85,09 %".
+func _fmt_pct(frac: float) -> String:
+	return ("%.2f" % (frac * 100.0)).replace(".", ",") + " %"
+
+
 ## Geschaetzte Spielzeit: Plays x Kartenlaenge (Abbrueche nicht erfasst).
 func _fmt_playtime() -> String:
 	var ms := 0.0
@@ -282,19 +342,19 @@ func _fmt_playtime() -> String:
 	return "%dh %02dm" % [mins / 60, mins % 60]
 
 
-func _head_stat(row: HBoxContainer, value: String, caption: String, col: Color) -> void:
+func _head_stat(row: Container, value: String, caption: String, col: Color) -> void:
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 0)
 	row.add_child(box)
 	var v := Label.new()
 	v.text = value
 	v.add_theme_font_override("font", UiTheme.heading_font(1))
-	v.add_theme_font_size_override("font_size", 22)
+	v.add_theme_font_size_override("font_size", 20)
 	v.add_theme_color_override("font_color", col)
 	box.add_child(v)
 	var c := Label.new()
 	c.text = caption
-	c.add_theme_font_size_override("font_size", 11)
+	c.add_theme_font_size_override("font_size", 12)
 	c.add_theme_color_override("font_color", COL_DIM)
 	box.add_child(c)
 
@@ -313,7 +373,7 @@ func _section(list: VBoxContainer, text: String) -> void:
 
 func _empty_hint(list: VBoxContainer) -> void:
 	var empty := Label.new()
-	empty.text = "Noch keine Plays — leg los!"
+	empty.text = "Noch keine Spiele — leg los!"
 	empty.add_theme_font_size_override("font_size", 13)
 	empty.add_theme_color_override("font_color", COL_DIM)
 	list.add_child(empty)
@@ -378,16 +438,16 @@ func _play_row(e: Dictionary, mode: String) -> Control:
 	var sub := Label.new()
 	var sub_parts: Array[String] = []
 	if str(e.get("version", "")) != "":
-		sub_parts.append("[%s]" % str(e.get("version", "")))
+		sub_parts.append(_diff_name(str(e.get("version", ""))))
 	if mode == "most":
-		sub_parts.append("%d× gespielt" % int(e.get("count", 0)))
+		sub_parts.append("%s× gespielt" % _fmt_int(int(e.get("count", 0))))
 	var date := _fmt_date(str(e.get("date", "")))
 	if date != "":
 		sub_parts.append(date)
 	if float(e.get("accuracy", 0.0)) > 0.0:
-		sub_parts.append("%.2f%%" % (float(e.get("accuracy", 0.0)) * 100.0))
+		sub_parts.append(_fmt_pct(float(e.get("accuracy", 0.0))))
 	if int(e.get("max_combo", 0)) > 0:
-		sub_parts.append("%dx" % int(e.get("max_combo", 0)))
+		sub_parts.append("%sx" % _fmt_int(int(e.get("max_combo", 0))))
 	sub.text = "  ·  ".join(sub_parts)
 	sub.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	sub.add_theme_font_size_override("font_size", 12)
@@ -425,7 +485,7 @@ func _play_row(e: Dictionary, mode: String) -> Control:
 	# pp rechts, gross.
 	var pp_label := Label.new()
 	var ppv := float(e.get("pp", -1.0))
-	pp_label.text = ("%.0fpp" % ppv) if ppv >= 0.0 else "—"
+	pp_label.text = (_fmt_int(roundi(ppv)) + " pp") if ppv >= 0.0 else "—"
 	pp_label.custom_minimum_size = Vector2(88, 0)
 	pp_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	pp_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
@@ -441,7 +501,7 @@ func _play_row(e: Dictionary, mode: String) -> Control:
 	play.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	play.disabled = not playable
 	play.tooltip_text = "Map spielen" if playable else "Map nicht (mehr) in der Bibliothek"
-	UiTheme.style_button(play, playable)
+	_style_ghost_icon(play)
 	var version := str(e.get("version", ""))
 	play.pressed.connect(func(): _start_map(osz_file, version))
 	hb.add_child(play)
@@ -453,6 +513,37 @@ func _play_row(e: Dictionary, mode: String) -> Control:
 					and ev.button_index == MOUSE_BUTTON_LEFT:
 				_start_map(osz_file, version))
 	return row
+
+
+## Diff-Name ohne Leerraum und ohne vorhandene Klammern -> "[Name]".
+func _diff_name(v: String) -> String:
+	var t := v.strip_edges()
+	while t.begins_with("["):
+		t = t.substr(1).strip_edges()
+	while t.ends_with("]"):
+		t = t.left(t.length() - 1).strip_edges()
+	return "[%s]" % t
+
+
+## Ghost-Icon-Button: transparent, Fuellung nur bei Hover.
+func _style_ghost_icon(b: Button) -> void:
+	var none := StyleBoxEmpty.new()
+	var hover := StyleBoxFlat.new()
+	hover.bg_color = Color(UiTheme.ACCENT.r, UiTheme.ACCENT.g, UiTheme.ACCENT.b, 0.22)
+	hover.set_corner_radius_all(10)
+	var pressed := hover.duplicate() as StyleBoxFlat
+	pressed.bg_color = Color(UiTheme.ACCENT.r, UiTheme.ACCENT.g, UiTheme.ACCENT.b, 0.34)
+	b.add_theme_stylebox_override("normal", none)
+	b.add_theme_stylebox_override("disabled", none)
+	b.add_theme_stylebox_override("hover", hover)
+	b.add_theme_stylebox_override("pressed", pressed)
+	b.add_theme_stylebox_override("focus", none)
+	b.add_theme_color_override("font_color", COL_DIM)
+	b.add_theme_color_override("font_hover_color", UiTheme.ACCENT)
+	b.add_theme_color_override("font_pressed_color", UiTheme.ACCENT)
+	b.add_theme_color_override("font_disabled_color", Color(COL_DIM.r, COL_DIM.g, COL_DIM.b, 0.3))
+	b.add_theme_font_size_override("font_size", 18)
+	b.focus_mode = Control.FOCUS_NONE
 
 
 ## "2026-07-19T11:33:20" -> "19.07.2026"
@@ -539,23 +630,52 @@ func _rebuild_avatar() -> void:
 		rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		_avatar_slot.add_child(rect)
 	else:
-		var circle := ColorRect.new()
-		circle.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		circle.color = Color(0.16, 0.30, 0.42)
-		var m2 := ShaderMaterial.new()
-		m2.shader = load("res://shaders/avatar_circle.gdshader")
-		circle.material = m2
-		circle.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		_avatar_slot.add_child(circle)
+		# Verlauf-Ring (Cyan -> Pink) um dunkle Flaeche mit Initiale.
+		var ring := _circle_rect(_gradient_tex(UiTheme.ACCENT, UiTheme.ACCENT2), 0)
+		_avatar_slot.add_child(ring)
+		var inner := _circle_rect(_gradient_tex(Color(0.10, 0.20, 0.30), Color(0.16, 0.10, 0.26)), 5)
+		_avatar_slot.add_child(inner)
 		var initial := Label.new()
 		initial.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		initial.text = Settings.profile_name.substr(0, 1).to_upper()
+		initial.text = Settings.profile_name.strip_edges().substr(0, 1).to_upper()
 		initial.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		initial.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		initial.add_theme_font_size_override("font_size", 44)
-		initial.add_theme_color_override("font_color", Color(0.85, 0.93, 1.0))
+		initial.add_theme_font_override("font", UiTheme.heading_font(1))
+		initial.add_theme_font_size_override("font_size", 56)
+		initial.add_theme_color_override("font_color", Color(0.9, 0.96, 1.0))
 		initial.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		_avatar_slot.add_child(initial)
+
+
+func _circle_rect(tex: Texture2D, inset: int) -> TextureRect:
+	var r := TextureRect.new()
+	r.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	r.offset_left = inset
+	r.offset_top = inset
+	r.offset_right = -inset
+	r.offset_bottom = -inset
+	r.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	r.stretch_mode = TextureRect.STRETCH_SCALE
+	r.texture = tex
+	var m := ShaderMaterial.new()
+	m.shader = load("res://shaders/avatar_circle.gdshader")
+	m.set_shader_parameter("border_col", Color(1, 1, 1, 0.0))
+	r.material = m
+	r.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return r
+
+
+func _gradient_tex(a: Color, b: Color) -> GradientTexture2D:
+	var g := Gradient.new()
+	g.set_color(0, a)
+	g.set_color(1, b)
+	var t := GradientTexture2D.new()
+	t.gradient = g
+	t.fill_from = Vector2(0, 0)
+	t.fill_to = Vector2(1, 1)
+	t.width = 128
+	t.height = 128
+	return t
 
 
 func _pick_avatar() -> void:
