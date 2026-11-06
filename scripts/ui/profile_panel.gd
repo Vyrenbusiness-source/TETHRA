@@ -8,14 +8,14 @@ extends Control
 
 signal closed
 
-const COL_ACCENT := Color(0.20, 0.85, 1.0)
+const COL_ACCENT := UiTheme.ACCENT
 const COL_DIM := Color(0.6, 0.63, 0.72)
-const COL_PP := Color(1.0, 0.6, 0.9)
+const COL_PP := UiTheme.ACCENT2
 const GRADE_COLOR := {
-	"SS": Color(1.0, 0.95, 0.5), "S": Color(1.0, 0.85, 0.25),
-	"A": Color(0.4, 1.0, 0.5), "B": Color(0.35, 0.75, 1.0),
-	"C": Color(0.9, 0.6, 1.0), "D": Color(1.0, 0.4, 0.4),
-	"F": Color(1.0, 0.35, 0.35),
+	"SS": Color(1.0, 0.92, 0.55), "S": Color(1.0, 0.82, 0.38),
+	"A": Color(0.5, 0.92, 0.6), "B": Color(0.45, 0.72, 0.95),
+	"C": Color(0.8, 0.62, 0.92), "D": Color(0.95, 0.5, 0.5),
+	"F": Color(0.95, 0.45, 0.45),
 }
 
 var _avatar_slot: Control
@@ -43,7 +43,7 @@ func _ready() -> void:
 
 	var dim := ColorRect.new()
 	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	dim.color = Color(0, 0, 0, 0.55)
+	dim.color = Color(0.01, 0.01, 0.03, 0.0)
 	dim.gui_input.connect(func(e):
 		if e is InputEventMouseButton and e.pressed:
 			_close())
@@ -63,8 +63,17 @@ func _ready() -> void:
 	center.add_child(panel)
 
 	var vb := VBoxContainer.new()
-	vb.add_theme_constant_override("separation", 12)
+	vb.add_theme_constant_override("separation", 14)
 	panel.add_child(vb)
+
+	# Sanftes Einblenden: Abdunklung + Panel faden, Panel waechst leicht.
+	panel.modulate.a = 0.0
+	panel.pivot_offset = Vector2(430, 300)
+	panel.scale = Vector2(0.98, 0.98)
+	var tw := create_tween().set_parallel(true).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	tw.tween_property(dim, "color:a", 0.72, 0.28)
+	tw.tween_property(panel, "modulate:a", 1.0, 0.28)
+	tw.tween_property(panel, "scale", Vector2.ONE, 0.28)
 
 	# ------------------------------ Kopfzeile -------------------------------
 	var head := HBoxContainer.new()
@@ -72,7 +81,7 @@ func _ready() -> void:
 	vb.add_child(head)
 
 	_avatar_slot = Control.new()
-	_avatar_slot.custom_minimum_size = Vector2(96, 96)
+	_avatar_slot.custom_minimum_size = Vector2(128, 128)
 	_avatar_slot.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_avatar_slot.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	_avatar_slot.tooltip_text = "Klicken: Profilbild aendern"
@@ -99,12 +108,47 @@ func _ready() -> void:
 	name_edit.focus_exited.connect(func(): _save_name(name_edit.text))
 	info.add_child(name_edit)
 
+	# Gesamt-pp gross in ACCENT2.
+	var pp_row := HBoxContainer.new()
+	pp_row.add_theme_constant_override("separation", 6)
+	info.add_child(pp_row)
+	var pp_big := Label.new()
+	pp_big.text = _fmt_int(roundi(ScoreStore.profile_pp()))
+	pp_big.add_theme_font_override("font", UiTheme.heading_font(1))
+	pp_big.add_theme_font_size_override("font_size", 44)
+	pp_big.add_theme_color_override("font_color", COL_PP)
+	pp_row.add_child(pp_big)
+	var pp_cap := Label.new()
+	pp_cap.text = "pp"
+	pp_cap.size_flags_vertical = Control.SIZE_SHRINK_END
+	pp_cap.add_theme_font_size_override("font_size", 18)
+	pp_cap.add_theme_color_override("font_color", COL_DIM)
+	pp_row.add_child(pp_cap)
+
+	# Rang-Verteilung als Chips + Accuracy-Schnitt.
+	var counts := { "SS": 0, "S": 0, "A": 0, "B": 0 }
+	var acc_sum := 0.0
+	var acc_n := 0
+	for be in ScoreStore.best_plays(99999):
+		var gr := str(be.get("grade", ""))
+		if counts.has(gr):
+			counts[gr] += 1
+		if float(be.get("accuracy", 0.0)) > 0.0:
+			acc_sum += float(be.get("accuracy", 0.0))
+			acc_n += 1
+	var chips := HBoxContainer.new()
+	chips.add_theme_constant_override("separation", 8)
+	info.add_child(chips)
+	for gk in ["SS", "S", "A", "B"]:
+		chips.add_child(_rank_chip(gk, int(counts[gk])))
+
 	var stat_row := HBoxContainer.new()
-	stat_row.add_theme_constant_override("separation", 22)
+	stat_row.add_theme_constant_override("separation", 26)
 	info.add_child(stat_row)
-	_head_stat(stat_row, "%.0f" % ScoreStore.profile_pp(), "pp", COL_PP)
-	_head_stat(stat_row, str(ScoreStore.total_plays()), "Plays", Color(0.9, 0.93, 1.0))
-	_head_stat(stat_row, str(ScoreStore.most_played(9999).size()), "Maps gespielt", Color(0.9, 0.93, 1.0))
+	_head_stat(stat_row, str(ScoreStore.total_plays()), "Plays", UiTheme.TEXT)
+	_head_stat(stat_row, ("%.2f%%" % (acc_sum / acc_n * 100.0)) if acc_n > 0 else "—",
+			"Accuracy", UiTheme.TEXT)
+	_head_stat(stat_row, _fmt_playtime(), "Spielzeit", UiTheme.TEXT)
 
 	var head_btns := VBoxContainer.new()
 	head_btns.add_theme_constant_override("separation", 8)
@@ -141,8 +185,8 @@ func _ready() -> void:
 	list.add_theme_constant_override("separation", 6)
 	scroll.add_child(list)
 
-	_section(list, "BESTE PLAYS")
-	var best := ScoreStore.best_plays(6)
+	_section(list, "TOP PLAYS")
+	var best := ScoreStore.best_plays(8)
 	if best.is_empty():
 		_empty_hint(list)
 	for e in best:
@@ -179,6 +223,62 @@ func _ready() -> void:
 			_remove_btn.visible = true
 			_rebuild_avatar())
 	add_child(_file_dialog)
+
+
+func _rank_chip(g: String, n: int) -> Control:
+	var col: Color = GRADE_COLOR.get(g, UiTheme.DIM)
+	var chip := PanelContainer.new()
+	var cb := StyleBoxFlat.new()
+	cb.bg_color = Color(col.r, col.g, col.b, 0.14 if n > 0 else 0.05)
+	cb.border_color = Color(col.r, col.g, col.b, 0.45 if n > 0 else 0.15)
+	cb.set_border_width_all(1)
+	cb.set_corner_radius_all(10)
+	cb.content_margin_left = 12
+	cb.content_margin_right = 12
+	cb.content_margin_top = 4
+	cb.content_margin_bottom = 4
+	chip.add_theme_stylebox_override("panel", cb)
+	var hb := HBoxContainer.new()
+	hb.add_theme_constant_override("separation", 8)
+	chip.add_child(hb)
+	var lg := Label.new()
+	lg.text = g
+	lg.add_theme_font_override("font", UiTheme.heading_font(1))
+	lg.add_theme_font_size_override("font_size", 15)
+	lg.add_theme_color_override("font_color", col if n > 0 else COL_DIM)
+	hb.add_child(lg)
+	var ln := Label.new()
+	ln.text = str(n)
+	ln.add_theme_font_size_override("font_size", 15)
+	ln.add_theme_color_override("font_color", UiTheme.TEXT if n > 0 else COL_DIM)
+	hb.add_child(ln)
+	return chip
+
+
+## Tausendertrenner mit Punkt: 1234 -> "1.234".
+func _fmt_int(v: int) -> String:
+	var s := str(absi(v))
+	var out := ""
+	for i in s.length():
+		if i > 0 and (s.length() - i) % 3 == 0:
+			out += "."
+		out += s[i]
+	return ("-" + out) if v < 0 else out
+
+
+## Geschaetzte Spielzeit: Plays x Kartenlaenge (Abbrueche nicht erfasst).
+func _fmt_playtime() -> String:
+	var ms := 0.0
+	for e in ScoreStore.most_played(99999):
+		var ms_set = _set_by_file.get(str(e.get("osz_file", "")))
+		if ms_set != null:
+			ms += ms_set.length_ms() * int(e.get("count", 0))
+	var mins := int(ms / 60000.0)
+	if mins < 1:
+		return "—"
+	if mins < 60:
+		return "%d min" % mins
+	return "%dh %02dm" % [mins / 60, mins % 60]
 
 
 func _head_stat(row: HBoxContainer, value: String, caption: String, col: Color) -> void:
@@ -222,10 +322,15 @@ func _empty_hint(list: VBoxContainer) -> void:
 ## mode: "best" (Datum + Acc), "recent" (Datum, Fail rot), "most" (Nx gespielt).
 func _play_row(e: Dictionary, mode: String) -> Control:
 	var row := PanelContainer.new()
-	var rb := UiTheme.glass_box(10, 0.35, 0.10)
+	var rb := UiTheme.glass_box(12, 0.38, 0.08)
 	rb.shadow_size = 0
-	rb.set_content_margin_all(7)
+	rb.set_content_margin_all(9)
 	row.add_theme_stylebox_override("panel", rb)
+	var rb_hover := rb.duplicate() as StyleBoxFlat
+	rb_hover.bg_color = Color(0.14, 0.17, 0.26, 0.62)
+	rb_hover.border_color = Color(UiTheme.ACCENT.r, UiTheme.ACCENT.g, UiTheme.ACCENT.b, 0.4)
+	row.mouse_entered.connect(func(): row.add_theme_stylebox_override("panel", rb_hover))
+	row.mouse_exited.connect(func(): row.add_theme_stylebox_override("panel", rb))
 	var hb := HBoxContainer.new()
 	hb.add_theme_constant_override("separation", 12)
 	row.add_child(hb)
@@ -264,13 +369,15 @@ func _play_row(e: Dictionary, mode: String) -> Control:
 		var ms0: MapSet = _set_by_file[osz_file]
 		if ms0.title != "":
 			map_name = ("%s - %s" % [ms0.artist, ms0.title]) if ms0.artist != "" else ms0.title
-	title.text = "%s  [%s]" % [map_name, str(e.get("version", ""))]
+	title.text = map_name
 	title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	title.add_theme_font_size_override("font_size", 15)
 	title.add_theme_color_override("font_color", Color(0.94, 0.95, 1.0))
 	mid.add_child(title)
 	var sub := Label.new()
 	var sub_parts: Array[String] = []
+	if str(e.get("version", "")) != "":
+		sub_parts.append("[%s]" % str(e.get("version", "")))
 	if mode == "most":
 		sub_parts.append("%d× gespielt" % int(e.get("count", 0)))
 	var date := _fmt_date(str(e.get("date", "")))
@@ -286,29 +393,43 @@ func _play_row(e: Dictionary, mode: String) -> Control:
 	sub.add_theme_color_override("font_color", COL_DIM)
 	mid.add_child(sub)
 
-	# Grade (Fail rot).
-	var grade := Label.new()
+	# Grade-Badge (Fail rot).
 	var g := str(e.get("grade", ""))
 	if mode == "recent" and bool(e.get("failed", false)):
 		g = "F"
-	grade.text = g
-	grade.custom_minimum_size = Vector2(36, 0)
+	var gcol: Color = GRADE_COLOR.get(g, Color(0.7, 0.72, 0.8))
+	var badge := PanelContainer.new()
+	var bb := StyleBoxFlat.new()
+	bb.bg_color = Color(gcol.r, gcol.g, gcol.b, 0.16)
+	bb.border_color = Color(gcol.r, gcol.g, gcol.b, 0.5)
+	bb.set_border_width_all(1)
+	bb.set_corner_radius_all(9)
+	bb.content_margin_left = 6
+	bb.content_margin_right = 6
+	bb.content_margin_top = 2
+	bb.content_margin_bottom = 2
+	badge.add_theme_stylebox_override("panel", bb)
+	badge.custom_minimum_size = Vector2(46, 0)
+	badge.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hb.add_child(badge)
+	var grade := Label.new()
+	grade.text = g if g != "" else "—"
 	grade.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	grade.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	grade.add_theme_font_override("font", UiTheme.heading_font(1))
-	grade.add_theme_font_size_override("font_size", 22)
-	grade.add_theme_color_override("font_color", GRADE_COLOR.get(g, Color(0.7, 0.72, 0.8)))
-	hb.add_child(grade)
+	grade.add_theme_font_size_override("font_size", 20)
+	grade.add_theme_color_override("font_color", gcol)
+	badge.add_child(grade)
 
-	# pp rechts.
+	# pp rechts, gross.
 	var pp_label := Label.new()
 	var ppv := float(e.get("pp", -1.0))
 	pp_label.text = ("%.0fpp" % ppv) if ppv >= 0.0 else "—"
-	pp_label.custom_minimum_size = Vector2(64, 0)
+	pp_label.custom_minimum_size = Vector2(88, 0)
 	pp_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	pp_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	pp_label.add_theme_font_override("font", UiTheme.heading_font(1))
-	pp_label.add_theme_font_size_override("font_size", 17)
+	pp_label.add_theme_font_size_override("font_size", 24)
 	pp_label.add_theme_color_override("font_color", COL_PP)
 	hb.add_child(pp_label)
 
