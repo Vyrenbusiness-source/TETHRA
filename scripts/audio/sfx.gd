@@ -185,7 +185,11 @@ static func _play(key: String, gain: float) -> void:
 	_next_player = (_next_player + 1) % _players.size()
 	pl.stream = _cache[key]
 	pl.volume_db = linear_to_db(clampf(vol * gain, 0.0, 1.0))
-	pl.play()
+	# Erster Aufruf (z.B. aus _ready): der Player haengt erst nach diesem Frame im Baum.
+	if pl.is_inside_tree():
+		pl.play()
+	else:
+		pl.play.call_deferred()
 
 
 static func _build(key: String) -> AudioStreamWAV:
