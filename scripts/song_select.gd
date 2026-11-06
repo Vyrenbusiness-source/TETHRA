@@ -38,6 +38,12 @@ var _list_box: VBoxContainer
 var _search: LineEdit
 var _count_label: Label
 var _card_buttons: Array[Button] = []
+# Bass-Reaktion der Vorschau (dezent): Onset gegen gleitenden Mittelwert.
+var _bass_avg := 0.0
+var _bass_punch := 0.0
+var _bass_smooth := 0.0
+var _punch_cd := 0.0
+var _pulse_card: Button = null
 var _preview: AudioStreamPlayer
 var _preview_fade: Tween
 # Vorschau bewusst leise (Hintergrund-Charakter), mit sanfter Einblendung.
@@ -687,7 +693,8 @@ func _refresh_filter(query: String) -> void:
 	_count_label.text = count_txt
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	_bass_react(delta)
 	# Thumbnails haeppchenweise laden — Browser bleibt fluessig.
 	var budget := 2
 	while budget > 0 and not _thumb_queue.is_empty():
@@ -702,7 +709,54 @@ func _process(_delta: float) -> void:
 		budget -= 1
 
 
+## Auswahl-Karte + Hintergrund pulsen dezent mit dem Sub-Bass der Vorschau.
+## Keine Allokation: nur Skalare, Scale/Modulate bestehender Nodes.
+func _bass_react(delta: float) -> void:
+	var raw := 0.0
+	if _preview != null and _preview.playing:
+		raw = SyncClock.band_energy(30.0, 150.0)
+	_bass_avg = lerpf(_bass_avg, raw, minf(delta * 1.5, 1.0))
+	_punch_cd = maxf(_punch_cd - delta, 0.0)
+	if raw - _bass_avg > 0.10 and _punch_cd <= 0.0:
+		_bass_punch = 1.0
+		_punch_cd = 0.15
+	_bass_punch = move_toward(_bass_punch, 0.0, delta * 4.0)
+	_bass_smooth = lerpf(_bass_smooth, _bass_punch, minf(delta * 18.0, 1.0))
+	var p := _bass_smooth
+	if _bg != null:
+		_bg.pivot_offset = _bg.size * 0.5
+		var s := 1.0 + 0.02 * p
+		_bg.scale = Vector2(s, s)
+		var b := 0.34 + 0.05 * p
+		_bg.modulate = Color(b, b, b + 0.06)
+	var idx := _filtered.find(_selected_set)
+	var card: Button = null
+	if idx >= 0 and idx < _card_buttons.size() and is_instance_valid(_card_buttons[idx]):
+		card = _card_buttons[idx]
+	if card != _pulse_card:
+		if _pulse_card != null and is_instance_valid(_pulse_card):
+			_pulse_card.modulate = Color.WHITE
+			if not _pulse_card.is_hovered():
+				_pulse_card.scale = Vector2.ONE
+			var old_bg := _pulse_card.get_child(0) as TextureRect
+			if old_bg != null:
+				old_bg.self_modulate = Color.WHITE
+		_pulse_card = card
+	if card != null:
+		var c := 1.0 + 0.05 * p
+		card.modulate = Color(c, c, c)
+		if not card.is_hovered():
+			card.pivot_offset = card.size * 0.5
+			var cs := 1.0 + 0.02 * p
+			card.scale = Vector2(cs, cs)
+		var cbg := card.get_child(0) as TextureRect
+		if cbg != null:
+			var g := 1.0 + 0.8 * p
+			cbg.self_modulate = Color(g, g, g)
+
+
 func _rebuild_cards() -> void:
+	_pulse_card = null
 	_thumb_queue.clear()
 	for c in _list_box.get_children():
 		c.queue_free()
