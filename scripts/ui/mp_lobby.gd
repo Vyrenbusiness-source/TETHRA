@@ -64,7 +64,7 @@ func _ready() -> void:
 	add_child(_bg_rect)
 	var dim := ColorRect.new()
 	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	dim.color = Color(0, 0, 0, 0.45)
+	dim.color = Color(0, 0, 0, 0.72)
 	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(dim)
 	_update_bg()
@@ -73,7 +73,7 @@ func _ready() -> void:
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(center)
 	var panel := PanelContainer.new()
-	var sb := UiTheme.glass_box(18, 0.7)
+	var sb := UiTheme.glass_box(18, 0.95)
 	sb.set_content_margin_all(26)
 	panel.add_theme_stylebox_override("panel", sb)
 	panel.custom_minimum_size = Vector2(880, 560)
@@ -209,7 +209,7 @@ func _build_browser() -> void:
 	var rooms_head := HBoxContainer.new()
 	left_col.add_child(rooms_head)
 	var lan_head := Label.new()
-	lan_head.text = "OFFENE RAEUME"
+	lan_head.text = "OFFENE RÄUME"
 	lan_head.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	lan_head.add_theme_font_override("font", UiTheme.heading_font(2))
 	lan_head.add_theme_font_size_override("font_size", 14)
@@ -257,12 +257,12 @@ func _build_browser() -> void:
 	_name_edit.text = "%s's Raum" % Settings.profile_name
 	_name_edit.max_length = 28
 	_name_edit.custom_minimum_size = Vector2(0, 40)
-	_name_edit.add_theme_stylebox_override("normal", UiTheme.glass_box(10, 0.55))
+	_name_edit.add_theme_stylebox_override("normal", _field_box())
 	cv.add_child(_name_edit)
 	_pw_edit = LineEdit.new()
-	_pw_edit.placeholder_text = "Passwort (leer = oeffentlich sichtbar)"
+	_pw_edit.placeholder_text = "Passwort (leer = öffentlich)"
 	_pw_edit.custom_minimum_size = Vector2(0, 40)
-	_pw_edit.add_theme_stylebox_override("normal", UiTheme.glass_box(10, 0.55))
+	_pw_edit.add_theme_stylebox_override("normal", _field_box())
 	cv.add_child(_pw_edit)
 	var create := Button.new()
 	create.text = "+ Raum erstellen"
@@ -297,14 +297,14 @@ func _build_browser() -> void:
 	_code_edit.placeholder_text = "Code (z.B. 7K3F9-A2QXM)"
 	_code_edit.custom_minimum_size = Vector2(0, 54)
 	_code_edit.alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_code_edit.add_theme_font_size_override("font_size", 20)
-	_code_edit.add_theme_stylebox_override("normal", UiTheme.glass_box(10, 0.55))
+	_code_edit.add_theme_font_size_override("font_size", 16)
+	_code_edit.add_theme_stylebox_override("normal", _field_box())
 	_code_edit.text_submitted.connect(func(_t): _join_by_code())
 	kv.add_child(_code_edit)
 	_join_pw_edit = LineEdit.new()
 	_join_pw_edit.placeholder_text = "Passwort (falls gesetzt)"
 	_join_pw_edit.custom_minimum_size = Vector2(0, 40)
-	_join_pw_edit.add_theme_stylebox_override("normal", UiTheme.glass_box(10, 0.55))
+	_join_pw_edit.add_theme_stylebox_override("normal", _field_box())
 	_join_pw_edit.text_submitted.connect(func(_t): _join_by_code())
 	kv.add_child(_join_pw_edit)
 	var join := Button.new()
@@ -314,6 +314,13 @@ func _build_browser() -> void:
 	UiTheme.style_button(join, true)
 	join.pressed.connect(_join_by_code)
 	kv.add_child(join)
+
+
+func _field_box() -> StyleBoxFlat:
+	var fb := UiTheme.glass_box(10, 0.85)
+	fb.content_margin_left = 14
+	fb.content_margin_right = 14
+	return fb
 
 
 func _join_by_code() -> void:
@@ -472,6 +479,7 @@ func _refresh_rooms() -> void:
 		var empty := VBoxContainer.new()
 		empty.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		empty.alignment = BoxContainer.ALIGNMENT_CENTER
+		empty.add_theme_constant_override("separation", 10)
 		var ei := Label.new()
 		ei.text = "🎧"
 		ei.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -484,9 +492,10 @@ func _refresh_rooms() -> void:
 		et.add_theme_color_override("font_color", COL_TEXT)
 		empty.add_child(et)
 		var el := Label.new()
-		el.text = "Keine offenen Raeume. Erstelle einen — er erscheint
+		el.text = "Keine offenen Räume. Erstelle einen, er erscheint
 hier automatisch bei allen Spielern."
 		el.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		el.add_theme_constant_override("line_spacing", 6)
 		el.add_theme_font_size_override("font_size", 13)
 		el.add_theme_color_override("font_color", COL_DIM)
 		empty.add_child(el)
@@ -505,7 +514,7 @@ func _build_room() -> void:
 	_room_box.add_child(_code_label)
 
 	var players_head := Label.new()
-	players_head.text = "SPIELER  (👑 waehlt die Map — Host klickt einen Spieler, um sie zu vergeben)"
+	players_head.text = "SPIELER  (👑 wählt die Map — Host klickt einen Spieler, um sie zu vergeben)"
 	players_head.add_theme_font_size_override("font_size", 13)
 	players_head.add_theme_color_override("font_color", COL_ACCENT)
 	_room_box.add_child(players_head)
@@ -535,13 +544,13 @@ func _build_room() -> void:
 	mv.add_theme_constant_override("separation", 2)
 	mh.add_child(mv)
 	_map_label = Label.new()
-	_map_label.text = "Noch keine Map gewaehlt."
+	_map_label.text = "Noch keine Map gewählt."
 	_map_label.add_theme_font_size_override("font_size", 17)
 	_map_label.add_theme_color_override("font_color", COL_TEXT)
 	_map_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	mv.add_child(_map_label)
 	_map_meta = Label.new()
-	_map_meta.text = "Der Kronentraeger waehlt die Map."
+	_map_meta.text = "Der Kronenträger wählt die Map."
 	_map_meta.add_theme_font_size_override("font_size", 13)
 	_map_meta.add_theme_color_override("font_color", COL_DIM)
 	mv.add_child(_map_meta)
@@ -550,7 +559,7 @@ func _build_room() -> void:
 	btns.add_theme_constant_override("separation", 8)
 	_room_box.add_child(btns)
 	_pick_btn = Button.new()
-	_pick_btn.text = "Map waehlen"
+	_pick_btn.text = "Map wählen"
 	_pick_btn.custom_minimum_size = Vector2(0, 46)
 	_pick_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	UiTheme.style_button(_pick_btn)
@@ -702,7 +711,7 @@ func _open_picker() -> void:
 	vb.add_theme_constant_override("separation", 8)
 	panel.add_child(vb)
 	var t := Label.new()
-	t.text = "Map waehlen"
+	t.text = "Map wählen"
 	t.add_theme_font_size_override("font_size", 20)
 	vb.add_child(t)
 	var search := LineEdit.new()
@@ -963,7 +972,7 @@ func _on_map_changed() -> void:
 		return
 	var set_id := int(Lobby.sel_map.get("set_id", 0))
 	if set_id <= 0:
-		_status_label.text = "Map fehlt und hat keine Set-ID — Download nicht moeglich."
+		_status_label.text = "Map fehlt und hat keine Set-ID — Download nicht möglich."
 		return
 	_downloading = true
 	_status_label.text = "Map fehlt — lade automatisch herunter…"
