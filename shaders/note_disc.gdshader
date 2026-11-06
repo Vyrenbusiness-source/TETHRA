@@ -18,7 +18,7 @@ render_mode unshaded, blend_mix, depth_draw_never, cull_disabled;
 // zur Kamera, dass sein Blickwinkel-Sinus >= min_facing ist (max 35 Grad).
 // An der Abfanglinie (steiler Blick) kippt nichts -> landet exakt aufs Pad.
 // Kamera-zugewandte Quads (andere Modi) bleiben unveraendert.
-uniform float min_facing: hint_range(0.0, 1.0) = 0.56;
+uniform float min_facing: hint_range(0.0, 1.0) = 0.0;   // 0 = keine Kippung: Note bleibt flacher 2D-Ring wie das Pad (Nutzer-Vorgabe)
 
 uniform vec4 base_color: source_color = vec4(0.15, 0.75, 1.0, 1.0);
 uniform vec4 rim_color: source_color = vec4(1.0, 1.0, 1.0, 1.0);
