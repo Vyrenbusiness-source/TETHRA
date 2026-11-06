@@ -57,8 +57,8 @@ var _ship_glow_mat: ShaderMaterial
 var _horizon_mat: ShaderMaterial
 var _road_mat: ShaderMaterial
 
-# Beat-exakte FX: Integer-Beat-Kante triggert alles synchron zum Takt.
-var _beat_idx_last := -999999
+# Beat-exakte FX: BeatClock liefert Phase/Kanten aus den Timing-Points.
+var _clock := BeatClock.new()
 var _vignette_mat: ShaderMaterial
 var _ember_mm: MultiMesh
 var _ember_pos: Array[Vector3] = []
@@ -243,6 +243,7 @@ func _ready() -> void:
 	if GameSession.tutorial:
 		scroll = minf(scroll, 1.0) * 0.65
 	core.setup(_beatmap, -1.0, scroll)
+	_clock.setup(_beatmap.timing_points)
 	core.note_spawned.connect(_on_note_spawned)
 	core.note_judged.connect(_on_note_judged)
 	core.hold_started.connect(_on_hold_started)
@@ -1468,8 +1469,10 @@ func _process(delta: float) -> void:
 	# Laser abklingen.
 	# OVERDRIVE abklingen lassen.
 	_overdrive = maxf(_overdrive - delta, 0.0)
-	# Weiche Beat-Huellkurve (Release ~380 ms — atmet, statt zu blitzen).
-	_beat_env = maxf(_beat_env - delta * 2.6, 0.0)
+	# Takt exakt aus BeatClock: Angriff liegt auf dem Schlag, Release bleibt
+	# weich (~380 ms — atmet, statt zu blitzen).
+	_clock.update(t, delta)
+	_beat_env = maxf(_clock.beat_env, _beat_env - delta * 2.6)
 
 	# NOTENDICHTE (naechste Sekunde) -> Intensitaets-Surge bei Bursts;
 	# keine Note in 2.5s -> Break/Cruise, Rueckkehr mit Flash.
