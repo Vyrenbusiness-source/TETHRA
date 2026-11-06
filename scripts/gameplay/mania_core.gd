@@ -162,15 +162,7 @@ func update(t_ms: float) -> void:
 		_next_spawn += 1
 	# Verpasste Heads pro Spalte.
 	for c in columns:
-		while _lane_head[c] < _lane_notes[c].size():
-			var idx: int = _lane_notes[c][_lane_head[c]]
-			if _judged.has(idx):
-				_lane_head[c] += 1
-				continue
-			if t_ms > objs[idx].time + w50 and _active_hold[c] != idx:
-				_miss(idx)
-				continue
-			break
+		_expire_lane(c, t_ms)
 		# Hold-Ende erreicht, Taste noch unten -> Head-Qualitaet einloesen.
 		var h: int = _active_hold[c]
 		if h >= 0 and t_ms >= objs[h].end_time():
@@ -180,13 +172,30 @@ func update(t_ms: float) -> void:
 		finished.emit(stats())
 
 
-## Tastendruck in Spalte c.
+## Spalte c bis t_ms nachziehen: gerichtete Heads ueberspringen, Heads mit
+## abgelaufenem 50er-Fenster als Miss werten (gleiche Bedingung wie update()).
+func _expire_lane(c: int, t_ms: float) -> void:
+	var objs := beatmap.hit_objects
+	while _lane_head[c] < _lane_notes[c].size():
+		var idx: int = _lane_notes[c][_lane_head[c]]
+		if _judged.has(idx):
+			_lane_head[c] += 1
+			continue
+		if t_ms > objs[idx].time + w50 and _active_hold[c] != idx:
+			_miss(idx)
+			continue
+		break
+
+
+## Tastendruck in Spalte c. t_ms ist der Zeitpunkt des Events (nicht der
+## Frame-Zeit): Heads, deren Fenster bis dahin abgelaufen sind, werden erst
+## als Miss gewertet — sonst wuerde ein Druck zwischen zwei Frames bei Jacks
+## am alten Head haengen bleiben und die naechste Note verfehlen.
 func key_down(c: int, t_ms: float) -> void:
 	if c < 0 or c >= columns or beatmap == null:
 		return
 	var objs := beatmap.hit_objects
-	while _lane_head[c] < _lane_notes[c].size() and _judged.has(_lane_notes[c][_lane_head[c]]):
-		_lane_head[c] += 1
+	_expire_lane(c, t_ms)
 	if _lane_head[c] >= _lane_notes[c].size():
 		lane_pressed.emit(c, false)
 		return
