@@ -222,9 +222,9 @@ static func build_theme() -> Theme:
 	th.set_stylebox("slider", "HSlider", track)
 	th.set_stylebox("grabber_area", "HSlider", fill)
 	th.set_stylebox("grabber_area_highlight", "HSlider", fill)
-	th.set_icon("grabber", "HSlider", _glow_dot(24, 6.0, 0.28, Color(0.96, 0.98, 1.0)))
-	th.set_icon("grabber_highlight", "HSlider", _glow_dot(30, 8.0, 0.5, Color(1, 1, 1)))
-	th.set_icon("grabber_disabled", "HSlider", _glow_dot(24, 6.0, 0.0, Color(0.6, 0.62, 0.7)))
+	th.set_icon("grabber", "HSlider", _glow_dot(28, 7.0, 0.5, Color(0.96, 0.98, 1.0)))
+	th.set_icon("grabber_highlight", "HSlider", _glow_dot(36, 9.0, 0.7, Color(1, 1, 1)))
+	th.set_icon("grabber_disabled", "HSlider", _glow_dot(28, 7.0, 0.0, Color(0.6, 0.62, 0.7)))
 
 	# Scrollbalken: schmal + dezent.
 	var sb_bg := StyleBoxFlat.new()
