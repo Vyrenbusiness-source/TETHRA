@@ -8,6 +8,9 @@ extends RefCounted
 
 const DEV_MAPS_DIR := "C:/Users/Gexanx/Desktop/rhyg/maps"
 const CACHE_PATH := "user://library.cfg"
+## Version der "unbrauchbar"-Markierung: hochzaehlen, wenn der Importer neue
+## Modi/Keycounts unterstuetzt, damit alte Skip-Eintraege neu geprueft werden.
+const SKIP_VERSION := 1
 
 var maps_dir: String = ""
 var mapsets: Array[MapSet] = []
@@ -34,31 +37,52 @@ func scan() -> int:
 	if dir == null:
 		push_warning("MapLibrary: maps-Ordner nicht gefunden: " + maps_dir)
 		return 0
+	var t0 := Time.get_ticks_usec()
 	var cfg := ConfigFile.new()
 	cfg.load(CACHE_PATH)
-
-	# Nur fuer NEUE Dateien Stars im Batch vorberechnen.
-	StarService.prefetch_dir(maps_dir)
+	OszImporter._perf("Library: Cache laden", t0, CACHE_PATH)
+	t0 = Time.get_ticks_usec()
 
 	var files := dir.get_files()
 	files.sort()
-	var dirty := false
+	# Erst aus dem Cache bedienen; nur unbekannte Dateien voll analysieren.
+	# Unbrauchbare Sets (keine Standard-/4K-Diff, kaputtes Zip) stehen als
+	# {"skip": SKIP_VERSION} im Cache — sonst wuerden sie bei JEDEM Oeffnen neu
+	# geparst und loesten jedes Mal den python-Sternelauf aus.
+	var fresh: Array[String] = []
 	for fname in files:
 		if not fname.to_lower().ends_with(".osz"):
 			continue
 		var path := maps_dir.path_join(fname)
 		var key := _cache_key(path)
-		var cached = cfg.get_value("sets", key, false) if cfg.has_section_key("sets", key) else null
-		var ms: MapSet = null
+		var cached = cfg.get_value("sets", key, null) if cfg.has_section_key("sets", key) else null
 		if cached is Dictionary:
-			ms = MapSet.from_dict(path, cached)
-		else:
-			ms = _build_mapset_full(path)
+			if int(cached.get("skip", 0)) == SKIP_VERSION:
+				continue
+			if not cached.has("skip"):
+				var ms := MapSet.from_dict(path, cached)
+				if ms.difficulty_count() > 0:
+					mapsets.append(ms)
+				continue
+		fresh.append(path)
+	OszImporter._perf("Library: %d Sets aus Cache" % mapsets.size(), t0, maps_dir)
+
+	var dirty := false
+	if not fresh.is_empty():
+		t0 = Time.get_ticks_usec()
+		# Nur fuer NEUE Dateien Stars im Batch vorberechnen.
+		if fresh.size() >= 2:
+			StarService.prefetch_dir(maps_dir)
+		for path in fresh:
+			var ms := _build_mapset_full(path)
 			if ms != null:
-				cfg.set_value("sets", key, ms.to_dict())
-				dirty = true
-		if ms != null and ms.difficulty_count() > 0:
-			mapsets.append(ms)
+				cfg.set_value("sets", _cache_key(path), ms.to_dict())
+				if ms.difficulty_count() > 0:
+					mapsets.append(ms)
+			else:
+				cfg.set_value("sets", _cache_key(path), {"skip": SKIP_VERSION})
+			dirty = true
+		OszImporter._perf("Library: %d neue Dateien analysiert" % fresh.size(), t0, maps_dir)
 	if dirty:
 		cfg.save(CACHE_PATH)
 	mapsets.sort_custom(func(a, b): return a.search_haystack() < b.search_haystack())

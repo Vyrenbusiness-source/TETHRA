@@ -100,6 +100,18 @@ var _nf_btn: Button
 
 # Lazy-Loading der Karten-Thumbnails (2 pro Frame).
 var _thumb_queue: Array = []
+# Lade-Messung (--perf): Startzeit von _ready bzw. der letzten Auswahl.
+var _perf_ready_t := 0
+var _perf_select_t := 0
+# Hintergrund-Vorbereitung der Auswahl (Parse + Audio + Cover), entprellt:
+# erst wenn die Auswahl PREPARE_DELAY_MS stabil ist (schnelles Scrollen
+# startet keine Task-Lawine). Full-Res-Cover kommt danach aus dem Cache.
+const PREPARE_DELAY_MS := 100
+const THUMB_BUDGET_USEC := 4000
+var _prep_due := 0
+var _bg_wait_set: MapSet = null
+# scores.cfg einmal pro Kartenaufbau lesen (statt pro Karte und Diff).
+var _scores_cfg: ConfigFile = null
 var _replay_btn: Button
 
 # Collections-Ansicht.
@@ -174,9 +186,11 @@ var _dl_auto_pages := 0
 
 
 func _ready() -> void:
+	_perf_ready_t = Time.get_ticks_usec()
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_library = MapLibrary.new()
 	_library.scan()
+	GameSession.perf_since("Browser: Library-Scan gesamt", _perf_ready_t)
 
 	_preview = AudioStreamPlayer.new()
 	_preview.bus = "Music"
@@ -191,13 +205,22 @@ func _ready() -> void:
 	_mirror.download_done.connect(_on_mirror_download_done)
 	_mirror.download_failed.connect(_on_mirror_download_failed)
 
+	var t_ui := Time.get_ticks_usec()
 	_build_ui()
+	GameSession.perf_since("Browser: UI aufbauen", t_ui)
+	t_ui = Time.get_ticks_usec()
 	_refresh_filter("")
+	GameSession.perf_since("Browser: %d Karten bauen" % _filtered.size(), t_ui)
 	get_window().files_dropped.connect(_on_files_dropped)
+	t_ui = Time.get_ticks_usec()
 	_select_initial()
+	GameSession.perf_since("Browser: Startauswahl (Info, Cover, Vorschau)", t_ui)
+	GameSession.perf_since("Browser: _ready gesamt", _perf_ready_t)
 
 	if DisplayServer.get_name() == "headless":
 		_headless_report()
+	elif GameSession.perf_enabled:
+		_perf_flow.call_deferred()
 	elif OS.get_cmdline_args().has("--mania"):
 		# Debug: erste 4K-Mania-Diff automatisch starten.
 		for ms in _filtered:
@@ -217,6 +240,30 @@ func _ready() -> void:
 		_shot_dl_after.call_deferred()
 	elif OS.get_cmdline_args().has("--shot"):
 		_capture_screenshot_and_quit()
+
+
+## Lade-Messung: Map wechseln (Auswahl -> Vorschau-Ton), kurz warten, SPIELEN.
+func _perf_flow() -> void:
+	var picks: Array = []
+	for ms in _filtered:
+		for i in ms.difficulty_count():
+			if int(ms.meta_at(i).get("mode", 0)) == 3:
+				picks.append([ms, i])
+				break
+	var at := 0
+	for k in picks.size():
+		if picks[k][0] == _selected_set:
+			at = k
+	for step in 2:
+		await get_tree().create_timer(1.5).timeout
+		if picks.is_empty():
+			_move_selection(1)
+		else:
+			var pk: Array = picks[(at + 1 + step) % picks.size()]
+			_select_set(pk[0], pk[1])
+	await get_tree().create_timer(2.0).timeout
+	GameSession.perf_request("SPIELEN -> Gameplay")
+	_on_play_pressed()
 
 
 func _shot_dl_after() -> void:
@@ -1042,9 +1089,11 @@ func _refresh_filter(query: String) -> void:
 func _process(delta: float) -> void:
 	_beat_react(delta)
 	_loudness_step()
-	# Thumbnails haeppchenweise laden — Browser bleibt fluessig.
+	_prepare_step()
+	# Thumbnails haeppchenweise laden (Zeitbudget pro Frame) — Browser bleibt fluessig.
+	var t_end := Time.get_ticks_usec() + THUMB_BUDGET_USEC
 	var budget := 2
-	while budget > 0 and not _thumb_queue.is_empty():
+	while (budget > 0 or Time.get_ticks_usec() < t_end) and not _thumb_queue.is_empty():
 		var job: Dictionary = _thumb_queue.pop_front()
 		var bg_rect: TextureRect = job.bg
 		if not is_instance_valid(bg_rect):
@@ -1053,6 +1102,9 @@ func _process(delta: float) -> void:
 		if tex != null:
 			bg_rect.texture = tex
 		budget -= 1
+		if _thumb_queue.is_empty() and _perf_ready_t > 0:
+			GameSession.perf_since("Browser: alle Thumbnails sichtbar (seit _ready)", _perf_ready_t)
+			_perf_ready_t = 0
 
 
 ## Lautheitsmessung der Vorschau; nach >= 6 s Gain speichern und anwenden.
@@ -1122,7 +1174,27 @@ func _beat_react(delta: float) -> void:
 			_progress_fill.size = Vector2(w, _progress_bg.size.y)
 
 
+## Auswahl im Hintergrund vorbereiten, sobald sie stabil ist; das Full-Res-
+## Cover erst uebernehmen, wenn der Worker es dekodiert hat.
+func _prepare_step() -> void:
+	if _selected_set == null:
+		return
+	if _prep_due > 0 and Time.get_ticks_msec() >= _prep_due:
+		_prep_due = 0
+		var m := _selected_set.meta_at(_selected_diff)
+		GameSession.preload_selection(_selected_set.osz_path, str(m.get("audio_filename", "")),
+			_selected_set.background_file, _selected_set.version_name_at(_selected_diff))
+		_bg_wait_set = _selected_set
+	if _bg_wait_set != null and OszImporter.is_prepared(_bg_wait_set.osz_path):
+		var target := _bg_wait_set
+		_bg_wait_set = null
+		_load_fullres_bg(target)
+
+
 func _rebuild_cards() -> void:
+	_scores_cfg = ConfigFile.new()
+	if _scores_cfg.load(ScoreStore.PATH) != OK:
+		_scores_cfg = null
 	_pulse_card = null
 	_thumb_queue.clear()
 	for c in _list_box.get_children():
@@ -1151,6 +1223,7 @@ func _rebuild_cards() -> void:
 		_card_buttons.append(card)
 		card.mouse_entered.connect(_slide_card.bind(card, true))
 		card.mouse_exited.connect(_slide_card.bind(card, false))
+	_scores_cfg = null
 	if _selected_set != null:
 		_apply_card_highlight()
 
@@ -1289,9 +1362,12 @@ func _make_card(ms: MapSet) -> Button:
 	return card
 
 func _best_grade_badge(ms: MapSet) -> String:
+	if _scores_cfg == null:
+		return ""
 	for i in range(ms.difficulty_count() - 1, -1, -1):
-		var best := ScoreStore.best(ms.osz_path, ms.version_name_at(i))
-		if not best.is_empty():
+		# Gleiche Abfrage wie ScoreStore.best(), aber ohne scores.cfg pro Aufruf neu zu lesen.
+		var best = _scores_cfg.get_value("scores", ScoreStore._key(ms.osz_path, ms.version_name_at(i)), {})
+		if best is Dictionary and not best.is_empty():
 			return str(best.get("grade", ""))
 	return ""
 
@@ -1320,6 +1396,7 @@ func _on_card_pressed(ms: MapSet) -> void:
 
 
 func _select_set(ms: MapSet, diff_index: int) -> void:
+	_perf_select_t = Time.get_ticks_usec()
 	_selected_set = ms
 	_selected_diff = clampi(diff_index, 0, ms.difficulty_count() - 1)
 	_update_info_panel()
@@ -1343,8 +1420,8 @@ func _update_info_panel() -> void:
 	var quick := _selected_set.thumb_texture()
 	_bg.texture = quick
 	_cover.texture = quick
-	var target_set := _selected_set
-	call_deferred("_load_fullres_bg", target_set)
+	_prep_due = Time.get_ticks_msec() + PREPARE_DELAY_MS
+	_bg_wait_set = null
 	_title_label.text = _selected_set.title
 	_artist_label.text = _selected_set.artist
 	_mapper_label.text = "Map von %s" % _selected_set.creator
@@ -1602,7 +1679,8 @@ func _on_play_pressed() -> void:
 		_selected_set.version_name_at(_selected_diff),
 		_selected_set.osu_filename_at(_selected_diff),
 		_selected_set.stars_at(_selected_diff))
-	GameSession.save_last_played(_selected_set.osz_path, _selected_diff, _selected_set.background_file)
+	if not GameSession.perf_enabled:   # Messlauf veraendert den Startzustand nicht
+		GameSession.save_last_played(_selected_set.osz_path, _selected_diff, _selected_set.background_file)
 	_preview.stop()
 	# Auto-Erkennung: Mania-Diffs (Mode 3) starten die 4K-Szene.
 	var mode := int(_selected_set.meta_at(_selected_diff).get("mode", 0))
@@ -1746,6 +1824,9 @@ func _start_preview(stream: AudioStream, from_sec: float, song_key: String) -> v
 		_setup_beat_clock()
 	_preview.volume_db = PREVIEW_SILENT_DB
 	_preview.play(from_sec)
+	if _perf_select_t > 0:
+		GameSession.perf_since("Map-Auswahl -> Vorschau-Ton", _perf_select_t)
+		_perf_select_t = 0
 	_preview_fade = create_tween()
 	_preview_fade.tween_property(_preview, "volume_db", PREVIEW_DB + _preview_gain_db, PREVIEW_FADE_IN)
 

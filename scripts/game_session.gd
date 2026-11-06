@@ -32,10 +32,31 @@ var clip_md5: String = ""
 const CLIP_QUIT_DELAY := 3.0
 var _clip_end_t := -1.0
 
+## Lade-Messung (--perf): jede Phase loggt "PERF <phase> <ms>". Im Perf-Modus
+## laeuft der Weg Hauptmenue -> Song-Browser -> Map-Wechsel -> SPIELEN automatisch;
+## 10 s nach dem ersten Gameplay-Frame kommt die Frame-Statistik, dann Ende.
+var perf_enabled := false
+const PERF_GAMEPLAY_SEC := 10.0
+var _perf_req_t := 0
+var _perf_req_name := ""
+var _perf_wait_frame := false
+var _perf_gameplay_t := 0
+var _perf_last_frame_t := 0
+var _perf_frames: Array = []
+
 
 func _ready() -> void:
 	set_process(false)
 	_arm_test_watchdog()
+	perf_enabled = OS.get_cmdline_args().has("--perf") or OS.get_cmdline_user_args().has("--perf")
+	if perf_enabled:
+		perf_since("Engine-Start -> Autoload GameSession", 0)
+		OszImporter.perf = true
+		get_tree().scene_changed.connect(_perf_on_scene_changed)
+		RenderingServer.frame_post_draw.connect(_perf_on_frame)
+		_perf_req_t = 0
+		_perf_req_name = "Spielstart -> Hauptmenue"
+		_perf_wait_frame = true
 	var args := OS.get_cmdline_args()
 	var i := args.find("--clip")
 	if i >= 0 and i + 1 < args.size():
@@ -86,12 +107,83 @@ func _process(_dt: float) -> void:
 		get_tree().quit(0)
 
 
+## Phase seit t0 (Time.get_ticks_usec) loggen.
+func perf_since(phase: String, t0: int) -> void:
+	if perf_enabled:
+		print("PERF %-44s %9.1f ms" % [phase, float(Time.get_ticks_usec() - t0) / 1000.0])
+
+
+## Szenenwechsel-Messung starten: Zeit bis zum ersten gezeichneten Frame der
+## neuen Szene (Laden + _ready + erster Draw).
+func perf_request(phase: String) -> void:
+	if not perf_enabled:
+		return
+	_perf_req_t = Time.get_ticks_usec()
+	_perf_req_name = phase
+
+
+func _perf_on_scene_changed() -> void:
+	var sc := get_tree().current_scene
+	if sc == null or _perf_req_name == "":
+		return
+	perf_since(_perf_req_name + " (Szene bereit)", _perf_req_t)
+	_perf_wait_frame = true
+
+
+func _perf_on_frame() -> void:
+	var now := Time.get_ticks_usec()
+	if _perf_wait_frame:
+		_perf_wait_frame = false
+		perf_since(_perf_req_name + " (erster Frame)", _perf_req_t)
+		_perf_req_name = ""
+		var sc := get_tree().current_scene
+		if sc != null and (sc.scene_file_path.contains("mania_3d") or sc.scene_file_path.contains("gameplay_3d")):
+			_perf_gameplay_t = now
+			_perf_frames.clear()
+	elif _perf_gameplay_t > 0:
+		_perf_frames.append(now - _perf_last_frame_t)
+		if now - _perf_gameplay_t >= int(PERF_GAMEPLAY_SEC * 1000000.0):
+			_perf_report_frames()
+	_perf_last_frame_t = now
+
+
+## Frame-Statistik der ersten Gameplay-Sekunden (Shader-/Lade-Haenger).
+func _perf_report_frames() -> void:
+	_perf_gameplay_t = 0
+	var worst := 0
+	var over50 := 0
+	var over100 := 0
+	var total := 0
+	for f in _perf_frames:
+		worst = maxi(worst, int(f))
+		total += int(f)
+		if f > 50000:
+			over50 += 1
+		if f > 100000:
+			over100 += 1
+	print("PERF %-44s %9.1f ms" % ["Gameplay laengster Frame (10 s)", worst / 1000.0])
+	print("PERF %-44s %9d" % ["Gameplay Frames > 50 ms", over50])
+	print("PERF %-44s %9d" % ["Gameplay Frames > 100 ms", over100])
+	print("PERF %-44s %9.1f ms" % ["Gameplay Frame-Mittel", total / 1000.0 / maxf(1.0, _perf_frames.size())])
+	print("PERF-DONE")
+	get_tree().quit(0)
+
+
 func set_selection(p_osz_path: String, p_difficulty_index: int, p_difficulty_version: String = "", p_osu_filename: String = "", p_stars: float = -1.0) -> void:
 	osz_path = p_osz_path
 	difficulty_index = p_difficulty_index
 	difficulty_version = p_difficulty_version
 	osu_filename = p_osu_filename
 	stars = p_stars
+
+
+## Song-Browser: Auswahl im Hintergrund vorbereiten (WorkerThreadPool) —
+## .osz parsen, Audio + Cover laden. Die Gameplay-Szene bekommt beim Start
+## ueber OszImporter.import()/load_audio_stream() das Fertige (kein zweites
+## Entpacken/Dekodieren).
+func preload_selection(p_osz_path: String, audio_name: String, bg_file: String, version: String) -> void:
+	if p_osz_path != "":
+		OszImporter.prepare(p_osz_path, audio_name, bg_file, version)
 
 
 func has_selection() -> bool:
@@ -130,7 +222,7 @@ func _arm_test_watchdog() -> void:
 	var all := OS.get_cmdline_args() + OS.get_cmdline_user_args()
 	var limit := 0.0
 	for a in all:
-		if a.begins_with("--shot") or a == "--autoplay" or a == "--smoke":
+		if a.begins_with("--shot") or a == "--autoplay" or a == "--smoke" or a == "--perf":
 			limit = 45.0
 		elif (a == "--script" or a == "-s") and limit == 0.0:
 			limit = 120.0   # Headless-Test-Runner: grosszuegiger, haengt aber nie ewig
