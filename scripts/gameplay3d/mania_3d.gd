@@ -116,6 +116,14 @@ var _groove_kiai_seen := false
 var _kiai_sweep_pending := false
 ## Kiai-Licht-Sweeps: {node, mat, t0, dur, peak}
 var _kiai_sweeps: Array = []
+# TREFFER AUF DEM BEAT: Pad-Puls (300/MAX) in Snap-/Spurfarbe, MAX-Ring-Expand,
+# Miss-Abdunkeln — je Spur, klingt in ~180-250 ms ab.
+var _pad_groove: Array[float] = []
+var _pad_groove_col: Array[Color] = []
+var _pad_dark: Array[float] = []
+var _max_rings: Array[MeshInstance3D] = []
+var _max_ring_mats: Array[ShaderMaterial] = []
+var _max_ring_t: Array[float] = []
 var _ember_mat: ShaderMaterial
 
 # Replay: Aufnahme jeder Runde + zeitgenaue Wiedergabe.
@@ -649,6 +657,32 @@ func _build_world() -> void:
 		pad.material_override = pm
 		_world.add_child(pad)
 		_pad_nodes.append(pad)
+		_pad_groove.append(0.0)
+		_pad_groove_col.append(_pad_color(i))
+		_pad_dark.append(0.0)
+		# MAX-Ring: duenner Ring unter dem Pad (unter Noten und Linie gezeichnet),
+		# weitet sich bei MAX kurz auf und verglimmt.
+		var mr := MeshInstance3D.new()
+		var mrq := QuadMesh.new()
+		mrq.size = Vector2(PAD_SIZE, PAD_SIZE)
+		mr.mesh = mrq
+		mr.rotation_degrees = Vector3(-90, 0, 0)
+		mr.position = Vector3(RAIL_X[i], ROAD_Y + PAD_Y - 0.03, Z_LINE)
+		var mrm := ShaderMaterial.new()
+		mrm.shader = _note_shader
+		mrm.set_shader_parameter("base_color", _pad_color(i))
+		mrm.set_shader_parameter("rim_color", _pad_color(i))
+		mrm.set_shader_parameter("fill_alpha", 0.0)
+		mrm.set_shader_parameter("halo_strength", 0.35)
+		mrm.set_shader_parameter("rim_boost", 0.0)
+		mrm.set_shader_parameter("master_alpha", 0.0)
+		mrm.render_priority = -2
+		mr.material_override = mrm
+		mr.visible = false
+		_world.add_child(mr)
+		_max_rings.append(mr)
+		_max_ring_mats.append(mrm)
+		_max_ring_t.append(0.0)
 
 		# Lane-Highlight: transparente Bahn, leuchtet solange die Taste
 		# gedrueckt ist (Standard-Mania-Feedback).
@@ -1272,6 +1306,17 @@ func _on_note_judged(index: int, result: Dictionary) -> void:
 		_pad_flash[col] = 1.0
 	if col < _pad_judge_col.size():
 		_pad_judge_col[col] = QUALITY_COLOR[q]
+	# TREFFER AUF DEM BEAT: Treffer im 300-Fenster pulsen das Pad in der
+	# Snap-/Spurfarbe, MAX weitet zusaetzlich kurz einen Ring; Miss dunkelt ab.
+	if col < _pad_groove.size():
+		if q <= ManiaCore.Quality.PERFECT:
+			_pad_groove[col] = 1.0
+			var gcol := _snap_col(index) if SNAP_COLORS_ENABLED else Color(0, 0, 0, 0)
+			_pad_groove_col[col] = gcol if gcol.a > 0.0 else _lane_color(col)
+			if q == ManiaCore.Quality.MAX:
+				_max_ring_t[col] = 1.0
+		elif q == ManiaCore.Quality.MISS:
+			_pad_dark[col] = 1.0
 	# FRUEH/SPAET entscheidet JudgeDisplay (erst ausserhalb des 300-Fensters);
 	# Hold-Enden ohne Zeitfehler bekommen keinen Hinweis.
 	if _judge_disp != null:
@@ -1703,6 +1748,19 @@ func _process(delta: float) -> void:
 
 	for c in core.columns:
 		_pad_flash[c] = move_toward(_pad_flash[c], 0.0, delta * 5.0)
+		if c < _pad_groove.size():
+			_pad_groove[c] = maxf(_pad_groove[c] - delta / 0.18, 0.0)
+			_pad_dark[c] = maxf(_pad_dark[c] - delta / 0.25, 0.0)
+			_max_ring_t[c] = maxf(_max_ring_t[c] - delta / 0.20, 0.0)
+			var mr_on := _max_ring_t[c] > 0.0 and _fx_level() > 0.0
+			_max_rings[c].visible = mr_on
+			if mr_on:
+				var rr := 1.0 - _max_ring_t[c]
+				# Ease-out: schnell auf, weich aus; max 1.22 (bleibt am Pad).
+				_max_rings[c].scale = Vector3.ONE * (1.0 + 0.22 * (1.0 - (1.0 - rr) * (1.0 - rr)))
+				_max_ring_mats[c].set_shader_parameter("rim_color", _pad_groove_col[c] * 1.3)
+				_max_ring_mats[c].set_shader_parameter("master_alpha",
+						_max_ring_t[c] * 0.85 * _fx_level())
 		# Gedrueckte Spur leuchtet dezent auf (schnell rein, weich raus) —
 		# in den Einstellungen abschaltbar.
 		if c < _lane_glow_mats.size():
@@ -1901,8 +1959,14 @@ func _process(delta: float) -> void:
 		if i < _pad_judge_col.size():
 			base_col = base_col.lerp(_pad_judge_col[i], clampf(_pad_flash[i], 0.0, 1.0) * 0.65)
 		var pcol := base_col.lerp(_theme_kiai, od * 0.45)
+		var pg := 0.0
+		var dark := 1.0
+		if i < _pad_groove.size():
+			pg = _pad_groove[i] * fx
+			pcol = pcol.lerp(_pad_groove_col[i], pg * 0.55)
+			dark = 1.0 - _pad_dark[i] * 0.6
 		_pad_mats[i].set_shader_parameter("base_color", pcol)
-		_pad_mats[i].set_shader_parameter("rim_color", pcol * pad_energy[i])
+		_pad_mats[i].set_shader_parameter("rim_color", pcol * (pad_energy[i] + pg * 0.5) * dark)
 	for em2 in _edge_mats:
 		var edge_col := Color(0.45, 0.47, 0.53) if fx <= 0.0 \
 				else _theme_col.lerp(_theme_kiai, maxf(od * 0.45, _kiai_mix))
