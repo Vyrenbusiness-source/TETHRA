@@ -22,6 +22,7 @@ void fragment() {
 var _capturing := 0   # 0 = keine Aufnahme, 3..6 = Lane 1-4
 var _lane_btns: Array[Button] = []
 var _offset_value: Label
+var _offset_slider: HSlider
 var _vol_value: Label
 
 
@@ -119,7 +120,22 @@ func _ready() -> void:
 		Settings.offset_ms = v
 		Settings.apply()
 		_offset_value.text = "%+d ms" % int(v))
-	_row(cv_gameplay, "Audio-Offset", offset_slider, _offset_value)
+	_offset_slider = offset_slider
+	var offset_box := HBoxContainer.new()
+	offset_box.add_theme_constant_override("separation", 10)
+	offset_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	offset_slider.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	offset_slider.size_flags_stretch_ratio = 2.0
+	offset_slider.custom_minimum_size = Vector2(140, 0)
+	offset_box.add_child(offset_slider)
+	var calib_btn := Button.new()
+	calib_btn.text = "Kalibrieren"
+	calib_btn.custom_minimum_size = Vector2(0, 34)
+	calib_btn.size_flags_horizontal = Control.SIZE_SHRINK_END
+	UiTheme.style_button(calib_btn)
+	calib_btn.pressed.connect(_open_wizard)
+	offset_box.add_child(calib_btn)
+	_row(cv_gameplay, "Audio-Offset", offset_box, _offset_value)
 
 	# -------------------------------- AUDIO ---------------------------------
 	var cv_audio := _section(vb, "AUDIO")
@@ -315,6 +331,14 @@ func _refresh_labels() -> void:
 		_lane_btns[_capturing - 3].text = "…"
 	_offset_value.text = "%+d ms" % int(Settings.offset_ms)
 	_vol_value.text = "%d dB" % int(Settings.volume_db)
+
+
+func _open_wizard() -> void:
+	var w := OffsetWizard.new()
+	w.finished.connect(func(_applied: bool):
+		_offset_slider.set_value_no_signal(Settings.offset_ms)
+		_refresh_labels())
+	add_child(w)
 
 
 func _start_capture(which: int) -> void:
