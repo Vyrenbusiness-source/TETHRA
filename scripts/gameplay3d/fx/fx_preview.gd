@@ -23,6 +23,9 @@ var _combo := 0
 var _hit_acc := 0.0
 var _kiai := 0.0
 var _shot := false
+var _shot_phase := 0.0       # --phase=0..1: Screenshot-Zeitpunkt im Beat (0 = Beat-Kante)
+var _shot_path := SHOT_PATH
+var _shot_sec := SHOT_SEC
 var _shot_done := false
 var _rng := RandomNumberGenerator.new()
 var _label: Label
@@ -35,11 +38,18 @@ func _ready() -> void:
 	for a in args:
 		if a == "--shot":
 			_shot = true
+		elif a.begins_with("--phase="):
+			_shot_phase = clampf(float(a.substr(8)), 0.0, 0.99)
+		elif a.begins_with("--out="):
+			_shot_path = a.substr(6)
 		elif a.begins_with("--tier="):
 			var tier := clampi(int(a.substr(7)), 0, 4)
 			_combo = [0, 60, 120, 230, 420][tier]
 	if _shot and _combo == 0:
 		_combo = 420
+	# Screenshot-Zeit: ganzer Beat nahe SHOT_SEC plus gewuenschte Phase.
+	var beat_len := 60.0 / BPM
+	_shot_sec = floorf(SHOT_SEC / beat_len) * beat_len + _shot_phase * beat_len + 0.0005
 	_build_room()
 	_fx = SkillFx.new()
 	add_child(_fx)
@@ -156,7 +166,7 @@ func _process(delta: float) -> void:
 		_shown_combo = _combo
 		_label.text = "SkillFx  combo %d  stufe %.2f" % [_combo, _fx.get_level()]
 
-	if _shot and not _shot_done and _t >= SHOT_SEC:
+	if _shot and not _shot_done and _t >= _shot_sec:
 		_shot_done = true
 		_save_shot()
 
@@ -164,6 +174,6 @@ func _process(delta: float) -> void:
 func _save_shot() -> void:
 	await RenderingServer.frame_post_draw
 	var img := get_viewport().get_texture().get_image()
-	var err := img.save_png(SHOT_PATH)
-	print("fx_preview: shot ", SHOT_PATH, " err=", err)
+	var err := img.save_png(_shot_path)
+	print("fx_preview: shot ", _shot_path, " err=", err)
 	get_tree().quit()

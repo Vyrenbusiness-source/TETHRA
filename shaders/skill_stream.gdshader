@@ -2,7 +2,8 @@ shader_type spatial;
 render_mode unshaded, blend_add, depth_draw_never, cull_disabled;
 
 // Skill-Lichtstroeme an den Streckenaussenkanten (SkillFx).
-// Ein Puls pro Schlag laeuft von der Abfanglinie nach hinten.
+// Jeder Puls entsteht EXAKT auf der Beat-Kante (fract(beats) = 0) an der
+// Abfanglinie und laeuft genau einen Beat lang um einen Pulsabstand nach hinten.
 //  wall = 0: flaches Band am Boden (PlaneMesh, UV.y = 0 hinten).
 //  wall = 1: senkrechte Lichtwand (QuadMesh, rot Y 90, UV.x = 0 vorne).
 // Alles additiv und weich: keine Vollflaechen-Blitze, nur wandernde Pulse.
@@ -17,6 +18,7 @@ uniform float wall = 0.0;
 uniform float boost = 0.0;       // sanfte Judge-Energie 0..1
 uniform float sweep = -1.0;      // Meilenstein-Welle: Position 0..1.2, <0 aus
 uniform float t = 0.0;
+uniform float music_energy = 1.0; // 0..1 Musik-Energie, skaliert die Pulse
 uniform float pulses = 6.0;      // sichtbare Pulse auf der ganzen Laenge
 
 float hash12(vec2 p) {
@@ -47,6 +49,14 @@ float pulse_shape(float s, float off) {
 	return smoothstep(0.0, 0.035, y) * exp(-y * 4.2);
 }
 
+// Frisch geborener Puls (Alter < 1 Beat): auf der Kante sofort da, klingt
+// waehrend seines Beats ab. Nie heller als die normalen Pulse.
+float birth_gain(float s) {
+	float ph = fract(beats);
+	float young = 1.0 - smoothstep(0.0, 1.0 / pulses, s);
+	return 1.0 + young * (1.0 - ph) * 0.18;
+}
+
 void fragment() {
 	float s;
 	float across;
@@ -72,9 +82,9 @@ void fragment() {
 	}
 
 	// Laengs: vorne weich einblenden, hinten im Horizont verlieren.
-	float along = smoothstep(0.0, 0.035, s) * (1.0 - smoothstep(0.55, 1.0, s));
+	float along = smoothstep(0.0, 0.012, s) * (1.0 - smoothstep(0.55, 1.0, s));
 
-	float p = pulse_shape(s, 0.0);
+	float p = pulse_shape(s, 0.0) * birth_gain(s);
 	// Feine Streifen, die mitstroemen: Textur statt glatter Balken.
 	float streak = vnoise(vec2(s * 90.0 - beats * 15.0, across * 3.0 + side * 7.0));
 	streak = 0.55 + 0.45 * streak;
@@ -86,7 +96,8 @@ void fragment() {
 	}
 
 	float base = 0.16 + env * 0.10 + boost * 0.18;
-	float energy = (base + p * (0.85 + boost * 0.25)) * streak + sw * 0.65;
+	float pe = 0.65 + 0.35 * clamp(music_energy, 0.0, 1.0);
+	float energy = (base + p * pe * (0.85 + boost * 0.25)) * streak + sw * 0.65;
 	float shape = core * 0.75 + halo * 0.35;
 	float a = energy * shape * along * clamp(intensity, 0.0, 1.0);
 
