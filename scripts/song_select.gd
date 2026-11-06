@@ -44,6 +44,23 @@ var _bass_punch := 0.0
 var _bass_smooth := 0.0
 var _punch_cd := 0.0
 var _pulse_card: Button = null
+var _play_btn: Button
+# Glow der ausgewaehlten Karte: dieselbe StyleBox wird pro Frame nur
+# skalar angepasst (keine Allokation).
+var _sel_box: StyleBoxFlat = null
+# Info-Panel: BPM/Laenge-Chips, Diff-Farbbalken, Vorschau-Fortschritt.
+var _bpm_label: Label
+var _len_label: Label
+var _diff_bar: HBoxContainer
+var _progress_bg: Control
+var _progress_fill: ColorRect
+var _preview_len := 0.0
+var _bpm_cache: Dictionary = {}
+# Weiches Scrollen der Liste beim Kartenwechsel.
+var _scroll_tween: Tween
+const CARD_H := 88.0
+const CARD_SLIDE := 8.0
+const LIST_PAD := 14
 var _preview: AudioStreamPlayer
 var _preview_fade: Tween
 # Vorschau bewusst leise (Hintergrund-Charakter), mit sanfter Einblendung.
@@ -394,6 +411,23 @@ func _build_info_panel() -> void:
 	_cover.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 	vb.add_child(_cover)
 
+	# Vorschau-Fortschritt: duenne Linie direkt unter dem Cover (Position im Song).
+	_progress_bg = Control.new()
+	_progress_bg.custom_minimum_size = Vector2(0, 3)
+	_progress_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vb.add_child(_progress_bg)
+	var track := ColorRect.new()
+	track.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	track.color = Color(1, 1, 1, 0.10)
+	track.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_progress_bg.add_child(track)
+	_progress_fill = ColorRect.new()
+	_progress_fill.position = Vector2.ZERO
+	_progress_fill.size = Vector2(0, 3)
+	_progress_fill.color = COL_ACCENT
+	_progress_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_progress_bg.add_child(_progress_fill)
+
 	_title_label = _add_label(vb, "", 26, COL_TEXT)
 	_title_label.add_theme_font_override("font", UiTheme.heading_font(1))
 	_artist_label = _add_label(vb, "", 15, COL_DIM)
@@ -415,7 +449,21 @@ func _build_info_panel() -> void:
 	next.pressed.connect(func(): _cycle_difficulty(1))
 	diff_row.add_child(next)
 
+	# Diff-Farbbalken: ein Segment pro Difficulty in Sternfarbe, Auswahl hell.
+	_diff_bar = HBoxContainer.new()
+	_diff_bar.custom_minimum_size = Vector2(0, 8)
+	_diff_bar.add_theme_constant_override("separation", 4)
+	vb.add_child(_diff_bar)
+
 	_star_label = _add_label(vb, "", 17, Color(1.0, 0.85, 0.3))
+
+	# BPM + Laenge als ruhige Glas-Chips.
+	var chip_row := HBoxContainer.new()
+	chip_row.add_theme_constant_override("separation", 8)
+	vb.add_child(chip_row)
+	_bpm_label = _info_chip(chip_row)
+	_len_label = _info_chip(chip_row)
+
 	_maxpp_label = _add_label(vb, "", 14, Color(1.0, 0.6, 0.9))
 	_stats_label = _add_label(vb, "", 14, COL_DIM)
 
@@ -425,8 +473,18 @@ func _build_info_panel() -> void:
 	play.add_theme_font_override("font", UiTheme.heading_font(4))
 	play.add_theme_font_size_override("font_size", 22)
 	UiTheme.style_button(play, true)
+	# Hover-Glow: weicher Akzent-Schein statt hartem Farbsprung.
+	var play_hover := play.get_theme_stylebox("hover") as StyleBoxFlat
+	if play_hover != null:
+		play_hover = play_hover.duplicate()
+		play_hover.shadow_color = Color(COL_ACCENT, 0.45)
+		play_hover.shadow_size = 16
+		play_hover.shadow_offset = Vector2.ZERO
+		play.add_theme_stylebox_override("hover", play_hover)
+		play.add_theme_stylebox_override("focus", play_hover)
 	play.pressed.connect(_on_play_pressed)
 	vb.add_child(play)
+	_play_btn = play
 
 	# Mod-Reihe: aktuell nur No Fail (NF).
 	var mods_row := HBoxContainer.new()
@@ -475,6 +533,35 @@ func _build_info_panel() -> void:
 	_lb_box.add_theme_constant_override("separation", 5)
 	vb.add_child(_lb_box)
 
+	# Platz fuer den Audio-Visualizer (eigenes Modul fuellt ihn): ganz unten,
+	# volle Panelbreite, 60 px. Hier bewusst KEINE eigenen Balken.
+	var push := Control.new()
+	push.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	push.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vb.add_child(push)
+	var slot := Control.new()
+	slot.name = "VisualizerSlot"
+	slot.custom_minimum_size = Vector2(0, 60)
+	slot.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vb.add_child(slot)
+
+
+func _info_chip(parent: Node) -> Label:
+	var p := PanelContainer.new()
+	var sb := _rounded_box(Color(1, 1, 1, 0.06), 8, Color(1, 1, 1, 0.10), 1)
+	sb.content_margin_left = 10
+	sb.content_margin_right = 10
+	sb.content_margin_top = 3
+	sb.content_margin_bottom = 3
+	p.add_theme_stylebox_override("panel", sb)
+	parent.add_child(p)
+	var l := Label.new()
+	l.add_theme_font_size_override("font_size", 13)
+	l.add_theme_color_override("font_color", COL_TEXT)
+	p.add_child(l)
+	return l
+
 
 func _build_list() -> void:
 	_scroll = ScrollContainer.new()
@@ -484,15 +571,25 @@ func _build_list() -> void:
 	_scroll.anchor_bottom = 1.0
 	_scroll.offset_left = -620
 	_scroll.offset_right = -20
-	_scroll.offset_top = 114
+	_scroll.offset_top = 106
 	_scroll.offset_bottom = -20
 	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	add_child(_scroll)
 
+	# Innenabstand, damit Glow/Schatten und der Hover-Slide nach links nicht
+	# vom Scroll-Clip abgeschnitten werden (vorher: oberste Karte gekappt).
+	var pad := MarginContainer.new()
+	pad.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	pad.add_theme_constant_override("margin_top", LIST_PAD)
+	pad.add_theme_constant_override("margin_bottom", LIST_PAD)
+	pad.add_theme_constant_override("margin_left", LIST_PAD + int(CARD_SLIDE))
+	pad.add_theme_constant_override("margin_right", LIST_PAD)
+	_scroll.add_child(pad)
+
 	_list_box = VBoxContainer.new()
 	_list_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_list_box.add_theme_constant_override("separation", 10)
-	_scroll.add_child(_list_box)
+	pad.add_child(_list_box)
 
 
 # ---------------------------------------------------------------------------
@@ -516,7 +613,7 @@ func _set_collection_mode(on: bool) -> void:
 		var names := CollectionStore.list_names()
 		_active_collection = names[0] if not names.is_empty() else ""
 	_chips_row.visible = on
-	_scroll.offset_top = 152 if on else 114
+	_scroll.offset_top = 144 if on else 106
 	_style_tabs()
 	_rebuild_chips()
 	_refresh_filter(_search.text)
@@ -736,8 +833,7 @@ func _bass_react(delta: float) -> void:
 	if card != _pulse_card:
 		if _pulse_card != null and is_instance_valid(_pulse_card):
 			_pulse_card.modulate = Color.WHITE
-			if not _pulse_card.is_hovered():
-				_pulse_card.scale = Vector2.ONE
+			_pulse_card.scale = Vector2.ONE
 			var old_bg := _pulse_card.get_child(0) as TextureRect
 			if old_bg != null:
 				old_bg.self_modulate = Color.WHITE
@@ -745,14 +841,33 @@ func _bass_react(delta: float) -> void:
 	if card != null:
 		var c := 1.0 + 0.05 * p
 		card.modulate = Color(c, c, c)
-		if not card.is_hovered():
-			card.pivot_offset = card.size * 0.5
-			var cs := 1.0 + 0.02 * p
-			card.scale = Vector2(cs, cs)
+		card.pivot_offset = card.size * 0.5
+		var cs := 1.0 + 0.012 * p
+		card.scale = Vector2(cs, cs)
 		var cbg := card.get_child(0) as TextureRect
 		if cbg != null:
 			var g := 1.0 + 0.8 * p
 			cbg.self_modulate = Color(g, g, g)
+	# Glow der Auswahl atmet mit dem Bass (nur Skalar auf bestehender StyleBox).
+	if _sel_box != null:
+		var gs := 12 + int(round(8.0 * p))
+		if _sel_box.shadow_size != gs:
+			_sel_box.shadow_size = gs
+	# PLAY-Button: dezenter Bass-Puls (Helligkeit + Mini-Scale).
+	if _play_btn != null:
+		var pb := 1.0 + 0.10 * p
+		_play_btn.modulate = Color(pb, pb, pb)
+		_play_btn.pivot_offset = _play_btn.size * 0.5
+		var ps := 1.0 + 0.025 * p
+		_play_btn.scale = Vector2(ps, ps)
+	# Vorschau-Fortschritt (Position im Song).
+	if _progress_fill != null:
+		var frac := 0.0
+		if _preview != null and _preview.playing and _preview_len > 0.0:
+			frac = clampf(_preview.get_playback_position() / _preview_len, 0.0, 1.0)
+		var w := _progress_bg.size.x * frac
+		if not is_equal_approx(_progress_fill.size.x, w):
+			_progress_fill.size = Vector2(w, _progress_bg.size.y)
 
 
 func _rebuild_cards() -> void:
@@ -763,8 +878,52 @@ func _rebuild_cards() -> void:
 	_card_buttons.clear()
 	for i in _filtered.size():
 		var card := _make_card(_filtered[i])
-		_list_box.add_child(card)
+		# Halter (vom VBox gelayoutet) -> Slider (frei verschiebbar fuer den
+		# Hover-Slide) -> [Glow-Panel hinter der Karte, Karte].
+		var holder := Control.new()
+		holder.custom_minimum_size = Vector2(0, CARD_H)
+		holder.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var slider := Control.new()
+		slider.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		slider.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		holder.add_child(slider)
+		var glow := Panel.new()
+		glow.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		glow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		glow.visible = false
+		slider.add_child(glow)
+		card.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		slider.add_child(card)
+		_list_box.add_child(holder)
 		_card_buttons.append(card)
+		card.mouse_entered.connect(_slide_card.bind(card, true))
+		card.mouse_exited.connect(_slide_card.bind(card, false))
+	if _selected_set != null:
+		_apply_card_highlight()
+
+
+## Hover-Slide: Karte gleitet 8 px nach links (ausgewaehlte bleibt draussen).
+func _slide_card(card: Button, hovered: bool) -> void:
+	if not is_instance_valid(card):
+		return
+	var slider := card.get_parent() as Control
+	if slider == null:
+		return
+	var idx := _card_buttons.find(card)
+	var is_sel := idx >= 0 and idx < _filtered.size() and _filtered[idx] == _selected_set
+	var target := -CARD_SLIDE if (hovered or is_sel) else 0.0
+	if is_equal_approx(slider.offset_left, target):
+		return
+	if slider.has_meta("tw"):
+		var old := slider.get_meta("tw") as Tween
+		if old != null and old.is_valid():
+			old.kill()
+	var tw := slider.create_tween().set_parallel(true)
+	tw.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	tw.tween_property(slider, "offset_left", target, 0.16)
+	tw.tween_property(slider, "offset_right", target, 0.16)
+	slider.set_meta("tw", tw)
 
 
 ## Rechtsklick auf eine Karte: .osz nach Bestaetigung loeschen.
@@ -790,7 +949,7 @@ func _confirm_delete(ms: MapSet) -> void:
 
 func _make_card(ms: MapSet) -> Button:
 	var card := Button.new()
-	card.custom_minimum_size = Vector2(0, 88)
+	card.custom_minimum_size = Vector2(0, CARD_H)
 	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	card.clip_contents = true
 	var accent := _star_color(ms.max_stars())
@@ -799,7 +958,6 @@ func _make_card(ms: MapSet) -> Button:
 	card.add_theme_stylebox_override("pressed", _card_box(COL_CARD_SEL, accent))
 	card.add_theme_stylebox_override("focus", _card_box(COL_CARD_SEL, accent))
 	card.pressed.connect(func(): _on_card_pressed(ms))
-	UiTheme.attach_hover(card, 1.015)
 	# Rechtsklick: Map nach Bestaetigung vom Datentraeger loeschen.
 	card.gui_input.connect(func(e):
 		if e is InputEventMouseButton and e.pressed \
@@ -942,9 +1100,13 @@ func _update_info_panel() -> void:
 	var stars := _selected_set.stars_at(_selected_diff)
 	_star_label.text = "%s  %s stars" % [_star_icons(stars), _fmt_stars(stars)]
 	_star_label.add_theme_color_override("font_color", _star_color(stars).lightened(0.3))
-	_stats_label.text = "%d Notes · %s · CS %.1f  AR %.1f  OD %.1f" % [
-		int(m.get("notes", 0)), _format_time(float(m.get("duration_ms", 0.0))),
+	_stats_label.text = "%d Notes · CS %.1f  AR %.1f  OD %.1f" % [
+		int(m.get("notes", 0)),
 		float(m.get("cs", 0.0)), float(m.get("ar", 0.0)), float(m.get("od", 0.0))]
+	_bpm_label.text = "♪ %s BPM" % _bpm_text(_selected_set, _selected_diff)
+	_len_label.text = "◷ %s" % _format_time(float(m.get("duration_ms", 0.0)))
+	_rebuild_diff_bar()
+	_progress_fill.color = _star_color(_selected_set.max_stars()).lightened(0.2)
 	_update_max_pp(m)
 	# BESTE SCORES: Top 5 dieser Difficulty als cleane Rows.
 	for c in _lb_box.get_children():
@@ -961,12 +1123,92 @@ func _update_info_panel() -> void:
 	# Replay-Button nur zeigen, wenn fuer diese Diff ein Replay existiert.
 	if _replay_btn != null:
 		_replay_btn.visible = int(m.get("mode", 0)) == 3 			and ReplayStore.exists(_selected_set.osz_path, _selected_set.version_name_at(_selected_diff))
-	# Auswahl-Hervorhebung der Karten.
+	_apply_card_highlight()
+
+
+## Auswahl-Hervorhebung: Akzentrand in Songfarbe + weicher Glow dahinter.
+func _apply_card_highlight() -> void:
+	_sel_box = null
 	for i in _card_buttons.size():
+		var card := _card_buttons[i]
+		if not is_instance_valid(card):
+			continue
 		var is_sel := _filtered[i] == _selected_set
 		var accent := _star_color(_filtered[i].max_stars())
-		_card_buttons[i].add_theme_stylebox_override(
+		card.add_theme_stylebox_override(
 			"normal", _card_box(COL_CARD_SEL if is_sel else COL_CARD, accent, is_sel))
+		var glow := card.get_parent().get_child(0) as Panel
+		if glow != null:
+			glow.visible = is_sel
+			if is_sel:
+				var gb := StyleBoxFlat.new()
+				gb.bg_color = Color(0, 0, 0, 0)
+				gb.set_corner_radius_all(10)
+				gb.shadow_color = Color(accent, 0.30)
+				gb.shadow_size = 12
+				gb.shadow_offset = Vector2.ZERO
+				glow.add_theme_stylebox_override("panel", gb)
+				_sel_box = gb
+		_slide_card(card, card.is_hovered())
+
+
+## Ein Segment pro Difficulty in Sternfarbe; Klick waehlt die Diff.
+func _rebuild_diff_bar() -> void:
+	for c in _diff_bar.get_children():
+		c.queue_free()
+	var n := _selected_set.difficulty_count()
+	for i in n:
+		var seg := ColorRect.new()
+		seg.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		seg.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		var sel := i == _selected_diff
+		seg.custom_minimum_size = Vector2(0, 8 if sel else 4)
+		var col := _star_color(_selected_set.stars_at(i))
+		seg.color = col.lightened(0.15) if sel else Color(col, 0.40)
+		seg.tooltip_text = "%s  %s★" % [_selected_set.version_name_at(i), _fmt_stars(_selected_set.stars_at(i))]
+		seg.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		seg.gui_input.connect(func(e):
+			if e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_LEFT:
+				_selected_diff = i
+				_update_info_panel())
+		_diff_bar.add_child(seg)
+
+
+## BPM der Diff aus den roten Timing-Linien (einmal pro Diff, gecacht).
+## Bereich "min–max", wenn die Map das Tempo wechselt.
+func _bpm_text(ms: MapSet, diff: int) -> String:
+	var key := ms.osz_path + "|" + ms.osu_filename_at(diff)
+	if _bpm_cache.has(key):
+		return str(_bpm_cache[key])
+	var txt := "—"
+	var bytes := OszImporter.read_file_bytes(ms.osz_path, ms.osu_filename_at(diff))
+	if not bytes.is_empty():
+		var lo := INF
+		var hi := 0.0
+		var in_tp := false
+		for raw_line in bytes.get_string_from_utf8().split("\n"):
+			var line := raw_line.strip_edges()
+			if line.begins_with("["):
+				if in_tp:
+					break
+				in_tp = line == "[TimingPoints]"
+				continue
+			if not in_tp or line == "":
+				continue
+			var f := line.split(",")
+			if f.size() < 2:
+				continue
+			var beat_len := float(f[1])
+			var red := f.size() < 7 or f[6].strip_edges() == "1"
+			if red and beat_len > 0.0:
+				var b := 60000.0 / beat_len
+				lo = minf(lo, b)
+				hi = maxf(hi, b)
+		if hi > 0.0:
+			txt = ("%d" % roundi(hi)) if roundi(lo) == roundi(hi) \
+				else "%d–%d" % [roundi(lo), roundi(hi)]
+	_bpm_cache[key] = txt
+	return txt
 
 
 ## Eine Leaderboard-Zeile: Rang, Grade, Score/Acc, pp, Datum.
@@ -1132,6 +1374,7 @@ func _play_preview() -> void:
 		_preview.stop()
 		return
 	_preview.stream = stream
+	_preview_len = stream.get_length()
 	var preview_ms := float(m.get("preview_time", -1.0))
 	if preview_ms < 0:
 		preview_ms = float(m.get("duration_ms", 0.0)) * 0.4
@@ -1197,8 +1440,25 @@ func _move_selection(dir: int) -> void:
 ## Liste zur ausgewaehlten Karte scrollen (Auswahl bleibt immer sichtbar).
 func _scroll_to_selected() -> void:
 	var idx := _filtered.find(_selected_set)
-	if idx >= 0 and idx < _card_buttons.size() and is_instance_valid(_card_buttons[idx]):
-		_scroll.ensure_control_visible(_card_buttons[idx])
+	if idx < 0 or idx >= _card_buttons.size() or not is_instance_valid(_card_buttons[idx]):
+		return
+	var holder := _card_buttons[idx].get_parent().get_parent() as Control
+	if holder.size.y <= 0.0:
+		# Layout noch nicht fertig (erster Frame): einen Frame warten.
+		await get_tree().process_frame
+		if not is_instance_valid(holder):
+			return
+	# Ziel: Karte mittig im sichtbaren Bereich, weich eingeblendet.
+	var top := holder.position.y + float(LIST_PAD)
+	var target := top + holder.size.y * 0.5 - _scroll.size.y * 0.5
+	var vbar := _scroll.get_v_scroll_bar()
+	var max_v := maxf(vbar.max_value - vbar.page, 0.0)
+	target = clampf(target, 0.0, max_v)
+	if _scroll_tween != null and _scroll_tween.is_valid():
+		_scroll_tween.kill()
+	_scroll_tween = create_tween()
+	_scroll_tween.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	_scroll_tween.tween_property(_scroll, "scroll_vertical", int(target), 0.30)
 
 
 # ---------------------------------------------------------------------------
