@@ -469,12 +469,21 @@ func _raw_time_ms(now_usec: int) -> float:
 				e += float(now_usec - _last_tick_usec) / 1000.0
 			return e - _lead_in_ms - _latency_ms
 		State.PLAYING:
-			var pos := _player.get_playback_position()
 			if _movie:
 				# Movie-Writer mischt pro Frame genau 1/fps: die Position IST
 				# die Film-Zeit (Mix-Zeitstempel waere Wanduhr).
-				return pos * 1000.0
-			var since_mix := AudioServer.get_time_since_last_mix()
+				return _player.get_playback_position() * 1000.0
+			# Position und Mix-Zeitstempel kommen aus dem Mix-Thread: faellt ein
+			# Mix zwischen die beiden Abfragen, liegt die Summe einen Block
+			# daneben. Zeitstempel davor/danach lesen, bei Mix neu lesen.
+			var pos := 0.0
+			var since_mix := 0.0
+			for attempt in 3:
+				var m0 := AudioServer.get_time_since_last_mix()
+				pos = _player.get_playback_position()
+				since_mix = AudioServer.get_time_since_last_mix()
+				if since_mix >= m0:
+					break
 			return (pos + since_mix) * 1000.0 - _latency_ms
 		_:
 			return 0.0

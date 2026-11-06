@@ -19,6 +19,8 @@ var _mono := true
 var _mark := 0.0
 var _gain := 0.0
 var _seek_checked := false
+var _dev_sum := 0.0
+var _dev_n := 0
 ## Movie-Phase (Film-Zeit statt Wanduhr).
 var _f0 := 0
 var _movie_ok := true
@@ -429,6 +431,17 @@ func _live_step() -> void:
 			if el >= 100 and _mark == 0.0:
 				_mark = v
 				_ok(v > -300.0 and v < -150.0, "Lead-In laeuft (%.1f ms)" % v)
+			if el >= 450 and el < 700:
+				# Abstand zur Audio-Rohzeit mitteln: die Rohzeit des Dummy-
+				# Treibers ist ein Saegezahn (Mix-Thread schlaeft ungenau,
+				# Mix-Race), die Uhr folgt ihrem Mittel.
+				var near := INF
+				for i in 3:
+					var d: float = v - _clock.raw_time_ms()
+					if absf(d) < absf(near):
+						near = d
+				_dev_sum += near
+				_dev_n += 1
 			if el >= 700:
 				# Relativ zur tatsaechlich vergangenen Zeit pruefen (Frame-Takt
 				# schwankt unter Last). Die Audio-Konvention (Position + Zeit seit
@@ -436,8 +449,9 @@ func _live_step() -> void:
 				# Wanduhr des Lead-In -> Band statt fester Toleranz.
 				var ahead := v - (float(el) - 300.0)
 				_ok(ahead > -40.0 and ahead < 130.0, "nach Lead-In Audio-Zeit folgt Echtzeit (%.1f ms bei el=%d)" % [v, el])
-				var raw: float = _clock.raw_time_ms()
-				_ok(absf(v - raw) < 15.0, "an der Audio-Uhr (Abw. %.2f ms)" % (v - raw))
+				var mean := _dev_sum / maxf(float(_dev_n), 1.0)
+				_ok(_dev_n > 0 and absf(mean) < 10.0,
+						"an der Audio-Uhr (mittlere Abw. %.2f ms, %d Frames)" % [mean, _dev_n])
 				_ok(player.playing, "Audio spielt")
 				_gain = player.volume_db
 				_clock.pause()
@@ -500,7 +514,11 @@ func _movie_us(frames: int) -> float:
 func _movie_step(player: AudioStreamPlayer) -> void:
 	var frames := Engine.get_process_frames()
 	var f := frames - _f0
+	# Im Test mischt der Dummy-Treiber in einem eigenen Thread (im echten
+	# Film nicht): Position vor und nach der Abfrage einklammern.
+	var pos0 := player.get_playback_position() * 1000.0
 	var v: float = _clock.song_time_ms()
+	var pos1 := player.get_playback_position() * 1000.0
 	if v < _movie_last:
 		_movie_ok = false
 	if not player.playing:
@@ -515,8 +533,14 @@ func _movie_step(player: AudioStreamPlayer) -> void:
 			_ok(_movie_worst < 0.01, "Lead-In = Frames/FPS (max Abw. %.4f ms)" % _movie_worst)
 			_ok(f >= 18 and f <= 20, "Audio startet nach 300 ms Film-Zeit (Frame %d)" % f)
 		# Ohne Mix-Zeitstempel/Latenz: Uhr = Audio-Position (monoton geklemmt).
-		var pos := player.get_playback_position() * 1000.0
-		_movie_play_dev = maxf(_movie_play_dev, absf(v - maxf(pos, _movie_last)))
+		var lo := maxf(pos0, _movie_last)
+		var hi := maxf(pos1, _movie_last)
+		var d := 0.0
+		if v < lo - 0.0005:
+			d = lo - v
+		elif v > hi + 0.0005:
+			d = v - hi
+		_movie_play_dev = maxf(_movie_play_dev, d)
 	_movie_last = v
 	if f == 3:
 		_ok(absf(_clock.judgement_time_ms() - v - _clock.user_offset_ms) < 0.0001,
