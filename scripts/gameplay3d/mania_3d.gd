@@ -37,6 +37,8 @@ var _use_audio := false
 var _camera: Camera3D
 var _glow_shader: Shader
 var _ring_shader: Shader
+var _note_shader: Shader
+var _sparks: HitSparks
 
 var _theme_col := Color(0.22, 0.68, 0.90)
 var _theme_kiai := Color(0.92, 0.52, 0.20)
@@ -57,8 +59,8 @@ var _ship_glow_mat: ShaderMaterial
 var _horizon_mat: ShaderMaterial
 var _road_mat: ShaderMaterial
 
-# Beat-exakte FX: Integer-Beat-Kante triggert alles synchron zum Takt.
-var _beat_idx_last := -999999
+# Beat-exakte FX: BeatClock liefert Phase/Kanten aus den Timing-Points.
+var _clock := BeatClock.new()
 var _vignette_mat: ShaderMaterial
 var _ember_mm: MultiMesh
 var _ember_pos: Array[Vector3] = []
@@ -76,6 +78,10 @@ var _ember_mat: ShaderMaterial
 
 # Replay: Aufnahme jeder Runde + zeitgenaue Wiedergabe.
 var _recorded: Array = []
+## --autoplay (nur Screenshots/Debug): trifft jede Note exakt, speichert nichts.
+var _autoplay := false
+var _auto_idx := 0
+var _auto_release: Array[float] = []
 var _replay_idx := 0
 
 # Kreative Song-Events: Drop-Warp, Notendichte-Surge, Phrasen-Sweep, Break.
@@ -85,6 +91,9 @@ var _scan_from := 0
 
 ## index -> {root, glow_mat, rim, beam}
 var _notes: Dictionary = {}
+## Losgelassene/verpasste Hold-Strahlen scrollen entsaettigt weiter:
+## { "beam": HoldBeam, "head": ms, "end": ms, "col": int }
+var _released_beams: Array[Dictionary] = []
 
 var _star_mm: MultiMesh
 var _star_seeds: Array[Vector3] = []
@@ -165,7 +174,6 @@ var _nebula_mat2: ShaderMaterial
 var _aurora_mat: ShaderMaterial
 
 var _kiai_mix := 0.0
-var _red_tp_idx := 0
 var _bass := 0.0
 var _treble := 0.0
 var _bass_avg := 0.0
@@ -175,7 +183,6 @@ var _kick := 0.0
 var _kick_cooldown := 0.0
 var _punch := 0.0
 var _punch_cooldown := 0.0
-var _last_bar := -1
 var _star_burst := 0.0
 # Planeten-Referenzen fuer den Bass-Puls.
 var _planet_nodes: Array = []
@@ -229,7 +236,7 @@ var _time_label: Label
 var _top_fill: ColorRect
 var _bottom_fill: ColorRect
 var _hp_fill: ColorRect
-var _pause_menu: Control
+var _pause_menu: PauseMenu
 var _song_len_ms := 1.0
 
 
@@ -243,6 +250,10 @@ func _ready() -> void:
 	if GameSession.tutorial:
 		scroll = minf(scroll, 1.0) * 0.65
 	core.setup(_beatmap, -1.0, scroll)
+	_clock.setup(_beatmap.timing_points)
+	_autoplay = OS.get_cmdline_args().has("--autoplay") 			and not GameSession.is_replay and not Lobby.active
+	_auto_release.resize(core.columns)
+	_auto_release.fill(-1.0)
 	core.note_spawned.connect(_on_note_spawned)
 	core.note_judged.connect(_on_note_judged)
 	core.hold_started.connect(_on_hold_started)
@@ -251,9 +262,13 @@ func _ready() -> void:
 
 	_glow_shader = load("res://shaders/glow_dot.gdshader")
 	_ring_shader = load("res://shaders/hit_ring.gdshader")
+	_note_shader = load("res://shaders/note_disc.gdshader")
 	_extract_theme_color()
 	_preload_stations()
 	_build_world()
+	_sparks = HitSparks.new()
+	_world.add_child(_sparks)
+	_sparks.setup(RAIL_X, Z_LINE, ROAD_Y, _theme_col)
 	_build_hud()
 	_build_screen_fx()
 	_build_route_ui()
@@ -979,26 +994,21 @@ func _on_note_spawned(index: int) -> void:
 	var root := Node3D.new()
 	# 2D-KONSISTENZ: Die Note ist ein FLACHER Kreis wie das Pad — sie gleitet
 	# als Hit-Circle heran und landet exakt AUF dem Pad-Ring (kein 3D-Ball).
+	# Kern + Rim in EINEM Quad (note_disc.gdshader): beat/approach pro Frame.
 	var disc := MeshInstance3D.new()
-	var cyl := CylinderMesh.new()
-	cyl.top_radius = 0.37
-	cyl.bottom_radius = 0.37
-	cyl.height = 0.04
-	disc.mesh = cyl
-	var disc_mat := _emissive_mat(col, 0.6 if clean else 1.0)
-	disc.material_override = disc_mat
+	var dq := QuadMesh.new()
+	dq.size = Vector2(1.12, 1.12)
+	disc.mesh = dq
+	var rim := ShaderMaterial.new()
+	rim.shader = _note_shader
+	rim.set_shader_parameter("base_color", col)
+	rim.set_shader_parameter("rim_color", col.lerp(Color(1, 1, 1), 0.35 if clean else 0.6))
+	rim.set_shader_parameter("fill_alpha", 0.75 if clean else 0.85)
+	rim.set_shader_parameter("halo_strength", 0.4 if clean else 0.7)
+	rim.set_shader_parameter("rim_boost", 0.3)
+	disc.material_override = rim
+	disc.rotation_degrees = Vector3(-90, 0, 0)
 	root.add_child(disc)
-	var ring := MeshInstance3D.new()
-	var rtor := TorusMesh.new()
-	rtor.inner_radius = 0.42
-	rtor.outer_radius = 0.54
-	rtor.rings = 96
-	rtor.ring_segments = 40
-	ring.mesh = rtor
-	var rim := _emissive_mat(col.lerp(Color(1, 1, 1), 0.35 if clean else 0.6),
-		0.9 if clean else 1.4)
-	ring.material_override = rim
-	root.add_child(ring)
 	var glow := MeshInstance3D.new()
 	var q := QuadMesh.new()
 	q.size = Vector2(2.05, 2.05)
@@ -1014,25 +1024,14 @@ func _on_note_spawned(index: int) -> void:
 	root.position = Vector3(RAIL_X[obj.column], ROAD_Y + 0.32, _note_z(obj.time, _time_ms()))
 	_world.add_child(root)
 
-	# Hold: BREITE Leuchtbahn (fast Spurbreite, halbtransparent) mit hellem
-	# Kernstreifen — unuebersehbar, Project-Sekai-Style.
-	var beam: MeshInstance3D = null
+	# Hold: Energiestrahl (HoldBeam), Laenge pro Frame ueber _note_z (SV-korrekt).
+	var beam: HoldBeam = null
 	if obj.is_hold:
-		beam = MeshInstance3D.new()
-		var bb := BoxMesh.new()
-		bb.size = Vector3(1.02, 0.035, 1.0)
-		beam.mesh = bb
-		var bm := _emissive_mat(col, 0.38 if clean else 0.55)
-		bm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		bm.albedo_color = Color(col.r, col.g, col.b, 0.30 if clean else 0.34)
-		beam.material_override = bm
-		var beam_core := MeshInstance3D.new()
-		var cb := BoxMesh.new()
-		cb.size = Vector3(0.30, 0.05, 1.0)
-		beam_core.mesh = cb
-		beam_core.material_override = _emissive_mat(col.lerp(Color(1, 1, 1), 0.55), 1.1)
-		beam.add_child(beam_core)
+		beam = HoldBeam.new()
 		_world.add_child(beam)
+		beam.setup(0.92, col)
+		beam.set_span(root.position.z, _note_z(obj.end_time(), _time_ms()),
+				RAIL_X[obj.column], ROAD_Y + 0.28)
 
 	# Landelicht: weicher Reflexions-Spot unter der Drohne auf der Road —
 	# verbindet Note und Spur optisch (Tiefenanker).
@@ -1085,6 +1084,9 @@ func _on_note_judged(index: int, result: Dictionary) -> void:
 	if col < _pad_judge_col.size():
 		_pad_judge_col[col] = QUALITY_COLOR[q]
 	_spawn_popup(col, QUALITY_TEXT[q], QUALITY_COLOR[q], sub)
+	_sparks.spark(col, q)
+	if q != ManiaCore.Quality.MISS:
+		_sparks.lane_shot(col)
 	_ur_tick(result)
 	if _notes.has(index):
 		var entry: Dictionary = _notes[index]
@@ -1099,19 +1101,33 @@ func _on_note_judged(index: int, result: Dictionary) -> void:
 			node.queue_free()
 		else:
 			# Drohne rauscht am Schiff vorbei und verglimmt rot.
-			(entry.rim as StandardMaterial3D).emission = Color(1.0, 0.25, 0.25)
+			var miss_mat := entry.rim as ShaderMaterial
+			miss_mat.set_shader_parameter("rim_color", Color(1.0, 0.25, 0.25))
+			miss_mat.set_shader_parameter("base_color", Color(0.55, 0.12, 0.12))
 			var tw := create_tween()
 			tw.tween_property(node, "position:z", SHIP_Z + 6.0, 0.35)
 			tw.parallel().tween_property(node, "scale", Vector3.ONE * 0.3, 0.35)
 			tw.tween_callback(node.queue_free)
-		if entry.beam != null:
-			(entry.beam as MeshInstance3D).queue_free()
+		var hb: HoldBeam = entry.beam
+		if hb != null:
+			var hobj := _beatmap.hit_objects[index] as ManiaNote
+			var dropped: bool = result.get("hold_end", false) and not result.get("held", true)
+			if q == ManiaCore.Quality.MISS or dropped:
+				# Rest des Holds scrollt entsaettigt weiter (Loslassen sichtbar).
+				hb.set_state(HoldBeam.STATE_RELEASED)
+				_released_beams.append({ "beam": hb,
+					"head": maxf(hobj.time, _time_ms()) if dropped else hobj.time,
+					"end": hobj.end_time(), "col": hobj.column })
+			else:
+				hb.queue_free()
 	if q == ManiaCore.Quality.MISS:
 		_last_milestone = 0
 	else:
 		var c := core.combo
 		if (c == 25 or c == 50 or (c >= 100 and c % 100 == 0)) and c != _last_milestone:
 			_last_milestone = c
+			if c >= 50 and _use_audio:
+				Sfx.milestone(c)
 			# Milestone-Belohnung: Sternschnuppe zieht ueber den Himmel.
 			if c >= 50 and _fx_level() > 0.0:
 				_spawn_shooting_star(c)
@@ -1201,6 +1217,8 @@ func _fire_laser(column: int, target: Vector3, power: float = 1.0) -> void:
 	var rpeak := (0.8 if fx <= 0.0 else 1.5) * power
 	rm.set_shader_parameter("intensity", rpeak)
 	rm.set_shader_parameter("radius", 0.06)
+	rm.set_shader_parameter("beat", _beat_env * 0.6)
+	rm.set_shader_parameter("approach", 1.0)
 	ring.material_override = rm
 	ring.position = Vector3(target.x, ROAD_Y + 0.02, target.z)
 	ring.rotation_degrees = Vector3(-90, 0, 0)
@@ -1308,7 +1326,7 @@ func _ur_tick(result: Dictionary) -> void:
 # ---------------------------------------------------------------------------
 
 func _input(event: InputEvent) -> void:
-	if _ended or GameSession.is_replay:
+	if _ended or GameSession.is_replay or _autoplay:
 		return
 	if event is InputEventKey and not event.echo:
 		var lane := Settings.lane_for_key(event.keycode)
@@ -1320,6 +1338,30 @@ func _input(event: InputEvent) -> void:
 				core.key_down(lane, t)
 			else:
 				core.key_up(lane, t)
+
+
+## Autoplay: Taste exakt zur Notenzeit, Holds bis end_time, sonst 40 ms.
+## Zeitstempel wie beim Replay -> Judgement bleibt unveraendert.
+func _run_autoplay(t: float) -> void:
+	for c in _auto_release.size():
+		var rel := _auto_release[c]
+		if rel >= 0.0 and rel <= t:
+			core.key_up(c, rel)
+			_lane_held[c] = false
+			_auto_release[c] = -1.0
+	var objs := _beatmap.hit_objects
+	while _auto_idx < objs.size() and objs[_auto_idx].time <= t:
+		var n := objs[_auto_idx] as ManiaNote
+		_auto_idx += 1
+		var c := n.column
+		if c < 0 or c >= _auto_release.size():
+			continue
+		if _auto_release[c] >= 0.0:
+			core.key_up(c, minf(_auto_release[c], n.time))
+			_auto_release[c] = -1.0
+		core.key_down(c, n.time)
+		_lane_held[c] = true
+		_auto_release[c] = n.end_time() if n.is_hold else n.time + 40.0
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -1402,6 +1444,8 @@ func _process(delta: float) -> void:
 				core.key_down(int(ev.lane), float(ev.t))
 			else:
 				core.key_up(int(ev.lane), float(ev.t))
+	if _autoplay:
+		_run_autoplay(t)
 	core.update(t)
 	# Tutorial: vor jedem neuen Element anhalten und erklaeren.
 	if GameSession.tutorial and not _ended and not _countdown_running \
@@ -1422,35 +1466,36 @@ func _process(delta: float) -> void:
 		var lock: bool = absf(until) <= core.w50
 		# Beat-Anticipation: Noten, die AUF dem Beat landen, glimmen im
 		# Anflug leicht heller und pulsieren mit der Beat-Huellkurve.
-		var rim_base := 1.3
+		var rim_base := 0.3
 		if bool(entry.get("on_beat", false)):
-			rim_base = 1.5 + _beat_env * 0.5
-		(entry.rim as StandardMaterial3D).emission_energy_multiplier = 2.6 if lock else rim_base
+			rim_base = 0.4 + _beat_env * 0.2
+		var nmat := entry.rim as ShaderMaterial
+		nmat.set_shader_parameter("rim_boost", 1.0 if lock else rim_base)
+		nmat.set_shader_parameter("beat", _beat_env * 0.6)
+		nmat.set_shader_parameter("approach",
+				clampf((root.position.z - Z_FAR) / (Z_LINE - Z_FAR), 0.0, 1.0))
 		(entry.glow as ShaderMaterial).set_shader_parameter("intensity", 1.6 if lock else 0.9)
-		var beam: MeshInstance3D = entry.beam
+		var beam: HoldBeam = entry.beam
 		if beam != null:
-			var z1: float = root.position.z
-			var z2 := _note_z(obj.end_time(), t)
-			beam.position = Vector3(RAIL_X[obj.column], ROAD_Y + 0.28, (z1 + z2) * 0.5)
-			# HOLD-GLOW: saettigt in ~0,6 s (auch lange Holds gluehen sofort
-			# sichtbar), pulsiert mit dem Beat; der Kern wird weiss-heiss und
-			# das Pad leuchtet dauerhaft, solange gehalten wird.
-			var wide := 1.0
+			beam.set_span(root.position.z, _note_z(obj.end_time(), t),
+					RAIL_X[obj.column], ROAD_Y + 0.28)
+			beam.set_beat(_beat_env)
+			# Halten: Strahl wird heiss, das Pad leuchtet dauerhaft mit.
 			if core.active_hold(obj.column) == index:
+				if not bool(entry.get("held", false)):
+					entry["held"] = true
+					beam.set_state(HoldBeam.STATE_HELD)
 				var held_t: float = clampf((t - obj.time) / 600.0, 0.0, 1.0)
-				wide = 1.0 + held_t * 0.45
-				var bmat := beam.material_override as StandardMaterial3D
-				if bmat != null:
-					bmat.emission_energy_multiplier = 0.55 \
-							+ held_t * (1.7 + _beat_env * 0.9)
-					bmat.albedo_color.a = 0.34 + held_t * 0.30
-				if beam.get_child_count() > 0:
-					var cmat := (beam.get_child(0) as MeshInstance3D).material_override as StandardMaterial3D
-					if cmat != null:
-						cmat.emission_energy_multiplier = 1.1 \
-								+ held_t * (2.4 + _beat_env * 1.2)
 				_pad_flash[obj.column] = maxf(_pad_flash[obj.column], 0.5 + held_t * 0.3)
-			beam.scale = Vector3(wide, 1, maxf(absf(z1 - z2), 0.05))
+	for ri in range(_released_beams.size() - 1, -1, -1):
+		var rb: Dictionary = _released_beams[ri]
+		var rbeam: HoldBeam = rb.beam
+		var z_end := _note_z(float(rb.end), t)
+		if z_end > Z_LINE + 4.0:
+			rbeam.queue_free()
+			_released_beams.remove_at(ri)
+			continue
+		rbeam.set_span(_note_z(float(rb.head), t), z_end, RAIL_X[int(rb.col)], ROAD_Y + 0.28)
 
 	for c in core.columns:
 		_pad_flash[c] = move_toward(_pad_flash[c], 0.0, delta * 5.0)
@@ -1468,8 +1513,11 @@ func _process(delta: float) -> void:
 	# Laser abklingen.
 	# OVERDRIVE abklingen lassen.
 	_overdrive = maxf(_overdrive - delta, 0.0)
-	# Weiche Beat-Huellkurve (Release ~380 ms — atmet, statt zu blitzen).
-	_beat_env = maxf(_beat_env - delta * 2.6, 0.0)
+	# Takt exakt aus BeatClock: Angriff liegt auf dem Schlag, Release bleibt
+	# weich (~380 ms — atmet, statt zu blitzen).
+	_clock.update(t, delta)
+	_sparks.update(delta)
+	_beat_env = maxf(_clock.beat_env, _beat_env - delta * 2.6)
 
 	# NOTENDICHTE (naechste Sekunde) -> Intensitaets-Surge bei Bursts;
 	# keine Note in 2.5s -> Break/Cruise, Rueckkehr mit Flash.
@@ -1547,26 +1595,18 @@ func _process(delta: float) -> void:
 		_kick = 1.0
 		_kick_cooldown = 0.16
 	_kick = move_toward(_kick, 0.0, delta * 4.5)
-	var bar := _current_bar(t)
-	if bar != _last_bar:
-		_last_bar = bar
+	if _clock.is_downbeat_edge:
 		_star_burst = 1.0
 	_star_burst = move_toward(_star_burst, 0.0, delta * 2.5)
 
-	var pulse: float = maxf(maxf(_beat_pulse(t), _bass * 1.05), _punch)
-	var kiai_now := _beatmap.is_kiai(t)
-	_kiai_mix = move_toward(_kiai_mix, 1.0 if kiai_now else 0.0, delta * 2.5)
+	var pulse: float = maxf(maxf(_beat_env, _bass * 1.05), _punch)
+	var kiai_now := _clock.kiai
+	_kiai_mix = _clock.kiai_mix
 
 	# Beat-/Takt-Wellen: Phase 0..1, Welle trifft die Linie exakt auf dem Schlag.
-	var tps := _beatmap.timing_points
-	var ri := _red_tp_idx
-	while ri >= 0 and ri < tps.size() and not tps[ri].uninherited:
-		ri -= 1
-	if ri >= 0 and ri < tps.size() and tps[ri].beat_length > 0.0 and _road_mat != null:
-		var bl: float = tps[ri].beat_length
-		var bar_len: float = bl * float(maxi(tps[ri].meter, 1))
-		_road_mat.set_shader_parameter("beat_phase", fposmod(t - tps[ri].time, bl) / bl)
-		_road_mat.set_shader_parameter("bar_phase", fposmod(t - tps[ri].time, bar_len) / bar_len)
+	if _road_mat != null:
+		_road_mat.set_shader_parameter("beat_phase", _clock.beat_phase)
+		_road_mat.set_shader_parameter("bar_phase", _clock.bar_phase)
 		_road_mat.set_shader_parameter("punch", _punch)
 		_road_mat.set_shader_parameter("wave_amount", fx)
 		_road_mat.set_shader_parameter("energy", 0.5 + (_bass * 0.5 + _kick * 0.3 + _sub * 0.15 + _kiai_mix * 0.4 + _density * 0.35) * fx)
@@ -1579,11 +1619,9 @@ func _process(delta: float) -> void:
 		else:
 			road_col = road_col.lerp(Color(0.40, 0.70, 1.0), -trend * 0.16)
 		_road_mat.set_shader_parameter("base_color", road_col)
-		# BEAT-KANTE: alles hier feuert EXAKT auf dem Schlag.
-		var beat_idx := int(floor((t - tps[ri].time) / bl))
-		if beat_idx != _beat_idx_last:
-			_beat_idx_last = beat_idx
-			_on_beat_edge(beat_idx)
+	# BEAT-KANTE: alles hier feuert EXAKT auf dem Schlag.
+	if _clock.is_beat_edge:
+		_on_beat_edge(_clock.beat_index, _clock.is_downbeat_edge)
 
 	# Die ABFANGLINIE pulsiert im Takt — der Hit-Moment ist hoerbar UND sichtbar.
 	_line_mat.emission_energy_multiplier = 1.1 + pulse * 1.6 + _punch * 1.0 + _kick * 0.35 + _line_flash * 1.0
@@ -1841,10 +1879,10 @@ func _process(delta: float) -> void:
 		var can_skip: bool = _can_skip_intro() and Settings.lane_for_key(KEY_SPACE) == -1
 		_skip_label.visible = can_skip
 		if can_skip and Lobby.active and Lobby.in_game:
-			_skip_label.text = "LEERTASTE  ·  Intro ueberspringen  (%d/%d)" % [
+			_skip_label.text = "LEERTASTE  ·  Intro überspringen  (%d/%d)" % [
 				Lobby.skip_votes.size(), Lobby.players.size()]
 		else:
-			_skip_label.text = "LEERTASTE  ·  Intro ueberspringen"
+			_skip_label.text = "LEERTASTE  ·  Intro überspringen"
 	# Multiplayer: eigenen Live-Score ~4x pro Sekunde teilen.
 	if Lobby.active and Lobby.in_game and not _ended:
 		_mp_send_t -= delta
@@ -1858,11 +1896,9 @@ func _process(delta: float) -> void:
 
 ## Feuert EXAKT auf jeder Beat-Kante: Pad-Pulse, Glut-Spawn, Nebel-Tick,
 ## Linien-Blitz (staerker auf Takt-Anfaengen).
-func _on_beat_edge(beat_idx: int) -> void:
-	# Beat-Huellkurve: Taktanfang voll, sonst sanft — plus Sub-Thump (hoerbar
-	# UND fuehlbar, uebertoent die Musik nicht).
-	var downbeat := beat_idx % 4 == 0
-	_beat_env = 1.0 if downbeat else maxf(_beat_env, 0.45)
+func _on_beat_edge(beat_idx: int, downbeat: bool) -> void:
+	# Sub-Thump auf dem Taktanfang (hoerbar UND fuehlbar, uebertoent die Musik
+	# nicht); die Huellkurve kommt aus BeatClock.
 	if downbeat and _use_audio and _beat_player != null:
 		_beat_player.play()
 	# Downbeat-Welle: ein Lichtband rollt im Noten-Tempo vom Horizont zur
@@ -1884,10 +1920,9 @@ func _on_beat_edge(beat_idx: int) -> void:
 	# Nebel + Planeten ticken, Linie blitzt (Takt-Anfang staerker).
 	_nebula_kick = 1.0
 	_line_flash = maxf(_line_flash, 0.45)
-	if beat_idx % 4 == 0:
+	if downbeat:
 		_line_flash = 1.0
-	# Takt-Anfang: der Nebel tickt staerker.
-	if beat_idx % 4 == 0:
+		# Takt-Anfang: der Nebel tickt staerker.
 		_nebula_kick = 1.3
 	# Kiai: gelegentliche Sternschnuppe am Himmel.
 	if (_kiai_mix > 0.5 and beat_idx % 8 == 4 and _fx_level() > 0.0) \
@@ -2193,41 +2228,6 @@ func _run_flight_event(ev: Dictionary, t: float) -> void:
 					_cosmos_lift_target = 0.0)
 
 
-## Fortlaufende Beat-Zahl der Song-Zeit (fuer BPM-synchrone Choreografie).
-func _song_beats(t: float) -> float:
-	var tps := _beatmap.timing_points
-	var i := _red_tp_idx
-	while i >= 0 and i < tps.size() and not tps[i].uninherited:
-		i -= 1
-	if i < 0 or i >= tps.size() or tps[i].beat_length <= 0.0:
-		return t / 500.0
-	return (t - tps[i].time) / tps[i].beat_length
-
-
-func _current_bar(t: float) -> int:
-	var tps := _beatmap.timing_points
-	var i := _red_tp_idx
-	while i >= 0 and i < tps.size() and not tps[i].uninherited:
-		i -= 1
-	if i < 0 or i >= tps.size() or tps[i].beat_length <= 0.0:
-		return -1
-	var bar_len := tps[i].beat_length * float(maxi(tps[i].meter, 1))
-	return int(floor((t - tps[i].time) / bar_len))
-
-
-func _beat_pulse(t: float) -> float:
-	var tps := _beatmap.timing_points
-	while _red_tp_idx + 1 < tps.size() and tps[_red_tp_idx + 1].time <= t:
-		_red_tp_idx += 1
-	var i := _red_tp_idx
-	while i >= 0 and not tps[i].uninherited:
-		i -= 1
-	if i < 0 or tps[i].beat_length <= 0.0:
-		return 0.0
-	var phase := fposmod(t - tps[i].time, tps[i].beat_length) / tps[i].beat_length
-	return pow(1.0 - phase, 2.0)
-
-
 func _play_hit(pitch: float) -> void:
 	if not Settings.hitsounds or Settings.hitsound_volume <= 0.01:
 		return
@@ -2422,7 +2422,7 @@ func _build_hud() -> void:
 
 	# Intro-Skip-Hinweis (nur sichtbar, solange ein langer Vorlauf laeuft).
 	_skip_label = Label.new()
-	_skip_label.text = "LEERTASTE  ·  Intro ueberspringen"
+	_skip_label.text = "LEERTASTE  ·  Intro überspringen"
 	_skip_label.anchor_left = 0.5
 	_skip_label.anchor_right = 0.5
 	_skip_label.anchor_top = 1.0
@@ -2517,14 +2517,24 @@ func _fmt_time(ms: float) -> String:
 func _toggle_pause(paused: bool) -> void:
 	if paused:
 		if _pause_menu == null:
-			_build_pause_menu()
-		_pause_menu.visible = true
+			_pause_menu = PauseMenu.new()
+			_hud.add_child(_pause_menu)
+			_pause_menu.resume_pressed.connect(func(): _toggle_pause(false))
+			_pause_menu.restart_pressed.connect(_restart)
+			_pause_menu.quit_pressed.connect(_back_to_browser)
+		_pause_menu.open({
+			"title": "%s — %s" % [_beatmap.artist(), _beatmap.title()],
+			"progress": clampf(_time_ms() / maxf(_song_len_ms, 1.0), 0.0, 1.0),
+			"score": core.score,
+			"acc": core.accuracy() * 100.0,
+			"difficulty": _beatmap.version_name(),
+		})
 		get_tree().paused = true
 		SyncClock.pause()
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	else:
-		if _pause_menu != null:
-			_pause_menu.visible = false
+		if _pause_menu != null and _pause_menu.visible:
+			_pause_menu.close()
 		_resume_with_countdown()
 
 
@@ -2577,49 +2587,6 @@ func _resume_with_countdown(step: float = 0.4) -> void:
 	get_tree().paused = false
 	SyncClock.resume()
 	Input.mouse_mode = Input.MOUSE_MODE_CONFINED_HIDDEN
-
-
-func _build_pause_menu() -> void:
-	_pause_menu = Control.new()
-	_pause_menu.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_pause_menu.process_mode = Node.PROCESS_MODE_WHEN_PAUSED
-	_hud.add_child(_pause_menu)
-	var dim := ColorRect.new()
-	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	dim.color = Color(0, 0, 0, 0.65)
-	_pause_menu.add_child(dim)
-	var center := CenterContainer.new()
-	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_pause_menu.add_child(center)
-	var panel := PanelContainer.new()
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color(0.07, 0.07, 0.11, 0.97)
-	sb.set_corner_radius_all(16)
-	sb.set_content_margin_all(30)
-	panel.add_theme_stylebox_override("panel", sb)
-	center.add_child(panel)
-	var vb := VBoxContainer.new()
-	vb.add_theme_constant_override("separation", 10)
-	panel.add_child(vb)
-	var title := Label.new()
-	title.text = "Pause"
-	title.add_theme_font_size_override("font_size", 34)
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	vb.add_child(title)
-	for def in [
-		["Weiter", func(): _toggle_pause(false)],
-		["Retry", func(): _restart()],
-		["Einstellungen", func(): _hud.add_child(SettingsPanel.new())],
-		["Song-Browser", func(): _back_to_browser()],
-	]:
-		var b := Button.new()
-		b.text = def[0]
-		b.custom_minimum_size = Vector2(260, 46)
-		b.pressed.connect(def[1])
-		vb.add_child(b)
-	_pause_menu.gui_input.connect(func(ev):
-		if ev is InputEventKey and ev.pressed and ev.keycode == KEY_ESCAPE:
-			_toggle_pause(false))
 
 
 func _restart() -> void:
@@ -2687,8 +2654,8 @@ func _show_results(is_fail: bool) -> void:
 				pp = maxf(pp, max_pp * pow(acc, 6.0) * 0.8)
 	s["pp"] = pp
 	var new_best := false
-	if GameSession.is_replay or GameSession.tutorial:
-		# Replay-Ansicht/Tutorial: NICHTS werten oder speichern.
+	if GameSession.is_replay or GameSession.tutorial or _autoplay:
+		# Replay-Ansicht/Tutorial/Autoplay: NICHTS werten oder speichern.
 		pp = -1.0
 	else:
 		var save := ScoreStore.submit(GameSession.osz_path, _beatmap.version_name(), s)
@@ -2840,7 +2807,7 @@ func _build_results(is_fail: bool, s: Dictionary, pp: float, unranked: bool, new
 		var variance := maxf(_dt_sqsum / float(_dt_n) - mean * mean, 0.0)
 		var timing := Label.new()
 		timing.text = "UR %.0f      Ø %+.1f ms (%s)" % [
-			sqrt(variance) * 10.0, mean, "spaet" if mean > 0.0 else "frueh"]
+			sqrt(variance) * 10.0, mean, "spät" if mean > 0.0 else "früh"]
 		timing.add_theme_font_size_override("font_size", 15)
 		timing.add_theme_color_override("font_color", Color(0.62, 0.66, 0.75))
 		vb.add_child(timing)
@@ -3008,24 +2975,24 @@ func _build_tutorial_steps() -> void:
 			chord_b = (objs[i] as ManiaNote).column
 	_tut_steps = []
 	_tut_steps.append({ "t": objs[0].time - 3000.0, "title": "DEINE TASTEN",
-		"body": "%s  %s  %s  %s — eine Taste pro Spur (Pfeil: die Ringe).\nDruecke GENAU, wenn eine Drohne ihren Ring beruehrt." % [k[0], k[1], k[2], k[3]],
+		"body": "%s  %s  %s  %s — eine Taste pro Spur (Pfeil: die Ringe).\nDrücke GENAU, wenn eine Drohne ihren Ring berührt." % [k[0], k[1], k[2], k[3]],
 		"worlds": [Vector3(0.0, ROAD_Y + 0.3, Z_LINE)] })
 	if first_note >= 0.0:
 		_tut_steps.append({ "t": first_note - 1600.0, "title": "ERSTE NOTE",
-			"body": "Gleich kommt eine Drohne auf DIESEN Ring zu.\nDruecke [%s] genau beim Beruehren.\nDeine Wertung (MAX … 50) erscheint danach in der Bildmitte." % k[note_col],
+			"body": "Gleich kommt eine Drohne auf DIESEN Ring zu.\nDrücke [%s] genau beim Berühren.\nDeine Wertung (MAX … 50) erscheint danach in der Bildmitte." % k[note_col],
 			"worlds": [Vector3(RAIL_X[note_col], ROAD_Y + 0.3, Z_LINE)] })
 	if first_hold >= 0.0:
 		_tut_steps.append({ "t": first_hold - 1600.0, "title": "HOLD-NOTE",
-			"body": "Die Drohne mit dem langen Beam: [%s] druecken und HALTEN,\nbis der Beam vorbei ist. Zu frueh loslassen = Combo weg!" % k[hold_col],
+			"body": "Die Drohne mit dem langen Beam: [%s] drücken und HALTEN,\nbis der Beam vorbei ist. Zu früh loslassen = Combo weg!" % k[hold_col],
 			"worlds": [Vector3(RAIL_X[hold_col], ROAD_Y + 0.3, Z_LINE)] })
 	if first_chord >= 0.0:
 		_tut_steps.append({ "t": first_chord - 1600.0, "title": "DOPPELNOTE",
-			"body": "Zwei Drohnen gleichzeitig — beide Pfeile!\n[%s] + [%s] EXAKT ZUSAMMEN druecken." % [k[chord_a], k[chord_b]],
+			"body": "Zwei Drohnen gleichzeitig — beide Pfeile!\n[%s] + [%s] EXAKT ZUSAMMEN drücken." % [k[chord_a], k[chord_b]],
 			"worlds": [Vector3(RAIL_X[chord_a], ROAD_Y + 0.3, Z_LINE),
 				Vector3(RAIL_X[chord_b], ROAD_Y + 0.3, Z_LINE)] })
 	var span := objs[objs.size() - 1].time - objs[0].time
 	_tut_steps.append({ "t": objs[0].time + span * 0.45, "title": "DEIN HUD",
-		"body": "Der Pfeil zeigt auf die Timing-Leiste: Strich links = zu frueh,\nrechts = zu spaet. Darueber: Combo + Wertung.\nLinks: Accuracy · Rechts: Score · Oben: HP.\nJetzt spiel die Map zu Ende — viel Spass!",
+		"body": "Der Pfeil zeigt auf die Timing-Leiste: Strich links = zu früh,\nrechts = zu spät. Darüber: Combo + Wertung.\nLinks: Accuracy · Rechts: Score · Oben: HP.\nJetzt spiel die Map zu Ende — viel Spaß!",
 		"screen": Vector2(0.5, 0.615) })
 	_tut_steps.sort_custom(func(a, b): return float(a.t) < float(b.t))
 	# Mindestabstand zwischen Stopps, sonst nerven sie.
