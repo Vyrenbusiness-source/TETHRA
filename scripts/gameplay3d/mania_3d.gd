@@ -486,16 +486,16 @@ func _build_world() -> void:
 		var label := Label3D.new()
 		label.text = _short_key_name(Settings.key_lanes[i])
 		# Hohe Font-Aufloesung bei gleicher Weltgroesse — kein Pixelbrei.
-		label.font_size = 96
-		label.pixel_size = 0.0015
-		label.outline_size = 40
+		label.font_size = 128
+		label.pixel_size = 0.0019
+		label.outline_size = 44
 		label.outline_modulate = Color(0, 0, 0, 0.85)
-		label.modulate = Color(0.75, 0.8, 0.9, 0.75)
+		label.modulate = Color(0.82, 0.86, 0.95, 0.85)
 		label.no_depth_test = true
 		# Billboard: Schrift steht immer plan zur Kamera — nicht schraeg
 		# auf der Bahn liegend (wirkte gestaucht/verzerrt).
 		label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-		label.position = Vector3(RAIL_X[i], ROAD_Y + 0.12, Z_LINE + 0.55)
+		label.position = Vector3(RAIL_X[i], ROAD_Y + 0.17, Z_LINE + 0.5)
 		_world.add_child(label)
 
 	_build_ship()
