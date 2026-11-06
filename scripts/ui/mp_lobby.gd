@@ -22,6 +22,8 @@ var _join_pw_edit: LineEdit
 var _fetch_timer: Timer
 var _players_box: VBoxContainer
 var _map_label: Label
+var _map_meta: Label
+var _map_cover: TextureRect
 var _status_label: Label
 var _start_btn: Button
 var _pick_btn: Button
@@ -116,6 +118,7 @@ func _ready() -> void:
 	_build_room()
 
 	Lobby.players_changed.connect(_refresh_room)
+	Lobby.scores_changed.connect(_refresh_room)
 	Lobby.map_changed.connect(_on_map_changed)
 	Lobby.rooms_changed.connect(_refresh_rooms)
 	Lobby.status.connect(func(m): _status_label.text = m)
@@ -277,8 +280,8 @@ func _build_browser() -> void:
 	cv.add_child(hint)
 
 	var code_card := PanelContainer.new()
-	var kb := UiTheme.glass_box(12, 0.5)
-	kb.set_content_margin_all(14)
+	var kb := UiTheme.glass_box(12, 0.5, 0.28)
+	kb.set_content_margin_all(18)
 	code_card.add_theme_stylebox_override("panel", kb)
 	right_col.add_child(code_card)
 	var kv := VBoxContainer.new()
@@ -286,13 +289,15 @@ func _build_browser() -> void:
 	code_card.add_child(kv)
 	var kh := Label.new()
 	kh.text = "MIT CODE BEITRETEN"
+	kh.add_theme_font_size_override("font_size", 16)
 	kh.add_theme_font_override("font", UiTheme.heading_font(2))
-	kh.add_theme_font_size_override("font_size", 14)
 	kh.add_theme_color_override("font_color", COL_ACCENT)
 	kv.add_child(kh)
 	_code_edit = LineEdit.new()
 	_code_edit.placeholder_text = "Code (z.B. 7K3F9-A2QXM)"
-	_code_edit.custom_minimum_size = Vector2(0, 40)
+	_code_edit.custom_minimum_size = Vector2(0, 54)
+	_code_edit.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_code_edit.add_theme_font_size_override("font_size", 20)
 	_code_edit.add_theme_stylebox_override("normal", UiTheme.glass_box(10, 0.55))
 	_code_edit.text_submitted.connect(func(_t): _join_by_code())
 	kv.add_child(_code_edit)
@@ -304,7 +309,8 @@ func _build_browser() -> void:
 	kv.add_child(_join_pw_edit)
 	var join := Button.new()
 	join.text = "Beitreten"
-	join.custom_minimum_size = Vector2(0, 44)
+	join.custom_minimum_size = Vector2(0, 50)
+	join.add_theme_font_size_override("font_size", 16)
 	UiTheme.style_button(join, true)
 	join.pressed.connect(_join_by_code)
 	kv.add_child(join)
@@ -315,37 +321,110 @@ func _join_by_code() -> void:
 		_show_room()
 
 
-## Eine Raum-Karte: Badge (🌐/🏠), Name, Spielerzahl, JOIN.
-func _room_card(badge: String, rname: String, players_n: int, sub: String, on_join: Callable) -> Control:
+## Fade+Slide-In fuer neu aufgebaute Karten (index staffelt leicht).
+func _fade_in(c: Control, idx: int = 0) -> void:
+	c.modulate.a = 0.0
+	var tw := create_tween()
+	tw.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tw.tween_interval(minf(idx * 0.04, 0.3))
+	tw.tween_property(c, "modulate:a", 1.0, 0.22)
+
+
+## Runder Avatar mit Anfangsbuchstabe; Farbe aus dem Namen abgeleitet.
+func _avatar(pname: String, sz: int = 28) -> Control:
+	var p := PanelContainer.new()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color.from_hsv(float(pname.hash() % 360) / 360.0, 0.45, 0.62)
+	sb.set_corner_radius_all(sz)
+	sb.set_border_width_all(2)
+	sb.border_color = Color(0.08, 0.09, 0.14, 0.9)
+	p.add_theme_stylebox_override("panel", sb)
+	p.custom_minimum_size = Vector2(sz, sz)
+	var l := Label.new()
+	l.text = pname.substr(0, 1).to_upper() if pname != "" else "?"
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	l.add_theme_font_size_override("font_size", int(sz * 0.5))
+	l.add_theme_color_override("font_color", COL_TEXT)
+	p.add_child(l)
+	return p
+
+
+## Kleiner Status-Chip (Text auf getoenter Pille).
+func _chip(text: String, col: Color) -> Control:
+	var p := PanelContainer.new()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(col.r, col.g, col.b, 0.18)
+	sb.border_color = Color(col.r, col.g, col.b, 0.6)
+	sb.set_border_width_all(1)
+	sb.set_corner_radius_all(20)
+	sb.content_margin_left = 10
+	sb.content_margin_right = 10
+	sb.content_margin_top = 2
+	sb.content_margin_bottom = 2
+	p.add_theme_stylebox_override("panel", sb)
+	p.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	var l := Label.new()
+	l.text = text
+	l.add_theme_font_size_override("font_size", 12)
+	l.add_theme_color_override("font_color", col)
+	p.add_child(l)
+	return p
+
+
+## Eine Raum-Karte: Cover-Platzhalter, Name, Avatare, Status-Badge, JOIN.
+func _room_card(badge: String, rname: String, players_n: int, sub: String,
+		on_join: Callable, playing: bool = false) -> Control:
 	var card := PanelContainer.new()
-	var rb := UiTheme.glass_box(10, 0.42, 0.10)
+	var rb := UiTheme.glass_box(12, 0.42, 0.10)
 	rb.shadow_size = 0
-	rb.set_content_margin_all(9)
+	rb.set_content_margin_all(10)
 	card.add_theme_stylebox_override("panel", rb)
 	var hb := HBoxContainer.new()
 	hb.add_theme_constant_override("separation", 12)
 	card.add_child(hb)
+	# Map-Cover-Kachel (fuer fremde Raeume ist keine Map bekannt: Symbol).
+	var cover := PanelContainer.new()
+	var cs := UiTheme.glass_box(10, 0.7, 0.12)
+	cs.shadow_size = 0
+	cs.bg_color = Color(0.12, 0.2, 0.3, 0.8)
+	cover.add_theme_stylebox_override("panel", cs)
+	cover.custom_minimum_size = Vector2(54, 54)
+	cover.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	var ic := Label.new()
 	ic.text = badge
-	ic.add_theme_font_size_override("font_size", 22)
-	ic.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	hb.add_child(ic)
+	ic.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	ic.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	ic.add_theme_font_size_override("font_size", 24)
+	cover.add_child(ic)
+	hb.add_child(cover)
 	var mid := VBoxContainer.new()
 	mid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	mid.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	mid.add_theme_constant_override("separation", 0)
+	mid.add_theme_constant_override("separation", 3)
 	hb.add_child(mid)
+	var top := HBoxContainer.new()
+	top.add_theme_constant_override("separation", 8)
+	mid.add_child(top)
 	var nl := Label.new()
 	nl.text = rname
 	nl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	nl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	nl.add_theme_font_size_override("font_size", 16)
 	nl.add_theme_color_override("font_color", COL_TEXT)
-	mid.add_child(nl)
+	top.add_child(nl)
+	top.add_child(_chip("Spielt" if playing else "Wartet",
+		Color(1.0, 0.7, 0.3) if playing else Color(0.5, 1.0, 0.6)))
+	var bottom := HBoxContainer.new()
+	bottom.add_theme_constant_override("separation", -8)
+	mid.add_child(bottom)
+	for i in mini(players_n, 5):
+		bottom.add_child(_avatar(rname + str(i), 22))
 	var sl := Label.new()
-	sl.text = "%d Spieler  ·  %s" % [players_n, sub]
+	sl.text = "   %d Spieler  ·  %s" % [players_n, sub]
 	sl.add_theme_font_size_override("font_size", 12)
 	sl.add_theme_color_override("font_color", COL_DIM)
-	mid.add_child(sl)
+	bottom.add_child(sl)
 	var jb := Button.new()
 	jb.text = "JOIN"
 	jb.custom_minimum_size = Vector2(76, 40)
@@ -353,6 +432,7 @@ func _room_card(badge: String, rname: String, players_n: int, sub: String, on_jo
 	UiTheme.style_button(jb, true)
 	jb.pressed.connect(on_join)
 	hb.add_child(jb)
+	UiTheme.attach_hover(card, 1.015)
 	return card
 
 
@@ -384,12 +464,34 @@ func _refresh_rooms() -> void:
 				if Lobby.join_code(jcode):
 					_show_room()))
 		count += 1
+	var idx := 0
+	for c in _rooms_list.get_children():
+		_fade_in(c, idx)
+		idx += 1
 	if count == 0:
-		var empty := Label.new()
-		empty.text = "Gerade keine offenen Raeume.\nErstelle einen — er erscheint hier automatisch bei allen."
-		empty.add_theme_font_size_override("font_size", 13)
-		empty.add_theme_color_override("font_color", COL_DIM)
+		var empty := VBoxContainer.new()
+		empty.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		empty.alignment = BoxContainer.ALIGNMENT_CENTER
+		var ei := Label.new()
+		ei.text = "🎧"
+		ei.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		ei.add_theme_font_size_override("font_size", 44)
+		empty.add_child(ei)
+		var et := Label.new()
+		et.text = "Gerade ist es ruhig hier"
+		et.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		et.add_theme_font_size_override("font_size", 18)
+		et.add_theme_color_override("font_color", COL_TEXT)
+		empty.add_child(et)
+		var el := Label.new()
+		el.text = "Keine offenen Raeume. Erstelle einen — er erscheint
+hier automatisch bei allen Spielern."
+		el.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		el.add_theme_font_size_override("font_size", 13)
+		el.add_theme_color_override("font_color", COL_DIM)
+		empty.add_child(el)
 		_rooms_list.add_child(empty)
+		_fade_in(empty)
 
 
 # ---------------------------------------------------------------------------
@@ -413,11 +515,36 @@ func _build_room() -> void:
 	_players_box.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_room_box.add_child(_players_box)
 
+	var map_card := PanelContainer.new()
+	var mcs := UiTheme.glass_box(12, 0.5, 0.16)
+	mcs.set_content_margin_all(10)
+	map_card.add_theme_stylebox_override("panel", mcs)
+	_room_box.add_child(map_card)
+	var mh := HBoxContainer.new()
+	mh.add_theme_constant_override("separation", 14)
+	map_card.add_child(mh)
+	_map_cover = TextureRect.new()
+	_map_cover.custom_minimum_size = Vector2(120, 68)
+	_map_cover.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_map_cover.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	_map_cover.clip_contents = true
+	mh.add_child(_map_cover)
+	var mv := VBoxContainer.new()
+	mv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	mv.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	mv.add_theme_constant_override("separation", 2)
+	mh.add_child(mv)
 	_map_label = Label.new()
 	_map_label.text = "Noch keine Map gewaehlt."
-	_map_label.add_theme_font_size_override("font_size", 15)
+	_map_label.add_theme_font_size_override("font_size", 17)
+	_map_label.add_theme_color_override("font_color", COL_TEXT)
 	_map_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	_room_box.add_child(_map_label)
+	mv.add_child(_map_label)
+	_map_meta = Label.new()
+	_map_meta.text = "Der Kronentraeger waehlt die Map."
+	_map_meta.add_theme_font_size_override("font_size", 13)
+	_map_meta.add_theme_color_override("font_color", COL_DIM)
+	mv.add_child(_map_meta)
 
 	var btns := HBoxContainer.new()
 	btns.add_theme_constant_override("separation", 8)
@@ -445,6 +572,17 @@ func _build_room() -> void:
 	btns.add_child(leave)
 
 
+## Cover-Thumbnail der gewaehlten Map (null, wenn lokal nicht vorhanden).
+func _map_cover_tex() -> Texture2D:
+	var path := Lobby.resolve_local_path()
+	if path == "":
+		return null
+	for ms in _library.mapsets:
+		if ms.osz_path == path:
+			return ms.thumb_texture()
+	return null
+
+
 func _show_room() -> void:
 	Lobby.stop_discovery()
 	_browser_box.visible = false
@@ -467,13 +605,28 @@ func _refresh_room() -> void:
 	for c in _players_box.get_children():
 		c.queue_free()
 	var my_id := multiplayer.get_unique_id()
+	var row_i := 0
+	var in_round := false
+	for id in Lobby.players:
+		if int(Lobby.players[id].get("score", 0)) > 0:
+			in_round = true
 	for id in Lobby.players:
 		var p: Dictionary = Lobby.players[id]
+		var is_crown: bool = id == Lobby.crown_id
+		var card := PanelContainer.new()
+		var rs := UiTheme.glass_box(10, 0.45, 0.30 if is_crown else 0.10)
+		rs.shadow_size = 0
+		rs.set_content_margin_all(8)
+		if is_crown:
+			rs.border_color = Color(1.0, 0.85, 0.3, 0.55)
+		card.add_theme_stylebox_override("panel", rs)
 		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 8)
+		row.add_theme_constant_override("separation", 10)
+		card.add_child(row)
+		row.add_child(_avatar(str(p.name), 34))
 		var crown := Label.new()
-		crown.text = CROWN if id == Lobby.crown_id else " "
-		crown.custom_minimum_size = Vector2(30, 0)
+		crown.text = CROWN if is_crown else ""
+		crown.custom_minimum_size = Vector2(24, 0)
 		crown.add_theme_font_size_override("font_size", 17)
 		row.add_child(crown)
 		var name_l := Label.new()
@@ -482,13 +635,17 @@ func _refresh_room() -> void:
 		name_l.add_theme_font_size_override("font_size", 16)
 		name_l.add_theme_color_override("font_color", COL_TEXT)
 		row.add_child(name_l)
-		var ready := Label.new()
-		ready.text = "✓ bereit" if bool(p.ready) else "…"
-		ready.add_theme_font_size_override("font_size", 13)
-		ready.add_theme_color_override("font_color",
-			Color(0.5, 1.0, 0.6) if bool(p.ready) else COL_DIM)
-		row.add_child(ready)
-		if Lobby.is_host and id != Lobby.crown_id:
+		if in_round:
+			var sc := Label.new()
+			sc.text = "%s  ·  %.1f %%  ·  %dx" % [
+				str(int(p.get("score", 0))).reverse().insert(3, " ").reverse() if int(p.get("score", 0)) >= 1000 else str(int(p.get("score", 0))),
+				float(p.get("acc", 0.0)), int(p.get("combo", 0))]
+			sc.add_theme_font_size_override("font_size", 14)
+			sc.add_theme_color_override("font_color", COL_ACCENT)
+			row.add_child(sc)
+		row.add_child(_chip("✓ Bereit", Color(0.5, 1.0, 0.6)) if bool(p.ready)
+			else _chip("Wartet", COL_DIM))
+		if Lobby.is_host and not is_crown:
 			var give := Button.new()
 			give.text = CROWN + " geben"
 			give.custom_minimum_size = Vector2(0, 32)
@@ -497,12 +654,17 @@ func _refresh_room() -> void:
 			var target := int(id)
 			give.pressed.connect(func(): Lobby.give_crown(target))
 			row.add_child(give)
-		_players_box.add_child(row)
-	# Map-Zeile + Buttons.
+		_players_box.add_child(card)
+		UiTheme.attach_hover(card, 1.01)
+		_fade_in(card, row_i)
+		row_i += 1
+	# Map-Karte + Buttons.
 	if not Lobby.sel_map.is_empty():
-		_map_label.text = "Map:  %s — %s  [%s]  ★ %.2f" % [
-			str(Lobby.sel_map.get("artist", "")), str(Lobby.sel_map.get("title", "")),
+		_map_label.text = "%s — %s" % [
+			str(Lobby.sel_map.get("artist", "")), str(Lobby.sel_map.get("title", ""))]
+		_map_meta.text = "[%s]   ★ %.2f" % [
 			str(Lobby.sel_map.get("version", "")), float(Lobby.sel_map.get("stars", 0.0))]
+		_map_cover.texture = _map_cover_tex()
 	_pick_btn.visible = Lobby.crown_id == my_id
 	_start_btn.visible = Lobby.is_host
 	_start_btn.disabled = not Lobby.all_ready()
