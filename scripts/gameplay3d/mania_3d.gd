@@ -495,7 +495,15 @@ func _build_world() -> void:
 		# Billboard: Schrift steht immer plan zur Kamera — nicht schraeg
 		# auf der Bahn liegend (wirkte gestaucht/verzerrt).
 		label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-		label.position = Vector3(RAIL_X[i], ROAD_Y + 0.17, Z_LINE + 0.5)
+		# Satzzeichen ("," ".") sind als Glyphe winzig: deutlich groesser setzen,
+		# damit jede Taste gleich gut lesbar ist.
+		var key_txt := label.text
+		var is_punct := key_txt.length() == 1 and key_txt.to_upper() == key_txt.to_lower() and not key_txt.is_valid_int()
+		if is_punct:
+			label.pixel_size = 0.0019 * 2.3
+		# Mittig IM Pad-Ring statt auf dessen vorderem Rand. Satzzeichen sitzen
+		# auf der Schrift-Grundlinie -> etwas anheben, damit sie mittig wirken.
+		label.position = Vector3(RAIL_X[i], ROAD_Y + (0.2 if is_punct else 0.12), Z_LINE)
 		_world.add_child(label)
 
 	_build_ship()
@@ -2470,10 +2478,17 @@ func _update_hud() -> void:
 		var ctw := create_tween()
 		ctw.tween_property(_combo_label, "scale", Vector2.ONE, 0.12)
 	_last_combo_shown = core.combo
+	var judged_n := core.n_max + core.n300 + core.n200 + core.n100 + core.n50 + core.n_miss
 	var g := core.grade()
-	_grade_label.text = g
-	_grade_label.add_theme_color_override("font_color", GRADE_COLOR.get(g, Color.WHITE))
-	_acc_label.text = "%.1f%%" % (core.accuracy() * 100.0)
+	if judged_n == 0:
+		# Vor der ersten gewerteten Note: kein "D" und keine 0.0%.
+		_grade_label.text = "-"
+		_grade_label.add_theme_color_override("font_color", Color(1, 1, 1, 0.35))
+		_acc_label.text = "100.0%"
+	else:
+		_grade_label.text = g
+		_grade_label.add_theme_color_override("font_color", GRADE_COLOR.get(g, Color.WHITE))
+		_acc_label.text = "%.1f%%" % (core.accuracy() * 100.0)
 	# Farbecho des On-Fire-Zustands: Gold ab 97%, Eisblau ab 99.5%.
 	var hud_j := core.n_max + core.n300 + core.n200 + core.n100 + core.n50 + core.n_miss
 	var hud_acc := core.accuracy()
