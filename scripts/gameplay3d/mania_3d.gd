@@ -2692,6 +2692,7 @@ func _toggle_pause(paused: bool) -> void:
 			"score": core.score,
 			"acc": core.accuracy() * 100.0,
 			"difficulty": _beatmap.version_name(),
+			"length_ms": _song_len_ms,
 		})
 		get_tree().paused = true
 		SyncClock.pause()
