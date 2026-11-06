@@ -611,8 +611,8 @@ func _pp_block() -> PanelContainer:
 	var pp: float = float(_data.get("pp", -1.0))
 	var unranked := bool(_data.get("unranked", false))
 	if not unranked and pp >= 0.0:
-		return _stat_block("PERFORMANCE", "%s pp" % fmt_dec(pp, 1), UiTheme.ACCENT2)
-	var p := _stat_block("PERFORMANCE", "–", MUTED)
+		return _stat_block("LEISTUNG", "%s pp" % fmt_dec(pp, 1), UiTheme.ACCENT2)
+	var p := _stat_block("LEISTUNG", "–", MUTED)
 	var why := "Map ist nicht gewertet – keine PP" if unranked \
 		else "PP für diese Map nicht berechenbar"
 	p.tooltip_text = why
