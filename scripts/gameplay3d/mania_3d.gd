@@ -41,26 +41,12 @@ var _ring_shader: Shader
 var _theme_col := Color(0.22, 0.68, 0.90)
 var _theme_kiai := Color(0.92, 0.52, 0.20)
 
-## Traeger fuer die komplette Strecke (Rails/Linie/Pads/Notes/Laser):
-## wird als Ganzes geneigt/gerollt -> Flug-Gefuehl ohne Judgement-Einfluss.
+## Traeger fuer die komplette Strecke (Rails/Linie/Pads/Notes/Laser).
+## Bleibt FIX: kein Kippen/Banken/Wippen — die Bahn ist der Ruhepol.
 var _world: Node3D
-# OVERDRIVE-Effekt (Combo-Blitz) + Kamera-Beben.
+# OVERDRIVE-Effekt (Combo-Belohnung, rein Farbe/Glow).
 var _overdrive := 0.0
-var _shake := 0.0
 var _was_kiai := false
-var _pitch_smooth := 0.0
-# FLUG-CHOREO v2: Feder-Daempfer-Zustaende (Traegheit + leichter Overshoot),
-# Phrasen-Phase, Break-Ruhe und Kurven-Drift des Kosmos.
-var _pitch_vel := 0.0
-var _bank_smooth := 0.0
-var _bank_vel := 0.0
-var _lift_vel := 0.0
-var _bank_phase := 0.0
-var _last_beats := 0.0
-var _calm := 0.0
-var _reentry_armed := false
-var _cosmos_yaw := 0.0
-var _lift_smooth := 0.0
 
 var _edge_mats: Array[StandardMaterial3D] = []
 var _pad_mats: Array[StandardMaterial3D] = []
@@ -121,22 +107,15 @@ const PLANET_DRIFT := [
 # KOSMOS: der komplette Hintergrund haengt unter diesem frei beweglichen
 # Node — die Bahn bleibt fix, das UNIVERSUM fliegt (Roll/Bank/Climb).
 var _cosmos: Node3D
-var _cosmos_roll := 0.0
-var _cosmos_roll_target := 0.0
-var _cosmos_bank := 0.0
-var _cosmos_bank_target := 0.0
 var _cosmos_lift := 0.0
 var _cosmos_lift_target := 0.0
-# Easing-Phasen (0..1) fuer butterweiche Roll-/Climb-Bewegungen.
-var _roll_phase := 0.0
+# Easing-Phase (0..1) fuer das langsame Break-Hochziehen.
 var _lift_phase := 0.0
 # Beat-Schub-Reise: akkumulierte Distanz statt linearer Zeit.
 var _travel := 0.0
-# Screen-FX (Aberration/Schockwelle/Glitch/Vignette).
+# Screen-FX: nur noch die ruhige Vignette (Aberration/Schockwelle/Glitch/
+# Warp-Tunnel verzerrten das Spielfeld und sind raus).
 var _screen_mat: ShaderMaterial
-var _shock := -1.0
-var _glitch := 0.0
-var _miss_streak := 0
 # Schwarzes Loch + God-Rays.
 var _bh_mat: ShaderMaterial
 var _rays_mat: ShaderMaterial
@@ -151,20 +130,14 @@ var _gal_stars := 1.0
 var _gal_scale := 1.0
 ## Grund-Reisetempo aus dem BPM der Map (140 BPM = neutral).
 var _bpm_factor := 1.0
-# Flug-Choreografie (aus der Map geplant) + aktive Vorbeifluege.
+# Flug-Choreografie (aus der Map geplant): nur noch Break-Kino.
 var _flight_plan: Array = []
 var _flight_idx := 0
-var _flybys: Array = []
-var _whoosh_player: AudioStreamPlayer
 ## Stations-Assets werden beim Map-Start EINMAL geladen (Preload-Cache) —
 ## nie Disk-I/O mitten im Spiel (Latenz!). Eintrag = Liste von [Mesh, Tex].
 var _station_pool: Array = []
 var _dock_station: Node3D
-## Planeten-Texturen fuer Nahvorbeifluege (vorab geladen).
-var _planet_tex_cache: Array = []
-# Reise v2: Warp-Tunnel-Huellkurve, Nah-Staub, Landmarks, Sonnenaufgang,
-# HUD-Reiseroute.
-var _tunnel_fx := 0.0
+# Reise v2: Nah-Staub, Landmarks, Sonnenaufgang, HUD-Reiseroute.
 var _dust_mm: MultiMesh
 var _dust_seeds: Array = []
 var _dust_mat: ShaderMaterial
@@ -204,7 +177,6 @@ var _punch := 0.0
 var _punch_cooldown := 0.0
 var _last_bar := -1
 var _star_burst := 0.0
-var _fov_kick := 0.0
 # Planeten-Referenzen fuer den Bass-Puls.
 var _planet_nodes: Array = []
 var _last_milestone := 0
@@ -293,11 +265,6 @@ func _ready() -> void:
 	_beat_player.bus = "Master"
 	_beat_player.volume_db = -16.0
 	add_child(_beat_player)
-	_whoosh_player = AudioStreamPlayer.new()
-	_whoosh_player.stream = Sfx.whoosh_stream()
-	_whoosh_player.bus = "Master"
-	_whoosh_player.volume_db = -13.0
-	add_child(_whoosh_player)
 	if GameSession.tutorial:
 		core.no_fail = true
 		_build_tutorial_steps()
@@ -517,7 +484,7 @@ func _build_world() -> void:
 		_pad_judge_col.append(_pad_color(i))
 
 		var label := Label3D.new()
-		label.text = OS.get_keycode_string(Settings.key_lanes[i])
+		label.text = _short_key_name(Settings.key_lanes[i])
 		# Hohe Font-Aufloesung bei gleicher Weltgroesse — kein Pixelbrei.
 		label.font_size = 96
 		label.pixel_size = 0.0015
@@ -525,8 +492,10 @@ func _build_world() -> void:
 		label.outline_modulate = Color(0, 0, 0, 0.85)
 		label.modulate = Color(0.75, 0.8, 0.9, 0.75)
 		label.no_depth_test = true
-		label.position = Vector3(RAIL_X[i], ROAD_Y + 0.03, Z_LINE + 0.55)
-		label.rotation_degrees = Vector3(-55, 0, 0)
+		# Billboard: Schrift steht immer plan zur Kamera — nicht schraeg
+		# auf der Bahn liegend (wirkte gestaucht/verzerrt).
+		label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		label.position = Vector3(RAIL_X[i], ROAD_Y + 0.12, Z_LINE + 0.55)
 		_world.add_child(label)
 
 	_build_ship()
@@ -535,6 +504,25 @@ func _build_world() -> void:
 
 
 ## Hitzonen-Farbe: bei "Effekte: Aus" neutral grau statt Songfarbe.
+## Kurzer Tastenname fuer die Pad-Beschriftung: Satzzeichen als Zeichen
+## ("," statt "Comma"), Buchstaben gross.
+func _short_key_name(code: int) -> String:
+	match code:
+		KEY_COMMA: return ","
+		KEY_PERIOD: return "."
+		KEY_SEMICOLON: return ";"
+		KEY_SLASH: return "/"
+		KEY_BACKSLASH: return "\\"
+		KEY_APOSTROPHE: return "'"
+		KEY_QUOTELEFT: return "`"
+		KEY_BRACKETLEFT: return "["
+		KEY_BRACKETRIGHT: return "]"
+		KEY_MINUS: return "-"
+		KEY_EQUAL: return "="
+		KEY_SPACE: return "SPC"
+	return OS.get_keycode_string(code).to_upper()
+
+
 func _pad_color(i: int) -> Color:
 	if _fx_level() <= 0.0:
 		return CLEAN_PAD
@@ -872,9 +860,12 @@ func _build_starfield() -> void:
 		belt_mm.set_instance_transform(bi, Transform3D(
 			Basis.IDENTITY.scaled(Vector3.ONE * bs), Vector3(bx, by, Z_FAR - 12.0)))
 	belt.multimesh = belt_mm
-	var belt_mat := StandardMaterial3D.new()
-	belt_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	belt_mat.albedo_color = Color(0.30, 0.29, 0.30)
+	# Runde, weiche Brocken (glow_dot-Maske) — die frueheren unshaded
+	# Quads standen als eckige graue Pixel-Quadrate am Horizont.
+	var belt_mat := ShaderMaterial.new()
+	belt_mat.shader = _glow_shader
+	belt_mat.set_shader_parameter("base_color", Color(0.62, 0.58, 0.54))
+	belt_mat.set_shader_parameter("intensity", 0.22)
 	belt.material_override = belt_mat
 	belt.visible = false
 	_cosmos.add_child(belt)
@@ -1072,12 +1063,7 @@ func _on_note_judged(index: int, result: Dictionary) -> void:
 	var q: int = result.quality
 	if q == ManiaCore.Quality.MISS:
 		_play_miss()
-		# 3 Misses in Folge: kurzer Schadens-Glitch (Screen-FX).
-		_miss_streak += 1
-		if _miss_streak >= 3:
-			_glitch = 1.0
 	else:
-		_miss_streak = 0
 		_play_hit([1.0, 1.0, 0.944, 0.891, 0.794][q])
 	var col: int = result.get("column", 0)
 	var sub := ""
@@ -1097,9 +1083,6 @@ func _on_note_judged(index: int, result: Dictionary) -> void:
 		_notes.erase(index)
 		var node: Node3D = entry.root
 		if q != ManiaCore.Quality.MISS:
-			# Mikro-Lean: jeder Treffer lehnt das Schiff hauchduenn in
-			# seine Spurseite (Feder-gedaempft, summiert sich nie auf).
-			_bank_vel += [-1.0, -0.45, 0.45, 1.0][mini(col, 3)] * 0.28 * _fx_level()
 			# Hit-Lighting IMMER exakt am Ring — nicht an der Notenposition
 			# (die haengt beim fruehen Druecken noch weit vor der Linie).
 			_fire_laser(col, Vector3(RAIL_X[col], ROAD_Y + 0.32, Z_LINE),
@@ -1121,7 +1104,6 @@ func _on_note_judged(index: int, result: Dictionary) -> void:
 		var c := core.combo
 		if (c == 25 or c == 50 or (c >= 100 and c % 100 == 0)) and c != _last_milestone:
 			_last_milestone = c
-			_fov_kick = 2.1
 			# Milestone-Belohnung: Sternschnuppe zieht ueber den Himmel.
 			if c >= 50 and _fx_level() > 0.0:
 				_spawn_shooting_star(c)
@@ -1131,53 +1113,13 @@ func _on_note_judged(index: int, result: Dictionary) -> void:
 	_update_hud()
 
 
-## OVERDRIVE: Blitzschlag bei grossen Combos — weisser Flash, Kamera-Beben,
-## die Abfanglinie elektrisiert 2 Sekunden, Farben kippen auf Komplementaer.
+## OVERDRIVE bei grossen Combos: Pads/Kanten kippen 2 Sekunden weich in die
+## Kiai-Farbe. Kein Flash, kein Beben, keine Bildverzerrung.
 func _trigger_overdrive() -> void:
 	var fx := _fx_level()
 	if fx <= 0.0:
 		return
 	_overdrive = 2.0 * fx
-	_shake = 0.09 * fx
-	_shock = 0.0
-	# Vollbild-Blitz.
-	var flash := ColorRect.new()
-	flash.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	flash.color = Color(1, 1, 1, 0.025)
-	flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_hud.add_child(flash)
-	var tw := create_tween()
-	tw.tween_property(flash, "color:a", 0.0, 0.12)
-	tw.tween_callback(flash.queue_free)
-	# (Zackenblitze entfernt — nervten; Schockwelle + Puls reichen.)
-
-
-func _spawn_bolt(seed_i: int) -> void:
-	var im := ImmediateMesh.new()
-	var x := (_hash01(float(seed_i) * 17.71 + 3.0) - 0.5) * 6.4
-	var top := Vector3(x, 5.5, Z_LINE - 3.0 - _hash01(float(seed_i) * 7.3) * 8.0)
-	var bottom := Vector3(x + (_hash01(float(seed_i) * 29.1) - 0.5) * 1.6, ROAD_Y, top.z)
-	im.surface_begin(Mesh.PRIMITIVE_LINE_STRIP)
-	var steps := 7
-	for s in range(steps + 1):
-		var k := float(s) / float(steps)
-		var p := top.lerp(bottom, k)
-		p.x += (_hash01(float(seed_i) * 31.7 + float(s) * 5.1) - 0.5) * 0.9 * (1.0 - absf(k - 0.5) * 2.0 + 0.2)
-		im.surface_set_color(Color(1, 1, 1, 0.55))
-		im.surface_add_vertex(p)
-	im.surface_end()
-	var mesh := MeshInstance3D.new()
-	mesh.mesh = im
-	var m := StandardMaterial3D.new()
-	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	m.vertex_color_use_as_albedo = true
-	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-	mesh.material_override = m
-	_world.add_child(mesh)
-	var tw := create_tween()
-	tw.tween_interval(0.06 + _hash01(float(seed_i) * 3.3) * 0.22)
-	tw.tween_callback(mesh.queue_free)
 
 
 func _on_hold_started(index: int, _quality: int) -> void:
@@ -1185,8 +1127,6 @@ func _on_hold_started(index: int, _quality: int) -> void:
 	if _notes.has(index):
 		var obj := _beatmap.hit_objects[index] as ManiaNote
 		_pad_flash[obj.column] = 1.0
-		# Das Schiff schwingt kurz in die Spurseite der Long Note ein.
-		_bank_vel += [-1.0, -0.45, 0.45, 1.0][mini(obj.column, 3)] * 1.3 * _fx_level()
 		_fire_laser(obj.column, Vector3(RAIL_X[obj.column], ROAD_Y + 0.32, Z_LINE))
 
 
@@ -1520,7 +1460,6 @@ func _process(delta: float) -> void:
 	# Laser abklingen.
 	# OVERDRIVE abklingen lassen.
 	_overdrive = maxf(_overdrive - delta, 0.0)
-	_shake = maxf(_shake - delta * 1.4, 0.0)
 	# Weiche Beat-Huellkurve (Release ~380 ms — atmet, statt zu blitzen).
 	_beat_env = maxf(_beat_env - delta * 2.6, 0.0)
 
@@ -1544,7 +1483,6 @@ func _process(delta: float) -> void:
 	if _in_break and not now_break:
 		# Comeback: kurzer Flash + Glut-Salve kuendigt den Wiedereinstieg an.
 		_line_flash = 1.0
-		_fov_kick = maxf(_fov_kick, 1.4)
 		_star_burst = 1.0
 	_in_break = now_break
 
@@ -1590,7 +1528,6 @@ func _process(delta: float) -> void:
 	if bass_raw - _bass_avg > 0.16 and _punch_cooldown <= 0.0:
 		_punch = 1.0
 		_punch_cooldown = 0.12
-		_fov_kick = maxf(_fov_kick, 0.85)
 	_punch = move_toward(_punch, 0.0, delta * 6.0)
 	# SUB-BASS-KICK (30-100 Hz): Onset gegen gleitenden Mittelwert, kurzer
 	# gedeckelter Puls (Analyse bleibt Pre-EQ, Judgement unberuehrt).
@@ -1670,76 +1607,14 @@ func _process(delta: float) -> void:
 		fmat3.set_shader_parameter("heat", _fire_heat)
 		fmat3.set_shader_parameter("t", t / 1000.0)
 
-	# FLUG-CHOREOGRAFIE: Die ganze Strecke steigt/faellt und bankt im Takt
-	# (BPM/Kiai skaliert), Bass-Kicks druecken die Nase kurz runter, und bei
-	# Combo-Milestones/Kiai-Start gibt's einen Barrel-Roll-Looping.
-	# Kamera bleibt fix — Judgement voellig unberuehrt.
-	# FLUG-CHOREO v2 — Feder-Physik statt Animation:
-	#  · Traegheit + leichter Overshoot (Masse-Gefuehl)
-	#  · Phrasen-LEANS (alle 8 Beats Seitenwechsel; Kiai: 4 = Angriffsflug)
-	#  · Hold-Notes ziehen die Nase hoch (Input steuert das Schiff!)
-	#  · Breaks = stilles Gleiten, danach kraeftiger Wiedereinstiegs-Lean
-	#  · Docking = Flare: Nase hoch, alles laeuft aus.
-	# WICHTIG: Neigung HART begrenzen (nach oben kippt die Lesbarkeit).
-	var beats := _song_beats(t)
-	var dbeats := clampf(beats - _last_beats, 0.0, 1.0)
-	_last_beats = beats
-	var dock_pre := clampf((t - (_song_len_ms - 5000.0)) / 5000.0, 0.0, 1.0)
-	# Ruhe-Faktor: keine Noten in der Naehe -> das Schiff gleitet still.
-	_calm = lerpf(_calm, 1.0 if _density < 0.05 else 0.0, minf(delta * 1.2, 1.0))
-	var act := (1.0 - _calm * 0.85) * (1.0 - dock_pre)
-	# Wiedereinstieg nach einem Break: einmaliger kraeftiger Lean.
-	if _calm > 0.55 and _density > 0.2 and not _reentry_armed:
-		_reentry_armed = true
-		_bank_vel += 5.0 * fx
-	elif _calm < 0.2:
-		_reentry_armed = false
-	# Phrasen-Lean: die Schraeglage wechselt an Phrasengrenzen die Seite.
-	_bank_phase += dbeats / (8.0 - 4.0 * roundf(_kiai_mix))
-	var lean_dir := 1.0 if int(floor(_bank_phase)) % 2 == 0 else -1.0
-	var bank_target := lean_dir * (0.77 + _kiai_mix * 0.5) * fx * act
-	# Hold-Steigflug + SEITEN-ZUG: Holds ziehen hoch UND in ihre Spurseite —
-	# linke Spuren lehnen das Schiff links, rechte rechts (Aussenspuren
-	# staerker). Links+rechts gleichzeitig = neutral, nur Steigen.
-	var held_n := 0
-	var held_side := 0.0
-	for hc in core.columns:
-		if core.active_hold(hc) >= 0:
-			held_n += 1
-			held_side += [-1.0, -0.45, 0.45, 1.0][mini(hc, 3)]
-	var hold_lift := minf(float(held_n), 2.0) * 0.4 * fx
-	var hold_bank := clampf(held_side, -1.5, 1.5) * 0.77 * fx
-	bank_target += hold_bank
-	# Pitch: Takt-Atmung + Kiai-Angriffshaltung + Hold-Lift + Docking-Flare.
-	var pitch_target := clampf(sin(TAU * beats / 16.0) * (0.35 + _kiai_mix * 0.2)
-			* fx * act - _kiai_mix * 0.28 * fx + hold_lift
-			+ dock_pre * 0.8 * fx, -1.6, 0.9)
-	var lift_target := sin(TAU * beats / 32.0) * 0.12 * fx * act + hold_lift * 0.10
-	# Feder-Daempfer (leicht unterdaempft -> minimaler Overshoot).
-	_pitch_vel += (pitch_target - _pitch_smooth) * 16.0 * delta
-	_pitch_vel *= exp(-6.8 * delta)
-	_pitch_smooth += _pitch_vel * delta
-	_bank_vel += (bank_target - _bank_smooth) * 14.0 * delta
-	_bank_vel *= exp(-6.4 * delta)
-	_bank_smooth += _bank_vel * delta
-	_lift_vel += (lift_target - _lift_smooth) * 10.0 * delta
-	_lift_vel *= exp(-6.0 * delta)
-	_lift_smooth += _lift_vel * delta
-	_world.position.y = _lift_smooth
-	_world.rotation_degrees = Vector3(clampf(_pitch_smooth, -1.8, 1.0), 0.0, _bank_smooth)
-	# Kurvenflug-Illusion: der Kosmos driftet seitlich zur Kurvenaussenseite.
-	_cosmos_yaw = lerpf(_cosmos_yaw, -deg_to_rad(_bank_smooth) * 1.1, minf(delta * 1.5, 1.0))
-	# DROP: Kiai-Start feuert den Warp (Streifen + Flash + Sternen-Schub).
+	# DROP: Kiai-Start gibt den Sternen einen Warp-Schub (Hintergrund).
 	if kiai_now and not _was_kiai:
 		_start_drop_warp()
 	_was_kiai = kiai_now
 
-	# OVERDRIVE aktiv: Linie elektrisiert (Flacker), Farben kippen, Kamera bebt.
+	# OVERDRIVE aktiv: Farben kippen weich (kein Flackern der Linie).
 	# Farben werden pro Frame von der BASIS aus gemischt (kein Aufschaukeln).
 	var od := clampf(_overdrive, 0.0, 1.0)
-	if _overdrive > 0.0:
-		var flicker := _hash01(floor(t * 0.05)) * 2.4
-		_line_mat.emission_energy_multiplier += flicker * od * 0.12
 	for i in _pad_mats.size():
 		var base_col := _pad_color(i)
 		if i < _pad_judge_col.size():
@@ -1753,13 +1628,6 @@ func _process(delta: float) -> void:
 			var glow_col := Color(1.0, 0.6, 0.25).lerp(Color(0.72, 0.92, 1.0), _fire_heat)
 			edge_col = edge_col.lerp(glow_col, _fire_level * 0.7)
 		em2.emission = edge_col
-	if _shake > 0.0 or _kick > 0.01:
-		var kshake := _kick * 0.012 * fx
-		_camera.position.x = sin(t * 0.09) * (_shake * 0.10 + kshake)
-		_camera.position.y = 1.78 + sin(t * 0.117 + 2.0) * (_shake * 0.07 + kshake) - _kick * 0.03 * fx
-	else:
-		_camera.position.x = 0.0
-		_camera.position.y = 1.78
 
 	# REISE-UHR: Beat-Schub-Distanz — jeder Downbeat schiebt sichtbar an,
 	# dazwischen gleitet man aus. Bei Effekte=Aus laeuft die Reise linear
@@ -1769,13 +1637,10 @@ func _process(delta: float) -> void:
 	var dock_mix := clampf((t - (_song_len_ms - 5000.0)) / 5000.0, 0.0, 1.0)
 	dock_mix = dock_mix * dock_mix * (3.0 - 2.0 * dock_mix)
 
-	_fov_kick = move_toward(_fov_kick, 0.0, delta * 9.0)
-	# Beat-Puls im FOV + Mini-Schub der Kamera nach vorn: jeder Downbeat
-	# fuehlt sich wie ein Antriebsstoss durchs All an (rein visuell).
-	_camera.fov = 72.0 + (_kiai_mix * 3.5 + _bass * 1.8 + _density * 1.4 \
-			+ _fov_kick + _beat_env * 1.1 + minf(_kick * 0.9 + _sub * 0.3, 1.1)) * fx
-	_camera.position.z = 6.8 - (_beat_env * 0.10 + _warp_level * 0.25 \
-			+ _punch * 0.12 + _kick * 0.05) * fx
+	# KAMERA bleibt ruhig: festes FOV, feste Position (kein Zoom-Pumpen,
+	# kein Beat-Schub). Tempo-Gefuehl kommt nur aus Sternen/Staub.
+	_camera.fov = 72.0
+	_camera.position = Vector3(0, 1.78, 6.8)
 
 	# HYPERSPACE: Der Drop reisst die Sterne ~1.5s zu Lichtfaeden.
 	_warp_level = move_toward(_warp_level, 0.0, delta * 0.7)
@@ -1786,7 +1651,9 @@ func _process(delta: float) -> void:
 			+ _kiai_mix * 10.0 + _star_burst * 30.0 + _beat_env * 26.0 + _kick * 5.0 \
 			+ _warp_level * 55.0 + _density * 9.0) * fx) \
 			* (1.0 - dock_mix * 0.75)
-	var warp_stretch := 1.0 + _warp_level * 16.0 * fx
+	# Lichtfaeden nur maessig strecken — lange Streifen zogen sonst quer
+	# durchs Spielfeld.
+	var warp_stretch := 1.0 + _warp_level * 4.0 * fx
 	for i in _star_seeds.size():
 		var seed := _star_seeds[i]
 		var z := fmod(seed.z + _star_scroll, 60.0) - 52.0
@@ -1802,11 +1669,8 @@ func _process(delta: float) -> void:
 			gal_target = ci
 	if gal_target != _gal_idx:
 		if _gal_idx >= 0 and fx > 0.0:
+			# Nur Sternen-Warp im Hintergrund — kein Tunnel, kein FOV-Wabern.
 			_warp_level = 1.0
-			_tunnel_fx = 1.0
-			# Kein Bild-Sog + nur kleiner FOV-Kick — der Sprung soll gleiten,
-			# nicht wabern.
-			_fov_kick = maxf(_fov_kick, 1.1)
 		_gal_idx = gal_target
 		_apply_landmark(_gal_idx)
 	if _gal_idx >= 0 and fx > 0.0:
@@ -1835,14 +1699,10 @@ func _process(delta: float) -> void:
 	if _sun_mat != null:
 		_sun_mat.set_shader_parameter("intensity",
 			(_sunrise * 0.34 + dock_mix * 0.14) * fx)
-	# HUD-Route + Warp-Tunnel-Huellkurve + Doppelstern-Kreisen.
+	# HUD-Route + Doppelstern-Kreisen.
 	_route_p = journey_p
 	if _route_ui != null:
 		_route_ui.queue_redraw()
-	_tunnel_fx = maxf(_tunnel_fx - delta * 0.65, 0.0)
-	if _screen_mat != null:
-		_screen_mat.set_shader_parameter("warp_tunnel",
-			sin(PI * clampf(_tunnel_fx, 0.0, 1.0)) * fx)
 	if _landmarks.size() > 1 and is_instance_valid(_landmarks[1]) and _landmarks[1].visible:
 		_landmarks[1].rotation.y += delta * 0.35
 	# NAH-STAUB: rast mit dem Reisetempo an der Kamera vorbei.
@@ -1918,21 +1778,10 @@ func _process(delta: float) -> void:
 				journey_scale = 0.55 + pow(journey_p, 1.35) * 1.35 + dock_mix * 1.5
 				ppos = ppos.lerp(Vector3(0.0, 6.2, Z_FAR - 6.0), dock_mix)
 			pn.position = ppos
-		pn.scale = Vector3.ONE * journey_scale \
-				* (1.0 + (_bass * 0.09 + _nebula_kick * 0.04) * fx)
+		pn.scale = Vector3.ONE * journey_scale
 
-	# SCREEN-FX: Aberration auf Bass-Kicks, Overdrive-Schockwelle, Glitch.
+	# SCREEN-FX: nur ruhige Vignette (keine Aberration/Schockwelle/Glitch).
 	if _screen_mat != null:
-		if _shock >= 0.0:
-			_shock += delta * 1.6
-			if _shock > 1.5:
-				_shock = -1.0
-		_glitch = maxf(_glitch - delta * 2.2, 0.0)
-		_screen_mat.set_shader_parameter("aberration",
-				(clampf((_bass - 0.5) * 1.2, 0.0, 1.0) + _beat_env * 0.07) * fx)
-		_screen_mat.set_shader_parameter("shock", _shock)
-		_screen_mat.set_shader_parameter("shock_str", fx)
-		_screen_mat.set_shader_parameter("glitch", _glitch * fx)
 		_screen_mat.set_shader_parameter("vignette", 0.22 * fx)
 
 	# Schwarzes Loch + God-Rays atmen mit Musik und Reise.
@@ -1961,58 +1810,19 @@ func _process(delta: float) -> void:
 			_dock_station.scale = Vector3.ONE * (0.4 + dock_mix * 0.8)
 			_dock_station.rotation.y += delta * 0.15
 
-	# FLUGPLAN abarbeiten (Vorbeifluege, Ueberkopf-Roll, Break-Kino).
+	# FLUGPLAN abarbeiten (Break-Kino).
 	while _flight_idx < _flight_plan.size() and t >= float(_flight_plan[_flight_idx].t):
 		_run_flight_event(_flight_plan[_flight_idx], t)
 		_flight_idx += 1
-	# Aktive Vorbeifluege bewegen; kurz vor der Passage bankt der Kosmos weg
-	# und das Notlicht der Wracks blinkt.
-	var bank_req := 0.0
-	for fb in _flybys:
-		var fnode: Node3D = fb.node
-		if not is_instance_valid(fnode):
-			continue
-		fnode.position.z += delta * float(fb.speed) * (1.0 + _beat_env * 0.25)
-		fnode.rotation.z += delta * float(fb.get("tumble", 0.0))
-		fnode.rotation.y += delta * float(fb.get("tumble", 0.0)) * 0.6
-		# Beim Naeherkommen nach aussen ziehen — Passage bleibt seitlich sichtbar.
-		fnode.position.x += delta * float(fb.side) * 2.0
-		if fnode.has_meta("lamp"):
-			(fnode.get_meta("lamp") as ShaderMaterial).set_shader_parameter(
-				"intensity", 0.35 + 1.0 * float(int(t * 0.004) % 2))
-		if fnode.position.z > -16.0 and fnode.position.z < 4.0:
-			bank_req = -float(fb.side) * 0.022
-		if not bool(fb.whooshed) and fnode.position.z > -7.0:
-			fb.whooshed = true
-			if _whoosh_player != null and fx > 0.0:
-				_whoosh_player.play()
-		if fnode.position.z > 18.0:
-			fnode.queue_free()
-	_flybys = _flybys.filter(func(fb2):
-		return is_instance_valid(fb2.node) and fb2.node.position.z <= 18.0)
-	_cosmos_bank_target = bank_req
-
-	# KOSMOS-Transform: Roll (Ueberkopf-Flug), Bank (Ausweichen), Lift
-	# (Hochziehen) — Pivot nahe dem Fluchtpunkt, Bahn bleibt unberuehrt.
+	# KOSMOS: kein Roll/Bank mehr (kippte das ganze Bild). Nur in Breaks
+	# sinkt der Hintergrund langsam ab (4s Smoothstep) — wirkt wie Steigflug.
 	if fx <= 0.0:
-		_cosmos_roll_target = 0.0
-		_cosmos_bank_target = 0.0
 		_cosmos_lift_target = 0.0
-	# BUTTERWEICH: feste Phasen-Dauern + Smoothstep-Easing — der Roll baut
-	# sich langsam auf, gleitet und laeuft weich aus (kein Ruck mehr).
-	_roll_phase = move_toward(_roll_phase,
-			1.0 if _cosmos_roll_target > 0.5 else 0.0, delta / 6.0)
-	_cosmos_roll = smoothstep(0.0, 1.0, _roll_phase) * PI
 	_lift_phase = move_toward(_lift_phase,
 			1.0 if _cosmos_lift_target > 0.1 else 0.0, delta / 4.0)
 	_cosmos_lift = smoothstep(0.0, 1.0, _lift_phase) * 2.4
-	_cosmos_bank = lerpf(_cosmos_bank, _cosmos_bank_target, minf(delta * 1.1, 1.0))
 	if _cosmos != null:
-		var piv := Vector3(0, 3.6, Z_FAR * 0.5)
-		_cosmos.transform = Transform3D(
-				Basis(Vector3(0, 0, 1), _cosmos_roll + _cosmos_bank) \
-				* Basis(Vector3(0, 1, 0), _cosmos_yaw),
-				piv + Vector3(0, -_cosmos_lift, 0)) * Transform3D(Basis.IDENTITY, -piv)
+		_cosmos.position = Vector3(0, -_cosmos_lift, 0)
 	if _star_mat != null:
 		# Im Hyperspace brennen die Lichtfaeden deutlich heller.
 		_star_mat.set_shader_parameter("intensity",
@@ -2077,37 +1887,13 @@ func _on_beat_edge(beat_idx: int) -> void:
 		_spawn_shooting_star(beat_idx)
 
 
-## DROP-Warp beim Kiai-Start: Lichtstreifen rasen an der Kamera vorbei,
-## kurzer Flash, Sterne springen auf Warp-Tempo.
+## DROP-Warp beim Kiai-Start: Sterne springen kurz auf Warp-Tempo —
+## rein im Hintergrund (kein Flash, kein FOV-Kick, keine Streifen vor der Bahn).
 func _start_drop_warp() -> void:
-	var fx := _fx_level()
-	if fx <= 0.0:
+	if _fx_level() <= 0.0:
 		return
 	_star_burst = 1.0
-	# Hyperspace: Sterne ziehen sich ~1.5s zu Lichtfaeden.
 	_warp_level = 1.0
-	_fov_kick = maxf(_fov_kick, 3.5)
-	var flash := ColorRect.new()
-	flash.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	flash.color = Color(1, 1, 1, 0.5)
-	flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_hud.add_child(flash)
-	var ftw := create_tween()
-	ftw.tween_property(flash, "color:a", 0.0, 0.22)
-	ftw.tween_callback(flash.queue_free)
-	for i in int(14.0 * fx):
-		var streak := MeshInstance3D.new()
-		var box := BoxMesh.new()
-		box.size = Vector3(0.04, 0.04, 10.0 + _hash01(float(i) * 3.7) * 14.0)
-		streak.mesh = box
-		var h1 := _hash01(float(i) * 17.3)
-		var h2 := _hash01(float(i) * 51.9)
-		streak.position = Vector3((h1 - 0.5) * 30.0, h2 * 14.0 - 3.0, Z_FAR * h2)
-		streak.material_override = _emissive_mat(_theme_kiai.lerp(Color(1, 1, 1), 0.5), 1.6)
-		add_child(streak)
-		var tw3 := create_tween()
-		tw3.tween_property(streak, "position:z", 14.0, 0.5 + h1 * 0.3) 			.set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
-		tw3.tween_callback(streak.queue_free)
 
 
 func _spawn_shooting_star(seed_i: int) -> void:
@@ -2200,8 +1986,8 @@ func _update_beat_waves(t: float) -> void:
 		i -= 1
 
 
-## Alle Stations-Meshes/Texturen einmalig laden — _spawn_flyby und das
-## Docking-Finale greifen nur noch auf den Cache zu (keine Frame-Hitches).
+## Alle Stations-Meshes/Texturen einmalig laden — das Docking-Finale
+## greift nur noch auf den Cache zu (keine Frame-Hitches).
 func _preload_stations() -> void:
 	_station_pool = []
 	for sdef in STATION_DEFS:
@@ -2218,15 +2004,6 @@ func _preload_stations() -> void:
 			parts.append([load(mp), tex])
 		if not parts.is_empty():
 			_station_pool.append(parts)
-	# Planeten-Texturen fuer Nahvorbeifluege cachen.
-	for tname in ["earth_like", "ocean_planet", "desert_planet", "lava_planet",
-			"mining_planet", "ecumenopolis", "moon_like"]:
-		var dp := "res://assets_game/planets/%s_diffuse.webp" % tname
-		if ResourceLoader.exists(dp):
-			var ep := "res://assets_game/planets/%s_emission.webp" % tname
-			_planet_tex_cache.append([load(dp),
-				load(ep) if ResourceLoader.exists(ep) else null,
-				tname == "earth_like" or tname == "ocean_planet"])
 
 
 ## Stations-Node aus vorab geladenen Teilen bauen (auf ~5 Einheiten normiert).
@@ -2372,37 +2149,8 @@ func _build_flight_plan() -> void:
 		if tp.uninherited and tp.beat_length > 0.0:
 			bar = tp.beat_length * float(maxi(tp.meter, 1))
 			break
-	var seed_h: int = hash(GameSession.osu_filename)
 	var objs := _beatmap.hit_objects
-	var t0: float = objs[0].time
-	var t_end: float = objs[objs.size() - 1].time
-	# 1) Vorbeifluege an 8-Takt-Grenzen — nur wenn das Fenster ruhig ist.
-	var k := 0
-	var pt := t0 + bar * 8.0
-	while pt < t_end - 4000.0:
-		# Nur noch Asteroiden + (jeder 5.) Planeten-Pass — Wracks und
-		# Stationen sind auf Nutzerwunsch komplett raus.
-		var fkind := 1
-		if k % 5 == 2:
-			fkind = 3
-		_flight_plan.append({ "t": pt - 2600.0, "type": "flyby",
-			"side": (-1.0 if (seed_h + k) % 2 == 0 else 1.0),
-			"kind": fkind })
-		k += 1
-		pt += bar * 8.0
-	# 2) Ueberkopf-Roll beim ersten Kiai (6 Takte kopfueber, dann zurueck).
-	var kiai_t := -1.0
-	var scan := 0.0
-	var scan_end := maxf(_beatmap.duration_ms(), 1.0)
-	while scan < scan_end:
-		if _beatmap.is_kiai(scan):
-			kiai_t = scan
-			break
-		scan += 400.0
-	if kiai_t > 0.0:
-		_flight_plan.append({ "t": kiai_t, "type": "roll", "on": true })
-		_flight_plan.append({ "t": kiai_t + bar * 6.0, "type": "roll", "on": false })
-	# 3) Breaks (>4.5s ohne Noten): Hochziehen + Kometensturm.
+	# Breaks (>4.5s ohne Noten): Hochziehen + Kometensturm.
 	for i in range(1, objs.size()):
 		var gap: float = objs[i].time - objs[i - 1].time
 		if gap > 4500.0:
@@ -2423,14 +2171,6 @@ func _run_flight_event(ev: Dictionary, t: float) -> void:
 	if _fx_level() <= 0.0:
 		return
 	match str(ev.type):
-		"flyby":
-			_spawn_flyby(float(ev.side), int(ev.kind))
-		"roll":
-			# Nur kopfueber gehen, wenn gerade wenig los ist.
-			if bool(ev.on) and _density < 0.85:
-				_cosmos_roll_target = PI
-			else:
-				_cosmos_roll_target = 0.0
 		"break_show":
 			_cosmos_lift_target = 2.4
 			var dur: float = maxf((float(ev.until) - t) / 1000.0, 1.2)
@@ -2443,184 +2183,6 @@ func _run_flight_event(ev: Dictionary, t: float) -> void:
 			get_tree().create_timer(dur, false).timeout.connect(func():
 				if is_inside_tree():
 					_cosmos_lift_target = 0.0)
-
-
-## Wrack/Asteroid: spawnt weit hinten AUSSERHALB des Noten-Korridors und
-## rauscht seitlich-oben an der Kamera vorbei.
-func _spawn_flyby(side: float, kind: int) -> void:
-	var root := Node3D.new()
-	# IMMER oben-seitlich: hoch genug ueber dem Horizont und weit genug
-	# aussen — die Flugbahn kreuzt NIE den Noten-Korridor.
-	root.position = Vector3(side * 11.0, 6.0 + randf() * 2.5, Z_FAR - 16.0)
-	_cosmos.add_child(root)
-	if kind == 0:
-		# WRACK v2: aufgerissener Frachter als BELEUCHTETE Silhouette —
-		# unshaded-Materialien mit per-Teil-Helligkeit (die Szene hat kein
-		# echtes Licht; Standard-Shading rendert sonst pechschwarz),
-		# warme Fensterreihen, Sonnen-Streiflicht, Antenne, Truemmerfeld.
-		var hull_col := Color(0.15, 0.17, 0.22)
-		var parts := [
-			[Vector3(0, 0, 0), Vector3(4.4, 1.3, 1.6), 1.0],
-			[Vector3(-1.7, 0.95, 0.0), Vector3(1.5, 0.9, 1.1), 1.35],
-			[Vector3(2.1, -0.35, 0.2), Vector3(1.7, 0.8, 1.2), 0.7],
-		]
-		for part in parts:
-			var hull := MeshInstance3D.new()
-			var bm := BoxMesh.new()
-			bm.size = part[1]
-			hull.mesh = bm
-			var hmat := StandardMaterial3D.new()
-			hmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-			hmat.albedo_color = hull_col * float(part[2])
-			hull.material_override = hmat
-			hull.position = part[0]
-			hull.rotation_degrees = Vector3(randf() * 6.0 - 3.0,
-					randf() * 10.0 - 5.0, randf() * 6.0 - 3.0)
-			root.add_child(hull)
-		# Fensterreihe: warme Lichtpunkte, ein Teil ist "ausgefallen".
-		for w in 8:
-			if randf() < 0.3:
-				continue
-			var win := MeshInstance3D.new()
-			var wq := QuadMesh.new()
-			wq.size = Vector2(0.17, 0.11)
-			win.mesh = wq
-			var wmat := StandardMaterial3D.new()
-			wmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-			wmat.albedo_color = Color(1.0, 0.86, 0.55)
-			win.position = Vector3(-1.9 + float(w) * 0.55, 0.12, 0.82)
-			root.add_child(win)
-		# Abgeknickte Antenne.
-		var ant := MeshInstance3D.new()
-		var am := BoxMesh.new()
-		am.size = Vector3(0.06, 1.5, 0.06)
-		ant.mesh = am
-		var amat := StandardMaterial3D.new()
-		amat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		amat.albedo_color = hull_col * 1.2
-		ant.material_override = amat
-		ant.position = Vector3(1.3, 1.2, 0)
-		ant.rotation_degrees = Vector3(0, 0, 34)
-		root.add_child(ant)
-		# Sonnen-Streiflicht: warmer Glow verkauft die Beleuchtung.
-		var sun := MeshInstance3D.new()
-		var sq2 := QuadMesh.new()
-		sq2.size = Vector2(4.4, 4.4)
-		sun.mesh = sq2
-		var smat2 := ShaderMaterial.new()
-		smat2.shader = _glow_shader
-		smat2.set_shader_parameter("base_color", Color(1.0, 0.82, 0.55))
-		smat2.set_shader_parameter("intensity", 0.10)
-		sun.material_override = smat2
-		sun.position = Vector3(-1.6, 0.7, -0.4)
-		root.add_child(sun)
-		# Truemmerfeld: kleine Fragmente driften um das Wrack.
-		for dtri in 5:
-			var deb := MeshInstance3D.new()
-			var dm := BoxMesh.new()
-			var dsz := 0.14 + randf() * 0.24
-			dm.size = Vector3(dsz, dsz * 0.7, dsz)
-			deb.mesh = dm
-			var dmat := StandardMaterial3D.new()
-			dmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-			dmat.albedo_color = hull_col * (0.7 + randf() * 0.7)
-			deb.material_override = dmat
-			deb.position = Vector3((randf() - 0.5) * 6.5,
-					(randf() - 0.5) * 4.0, (randf() - 0.5) * 3.0)
-			deb.rotation_degrees = Vector3(randf() * 360.0, randf() * 360.0, 0)
-			root.add_child(deb)
-		var lamp := MeshInstance3D.new()
-		var lq := QuadMesh.new()
-		lq.size = Vector2(0.7, 0.7)
-		lamp.mesh = lq
-		var lmat := ShaderMaterial.new()
-		lmat.shader = _glow_shader
-		lmat.set_shader_parameter("base_color", Color(1.0, 0.25, 0.2))
-		lmat.set_shader_parameter("intensity", 1.0)
-		lamp.material_override = lmat
-		lamp.position = Vector3(-1.7, 1.7, 0)
-		root.add_child(lamp)
-		root.set_meta("lamp", lmat)
-	elif kind == 2:
-		# RAUMSTATION: echtes 3D-Modell (Community-Asset), unshaded texturiert,
-		# auf einheitliche Groesse normiert. Fallback: einfacher Ring.
-		if not _station_pool.is_empty():
-			var st := _build_station_node(
-					_station_pool[randi() % _station_pool.size()])
-			st.rotation_degrees = Vector3(10, randf() * 360.0, 5)
-			root.add_child(st)
-		else:
-			var ring := MeshInstance3D.new()
-			var rt := TorusMesh.new()
-			rt.inner_radius = 0.9
-			rt.outer_radius = 1.5
-			ring.mesh = rt
-			var rm2 := StandardMaterial3D.new()
-			rm2.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-			rm2.albedo_color = Color(0.22, 0.25, 0.32)
-			ring.material_override = rm2
-			root.add_child(ring)
-		var plight := MeshInstance3D.new()
-		var plq := QuadMesh.new()
-		plq.size = Vector2(0.55, 0.55)
-		plight.mesh = plq
-		var plmat := ShaderMaterial.new()
-		plmat.shader = _glow_shader
-		plmat.set_shader_parameter("base_color", Color(0.4, 1.0, 0.6))
-		plmat.set_shader_parameter("intensity", 1.0)
-		plight.material_override = plmat
-		plight.position = Vector3(0, 1.4, 0)
-		root.add_child(plight)
-		root.set_meta("lamp", plmat)
-	elif kind == 3 and not _planet_tex_cache.is_empty():
-		# PLANETEN-NAHVORBEIFLUG: ein riesiger Textur-Planet zieht
-		# majestaetisch knapp am Spielfeld vorbei — der Wow-Moment.
-		var ptex: Array = _planet_tex_cache[randi() % _planet_tex_cache.size()]
-		var pp3 := MeshInstance3D.new()
-		var pq3 := QuadMesh.new()
-		var psize := 14.0 + randf() * 6.0
-		pq3.size = Vector2(psize, psize)
-		pp3.mesh = pq3
-		var pmat3 := ShaderMaterial.new()
-		pmat3.shader = load("res://shaders/planet.gdshader")
-		pmat3.set_shader_parameter("use_texture", 1.0)
-		pmat3.set_shader_parameter("tex_diffuse", ptex[0])
-		if ptex[1] != null:
-			pmat3.set_shader_parameter("tex_emission", ptex[1])
-		if bool(ptex[2]):
-			pmat3.set_shader_parameter("clouds_amount", 0.85)
-		pmat3.set_shader_parameter("seed", randf() * 30.0)
-		pmat3.set_shader_parameter("atmo_col", _theme_col.lerp(Color(0.7, 0.85, 1.0), 0.5))
-		pp3.material_override = pmat3
-		root.add_child(pp3)
-		# Weiter aussen + hoeher als Wracks, damit er trotz Groesse nie
-		# ueber dem Spielfeld haengt.
-		root.position = Vector3(side * 19.0, 9.5 + randf() * 2.0, Z_FAR - 26.0)
-	else:
-		# ASTEROID: grauer Brocken mit dem Planeten-Shader.
-		var rock := MeshInstance3D.new()
-		var rq2 := QuadMesh.new()
-		var rs := 2.0 + randf() * 2.5
-		rq2.size = Vector2(rs, rs)
-		rock.mesh = rq2
-		var rmat := ShaderMaterial.new()
-		rmat.shader = load("res://shaders/planet.gdshader")
-		rmat.set_shader_parameter("base_col", Color(0.45, 0.43, 0.41))
-		rmat.set_shader_parameter("band_col", Color(0.30, 0.29, 0.28))
-		rmat.set_shader_parameter("atmo_col", Color(0.5, 0.5, 0.55))
-		rmat.set_shader_parameter("band_freq", 17.0)
-		rmat.set_shader_parameter("seed", randf() * 40.0)
-		rmat.set_shader_parameter("ring_amount", 0.0)
-		rock.material_override = rmat
-		root.add_child(rock)
-	# Planeten gleiten langsam und lautlos (majestaetisch), Rest rauscht.
-	var spd := 16.0 + randf() * 8.0
-	var tmb := (randf() - 0.5) * 0.3
-	if kind == 3:
-		spd = 9.0 + randf() * 3.0
-		tmb = 0.0
-	_flybys.append({ "node": root, "side": side, "speed": spd,
-		"whooshed": kind == 3, "tumble": tmb })
 
 
 ## Fortlaufende Beat-Zahl der Song-Zeit (fuer BPM-synchrone Choreografie).
@@ -3409,7 +2971,7 @@ func _build_tutorial_steps() -> void:
 		return
 	var k := []
 	for code in Settings.key_lanes:
-		k.append(OS.get_keycode_string(code))
+		k.append(_short_key_name(code))
 	var first_note := -1.0
 	var note_col := 0
 	var first_hold := -1.0
@@ -3557,9 +3119,6 @@ func _refresh_mp_board() -> void:
 	for i in ranked.size():
 		if int(ranked[i].id) == my_id:
 			my_rank = i
-	# Ueberhol-Feedback: eigener Rang verbessert -> kurzer FOV-Kick.
-	if _mp_last_rank >= 0 and my_rank >= 0 and my_rank < _mp_last_rank:
-		_fov_kick = maxf(_fov_kick, 1.1)
 	_mp_last_rank = my_rank
 	for i in ranked.size():
 		var p: Dictionary = ranked[i]
@@ -3685,14 +3244,6 @@ func _capture_results_shot() -> void:
 
 
 func _capture_after_first_note() -> void:
-	# Harness: je ein Wrack + eine Station sichtbar platzieren, damit der
-	# Screenshot die Vorbeiflug-Optik mitprueft.
-	_spawn_flyby(-1.0, 1)
-	_spawn_flyby(1.0, 3)
-	for fb in _flybys:
-		if is_instance_valid(fb.node):
-			fb.node.position.z = -26.0
-		fb.speed = 0.0
 	var idx := mini(6, _beatmap.hit_objects.size() - 1)
 	var target := _beatmap.hit_objects[idx].time - 150.0
 	var guard := 0

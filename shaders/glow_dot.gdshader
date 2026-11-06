@@ -12,7 +12,10 @@ void fragment() {
 	float d = length(p);
 	float core = exp(-d * d * 6.0);
 	float halo = exp(-d * 2.4) * 0.55;
-	vec3 col = base_color.rgb * COLOR.rgb * (core * 2.4 + halo) * intensity;
+	// Runde Maske: der Halo endet weich VOR dem Quad-Rand — sonst zeichnen
+	// sich bei additivem Blend + Glow die Quad-Ecken als Quadrate ab.
+	float mask = 1.0 - smoothstep(0.6, 1.0, d);
+	vec3 col = base_color.rgb * COLOR.rgb * (core * 2.4 + halo) * intensity * mask;
 	ALBEDO = col;
-	ALPHA = clamp(core + halo, 0.0, 1.0) * master_alpha;
+	ALPHA = clamp(core + halo, 0.0, 1.0) * master_alpha * mask;
 }
