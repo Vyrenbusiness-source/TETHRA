@@ -7,10 +7,7 @@ extends Control
 
 signal closed
 
-const COL_DIM := Color(0.55, 0.58, 0.66)
-const COL_SECTION := Color(0.45, 0.8, 1.0)
-const COL_TAB_SEL := Color(1, 1, 1, 0.10)
-const COL_TAB := Color(0.78, 0.81, 0.9)
+const COL_DIM := UiTheme.DIM
 const VALUE_W := 72.0
 const CAP_W := 180.0
 const ROW_H := 40.0
@@ -361,6 +358,7 @@ func _intro(panel: Control) -> void:
 
 ## Harness (--shot-settings): jede Kategorie als PNG, danach 2D-Modus-Wechsel.
 func _shot_pages() -> void:
+	printerr("DBG pages ", _pages.size())
 	var dir := OS.get_environment("SETTINGS_SHOT_DIR")
 	if dir == "":
 		dir = OS.get_user_data_dir()
@@ -395,10 +393,10 @@ func _page(side: VBoxContainer, stack: Control, caption: String) -> VBoxContaine
 	b.custom_minimum_size = Vector2(0, 38)
 	b.focus_mode = Control.FOCUS_NONE
 	b.add_theme_font_size_override("font_size", 15)
-	b.add_theme_color_override("font_hover_color", Color.WHITE)
+	b.add_theme_color_override("font_hover_color", UiTheme.TEXT)
 	var hv := StyleBoxFlat.new()
-	hv.bg_color = Color(1, 1, 1, 0.05)
-	hv.set_corner_radius_all(10)
+	hv.bg_color = Color(1, 1, 1, 0.06)
+	hv.set_corner_radius_all(12)
 	hv.content_margin_left = 14
 	b.add_theme_stylebox_override("hover", hv)
 	b.add_theme_stylebox_override("pressed", hv)
@@ -417,19 +415,20 @@ func _show_page(i: int) -> void:
 		_pages[k].visible = k == i
 		var b := _tabs[k]
 		if k == i:
+			# Aktiv wie die Chips im Song-Browser: Akzent-Fuellung + Rand.
 			var sel := StyleBoxFlat.new()
-			sel.bg_color = COL_TAB_SEL
-			sel.set_corner_radius_all(10)
-			sel.border_width_left = 3
-			sel.border_color = COL_SECTION
+			sel.bg_color = Color(UiTheme.ACCENT, 0.16)
+			sel.border_color = Color(UiTheme.ACCENT, 0.60)
+			sel.set_border_width_all(1)
+			sel.set_corner_radius_all(12)
 			sel.content_margin_left = 14
 			b.add_theme_stylebox_override("normal", sel)
-			b.add_theme_color_override("font_color", Color.WHITE)
+			b.add_theme_color_override("font_color", UiTheme.ACCENT)
 		else:
 			var n := StyleBoxEmpty.new()
 			n.content_margin_left = 14
 			b.add_theme_stylebox_override("normal", n)
-			b.add_theme_color_override("font_color", COL_TAB)
+			b.add_theme_color_override("font_color", UiTheme.DIM)
 
 
 ## Regler-Zeile: fmt(v) -> Text, on_change(v). Optional eigenes Wert-Label.
@@ -495,7 +494,7 @@ func _row(vb: VBoxContainer, caption: String, control: Control, value: Label) ->
 	cap.text = caption
 	cap.custom_minimum_size = Vector2(CAP_W, 0)
 	cap.add_theme_font_size_override("font_size", 15)
-	cap.add_theme_color_override("font_color", Color(0.85, 0.88, 0.95))
+	cap.add_theme_color_override("font_color", UiTheme.TEXT)
 	row.add_child(cap)
 	control.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	if control is CheckButton:
