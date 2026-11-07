@@ -5,6 +5,9 @@ shader_type sky;
 //   Himmel   (tex_a/tex_b)     sky_boss.webp        Glut-Horizont, Vulkan-Grate,
 //                                                   Gewittertuerme, Wolkenbaenke
 //   Glut     (stars_a/stars_b) sky_boss_embers.webp aufsteigende Funken (Parallax)
+//   Rauch    (veil_tex)        sky_boss_veil.webp   Rauchsaeulen ueber dem Horizont
+//                                                   (RGBA: Randlicht add., A = Abdunklung;
+//                                                   eigener Parallax, schiebt auf beat_step)
 //   Blitz    (flash_tex)       sky_boss_flash.webp  R/G/B = drei Blitz-Gruppen
 // Uniform-Interface wie shaders/sky_panorama.gdshader (gleiche Namen, gleiche
 // Abbildung u = atan(d.x,-d.z)/2pi+0.5, v = 0.5-asin(d.y)/pi, Wurzel-Kodierung
@@ -31,6 +34,7 @@ shader_type sky;
 //   mat.shader = load("res://shaders/theme_boss.gdshader")
 //   mat.set_shader_parameter("tex_a", load("res://assets_game/themes/boss/sky_boss.webp"))
 //   mat.set_shader_parameter("stars_a", load("res://assets_game/themes/boss/sky_boss_embers.webp"))
+//   mat.set_shader_parameter("veil_tex", load("res://assets_game/themes/boss/sky_boss_veil.webp"))
 //   mat.set_shader_parameter("flash_tex", load("res://assets_game/themes/boss/sky_boss_flash.webp"))
 //   pro Downbeat (selten): mat.set_shader_parameter("lightning_cell", n % 3); _flash = 1.0
 //   pro Frame: _flash = move_toward(_flash, 0.0, delta * 4.0)
@@ -50,6 +54,18 @@ shader_type sky;
 //   Umgebungslicht       #140405, Glow-Schwelle wie Spiel (0.92)
 //   Theme-Farbe (Hue)    0.99 (fuer _sky_pal_for_hue / UI-Akzente)
 //
+// NAHE EBENE shards_tex (sky_boss_shards.webp, RGBA): Glut-Brocken/Truemmer im Stil der Fraktal-Splitter;
+//   Parallax zur Fernebene, Gier rastet mit beat_step ein, Drop = schneller/naeher/heller
+//   (Mitte/unten in Weltkoordinaten frei). Bindung: mat.set_shader_parameter("shards_tex", load("res://assets_game/themes/boss/sky_boss_shards.webp")).
+// BEAT-VERTRAG (docs/worlds/beat_contract.md):
+//   beat_step       Glut-HERZSCHLAG: die Funken-Ebene springt auf jedem Schlag ein
+//                   Stueck aufwaerts und ruht bis zum naechsten (rastet exakt ein).
+//   downbeat_pulse  Takt-Akzent: Glut-Horizont und Turm-Raender gluehen eine Spur
+//                   heller und laenger als beat_pulse.
+//   drop            Verwandlung: Glut-Horizont weitet sich nach oben, Funken werden
+//                   hochgesogen und dichter; Luma-Anstieg gedeckelt.
+//   kiai, energy    Grundglut atmet minimal mit; comfort halbiert alle Bewegung.
+//   beat_phase, bar_phase  Saegezaehne (Preview-Kontrolle, Funken-Flackern).
 // Pro Frame (alles optional, wie sky_panorama):
 //   beat_pulse 0..1    Glut-Horizont + beleuchtete Wolkenraender atmen auf dem Beat
 //   palette_mix 0..1   Ueberblendung tex_a/stars_a -> tex_b/stars_b
@@ -59,11 +75,13 @@ shader_type sky;
 // Kosten: 1-2 Himmel-Fetches + 1 Blitz-Fetch (nur wenn lightning > 0) +
 // 2..4 Glut-Fetches (x WARP_TAPS bei warp > 0).
 
-uniform sampler2D tex_a : source_color, filter_linear, repeat_enable, hint_default_black;
-uniform sampler2D tex_b : source_color, filter_linear, repeat_enable, hint_default_black;
-uniform sampler2D stars_a : source_color, filter_linear, repeat_enable, hint_default_black;
-uniform sampler2D stars_b : source_color, filter_linear, repeat_enable, hint_default_black;
-uniform sampler2D flash_tex : source_color, filter_linear, repeat_enable, hint_default_black;
+uniform sampler2D tex_a : source_color, filter_linear_mipmap_anisotropic, repeat_enable, hint_default_black;
+uniform sampler2D tex_b : source_color, filter_linear_mipmap_anisotropic, repeat_enable, hint_default_black;
+uniform sampler2D stars_a : source_color, filter_linear_mipmap_anisotropic, repeat_enable, hint_default_black;
+uniform sampler2D stars_b : source_color, filter_linear_mipmap_anisotropic, repeat_enable, hint_default_black;
+uniform sampler2D veil_tex : filter_linear_mipmap_anisotropic, repeat_enable, hint_default_black;
+uniform sampler2D flash_tex : source_color, filter_linear_mipmap_anisotropic, repeat_enable, hint_default_black;
+uniform sampler2D shards_tex : source_color, filter_linear_mipmap_anisotropic, repeat_enable, hint_default_transparent;
 uniform float palette_mix : hint_range(0.0, 1.0) = 0.0;
 
 uniform vec3 tint : source_color = vec3(1.0);
@@ -71,6 +89,14 @@ uniform float brightness : hint_range(0.0, 4.0) = 1.0;
 uniform float star_brightness : hint_range(0.0, 4.0) = 1.0;
 uniform float star_hdr : hint_range(1.0, 4.0) = 1.4;
 uniform float beat_pulse : hint_range(0.0, 1.0) = 0.0;
+uniform float beat_phase : hint_range(0.0, 1.0) = 0.0;
+uniform float bar_phase : hint_range(0.0, 1.0) = 0.0;
+uniform float beat_step = 0.0;
+uniform float downbeat_pulse : hint_range(0.0, 1.0) = 0.0;
+uniform float kiai : hint_range(0.0, 1.0) = 0.0;
+uniform float drop : hint_range(0.0, 0.6) = 0.0;
+uniform float energy : hint_range(0.0, 1.0) = 0.0;
+uniform float comfort : hint_range(0.0, 1.0) = 0.0;
 
 uniform vec3 pano_rotation = vec3(0.0);
 uniform vec2 pano_offset = vec2(0.0);
@@ -121,6 +147,15 @@ vec3 zoom_dir(vec3 d, float s) {
 	return vec3(perp / l * sn, -cs);
 }
 
+// Mip-Sampling mit nahtfreien Gradienten (fract(u) springt an der Naht).
+vec4 tg(sampler2D s, vec2 uv) {
+	vec2 gx = dFdx(uv);
+	vec2 gy = dFdy(uv);
+	gx.x -= round(gx.x);
+	gy.x -= round(gy.x);
+	return textureGrad(s, uv, gx, gy);
+}
+
 vec3 dec(vec3 c) {
 	return c * c;
 }
@@ -142,12 +177,12 @@ float hash11(float p) {
 vec3 embers_at(vec3 d, mat3 srot, vec2 rise) {
 	vec2 uv = dir_uv(d * srot, stars_offset + rise);
 	if (palette_mix <= 0.001) {
-		return dec(textureLod(stars_a, uv, 0.0).rgb);
+		return dec(tg(stars_a, uv).rgb);
 	}
 	if (palette_mix >= 0.999) {
-		return dec(textureLod(stars_b, uv, 0.0).rgb);
+		return dec(tg(stars_b, uv).rgb);
 	}
-	return mix(dec(textureLod(stars_a, uv, 0.0).rgb), dec(textureLod(stars_b, uv, 0.0).rgb), palette_mix);
+	return mix(dec(tg(stars_a, uv).rgb), dec(tg(stars_b, uv).rgb), palette_mix);
 }
 
 // Weiches Flackern je Funke (Gitterzellen ~ Funkengroesse, zeitlich glatt).
@@ -167,15 +202,31 @@ void sky() {
 	vec2 puv = dir_uv(dir * euler(pano_rotation), pano_offset);
 	vec3 sky_col;
 	if (palette_mix <= 0.001) {
-		sky_col = dec(textureLod(tex_a, puv, 0.0).rgb);
+		sky_col = dec(tg(tex_a, puv).rgb);
 	} else if (palette_mix >= 0.999) {
-		sky_col = dec(textureLod(tex_b, puv, 0.0).rgb);
+		sky_col = dec(tg(tex_b, puv).rgb);
 	} else {
-		sky_col = mix(dec(textureLod(tex_a, puv, 0.0).rgb), dec(textureLod(tex_b, puv, 0.0).rgb), palette_mix);
+		sky_col = mix(dec(tg(tex_a, puv).rgb), dec(tg(tex_b, puv).rgb), palette_mix);
 	}
 	// Puls hebt die hellen Glut-Bereiche (Horizont, Wolkenraender), Schwarz bleibt.
 	float nl = dot(sky_col, vec3(0.2126, 0.7152, 0.0722));
 	sky_col *= 1.0 + beat_pulse * (0.12 + 9.0 * nl);
+	float mv = 1.0 - 0.5 * comfort;
+	// Takt-Akzent und Drop wirken auf den Glut-Horizont (Breitenband), nie auf die Mitte.
+	float hband = exp(-max(lat, 0.0) / 0.20) * smoothstep(-0.06, 0.03, lat);
+	float dp = drop * (1.0 - 0.5 * comfort);
+	sky_col *= 1.0 + downbeat_pulse * mv * (0.06 + 3.5 * nl) * (0.4 + 0.6 * hband);
+	sky_col *= 1.0 + dp * (0.12 * hband + 0.9 * nl * (0.3 + hband)) + 0.05 * kiai * hband * (0.6 + energy);
+	// Drop weitet die Glut: heller Dunstsaum steigt ueber den Horizont.
+	sky_col += vec3(0.020, 0.0010, 0.0016) * dp * 0.8 * exp(-max(lat - 0.02, 0.0) / (0.10 + 0.8 * dp)) * smoothstep(-0.04, 0.03, lat);
+
+	// Tiefenebene Rauch: eigener Versatz (langsame Drift + Schlag-Ruck auf beat_step).
+	{
+		vec2 vo = pano_offset + vec2(TIME * 0.0012 + beat_step * 0.0016 * mv, 0.0);
+		vec4 vl = tg(veil_tex, dir_uv(dir * euler(pano_rotation), vo));
+		vec3 vlight = dec(vl.rgb) * (1.0 + beat_pulse * 0.25 + downbeat_pulse * 0.8 * mv + dp * 0.9);
+		sky_col = sky_col * vl.a + vlight;
+	}
 
 	// Blitz: eine Gruppe, flackernd, in Weltkoordinaten gesperrt.
 	vec3 fl = vec3(0.0);
@@ -184,7 +235,7 @@ void sky() {
 		if (cell < 0) {
 			cell = int(hash11(floor(TIME * 0.45)) * 2.999);
 		}
-		vec3 f = dec(textureLod(flash_tex, puv, 0.0).rgb);
+		vec3 f = dec(tg(flash_tex, puv).rgb);
 		float g = cell == 0 ? f.r : (cell == 1 ? f.g : f.b);
 		// Mehrfach-Entladung: kurze Aussetzer statt gleichmaessigem Leuchten.
 		float st = hash11(floor(TIME * 22.0) + float(cell) * 7.0);
@@ -201,8 +252,9 @@ void sky() {
 		mat3 srot = euler(stars_rotation);
 		float ph = star_phase + TIME * star_speed;
 		bool moving = abs(star_speed) > 0.0001 || abs(fract(star_phase)) > 0.0001;
-		bool rising = abs(ember_rise) > 0.0001;
-		float rp = TIME * ember_rise;
+		bool rising = abs(ember_rise) > 0.0001 || abs(beat_step) > 0.0001;
+		// Herzschlag: beat_step schiebt die Funken je Schlag ein Stueck hoch (8-Schlag-Zyklus).
+		float rp = TIME * ember_rise + beat_step * 0.125 * mv;
 		vec3 em = vec3(0.0);
 		for (int rl = 0; rl < 2; rl++) {
 			float ra = fract(rp + float(rl) * 0.5);
@@ -214,7 +266,7 @@ void sky() {
 			if (rw < 0.002) {
 				continue;
 			}
-			vec2 rise = vec2(float(rl) * 0.37, (ra - 0.5) * 0.03);
+			vec2 rise = vec2(float(rl) * 0.37, (ra - 0.5) * 0.03 - dp * 0.012);
 			for (int layer = 0; layer < 2; layer++) {
 				float a = fract(ph + float(layer) * 0.5);
 				float w = 0.5 - 0.5 * cos(a * TAU);
@@ -248,9 +300,25 @@ void sky() {
 		}
 		float el = dot(em, vec3(0.2126, 0.7152, 0.0722));
 		em *= star_brightness * mix(1.0, star_hdr, smoothstep(0.12, 0.35, el));
-		em *= 1.0 + beat_pulse * 0.6;
+		em *= 1.0 + beat_pulse * 0.6 + downbeat_pulse * 0.35 * mv + dp * 0.9;
 
 		vec3 col = (sky_col + em + fl) * tint * brightness;
+
+		// Nahe Objekt-Ebene (Stil Fraktal-Splitter): Brocken ziehen am Spieler vorbei,
+		// Gier rastet mit beat_step auf dem Schlag ein; Drop = schneller/naeher/heller.
+		{
+			float s_mv = 1.0 - 0.5 * comfort;
+			float s_dp = drop * (1.0 - 0.5 * comfort);
+			float s_yaw = TIME * 0.004 * s_mv + beat_step * 0.012 * s_mv + s_dp * 0.07;
+			vec3 s_d = dir * euler(vec3(0.0, s_yaw, 0.0));
+			s_d.y = dir.y + s_dp * 0.03 * (1.0 - abs(dir.y));          // Drop: naeher heran
+			vec4 s_sh = tg(shards_tex, dir_uv(normalize(s_d), vec2(0.0)));
+			float s_lon = atan(dir.x, -dir.z);
+			float s_lat = asin(clamp(dir.y, -1.0, 1.0));
+			float s_gate = smoothstep(0.03, 0.12, s_lat) * (1.0 - exp(-(s_lon / 0.5) * (s_lon / 0.5)) * smoothstep(0.9, 0.5, s_lat));
+			vec3 s_c = dec(s_sh.rgb) * (1.0 + beat_pulse * 0.30 + downbeat_pulse * 0.25 * s_mv + s_dp * 0.6);
+			col = mix(col, s_c * tint * brightness, s_sh.a * s_gate);
+		}
 
 		// Lesbarkeit in Weltkoordinaten: vorn-mitte/unten zusaetzlich dunkler.
 		float front = exp(-(lon / 0.62) * (lon / 0.62)) * smoothstep(0.22, -0.30, lat);
