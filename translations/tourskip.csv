@@ -76,3 +76,17 @@ wählt …,wählt …,choosing …
 "»Rest automatisch füllen« nimmt zuerst passende Maps aus deiner Bibliothek, dann online.","»Rest automatisch füllen« nimmt zuerst passende Maps aus deiner Bibliothek, dann online.","""Fill the rest automatically"" takes matching maps from your library first, then online."
 ≈ %d Minuten Spielzeit,≈ %d Minuten Spielzeit,≈ %d minutes of play
 ✓ gewählt,✓ gewählt,✓ chosen
+SCHWIERIGKEIT,SCHWIERIGKEIT,DIFFICULTY
+ES ENTSTEHT,ES ENTSTEHT,SUMMARY
+Egal,Egal,Any
+Wenig,Wenig,Few
+Mittel,Mittel,Some
+Viel,Viel,Many
+Long Notes,Long Notes,Long notes
+Wenig Long Notes,Wenig Long Notes,Few long notes
+Mittel viele Long Notes,Mittel viele Long Notes,Some long notes
+Viele Long Notes,Viele Long Notes,Many long notes
+%d–%d %% Long Notes,%d–%d %% Long Notes,%d–%d %% long notes
+bis %s min,bis %s min,up to %s min
+ab %d BPM,ab %d BPM,from %d BPM
+bis %d BPM,bis %d BPM,up to %d BPM
