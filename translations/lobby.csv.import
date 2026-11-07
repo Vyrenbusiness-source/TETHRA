@@ -1,0 +1,19 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+uid="uid://coqnaf7vmoust"
+
+[deps]
+
+files=["res://translations/lobby.de.translation", "res://translations/lobby.en.translation"]
+
+source_file="res://translations/lobby.csv"
+dest_files=["res://translations/lobby.de.translation", "res://translations/lobby.en.translation"]
+
+[params]
+
+compress=1
+delimiter=0
+unescape_keys=false
+unescape_translations=true

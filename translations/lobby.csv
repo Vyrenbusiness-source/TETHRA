@@ -1,0 +1,33 @@
+keys,de,en
+Zurück (Esc),Zurück (Esc),Back (Esc)
+Raumname,Raumname,Room name
+Ohne Passwort erscheint der Raum bei allen in der Liste.,Ohne Passwort erscheint der Raum bei allen in der Liste.,Without a password the room shows up in everyone's list.
+Den Code bekommst du vom Host des Raums.,Den Code bekommst du vom Host des Raums.,Get the code from the room's host.
+Kopieren,Kopieren,Copy
+Kopiert,Kopiert,Copied
+Code  %s,Code  %s,Code  %s
+Nur im eigenen Netzwerk,Nur im eigenen Netzwerk,Local network only
+Jeder für sich — der höchste Score gewinnt.,Jeder für sich — der höchste Score gewinnt.,Everyone for themselves — highest score wins.
+Turnier läuft — Modus ist fest.,Turnier läuft — Modus ist fest.,Tournament running — mode is locked.
+%d / %d bereit,%d / %d bereit,%d / %d ready
+SPIELER IM RAUM,SPIELER IM RAUM,PLAYERS IN ROOM
+Wähle eine Map mit „Map wählen“.,Wähle eine Map mit „Map wählen“.,Pick a map with “Pick map”.
+Nicht in deiner Bibliothek,Nicht in deiner Bibliothek,Not in your library
+Wird geladen,Wird geladen,Downloading
+Map laden,Map laden,Download map
+Kein Abbruch bei leerer Lebensleiste,Kein Abbruch bei leerer Lebensleiste,No fail when the health bar runs empty
+Jede Map mit Tempowechseln,Jede Map mit Tempowechseln,Scroll speed changes on every map
+Nur der Kronenträger schaltet Mods.,Nur der Kronenträger schaltet Mods.,Only the crown holder can change mods.
+SPIELEN,SPIELEN,PLAY
+BEREIT,BEREIT,READY
+MAP LÄDT,MAP LÄDT,MAP LOADING
+NICHT BEREIT,NICHT BEREIT,NOT READY
+Noch nicht alle sind bereit.,Noch nicht alle sind bereit.,Not everyone is ready yet.
+Der Kronenträger startet die Runde.,Der Kronenträger startet die Runde.,The crown holder starts the round.
+Kronenträger: wählt die Map und startet,Kronenträger: wählt die Map und startet,Crown holder: picks the map and starts
+Krone,Krone,crown
+Bereit,Bereit,Ready
+%d Noten,%d Noten,%d notes
+Map von %s,Map von %s,Mapped by %s
+1 Spieler,1 Spieler,1 player
+Jede Runde scheidet der niedrigste Score aus.,Jede Runde scheidet der niedrigste Score aus.,The lowest score is out each round.
