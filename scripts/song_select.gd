@@ -182,6 +182,8 @@ func _ready() -> void:
 	GameSession.perf_since("Browser: _ready gesamt", _perf_ready_t)
 	get_tree().create_timer(GAME_PRELOAD_DELAY).timeout.connect(_begin_game_preload)
 
+	if OS.get_cmdline_args().has("--sv"):
+		_on_sv_toggled(true)  # Debug/Shots: SV-Mod vorwaehlen
 	if DisplayServer.get_name() == "headless":
 		_headless_report()
 	elif GameSession.perf_enabled:
