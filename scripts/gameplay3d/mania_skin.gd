@@ -329,7 +329,32 @@ static func safe_rel(path: String) -> String:
 
 
 ## .osk/.zip oder Skin-Ordner -> user://skins/<name>/. Gibt den Namen zurueck, "" bei Fehler.
+## Grund des letzten fehlgeschlagenen import_skin() (fuer die Anzeige).
+static var last_error := ""
+
+
+## Installierte osu!stable-Skins mit Mania-Grafiken (%LOCALAPPDATA%/osu!/Skins):
+## [{name, path}], alphabetisch. Fuer "Aus osu! übernehmen" mit einem Klick.
+static func osu_skins() -> Array:
+	var out: Array = []
+	var root := OS.get_environment("LOCALAPPDATA").replace("\\", "/").path_join("osu!/Skins")
+	var d := DirAccess.open(root)
+	if d == null:
+		return out
+	for sub in d.get_directories():
+		var sd := DirAccess.open(root.path_join(sub))
+		if sd == null:
+			continue
+		for f in sd.get_files():
+			if f.to_lower().begins_with("mania-") and f.to_lower().ends_with(".png"):
+				out.append({"name": sub.strip_edges(), "path": root.path_join(sub)})
+				break
+	out.sort_custom(func(a, b): return String(a.name).naturalnocasecmp_to(String(b.name)) < 0)
+	return out
+
+
 static func import_skin(path: String) -> String:
+	last_error = ""
 	var entries: Dictionary = {}   # relativer Pfad -> Callable() -> PackedByteArray
 	var base_name := path.replace("\\", "/").trim_suffix("/").get_file().get_basename()
 	var zr: ZIPReader = null
@@ -340,11 +365,13 @@ static func import_skin(path: String) -> String:
 	elif FileAccess.file_exists(path):
 		zr = ZIPReader.new()
 		if zr.open(path) != OK:
+			last_error = "Datei ist kein gültiges .osk/.zip"
 			return ""
 		for fn in zr.get_files():
 			if not String(fn).ends_with("/"):
 				entries[String(fn).replace("\\", "/")] = fn
 	else:
+		last_error = "Datei nicht gefunden"
 		return ""
 	# Praefix-Ordner: skin.ini liegt evtl. eine Ebene tiefer.
 	var prefix := ""
@@ -413,6 +440,7 @@ static func import_skin(path: String) -> String:
 		if String(rel).to_lower().ends_with(".png"):
 			png_count += 1
 	if png_count == 0:
+		last_error = "Kein Mania-Skin (keine mania-Grafiken enthalten)"
 		return ""
 	var nm := safe_name(base_name)
 	var dest := SKINS_DIR + "/" + nm

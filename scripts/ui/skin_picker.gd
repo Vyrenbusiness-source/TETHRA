@@ -9,6 +9,8 @@ signal changed
 
 var _opt: OptionButton
 var _import_btn: Button
+var _osu_btn: MenuButton
+var _osu_list: Array = []
 var _del_btn: Button
 var _dialog: FileDialog
 var _status: Label
@@ -26,6 +28,16 @@ func _init() -> void:
 	UiTheme.style_button(_import_btn)
 	_import_btn.pressed.connect(_on_import_pressed)
 	add_child(_import_btn)
+	# Ein Klick: installierte osu!-Skins mit Mania-Grafiken uebernehmen.
+	_osu_btn = MenuButton.new()
+	_osu_btn.text = "Aus osu!"
+	_osu_btn.tooltip_text = "Skin aus deiner osu!-Installation übernehmen"
+	UiTheme.style_button(_osu_btn)
+	_osu_btn.about_to_popup.connect(_fill_osu_menu)
+	_osu_btn.get_popup().id_pressed.connect(func(i: int):
+		if i >= 0 and i < _osu_list.size():
+			_import(String(_osu_list[i].path)))
+	add_child(_osu_btn)
 	_del_btn = Button.new()
 	_del_btn.text = "Löschen"
 	UiTheme.style_button(_del_btn)
@@ -83,13 +95,25 @@ func _on_import_pressed() -> void:
 func _import(path: String) -> void:
 	var nm := ManiaSkin.import_skin(path)
 	if nm == "":
-		_status.text = "Import fehlgeschlagen"
+		_status.text = ManiaSkin.last_error if ManiaSkin.last_error != "" else "Import fehlgeschlagen"
 		return
 	Settings.skin_2d = nm
 	Settings.save()
 	refresh()
-	_status.text = "Importiert"
+	_status.text = "„%s“ aktiv" % nm
 	changed.emit()
+
+
+func _fill_osu_menu() -> void:
+	var pm := _osu_btn.get_popup()
+	pm.clear()
+	_osu_list = ManiaSkin.osu_skins()
+	if _osu_list.is_empty():
+		pm.add_item("Keine osu!-Skins mit Mania-Grafiken gefunden", -1)
+		pm.set_item_disabled(0, true)
+		return
+	for i in _osu_list.size():
+		pm.add_item(String(_osu_list[i].name), i)
 
 
 func _on_delete() -> void:
