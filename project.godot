@@ -21,6 +21,7 @@ config/icon="res://icon.svg"
 WorldPack="*res://scripts/net/world_pack.gd"
 SyncClock="*res://scripts/audio/sync_clock.gd"
 GameSession="*res://scripts/game_session.gd"
+GpuGuard="*res://scripts/core/gpu_guard.gd"
 Settings="*res://scripts/settings.gd"
 Lobby="*res://scripts/net/lobby.gd"
 Mirror="*res://scripts/net/beatmap_mirror.gd"
@@ -61,7 +62,7 @@ driver/mix_rate=48000
 
 [internationalization]
 
-locale/translations=PackedStringArray("res://translations/menus.en.translation", "res://translations/game.en.translation", "res://translations/mp.en.translation", "res://translations/colors.en.translation", "res://translations/lobby.en.translation", "res://translations/tourskip.en.translation", "res://translations/picker.en.translation")
+locale/translations=PackedStringArray("res://translations/menus.en.translation", "res://translations/game.en.translation", "res://translations/mp.en.translation", "res://translations/colors.en.translation", "res://translations/lobby.en.translation", "res://translations/tourskip.en.translation", "res://translations/picker.en.translation", "res://translations/gpu.en.translation")
 locale/fallback="de"
 
 [physics]
@@ -71,6 +72,7 @@ common/max_physics_steps_per_frame=16
 
 [rendering]
 
+rendering_device/fallback_to_opengl3=true
 textures/default_filters/anisotropic_filtering_level=4
 anti_aliasing/quality/msaa_2d=3
 anti_aliasing/quality/msaa_3d=3

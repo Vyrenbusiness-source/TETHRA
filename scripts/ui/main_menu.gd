@@ -132,6 +132,8 @@ func _ready() -> void:
 	ver.add_theme_font_size_override("font_size", 13)
 	ver.add_theme_color_override("font_color", Color(0.78, 0.82, 0.9, 0.9))
 	add_child(ver)
+	if GpuGuard.take_notice():
+		_show_gpu_notice()
 	GameSession.perf_since("Hauptmenue: _ready gesamt", t_ready)
 
 	if DisplayServer.get_name() == "headless":
@@ -1134,3 +1136,28 @@ func _capture() -> void:
 	img.save_png(path)
 	print("SHOT gespeichert: " + path)
 	get_tree().quit(0)
+
+
+## Ruhiger Hinweis nach hartem Absturz: sicherer Grafikmodus wurde aktiviert.
+func _show_gpu_notice() -> void:
+	var l := Label.new()
+	l.text = tr("Das Spiel wurde zuletzt unerwartet beendet. Sicherer Grafikmodus ist an (Einstellungen > Grafik).")
+	l.anchor_left = 0.5
+	l.anchor_right = 0.5
+	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	l.offset_left = -250
+	l.offset_right = 250
+	l.offset_top = 26
+	l.offset_bottom = 70
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	l.add_theme_font_size_override("font_size", 14)
+	l.add_theme_color_override("font_color", Color(0.78, 0.9, 1.0, 0.95))
+	l.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.8))
+	l.add_theme_constant_override("shadow_offset_x", 1)
+	l.add_theme_constant_override("shadow_offset_y", 1)
+	add_child(l)
+	var tw := create_tween()
+	tw.tween_interval(12.0)
+	tw.tween_property(l, "modulate:a", 0.0, 1.5)
+	tw.tween_callback(l.queue_free)
