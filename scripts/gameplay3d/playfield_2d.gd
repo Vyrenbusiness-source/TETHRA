@@ -137,7 +137,7 @@ func _draw() -> void:
 	var cw := col_width()
 	var ly := line_y()
 	# Spalten-Hintergrund: dunkel, halbtransparent; gedrueckte Spalte hellt auf.
-	draw_rect(fr, Color(0.02, 0.025, 0.04, 0.82))
+	draw_rect(fr, Color(0.012, 0.014, 0.02, Settings.field_dim_2d))  # Spielfeld-Deckkraft
 	for c in columns:
 		var x := fr.position.x + cw * c
 		if c < _held.size() and bool(_held[c]) and Settings.lane_glow:
@@ -286,7 +286,7 @@ func _draw_skinned() -> void:
 	for c in columns:
 		xs.append(fr.position.x + u * sk.col_offset_units(c))
 		ws.append(u * sk.col_units(c))
-	draw_rect(fr, Color(0.02, 0.025, 0.04, 0.82))
+	draw_rect(fr, Color(0.012, 0.014, 0.02, Settings.field_dim_2d))  # Spielfeld-Deckkraft
 	for c in columns:
 		if c < _held.size() and bool(_held[c]) and Settings.lane_glow:
 			draw_rect(Rect2(float(xs[c]), 0.0, float(ws[c]), ly), Color(lane_color.r, lane_color.g, lane_color.b, 0.07))

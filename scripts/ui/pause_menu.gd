@@ -29,6 +29,7 @@ var _scroll_val: Label
 var _lane2d_val: Label
 var _note2d_val: Label
 var _bg_val: Label
+var _field_val: Label
 var _quick: GridContainer
 var _rows_2d: Array[Control] = []
 var _btn_resume: Button
@@ -123,6 +124,8 @@ func _init() -> void:
 			func(d: float): _step_2d("note_size_2d", d)))
 	_bg_val = Label.new()
 	_rows_2d.append(_stepper("Hintergrund", _bg_val, -0.1, 0.1, func(d: float): _step_bg(d)))
+	_field_val = Label.new()
+	_rows_2d.append(_stepper("Spielfeld", _field_val, -0.1, 0.1, func(d: float): _step_field(d)))
 	for row in _rows_2d:
 		_quick.add_child(row)
 
@@ -245,12 +248,21 @@ func _step_bg(d: float) -> void:
 	view_2d_changed.emit()
 
 
+## Spielfeld-Deckkraft 0..100 % (100 = schwarz), sofort aktiv.
+func _step_field(d: float) -> void:
+	Settings.field_dim_2d = Settings.clamp_bg_dim(Settings.field_dim_2d + d)
+	Settings.save()
+	_refresh_values()
+	view_2d_changed.emit()
+
+
 func _refresh_values() -> void:
 	_offset_val.text = "%+.0f ms" % Settings.offset_ms
 	_scroll_val.text = ("%.2f" % Settings.mania_scroll).replace(".", ",") + "x"
 	_lane2d_val.text = _pct(Settings.lane_width_2d)
 	_note2d_val.text = _pct(Settings.note_size_2d)
 	_bg_val.text = "Aus" if Settings.bg_dim <= 0.001 else _pct(Settings.bg_dim)
+	_field_val.text = _pct(Settings.field_dim_2d)
 
 
 static func _pct(v: float) -> String:

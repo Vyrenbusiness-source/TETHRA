@@ -196,6 +196,12 @@ func _ready() -> void:
 		func(v): return _fmt_bg(Settings.clamp_bg_dim(v / 100.0)),
 		func(v): Settings.bg_dim = Settings.clamp_bg_dim(v / 100.0),
 		"Deckkraft des Map-Bilds; 0 % = Hintergrund aus (schwarz)")
+	_slider_row(pg_2d, "Spielfeld", 0.0, 100.0, 5.0, Settings.field_dim_2d * 100.0,
+		func(v): return _fmt_pct0(Settings.clamp_bg_dim(v / 100.0)),
+		func(v):
+			Settings.field_dim_2d = Settings.clamp_bg_dim(v / 100.0)
+			_refresh_2d_preview(),
+		"Deckkraft des Spielfelds; 100 % = schwarz, Map-Bild nur links und rechts")
 
 	var blur_btn := CheckButton.new()
 	blur_btn.button_pressed = Settings.bg_blur
