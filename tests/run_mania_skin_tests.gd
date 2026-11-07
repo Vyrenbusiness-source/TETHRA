@@ -46,6 +46,8 @@ func _run() -> void:
 	_test_safe_rel()
 	_test_import_zip()
 	_test_import_dir()
+	_test_patterns()
+	_test_real_world()
 	_test_builtin()
 	_cleanup()
 	print("--- %d bestanden, %d fehlgeschlagen ---" % [_passed, _failed])
@@ -73,6 +75,7 @@ func _test_parser() -> void:
 	_ok(float(s.column_line_width[0]) == 3.0 and float(s.column_line_width[4]) == 3.0, "ColumnLineWidth")
 	_ok(String(s._names["note_1"]) == "Sub\\Custom-Note", "NoteImage1 aus ini")
 	_ok(String(s._names["head_1"]) == "Sub\\Custom-NoteH", "Kopf-Standard = NoteImage + H")
+	_ok(s._alts["head_1"].has("Sub\\Custom-Note"), "Kopf faellt auf die Note zurueck")
 	_ok(String(s._names["keyd_0"]) == "mania-keypressed", "KeyImage0D aus ini")
 
 
@@ -195,3 +198,86 @@ func _test_builtin() -> void:
 		_ok(s.tex("stage_hint") != null and s.tex_scale("note_0") == 0.5, id + ": Stage-Hint, @2x")
 		_ok(not ManiaSkin.delete_skin(id), id + " nicht loeschbar")
 	_ok(ManiaSkin.load_skin("builtin:Gibtsnicht") == null, "unbekannter builtin -> null")
+
+
+func _test_patterns() -> void:
+	var exp := {
+		4: ["1", "2", "2", "1"], 5: ["1", "2", "S", "2", "1"],
+		6: ["1", "2", "1", "1", "2", "1"], 7: ["1", "2", "1", "S", "1", "2", "1"],
+	}
+	for n in exp:
+		var got: Array = []
+		for c in n:
+			got.append(ManiaSkin.pattern_name(c, n))
+		_ok(got == exp[n], "Standardmuster %dK: %s" % [n, "".join(got)])
+	var s5 := ManiaSkin.parse("", 5)
+	_ok(String(s5._names["note_2"]) == "mania-noteS" and String(s5._names["keyd_2"]) == "mania-keySD", "5K Mitte = S")
+
+
+func _write(path: String, bytes: PackedByteArray) -> void:
+	DirAccess.make_dir_recursive_absolute(path.get_base_dir())
+	var wf := FileAccess.open(path, FileAccess.WRITE)
+	wf.store_buffer(bytes)
+	wf.close()
+
+
+## Echte-Skin-Faelle: mehrere Bloecke, eingerueckte ini, Unterordner mit
+## Backslash, Gross/Klein, Animation, Leerzeichen/Sonderzeichen, Fallbacks.
+func _test_real_world() -> void:
+	var ini := """[General]
+Name: x
+[Mania]
+	Keys: 4
+	ColumnStart: 306
+	ColumnWidth: 60,61,62,63
+	ColumnSpacing: 1,2,3
+	ColumnLineWidth: 0,0,0,0,0
+	HitPosition: 467
+	NoteImage0: Arrownote\\Left Arrow
+	NoteImage0H: Arrownote\\Left Arrow
+	NoteImage0L: Arrownote\\LNB
+	NoteImage1: ANIM\\Note-X
+	KeyImage0: Arrows\\leftReceptor.PNG
+	KeyImage0D: Arrows\\leftReceptorD
+[Mania]
+	Keys: 5
+	ColumnWidth: 11
+"""
+	var dir := _tmp + "/Real #Skin [1.2] (SK)"
+	_write(dir + "/skin.ini", ini.to_utf8_buffer())
+	_write(dir + "/arrownote/LEFT ARROW.png", _png(Color.RED))
+	_write(dir + "/Arrownote/LNB.png", _png(Color.GREEN, 8, 6))
+	_write(dir + "/Arrows/leftReceptor.png", _png(Color.BLUE, 10, 10))
+	_write(dir + "/Anim/Note-X-0.png", _png(Color.WHITE, 12, 6))
+	_write(dir + "/Anim/Note-X-1.png", _png(Color.BLACK, 3, 3))
+	_write(dir + "/MANIA-STAGE-HINT.png", _png(Color.GRAY))
+	_write(dir + "/mania-note2@2x.png", _png(Color.RED, 20, 10))
+	_write(dir + "/mania-key2.png", _png(Color.RED, 5, 5))
+	_write(dir + "/junk.png", _png(Color.RED))
+	var root := _tmp + "/skins"
+	var nm := ManiaSkin.import_skin(ProjectSettings.globalize_path(dir), root)
+	_ok(nm == "Real _Skin _1.2_ (SK)", "Sonderzeichen im Namen (" + nm + ")")
+	_ok(FileAccess.file_exists(root + "/" + nm + "/Anim/Note-X-0.png") and FileAccess.file_exists(root + "/" + nm + "/Anim/Note-X-1.png"), "Animations-Frames aus Unterordner importiert")
+	_ok(FileAccess.file_exists(root + "/" + nm + "/arrownote/LEFT ARROW.png") and FileAccess.file_exists(root + "/" + nm + "/Arrows/leftReceptor.png"), "Unterordner (anderes Case, Leerzeichen) importiert")
+	_ok(not FileAccess.file_exists(root + "/" + nm + "/junk.png"), "Unnoetiges nicht importiert")
+	var s := ManiaSkin.load_skin(nm, root)
+	_ok(s != null and s.has_mania_block and s.keys == 4, "4K-Block trotz davor/danach anderer Bloecke")
+	if s == null:
+		return
+	_ok(s.col_units(1) == 61.0 and s.col_units(3) == 63.0 and s.hit_position == 467.0, "ColumnWidth je Spalte, HitPosition 467")
+	_ok(s.column_spacing == [1.0, 2.0, 3.0] and is_equal_approx(s.stage_units(), 246.0 + 6.0), "ColumnSpacing je Luecke")
+	_ok(is_equal_approx(s.col_offset_units(2), 60.0 + 1.0 + 61.0 + 2.0), "Spaltenversatz mit Spacing")
+	_ok(s.column_start == 306.0, "ColumnStart")
+	var n0 := s.tex("note_0")
+	_ok(n0 != null and n0.get_width() == 8, "Backslash + Gross/Klein + Leerzeichen, ohne Endung")
+	_ok(s.tex("head_0") != null, "Kopf aus ini")
+	_ok(s.tex("body_0") != null and s.tex("body_0").get_height() == 6, "Koerper aus Unterordner")
+	var n1 := s.tex("note_1")
+	_ok(n1 != null and n1.get_width() == 12, "Animation: erstes Frame (-0)")
+	_ok(s.tex("key_0") != null and s.tex("key_0").get_width() == 10, "KeyImage mit .PNG-Endung gross")
+	_ok(s.tex("keyd_0") == null, "fehlende Gedrueckt-Datei -> null (nur dieses Element)")
+	_ok(s.tex("stage_hint") != null, "mania-stage-hint in Grossbuchstaben")
+	_ok(s.tex("head_1") != null and s.tex("head_1").get_width() == 12, "Kopf fehlt -> Note der Spalte")
+	_ok(s.tex("note_2") != null and s.tex_scale("note_2") == 0.5, "Standarddatei mania-note2@2x, halbe Groesse")
+	_ok(s.tex("key_2") != null and s.tex("key_2").get_width() == 5, "Standard-Key mania-key2 fuer Spalte 3")
+	ManiaSkin.delete_skin_in(root, nm)
