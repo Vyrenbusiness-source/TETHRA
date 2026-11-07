@@ -94,6 +94,8 @@ var _pack_retries := 0
 
 # Vorschau
 var _preview_req: HTTPRequest
+## Harness: Downloads in einen Testordner statt in die echte Bibliothek.
+var download_dir_override := ""
 var _preview_set := -1
 
 # UI
@@ -839,6 +841,7 @@ func _say(msg: String) -> void:
 
 func _show_state(title: String, sub: String, btn_text: String, action: Callable) -> void:
 	_state_box.visible = true
+	_footer.text = ""
 	_state_title.text = title
 	_state_sub.text = sub
 	_state_btn.visible = btn_text != ""
@@ -863,6 +866,7 @@ func _clear_grid() -> void:
 
 func _show_skeleton() -> void:
 	_stop_skeleton()
+	_footer.text = ""
 	var n := maxi(_grid.columns, 1) * 2
 	for i in n:
 		var card := PanelContainer.new()
@@ -953,7 +957,9 @@ static func meta_line(r: Dictionary) -> String:
 	return "  ·  ".join(parts)
 
 
-func _pill(text: String, bg: Color, fg: Color, size: int = 12) -> PanelContainer:
+## Kleine Pill. min_w > 0: feste Mindestbreite, Text zentriert und geclippt
+## (Laenge/Sterne springen nicht und ragen nie aus ihrem Feld).
+func _pill(text: String, bg: Color, fg: Color, size: int = 12, min_w: float = 0.0) -> PanelContainer:
 	var p := PanelContainer.new()
 	var sb := _box(bg, 8)
 	sb.content_margin_left = 8
@@ -967,6 +973,12 @@ func _pill(text: String, bg: Color, fg: Color, size: int = 12) -> PanelContainer
 	l.text = text
 	l.add_theme_font_size_override("font_size", size)
 	l.add_theme_color_override("font_color", fg)
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	if min_w > 0.0:
+		l.custom_minimum_size = Vector2(min_w, 0)
+		l.clip_text = true
+		l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	p.add_child(l)
 	return p
 
@@ -1009,18 +1021,25 @@ func _make_card(r: Dictionary) -> Control:
 	cover.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	holder.add_child(cover)
 	cover.resized.connect(_on_cover_resized.bind(cover))
+	# Pills oben: Status links, Laenge rechts (eigene Zeile, nie abgeschnitten).
+	var pills := HBoxContainer.new()
+	pills.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
+	pills.offset_left = 12
+	pills.offset_right = -12
+	pills.offset_top = 12
+	pills.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	holder.add_child(pills)
 	var loved := str(r.get("status", "")) == "loved"
-	var st := _pill("LOVED" if loved else "RANKED",
-		Color(UiTheme.ACCENT2 if loved else ACCENT, 0.92), Color(0.03, 0.04, 0.07), 11)
-	st.position = Vector2(12, 12)
-	holder.add_child(st)
+	pills.add_child(_pill("LOVED" if loved else "RANKED",
+		Color(UiTheme.ACCENT2 if loved else ACCENT, 0.92), Color(0.03, 0.04, 0.07), 11))
+	var spacer := Control.new()
+	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	pills.add_child(spacer)
 	var len_s := int(r.get("length_s", 0))
 	if len_s > 0:
-		var lp := _pill(fmt_length(len_s), Color(0, 0, 0, 0.62), TEXT, 12)
-		lp.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-		lp.grow_horizontal = Control.GROW_DIRECTION_BEGIN
-		lp.position = Vector2(-12, 12)
-		holder.add_child(lp)
+		pills.add_child(_pill(fmt_length(len_s), Color(0, 0, 0, 0.62), TEXT, 12,
+			58.0 if len_s >= 3600 else 40.0))
 
 	var m := MarginContainer.new()
 	m.add_theme_constant_override("margin_left", 16)
@@ -1040,17 +1059,25 @@ func _make_card(r: Dictionary) -> Control:
 	info.add_child(_label(meta_line(r), 12, DIM))
 
 	# Sterne je 4K-Diff (aufsteigend), max. 5 + "+N", danach ggf. SV.
+	# Feld mit fester Hoehe + Clip: die Pill-Reihe kann die Karte nie
+	# verbreitern (ein Control-Elternteil reicht keine Mindestgroesse durch).
+	var star_field := Control.new()
+	star_field.custom_minimum_size = Vector2(0, 26)
+	star_field.clip_contents = true
+	star_field.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	info.add_child(star_field)
 	var stars := HBoxContainer.new()
 	stars.add_theme_constant_override("separation", 5)
 	stars.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	stars.custom_minimum_size = Vector2(0, 26)
-	info.add_child(stars)
+	stars.set_anchors_and_offsets_preset(Control.PRESET_LEFT_WIDE)
+	star_field.add_child(stars)
 	var sl: Array = r.get("star_list", [])
 	for i in mini(sl.size(), 5):
 		var s := float(sl[i])
 		var col := star_color(s)
 		var fg := Color(0.03, 0.04, 0.07) if s < 6.4 else Color(1, 1, 1, 0.95)
-		stars.add_child(_pill(("★ " if i == 0 else "") + UiTheme.fmt_num(s, 2), col, fg))
+		stars.add_child(_pill(("★ " if i == 0 else "") + UiTheme.fmt_num(s, 2), col, fg, 12,
+			50.0 if i == 0 else 36.0))
 	if sl.size() > 5:
 		stars.add_child(_pill("+%d" % (sl.size() - 5), Color(1, 1, 1, 0.08), DIM))
 	var sv_state := _mirror.sv_state(int(r.get("sv_id", 0)))
@@ -1191,7 +1218,7 @@ func start_download(set_id: int) -> void:
 	if _mirror.is_downloading(set_id):
 		return  # Doppelklick
 	_row_state(set_id, "loading", 0.0)
-	_mirror.download(set_id, library.maps_dir)
+	_mirror.download(set_id, download_dir_override if download_dir_override != "" else library.maps_dir)
 	_update_dl_info()
 
 
@@ -1411,6 +1438,24 @@ func run_shot_harness(dir: String) -> void:
 	await _shot(dir.path_join("online_grid.png"))
 	print("SHOT-ONLINE grid: %d Karten, server_sorted=%s" % [_rows.size(), _mirror.last_server_sorted])
 
+	# Grenzfaelle: sehr lange Titel, Songs ueber 10 min und ueber 1 h,
+	# viele Diffs, hohe BPM/Plays — nichts darf aus seinem Feld ragen.
+	var real := _results
+	_results = [
+		_fake(-1, "Ein wirklich sehr, sehr langer Songtitel (Extended Festival Mix) [Ultra Long Version]", 754, 1234.5, 8),
+		_fake(-2, "Marathon", 3725, 98.0, 3),
+		_fake(-3, "Kurz", 9, 300.0, 1),
+	] + real
+	_render()
+	await get_tree().create_timer(1.5).timeout
+	await _shot(dir.path_join("online_long.png"))
+	var widest := 0.0
+	for c in _grid.get_children():
+		widest = maxf(widest, (c as Control).size.x)
+	print("SHOT-ONLINE long: karte_breit=%.0f spalte_max=%.0f" % [widest,
+		(_scroll.size.x - 14.0 - GRID_SEP * (_grid.columns - 1)) / _grid.columns])
+	_results = real
+
 	# Genre Elektronisch + Beliebteste: alle Karten Genre 10, Plays absteigend.
 	_set_genre(10)
 	_set_sort(BeatmapMirror.Sort.PLAYS)
@@ -1455,20 +1500,28 @@ func run_shot_harness(dir: String) -> void:
 		if first > 0:
 			break
 	if first > 0:
+		download_dir_override = dir.path_join("dl_test")
 		start_download(first)
 		start_download(first)  # Doppelklick darf nichts doppelt starten
+		var running := _mirror.downloads_running()
+		# Erste Fortschrittsmeldung abwarten (max. 8 s), dann Screenshot.
 		var w := 0.0
-		while w < 8.0 and _mirror.active_ratio(first) < 0.15 and _mirror.is_downloading(first):
-			await get_tree().create_timer(0.1).timeout
-			w += 0.1
+		while w < 8.0 and _mirror.is_downloading(first) and _mirror.active_ratio(first) <= 0.0:
+			await get_tree().process_frame
+			w += get_process_delta_time()
 		await _shot(dir.path_join("online_download.png"))
-		print("SHOT-ONLINE download: set=%d ratio=%.2f laufend=%d" % [
-			first, _mirror.active_ratio(first), _mirror.downloads_running()])
+		print("SHOT-ONLINE download: set=%d ratio=%.2f laufend_nach_doppelklick=%d" % [
+			first, _mirror.active_ratio(first), running])
+		var was_running := _mirror.is_downloading(first)
 		_mirror.cancel_download(first)
 		await get_tree().process_frame
-		var dest := library.maps_dir.path_join("mirror_%d.osz" % first)
-		print("SHOT-ONLINE cancel: laufend=%d datei_weg=%s" % [
-			_mirror.downloads_running(), not FileAccess.file_exists(dest)])
+		var dest := download_dir_override.path_join("mirror_%d.osz" % first)
+		print("SHOT-ONLINE cancel: lief_noch=%s laufend=%d datei_weg=%s karte=%s" % [
+			was_running, _mirror.downloads_running(), not FileAccess.file_exists(dest),
+			(_rows[first].btn as Button).text if _rows.has(first) else "?"])
+		if FileAccess.file_exists(dest):
+			DirAccess.remove_absolute(dest)
+		download_dir_override = ""
 
 	# Fehlerzustand: unerreichbarer Mirror.
 	_mirror.search_url_override = "https://mirror.invalid/api/v2/search"
@@ -1481,6 +1534,17 @@ func run_shot_harness(dir: String) -> void:
 	await _shot(dir.path_join("online_error.png"))
 	print("SHOT-ONLINE error: sichtbar=%s text=%s" % [_state_box.visible, _state_title.text])
 	_mirror.search_url_override = ""
+
+
+func _fake(id: int, title: String, length_s: int, bpm: float, diffs: int) -> Dictionary:
+	var sl: Array = []
+	for i in diffs:
+		sl.append(0.8 + i * 0.9)
+	return {"id": id, "title": title, "artist": "Künstler mit einem ausgesprochen langen Namen feat. Gäste",
+		"creator": "Mapper_mit_langem_Namen", "stars": sl.back(), "stars_lo": sl.front(),
+		"star_list": sl, "diffs": diffs, "cover_url": "", "preview_url": "",
+		"status": "loved" if id == -1 else "ranked", "genre_id": 10, "bpm": bpm,
+		"length_s": length_s, "plays": 123456789, "ranked_date": "", "sv": true, "sv_id": 0}
 
 
 func _wait_loaded(limit: float) -> void:

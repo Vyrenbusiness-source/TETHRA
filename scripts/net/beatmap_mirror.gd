@@ -530,9 +530,15 @@ func _end_cover_request(set_id: int) -> void:
 ## Verkleinern ohne Flimmern). Textur entsteht danach im Hauptthread.
 func _decode_cover(set_id: int, body: PackedByteArray) -> void:
 	var img := Image.new()
-	var ok := img.load_jpg_from_buffer(body) == OK
-	if not ok:
-		ok = img.load_png_from_buffer(body) == OK
+	var ok := false
+	# Format an den Magic-Bytes erkennen (kein Fehler-Spam durch Raten).
+	if body.size() > 12:
+		if body[0] == 0xFF and body[1] == 0xD8:
+			ok = img.load_jpg_from_buffer(body) == OK
+		elif body[0] == 0x89 and body[1] == 0x50:
+			ok = img.load_png_from_buffer(body) == OK
+		elif body[0] == 0x52 and body[1] == 0x49 and body[8] == 0x57 and body[9] == 0x45:
+			ok = img.load_webp_from_buffer(body) == OK
 	if ok:
 		img.generate_mipmaps()
 	_cover_decoded.call_deferred(set_id, img if ok else null)
