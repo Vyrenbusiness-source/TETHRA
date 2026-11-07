@@ -11,6 +11,10 @@ const COL_DIM := Color(0.55, 0.58, 0.66)
 const COL_SECTION := Color(0.45, 0.8, 1.0)
 const VALUE_W := 84.0
 
+var _world_preview: WorldPreview
+var _world_row: Control
+var _panel: Control
+
 const BLUR_SHADER := """shader_type canvas_item;
 uniform sampler2D screen_tex : hint_screen_texture, filter_linear_mipmap;
 void fragment() {
@@ -57,6 +61,7 @@ func _ready() -> void:
 	panel.custom_minimum_size = Vector2(600, 0)
 	panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	center.add_child(panel)
+	_panel = panel
 
 	var vb := VBoxContainer.new()
 	vb.add_theme_constant_override("separation", 12)
@@ -249,8 +254,15 @@ Dynamisch: volle Flug-Bewegung"
 	wt.custom_minimum_size = Vector2(0, 36)
 	wt.tooltip_text = "Automatisch: düstere Welt passend zum Song
 (intensiv = Bosskampf, ruhig = Frost, sonst Eklipse, Abgrund, Fraktal, Obsidian …)"
-	wt.item_selected.connect(func(i): Settings.world_theme = i)
+	wt.item_selected.connect(func(i):
+		Settings.world_theme = i
+		_world_preview.show_world("" if i == 0 else Settings.WORLD_ORDER[i - 1]))
 	_row(cv_anzeige, "Welt", wt, null)
+	_world_row = wt
+	_world_preview = WorldPreview.new()
+	_world_preview.visible = false
+	add_child(_world_preview)
+	_world_preview.show_world(Settings.world_theme_name())
 
 	var gfx := OptionButton.new()
 	gfx.add_item("Niedrig", 0)
@@ -410,10 +422,29 @@ func _input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 
 
+## Vorschau-Karte rechts neben das Panel, auf Hoehe der Welt-Zeile (sonst
+## unter das Panel); bleibt im sichtbaren Bereich.
+func _process(_delta: float) -> void:
+	if _world_preview == null or _panel == null or _world_row == null:
+		return
+	var vr := get_viewport_rect().size
+	var pr := _panel.get_global_rect()
+	var sz := WorldPreview.SIZE_PX
+	var x := pr.end.x + 16.0
+	if x + sz.x > vr.x - 8.0:
+		x = maxf(8.0, vr.x - sz.x - 8.0)
+	var y := clampf(_world_row.get_global_rect().get_center().y - sz.y * 0.5, 8.0, maxf(8.0, vr.y - sz.y - 8.0))
+	_world_preview.position = Vector2(x, y)
+	_world_preview.modulate.a = _panel.modulate.a
+	_world_preview.visible = _panel.modulate.a > 0.01
+
+
 func _close(with_sound: bool = true) -> void:
 	if with_sound:
 		Sfx.ui_close()
 	Settings.save()
 	Settings.apply()
+	if _world_preview != null:
+		_world_preview.release()
 	closed.emit()
 	queue_free()
