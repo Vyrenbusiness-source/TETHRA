@@ -361,7 +361,9 @@ static func drop_env(since_start: float, since_end: float, comfort: bool) -> flo
 
 ## Monotoner Beat-Zaehler mit Easing: springt auf dem Schlag, ruht bis zum naechsten.
 static func beat_step(beats_total: int, beat_phase: float) -> float:
-	return float(beats_total) + 1.0 - pow(1.0 - clampf(beat_phase, 0.0, 1.0), 4.0)
+	# Glatt, nie still: Geschwindigkeit 1.25x auf dem Schlag .. 0.75x davor.
+	var p := clampf(beat_phase, 0.0, 1.0)
+	return float(beats_total) + p + 0.25 * ((1.0 - (1.0 - p) * (1.0 - p)) - p)
 
 
 ## downbeat_pulse: exp(-bar_phase*meter*3), 1 auf dem Takt-Anfang.

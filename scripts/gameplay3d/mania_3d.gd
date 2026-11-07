@@ -242,6 +242,7 @@ var _sky_phase := 0.0
 # gleichen Uniform-Interface (_sky_mat), Farbsatz ersetzt die Coverfarbe.
 var _world_theme := WorldTheme.GALAXY
 var _theme_lightning := 0.0
+var _bs_smooth := 0.0     # monotone, geglaettete beat_step-Zeit
 var _beat_total := 0     # gezaehlte Beat-Kanten (beat_step, monoton)
 var _bc_kiai := false
 var _kiai_t0 := -1.0
@@ -2161,8 +2162,8 @@ func _process(delta: float) -> void:
 		var sw := clampf(_warp_level * 0.7 + maxf(_surge, 0.0) * 0.05, 0.0, 1.0) * fx
 		# Komfort: keine Warp-Streckung, kein Rollen der Sternen-Ebene.
 		_sky_mat.set_shader_parameter(&"warp", sw if sw > 0.03 and not _comfort else 0.0)
-		_sky_mat.set_shader_parameter(&"stars_rotation",
-				Vector3.ZERO if _comfort else Vector3(0, 0, _sky_phase * 0.02))
+		# Komfort-Regel: nie um die Blickachse rollen (Kopfschmerzen).
+		_sky_mat.set_shader_parameter(&"stars_rotation", Vector3.ZERO)
 	_update_theme_sky(delta)
 	# Kurze Streifen auf dem Schlag (radial, minimal), Hyperspace laenger.
 	var warp_stretch := 1.0 if _comfort else 			1.0 + maxf(_surge, 0.0) * 0.8 + _warp_level * 4.0 * fx
@@ -4401,7 +4402,7 @@ func _themed_warp_cap(v: float) -> float:
 
 ## Beat-Vertrag (docs/worlds/beat_contract.md): Uniforms auf das Himmels-Material.
 ## Zeitbasis wie _clock (SyncClock.visual_time_ms). Neon: eigener Pfad, nichts setzen.
-func _update_beat_contract() -> void:
+func _update_beat_contract(delta: float = 0.016) -> void:
 	if _world_theme == WorldTheme.NEON:
 		return
 	var fx := _fx_level()
@@ -4421,7 +4422,15 @@ func _update_beat_contract() -> void:
 	m.set_shader_parameter(&"beat_pulse", clampf(_world_pulse, 0.0, 1.0) if on else 0.0)
 	m.set_shader_parameter(&"beat_phase", _clock.beat_phase if on else 0.0)
 	m.set_shader_parameter(&"bar_phase", _clock.bar_phase if on else 0.0)
-	m.set_shader_parameter(&"beat_step", WorldTheme.beat_step(_beat_total, _clock.beat_phase) if on else 0.0)
+	# Glatte Zeitbasis: nie zurueck, Clock-Korrekturen/Kantenversatz werden
+	# ueber ~50 ms eingeblendet statt zu springen (Seek > 2 Beats: sofort).
+	var bs_target := WorldTheme.beat_step(_beat_total, _clock.beat_phase)
+	var bs_d := bs_target - _bs_smooth
+	if absf(bs_d) > 2.0:
+		_bs_smooth = bs_target
+	elif bs_d > 0.0:
+		_bs_smooth += bs_d * clampf(delta * 20.0, 0.0, 1.0)
+	m.set_shader_parameter(&"beat_step", _bs_smooth if on else 0.0)
 	m.set_shader_parameter(&"downbeat_pulse", WorldTheme.downbeat_pulse(_clock.bar_phase, _meter_at(_vt)) if on else 0.0)
 	m.set_shader_parameter(&"kiai", _ch_kiai_w if on else 0.0)
 	m.set_shader_parameter(&"drop", WorldTheme.drop_env(since_start, since_end, _comfort) if on else 0.0)
@@ -4447,7 +4456,7 @@ func _meter_at(t: float) -> int:
 func _update_theme_sky(delta: float) -> void:
 	if _sky_mat == null or _world_theme == WorldTheme.GALAXY:
 		return
-	_update_beat_contract()
+	_update_beat_contract(delta)
 	_theme_lightning = maxf(0.0, _theme_lightning - delta * 3.2)
 	_sky_mat.set_shader_parameter(&"lightning", _theme_lightning)
 	var flow_rate := (0.5 if _comfort else 1.0) * (1.0 + _ch_kiai_w * 0.6)

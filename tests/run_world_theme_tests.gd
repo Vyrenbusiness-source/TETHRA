@@ -173,7 +173,15 @@ func _test_beat_contract() -> void:
 			last = v
 	_check(mono, "beat_step monoton")
 	_check(absf(D.beat_step(3, 0.0) - 3.0) < 0.001, "beat_step Beat 3 Phase 0 = 3")
-	_check(D.beat_step(3, 0.99) > 3.99, "beat_step ruht vor naechstem Schlag")
+	var dmin := 9.0
+	var dmax := 0.0
+	for b in 4:
+		for k in 1000:
+			var p0 := float(k) / 1000.0
+			var dv := (D.beat_step(b, p0 + 0.001) - D.beat_step(b, p0)) / 0.001
+			dmin = minf(dmin, dv)
+			dmax = maxf(dmax, dv)
+	_check(dmin >= 0.74 and dmax <= 1.26, "beat_step Tempo 0.75..1.25 (%.3f..%.3f), nie still" % [dmin, dmax])
 	_check(absf(D.beat_step(3, 0.9999) - D.beat_step(4, 0.0)) < 0.001, "beat_step stetig am Schlag")
 	_check(D.downbeat_pulse(0.0, 4) == 1.0 and D.downbeat_pulse(0.5, 4) < 0.01, "downbeat_pulse")
 
