@@ -136,6 +136,78 @@ func _init() -> void:
 	L._reset()
 	_check(L.mods == { "SV": false, "NF": false }, "Reset loescht Mods")
 
+	# Turnier: Server validiert Rechte, Phasen, Werte
+	L._reset()
+	L.active = true
+	L.is_host = true
+	L.players = { 1: L._new_player("Host"), 2: L._new_player("Anna"), 3: L._new_player("Ben") }
+	var tm := func(n: int, st: float = 4.0) -> Dictionary:
+		return { "set_id": 500 + n, "file": "%d t.osz" % n, "version": "Hard", "title": "T", "artist": "A", "stars": st }
+	L.tour_add_map(tm.call(1))
+	_check(L.tournament == null, "ohne Turnier kein Pick")
+	L.tour_create({ "maps": 5, "stars_lo": 3.0, "stars_hi": 5.0, "mods": { "NF": true } })
+	_check(L.tournament != null and L.tournament.config.maps == 5, "Host legt Turnier an")
+	L.tour_create({ "maps": 15 })
+	_check(L.tournament.config.maps == 5, "zweites tour_create ignoriert")
+	_check(L._srv_tour_add(9, tm.call(1)) != "", "Pick von Unbekanntem abgelehnt")
+	_check(L._srv_tour_add(2, tm.call(1, 9.0)) != "", "Sterne ausserhalb abgelehnt")
+	_check(L._srv_tour_add(2, { "set_id": "x", "file": "a", "version": "b", "stars": 4.0 }) != "", "Muellpaket abgelehnt")
+	_check(L._srv_tour_add(2, tm.call(1)) == "" and L.tournament.pool.size() == 1, "gueltiger Pick")
+	_check(L._srv_tour_add(3, tm.call(1)) != "", "Duplikat abgelehnt")
+	_check(L._srv_tour_add(2, tm.call(2)) == "" and L._srv_tour_add(2, tm.call(3)) != "", "Pick-Limit ceil(5/3)=2")
+	_check(L._srv_tour_ban(2, 0) != "", "Ban in PICK abgelehnt")
+	_check(L._srv_tour_remove(3, 0) != "", "fremden Pick entfernen abgelehnt")
+	L.tour_start_bans()
+	_check(L.tournament.phase == Tournament.Phase.PICK, "Bans erst mit vollem Pool")
+	L._srv_tour_add(3, tm.call(4))
+	L._srv_tour_add(3, tm.call(5))
+	L._srv_tour_add(1, tm.call(6))
+	_check(L.tournament.is_pool_full(), "Pool voll")
+	L.tour_start_bans()
+	_check(L.tournament.phase == Tournament.Phase.BAN, "Host startet Bans")
+	_check(L._srv_tour_add(1, tm.call(7)) != "", "Pick in BAN abgelehnt")
+	L.is_host = false
+	L.tour_begin()
+	L.tour_cancel()
+	L.is_host = true
+	_check(L.tournament != null and L.tournament.phase == Tournament.Phase.BAN, "Nicht-Host kann nicht steuern")
+	L.tour_begin()
+	_check(L.tournament.phase == Tournament.Phase.BAN, "Start vor allen Bans abgelehnt")
+	_check(L._srv_tour_ban(2, 99) != "" and L._srv_tour_ban(9, 0) != "", "Ban: Index/Sender geprueft")
+	_check(L._srv_tour_ban(1, 0) == "" and L._srv_tour_ban(2, 0) != "", "Ban doppelt abgelehnt")
+	L.pick_mods({ "SV": true })
+	L.pick_map(tm.call(8))
+	_check(L.sel_map.is_empty() and not bool(L.mods.SV), "im Turnier keine freie Map/Mods")
+	L._srv_tour_ban(2, 1)
+	L._srv_tour_ban(3, 2)
+	L.tour_begin()
+	_check(L.tournament.phase == Tournament.Phase.PLAY and not L.sel_map.is_empty(), "Runde 1: sel_map gesetzt")
+	_check(bool(L.mods.NF) and not bool(L.mods.SV), "Mods aus Config")
+	_check(not L.sel_map.has("by") and not L.sel_map.has("banned"), "sel_map ohne Turnier-Felder")
+	# Runde: Spieler 3 geht, Rest meldet Finale
+	for id in [1, 2, 3]:
+		L.players[id].ready = true
+	L.in_game = true
+	L._tour_peers = [1, 2, 3]
+	L.players[1].final = { "score": 500, "acc": 0.9, "combo": 10, "failed": false }
+	L._tour_check_round()
+	_check(L.tournament.rounds.is_empty(), "Runde offen bis alle fertig")
+	L._on_peer_disconnected(3)
+	L.players[2].final = { "score": 700, "acc": 0.8, "combo": 12, "failed": false }
+	L._tour_check_round()
+	_check(L.tournament.rounds.size() == 1 and L.tournament.phase == Tournament.Phase.BETWEEN, "Runde gewertet")
+	var res1: Dictionary = L.tournament.rounds[0].results
+	_check(res1[3].points == 0 and res1[2].points == 3 and res1[1].points == 2, "Gegangener 0 Punkte, Rest 3/2")
+	_check(L.tournament.standings().size() == 3, "Gegangener bleibt in Tabelle")
+	L.tour_next()
+	_check(L.tournament.phase == Tournament.Phase.BETWEEN, "tour_next waehrend Runde ignoriert")
+	L.in_game = false
+	L.tour_next()
+	_check(L.tournament.phase == Tournament.Phase.PLAY, "tour_next startet Runde 2")
+	L.tour_cancel()
+	_check(L.tournament == null, "Host bricht ab")
+	L.in_game = false
+
 	# Disconnect waehrend des Spiels: Spieler faellt raus, Krone wandert, Board laeuft weiter
 	L.active = true
 	L.is_host = true
