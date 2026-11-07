@@ -299,6 +299,7 @@ func tex(key: String) -> Texture2D:
 		return _tex[key]
 	var t: Texture2D = null
 	_at2x_pending = false
+	_src_h_pending = 0
 	if not _dir.is_empty() and _names.has(key):
 		var anim := _animated(key)
 		t = _load_image(String(_names[key]), anim)
@@ -307,8 +308,18 @@ func tex(key: String) -> Texture2D:
 				break
 			t = _load_image(String(alt), anim)
 	_at2x[key] = t != null and _at2x_pending
+	_src_h[key] = float(_src_h_pending) if t != null and _src_h_pending > 0 else (float(t.get_height()) if t != null else 0.0)
 	_tex[key] = t
 	return t
+
+
+## Originalhoehe der Bilddatei in Pixeln (vor dem Abschneiden auf MAX_TEX).
+func tex_src_h(key: String) -> float:
+	if tex(key) == null:
+		return 0.0
+	return float(_src_h.get(key, tex(key).get_height()))
+
+var _src_h: Dictionary = {}
 
 
 ## @2x-Datei? Dann gelten alle Pixelmasse halbiert.
@@ -363,19 +374,124 @@ func _load_image(ini_path: String, animated: bool = false) -> Texture2D:
 	var f := FileAccess.open(_dir + "/" + rel, FileAccess.READ)
 	if f == null or f.get_length() > MAX_FILE_BYTES or f.get_length() <= 0:
 		return null
-	var img := Image.new()
-	if img.load_png_from_buffer(f.get_buffer(f.get_length())) != OK or img.is_empty():
+	var res := decode_image(f.get_buffer(f.get_length()))
+	var img: Image = res[0]
+	if img == null:
 		return null
-	if img.get_width() < 1 or img.get_height() < 1 or img.get_width() > MAX_TEX:
-		return null
-	# Sehr hohe Hold-Koerper (z. B. 138x40000) passen in keine GPU-Textur: oberen
-	# Teil nehmen (osu! zeigt ohnehin nur den sichtbaren Ausschnitt des Koerpers).
-	if img.get_height() > MAX_TEX:
-		img = img.get_region(Rect2i(0, 0, img.get_width(), MAX_TEX))
+	_src_h_pending = int(res[1])
 	_at2x_pending = bool(r[1])
 	return ImageTexture.create_from_image(img)
 
 var _at2x_pending := false
+var _src_h_pending := 0
+
+
+## Bilddaten -> [Image|null, Originalhoehe]. osu! (GDI+) laedt auch Dateien, die nur
+## .png heissen, aber TIFF/JPEG/BMP sind (tekkito2: holdbody.png ist ein TIFF) -
+## daher nach Signatur statt Endung. Bilder hoeher als MAX_TEX werden oben
+## abgeschnitten (osu! zeigt bei Hold-Koerpern ohnehin nur den oberen Ausschnitt).
+static func decode_image(buf: PackedByteArray) -> Array:
+	if buf.size() < 8:
+		return [null, 0]
+	var img: Image = null
+	var src_h := 0
+	var b0 := buf[0]
+	var b1 := buf[1]
+	if (b0 == 0x49 and b1 == 0x49) or (b0 == 0x4D and b1 == 0x4D):
+		var t := _decode_tiff(buf)
+		img = t[0]
+		src_h = int(t[1])
+	else:
+		img = Image.new()
+		var err := ERR_FILE_UNRECOGNIZED
+		if b0 == 0x89 and b1 == 0x50:
+			err = img.load_png_from_buffer(buf)
+		elif b0 == 0xFF and b1 == 0xD8:
+			err = img.load_jpg_from_buffer(buf)
+		elif b0 == 0x42 and b1 == 0x4D:
+			err = img.load_bmp_from_buffer(buf)
+		elif b0 == 0x52 and b1 == 0x49:
+			err = img.load_webp_from_buffer(buf)
+		if err != OK or img.is_empty():
+			return [null, 0]
+		src_h = img.get_height()
+	if img == null or img.get_width() < 1 or img.get_height() < 1 or img.get_width() > MAX_TEX:
+		return [null, 0]
+	if img.get_height() > MAX_TEX:
+		img = img.get_region(Rect2i(0, 0, img.get_width(), MAX_TEX))
+	return [img, src_h]
+
+
+## Minimaler TIFF-Leser: unkomprimiert, 8 Bit, RGB/RGBA/Grau, Streifen (chunky).
+## Liest nur die obersten MAX_TEX Zeilen. [Image|null, Originalhoehe].
+static func _decode_tiff(buf: PackedByteArray) -> Array:
+	var be := buf[0] == 0x4D
+	var rd := func(off: int, n: int) -> int:
+		if off < 0 or off + n > buf.size():
+			return -1
+		var v := 0
+		for i in n:
+			v = (v << 8) | int(buf[off + (i if be else n - 1 - i)])
+		return v
+	var ifd: int = rd.call(4, 4)
+	var cnt: int = rd.call(ifd, 2)
+	if ifd < 8 or cnt <= 0:
+		return [null, 0]
+	var tags: Dictionary = {}
+	for i in cnt:
+		var e := ifd + 2 + i * 12
+		var tag: int = rd.call(e, 2)
+		if not tag in [256, 257, 258, 259, 273, 277, 278, 284]:
+			continue
+		var typ: int = rd.call(e + 2, 2)
+		var n: int = rd.call(e + 4, 4)
+		var sz := 2 if typ == 3 else 4
+		if typ == 1:
+			sz = 1
+		var off := e + 8 if n * sz <= 4 else int(rd.call(e + 8, 4))
+		var vals: Array = []
+		for k in mini(n, 65536):
+			vals.append(rd.call(off + k * sz, sz))
+		tags[tag] = vals
+	var w := int(tags.get(256, [0])[0])
+	var h := int(tags.get(257, [0])[0])
+	var spp := int(tags.get(277, [1])[0])
+	var bps := int(tags.get(258, [8])[0])
+	if int(tags.get(259, [1])[0]) != 1 or bps != 8 or int(tags.get(284, [1])[0]) != 1:
+		return [null, 0]
+	if w < 1 or h < 1 or w > MAX_TEX or not spp in [1, 2, 3, 4]:
+		return [null, 0]
+	var offs: Array = tags.get(273, [])
+	var rps := int(tags.get(278, [h])[0])
+	var rows := mini(h, MAX_TEX)
+	var row_b := w * spp
+	var data := PackedByteArray()
+	var y := 0
+	for so in offs:
+		if y >= rows:
+			break
+		var n_rows := mini(rps, rows - y)
+		var start := int(so)
+		if start < 0 or start + n_rows * row_b > buf.size():
+			return [null, 0]
+		data.append_array(buf.slice(start, start + n_rows * row_b))
+		y += n_rows
+	if y < rows:
+		return [null, 0]
+	# Graustufen/RGB auf RGBA. Assoziiertes Alpha (ExtraSamples 1) bleibt wie es ist:
+	# bei fast deckenden Pixeln (typisch Hold-Koerper) ist der Farbfehler unsichtbar,
+	# eine Schleife ueber Millionen Pixel in GDScript waere es nicht.
+	var fmt := Image.FORMAT_RGBA8
+	if spp == 3:
+		fmt = Image.FORMAT_RGB8
+	elif spp == 1:
+		fmt = Image.FORMAT_L8
+	elif spp == 2:
+		fmt = Image.FORMAT_LA8
+	var img := Image.create_from_data(w, rows, false, fmt, data)
+	if fmt != Image.FORMAT_RGBA8:
+		img.convert(Image.FORMAT_RGBA8)
+	return [img, h]
 
 
 # ------------------------------------------------------- Laden / Verwalten
