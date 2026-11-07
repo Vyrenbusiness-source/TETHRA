@@ -44,7 +44,7 @@ var _dl_cancel: Button
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_library = MapLibrary.new()
+	_library = MapLibrary.new(_arg_value("--mp-maps="))
 	_library.scan()
 	_mirror = Mirror
 	_preview = AudioStreamPlayer.new()
@@ -171,10 +171,96 @@ func _ready() -> void:
 		if not Lobby.active:
 			Lobby.host_room()
 		_mp_auto(true)
+	elif OS.get_cmdline_args().has("--mp-dl-host"):
+		if not Lobby.active:
+			Lobby.host_room()
+		_mp_dl(true)
+	elif OS.get_cmdline_args().has("--mp-dl-client"):
+		if not Lobby.active:
+			Lobby.join_lan("127.0.0.1")
+		_mp_dl(false)
 	elif OS.get_cmdline_args().has("--mp-auto-client"):
 		if not Lobby.active:
 			Lobby.join_lan("127.0.0.1")
 		_mp_auto(false)
+
+
+## Wert einer Kommandozeilen-Option "--name=wert" ("" = fehlt).
+static func _arg_value(prefix: String) -> String:
+	for a in OS.get_cmdline_args():
+		if a.begins_with(prefix):
+			return a.substr(prefix.length())
+	return ""
+
+
+## Download-Flow-Test (Host + Client, getrennte Scratch-Bibliotheken per
+## --mp-maps=). Host: Online-Tab -> kleinste Map laden -> fuer Raum gewaehlt.
+## Client: sieht fehlende Map, Abbruch, "Map laden", gleiche Set-ID, bereit.
+func _mp_dl(host: bool) -> void:
+	var tag := "HOST" if host else "CLIENT"
+	var step := func(msg: String): print("MPDL %s %s" % [tag, msg])
+	var wait_for := func(cond: Callable, secs: float) -> bool:
+		var w := 0.0
+		while w < secs and not cond.call():
+			await get_tree().create_timer(0.1).timeout
+			w += 0.1
+		return cond.call()
+	step.call("maps_dir=" + _library.maps_dir)
+	if not await wait_for.call(func(): return Lobby.players.size() >= 2 and Lobby.players.has(multiplayer.get_unique_id()), 20.0):
+		step.call("TIMEOUT players")
+		get_tree().quit(1)
+		return
+	step.call("players synced")
+	if host:
+		_open_picker()
+		_picker.open_online()
+		var online: OnlineBrowser = _picker._online
+		if not await wait_for.call(func(): return not online._results.is_empty(), 30.0):
+			step.call("TIMEOUT online search")
+			get_tree().quit(1)
+			return
+		var best: Dictionary = {}
+		for r in online._results:
+			if int(r.get("set_id", 0)) <= 0:
+				continue
+			if best.is_empty() or int(r.get("length_s", 9999)) < int(best.get("length_s", 9999)):
+				best = r
+		step.call("online %d Ergebnisse, kleinste: set=%s len=%s" % [online._results.size(), str(best.get("set_id")), str(best.get("length_s"))])
+		var sid := int(best.get("set_id", 0))
+		online.start_download(sid)
+		if not await wait_for.call(func(): return int(Lobby.sel_map.get("set_id", 0)) == sid, 120.0):
+			step.call("TIMEOUT download/pick")
+			get_tree().quit(1)
+			return
+		step.call("host: Raum-Map gewaehlt set=%d local=%s ready=%s" % [sid, Lobby.resolve_local_path(), str(Lobby.players[multiplayer.get_unique_id()].get("ready", "?"))])
+		if not await wait_for.call(func(): return Lobby.all_ready(), 150.0):
+			step.call("TIMEOUT all_ready")
+			get_tree().quit(1)
+			return
+		step.call("all_ready OK")
+		await get_tree().create_timer(1.0).timeout
+		get_tree().quit(0)
+	else:
+		if not await wait_for.call(func(): return not Lobby.sel_map.is_empty(), 150.0):
+			step.call("TIMEOUT sel_map")
+			get_tree().quit(1)
+			return
+		var sid := int(Lobby.sel_map.get("set_id", 0))
+		step.call("client sieht Map set=%d local='%s' downloading=%s btn_visible=%s" % [sid, Lobby.resolve_local_path(), str(_downloading), str(_dl_btn.visible)])
+		await get_tree().create_timer(0.8).timeout
+		_dl_cancel.pressed.emit()
+		await get_tree().create_timer(0.8).timeout
+		step.call("nach Abbruch: downloading=%s btn_visible=%s status='%s'" % [str(_downloading), str(_dl_btn.visible), _status_label.text])
+		_dl_btn.pressed.emit()
+		step.call("Klick Map laden: downloading=%s dl_set=%d (soll %d)" % [str(_downloading), _dl_set, sid])
+		if not await wait_for.call(func(): return Lobby.resolve_local_path() != "", 120.0):
+			step.call("TIMEOUT download status='%s'" % _status_label.text)
+			get_tree().quit(1)
+			return
+		await get_tree().create_timer(1.0).timeout
+		step.call("fertig local=%s status='%s' ready=%s" % [Lobby.resolve_local_path(), _status_label.text, str(Lobby.all_ready())])
+		await get_tree().create_timer(2.0).timeout
+		get_tree().quit(0)
 
 
 func _mp_smoke(host: bool) -> void:
