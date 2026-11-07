@@ -10,9 +10,11 @@ extends Control
 ## Innen = Ring 0 (Kreis, kuehles Blau), Aussen = Ring 1 (Raute, warmes Bernstein).
 
 ## Ringradien und Spawn-Radius relativ zur Bildschirmhoehe.
-const R_INNER_K := 0.205
-const R_OUTER_K := 0.355
-const R_SPAWN_K := 0.05
+const R_INNER_K := 0.215
+const R_OUTER_K := 0.37
+const R_SPAWN_K := 0.085
+## Dunkler Kern (Kombo + Judge); Ziele entstehen an seinem Rand.
+const CORE_K := 0.078
 ## Totzone um die Mitte (Cursor dort = Winkel bleibt stehen).
 const DEADZONE_K := 0.045
 ## Notengroesse (Radius) relativ zur Hoehe; Anflug startet kleiner.
@@ -64,7 +66,7 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_plate_tex = _radial_tex([0.0, 0.55, 1.0],
-		[Color(PLATE_COL, 0.62), Color(PLATE_COL, 0.48), Color(PLATE_COL, 0.0)])
+		[Color(PLATE_COL, 0.84), Color(PLATE_COL, 0.74), Color(PLATE_COL, 0.0)])
 	_glow_tex = _radial_tex([0.0, 0.22, 0.6, 1.0],
 		[Color(1, 1, 1, 1.0), Color(1, 1, 1, 0.5), Color(1, 1, 1, 0.12), Color(1, 1, 1, 0.0)])
 
@@ -170,8 +172,9 @@ func on_arc_started(index: int) -> void:
 
 
 func _light(pos: Vector2, ring: int, q: int) -> void:
-	var col: Color = MAX_COL if q == 0 else (OUTER_COL if ring == 1 else INNER_COL).lightened(0.25)
-	_lights.append({"pos": pos, "col": col, "t0": t_ms, "ring": ring})
+	# Immer Ringfarbe (innen/aussen bleibt auch im Licht erkennbar); MAX nur heller.
+	var col: Color = _ring_col(ring).lightened(0.45 if q == 0 else 0.2)
+	_lights.append({"pos": pos, "col": col, "t0": t_ms, "ring": ring, "max": q == 0})
 	if _lights.size() > 24:
 		_lights.pop_front()
 
@@ -202,8 +205,11 @@ func _draw() -> void:
 	var r_out := ring_radius(1)
 
 	# Dunkle Platte hinter dem Spielfeld: Lesbarkeit ueber jedem Map-Bild.
-	var pr := r_out * 1.45
+	var pr := r_out * 1.6
 	draw_texture_rect(_plate_tex, Rect2(c - Vector2(pr, pr), Vector2(pr, pr) * 2.0), false)
+	# Kern: ruhige Flaeche fuer Kombo + Judge, feiner Rand = Entstehungslinie.
+	draw_circle(c, u * CORE_K, Color(PLATE_COL, 0.55), true, -1.0, true)
+	draw_arc(c, u * CORE_K, 0.0, TAU, 64, Color(1, 1, 1, 0.07), 1.0, true)
 
 	if show_guides:
 		_draw_guides(c, u, r_in, r_out)
@@ -248,7 +254,7 @@ func _ring_col(ring: int) -> Color:
 
 
 func _draw_guides(c: Vector2, u: float, r_in: float, r_out: float) -> void:
-	var r0 := u * R_SPAWN_K * 1.6
+	var r0 := u * R_SPAWN_K
 	for k in 8:
 		var deg := float(k) * 45.0
 		var major := k % 2 == 0
@@ -287,7 +293,7 @@ func _draw_cursor(c: Vector2, u: float, r_in: float, r_out: float) -> void:
 	var a1 := _ga(cursor_deg + tol_deg)
 	var dim := 0.55 if cursor_in_deadzone else 1.0
 	# Leiser Zeiger von der Mitte bis aussen.
-	draw_line(polar(c, cursor_deg, u * R_SPAWN_K * 1.6), polar(c, cursor_deg, r_out - u * 0.03),
+	draw_line(polar(c, cursor_deg, u * R_SPAWN_K), polar(c, cursor_deg, r_out - u * 0.03),
 		Color(1, 1, 1, 0.06 * dim), 1.5, true)
 	for r in 2:
 		var rad := r_out if r == 1 else r_in
@@ -410,11 +416,8 @@ func _draw_arc_note(c: Vector2, u: float, i: int, n) -> void:
 	var alpha := _approach_alpha(dt) * fade
 	# Spitze: bewegt sich ab der Trefferzeit von a0 nach a1.
 	var k := clampf((t_ms - t0) / maxf(t1 - t0, 1.0), 0.0, 1.0) if (held or dt < 0.0) else 0.0
+	# Gleiche Spitze wie OrbitNote.angle_at, aber entfaltet (a1 - a0 = Bogen).
 	var tip := lerpf(a0, a1, k)
-	if k > 0.0 and n.has_method("angle_at"):
-		# Gleiche Spitze wie der Core; nahe der linearen Schaetzung entfaltet.
-		var core_tip := float(n.angle_at(t_ms))
-		tip += rad_to_deg(angle_difference(deg_to_rad(tip), deg_to_rad(core_tip)))
 	var lo := minf(tip, a1)
 	var hi := maxf(tip, a1)
 	var seg := maxi(8, int(absf(hi - lo) / 3.0))
@@ -467,7 +470,7 @@ func _draw_lights(u: float) -> void:
 			continue
 		var e := 1.0 - f
 		var col: Color = l.col
-		var gs := u * lerpf(0.07, 0.10, f)
+		var gs := u * lerpf(0.075, 0.105, f)
 		draw_texture_rect(_glow_tex, Rect2(l.pos - Vector2(gs, gs) * 0.5, Vector2(gs, gs)), false,
-			Color(col, 0.42 * e * e))
-		draw_arc(l.pos, u * NOTE_K * lerpf(1.0, 1.9, sqrt(f)), 0.0, TAU, 32, Color(col, 0.45 * e), 1.5, true)
+			Color(col, (0.5 if l.max else 0.38) * e * e))
+		draw_arc(l.pos, u * NOTE_K * lerpf(1.0, 1.55, sqrt(f)), 0.0, TAU, 32, Color(col, 0.5 * e * e), 2.0, true)

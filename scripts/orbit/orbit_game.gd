@@ -12,11 +12,9 @@ extends Control
 ## --auto-miss=<n> (Autoplay laesst jede n-te Note aus, fuer Fehltreffer-Shots).
 
 const MODE := "orbit"
-const CORE_PATH := "res://scripts/orbit/orbit_core.gd"
-const CONVERTER_PATH := "res://scripts/orbit/orbit_converter.gd"
-## Nur solange orbit-core noch nicht in main ist (Shots/Tests).
-const STAND_IN_PATH := "res://tests/orbit_stand_in.gd"
 const AUTO_TAP_MS := 40.0
+## Groesse von Judge + Kombo relativ zu Mania (bei 720 px Hoehe).
+const JUDGE_SCALE := 0.5
 const GRADE_COLOR := {
 	"SS": Color(1.0, 0.92, 0.55), "S": Color(1.0, 0.85, 0.40), "A": Color(0.45, 0.95, 0.55),
 	"B": Color(0.45, 0.70, 1.0), "C": Color(0.80, 0.55, 1.0), "D": Color(1.0, 0.45, 0.45),
@@ -24,8 +22,8 @@ const GRADE_COLOR := {
 const HIT_DB := -7.0
 const MISS_DB := -6.0
 
-var core   # OrbitCore (oder Platzhalter)
-var notes: Array = []
+var core: OrbitCore
+var notes: Array[OrbitNote] = []
 var _beatmap: Beatmap
 var _use_audio := false
 var _debug_start_usec := 0
@@ -134,25 +132,16 @@ func _load_beatmap() -> bool:
 	return true
 
 
-## Logik laden: echte OrbitCore/OrbitConverter, sonst Platzhalter (nur bis
-## orbit-core in main ist). Untypisiert, damit diese Datei in beiden Faellen
-## kompiliert.
+## Logik laden: OrbitConverter macht aus der Mania-Map die Ziele, OrbitCore
+## wertet (NF liest OrbitCore selbst aus GameSession.mods).
 func _build_core() -> void:
-	if ResourceLoader.exists(CORE_PATH) and ResourceLoader.exists(CONVERTER_PATH):
-		notes = load(CONVERTER_PATH).convert(_beatmap)
-		core = load(CORE_PATH).new()
-	else:
-		var s = load(STAND_IN_PATH)
-		notes = s.Converter.convert(_beatmap)
-		core = s.Core.new()
-	core.setup(notes, _beatmap.od(), Settings.mania_scroll)
-	if "no_fail" in core and bool(GameSession.mods.get("NF", false)):
-		core.no_fail = true
+	notes = OrbitConverter.convert(_beatmap)
+	core = OrbitCore.new()
+	core.setup(notes, _beatmap.od(), Settings.mania_scroll, _beatmap.hp())
 	core.note_judged.connect(_on_note_judged)
 	core.arc_started.connect(_on_arc_started)
 	core.finished.connect(func(_s): _show_results(false))
-	if "w300" in core:
-		_w300 = float(core.w300)
+	_w300 = core.w300
 
 
 func _preempt() -> float:
@@ -160,15 +149,7 @@ func _preempt() -> float:
 
 
 func _tolerance() -> float:
-	for k in ["ANGLE_TOLERANCE", "ANGLE_TOL", "TOL"]:
-		if core != null and k in core:
-			return float(core.get(k))
-	if core != null and core.get_script() != null:
-		var consts: Dictionary = core.get_script().get_script_constant_map()
-		for k in ["ANGLE_TOLERANCE_DEG", "ANGLE_TOLERANCE", "ANGLE_TOL", "TOL"]:
-			if consts.has(k):
-				return float(consts[k])
-	return OrbitView.TOL_DEFAULT
+	return OrbitCore.ANGLE_TOL_DEG
 
 
 func _time_ms() -> float:
@@ -183,7 +164,7 @@ func _time_ms() -> float:
 func apply_scroll_speed(_speed: int) -> void:
 	if _view != null:
 		_view.preempt = _preempt()
-	if core != null and core.has_method("set_scroll_scale"):
+	if core != null:
 		core.set_scroll_scale(Settings.mania_scroll)
 
 
@@ -366,9 +347,14 @@ func _place_hud() -> void:
 	var vs := get_viewport().get_visible_rect().size
 	var cy := vs.y * 0.5
 	# Judge knapp unter der Mitte, Kombo knapp darueber (innerhalb des inneren Rings).
+	# Kleiner als in Mania: alles bleibt im dunklen Kern innerhalb der
+	# Entstehungszone der Ziele (Skalierung um die Bildschirmmitte).
+	var k := JUDGE_SCALE * vs.y / 720.0
+	_judge_disp.pivot_offset = vs * 0.5
+	_judge_disp.scale = Vector2(k, k)
 	_judge_disp.judge_gap = 0.0
-	_judge_disp.combo_gap = vs.y * 0.085
-	_judge_disp.place(cy + vs.y * 0.045)
+	_judge_disp.combo_gap = vs.y * 0.05 / k
+	_judge_disp.place(cy + vs.y * 0.026 / k)
 	var r_out := vs.y * OrbitView.R_OUTER_K
 	_err_bar.position = Vector2((vs.x - _err_bar.size.x) * 0.5,
 		minf(cy + r_out + vs.y * 0.045, vs.y - _err_bar.size.y - 8.0))
@@ -594,11 +580,7 @@ func _run_autoplay(t: float) -> void:
 	# Cursor-Fuehrung fuer dieses Bild.
 	for r in 2:
 		if _auto_arc[r] >= 0:
-			var a = notes[_auto_arc[r]]
-			var tip: float = a.angle_at(t) if a.has_method("angle_at") else lerpf(
-				float(a.angle_deg), float(a.end_angle_deg),
-				clampf((t - float(a.time_ms)) / maxf(float(a.end_ms) - float(a.time_ms), 1.0), 0.0, 1.0))
-			_auto_cursor(tip, t)
+			_auto_cursor(notes[_auto_arc[r]].angle_at(t), t)
 			return
 	if _auto_idx < notes.size():
 		var nx = notes[_auto_idx]
@@ -691,7 +673,7 @@ func _on_note_judged(index: int, result: Dictionary) -> void:
 	_acc_trace.append(core.accuracy())
 
 
-func _on_arc_started(index: int, _a = null, _b = null) -> void:
+func _on_arc_started(index: int, _quality: int) -> void:
 	_view.on_arc_started(index)
 
 
@@ -880,11 +862,11 @@ func _shot_path(def: String) -> String:
 ## --shot --shot-at=<ms>: Bild zur Songzeit (Autoplay laeuft dabei mit).
 ## --shot-results: bis zum Ende spielen lassen (oder springen), dann Results.
 func _capture_shot() -> void:
-	core.set("no_fail", true)
+	core._tally.no_fail = true  # Shots: nie scheitern
 	var target := float(notes[mini(6, notes.size() - 1)].time_ms) if not notes.is_empty() else 2000.0
 	for a in OS.get_cmdline_args():
 		if a.begins_with("--shot-at="):
-			target = a.trim_prefix("--shot-at=").to_float()
+			target = _shot_target(a.trim_prefix("--shot-at="), target)
 	if OS.get_cmdline_args().has("--shot-pause"):
 		await _wait_until(target)
 		_toggle_pause(true)
@@ -898,8 +880,16 @@ func _capture_shot() -> void:
 		_show_results(false)
 		return
 	if target - _time_ms() > 4000.0 and _use_audio:
-		# Nur vorspulen; Autoplay holt die uebersprungenen Ziele als Fehler nach.
-		_auto_idx = _first_note_after(target - 2500.0)
+		# Vorspulen: Wertung neu ab dem Sprungpunkt, damit das Bild keine
+		# kuenstlichen Fehler der uebersprungenen Ziele zeigt.
+		var cut := _first_note_after(target - 2500.0)
+		var rest: Array[OrbitNote] = []
+		rest.assign(notes.slice(cut))
+		notes = rest
+		core.setup(notes, _beatmap.od(), Settings.mania_scroll, _beatmap.hp())
+		core._tally.no_fail = true
+		_view.setup(notes)
+		_auto_idx = 0
 		SyncClock.seek_ms(target - 2500.0)
 	await _wait_until(target)
 	if not is_inside_tree():
@@ -907,6 +897,22 @@ func _capture_shot() -> void:
 	await RenderingServer.frame_post_draw
 	_save_shot(_shot_path("orbit.png"))
 	get_tree().quit(0)
+
+
+## Zeitpunkt fuer --shot-at: Zahl (ms), "arc" (Bogen mitten im Halten)
+## oder "chord" (Akkord kurz vor der Ankunft).
+func _shot_target(v: String, def: float) -> float:
+	if v.is_valid_float():
+		return v.to_float()
+	for i in notes.size():
+		var n := notes[i]
+		if n.time_ms < 8000.0:
+			continue
+		if v == "arc" and n.is_arc and n.duration_ms() >= 400.0:
+			return n.time_ms + n.duration_ms() * 0.45
+		if v == "chord" and i + 1 < notes.size() 				and absf(notes[i + 1].time_ms - n.time_ms) <= OrbitView.CHORD_EPS_MS:
+			return n.time_ms - 160.0
+	return def
 
 
 func _first_note_after(t: float) -> int:
