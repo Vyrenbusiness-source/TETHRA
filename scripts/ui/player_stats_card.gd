@@ -14,9 +14,9 @@ extends PanelContainer
 ## n100, n50, n_miss, ur, mean (ms, + = spaet), early, late, h_ok, h_drop,
 ## mods [str], bins [BINS Zaehler, -RANGE_MS..+RANGE_MS], trace [<= TRACE Promille].
 
-const BINS := 15
+const BINS := 21
 const TRACE := 40
-const RANGE_MS := 120.0
+const RANGE_MS := 105.0
 const MAX_COUNT := 1000000
 
 const TAGS := ["MAX", "300", "200", "100", "50", "MISS"]
@@ -110,9 +110,12 @@ static func resample(trace: PackedFloat32Array, pts: int) -> Array:
 	var tn := trace.size()
 	if tn == 0:
 		return out
-	var m := mini(tn, pts)
+	# Die ersten Noten (immer ~100 %) ueberspringen, sonst dominiert der Start.
+	var start := int(float(tn) * 0.04) if tn > pts * 2 else 0
+	var span := tn - start
+	var m := mini(span, pts)
 	for i in m:
-		var idx := 0 if m <= 1 else int(round(float(i) * float(tn - 1) / float(m - 1)))
+		var idx := start + (0 if m <= 1 else int(round(float(i) * float(span - 1) / float(m - 1))))
 		out.append(int(round(clampf(trace[idx], 0.0, 1.0) * 1000.0)))
 	return out
 
@@ -689,7 +692,9 @@ func _timing(st: Dictionary, ref: Dictionary) -> Control:
 
 
 func _graphs(st: Dictionary, ref: Dictionary, info: Dictionary) -> Control:
-	var r := HBoxContainer.new()
+	# Schmal: nebeneinander, feste Hoehe. Breit: untereinander, fuellen die Karte.
+	var wide := _s >= 1.0
+	var r: BoxContainer = VBoxContainer.new() if wide else HBoxContainer.new()
 	r.add_theme_constant_override("separation", _px(16))
 	r.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	r.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -702,6 +707,7 @@ func _graphs(st: Dictionary, ref: Dictionary, info: Dictionary) -> Control:
 	hg.range_ms = RANGE_MS
 	hg.custom_minimum_size = Vector2(0, _px(104))
 	hg.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	hv.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	hv.add_child(hg)
 	r.add_child(hv)
 	var trace: Array = st.get("trace", [])
@@ -717,6 +723,7 @@ func _graphs(st: Dictionary, ref: Dictionary, info: Dictionary) -> Control:
 		tg.dots = per_round
 		tg.custom_minimum_size = Vector2(0, _px(104))
 		tg.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		tv.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		tv.add_child(tg)
 		r.add_child(tv)
 	return r
