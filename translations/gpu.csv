@@ -1,0 +1,7 @@
+keys,de,en
+Sicherer Grafikmodus,Sicherer Grafikmodus,Safe graphics mode
+"Neustart des Spiels nötig, damit der Renderer wechselt.","Neustart des Spiels nötig, damit der Renderer wechselt.","Restart the game for the renderer change to take effect."
+"Weniger GPU-Last: OpenGL-Renderer, niedrigere Qualität, 240 FPS mit VSync. Hilft bei Abstürzen oder Treiber-Problemen.","Weniger GPU-Last: OpenGL-Renderer, niedrigere Qualität, 240 FPS mit VSync. Hilft bei Abstürzen oder Treiber-Problemen.","Less GPU load: OpenGL renderer, lower quality, 240 FPS with VSync. Helps with crashes or driver problems."
+"Das Spiel wurde zuletzt unerwartet beendet. Sicherer Grafikmodus ist an (Einstellungen > Grafik).","Das Spiel wurde zuletzt unerwartet beendet. Sicherer Grafikmodus ist an (Einstellungen > Grafik).","The game ended unexpectedly last time. Safe graphics mode is on (Settings > Graphics)."
+Stumm,Stumm,Muted
+Lautstaerke   %s,Lautstaerke   %s,Volume   %s

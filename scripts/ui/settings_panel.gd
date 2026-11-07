@@ -326,6 +326,19 @@ func _ready() -> void:
 	_row(pg_gfx, "FPS-Limit", fps, null)
 
 	_group(pg_gfx, "Optionen")
+	var safe_cb := CheckButton.new()
+	safe_cb.button_pressed = GpuGuard.safe_mode
+	var safe_hint := Label.new()
+	safe_hint.add_theme_font_size_override("font_size", 13)
+	safe_hint.add_theme_color_override("font_color", Color(0.55, 0.9, 1.0))
+	safe_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	safe_cb.toggled.connect(func(on):
+		GpuGuard.set_safe_mode(on)
+		Settings.apply()
+		safe_hint.text = tr("Neustart des Spiels nötig, damit der Renderer wechselt."))
+	_row(pg_gfx, "Sicherer Grafikmodus", safe_cb, null).tooltip_text = tr("Weniger GPU-Last: OpenGL-Renderer, niedrigere Qualität, 240 FPS mit VSync. Hilft bei Abstürzen oder Treiber-Problemen.")
+	pg_gfx.add_child(safe_hint)
+
 	var lg := CheckButton.new()
 	lg.button_pressed = Settings.lane_glow
 	lg.toggled.connect(func(on): Settings.lane_glow = on)
@@ -340,7 +353,7 @@ func _ready() -> void:
 	_group(pg_audio, "Lautstärke & Klang")
 	_vol_value = Label.new()
 	_slider_row(pg_audio, "Lautstärke", -30.0, 0.0, 1.0, Settings.volume_db,
-		func(v): return "%d dB" % int(v),
+		func(v): return tr("Stumm") if v <= Settings.VOLUME_MIN_DB + 0.01 else "%d dB" % int(v),
 		func(v):
 			Settings.volume_db = v
 			Settings.apply(), "", _vol_value)
@@ -739,7 +752,7 @@ func _refresh_labels() -> void:
 	if _capturing >= 3 and _capturing - 3 < _lane_btns.size():
 		_lane_btns[_capturing - 3].text = "…"
 	_offset_value.text = "%+d ms" % int(Settings.offset_ms)
-	_vol_value.text = "%d dB" % int(Settings.volume_db)
+	_vol_value.text = tr("Stumm") if Settings.is_muted() else "%d dB" % int(Settings.volume_db)
 
 
 func _open_wizard() -> void:

@@ -11,7 +11,11 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Vyrenbusiness-source/TETHRA/releases/latest"><img src="https://img.shields.io/badge/%E2%AC%87%20%20DOWNLOAD%20FOR%20WINDOWS-latest%20release-2ea44f?style=for-the-badge&labelColor=1f6f3a" alt="Download for Windows" height="48"></a>
+  <a href="https://github.com/Vyrenbusiness-source/TETHRA/releases/download/worlds/TETHRA_Setup.exe"><img src="https://img.shields.io/badge/%E2%AC%87%20%20DOWNLOAD%20FOR%20WINDOWS-TETHRA__Setup.exe-2ea44f?style=for-the-badge&labelColor=1f6f3a" alt="Download TETHRA_Setup.exe for Windows" height="48"></a>
+</p>
+
+<p align="center">
+  <sub>One file, everything included (game, all worlds, sample maps). No Godot needed. Updates install themselves.</sub>
 </p>
 
 <p align="center">
@@ -111,11 +115,13 @@ All keys can be rebound in Settings.
 
 ## Install
 
-1. Download the zip from [Releases](https://github.com/Vyrenbusiness-source/TETHRA/releases/latest) and extract it anywhere.
-2. For all worlds, put `TETHRA_worlds.pck` next to `TETHRA.exe`.
-3. Run `TETHRA.exe`.
+1. Download **[TETHRA_Setup.exe](https://github.com/Vyrenbusiness-source/TETHRA/releases/download/worlds/TETHRA_Setup.exe)** (about 390 MB). That is the only file you need.
+2. Run it and click through. Windows may show "Windows protected your PC": click **More info**, then **Run anyway** (the game is not code-signed).
+3. Start TETHRA from the desktop or start menu. New versions download and install themselves inside the game.
 
-Graphics problems? Start the compatibility `.bat` from the zip instead. The game updates itself when a new version is out.
+Graphics problems? Start "TETHRA (Kompatibilitätsmodus)" from the start menu (OpenGL instead of Vulkan).
+
+The small `TETHRA.pck` files on the [release pages](https://github.com/Vyrenbusiness-source/TETHRA/releases) are only the update packages the game fetches by itself. You do not need to download them.
 
 ## Your maps
 
@@ -144,4 +150,4 @@ Put osu!mania 4K `.osz` files into the `maps/` folder, or use the online browser
 
 ## Deutsch
 
-TETHRA ist ein 3D-Raumflug-Rhythmusspiel für osu!mania-4K-Beatmaps (`.osz`) mit exakter osu!-Wertung, 2D-Modus mit osu!-Skins, Online-Map-Browser, Replays, Multiplayer und Turnieren. Installation: Zip aus den [Releases](https://github.com/Vyrenbusiness-source/TETHRA/releases/latest) entpacken, `TETHRA_worlds.pck` für alle Welten neben `TETHRA.exe` legen, starten. Maps gehören ihren Mappern, osu! ist eine Marke von ppy.
+TETHRA ist ein 3D-Raumflug-Rhythmusspiel für osu!mania-4K-Beatmaps (`.osz`) mit exakter osu!-Wertung, 2D-Modus mit osu!-Skins, Online-Map-Browser, Replays, Multiplayer und Turnieren. Installation: **[TETHRA_Setup.exe](https://github.com/Vyrenbusiness-source/TETHRA/releases/download/worlds/TETHRA_Setup.exe)** herunterladen (eine Datei, alles drin, kein Godot nötig), ausführen, spielen. Meldet Windows "Der Computer wurde durch Windows geschützt": **Weitere Informationen** → **Trotzdem ausführen**. Updates kommen automatisch im Spiel. Maps gehören ihren Mappern, osu! ist eine Marke von ppy.

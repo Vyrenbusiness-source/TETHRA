@@ -224,9 +224,11 @@ func _draw_circle_item(it: Array, x0: float, w: float, yh: float, c: Color, st: 
 		var bc := c if st != STATE_HELD else c.lerp(Color(1, 1, 1), 0.25)
 		var ba := 0.55 if st != STATE_HELD else 0.75
 		draw_rect(Rect2(cx - bw * 0.5, top, bw, bot - top), Color(bc.r, bc.g, bc.b, ba))
-		# Runde Endkappe in Koerperbreite.
-		draw_texture_rect(_disc_tex, Rect2(cx - bw * 0.5, top - bw * 0.5, bw, bw), false,
-				Color(bc.r, bc.g, bc.b, minf(ba + 0.3, 1.0)))
+		# Runde Endkappe in Koerperbreite: nur die obere Kreishaelfte, gleiche Farbe/Deckkraft
+		# wie der Koerper (kein heller Ball am Ende).
+		var ts := Vector2(_disc_tex.get_size())
+		draw_texture_rect_region(_disc_tex, Rect2(cx - bw * 0.5, top - bw * 0.5, bw, bw * 0.5),
+				Rect2(0, 0, ts.x, ts.y * 0.5), Color(bc.r, bc.g, bc.b, ba))
 	elif yh < -d or yh > vs.y + d:
 		return
 	var r := Rect2(cx - d * 0.5, yh - d * 0.5, d, d)
@@ -385,6 +387,10 @@ func _draw_skin_item(it: Array, xs: Array, ws: Array, vs: Vector2) -> void:
 		if bot < -hh or top > vs.y + hh:
 			return
 		var tail := sk.tex("tail_%d" % col)
+		# Kugelfoermige Tails (fast quadratisch, typisch bei Kreis-Skins) weglassen:
+		# kein Ball am Hold-Ende. Flache Kappen bleiben.
+		if tail != null and float(tail.get_height()) >= float(tail.get_width()) * 0.6:
+			tail = null
 		var th := (_tex_h(tail, nw) if tail != null else (hh if head != null else vs.y * NOTE_H_FRAC * note_k))
 		var body := sk.tex("body_%d" % col)
 		var bm := mod
@@ -398,11 +404,10 @@ func _draw_skin_item(it: Array, xs: Array, ws: Array, vs: Vector2) -> void:
 				var cc: Color = it[3] if st != STATE_DEAD else Color(0.36, 0.37, 0.41, 0.8)
 				var bw := w * 0.72
 				draw_rect(Rect2(x + (w - bw) * 0.5, top, bw, body_bot - top), Color(cc.r, cc.g, cc.b, 0.55 if st != STATE_HELD else 0.75))
-		# Ende: eigene Textur, sonst Kopf vertikal gespiegelt, sonst Balken.
+		# Ende: nur eine eigene Tail-Textur des Skins. Fehlt sie, kein gespiegelter
+		# Kopf mehr (bei Kreis-Skins war das ein zweiter Ball am Hold-Ende).
 		if tail != null:
 			draw_texture_rect(tail, Rect2(nx, top - th, nw, th), false, mod)
-		elif head != null:
-			draw_texture_rect(head, Rect2(nx, top, nw, -th), false, mod)
 	elif yh < -hh or yh > vs.y + hh:
 		return
 	if head != null:

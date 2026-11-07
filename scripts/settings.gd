@@ -97,7 +97,8 @@ var hitsound_set: int = 0
 var fullscreen: bool = false
 ## Grafik-Qualitaet: 0 Niedrig (kein AA) · 1 Mittel (2x) · 2 Hoch (4x)
 ## · 3 Ultra (8x MSAA) · 4 Extrem (8x MSAA + 1.5x Supersampling).
-var graphics_quality: int = 3
+## Default 2 (4x MSAA): Ultra/Extrem nur bewusst, Supersampling nur manuell.
+var graphics_quality: int = 2
 ## FPS-Modus: 0 = VSync, 1 = Unlimited, 2 = 240, 3 = 360, 4 = 480.
 ## Unlimited/Caps schalten VSync ab — weniger Input-Latenz, besseres Timing.
 ## Default 240: Unlimited kann auf sehr neuen GPUs (Treiber-Timeouts)
@@ -366,7 +367,7 @@ func load_settings(path: String = PATH) -> void:
 	hitsound_volume = clampf(float(cfg.get_value("game", "hitsound_volume", 0.8)), 0.0, 1.0)
 	fullscreen = bool(cfg.get_value("game", "fullscreen", false))
 	fps_mode = clampi(int(cfg.get_value("game", "fps_mode", 2)), 0, 4)
-	graphics_quality = clampi(int(cfg.get_value("game", "graphics_quality", 3)), 0, 4)
+	graphics_quality = clampi(int(cfg.get_value("game", "graphics_quality", 2)), 0, 4)
 	audio_enhance = bool(cfg.get_value("game", "audio_enhance", true))
 	bass_boost = clampf(float(cfg.get_value("game", "bass_boost", 0.75)), 0.0, 1.0)
 	profile_name = str(cfg.get_value("profile", "name", "Player"))
@@ -411,11 +412,20 @@ func save(path: String = PATH) -> void:
 	cfg.save(path)
 
 
+## Lautstaerke am unteren Anschlag: Master stumm.
+const VOLUME_MIN_DB := -30.0
+
+func is_muted() -> bool:
+	return volume_db <= VOLUME_MIN_DB + 0.01
+
+
 ## Einstellungen auf die laufenden Systeme anwenden.
 func apply() -> void:
 	TranslationServer.set_locale(active_language())
 	SyncClock.user_offset_ms = offset_ms
 	AudioServer.set_bus_volume_db(0, volume_db)
+	# Ganz unten = wirklich stumm (-30 dB waere noch hoerbar).
+	AudioServer.set_bus_mute(0, is_muted())
 	_apply_mastering()
 	if DisplayServer.get_name() != "headless":
 		# EXCLUSIVE_FULLSCREEN = echtes Vollbild (nicht nur randloses Fenster).
@@ -430,7 +440,9 @@ func apply() -> void:
 			_place_test_window()
 		# Grafik-Qualitaet: MSAA-Stufe + optionales Supersampling.
 		var vp := get_viewport()
-		match graphics_quality:
+		# Sicherer Grafikmodus: Qualitaet gedeckelt, gespeicherter Wert bleibt.
+		var safe: bool = GpuGuard.safe_mode
+		match GpuGuard.effective_quality(graphics_quality, safe):
 			0:
 				vp.msaa_3d = Viewport.MSAA_DISABLED
 				vp.msaa_2d = Viewport.MSAA_DISABLED
@@ -454,10 +466,11 @@ func apply() -> void:
 				vp.scaling_3d_scale = 1.5
 		# FPS: VSync-Modus vs. Unlimited/Cap (Input wird pro Frame gepollt —
 		# mehr FPS = praezisere Hit-Zeitstempel).
-		match fps_mode:
+		var mode := 0 if safe else fps_mode
+		match mode:
 			0:
 				DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED)
-				Engine.max_fps = 0
+				Engine.max_fps = 240 if safe else 0
 			1:
 				DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
 				Engine.max_fps = 0
@@ -562,7 +575,7 @@ func _show_volume_overlay() -> void:
 		_vol_fill.color = Color(0.20, 0.85, 1.0)
 		bar_bg.add_child(_vol_fill)
 	var pct := int(round((volume_db + 30.0) / 30.0 * 100.0))
-	_vol_label.text = tr("Lautstaerke   %d %%") % pct
+	_vol_label.text = (tr("Lautstaerke   %d %%") % pct) if not is_muted() else (tr("Lautstaerke   %s") % tr("Stumm"))
 	_vol_fill.size = Vector2(210.0 * float(pct) / 100.0, 6)
 	_vol_layer.visible = true
 	if _vol_tween != null and _vol_tween.is_valid():

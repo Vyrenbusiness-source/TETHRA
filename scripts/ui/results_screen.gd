@@ -190,11 +190,17 @@ func show_results(data: Dictionary) -> void:
 	_build_background()
 	_build_header()
 	var group := _build_group()
-	_build_left_panel(_main_row)
-	_build_rank_area(_main_row)
+	if bool(data.get("lobby", false)):
+		_build_lobby_area(_main_row)
+	else:
+		_build_left_panel(_main_row)
+		_build_rank_area(_main_row)
 	_build_buttons(group)
 	_shown = true
-	_play_intro()
+	if bool(data.get("lobby", false)):
+		_play_lobby_intro()
+	else:
+		_play_intro()
 
 
 # ---------------------------------------------------------------------------
@@ -369,8 +375,8 @@ func _build_header() -> void:
 
 
 ## Zentrierte Gruppe: oben Panel + Rang (gemeinsame Mittelachse), unten die
-## Button-Leiste exakt so breit wie beide zusammen. Im Lobby-Modus links
-## buendig, damit rechts Platz fuer die Rangliste bleibt.
+## Button-Leiste exakt so breit wie beide zusammen. Im Lobby-Modus volle
+## Breite: Rangliste + zwei Stats-Karten (Vergleich).
 func _build_group() -> VBoxContainer:
 	var row := HBoxContainer.new()
 	row.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -385,6 +391,8 @@ func _build_group() -> VBoxContainer:
 	var group := VBoxContainer.new()
 	group.add_theme_constant_override("separation", 20)
 	group.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	if bool(_data.get("lobby", false)):
+		group.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(group)
 	_main_row = HBoxContainer.new()
 	_main_row.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -1102,3 +1110,381 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif event.keycode == KEY_ESCAPE:
 			get_viewport().set_input_as_handled()
 			back_pressed.emit()
+
+
+# ---------------------------------------------------------------------------
+# Multiplayer: Rangliste + zwei Stats-Karten (Direktvergleich)
+# ---------------------------------------------------------------------------
+
+var _board: Array = []        # [{id, name, final, score}] in Ranglisten-Reihenfolge
+var _board_me := -1
+var _board_mods := ""
+var _rank_list: VBoxContainer
+var _rank_head: Label
+var _lobby_col: VBoxContainer
+var _cards_row: HBoxContainer
+var _card_a: PlayerStatsCard
+var _card_b: PlayerStatsCard
+var _sel_a := -1
+var _sel_b := -1
+var _b_manual := false
+var _sig_a := ""
+var _sig_b := ""
+var _sig_duel := ""
+var _duel_slot: VBoxContainer
+var _narrow := false
+
+
+func _lobby_rank_w() -> float:
+	var w := get_viewport_rect().size.x
+	return clampf(w * 0.235, 290.0, 430.0)
+
+
+func _build_lobby_area(parent: Control) -> void:
+	_main_row.add_theme_constant_override("separation", 20)
+	var vw := get_viewport_rect().size
+	_narrow = vw.x < 1600.0 or vw.y < 900.0
+	_lobby_col = VBoxContainer.new()
+	_lobby_col.custom_minimum_size = Vector2(_lobby_rank_w(), 0)
+	_lobby_col.add_theme_constant_override("separation", 10)
+	_lobby_col.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	parent.add_child(_lobby_col)
+	# Platzierung gross oben, Modus-Zeile (Teams/Royale) darunter.
+	_place_tag = Label.new()
+	_place_tag.add_theme_font_override("font", UiTheme.heading_font(6))
+	_place_tag.add_theme_font_size_override("font_size", 26 if _narrow else 34)
+	_place_tag.text = "WARTE AUF ANDERE…"
+	_place_tag.add_theme_color_override("font_color", UiTheme.TEXT.lerp(CAPTION, 0.4))
+	_place_tag.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	_lobby_col.add_child(_place_tag)
+	_reveal.append(_place_tag)
+	var is_fail := bool(_data.get("is_fail", false))
+	var fc := int(_stats.get("n_miss", 0)) == 0 and not is_fail
+	if is_fail or fc:
+		var tag := Label.new()
+		tag.text = "NICHT GESCHAFFT" if is_fail else "FULL COMBO"
+		tag.add_theme_font_override("font", UiTheme.heading_font(5))
+		tag.add_theme_font_size_override("font_size", 15)
+		tag.add_theme_color_override("font_color", FAIL_COLOR if is_fail else UiTheme.ACCENT)
+		_lobby_col.add_child(tag)
+		_reveal.append(tag)
+	if Lobby.mm.kind != MatchMode.Kind.FREE:
+		_mode_tag = Label.new()
+		_mode_tag.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_mode_tag.add_theme_font_override("font", UiTheme.heading_font(3))
+		_mode_tag.add_theme_font_size_override("font_size", 16)
+		_mode_tag.visible = false
+		_lobby_col.add_child(_mode_tag)
+		_reveal.append(_mode_tag)
+	var gap := Control.new()
+	gap.custom_minimum_size = Vector2(0, 4)
+	_lobby_col.add_child(gap)
+	_rank_head = _caption("RANGLISTE")
+	_rank_head.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	_lobby_col.add_child(_rank_head)
+	_reveal.append(_rank_head)
+	_rank_list = VBoxContainer.new()
+	_rank_list.add_theme_constant_override("separation", 6)
+	_rank_list.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_lobby_col.add_child(_rank_list)
+	_reveal.append(_rank_list)
+	# Direktvergleich der beiden gezeigten Spieler (nur wenn Platz ist).
+	_duel_slot = VBoxContainer.new()
+	_duel_slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_lobby_col.add_child(_duel_slot)
+	_reveal.append(_duel_slot)
+	var fill := Control.new()
+	fill.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_lobby_col.add_child(fill)
+	var hint := Label.new()
+	hint.text = tr("Klick: Spieler rechts anzeigen  ·  Rechtsklick: links")
+	hint.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	hint.add_theme_font_size_override("font_size", 13)
+	hint.add_theme_color_override("font_color", MUTED)
+	_lobby_col.add_child(hint)
+	_reveal.append(hint)
+	_cards_row = HBoxContainer.new()
+	_cards_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_cards_row.add_theme_constant_override("separation", 20)
+	_cards_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	parent.add_child(_cards_row)
+	_card_a = PlayerStatsCard.new()
+	_card_b = PlayerStatsCard.new()
+	for c in [_card_a, _card_b]:
+		c.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		c.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_cards_row.add_child(c)
+	_reveal.append(_card_a)
+	_reveal.append(_card_b)
+	# Eigenes Paket sofort zeigen (Board kommt gleich vom Spiel nach).
+	var mine: Dictionary = _data.get("final", {})
+	var me_id := int(_data.get("my_id", -1))
+	if not mine.is_empty() and _board.is_empty():
+		_board = [{ "id": me_id, "name": str(_data.get("player", "?")), "final": mine, "score": int(mine.get("score", 0)) }]
+		_board_me = me_id
+	_refresh_lobby()
+
+
+## Rangliste + Karten aktualisieren (Live-Nachzug). entries in Ranglisten-
+## Reihenfolge: {id, name, final (leer = spielt noch), score (Live)}.
+func set_board(entries: Array, my_id: int, mods_text: String = "") -> void:
+	_board = entries.duplicate()
+	# Fertige nach Endscore vor allen, die noch spielen (die nach Live-Score).
+	_board.sort_custom(func(a, b):
+		var fa: Dictionary = a.get("final", {})
+		var fb: Dictionary = b.get("final", {})
+		if fa.is_empty() != fb.is_empty():
+			return not fa.is_empty()
+		var sa := int(fa.get("score", 0)) if not fa.is_empty() else int(a.get("score", 0))
+		var sb := int(fb.get("score", 0)) if not fb.is_empty() else int(b.get("score", 0))
+		if sa != sb:
+			return sa > sb
+		return float(fa.get("acc", 0.0)) > float(fb.get("acc", 0.0)))
+	_board_me = my_id
+	_board_mods = mods_text
+	if _rank_list != null and is_instance_valid(_rank_list):
+		_refresh_lobby()
+
+
+func _entry(id: int) -> Dictionary:
+	for e in _board:
+		if int(e.id) == id:
+			return e
+	return {}
+
+
+func _place_of(id: int) -> int:
+	var p := 0
+	for e in _board:
+		if (e.get("final", {}) as Dictionary).is_empty():
+			continue
+		p += 1
+		if int(e.id) == id:
+			return p
+	return 0
+
+
+func _refresh_lobby() -> void:
+	if _rank_head != null and is_instance_valid(_rank_head):
+		_rank_head.text = tr("RANGLISTE") + ("  ·  " + _board_mods if _board_mods != "" else "")
+	# A = ich (bis jemand anders gewaehlt wird), B = bester anderer Spieler.
+	if _entry(_sel_a).is_empty():
+		_sel_a = _board_me if not _entry(_board_me).is_empty() else (int(_board[0].id) if not _board.is_empty() else -1)
+	if not _b_manual or _entry(_sel_b).is_empty() or _sel_b == _sel_a:
+		_b_manual = false
+		_sel_b = -1
+		for e in _board:
+			if int(e.id) != _sel_a:
+				_sel_b = int(e.id)
+				break
+	_build_rank_rows()
+	_update_cards()
+
+
+func _build_rank_rows() -> void:
+	for c in _rank_list.get_children():
+		_rank_list.remove_child(c)
+		c.queue_free()
+	var row_h := 46.0 if _narrow else 56.0
+	if _board.size() > 6:
+		row_h = 40.0 if _narrow else 48.0
+	for i in _board.size():
+		_rank_list.add_child(_rank_row(_board[i], row_h))
+
+
+func _rank_row(e: Dictionary, row_h: float) -> Control:
+	var id := int(e.id)
+	var fin: Dictionary = e.get("final", {})
+	var place := _place_of(id)
+	var side := "A" if id == _sel_a else ("B" if id == _sel_b else "")
+	var sc: Color = PlayerStatsCard.SIDE_A if side == "A" else PlayerStatsCard.SIDE_B
+	var p := PanelContainer.new()
+	p.custom_minimum_size = Vector2(0, row_h)
+	var sb := UiTheme.glass_box(12, 0.58 if side != "" else 0.40, 0.08)
+	sb.shadow_size = 0
+	sb.content_margin_left = 12
+	sb.content_margin_right = 12
+	sb.content_margin_top = 4
+	sb.content_margin_bottom = 4
+	if side != "":
+		sb.border_color = Color(sc, 0.55)
+		sb.bg_color = Color(sc.darkened(0.75), 0.62)
+	p.add_theme_stylebox_override("panel", sb)
+	var hov: StyleBoxFlat = sb.duplicate()
+	hov.bg_color = sb.bg_color.lightened(0.08)
+	p.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	p.mouse_entered.connect(func(): p.add_theme_stylebox_override("panel", hov))
+	p.mouse_exited.connect(func(): p.add_theme_stylebox_override("panel", sb))
+	p.gui_input.connect(_on_row_input.bind(id))
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 10)
+	h.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	p.add_child(h)
+	var pl := Label.new()
+	pl.text = str(place) if place > 0 else "–"
+	pl.custom_minimum_size.x = 22
+	pl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	pl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	pl.add_theme_font_override("font", UiTheme.heading_font(0))
+	pl.add_theme_font_size_override("font_size", 18 if _narrow else 22)
+	pl.add_theme_color_override("font_color", TournamentPanel.rank_color(place) if place > 0 and place <= 3 else CAPTION)
+	pl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	h.add_child(pl)
+	h.add_child(TournamentPanel.avatar(str(e.name), 28 if _narrow else 34))
+	var nv := VBoxContainer.new()
+	nv.add_theme_constant_override("separation", -2)
+	nv.alignment = BoxContainer.ALIGNMENT_CENTER
+	nv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	nv.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	h.add_child(nv)
+	var nm := Label.new()
+	nm.text = str(e.name)
+	nm.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	nm.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	nm.add_theme_font_override("font", UiTheme.heading_font(1))
+	nm.add_theme_font_size_override("font_size", 15 if _narrow else 17)
+	nm.add_theme_color_override("font_color", UiTheme.ACCENT.lerp(UiTheme.TEXT, 0.3) if id == _board_me else UiTheme.TEXT)
+	nm.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	nv.add_child(nm)
+	var sub := Label.new()
+	sub.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	sub.add_theme_font_size_override("font_size", 12 if _narrow else 13)
+	sub.add_theme_color_override("font_color", CAPTION)
+	sub.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	sub.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	if fin.is_empty():
+		sub.text = tr("spielt noch…")
+	else:
+		var g := "F" if bool(fin.get("failed", false)) else str(fin.get("grade", "D"))
+		sub.text = "%s  ·  %s  ·  %d %s" % [g, UiTheme.fmt_pct(float(fin.get("acc", 0.0)) * 100.0),
+			int(fin.get("n_miss", 0)), tr("Miss")]
+	nv.add_child(sub)
+	var rv := VBoxContainer.new()
+	rv.alignment = BoxContainer.ALIGNMENT_CENTER
+	rv.add_theme_constant_override("separation", -2)
+	rv.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	h.add_child(rv)
+	var sl := Label.new()
+	sl.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	sl.text = UiTheme.fmt_score(int(fin.get("score", 0)) if not fin.is_empty() else int(e.get("score", 0)))
+	sl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	sl.add_theme_font_override("font", UiTheme.heading_font(0))
+	sl.add_theme_font_size_override("font_size", 16 if _narrow else 19)
+	sl.add_theme_color_override("font_color", UiTheme.TEXT if not fin.is_empty() else MUTED)
+	sl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	rv.add_child(sl)
+	if side != "":
+		var sd := Label.new()
+		sd.text = tr("links") if side == "A" else tr("rechts")
+		sd.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+		sd.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		sd.add_theme_font_override("font", UiTheme.heading_font(2))
+		sd.add_theme_font_size_override("font_size", 11)
+		sd.add_theme_color_override("font_color", sc)
+		sd.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		rv.add_child(sd)
+	return p
+
+
+func _on_row_input(ev: InputEvent, id: int) -> void:
+	if not (ev is InputEventMouseButton and ev.pressed):
+		return
+	var mb := ev as InputEventMouseButton
+	if mb.button_index == MOUSE_BUTTON_LEFT and not mb.shift_pressed:
+		if id == _sel_a:
+			if _sel_b < 0:
+				return
+			_sel_a = _sel_b
+		_sel_b = id
+		_b_manual = true
+	elif mb.button_index == MOUSE_BUTTON_RIGHT or (mb.button_index == MOUSE_BUTTON_LEFT and mb.shift_pressed):
+		if id == _sel_b:
+			_sel_b = _sel_a
+		_sel_a = id
+		_b_manual = _sel_b >= 0
+	else:
+		return
+	accept_event()
+	_refresh_lobby()
+
+
+func _card_sig(id: int, other: int) -> String:
+	var e := _entry(id)
+	var o := _entry(other)
+	return "%d|%d|%s|%d|%s|%d|%s" % [id, other, str(e.get("final", {}).hash()), int(e.get("score", 0)),
+		str(o.get("final", {}).hash()), _place_of(id), str(_narrow)]
+
+
+func _update_cards() -> void:
+	if _card_a == null or not is_instance_valid(_card_a):
+		return
+	var sa := _card_sig(_sel_a, _sel_b)
+	if sa != _sig_a:
+		_sig_a = sa
+		_fill_card(_card_a, _sel_a, _sel_b, "A")
+	_card_b.visible = _sel_b >= 0
+	var sbg := _card_sig(_sel_b, _sel_a)
+	if _sel_b >= 0 and sbg != _sig_b:
+		_sig_b = sbg
+		_fill_card(_card_b, _sel_b, _sel_a, "B")
+	_update_duel()
+
+
+func _update_duel() -> void:
+	if _duel_slot == null or not is_instance_valid(_duel_slot):
+		return
+	var fa: Dictionary = _entry(_sel_a).get("final", {})
+	var fb: Dictionary = _entry(_sel_b).get("final", {})
+	var room := _board.size() <= (3 if _narrow else 6)
+	var show := room and not fa.is_empty() and not fb.is_empty()
+	var sig := "%s|%s|%s|%s" % [str(show), _card_sig(_sel_a, _sel_b), _card_sig(_sel_b, _sel_a), str(_board.size())]
+	if sig == _sig_duel:
+		return
+	_sig_duel = sig
+	for c in _duel_slot.get_children():
+		_duel_slot.remove_child(c)
+		c.queue_free()
+	_duel_slot.visible = show
+	if not show:
+		return
+	var gap := Control.new()
+	gap.custom_minimum_size = Vector2(0, 8 if _narrow else 14)
+	_duel_slot.add_child(gap)
+	_duel_slot.add_child(PlayerStatsCard.duel(str(_entry(_sel_a).get("name", "?")), fa,
+		str(_entry(_sel_b).get("name", "?")), fb, _narrow))
+
+
+func _fill_card(card: PlayerStatsCard, id: int, other: int, side: String) -> void:
+	var e := _entry(id)
+	var fin: Dictionary = e.get("final", {})
+	var o := _entry(other)
+	var info := {
+		"name": str(e.get("name", "?")), "place": _place_of(id), "side": side,
+		"narrow": _narrow, "pending": fin.is_empty(), "live": int(e.get("score", 0)),
+		"ref": o.get("final", {}), "sub": tr("Du") if id == _board_me else "",
+	}
+	card.setup(info, fin)
+
+
+func _play_lobby_intro() -> void:
+	for c in _reveal:
+		c.modulate.a = 0.0
+	await get_tree().process_frame
+	await get_tree().process_frame
+	if not is_inside_tree():
+		return
+	var tw := create_tween().set_parallel(true)
+	for i in _reveal.size():
+		var c: Control = _reveal[i]
+		tw.tween_property(c, "modulate:a", 1.0, 0.35).set_delay(0.05 + 0.06 * i)
+	for c in [_card_a, _card_b]:
+		var y: float = c.position.y
+		c.position.y = y + 24.0
+		tw.tween_property(c, "position:y", y, 0.5).set_trans(Tween.TRANS_CUBIC) \
+			.set_ease(Tween.EASE_OUT).set_delay(0.2 + (0.1 if c == _card_b else 0.0))
+	tw.chain().tween_callback(func():
+		if is_instance_valid(_main_row):
+			_main_row.queue_sort())

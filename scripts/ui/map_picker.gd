@@ -72,6 +72,8 @@ var _scores: Dictionary = {}
 var _extra: Dictionary = {}
 var _query := ""
 var _star_filter := 0
+## Aktive Sammlung ("" = alle Maps).
+var _coll := ""
 var _sort: int = Sort.TITLE
 var _desc := false
 var _sel := -1
@@ -82,6 +84,8 @@ var _sort_btn: OptionButton
 var _dir_btn: Button
 var _count_label: Label
 var _star_chips: Array[Button] = []
+var _coll_btn: OptionButton
+var _pick_btn: Button
 var _scroll: ScrollContainer
 var _content: Control
 var _empty_label: Label
@@ -147,6 +151,10 @@ func is_open() -> bool:
 ## Oeffnen: Scores neu lesen, Eintraege bauen, Suche fokussieren.
 func open() -> void:
 	visible = true
+	# Screenshot-Harness: --shot-coll=<Name> startet mit dieser Sammlung.
+	for a in OS.get_cmdline_args() + OS.get_cmdline_user_args():
+		if a.begins_with("--shot-coll="):
+			_coll = a.substr(12)
 	reload()
 	_search.grab_focus.call_deferred()
 	_start_meta_scan()
@@ -169,6 +177,7 @@ func online_open() -> bool:
 func reload() -> void:
 	var keep: MapSet = selected_set()
 	_scores = load_scores()
+	_refresh_collections()
 	_entries = build_entries(library.mapsets, _scores, _extra)
 	_refilter(keep)
 
@@ -288,13 +297,16 @@ static func better_grade(a: String, b: String) -> String:
 
 
 ## Suche (alle Woerter muessen vorkommen) + Sterne-Filter (irgendeine Diff
-## im Bereich). Reihenfolge der Eingabe bleibt erhalten.
-static func filter_entries(entries: Array, query: String, star_idx: int) -> Array:
+## im Bereich) + optional Sammlung (coll_files = Array der .osz-Dateinamen,
+## null = keine Sammlung). Reihenfolge der Eingabe bleibt erhalten.
+static func filter_entries(entries: Array, query: String, star_idx: int, coll_files: Variant = null) -> Array:
 	var words := query.strip_edges().to_lower().split(" ", false)
 	var lo: float = STAR_FILTERS[star_idx][1]
 	var hi: float = STAR_FILTERS[star_idx][2]
 	var out: Array = []
 	for e in entries:
+		if coll_files is Array and not (coll_files as Array).has(e.file):
+			continue
 		var hay: String = e.hay
 		var ok := true
 		for w in words:
@@ -619,10 +631,22 @@ func _build() -> void:
 		chip.pressed.connect(func(): set_star_filter(fi))
 		chips.add_child(chip)
 		_star_chips.append(chip)
+	_coll_btn = OptionButton.new()
+	_coll_btn.tooltip_text = tr("Sammlung")
+	_coll_btn.focus_mode = Control.FOCUS_NONE
+	_coll_btn.custom_minimum_size = Vector2(170, 32)
+	_coll_btn.add_theme_font_size_override("font_size", 13)
+	_coll_btn.add_theme_stylebox_override("normal", _toggle_box(false, 10))
+	_coll_btn.add_theme_stylebox_override("hover", _toggle_box(false, 10, true))
+	_coll_btn.add_theme_stylebox_override("pressed", _toggle_box(false, 10, true))
+	_coll_btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	_coll_btn.add_theme_color_override("font_color", TEXT)
+	_coll_btn.item_selected.connect(func(i: int): set_collection("" if i <= 0 else _coll_btn.get_item_text(i)))
+	chips.add_child(_coll_btn)
 	var gap := Control.new()
 	gap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	chips.add_child(gap)
-	_hint = _label("↑↓ wählen  ·  Enter übernehmen  ·  Esc schließen", 12, DIM)
+	_hint = _label(tr("↑↓ wählen  ·  Doppelklick oder Enter übernehmen  ·  Esc schließen"), 12, DIM)
 	_hint.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	chips.add_child(_hint)
 	_restyle_chips()
@@ -687,7 +711,37 @@ func _build() -> void:
 	_diff_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_diff_box.add_theme_constant_override("separation", 6)
 	dscroll.add_child(_diff_box)
+	_pick_btn = Button.new()
+	_pick_btn.text = tr("AUSWÄHLEN")
+	_pick_btn.focus_mode = Control.FOCUS_NONE
+	_pick_btn.custom_minimum_size = Vector2(0, 46)
+	_pick_btn.add_theme_font_size_override("font_size", 15)
+	UiTheme.style_button(_pick_btn, true)
+	_pick_btn.pressed.connect(func(): _pick(_sel_diff))
+	_detail.add_child(_pick_btn)
 	_show_detail()
+
+
+## Sammlungs-Auswahl neu fuellen (nur lesen). Unbekannte Sammlung -> "Alle".
+func _refresh_collections() -> void:
+	if _coll_btn == null:
+		return
+	var names := CollectionStore.list_names()
+	if _coll != "" and not names.has(_coll):
+		_coll = ""
+	_coll_btn.clear()
+	_coll_btn.add_item(tr("Alle Sammlungen"), 0)
+	for n in names:
+		_coll_btn.add_item(str(n))
+	_coll_btn.select(0 if _coll == "" else names.find(_coll) + 1)
+	_coll_btn.visible = not names.is_empty()
+
+
+func set_collection(name: String) -> void:
+	_coll = name
+	if _coll_btn != null:
+		_refresh_collections()
+	_refilter(selected_set())
 
 
 func _restyle_chips() -> void:
@@ -745,7 +799,8 @@ static func clamp_to_range(entries: Array, lo: float, hi: float) -> Array:
 
 
 func _refilter(keep: MapSet) -> void:
-	_shown = filter_entries(_entries, _query, _star_filter)
+	var coll_files: Variant = CollectionStore.maps_in(_coll) if _coll != "" else null
+	_shown = filter_entries(_entries, _query, _star_filter, coll_files)
 	if star_range.y >= 0.0:
 		_shown = clamp_to_range(_shown, star_range.x, star_range.y)
 	sort_entries(_shown, _sort, _desc)
@@ -753,6 +808,8 @@ func _refilter(keep: MapSet) -> void:
 	_count_label.text = (tr("%s von %s Maps") % [UiTheme.fmt_score(n), UiTheme.fmt_score(_entries.size())]) \
 			if n != _entries.size() else (tr("%s Maps") % UiTheme.fmt_score(n))
 	_empty_label.visible = n == 0
+	var coll_empty: bool = _coll != "" and (coll_files as Array).is_empty()
+	_empty_label.text = tr("Diese Sammlung ist noch leer.") if n == 0 and coll_empty else tr("Nichts gefunden.")
 	_content.custom_minimum_size = Vector2(0, maxf(n * (ROW_H + ROW_GAP) - ROW_GAP, 0.0))
 	var idx := -1
 	if keep != null:
@@ -855,6 +912,11 @@ func _make_row() -> Dictionary:
 	b.pressed.connect(func():
 		if row.idx >= 0:
 			_select(row.idx, -1))
+	b.gui_input.connect(func(ev: InputEvent):
+		if ev is InputEventMouseButton and ev.pressed and ev.double_click and ev.button_index == MOUSE_BUTTON_LEFT and row.idx >= 0:
+			if _sel != row.idx:
+				_select(row.idx, -1)
+			_pick(_sel_diff))
 	return row
 
 
@@ -1067,7 +1129,9 @@ func _show_detail() -> void:
 		_detail_title.text = "Keine Map"
 		_detail_sub.text = "Suche anpassen oder online laden."
 		_detail_meta.text = ""
+		_pick_btn.disabled = true
 		return
+	_pick_btn.disabled = not can_pick
 	var e: Dictionary = _shown[_sel]
 	_detail_cover.texture = _covers.get(e.file, null)
 	_detail_title.text = ms.title
@@ -1150,7 +1214,12 @@ func _diff_row(e: Dictionary, k: int) -> Button:
 	gl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	gl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	hb.add_child(gl)
-	b.pressed.connect(func(): _pick(k))
+	b.pressed.connect(func():
+		_sel_diff = k
+		_restyle_diffs())
+	b.gui_input.connect(func(ev: InputEvent):
+		if ev is InputEventMouseButton and ev.pressed and ev.double_click and ev.button_index == MOUSE_BUTTON_LEFT:
+			_pick(k))
 	b.mouse_entered.connect(func():
 		if _sel_diff != k:
 			_sel_diff = k
