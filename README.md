@@ -129,8 +129,6 @@ Put osu!mania 4K `.osz` files into the `maps/` folder, or use the online browser
 
 **Mac or Linux?** Windows only for now. You can build from source with Godot.
 
-**Where are my scores?** In your profile. They stay on your PC.
-
 ## Build from source
 
 1. Install [Godot 4.7](https://godotengine.org/download).
