@@ -41,4 +41,7 @@ static func mount() -> bool:
 	var p := pack_path()
 	if not is_valid_file(p):
 		return false
-	return ProjectSettings.load_resource_pack(p)
+	# replace_files = false: das Welten-Paket darf NIE Dateien des Spiels
+	# ueberschreiben (alte Pakete enthielten Autoload-Skripte von v1.9.0 und
+	# haben damit Updater/Settings/Lobby zurueckgedreht -> Update-Loop).
+	return ProjectSettings.load_resource_pack(p, false)
