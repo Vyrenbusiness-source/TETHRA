@@ -417,6 +417,7 @@ func srv_register(pname: String, pw: String = "") -> void:
 		return
 	players[id] = _new_player(_unique_name(pname.strip_edges().substr(0, 20), id))
 	_sync()
+	send_my_scores()  # Neuer Spieler bekommt meine Scores der gewaehlten Map
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -545,6 +546,7 @@ func _apply_map(data: Dictionary) -> void:
 		players[id].ready = false
 	_sync()
 	map_changed.emit()
+	send_my_scores()
 
 
 func set_ready(r: bool) -> void:
@@ -592,6 +594,10 @@ func _sync() -> void:
 @rpc("authority", "call_remote", "reliable")
 func cl_state(p: Dictionary, crown: int, m: Dictionary, rname: String, played_list: Array = [], mods_in: Dictionary = {}) -> void:
 	var map_was := sel_map.duplicate()
+	var new_peer := false
+	for id in p:
+		if not players.has(id):
+			new_peer = true
 	players = p
 	crown_id = crown
 	sel_map = m
@@ -603,6 +609,8 @@ func cl_state(p: Dictionary, crown: int, m: Dictionary, rname: String, played_li
 		map_changed.emit()
 	if in_game:
 		scores_changed.emit()
+	elif not sel_map.is_empty() and (map_was != sel_map or new_peer):
+		send_my_scores()
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -715,7 +723,82 @@ func cl_final(stats: Dictionary) -> void:
 	var id := multiplayer.get_remote_sender_id()
 	if players.has(id):
 		players[id].final = stats
+		_store_final(id, stats)
 		scores_changed.emit()
+
+
+## Endergebnis eines Mitspielers als fremden Score speichern (nicht bei Fail).
+func _store_final(id: int, stats: Dictionary) -> int:
+	if sel_map.is_empty() or not players.has(id) or bool(stats.get("failed", false)):
+		return 0
+	var pname := str(players[id].get("name", ""))
+	if pname == ScoreStore._self_name():
+		return 0
+	var e := {
+		"score": stats.get("score", 0), "accuracy": stats.get("acc", 0.0),
+		"grade": stats.get("grade", "D"), "max_combo": stats.get("combo", 0),
+		"pp": -1.0, "mods": _mods_list(), "date": Time.get_datetime_string_from_system(),
+	}
+	return ScoreStore.submit_others(_map_key(), pname, [e])
+
+
+func _mods_list() -> Array:
+	var out: Array = []
+	for k in mods:
+		if bool(mods[k]):
+			out.append(str(k))
+	return out
+
+
+## ScoreStore-Schluessel der gewaehlten Map (Set-ID, sonst lokaler Dateiname).
+func _map_key() -> String:
+	var sid := int(sel_map.get("set_id", 0))
+	var ver := str(sel_map.get("version", ""))
+	if sid > 0:
+		return ScoreStore.map_id_for_set(sid, ver)
+	return ScoreStore.map_id(str(sel_map.get("file", "")), ver)
+
+
+## Eigene Top-Scores (max. 10, ohne Fails) der gewaehlten Map an alle schicken.
+func send_my_scores() -> void:
+	if not active or sel_map.is_empty() or multiplayer.multiplayer_peer == null:
+		return
+	var path := resolve_local_path()
+	if path == "":
+		return
+	var sid := int(sel_map.get("set_id", 0))
+	if sid > 0:
+		ScoreStore.register_set_id(path, sid)
+	var ver := str(sel_map.get("version", ""))
+	var list: Array = []
+	for e in ScoreStore.top_scores(path, ver, ScoreStore.OTHERS_CAP):
+		list.append({
+			"score": int(e.get("score", 0)), "accuracy": float(e.get("accuracy", 0.0)),
+			"grade": str(e.get("grade", "D")), "max_combo": int(e.get("max_combo", 0)),
+			"pp": float(e.get("pp", -1.0)), "unranked": bool(e.get("unranked", false)),
+			"mods": e.get("mods", []), "date": str(e.get("date", "")),
+		})
+	if list.is_empty():
+		return
+	rpc("cl_scores", sid, ver, list)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func cl_scores(set_id: int, version: String, list: Array) -> void:
+	accept_scores(multiplayer.get_remote_sender_id(), set_id, version, list)
+
+
+## Score-Paket eines Mitspielers pruefen und speichern; Zahl neuer Eintraege.
+## Nur fuer die aktuell gewaehlte Map, max. 10 Eintraege.
+func accept_scores(id: int, set_id: int, version: String, list: Array) -> int:
+	if not players.has(id) or sel_map.is_empty() or list.size() > ScoreStore.OTHERS_CAP:
+		return 0
+	if set_id != int(sel_map.get("set_id", 0)) or version != str(sel_map.get("version", "")):
+		return 0
+	var pname := str(players[id].get("name", ""))
+	if pname == ScoreStore._self_name():
+		return 0
+	return ScoreStore.submit_others(_map_key(), pname, list)
 
 
 ## Intro-Skip stimmen: springt erst, wenn ALLE Spieler gedrueckt haben.

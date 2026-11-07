@@ -159,6 +159,47 @@ func _init() -> void:
 	_check(L.players.size() == 1 and L.ranked_players().size() == 1, "letzter Gegner weg: Rest bleibt")
 	L.in_game = false
 
+	# Score-Paket validieren
+	var backup := ""
+	if FileAccess.file_exists(ScoreStore.PATH):
+		backup = FileAccess.get_file_as_string(ScoreStore.PATH)
+		DirAccess.remove_absolute(ScoreStore.PATH)
+	L._reset()
+	L.active = true
+	L.is_host = true
+	L.players = { 1: L._new_player("Host"), 2: L._new_player("Anna") }
+	L.sel_map = { "set_id": 11, "file": "11 a.osz", "version": "Hard", "stars": 4.0 }
+	var ok_e := { "score": 5000, "accuracy": 0.9, "grade": "A", "max_combo": 50, "pp": 10.0, "mods": [], "date": "2026-01-01T10:00:00" }
+	_check(L.accept_scores(2, 11, "Hard", [ok_e]) == 1, "gueltiges Paket gespeichert")
+	_check(L.accept_scores(2, 11, "Hard", [ok_e]) == 0, "Duplikat abgewiesen")
+	_check(L.accept_scores(2, 99, "Hard", [ok_e]) == 0, "falsche Map abgewiesen")
+	_check(L.accept_scores(2, 11, "Easy", [ok_e]) == 0, "falsche Diff abgewiesen")
+	_check(L.accept_scores(7, 11, "Hard", [ok_e]) == 0, "unbekannter Sender abgewiesen")
+	var big: Array = []
+	for i in 11:
+		big.append(ok_e.merged({ "score": 6000 + i }, true))
+	_check(L.accept_scores(2, 11, "Hard", big) == 0, "mehr als 10 abgewiesen")
+	var bad: Array = [
+		ok_e.merged({ "score": "x" }, true), ok_e.merged({ "score": -5 }, true),
+		ok_e.merged({ "accuracy": 3.0 }, true), ok_e.merged({ "grade": "ZZ" }, true),
+		ok_e.merged({ "mods": "SV" }, true), ok_e.merged({ "pp": 1e12 }, true), 5, "str",
+		ok_e.merged({ "failed": true }, true),
+	]
+	_check(L.accept_scores(2, 11, "Hard", bad) == 0, "ungueltige Eintraege abgewiesen")
+	L.players[2].name = "N".repeat(40)
+	L.accept_scores(2, 11, "Hard", [ok_e.merged({ "score": 7000 }, true)])
+	var all: Array = ScoreStore.top_scores_all("11 a.osz", "Hard", 10)
+	_check(all.size() == 2 and str(all[0].player).length() == 24, "Name auf 24 gekappt")
+	L.players[2].name = "Anna"
+	_check(L._store_final(2, { "score": 9000, "acc": 0.95, "grade": "S", "combo": 80, "failed": true }) == 0, "Fail nicht gespeichert")
+	_check(L._store_final(2, { "score": 9000, "acc": 0.95, "grade": "S", "combo": 80, "failed": false }) == 1, "Endergebnis gespeichert")
+	_check(ScoreStore.best("11 a.osz", "Hard").is_empty(), "eigener Bestwert unberuehrt")
+	DirAccess.remove_absolute(ScoreStore.PATH)
+	if backup != "":
+		var f := FileAccess.open(ScoreStore.PATH, FileAccess.WRITE)
+		f.store_string(backup)
+		f.close()
+
 	L._reset()
 	print("FAILED: %d" % _failed)
 	quit(1 if _failed > 0 else 0)
