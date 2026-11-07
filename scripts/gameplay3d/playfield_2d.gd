@@ -387,6 +387,10 @@ func _draw_skin_item(it: Array, xs: Array, ws: Array, vs: Vector2) -> void:
 		if bot < -hh or top > vs.y + hh:
 			return
 		var tail := sk.tex("tail_%d" % col)
+		# Kugelfoermige Tails (fast quadratisch, typisch bei Kreis-Skins) weglassen:
+		# kein Ball am Hold-Ende. Flache Kappen bleiben.
+		if tail != null and float(tail.get_height()) >= float(tail.get_width()) * 0.6:
+			tail = null
 		var th := (_tex_h(tail, nw) if tail != null else (hh if head != null else vs.y * NOTE_H_FRAC * note_k))
 		var body := sk.tex("body_%d" % col)
 		var bm := mod
@@ -400,11 +404,10 @@ func _draw_skin_item(it: Array, xs: Array, ws: Array, vs: Vector2) -> void:
 				var cc: Color = it[3] if st != STATE_DEAD else Color(0.36, 0.37, 0.41, 0.8)
 				var bw := w * 0.72
 				draw_rect(Rect2(x + (w - bw) * 0.5, top, bw, body_bot - top), Color(cc.r, cc.g, cc.b, 0.55 if st != STATE_HELD else 0.75))
-		# Ende: eigene Textur, sonst Kopf vertikal gespiegelt, sonst Balken.
+		# Ende: nur eine eigene Tail-Textur des Skins. Fehlt sie, kein gespiegelter
+		# Kopf mehr (bei Kreis-Skins war das ein zweiter Ball am Hold-Ende).
 		if tail != null:
 			draw_texture_rect(tail, Rect2(nx, top - th, nw, th), false, mod)
-		elif head != null:
-			draw_texture_rect(head, Rect2(nx, top, nw, -th), false, mod)
 	elif yh < -hh or yh > vs.y + hh:
 		return
 	if head != null:
