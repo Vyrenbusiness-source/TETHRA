@@ -306,7 +306,7 @@ void sky() {
 		vec2 uv0 = dir_uv(dir * euler(stars_rotation), stars_offset);
 		vec2 ud = vec2(fract(0.5 + (uv0.x - 0.5) / s_d + yaw / TAU_), clamp(0.43 + (uv0.y - 0.43) / s_d, 0.0005, 0.9995));
 		vec4 deb = sample_debris(ud);
-		col = col * (1.0 - deb.a) + deb.rgb * star_brightness * (1.0 + 0.45 * bp + 0.30 * dn) * en;
+		col = col * (1.0 - deb.a) + deb.rgb * star_brightness * (1.0 + 0.90 * bp + 0.30 * dn) * en;
 
 		// Augenwand / Wetterleuchten: nur beleuchtete Wolken heben sich (Schwarz
 		// bleibt schwarz), begrenzt auf die Wand um das Auge.
@@ -321,7 +321,7 @@ void sky() {
 		float outer = exp(-max(rdeg - eye_radius, 0.0) / 16.0) * (1.0 - 0.9 * front);
 		// Beat: Lichter der Wand; Takt: Akzent; Drop: Wolken leuchten innen mit;
 		// Kiai: Wetterleuchten wandert im Sektor, atmet mit dem Taktanfang.
-		float flash = 0.55 * bp + 0.50 * dbp * cf;
+		float flash = 0.80 * bp + 0.60 * dbp * cf;
 		float storm = (0.20 * dn + kg * (0.18 + 0.55 * dbp)) * sector * outer;
 		col *= 1.0 + litk * ((flash * wall + 0.16 * dn * wall) * en + storm);
 		col += glow_color * (0.006 * (bp + dbp * cf) * en + 0.010 * dn + 0.012 * kg * dbp) * inner

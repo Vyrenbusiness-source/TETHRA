@@ -3,15 +3,16 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://c3b5dd2p08ips"
-path="res://.godot/imported/storm_sky.webp-a5ad8bda778de89a131df38227758722.ctex"
+path.bptc="res://.godot/imported/storm_sky.webp-a5ad8bda778de89a131df38227758722.bptc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 
 [deps]
 
 source_file="res://assets_game/themes/storm/storm_sky.webp"
-dest_files=["res://.godot/imported/storm_sky.webp-a5ad8bda778de89a131df38227758722.ctex"]
+dest_files=["res://.godot/imported/storm_sky.webp-a5ad8bda778de89a131df38227758722.bptc.ctex"]
 
 [params]
 

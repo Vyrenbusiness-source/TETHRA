@@ -3,15 +3,16 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://c3p7rkbc405cf"
-path="res://.godot/imported/singularity_chunks.webp-66410ae477e7e8c36330a2a4692b4c41.ctex"
+path.bptc="res://.godot/imported/singularity_chunks.webp-66410ae477e7e8c36330a2a4692b4c41.bptc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 
 [deps]
 
 source_file="res://assets_game/themes/singularity/singularity_chunks.webp"
-dest_files=["res://.godot/imported/singularity_chunks.webp-66410ae477e7e8c36330a2a4692b4c41.ctex"]
+dest_files=["res://.godot/imported/singularity_chunks.webp-66410ae477e7e8c36330a2a4692b4c41.bptc.ctex"]
 
 [params]
 

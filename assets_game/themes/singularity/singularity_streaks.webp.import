@@ -3,15 +3,16 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://b76pnn2jfurns"
-path="res://.godot/imported/singularity_streaks.webp-b4f86d151b9da5ae9074886f3ecf7b51.ctex"
+path.bptc="res://.godot/imported/singularity_streaks.webp-b4f86d151b9da5ae9074886f3ecf7b51.bptc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 
 [deps]
 
 source_file="res://assets_game/themes/singularity/singularity_streaks.webp"
-dest_files=["res://.godot/imported/singularity_streaks.webp-b4f86d151b9da5ae9074886f3ecf7b51.ctex"]
+dest_files=["res://.godot/imported/singularity_streaks.webp-b4f86d151b9da5ae9074886f3ecf7b51.bptc.ctex"]
 
 [params]
 

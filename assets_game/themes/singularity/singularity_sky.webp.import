@@ -3,15 +3,16 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://b4ncqswlbq2yl"
-path="res://.godot/imported/singularity_sky.webp-4ec2a9eacb6b5b29e0f19faa88a139bd.ctex"
+path.bptc="res://.godot/imported/singularity_sky.webp-4ec2a9eacb6b5b29e0f19faa88a139bd.bptc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 
 [deps]
 
 source_file="res://assets_game/themes/singularity/singularity_sky.webp"
-dest_files=["res://.godot/imported/singularity_sky.webp-4ec2a9eacb6b5b29e0f19faa88a139bd.ctex"]
+dest_files=["res://.godot/imported/singularity_sky.webp-4ec2a9eacb6b5b29e0f19faa88a139bd.bptc.ctex"]
 
 [params]
 

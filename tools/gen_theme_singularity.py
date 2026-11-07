@@ -565,8 +565,8 @@ def render_objects(W, rng, n, lat_rng, rad_rng, light, body, rim, rim2, hard, as
             if math.hypot(dl * math.cos(math.radians(lat0)), lat0 - clear[1]) < clear[2]:
                 op *= 0.45
         kk0 = 1.0
-        half_h = R * asp * 1.35
-        half_w = min(R * asp * 1.35 / max(math.cos(math.radians(lat0)), 0.2), 170.0)
+        half_h = R * asp * 2.0
+        half_w = min(R * asp * 2.0 / max(math.cos(math.radians(lat0)), 0.2), 170.0)
         r0 = int((90 - lat0 - half_h) * ppd)
         r1 = int((90 - lat0 + half_h) * ppd) + 1
         c0 = int((lon0 + 180 - half_w) * ppd)
@@ -607,7 +607,7 @@ def render_objects(W, rng, n, lat_rng, rad_rng, light, body, rim, rim2, hard, as
         t2 /= t2.std() + 1e-6
         dome = np.clip(1.0 - (r / np.maximum(edge, 0.3)) ** 2, 0.0, 1.0)
         height = mask * (0.9 * np.sqrt(dome) + 0.10 * t1 + 0.02 * t2 + 0.12 * hard * np.abs(t1))
-        hs = ndimage.gaussian_filter(height, 1.1 * kk)
+        hs = ndimage.gaussian_filter(height, 2.2 * kk)
         gy, gx = np.gradient(hs)
         slope = 24.0 / max(R * asp * ppd * 0.02, 1.0)
         ltd = max(float(lt @ c), 0.05)
@@ -619,7 +619,7 @@ def render_objects(W, rng, n, lat_rng, rad_rng, light, body, rim, rim2, hard, as
         lit = lit ** (1.2 - 0.3 * hard)
         shade = np.clip(0.55 + 0.45 * np.tanh(0.6 * t1 + 0.3 * t2), 0.1, 1.2)
         col = body[None, None] * shade[..., None]
-        col = col + rim[None, None] * (lit * (0.35 + 0.65 * np.clip(0.5 + 0.5 * t2, 0, 1)))[..., None]
+        col = col + rim[None, None] * (lit * (0.65 + 0.35 * np.clip(0.5 + 0.5 * t2, 0, 1)))[..., None]
         col = col + rim2[None, None] * (np.clip(lit - 0.6, 0, None) * 1.8)[..., None]
         valid = ((ri >= 0) & (ri < H))[:, None]
         a = (mask * op * valid).astype(F32)
@@ -637,8 +637,8 @@ def render_chunks(W, seed):
     rng = np.random.default_rng(seed)
     light = (HOLE_LON, HOLE_LAT)
     body = SILVER * 0.045
-    rim = (SILVER * 0.7 + WHITE * 0.3) * 0.55
-    rim2 = WHITE * 0.9 + WARM * 0.06
+    rim = (SILVER * 0.7 + WHITE * 0.3) * 0.38
+    rim2 = WHITE * 0.6 + WARM * 0.04
     r1, a1 = render_objects(W, rng, 14, (3.0, 32.0), (1.2, 3.5), light, body, rim, rim2, 0.9,
                             aspect=(1.2, 2.4), opacity=(0.85, 1.0), clear=(HOLE_LON, HOLE_LAT, 10.0))
     r2, a2 = render_objects(W, rng, 8, (3.0, 30.0), (2.0, 4.5), light, body * 0.6, rim * 0.6, rim2 * 0.4, 0.25,
