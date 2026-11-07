@@ -3855,6 +3855,8 @@ func _mp_demo_shot(tag: String) -> void:
 
 func _mp_demo_step(delta: float) -> void:
 	_mp_demo_t += delta
+	if int(_mp_demo_t * 2.0) != int((_mp_demo_t - delta) * 2.0) and int(_mp_demo_t) % 2 == 0:
+		print("MPAUTO tick %.1f paused=%s" % [_mp_demo_t, str(get_tree().paused)])
 	if _mp_demo_shots == 0 and _mp_demo_t > 5.0:
 		_mp_demo_shots = 1
 		_mp_demo_shot("live1")
