@@ -1,0 +1,19 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+uid="uid://cc6xs5ry0uygc"
+
+[deps]
+
+files=["res://translations/scroll.de.translation", "res://translations/scroll.en.translation"]
+
+source_file="res://translations/scroll.csv"
+dest_files=["res://translations/scroll.de.translation", "res://translations/scroll.en.translation"]
+
+[params]
+
+compress=1
+delimiter=0
+unescape_keys=false
+unescape_translations=true
