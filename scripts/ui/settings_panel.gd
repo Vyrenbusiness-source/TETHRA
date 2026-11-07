@@ -535,6 +535,18 @@ func _shot_pages() -> void:
 	if dir == "":
 		dir = OS.get_user_data_dir()
 	await get_tree().create_timer(1.5).timeout
+	if OS.get_cmdline_args().has("--shot-orbit") and not _orbit_btns.is_empty():
+		# Nur die Orbit-Gruppe (Gameplay-Seite), nichts wird gespeichert.
+		for i in _pages.size():
+			if _orbit_btns[0].is_ancestor_of(_pages[i]) or _pages[i].is_ancestor_of(_orbit_btns[0]):
+				_show_page(i)
+		await get_tree().process_frame
+		_scroll.ensure_control_visible(_orbit_btns[0])
+		await get_tree().create_timer(0.8).timeout
+		await RenderingServer.frame_post_draw
+		_shot_save(dir, "settings_orbit.png")
+		get_tree().quit(0)
+		return
 	for mode_2d in [false, true]:
 		Settings.playfield_2d = mode_2d
 		_update_2d_rows()

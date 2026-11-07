@@ -311,7 +311,10 @@ func _capture_screenshot_and_quit() -> void:
 	if not is_inside_tree():
 		return
 	var img := get_viewport().get_texture().get_image()
-	var path := "C:/Users/Gexanx/AppData/Local/Temp/claude/c--Users-Gexanx-Desktop-rhyg/b9d5e593-aabc-4b4b-a882-a5835e187db3/scratchpad/song_select.png"
+	var path := OS.get_user_data_dir().path_join("song_select.png")
+	for a in OS.get_cmdline_args():
+		if a.begins_with("--shot-out="):
+			path = a.trim_prefix("--shot-out=")
 	img.save_png(path)
 	print("SHOT gespeichert: " + path)
 	get_tree().quit(0)
@@ -1600,7 +1603,10 @@ func _update_info_panel() -> void:
 	for c in _lb_box.get_children():
 		c.queue_free()
 	# Eigene + Scores von Mitspielern (Multiplayer-Sync), beste zuerst.
-	var tops := ScoreStore.top_scores_all(_selected_set.osz_path, _selected_set.version_name_at(_selected_diff), 5)
+	# Orbit-Modus (nur 4K-Diffs): eigene Orbit-Scores, getrennt von Mania.
+	var orbit := _play_mode == "orbit" and int(m.get("mode", 0)) == 3
+	var tops := ScoreStore.top_scores_all(_selected_set.osz_path,
+		_selected_set.version_name_at(_selected_diff), 5, ScoreStore.MODE_ORBIT if orbit else "")
 	if tops.is_empty():
 		var empty := Label.new()
 		empty.text = "Noch kein Score — spiel die Map!"
@@ -1611,7 +1617,7 @@ func _update_info_panel() -> void:
 		_lb_box.add_child(_score_row(i, tops[i]))
 	# Replay-Button nur zeigen, wenn fuer diese Diff ein Replay existiert.
 	if _replay_btn != null:
-		_replay_btn.visible = int(m.get("mode", 0)) == 3 			and ReplayStore.exists(_selected_set.osz_path, _selected_set.version_name_at(_selected_diff))
+		_replay_btn.visible = int(m.get("mode", 0)) == 3 and not orbit 			and ReplayStore.exists(_selected_set.osz_path, _selected_set.version_name_at(_selected_diff))
 	_apply_card_highlight()
 
 
@@ -1859,6 +1865,8 @@ func _set_play_mode(mode: String) -> void:
 		return
 	_play_mode = mode
 	_restyle_mode_switch()
+	if _selected_set != null:
+		_update_info_panel()
 	if _state_ready:
 		_save_browser_state()
 

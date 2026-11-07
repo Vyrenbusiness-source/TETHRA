@@ -422,12 +422,13 @@ static func submit_others(map_key: String, player: String, entries: Array) -> in
 
 
 ## Eigene + fremde Scores einer Map gemischt (beste zuerst, max. n).
-## Jeder Eintrag hat "player" und "is_self".
-static func top_scores_all(osz_file: String, version: String, n: int = 5) -> Array:
+## Jeder Eintrag hat "player" und "is_self". Fremde Scores gibt es nur fuer
+## Mania (mode "" / "mania"); Orbit zeigt nur eigene Orbit-Scores.
+static func top_scores_all(osz_file: String, version: String, n: int = 5, mode: String = "") -> Array:
 	var cfg := ConfigFile.new()
-	var loaded := cfg.load(PATH) == OK
+	var loaded := cfg.load(PATH) == OK and (mode == "" or mode == MODE_MANIA)
 	var out: Array = []
-	for e in top_scores(osz_file, version, HISTORY_CAP):
+	for e in top_scores(osz_file, version, HISTORY_CAP, mode):
 		var d: Dictionary = e.duplicate()
 		d["player"] = _self_name()
 		d["is_self"] = true
