@@ -501,3 +501,46 @@ static func from_dict(d: Dictionary) -> Tournament:
 	t.hidden = bool(d.get("hidden", false))
 	t.voted = (d.get("voted", []) as Array).duplicate()
 	return t
+
+
+## Set-ID aus dem Dateinamen ("mirror_<id>.osz" oder "<id> Name.osz"), sonst 0.
+static func set_id_of(fname: String) -> int:
+	var base := fname.get_basename()
+	if base.begins_with("mirror_") and base.substr(7).is_valid_int():
+		return int(base.substr(7))
+	var head := base.split(" ")[0]
+	return int(head) if head.is_valid_int() else 0
+
+
+## Pool-Eintrag einer lokalen Diff (mit Kennwerten, soweit bekannt).
+static func local_data(ms: MapSet, diff: int) -> Dictionary:
+	var fname := ms.osz_path.get_file()
+	var d := {"set_id": set_id_of(fname), "file": fname,
+		"version": ms.version_name_at(diff), "title": ms.title,
+		"artist": ms.artist, "stars": ms.stars_at(diff), "online": false}
+	var st := ms.stats_at(diff)
+	for k in st:
+		if int(st[k]) >= 0:
+			d[k] = int(st[k])
+	return d
+
+
+## Lokale Kandidaten der Auto-Auswahl: [[rank, data]] (rank siehe Tournament.filter_rank).
+static func local_candidates(lib: MapLibrary, lo: float, hi: float, f: Dictionary, skip: Callable) -> Array:
+	var out: Array = []
+	if lib == null:
+		return out
+	for ms in lib.mapsets:
+		for i in ms.difficulty_count():
+			if int(ms.meta_at(i).get("mode", 0)) != 3:
+				continue
+			var st: float = ms.stars_at(i)
+			if st < lo - 0.0001 or st > hi + 0.0001:
+				continue
+			var d := local_data(ms, i)
+			if skip.is_valid() and bool(skip.call(d)):
+				continue
+			var rank := Tournament.filter_rank(f, ms.stats_at(i))
+			if rank >= 0:
+				out.append([rank, d])
+	return out

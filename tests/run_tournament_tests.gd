@@ -294,20 +294,20 @@ func _init() -> void:
 	var fj := Tournament.clean_filters({ "ln_lo": 80, "ln_hi": 20, "len_max": 99999, "bpm_lo": "x", "bpm_hi": -5 })
 	_check(fj.ln_lo == 20 and fj.ln_hi == 80 and fj.len_max == Tournament.LEN_MAX_S and fj.bpm_lo == 0 and fj.bpm_hi == 0,
 		"Filter: Bereich getauscht, Laenge geklemmt, Muell -> 0")
-	var fs := Tournament.clean_filters({ "bpm_lo": 220, "bpm_hi": 150, "ln_lo": 0.4, "ln_hi": NAN })
-	_check(fs.bpm_lo == 150 and fs.bpm_hi == 220 and fs.ln_lo == 0 and fs.ln_hi == 100, "Filter: BPM getauscht, NaN -> Standard")
+	var fsw := Tournament.clean_filters({ "bpm_lo": 220, "bpm_hi": 150, "ln_lo": 0.4, "ln_hi": NAN })
+	_check(fsw.bpm_lo == 150 and fsw.bpm_hi == 220 and fsw.ln_lo == 0 and fsw.ln_hi == 100, "Filter: BPM getauscht, NaN -> Standard")
 	var fopen := Tournament.clean_filters({ "bpm_lo": 180, "bpm_hi": 0 })
 	_check(fopen.bpm_lo == 180 and fopen.bpm_hi == 0, "Filter: BPM nach oben offen bleibt offen")
-	var tf := Tournament.create({ "maps": 5, "filters": { "ln_lo": 0, "ln_hi": 15, "len_max": 180, "bpm_lo": 120, "bpm_hi": 200 } })
-	_check(Tournament.ln_preset(tf.config.filters) == "few" and Tournament.filters_active(tf.config.filters), "Filter in config, Stufe few")
-	var tfb := Tournament.from_dict(tf.to_dict())
-	_check(tfb.config.filters == tf.config.filters and tfb.to_dict() == tf.to_dict(), "Filter: Netz-Roundtrip identisch")
+	var tfl := Tournament.create({ "maps": 5, "filters": { "ln_lo": 0, "ln_hi": 15, "len_max": 180, "bpm_lo": 120, "bpm_hi": 200 } })
+	_check(Tournament.ln_preset(tfl.config.filters) == "few" and Tournament.filters_active(tfl.config.filters), "Filter in config, Stufe few")
+	var tfb := Tournament.from_dict(tfl.to_dict())
+	_check(tfb.config.filters == tfl.config.filters and tfb.to_dict() == tfl.to_dict(), "Filter: Netz-Roundtrip identisch")
 	_check(Tournament.from_dict({ "config": { "filters": "kaputt" } }).config.filters == f0, "Filter: kaputtes Netzformat -> Standard")
 	var tm2 := Tournament.create({ "filters": { "ln_hi": 15 } })
 	_check(tm2.config.maps == 10 and tm2.config.filters.ln_hi == 15, "Filter: Teil-Angabe ergaenzt")
 
 	# --- Filter wirken (Rang 0 passt, 1 = keine Daten, -1 = passt nicht)
-	var ff := tf.config.filters
+	var ff: Dictionary = tfl.config.filters
 	_check(Tournament.filter_rank(ff, { "ln": 10, "len_s": 150, "bpm": 170 }) == 0, "Filter: passende Map")
 	_check(Tournament.filter_rank(ff, { "ln": 40, "len_s": 150, "bpm": 170 }) == -1, "Filter: zu viele Long Notes")
 	_check(Tournament.filter_rank(ff, { "ln": 10, "len_s": 240, "bpm": 170 }) == -1, "Filter: zu lang")
@@ -380,9 +380,9 @@ func _init() -> void:
 	_check(not ms.needs_stats() and ms.stats_at(0).ln == 5 and ms.has_sv() and ms.stats_at(1).ln == 42, "MapSet: Nachlauf ergaenzt Kennwerte")
 	var lib := MapLibrary.new("Z:/gibt/es/nicht")
 	lib.mapsets.append(ms)
-	var lc := TournamentPanel.local_candidates(lib, 3.0, 5.0, ff, Callable())
+	var lc := Tournament.local_candidates(lib, 3.0, 5.0, ff, Callable())
 	_check(lc.size() == 1 and lc[0][1].version == "Old" and int(lc[0][0]) == 0, "Lokal: Filter wirkt (LN + Laenge)")
-	var lc2 := TournamentPanel.local_candidates(lib, 3.0, 5.0, f0, func(d): return d.version == "Old")
+	var lc2 := Tournament.local_candidates(lib, 3.0, 5.0, f0, func(d): return d.version == "Old")
 	_check(lc2.size() == 1 and lc2[0][1].version == "New" and lc2[0][1].ln == 42, "Lokal: ohne Filter + Skip, Daten mit Kennwerten")
 
 	# --- to_dict-Roundtrip
