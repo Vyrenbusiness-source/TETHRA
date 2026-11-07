@@ -577,7 +577,17 @@ func _build_playfield_2d() -> void:
 		keys.append(_short_key_name(Settings.key_lanes[i]) if i < Settings.key_lanes.size() else "")
 	_pf2d.setup(core.columns, _lane_k_2d, Z_LINE, Z_FAR, keys, _lane_color(0), _note_style_2d,
 			_note_k_2d)
+	_pf2d.skin = _load_skin_2d()
 	pf_layer.add_child(_pf2d)
+
+
+## Gewaehlter osu!mania-Skin (Settings.skin_2d, CLI --skin2d=<name>) oder null.
+func _load_skin_2d() -> ManiaSkin:
+	var nm := Settings.skin_2d
+	for a in OS.get_cmdline_args() + OS.get_cmdline_user_args():
+		if a.begins_with("--skin2d="):
+			nm = a.trim_prefix("--skin2d=")
+	return ManiaSkin.load_skin(nm) if nm != "" else null
 
 
 ## Pausenmenue hat 2D-Werte geaendert: sofort anwenden (ohne Neustart).

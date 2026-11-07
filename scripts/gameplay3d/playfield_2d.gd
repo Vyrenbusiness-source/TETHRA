@@ -25,6 +25,7 @@ var key_names: PackedStringArray = []
 var lane_color := Color(0.7, 0.85, 1.0)
 var show_keys := true
 var circle := false   ## Settings.NOTE_STYLE_CIRCLE
+var skin: ManiaSkin = null  ## osu!mania-Skin (Settings.skin_2d); null = eingebauter Look
 var preview_size := Vector2.ZERO  ## > 0: Vorschau-Modus, _vs() nutzt diese Groesse statt des Viewports
 
 # Kreis-Stil: Texturen einmal beim Setup erzeugt, pro Frame nur gezeichnet.
@@ -95,15 +96,22 @@ func set_lanes(held: Array, flash: Array, flash_col: Array) -> void:
 
 
 func line_y() -> float:
+	if skin != null:
+		return _vs().y * skin.hit_position / ManiaSkin.SCREEN_UNITS
 	return _vs().y * LINE_FRAC
 
 
 func col_width() -> float:
+	if skin != null:
+		return _skin_unit() * skin.stage_units() / float(maxi(columns, 1))
 	return _vs().y * COL_W_FRAC * lane_k
 
 
 func field_rect() -> Rect2:
 	var vs := _vs()
+	if skin != null:
+		var sw := _skin_unit() * skin.stage_units()
+		return Rect2((vs.x - sw) * 0.5, 0.0, sw, vs.y)
 	var w := col_width() * columns
 	return Rect2((vs.x - w) * 0.5, 0.0, w, vs.y)
 
@@ -121,6 +129,9 @@ func _vs() -> Vector2:
 
 
 func _draw() -> void:
+	if skin != null:
+		_draw_skinned()
+		return
 	var vs := _vs()
 	var fr := field_rect()
 	var cw := col_width()
@@ -249,3 +260,170 @@ func _draw_bar(r: Rect2, c: Color) -> void:
 	draw_rect(r, c)
 	# Heller Oberkante-Glanz: Balken liest sich flach, aber klar.
 	draw_rect(Rect2(r.position, Vector2(r.size.x, maxf(2.0, r.size.y * 0.18))), c.lerp(Color(1, 1, 1), 0.45))
+
+
+# ------------------------------------------------------------ Skin-Look
+
+## Pixel pro osu-Einheit (horizontal, mit Spurbreite-Faktor).
+func _skin_unit() -> float:
+	return _vs().y / ManiaSkin.SCREEN_UNITS * lane_k
+
+
+## Textur mit Pixelmass (Hoehe aus Seitenverhaeltnis bei Zielbreite w).
+func _tex_h(t: Texture2D, w: float) -> float:
+	return w * float(t.get_height()) / maxf(1.0, float(t.get_width()))
+
+
+func _draw_skinned() -> void:
+	var vs := _vs()
+	var sk := skin
+	var u := _skin_unit()
+	var uy := vs.y / ManiaSkin.SCREEN_UNITS
+	var fr := field_rect()
+	var ly := line_y()
+	var xs: Array = []
+	var ws: Array = []
+	for c in columns:
+		xs.append(fr.position.x + u * sk.col_offset_units(c))
+		ws.append(u * sk.col_units(c))
+	draw_rect(fr, Color(0.02, 0.025, 0.04, 0.82))
+	for c in columns:
+		if c < _held.size() and bool(_held[c]) and Settings.lane_glow:
+			draw_rect(Rect2(float(xs[c]), 0.0, float(ws[c]), ly), Color(lane_color.r, lane_color.g, lane_color.b, 0.07))
+	# Spaltenlinien (ColumnLineWidth) zwischen den Spalten.
+	for c in columns + 1:
+		var lu: float = float(sk.column_line_width[mini(c, sk.column_line_width.size() - 1)])
+		if lu <= 0.0:
+			continue
+		var lw := maxf(1.0, u * lu)
+		var lx := fr.end.x if c == columns else float(xs[c])
+		draw_rect(Rect2(lx - lw * 0.5, 0.0, lw, vs.y), Color(1, 1, 1, 0.22))
+	# Buehnenraender.
+	var sl := sk.tex("stage_left")
+	if sl != null:
+		var w := sl.get_width() * uy * sk.tex_scale("stage_left")
+		draw_texture_rect(sl, Rect2(fr.position.x - w, 0.0, w, vs.y), false)
+	var sr := sk.tex("stage_right")
+	if sr != null:
+		var w2 := sr.get_width() * uy * sk.tex_scale("stage_right")
+		draw_texture_rect(sr, Rect2(fr.end.x, 0.0, w2, vs.y), false)
+	# Abfanglinie (StageHint) bzw. einfache Linie.
+	var hint := sk.tex("stage_hint")
+	if hint != null:
+		var hh := hint.get_height() * uy * sk.tex_scale("stage_hint")
+		draw_texture_rect(hint, Rect2(fr.position.x, ly - hh * 0.5, fr.size.x, hh), false)
+	elif sk.judgement_line:
+		draw_rect(Rect2(fr.position.x, ly - 1.0, fr.size.x, 2.0), Color(1, 1, 1, 0.35))
+	if sk.keys_under_notes:
+		_draw_skin_keys(xs, ws, ly, vs)
+	for it in _items:
+		_draw_skin_item(it, xs, ws, vs)
+	if not sk.keys_under_notes:
+		_draw_skin_keys(xs, ws, ly, vs)
+
+
+func _draw_skin_keys(xs: Array, ws: Array, ly: float, vs: Vector2) -> void:
+	var sk := skin
+	for c in columns:
+		var on := c < _held.size() and bool(_held[c])
+		var key := ("keyd_%d" % c) if on else ("key_%d" % c)
+		var t := sk.tex(key)
+		if t == null:
+			t = sk.tex("key_%d" % c)
+		var x := float(xs[c])
+		var w := float(ws[c])
+		var top := ly
+		var h := vs.y * RECEPTOR_H_FRAC
+		if t != null:
+			h = _tex_h(t, w)
+			top = minf(ly, vs.y - h)
+			draw_texture_rect(t, Rect2(x, top, w, h), false)
+		else:
+			# Fallback: eingebauter Receptor fuer genau diese Spalte.
+			var fl := clampf(float(_flash[c]) if c < _flash.size() else 0.0, 0.0, 1.0)
+			var fc: Color = _flash_col[c] if c < _flash_col.size() else lane_color
+			var base := lane_color.lerp(fc, fl * 0.6)
+			var r := Rect2(x + 2.0, ly, w - 4.0, h)
+			draw_rect(r, Color(base.r, base.g, base.b, minf(0.14 + (0.45 if on else 0.0) + fl * 0.25, 0.85)))
+			draw_rect(r, Color(base.r, base.g, base.b, 0.9 if on else 0.55), false, 2.0)
+			top = ly
+		if show_keys and c < key_names.size() and _font != null:
+			var fs := int(vs.y * 0.02)
+			if preview_size.x > 0.0:
+				fs = 11
+			var txt := key_names[c]
+			var tw := _font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+			draw_string(_font, Vector2(x + (w - tw) * 0.5, minf(top + h * 0.5 + fs * 0.35, vs.y - 2.0)),
+					txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(1, 1, 1, 0.75 if on else 0.4))
+
+
+func _draw_skin_item(it: Array, xs: Array, ws: Array, vs: Vector2) -> void:
+	var sk := skin
+	var col: int = it[0]
+	if col < 0 or col >= columns:
+		return
+	var x := float(xs[col])
+	var w := float(ws[col])
+	var yh := z_to_y(float(it[1]))   # Noten-Unterkante = Trefferzeit
+	var st: int = it[4]
+	var mod := Color(1, 1, 1, 1)
+	if st == STATE_DEAD:
+		mod = Color(0.5, 0.5, 0.55, 0.8)
+	var head := sk.tex("head_%d" % col) if bool(it[5]) else null
+	if head == null:
+		head = sk.tex("note_%d" % col)
+	if head == null:
+		head = sk.tex("head_%d" % col)
+	var hh := (_tex_h(head, w) if head != null else vs.y * NOTE_H_FRAC) * note_k
+	if bool(it[5]):
+		var yt := z_to_y(float(it[2]))
+		var top := minf(yh, yt)
+		var bot := maxf(yh, yt)
+		if bot < -hh or top > vs.y + hh:
+			return
+		var tail := sk.tex("tail_%d" % col)
+		var th := (_tex_h(tail, w) if tail != null else (hh if head != null else vs.y * NOTE_H_FRAC * note_k))
+		var body := sk.tex("body_%d" % col)
+		var bm := mod
+		if st == STATE_HELD:
+			bm = Color(1.15, 1.15, 1.15, 1)
+		var body_bot := yh - hh * 0.5
+		if body_bot > top:
+			if body != null:
+				_draw_body(body, x, w, top, body_bot, bm)
+			else:
+				var cc: Color = it[3] if st != STATE_DEAD else Color(0.36, 0.37, 0.41, 0.8)
+				var bw := w * 0.72
+				draw_rect(Rect2(x + (w - bw) * 0.5, top, bw, body_bot - top), Color(cc.r, cc.g, cc.b, 0.55 if st != STATE_HELD else 0.75))
+		# Ende: eigene Textur, sonst Kopf vertikal gespiegelt, sonst Balken.
+		if tail != null:
+			draw_texture_rect(tail, Rect2(x, top - th, w, th), false, mod)
+		elif head != null:
+			draw_texture_rect(head, Rect2(x, top, w, -th), false, mod)
+	elif yh < -hh or yh > vs.y + hh:
+		return
+	if head != null:
+		draw_texture_rect(head, Rect2(x, yh - hh, w, hh), false, mod)
+	else:
+		var c: Color = it[3] if st != STATE_DEAD else Color(0.36, 0.37, 0.41, 0.8)
+		_draw_bar(Rect2(x + 2.0, yh - hh, w - 4.0, hh), c)
+
+
+## Hold-Koerper: NoteBodyStyle 0 = gestreckt, 1 = gekachelt ab Kopf (unten), 2 = ab Ende (oben).
+func _draw_body(t: Texture2D, x: float, w: float, top: float, bot: float, mod: Color) -> void:
+	var blen := bot - top
+	var th := maxf(1.0, _tex_h(t, w))
+	if skin.note_body_style == 0 or blen / th > 200.0:
+		draw_texture_rect(t, Rect2(x, top, w, blen), false, mod)
+		return
+	var tw := float(t.get_width())
+	var tht := float(t.get_height())
+	var from_bottom := skin.note_body_style == 1
+	var done := 0.0
+	while done < blen - 0.01:
+		var seg := minf(th, blen - done)
+		var frac := seg / th
+		var y := (bot - done - seg) if from_bottom else (top + done)
+		var sy := (tht - tht * frac) if from_bottom else 0.0
+		draw_texture_rect_region(t, Rect2(x, y, w, seg), Rect2(0.0, sy, tw, tht * frac), mod)
+		done += seg

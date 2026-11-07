@@ -42,10 +42,12 @@ func refresh() -> void:
 		keys.append(UiTheme.key_short(OS.get_keycode_string(k)))
 	_pf.setup(4, Settings.lane_width_2d, 3.0, -46.0, keys, UiTheme.ACCENT,
 			Settings.note_style_2d, Settings.note_size_2d)
+	_pf.skin = ManiaSkin.load_skin(Settings.skin_2d) if Settings.skin_2d != "" else null
 	_pf.preview_size = Vector2(BOX.x, VH)
 	_pf.set_anchors_preset(Control.PRESET_TOP_LEFT)
 	_pf.size = Vector2(BOX.x, VH)
-	_pf.position = Vector2(0, BOX.y - VH * 0.86 - 40.0)
+	# Mit Skin sitzt die Linie weiter oben, damit die Tasten-Bilder sichtbar bleiben.
+	_pf.position = Vector2(0, BOX.y - (_pf.line_y() + 40.0 if _pf.skin == null else _pf.line_y() + 62.0))
 	_feed()
 
 
