@@ -51,6 +51,8 @@ func _bench_tick(delta: float) -> void:
 		get_window().size = Vector2i(1920, 1080)
 		if _bench_ref:
 			_mat.shader = load("res://shaders/sky_panorama.gdshader")
+			_mat.set_shader_parameter("tex_a", load("res://assets_game/space/sky_violet.webp"))
+			_mat.set_shader_parameter("stars_a", load("res://assets_game/space/sky_violet_stars.webp"))
 	if _bench_n > 120:
 		_bench_ms.append(delta * 1000.0)
 	if _bench_n >= 720:
@@ -72,6 +74,8 @@ func _ready() -> void:
 			_bench_ref = true
 		elif a.begins_with("--shot-dir="):
 			_shot_dir = a.trim_prefix("--shot-dir=")
+	if _shot:
+		get_window().size = Vector2i(1920, 1080)
 	_bpm = _arg_f("--bpm=", 128.0)
 
 	_mat = ShaderMaterial.new()
@@ -201,7 +205,7 @@ func _set_pulse(p: float) -> void:
 		nm.set_shader_parameter("beat", p)
 
 func _process(delta: float) -> void:
-	if _bench:
+	if _bench or _bench_ref:
 		_bench_tick(delta)
 	_t += delta
 	_frames += 1
