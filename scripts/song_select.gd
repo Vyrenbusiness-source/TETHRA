@@ -97,6 +97,9 @@ var _tp_cache: Dictionary = {}
 ## Aktiver No-Fail-Mod: Health kann nicht auf 0 fallen, Play zaehlt unranked.
 var _nf_enabled := false
 var _nf_btn: Button
+## SV-Mod: jede Map mit generierten Tempowechseln (SvMod), Score x1.10.
+var _sv_enabled := false
+var _sv_btn: Button
 
 # Lazy-Loading der Karten-Thumbnails (2 pro Frame).
 var _thumb_queue: Array = []
@@ -646,6 +649,27 @@ func _build_info_panel() -> void:
 	nf.toggled.connect(_on_nf_toggled)
 	mods_row.add_child(nf)
 	_nf_btn = nf
+
+	var sv := CheckButton.new()
+	sv.text = "SV"
+	sv.tooltip_text = "Jede Map mit Tempowechseln"
+	sv.focus_mode = Control.FOCUS_NONE
+	sv.button_pressed = _sv_enabled
+	sv.custom_minimum_size = Vector2(0, 40)
+	sv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	sv.add_theme_font_size_override("font_size", 14)
+	var sv_box := _toggle_box(false, 10)
+	sv.add_theme_stylebox_override("normal", sv_box)
+	sv.add_theme_stylebox_override("pressed", sv_box)
+	sv.add_theme_stylebox_override("hover", _toggle_box(false, 10, true))
+	sv.add_theme_stylebox_override("hover_pressed", _toggle_box(false, 10, true))
+	sv.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	for fc in ["font_color", "font_pressed_color", "font_hover_color", "font_hover_pressed_color"]:
+		sv.add_theme_color_override(fc, COL_TEXT)
+	UiTheme._attach_sounds(sv)
+	sv.toggled.connect(_on_sv_toggled)
+	mods_row.add_child(sv)
+	_sv_btn = sv
 
 	var coll_btn := Button.new()
 	coll_btn.text = "+ Sammlung"
@@ -1724,7 +1748,7 @@ func _score_row(rank: int, e: Dictionary) -> Control:
 func _on_play_pressed() -> void:
 	if _selected_set == null:
 		return
-	GameSession.mods = {"NF": _nf_enabled}
+	GameSession.mods = _current_mods()
 	GameSession.is_replay = false
 	GameSession.replay_events = []
 	GameSession.set_selection(
@@ -1741,6 +1765,17 @@ func _on_play_pressed() -> void:
 		_change_to_game("res://scenes/mania_3d.tscn")
 	else:
 		_change_to_game("res://scenes/gameplay_3d.tscn")
+
+
+func _on_sv_toggled(pressed: bool) -> void:
+	_sv_enabled = pressed
+	if _sv_btn != null:
+		_sv_btn.set_pressed_no_signal(_sv_enabled)
+
+
+## Mods fuer den naechsten Start (Schnittstelle GameSession.mods).
+func _current_mods() -> Dictionary:
+	return {"NF": _nf_enabled, "SV": _sv_enabled}
 
 
 func _on_nf_toggled(pressed: bool) -> void:
@@ -1771,7 +1806,7 @@ func _watch_replay() -> void:
 	var data := ReplayStore.load_replay(_selected_set.osz_path, _selected_set.version_name_at(_selected_diff))
 	if data.is_empty():
 		return
-	GameSession.mods = {"NF": _nf_enabled}
+	GameSession.mods = _current_mods()
 	GameSession.set_selection(
 		_selected_set.osz_path, _selected_diff,
 		_selected_set.version_name_at(_selected_diff),

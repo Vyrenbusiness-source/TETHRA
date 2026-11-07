@@ -49,7 +49,7 @@ var n100 := 0
 var n50 := 0
 var n_miss := 0
 var score := 0
-## EXAKTE osu!mania-ScoreV1-Formel (max 1.000.000):
+## EXAKTE osu!mania-ScoreV1-Formel (max 1.000.000, mal Mod-Multiplikator):
 ##   Score = Base + Bonus, je Note:
 ##   Base  = (500000/Total) * HitValue/320
 ##   Bonus = (500000/Total) * HitBonusValue * sqrt(BonusZaehler)/320
@@ -64,6 +64,10 @@ var _total_notes := 0
 var hp := 1.0
 var no_fail := false
 var failed := false
+## Aktive Mods dieses Plays (Kopie von GameSession.mods beim setup).
+var mods: Dictionary = {}
+## Score-Multiplikator der Mods (SV x1.10, NF x0.5, kombiniert = Produkt).
+var mod_mult := 1.0
 var _finished_emitted := false
 var _judged_count := 0
 
@@ -94,7 +98,9 @@ func setup(p_beatmap: Beatmap, _ar_override: float = -1.0, scroll_scale: float =
 	w50 = DifficultyCalc.mania_window_50(od)
 	w_miss = DifficultyCalc.mania_window_miss(od)
 	_hp_miss_damage = 0.04 + 0.04 * (beatmap.hp() / 10.0)
-	no_fail = false
+	mods = session_mods()
+	mod_mult = mod_multiplier(mods)
+	no_fail = bool(mods.get("NF", false))
 	_score_f = 0.0
 	_bonus = 100.0
 	_total_notes = beatmap.hit_objects.size()
@@ -117,14 +123,51 @@ func setup(p_beatmap: Beatmap, _ar_override: float = -1.0, scroll_scale: float =
 ## Baut die SV-Positionstabelle und die Spawn-Zeiten (einmal beim Laden).
 func _build_scroll() -> void:
 	var objs := beatmap.hit_objects
-	scroll = build_scroll_map(beatmap)
+	scroll = build_scroll_map(beatmap, mods)
 	_spawn_times.resize(objs.size())
 	for i in objs.size():
 		_spawn_times[i] = scroll.spawn_time(objs[i].time, preempt)
 
 
+## Score-Multiplikator je Mod (kombinierbar: Produkt aller aktiven Mods).
+const MOD_MULT := {"NF": 0.5, "SV": 1.1}
+## Anzeige-Reihenfolge der Mod-Badges.
+const MOD_ORDER := ["SV", "NF"]
+
+
+## Score-Multiplikator fuer ein Mod-Dictionary (z.B. SV+NF = 1.1 * 0.5).
+static func mod_multiplier(p_mods: Dictionary) -> float:
+	var m := 1.0
+	for k in MOD_MULT:
+		if bool(p_mods.get(k, false)):
+			m *= float(MOD_MULT[k])
+	return m
+
+
+## Aktive Mods als Badge-Liste, z.B. ["SV", "NF"].
+static func mod_list(p_mods: Dictionary) -> Array:
+	var out := []
+	for k in MOD_ORDER:
+		if bool(p_mods.get(k, false)):
+			out.append(k)
+	return out
+
+
+## Mods aus dem Autoload GameSession (leer, falls nicht geladen).
+static func session_mods() -> Dictionary:
+	var ml := Engine.get_main_loop()
+	if ml is SceneTree:
+		var gs := (ml as SceneTree).root.get_node_or_null("GameSession")
+		if gs != null:
+			return (gs.mods as Dictionary).duplicate()
+	return {}
+
+
 ## SV-Tabelle einer Map (lastTime = groesste Endzeit aller Objekte, lazer).
-static func build_scroll_map(bm: Beatmap) -> ScrollMap:
+## p_mods null = GameSession.mods. Mit "SV" kommen die gruenen Linien aus
+## SvMod (deterministisch je Map, Maps mit eigenem SV bleiben unveraendert).
+static func build_scroll_map(bm: Beatmap, p_mods = null) -> ScrollMap:
+	var m: Dictionary = p_mods if p_mods is Dictionary else session_mods()
 	var objs := bm.hit_objects
 	var last_time := 0.0
 	if objs.is_empty():
@@ -135,7 +178,10 @@ static func build_scroll_map(bm: Beatmap) -> ScrollMap:
 		for obj in objs:
 			last_time = maxf(last_time, obj.end_time())
 	var sm := ScrollMap.new()
-	sm.build(bm.timing_points, last_time)
+	var tps: Array = bm.timing_points
+	if bool(m.get("SV", false)):
+		tps = SvMod.timing_points_for(bm)
+	sm.build(tps, last_time)
 	return sm
 
 
@@ -144,13 +190,14 @@ func score_multiplier() -> float:
 	return minf(float(combo), 100.0) / 100.0
 
 
-## Original osu!mania ScoreV1: Basis- + Bonus-Anteil, Maximum 1.000.000.
+## Original osu!mania ScoreV1: Basis- + Bonus-Anteil, Maximum 1.000.000
+## (mal mod_mult: SV 1.100.000, NF 500.000).
 func _add_score(q: int) -> void:
 	var unit := 500000.0 / maxf(float(_total_notes), 1.0)
 	_bonus = clampf(_bonus + BONUS_DELTA[q], 0.0, 100.0)
 	_score_f += unit * (HIT_VALUE[q] / 320.0) \
 			+ unit * (HIT_BONUS_VALUE[q] * sqrt(_bonus) / 320.0)
-	score = int(round(_score_f))
+	score = int(round(_score_f * mod_mult))
 
 
 func update(t_ms: float) -> void:
@@ -363,6 +410,7 @@ func stats() -> Dictionary:
 		"n50": n50, "n_miss": n_miss,
 		"max_combo": max_combo, "accuracy": accuracy(), "grade": grade(),
 		"failed": failed, "score": score,
+		"mods": mod_list(mods), "mod_mult": mod_mult,
 	}
 
 
