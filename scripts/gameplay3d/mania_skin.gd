@@ -309,8 +309,80 @@ func tex(key: String) -> Texture2D:
 			t = _load_image(String(alt), anim)
 	_at2x[key] = t != null and _at2x_pending
 	_src_h[key] = float(_src_h_pending) if t != null and _src_h_pending > 0 else (float(t.get_height()) if t != null else 0.0)
+	if t == null and _uses_fallback(key):
+		# osu! nimmt fuer fehlende Noten-/Tastenbilder den Standard-Skin (BubbleSkinHappyEdit
+		# hat gar keine Notenbilder): hier der eingebaute "Balken"-Skin, Muster 1/2 je Spalte.
+		var fb := _fallback_skin()
+		if fb != null:
+			var fkey := _fb_key(key)
+			t = fb.tex(fkey)
+			_at2x[key] = fb._at2x.get(fkey, false)
+			_src_h[key] = fb.tex_src_h(fkey)
 	_tex[key] = t
 	return t
+
+
+## Rundes Bild (Ball): etwa quadratisch, Mitte deckend, Ecken durchsichtig. Playfield2D
+## laesst solche Hold-Enden weg (Nutzerwunsch: kein Ball am Hold-Ende). Deckende
+## Quadrate (Unknown: schwarzes noteT) sind kein Ball und bleiben wie in osu! sichtbar.
+func is_round(key: String) -> bool:
+	if _round.has(key):
+		return _round[key]
+	var t := tex(key)
+	var r := false
+	if t != null:
+		r = image_is_round(t.get_image())
+	_round[key] = r
+	return r
+
+var _round: Dictionary = {}
+
+
+static func image_is_round(img: Image) -> bool:
+	if img == null or img.is_empty():
+		return false
+	var w := img.get_width()
+	var h := img.get_height()
+	if float(h) < float(w) * 0.6 or float(w) < float(h) * 0.6:
+		return false
+	if img.get_pixel(w / 2, h / 2).a < 0.5:
+		return false
+	var ix := maxi(0, int(w * 0.08))
+	var iy := maxi(0, int(h * 0.08))
+	for p in [Vector2i(ix, iy), Vector2i(w - 1 - ix, iy), Vector2i(ix, h - 1 - iy), Vector2i(w - 1 - ix, h - 1 - iy)]:
+		if img.get_pixelv(p).a > 0.1:
+			return false
+	return true
+
+
+const FALLBACK_SKIN := "Balken"
+const FALLBACK_PREFIXES: Array = ["note_", "head_", "body_", "tail_", "key_", "keyd_"]
+static var _fb_skin: ManiaSkin = null
+
+
+func _uses_fallback(key: String) -> bool:
+	if _dir.is_empty() or _dir.begins_with("res://"):
+		return false
+	# Ende nur, wenn die Spalte gar keine eigene Note hat (sonst bleibt es wie in osu! leer).
+	if key.begins_with("tail_"):
+		var nk := "note_" + key.trim_prefix("tail_")
+		return tex(nk) != null and _fallback_skin() != null 				and tex(nk) == _fallback_skin().tex(_fb_key(nk))
+	for p in FALLBACK_PREFIXES:
+		if key.begins_with(p):
+			return true
+	return false
+
+
+func _fb_key(key: String) -> String:
+	var under := key.rfind("_")
+	var col := int(key.substr(under + 1))
+	return key.substr(0, under + 1) + ("0" if pattern_name(col, keys) == "1" else "1")
+
+
+static func _fallback_skin() -> ManiaSkin:
+	if _fb_skin == null:
+		_fb_skin = _load_builtin(BUILTIN_PREFIX + FALLBACK_SKIN)
+	return _fb_skin
 
 
 ## Originalhoehe der Bilddatei in Pixeln (vor dem Abschneiden auf MAX_TEX).

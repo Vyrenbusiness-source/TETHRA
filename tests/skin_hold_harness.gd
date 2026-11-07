@@ -105,7 +105,7 @@ static func feed_fake(pf: Playfield2D) -> void:
 	pf.add_hold(0, -31.0, -42.0, c)
 	# Spalte 1: Note knapp ueber der Linie, langer Hold oben angeschnitten.
 	pf.add_note(1, 1.0, c)
-	pf.add_hold(1, -8.0, -70.0, c)
+	pf.add_hold(1, -8.0, -400.0, c)   # sehr lang: tausende Pixel ueber den Rand
 	# Spalte 2: gehaltener Hold (Kopf schon unter der Linie -> an der Linie).
 	pf.add_hold(2, 6.0, -30.0, c, Playfield2D.STATE_HELD)
 	pf.add_hold(2, -36.0, -40.0, c)
