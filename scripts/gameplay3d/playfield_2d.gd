@@ -572,8 +572,12 @@ func _draw_osu() -> void:
 	# z. B. Hold-Ende ueber dem Kopf der direkt folgenden Note.
 	var order := _items.duplicate()
 	order.sort_custom(func(a: Array, b: Array) -> bool: return float(a[1]) < float(b[1]))
-	for it in order:
-		_draw_osu_item(it, xs, ws, vs, ly)
+	# Zwei Ebenen: erst alle Hold-Koerper/-Enden, dann alle Noten/Koepfe obendrauf -
+	# sonst schneiden deckende Hold-Enden (z. B. schwarze Kappen) die naechste Note
+	# zum Halbkreis ab, sobald die Noten groesser sind (Spurbreite > 100 %).
+	for layer in 2:
+		for it in order:
+			_draw_osu_item(it, xs, ws, vs, ly, layer)
 	if not sk.keys_under_notes:
 		_draw_osu_keys(xs, ws, vs)
 	# StageBottom (x 1,6), unten mittig, ueber Noten und Tasten.
@@ -617,7 +621,8 @@ func _osu_note_h(t: Texture2D) -> float:
 			* skin.note_height_units() * _skin_unit() * note_k
 
 
-func _draw_osu_item(it: Array, xs: Array, ws: Array, vs: Vector2, ly: float) -> void:
+## layer 0: Hold-Koerper und -Enden, layer 1: Noten und Hold-Koepfe.
+func _draw_osu_item(it: Array, xs: Array, ws: Array, vs: Vector2, ly: float, layer: int = 1) -> void:
 	var sk := skin
 	var col: int = it[0]
 	if col < 0 or col >= columns:
@@ -628,6 +633,8 @@ func _draw_osu_item(it: Array, xs: Array, ws: Array, vs: Vector2, ly: float) -> 
 	var mod := DARK_GRAY if st == STATE_DEAD else Color(1, 1, 1, 1)
 	var yh := z_to_y(float(it[1]))   # Unterkante der Note = Trefferzeit
 	if not bool(it[5]):
+		if layer != 1:
+			return
 		var nt := sk.tex("note_%d" % col)
 		if nt == null:
 			return
@@ -649,6 +656,10 @@ func _draw_osu_item(it: Array, xs: Array, ws: Array, vs: Vector2, ly: float) -> 
 	var th := _osu_note_h(tail) if tail != null else hh
 	if yh < 0.0 or yt - th > vs.y:
 		return
+	if layer == 1:
+		if head != null:
+			draw_texture_rect(head, Rect2(x, yh - hh, w, hh), false, mod)
+		return
 	var body := sk.tex("body_%d" % col)
 	var b_top := yt - th * 0.5
 	var b_bot := yh - hh * 0.5
@@ -660,8 +671,6 @@ func _draw_osu_item(it: Array, xs: Array, ws: Array, vs: Vector2, ly: float) -> 
 		draw_set_transform(Vector2(0.0, yt), 0.0, Vector2(1.0, -1.0))
 		draw_texture_rect(tail, Rect2(x, 0.0, w, th), false, mod)
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
-	if head != null:
-		draw_texture_rect(head, Rect2(x, yh - hh, w, hh), false, mod)
 
 
 ## Hold-Koerper. NoteBodyStyle 0: gestreckt. 1: ab oben (Ende) in nativer Hoehe
