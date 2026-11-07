@@ -71,6 +71,22 @@ func _ready() -> void:
 		left.emit("Der Host hat den Raum geschlossen."))
 
 
+## Gleiche Namen unterscheidbar machen: "Anna", "Anna (2)", "Anna (3)".
+func _unique_name(base: String, id: int) -> String:
+	if base == "":
+		base = "Spieler"
+	var taken := {}
+	for pid in players:
+		if pid != id:
+			taken[str(players[pid].name)] = true
+	var nm := base
+	var n := 2
+	while taken.has(nm):
+		nm = "%s (%d)" % [base, n]
+		n += 1
+	return nm
+
+
 func _new_player(pname: String) -> Dictionary:
 	return { "name": pname, "ready": false, "score": 0, "combo": 0,
 		"acc": 1.0, "final": {} }
@@ -365,9 +381,23 @@ func _on_peer_disconnected(id: int) -> void:
 	if not is_host:
 		return
 	players.erase(id)
+	skip_votes.erase(id)
+	# Kronentraeger weg -> Krone geht automatisch an einen verbleibenden Spieler.
 	if crown_id == id:
-		crown_id = 1
+		crown_id = _next_crown()
 	_sync()
+	if in_game:
+		scores_changed.emit()
+		_check_skip()
+
+
+## Naechster Kronentraeger: der Host (id 1), sonst der kleinste verbleibende Peer.
+func _next_crown() -> int:
+	if players.has(1):
+		return 1
+	var ids := players.keys()
+	ids.sort()
+	return int(ids[0]) if not ids.is_empty() else 1
 
 
 @rpc("any_peer", "call_remote", "reliable")
@@ -382,7 +412,7 @@ func srv_register(pname: String, pw: String = "") -> void:
 			if multiplayer.multiplayer_peer != null:
 				multiplayer.multiplayer_peer.disconnect_peer(id))
 		return
-	players[id] = _new_player(pname.strip_edges().substr(0, 20))
+	players[id] = _new_player(_unique_name(pname.strip_edges().substr(0, 20), id))
 	_sync()
 
 
@@ -411,11 +441,41 @@ func srv_pick_map(data: Dictionary) -> void:
 	_apply_map(data)
 
 
-## Krone weitergeben — nur der Host darf das.
+## Krone weitergeben — nur der Kronentraeger darf das.
 func give_crown(id: int) -> void:
-	if is_host and players.has(id):
-		crown_id = id
-		_sync()
+	if not active or in_game:
+		return
+	if is_host:
+		if crown_id == 1 and players.has(id):
+			crown_id = id
+			_sync()
+	elif crown_id == multiplayer.get_unique_id():
+		rpc_id(1, "srv_give_crown", id)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func srv_give_crown(id: int) -> void:
+	if not is_host or in_game:
+		return
+	if multiplayer.get_remote_sender_id() != crown_id or not players.has(id):
+		return
+	crown_id = id
+	_sync()
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func srv_start() -> void:
+	if not is_host or in_game:
+		return
+	if multiplayer.get_remote_sender_id() != crown_id or not all_ready():
+		return
+	rpc("cl_start")
+	cl_start()
+
+
+## Darf ich starten? Nur der Kronentraeger, wenn alle bereit sind.
+func can_start() -> bool:
+	return active and not in_game and crown_id == multiplayer.get_unique_id() and all_ready()
 
 
 ## Map waehlen — nur der Kronentraeger.
@@ -430,6 +490,8 @@ func pick_map(data: Dictionary) -> void:
 
 
 func _apply_map(data: Dictionary) -> void:
+	if in_game or data == sel_map:
+		return
 	sel_map = data
 	# Neue Map -> alle muessen sie (ggf. nach Download) neu bestaetigen.
 	for id in players:
@@ -458,10 +520,15 @@ func all_ready() -> bool:
 
 
 func start_game() -> void:
-	if not is_host or not all_ready():
+	if not active or in_game or not all_ready():
 		return
-	rpc("cl_start")
-	cl_start()
+	if is_host:
+		if crown_id != 1:
+			return
+		rpc("cl_start")
+		cl_start()
+	elif crown_id == multiplayer.get_unique_id():
+		rpc_id(1, "srv_start")
 
 
 func _sync() -> void:
@@ -486,6 +553,8 @@ func cl_state(p: Dictionary, crown: int, m: Dictionary, rname: String, played_li
 	players_changed.emit()
 	if map_was != sel_map:
 		map_changed.emit()
+	if in_game:
+		scores_changed.emit()
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -561,6 +630,7 @@ func resolve_local_path() -> String:
 func send_score(score: int, combo: int, acc: float) -> void:
 	if not active or not in_game:
 		return
+	acc = clampf(acc, 0.0, 1.0)
 	var me := multiplayer.get_unique_id()
 	if players.has(me):
 		players[me].score = score
@@ -572,6 +642,7 @@ func send_score(score: int, combo: int, acc: float) -> void:
 
 @rpc("any_peer", "call_remote", "unreliable_ordered")
 func cl_score(score: int, combo: int, acc: float) -> void:
+	acc = clampf(acc, 0.0, 1.0)
 	var id := multiplayer.get_remote_sender_id()
 	if players.has(id):
 		players[id].score = score
@@ -624,13 +695,10 @@ func _check_skip() -> void:
 		skip_now.emit()
 
 
-## Nach Rueckkehr in die Lobby: Runde beenden, alle wieder unready.
+## Nach Rueckkehr in die Lobby: Runde beenden. Bereit-Status bleibt
+## erhalten (Map ist ja bei allen vorhanden) — Neuwahl setzt ihn zurueck.
 func round_done() -> void:
 	in_game = false
-	if is_host:
-		for id in players:
-			players[id].ready = id == 1 and not sel_map.is_empty()
-		_sync()
 
 
 ## Spieler-Liste nach Live-Score sortiert (fuer Scoreboard/Ranking).
