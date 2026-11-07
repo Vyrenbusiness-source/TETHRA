@@ -102,3 +102,8 @@ Offen, nach Neustart fortsetzen (Worktree-Commits "WIP (Stopp wegen RAM-Leck)"):
 Gemergt (72c97b6) und released: i18n-core (Menues/Tutorial/Updater Englisch, Standardsprache Englisch, Sprachwahl), lobby-redesign (Vollbild-Lobby im Song-Browser-Stil, translations/lobby.csv), note-colors (Notenfarben-Picker in den Einstellungen, translations/colors.csv).
 Welten-Paket liegt jetzt im festen Release-Tag "worlds" (TETHRA_worlds.pck + TETHRA_v1.zip); normale Releases haengen nur TETHRA.pck an.
 Offen: Raumkarten ohne Cover/Modus/Schloss (Raum-Ankuendigung in lobby.gd traegt nur Name/Spielerzahl/Code); team_board.gd/royale_board.gd nutzen noch gesperrte Titel; mit eingebautem Textur-Skin ersetzen Notenfarben die Skin-Farben nicht.
+
+## Stand 2026-11-08 00:40 (v1.16.0)
+Released: Orbit-Modus (Vorschau, Branches orbit-core+orbit-play gemergt), starkes SV (sv_mod Stufe Stark = Standard), davor v1.15.x (Skins exakt wie Original, Scroll Speed 1-40 wie lazer, Clip schnell + ffmpeg im Installer, GPU-Schutz, Turnier-Ueberarbeitung, Detail-Stats).
+Offen: Orbit-Pause/Results/Einstellungen/Browser-Umschalter nie per Screenshot geprueft; SV-Stufe waehlbar machen (SvMod hat Normal/Stark intern); Score-Tausch im MP (Nutzer: erstmal egal); 2D-Optionen wie osu! (Richtung, HitPosition, Spaltenabstand, FadeIn/Hidden) noch offen.
+Installer: tools/installer/tethra.iss, Setup im Release-Tag "worlds" (siehe memory release-checks).
