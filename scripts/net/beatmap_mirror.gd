@@ -189,10 +189,9 @@ func sv_state(beatmap_id: int) -> int:
 	if beatmap_id <= 0 or _sv_failed.has(beatmap_id):
 		return 0
 	_load_sv_cache()
-	var v: Variant = _sv_cache.get_value(_sv_section(), str(beatmap_id), null)
-	if v == null:
+	if not _sv_cache.has_section_key(_sv_section(), str(beatmap_id)):
 		return -1
-	return 1 if bool(v) else 0
+	return 1 if bool(_sv_cache.get_value(_sv_section(), str(beatmap_id), false)) else 0
 
 
 ## Diff zur SV-Pruefung einreihen (max. SV_MAX_PARALLEL Anfragen parallel).
