@@ -57,8 +57,7 @@ func _initialize() -> void:
 	_check(src.contains('"graphics_quality", 2)'), "Lade-Default graphics_quality 2")
 	_check(src.contains("var fps_mode: int = 2"), "Default FPS mit Cap (240), nicht Unbegrenzt")
 	_check(src.contains('"fps_mode", 2)'), "Lade-Default fps_mode 2")
-	_check(not src.contains("scaling_3d_scale = 1.5") or src.contains("4:
-				# Extrem"), "Supersampling nur in Stufe Extrem")
+	_check(not src.contains("scaling_3d_scale = 1.5") or src.contains("# Extrem: 8x MSAA + 1.5x Supersampling"), "Supersampling nur in Stufe Extrem")
 
 	DirAccess.remove_absolute(dir)
 	print("=== GPU-Guard-Tests: %s ===" % ("OK" if _failed == 0 else "%d FEHLER" % _failed))
