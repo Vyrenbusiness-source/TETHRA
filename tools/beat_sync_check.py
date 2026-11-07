@@ -237,6 +237,8 @@ def render(args, frames_dir):
            "--audio-driver", "Dummy", "--position", "-1700,120",
            "--quit-after", str(args.max_frames),
            "res://scenes/song_select.tscn", "--mania", "--autoplay"]
+    if getattr(args, "theme", None):
+        cmd.append("--theme=" + args.theme)
     try:
         with open(probe, "w", encoding="utf-8", newline="\n") as fh:
             fh.write(PROBE_GD)
@@ -610,6 +612,7 @@ def main():
     ap.add_argument("--offset", type=float, help="ms, Zeit des ersten Beats")
     ap.add_argument("--max-frames", type=int, default=3000)
     ap.add_argument("--timeout", type=int, default=900)
+    ap.add_argument("--theme", help="Welt erzwingen (z. B. abyss; nicht neon)")
     ap.add_argument("--report", help="Markdown-Bericht schreiben (z. B. docs/perf/beat_sync.md)")
     args = ap.parse_args()
     res = run(args)

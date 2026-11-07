@@ -19,15 +19,19 @@ const FRACTAL := "fractal"
 const SINGULARITY := "singularity"
 const STORM := "storm"
 const OBSIDIAN := "obsidian"
-const NAMES: Array[String] = [GALAXY, BOSS, AURORA, NEON, ECLIPSE, ABYSS, FRACTAL, SINGULARITY, STORM, OBSIDIAN]
+const MONOLITH := "monolith"
+const RIFT := "rift"
+const NERVE := "nerve"
+const NAMES: Array[String] = [GALAXY, BOSS, AURORA, NEON, ECLIPSE, ABYSS, FRACTAL, SINGULARITY, STORM, OBSIDIAN, MONOLITH, RIFT, NERVE]
 ## Dunkle Welten in Rueckfall-Reihenfolge (fehlt eine, nimmt resolve die naechste).
-const DARK: Array[String] = [BOSS, ECLIPSE, ABYSS, FRACTAL, OBSIDIAN, STORM, SINGULARITY, AURORA]
+const DARK: Array[String] = [BOSS, ECLIPSE, ABYSS, FRACTAL, OBSIDIAN, STORM, SINGULARITY, MONOLITH, RIFT, NERVE, AURORA]
 ## Welten fuer die gleichmaessige Verteilung (ohne Boss/Frost, die nach Charakter kommen).
-const VARIETY: Array[String] = [ECLIPSE, ABYSS, FRACTAL, OBSIDIAN, STORM, SINGULARITY]
+const VARIETY: Array[String] = [ECLIPSE, ABYSS, FRACTAL, OBSIDIAN, STORM, SINGULARITY, MONOLITH, RIFT, NERVE]
 ## Anzeige-Namen (Einstellungen).
 const LABELS := {"galaxy": "Galaxie", "boss": "Bosskampf", "aurora": "Frost", "neon": "Neon",
 	"eclipse": "Eklipse", "abyss": "Abgrund", "fractal": "Fraktal", "singularity": "Singularität",
-	"storm": "Sturm", "obsidian": "Obsidian"}
+	"storm": "Sturm", "obsidian": "Obsidian", "monolith": "Monolith", "rift": "Riss",
+	"nerve": "Nerv"}
 ## Galaxie (mit Planeten) nur noch extrem selten (Nutzer-Wunsch).
 const GALAXY_SHARE := 0.03
 
@@ -58,6 +62,9 @@ const PALETTES := {
 	"singularity": {"line": Color(0.80, 0.82, 0.86), "kiai": Color(1.0, 0.96, 0.90)},
 	"storm": {"line": Color(0.52, 0.48, 0.66), "kiai": Color(0.78, 0.74, 0.92)},
 	"obsidian": {"line": Color(0.40, 0.56, 0.72), "kiai": Color(0.66, 0.80, 0.94)},
+	"monolith": {"line": Color(0.70, 0.72, 0.76), "kiai": Color(0.90, 0.92, 0.95)},
+	"rift": {"line": Color(0.56, 0.64, 0.56), "kiai": Color(0.76, 0.84, 0.74)},
+	"nerve": {"line": Color(0.42, 0.08, 0.16), "kiai": Color(0.70, 0.22, 0.32)},
 	"neon": {"line": Color("#ff2bd6"), "kiai": Color("#19f0ff")},
 }
 
@@ -251,3 +258,44 @@ static func shader_path(theme: String) -> String:
 
 static func asset_dir(theme: String) -> String:
 	return "res://assets_game/themes/%s" % theme
+
+
+# ---------------------------------------------------------------- Beat-Vertrag
+# docs/worlds/beat_contract.md: statische Huellkurven (headless testbar).
+
+const DROP_PEAK := 0.6
+const DROP_HOLD := 0.3
+const DROP_MAX := 0.6
+const DROP_RISE_BEATS := 1.0
+const DROP_FALL_BEATS := 4.0
+const DROP_END_BEATS := 2.0
+
+
+## Drop-Huellkurve. since_start: Beats seit Kiai-Start (<0 = kein Kiai gewesen),
+## since_end: Beats seit Kiai-Ende (<0 = Kiai laeuft noch), comfort halbiert.
+static func drop_env(since_start: float, since_end: float, comfort: bool) -> float:
+	if since_start < 0.0:
+		return 0.0
+	var up := since_start
+	var v: float
+	if up < DROP_RISE_BEATS:
+		v = DROP_PEAK * smoothstep(0.0, DROP_RISE_BEATS, up)
+	elif up < DROP_RISE_BEATS + DROP_FALL_BEATS:
+		v = lerpf(DROP_PEAK, DROP_HOLD, smoothstep(0.0, DROP_FALL_BEATS, up - DROP_RISE_BEATS))
+	else:
+		v = DROP_HOLD
+	if since_end >= 0.0:
+		v *= 1.0 - smoothstep(0.0, DROP_END_BEATS, since_end)
+	if comfort:
+		v *= 0.5
+	return clampf(v, 0.0, DROP_MAX)
+
+
+## Monotoner Beat-Zaehler mit Easing: springt auf dem Schlag, ruht bis zum naechsten.
+static func beat_step(beats_total: int, beat_phase: float) -> float:
+	return float(beats_total) + 1.0 - pow(1.0 - clampf(beat_phase, 0.0, 1.0), 4.0)
+
+
+## downbeat_pulse: exp(-bar_phase*meter*3), 1 auf dem Takt-Anfang.
+static func downbeat_pulse(bar_phase: float, meter: int) -> float:
+	return exp(-clampf(bar_phase, 0.0, 1.0) * float(maxi(meter, 1)) * 3.0)

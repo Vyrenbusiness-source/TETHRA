@@ -27,6 +27,8 @@ func _initialize() -> void:
 	_test_electro_words()
 	_test_resolve()
 	_test_palette()
+	_test_new_worlds()
+	_test_beat_contract()
 	print("=== Ergebnis: %d fehlgeschlagen ===" % _failed)
 	quit(1 if _failed > 0 else 0)
 
@@ -130,3 +132,46 @@ func _test_palette() -> void:
 	_check(neon.r > 0.8 and neon.b > 0.6 and neon.g < 0.4, "Neon magenta")
 	_check(WorldTheme.shader_path("galaxy") == "", "Galaxie nutzt sky_panorama")
 	_check(WorldTheme.shader_path("boss") == "res://shaders/theme_boss.gdshader", "Boss-Shaderpfad")
+
+
+func _test_new_worlds() -> void:
+	for t in ["monolith", "rift", "nerve"]:
+		_check(WorldTheme.NAMES.has(t), "%s in NAMES" % t)
+		_check(WorldTheme.DARK.has(t) and WorldTheme.VARIETY.has(t), "%s in DARK/VARIETY" % t)
+		_check(WorldTheme.LABELS.has(t), "%s hat Anzeige" % t)
+		_check(WorldTheme.palette(t).has("line") and WorldTheme.palette(t).has("kiai"), "%s hat Farbsatz" % t)
+	_check(WorldTheme.LABELS.rift == "Riss" and WorldTheme.LABELS.nerve == "Nerv", "Anzeige Riss/Nerv")
+	var n: Color = WorldTheme.palette("nerve").line
+	_check(n.r > n.g * 2.0 and n.r < 0.6, "Nerv dunkles Bordeaux")
+	_check(WorldTheme.shader_path("rift") == "res://shaders/theme_rift.gdshader", "Rift-Shaderpfad")
+
+
+func _test_beat_contract() -> void:
+	var D := WorldTheme
+	_check(D.drop_env(-1.0, -1.0, false) == 0.0, "Drop: kein Kiai = 0")
+	_check(D.drop_env(0.0, -1.0, false) == 0.0, "Drop: Start 0")
+	_check(absf(D.drop_env(1.0, -1.0, false) - D.DROP_PEAK) < 0.001, "Drop: Spitze 0.6 nach 1 Beat")
+	_check(absf(D.drop_env(5.0, -1.0, false) - D.DROP_HOLD) < 0.001, "Drop: 0.3 nach 5 Beats")
+	_check(absf(D.drop_env(40.0, -1.0, false) - D.DROP_HOLD) < 0.001, "Drop: haelt 0.3")
+	_check(D.drop_env(0.5, -1.0, false) < D.DROP_PEAK, "Drop: steigt weich")
+	_check(D.drop_env(3.0, -1.0, false) < D.drop_env(1.5, -1.0, false), "Drop: faellt nach Spitze")
+	_check(D.drop_env(40.0, 2.0, false) < 0.001, "Drop: Kiai-Ende 0 nach 2 Beats")
+	_check(absf(D.drop_env(1.0, -1.0, true) - 0.3) < 0.001, "Drop: Komfort x0.5")
+	var mx := 0.0
+	for i in 400:
+		mx = maxf(mx, D.drop_env(i * 0.05, -1.0, false))
+	_check(mx <= D.DROP_MAX + 0.0001, "Drop nie ueber DROP_MAX")
+	# beat_step: monoton ueber Beats, springt auf dem Schlag, ruht davor.
+	var last := -1.0
+	var mono := true
+	for b in 20:
+		for k in 50:
+			var v := D.beat_step(b, float(k) / 50.0)
+			if v < last - 0.0001:
+				mono = false
+			last = v
+	_check(mono, "beat_step monoton")
+	_check(absf(D.beat_step(3, 0.0) - 3.0) < 0.001, "beat_step Beat 3 Phase 0 = 3")
+	_check(D.beat_step(3, 0.99) > 3.99, "beat_step ruht vor naechstem Schlag")
+	_check(absf(D.beat_step(3, 0.9999) - D.beat_step(4, 0.0)) < 0.001, "beat_step stetig am Schlag")
+	_check(D.downbeat_pulse(0.0, 4) == 1.0 and D.downbeat_pulse(0.5, 4) < 0.01, "downbeat_pulse")
