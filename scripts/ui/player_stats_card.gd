@@ -357,6 +357,7 @@ static func _dlbl(text: String, size: int, col: Color, heading: bool, align: int
 	if heading:
 		l.add_theme_font_override("font", UiTheme.heading_font(1))
 	l.horizontal_alignment = align
+	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	# Mittlere Spalte behaelt ihre Breite, nur die Seiten duerfen kuerzen.
 	if align != HORIZONTAL_ALIGNMENT_CENTER:
 		l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
