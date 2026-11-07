@@ -1943,13 +1943,12 @@ func _on_tour_btn() -> void:
 		_open_tour_setup()
 
 
-## Host: Anzahl Maps (5/10/15), Sternbereich in 0,5er-Schritten, Mods.
+## Host: Anzahl Maps (5/10/15), Sternbereich exakt (eintippen oder 0,1er-Schritte), Mods.
 func _open_tour_setup() -> void:
 	if _tour_dialog != null:
 		return
-	var maps_n := 10
-	var lo := 2.0
-	var hi := 5.0
+	# Zustand im Dictionary: Lambdas kopieren lokale int/float-Werte, Aenderungen gingen sonst verloren.
+	var st: Dictionary = {"maps": 10, "lo": 2.0, "hi": 5.0}
 	var mods: Dictionary = {"SV": bool(Lobby.mods.get("SV", false)), "NF": bool(Lobby.mods.get("NF", false))}
 	var back := UiTheme.modal_backdrop(self)
 	_tour_dialog = back
@@ -1982,23 +1981,27 @@ func _open_tour_setup() -> void:
 		UiTheme.style_button(b)
 		var nn: int = n
 		b.pressed.connect(func():
-			maps_n = nn
+			st.maps = nn
 			for k in chip_btns:
 				(chip_btns[k] as Button).set_pressed_no_signal(k == nn))
-		b.set_pressed_no_signal(n == maps_n)
+		b.set_pressed_no_signal(n == st.maps)
 		chips.add_child(b)
 		chip_btns[n] = b
 	v.add_child(TournamentPanel.lbl("SCHWIERIGKEIT (STERNE)", 13, COL_ACCENT, true))
-	var val_lo := Label.new()
-	var val_hi := Label.new()
+	# Werte direkt eintippbar (z. B. "4,37"), -/+ fuer 0,1er-Schritte.
+	var val_lo := LineEdit.new()
+	var val_hi := LineEdit.new()
+	var fmt_star := func(x: float) -> String:
+		return UiTheme.fmt_num(x, 1 if is_equal_approx(snappedf(x, 0.1), x) else 2)
 	var upd := func():
-		val_lo.text = "★ " + UiTheme.fmt_num(lo, 1)
-		val_hi.text = "★ " + UiTheme.fmt_num(hi, 1)
-	for pair in [["von", val_lo, true], ["bis", val_hi, false]]:
+		val_lo.text = fmt_star.call(st.lo)
+		val_hi.text = fmt_star.call(st.hi)
+	for pair in [["Min", val_lo, true], ["Max", val_hi, false]]:
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 10)
 		v.add_child(row)
 		var cap := TournamentPanel.lbl(pair[0], 16, COL_DIM)
+		cap.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
 		cap.custom_minimum_size.x = 50
 		row.add_child(cap)
 		var is_lo: bool = pair[2]
@@ -2007,12 +2010,31 @@ func _open_tour_setup() -> void:
 		minus.custom_minimum_size = Vector2(48, 40)
 		UiTheme.style_button(minus)
 		row.add_child(minus)
-		var vl: Label = pair[1]
-		vl.custom_minimum_size.x = 100
-		vl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		var star := TournamentPanel.lbl("★", 20, COL_TEXT)
+		row.add_child(star)
+		var vl: LineEdit = pair[1]
+		vl.custom_minimum_size = Vector2(84, 40)
+		vl.alignment = HORIZONTAL_ALIGNMENT_CENTER
+		vl.max_length = 5
+		vl.select_all_on_focus = true
 		vl.add_theme_font_size_override("font_size", 20)
 		vl.add_theme_color_override("font_color", COL_TEXT)
 		row.add_child(vl)
+		var commit := func():
+			var txt := vl.text.replace(",", ".").replace("★", "").strip_edges()
+			if txt.is_valid_float():
+				var f := snappedf(clampf(txt.to_float(), 0.0, 15.0), 0.01)
+				if is_lo:
+					st.lo = f
+					st.hi = maxf(st.hi, st.lo)
+				else:
+					st.hi = f
+					st.lo = minf(st.lo, st.hi)
+			upd.call()
+		vl.text_submitted.connect(func(_x):
+			commit.call()
+			vl.release_focus())
+		vl.focus_exited.connect(commit)
 		var plus := Button.new()
 		plus.text = "+"
 		plus.custom_minimum_size = Vector2(48, 40)
@@ -2020,11 +2042,11 @@ func _open_tour_setup() -> void:
 		row.add_child(plus)
 		var step := func(d: float):
 			if is_lo:
-				lo = snappedf(clampf(lo + d, 0.0, 10.0), 0.1)
-				hi = maxf(hi, lo)
+				st.lo = snappedf(clampf(st.lo + d, 0.0, 15.0), 0.1)
+				st.hi = maxf(st.hi, st.lo)
 			else:
-				hi = snappedf(clampf(hi + d, 0.0, 10.0), 0.1)
-				lo = minf(lo, hi)
+				st.hi = snappedf(clampf(st.hi + d, 0.0, 15.0), 0.1)
+				st.lo = minf(st.lo, st.hi)
 			upd.call()
 		# 0,1er-Schritte; gedrueckt halten = schnell weiterzaehlen.
 		for pb in [[minus, -0.1], [plus, 0.1]]:
@@ -2071,7 +2093,7 @@ func _open_tour_setup() -> void:
 	go.custom_minimum_size = Vector2(200, 46)
 	UiTheme.style_button(go, true)
 	go.pressed.connect(func():
-		Lobby.tour_create({"maps": maps_n, "stars_lo": lo, "stars_hi": hi, "mods": mods.duplicate()})
+		Lobby.tour_create({"maps": st.maps, "stars_lo": st.lo, "stars_hi": st.hi, "mods": mods.duplicate()})
 		close_dialog.call())
 	bar.add_child(go)
 
@@ -2266,6 +2288,17 @@ func _tournament_shots() -> void:
 	await shot.call("end")
 	var img_path := end.save_png("%s_end_image.png" % out)
 	print("END-BILD " + img_path)
+	# Erstell-Dialog: exakter Sternwert per Eingabe.
+	end.queue_free()
+	_open_tour_setup()
+	var edits := _tour_dialog.find_children("*", "LineEdit", true, false)
+	if edits.size() >= 2:
+		(edits[0] as LineEdit).text = "4,37"
+		(edits[0] as LineEdit).text_submitted.emit("4,37")
+		(edits[1] as LineEdit).text = "6.8"
+		(edits[1] as LineEdit).text_submitted.emit("6.8")
+	await get_tree().create_timer(0.6).timeout
+	await shot.call("setup")
 	get_tree().quit(0)
 
 
