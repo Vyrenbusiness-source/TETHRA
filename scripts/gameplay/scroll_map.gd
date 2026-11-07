@@ -7,18 +7,29 @@ extends RefCounted
 ## position(t) ist stueckweise linear (ms-Einheiten); Abstand einer Note zur
 ## Trefferlinie = position(hit) - position(t). Ohne SV-/BPM-Wechsel (alle
 ## Multiplikatoren 1) gilt position(t) == t exakt (bitgenau wie vorher).
+##
+## SV-Mod (Stufe Stark): eine gruene Linie mit Meta SV_META ("sv_mult") traegt
+## den Multiplikator m direkt, auch NEGATIV (Reverse/Rueck-Sprung: die Noten
+## laufen kurz nach oben). position(t) ist dann nicht mehr monoton; time_at()
+## liefert den ERSTEN Zeitpunkt, an dem eine Position erreicht ist (laufendes
+## Maximum), spawn_time() damit den ersten Moment im Sichtfenster.
 
 const BL_MIN := 6.0
 const BL_MAX := 60000.0
 const SV_MIN := 0.01
 const SV_MAX := 10.0
 const DEFAULT_BL := 1000.0
+## Meta-Schluessel fuer direkt gesetzte (auch negative) Multiplikatoren.
+const SV_META := &"sv_mult"
 
 ## Kontrollpunkt-Zeiten, kumulative Positionen und Multiplikatoren (parallel).
 var _times := PackedFloat64Array()
 var _pos := PackedFloat64Array()
 var _mult := PackedFloat64Array()
+## Laufendes Maximum von _pos (fuer time_at bei nicht-monotoner Position).
+var _pmax := PackedFloat64Array()
 var _identity := true
+var _monotone := true
 var base_beat_length := DEFAULT_BL
 
 
@@ -47,7 +58,9 @@ func build(timing_points: Array, map_end_ms: float) -> void:
 	_times.clear()
 	_pos.clear()
 	_mult.clear()
+	_pmax.clear()
 	_identity = true
+	_monotone = true
 	# Stabile Sortierung: Zeit, dann rot vor gruen, dann Array-Index.
 	var order: Array = []
 	for i in timing_points.size():
@@ -80,6 +93,8 @@ func build(timing_points: Array, map_end_ms: float) -> void:
 		if tp.time > map_end_ms:
 			continue
 		var m := sv * base_beat_length / bl
+		if not tp.uninherited and tp.has_meta(SV_META):
+			m = float(tp.get_meta(SV_META))
 		var n := _times.size()
 		if n > 0 and _times[n - 1] == tp.time:
 			_mult[n - 1] = m
@@ -93,6 +108,9 @@ func build(timing_points: Array, map_end_ms: float) -> void:
 			_pos.append(_pos[i - 1] + (_times[i] - _times[i - 1]) * _mult[i - 1])
 		if _mult[i] != 1.0:
 			_identity = false
+		if _mult[i] <= 0.0:
+			_monotone = false
+		_pmax.append(_pos[i] if i == 0 else maxf(_pmax[i - 1], _pos[i]))
 
 
 static func _most_common_beat_length(reds: Array, last_time: float) -> float:
@@ -133,6 +151,11 @@ func is_identity() -> bool:
 	return _identity
 
 
+## false, wenn ein Abschnitt rueckwaerts (m <= 0) laeuft.
+func is_monotone() -> bool:
+	return _monotone
+
+
 ## Index des letzten Kontrollpunkts mit time <= t (0 fuer t davor).
 func _seg_by_time(t: float) -> int:
 	var lo := 0
@@ -167,15 +190,36 @@ func position(t_ms: float) -> float:
 
 
 ## Inverse von position(): Zeit, zu der die Scroll-Position p erreicht ist.
+## Nicht monoton (Reverse): der ERSTE Zeitpunkt mit position(t) >= p.
 func time_at(p: float) -> float:
 	if _identity or _times.is_empty():
 		return p
-	var k := _seg_by_pos(p)
-	return _times[k] + (p - _pos[k]) / _mult[k]
+	if _monotone:
+		var k := _seg_by_pos(p)
+		return _times[k] + (p - _pos[k]) / _mult[k]
+	# Erster Kontrollpunkt j mit laufendem Maximum >= p.
+	var n := _pmax.size()
+	if p > _pmax[n - 1]:
+		var kl := n - 1
+		return _times[kl] + (p - _pos[kl]) / _mult[kl] if _mult[kl] > 0.0 else _times[kl]
+	var lo := 0
+	var hi := n - 1
+	while lo < hi:
+		var mid := (lo + hi) >> 1
+		if _pmax[mid] >= p:
+			hi = mid
+		else:
+			lo = mid + 1
+	if lo == 0:
+		return _times[0] + (p - _pos[0]) / _mult[0] if _mult[0] > 0.0 else _times[0]
+	if _pos[lo] == p:
+		return _times[lo]
+	# Abschnitt lo-1 steigt (pmax[lo-1] < p <= pos[lo]): dort wird p ueberquert.
+	return _times[lo - 1] + (p - _pos[lo - 1]) / _mult[lo - 1]
 
 
 ## Zeitpunkt, ab dem eine Note mit Trefferzeit hit_ms sichtbar ist
-## (position(hit) - position(t) <= view).
+## (position(hit) - position(t) <= view; bei Reverse der erste solche Moment).
 func spawn_time(hit_ms: float, view: float) -> float:
 	if _identity or _times.is_empty():
 		return hit_ms - view

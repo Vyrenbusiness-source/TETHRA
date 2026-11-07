@@ -2081,6 +2081,12 @@ func _process(delta: float) -> void:
 		if core.active_hold(obj.column) == index:
 			head_t = maxf(obj.time, t)
 		root.position = Vector3(RAIL_X[obj.column], ROAD_Y + 0.32, _note_z(head_t, t))
+		# SV-Reverse: Noten hinter dem Horizont (kurz nach oben gelaufen) aus.
+		var in_view := root.position.z >= Z_FAR - 0.5
+		if root.visible != in_view:
+			root.visible = in_view
+			if entry.get("beam") != null:
+				(entry.beam as Node3D).visible = in_view
 		if _2d:
 			# 2D: nur Position + Hold-Zustand, keine 3D-Shader-Updates.
 			if obj.is_hold and core.active_hold(obj.column) == index:
@@ -4466,6 +4472,8 @@ func _capture_after_first_note() -> void:
 	var lead := 150.0
 	# --shot-at=<ms>: Songzeit des Bildes (spaetere Kapitel), --shot-out=<png>.
 	var shot_at := -1.0
+	var seq := 1
+	var step := 50.0
 	var path := "C:/Users/Gexanx/AppData/Local/Temp/claude/c--Users-Gexanx-Desktop-rhyg/b9d5e593-aabc-4b4b-a882-a5835e187db3/scratchpad/mania_3d.png"
 	for a in OS.get_cmdline_args():
 		if a.begins_with("--shot-lead="):
@@ -4474,12 +4482,25 @@ func _capture_after_first_note() -> void:
 			shot_at = a.trim_prefix("--shot-at=").to_float()
 		elif a.begins_with("--shot-out="):
 			path = a.trim_prefix("--shot-out=")
+		elif a.begins_with("--shot-seq="):
+			seq = maxi(a.trim_prefix("--shot-seq=").to_int(), 1)
+		elif a.begins_with("--shot-step="):
+			step = a.trim_prefix("--shot-step=").to_float()
 	var target := _beatmap.hit_objects[idx].time - lead
+	# --shot-rev: erste SV-Rueckwaerts-Phase (Kiai bevorzugt) mit Noten im Bild;
+	# --shot-lead = Vorlauf davor. Bildfolge: --shot-seq=<n> --shot-step=<ms>.
+	var rev_t := _find_reverse_shot() if OS.get_cmdline_args().has("--shot-rev") else -1.0
 	if shot_at >= 0.0:
 		# Auf den naechsten Beat ab shot_at, dann --shot-lead als Versatz
 		# (0 = genau auf dem Schlag, halbe Beatlaenge = zwischen Beats).
 		core.no_fail = true
 		target = _beat_ceil(shot_at) - lead
+		if target - _time_ms() > 4000.0:
+			SyncClock.seek_ms(target - 3000.0)
+	if rev_t >= 0.0:
+		core.no_fail = true
+		target = rev_t - lead
+		print("SHOT-REV reverse ab %.0f ms, erstes Bild %.0f ms" % [rev_t, target])
 		if target - _time_ms() > 4000.0:
 			SyncClock.seek_ms(target - 3000.0)
 	var guard := 0
@@ -4503,10 +4524,62 @@ func _capture_after_first_note() -> void:
 		print("TRAVEL2D speed=%d rest=%.1f ms note_y=%.1f line_y=%.1f -> %.0f ms (lazer %.0f ms)" % [
 			Settings.scroll_speed if Settings._scroll_override <= 0 else Settings._scroll_override,
 			hit_t - now, ny, ly, travel, Settings.scroll_time_ms(Settings.mania_scroll * Settings.SCROLL_MAX_TIME_RANGE / Settings.SCROLL_BASE_PREEMPT)])
+	if seq > 1:
+		# Bildfolge (SV-Pruefung): halbe Aufloesung, Name_<k>.png.
+		for k in seq:
+			var tk := target + k * step
+			guard = 0
+			while _time_ms() < tk and guard < 600:
+				guard += 1
+				await get_tree().process_frame
+				if not is_inside_tree():
+					return
+			await RenderingServer.frame_post_draw
+			if not is_inside_tree():
+				return
+			var now := _time_ms()
+			var sm := core.scroll
+			var m := (sm.position(now + 1.0) - sm.position(now)) / 1.0
+			var vis := 0
+			for o in _beatmap.hit_objects:
+				var d := sm.position(o.time) - sm.position(now)
+				if d > 0.0 and d <= core.preempt:
+					vis += 1
+			var im := get_viewport().get_texture().get_image()
+			im.resize(im.get_width() / 2, im.get_height() / 2)
+			var pk := "%s_%02d.png" % [path.get_basename(), k]
+			im.save_png(pk)
+			print("SEQ %d t=%.0f m=%.2f im_bild=%d -> %s" % [k, now, m, vis, pk])
+		get_tree().quit(0)
+		return
 	var img := get_viewport().get_texture().get_image()
 	img.save_png(path)
 	print("SHOT gespeichert: " + path)
 	get_tree().quit(0)
+
+
+## Debug (--shot-rev): Startzeit der ersten Rueckwaerts-Phase (> 12 ms, nach
+## den ersten 3 s, Kiai bevorzugt) mit mindestens 4 Noten im Sichtfenster; -1 ohne.
+func _find_reverse_shot() -> float:
+	var sm := core.scroll
+	var t_min: float = _beatmap.hit_objects[0].time + 3000.0
+	var fallback := -1.0
+	for k in range(sm._times.size() - 1):
+		var t: float = sm._times[k]
+		if sm._mult[k] >= 0.0 or t < t_min or sm._times[k + 1] - t <= 12.0:
+			continue
+		var vis := 0
+		for o in _beatmap.hit_objects:
+			var d := sm.position(o.time) - sm.position(t)
+			if d > 0.0 and d <= core.preempt:
+				vis += 1
+		if vis < 4:
+			continue
+		if _beatmap.is_kiai(t):
+			return t
+		if fallback < 0.0:
+			fallback = t
+	return fallback
 
 
 ## Panorama-Himmel als Basis (BG_SKY); false, wenn Shader/Texturen fehlen.
