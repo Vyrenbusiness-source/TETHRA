@@ -16,6 +16,7 @@ func _initialize() -> void:
 	_test_expiry_miss()
 	_test_hold_complete()
 	_test_hold_drop()
+	_test_hold_head_dt()
 	_test_accuracy_weights()
 	print("=== Ergebnis: %d bestanden, %d fehlgeschlagen ===" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
@@ -100,6 +101,17 @@ func _test_hold_complete() -> void:
 	_ok(core.n_max == 1, "gehalten -> MAX")
 	var hold_results := results.filter(func(r): return r.get("hold_end", false))
 	_ok(hold_results.size() == 1 and bool(hold_results[0].held), "held=true")
+
+
+func _test_hold_head_dt() -> void:
+	print("- Hold-Kopf liefert Zeitfehler fuer die UR-Leiste")
+	var core := _make_core()
+	var got := [false, 0.0]
+	core.hold_started.connect(func(i, _q):
+		got[0] = true
+		got[1] = core.hold_head_dt(i))
+	core.key_down(3, 1412.0)
+	_ok(bool(got[0]) and is_equal_approx(float(got[1]), 12.0), "hold_head_dt = +12 ms (war %s)" % str(got[1]))
 
 
 func _test_hold_drop() -> void:

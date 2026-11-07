@@ -266,7 +266,7 @@ func key_down(c: int, t_ms: float) -> void:
 		_hold_quality[c] = q
 		combo += 1
 		max_combo = maxi(max_combo, combo)
-		_judged[idx] = { "pending": true }
+		_judged[idx] = { "pending": true, "dt": dt }
 		hold_started.emit(idx, q)
 	else:
 		_apply_hit(idx, q, dt)
@@ -320,6 +320,12 @@ func _finish_hold(c: int, held_to_end: bool) -> void:
 	_judged[idx] = result
 	_judged_count += 1
 	note_judged.emit(idx, result)
+
+
+## Zeitfehler des Hold-Kopfs (ms, + = spaet), solange der Hold laeuft; sonst 0.
+func hold_head_dt(idx: int) -> float:
+	var j: Dictionary = _judged.get(idx, {})
+	return float(j.get("dt", 0.0))
 
 
 func _quality_for(abs_dt: float) -> int:

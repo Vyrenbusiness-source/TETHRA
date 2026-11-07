@@ -1744,8 +1744,12 @@ func _trigger_overdrive() -> void:
 	_overdrive = 2.0 * fx
 
 
-func _on_hold_started(index: int, _quality: int) -> void:
+func _on_hold_started(index: int, quality: int) -> void:
 	_play_hit(1.0)
+	# Hold-Kopf zaehlt fuer UR-Leiste und Trefferfehler wie eine normale Note.
+	var head_dt := core.hold_head_dt(index)
+	_ur_tick({"dt": head_dt, "quality": quality})
+	_hit_offsets.append(head_dt)
 	if _notes.has(index):
 		var obj := _beatmap.hit_objects[index] as ManiaNote
 		_pad_flash[obj.column] = 1.0
