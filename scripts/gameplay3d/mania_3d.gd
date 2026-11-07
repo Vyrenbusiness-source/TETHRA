@@ -241,6 +241,7 @@ var _sky_phase := 0.0
 var _world_theme := WorldTheme.GALAXY
 var _theme_lightning := 0.0
 var _theme_flow := 0.0
+var _theme_grid := 0.0
 var _gal_scale := 1.0
 ## Grund-Reisetempo aus dem BPM der Map (140 BPM = neutral).
 var _bpm_factor := 1.0
@@ -673,6 +674,9 @@ func _build_world() -> void:
 		fmat.set_shader_parameter("base_color",
 				_theme_col.lerp(Color(1, 1, 1), 0.3))
 		fmat.set_shader_parameter("intensity", 0.0)
+		if _world_theme != WorldTheme.GALAXY:
+			# Themen-Farbsatz auch fuer die heisse Flammen-Kante (sonst Eisblau).
+			fmat.set_shader_parameter("hot_color", _theme_kiai)
 		fmesh.material_override = fmat
 		fmesh.position = Vector3(sx, ROAD_Y + 0.56, (Z_FAR + Z_LINE) * 0.5 + 2.0)
 		fmesh.rotation_degrees = Vector3(0, 90, 0)
@@ -2107,7 +2111,6 @@ func _process(delta: float) -> void:
 	_star_scroll += delta * _flow * (cruise * (1.0 + surge_m) + (_warp_level * 55.0 + _star_burst * 18.0) * fx * _flow) * (1.0 - dock_mix * 0.75)
 	# Panorama: ferne Sternen-Ebene stroemt langsamer (Parallaxe), gleicher
 	# Beat-Schub; Welt-Puls + minimaler Warp auf dem Schlag.
-	_update_theme_sky(delta)
 	if _sky_mat != null:
 		_sky_phase += delta * _flow * (0.05 * cruise / 9.0 * (1.0 + surge_m * fx) + _warp_level * 0.45 * fx * _flow) * (1.0 - dock_mix * 0.75)
 		_sky_mat.set_shader_parameter(&"star_phase", _sky_phase)
@@ -2117,6 +2120,7 @@ func _process(delta: float) -> void:
 		_sky_mat.set_shader_parameter(&"warp", sw if sw > 0.03 and not _comfort else 0.0)
 		_sky_mat.set_shader_parameter(&"stars_rotation",
 				Vector3.ZERO if _comfort else Vector3(0, 0, _sky_phase * 0.02))
+	_update_theme_sky(delta)
 	# Kurze Streifen auf dem Schlag (radial, minimal), Hyperspace laenger.
 	var warp_stretch := 1.0 if _comfort else 			1.0 + maxf(_surge, 0.0) * 0.8 + _warp_level * 4.0 * fx
 	var cy := _cam_pos.y + _cosmos_lift
@@ -4202,3 +4206,11 @@ func _update_theme_sky(delta: float) -> void:
 	var flow_rate := (0.5 if _comfort else 1.0) * (1.0 + _ch_kiai_w * 0.6)
 	_theme_flow += delta * flow_rate
 	_sky_mat.set_shader_parameter(&"aurora_flow", _theme_flow)
+	if _world_theme == WorldTheme.NEON:
+		# Neon-Gitter: star_phase = Flug in Zellen, beat_pulse = Welle vom
+		# Horizont zum Spieler ueber einen ganzen Schlag (1 -> 0).
+		_theme_grid += delta * 1.2 * _bpm_factor * _flow * (1.0 + _kiai_mix * 0.5)
+		_sky_mat.set_shader_parameter(&"star_phase", _theme_grid)
+		var bp := pow(1.0 - clampf(_clock.beat_phase, 0.0, 1.0), 4.0) if _fx_level() > 0.0 else 0.0
+		_sky_mat.set_shader_parameter(&"beat_pulse", bp * (0.7 if _comfort else 1.0))
+		_sky_mat.set_shader_parameter(&"grid_intensity", lerpf(1.0, 1.35, _ch_kiai_w))

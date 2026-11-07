@@ -36,7 +36,7 @@ const ELECTRO_EXACT: Array[String] = ["edm", "dnb", "idm", "eurobeat"]
 const PALETTES := {
 	"boss": {"line": Color(0.96, 0.30, 0.10), "kiai": Color(1.0, 0.80, 0.42)},
 	"aurora": {"line": Color(0.42, 0.80, 0.98), "kiai": Color(0.45, 0.98, 0.76)},
-	"neon": {"line": Color(0.98, 0.24, 0.82), "kiai": Color(0.18, 0.92, 1.0)},
+	"neon": {"line": Color("#ff2bd6"), "kiai": Color("#19f0ff")},
 }
 
 
