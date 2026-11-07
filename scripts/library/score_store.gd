@@ -44,6 +44,8 @@ static func submit(osz_file: String, version: String, result: Dictionary) -> Dic
 			"n_miss": int(result.get("n_miss", 0)),
 			"pp": float(result.get("pp", -1.0)),
 			"unranked": unranked,
+			"mods": _mods_of(result),
+			"mod_mult": float(result.get("mod_mult", 1.0)),
 			"date": Time.get_datetime_string_from_system(),
 		}
 		cfg.set_value("scores", key, entry)
@@ -51,6 +53,25 @@ static func submit(osz_file: String, version: String, result: Dictionary) -> Dic
 	cfg.set_value("plays", key, plays)
 	cfg.save(PATH)
 	return { "is_new_best": is_new_best, "previous": prev_dict }
+
+
+## Mod-Liste des Laufs als Array[String]; fehlt "mods" (alte Daten): [].
+static func _mods_of(result: Dictionary) -> Array:
+	var out: Array = []
+	var m = result.get("mods", [])
+	if m is Array:
+		for x in m:
+			out.append(str(x))
+	elif m is Dictionary:
+		for x in m:
+			if bool(m[x]):
+				out.append(str(x))
+	return out
+
+
+## Bestwert-Mods als Liste (alte Eintraege ohne "mods" -> []).
+static func best_mods(osz_file: String, version: String) -> Array:
+	return _mods_of(best(osz_file, version))
 
 
 const HISTORY_CAP := 20
@@ -70,6 +91,7 @@ static func log_play(osz_file: String, version: String, map_label: String, resul
 		"max_combo": int(result.get("max_combo", 0)),
 		"pp": float(result.get("pp", -1.0)),
 		"unranked": bool(result.get("unranked", false)),
+		"mods": _mods_of(result),
 		"failed": bool(result.get("failed", false)),
 		"date": Time.get_datetime_string_from_system(),
 	}
