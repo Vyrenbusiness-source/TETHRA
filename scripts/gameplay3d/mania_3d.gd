@@ -660,7 +660,7 @@ func _load_beatmap() -> bool:
 		var scroll := Settings.mania_scroll
 		if GameSession.tutorial:
 			scroll = minf(scroll, 1.0) * 0.65
-		var preempt := ManiaCore.BASE_PREEMPT / clampf(scroll, 0.5, 3.0)
+		var preempt := ManiaCore.preempt_for(scroll)
 		var lead := _beatmap.audio_lead_in()
 		var first_t: float = _beatmap.hit_objects[0].time
 		# SV: Anflugzeit der ersten Note folgt der Scroll-Position (lazer).
@@ -1497,6 +1497,15 @@ func _emissive_mat(col: Color, energy: float) -> StandardMaterial3D:
 # Noten auf den Schienen (Scroll-Velocity wie osu!lazer: Abstand ueber
 # core.scroll.position, ohne SV/BPM-Wechsel exakt konstante Geschwindigkeit)
 # ---------------------------------------------------------------------------
+
+## Scroll Speed live (Settings.step_scroll_speed: F3/F4, Pausenmenue). Die
+## ruhige Anzeige "Scroll Speed 25 (459 ms)" zeigt Settings selbst.
+func apply_scroll_speed(_speed: int) -> void:
+	var scroll := Settings.mania_scroll
+	if GameSession.tutorial:
+		scroll = minf(scroll, 1.0) * 0.65
+	core.set_scroll_scale(scroll)
+
 
 func _note_z(hit_time: float, t: float) -> float:
 	var sm := core.scroll
@@ -4484,6 +4493,16 @@ func _capture_after_first_note() -> void:
 		return
 	# Takt-Lage des Bildes (Vergleich auf/zwischen Beats per --shot-lead).
 	print("GROOVE t=%.0f bpm=%.1f phase=%.2f kiai=%.2f groove=%.2f energy=%.2f dens=%.2f surge=%.2f wpulse=%.2f chapter=%d" % [_time_ms(), _clock.bpm, _clock.beat_phase, _kiai_mix, _groove, _music_energy, _density2, _surge, _world_pulse, _gal_idx])
+	if _2d and _pf2d != null:
+		# 2D-Zeitmessung: Bildzeile der Note -> Zeit Oberkante bis Trefferlinie.
+		var hit_t: float = _beatmap.hit_objects[idx].time
+		var now := _time_ms()
+		var ny: float = _pf2d.z_to_y(_note_z(hit_t, now))
+		var ly: float = _pf2d.line_y()
+		var travel := (hit_t - now) * ly / maxf(ly - ny, 0.001)
+		print("TRAVEL2D speed=%d rest=%.1f ms note_y=%.1f line_y=%.1f -> %.0f ms (lazer %.0f ms)" % [
+			Settings.scroll_speed if Settings._scroll_override <= 0 else Settings._scroll_override,
+			hit_t - now, ny, ly, travel, Settings.scroll_time_ms(Settings.mania_scroll * Settings.SCROLL_MAX_TIME_RANGE / Settings.SCROLL_BASE_PREEMPT)])
 	var img := get_viewport().get_texture().get_image()
 	img.save_png(path)
 	print("SHOT gespeichert: " + path)

@@ -89,7 +89,7 @@ const BASE_PREEMPT := 1200.0
 func setup(p_beatmap: Beatmap, _ar_override: float = -1.0, scroll_scale: float = 1.0) -> void:
 	beatmap = p_beatmap
 	columns = beatmap.column_count()
-	preempt = BASE_PREEMPT / clampf(scroll_scale, 0.5, 3.0)
+	preempt = preempt_for(scroll_scale)
 	var od := beatmap.od()
 	w_max = DifficultyCalc.mania_window_max(od)
 	w300 = DifficultyCalc.mania_window_300(od)
@@ -118,6 +118,26 @@ func setup(p_beatmap: Beatmap, _ar_override: float = -1.0, scroll_scale: float =
 		if obj is ManiaNote:
 			_lane_notes[(obj as ManiaNote).column].append(i)
 	_build_scroll()
+
+
+## Anflugzeit zum Scroll-Faktor (Settings.mania_scroll). Kein 0,5-3,0-Deckel
+## mehr: Scroll Speed 1..40 ergibt exakt 11485 / speed ms (lazer).
+static func preempt_for(scroll_scale: float) -> float:
+	if is_nan(scroll_scale) or scroll_scale <= 0.0:
+		scroll_scale = 1.0
+	return BASE_PREEMPT / clampf(scroll_scale, 0.01, 10.0)
+
+
+## Scroll-Faktor waehrend des Spiels aendern (F3/F4, Pausenmenue): neue
+## Anflugzeit, Spawn-Zeiten der noch nicht erschienenen Notes neu. Schon
+## sichtbare Notes rutschen automatisch mit (Position rechnet mit preempt).
+func set_scroll_scale(scroll_scale: float) -> void:
+	preempt = preempt_for(scroll_scale)
+	if beatmap == null:
+		return
+	var objs := beatmap.hit_objects
+	for i in range(_next_spawn, mini(objs.size(), _spawn_times.size())):
+		_spawn_times[i] = scroll.spawn_time(objs[i].time, preempt)
 
 
 ## Baut die SV-Positionstabelle und die Spawn-Zeiten (einmal beim Laden).
