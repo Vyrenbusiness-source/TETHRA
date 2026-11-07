@@ -68,14 +68,20 @@ func _ready() -> void:
 		return
 	_commit_worlds_sig()
 	# Liegt schon ein fertiges Update vom letzten Lauf da? Sofort anwenden.
+	var blocked := false
 	if not _ready_files().is_empty():
-		_apply_and_restart()
-		return
+		if not apply_blocked(_apply_tries(), CURRENT_VERSION, CURRENT_VERSION):
+			_apply_and_restart()
+			return
+		blocked = true
 	_toast = UpdateToast.new()
 	_toast.restart_requested.connect(_apply_and_restart)
 	_toast.postponed.connect(func(): _postponed = true)
 	get_tree().root.add_child.call_deferred(_toast)
 	_show_release_notes.call_deferred()
+	if blocked:
+		_apply_failed.call_deferred()
+		return
 	_check_latest()
 	var t := Timer.new()
 	t.wait_time = CHECK_INTERVAL
@@ -469,33 +475,105 @@ static func backoff_for(attempt: int) -> float:
 	return minf(BACKOFF_START * pow(2.0, attempt), BACKOFF_MAX)
 
 
-## Batch-Skript: wartet bis die Exe zu ist, tauscht die .pck(s), startet neu.
+## Batch-Skript: wartet bis DIESER Prozess (pid) wirklich beendet ist, tauscht
+## die .pck(s) und startet neu (mit denselben Startargumenten, z. B. OpenGL).
+## Ohne Konsole: `ping` als Pause (`timeout` bricht ohne Konsole sofort ab),
+## Erfolg per `if exist` pruefen (errorlevel von `move` ist unzuverlaessig).
 ## `move` statt `copy`: gleiche Platte = Umbenennen, bei 1+ GB sofort.
-static func build_bat(exe_path: String, exe_dir: String, assets: Array) -> String:
-	var bat := "@echo off\r\n" \
-			+ "timeout /t 1 /nobreak >nul\r\n"
+static func build_bat(exe_path: String, exe_dir: String, assets: Array, pid: int = 0,
+		args: PackedStringArray = PackedStringArray()) -> String:
+	var bat := "@echo off
+"
+	if pid > 0:
+		bat += "set n=0
+" 				+ ":wait
+" 				+ "tasklist /fi \"PID eq %d\" 2>nul | find \"%d\" >nul
+" % [pid, pid] 				+ "if errorlevel 1 goto gone
+" 				+ "set /a n+=1
+" 				+ "if %n% geq 60 goto gone
+" 				+ "ping -n 2 127.0.0.1 >nul
+" 				+ "goto wait
+" 				+ ":gone
+"
+	bat += "ping -n 2 127.0.0.1 >nul
+"
 	var i := 0
 	for a in assets:
 		var fin: String = exe_dir.path_join(str(a)).replace("/", "\\")
-		bat += ":retry%d\r\n" % i \
-				+ "move /y \"%s.new\" \"%s\" >nul 2>&1\r\n" % [fin, fin] \
-				+ "if errorlevel 1 (timeout /t 1 /nobreak >nul & goto retry%d)\r\n" % i
+		bat += "set t=0
+" 				+ ":retry%d
+" % i 				+ "move /y \"%s.new\" \"%s\" >nul 2>&1
+" % [fin, fin] 				+ "if not exist \"%s.new\" goto done%d
+" % [fin, i] 				+ "set /a t+=1
+" 				+ "if %%t%% geq 30 goto done%d
+" % i 				+ "ping -n 2 127.0.0.1 >nul
+" 				+ "goto retry%d
+" % i 				+ ":done%d
+" % i
 		i += 1
-	return bat + "start \"\" \"%s\"\r\n" % exe_path.replace("/", "\\") + "del \"%~f0\""
+	var arg_s := ""
+	for a in args:
+		var x := str(a)
+		if x.contains("\"") or x.contains("&") or x.contains("|"):
+			continue
+		arg_s += " \"%s\"" % x
+	return bat + "start \"\" /d \"%s\" \"%s\"%s
+" % [exe_dir.replace("/", "\\"),
+			exe_path.replace("/", "\\"), arg_s] + "del \"%~f0\""
+
+
+## Schleifen-Bremse: wie oft wurde fuer diese Spielversion schon ein Tausch
+## versucht? Ab MAX_APPLY_TRIES kein Auto-Neustart mehr (Datei gesperrt o. ae.).
+const MAX_APPLY_TRIES := 2
+
+static func apply_blocked(tries: int, tried_from: String, current: String) -> bool:
+	return tried_from == current and tries >= MAX_APPLY_TRIES
+
+
+func _apply_tries() -> int:
+	var cfg := ConfigFile.new()
+	cfg.load(CFG_PATH)
+	if str(cfg.get_value("updater", "apply_from", "")) != CURRENT_VERSION:
+		return 0
+	return int(cfg.get_value("updater", "apply_tries", 0))
+
+
+func _note_apply_try() -> void:
+	var cfg := ConfigFile.new()
+	cfg.load(CFG_PATH)
+	var n := _apply_tries() + 1
+	cfg.set_value("updater", "apply_from", CURRENT_VERSION)
+	cfg.set_value("updater", "apply_tries", n)
+	cfg.save(CFG_PATH)
 
 
 func _apply_and_restart() -> void:
+	if apply_blocked(_apply_tries(), CURRENT_VERSION, CURRENT_VERSION):
+		_apply_failed()
+		return
+	_note_apply_try()
 	_remember_notes()
 	var assets := _ready_files()
 	var bat_path := _exe_dir.path_join("tethra_update.bat")
-	var bat := build_bat(OS.get_executable_path(), _exe_dir, assets)
+	var bat := build_bat(OS.get_executable_path(), _exe_dir, assets, OS.get_process_id(),
+			OS.get_cmdline_args())
 	var f := FileAccess.open(bat_path, FileAccess.WRITE)
 	if f == null:
+		_apply_failed()
 		return
 	f.store_string(bat)
 	f.close()
 	OS.create_process("cmd.exe", ["/c", bat_path.replace("/", "\\")])
 	get_tree().quit()
+
+
+## Tausch klappte mehrfach nicht: nicht weiter neu starten, Nutzer informieren.
+func _apply_failed() -> void:
+	status = "error"
+	var msg := "Update ließ sich nicht installieren. TETHRA schließen und neu starten — sonst neu von GitHub laden."
+	state_changed.emit(msg, -1.0)
+	if _toast != null:
+		_toast.show_error(msg)
 
 
 func _is_pck(path: String) -> bool:

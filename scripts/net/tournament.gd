@@ -34,6 +34,9 @@ var host_id := 1
 ## Host hat die Auto-Fuellung freigegeben: Host darf freie Plaetze ueber sein Limit fuellen,
 ## und die Ban-Phase darf auch mit unvollem Pool starten.
 var autofill_done := false
+## Nur Client-Sicht: Bans anderer sind noch verdeckt; voted = wer schon gewaehlt hat.
+var hidden := false
+var voted: Array = []
 
 
 ## Gueltige Konfiguration aus beliebigem Dict bauen.
@@ -171,7 +174,7 @@ func ban(peer: int, i: int) -> String:
 	if bans.get(peer, -1) == i:
 		return ""
 	if bool(pool[i].banned):
-		return "Map ist schon gebannt."
+		return "Diese Map hat schon jemand gestrichen. Such dir eine andere aus."
 	# Mindestens 1 Map bleibt: beim Wechsel wird erst die alte frei.
 	var freed := 1 if bans.has(peer) else 0
 	if remaining() + freed <= 1:
@@ -324,6 +327,26 @@ func to_dict() -> Dictionary:
 		"player_ids": player_ids.duplicate(), "host_id": host_id, "autofill_done": autofill_done }
 
 
+## Sicht fuer einen Spieler: solange nicht alle gebannt haben, kennt er nur
+## den eigenen Ban; von den anderen nur "hat gewaehlt" (voted).
+func to_dict_for(peer: int) -> Dictionary:
+	var d := to_dict()
+	d["voted"] = bans.keys()
+	if phase != Phase.BAN or all_banned(player_ids):
+		return d
+	var mine := int(bans.get(peer, -1))
+	var pl: Array = d.pool
+	for i in pl.size():
+		pl[i].banned = (i == mine)
+	d["bans"] = { peer: mine } if mine >= 0 else {}
+	d["hidden"] = true
+	return d
+
+
+func has_voted(peer: int) -> bool:
+	return int(bans.get(peer, -1)) >= 0 or voted.has(peer)
+
+
 static func from_dict(d: Dictionary) -> Tournament:
 	var t := Tournament.new()
 	t.phase = clampi(int(d.get("phase", 0)), 0, Phase.END)
@@ -337,4 +360,6 @@ static func from_dict(d: Dictionary) -> Tournament:
 	t.player_ids = (d.get("player_ids", []) as Array).duplicate()
 	t.host_id = int(d.get("host_id", 1))
 	t.autofill_done = bool(d.get("autofill_done", false))
+	t.hidden = bool(d.get("hidden", false))
+	t.voted = (d.get("voted", []) as Array).duplicate()
 	return t

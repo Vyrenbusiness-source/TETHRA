@@ -58,6 +58,7 @@ void fragment() {
 var _data: Dictionary = {}
 var _stats: Dictionary = {}
 var _place_tag: Label
+var _mode_tag: Label
 var _offsets: PackedFloat32Array = PackedFloat32Array()
 var _hist: PackedFloat32Array = PackedFloat32Array()
 var _hist_range := 100.0
@@ -156,6 +157,18 @@ func show_clip_result(ok: bool, path: String, error: String = "") -> void:
 
 
 ## Multiplayer: Platzierungs-Text unter dem Rang, weich eingeblendet.
+## Modus-Zeile unter der Platzierung (Teams: Teamsumme + Rundensieger,
+## Royale: wer ausscheidet). Leerer Text blendet sie aus.
+func set_mode_text(text: String, col: Color) -> void:
+	if _mode_tag == null or not is_instance_valid(_mode_tag) or _mode_tag.text == text:
+		return
+	_mode_tag.text = text
+	_mode_tag.visible = text != ""
+	_mode_tag.add_theme_color_override("font_color", col)
+	_mode_tag.modulate.a = 0.0
+	create_tween().tween_property(_mode_tag, "modulate:a", 1.0, 0.5)
+
+
 func set_placement(text: String, win: bool) -> void:
 	if _place_tag == null or not is_instance_valid(_place_tag) or _place_tag.text == text:
 		return
@@ -590,6 +603,16 @@ func _build_rank_area(parent: Control) -> void:
 		_place_tag.add_theme_color_override("font_color", UiTheme.TEXT.lerp(CAPTION, 0.4))
 		col.add_child(_place_tag)
 		_reveal.append(_place_tag)
+		if Lobby.mm.kind != MatchMode.Kind.FREE:
+			_mode_tag = Label.new()
+			_mode_tag.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			_mode_tag.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			_mode_tag.custom_minimum_size = Vector2(420, 0)
+			_mode_tag.add_theme_font_override("font", UiTheme.heading_font(5))
+			_mode_tag.add_theme_font_size_override("font_size", 19)
+			_mode_tag.visible = false
+			col.add_child(_mode_tag)
+			_reveal.append(_mode_tag)
 
 
 func _build_buttons(group: Control) -> void:

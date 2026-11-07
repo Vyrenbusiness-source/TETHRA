@@ -101,7 +101,7 @@ func _ready() -> void:
 
 ## Zustand aus der Lobby uebernehmen und neu zeichnen.
 func sync_from_lobby() -> void:
-	t = Lobby.tournament
+	t = Lobby.tour_view()
 	names = {}
 	for id in Lobby.players:
 		names[int(id)] = str(Lobby.players[id].get("name", "?"))
@@ -630,10 +630,12 @@ func _voters() -> Array:
 
 
 func _has_voted(peer: int) -> bool:
-	return int(t.bans.get(peer, -1)) >= 0
+	return t.has_voted(peer)
 
 
 func _all_voted() -> bool:
+	if t.hidden:
+		return false
 	if t.remaining() <= 1 and not t.pool.is_empty() and not t.bans.is_empty():
 		return true
 	var ids := _voters()

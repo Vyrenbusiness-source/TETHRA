@@ -272,6 +272,142 @@ func _init() -> void:
 		f.store_string(backup)
 		f.close()
 
+	_modes(L)
+	_nearest(L)
+
 	L._reset()
 	print("FAILED: %d" % _failed)
 	quit(1 if _failed > 0 else 0)
+
+
+func _fin(sc: int, failed: bool = false) -> Dictionary:
+	return { "score": sc, "acc": 0.9, "combo": 50, "failed": failed, "grade": "A" }
+
+
+## Raum-Modi: Teams + Royale ueber die Lobby-API (Host-Zustand direkt).
+func _modes(L) -> void:
+	L._reset()
+	L.active = true
+	L.is_host = true
+	L.crown_id = 1
+	L.players = { 1: L._new_player("Host"), 2: L._new_player("Anna"), 3: L._new_player("Ben"), 4: L._new_player("Cleo") }
+	L.sel_map = { "set_id": 11, "file": "11 a.osz", "version": "Hard", "stars": 4.0 }
+	for id in L.players:
+		L.players[id].ready = true
+	L._mm_refresh()
+	_check(L.room_kind() == MatchMode.Kind.FREE and L.mode_blocker() == "", "Modus startet Frei")
+	# Teams
+	L.set_room_mode(MatchMode.Kind.TEAMS)
+	_check(L.room_kind() == MatchMode.Kind.TEAMS and L.mm.team_sizes() == [2, 2], "Teams: 2v2 automatisch")
+	L.set_team(4, 0)
+	L.set_team(3, 0)
+	_check(L.mm.team_of[4] == 0 and L.mm.team_of[3] == 0, "Krone verschiebt Spieler")
+	L.auto_balance_teams()
+	_check(L.mm.team_sizes() == [2, 2], "Auto-Ausgleich 2v2")
+	L.crown_id = 2
+	var before: int = L.mm.team_of[4]
+	L._srv_set_team(3, 4, 1 - before)
+	_check(L.mm.team_of[4] == before, "Sender 3 ohne Krone: Wechsel von 4 abgewiesen")
+	L._srv_set_team(4, 4, 1 - before)
+	_check(L.mm.team_of[4] == 1 - before, "Spieler wechselt selbst")
+	L.crown_id = 1
+	for id in L.mm.order:
+		L.mm.team_of[id] = 0
+	_check(L.mode_blocker() != "" and not L.can_start(), "ein leeres Team blockiert den Start")
+	L.auto_balance_teams()
+	_check(L.mode_blocker() == "", "ausgeglichen: Start frei")
+	# Runde: Teams werten nach Summe, Serie laeuft
+	L.in_game = true
+	L._mm_peers = L._mode_participants()
+	for id in L.players:
+		L.players[id].final = {}
+	for id in [1, 2, 3]:
+		L.players[id].final = _fin(1000 * id)
+		L._mode_check_round()
+		_check(L.mm.rounds_played == 0, "Runde wartet auf alle (%d)" % id)
+	L.players[4].final = _fin(500)
+	L._mode_check_round()
+	_check(L.mm.rounds_played == 1 and L.mm.history.size() == 1, "Teams: Runde ausgewertet")
+	_check(L._mm_peers.is_empty(), "Teilnehmerliste geleert")
+	_check(L.mm.team_totals(L.live_results()) == L.mm.history[0].totals, "live_results = Endsumme")
+	var rt := MatchMode.from_dict(L.mm.to_dict())
+	_check(rt.history == L.mm.history, "Teamstand ueberlebt Sync")
+	L.in_game = false
+	# Serie beenden -> naechster Start beginnt frisch
+	L.mm.team_wins = [2, 0]
+	L.mm.rounds_played = 2
+	_check(L.mm.series_over(), "Serie entschieden")
+	L._mode_prepare_round()
+	_check(L.mm.rounds_played == 0 and L.mm.team_wins == [0, 0] and L.mm.team_sizes() == [2, 2], "neue Serie behaelt Teams")
+	# Royale
+	L.set_room_mode(MatchMode.Kind.ROYALE)
+	_check(L.mm.alive().size() == 4, "Royale: alle leben")
+	L.in_game = true
+	L._mm_peers = L._mode_participants()
+	for id in L.players:
+		L.players[id].final = _fin(5000 * id)
+	L._mode_check_round()
+	_check(L.mm.alive().size() == 3 and L.mm.is_spectator(1) and L.mm.out_order == [1], "Royale: Schwaechster fliegt")
+	_check(L.mm.round_no == 2, "Royale: Runde 2")
+	L.in_game = false
+	L.players[1].ready = false
+	_check(L.all_ready(), "Ausgeschiedener muss nicht bereit sein")
+	for id in L.players:
+		L.players[id].final = {}
+	_check(L.ranked_players().size() == 3, "Ausgeschiedene Vorrunden-Spieler nicht in der Rangliste")
+	# Spieler geht mitten in der Runde: zaehlt als Leaver
+	L.in_game = true
+	L._mm_peers = L._mode_participants()
+	L.players[2].final = _fin(100)
+	L.players[3].final = _fin(900)
+	L._on_peer_disconnected(4)
+	_check(L.mm.alive() == [2, 3] and L.mm.is_spectator(4) and L.mm.out_order == [1, 4], "Royale: Leaver fliegt, Schwaecherer bleibt")
+	L._mm_peers = L._mode_participants()
+	_check(L._mm_peers == [2, 3], "Teilnehmer: nur Lebende")
+	L.players[2].final = _fin(100)
+	L.players[3].final = _fin(900)
+	L._mode_check_round()
+	_check(L.mm.is_over() and L.mm.winner_peer in [2, 3], "Royale: Sieger steht fest")
+	L.in_game = false
+	L._mode_prepare_round()
+	_check(not L.mm.is_over() and L.mm.alive().size() == L.players.size(), "Royale: neue Serie mit allen")
+	# Wechsel zurueck + Turnier-Ausschluss
+	L.set_room_mode(MatchMode.Kind.FREE)
+	_check(L.room_kind() == MatchMode.Kind.FREE, "zurueck auf Frei")
+	L.set_room_mode(MatchMode.Kind.TEAMS)
+	L.tour_create({ "maps": 5, "stars_lo": 2.0, "stars_hi": 6.0 })
+	_check(L.tournament != null and L.room_kind() == MatchMode.Kind.FREE, "Turnier setzt Raum-Modus auf Frei")
+	L.set_room_mode(MatchMode.Kind.ROYALE)
+	_check(L.room_kind() == MatchMode.Kind.FREE, "im Turnier kein Moduswechsel")
+	# Ban-Sicht: Fremde Bans erst nach Aufdecken
+	var t: Tournament = L.tournament
+	for i in 5:
+		t.pool.append({ "set_id": i, "file": "x%d.osz" % i, "version": "v", "title": "T%d" % i,
+			"artist": "A", "stars": 3.0 + i, "by": 1, "online": false, "banned": false })
+	t.set_players(L.players.keys(), {})
+	_check(t.start_bans(), "Ban-Phase")
+	t.ban(2, 0)
+	var v1 := t.to_dict_for(1)
+	_check(v1.get("hidden", false) and v1.bans.is_empty() and not v1.pool[0].banned, "Host sieht fremden Ban nicht")
+	_check(Tournament.from_dict(v1).has_voted(2) and not Tournament.from_dict(v1).has_voted(3), "nur 'hat gewaehlt' sichtbar")
+	var v2 := t.to_dict_for(2)
+	_check(v2.pool[0].banned and v2.bans.size() == 1 and v2.bans[2] == 0, "Eigener Ban sichtbar")
+	var msg: String = t.ban(3, 0)
+	_check(msg.contains("gestrichen"), "Doppel-Ban: klare Meldung")
+	t.ban(1, 4)
+	t.ban(3, 1)
+	_check(not t.to_dict_for(1).get("hidden", false) and t.to_dict_for(1).bans.size() == 3, "nach allen Bans aufgedeckt")
+
+
+## Online-Pick ohne Diff-Name: ueberspringt Nicht-4K-Mania.
+func _nearest(L) -> void:
+	var mk := func(mode: int, cs: float) -> Dictionary:
+		var b := Beatmap.new()
+		b.general = { "Mode": mode }
+		b.difficulty = { "CircleSize": cs }
+		return { "osu_filename": "x%d_%d.osu" % [mode, int(cs)], "beatmap": b }
+	var imp := { "ok": true, "difficulties": [mk.call(3, 7.0), mk.call(3, 4.0), mk.call(0, 4.0)] }
+	var i: int = L._nearest_4k("res://nonexistent.osz", imp, 4.0)
+	_check(i == 1, "Fallback-Diff ist 4K (nicht 7K)")
+	var none := { "ok": true, "difficulties": [mk.call(3, 7.0)] }
+	_check(L._nearest_4k("res://nonexistent.osz", none, 4.0) == -1, "nur 7K -> keine Diff")
