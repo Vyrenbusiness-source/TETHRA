@@ -13,9 +13,22 @@ const CACHE_PATH := "user://library.cfg"
 const SKIP_VERSION := 1
 ## Version der SV-Erkennung: hochzaehlen -> alle Cache-Eintraege werden einmal
 ## im Hintergrund nachgerechnet (start_sv_backfill).
-const SV_VERSION := 1
-## Mindestanzahl gruener Linien mit SV != 1.0 fuer "echte SV".
-const SV_MIN_LINES := 10
+const SV_VERSION := 2
+## SV-Erkennung ueber die EFFEKTIVE Scrollgeschwindigkeit (ScrollMap):
+## Abweichung eines Abschnitts vom Grundtempo, ab der er als "SV" zaehlt.
+const SV_DEV := 0.08
+## Mindestanteil der Notenspanne mit SV-Abweichung fuer "echte SV".
+const SV_MIN_FRAC := 0.15
+## Sprung der Geschwindigkeit, der als deutlicher Wechsel zaehlt.
+const SV_JUMP := 0.15
+## Mindestzahl deutlicher Wechsel fuer "echte SV".
+const SV_MIN_JUMPS := 12
+## Abschnitte kuerzer als das (und mit weniger Versatz) ignorieren die
+## Wechsel-Zaehlung: rote Linie + Ausgleichslinie 1 ms spaeter o.ae.
+const SV_SIG_MS := 5.0
+## Wechsel naeher als das am letzten gezaehlten zaehlen nicht: ein einzelner
+## kurzer SV-Effekt (10 Linien in 0.5 s) macht noch keine SV-Map.
+const SV_JUMP_GAP_MS := 250.0
 
 ## Sets aus dem Cache ohne aktuelle SV-Erkennung (siehe start_sv_backfill).
 var sv_pending: Array[String] = []
@@ -139,7 +152,7 @@ func _build_mapset_full(osz_path: String) -> MapSet:
 			"preview_time": float(bm.general.get("PreviewTime", -1.0)),
 			"audio_filename": bm.audio_filename(),
 			"_sort_notes": bm.note_count(),
-			"sv": detect_sv(bm.timing_points),
+			"sv": detect_sv(bm),
 		})
 		if ms.background_file == "" and bm.background_file != "":
 			ms.background_file = bm.background_file
@@ -162,18 +175,110 @@ func _build_mapset_full(osz_path: String) -> MapSet:
 	return ms
 
 
-## Echte SV: mindestens SV_MIN_LINES gruene Linien mit SV != 1.0 (auf 3
-## Stellen gerundet). Reine Tempo-Wechsel (rote Linien) zaehlen nicht.
-static func detect_sv(timing_points: Array) -> bool:
-	var n := 0
+## Echte SV fuer eine geparste Map (siehe sv_stats).
+static func detect_sv(bm: Beatmap) -> bool:
+	return bool(sv_stats(bm).sv)
+
+
+## SV-Kennzahlen einer Map zwischen erster Note und letztem Notenende:
+## { sv: bool, frac: Anteil mit SV-Abweichung, jumps: deutliche Wechsel }.
+static func sv_stats(bm: Beatmap) -> Dictionary:
+	if bm == null or bm.hit_objects.is_empty():
+		return {"sv": false, "frac": 0.0, "jumps": 0}
+	var t0 := INF
+	var t1 := -INF
+	for obj in bm.hit_objects:
+		t0 = minf(t0, obj.time)
+		t1 = maxf(t1, obj.end_time())
+	return sv_stats_tp(bm.timing_points, t0, t1)
+
+
+## Kern der Erkennung. Wertet die effektiven Multiplikatoren der ScrollMap
+## (SV * BaseBeatLength / beatLength, wie im Spiel) im Fenster [t0, t1] aus.
+## Bezug ist das dominante Tempo m_dom (laengste Gesamtdauer), damit eine
+## global gesetzte SV (ueberall 0.8) keine SV-Map ist. Ein Abschnitt weicht
+## nur ab, wenn |m / m_dom - 1| > SV_DEV UND |m - 1| > SV_DEV (gegen
+## zweigipflige Mini-SV wie 0.95/1.05) UND sein gruener Anteil
+## g (= m * bl / base) vom neutralen g abweicht: reine BPM-Wechsel ohne
+## gruene Linie zaehlen nicht, BPM-Ausgleichslinien (m ~ 1) ebenfalls nicht.
+## Wechsel: Sprung |dm| / m_dom > SV_JUMP zwischen signifikanten Abschnitten
+## mit unterschiedlichem g, hoechstens einer je SV_JUMP_GAP_MS.
+## SV-Map, wenn frac >= SV_MIN_FRAC oder jumps >= SV_MIN_JUMPS.
+static func sv_stats_tp(timing_points: Array, t0: float, t1: float) -> Dictionary:
+	var res := {"sv": false, "frac": 0.0, "jumps": 0}
+	var span := t1 - t0
+	if timing_points.is_empty() or not (span > 0.0):
+		return res
+	var sm := ScrollMap.new()
+	sm.build(timing_points, t1)
+	var times: PackedFloat64Array = sm._times
+	var mults: PackedFloat64Array = sm._mult
+	if times.is_empty():
+		return res
+	var reds: Array = []
 	for tp in timing_points:
 		if tp.uninherited:
+			reds.append(tp)
+	reds.sort_custom(func(a, b): return a.time < b.time)
+	# Abschnitte im Fenster: [dauer, m, g, start].
+	var segs: Array = []
+	var ri := -1
+	for i in times.size():
+		while ri + 1 < reds.size() and reds[ri + 1].time <= times[i]:
+			ri += 1
+		var bl := ScrollMap.DEFAULT_BL if ri < 0 else ScrollMap.red_beat_length(reds[ri])
+		var s := t0 if i == 0 else maxf(times[i], t0)
+		var e := t1 if i == times.size() - 1 else minf(times[i + 1], t1)
+		if e <= s:
 			continue
-		if absf(roundf(ScrollMap.green_sv(tp) * 1000.0) / 1000.0 - 1.0) > 0.0005:
-			n += 1
-			if n >= SV_MIN_LINES:
-				return true
-	return false
+		var m: float = mults[i]
+		segs.append([e - s, m, m * bl / sm.base_beat_length, s])
+	if segs.is_empty():
+		return res
+	var m_dom := _dominant(segs, 1, 100.0)
+	if m_dom <= 0.0:
+		return res
+	# Neutraler gruener Anteil: der haeufigste g unter den Abschnitten im
+	# dominanten Tempo (normal 1.0; bei globaler SV deren Wert).
+	var base_segs: Array = []
+	for seg in segs:
+		if absf(float(seg[1]) - m_dom) < 0.0051:
+			base_segs.append(seg)
+	var g_dom := _dominant(base_segs, 2, 1000.0) if not base_segs.is_empty() else 1.0
+	var dev_ms := 0.0
+	var jumps := 0
+	var prev: Array = []
+	var last_jump := -INF
+	for seg in segs:
+		var rel: float = seg[1] / m_dom
+		var green_off: bool = absf(seg[2] - g_dom) > 0.001
+		if green_off and absf(rel - 1.0) > SV_DEV and absf(seg[1] - 1.0) > SV_DEV:
+			dev_ms += seg[0]
+		var sig: bool = seg[0] >= SV_SIG_MS or absf(rel - 1.0) * seg[0] >= SV_SIG_MS
+		if not sig:
+			continue
+		if not prev.is_empty() and absf(seg[1] - prev[1]) / m_dom > SV_JUMP 				and absf(seg[2] - prev[2]) > 0.001 and seg[3] - last_jump >= SV_JUMP_GAP_MS:
+			jumps += 1
+			last_jump = seg[3]
+		prev = seg
+	res.frac = dev_ms / span
+	res.jumps = jumps
+	res.sv = res.frac >= SV_MIN_FRAC or jumps >= SV_MIN_JUMPS
+	return res
+
+
+## Wert (Spalte idx) mit der groessten Gesamtdauer, gerundet auf 1/scale.
+static func _dominant(segs: Array, idx: int, scale: float) -> float:
+	var durs := {}
+	var best_key := 0
+	var best := -1.0
+	for seg in segs:
+		var k := int(roundf(float(seg[idx]) * scale))
+		durs[k] = float(durs.get(k, 0.0)) + float(seg[0])
+		if durs[k] > best:
+			best = durs[k]
+			best_key = k
+	return best_key / scale
 
 
 func sv_backfill_running() -> bool:
@@ -202,7 +307,7 @@ func _sv_worker(paths: Array[String], on_done: Callable) -> void:
 		var by_file := {}
 		if imp.get("ok", false):
 			for d in imp.difficulties:
-				by_file[str(d.osu_filename)] = detect_sv(d.beatmap.timing_points)
+				by_file[str(d.osu_filename)] = detect_sv(d.beatmap)
 		out[path] = by_file
 	_sv_finish.call_deferred(out, on_done)
 

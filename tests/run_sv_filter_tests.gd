@@ -14,6 +14,8 @@ func _initialize() -> void:
 	_test_text()
 	_test_item()
 	_test_mapset()
+	if OS.get_environment("SV_REPORT") != "":
+		_report(OS.get_environment("SV_REPORT"))
 	print("=== Ergebnis: %d bestanden, %d fehlgeschlagen ===" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
 
@@ -35,6 +37,7 @@ func _tp(time: float, bl: float, red: bool) -> TimingPoint:
 	return t
 
 
+## Map mit Grundtempo 500 ms und n gruenen Linien (SV sv) alle 500 ms.
 func _greens(n: int, sv: float) -> Array:
 	var a: Array = [_tp(0, 500.0, true)]
 	for i in n:
@@ -42,16 +45,117 @@ func _greens(n: int, sv: float) -> Array:
 	return a
 
 
+func _sv(tps: Array, t0: float = 0.0, t1: float = 100000.0) -> bool:
+	return bool(MapLibrary.sv_stats_tp(tps, t0, t1).sv)
+
+
+## Abwechselnd sv_a / sv_b alle step ms im Fenster 0..end.
+func _alt(sv_a: float, sv_b: float, step: float, end: float) -> Array:
+	var a: Array = [_tp(0, 500.0, true)]
+	var t := 0.0
+	var k := 0
+	while t < end:
+		a.append(_tp(t, -100.0 / (sv_a if k % 2 == 0 else sv_b), false))
+		t += step
+		k += 1
+	return a
+
+
 func _test_detect() -> void:
-	_ok(not MapLibrary.detect_sv([]), "leer: keine SV")
-	_ok(not MapLibrary.detect_sv(_greens(20, 1.0)), "20 Linien mit SV 1.0: keine SV")
-	_ok(not MapLibrary.detect_sv(_greens(9, 1.5)), "9 Linien SV 1.5: unter Schwelle")
-	_ok(MapLibrary.detect_sv(_greens(10, 1.5)), "10 Linien SV 1.5: SV")
-	_ok(MapLibrary.detect_sv(_greens(30, 0.5)), "30 Linien SV 0.5: SV")
+	_ok(not _sv([]), "leer: keine SV")
+	_ok(not _sv(_greens(20, 1.0)), "20 Linien mit SV 1.0: keine SV")
 	var reds: Array = []
 	for i in 30:
 		reds.append(_tp(i * 1000.0, 400.0 + i * 10.0, true))
-	_ok(not MapLibrary.detect_sv(reds), "nur rote Linien: keine SV")
+	_ok(not _sv(reds, 0.0, 30000.0), "nur rote Linien (Tempo-Drift): keine SV")
+	# Konstante Map mit BPM-Ausgleichslinien: 40 BPM-Wechsel 120 <-> 240 BPM,
+	# jede rote Linie mit gruener Linie, die genau ausgleicht (m == 1).
+	var comp: Array = []
+	for i in 40:
+		var t := i * 2500.0
+		if i % 2 == 0:
+			comp.append(_tp(t, 500.0, true))
+		else:
+			comp.append(_tp(t, 250.0, true))
+			comp.append(_tp(t, -200.0, false))  # SV 0.5 * 500/250 = 1
+	var st := MapLibrary.sv_stats_tp(comp, 0.0, 100000.0)
+	_ok(not st.sv and st.jumps == 0 and float(st.frac) == 0.0,
+		"BPM-Ausgleichslinien: keine SV (%s)" % str(st))
+	# Ausgleichslinie 1 ms nach der roten Linie (haeufig in echten Maps).
+	var late: Array = []
+	for i in 40:
+		var t := i * 2500.0
+		if i % 2 == 0:
+			late.append(_tp(t, 500.0, true))
+		else:
+			late.append(_tp(t, 1000.0, true))
+			late.append(_tp(t + 1.0, -50.0, false))  # SV 2.0 * 500/1000 = 1
+	st = MapLibrary.sv_stats_tp(late, 0.0, 100000.0)
+	_ok(not st.sv and st.jumps == 0, "Ausgleich 1 ms spaeter: keine SV (%s)" % str(st))
+	# Reiner BPM-Wechsel ohne gruene Linie (halbe Map doppelt so schnell).
+	var bpm: Array = [_tp(0, 500.0, true), _tp(50000.0, 250.0, true)]
+	_ok(not _sv(bpm), "reiner BPM-Wechsel: keine SV")
+	# Global gesetzte SV 0.8 (konstant langsamer, keine Wechsel).
+	_ok(not _sv([_tp(0, 500.0, true), _tp(0, -125.0, false)]), "globale SV 0.8: keine SV")
+	# Mini-Abweichungen: 0.95 <-> 1.05 alle 500 ms ueber die ganze Map.
+	st = MapLibrary.sv_stats_tp(_alt(0.95, 1.05, 500.0, 100000.0), 0.0, 100000.0)
+	_ok(not st.sv and float(st.frac) == 0.0 and st.jumps == 0,
+		"Mini-Abweichungen 0.95/1.05: keine SV (%s)" % str(st))
+	# Wenige kurze SV-Effekte: 5 x 500 ms SV 0.5 in 100 s (2.5 %, 10 Wechsel).
+	var few: Array = [_tp(0, 500.0, true)]
+	for i in 5:
+		few.append(_tp(10000.0 + i * 15000.0, -200.0, false))
+		few.append(_tp(10500.0 + i * 15000.0, -100.0, false))
+	st = MapLibrary.sv_stats_tp(few, 0.0, 100000.0)
+	_ok(not st.sv and st.jumps == 10, "5 kurze SV-Effekte: keine SV (%s)" % str(st))
+	# Echte SV-Map: 0.5 <-> 1.5 alle 1000 ms.
+	st = MapLibrary.sv_stats_tp(_alt(0.5, 1.5, 1000.0, 100000.0), 0.0, 100000.0)
+	_ok(st.sv and float(st.frac) >= 0.45 and int(st.jumps) > 50, "echte SV 0.5/1.5: SV (%s)" % str(st))
+	# Langer langsamer Abschnitt: 20 % der Map SV 0.5, sonst 1.0.
+	var slow: Array = [_tp(0, 500.0, true), _tp(40000.0, -200.0, false),
+		_tp(60000.0, -100.0, false)]
+	st = MapLibrary.sv_stats_tp(slow, 0.0, 100000.0)
+	_ok(st.sv and absf(float(st.frac) - 0.2) < 0.001, "20 %% SV-Abschnitt: SV (%s)" % str(st))
+	# Stutter-SV: 14 kurze Stopps (SV 0.01, 200 ms) -> 14 gezaehlte Wechsel
+	# (Rueckkehr nach 200 ms liegt unter SV_JUMP_GAP_MS), frac klein.
+	var stut: Array = [_tp(0, 500.0, true)]
+	for i in 14:
+		stut.append(_tp(5000.0 + i * 6000.0, -10000.0, false))
+		stut.append(_tp(5200.0 + i * 6000.0, -100.0, false))
+	st = MapLibrary.sv_stats_tp(stut, 0.0, 100000.0)
+	_ok(st.sv and int(st.jumps) == 14, "14 Stopps: SV durch Wechsel (%s)" % str(st))
+	# BPM-Abschnitt 240 BPM mit Ausgleich (SV 0.5 -> m = 1), danach ohne.
+	var mix: Array = [_tp(0, 500.0, true), _tp(30000.0, 250.0, true),
+		_tp(30000.0, -200.0, false), _tp(50000.0, -100.0, false),
+		_tp(70000.0, 500.0, true)]
+	st = MapLibrary.sv_stats_tp(mix, 0.0, 100000.0)
+	_ok(not st.sv, "Ausgleich, danach BPM-Abschnitt ohne Ausgleich: keine SV (%s)" % str(st))
+	var mix2: Array = [_tp(0, 500.0, true), _tp(30000.0, 250.0, true),
+		_tp(30000.0, -200.0, false), _tp(50000.0, -100.0, false),
+		_tp(50000.0, 250.0, true), _tp(50000.0, -100.0, false),
+		_tp(70000.0, 500.0, true), _tp(70000.0, -200.0, false)]
+	st = MapLibrary.sv_stats_tp(mix2, 0.0, 100000.0)
+	_ok(st.sv and absf(float(st.frac) - 0.3) < 0.001, "SV 0.5 nach Ausgleichsabschnitt: SV (%s)" % str(st))
+	# Ein einzelner SV-Burst: 16 Wechsel in 0.6 s -> keine SV-Map.
+	var burst: Array = [_tp(0, 500.0, true)]
+	for i in 16:
+		burst.append(_tp(50000.0 + i * 40.0, -100.0 / (0.2 if i % 2 == 0 else 1.8), false))
+	burst.append(_tp(50640.0, -100.0, false))
+	st = MapLibrary.sv_stats_tp(burst, 0.0, 100000.0)
+	_ok(not st.sv and int(st.jumps) < 5, "einzelner SV-Burst: keine SV (%s)" % str(st))
+	# Fenster: SV nur vor der ersten Note zaehlt nicht.
+	var intro: Array = [_tp(0, 500.0, true), _tp(0, -200.0, false), _tp(20000.0, -100.0, false)]
+	_ok(not _sv(intro, 20000.0, 100000.0), "SV nur im Intro vor der ersten Note: keine SV")
+	# Beatmap-Variante: Fenster aus den Noten.
+	var bm := Beatmap.new()
+	for tp in _alt(0.5, 1.5, 1000.0, 60000.0):
+		bm.timing_points.append(tp)
+	for i in 100:
+		var o := HitObject.new()
+		o.time = 1000.0 + i * 500.0
+		bm.hit_objects.append(o)
+	_ok(MapLibrary.detect_sv(bm), "detect_sv(Beatmap) mit SV")
+	_ok(not MapLibrary.detect_sv(Beatmap.new()), "detect_sv(Beatmap) ohne Noten")
 
 
 func _test_text() -> void:
@@ -84,3 +188,32 @@ func _test_mapset() -> void:
 	_ok(bool(ms.diffs[1].sv) and not bool(ms.diffs[0].sv), "Diff-Felder gesetzt")
 	var back := MapSet.from_dict("a.osz", ms.to_dict())
 	_ok(back.has_sv() and back.sv_ver == MapLibrary.SV_VERSION, "Cache-Roundtrip")
+
+
+## Bericht ueber echte Maps (keine Pruefung): SV_REPORT=<Ordner> setzen,
+## optional SV_REPORT_FILTER=<Teilstring der Dateinamen, | getrennt>.
+func _report(dir_path: String) -> void:
+	var dir := DirAccess.open(dir_path)
+	if dir == null:
+		print("SV-REPORT: Ordner fehlt: " + dir_path)
+		return
+	var filt := OS.get_environment("SV_REPORT_FILTER").split("|", false)
+	for fname in dir.get_files():
+		if not fname.to_lower().ends_with(".osz"):
+			continue
+		if not filt.is_empty():
+			var hit := false
+			for f in filt:
+				hit = hit or fname.contains(f)
+			if not hit:
+				continue
+		var imp := OszImporter._import_uncached(dir_path.path_join(fname))
+		if not imp.get("ok", false):
+			continue
+		for d in imp.difficulties:
+			var bm: Beatmap = d.beatmap
+			if not bm.is_mania() or bm.column_count() != 4:
+				continue
+			var st := MapLibrary.sv_stats(bm)
+			print("SV-REPORT|%s|%s|%s|frac=%.3f|jumps=%d" % [fname.get_basename(),
+				bm.version_name(), "SV" if st.sv else "-", st.frac, st.jumps])
