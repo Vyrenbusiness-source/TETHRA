@@ -599,6 +599,7 @@ func _apply_2d_view() -> void:
 		_pf2d.set_sizes(_lane_k_2d, _note_k_2d)
 	if _bg_mat_2d != null:
 		_bg_mat_2d.set_shader_parameter("opacity", _bg_opacity)
+	_place_hud_to_line()  # UR-Leiste folgt der neuen Feldbreite
 
 
 ## 2D-Modus: Notenstand dieses Frames an Playfield2D (gleiche _note_z-Rechnung).
@@ -3455,6 +3456,17 @@ func _place_hud_to_line() -> void:
 	# Judge + FRUEH/SPAET ueber den Pads (Pad-Oberkante ~8,5 % Bildhoehe ueber der Linie).
 	_judge_disp.judge_gap = vs.y * 0.085 + 44.0
 	_judge_disp.place(line_y)
+	if _pf2d != null:
+		# 2D: UR-Leiste IM Spielfeld unten (nie breiter als das Feld), nicht
+		# quer ueber Bildschirm/Tastenbeschriftung.
+		var fr := _pf2d.field_rect()
+		var w := clampf(fr.size.x - 16.0, 120.0, 300.0)
+		if not is_equal_approx(_err_bar.size.x, w):
+			_err_bar.custom_minimum_size = Vector2(w, _err_bar.custom_minimum_size.y)
+			_err_bar.size = _err_bar.custom_minimum_size
+		_err_bar.position = Vector2(fr.position.x + (fr.size.x - w) * 0.5,
+			vs.y - _err_bar.size.y - 4.0)
+		return
 	_err_bar.position = Vector2((vs.x - _err_bar.size.x) * 0.5,
 		minf(line_y + 34.0, vs.y - _err_bar.size.y - 8.0))
 
