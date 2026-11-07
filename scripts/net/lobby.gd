@@ -26,6 +26,8 @@ signal game_start
 signal skip_now
 signal left(reason: String)
 signal status(msg: String)
+## Turnier-Zustand hat sich geaendert (auch: Turnier gestartet/beendet -> tournament null).
+signal tournament_changed
 
 var active := false
 var is_host := false
@@ -53,6 +55,8 @@ var lan_rooms: Dictionary = {}
 var skip_votes: Dictionary = {}
 ## In dieser Session bereits ZUSAMMEN gespielte Maps ("file|version").
 var played: Array = []
+## Turnier (null = normaler Raum). Server haelt die Wahrheit, Clients bekommen to_dict().
+var tournament: Tournament = null
 
 var _bcast: PacketPeerUDP
 var _listen: PacketPeerUDP
@@ -880,3 +884,52 @@ static func _decode_code(code: String) -> Dictionary:
 	v /= 65536
 	var ip := "%d.%d.%d.%d" % [(v >> 24) & 0xFF, (v >> 16) & 0xFF, (v >> 8) & 0xFF, v & 0xFF]
 	return { "ip": ip, "port": port }
+
+
+# ---------------------------------------------------------------------------
+# Turnier (API-Stubs; Ausbau folgt)
+# ---------------------------------------------------------------------------
+
+## Host: Turnier anlegen. cfg {maps: 5/10/15, stars_lo, stars_hi, mods}.
+func tour_create(_cfg: Dictionary) -> void:
+	pass
+
+
+## Host: Auto-Fuellung der Picks abgeschlossen (Pool voll, weiter zu Bans).
+func tour_autofill_done() -> void:
+	pass
+
+
+## Host: PICK -> BAN.
+func tour_start_bans() -> void:
+	pass
+
+
+## Host: BAN -> PLAY (erste Runde).
+func tour_begin() -> void:
+	pass
+
+
+## Host: BETWEEN -> naechste Runde oder END.
+func tour_next() -> void:
+	pass
+
+
+## Host: Turnier abbrechen (tournament = null).
+func tour_cancel() -> void:
+	pass
+
+
+## Alle: Map vorschlagen (sel_map-Format; online-Maps erlaubt).
+func tour_add_map(_data: Dictionary) -> void:
+	pass
+
+
+## Alle: eigenen Pick entfernen (Host: jeden).
+func tour_remove_map(_i: int) -> void:
+	pass
+
+
+## Alle: Hass-Map abwaehlen (Pool-Index).
+func tour_ban(_i: int) -> void:
+	pass
