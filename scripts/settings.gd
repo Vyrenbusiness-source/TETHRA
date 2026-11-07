@@ -74,6 +74,9 @@ var note_style_2d: int = 0
 ## 2D-Spurbreite und 2D-Notengroesse (relativ, 0.5..2.0, 5er-Schritte). Eigene
 ## Werte, weil die 3D-Strecke nur 70..120 % vertraegt.
 var lane_width_2d: float = 1.0
+## Mods im Song-Browser bleiben an, bis man sie ausschaltet (auch nach Neustart).
+var mod_sv: bool = false
+var mod_nf: bool = false
 var note_size_2d: float = 1.0
 const SIZE_2D_MIN := 0.5
 const SIZE_2D_MAX := 2.0
@@ -339,6 +342,8 @@ func load_settings(path: String = PATH) -> void:
 	bg_dim = clamp_bg_dim(float(cfg.get_value("game", "bg_dim", 0.3)))
 	bg_blur = bool(cfg.get_value("game", "bg_blur", true))
 	note_style_2d = clampi(int(cfg.get_value("game", "note_style_2d", 0)), 0, 1)
+	mod_sv = bool(cfg.get_value("mods", "sv", false))
+	mod_nf = bool(cfg.get_value("mods", "nf", false))
 	lane_width_2d = clamp_2d_size(float(cfg.get_value("game", "lane_width_2d", 1.0)))
 	note_size_2d = clamp_2d_size(float(cfg.get_value("game", "note_size_2d", 1.0)))
 	hitsound_set = clampi(int(cfg.get_value("game", "hitsound_set", 0)), 0, 2)
@@ -372,6 +377,8 @@ func save(path: String = PATH) -> void:
 	cfg.set_value("game", "bg_blur", bg_blur)
 	cfg.set_value("game", "note_style_2d", note_style_2d)
 	cfg.set_value("game", "lane_width_2d", lane_width_2d)
+	cfg.set_value("mods", "sv", mod_sv)
+	cfg.set_value("mods", "nf", mod_nf)
 	cfg.set_value("game", "note_size_2d", note_size_2d)
 	cfg.set_value("game", "hitsound_set", hitsound_set)
 	cfg.set_value("game", "hitsound_volume", hitsound_volume)

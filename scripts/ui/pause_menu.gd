@@ -216,7 +216,9 @@ func _stepper(text: String, val: Label, minus: float, plus: float, cb: Callable)
 
 
 func _step_offset(d: float) -> void:
-	Settings.offset_ms = clampf(Settings.offset_ms + d, -300.0, 300.0)
+	Settings.offset_ms = clampf(Settings.offset_ms + d, -200.0, 200.0)
+	# Sofort wirksam (Settings.apply() wuerde auch Fenster/Grafik neu setzen).
+	SyncClock.user_offset_ms = Settings.offset_ms
 	Settings.save()
 	_refresh_values()
 
