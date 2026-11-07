@@ -1,19 +1,18 @@
 class_name SettingsPanel
 extends Control
 
-## Einstellungen — schlank wie osu!mania, in drei klaren Sektionen:
-## GAMEPLAY (Scroll, Tasten, Offset), AUDIO (Lautstaerke, Hitsounds),
-## ANZEIGE (Effekte, Vollbild). Profilname/-bild wohnen in der Profil-Ansicht.
+## Einstellungen — ruhiges Glas-Panel mit Kategorie-Leiste links:
+## Gameplay, 2D-Spielfeld (nur im 2D-Modus), Welt (nur 3D), Grafik, Audio.
+## Profilname/-bild wohnen in der Profil-Ansicht.
 
 signal closed
 
-const COL_DIM := Color(0.55, 0.58, 0.66)
-const COL_SECTION := Color(0.45, 0.8, 1.0)
-const VALUE_W := 84.0
-
-var _world_preview: WorldPreview
-var _world_row: Control
-var _panel: Control
+const COL_DIM := UiTheme.DIM
+const VALUE_W := 72.0
+const CAP_W := 180.0
+const ROW_H := 40.0
+const PAGE_H := 480.0
+const CTRL_H := 34.0
 
 const BLUR_SHADER := """shader_type canvas_item;
 uniform sampler2D screen_tex : hint_screen_texture, filter_linear_mipmap;
@@ -23,17 +22,19 @@ void fragment() {
 }
 """
 
+var _world_preview: WorldPreview
+var _panel: Control
+var _pages: Array[Control] = []
+var _tabs: Array[Button] = []
+var _tab_cur := 0
+var _preview_2d: Control
+var _rows_3d: Array[Control] = []
+
 var _capturing := 0   # 0 = keine Aufnahme, 3..6 = Lane 1-4
 var _lane_btns: Array[Button] = []
 var _offset_value: Label
 var _offset_slider: HSlider
 var _vol_value: Label
-var _bg_dim_slider: HSlider
-var _bg_blur_btn: CheckButton
-var _lane2d_slider: HSlider
-var _note2d_slider: HSlider
-var _spacing_slider: HSlider
-var _note_style_opt: OptionButton
 
 
 func _ready() -> void:
@@ -62,15 +63,15 @@ func _ready() -> void:
 
 	var panel := PanelContainer.new()
 	var sb := UiTheme.glass_box(18, 0.95)
-	sb.set_content_margin_all(28)
+	sb.set_content_margin_all(24)
 	panel.add_theme_stylebox_override("panel", sb)
-	panel.custom_minimum_size = Vector2(600, 0)
+	panel.custom_minimum_size = Vector2(780, 0)
 	panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	center.add_child(panel)
 	_panel = panel
 
 	var vb := VBoxContainer.new()
-	vb.add_theme_constant_override("separation", 12)
+	vb.add_theme_constant_override("separation", 14)
 	panel.add_child(vb)
 
 	# Kopfzeile mit Schliessen-Knopf.
@@ -80,241 +81,114 @@ func _ready() -> void:
 	title.text = "EINSTELLUNGEN"
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title.add_theme_font_override("font", UiTheme.heading_font(3))
-	title.add_theme_font_size_override("font_size", 24)
+	title.add_theme_font_size_override("font_size", 22)
 	head.add_child(title)
 	var close_x := Button.new()
 	close_x.text = "✕"
-	close_x.custom_minimum_size = Vector2(38, 38)
+	close_x.custom_minimum_size = Vector2(36, 36)
 	UiTheme.style_button(close_x)
 	close_x.pressed.connect(_close)
 	head.add_child(close_x)
 
+	# Kategorie-Leiste links, Seiten rechts.
+	var body := HBoxContainer.new()
+	body.add_theme_constant_override("separation", 20)
+	vb.add_child(body)
+	var side := VBoxContainer.new()
+	side.add_theme_constant_override("separation", 4)
+	side.custom_minimum_size = Vector2(150, 0)
+	body.add_child(side)
+	var stack := Control.new()
+	stack.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	stack.custom_minimum_size = Vector2(0, PAGE_H)
+	body.add_child(stack)
+
+	var pg_game := _page(side, stack, "Gameplay")
+	var pg_2d := _page(side, stack, "2D-Spielfeld")
+	var pg_world := _page(side, stack, "Welt")
+	var pg_gfx := _page(side, stack, "Grafik")
+	var pg_audio := _page(side, stack, "Audio")
+
 	# ------------------------------- GAMEPLAY -------------------------------
-	var cv_gameplay := _section(vb, "GAMEPLAY")
-
-	var scroll_slider := HSlider.new()
-	scroll_slider.min_value = 0.5
-	scroll_slider.max_value = 3.0
-	scroll_slider.step = 0.1
-	scroll_slider.value = Settings.mania_scroll
-	var scroll_value := Label.new()
-	scroll_value.custom_minimum_size = Vector2(VALUE_W, 0)
-	scroll_value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	scroll_value.text = _fmt_x(Settings.mania_scroll)
-	scroll_slider.value_changed.connect(func(v):
-		Settings.mania_scroll = v
-		scroll_value.text = _fmt_x(v))
-	_row(cv_gameplay, "Scrollgeschwindigkeit", scroll_slider, scroll_value)
-
-	var spacing_slider := HSlider.new()
-	spacing_slider.min_value = Settings.LANE_SPACING_MIN * 100.0
-	spacing_slider.max_value = Settings.LANE_SPACING_MAX * 100.0
-	spacing_slider.step = Settings.LANE_SPACING_STEP * 100.0
-	spacing_slider.value = Settings.lane_spacing * 100.0
-	var spacing_value := Label.new()
-	spacing_value.text = _fmt_pct0(Settings.lane_spacing)
-	spacing_slider.value_changed.connect(func(v):
-		Settings.lane_spacing = Settings.clamp_lane_spacing(v / 100.0)
-		spacing_value.text = _fmt_pct0(Settings.lane_spacing))
-	spacing_slider.tooltip_text = "Abstand der Spuren in der 3D-Welt. Unter 85 % werden die Noten leicht kleiner."
-	_spacing_slider = spacing_slider
-	_row(cv_gameplay, "Spurbreite (3D)", spacing_slider, spacing_value)
-
 	var mode_2d := CheckButton.new()
 	mode_2d.button_pressed = Settings.playfield_2d
 	mode_2d.tooltip_text = "Klassische senkrechte Spuren ohne 3D-Welt; Hintergrund = Map-Bild"
 	mode_2d.toggled.connect(func(on):
 		Settings.playfield_2d = on
 		_update_2d_rows())
-	_row(cv_gameplay, "2D-Modus", mode_2d, null)
+	_row(pg_game, "2D-Modus", mode_2d, null)
 
-	_note_style_opt = OptionButton.new()
-	_note_style_opt.add_item("Balken", Settings.NOTE_STYLE_BAR)
-	_note_style_opt.add_item("Kreis", Settings.NOTE_STYLE_CIRCLE)
-	_note_style_opt.select(Settings.note_style_2d)
-	_note_style_opt.custom_minimum_size = Vector2(0, 36)
-	_note_style_opt.item_selected.connect(func(i): Settings.note_style_2d = i)
-	_row(cv_gameplay, "2D-Notenform", _note_style_opt, null)
+	_slider_row(pg_game, "Scrollgeschwindigkeit", 0.5, 3.0, 0.1, Settings.mania_scroll,
+		_fmt_x, func(v): Settings.mania_scroll = v)
 
-	_lane2d_slider = _size_2d_slider("lane_width_2d")
-	var lane2d_value := Label.new()
-	lane2d_value.text = _fmt_pct0(Settings.lane_width_2d)
-	_lane2d_slider.value_changed.connect(func(v):
-		Settings.lane_width_2d = Settings.clamp_2d_size(v / 100.0)
-		lane2d_value.text = _fmt_pct0(Settings.lane_width_2d))
-	_lane2d_slider.tooltip_text = "Breite der 2D-Spalten (auch im Pausenmenü einstellbar)"
-	_row(cv_gameplay, "2D-Spurbreite", _lane2d_slider, lane2d_value)
-
-	_note2d_slider = _size_2d_slider("note_size_2d")
-	var note2d_value := Label.new()
-	note2d_value.text = _fmt_pct0(Settings.note_size_2d)
-	_note2d_slider.value_changed.connect(func(v):
-		Settings.note_size_2d = Settings.clamp_2d_size(v / 100.0)
-		note2d_value.text = _fmt_pct0(Settings.note_size_2d))
-	_note2d_slider.tooltip_text = "Höhe der Balken bzw. Größe der Kreise (auch im Pausenmenü einstellbar)"
-	_row(cv_gameplay, "2D-Notengröße", _note2d_slider, note2d_value)
-
-	_bg_dim_slider = HSlider.new()
-	_bg_dim_slider.min_value = 0.0
-	_bg_dim_slider.max_value = 100.0
-	_bg_dim_slider.step = 5.0
-	_bg_dim_slider.value = Settings.bg_dim * 100.0
-	var dim_value := Label.new()
-	dim_value.text = _fmt_bg(Settings.bg_dim)
-	_bg_dim_slider.tooltip_text = "Helligkeit des Map-Bilds im 2D-Modus; 0 % = Hintergrund aus (schwarz)"
-	_bg_dim_slider.value_changed.connect(func(v):
-		Settings.bg_dim = Settings.clamp_bg_dim(v / 100.0)
-		dim_value.text = _fmt_bg(Settings.bg_dim))
-	_row(cv_gameplay, "Hintergrund-Deckkraft", _bg_dim_slider, dim_value)
-
-	_bg_blur_btn = CheckButton.new()
-	_bg_blur_btn.button_pressed = Settings.bg_blur
-	_bg_blur_btn.toggled.connect(func(on): Settings.bg_blur = on)
-	_row(cv_gameplay, "Hintergrund-Unschärfe", _bg_blur_btn, null)
+	var spacing_row := _slider_row(pg_game, "Spurbreite", Settings.LANE_SPACING_MIN * 100.0,
+		Settings.LANE_SPACING_MAX * 100.0, Settings.LANE_SPACING_STEP * 100.0,
+		Settings.lane_spacing * 100.0,
+		func(v): return _fmt_pct0(Settings.clamp_lane_spacing(v / 100.0)),
+		func(v): Settings.lane_spacing = Settings.clamp_lane_spacing(v / 100.0),
+		"Abstand der Spuren in der 3D-Welt. Unter 85 % werden die Noten leicht kleiner.")
+	_rows_3d.append(spacing_row)
 
 	var lane_row := HBoxContainer.new()
 	lane_row.add_theme_constant_override("separation", 8)
 	for i in 4:
 		var b := Button.new()
-		b.custom_minimum_size = Vector2(0, 36)
+		b.custom_minimum_size = Vector2(0, CTRL_H)
 		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		UiTheme.style_button(b)
 		var lane := i
 		b.pressed.connect(func(): _start_capture(3 + lane))
 		lane_row.add_child(b)
 		_lane_btns.append(b)
-	_row(cv_gameplay, "Tasten 1-4", lane_row, null)
+	_row(pg_game, "Tasten 1–4", lane_row, null).tooltip_text = "Knopf anklicken, dann Taste drücken (Esc bricht ab)"
 
-	var offset_slider := HSlider.new()
-	offset_slider.min_value = -200.0
-	offset_slider.max_value = 200.0
-	offset_slider.step = 1.0
-	offset_slider.value = Settings.offset_ms
-	_offset_value = Label.new()
-	_offset_value.custom_minimum_size = Vector2(VALUE_W, 0)
-	_offset_value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	offset_slider.value_changed.connect(func(v):
-		Settings.offset_ms = v
-		Settings.apply()
-		_offset_value.text = "%+d ms" % int(v))
-	_offset_slider = offset_slider
-	var offset_box := HBoxContainer.new()
-	offset_box.add_theme_constant_override("separation", 10)
-	offset_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	offset_slider.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	offset_slider.size_flags_stretch_ratio = 2.0
-	offset_slider.custom_minimum_size = Vector2(140, 0)
-	offset_box.add_child(offset_slider)
-	var calib_btn := Button.new()
-	calib_btn.text = "Kalibrieren"
-	calib_btn.custom_minimum_size = Vector2(0, 34)
-	calib_btn.size_flags_horizontal = Control.SIZE_SHRINK_END
-	UiTheme.style_button(calib_btn)
-	calib_btn.pressed.connect(_open_wizard)
-	offset_box.add_child(calib_btn)
-	_row(cv_gameplay, "Audio-Offset", offset_box, _offset_value)
+	# ------------------------------ 2D-SPIELFELD ----------------------------
+	var note_style := OptionButton.new()
+	note_style.add_item("Balken", Settings.NOTE_STYLE_BAR)
+	note_style.add_item("Kreis", Settings.NOTE_STYLE_CIRCLE)
+	note_style.select(Settings.note_style_2d)
+	note_style.custom_minimum_size = Vector2(0, CTRL_H)
+	note_style.item_selected.connect(func(i):
+		Settings.note_style_2d = i
+		_refresh_2d_preview())
+	_row(pg_2d, "Notenform", note_style, null)
 
-	# -------------------------------- AUDIO ---------------------------------
-	var cv_audio := _section(vb, "AUDIO")
+	_slider_row(pg_2d, "Spurbreite", Settings.SIZE_2D_MIN * 100.0, Settings.SIZE_2D_MAX * 100.0,
+		Settings.SIZE_2D_STEP * 100.0, Settings.lane_width_2d * 100.0,
+		func(v): return _fmt_pct0(Settings.clamp_2d_size(v / 100.0)),
+		func(v):
+			Settings.lane_width_2d = Settings.clamp_2d_size(v / 100.0)
+			_refresh_2d_preview(),
+		"Breite der 2D-Spalten (auch im Pausenmenü einstellbar)")
 
-	var vol_slider := HSlider.new()
-	vol_slider.min_value = -30.0
-	vol_slider.max_value = 0.0
-	vol_slider.step = 1.0
-	vol_slider.value = Settings.volume_db
-	_vol_value = Label.new()
-	_vol_value.custom_minimum_size = Vector2(VALUE_W, 0)
-	_vol_value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	vol_slider.value_changed.connect(func(v):
-		Settings.volume_db = v
-		Settings.apply()
-		_vol_value.text = "%d dB" % int(v))
-	_row(cv_audio, "Lautstärke", vol_slider, _vol_value)
+	_slider_row(pg_2d, "Notengröße", Settings.SIZE_2D_MIN * 100.0, Settings.SIZE_2D_MAX * 100.0,
+		Settings.SIZE_2D_STEP * 100.0, Settings.note_size_2d * 100.0,
+		func(v): return _fmt_pct0(Settings.clamp_2d_size(v / 100.0)),
+		func(v):
+			Settings.note_size_2d = Settings.clamp_2d_size(v / 100.0)
+			_refresh_2d_preview(),
+		"Höhe der Balken bzw. Größe der Kreise (auch im Pausenmenü einstellbar)")
 
-	var enh := CheckButton.new()
-	enh.button_pressed = Settings.audio_enhance
-	enh.toggled.connect(func(on):
-		Settings.audio_enhance = on
-		Settings.apply())
-	_row(cv_audio, "Klarheit (Höhen)", enh, null)
+	_slider_row(pg_2d, "Hintergrund", 0.0, 100.0, 5.0, Settings.bg_dim * 100.0,
+		func(v): return _fmt_bg(Settings.clamp_bg_dim(v / 100.0)),
+		func(v): Settings.bg_dim = Settings.clamp_bg_dim(v / 100.0),
+		"Deckkraft des Map-Bilds; 0 % = Hintergrund aus (schwarz)")
 
-	var bass_slider := HSlider.new()
-	bass_slider.min_value = 0.0
-	bass_slider.max_value = 1.0
-	bass_slider.step = 0.05
-	bass_slider.value = Settings.bass_boost
-	var bass_value := Label.new()
-	bass_value.custom_minimum_size = Vector2(VALUE_W, 0)
-	bass_value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	bass_value.text = "%d %%" % int(Settings.bass_boost * 100.0)
-	var no_fill := StyleBoxEmpty.new()
-	var set_bass_fill := func(v: float):
-		if v <= 0.001:
-			bass_slider.add_theme_stylebox_override("grabber_area", no_fill)
-			bass_slider.add_theme_stylebox_override("grabber_area_highlight", no_fill)
-		else:
-			bass_slider.remove_theme_stylebox_override("grabber_area")
-			bass_slider.remove_theme_stylebox_override("grabber_area_highlight")
-	set_bass_fill.call(Settings.bass_boost)
-	bass_slider.value_changed.connect(func(v):
-		set_bass_fill.call(v)
-		Settings.bass_boost = v
-		Settings.apply()
-		bass_value.text = "%d %%" % int(v * 100.0))
-	_row(cv_audio, "Bass", bass_slider, bass_value)
+	var blur_btn := CheckButton.new()
+	blur_btn.button_pressed = Settings.bg_blur
+	blur_btn.toggled.connect(func(on): Settings.bg_blur = on)
+	_row(pg_2d, "Hintergrund-Unschärfe", blur_btn, null).tooltip_text = "Map-Bild unscharf zeichnen"
 
-	var hs := CheckButton.new()
-	hs.button_pressed = Settings.hitsounds
-	hs.toggled.connect(func(on): Settings.hitsounds = on)
-	_row(cv_audio, "Treffer-Sounds", hs, null)
+	if ResourceLoader.exists("res://scripts/ui/skin_picker.gd"):
+		var skin = load("res://scripts/ui/skin_picker.gd").new()
+		if skin is Control:
+			if skin.has_signal("changed"):
+				skin.connect("changed", _refresh_2d_preview)
+			_row(pg_2d, "Skin", skin, null)
 
-	var hset := OptionButton.new()
-	hset.add_item("Soft", 0)
-	hset.add_item("Clap", 1)
-	hset.add_item("Kick", 2)
-	hset.select(Settings.hitsound_set)
-	hset.custom_minimum_size = Vector2(0, 36)
-	hset.item_selected.connect(func(i):
-		Settings.hitsound_set = i
-		Sfx.preview_hit(i))
-	_row(cv_audio, "Hitsound", hset, null)
+	_add_2d_preview(pg_2d)
 
-	var hs_slider := HSlider.new()
-	hs_slider.min_value = 0.0
-	hs_slider.max_value = 1.0
-	hs_slider.step = 0.05
-	hs_slider.value = Settings.hitsound_volume
-	var hs_value := Label.new()
-	hs_value.custom_minimum_size = Vector2(VALUE_W, 0)
-	hs_value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	hs_value.text = "%d %%" % int(Settings.hitsound_volume * 100.0)
-	hs_slider.value_changed.connect(func(v):
-		Settings.hitsound_volume = v
-		hs_value.text = "%d %%" % int(v * 100.0))
-	_row(cv_audio, "Treffer-Lautstärke", hs_slider, hs_value)
-
-	# ------------------------------- ANZEIGE --------------------------------
-	var cv_anzeige := _section(vb, "ANZEIGE")
-
-	var fx := OptionButton.new()
-	fx.add_item("Aus", 0)
-	fx.add_item("Dezent", 1)
-	fx.add_item("Voll", 2)
-	fx.select(Settings.tunnel_intensity)
-	fx.custom_minimum_size = Vector2(0, 36)
-	fx.item_selected.connect(func(i): Settings.tunnel_intensity = i)
-	_row(cv_anzeige, "Effekt-Intensität", fx, null)
-
-	var cam := OptionButton.new()
-	cam.add_item("Komfort", 0)
-	cam.add_item("Dynamisch", 1)
-	cam.select(Settings.camera_mode)
-	cam.custom_minimum_size = Vector2(0, 36)
-	cam.tooltip_text = "Komfort: ruhige Kamera, gegen Übelkeit
-Dynamisch: volle Flug-Bewegung"
-	cam.item_selected.connect(func(i): Settings.camera_mode = i)
-	_row(cv_anzeige, "Kamera", cam, null)
-
+	# --------------------------------- WELT ---------------------------------
 	var wt := OptionButton.new()
 	wt.add_item("Automatisch", 0)
 	for wi in Settings.WORLD_ORDER.size():
@@ -323,20 +197,38 @@ Dynamisch: volle Flug-Bewegung"
 		if wname != "galaxy" and not WorldTheme.is_available(wname):
 			wt.set_item_disabled(wt.get_item_count() - 1, true)
 	wt.select(Settings.world_theme)
-	wt.custom_minimum_size = Vector2(0, 36)
-	wt.tooltip_text = "Automatisch: düstere Welt passend zum Song
-(intensiv = Bosskampf, ruhig = Frost, sonst Eklipse, Abgrund, Fraktal, Obsidian …)"
+	wt.custom_minimum_size = Vector2(0, CTRL_H)
+	wt.tooltip_text = "Automatisch: düstere Welt passend zum Song\n(intensiv = Bosskampf, ruhig = Frost, sonst Eklipse, Abgrund, Fraktal, Obsidian …)"
 	wt.item_selected.connect(func(i):
 		Settings.world_theme = i
 		_world_preview.show_world("" if i == 0 else Settings.WORLD_ORDER[i - 1]))
-	_row(cv_anzeige, "Welt", wt, null)
-	_world_row = wt
-	_update_2d_rows()
+	_row(pg_world, "Welt", wt, null)
+
 	_world_preview = WorldPreview.new()
-	_world_preview.visible = false
-	add_child(_world_preview)
+	var wp_center := CenterContainer.new()
+	wp_center.custom_minimum_size = Vector2(0, WorldPreview.SIZE_PX.y + 8)
+	pg_world.add_child(wp_center)
+	wp_center.add_child(_world_preview)
 	_world_preview.show_world(Settings.world_theme_name())
 
+	var cam := OptionButton.new()
+	cam.add_item("Komfort", 0)
+	cam.add_item("Dynamisch", 1)
+	cam.select(Settings.camera_mode)
+	cam.custom_minimum_size = Vector2(0, CTRL_H)
+	cam.item_selected.connect(func(i): Settings.camera_mode = i)
+	_row(pg_world, "Kamera", cam, null).tooltip_text = "Komfort: ruhige Kamera, gegen Übelkeit\nDynamisch: volle Flug-Bewegung"
+
+	var fx := OptionButton.new()
+	fx.add_item("Aus", 0)
+	fx.add_item("Dezent", 1)
+	fx.add_item("Voll", 2)
+	fx.select(Settings.tunnel_intensity)
+	fx.custom_minimum_size = Vector2(0, CTRL_H)
+	fx.item_selected.connect(func(i): Settings.tunnel_intensity = i)
+	_row(pg_world, "Effekte", fx, null)
+
+	# -------------------------------- GRAFIK --------------------------------
 	var gfx := OptionButton.new()
 	gfx.add_item("Niedrig", 0)
 	gfx.add_item("Mittel (2x AA)", 1)
@@ -344,11 +236,11 @@ Dynamisch: volle Flug-Bewegung"
 	gfx.add_item("Ultra (8x AA)", 3)
 	gfx.add_item("Extrem (8x AA + SSAA)", 4)
 	gfx.select(Settings.graphics_quality)
-	gfx.custom_minimum_size = Vector2(0, 36)
+	gfx.custom_minimum_size = Vector2(0, CTRL_H)
 	gfx.item_selected.connect(func(i):
 		Settings.graphics_quality = i
 		Settings.apply())
-	_row(cv_anzeige, "Grafik-Qualität", gfx, null)
+	_row(pg_gfx, "Qualität", gfx, null)
 
 	var fps := OptionButton.new()
 	fps.add_item("VSync", 0)
@@ -357,36 +249,111 @@ Dynamisch: volle Flug-Bewegung"
 	fps.add_item("360 FPS", 3)
 	fps.add_item("480 FPS", 4)
 	fps.select(Settings.fps_mode)
-	fps.custom_minimum_size = Vector2(0, 36)
+	fps.custom_minimum_size = Vector2(0, CTRL_H)
 	fps.item_selected.connect(func(i):
 		Settings.fps_mode = i
 		Settings.apply())
-	_row(cv_anzeige, "FPS-Limit", fps, null)
+	_row(pg_gfx, "FPS-Limit", fps, null)
 
 	var lg := CheckButton.new()
 	lg.button_pressed = Settings.lane_glow
 	lg.toggled.connect(func(on): Settings.lane_glow = on)
-	_row(cv_anzeige, "Spur-Aufleuchten (Taste)", lg, null)
+	_row(pg_gfx, "Spur-Leuchten", lg, null).tooltip_text = "Spur leuchtet auf, wenn die Taste gedrückt wird"
 
 	var fs := CheckButton.new()
 	fs.button_pressed = Settings.fullscreen
 	fs.toggled.connect(func(on): Settings.fullscreen = on; Settings.apply())
-	_row(cv_anzeige, "Vollbild (F11)", fs, null)
+	_row(pg_gfx, "Vollbild", fs, null).tooltip_text = "Vollbild (F11)"
+
+	# --------------------------------- AUDIO --------------------------------
+	_vol_value = Label.new()
+	_slider_row(pg_audio, "Lautstärke", -30.0, 0.0, 1.0, Settings.volume_db,
+		func(v): return "%d dB" % int(v),
+		func(v):
+			Settings.volume_db = v
+			Settings.apply(), "", _vol_value)
+
+	var enh := CheckButton.new()
+	enh.button_pressed = Settings.audio_enhance
+	enh.toggled.connect(func(on):
+		Settings.audio_enhance = on
+		Settings.apply())
+	_row(pg_audio, "Klarheit", enh, null).tooltip_text = "Hellere Höhen für mehr Klarheit"
+
+	var no_fill := StyleBoxEmpty.new()
+	var bass_ref: Array = [null]
+	var set_bass_fill := func(v: float):
+		var bs: HSlider = bass_ref[0]
+		if bs == null:
+			return
+		if v <= 0.001:
+			bs.add_theme_stylebox_override("grabber_area", no_fill)
+			bs.add_theme_stylebox_override("grabber_area_highlight", no_fill)
+		else:
+			bs.remove_theme_stylebox_override("grabber_area")
+			bs.remove_theme_stylebox_override("grabber_area_highlight")
+	var bass_row := _slider_row(pg_audio, "Bass", 0.0, 1.0, 0.05, Settings.bass_boost,
+		func(v): return "%d %%" % int(v * 100.0),
+		func(v):
+			set_bass_fill.call(v)
+			Settings.bass_boost = v
+			Settings.apply())
+	bass_ref[0] = bass_row.get_meta("slider")
+	set_bass_fill.call(Settings.bass_boost)
+
+	var hs := CheckButton.new()
+	hs.button_pressed = Settings.hitsounds
+	hs.toggled.connect(func(on): Settings.hitsounds = on)
+	_row(pg_audio, "Treffer-Sounds", hs, null)
+
+	var hset := OptionButton.new()
+	hset.add_item("Soft", 0)
+	hset.add_item("Clap", 1)
+	hset.add_item("Kick", 2)
+	hset.select(Settings.hitsound_set)
+	hset.custom_minimum_size = Vector2(0, CTRL_H)
+	hset.item_selected.connect(func(i):
+		Settings.hitsound_set = i
+		Sfx.preview_hit(i))
+	_row(pg_audio, "Hitsound", hset, null)
+
+	_slider_row(pg_audio, "Treffer-Lautstärke", 0.0, 1.0, 0.05, Settings.hitsound_volume,
+		func(v): return "%d %%" % int(v * 100.0),
+		func(v): Settings.hitsound_volume = v)
+
+	_offset_value = Label.new()
+	var off_row := _slider_row(pg_audio, "Audio-Offset", -200.0, 200.0, 1.0, Settings.offset_ms,
+		func(v): return "%+d ms" % int(v),
+		func(v):
+			Settings.offset_ms = v
+			Settings.apply(), "Verschiebt die Noten gegenüber dem Ton", _offset_value)
+	_offset_slider = off_row.get_meta("slider")
+	var calib_btn := Button.new()
+	calib_btn.text = "Kalibrieren"
+	calib_btn.custom_minimum_size = Vector2(0, CTRL_H)
+	UiTheme.style_button(calib_btn)
+	calib_btn.pressed.connect(_open_wizard)
+	_row(pg_audio, "Kalibrierung", calib_btn, null)
 
 	# Fusszeile.
 	var save := Button.new()
 	save.text = "Speichern & Schließen"
-	save.custom_minimum_size = Vector2(0, 46)
+	save.custom_minimum_size = Vector2(0, 44)
 	UiTheme.style_button(save, true)
 	save.pressed.connect(_close)
 	vb.add_child(save)
 
+	_update_2d_rows()
+	_show_page(0)
 	_refresh_labels()
 
 	# Sanftes Einblenden: Scale 0.96 -> 1 + Fade, 0.18 s.
 	panel.modulate.a = 0.0
 	panel.scale = Vector2(0.96, 0.96)
 	_intro.call_deferred(panel)
+
+	if OS.get_cmdline_args().has("--shot-settings"):
+		_shot_pages.call_deferred()
 
 
 func _intro(panel: Control) -> void:
@@ -396,43 +363,134 @@ func _intro(panel: Control) -> void:
 	tw.tween_property(panel, "scale", Vector2.ONE, 0.18)
 
 
-## Sektion als dezente Karte: Kopfzeile + Zeilen-Box. Gibt die Box zurueck.
-func _section(vb: VBoxContainer, text: String) -> VBoxContainer:
-	var card := PanelContainer.new()
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color(1, 1, 1, 0.035)
-	sb.set_corner_radius_all(12)
-	sb.set_border_width_all(1)
-	sb.border_color = Color(1, 1, 1, 0.07)
-	sb.set_content_margin_all(14)
-	card.add_theme_stylebox_override("panel", sb)
-	vb.add_child(card)
-	var inner := VBoxContainer.new()
-	inner.add_theme_constant_override("separation", 4)
-	card.add_child(inner)
-	var l := Label.new()
-	l.text = text
-	l.add_theme_font_override("font", UiTheme.heading_font(2))
-	l.add_theme_font_size_override("font_size", 13)
-	l.add_theme_color_override("font_color", COL_SECTION)
-	inner.add_child(l)
-	return inner
+## Harness (--shot-settings): jede Kategorie als PNG, danach 2D-Modus-Wechsel.
+func _shot_pages() -> void:
+	var dir := OS.get_environment("SETTINGS_SHOT_DIR")
+	if dir == "":
+		dir = OS.get_user_data_dir()
+	await get_tree().create_timer(1.5).timeout
+	for mode_2d in [false, true]:
+		Settings.playfield_2d = mode_2d
+		_update_2d_rows()
+		for i in _pages.size():
+			if not _tabs[i].visible:
+				continue
+			_show_page(i)
+			await get_tree().create_timer(1.2).timeout
+			await RenderingServer.frame_post_draw
+			var path := dir.path_join("settings_%s_%d.png" % ["2d" if mode_2d else "3d", i])
+			get_viewport().get_texture().get_image().save_png(path)
+			print("SHOT ", path)
+	get_tree().quit(0)
 
 
-## Einheitliche Zeile: Beschriftung links (feste Breite), Control rechts.
-func _row(vb: VBoxContainer, caption: String, control: Control, value: Label) -> void:
+## Kategorie: Knopf in der Leiste + Seite (VBox) im Stapel.
+func _page(side: VBoxContainer, stack: Control, caption: String) -> VBoxContainer:
+	var idx := _pages.size()
+	var pg := VBoxContainer.new()
+	pg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	pg.add_theme_constant_override("separation", 4)
+	pg.visible = false
+	stack.add_child(pg)
+	_pages.append(pg)
+	var b := Button.new()
+	b.text = caption
+	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	b.custom_minimum_size = Vector2(0, 38)
+	b.focus_mode = Control.FOCUS_NONE
+	b.add_theme_font_size_override("font_size", 15)
+	b.add_theme_color_override("font_hover_color", UiTheme.TEXT)
+	var hv := StyleBoxFlat.new()
+	hv.bg_color = Color(1, 1, 1, 0.06)
+	hv.set_corner_radius_all(12)
+	hv.content_margin_left = 14
+	b.add_theme_stylebox_override("hover", hv)
+	b.add_theme_stylebox_override("pressed", hv)
+	b.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	b.pressed.connect(func():
+		Sfx.ui_click()
+		_show_page(idx))
+	side.add_child(b)
+	_tabs.append(b)
+	return pg
+
+
+func _show_page(i: int) -> void:
+	_tab_cur = i
+	for k in _pages.size():
+		_pages[k].visible = k == i
+		var b := _tabs[k]
+		if k == i:
+			# Aktiv wie die Chips im Song-Browser: Akzent-Fuellung + Rand.
+			var sel := StyleBoxFlat.new()
+			sel.bg_color = Color(UiTheme.ACCENT, 0.16)
+			sel.border_color = Color(UiTheme.ACCENT, 0.60)
+			sel.set_border_width_all(1)
+			sel.set_corner_radius_all(12)
+			sel.content_margin_left = 14
+			b.add_theme_stylebox_override("normal", sel)
+			b.add_theme_color_override("font_color", UiTheme.ACCENT)
+		else:
+			var n := StyleBoxEmpty.new()
+			n.content_margin_left = 14
+			b.add_theme_stylebox_override("normal", n)
+			b.add_theme_color_override("font_color", UiTheme.DIM)
+
+
+## Regler-Zeile: fmt(v) -> Text, on_change(v). Optional eigenes Wert-Label.
+## Der HSlider liegt zusaetzlich als Meta "slider" an der Zeile.
+func _slider_row(pg: VBoxContainer, caption: String, mn: float, mx: float, step: float,
+		val: float, fmt: Callable, on_change: Callable, tip: String = "", value: Label = null) -> Control:
+	var sl := HSlider.new()
+	sl.min_value = mn
+	sl.max_value = mx
+	sl.step = step
+	sl.value = val
+	if value == null:
+		value = Label.new()
+	value.text = str(fmt.call(val))
+	sl.value_changed.connect(func(v):
+		on_change.call(v)
+		value.text = str(fmt.call(v)))
+	var r := _row(pg, caption, sl, value)
+	r.tooltip_text = tip
+	r.set_meta("slider", sl)
+	return r
+
+
+## 2D-Vorschau-Haken (Task playfield-preview): nur wenn das Skript existiert.
+func _add_2d_preview(parent: Control) -> void:
+	if not (ClassDB.class_exists("PlayfieldPreview") or ResourceLoader.exists("res://scripts/ui/playfield_preview.gd")):
+		return
+	var scr = load("res://scripts/ui/playfield_preview.gd")
+	if scr == null:
+		return
+	_preview_2d = scr.new()
+	var cc := CenterContainer.new()
+	parent.add_child(cc)
+	cc.add_child(_preview_2d)
+
+
+func _refresh_2d_preview() -> void:
+	if _preview_2d != null and is_instance_valid(_preview_2d) and _preview_2d.has_method("refresh"):
+		_preview_2d.call("refresh")
+
+
+## Einheitliche Zeile: Beschriftung links (feste Breite), Control mittig,
+## Wert rechts (feste Breite; ohne Wert bleibt der Platz frei).
+func _row(vb: VBoxContainer, caption: String, control: Control, value: Label) -> PanelContainer:
 	var hov := PanelContainer.new()
 	hov.mouse_filter = Control.MOUSE_FILTER_PASS
 	var hn := StyleBoxFlat.new()
 	hn.bg_color = Color(1, 1, 1, 0.0)
 	hn.set_corner_radius_all(8)
-	hn.content_margin_left = 8
-	hn.content_margin_right = 8
-	hn.content_margin_top = 3
-	hn.content_margin_bottom = 3
+	hn.content_margin_left = 10
+	hn.content_margin_right = 10
+	hn.content_margin_top = 2
+	hn.content_margin_bottom = 2
 	hov.add_theme_stylebox_override("panel", hn)
-	hov.custom_minimum_size = Vector2(0, 44)
-	hov.mouse_entered.connect(func(): hn.bg_color = Color(1, 1, 1, 0.06))
+	hov.custom_minimum_size = Vector2(0, ROW_H)
+	hov.mouse_entered.connect(func(): hn.bg_color = Color(1, 1, 1, 0.05))
 	hov.mouse_exited.connect(func(): hn.bg_color = Color(1, 1, 1, 0.0))
 	vb.add_child(hov)
 	var row := HBoxContainer.new()
@@ -440,29 +498,29 @@ func _row(vb: VBoxContainer, caption: String, control: Control, value: Label) ->
 	hov.add_child(row)
 	var cap := Label.new()
 	cap.text = caption
-	cap.custom_minimum_size = Vector2(190, 0)
+	cap.custom_minimum_size = Vector2(CAP_W, 0)
 	cap.add_theme_font_size_override("font_size", 15)
-	cap.add_theme_color_override("font_color", Color(0.85, 0.88, 0.95))
+	cap.add_theme_color_override("font_color", UiTheme.TEXT)
 	row.add_child(cap)
-	control.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	control.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	if control is CheckButton:
+		# Schalter ganz rechts.
+		var sp := Control.new()
+		sp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(sp)
+		control.size_flags_horizontal = Control.SIZE_SHRINK_END
+		row.add_child(control)
+		return hov
+	control.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(control)
-	if value != null:
-		value.add_theme_font_size_override("font_size", 14)
-		value.add_theme_color_override("font_color", COL_DIM)
-		value.custom_minimum_size = Vector2(VALUE_W, 0)
-		value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-		row.add_child(value)
-
-
-## Regler 50..200 % fuer eine 2D-Groesse (Settings-Feld key).
-func _size_2d_slider(key: String) -> HSlider:
-	var sl := HSlider.new()
-	sl.min_value = Settings.SIZE_2D_MIN * 100.0
-	sl.max_value = Settings.SIZE_2D_MAX * 100.0
-	sl.step = Settings.SIZE_2D_STEP * 100.0
-	sl.value = float(Settings.get(key)) * 100.0
-	return sl
+	if value == null:
+		value = Label.new()
+	value.add_theme_font_size_override("font_size", 14)
+	value.add_theme_color_override("font_color", COL_DIM)
+	value.custom_minimum_size = Vector2(VALUE_W, 0)
+	value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	row.add_child(value)
+	return hov
 
 
 ## Hintergrund-Deckkraft: 0 -> "Aus", sonst "30 %".
@@ -475,28 +533,17 @@ static func _fmt_pct0(v: float) -> String:
 	return UiTheme.fmt_num(v * 100.0, 0) + " %"
 
 
-## 2D-Regler nur bei 2D aktiv; Welt-Auswahl gilt nur fuer 3D (ausgegraut).
+## Modus-abhaengig: im 2D-Modus 3D-Spurbreite und Reiter "Welt" ausblenden,
+## im 3D-Modus den Reiter "2D-Spielfeld".
 func _update_2d_rows() -> void:
 	var on := Settings.playfield_2d
-	if _bg_dim_slider != null:
-		_bg_dim_slider.editable = on
-		_bg_dim_slider.modulate.a = 1.0 if on else 0.4
-	if _note_style_opt != null:
-		_note_style_opt.disabled = not on
-		_note_style_opt.modulate.a = 1.0 if on else 0.4
-	if _bg_blur_btn != null:
-		_bg_blur_btn.disabled = not on
-		_bg_blur_btn.modulate.a = 1.0 if on else 0.4
-	for sl in [_lane2d_slider, _note2d_slider]:
-		if sl != null:
-			sl.editable = on
-			sl.modulate.a = 1.0 if on else 0.4
-	if _spacing_slider != null:
-		_spacing_slider.editable = not on
-		_spacing_slider.modulate.a = 0.4 if on else 1.0
-	if _world_row is OptionButton:
-		(_world_row as OptionButton).disabled = on
-		_world_row.modulate.a = 0.4 if on else 1.0
+	for r in _rows_3d:
+		r.visible = not on
+	if _tabs.size() >= 3:
+		_tabs[1].visible = on
+		_tabs[2].visible = not on
+	if _tab_cur < _tabs.size() and not _tabs[_tab_cur].visible:
+		_show_page(0)
 
 
 static func _fmt_x(v: float) -> String:
@@ -537,23 +584,6 @@ func _input(event: InputEvent) -> void:
 			Sfx.ui_back()
 			_close(false)
 			get_viewport().set_input_as_handled()
-
-
-## Vorschau-Karte rechts neben das Panel, auf Hoehe der Welt-Zeile (sonst
-## unter das Panel); bleibt im sichtbaren Bereich.
-func _process(_delta: float) -> void:
-	if _world_preview == null or _panel == null or _world_row == null:
-		return
-	var vr := get_viewport_rect().size
-	var pr := _panel.get_global_rect()
-	var sz := WorldPreview.SIZE_PX
-	var x := pr.end.x + 16.0
-	if x + sz.x > vr.x - 8.0:
-		x = maxf(8.0, vr.x - sz.x - 8.0)
-	var y := clampf(_world_row.get_global_rect().get_center().y - sz.y * 0.5, 8.0, maxf(8.0, vr.y - sz.y - 8.0))
-	_world_preview.position = Vector2(x, y)
-	_world_preview.modulate.a = _panel.modulate.a
-	_world_preview.visible = _panel.modulate.a > 0.01
 
 
 func _close(with_sound: bool = true) -> void:
