@@ -22,6 +22,8 @@ const PAD_PRESS := 0.35
 const PAD_MAX_SCALE := 1.15
 # Leuchtfleck unter Noten (vorher 0.9 / Lock 1.6 -> ueberstrahlte Muster).
 const NOTE_GLOW := 0.34
+## Obergrenze der Streckenrand-Emission in Themen-Welten (Galaxie/Neon frei).
+const EDGE_MAX_THEMED := 1.15
 
 const QUALITY_COLOR := {
 	0: Color(1.0, 0.92, 0.55), 1: Color(1.0, 1.0, 1.0),
@@ -364,6 +366,8 @@ var _song_len_ms := 1.0
 
 
 func _ready() -> void:
+	# Erzwungene Welt: Texturen sofort im Hintergrund laden (kein Hitch spaeter).
+	WorldTheme.prefetch(_forced_theme())
 	if not _load_beatmap():
 		get_tree().change_scene_to_file.call_deferred("res://scenes/song_select.tscn")
 		return
@@ -388,6 +392,7 @@ func _ready() -> void:
 	_note_shader = load("res://shaders/note_disc.gdshader")
 	_extract_theme_color()
 	_choose_world_theme()
+	WorldTheme.prefetch(_world_theme)
 	_precompute_snap_colors()
 	_preload_stations()
 	_build_world()
@@ -610,9 +615,13 @@ func _precompute_snap_colors() -> void:
 	for i in divs.size():
 		var d: int = divs[i]
 		if not cache.has(d):
-			var c := SnapColor.color_for(d, _theme_col)
-			cache[d] = Color.from_hsv(c.h, clampf(c.s * 1.08, 0.0, 0.85),
-					clampf(c.v * 1.04, 0.0, 0.95))
+			if WorldTheme.has_note_style(_world_theme):
+				# Weltfarbe, Snap ueber Helligkeit/Saettigung gestaffelt.
+				cache[d] = WorldTheme.snap_style(d, WorldTheme.note_color(_world_theme, false))
+			else:
+				var c := SnapColor.color_for(d, _theme_col)
+				cache[d] = Color.from_hsv(c.h, clampf(c.s * 1.08, 0.0, 0.85),
+						clampf(c.v * 1.04, 0.0, 0.95))
 		_snap_cols[i] = cache[d]
 
 
@@ -889,6 +898,23 @@ func _build_horizon() -> void:
 	_road_mat.set_shader_parameter("base_color", _theme_col)
 	road.material_override = _road_mat
 	_world.add_child(road)
+	if _world_theme == WorldTheme.MONOLITH:
+		# Dunkler Unterbau: Himmel-Panele scheinen sonst durch die Lanes.
+		var under := MeshInstance3D.new()
+		var uq := QuadMesh.new()
+		uq.size = rq.size
+		under.mesh = uq
+		var um := StandardMaterial3D.new()
+		um.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		um.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		um.albedo_color = Color(0.015, 0.016, 0.02, 0.88)
+		um.render_priority = -3
+		um.cull_mode = BaseMaterial3D.CULL_DISABLED
+		under.material_override = um
+		under.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		under.rotation_degrees = road.rotation_degrees
+		under.position = road.position - Vector3(0, 0.01, 0)
+		_world.add_child(under)
 
 
 func _build_starfield() -> void:
@@ -1298,9 +1324,12 @@ func _on_note_spawned(index: int) -> void:
 	# Hitzone/Umgebung tragen die Songfarbe — normale Noten sind
 	# weiss-dominant (leichter Songfarb-Stich), Holds immer amber.
 	var clean := _fx_level() <= 0.0
+	var themed_note := WorldTheme.has_note_style(_world_theme) and not clean
 	var col: Color
 	if clean:
 		col = CLEAN_HOLD if obj.is_hold else CLEAN_NOTE
+	elif themed_note:
+		col = WorldTheme.note_color(_world_theme, obj.is_hold)
 	elif obj.is_hold:
 		col = CLEAN_HOLD
 	else:
@@ -2020,7 +2049,8 @@ func _process(delta: float) -> void:
 		_road_mat.set_shader_parameter("energy", road_e)
 		# Strecke bleibt in der Songfarbe (kein Timing-/Kiai-Farbkippen —
 		# wandernde Fremdfarben auf dem Spielfeld stoerten).
-		_road_mat.set_shader_parameter("base_color", _theme_col)
+		_road_mat.set_shader_parameter("base_color",
+				_theme_col * 0.5 if _world_theme == WorldTheme.MONOLITH else _theme_col)
 
 	# Die ABFANGLINIE pulsiert im Takt — der Hit-Moment ist hoerbar UND sichtbar.
 	_line_mat.emission_energy_multiplier = 1.1 + _beat_env * 1.6 + _line_flash * 1.0 \
@@ -2037,10 +2067,13 @@ func _process(delta: float) -> void:
 		if i < _pad_nodes.size():
 			_pad_nodes[i].scale = Vector3.ONE * maxf(1.0 + (PAD_MAX_SCALE - 1.0) * pf,
 					1.0 + minf(_groove, 1.0) * 0.04)
+	var edge_themed := _world_theme != WorldTheme.GALAXY and _world_theme != WorldTheme.NEON
 	for m in _edge_mats:
-		m.emission_energy_multiplier = (0.28 if fx <= 0.0 else 0.4) \
+		var ee := (0.28 if fx <= 0.0 else 0.4) \
 				+ (_music_energy * 0.9 + _density * 0.6
-				+ _kiai_mix * 0.7) * fx + _groove * 3.0
+				+ _kiai_mix * 0.7) * fx + _groove * (1.2 if edge_themed else 3.0)
+		# Themen-Welten: Rand-Baender nicht auf dem Beat ausbrennen lassen.
+		m.emission_energy_multiplier = minf(ee, EDGE_MAX_THEMED) if edge_themed else ee
 
 	# ON FIRE: ab 97% Acc (und min. 30 gewerteten Noten) zuenden die Kanten —
 	# je naeher an 100%, desto hoeher die Flammen. Ab 99.5% kippt das Feuer
@@ -2345,7 +2378,9 @@ func _apply_world_pulse() -> void:
 	if _galaxy_node != null:
 		_galaxy_node.scale = Vector3.ONE * (1.0 + wp * 0.02)
 	if _edge_band_mat != null:
-		_edge_band_mat.set_shader_parameter(&"intensity", 0.12 * (1.0 + wp * 0.35))
+		var themed_band := _world_theme != WorldTheme.GALAXY and _world_theme != WorldTheme.NEON
+		_edge_band_mat.set_shader_parameter(&"intensity",
+				0.09 * (1.0 + wp * 0.15) if themed_band else 0.12 * (1.0 + wp * 0.35))
 
 
 ## Feuert EXAKT auf jeder Beat-Kante: Pad-Pulse, Glut-Spawn, Nebel-Tick,
@@ -4225,11 +4260,16 @@ func _sky_begin_chapter(pal: int, first: bool) -> void:
 
 ## Welt-Thema waehlen: --theme=<name> (Screenshots) > Einstellung > Automatisch.
 ## Fehlt Shader oder Panorama eines Themas -> Galaxie (laeuft immer).
-func _choose_world_theme() -> void:
+func _forced_theme() -> String:
 	var forced := Settings.world_theme_name()
 	for a in OS.get_cmdline_args():
 		if a.begins_with("--theme="):
 			forced = a.substr(8)
+	return forced
+
+
+func _choose_world_theme() -> void:
+	var forced := _forced_theme()
 	var stars := GameSession.stars
 	var t := WorldTheme.resolve(forced, _beatmap, stars, _theme_col)
 	if t != WorldTheme.GALAXY and _theme_files(t).is_empty():
@@ -4304,7 +4344,7 @@ func _build_theme_sky(env: Environment) -> bool:
 		var b: String = keys[sn]
 		var path: String = pano if b == "tex" else str(layer_of.get(b, ""))
 		if path != "":
-			_sky_mat.set_shader_parameter(sn, load(path))
+			_sky_mat.set_shader_parameter(sn, WorldTheme.get_cached(path))
 	_sky_mat.set_shader_parameter("readability", 0.7)
 	_sky_mat.set_shader_parameter("star_speed", 0.0)
 	_sky_mat.set_shader_parameter("palette_mix", 0.0)

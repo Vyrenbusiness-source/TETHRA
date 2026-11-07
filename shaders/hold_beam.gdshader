@@ -88,9 +88,11 @@ void fragment() {
 	// Endkappe: Innenflaeche leicht aufgehellt, radial weich.
 	float tail_c = max(len - r, r);
 	float in_tail = step(tail_c, p.y) * (1.0 - smoothstep(0.0, r, length(vec2(p.x, p.y - tail_c))));
-	col = mix(col, light, 0.18 * in_tail * (1.0 - border));
+	col = mix(col, light, 0.30 * in_tail * (1.0 - border));
 
-	col *= brightness * (1.0 + 0.02 * clamp(beat, 0.0, 1.0));
+	// Gehalten (brightness > 1.05): Koerper leuchtet im Takt deutlich auf.
+	float beat_gain = mix(0.02, 0.22, step(1.05, brightness));
+	col *= brightness * (1.0 + beat_gain * clamp(beat, 0.0, 1.0));
 	// Losgelassen: klar grau (Helligkeit vom Farbwert entkoppelt).
 	float lum = dot(col, vec3(0.299, 0.587, 0.114));
 	col = mix(col, vec3(lum * 0.62 + 0.06), clamp(desat, 0.0, 1.0));
