@@ -46,3 +46,18 @@ Effekte = Aus → alle Beat-Uniforms 0, Welt steht ruhig.
    (rastet auf dem Schlag ein), eine Akzentuierung über `downbeat_pulse`, der
    Drop über `drop`. Dauerbewegung (Zeit) nur langsam und unterschwellig.
 5. Farben: fast monochrom im Farbsatz des Themas, kein Neon (außer Welt „neon").
+
+## Komfort-Regeln (Nutzer-Feedback 2026-11-07: Kippen macht Kopfschmerzen, Bewegung stockt)
+
+Gelten für ALLE Welten und haben Vorrang vor jedem Effekt.
+
+1. **Kein Rollen, kein Kippen.** Keine Ebene dreht sich um die Blickachse (Roll) und nichts kippt den Horizont seitlich.
+   `stars_rotation`/`pano_rotation`/`*_rotation` nur noch um die Hochachse (Yaw), höchstens 1 Grad/s, sonst 0.
+   Der Tornado (Sturm) und alle Wirbel drehen höchstens 4 Grad/s, ohne Beat-Sprünge. Der Horizont bleibt immer waagerecht.
+2. **Kein Stop-and-go.** `beat_step` ist ab jetzt eine glatte, nie stehende Bewegung:
+   `beat_step = beats_total + p + 0.25 * ((1 - (1 - p)^2) - p)` mit p = beat_phase.
+   Die Geschwindigkeit liegt damit immer zwischen 0,75x und 1,25x. Sie ist auf dem Schlag am schnellsten, steht nie still und springt nicht.
+   Shader nutzen `beat_step` nur für Vorwärts-Fluss (auf den Spieler zu) oder sanftes Atmen, nie für Drehungen.
+3. **Glatte Zeitbasis.** Alle Bewegungen laufen über eine monotone, pro Frame geglättete Zeit. Sie springt nie zurück, und es gibt keine Sprünge bei Clock-Korrekturen.
+4. **Beat zeigt sich über Licht und Tempo, nicht über Ruck.** Das heißt `beat_pulse`, `downbeat_pulse` und der leichte Tempo-Akzent aus Regel 2.
+5. **Prüfen:** Zwei Shots im Abstand von 1/8 Beat zeigen keinen Ruck. Der Horizont bleibt in allen Shots waagerecht.
