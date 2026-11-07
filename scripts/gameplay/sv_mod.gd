@@ -109,6 +109,7 @@ static func generate(bm: Beatmap, seed_value: int) -> Array:
 		last_time = maxf(last_time, o.end_time())
 	heads.sort()
 	var base := ScrollMap._most_common_beat_length(reds, last_time)
+	var first_red: float = (reds[0] as TimingPoint).time
 
 	# Beat-Raster aller roten Abschnitte im Notenbereich.
 	var bt := PackedFloat64Array()
@@ -151,15 +152,49 @@ static func generate(bm: Beatmap, seed_value: int) -> Array:
 		kiai[i] = 1 if bm.is_kiai(bt[i] + 1.0) else 0
 
 	# Drops: Kiai-Beginn -> Ramp davor, Freeze im letzten Beat, Akzent darauf.
-	var plan := {}  # beat index -> ["freeze"] / ["ramp", n, lo] / ["drop"]
+	# Ohne Kiai: die dichtesten Takte (oberes Viertel) gelten als lebendig.
+	if bm.kiai_intervals.is_empty() and nb > 0:
+		var bars := []
+		var j0 := 0
+		while j0 < nb:
+			var n := 0
+			var j1 := j0
+			while j1 < nb and (j1 == j0 or bbar[j1] != 0):
+				n += cnt[j1]
+				j1 += 1
+			bars.append([j0, j1, n])
+			j0 = j1
+		var dens := []
+		for b in bars:
+			if int(b[2]) > 0:
+				dens.append(int(b[2]))
+		dens.sort()
+		var thr: int = dens[int(dens.size() * 0.75)] if not dens.is_empty() else 1 << 30
+		for b in bars:
+			if int(b[2]) >= thr:
+				for j in range(int(b[0]), int(b[1])):
+					kiai[j] = 1
+
+	# Drops: Kiai-Beginn und erste Note nach einem Break (>= 8 leere Beats).
+	var drop_beats := []
 	for iv in bm.kiai_intervals:
 		var s: float = iv.start
-		var d := -1
 		for i in nb:
 			if absf(bt[i] - s) < blen[i] * 0.5:
-				d = i
+				drop_beats.append(i)
 				break
-		if d < 1 or bsec[d - 1] != bsec[d]:
+	var empty := 0
+	for i in nb:
+		if cnt[i] == 0:
+			empty += 1
+			continue
+		if empty >= 8 and on_beat[i] > 0 and not drop_beats.has(i):
+			drop_beats.append(i)
+		empty = 0
+	drop_beats.sort()
+	var plan := {}  # beat index -> ["freeze"] / ["ramp", n, lo] / ["drop"]
+	for d: int in drop_beats:
+		if d < 1 or bsec[d - 1] != bsec[d] or plan.has(d):
 			continue
 		plan[d] = ["drop"]
 		plan[d - 1] = ["freeze"]
@@ -213,6 +248,8 @@ static func generate(bm: Beatmap, seed_value: int) -> Array:
 		var p: Array = plan.get(i, [])
 		if near == 0:
 			pass  # Break: ruhig
+		elif t0 <= first_red + 0.5:
+			pass  # vor dem ersten Kontrollpunkt gilt dessen m: Anlauf bleibt 1.0
 		elif not p.is_empty() and p[0] == "ramp":
 			span = int(p[1])
 			var lo: float = p[2]

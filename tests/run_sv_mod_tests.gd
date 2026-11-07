@@ -154,7 +154,8 @@ func _test_normalized(bm: Beatmap) -> void:
 	print("- Normierung (mittlere Scroll-Geschwindigkeit 1.0)")
 	var sm := _sm(bm, SvMod.timing_points_for(bm))
 	var t0 := bm.hit_objects[0].time
-	var t1 := bm.hit_objects[bm.hit_objects.size() - 1].time
+	# Blockgrenze (Kiai-Ende, kein Drop): dort muss die Position exakt stimmen.
+	var t1 := 1000.0 + 60 * 1600.0
 	var drift_end := absf((sm.position(t1) - sm.position(t0)) - (t1 - t0))
 	_ok(drift_end < 1.0, "Abweichung am Ende %.4f ms < 1 ms" % drift_end)
 	var worst := 0.0
@@ -189,6 +190,13 @@ func _test_fair(bm: Beatmap, label: String, tps: Array = []) -> void:
 	for preempt in [600.0, 1200.0, 2400.0]:
 		for o in bm.hit_objects:
 			if o.time - sm.spawn_time(o.time, preempt) < 0.4 * preempt:
+				if short == 0:
+					var k := sm._seg_by_time(o.time)
+					var seg := []
+					for q in range(maxi(k - 12, 0), mini(k + 2, sm._times.size())):
+						seg.append("%.0f:%.2f" % [sm._times[q], sm._mult[q]])
+					print("    kurz: t=%.0f preempt=%.0f sichtbar=%.0f  %s" % [o.time, preempt,
+						o.time - sm.spawn_time(o.time, preempt), " ".join(seg)])
 				short += 1
 	_ok(short == 0, "%s: jede Note >= 40%% der Anflugzeit sichtbar (%d zu kurz)" % [label, short])
 
