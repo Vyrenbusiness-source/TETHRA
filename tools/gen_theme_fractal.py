@@ -311,10 +311,20 @@ def build_scene(rng):
         druse(near, rng, b, up(llon, lean), L, r, (by + 0.12 * L, by + 0.62 * L),
               flat=rng.uniform(0.45, 0.8))
 
+    # Mittlere Tiefe: Drusen links/rechts der Strecke bis zum Horizont.
+    mids = [(-27.0, 120.0), (-31.0, 190.0), (-48.0, 150.0), (29.0, 130.0), (34.0, 210.0),
+            (52.0, 160.0), (-110.0, 140.0), (115.0, 150.0), (-160.0, 170.0), (155.0, 180.0)]
+    for lon, dist in mids:
+        L = dist * rng.uniform(0.32, 0.5)
+        by = -L * rng.uniform(0.35, 0.5)
+        b0 = at(0.0, lon, dist, y=by)
+        druse(near, rng, b0, up(rng.uniform(-180, 180), rng.uniform(4, 16)), L, L * rng.uniform(0.09, 0.13),
+              (by + 0.15 * L, by + 0.7 * L), n=(3, 6), cone=30.0, flat=rng.uniform(0.5, 0.9))
+
     # Von oben haengende Stacheln (Spitzen zeigen auf die Strecke, bleiben oben).
     hangs = [
-        (-24.0, 70.0, 88.0, 70.0, 5.0, 30.0),
-        (27.0, 76.0, 92.0, 74.0, 5.2, -30.0),
+        (-30.0, 62.0, 70.0, 64.0, 5.4, 26.0),
+        (33.0, 66.0, 74.0, 68.0, 5.6, -26.0),
         (-70.0, 60.0, 80.0, 60.0, 4.6, 40.0),
         (74.0, 62.0, 84.0, 62.0, 4.8, -40.0),
         (180.0, 70.0, 90.0, 70.0, 5.0, 0.0),
@@ -357,12 +367,13 @@ def build_scene(rng):
 def env(r, rim_k=1.0):
     """Gespiegelte Umgebung (linear) fuer Reflexionsrichtungen r (n, 3)."""
     ry = r[:, 1:2]
-    dome = COLD * (0.006 + 0.16 * np.clip(ry, 0, 1) ** 2.2)
+    dome = COLD * (0.004 + 0.07 * np.clip(ry, 0, 1) ** 2.0)
     k = r @ KEY_DIR
     key = (np.exp((k - 1.0) * 40.0) * 0.10 + np.exp((k - 1.0) * 420.0) * 2.6)[:, None] * CARMINE
     q = r @ RIM_DIR
     rim = (np.exp((q - 1.0) * 12.0) * 0.05 + np.exp((q - 1.0) * 150.0) * 0.9)[:, None] * CARMINE * rim_k
-    hor = (np.exp(-(ry / 0.10) ** 2) * 0.020)[..., :1] * CARMINE_DEEP
+    # Horizont-Spalt: duenne helle Linie + Schein -> Spiegelstreifen in den Facetten.
+    hor = (np.exp(-(ry / 0.030) ** 2) * 0.32 + np.exp(-np.abs(ry) / 0.12) * 0.045) * CARMINE
     return dome + key + rim + hor
 
 
@@ -390,9 +401,9 @@ def shade(d, t, p, P, i_in, j_e, ed, px):
     halo = np.exp(-ed[:, None] / (w * 4.0)) * 0.07
     k = re @ KEY_DIR
     q = re @ RIM_DIR
-    glint = (0.03 + 0.55 * np.exp((k - 1.0) * 4.0) + 0.45 * np.exp((q - 1.0) * 3.0))[:, None]
+    glint = (0.06 + 0.8 * np.exp((k - 1.0) * 4.0) + 0.7 * np.exp((q - 1.0) * 3.0))[:, None]
     hot = (np.exp((k - 1.0) * 30.0) + np.exp((q - 1.0) * 22.0))[:, None]
-    ec = CARMINE * glint * 0.6 + CARMINE_HOT * hot * 1.2
+    ec = CARMINE * glint * 1.0 + CARMINE_HOT * hot * 1.6
     col = col + ec * (line + halo) * sharp * P.gloss
     # Dunst und Abgrund.
     fog = np.exp(-t / FOG_DIST)[:, None]
