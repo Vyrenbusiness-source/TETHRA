@@ -566,7 +566,8 @@ func _start_map(osz_file: String, version: String) -> void:
 		if ms.version_name_at(i) == version:
 			idx = i
 			break
-	GameSession.mods = {"NF": false}
+	# Gleiche Mods wie im Song-Browser (bleiben an, bis man sie ausschaltet).
+	GameSession.mods = {"NF": Settings.mod_nf, "SV": Settings.mod_sv}
 	GameSession.is_replay = false
 	GameSession.set_selection(ms.osz_path, idx, ms.version_name_at(idx),
 			ms.osu_filename_at(idx), ms.stars_at(idx))

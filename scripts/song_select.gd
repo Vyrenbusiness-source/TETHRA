@@ -1824,7 +1824,7 @@ func _watch_replay() -> void:
 	var data := ReplayStore.load_replay(_selected_set.osz_path, _selected_set.version_name_at(_selected_diff))
 	if data.is_empty():
 		return
-	GameSession.mods = _current_mods()
+	GameSession.mods = GameSession._replay_mods(data)
 	GameSession.set_selection(
 		_selected_set.osz_path, _selected_diff,
 		_selected_set.version_name_at(_selected_diff),

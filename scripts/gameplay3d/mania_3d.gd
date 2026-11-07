@@ -3796,6 +3796,7 @@ func _show_results(is_fail: bool) -> void:
 		ReplayStore.save(GameSession.osz_path, _beatmap.version_name(), _recorded, {
 			"score": int(s.score), "grade": str(s.grade),
 			"accuracy": float(s.accuracy), "date": Time.get_datetime_string_from_system(),
+			"mods": GameSession.mods.duplicate(),  # Replay laeuft mit denselben Mods
 		})
 	_build_results(is_fail, s, pp, unranked, new_best)
 
