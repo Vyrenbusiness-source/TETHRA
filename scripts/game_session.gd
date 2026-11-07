@@ -17,8 +17,21 @@ var osu_filename: String = ""
 ## Star Rating der gewaehlten Difficulty (aus rosu-pp, -1 = unbekannt).
 var stars: float = -1.0
 
-## Aktive Mods (kosmetisch/teilweise funktional). z.B. {"NF": true}.
+## Aktive Mods, Schnittstelle {"SV": bool, "NF": bool}.
+## NF: kein Fail. SV: jede Map mit generierten Tempowechseln (SvMod).
 var mods: Dictionary = {}
+## Score-Multiplikatoren und Badge-Liste: ManiaCore.MOD_MULT / mod_multiplier
+## / mod_list (SV x1.10, NF x0.5, kombiniert = Produkt).
+
+
+static func mod_multiplier(p_mods: Dictionary) -> float:
+	return ManiaCore.mod_multiplier(p_mods)
+
+
+static func mod_list(p_mods: Dictionary) -> Array:
+	return ManiaCore.mod_list(p_mods)
+
+
 ## Tutorial-Modus: Uebungs-Map mit Erklaer-Stopps, ohne Score-Wertung.
 var tutorial := false
 
