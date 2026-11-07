@@ -12,6 +12,12 @@ shader_type sky;
 //     Oberkante wogt; der Nebel wird am Schacht kalt angeleuchtet.
 //   - Lichtschacht atmet auf dem Beat (beat_pulse) und im Kiai (kiai),
 //     Staubflocken sinken langsam durch den Strahl.
+//   - Platten-Ebenen (abyss_sky_near.webp: R ferne, G nahe Monolithplatten,
+//     B Kantenlicht): rutschen mit beat_step ruckartig, exakt auf dem
+//     Schlag, weiter (ferne 0.35, nahe 0.8 Grad je Beat; Parallax) und
+//     schieben sich durch den Schacht. downbeat_pulse laesst den Schacht
+//     und das Kantenlicht aufflammen. Der Drop (drop 0..0.6) lichtet den
+//     Nebel und weitet das Schachtlicht: Welt wird sichtbar, nie blendend.
 //   - Schwerer Bodennebel auf einer Ebene unter der Strecke, stroemt beim
 //     Flug zum Spieler (star_phase / star_speed), Mitte unter der Strecke
 //     bleibt dunkel; warp zieht ihn in Flugrichtung.
@@ -82,6 +88,18 @@ uniform float readability : hint_range(0.0, 1.0) = 0.35;
 
 // Abgrund
 uniform float kiai : hint_range(0.0, 1.0) = 0.0;
+// Beat-Vertrag (docs/worlds/beat_contract.md)
+uniform float beat_phase : hint_range(0.0, 1.0) = 0.0;
+uniform float bar_phase : hint_range(0.0, 1.0) = 0.0;
+uniform float beat_step = 0.0;
+uniform float downbeat_pulse : hint_range(0.0, 1.0) = 0.0;
+uniform float drop : hint_range(0.0, 0.6) = 0.0;
+uniform float energy : hint_range(0.0, 1.0) = 0.0;
+uniform float comfort : hint_range(0.0, 1.0) = 0.0;
+uniform sampler2D near_a : filter_linear, repeat_enable, hint_default_black;
+uniform sampler2D near_b : filter_linear, repeat_enable, hint_default_black;
+uniform float slab_mid_deg = 0.35;       // Grad je Beat (ferne Platten)
+uniform float slab_near_deg = 0.8;       // Grad je Beat (nahe Platten)
 uniform vec3 fog_color : source_color = vec3(0.49, 0.55, 0.63);
 uniform vec3 fog_lit_color : source_color = vec3(0.74, 0.79, 0.86);
 uniform vec3 shaft_color : source_color = vec3(0.85, 0.89, 0.94);
@@ -238,6 +256,16 @@ vec4 ground_fog_layer(vec3 dir, float lon, float bp) {
 	return vec4(c, clamp(dens * ground_fog, 0.0, 0.92));
 }
 
+// Plattenebene: lit (Oberflaeche), rim (Kantenlicht), cov (Deckung).
+vec3 slab_color(float rim, float v, float lon, float lat, float haze, float atem, float dk, float dbp) {
+	float prox = exp(-abs(wrap_deg(lon - shaft_lon)) / 55.0);
+	vec3 surf = mix(vec3(0.003, 0.004, 0.006), fog_lit_color * 0.20, v) * (0.30 + 1.1 * prox + 0.5 * dk);
+	vec3 rimc = shaft_color * rim * (0.30 + 0.35 * atem + 0.9 * dbp + 0.8 * dk) * 0.9;
+	vec3 c = surf + rimc;
+	vec3 fc = fog_color * fog_amb(lat) + fog_lit_color * shaft_lit(lon, lat) * 0.5;
+	return mix(c, fc, haze);
+}
+
 void sky() {
 	vec3 dir = normalize(EYEDIR);
 	vec3 pdir = dir * euler(pano_rotation);
@@ -273,9 +301,24 @@ void sky() {
 		float r = fog_tex(vec2(fract(puv.x - rt), puv.y + wob)).r;
 		float amb = fog_amb(lat);
 		float sl = shaft_lit(lon, lat) * (1.0 + atem * 0.5);
+		float dk = clamp(drop / 0.6, 0.0, 1.0);
+		float dbp = clamp(downbeat_pulse, 0.0, 1.0);
+		float cm = 1.0 - 0.5 * comfort;
+		float fd = fog_density * (1.0 - 0.40 * dk);
 		vec3 fc = fog_color * amb + fog_lit_color * sl;
-		col = mix(col, fc, clamp(g * 0.45 * fog_density, 0.0, 1.0));
-		col = mix(col, fc, clamp(r * 0.85 * fog_density, 0.0, 1.0));
+		col = mix(col, fc, clamp(g * 0.45 * fd, 0.0, 1.0));
+		// Platten rutschen mit beat_step (springt auf dem Schlag, ruht dazwischen).
+		float su_mid = beat_step * slab_mid_deg * cm / 360.0;
+		float su_near = beat_step * slab_near_deg * cm / 360.0;
+		vec4 nm = textureLod(near_a, vec2(fract(puv.x + su_mid), puv.y), 0.0);
+		float cm_mid = smoothstep(0.0, 0.06, nm.r);
+		col = mix(col, slab_color(0.0, nm.r, lon, lat, 0.55 * exp(-max(lat, 0.0) / 6.0) + 0.25, atem, dk, dbp), cm_mid);
+		col = mix(col, fc, clamp(r * 0.85 * fd, 0.0, 1.0));
+		vec4 nn = textureLod(near_a, vec2(fract(puv.x + su_near), puv.y), 0.0);
+		float cm_near = smoothstep(0.0, 0.06, nn.g);
+		col = mix(col, slab_color(nn.b, nn.g, lon, lat, 0.30 * exp(-max(lat, 0.0) / 4.0), atem, dk, dbp), cm_near);
+		// Schacht flammt auf dem Taktanfang auf und weitet sich im Drop.
+		col += shaft_color * sb * shaft_gain * (0.35 * dbp + 0.8 * dk) * (1.0 - cm_near);
 
 		if (dir.y < 0.0) {
 			vec4 gf = ground_fog_layer(dir, lon, bp);

@@ -4,9 +4,12 @@ extends Node3D
 ## Stahlgrau-Farbsatz, Pads und Noten zur Lesbarkeits-Kontrolle.
 ## Ohne Argumente: 128 BPM, Schacht atmet, Nebel rollt, Bodennebel stroemt.
 ##   --bpm=<n> --speed=<Phase/s> --warp=<0..1> --kiai=<0..1>
-##   --shot [--shot-dir=<ordner>]  speichert abyss_still / abyss_beat /
-##        abyss_exhale / abyss_kiai / abyss_warp / abyss_side (70 Grad) /
-##        abyss_up (Blick zum Schacht) / abyss_back als PNG, dann Ende.
+##   --shot [--shot-dir=<ordner>]  speichert abyss_still / abyss_beat
+##        (phase 0.02) / abyss_half (phase 0.5) / abyss_drop (Drop-Spitze) /
+##        abyss_side (70 Grad) als PNG, druckt [luma] still=.. beat=.. drop=..
+##        (Strecke: x .25-.75, y .42-.87 | oben: y 0-.42), dann Ende.
+## Beat-Uniforms (beat_phase, bar_phase, beat_step, downbeat_pulse, drop,
+## energy, comfort) mit den Formeln aus docs/worlds/beat_contract.md.
 
 const ROAD_Y := -1.6
 const Z_LINE := 3.0
@@ -157,8 +160,22 @@ func _arg_f(prefix: String, def: float) -> float:
 			return float(a.trim_prefix(prefix))
 	return def
 
-func _set_pulse(p: float) -> void:
+func _set_state(beats: int, phase: float, drop: float, kiai: float) -> void:
+	var beat_ms := 60000.0 / _bpm
+	var meter := 4
+	var bar_phase := (float(beats % meter) + phase) / float(meter)
+	var p := exp(-phase * beat_ms / 62.0)
+	if beats % meter == 0:
+		p = minf(p * 1.15, 1.0)
 	_mat.set_shader_parameter("beat_pulse", p)
+	_mat.set_shader_parameter("beat_phase", phase)
+	_mat.set_shader_parameter("bar_phase", bar_phase)
+	_mat.set_shader_parameter("beat_step", float(beats) + 1.0 - pow(1.0 - phase, 4.0))
+	_mat.set_shader_parameter("downbeat_pulse", exp(-bar_phase * float(meter) * 3.0))
+	_mat.set_shader_parameter("drop", drop)
+	_mat.set_shader_parameter("kiai", kiai)
+	_mat.set_shader_parameter("energy", 0.5)
+	_mat.set_shader_parameter("comfort", 0.0)
 	for em in _edge_mats:
 		em.emission = C_EDGE.lerp(C_EDGE_BEAT, p)
 		em.emission_energy_multiplier = 0.45 + 0.65 * p
@@ -171,8 +188,28 @@ func _process(delta: float) -> void:
 	if _shot:
 		_shot_step()
 		return
-	var beat := _t * _bpm / 60.0
-	_set_pulse(pow(1.0 - fmod(beat, 1.0), 4.0))
+	var b := _t * _bpm / 60.0
+	var d := clampf(float(_arg_f("--drop=", 0.0)), 0.0, 0.6)
+	_set_state(int(floor(b)), fmod(b, 1.0), d, _arg_f("--kiai=", 0.0))
+
+func _luma(img: Image, y0: float, y1: float) -> float:
+	var im := img.duplicate() as Image
+	im.resize(160, 90)
+	var s := 0.0
+	var n := 0
+	for y in range(int(y0 * 90), int(y1 * 90)):
+		for x in range(int(0.25 * 160), int(0.75 * 160)) if y0 > 0.1 else range(0, 160):
+			var c := im.get_pixel(x, y)
+			s += 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b
+			n += 1
+	return s / float(maxi(n, 1))
+
+var _lm: Dictionary = {}
+
+func _grab(key: String) -> void:
+	var img := get_viewport().get_texture().get_image()
+	_lm[key] = [_luma(img, 0.42, 0.87), _luma(img, 0.0, 0.42)]
+	_save("abyss_%s.png" % key)
 
 ## Schritt-Folge fuer --shot: je 12 Frames Einschwingen, dann speichern.
 func _shot_step() -> void:
@@ -180,37 +217,29 @@ func _shot_step() -> void:
 		return
 	match _step:
 		0:
-			_set_pulse(0.0)
+			_set_state(8, 0.5, 0.0, 0.0)
 		1:
-			_save("abyss_still.png")
-			_set_pulse(1.0)
+			_grab("still")
+			_set_state(8, 0.02, 0.0, 0.0)
 		2:
-			_save("abyss_beat.png")
-			_set_pulse(0.2)
+			_grab("beat")
+			_set_state(8, 0.5, 0.0, 0.0)
 		3:
-			_save("abyss_exhale.png")
-			_set_pulse(0.6)
-			_mat.set_shader_parameter("kiai", 1.0)
+			_grab("half")
+			_set_state(8, 0.02, 0.6, 1.0)
 		4:
-			_save("abyss_kiai.png")
-			_mat.set_shader_parameter("kiai", 0.0)
-			_set_pulse(0.3)
-			_mat.set_shader_parameter("star_phase", 0.8)
-			_mat.set_shader_parameter("warp", 0.8)
-		5:
-			_save("abyss_warp.png")
-			_mat.set_shader_parameter("warp", 0.0)
-			_mat.set_shader_parameter("star_phase", 0.0)
-			_set_pulse(0.5)
+			_grab("drop")
+			_set_state(8, 0.5, 0.0, 0.0)
 			_cam.rotation_degrees = Vector3(-8, 70, 0)
-		6:
-			_save("abyss_side.png")
-			_cam.rotation_degrees = Vector3(30, 22, 0)
-		7:
-			_save("abyss_up.png")
-			_cam.rotation_degrees = Vector3(-6, 180, 0)
-		8:
-			_save("abyss_back.png")
+		5:
+			_grab("side")
+			var s: Array = _lm["still"]
+			var bt: Array = _lm["beat"]
+			var h: Array = _lm["half"]
+			var dr: Array = _lm["drop"]
+			print("[luma] still=%.4f beat=%.4f drop=%.4f (Strecke) | oben still=%.4f beat=%.4f half=%.4f drop=%.4f" % [s[0], bt[0], dr[0], s[1], bt[1], h[1], dr[1]])
+			print("[luma] Strecke drop/still=%+.1f%% (max +20) | oben drop/still=%+.1f%% (max +35) | beat/half oben=%+.1f%%" % [
+				100.0 * (dr[0] / maxf(s[0], 1e-5) - 1.0), 100.0 * (dr[1] / maxf(s[1], 1e-5) - 1.0), 100.0 * (bt[1] / maxf(h[1], 1e-5) - 1.0)])
 			get_tree().quit(0)
 	_step += 1
 
