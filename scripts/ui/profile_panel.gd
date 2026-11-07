@@ -29,6 +29,8 @@ const GRADE_COLOR := {
 
 var _avatar_slot: Control
 var _remove_btn: Button
+var _name_edit: LineEdit
+var _name_hint: Label
 var _file_dialog: FileDialog
 
 var _library: MapLibrary
@@ -113,16 +115,26 @@ func _ready() -> void:
 	info.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	head.add_child(info)
 
+	# Name nur EINMAL festlegbar (gleiche Regel wie Einstellungen > Gameplay):
+	# solange "Player" -> Eingabe + Enter, danach nur Anzeige.
 	var name_edit := LineEdit.new()
 	name_edit.text = Settings.profile_name
-	name_edit.max_length = 20
+	name_edit.max_length = Settings.NAME_MAX_LEN
 	name_edit.add_theme_font_override("font", UiTheme.heading_font(2))
 	name_edit.add_theme_font_size_override("font_size", 28)
 	name_edit.add_theme_stylebox_override("normal", StyleBoxEmpty.new())
+	name_edit.add_theme_stylebox_override("read_only", StyleBoxEmpty.new())
 	name_edit.add_theme_stylebox_override("focus", UiTheme.glass_box(8, 0.4, 0.25))
-	name_edit.text_submitted.connect(func(t): _save_name(t))
-	name_edit.focus_exited.connect(func(): _save_name(name_edit.text))
+	name_edit.editable = Settings.can_set_name()
 	info.add_child(name_edit)
+	_name_edit = name_edit
+	if name_edit.editable:
+		_name_hint = Label.new()
+		_name_hint.text = tr("Enter: Name festlegen · kann nur einmal geändert werden")
+		_name_hint.add_theme_font_size_override("font_size", 12)
+		_name_hint.add_theme_color_override("font_color", Color(COL_DIM, 0.85))
+		info.add_child(_name_hint)
+		name_edit.text_submitted.connect(func(t): _save_name(t))
 
 	# Gesamt-pp gross in ACCENT2.
 	var pp_row := HBoxContainer.new()
@@ -679,9 +691,21 @@ func _pick_avatar() -> void:
 	_file_dialog.popup_centered()
 
 
+## Einmaliges Festlegen; Fehler ruhig im Hinweis, danach nur noch Anzeige.
 func _save_name(t: String) -> void:
-	Settings.profile_name = t.strip_edges() if t.strip_edges() != "" else "Player"
-	Settings.save()
+	var err := Settings.set_name_once(t)
+	if err != "":
+		if _name_hint != null:
+			_name_hint.text = tr(err)
+			_name_hint.add_theme_color_override("font_color", Color(1.0, 0.72, 0.45, 0.95))
+		return
+	if _name_edit != null:
+		_name_edit.text = Settings.profile_name
+		_name_edit.editable = false
+		_name_edit.release_focus()
+	if _name_hint != null:
+		_name_hint.queue_free()
+		_name_hint = null
 
 
 func _unhandled_input(event: InputEvent) -> void:

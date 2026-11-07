@@ -32,6 +32,9 @@ var _tabs: Array[Button] = []
 var _tab_cur := 0
 var _accent := UiTheme.ACCENT
 var _preview_2d: Control
+var _preview_bg: TextureRect
+var _preview_bg_label: Label
+var _name_box: VBoxContainer
 var _rows_3d: Array[Control] = []
 
 var _capturing := 0   # 0 = keine Aufnahme, 3..6 = Lane 1-4
@@ -144,6 +147,13 @@ func _ready() -> void:
 	var pg_audio := _page(side, stack, "Audio")
 
 	# ------------------------------- GAMEPLAY -------------------------------
+	# Spielername ganz oben: "Player" darf EINMAL einen eigenen Namen festlegen.
+	_group(pg_game, "Spielername")
+	_name_box = VBoxContainer.new()
+	_name_box.add_theme_constant_override("separation", 2)
+	pg_game.add_child(_name_box)
+	_build_name_rows()
+
 	_group(pg_game, "Spielfeld")
 	var mode_2d := CheckButton.new()
 	mode_2d.button_pressed = Settings.playfield_2d
@@ -155,8 +165,18 @@ func _ready() -> void:
 			_note_colors.show_mode(on))
 	_row(pg_game, "2D-Modus", mode_2d, null)
 
-	_slider_row(pg_game, "Scrollgeschwindigkeit", 0.5, 3.0, 0.1, Settings.mania_scroll,
-		_fmt_x, func(v): Settings.mania_scroll = v)
+	# Scroll Speed wie osu!lazer: 1..40, Anzeige "25 (459 ms)" = Zeit bis zur Linie.
+	# Pfeiltasten (Regler fokussiert) und Mausrad (ueber dem Regler): +-1.
+	var sp_val := Label.new()
+	sp_val.custom_minimum_size = Vector2(96, 0)
+	_slider_row(pg_game, "Scroll Speed", Settings.SCROLL_SPEED_MIN, Settings.SCROLL_SPEED_MAX, 1.0,
+		Settings.scroll_speed,
+		func(v): return Settings.scroll_value_text(int(v)),
+		func(v):
+			Settings.scroll_speed = Settings.clamp_scroll_speed(v)
+			Settings.scroll_speed_changed.emit(Settings.scroll_speed),
+		"Wie osu!lazer: Zeit von oben bis zur Trefferlinie = 11485 ms / Speed. Pfeiltasten/Mausrad: ±1, im Spiel F3/F4",
+		sp_val)
 
 	var spacing_row := _slider_row(pg_game, "Spurbreite", Settings.LANE_SPACING_MIN * 100.0,
 		Settings.LANE_SPACING_MAX * 100.0, Settings.LANE_SPACING_STEP * 100.0,
@@ -238,8 +258,10 @@ func _ready() -> void:
 	_group(pg_2d, "Map-Bild")
 	_slider_row(pg_2d, "Hintergrund", 0.0, 100.0, 5.0, Settings.bg_dim * 100.0,
 		func(v): return _fmt_bg(Settings.clamp_bg_dim(v / 100.0)),
-		func(v): Settings.bg_dim = Settings.clamp_bg_dim(v / 100.0),
-		"Deckkraft des Map-Bilds; 0 % = Hintergrund aus (schwarz)")
+		func(v):
+			Settings.bg_dim = Settings.clamp_bg_dim(v / 100.0)
+			_refresh_bg_preview(),
+		"Deckkraft des Map-Bilds; 0 % = Hintergrund ganz aus (schwarz)")
 	_slider_row(pg_2d, "Spielfeld", 0.0, 100.0, 5.0, Settings.field_dim_2d * 100.0,
 		func(v): return _fmt_pct0(Settings.clamp_bg_dim(v / 100.0)),
 		func(v):
@@ -662,7 +684,56 @@ func _add_2d_preview(parent: Control) -> void:
 	_preview_2d = scr.new()
 	var cc := CenterContainer.new()
 	parent.add_child(_framed(cc))
-	cc.add_child(_preview_2d)
+	# Hinter der Vorschau: Beispiel-"Map-Bild" mit der Hintergrund-Deckkraft
+	# (0 = ganz schwarz), damit "Aus" live sichtbar ist.
+	var stack := Control.new()
+	stack.custom_minimum_size = _preview_2d.custom_minimum_size
+	stack.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	cc.add_child(stack)
+	var black := ColorRect.new()
+	black.color = Color.BLACK
+	black.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	black.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	stack.add_child(black)
+	_preview_bg = TextureRect.new()
+	_preview_bg.texture = _sample_bg_texture()
+	_preview_bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_preview_bg.stretch_mode = TextureRect.STRETCH_SCALE
+	_preview_bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_preview_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	stack.add_child(_preview_bg)
+	stack.add_child(_preview_2d)
+	_preview_bg_label = Label.new()
+	_preview_bg_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_preview_bg_label.add_theme_font_size_override("font_size", 12)
+	_preview_bg_label.add_theme_color_override("font_color", Color(COL_DIM, 0.85))
+	parent.add_child(_preview_bg_label)
+	_refresh_bg_preview()
+
+
+## Beispiel-Hintergrund fuer die Vorschau (bunter Verlauf statt echtem Map-Bild).
+static func _sample_bg_texture() -> Texture2D:
+	var g := Gradient.new()
+	g.set_color(0, Color(0.95, 0.45, 0.25))
+	g.set_color(1, Color(0.25, 0.35, 0.95))
+	g.add_point(0.5, Color(0.85, 0.30, 0.75))
+	var t := GradientTexture2D.new()
+	t.gradient = g
+	t.fill_from = Vector2(0, 0)
+	t.fill_to = Vector2(1, 1)
+	t.width = 64
+	t.height = 64
+	return t
+
+
+## Vorschau-Hintergrund an Settings.bg_dim angleichen (0 = Aus).
+func _refresh_bg_preview() -> void:
+	if _preview_bg == null:
+		return
+	var v := Settings.bg_dim
+	_preview_bg.modulate = Color(v, v, v, 1.0)
+	_preview_bg.visible = v > 0.001
+	_preview_bg_label.text = tr("Map-Bild") + ": " + tr(_fmt_bg(v))
 
 
 func _refresh_2d_preview() -> void:
@@ -747,6 +818,57 @@ func _update_2d_rows() -> void:
 		_tabs[2].visible = not on
 	if _tab_cur < _tabs.size() and not _tabs[_tab_cur].visible:
 		_show_page(0)
+
+
+## Spielername: festgelegt -> nur der Name; sonst Eingabefeld + "Name speichern"
+## (einmalig, 2-16 Zeichen, nicht "Player").
+func _build_name_rows() -> void:
+	for c in _name_box.get_children():
+		c.queue_free()
+	if not Settings.can_set_name():
+		var shown := Label.new()
+		shown.text = Settings.profile_name
+		shown.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+		shown.add_theme_font_override("font", UiTheme.heading_font(2))
+		shown.add_theme_font_size_override("font_size", 18)
+		shown.add_theme_color_override("font_color", UiTheme.TEXT)
+		_row(_name_box, "Name", shown, null).tooltip_text = tr("Der Name ist festgelegt")
+		return
+	var line := HBoxContainer.new()
+	line.add_theme_constant_override("separation", 8)
+	var edit := LineEdit.new()
+	edit.name = "NameEdit"
+	edit.max_length = Settings.NAME_MAX_LEN
+	edit.placeholder_text = tr("Dein Name (2–16 Zeichen)")
+	edit.custom_minimum_size = Vector2(0, CTRL_H)
+	edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	line.add_child(edit)
+	var save_btn := Button.new()
+	save_btn.name = "NameSave"
+	save_btn.text = "Name speichern"
+	save_btn.custom_minimum_size = Vector2(0, CTRL_H)
+	UiTheme.style_button(save_btn, true)
+	line.add_child(save_btn)
+	_row(_name_box, "Name", line, null)
+	var hint := Label.new()
+	hint.name = "NameHint"
+	hint.text = tr("Kann nur einmal geändert werden")
+	hint.add_theme_font_size_override("font_size", 12)
+	hint.add_theme_color_override("font_color", Color(COL_DIM, 0.85))
+	var hm := MarginContainer.new()
+	hm.add_theme_constant_override("margin_left", int(CAP_W) + 24)
+	hm.add_child(hint)
+	_name_box.add_child(hm)
+	var submit := func():
+		var err := Settings.set_name_once(edit.text)
+		if err != "":
+			hint.text = tr(err)
+			hint.add_theme_color_override("font_color", Color(1.0, 0.72, 0.45, 0.95))
+			return
+		Sfx.ui_open()
+		_build_name_rows()
+	save_btn.pressed.connect(submit)
+	edit.text_submitted.connect(func(_t: String): submit.call())
 
 
 static func _fmt_x(v: float) -> String:
