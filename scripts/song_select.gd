@@ -136,6 +136,10 @@ var _star_filter := 0
 var _sort_mode := 0
 var _star_chips: Array[Button] = []
 var _sv_filter := false
+## Filter/Sortierung/Sammlung/Suche bleiben ueber Map-Ende und Neustart erhalten.
+const BROWSER_STATE_PATH := "user://browser_state.cfg"
+var _state_ready := false
+var _saved_search := ""
 var _sv_chip: Button
 # Max-pp (SS) der ausgewaehlten Diff — rosu-pp im Hintergrund-Thread.
 var _maxpp_label: Label
@@ -170,10 +174,16 @@ func _ready() -> void:
 	add_child(_preview)
 
 	var t_ui := Time.get_ticks_usec()
+	var restore := _load_browser_state()
 	_build_ui()
 	GameSession.perf_since("Browser: UI aufbauen", t_ui)
 	t_ui = Time.get_ticks_usec()
-	_refresh_filter("")
+	if restore:
+		_search.text = _saved_search
+		if _collection_mode:
+			_set_collection_mode(true)
+	_refresh_filter(_search.text)
+	_state_ready = restore
 	GameSession.perf_since("Browser: %d Karten bauen" % _filtered.size(), t_ui)
 	get_window().files_dropped.connect(_on_files_dropped)
 	t_ui = Time.get_ticks_usec()
@@ -1050,7 +1060,37 @@ func _restyle_star_chips() -> void:
 		_apply_toggle(_sv_chip, _sv_filter)
 
 
+## Gespeicherte Browser-Filter laden (nicht in Test-/Shot-Laeufen: die brauchen den Standard).
+func _load_browser_state() -> bool:
+	var force := OS.get_cmdline_args().has("--browser-state")  # Harness: Wiederherstellung pruefen
+	if not force and (Settings.is_test_run() or DisplayServer.get_name() == "headless"):
+		return false
+	var cfg := ConfigFile.new()
+	if cfg.load(BROWSER_STATE_PATH) == OK:
+		_star_filter = clampi(int(cfg.get_value("browser", "star_filter", 0)), 0, STAR_FILTERS.size() - 1)
+		_sv_filter = bool(cfg.get_value("browser", "sv_filter", false))
+		_sort_mode = clampi(int(cfg.get_value("browser", "sort_mode", 0)), 0, 2)
+		_saved_search = str(cfg.get_value("browser", "search", ""))
+		var coll := str(cfg.get_value("browser", "collection", ""))
+		_active_collection = coll if CollectionStore.list_names().has(coll) else ""
+		_collection_mode = bool(cfg.get_value("browser", "collection_mode", false))
+	return true
+
+
+func _save_browser_state() -> void:
+	var cfg := ConfigFile.new()
+	cfg.set_value("browser", "star_filter", _star_filter)
+	cfg.set_value("browser", "sv_filter", _sv_filter)
+	cfg.set_value("browser", "sort_mode", _sort_mode)
+	cfg.set_value("browser", "search", _search.text if _search != null else "")
+	cfg.set_value("browser", "collection", _active_collection)
+	cfg.set_value("browser", "collection_mode", _collection_mode)
+	cfg.save(BROWSER_STATE_PATH)
+
+
 func _refresh_filter(query: String) -> void:
+	if _state_ready:
+		_save_browser_state()
 	var q := query.strip_edges().to_lower()
 	var lo: float = STAR_FILTERS[_star_filter][1]
 	var hi: float = STAR_FILTERS[_star_filter][2]
