@@ -3928,9 +3928,12 @@ func _on_results_clip() -> void:
 		return
 	if _clip_exporter == null:
 		_clip_exporter = ClipExporter.new()
-		add_child(_clip_exporter)
-		_clip_exporter.progress.connect(func(sec: float):
-			_results_toast(tr("Clip wird aufgenommen … %d s") % int(sec), true))
+		# An die Wurzel haengen: das MP4-Umkodieren laeuft weiter, auch wenn man
+		# die Results verlaesst.
+		get_tree().root.add_child(_clip_exporter)
+		_clip_exporter.progress_info.connect(func(fraction: float, eta_s: float, phase: String):
+			if _results_screen != null and is_instance_valid(_results_screen) 					and _results_screen.has_method("show_clip_progress"):
+				_results_screen.show_clip_progress(fraction, eta_s, phase))
 		_clip_exporter.finished.connect(func(ok: bool, path: String):
 			# Fortschritts-Toast weg, Ergebnis kommt als Results-Toast mit
 			# "Ordner öffnen"-Button (bzw. dem Fehlergrund).

@@ -44,6 +44,7 @@ var replay_events: Array = []
 var clip_md5: String = ""
 const CLIP_QUIT_DELAY := 3.0
 var _clip_end_t := -1.0
+var _clip_end_frames := 0
 
 ## Lade-Messung (--perf): jede Phase loggt "PERF <phase> <ms>". Im Perf-Modus
 ## laeuft der Weg Hauptmenue -> Song-Browser -> Map-Wechsel -> SPIELEN automatisch;
@@ -117,10 +118,22 @@ func _process(_dt: float) -> void:
 	var ended = sc.get("_ended") if "_ended" in sc else false
 	if not bool(ended):
 		return
+	# In Frames zaehlen, nicht in Echtzeit: der Movie-Modus rendert schneller als
+	# Echtzeit, sonst haengen mehrere Sekunden Results-Bild am Clip.
 	if _clip_end_t < 0.0:
-		_clip_end_t = Time.get_ticks_msec() / 1000.0
-	elif Time.get_ticks_msec() / 1000.0 - _clip_end_t >= CLIP_QUIT_DELAY:
+		_clip_end_t = 0.0
+		_clip_end_frames = 0
+	_clip_end_frames += 1
+	if _clip_end_frames >= int(CLIP_QUIT_DELAY * _clip_fps()):
 		get_tree().quit(0)
+
+
+func _clip_fps() -> float:
+	var a := OS.get_cmdline_args()
+	var i := a.find("--fixed-fps")
+	if i >= 0 and i + 1 < a.size() and a[i + 1].is_valid_int():
+		return maxf(1.0, a[i + 1].to_float())
+	return 60.0
 
 
 ## Phase seit t0 (Time.get_ticks_usec) loggen.

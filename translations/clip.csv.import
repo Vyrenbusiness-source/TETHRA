@@ -1,0 +1,19 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+uid="uid://br6xxj1o30s1r"
+
+[deps]
+
+files=["res://translations/clip.de.translation", "res://translations/clip.en.translation"]
+
+source_file="res://translations/clip.csv"
+dest_files=["res://translations/clip.de.translation", "res://translations/clip.en.translation"]
+
+[params]
+
+compress=1
+delimiter=0
+unescape_keys=false
+unescape_translations=true
