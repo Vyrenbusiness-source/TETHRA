@@ -121,7 +121,7 @@ uniform float wave_amp = 0.055;       // Linsenwelle: Auslenkung (relativ zum Wi
 // 1:1, ruhig beim Verkleinern. Wird je Pixel in sky() gesetzt.
 float g_lod = 0.0;
 
-const int WARP_TAPS = 6;
+const int WARP_TAPS = 3;
 const float TAU_ = 6.28318530718;
 const float DROP_PEAK_ = 0.6;
 

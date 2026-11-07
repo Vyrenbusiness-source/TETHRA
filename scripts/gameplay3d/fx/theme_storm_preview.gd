@@ -43,6 +43,10 @@ var _kiai := false
 var _comfort := false
 var _luma: Dictionary = {}
 var _wait := 0
+var _bench := false
+var _bench_ref := false
+var _bench_ms: Array[float] = []
+var _bench_n := 0
 
 func _ready() -> void:
 	for a in OS.get_cmdline_args():
@@ -50,10 +54,17 @@ func _ready() -> void:
 			_shot = true
 		elif a == "--kiai":
 			_kiai = true
+		elif a == "--bench":
+			_bench = true
+		elif a == "--bench-ref":
+			_bench = true
+			_bench_ref = true
 		elif a == "--comfort":
 			_comfort = true
 		elif a.begins_with("--shot-dir="):
 			_shot_dir = a.trim_prefix("--shot-dir=")
+	if _bench:
+		_kiai = true
 	_bpm = _arg_f("--bpm=", 150.0)
 
 	_mat = ShaderMaterial.new()
@@ -63,6 +74,10 @@ func _ready() -> void:
 	_mat.set_shader_parameter("rain_a", load(DIR + "storm_sky_rain.webp"))
 	_mat.set_shader_parameter("debris_a", load(DIR + "storm_sky_debris.webp"))
 	_mat.set_shader_parameter("readability", 0.7)  # wie mania_3d._build_theme_sky
+	if _bench_ref:
+		# Referenz: Standard-Panorama-Shader mit derselben Textur, gleiche Szene.
+		_mat.shader = load("res://shaders/sky_panorama.gdshader")
+		_mat.set_shader_parameter("tex_a", load(DIR + "storm_sky.webp"))
 	var sky := Sky.new()
 	sky.sky_material = _mat
 	sky.radiance_size = Sky.RADIANCE_SIZE_32
@@ -211,6 +226,8 @@ func _sim(beats: float, since: float) -> void:
 func _process(delta: float) -> void:
 	_t += delta
 	_frames += 1
+	if _bench:
+		_bench_step(delta)
 	if _shot:
 		_shot_step()
 		return
@@ -219,6 +236,25 @@ func _process(delta: float) -> void:
 	if _kiai and beats >= 8.0:
 		since = fposmod(beats - 8.0, 32.0)
 	_sim(beats, since)
+
+## --bench / --bench-ref: vsync aus, max_fps 0, 120 Frames Warmup, 600 gemessen,
+## druckt "[perf] <welt> fps_avg=... frame_ms_p99=...". Mit --resolution 1920x1080.
+func _bench_step(delta: float) -> void:
+	if _frames == 1:
+		DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
+		Engine.max_fps = 0
+	if _frames <= 120:
+		return
+	_bench_ms.append(delta * 1000.0)
+	if _bench_ms.size() >= 600:
+		var sum := 0.0
+		for v in _bench_ms:
+			sum += v
+		var sorted := _bench_ms.duplicate()
+		sorted.sort()
+		var p99: float = sorted[int(sorted.size() * 0.99)]
+		print("[perf] %s fps_avg=%.1f frame_ms_p99=%.2f" % ["storm-ref(sky_panorama)" if _bench_ref else "storm", 1000.0 / (sum / _bench_ms.size()), p99])
+		get_tree().quit(0)
 
 ## Schuesse: je Schritt Zustand setzen, 10 Frames warten, speichern.
 ## still = Ruhe (Phase 0.9), beat = 0.02 (Downbeat), half = 0.5, drop = Spitze.

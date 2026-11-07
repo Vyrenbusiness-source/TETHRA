@@ -27,7 +27,8 @@ shader_type sky;
 //   downbeat_pulse Akzent: Augenwand gluet kurz staerker, Trichter zieht mehr ein.
 //   drop           Verwandlung: der Trichter zieht sich ENGER (bis ca. 30 %), die
 //                  Truemmer kommen naeher (bis +28 % groesser), Wetterleuchten
-//                  wandert in der Wand. Gedeckelt, kein Blitz (Luma Mitte/unten
+//                  wandert in der Wand, der Trichter dreht (Pendel) bis ~0.3 rad/s
+//                  schneller. Gedeckelt, kein Blitz (Luma Mitte/unten
 //                  <= +20 %, oben <= +35 %).
 //   kiai           weiches Wetterleuchten in der Wand, getaktet mit downbeat_pulse.
 //   energy         Regenschleier + Wandglut etwas kraeftiger (0.85..1.15).
@@ -48,7 +49,7 @@ shader_type sky;
 //   star_phase                    Drehwinkel (rad), fuer variable Geschwindigkeit
 //                                 star_speed = 0 lassen und hochzaehlen
 //   warp 0..1                     Sog-Unschaerfe: Wolken verwischen entlang der
-//                                 Drehung (8 Abtastungen je Ebene)
+//                                 Drehung (3 Abtastungen je Ebene)
 // Sturm-eigene Uniforms: eye_* (muessen zu EYE_* im Generator passen),
 // swirl_speed (Dauerdrift, sehr langsam), swirl_parallax, notch_far/mid/near
 // (rad je Schlag), breath.
@@ -133,7 +134,7 @@ uniform vec3 glow_color : source_color = vec3(0.62, 0.60, 0.74);
 // 1:1, ruhig beim Verkleinern. Wird je Pixel in sky() gesetzt.
 float g_lod = 0.0;
 
-const int WARP_TAPS = 8;
+const int WARP_TAPS = 3;
 const float TAU_ = 6.28318530718;
 const float DROP_PEAK_ = 0.6;
 
@@ -237,6 +238,10 @@ void sky() {
 		// Genauigkeit: Anteil modulo 2pi halten (beat_step waechst monoton).
 		float ratch = beat_step * cf;
 		float drift = star_phase + TIME * (swirl_speed + star_speed);
+		// Drop: Trichter dreht schneller (gedeckelt): Pendelwinkel mit Amplitude ~dn,
+		// stetig (kein Sprung bei Drop-Ein/Aus), Spitzenrate ~0.3 rad/s.
+		float spin = dn * sin(TIME * 0.85);
+		drift += 0.35 * spin;
 		float a_far = drift + mod(ratch * notch_far, TAU_);
 		float a_mid = drift * swirl_parallax + mod(ratch * notch_mid, TAU_);
 		float a_near = drift * swirl_parallax * 1.5 + mod(ratch * notch_near, TAU_);
