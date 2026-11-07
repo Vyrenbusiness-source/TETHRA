@@ -968,7 +968,7 @@ func _room_card(lan: bool, rname: String, players_n: int, sub: String,
 	var sl := _lbl(sub, FS_S, COL_DIM)
 	sl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	mid.add_child(sl)
-	var cnt := _lbl(tr("%d Spieler") % players_n, FS_S, COL_TEXT)
+	var cnt := _lbl(tr("1 Spieler") if players_n == 1 else tr("%d Spieler") % players_n, FS_S, COL_TEXT)
 	cnt.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	hb.add_child(cnt)
 	var join := _lbl("Beitreten", FS_S, COL_DIM)
@@ -1366,16 +1366,18 @@ func _player_row(id: int, p: Dictionary, my_id: int, in_round: bool) -> Control:
 	row.add_theme_stylebox_override("panel", n)
 	row.custom_minimum_size = Vector2(0, PROW_H)
 	row.mouse_filter = Control.MOUSE_FILTER_PASS
-	var give: Button = null
+	# Lambdas fangen Locals beim Erzeugen ein: Knopf ueber Meta holen, er entsteht erst unten.
 	row.mouse_entered.connect(func():
 		row.add_theme_stylebox_override("panel", hv)
-		if give != null:
-			give.modulate.a = 1.0)
+		var g: Button = row.get_meta("give", null)
+		if g != null:
+			g.modulate.a = 1.0)
 	row.mouse_exited.connect(func():
 		row.add_theme_stylebox_override("panel", n)
 		# Knopf bleibt sichtbar, solange die Maus auf ihm steht (Kind der Zeile).
-		if give != null and not give.get_global_rect().has_point(give.get_global_mouse_position()):
-			give.modulate.a = 0.0)
+		var g: Button = row.get_meta("give", null)
+		if g != null and not g.get_global_rect().has_point(g.get_global_mouse_position()):
+			g.modulate.a = 0.0)
 	var hb := HBoxContainer.new()
 	hb.add_theme_constant_override("separation", 12)
 	row.add_child(hb)
@@ -1427,7 +1429,8 @@ func _player_row(id: int, p: Dictionary, my_id: int, in_round: bool) -> Control:
 	# Krone geben: nur der Kronentraeger, fester Platz fuer gleiche Kanten.
 	if Lobby.crown_id == my_id:
 		if not is_crown:
-			give = _icon_btn(_icon("crown"), tr("%s geben") % tr("Krone"), 28)
+			var give := _icon_btn(_icon("crown"), tr("%s geben") % tr("Krone"), 28)
+			row.set_meta("give", give)
 			give.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 			# Nur beim Hover der Zeile sichtbar: keine Reihe gleicher Icons.
 			give.modulate.a = 0.0
@@ -1663,7 +1666,8 @@ func _refresh_mode(my_id: int) -> void:
 			"final": mm.is_final(), "winner": mm.winner_peer })
 		if _team_board != null:
 			_team_board.visible = false
-		info = tr("Battle Royale · Runde %d · %d dabei") % [mm.round_no, mm.alive().size()]
+		# Runde und "noch dabei" zeigt die Tafel selbst: hier nur die Regel.
+		info = tr("Jede Runde scheidet der niedrigste Score aus.")
 		if mm.is_over() and Lobby.players.has(mm.winner_peer):
 			info = tr("Sieger: %s") % str(Lobby.players[mm.winner_peer].name)
 		elif Lobby.spectating and Lobby.in_game:
