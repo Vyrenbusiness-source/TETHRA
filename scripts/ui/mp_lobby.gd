@@ -1396,7 +1396,7 @@ func _open_tour_setup() -> void:
 	if _tour_dialog != null:
 		return
 	var maps_n := 10
-	var lo := 3.0
+	var lo := 2.0
 	var hi := 5.0
 	var mods: Dictionary = {"SV": bool(Lobby.mods.get("SV", false)), "NF": bool(Lobby.mods.get("NF", false))}
 	var back := UiTheme.modal_backdrop(self)
