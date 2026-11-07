@@ -115,7 +115,7 @@ All keys can be rebound in Settings.
 
 ## Install
 
-1. Download **[TETHRA_Setup.exe](https://github.com/Vyrenbusiness-source/TETHRA/releases/download/worlds/TETHRA_Setup.exe)** (about 390 MB). That is the only file you need.
+1. Download **[TETHRA_Setup.exe](https://github.com/Vyrenbusiness-source/TETHRA/releases/download/worlds/TETHRA_Setup.exe)** (about 430 MB). That is the only file you need.
 2. Run it and click through. Windows may show "Windows protected your PC": click **More info**, then **Run anyway** (the game is not code-signed).
 3. Start TETHRA from the desktop or start menu. New versions download and install themselves inside the game.
 
