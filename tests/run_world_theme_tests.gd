@@ -36,10 +36,10 @@ func _f(bpm: float, nps: float, kiai: float = 0.0, electro: bool = false) -> Dic
 
 
 func _test_pick_from() -> void:
-	_check(WorldTheme.pick_from(_f(150, 6), 4.6, ORANGE) == "boss", "Sterne 4.6 -> Bosskampf")
-	_check(WorldTheme.pick_from(_f(100, 2), 4.5, BLUE) == "boss", "Sterne 4.5 schlaegt ruhig")
-	_check(WorldTheme.pick_from(_f(200, 9), 3.0, ORANGE) == "boss", "200 BPM dicht -> Bosskampf")
-	_check(WorldTheme.pick_from(_f(195, 5, 0.4), 3.0, ORANGE) == "boss", "195 BPM kiai-lastig -> Bosskampf")
+	_check(WorldTheme.pick_from(_f(150, 6), 5.4, ORANGE) == "boss", "Sterne 5.4 -> Bosskampf")
+	_check(WorldTheme.pick_from(_f(100, 2), 5.3, BLUE) == "boss", "Sterne 5.3 schlaegt ruhig")
+	_check(WorldTheme.pick_from(_f(210, 9), 3.0, ORANGE) == "boss", "210 BPM dicht -> Bosskampf")
+	_check(WorldTheme.pick_from(_f(210, 5, 0.4), 3.0, ORANGE) == "boss", "210 BPM kiai-lastig -> Bosskampf")
 	_check(WorldTheme.pick_from(_f(195, 5, 0.1), 3.0, ORANGE) != "neon", "195 BPM mittel ohne Kiai -> dunkle Welt (nie Neon)")
 	_check(WorldTheme.pick_from(_f(170, 6), 3.5, MAGENTA) != "neon", "170 BPM Magenta -> nie automatisch Neon")
 	_check(WorldTheme.pick_from(_f(150, 5), 3.5, CYAN) != "neon", "150 BPM Cyan -> nie automatisch Neon")
@@ -91,7 +91,7 @@ func _test_features() -> void:
 	_check(WorldTheme.dominant_bpm([], 0.0, 1.0) == 0.0, "ohne Timing 0 BPM")
 	# End-to-end: 200 BPM + 10 NPS -> Bosskampf.
 	var boss := _map(300.0, 201, 100.0)
-	_check(WorldTheme.pick(boss, 3.0, ORANGE) == "boss", "pick: 200 BPM dicht -> Bosskampf")
+	_check(WorldTheme.pick(boss, 5.4, ORANGE) == "boss", "pick: sehr schwer -> Bosskampf")
 	var calm := _map(60000.0 / 90.0, 41, 500.0)
 	_check(WorldTheme.pick(calm, 1.5, BLUE) == "aurora", "pick: 90 BPM duenn -> Aurora")
 	var edm := _map(60000.0 / 128.0, 101, 200.0, "Song", "edm future bass")
@@ -114,8 +114,8 @@ func _test_electro_words() -> void:
 func _test_resolve() -> void:
 	var bm := _map(300.0, 201, 100.0)
 	_check(WorldTheme.resolve("aurora", bm, 6.0, ORANGE) == "aurora", "Einstellung schlaegt Auto")
-	_check(WorldTheme.resolve("", bm, 3.0, ORANGE) == "boss", "leer = Automatisch")
-	_check(WorldTheme.resolve("quatsch", bm, 3.0, ORANGE) == "boss", "unbekannt = Automatisch")
+	_check(WorldTheme.resolve("", bm, 3.0, ORANGE) == WorldTheme.pick(bm, 3.0, ORANGE), "leer = Automatisch")
+	_check(WorldTheme.resolve("quatsch", bm, 3.0, ORANGE) == WorldTheme.pick(bm, 3.0, ORANGE), "unbekannt = Automatisch")
 	_check(WorldTheme.resolve("", null, 3.0, ORANGE) == "galaxy", "ohne Map Galaxie")
 
 

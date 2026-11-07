@@ -22,6 +22,8 @@ const OBSIDIAN := "obsidian"
 const NAMES: Array[String] = [GALAXY, BOSS, AURORA, NEON, ECLIPSE, ABYSS, FRACTAL, SINGULARITY, STORM, OBSIDIAN]
 ## Dunkle Welten in Rueckfall-Reihenfolge (fehlt eine, nimmt resolve die naechste).
 const DARK: Array[String] = [BOSS, ECLIPSE, ABYSS, FRACTAL, OBSIDIAN, STORM, SINGULARITY, AURORA]
+## Welten fuer die gleichmaessige Verteilung (ohne Boss/Frost, die nach Charakter kommen).
+const VARIETY: Array[String] = [ECLIPSE, ABYSS, FRACTAL, OBSIDIAN, STORM, SINGULARITY]
 ## Anzeige-Namen (Einstellungen).
 const LABELS := {"galaxy": "Galaxie", "boss": "Bosskampf", "aurora": "Frost", "neon": "Neon",
 	"eclipse": "Eklipse", "abyss": "Abgrund", "fractal": "Fraktal", "singularity": "Singularität",
@@ -30,8 +32,8 @@ const LABELS := {"galaxy": "Galaxie", "boss": "Bosskampf", "aurora": "Frost", "n
 const GALAXY_SHARE := 0.03
 
 ## Schwellen (Noten pro Sekunde ueber die Spielzeit, Mania-typisch).
-const BOSS_STARS := 4.5
-const BOSS_BPM := 190.0
+const BOSS_STARS := 5.3
+const BOSS_BPM := 205.0
 const DENSE_NPS := 8.0
 const NEON_BPM_MIN := 140.0
 const NEON_NPS := 4.5
@@ -76,10 +78,16 @@ static func resolve(forced: String, beatmap: Beatmap, stars: float, theme_color:
 	var t := pick(beatmap, stars, theme_color)
 	if t == GALAXY or is_available(t):
 		return t
-	for d in DARK:
+	# Gewaehlte Welt fehlt noch (Assets nicht da): NICHT immer auf dieselbe
+	# zurueckfallen, sondern gleichmaessig per Hash ueber alle vorhandenen.
+	var avail: Array[String] = []
+	for d in VARIETY:
 		if is_available(d):
-			return d
-	return GALAXY
+			avail.append(d)
+	if avail.is_empty():
+		return GALAXY
+	var f := features(beatmap)
+	return avail[mini(int(_h(f, stars, 13) * avail.size()), avail.size() - 1)]
 
 
 ## Hat das Thema Shader + Assets (spaeter gemergte Welten erscheinen so automatisch)?
@@ -218,15 +226,15 @@ static func pick_from(f: Dictionary, stars: float, theme_color: Color) -> String
 	var very_calm := (bpm > 0.0 and bpm < 100.0 and nps < 4.0) or (nps > 0.0 and nps < 2.0)
 	if calm and (is_soft_color(theme_color) or very_calm):
 		return AURORA
-	# Sonst eine dunkle Welt nach Charakter, per Hash variiert.
-	var pool: Array[String]
-	if kiai >= KIAI_HEAVY or stars >= 3.0:
-		pool = [ECLIPSE, STORM, SINGULARITY]
-	elif nps >= DENSE_NPS * 0.7:
-		pool = [FRACTAL, ECLIPSE, STORM]
-	else:
-		pool = [ABYSS, OBSIDIAN, FRACTAL]
-	return pool[mini(int(_h(f, stars, 13) * pool.size()), pool.size() - 1)]
+	# Sonst gleichmaessig eine der dunklen Welten (per Hash fest pro Map),
+	# damit keine Welt viel oefter kommt als die anderen.
+	var avail: Array[String] = []
+	for d in VARIETY:
+		if is_available(d):
+			avail.append(d)
+	if avail.is_empty():
+		avail = VARIETY
+	return avail[mini(int(_h(f, stars, 13) * avail.size()), avail.size() - 1)]
 
 
 ## Farbsatz {line, kiai} oder {} (Galaxie: Coverfarbe bleibt).
