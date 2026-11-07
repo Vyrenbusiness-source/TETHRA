@@ -27,6 +27,7 @@ func _init() -> void:
 		return
 	_pack_tests()
 	_merge_tests()
+	_duel_tests()
 	await _card_tests()
 	print("FAILED: %d" % _failed)
 	quit(1 if _failed > 0 else 0)
@@ -46,7 +47,10 @@ func _pack_tests() -> void:
 	for b in d.bins:
 		bsum += int(b)
 	_check(bsum == 6 and int(d.bins[PlayerStatsCard.BINS - 1]) == 1, "Histogramm: alle Treffer, Ausreisser im Randbin")
-	_check(d.trace.size() == PlayerStatsCard.TRACE and int(d.trace[0]) == 1000 and int(d.trace[39]) == 901, "Verlauf verdichtet, Endstand erhalten")
+	# 100 Werte > 2 * TRACE: die ersten 4 % (Index 0..3) fallen weg, Start bei trace[4] = 0.996.
+	_check(d.trace.size() == PlayerStatsCard.TRACE and int(d.trace[0]) == 996 and int(d.trace[39]) == 901, "Verlauf verdichtet, Start uebersprungen, Endstand erhalten")
+	var short := PlayerStatsCard.resample(trace.slice(0, 60), PlayerStatsCard.TRACE)
+	_check(short.size() == PlayerStatsCard.TRACE and int(short[0]) == 1000 and int(short[39]) == 941, "kurzer Verlauf ohne Start-Sprung")
 	_check(absf(float(d.mean) - 200.0 / 6.0) < 0.01, "mittlere Abweichung")
 	_check(float(d.ur) > 0.0 and int(d.h_ok) == 7 and int(d.h_drop) == 2, "UR + Holds")
 	var f := PlayerStatsCard.pack(s, offs, trace, 0, 0, true)
@@ -71,6 +75,27 @@ func _merge_tests() -> void:
 	_check(absf(float(m.acc) - acc) < 0.0001, "Acc aus Summen")
 	var short := PlayerStatsCard.merge([{ "score": 10, "acc": 0.5, "combo": 3, "failed": true }])
 	_check(not short.has("ur") and int(short.fails) == 1, "alte Kurz-Pakete ohne Timing")
+
+
+func _duel_tests() -> void:
+	var a := { "score": 950000, "acc": 0.99, "combo": 500, "n_max": 900, "n300": 90, "n_miss": 2, "ur": 110.0 }
+	var b := { "score": 900000, "acc": 0.97, "combo": 600, "n_max": 700, "n300": 280, "n_miss": 8, "ur": 140.0 }
+	var rows := PlayerStatsCard.duel_rows(a, b)
+	_check(rows.size() == 6, "Direktvergleich: 6 Kennzahlen mit UR")
+	var w := {}
+	for r in rows:
+		w[str(r.cap)] = int(r.win)
+		_check(float(r.share) >= 0.06 and float(r.share) <= 0.94, "Anteil begrenzt: " + str(r.cap))
+	_check(w["Score"] == 1 and w["Max. Kombo"] == -1, "hoeher besser")
+	_check(w["UR"] == 1 and w["Miss"] == 1, "UR und Miss: niedriger besser")
+	_check(float(rows[0].share) > 0.5, "Balken zur Seite des Fuehrenden")
+	var same := PlayerStatsCard.duel_rows(a, a)
+	_check(int(same[0].win) == 0 and is_equal_approx(float(same[0].share), 0.5), "Gleichstand mittig")
+	_check(PlayerStatsCard.duel_rows({ "score": 1 }, { "score": 2 }).size() == 5, "ohne Timing keine UR-Zeile")
+	var box := PlayerStatsCard.duel("A", a, "B", b)
+	root.add_child(box)
+	_check(box.find_children("*", "Label", true, false).size() >= 20, "Direktvergleich gebaut")
+	box.queue_free()
 
 
 func _card_tests() -> void:
@@ -103,13 +128,17 @@ func _load_csv() -> void:
 	var f := FileAccess.open("res://translations/stats.csv", FileAccess.READ)
 	if f == null:
 		return
+	var de := Translation.new()
+	de.locale = "de"
 	var en := Translation.new()
 	en.locale = "en"
 	f.get_csv_line()
 	while not f.eof_reached():
 		var row := f.get_csv_line()
 		if row.size() >= 3 and row[0] != "":
+			de.add_message(row[0], row[1])
 			en.add_message(row[0], row[2])
+	TranslationServer.add_translation(de)
 	TranslationServer.add_translation(en)
 
 

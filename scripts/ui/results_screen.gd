@@ -1130,6 +1130,8 @@ var _sel_b := -1
 var _b_manual := false
 var _sig_a := ""
 var _sig_b := ""
+var _sig_duel := ""
+var _duel_slot: VBoxContainer
 var _narrow := false
 
 
@@ -1186,6 +1188,11 @@ func _build_lobby_area(parent: Control) -> void:
 	_rank_list.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_lobby_col.add_child(_rank_list)
 	_reveal.append(_rank_list)
+	# Direktvergleich der beiden gezeigten Spieler (nur wenn Platz ist).
+	_duel_slot = VBoxContainer.new()
+	_duel_slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_lobby_col.add_child(_duel_slot)
+	_reveal.append(_duel_slot)
 	var fill := Control.new()
 	fill.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -1423,6 +1430,31 @@ func _update_cards() -> void:
 	if _sel_b >= 0 and sbg != _sig_b:
 		_sig_b = sbg
 		_fill_card(_card_b, _sel_b, _sel_a, "B")
+	_update_duel()
+
+
+func _update_duel() -> void:
+	if _duel_slot == null or not is_instance_valid(_duel_slot):
+		return
+	var fa: Dictionary = _entry(_sel_a).get("final", {})
+	var fb: Dictionary = _entry(_sel_b).get("final", {})
+	var room := _board.size() <= (3 if _narrow else 6)
+	var show := room and not fa.is_empty() and not fb.is_empty()
+	var sig := "%s|%s|%s|%s" % [str(show), _card_sig(_sel_a, _sel_b), _card_sig(_sel_b, _sel_a), str(_board.size())]
+	if sig == _sig_duel:
+		return
+	_sig_duel = sig
+	for c in _duel_slot.get_children():
+		_duel_slot.remove_child(c)
+		c.queue_free()
+	_duel_slot.visible = show
+	if not show:
+		return
+	var gap := Control.new()
+	gap.custom_minimum_size = Vector2(0, 8 if _narrow else 14)
+	_duel_slot.add_child(gap)
+	_duel_slot.add_child(PlayerStatsCard.duel(str(_entry(_sel_a).get("name", "?")), fa,
+		str(_entry(_sel_b).get("name", "?")), fb, _narrow))
 
 
 func _fill_card(card: PlayerStatsCard, id: int, other: int, side: String) -> void:

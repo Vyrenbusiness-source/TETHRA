@@ -182,6 +182,8 @@ func _build_canvas() -> Control:
 	var info := _player_info(stand)
 	_podium(root, stand, Rect2(margin, 170, 680, 440))
 	_table(root, stand, info, Rect2(820, 170, W - 820 - margin, 440))
+	if stand.size() <= 5:
+		_awards(root, stand, Rect2(820, 516, W - 820 - margin, 94))
 	_maps(root, stand, wins, Rect2(margin, 640, W - margin * 2, 410))
 	return root
 
@@ -517,6 +519,95 @@ func _maps(root: Control, stand: Array, wins: Array, area: Rect2) -> void:
 
 ## Stats-Paket eines Rundenergebnisses ({} = gegangen). Alte Ergebnisse ohne
 ## Detail-Paket liefern nur Score/Acc/Kombo.
+## Auszeichnungen ueber alle Runden: je Eintrag cap, peer, name, value, sub.
+## Leere Liste, wenn keine Runde gespielt wurde.
+func awards(stand: Array) -> Array:
+	var best_score := { "v": -1 }
+	var best_combo := { "v": -1 }
+	var low_ur := { "v": INF }
+	var few_miss := { "v": INF }
+	for s in stand:
+		var peer = s.peer
+		var nm := str(s.get("name", "?"))
+		for i in t.rounds.size():
+			var st := round_stats(t.rounds[i].results.get(peer, {}))
+			if st.is_empty():
+				continue
+			var title := str(_round_map(i).get("title", "?"))
+			if int(st.get("score", 0)) > int(best_score.v):
+				best_score = { "v": int(st.score), "peer": peer, "name": nm, "sub": title }
+			if int(st.get("combo", 0)) > int(best_combo.v):
+				best_combo = { "v": int(st.combo), "peer": peer, "name": nm, "sub": title }
+		var tot := player_stats(peer)
+		if int(tot.get("rounds", 0)) == 0:
+			continue
+		if tot.has("ur") and float(tot.ur) > 0.0 and float(tot.ur) < float(low_ur.v):
+			low_ur = { "v": float(tot.ur), "peer": peer, "name": nm }
+		if PlayerStatsCard.total_of(tot) > 0:
+			var per := float(tot.get("n_miss", 0)) / float(tot.rounds)
+			if per < float(few_miss.v):
+				few_miss = { "v": per, "peer": peer, "name": nm }
+	var out: Array = []
+	if int(best_score.v) >= 0:
+		out.append({ "cap": tr("Bester Score"), "peer": best_score.peer, "name": best_score.name,
+			"value": UiTheme.fmt_score(int(best_score.v)), "sub": best_score.sub })
+	if int(best_combo.v) > 0:
+		out.append({ "cap": tr("Längste Kombo"), "peer": best_combo.peer, "name": best_combo.name,
+			"value": "%s×" % UiTheme.fmt_score(int(best_combo.v)), "sub": best_combo.sub })
+	if low_ur.has("peer"):
+		out.append({ "cap": tr("Ruhigste Hand"), "peer": low_ur.peer, "name": low_ur.name,
+			"value": UiTheme.fmt_num(float(low_ur.v), 1) + " UR", "sub": tr("niedrigste UR") })
+	if few_miss.has("peer"):
+		out.append({ "cap": tr("Wenigste Misses"), "peer": few_miss.peer, "name": few_miss.name,
+			"value": "Ø " + UiTheme.fmt_num(float(few_miss.v), 1), "sub": tr("je Map") })
+	return out
+
+
+## Leiste mit den Auszeichnungen (unter der Spielertabelle).
+func _awards(root: Control, stand: Array, area: Rect2) -> void:
+	var list := awards(stand)
+	if list.is_empty():
+		return
+	var h := HBoxContainer.new()
+	h.position = area.position
+	h.size = area.size
+	h.add_theme_constant_override("separation", 12)
+	root.add_child(h)
+	for a in list:
+		var p := PanelContainer.new()
+		p.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		p.size_flags_stretch_ratio = 1.0
+		var sb := UiTheme.glass_box(12, 0.45, 0.07)
+		sb.shadow_size = 0
+		sb.content_margin_left = 14
+		sb.content_margin_right = 14
+		sb.content_margin_top = 10
+		sb.content_margin_bottom = 10
+		p.add_theme_stylebox_override("panel", sb)
+		h.add_child(p)
+		var v := VBoxContainer.new()
+		v.add_theme_constant_override("separation", 4)
+		p.add_child(v)
+		var cap := TournamentPanel.lbl(str(a.cap).to_upper(), 12, Color(0.66, 0.69, 0.78), true, 2)
+		cap.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+		v.add_child(cap)
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 8)
+		v.add_child(row)
+		row.add_child(TournamentPanel.avatar(str(a.name), 24))
+		var nl := _txt(str(a.name), 16, TEXT)
+		nl.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+		row.add_child(nl)
+		var vl := TournamentPanel.lbl(str(a.value), 17, ACCENT, true, 0)
+		vl.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+		vl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		row.add_child(vl)
+		var sl := _txt(str(a.sub), 12, DIM)
+		sl.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+		v.add_child(sl)
+		_hits.append([p, a.peer])
+
+
 static func round_stats(r: Dictionary) -> Dictionary:
 	if r.is_empty() or bool(r.get("absent", false)):
 		return {}
@@ -629,21 +720,19 @@ func open_detail(peer: int, round_i: int = -1) -> void:
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 14 if narrow else 20)
 	panel.add_child(v)
-	# Kopf: Spieler, Eckdaten, Umschalter fuer alle Spieler, Schliessen.
+	# Kopf: Titel (Name steht in der Karte), Umschalter fuer alle Spieler, Schliessen.
 	var head := HBoxContainer.new()
 	head.add_theme_constant_override("separation", 14)
 	v.add_child(head)
-	head.add_child(TournamentPanel.avatar(nm, 44 if narrow else 56))
 	var hv := VBoxContainer.new()
 	hv.add_theme_constant_override("separation", 0)
 	hv.alignment = BoxContainer.ALIGNMENT_CENTER
 	head.add_child(hv)
-	var nl := TournamentPanel.lbl(nm, 24 if narrow else 30, TEXT, true, 1)
-	hv.add_child(nl)
+	hv.add_child(TournamentPanel.lbl(tr("Spieler-Statistik").to_upper(), 12 if narrow else 13, Color(0.66, 0.69, 0.78), true, 2))
+	var tl := TournamentPanel.lbl(title_text, 22 if narrow else 28, TEXT, true, 1)
+	tl.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	hv.add_child(tl)
 	var rk := int(srow.get("rank", 0))
-	hv.add_child(TournamentPanel.lbl(tr("%d. Platz  ·  %d Punkte  ·  %d Siege  ·  Ø %s") % [rk,
-		int(srow.get("points", 0)), int(srow.get("wins", 0)),
-		UiTheme.fmt_pct(float(srow.get("avg_acc", 0.0)) * 100.0)], 13 if narrow else 15, TournamentPanel.rank_color(rk) if rk <= 3 else DIM))
 	var sp := Control.new()
 	sp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	head.add_child(sp)
@@ -687,7 +776,9 @@ func open_detail(peer: int, round_i: int = -1) -> void:
 	if round_i < 0:
 		st = player_stats(peer)
 		info["place"] = rk
-		info["sub"] = tr("Gesamt über %d Maps") % int(st.get("rounds", 0)) + \
+		info["sub"] = tr("%s Punkte") % str(int(srow.get("points", 0))) + "  ·  " + \
+			tr("%d Siege") % int(srow.get("wins", 0)) + "  ·  " + \
+			tr("Gesamt über %d Maps") % int(st.get("rounds", 0)) + \
 			(("  ·  " + tr("%d× nicht geschafft") % int(st.fails)) if int(st.get("fails", 0)) > 0 else "")
 	else:
 		var r: Dictionary = t.rounds[round_i].results.get(peer, {})

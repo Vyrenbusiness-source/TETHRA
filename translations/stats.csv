@@ -26,7 +26,8 @@ FULL COMBO,FULL COMBO,FULL COMBO
 Klick: Spieler rechts anzeigen  ·  Rechtsklick: links,Klick: Spieler rechts anzeigen  ·  Rechtsklick: links,Click: show player on the right  ·  Right-click: left
 Klick auf einen Spieler zeigt seine Stats.,Klick auf einen Spieler zeigt seine Stats.,Click a player to see their stats.
 Treffer,Treffer,Hits
-%d. Platz  ·  %d Punkte  ·  %d Siege  ·  Ø %s,%d. Platz  ·  %d Punkte  ·  %d Siege  ·  Ø %s,#%d  ·  %d points  ·  %d wins  ·  Ø %s
+Spieler-Statistik,Spieler-Statistik,Player stats
+%d Siege,%d Siege,%d wins
 Gesamt über %d Maps,Gesamt über %d Maps,Total over %d maps
 %d× nicht geschafft,%d× nicht geschafft,failed %d×
 Map %d,Map %d,Map %d
@@ -35,3 +36,11 @@ Je Map,Je Map,Per map
 Gesamt,Gesamt,Total
 alle Maps zusammen,alle Maps zusammen,all maps combined
 gegangen,gegangen,left
+Direktvergleich,Direktvergleich,Head to head
+MAX-Anteil,MAX-Anteil,MAX share
+Bester Score,Bester Score,Best score
+Längste Kombo,Längste Kombo,Longest combo
+Ruhigste Hand,Ruhigste Hand,Steadiest hand
+niedrigste UR,niedrigste UR,lowest UR
+Wenigste Misses,Wenigste Misses,Fewest misses
+je Map,je Map,per map

@@ -103,8 +103,8 @@ static func pack(s: Dictionary, offsets: PackedFloat32Array, trace: PackedFloat3
 	return sanitize(d)
 
 
-## Verlauf (0..1) auf hoechstens pts Promille-Punkte verdichten (Mittel je Abschnitt,
-## letzter Punkt = Endstand).
+## Verlauf (0..1) auf hoechstens pts Promille-Punkte verdichten (gleichmaessig
+## abgetastet, letzter Punkt = Endstand).
 static func resample(trace: PackedFloat32Array, pts: int) -> Array:
 	var out: Array = []
 	var tn := trace.size()
@@ -299,6 +299,158 @@ static func fake(seed_i: int, skill: float, notes: int = 1400, failed: bool = fa
 	s["score"] = int(1000000.0 * pow(acc, 4.0) * 0.97 + float(best) * 12.0)
 	var holds := 60 + int(skill * 40.0)
 	return pack(s, offs, trace, holds - int((1.0 - skill) * 18.0), int((1.0 - skill) * 18.0), failed)
+
+
+# ---------------------------------------------------------------------------
+# Direktvergleich (zwei Pakete)
+# ---------------------------------------------------------------------------
+
+## Kennzahlen fuer den Direktvergleich: je Eintrag cap, a/b (Text), share
+## (0..1 Anteil von A am Balken, verstaerkt damit kleine Abstaende sichtbar
+## sind) und win (1 = A vorn, -1 = B vorn, 0 = gleich).
+static func duel_rows(a: Dictionary, b: Dictionary) -> Array:
+	var out: Array = []
+	var ta := maxi(total_of(a), 1)
+	var tb := maxi(total_of(b), 1)
+	# [Ueberschrift, Wert A, Wert B, hoeher besser, Verstaerkung, Format]
+	var defs := [
+		["Score", float(a.get("score", 0)), float(b.get("score", 0)), true, 6.0, "score"],
+		["Genauigkeit", float(a.get("acc", 0.0)), float(b.get("acc", 0.0)), true, 25.0, "pct"],
+		["Max. Kombo", float(a.get("combo", 0)), float(b.get("combo", 0)), true, 1.0, "combo"],
+		["MAX-Anteil", float(a.get("n_max", 0)) / float(ta), float(b.get("n_max", 0)) / float(tb), true, 2.0, "pct"],
+		["Miss", float(a.get("n_miss", 0)), float(b.get("n_miss", 0)), false, 1.0, "int"],
+	]
+	if a.has("ur") and b.has("ur"):
+		defs.insert(3, ["UR", float(a.ur), float(b.ur), false, 1.5, "ur"])
+	for d in defs:
+		var va: float = d[1]
+		var vb: float = d[2]
+		var top := maxf(absf(va), absf(vb))
+		var rel := 0.0 if top <= 0.0 else (va - vb) / top
+		if not d[3]:
+			rel = -rel
+		var win := 0 if absf(va - vb) < 0.0005 * maxf(top, 1e-6) else (1 if rel > 0.0 else -1)
+		out.append({ "cap": d[0], "a": _duel_fmt(va, d[5]), "b": _duel_fmt(vb, d[5]),
+			"share": clampf(0.5 + 0.5 * rel * float(d[4]), 0.06, 0.94), "win": win })
+	return out
+
+
+static func _duel_fmt(v: float, kind: String) -> String:
+	match kind:
+		"score":
+			return UiTheme.fmt_score(int(v))
+		"pct":
+			return UiTheme.fmt_pct(v * 100.0)
+		"combo":
+			return "%d×" % int(v)
+		"ur":
+			return "%.1f" % v
+	return str(int(v))
+
+
+static func _dlbl(text: String, size: int, col: Color, heading: bool, align: int) -> Label:
+	var l := Label.new()
+	l.text = text
+	l.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	l.add_theme_font_size_override("font_size", size)
+	l.add_theme_color_override("font_color", col)
+	if heading:
+		l.add_theme_font_override("font", UiTheme.heading_font(1))
+	l.horizontal_alignment = align
+	l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return l
+
+
+## Kompakter Direktvergleich A (links, SIDE_A) gegen B (rechts, SIDE_B):
+## Stand der gewonnenen Kennzahlen, dann je Kennzahl Werte + geteilter Balken.
+static func duel(a_name: String, a: Dictionary, b_name: String, b: Dictionary, narrow: bool = false) -> Control:
+	var rows := duel_rows(a, b)
+	var wa := 0
+	var wb := 0
+	for r in rows:
+		wa += 1 if int(r.win) > 0 else 0
+		wb += 1 if int(r.win) < 0 else 0
+	var p := PanelContainer.new()
+	var sb := UiTheme.glass_box(14, 0.50, 0.08)
+	sb.shadow_size = 0
+	sb.content_margin_left = 14
+	sb.content_margin_right = 14
+	sb.content_margin_top = 10 if narrow else 14
+	sb.content_margin_bottom = 10 if narrow else 14
+	p.add_theme_stylebox_override("panel", sb)
+	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 3 if narrow else 6)
+	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	p.add_child(v)
+	var cap := _dlbl(TranslationServer.translate("Direktvergleich").to_upper(), 11 if narrow else 12, CAPTION, true, HORIZONTAL_ALIGNMENT_CENTER)
+	cap.add_theme_font_override("font", UiTheme.heading_font(2))
+	v.add_child(cap)
+	# Kopf: Name A   wa : wb   Name B
+	var hd := HBoxContainer.new()
+	hd.add_theme_constant_override("separation", 8)
+	hd.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	v.add_child(hd)
+	var fs := 15 if narrow else 17
+	var na := _dlbl(a_name, fs, SIDE_A, true, HORIZONTAL_ALIGNMENT_LEFT)
+	na.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hd.add_child(na)
+	var sc := _dlbl("%d : %d" % [wa, wb], fs + 3, UiTheme.TEXT, true, HORIZONTAL_ALIGNMENT_CENTER)
+	sc.add_theme_font_override("font", UiTheme.heading_font(2))
+	hd.add_child(sc)
+	var nb := _dlbl(b_name, fs, SIDE_B, true, HORIZONTAL_ALIGNMENT_RIGHT)
+	nb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hd.add_child(nb)
+	var gap := Control.new()
+	gap.custom_minimum_size = Vector2(0, 2 if narrow else 4)
+	v.add_child(gap)
+	var vs := 13 if narrow else 15
+	for r in rows:
+		var line := HBoxContainer.new()
+		line.add_theme_constant_override("separation", 6)
+		line.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		v.add_child(line)
+		var la := _dlbl(str(r.a), vs, UiTheme.TEXT if int(r.win) > 0 else CAPTION, int(r.win) > 0, HORIZONTAL_ALIGNMENT_LEFT)
+		la.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		line.add_child(la)
+		var lc := _dlbl(TranslationServer.translate(str(r.cap)).to_upper(), 10 if narrow else 11, Color(CAPTION, 0.85), true, HORIZONTAL_ALIGNMENT_CENTER)
+		lc.add_theme_font_override("font", UiTheme.heading_font(2))
+		lc.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		line.add_child(lc)
+		var lb := _dlbl(str(r.b), vs, UiTheme.TEXT if int(r.win) < 0 else CAPTION, int(r.win) < 0, HORIZONTAL_ALIGNMENT_RIGHT)
+		lb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		line.add_child(lb)
+		var bar := _Split.new()
+		bar.share = float(r.share)
+		bar.win = int(r.win)
+		bar.custom_minimum_size = Vector2(0, 4 if narrow else 5)
+		v.add_child(bar)
+	return p
+
+
+## Geteilter Balken: A von links, B von rechts, kleine Luecke in der Mitte;
+## die vorne liegende Seite leuchtet staerker.
+class _Split extends Control:
+	var share := 0.5
+	var win := 0
+
+	func _init() -> void:
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	func _draw() -> void:
+		var h := size.y
+		var gap := 3.0
+		var wa := maxf((size.x - gap) * share, 2.0)
+		var wb := maxf(size.x - gap - wa, 2.0)
+		var ra := StyleBoxFlat.new()
+		ra.bg_color = Color(PlayerStatsCard.SIDE_A, 0.85 if win > 0 else 0.38)
+		ra.set_corner_radius_all(int(h * 0.5))
+		draw_style_box(ra, Rect2(0, 0, wa, h))
+		var rb := StyleBoxFlat.new()
+		rb.bg_color = Color(PlayerStatsCard.SIDE_B, 0.85 if win < 0 else 0.38)
+		rb.set_corner_radius_all(int(h * 0.5))
+		draw_style_box(rb, Rect2(size.x - wb, 0, wb, h))
 
 
 # ---------------------------------------------------------------------------
