@@ -164,7 +164,7 @@ func _build_canvas() -> Control:
 		chips.add_child(TournamentPanel.chip(" + ".join(mods), DIM, 16))
 
 	# Podium links.
-	_podium(root, stand, Rect2(margin, 170, 860, 440))
+	_podium(root, stand, Rect2(margin, 190, 860, 430))
 	# Tabelle rechts.
 	_table(root, stand, Rect2(1000, 170, W - 1000 - margin, 440))
 	# Maps unten.
@@ -198,7 +198,7 @@ func _podium(root: Control, stand: Array, area: Rect2) -> void:
 	holder.size = area.size
 	root.add_child(holder)
 	# Reihenfolge der Saeulen: 2. - 1. - 3.
-	var slots := [[1, 0, 270.0], [0, 1, 340.0], [2, 2, 200.0]]
+	var slots := [[1, 0, 265.0], [0, 1, 335.0], [2, 2, 235.0]]
 	var col_w := 270.0
 	var gap := 24.0
 	var total := col_w * 3.0 + gap * 2.0
@@ -224,10 +224,10 @@ func _podium(root: Control, stand: Array, area: Rect2) -> void:
 		block.position = Vector2(x, base_y - ph)
 		block.size = Vector2(col_w, ph)
 		holder.add_child(block)
-		var num := TournamentPanel.lbl(str(rank), 96, Color(rc, 0.28), true)
+		var num := TournamentPanel.lbl(str(rank), 72, Color(rc, 0.28), true)
 		num.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		num.size = Vector2(col_w, 120)
-		num.position = Vector2(x, base_y - ph + ph - 130)
+		num.size = Vector2(col_w, 90)
+		num.position = Vector2(x, base_y - 100)
 		holder.add_child(num)
 		var av_size := 132 if rank == 1 else 104
 		var av := TournamentPanel.avatar(str(s.get("name", "?")), av_size)
@@ -308,7 +308,7 @@ func _maps(root: Control, wins: Array, area: Rect2) -> void:
 		var w: Dictionary = wins[i]
 		var m: Dictionary = w.get("map", {})
 		var card := TournamentPanel.glass(10, 0.42, 0.08, 7)
-		card.custom_minimum_size = Vector2((area.size.x - 20) / 2.0, 0)
+		card.custom_minimum_size = Vector2((area.size.x - 20) / 2.0, clampf(330.0 / maxf(rows, 1) - 6.0, 40.0, 60.0))
 		var h := HBoxContainer.new()
 		h.add_theme_constant_override("separation", 12)
 		card.add_child(h)

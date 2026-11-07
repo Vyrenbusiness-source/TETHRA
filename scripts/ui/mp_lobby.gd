@@ -1557,7 +1557,7 @@ func _tournament_shots() -> void:
 			res[k + 2] = {"score": 930000 - ((k + r * 2) % 5) * 41000 - r * 7000,
 				"accuracy": 0.985 - ((k + r * 2) % 5) * 0.021, "max_combo": 400 + k * 30,
 				"failed": r == 1 and k == 4, "name": who[k]}
-		t.rounds.append(res)
+		t.rounds.append({"map": [0, 2, 3][r], "results": res})
 	t.fake_stand = [
 		{"peer": 3, "name": "Kenji", "points": 14, "wins": 2, "avg_acc": 0.974, "total_score": 2711000, "rank": 1},
 		{"peer": 2, "name": "Aria", "points": 12, "wins": 1, "avg_acc": 0.962, "total_score": 2650000, "rank": 2},

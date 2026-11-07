@@ -114,13 +114,13 @@ func sync_from_lobby() -> void:
 # Hilfen (auch vom Endbild genutzt)
 # ---------------------------------------------------------------------------
 
-static func lbl(text: String, size: int, col: Color = TEXT, heading: bool = false) -> Label:
+static func lbl(text: String, size: int, col: Color = TEXT, heading: bool = false, spacing: int = 3) -> Label:
 	var l := Label.new()
 	l.text = text
 	l.add_theme_font_size_override("font_size", size)
 	l.add_theme_color_override("font_color", col)
 	if heading:
-		l.add_theme_font_override("font", UiTheme.heading_font(3))
+		l.add_theme_font_override("font", UiTheme.heading_font(spacing))
 	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return l
 
@@ -380,14 +380,22 @@ func _header(sub: String, step: int) -> void:
 	col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(col)
 	col.add_child(lbl("TURNIER", 26, TEXT, true))
-	col.add_child(lbl(sub, 14, DIM))
+	var meta := HBoxContainer.new()
+	meta.add_theme_constant_override("separation", 8)
+	col.add_child(meta)
+	meta.add_child(chip("%d Maps" % int(t.config.get("maps", 10)), DIM))
+	meta.add_child(chip(star_range_text(), DIM))
+	meta.add_child(chip(mods_text(), DIM))
+	var sl := lbl(sub, 14, DIM)
+	sl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	sl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	sl.custom_minimum_size.x = 120
+	sl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	meta.add_child(sl)
 	var steps := ["MAPS WÄHLEN", "BANS", "RUNDEN"]
 	for i in steps.size():
 		var on := i == step
 		row.add_child(chip(steps[i], ACCENT if on else DIM, 13))
-	row.add_child(chip("%d Maps" % int(t.config.get("maps", 10)), DIM))
-	row.add_child(chip(star_range_text(), DIM))
-	row.add_child(chip(mods_text(), DIM))
 	var close := Button.new()
 	close.text = "✕"
 	close.tooltip_text = "Zurück zum Raum" if not is_host else "Turnier abbrechen"
@@ -401,9 +409,7 @@ func _header(sub: String, step: int) -> void:
 
 
 func _cols() -> int:
-	var w := size.x - 88.0 - 56.0
-	if w <= 0.0:
-		w = 1500.0
+	var w := get_viewport_rect().size.x - 88.0 - 56.0
 	return clampi(int(w / 300.0), 2, 5)
 
 
@@ -475,7 +481,7 @@ func _build_pick() -> void:
 		var b4 := _btn("Weiter zu Bans", true, 190, func():
 			if not harness:
 				Lobby.tour_start_bans())
-		b4.disabled = not full
+		b4.disabled = not (full or (t.autofill_done and t.pool.size() >= 2))
 		bar.add_child(b4)
 	else:
 		bar.add_child(lbl("Der Host startet die Bans, sobald der Pool voll ist.", 13, DIM))
@@ -483,6 +489,7 @@ func _build_pick() -> void:
 
 func _empty_slot(i: int) -> Control:
 	var c := glass(12, 0.22, 0.08, 10)
+	c.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	c.custom_minimum_size = Vector2(0, COVER_H + 96)
 	var v := VBoxContainer.new()
 	v.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -500,6 +507,7 @@ func _empty_slot(i: int) -> Control:
 func _card(i: int, m: Dictionary, mode: String, banned: bool = false) -> Control:
 	var card := glass(12, 0.5, 0.14, 0)
 	card.clip_contents = true
+	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 0)
 	card.add_child(v)
@@ -558,7 +566,7 @@ func _card(i: int, m: Dictionary, mode: String, banned: bool = false) -> Control
 	col.add_theme_constant_override("separation", 3)
 	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	info.add_child(col)
-	var title := lbl(str(m.get("title", "?")), 16, TEXT, true)
+	var title := lbl(str(m.get("title", "?")), 16, TEXT.darkened(0.45) if banned else TEXT, true, 0)
 	title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	col.add_child(title)
 	var ver := str(m.get("version", ""))
@@ -578,9 +586,11 @@ func _card(i: int, m: Dictionary, mode: String, banned: bool = false) -> Control
 		foot.add_child(who)
 	else:
 		foot.add_child(_spacer())
-	foot.add_child(_status_chip(m))
-	if mode == "ban" or banned:
-		_decorate_ban(card, holder, m, i, banned)
+	if banned:
+		foot.add_child(chip("gestrichen von " + _banners(i), WARN, 11))
+		_decorate_ban(holder)
+	else:
+		foot.add_child(_status_chip(m))
 	return card
 
 
@@ -620,10 +630,12 @@ func _voters() -> Array:
 
 
 func _has_voted(peer: int) -> bool:
-	return int(t.bans.get(peer, -1)) != -1
+	return int(t.bans.get(peer, -1)) >= 0
 
 
 func _all_voted() -> bool:
+	if t.remaining() <= 1 and not t.pool.is_empty() and not t.bans.is_empty():
+		return true
 	var ids := _voters()
 	if ids.is_empty():
 		return false
@@ -744,22 +756,21 @@ func _ignore_mouse(n: Node) -> void:
 		_ignore_mouse(c)
 
 
-## Aufgedeckte Ban-Karte: Chip "gestrichen von …" + Durchstreich-Overlay.
-func _decorate_ban(card: Control, holder: Control, _m: Dictionary, i: int, banned: bool) -> void:
-	if not banned:
-		return
-	var by_whom: Array[String] = []
+func _banners(i: int) -> String:
+	var who: Array[String] = []
 	for p in t.bans:
 		if int(t.bans[p]) == i:
-			by_whom.append(_pname(int(p)))
+			who.append(_pname(int(p)))
+	return ", ".join(who)
+
+
+## Aufgedeckte Ban-Karte: Durchstreich-Overlay auf dem Cover.
+func _decorate_ban(holder: Control) -> void:
 	var s := _Strike.new()
 	s.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	s.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	card.add_child(s)
+	holder.add_child(s)
 	_strikes.append(s)
-	var tag := chip("gestrichen von " + ", ".join(by_whom), WARN, 11)
-	tag.position = Vector2(10, COVER_H - 30)
-	holder.add_child(tag)
 
 
 func _play_strikes() -> void:
@@ -781,7 +792,7 @@ func _play_strikes() -> void:
 
 func _build_between() -> void:
 	var played: int = t.rounds.size()
-	var total: int = t.order.size() if not t.order.is_empty() else int(t.config.get("maps", 10))
+	var total: int = t.order.size() if not t.order.is_empty() else t.remaining()
 	_header("Zwischenstand nach Runde %d von %d" % [played, total], 2)
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 22)
@@ -811,10 +822,10 @@ func _build_between() -> void:
 	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(right)
 	var last_idx: int = played - 1
-	if last_idx >= 0 and last_idx < t.order.size():
-		var m: Dictionary = t.pool[int(t.order[last_idx])]
+	if last_idx >= 0 and int(t.rounds[last_idx].get("map", -1)) in range(t.pool.size()):
+		var m: Dictionary = t.pool[int(t.rounds[last_idx].map)]
 		right.add_child(lbl("RUNDE %d  ·  %s" % [played, str(m.get("title", "?")).to_upper()], 13, ACCENT, true))
-		var res: Dictionary = t.rounds[last_idx]
+		var res: Dictionary = t.rounds[last_idx].results
 		var rows: Array = []
 		for p in res:
 			var r: Dictionary = res[p]
@@ -842,9 +853,8 @@ func _build_between() -> void:
 	var remaining: int = total - played
 	if remaining > 0 and played < t.order.size():
 		var nm: Dictionary = t.pool[int(t.order[played])]
-		right.add_child(Control.new())
 		right.add_child(lbl("ALS NÄCHSTES", 13, ACCENT, true))
-		right.add_child(_card(int(t.order[played]), nm, "plain"))
+		right.add_child(_next_row(nm))
 	var bar := _bar()
 	bar.add_child(lbl("%d Maps noch zu spielen" % maxi(remaining, 0) if remaining > 0
 		else "Alle Runden gespielt.", 14, DIM))
@@ -855,6 +865,33 @@ func _build_between() -> void:
 				Lobby.tour_next()))
 	else:
 		bar.add_child(lbl("Der Host startet die nächste Runde.", 14, DIM))
+
+
+func _next_row(m: Dictionary) -> Control:
+	var card := glass(12, 0.5, 0.14, 8)
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 14)
+	card.add_child(h)
+	var tr := TextureRect.new()
+	tr.custom_minimum_size = Vector2(124, 70)
+	tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	tr.clip_contents = true
+	tr.texture = _cover_for(m)
+	h.add_child(tr)
+	var v := VBoxContainer.new()
+	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	v.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	v.add_theme_constant_override("separation", 3)
+	h.add_child(v)
+	var tl := lbl(str(m.get("title", "?")), 17, TEXT, true, 0)
+	tl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	v.add_child(tl)
+	var sub := lbl("%s  ·  %s" % [str(m.get("artist", "")), stars_text(float(m.get("stars", 0.0)))], 13, DIM)
+	sub.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	v.add_child(sub)
+	h.add_child(_status_chip(m))
+	return card
 
 
 # ---------------------------------------------------------------------------
@@ -923,6 +960,8 @@ func _autofill() -> void:
 		return
 	_filling = true
 	_fill_used = {}
+	# Host darf freie Plaetze ueber sein Pick-Limit fuellen (vor den Adds setzen).
+	Lobby.tour_autofill_done()
 	var r := _range()
 	var cands: Array = []
 	for ms in library.mapsets:
@@ -984,7 +1023,7 @@ func _on_fill_page(results: Array, raw_count: int, offset: int) -> void:
 			continue
 		opts.sort()
 		_fill_used[sid] = true
-		Lobby.tour_add_map({"set_id": sid, "file": "", "version": "", "title": str(res.title),
+		Lobby.tour_add_map({"set_id": sid, "file": "mirror_%d.osz" % sid, "version": "", "title": str(res.title),
 			"artist": str(res.artist), "stars": opts.back(), "online": true})
 		_fill_need -= 1
 	_fill_pages += 1
@@ -1012,6 +1051,4 @@ func _finish_fill() -> void:
 		_fill_status = "Nicht genug passende Maps gefunden."
 	elif _fill_need <= 0:
 		_fill_status = ""
-	if not harness:
-		Lobby.tour_autofill_done()
 	refresh()

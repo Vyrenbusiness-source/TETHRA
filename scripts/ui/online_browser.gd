@@ -1212,7 +1212,7 @@ func chosen_data(r: Dictionary) -> Dictionary:
 			best = f
 	if best < 0.0:
 		best = float(r.get("stars", 0.0))
-	return {"set_id": int(r.id), "file": "", "version": "", "title": str(r.title),
+	return {"set_id": int(r.id), "file": "mirror_%d.osz" % int(r.id), "version": "", "title": str(r.title),
 		"artist": str(r.artist), "stars": best, "online": true}
 
 
