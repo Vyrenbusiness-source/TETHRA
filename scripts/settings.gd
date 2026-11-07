@@ -51,9 +51,37 @@ var key_hook1: int = KEY_Z
 var key_hook2: int = KEY_X
 ## Mania-4K: eine Taste pro Spalte.
 var key_lanes: Array[int] = [KEY_D, KEY_F, KEY_J, KEY_K]
-## Mania Scroll-Speed (x0.5 langsam .. x3.0 schnell). Rein visuell:
-## verkuerzt/verlaengert nur die Anflugzeit, Timing-Fenster unveraendert.
-var mania_scroll: float = 1.0
+## Scroll Speed wie osu!lazer (1..40, ganzzahlig, Default 8 wie lazer). Rein
+## visuell: Timing-Fenster unveraendert. Zeit von der Feldoberkante bis zur
+## Trefferlinie = SCROLL_MAX_TIME_RANGE / scroll_speed (lazer
+## DrawableManiaRuleset.ComputeScrollTime: MAX_TIME_RANGE / scrollSpeed,
+## MAX_TIME_RANGE = 11485, MIN_TIME_RANGE = 290 bei 40; ManiaRulesetConfigManager:
+## ScrollSpeed Default 8, 1..40). F3/F4 = langsamer/schneller (lazer InGame-Belegung).
+const SCROLL_SPEED_MIN := 1
+const SCROLL_SPEED_MAX := 40
+const SCROLL_SPEED_DEFAULT := 8
+const SCROLL_MAX_TIME_RANGE := 11485.0
+## = ManiaCore.BASE_PREEMPT: Anflugzeit bei mania_scroll 1.0. 2D: z_far liegt an
+## der Bildoberkante, z_line an der Trefferlinie -> preempt ist exakt die lazer-Zeit.
+const SCROLL_BASE_PREEMPT := 1200.0
+signal scroll_speed_changed(speed: int)
+var scroll_speed: int = SCROLL_SPEED_DEFAULT
+## --scroll=<1..40> (Test-/Screenshot-Laeufe): gilt nur fuer diesen Lauf, nie gespeichert.
+var _scroll_override: int = 0
+## Urspruenglicher mania_scroll-Wert vor der Umstellung (bleibt in settings.cfg erhalten).
+var _legacy_mania_scroll: float = -1.0
+## Alter Faktor (x0.5..x3.0), aus scroll_speed abgeleitet: mania_3d.gd/ManiaCore
+## rechnen preempt = 1200 / mania_scroll, das ergibt genau 11485 / scroll_speed ms.
+## Setzen rechnet auf den naechsten Speed um (mindestens 1 Schritt in Zugrichtung).
+var mania_scroll: float:
+	get:
+		return mania_from_speed(_scroll_override if _scroll_override > 0 else scroll_speed)
+	set(v):
+		var cur := mania_from_speed(scroll_speed)
+		var s := speed_from_mania(v)
+		if s == scroll_speed and absf(v - cur) > 0.0001:
+			s = clampi(s + (1 if v > cur else -1), SCROLL_SPEED_MIN, SCROLL_SPEED_MAX)
+		scroll_speed = s
 ## Spur-Aufleuchten beim Tastendruck (Lane-Highlight) an/aus.
 var lane_glow: bool = true
 ## 2D: Aufleuchten der Tasten/Lighting beim Treffer (osu! "Hit Lighting").
@@ -106,8 +134,13 @@ var graphics_quality: int = 2
 ## Default 240: Unlimited kann auf sehr neuen GPUs (Treiber-Timeouts)
 ## Instabilitaet ausloesen — wer will, stellt bewusst auf Unlimited.
 var fps_mode: int = 2
-## Anzeigename des Spielers (Profil).
-var profile_name: String = "Player"
+## Anzeigename des Spielers (Profil). Nur EINMAL aenderbar (name_set).
+const DEFAULT_PROFILE_NAME := "Player"
+const NAME_MIN_LEN := 2
+const NAME_MAX_LEN := 16
+var profile_name: String = DEFAULT_PROFILE_NAME
+## true = Name festgelegt (settings.cfg profile/name_set), danach nicht mehr aenderbar.
+var name_set: bool = false
 ## Sprache der Oberflaeche: "en" (Default, auch ohne gespeicherten Wert) oder
 ## "de" (nur per Einstellungen). Eine gespeicherte Wahl bleibt erhalten.
 ## Uebersetzungen: translations/*.csv (Schluessel = deutscher Text).
@@ -239,6 +272,7 @@ func _ready() -> void:
 	_migrate_from_hookline()
 	load_settings()
 	_lang_override = cli_language()
+	_scroll_override = cli_scroll_speed()
 	_setup_audio_enhance()
 	# Globales Glass-Theme: ALLE Controls (Slider, Dropdowns, Scrollbalken,
 	# Popups …) verlieren die graue Godot-Standard-Optik.
@@ -351,7 +385,16 @@ func load_settings(path: String = PATH) -> void:
 	key_hook2 = int(cfg.get_value("keys", "hook2", KEY_X))
 	for i in 4:
 		key_lanes[i] = int(cfg.get_value("keys", "lane%d" % i, key_lanes[i]))
-	mania_scroll = clampf(float(cfg.get_value("game", "mania_scroll", 1.0)), 0.5, 3.0)
+	_legacy_mania_scroll = float(cfg.get_value("game", "mania_scroll_legacy", -1.0))
+	if cfg.has_section_key("game", "scroll_speed"):
+		scroll_speed = clamp_scroll_speed(cfg.get_value("game", "scroll_speed", SCROLL_SPEED_DEFAULT))
+	elif cfg.has_section_key("game", "mania_scroll"):
+		# Einmalige Umstellung: alter Faktor -> naechster lazer-Speed, Original bleibt.
+		var old := float(cfg.get_value("game", "mania_scroll", 1.0))
+		_legacy_mania_scroll = old
+		scroll_speed = speed_from_mania(clampf(old, 0.5, 3.0) if not is_nan(old) else 1.0)
+	else:
+		scroll_speed = SCROLL_SPEED_DEFAULT
 	hitsounds = bool(cfg.get_value("game", "hitsounds", true))
 	lane_glow = bool(cfg.get_value("game", "lane_glow", true))
 	hit_lighting_2d = bool(cfg.get_value("game", "hit_lighting_2d", true))
@@ -373,7 +416,10 @@ func load_settings(path: String = PATH) -> void:
 	graphics_quality = clampi(int(cfg.get_value("game", "graphics_quality", 2)), 0, 4)
 	audio_enhance = bool(cfg.get_value("game", "audio_enhance", true))
 	bass_boost = clampf(float(cfg.get_value("game", "bass_boost", 0.75)), 0.0, 1.0)
-	profile_name = str(cfg.get_value("profile", "name", "Player"))
+	profile_name = str(cfg.get_value("profile", "name", DEFAULT_PROFILE_NAME))
+	# Wer schon einen eigenen Namen hat, gilt als festgelegt.
+	name_set = bool(cfg.get_value("profile", "name_set", false)) \
+			or profile_name.strip_edges() != DEFAULT_PROFILE_NAME
 	language = _valid_language(str(cfg.get_value("game", "language", "en")))
 
 
@@ -389,7 +435,11 @@ func save(path: String = PATH) -> void:
 	cfg.set_value("keys", "hook2", key_hook2)
 	for i in 4:
 		cfg.set_value("keys", "lane%d" % i, key_lanes[i])
-	cfg.set_value("game", "mania_scroll", mania_scroll)
+	cfg.set_value("game", "scroll_speed", scroll_speed)
+	# Abgeleiteter Faktor fuer aeltere Versionen; Originalwert bleibt separat.
+	cfg.set_value("game", "mania_scroll", mania_from_speed(scroll_speed))
+	if _legacy_mania_scroll > 0.0:
+		cfg.set_value("game", "mania_scroll_legacy", _legacy_mania_scroll)
 	cfg.set_value("game", "hitsounds", hitsounds)
 	cfg.set_value("game", "lane_glow", lane_glow)
 	cfg.set_value("game", "hit_lighting_2d", hit_lighting_2d)
@@ -412,6 +462,7 @@ func save(path: String = PATH) -> void:
 	cfg.set_value("game", "audio_enhance", audio_enhance)
 	cfg.set_value("game", "bass_boost", bass_boost)
 	cfg.set_value("profile", "name", profile_name)
+	cfg.set_value("profile", "name_set", name_set)
 	cfg.set_value("game", "language", language)
 	cfg.save(path)
 
@@ -528,6 +579,11 @@ func _input(event: InputEvent) -> void:
 		apply()
 		save()
 		return
+	# F3/F4 = Scroll Speed -1/+1 (osu!lazer InGame-Belegung, Halten wiederholt).
+	if event is InputEventKey and event.pressed and not event.ctrl_pressed and not event.alt_pressed 			and (event.keycode == KEY_F3 or event.keycode == KEY_F4):
+		step_scroll_speed(1 if event.keycode == KEY_F4 else -1)
+		get_viewport().set_input_as_handled()
+		return
 	if event is InputEventMouseButton and event.pressed and event.alt_pressed:
 		var step := 0.0
 		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
@@ -544,6 +600,13 @@ func _input(event: InputEvent) -> void:
 
 ## Kleines osu-artiges Overlay unten rechts: Prozent + Balken, blendet aus.
 func _show_volume_overlay() -> void:
+	var pct := int(round((volume_db + 30.0) / 30.0 * 100.0))
+	_show_osd((tr("Lautstaerke   %d %%") % pct) if not is_muted() else (tr("Lautstaerke   %s") % tr("Stumm")),
+			float(pct) / 100.0)
+
+
+## Ruhige Kurzanzeige unten rechts (Lautstaerke, Scroll Speed): Text + Balken 0..1.
+func _show_osd(text: String, frac: float) -> void:
 	if _vol_layer == null:
 		_vol_layer = CanvasLayer.new()
 		_vol_layer.layer = 100
@@ -554,6 +617,8 @@ func _show_volume_overlay() -> void:
 		panel.anchor_top = 1.0
 		panel.anchor_bottom = 1.0
 		panel.offset_left = -262
+		panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+		panel.grow_vertical = Control.GROW_DIRECTION_BEGIN
 		panel.offset_right = -22
 		panel.offset_top = -92
 		panel.offset_bottom = -22
@@ -578,9 +643,8 @@ func _show_volume_overlay() -> void:
 		_vol_fill.size = Vector2(0, 6)
 		_vol_fill.color = Color(0.20, 0.85, 1.0)
 		bar_bg.add_child(_vol_fill)
-	var pct := int(round((volume_db + 30.0) / 30.0 * 100.0))
-	_vol_label.text = (tr("Lautstaerke   %d %%") % pct) if not is_muted() else (tr("Lautstaerke   %s") % tr("Stumm"))
-	_vol_fill.size = Vector2(210.0 * float(pct) / 100.0, 6)
+	_vol_label.text = text
+	_vol_fill.size = Vector2(210.0 * clampf(frac, 0.0, 1.0), 6)
 	_vol_layer.visible = true
 	if _vol_tween != null and _vol_tween.is_valid():
 		_vol_tween.kill()
@@ -628,6 +692,104 @@ static func clamp_bg_dim(v: float) -> float:
 	if is_nan(v):
 		return 0.3
 	return snappedf(clampf(v, 0.0, 1.0), 0.05)
+
+
+## ---------------- Scroll Speed (osu!lazer) ----------------
+
+## Zeit bis zur Trefferlinie in ms (lazer ComputeScrollTime): 11485 / speed.
+static func scroll_time_ms(speed: float) -> float:
+	return SCROLL_MAX_TIME_RANGE / maxf(speed, 0.001)
+
+
+## Speed -> alter Faktor fuer ManiaCore (preempt = 1200 / Faktor = 11485 / speed).
+static func mania_from_speed(speed: int) -> float:
+	return SCROLL_BASE_PREEMPT * float(speed) / SCROLL_MAX_TIME_RANGE
+
+
+## Alter Faktor -> naechster ganzzahliger Speed (1..40).
+static func speed_from_mania(factor: float) -> int:
+	if is_nan(factor) or factor <= 0.0:
+		return SCROLL_SPEED_DEFAULT
+	return clamp_scroll_speed(factor * SCROLL_MAX_TIME_RANGE / SCROLL_BASE_PREEMPT)
+
+
+## Beliebiger Wert aus der Datei -> ganzzahliger Speed 1..40.
+static func clamp_scroll_speed(v: Variant) -> int:
+	var f := float(v) if (v is int or v is float or v is String) else float(SCROLL_SPEED_DEFAULT)
+	if is_nan(f) or is_inf(f):
+		return SCROLL_SPEED_DEFAULT
+	return clampi(roundi(f), SCROLL_SPEED_MIN, SCROLL_SPEED_MAX)
+
+
+## Anzeige wie lazer: "25 (459 ms)" (ms abgeschnitten wie lazer: (int)).
+static func scroll_value_text(speed: int) -> String:
+	return "%d (%d ms)" % [speed, int(scroll_time_ms(speed))]
+
+
+## Vollstaendige Anzeige "Scroll Speed 25 (459 ms)".
+func scroll_speed_label(speed: int = -1) -> String:
+	return tr("Scroll Speed") + " " + scroll_value_text(scroll_speed if speed < 0 else speed)
+
+
+## Speed um d Schritte aendern (F3/F4, Pausenmenue), speichern, melden.
+func step_scroll_speed(d: int) -> void:
+	var s := clampi(scroll_speed + d, SCROLL_SPEED_MIN, SCROLL_SPEED_MAX)
+	_scroll_override = 0
+	if s != scroll_speed:
+		scroll_speed = s
+		save()
+		scroll_speed_changed.emit(s)
+	# Laufendes Spiel darf live nachziehen (Methode optional in der Szene).
+	var scene := get_tree().current_scene if is_inside_tree() else null
+	var live := scene != null and scene.has_method("apply_scroll_speed")
+	if live:
+		scene.call("apply_scroll_speed", scroll_speed)
+	var txt := scroll_speed_label()
+	if scene != null and not live and "core" in scene:
+		txt += "  ·  " + tr("ab dem nächsten Start")
+	_show_osd(txt, float(scroll_speed - SCROLL_SPEED_MIN) / float(SCROLL_SPEED_MAX - SCROLL_SPEED_MIN))
+
+
+## --scroll=<1..40> auf der Kommandozeile, sonst 0.
+static func cli_scroll_speed() -> int:
+	for a in OS.get_cmdline_args() + OS.get_cmdline_user_args():
+		if a.begins_with("--scroll="):
+			return clamp_scroll_speed(a.trim_prefix("--scroll=").to_float())
+	return 0
+
+
+## ---------------- Spielername (einmalig) ----------------
+
+## Prueft einen Wunschnamen: "" = gueltig, sonst der (deutsche) Fehlertext-Key.
+static func name_error(n: String) -> String:
+	var t := n.strip_edges()
+	if t.length() < NAME_MIN_LEN or t.length() > NAME_MAX_LEN:
+		return "Name: 2–16 Zeichen"
+	for i in t.length():
+		var c := t.unicode_at(i)
+		if c < 32 or c == 127 or (c >= 0x80 and c <= 0x9F) or c == 0x200B or c == 0xFEFF:
+			return "Name enthält ungültige Zeichen"
+	if t.to_lower() == DEFAULT_PROFILE_NAME.to_lower():
+		return "Bitte einen eigenen Namen wählen"
+	return ""
+
+
+## Darf der Name noch (einmalig) festgelegt werden?
+func can_set_name() -> bool:
+	return not name_set and profile_name.strip_edges() == DEFAULT_PROFILE_NAME
+
+
+## Name einmalig festlegen. "" = gespeichert, sonst Fehlertext-Key.
+func set_name_once(n: String, path: String = PATH) -> String:
+	if not can_set_name():
+		return "Name ist bereits festgelegt"
+	var err := name_error(n)
+	if err != "":
+		return err
+	profile_name = n.strip_edges()
+	name_set = true
+	save(path)
+	return ""
 
 
 ## 2D-Spurbreite/-Notengroesse auf 0.5..2.0 + 5-%-Raster ziehen.
