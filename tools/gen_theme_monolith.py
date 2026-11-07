@@ -163,8 +163,10 @@ def far_layer(W, H, seed):
 # ---------------------------------------------------------------------------
 # Tunnel-Textur: Monolithen-Reihen (u = Winkel, v = ln r ueber Faktor 4)
 # ---------------------------------------------------------------------------
-def rows_layer(W, H, seed):
-    rng = np.random.default_rng(seed + 11)
+def rows_layer(W, H, seed, cfg=None):
+    cfg = {**dict(col=COLD, L=L_SCREEN, wmean=0.115, shear=0.55, frame=0.42, tall=0.20, shape="box", rim=1.0, sd=11), **(cfg or {})}
+    COLc, Lc = cfg["col"], cfg["L"]
+    rng = np.random.default_rng(seed + cfg["sd"])
     S = W / 4096.0 * 0.7
     q = W / (2 * math.pi)             # Texel pro rad (Winkel)
     sy = q * LN4 / H                   # iso-Einheiten je v-Texel
@@ -178,7 +180,7 @@ def rows_layer(W, H, seed):
         slabs = []
         while cur < end - 0.03:
             gap = rng.uniform(0.012, 0.10) * (1.8 if rng.random() < 0.15 else 1.0)
-            w = float(np.clip(rng.lognormal(math.log(0.115), 0.5), 0.035, 0.42))
+            w = float(np.clip(rng.lognormal(math.log(cfg["wmean"]), 0.5), 0.035, 0.42))
             a = cur + gap
             b = a + w
             if b > end:
@@ -188,13 +190,13 @@ def rows_layer(W, H, seed):
             # reservierte Winkelbereiche (hohe Platten der Reihe darunter)
             if any(abs(wrap_pi(c - bc)) < (bw + w) * 0.5 + 0.01 for bc, bw in blocked[k]):
                 continue
-            tall = k < 7 and rng.random() < 0.20
+            tall = k < 7 and rng.random() < cfg["tall"]
             t0 = rng.uniform(0.10, 0.28)
             t1 = (rng.uniform(1.20, 1.55) if tall else rng.uniform(0.62, 0.90))
             if tall:
                 blocked[k + 1].append((c, w))
-            slabs.append((c, 0.5 * w, k + t0, k + t1, rng.uniform(-0.55, 0.55) * (1.0 if rng.random() < 0.55 else 0.1),
-                          rng.uniform(0.45, 1.25), rng.random() < 0.42))
+            slabs.append((c, 0.5 * w, k + t0, k + t1, rng.uniform(-cfg["shear"], cfg["shear"]) * (1.0 if rng.random() < 0.55 else 0.1),
+                          rng.uniform(0.45, 1.25), rng.random() < cfg["frame"]))
         for (c, hw, ra, rb, shear, litk, frame) in slabs:
             ya, yb = ra * RH, rb * RH
             yb = min(yb, H - 3)
@@ -223,18 +225,30 @@ def rows_layer(W, H, seed):
             r = np.zeros(m.shape, F32)
             sheen = np.zeros(m.shape, F32)
             lit_sum = 0.0
-            for dist, (nx, ny) in zip(ds, nrm):
-                lit = np.clip(nx * L_SCREEN[0] + ny * L_SCREEN[1], 0, 1) ** 1.4
+            if cfg["shape"] == "blob":
+                hq = 0.5 * hh * sy
+                xn, yn = xloc * q / (hw * q), (yy - 0.5 * (ya + yb)) * sy / hq
+                e = np.sqrt(xn ** 2 + yn ** 2)
+                inside = (1.0 - e) * min(hw * q, hq)
+                m = np.clip(inside / S + 0.5, 0, 1)
+                nxt, nyt = xn / (e + 1e-6), yn / (e + 1e-6)
+                nxs, nys = nxt * (-s) + nyt * co, nxt * co + nyt * s
+                lit = np.clip(nxs * Lc[0] + nys * Lc[1], 0, 1) ** 1.4
+                dd = np.maximum(inside, 0)
+                r += lit * (np.exp(-dd / (2.6 * S)) + 0.035 * np.exp(-dd / (8.0 * S))) + 0.02 * np.exp(-dd / (1.2 * S))
+                sheen += lit * np.exp(-dd / (46.0 * S))
+            for dist, (nx, ny) in (zip(ds, nrm) if cfg["shape"] != "blob" else []):
+                lit = np.clip(nx * Lc[0] + ny * Lc[1], 0, 1) ** 1.4
                 dd = np.maximum(dist, 0)
                 r += lit * (np.exp(-dd / (2.6 * S)) + 0.035 * np.exp(-dd / (8.0 * S)))
                 sheen += lit * np.exp(-dd / (46.0 * S))
                 r += 0.02 * np.exp(-dd / (1.2 * S))   # Restlicht: unbeleuchtete Kanten bleiben lesbar
             body = 0.0025 * sheen
-            if frame:
+            if frame and cfg["shape"] != "blob":
                 inset = (6.5 + 2.5 * (hw * q > 60)) * S / 0.7 * 0.7
                 fr = np.exp(-((inside - inset) / (0.9 * S)) ** 2) * (inside > 0)
                 r += fr * 0.14 * (0.4 + sheen / (sheen.max() + 1e-6))
-            col = (r * litk + body)[..., None] * COLD[None, None, :]
+            col = (r * litk * cfg["rim"] + body)[..., None] * COLc[None, None, :]
             sub = np.ix_(ys, xs)
             rgb[sub] = np.where((m > 0)[..., None], np.maximum(rgb[sub], col * m[..., None]), rgb[sub])
             alpha[sub] = np.maximum(alpha[sub], m.astype(F32))
@@ -245,8 +259,9 @@ def rows_layer(W, H, seed):
 # ---------------------------------------------------------------------------
 # Staub: schwebende Partikel (Panorama)
 # ---------------------------------------------------------------------------
-def dust_layer(W, H, seed):
-    rng = np.random.default_rng(seed + 29)
+def dust_layer(W, H, seed, col=None, sd=29, mult=1.0):
+    COLc = COLD if col is None else col
+    rng = np.random.default_rng(seed + sd)
     img = np.zeros((H, W, 3), F32)
     n = int(7000 * (W / 4096) ** 2)
     lon = rng.uniform(-math.pi, math.pi, n)
@@ -264,7 +279,7 @@ def dust_layer(W, H, seed):
         k *= lum[i] / max(k.sum(), 1e-6) * (2.0 * sz[i] ** 2) * 0.45
         ys = np.clip(cy + np.arange(-KR, KR + 1), 0, H - 1)
         xs = (cx + np.arange(-KR, KR + 1)) % W
-        img[np.ix_(ys, xs)] += k[..., None] * COLD[None, None, :]
+        img[np.ix_(ys, xs)] += k[..., None] * COLc[None, None, :] * mult
     # wenige unscharfe Bokeh-Scheiben (nahe Partikel)
     for i in range(int(90 * W / 4096)):
         lo, la = rng.uniform(-math.pi, math.pi), math.asin(rng.uniform(-0.3, 0.55))
@@ -275,7 +290,7 @@ def dust_layer(W, H, seed):
         disc = smoothstep(R + 1.0, R - 1.0, rr) * (0.6 + 0.4 * smoothstep(R * 0.4, R, rr)) * rng.uniform(0.012, 0.04)
         ys = np.clip(cy + np.arange(-R - 2, R + 3), 0, H - 1)
         xs = (cx + np.arange(-R - 2, R + 3)) % W
-        img[np.ix_(ys, xs)] += disc[..., None] * COLD[None, None, :]
+        img[np.ix_(ys, xs)] += disc[..., None] * COLc[None, None, :] * mult
     lon_g, lat_g = pano_grid(W, H)
     img *= front_dark(lon_g, lat_g)[..., None]
     return np.clip(img, 0, 1.0), rng
@@ -285,16 +300,18 @@ def dust_layer(W, H, seed):
 # ---------------------------------------------------------------------------
 # Nahe Ebene: grosse schwarze Prismen (RGBA-Panorama), Parallax-Orbit per beat_step
 # ---------------------------------------------------------------------------
-def prisms_layer(W, H, seed):
+def prisms_layer(W, H, seed, cfg=None):
+    cfg = {**dict(col=COLD, L=L_SCREEN, jit=0.0, n=26, sd=53), **(cfg or {})}
+    COLc, Lc = cfg["col"], cfg["L"]
     from PIL import ImageDraw
-    rng = np.random.default_rng(seed + 53)
+    rng = np.random.default_rng(seed + cfg["sd"])
     SS = 3
     S = W / 4096.0
     rgb = np.zeros((H, W, 3), F32)
     alpha = np.zeros((H, W), F32)
     px_lon = W / (2 * math.pi)
     px_lat = H / math.pi
-    n = 26
+    n = cfg["n"]
     for i in range(n):
         lon = -math.pi + (i + rng.uniform(0.1, 0.9)) / n * 2 * math.pi
         lat = rng.uniform(9.0, 52.0) * D2R
@@ -317,7 +334,9 @@ def prisms_layer(W, H, seed):
             xr, yr = x * cs - y * sn, x * sn + y * cs
             return ((pad + xr * stretch) * SS, (pad - yr) * SS)
         # Front: Rechteck (x 0..w, y 0..h), Tiefe: Versatz (dx,dy) nach hinten
-        fr = [(0, 0), (w, 0), (w, h), (0, h)]
+        j = cfg["jit"]
+        fr = [(rng.uniform(-j, j) * w, rng.uniform(-j, j) * h), (w + rng.uniform(-j, j) * w, rng.uniform(-j, j) * h),
+              (w + rng.uniform(-j, j) * w, h + rng.uniform(-j, j) * h), (rng.uniform(-j, j) * w, h + rng.uniform(-j, j) * h)]
         bk = [(x + dx, y + dy) for x, y in fr]
         faces = [bk]
         side = dx > 0
@@ -342,7 +361,7 @@ def prisms_layer(W, H, seed):
             nl = math.hypot(nx, ny) + 1e-6
             # Bildschirm-Normale (Rotation + y nach oben)
             sxn, syn = (nx * cs - ny * sn) / nl, (nx * sn + ny * cs) / nl
-            lit = max(0.0, sxn * L_SCREEN[0] + syn * L_SCREEN[1]) ** 1.3
+            lit = max(0.0, sxn * Lc[0] + syn * Lc[1]) ** 1.3
             val = 0.02 + 0.95 * lit
             df.line([P(*a), P(*b)], fill=float(val), width=max(1, int(1.6 * SS * S * 0.7)))
         m = np.asarray(im.resize((size, size), Image.LANCZOS), dtype=F32) / 255.0
@@ -354,7 +373,7 @@ def prisms_layer(W, H, seed):
         ok = (ys >= 0) & (ys < H)
         ys, m, li = ys[ok], m[ok], li[ok]
         sub = np.ix_(ys, xs)
-        rgb[sub] = np.maximum(rgb[sub], li[..., None] * COLD[None, None, :])
+        rgb[sub] = np.maximum(rgb[sub], li[..., None] * COLc[None, None, :])
         alpha[sub] = np.maximum(alpha[sub], m)
     return np.clip(rgb, 0, 1.0), alpha, rng
 
