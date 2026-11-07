@@ -62,12 +62,73 @@ Mittelwert m = 1 exakt. Die Noten kommen also an der richtigen Scroll-Position a
 - **Deterministik:** Seed = md5 aus roten Linien und Noten, dazu `RandomNumberGenerator` (PCG32).
   Das ergibt auf jedem Rechner und fuer jeden MP-Spieler dieselben Linien.
 - **Fairness:**
-  - m liegt zwischen 0,1 und 10 und ist immer groesser 0, also nie rueckwaerts.
+  - m liegt zwischen 0,1 und 10 und ist immer groesser 0, also nie rueckwaerts (Stufe Normal).
   - Kein Abschnitt ist kuerzer als 4 ms.
   - Das erste Segment hat m = 1, damit der Anlauf nicht beschleunigt.
   - Noten derselben Spalte (auch Hold-Kopf und Hold-Ende) behalten einen Positionsabstand
     von mindestens 30 % der Zeit bzw. 24 ms. Sonst faellt der Block auf m = 1 zurueck.
 - **Map mit eigenem SV** (`MapLibrary.detect_sv`): Ihr SV bleibt unveraendert, es wird nicht doppelt gemischt.
+
+## Stufe Stark (Standard)
+
+`SvMod.strength` waehlt die Stufe: `STRENGTH_NORMAL` ist der Generator oben (Stand v1.15,
+unveraendert). `STRENGTH_STRONG` ("max") ist der Standard. Eine Auswahl im Spiel kommt
+spaeter (song_select/settings gehoeren anderen Tasks). Der Cache haengt an Seed und Stufe.
+
+Leitbild: Die Noten tanzen auf dem Beat hoch und runter. Jeder Beat hat einen Ruecklauf
+und einen Burst, der genau auf dem naechsten Beat endet.
+
+| Muster | Form | Wann |
+|---|---|---|
+| BOUNCE | Ruecklauf lo (Kiai 0,08 bis 0,2, Strophe 0,35 bis 0,55; Downbeat x0,6), Burst 15 bis 25 % des Beats bis genau auf den Beat (bis 9,5) | Kiai 75 %, Strophe 50 % der Takte |
+| REVERSE | im Ruecklauf m = -k (Kiai 1 bis 2, Strophe 0,6 bis 1) fuer 1/4 bis 1/2 Beat, endet direkt vor dem Burst | nur in freien Luecken, Kiai 70 %, Strophe 35 % der Beats |
+| JUMP | Rueck-Sprung m = -10 fuer 5 bis 10 ms direkt vor dem Burst | wenn kein Reverse, Kiai 45 % |
+| TELEPORT | SV 10 fuer 5 bis 10 ms direkt vor dem Beat | vor Downbeat/Taktmitte mit Note, Kiai 60 % |
+| STUTTER | Bounce im 1/2-Takt | Kiai 20 %, nicht in dichten Takten |
+| PULSE | Schub hi 2 bis 4 ab dem Beat, Rest langsamer | Strophe 40 % |
+| WAVE | Beat-Mittel 1 + A*sin ueber den Takt (A 0,2 bis 0,35), exakt auf Takt-Mittel 1 normiert | jeder Takt |
+| Drop | FREEZE 0,05 fuer 3/4 Beat, Burst 3,85; Drop-Beat 4,0 fuer 1/5 Beat; RAMP ab 0,35 bis 0,5 | wie Normal |
+
+- **Block = Takt:** Der ganze Takt ist ein Block mit Mittel exakt 1. An jeder Taktgrenze
+  (ausser in Ramps vor Drops) stimmt die Position bitgenau wie ohne Mod. Die
+  Scroll-Speed-Einstellung stimmt im Mittel, jede Note kommt exakt puenktlich an.
+- **Reverse fair:**
+  - Rueckwaerts nur, wenn keine Note und kein Hold-Koerper naeher als 90 ms liegt
+    (Rueck-Sprung 70 ms). Damit ist waehrend der Rueckwaerts-Phase keine Note an der
+    Trefferlinie, und jede Note kommt vorwaerts an.
+  - Kein Hold laeuft durch eine Rueckwaerts-Phase.
+  - Es gilt dieselbe Spalten-Regel wie bei Normal (30 % der Zeit bzw. 24 ms Abstand).
+  - Verstoesst ein Takt dagegen, faellt er stufenweise zurueck: erst ohne Reverse und Jump,
+    dann ohne Welle (einfacher Puls), zuletzt m = 1.
+- **Grenzen Stark:** vorwaerts mindestens 0,05 (`M_MIN_STRONG`), hoechstens 10.
+  Rueckwaerts hoechstens -10 (`M_REV_MAX`). Bei hohem Tempo und Bursts darf die
+  Sichtzeit einer Note auf 1/3 der Anflugzeit sinken (Normal: 40 %).
+- **Darstellung:** Negative Multiplikatoren stehen als Meta `sv_mult` an der gruenen Linie
+  (`ScrollMap.SV_META`). Echte .osu-Dateien kennen das nicht, deren Verhalten bleibt 1:1.
+  `ScrollMap.position()` ist dann nicht monoton. `time_at()` und `spawn_time()` liefern
+  den ersten Zeitpunkt (laufendes Maximum). `ManiaCore` haelt die Spawn-Zeiten nicht fallend.
+  3D blendet Noten und Hold-Strahlen hinter dem Horizont aus, 2D zeichnet sie oberhalb des
+  Bildes. So verschwindet keine Note, die kurz nach oben laeuft, und keine erscheint doppelt.
+- **Treffer-Wertung:** Sie bleibt rein zeitbasiert und unveraendert.
+
+Kennzahlen Stark (`tests/run_sv_mod_tests.gd`):
+
+| Map | Linien | Rueckwaerts | Teleports | m vorwaerts |
+|---|---|---|---|---|
+| synthetisch 150 BPM, 1/2 + Stream | 533 | 13 | 38 | 0,05 bis 10 |
+| 1/1-Map 150 BPM mit Holds | | 19 Rueck-Spruenge, mindestens 10 Reverse | 52 | |
+| linear ring - lalabai [Stratosphere / Normal] | 1436 | 196 | 76 | 0,05 bis 10 |
+| linear ring - lalabai [Mesosphere / Hyper] | 1275 | 96 | 75 | 0,05 bis 10 |
+| linear ring - lalabai [Thermosphere / Another] | 1112 | 59 | 56 | 0,05 bis 10 |
+| linear ring - lalabai [Exosphere / Farewell] | 986 | 46 | 53 | 0,05 bis 10 |
+
+In leichten Diffs (mehr Luecken) gibt es mehr Reverse. In dichten Diffs bleiben Bounce,
+Teleport und Rueck-Sprung.
+
+Bildfolge im Spiel (Debug):
+`song_select.tscn --mania --autoplay --sv [--2d] --shot --shot-rev --shot-lead=<ms> --shot-seq=<n> --shot-step=<ms> --shot-out=<png>`.
+`--shot-rev` sucht die erste Rueckwaerts-Phase (Kiai bevorzugt) mit mindestens 4 Noten im Bild.
+Das Spiel speichert n Bilder in halber Aufloesung und gibt je Bild Zeit, m und Noten im Bild aus.
 
 ## Vergleich generiert und echt
 
