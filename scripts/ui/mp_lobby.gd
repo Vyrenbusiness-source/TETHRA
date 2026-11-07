@@ -157,6 +157,14 @@ func _ready() -> void:
 	elif OS.get_cmdline_args().has("--mp-join-test"):
 		Lobby.join_lan("127.0.0.1")
 		_mp_smoke(false)
+	elif OS.get_cmdline_args().has("--mp-auto-host"):
+		if not Lobby.active:
+			Lobby.host_room()
+		_mp_auto(true)
+	elif OS.get_cmdline_args().has("--mp-auto-client"):
+		if not Lobby.active:
+			Lobby.join_lan("127.0.0.1")
+		_mp_auto(false)
 
 
 func _mp_smoke(host: bool) -> void:
@@ -176,6 +184,81 @@ func _mp_smoke(host: bool) -> void:
 			return
 	print("MP-SMOKE %s TIMEOUT" % ("HOST" if host else "CLIENT"))
 	get_tree().quit(1)
+
+
+## Zwei-Instanzen-Test (Host + Client auf 127.0.0.1), Ablauf siehe Log.
+func _mp_auto(host: bool) -> void:
+	var tag := "HOST" if host else "CLIENT"
+	var out := ""
+	for a in OS.get_cmdline_args():
+		if a.begins_with("--mp-out="):
+			out = a.substr(9)
+	var step := func(msg: String): print("MPAUTO %s %s" % [tag, msg])
+	var wait_for := func(cond: Callable, secs: float) -> bool:
+		var w := 0.0
+		while w < secs and not cond.call():
+			await get_tree().create_timer(0.1).timeout
+			w += 0.1
+		return cond.call()
+	var shot := func(name: String):
+		await RenderingServer.frame_post_draw
+		get_viewport().get_texture().get_image().save_png("%s_%s_%s.png" % [out, tag.to_lower(), name])
+	if not Lobby.played.is_empty():
+		await get_tree().create_timer(1.5).timeout
+		await shot.call("back")
+		step.call("zurueck in Lobby, in_game=%s ready=%s" % [Lobby.in_game, str(Lobby.all_ready())])
+		get_tree().quit(0)
+		return
+	Lobby.map_changed.connect(func():
+		await get_tree().create_timer(0.4).timeout
+		step.call("map_changed -> '%s' status='%s' all_ready=%s" % [
+			str(Lobby.sel_map.get("title", "")), _status_label.text, Lobby.all_ready()]))
+	if not await wait_for.call(func(): return Lobby.players.size() >= 2 and Lobby.players.has(multiplayer.get_unique_id()), 20.0):
+		step.call("TIMEOUT players")
+		get_tree().quit(1)
+		return
+	step.call("players synced: %d crown=%d" % [Lobby.players.size(), Lobby.crown_id])
+	var sets := _library.mapsets
+	if sets.size() < 2:
+		step.call("zu wenig Maps")
+		get_tree().quit(1)
+		return
+	if host:
+		_pick(sets[0], 0)
+		step.call("picked A: " + str(Lobby.sel_map.get("title", "")))
+		await get_tree().create_timer(2.0).timeout
+		step.call("ready after pick: all_ready=%s" % Lobby.all_ready())
+		# Fehlende Map simulieren (nur Anzeige): Client meldet Status.
+		Lobby.pick_map({ "set_id": 0, "file": "gibts_nicht.osz", "version": "X", "title": "Ghost", "artist": "Nobody", "stars": 1.0 })
+		await get_tree().create_timer(1.5).timeout
+		step.call("ghost map: all_ready=%s" % Lobby.all_ready())
+		_pick(sets[0], 0)
+		await get_tree().create_timer(1.0).timeout
+		await shot.call("lobby")
+		step.call("give crown to client")
+		for id in Lobby.players:
+			if id != 1:
+				Lobby.give_crown(int(id))
+		await get_tree().create_timer(1.0).timeout
+		step.call("crown=%d pick by old host blocked: %s" % [Lobby.crown_id, str(not (Lobby.crown_id == 1))])
+		var before := Lobby.sel_map.duplicate()
+		_pick(sets[1], 0)
+		step.call("old host pick ignored: %s" % str(Lobby.sel_map == before or Lobby.sel_map.get("title", "") != sets[1].title or Lobby.crown_id == 1))
+		await get_tree().create_timer(0.5).timeout
+		step.call("host start blocked: can_start=%s" % Lobby.can_start())
+		if not await wait_for.call(func(): return Lobby.in_game, 40.0):
+			step.call("TIMEOUT game start")
+			get_tree().quit(1)
+	else:
+		await wait_for.call(func(): return Lobby.crown_id == multiplayer.get_unique_id(), 40.0)
+		step.call("client got crown: %s" % str(Lobby.crown_id == multiplayer.get_unique_id()))
+		await get_tree().create_timer(0.5).timeout
+		_pick(sets[1], 0)
+		await get_tree().create_timer(2.0).timeout
+		step.call("client picked: %s all_ready=%s" % [str(Lobby.sel_map.get("title", "")), Lobby.all_ready()])
+		await shot.call("lobby")
+		Lobby.start_game()
+		step.call("client start requested")
 
 
 func _capture_shot() -> void:

@@ -347,6 +347,10 @@ var _clip_toast_tw: Tween
 var _hit_offsets := PackedFloat32Array()
 var _mp_last_rank := -1
 var _mp_rows: Dictionary = {}
+## Test-Hook (--mp-demo): erfundene Scores + Screenshots, ohne zu spielen.
+var _mp_demo := OS.get_cmdline_args().has("--mp-demo")
+var _mp_demo_t := 0.0
+var _mp_demo_shots := 0
 var _acc_label: Label
 var _grade_label: Label
 var _score_label: Label
@@ -2301,7 +2305,12 @@ func _process(delta: float) -> void:
 		_mp_send_t -= delta
 		if _mp_send_t <= 0.0:
 			_mp_send_t = 0.25
-			Lobby.send_score(core.score, core.combo, core.accuracy())
+			if _mp_demo:
+				_mp_demo_send()
+			else:
+				Lobby.send_score(core.score, core.combo, core.accuracy())
+	if _mp_demo:
+		_mp_demo_step(delta)
 	if core.failed:
 		_show_results(true)
 	_update_hud()
@@ -3825,6 +3834,43 @@ func _close_tut_step() -> void:
 
 const MP_ROW_H := 46.0
 
+
+func _mp_demo_send() -> void:
+	var phase := 0.0 if Lobby.is_host else 2.4
+	var t := _mp_demo_t
+	var sc := int(t * 9000.0 + 22000.0 * sin(t * 0.45 + phase))
+	Lobby.send_score(maxi(sc, 0), int(t * 3.0) % 120, 1.0 - 0.02 * sin(t + phase) - 0.01)
+
+
+func _mp_demo_shot(tag: String) -> void:
+	await RenderingServer.frame_post_draw
+	var out := ""
+	for a in OS.get_cmdline_args():
+		if a.begins_with("--mp-out="):
+			out = a.substr(9)
+	var img := get_viewport().get_texture().get_image()
+	img.save_png("%s_%s.png" % [out, tag])
+	print("MPAUTO shot %s" % tag)
+
+
+func _mp_demo_step(delta: float) -> void:
+	_mp_demo_t += delta
+	if _mp_demo_shots == 0 and _mp_demo_t > 5.0:
+		_mp_demo_shots = 1
+		_mp_demo_shot("live1")
+	elif _mp_demo_shots == 1 and _mp_demo_t > 9.0:
+		_mp_demo_shots = 2
+		_mp_demo_shot("live2")
+	elif _mp_demo_shots == 2 and _mp_demo_t > 11.0:
+		_mp_demo_shots = 3
+		_show_results(false)
+	elif _mp_demo_shots == 3 and _mp_demo_t > 14.0:
+		_mp_demo_shots = 4
+		_mp_demo_shot("results")
+	elif _mp_demo_shots == 4 and _mp_demo_t > 15.0:
+		_mp_demo_shots = 5
+		_back_to_browser()
+
 func _refresh_mp_board() -> void:
 	if _mp_board == null or not is_instance_valid(_mp_board):
 		return
@@ -3846,7 +3892,7 @@ func _refresh_mp_board() -> void:
 		var ty := i * MP_ROW_H
 		if absf(float(row.get_meta("ty", -1.0)) - ty) > 0.5:
 			row.set_meta("ty", ty)
-			var old: Tween = row.get_meta("tw", null)
+			var old: Tween = row.get_meta("tw") if row.has_meta("tw") else null
 			if old != null and old.is_valid():
 				old.kill()
 			var tw := row.create_tween()
