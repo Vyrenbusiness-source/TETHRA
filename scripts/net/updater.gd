@@ -22,6 +22,8 @@ const BACKOFF_MAX := 240.0
 const MAX_RETRIES := 5
 const CFG_PATH := "user://updater.cfg"
 const NOTES_MAX_LINES := 6
+## Grosse PCK (100+ MB): kein Gesamt-Timeout, stattdessen Stillstands-Wache.
+const STALL_SECONDS := 45.0
 
 ## "", "checking", "downloading", "ready", "error" — plus Text fuers Menue.
 signal state_changed(text: String, ratio: float)
@@ -38,6 +40,8 @@ var _retries := 0
 var _toast: UpdateToast
 var _postponed := false
 var _gate_acc := 0.0
+var _last_bytes := -1
+var _stall := 0.0
 
 
 func _ready() -> void:
@@ -133,7 +137,9 @@ func _start_download(url: String) -> void:
 	status = "downloading"
 	state_changed.emit("⬇ Update v%s wird geladen…" % latest_version, 0.0)
 	_dl = HTTPRequest.new()
-	_dl.timeout = 300.0
+	_dl.timeout = 0.0  # unbegrenzt; haengende Downloads faengt die Stillstands-Wache in _process
+	_last_bytes = -1
+	_stall = 0.0
 	_dl.use_threads = true
 	_dl.download_chunk_size = 4 * 1024 * 1024
 	_dl.download_file = _new_path
@@ -167,6 +173,9 @@ func _process(delta: float) -> void:
 		var total := _dl.get_body_size()
 		if total <= 0:
 			total = _expected_size
+		_watch_stall(delta, _dl.get_downloaded_bytes())
+		if _dl == null:
+			return
 		if total > 0:
 			var r := clampf(float(_dl.get_downloaded_bytes()) / float(total), 0.0, 1.0)
 			state_changed.emit("⬇ Update v%s wird geladen… %d %%" % [latest_version, int(r * 100.0)], r)
@@ -177,6 +186,24 @@ func _process(delta: float) -> void:
 		if _gate_acc >= 0.5:
 			_gate_acc = 0.0
 			_offer_install()
+
+
+## Kein Byte seit STALL_SECONDS: Download abbrechen, Backoff-Retry starten.
+func _watch_stall(delta: float, bytes: int) -> void:
+	if bytes != _last_bytes:
+		_last_bytes = bytes
+		_stall = 0.0
+		return
+	_stall += delta
+	if stalled(_stall):
+		_dl.cancel_request()
+		_dl.queue_free()
+		_dl = null
+		_download_failed()
+
+
+static func stalled(stall_time: float) -> bool:
+	return stall_time >= STALL_SECONDS
 
 
 func _on_download_done(result: int, code: int, _h: PackedStringArray, _b: PackedByteArray) -> void:
@@ -271,6 +298,7 @@ static func backoff_for(attempt: int) -> float:
 
 
 ## Batch-Skript: wartet bis die Exe zu ist, tauscht die .pck, startet neu.
+## `move` statt `copy`: gleiche Platte = Umbenennen, bei 1+ GB sofort.
 func _apply_and_restart() -> void:
 	_remember_notes()
 	var exe_dir := OS.get_executable_path().get_base_dir()
@@ -278,7 +306,7 @@ func _apply_and_restart() -> void:
 	var bat := "@echo off\r\n" \
 			+ "timeout /t 1 /nobreak >nul\r\n" \
 			+ ":retry\r\n" \
-			+ "copy /y \"%s\" \"%s\" >nul 2>&1\r\n" % [_new_path.replace("/", "\\"), _pck_path.replace("/", "\\")] \
+			+ "move /y \"%s\" \"%s\" >nul 2>&1\r\n" % [_new_path.replace("/", "\\"), _pck_path.replace("/", "\\")] \
 			+ "if errorlevel 1 (timeout /t 1 /nobreak >nul & goto retry)\r\n" \
 			+ "del \"%s\" >nul 2>&1\r\n" % _new_path.replace("/", "\\") \
 			+ "start \"\" \"%s\"\r\n" % OS.get_executable_path().replace("/", "\\") \
