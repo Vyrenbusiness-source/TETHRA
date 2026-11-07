@@ -390,3 +390,28 @@ func _store(idx: int, result: Dictionary) -> void:
 	_judged[idx] = result
 	_judged_count += 1
 	note_judged.emit(idx, result)
+
+
+# ---------------------------------------------------------------------------
+# Bot (Autoplay-Varianten, Tests)
+# ---------------------------------------------------------------------------
+
+## Plan fuer einen "menschlichen" Bot: je Ziel [Zeitversatz ms (+ = spaet),
+## Zielfehler Grad, auslassen]. Deterministisch ueber seed. sigma_t/sigma_a =
+## Streuung (Normalverteilung, auf 3 sigma gedeckelt); miss_every > 0 laesst
+## jedes n-te Ziel aus. sigma 0 = perfekt.
+static func bot_plan(p_notes: Array, seed: int, sigma_t: float, sigma_a: float,
+		miss_every: int = 0) -> Array:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed
+	var out: Array = []
+	out.resize(p_notes.size())
+	for i in p_notes.size():
+		var ot := 0.0
+		var oa := 0.0
+		if sigma_t > 0.0:
+			ot = clampf(rng.randfn(0.0, sigma_t), -3.0 * sigma_t, 3.0 * sigma_t)
+		if sigma_a > 0.0:
+			oa = clampf(rng.randfn(0.0, sigma_a), -3.0 * sigma_a, 3.0 * sigma_a)
+		out[i] = [ot, oa, miss_every > 0 and i % miss_every == miss_every - 1]
+	return out

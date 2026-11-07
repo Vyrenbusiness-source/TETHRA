@@ -26,6 +26,8 @@ func _initialize() -> void:
 	_test_acc_like_mania()
 	_test_finished_stats()
 	_test_real_map()
+	_test_bot_synthetic()
+	_test_library_maps()
 	print("=== Ergebnis: %d bestanden, %d fehlgeschlagen ===" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
 
@@ -484,3 +486,127 @@ func _autoplay_cursor(c: OrbitCore, ns: Array[OrbitNote], t: float) -> void:
 		if h >= 0:
 			c.cursor_moved(ns[h].angle_at(t), t)
 			return
+
+
+
+# --- Bot (menschlich streuend, deterministisch) ---
+
+## Spielt ns mit einem Bot-Plan (OrbitCore.bot_plan) durch: Druck zur Zeit
+## + Versatz am Winkel + Zielfehler, Boegen mit gleichem Fehler verfolgt,
+## Taps 40 ms gehalten. Frames alle 16 ms wie im Spiel.
+func _bot_run(ns: Array[OrbitNote], od: float, hp: float, plan: Array, no_fail: bool = false) -> OrbitCore:
+	var c := OrbitCore.new()
+	c.setup(ns, od, 1.0, hp, {"NF": no_fail})
+	var ev: Array = []
+	for i in ns.size():
+		if bool(plan[i][2]):
+			continue
+		var tp: float = ns[i].time_ms + float(plan[i][0])
+		ev.append([tp, 0, i])
+		var tr: float = ns[i].end_ms + float(plan[i][0]) * 0.5 if ns[i].is_arc else tp + 40.0
+		ev.append([tr, 1, i])
+	ev.sort_custom(func(a, b): return a[0] < b[0] or (a[0] == b[0] and a[1] > b[1]))
+	var held: Array[int] = [-1, -1]
+	var t: float = ns[0].time_ms - 1000.0 if not ns.is_empty() else 0.0
+	var end_t: float = ns[-1].end_ms + 2000.0 if not ns.is_empty() else 0.0
+	var k := 0
+	while t < end_t and not c.failed:
+		while k < ev.size() and float(ev[k][0]) <= t:
+			var e: Array = ev[k]
+			k += 1
+			var te: float = e[0]
+			var n: OrbitNote = ns[e[2]]
+			c.update(te)
+			if e[1] == 0:
+				if held[n.ring] >= 0:
+					c.key_up(n.ring, te)
+				held[n.ring] = e[2]
+				c.key_down(n.ring, te, n.angle_at(te) + float(plan[e[2]][1]))
+			elif held[n.ring] == e[2]:
+				c.key_up(n.ring, te)
+				held[n.ring] = -1
+		for r in 2:
+			var h := c.active_arc(r)
+			if h >= 0:
+				c.cursor_moved(ns[h].angle_at(t) + float(plan[h][1]), t)
+				break
+		c.update(t)
+		t += 16.0
+	c.update(end_t + 5000.0)
+	return c
+
+
+func _test_bot_synthetic() -> void:
+	print("- Bot (synthetisch)")
+	var bm := _mixed_map()
+	var ns := OrbitConverter.convert(bm)
+	var perfect := _bot_run(ns, 8.0, 5.0, OrbitCore.bot_plan(ns, 1, 0.0, 0.0))
+	_ok(perfect.n_miss == 0 and perfect.accuracy() >= 1.0 - EPS, "Bot perfekt = SS")
+	var p1 := OrbitCore.bot_plan(ns, 7, 24.0, 5.0)
+	_ok(str(p1) == str(OrbitCore.bot_plan(ns, 7, 24.0, 5.0)), "Bot-Plan deterministisch (Seed)")
+	var good := _bot_run(ns, 8.0, 5.0, p1)
+	_ok(good.accuracy() > 0.85 and good.accuracy() < 1.0 and not good.failed,
+		"Bot leicht streuend: hohe Acc, kein Fail (%.3f)" % good.accuracy())
+	var s := good.stats()
+	var total := int(s.n_max) + int(s.n300) + int(s.n200) + int(s.n100) + int(s.n50) + int(s.n_miss)
+	_ok(total == ns.size(), "jedes Ziel genau einmal gewertet (%d/%d)" % [total, ns.size()])
+	var m4 := _bot_run(ns, 8.0, 5.0, OrbitCore.bot_plan(ns, 3, 0.0, 0.0, 4))
+	_ok(m4.n_miss >= ns.size() / 4 - 1 and m4.max_combo <= 3 + 3, "auto-miss 4: Misses + Kombo-Bruch")
+	var wild := _bot_run(ns, 8.0, 10.0, OrbitCore.bot_plan(ns, 5, 0.0, 0.0, 2))
+	_ok(wild.failed, "jedes 2. Ziel verpasst, HP 10: Fail")
+	var nf := _bot_run(ns, 8.0, 10.0, OrbitCore.bot_plan(ns, 5, 0.0, 0.0, 2), true)
+	_ok(not nf.failed and nf.hp >= 0.0, "NoFail: nie Fail")
+
+
+# --- Echte Maps aus der Bibliothek: Statistik + Fairness ---
+
+const LIB_MAPS := [
+	["Billain - Specialist", "Pairo's Normal"],
+	["Billain - Specialist", "Yuno's Hard"],
+	["Billain - Specialist", "GoldenJumper's Insane"],
+	["Lime - Aurora", "Hard"],
+	["goreshit - burn this moment", "fear"],
+]
+
+
+func _test_library_maps() -> void:
+	print("- Bibliothek (Statistik)")
+	var dir := MapLibrary.default_maps_dir()
+	var da := DirAccess.open(dir)
+	if da == null:
+		print("  (kein maps/-Ordner, uebersprungen)")
+		return
+	var files := Array(da.get_files())
+	for want in LIB_MAPS:
+		var bm: Beatmap = null
+		for f in files:
+			if str(f).find(want[0]) < 0:
+				continue
+			var imp := OszImporter.import(dir.path_join(f))
+			for d in imp.difficulties:
+				if d.beatmap.version_name() == want[1]:
+					bm = d.beatmap
+			break
+		if bm == null:
+			print("  (%s [%s] fehlt)" % want)
+			continue
+		_map_report("%s [%s]" % want, bm)
+
+
+func _map_report(label: String, bm: Beatmap) -> void:
+	var ns := OrbitConverter.convert(bm)
+	var a := OrbitConverter.analyze(ns, bm)
+	print("  %s: %d -> %d Ziele (%d Boegen, %d Akkorde), %.1f/s, Spruenge>=60: %d (schwach %d), Wenden %.0f%%, Tempo mittel %.3f p95 %.3f Grad/ms, Orbit-Sterne %.2f" % [
+		label, bm.hit_objects.size(), ns.size(), int(a.arcs), int(a.chords), float(a.nps),
+		int(a.jumps), int(a.weak_jumps), float(a.reversal) * 100.0, float(a.mean_speed),
+		float(a.p95_speed), OrbitConverter.stars(ns)])
+	_ok(_max_speed(ns) <= OrbitConverter.MAX_DEG_PER_MS + EPS, label + ": Tempo gedeckelt")
+	_ok(int(a.weak_jumps) == 0, label + ": grosse Spruenge nur auf starken Beats")
+	var pf := _bot_run(ns, bm.od(), bm.hp(), OrbitCore.bot_plan(ns, 11, 0.0, 0.0))
+	_ok(pf.n_miss == 0, label + ": perfekter Bot ohne Miss")
+	var b1 := _bot_run(ns, bm.od(), bm.hp(), OrbitCore.bot_plan(ns, 11, 14.0, 6.0))
+	var b2 := _bot_run(ns, bm.od(), bm.hp(), OrbitCore.bot_plan(ns, 11, 28.0, 11.0))
+	print("    Bot gut: Acc %.2f%% Miss %d %s | Bot wackelig: Acc %.2f%% Miss %d %s" % [
+		b1.accuracy() * 100.0, b1.n_miss, "FAIL" if b1.failed else "ok",
+		b2.accuracy() * 100.0, b2.n_miss, "FAIL" if b2.failed else "ok"])
+	_ok(not b1.failed and b1.accuracy() > 0.9, label + ": guter Bot schafft die Map")
