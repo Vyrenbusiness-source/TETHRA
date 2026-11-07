@@ -29,6 +29,11 @@ const SV_SIG_MS := 5.0
 ## Wechsel naeher als das am letzten gezaehlten zaehlen nicht: ein einzelner
 ## kurzer SV-Effekt (10 Linien in 0.5 s) macht noch keine SV-Map.
 const SV_JUMP_GAP_MS := 250.0
+## Starkes eigenes SV (SvMod laesst es unveraendert): mindestens so viele
+## deutliche Wechsel pro Minute. Gemessen an 983 Mania-Diffs (docs/qa/sv_real.md):
+## schwache "SV"-Maps (nur BPM-Wechsel, z.B. xi - Happy End) liegen bei <= 3,
+## die schwaechste echte SV-Map (MX) bei 6,1.
+const SV_STRONG_JPM := 5.0
 
 ## Sets aus dem Cache ohne aktuelle SV-Erkennung (siehe start_sv_backfill).
 var sv_pending: Array[String] = []
@@ -180,11 +185,17 @@ static func detect_sv(bm: Beatmap) -> bool:
 	return bool(sv_stats(bm).sv)
 
 
+## Eigenes SV stark genug, dass der SV-Mod nichts dazugeneriert.
+static func has_strong_sv(bm: Beatmap) -> bool:
+	var st := sv_stats(bm)
+	return bool(st.sv) and float(st.jpm) >= SV_STRONG_JPM
+
+
 ## SV-Kennzahlen einer Map zwischen erster Note und letztem Notenende:
 ## { sv: bool, frac: Anteil mit SV-Abweichung, jumps: deutliche Wechsel }.
 static func sv_stats(bm: Beatmap) -> Dictionary:
 	if bm == null or bm.hit_objects.is_empty():
-		return {"sv": false, "frac": 0.0, "jumps": 0}
+		return {"sv": false, "frac": 0.0, "jumps": 0, "jpm": 0.0}
 	var t0 := INF
 	var t1 := -INF
 	for obj in bm.hit_objects:
@@ -205,7 +216,7 @@ static func sv_stats(bm: Beatmap) -> Dictionary:
 ## mit unterschiedlichem g, hoechstens einer je SV_JUMP_GAP_MS.
 ## SV-Map, wenn frac >= SV_MIN_FRAC oder jumps >= SV_MIN_JUMPS.
 static func sv_stats_tp(timing_points: Array, t0: float, t1: float) -> Dictionary:
-	var res := {"sv": false, "frac": 0.0, "jumps": 0}
+	var res := {"sv": false, "frac": 0.0, "jumps": 0, "jpm": 0.0}
 	var span := t1 - t0
 	if timing_points.is_empty() or not (span > 0.0):
 		return res
@@ -226,7 +237,7 @@ static func sv_stats_tp(timing_points: Array, t0: float, t1: float) -> Dictionar
 	for i in times.size():
 		while ri + 1 < reds.size() and reds[ri + 1].time <= times[i]:
 			ri += 1
-		var bl := ScrollMap.DEFAULT_BL if ri < 0 else ScrollMap.red_beat_length(reds[ri])
+		var bl := ScrollMap.red_beat_length(reds[maxi(ri, 0)]) if not reds.is_empty() else ScrollMap.DEFAULT_BL
 		var s := t0 if i == 0 else maxf(times[i], t0)
 		var e := t1 if i == times.size() - 1 else minf(times[i + 1], t1)
 		if e <= s:
@@ -263,6 +274,7 @@ static func sv_stats_tp(timing_points: Array, t0: float, t1: float) -> Dictionar
 		prev = seg
 	res.frac = dev_ms / span
 	res.jumps = jumps
+	res.jpm = jumps / maxf(span / 60000.0, 1.0 / 60.0)
 	res.sv = res.frac >= SV_MIN_FRAC or jumps >= SV_MIN_JUMPS
 	return res
 

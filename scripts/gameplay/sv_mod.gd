@@ -25,7 +25,7 @@ extends RefCounted
 ## mindestens GAP_RATIO der Zeit bzw. GAP_ABS_MS). Verletzt ein Block das,
 ## faellt er auf m = 1 zurueck.
 ##
-## Map mit eigenem SV (MapLibrary.detect_sv): ihr SV bleibt unveraendert.
+## Map mit starkem eigenem SV (MapLibrary.has_strong_sv): ihr SV bleibt 1:1.
 
 const M_MIN := 0.1
 const M_MAX := 10.0
@@ -54,9 +54,11 @@ static func timing_points_for(bm: Beatmap) -> Array:
 	return _cache
 
 
-## Hat die Map schon echtes SV? Dann mischt der Mod nicht doppelt.
+## Hat die Map schon STARKES eigenes SV? Dann mischt der Mod nicht doppelt.
+## Schwaches SV (nur BPM-Wechsel, < MapLibrary.SV_STRONG_JPM Wechsel/min)
+## zaehlt nicht: dort erzeugt der Mod das SV (ersetzt die schwachen gruenen Linien).
 static func has_own_sv(bm: Beatmap) -> bool:
-	return MapLibrary.detect_sv(bm)
+	return MapLibrary.has_strong_sv(bm)
 
 
 ## Seed = Hash der Map (rote Linien + Noten): gleich auf jedem Rechner.
