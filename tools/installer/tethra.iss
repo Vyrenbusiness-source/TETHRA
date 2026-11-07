@@ -47,6 +47,9 @@ Source: "{#Src}\TETHRA.pck"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Src}\TETHRA_worlds.pck"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Src}\TETHRA Kompatibilitaetsmodus.bat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Src}\README.txt"; DestDir: "{app}"; Flags: ignoreversion isreadme
+; ffmpeg (GPL v3, gyan.dev "essentials") nur fuer Clip -> MP4; Lizenz in licenses\.
+Source: "{#Src}\ffmpeg.exe"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "{#Src}\licenses\*"; DestDir: "{app}\licenses"; Flags: ignoreversion recursesubdirs skipifsourcedoesntexist
 Source: "{#Src}\tools\*"; DestDir: "{app}\tools"; Flags: ignoreversion recursesubdirs
 ; Beispiel-Maps: nie ueberschreiben (Nutzer kann sie geloescht oder ersetzt haben).
 Source: "{#Src}\maps\*"; DestDir: "{app}\maps"; Flags: onlyifdoesntexist recursesubdirs
