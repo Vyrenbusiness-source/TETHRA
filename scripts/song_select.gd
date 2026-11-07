@@ -217,6 +217,10 @@ func _ready() -> void:
 		_shot_online.call_deferred()
 	elif OS.get_cmdline_args().has("--shot-settings"):
 		# Harness: Einstellungen oeffnen, das Panel fotografiert seine Reiter selbst.
+		# --skin2d=<Ordnername>: Skin fuer die Vorschau (nur im Speicher, nicht gespeichert).
+		for a in OS.get_cmdline_args():
+			if a.begins_with("--skin2d="):
+				Settings.skin_2d = a.trim_prefix("--skin2d=")
 		add_child.call_deferred(SettingsPanel.new())
 	elif OS.get_cmdline_args().has("--shot"):
 		_capture_screenshot_and_quit()

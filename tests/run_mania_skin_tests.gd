@@ -49,6 +49,8 @@ func _run() -> void:
 	_test_patterns()
 	_test_real_world()
 	_test_builtin()
+	_test_hold_geometry()
+	_test_display_name()
 	_cleanup()
 	print("--- %d bestanden, %d fehlgeschlagen ---" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
@@ -149,8 +151,8 @@ func _test_import_zip() -> void:
 		var t := s.tex("note_0")
 		_ok(t != null and t.get_width() == 16 and s.tex_scale("note_0") == 0.5, "@2x geladen, Mass halbiert")
 		_ok(s.tex("note_1") != null, "Pfad mit Backslash + Gross/Klein + ohne .png aufgeloest")
-		_ok(s.tex("body_1") == null, "kaputtes PNG -> null (Fallback)")
-		_ok(s.tex("head_2") == null and s.tex("stage_hint") == null, "fehlende Datei -> null")
+		_ok(s.tex("body_1") != null, "kaputtes PNG -> Balken-Fallback (wie osu!-Standardskin)")
+		_ok(s.tex("head_2") != null and s.tex("stage_hint") == null, "fehlende Note -> Balken-Fallback, Stage-Hint -> null")
 	_ok(ManiaSkin.load_skin("gibt es nicht") == null, "load_skin unbekannt -> null")
 	_ok(ManiaSkin.load_skin("../x") == null, "load_skin Pfadtrick -> null")
 	_ok(ManiaSkin.import_skin(_tmp + "/nope.osk") == "", "fehlende Datei -> \"\"")
@@ -275,9 +277,51 @@ Name: x
 	var n1 := s.tex("note_1")
 	_ok(n1 != null and n1.get_width() == 12, "Animation: erstes Frame (-0)")
 	_ok(s.tex("key_0") != null and s.tex("key_0").get_width() == 10, "KeyImage mit .PNG-Endung gross")
-	_ok(s.tex("keyd_0") == null, "fehlende Gedrueckt-Datei -> null (nur dieses Element)")
+	_ok(s.tex("keyd_0") != null, "fehlende Gedrueckt-Datei -> Balken-Fallback (nur dieses Element)")
 	_ok(s.tex("stage_hint") != null, "mania-stage-hint in Grossbuchstaben")
 	_ok(s.tex("head_1") != null and s.tex("head_1").get_width() == 12, "Kopf fehlt -> Note der Spalte")
 	_ok(s.tex("note_2") != null and s.tex_scale("note_2") == 0.5, "Standarddatei mania-note2@2x, halbe Groesse")
 	_ok(s.tex("key_2") != null and s.tex("key_2").get_width() == 5, "Standard-Key mania-key2 fuer Spalte 3")
 	ManiaSkin.delete_skin_in(root, nm)
+
+
+## Hold-Enden: rundes Bild (Ball) wird weggelassen, deckendes Quadrat / flache Kappe nicht.
+func _test_hold_geometry() -> void:
+	var disc := Image.create(40, 40, false, Image.FORMAT_RGBA8)
+	for y in 40:
+		for x in 40:
+			if Vector2(x - 19.5, y - 19.5).length() <= 20.0:
+				disc.set_pixel(x, y, Color.WHITE)
+	_ok(ManiaSkin.image_is_round(disc), "Scheibe = rund (Ball am Hold-Ende entfaellt)")
+	var sq := Image.create(40, 40, false, Image.FORMAT_RGBA8)
+	sq.fill(Color.BLACK)
+	_ok(not ManiaSkin.image_is_round(sq), "deckendes Quadrat (Unknown noteT) ist kein Ball")
+	var cap := Image.create(60, 10, false, Image.FORMAT_RGBA8)
+	cap.fill(Color.WHITE)
+	_ok(not ManiaSkin.image_is_round(cap), "flache Kappe ist kein Ball")
+	_ok(not ManiaSkin.image_is_round(null), "null -> nicht rund")
+	# Skin ohne eigene Noten-Bilder: Fallback auf eingebaute Balken
+	var dir := _tmp + "/skins_nonotes/Leer"
+	_write(dir + "/skin.ini", "[Mania]
+Keys: 4
+".to_utf8_buffer())
+	var sk := ManiaSkin.load_skin("Leer", _tmp + "/skins_nonotes")
+	_ok(sk != null and sk.tex("note_0") != null and sk.tex("body_0") != null and sk.tex("key_0") != null,
+			"Skin ohne Noten-Bilder: Fallback auf Balken")
+
+
+func _test_display_name() -> void:
+	var root := _tmp + "/skins_names"
+	_write(root + "/A/skin.ini", "[General]
+Name: Schoener Name
+".to_utf8_buffer())
+	_write(root + "/B/skin.ini", "[General]
+Name: Ini
+".to_utf8_buffer())
+	_write(root + "/B/tethra_name.txt", "Original Datei
+".to_utf8_buffer())
+	_write(root + "/C/foo.txt", "x".to_utf8_buffer())
+	_ok(ManiaSkin.display_name("A", root) == "Schoener Name", "Anzeige-Name aus skin.ini [General] Name")
+	_ok(ManiaSkin.display_name("B", root) == "Original Datei", "tethra_name.txt hat Vorrang")
+	_ok(ManiaSkin.display_name("C", root) == "C", "sonst Ordnername")
+

@@ -40,11 +40,29 @@ func _ready() -> void:
 	refresh()
 
 
+## Map-Hintergrund der Vorschau (von aussen setzbar). Wird nur gezeigt, wenn
+## Settings.bg_dim > 0; die Deckkraft ist bg_dim wie im Spiel (0 = kein Hintergrund).
+var map_bg: Texture2D = null
+
+
 func _draw() -> void:
 	draw_style_box(UiTheme.glass_box(14, 0.7, 0.14), Rect2(Vector2.ZERO, size))
+	var a := bg_alpha()
+	if map_bg != null and a > 0.0:
+		var ts := map_bg.get_size()
+		if ts.x > 0.0 and ts.y > 0.0:
+			var k := maxf(size.x / ts.x, size.y / ts.y)   # cover
+			var dsz := ts * k
+			draw_texture_rect(map_bg, Rect2((size - dsz) * 0.5, dsz), false, Color(1, 1, 1, a))
+
+
+## Deckkraft des Map-Hintergrunds in der Vorschau = Settings.bg_dim (0 = unsichtbar).
+static func bg_alpha() -> float:
+	return clampf(Settings.bg_dim, 0.0, 1.0)
 
 
 func refresh() -> void:
+	queue_redraw()
 	if _pf == null:
 		return
 	var keys := PackedStringArray()
