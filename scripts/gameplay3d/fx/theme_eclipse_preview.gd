@@ -227,7 +227,7 @@ func _set_beat(beat_idx: int, phase: float, drop: float, kiai: float, energy: fl
 	_set_pulse(clampf(peak * exp(-phase * beat_ms / 62.0), 0.0, 1.0))
 	_mat.set_shader_parameter("beat_phase", phase)
 	_mat.set_shader_parameter("bar_phase", bar_phase)
-	_mat.set_shader_parameter("beat_step", float(beat_idx) + 1.0 - pow(1.0 - phase, 4.0))
+	_mat.set_shader_parameter("beat_step", float(beat_idx) + phase + 0.25 * ((1.0 - pow(1.0 - phase, 2.0)) - phase))
 	_mat.set_shader_parameter("downbeat_pulse", exp(-bar_phase * float(METER) * 3.0))
 	_mat.set_shader_parameter("kiai", kiai)
 	_mat.set_shader_parameter("drop", minf(drop * cf, DROP_MAX))

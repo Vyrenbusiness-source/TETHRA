@@ -13,9 +13,9 @@ shader_type sky;
 //   - Lichtschacht atmet auf dem Beat (beat_pulse) und im Kiai (kiai),
 //     Staubflocken sinken langsam durch den Strahl.
 //   - Platten-Ebenen (abyss_sky_near.webp: R ferne, G nahe Monolithplatten,
-//     B Kantenlicht): rutschen mit beat_step ruckartig, exakt auf dem
-//     Schlag, weiter (ferne 0.35, nahe 0.8 Grad je Beat; Parallax) und
-//     schieben sich durch den Schacht. downbeat_pulse laesst den Schacht
+//     B Kantenlicht): gleiten gleichmaessig ueber TIME (ferne 0.35, nahe
+//     0.8 Grad/s; Parallax; Komfort-Regeln: nie ueber beat_step, kein Ruck)
+//     und schieben sich durch den Schacht. downbeat_pulse laesst den Schacht
 //     und das Kantenlicht aufflammen. Der Drop (drop 0..0.6) lichtet den
 //     Nebel und weitet das Schachtlicht: Welt wird sichtbar, nie blendend.
 //   - Schwerer Bodennebel auf einer Ebene unter der Strecke, stroemt beim
@@ -98,8 +98,8 @@ uniform float energy : hint_range(0.0, 1.0) = 0.0;
 uniform float comfort : hint_range(0.0, 1.0) = 0.0;
 uniform sampler2D near_a : filter_linear_mipmap_anisotropic, repeat_enable, hint_default_black;
 uniform sampler2D near_b : filter_linear_mipmap_anisotropic, repeat_enable, hint_default_black;
-uniform float slab_mid_deg = 0.35;       // Grad je Beat (ferne Platten)
-uniform float slab_near_deg = 0.8;       // Grad je Beat (nahe Platten)
+uniform float slab_mid_deg = 0.35;       // Grad/s (ferne Platten, Komfort <= 1)
+uniform float slab_near_deg = 0.8;       // Grad/s (nahe Platten, Komfort <= 1)
 uniform vec3 fog_color : source_color = vec3(0.49, 0.55, 0.63);
 uniform vec3 fog_lit_color : source_color = vec3(0.74, 0.79, 0.86);
 uniform vec3 shaft_color : source_color = vec3(0.85, 0.89, 0.94);
@@ -125,14 +125,11 @@ vec4 tx(sampler2D t, vec2 uv) {
 	return textureGrad(t, uv, gx, gy);
 }
 
+// Komfort (beat_contract.md): nur Gier um die Hochachse. x (Nicken) und z (Rollen)
+// werden ignoriert, damit der Horizont immer waagerecht bleibt.
 mat3 euler(vec3 e) {
-	float cx = cos(e.x), sx = sin(e.x);
 	float cy = cos(e.y), sy = sin(e.y);
-	float cz = cos(e.z), sz = sin(e.z);
-	mat3 rx = mat3(vec3(1.0, 0.0, 0.0), vec3(0.0, cx, sx), vec3(0.0, -sx, cx));
-	mat3 ry = mat3(vec3(cy, 0.0, -sy), vec3(0.0, 1.0, 0.0), vec3(sy, 0.0, cy));
-	mat3 rz = mat3(vec3(cz, sz, 0.0), vec3(-sz, cz, 0.0), vec3(0.0, 0.0, 1.0));
-	return ry * rx * rz;
+	return mat3(vec3(cy, 0.0, -sy), vec3(0.0, 1.0, 0.0), vec3(sy, 0.0, cy));
 }
 
 vec2 dir_uv(vec3 d, vec2 ofs) {
@@ -327,9 +324,9 @@ void sky() {
 		float fd = fog_density * (1.0 - 0.40 * dk);
 		vec3 fc = fog_color * amb + fog_lit_color * sl;
 		col = mix(col, fc, clamp(g * 0.45 * fd, 0.0, 1.0));
-		// Platten rutschen mit beat_step (springt auf dem Schlag, ruht dazwischen).
-		float su_mid = beat_step * slab_mid_deg * cm / 360.0;
-		float su_near = beat_step * slab_near_deg * cm / 360.0;
+		// Platten gleiten gleichmaessig (Gier ueber TIME, <= 1 Grad/s, nie ueber beat_step).
+		float su_mid = TIME * min(slab_mid_deg, 1.0) * cm / 360.0;
+		float su_near = TIME * min(slab_near_deg, 1.0) * cm / 360.0;
 		vec4 nm = tx(near_a, vec2(fract(puv.x + su_mid), puv.y));
 		float cm_mid = smoothstep(0.0, 0.06, nm.r);
 		col = mix(col, slab_color(0.0, nm.r, lon, lat, 0.55 * exp(-max(lat, 0.0) / 6.0) + 0.25, atem, dk, dbp), cm_mid);

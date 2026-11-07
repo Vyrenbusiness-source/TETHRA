@@ -36,9 +36,9 @@ shader_type sky;
 //
 // BEAT-VERTRAG (docs/worlds/beat_contract.md):
 //   beat_step       KORONA-SCHOCKRING: auf jedem Schlag schiesst ein Ring vom Sonnenrand
-//                   nach aussen (Easing: Anschlag exakt auf dem Schlag, dann Ruhe), der
-//                   Diamantring-Funke springt ein Stueck um die Sonne, die Asche stoesst
-//                   aufwaerts.
+//                   nach aussen (glatt, auf dem Schlag am schnellsten, nie stehend), die
+//                   Asche steigt mit leichtem Tempo-Akzent. Keine Drehung ueber beat_step:
+//                   der Diamantring-Funke wandert nur langsam ueber TIME (Komfort-Regeln).
 //   downbeat_pulse  Takt-Akzent: Ring und Korona-Fuss kraeftiger, langsamer abklingend.
 //   drop            Verwandlung: Korona weitet sich weit nach aussen, Diamantring gleisst
 //                   staerker, Asche dichter und schneller; Luma gedeckelt.
@@ -117,14 +117,11 @@ uniform float ash_density : hint_range(0.0, 2.0) = 1.0;
 uniform float ash_rise = 0.010;      // Kacheln/s aufwaerts
 uniform float ash_drift = 0.0025;    // Kacheln/s seitlich
 
+// Komfort (beat_contract.md): nur Gier um die Hochachse. x (Nicken) und z (Rollen)
+// werden ignoriert, damit der Horizont immer waagerecht bleibt.
 mat3 euler(vec3 e) {
-	float cx = cos(e.x), sx = sin(e.x);
 	float cy = cos(e.y), sy = sin(e.y);
-	float cz = cos(e.z), sz = sin(e.z);
-	mat3 rx = mat3(vec3(1.0, 0.0, 0.0), vec3(0.0, cx, sx), vec3(0.0, -sx, cx));
-	mat3 ry = mat3(vec3(cy, 0.0, -sy), vec3(0.0, 1.0, 0.0), vec3(sy, 0.0, cy));
-	mat3 rz = mat3(vec3(cz, sz, 0.0), vec3(-sz, cz, 0.0), vec3(0.0, 0.0, 1.0));
-	return ry * rx * rz;
+	return mat3(vec3(cy, 0.0, -sy), vec3(0.0, 1.0, 0.0), vec3(sy, 0.0, cy));
 }
 
 vec2 dir_uv(vec3 d, vec2 ofs) {
@@ -269,8 +266,8 @@ void sky() {
 		float limb_n = 0.75 + 0.25 * sin(ph_ang * 23.0 + 1.3) * sin(ph_ang * 9.0 - 0.4);
 		col += corona_color * ring * limb_n * limb_intensity * (1.0 + bp * 0.7 + kiai * 0.5) * vis;
 		// Diamantring: ein Lichtfunke am Rand.
-		float bang = bead_angle + beat_step * 0.30 * mv;     // Funke rastet je Schlag ein Stueck weiter
-	vec2 bpos = vec2(cos(bang), sin(bang)) * 1.004;
+		float bang = bead_angle + TIME * 0.017 * mv;     // Funke wandert gleichmaessig (~1 Grad/s), nie ueber beat_step
+		vec2 bpos = vec2(cos(bang), sin(bang)) * 1.004;
 		float bd = length(q - bpos);
 		float bead = exp(-bd * bd / (0.0008 + fw * fw)) * 1.4
 				+ exp(-bd / 0.06) * 0.45 + exp(-bd / 0.35) * 0.05;
@@ -283,7 +280,7 @@ void sky() {
 			float u = atan(dir.x, -dir.z) * (0.5 / PI);
 			float h = tan(radians(clamp(latd, -60.0, 60.0)));
 			float ph = star_phase + TIME * star_speed;
-			float t = TIME * ash_rise + ph * 0.03 + beat_step * 0.003 * mv;   // Asche stoesst je Schlag aufwaerts
+			float t = TIME * ash_rise + ph * 0.03 + beat_step * 0.003 * mv;   // Asche steigt glatt, auf dem Schlag etwas schneller
 			float dr = TIME * ash_drift;
 			float jit = hash12(FRAGCOORD.xy);
 			vec4 nearl = ash_layer(u, h, 1.0, t, dr, 0.0, jit);
@@ -302,11 +299,11 @@ void sky() {
 		}
 
 		// Nahe Objekt-Ebene (Stil Fraktal-Splitter): Brocken ziehen am Spieler vorbei,
-		// Gier rastet mit beat_step auf dem Schlag ein; Drop = schneller/naeher/heller.
+		// Gier gleichmaessig ueber TIME (0.69 Grad/s, Komfort halb), nie ueber beat_step/drop; Drop = naeher/heller.
 		{
 			float s_mv = 1.0 - 0.5 * comfort;
 			float s_dp = drop * (1.0 - 0.5 * comfort);
-			float s_yaw = TIME * 0.004 * s_mv + beat_step * 0.012 * s_mv + s_dp * 0.07;
+			float s_yaw = TIME * 0.012 * s_mv;
 			vec3 s_d = dir * euler(vec3(0.0, s_yaw, 0.0));
 			s_d.y = dir.y + s_dp * 0.03 * (1.0 - abs(dir.y));          // Drop: naeher heran
 			vec4 s_sh = tg(shards_tex, dir_uv(normalize(s_d), vec2(0.0)));

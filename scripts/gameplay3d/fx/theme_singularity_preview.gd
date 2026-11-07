@@ -211,7 +211,7 @@ func _sim(beats: float, since: float) -> void:
 	_mat.set_shader_parameter("beat_pulse", pulse)
 	_mat.set_shader_parameter("beat_phase", phase)
 	_mat.set_shader_parameter("bar_phase", bar)
-	_mat.set_shader_parameter("beat_step", total + 1.0 - pow(1.0 - phase, 4.0))
+	_mat.set_shader_parameter("beat_step", total + phase + 0.25 * ((1.0 - pow(1.0 - phase, 2.0)) - phase))
 	_mat.set_shader_parameter("downbeat_pulse", exp(-bar * METER * 3.0))
 	_mat.set_shader_parameter("kiai", kiai)
 	_mat.set_shader_parameter("drop", drop)
