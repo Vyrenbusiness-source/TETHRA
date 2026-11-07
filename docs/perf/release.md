@@ -82,3 +82,17 @@ Geprueft gegen ein 1,4 GB pck:
 
 ## Nicht gemacht (laut Auftrag)
 Kein `gh release`, kein Tag-Push, `CURRENT_VERSION` unveraendert (1.8.1), keine Assets geaendert, `TETHRA_v1.zip` nicht gebaut.
+
+## Hybrid 8192/4096 + eigenes Welten-Paket (umgesetzt)
+- Nahe Ebenen (12: abyss_sky_near, sky_boss_shards, eclipse_shards, fractal_sky_shards, sky_monolith_prisms, nerve_near, obsidian_drops, obsidian_shards, sky_rift_prisms, singularity_chunks, storm_sky_debris, aurora_ice) bleiben 8192 (`process/size_limit=0`). Alle anderen Welt-Texturen (31, Panoramen/Nebel/Sterne/Dunst) `process/size_limit=4096`, neon unveraendert.
+- Export in zwei Pakete (`export_presets.cfg`: "Windows" ohne `assets_game/themes/*`, "Worlds" nur Welt-Texturen; Liste per `python tools/sync_world_preset.py`).
+
+| Paket | Groesse |
+|---|---|
+| TETHRA.pck (Spiel) | 19 042 016 Byte = 18,2 MB |
+| TETHRA_worlds.pck | 819 739 968 Byte = 782 MB (0,82 GB) |
+
+- Ziel war ca. 0,66 GB: mit 12 statt 9 nahen Ebenen (12 x 44,7 + 31 x 11,2 + neon) ergibt sich 0,82 GB. Weiter drücken: aurora_ice / obsidian_shards auf 4096 setzen (ca. -67 MB).
+- Smoke (Console-Exe + `--main-pack`, `--headless --quit-after 200`): mit und ohne `TETHRA_worlds.pck` neben der Exe 0 Fehler, `MainMenu Headless OK`. Ohne Paket: `WorldTheme.is_available` findet `assets_game/themes/<welt>` nicht -> galaxy.
+- Updater: Welten-Paket nur bei fehlender Datei oder geaenderter Signatur (Digest bzw. Groesse@Zeitstempel), Download in 32-MB-Range-Stuecken in `.part` (Resume), Stillstands-Wache 45 s, Platzcheck (Rest + 64 MB), Tausch beider Pakete in einem Batch. `WorldPack`-Autoload haengt das Paket beim Start ein.
+- Nicht getestet: echter Download gegen GitHub (kein Release); Range ueber den GitHub-Redirect.

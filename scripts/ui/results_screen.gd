@@ -254,6 +254,37 @@ func _build_background() -> void:
 	add_child(vig)
 
 
+## Aktive Mods dieses Laufs in fester Reihenfolge (leer ohne Mods).
+func active_mods() -> Array:
+	var out: Array = []
+	var m: Dictionary = _data.get("mods", GameSession.mods)
+	for k in ["SV", "NF"]:
+		if bool(m.get(k, false)):
+			out.append(k)
+	return out
+
+
+func _mod_badge(text: String) -> Control:
+	var p := PanelContainer.new()
+	var sb := StyleBoxFlat.new()
+	var col: Color = UiTheme.ACCENT2
+	sb.bg_color = Color(col, 0.2)
+	sb.border_color = Color(col, 0.7)
+	sb.set_border_width_all(1)
+	sb.set_corner_radius_all(10)
+	sb.content_margin_left = 8
+	sb.content_margin_right = 8
+	sb.content_margin_top = 0
+	sb.content_margin_bottom = 0
+	p.add_theme_stylebox_override("panel", sb)
+	var l := Label.new()
+	l.text = text
+	l.add_theme_font_size_override("font_size", 13)
+	l.add_theme_color_override("font_color", col.lerp(UiTheme.TEXT, 0.4))
+	p.add_child(l)
+	return p
+
+
 func _build_header() -> void:
 	var strip := ColorRect.new()
 	strip.anchor_right = 1.0
@@ -294,6 +325,15 @@ func _build_header() -> void:
 	sub.add_theme_font_size_override("font_size", 15)
 	sub.add_theme_color_override("font_color", UiTheme.ACCENT.lerp(UiTheme.TEXT, 0.35))
 	strip.add_child(sub)
+	# Mod-Badges (SV, NF) hinter der Schwierigkeit.
+	var mod_row := HBoxContainer.new()
+	mod_row.position = Vector2(41 + 8, 46)
+	mod_row.add_theme_constant_override("separation", 6)
+	strip.add_child(mod_row)
+	for m in active_mods():
+		mod_row.add_child(_mod_badge(m))
+	mod_row.position.x = sub.position.x + sub.get_theme_font("font").get_string_size(
+		sub.text, HORIZONTAL_ALIGNMENT_LEFT, -1, 15).x + 12
 
 	var who := VBoxContainer.new()
 	who.anchor_left = 1.0
