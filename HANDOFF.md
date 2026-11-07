@@ -64,3 +64,12 @@ Offen, beim naechsten "weiter" fortsetzen (Agents per Handoff neu starten, Workt
 - beat-sync-check (Worktree beat-sync-check): NameError MIX_RATE/MIX_BLOCK fixen, Bericht docs/perf/beat_sync.md.
 - Danach: BeatQuantizer, IntensityMap, LaneLight, MilestoneBurst in mania_3d einbauen.
 WICHTIG Testfenster: Worktrees VOR jedem Fensterlauf `git merge --no-edit main` (enthaelt den Fix "bei Tests kein Vollbild + Fenster auf Nicht-Hauptmonitor" in settings.gd), sonst landet das Fenster im Vollbild auf Monitor 1. Dazu override.cfg aus tools/test_override.cfg. `warmd` ist evtl. nicht im PATH: /c/Users/Gexanx/.local/bin/warmd.
+
+## Stand 2026-11-07 spaet (Limit-Stopp, v1.7.9 released)
+Gemergt in main, aber NOCH NICHT im Spiel aktiv (Auswahl-Integration fehlt):
+- Fertig: Welten boss (Bosskampf, monochrom rot) und aurora (= "Frost", Eis) inkl. Assets/Shader/Preview.
+- WIP (Stand beim Stopp gemergt, Assets evtl. unvollstaendig/ungeprueft): eclipse, abyss, fractal, singularity, storm, obsidian (tools/gen_theme_<n>.py, shaders/theme_<n>.gdshader, assets_game/themes/<n>/, scenes/theme_<n>_preview.tscn). Je Thema: Generator laufen lassen falls Bilder fehlen, Preview-Screenshots pruefen, fertig polieren.
+- Integration: Task .warmd/tasks40.txt (theme-dark-integrate) — Worktree beat-sync-check hat evtl. WIP-Commit "theme-dark-integrate: WIP (Limit-Stopp)" (nicht gemergt). Inhalt: alle dunklen Welten in world_theme.gd, Auto-Wahl nur vorhandener Themen, Galaxie ~3 %, keine Planeten in dunklen Welten, Spielfeld-Farben je Thema, Neon nur manuell, Settings "Welt"-Liste.
+- Danach Release (v1.8.0 "Dunkle Welten").
+- Noch nicht eingebaut (Module fertig in main): BeatQuantizer, IntensityMap, LaneLight, MilestoneBurst.
+- Bekannt wackelig: tests/run_mastering_tests.gd (sporadisch rot, beim 2. Lauf gruen).
