@@ -42,11 +42,27 @@ shader_type sky;
 // flacht ab und blendet in die ferne Oelflaeche des Panoramas (kein Moire,
 // Wellen-Ebene mit Mipmaps). Cubemap-Pass (Radiance) nur Panorama.
 //
+// NAHE EBENE shards_tex (obsidian_shards.webp, RGBA): erstarrte Oel-Splitter im Stil der Fraktal-Splitter;
+//   Parallax zur Fernebene, Gier rastet mit beat_step ein, Drop = schneller/naeher/heller
+//   (Mitte/unten in Weltkoordinaten frei). Bindung: mat.set_shader_parameter("shards_tex", load("res://assets_game/themes/obsidian/obsidian_shards.webp")).
+// BEAT-VERTRAG (docs/worlds/beat_contract.md):
+//   beat_step       DRUCKWELLE: auf jedem Schlag schiesst der Kamm vom Horizont zum
+//                   Spieler (Easing 1-(1-p)^4: Anschlag exakt auf dem Schlag, dann
+//                   Ruhe) und die Oeltropfen (obsidian_drops.webp) springen aufwaerts.
+//   beat_pulse      Glanzpunkte der Tropfen und Panorama-Glanz blitzen kurz auf.
+//   downbeat_pulse  Takt-Akzent: Druckwelle ~1.8x hoeher, Seitenglanz hebt sich.
+//   drop            Verwandlung: schwarzes Oel BAEUMT sich auf (hoehere Duenung,
+//                   zweiter Kamm hinterher, haerterer Stahlglanz); gedeckelt.
+//   kiai/energy     Oel-Grundglanz atmet minimal; comfort halbiert alle Bewegung.
+//   beat_phase, bar_phase  Saegezaehne (Preview-Kontrolle).
+//   Dritte Ebene: Tropfen (drops_tex, RGBA), Parallax-Versatz + Rauschen der Glanzpunkte.
+//
 // INTEGRATION (wie sky_panorama / theme_neon):
 //   var mat := ShaderMaterial.new()
 //   mat.shader = load("res://shaders/theme_obsidian.gdshader")
 //   mat.set_shader_parameter("tex_a", load("res://assets_game/themes/obsidian/obsidian_sky.webp"))
 //   mat.set_shader_parameter("waves_a", load("res://assets_game/themes/obsidian/obsidian_waves.webp"))
+//   mat.set_shader_parameter("drops_tex", load("res://assets_game/themes/obsidian/obsidian_drops.webp"))
 //   sky.sky_material = mat ... pro Frame beat_pulse (wie Neon), aurora_flow.
 //   (mania_3d._build_theme_sky bindet tex_a/waves_a schon per Dateikonvention.)
 //
@@ -65,10 +81,11 @@ shader_type sky;
 //   Ambient              #07090c, Glow-Schwelle 0.92 wie mania_3d
 //   Kein Neon, keine Saettigung > 0.35: nur Schwarz, Graphit, Stahlblau, Weiss.
 
-uniform sampler2D tex_a : source_color, filter_linear, repeat_enable, hint_default_black;
-uniform sampler2D tex_b : source_color, filter_linear, repeat_enable, hint_default_black;
-uniform sampler2D stars_a : source_color, filter_linear, repeat_enable, hint_default_black;
-uniform sampler2D stars_b : source_color, filter_linear, repeat_enable, hint_default_black;
+uniform sampler2D tex_a : source_color, filter_linear_mipmap_anisotropic, repeat_enable, hint_default_black;
+uniform sampler2D tex_b : source_color, filter_linear_mipmap_anisotropic, repeat_enable, hint_default_black;
+uniform sampler2D stars_a : source_color, filter_linear_mipmap_anisotropic, repeat_enable, hint_default_black;
+uniform sampler2D stars_b : source_color, filter_linear_mipmap_anisotropic, repeat_enable, hint_default_black;
+uniform sampler2D shards_tex : source_color, filter_linear_mipmap_anisotropic, repeat_enable, hint_default_transparent;
 uniform float palette_mix : hint_range(0.0, 1.0) = 0.0;
 
 uniform vec3 tint : source_color = vec3(1.0);
@@ -76,6 +93,15 @@ uniform float brightness : hint_range(0.0, 4.0) = 1.0;
 uniform float star_brightness : hint_range(0.0, 4.0) = 1.0;
 uniform float star_hdr : hint_range(1.0, 4.0) = 1.5;
 uniform float beat_pulse : hint_range(0.0, 1.0) = 0.0;
+uniform float beat_phase : hint_range(0.0, 1.0) = 0.0;
+uniform float bar_phase : hint_range(0.0, 1.0) = 0.0;
+uniform float beat_step = 0.0;
+uniform float downbeat_pulse : hint_range(0.0, 1.0) = 0.0;
+uniform float kiai : hint_range(0.0, 1.0) = 0.0;
+uniform float drop : hint_range(0.0, 0.6) = 0.0;
+uniform float energy : hint_range(0.0, 1.0) = 0.0;
+uniform float comfort : hint_range(0.0, 1.0) = 0.0;
+uniform sampler2D drops_tex : filter_linear_mipmap_anisotropic, repeat_enable, hint_default_black;
 
 uniform vec3 pano_rotation = vec3(0.0);
 uniform vec2 pano_offset = vec2(0.0);
@@ -131,18 +157,27 @@ vec2 dir_uv(vec3 d, vec2 ofs) {
 	return vec2(fract(u), clamp(v, 0.0005, 0.9995));
 }
 
+// Mip-Sampling mit nahtfreien Gradienten (fract(u) springt an der Naht).
+vec4 tg(sampler2D s, vec2 uv) {
+	vec2 gx = dFdx(uv);
+	vec2 gy = dFdy(uv);
+	gx.x -= round(gx.x);
+	gy.x -= round(gy.x);
+	return textureGrad(s, uv, gx, gy);
+}
+
 vec3 dec(vec3 c) {
 	return c * c;
 }
 
 vec3 sample_pair(sampler2D a, sampler2D b, vec2 uv) {
 	if (palette_mix <= 0.001) {
-		return dec(textureLod(a, uv, 0.0).rgb);
+		return dec(tg(a, uv).rgb);
 	}
 	if (palette_mix >= 0.999) {
-		return dec(textureLod(b, uv, 0.0).rgb);
+		return dec(tg(b, uv).rgb);
 	}
-	return mix(dec(textureLod(a, uv, 0.0).rgb), dec(textureLod(b, uv, 0.0).rgb), palette_mix);
+	return mix(dec(tg(a, uv).rgb), dec(tg(b, uv).rgb), palette_mix);
 }
 
 float hash12(vec2 p) {
@@ -157,8 +192,12 @@ vec3 light_dir(vec3 l, mat3 m) {
 	return m * vec3(sin(lo) * cos(la), sin(la), -cos(lo) * cos(la));
 }
 
-// Beat-Phase 0..1 aus beat_pulse = pow(1 - phase, 4); Atem-Huelle sin(pi*phase).
-float beat_phase() {
+// Eingerastete Beat-Phase 0..1: steigt auf dem Schlag schnell, ruht bis zum naechsten
+// (= fract(beat_step), Easing 1-(1-p)^4). Fallback ohne beat_step: aus beat_pulse.
+float step_phase() {
+	if (beat_step > 0.0001) {
+		return clamp(fract(beat_step - 1e-5), 0.0, 1.0);
+	}
 	return clamp(1.0 - pow(clamp(beat_pulse, 0.0, 1.0), 0.25), 0.0, 1.0);
 }
 
@@ -216,17 +255,24 @@ vec3 oil_sea(vec3 dir, vec3 pan, mat3 prot) {
 
 	// Beat-Druckwelle: gewoelbter Kamm rollt vom Horizont zum Spieler.
 	float side = smoothstep(sea_clear, sea_clear + sea_clear_soft, abs(p.x));
-	float ph = beat_phase();
+	float mv = 1.0 - 0.5 * comfort;
+	float dp = drop * (1.0 - 0.5 * comfort);
+	float ph = step_phase();
 	float breath = sin(PI * ph);
 	breath *= breath;
+	float acc = 1.0 + 0.8 * downbeat_pulse * mv + 0.9 * dp;   // Takt-Akzent + Aufbaeumen
 	float zr = mix(swell_reach, 4.0, ph);
 	float fe = fwd + 0.0045 * p.x * p.x;
 	float ww = 5.0 + fe * 0.07;
 	float q = (fe - zr) / ww;
-	float g = swell_height * breath * exp(-q * q) * side;
-	float dg = -2.0 * q / ww * g;       // dg/dfe
+	float g = swell_height * acc * mv * breath * exp(-q * q) * side;
+	// Drop: zweiter Kamm folgt dem ersten (breiter, niedriger).
+	float q2 = (fe - mix(swell_reach, 4.0, clamp(ph * 0.8, 0.0, 1.0)) + 24.0 * dp) / (ww * 1.7);
+	float g2 = swell_height * 0.9 * dp * breath * exp(-q2 * q2) * side;
+	float dg = -2.0 * q / ww * g - 2.0 * q2 / (ww * 1.7) * g2;       // dg/dfe
+	g += g2;
 	s += vec2(dg * 0.009 * p.x, -dg);   // fe(x, z): dfe/dx = 0.009x, dfe/dz = -1
-	float crest = exp(-q * q) * breath * side;
+	float crest = (exp(-q * q) + 0.6 * dp * exp(-q2 * q2)) * breath * side;
 
 	// Warp: Glanz zieht sich in Flugrichtung zu Streifen.
 	s.y *= 1.0 - 0.8 * warp;
@@ -247,7 +293,7 @@ vec3 oil_sea(vec3 dir, vec3 pan, mat3 prot) {
 		+ gloss(n, v, light_dir(light_b, prot), light_b.z, sharp)
 		+ gloss(n, v, light_dir(light_c, prot), light_c.z, sharp);
 	gl *= mix(0.35, 1.0, smoothstep(5.0, 30.0, dist)); // kein Grell-Fleck vor der Kamera
-	float lift = 1.0 + swell_gloss * (crest * 2.0 + breath * 0.3 * side);
+	float lift = 1.0 + swell_gloss * (crest * 2.0 + breath * 0.3 * side) * mv + 0.25 * dp + 0.1 * kiai * energy;
 	col += (gloss_core * gl.x + gloss_color * gl.y) * mix(0.35, 1.0, F) * gloss_intensity * lift * occ;
 	// Kamm der Druckwelle faengt kalten Schimmer (auch ohne Licht dahinter).
 	col += gloss_color * crest * F * 0.05 * swell_gloss;
@@ -270,21 +316,51 @@ void sky() {
 	vec3 pan = sample_pair(tex_a, tex_b, puv);
 
 	// Panorama-Glanz (Tropfen, Lichtkerne) atmet mit, Schwarz bleibt schwarz.
-	float br = sin(PI * beat_phase());
+	float br = sin(PI * step_phase());
 	br *= br;
 	float nl = dot(pan, vec3(0.2126, 0.7152, 0.0722));
-	pan *= 1.0 + br * swell_gloss * 0.5 * smoothstep(0.02, 0.25, nl);
+	pan *= 1.0 + (br * swell_gloss * 0.5 + beat_pulse * 0.55 + downbeat_pulse * 0.15) * smoothstep(0.02, 0.25, nl);
+	pan *= 1.0 + drop * 0.7 * smoothstep(0.02, 0.25, nl);
 
 	if (AT_CUBEMAP_PASS) {
 		COLOR = pan * tint * brightness * 0.5;
 	} else {
 		vec3 col = pan;
-		vec3 st = sample_pair(stars_a, stars_b, dir_uv(dir * euler(stars_rotation), stars_offset));
-		float sl = dot(st, vec3(0.2126, 0.7152, 0.0722));
-		st *= star_brightness * mix(1.0, star_hdr, smoothstep(0.55, 1.0, sl));
-		col += st * step(0.0, dir.y);
 		if (dir.y < 0.0) {
 			col = oil_sea(dir, pan, prot);
+		} else {
+		// Tropfen-Ebene (Parallax): zwei ueberblendete Lagen steigen je Schlag ein Stueck.
+		{
+			float mvv = 1.0 - 0.5 * comfort;
+			float rp = beat_step * 0.125 * mvv + TIME * 0.004;
+			vec3 dsum = vec3(0.0);
+			float asum = 0.0;
+			for (int rl = 0; rl < 2; rl++) {
+				float ra = fract(rp + float(rl) * 0.5);
+				float rw = 0.5 - 0.5 * cos(ra * TAU);
+				vec2 uv = dir_uv(dir * prot, pano_offset + vec2(float(rl) * 0.37 + TIME * 0.0006, -(ra - 0.5) * 0.03 - drop * 0.01));
+				vec4 dr = tg(drops_tex, uv);
+				dsum += dec(dr.rgb) * rw;
+				asum += dr.a * rw;
+			}
+			float flare = 0.30 + beat_pulse * 2.6 + downbeat_pulse * 0.6 + drop * 1.6 + 0.2 * kiai * energy;
+			col = col * asum + dsum * flare;
+		}
+		// Nahe Objekt-Ebene (Stil Fraktal-Splitter): Brocken ziehen am Spieler vorbei,
+		// Gier rastet mit beat_step auf dem Schlag ein; Drop = schneller/naeher/heller.
+		{
+			float s_mv = 1.0 - 0.5 * comfort;
+			float s_dp = drop * (1.0 - 0.5 * comfort);
+			float s_yaw = TIME * 0.004 * s_mv + beat_step * 0.012 * s_mv + s_dp * 0.07;
+			vec3 s_d = dir * euler(vec3(0.0, s_yaw, 0.0));
+			s_d.y = dir.y + s_dp * 0.03 * (1.0 - abs(dir.y));          // Drop: naeher heran
+			vec4 s_sh = tg(shards_tex, dir_uv(normalize(s_d), vec2(0.0)));
+			float s_lon = atan(dir.x, -dir.z);
+			float s_lat = asin(clamp(dir.y, -1.0, 1.0));
+			float s_gate = smoothstep(0.03, 0.12, s_lat) * (1.0 - exp(-(s_lon / 0.5) * (s_lon / 0.5)) * smoothstep(0.9, 0.5, s_lat));
+			vec3 s_c = dec(s_sh.rgb) * (1.0 + beat_pulse * 0.30 + downbeat_pulse * 0.25 * s_mv + s_dp * 0.6);
+			col = mix(col, s_c, s_sh.a * s_gate);
+		}
 		}
 		col *= tint * brightness;
 

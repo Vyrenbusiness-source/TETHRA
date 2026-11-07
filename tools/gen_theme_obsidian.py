@@ -16,6 +16,11 @@ Erzeugt in assets_game/themes/obsidian/:
     - Unter dem Horizont: ferne, ruhige Oelflaeche (unscharfe Spiegelung des
       Himmels mit Fresnel, Glanzbahnen unter den Lichtern). Nah zeichnet
       shaders/theme_obsidian.gdshader die rollenden Wellen live darueber.
+  obsidian_shards.webp 4096x2048 RGBA, NAHE Objekt-Ebene (Stil Fraktal-Splitter):
+    erstarrte Oel-Splitter, facettiert, kaltes Randlicht.
+  obsidian_drops.webp  4096x2048 RGBA, dritte Tiefenebene: kleine aufsteigende
+    Oeltropfen (schwarzer Koerper = Abdunklung in A, Stahlblau-Randlicht und
+    Glanzpunkt additiv in RGB). Shader: Parallax, Schritt auf beat_step.
   obsidian_waves.webp  1024x1024 kachelbare Wellen-Ebene (verlustfrei):
     R/G = Steigung dh/dx, dh/dz (0.5 = flach, +-WAVE_SLOPE), B = Hoehe 0..1.
     Schwere, runde Duenung (trochoidale Kaemme, periodisch verwirbelt) plus
@@ -448,6 +453,7 @@ def build(W, seed, out_dir, preview, quality, wave_n):
     mb = os.path.getsize(path) / 1e6
     print("obsidian_sky: %dx%d  %.1f s  %.2f MB  -> %s" % (W, W // 2, time.time() - t0, mb, path))
     wmb = save_waves(wave_n, np.random.default_rng(seed + 3), out_dir)
+    build_drops(W, seed, out_dir, preview)
     if preview:
         os.makedirs(preview, exist_ok=True)
         dec = srgb_to_lin(np.asarray(Image.open(path).convert("RGB"), dtype=np.float64) / 255.0) ** 2
@@ -460,18 +466,173 @@ def build(W, seed, out_dir, preview, quality, wave_n):
     return mb, wmb
 
 
+# ---------------------------------------------------------------------------
+# Dritte Tiefenebene: aufsteigende Oeltropfen mit Stahlblau-Glanz (Parallax)
+# ---------------------------------------------------------------------------
+def build_drops(W, seed, out_dir, preview, n=1100):
+    """obsidian_drops.webp (RGBA, 4096x2048): schwarze Tropfen mit duenner kalter
+    Randlinie und je einem harten Glanzpunkt. RGB = additives Glanzlicht
+    (Stahlblau), A = Abdunklung (1 = unveraendert). Dichte nimmt zum Horizont
+    zu, Zenit leer, vorn-mitte duenner (Lesbarkeit). Im Shader steigen sie auf
+    (Schritt auf beat_step), Glanz blitzt kurz mit beat_pulse."""
+    H = W // 2
+    rng = np.random.default_rng(seed + 90)
+    rgb = np.zeros((H, W, 3), dtype=F32)
+    alpha = np.ones((H, W), dtype=F32)
+    steel = hexcol("#8fb0d0")
+    steel = steel / steel.max()
+    for i in range(n):
+        lat = 3.0 + 60.0 * rng.random() ** 1.7        # Grad ueber dem Horizont
+        lon = rng.uniform(-180.0, 180.0)
+        # vorn-mitte (Strecke) ausduennen
+        if abs(lon) < 28.0 and lat < 40.0 and rng.random() < 0.7:
+            continue
+        r = (1.6 + 7.5 * rng.random() ** 3.2) * (W / 4096.0)   # Radius in Textur-Pixeln (skaliert mit Breite)
+        near = r / 9.0                                 # gross = nah = heller
+        cy = (0.5 - lat / 180.0) * H
+        cx = (lon / 360.0 + 0.5) * W
+        sx = 1.0 / max(math.cos(math.radians(lat)), 0.25)
+        hw = int(r * sx) + 3
+        hh = int(r) + 3
+        y0, y1 = int(cy) - hh, int(cy) + hh + 1
+        if y0 < 0 or y1 >= H:
+            continue
+        ys, xs = np.mgrid[y0:y1, int(cx) - hw:int(cx) + hw + 1]
+        dx = (xs + 0.5 - cx) / (r * sx)
+        dy = (ys + 0.5 - cy) / r
+        d = np.sqrt(dx * dx + dy * dy)
+        body = 1.0 - smoothstep(0.92, 1.06, d)
+        # duenne Randlinie, oben-links staerker (Lichtquelle), unten schwach
+        lit = np.clip((-dx * 0.6 - dy * 0.8) / np.maximum(d, 1e-3), 0.0, 1.0) ** 2.0
+        rim = np.exp(-((d - 0.97) / 0.07) ** 2) * lit
+        # harter Glanzpunkt
+        gdx, gdy = dx + 0.38, dy + 0.42
+        spec = np.exp(-(gdx * gdx + gdy * gdy) / 0.012)
+        val = (rim * 0.45 + spec * 1.2) * (0.35 + 0.65 * near)
+        cols = (xs % W)
+        ys_i = ys
+        rgb[ys_i, cols] += (val[..., None] * steel[None, None, :]).astype(F32)
+        alpha[ys_i, cols] = np.minimum(alpha[ys_i, cols], 1.0 - 0.7 * body)
+    rgb = np.clip(rgb * 0.8, 0.0, 1.0)
+    rng2 = np.random.default_rng(6)
+    rgb8 = to_u8(np.sqrt(rgb), rng2)
+    a8 = np.clip(np.rint(alpha * 255.0), 0, 255).astype(np.uint8)
+    path = os.path.join(out_dir, "obsidian_drops.webp")
+    Image.fromarray(np.dstack([rgb8, a8])).save(path, "WEBP", quality=95, method=6, exact=True, alpha_quality=96)
+    mb = os.path.getsize(path) / 1e6
+    print("obsidian_drops: %dx%d  %.2f MB" % (W, H, mb), flush=True)
+    if preview:
+        os.makedirs(preview, exist_ok=True)
+        Image.fromarray(np.dstack([rgb8, a8])[300:900, 1400:2700, :3]).save(os.path.join(preview, "obsidian_drops_crop.png"))
+    return mb
+
+
+
+# ---------------------------------------------------------------------------
+# Nahe Objekt-Ebene (Stil wie Fraktal-Splitter): facettierte Brocken, RGBA
+# ---------------------------------------------------------------------------
+def build_shards(W, seed, path, cfg, preview=""):
+    """RGBA 4096x2048: facettierte Brocken (flach schattierte Dreiecks-Facetten,
+    Randlicht, optional Glutrisse). A = Deckung (Straight-Alpha, Shader mischt
+    col = mix(col, rgb, a)). Nur Band ueber dem Horizont; vorn-mitte und unten
+    bleibt leer. RGB wurzel-kodiert wie die Panoramen."""
+    from PIL import ImageDraw
+    H = W // 2
+    SS = 2
+    rng = np.random.default_rng(seed + cfg["seed"])
+    img = Image.new("RGBA", (W * SS, H * SS), (0, 0, 0, 0))
+    dr = ImageDraw.Draw(img)
+
+    def enc(rgb):
+        lin = np.clip(np.asarray(rgb, dtype=np.float64), 0, 1)
+        return tuple(int(round(255.0 * float(lin_to_srgb(np.sqrt(c))))) for c in lin)
+
+    base = hexcol(cfg["base"])
+    hi = hexcol(cfg["hi"])
+    rim = hexcol(cfg["rim"])
+    crack = hexcol(cfg["crack"]) if cfg.get("crack") else None
+    items = []
+    for i in range(cfg["n"]):
+        lat = cfg["lat0"] + (cfg["lat1"] - cfg["lat0"]) * rng.random() ** 1.3
+        lon = rng.uniform(-180, 180)
+        R = cfg["rmin"] + (cfg["rmax"] - cfg["rmin"]) * rng.random() ** 2.6   # Grad
+        items.append((R, lat, lon))
+    items.sort()   # kleine (ferne) zuerst
+    for R, lat, lon in items:
+        rpx = R / 360.0 * W * SS
+        cy = (0.5 - lat / 180.0) * H * SS
+        sx = 1.0 / max(math.cos(math.radians(lat)), 0.3)
+        n = int(rng.integers(5, 9))
+        ang = np.sort(rng.uniform(0, 2 * math.pi, n))
+        rad = rpx * rng.uniform(0.55, 1.0, n)
+        elong = rng.uniform(0.55, 1.0)           # flach/gestreckt
+        tilt = rng.uniform(0, math.pi)
+        pts = []
+        for a, r in zip(ang, rad):
+            x, y = math.cos(a) * r, math.sin(a) * r * elong
+            xr = x * math.cos(tilt) - y * math.sin(tilt)
+            yr = x * math.sin(tilt) + y * math.cos(tilt)
+            pts.append((xr * sx, yr))
+        apex = (rng.uniform(-0.25, 0.25) * rpx * sx, rng.uniform(-0.25, 0.25) * rpx)
+        light = np.array([-0.55, -0.75])         # Licht oben-links
+        cx0 = (lon / 360.0 + 0.5) * W * SS
+        for dx in (-W * SS, 0, W * SS):
+            cx = cx0 + dx
+            if cx + rpx * sx * 1.4 < 0 or cx - rpx * sx * 1.4 > W * SS:
+                continue
+            for k in range(n):
+                p0, p1 = pts[k], pts[(k + 1) % n]
+                mid = np.array([(p0[0] + p1[0]) * 0.5, (p0[1] + p1[1]) * 0.5]) / max(rpx, 1)
+                nrm = mid / (np.linalg.norm(mid) + 1e-6)
+                b = float(np.clip(0.5 + 0.5 * np.dot(nrm, light), 0, 1)) * rng.uniform(0.6, 1.0)
+                col = base * (1 - b) + hi * b
+                tri = [(cx + apex[0], cy + apex[1]), (cx + p0[0], cy + p0[1]), (cx + p1[0], cy + p1[1])]
+                dr.polygon(tri, fill=enc(col) + (255,))
+                # Randlicht nur an lichtzugewandten Kanten
+                if np.dot(nrm, light) > 0.1:
+                    dr.line([tri[1], tri[2]], fill=enc(rim * (0.35 + 0.65 * b)) + (255,), width=max(1, int(rpx / 90)))
+                if crack is not None and rng.random() < 0.25:
+                    dr.line([tri[0], tri[1]], fill=enc(crack * rng.uniform(0.5, 1.0)) + (255,), width=max(1, int(rpx / 70)))
+    img = img.resize((W, H), Image.LANCZOS)
+    arr = np.asarray(img)
+    a = arr[..., 3]
+    # nahe Brocken sind unverkennbar: Weichzeichnung der Alpha-Kante entfaellt (Lanczos AA reicht).
+    # Straight-Alpha: Farben unter Alpha 0 nicht benutzen -> exact=True.
+    Image.fromarray(arr).save(path, "WEBP", quality=94, method=6, exact=True, alpha_quality=96)
+    mb = os.path.getsize(path) / 1e6
+    print("%s: %dx%d  %.2f MB" % (os.path.basename(path), W, H, mb), flush=True)
+    if preview:
+        os.makedirs(preview, exist_ok=True)
+        Image.fromarray(arr[300:900, 1400:2700]).save(os.path.join(preview, os.path.basename(path) + ".png"))
+    return mb
+
+SHARDS_CFG = dict(seed=403, n=140, lat0=4.0, lat1=60.0, rmin=0.8, rmax=6.0,
+                 base="#030406", hi="#1a2230", rim="#8fb0d0", crack=None)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--width", type=int, default=4096)
+    ap.add_argument("--width", type=int, default=8192)
     ap.add_argument("--waves", type=int, default=1024)
     ap.add_argument("--seed", type=int, default=6623)
     ap.add_argument("--quality", type=int, default=95)
     ap.add_argument("--out", default=OUT_DIR)
     ap.add_argument("--preview", default="")
+    ap.add_argument("--only", default="", help="nur eine Ebene neu: drops")
     a = ap.parse_args()
+    spath = os.path.join(a.out, "obsidian_shards.webp")
+    if a.only == "shards":
+        os.makedirs(a.out, exist_ok=True)
+        build_shards(a.width, a.seed, spath, SHARDS_CFG, a.preview)
+        return
+    if a.only == "drops":
+        os.makedirs(a.out, exist_ok=True)
+        build_drops(a.width, a.seed, a.out, a.preview)
+        return
     mb, wmb = build(a.width, a.seed, a.out, a.preview, a.quality, a.waves)
-    if a.width >= 4096 and (mb >= 2.5 or wmb >= 2.5):
-        raise SystemExit("WebP zu gross (%.2f / %.2f MB >= 2.5 MB)" % (mb, wmb))
+    build_shards(a.width, a.seed, spath, SHARDS_CFG, a.preview)
+    if a.width >= 4096 and (mb >= 6.0 or wmb >= 6.0):
+        raise SystemExit("WebP zu gross (%.2f / %.2f MB >= 6.0 MB)" % (mb, wmb))
 
 
 if __name__ == "__main__":
