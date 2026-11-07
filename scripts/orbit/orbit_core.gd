@@ -40,6 +40,8 @@ var _active_arc: Array[int] = [-1, -1]
 var _arc_quality: Array[int] = [0, 0]
 ## Seit wann der Cursor ausserhalb der Bogen-Toleranz ist (INF = innerhalb).
 var _out_since: Array[float] = [INF, INF]
+## Zeit der letzten Bogen-Pruefung je Ring (Cursor stand seitdem still).
+var _last_check: Array[float] = [0.0, 0.0]
 var _judged: Dictionary = {}
 var _judged_count := 0
 var _finished_emitted := false
@@ -128,6 +130,7 @@ func setup(p_notes: Array[OrbitNote], od: float, scroll_scale: float = 1.0,
 	_active_arc = [-1, -1]
 	_arc_quality = [0, 0]
 	_out_since = [INF, INF]
+	_last_check = [0.0, 0.0]
 	_judged = {}
 	_judged_count = 0
 	_next_spawn = 0
@@ -205,6 +208,7 @@ func key_down(ring: int, t_ms: float, cursor_deg: float) -> void:
 		_active_arc[ring] = idx
 		_arc_quality[ring] = q
 		_out_since[ring] = INF
+		_last_check[ring] = t_ms
 		_tally.combo += 1
 		_tally.max_combo = maxi(_tally.max_combo, _tally.combo)
 		_judged[idx] = {"pending": true, "dt": dt, "angle_err": err}
@@ -280,14 +284,29 @@ func _check_arcs(t_ms: float) -> void:
 		var tc := minf(t_ms, n.end_ms)
 		if OrbitNote.dist_deg(_cursor, n.angle_at(tc)) > ANGLE_TOL_DEG:
 			if _out_since[r] == INF:
-				_out_since[r] = tc
-			elif tc - _out_since[r] > ARC_OUT_MS:
+				_out_since[r] = _exit_time(n, r, tc)
+			if tc - _out_since[r] > ARC_OUT_MS:
 				_finish_arc(r, false, "OUT")
 				continue
 		else:
 			_out_since[r] = INF
+		_last_check[r] = tc
 		if t_ms >= n.end_ms:
 			_finish_arc(r, true, "")
+
+
+## Genauer Zeitpunkt, an dem die Spitze den still stehenden Cursor verlassen
+## hat (zwischen letzter Pruefung und tc; die Spitze laeuft linear).
+func _exit_time(n: OrbitNote, r: int, tc: float) -> float:
+	var t0 := clampf(_last_check[r], n.time_ms, tc)
+	var d0 := OrbitNote.delta_deg(_cursor, n.angle_at(t0))
+	if absf(d0) > ANGLE_TOL_DEG or n.duration_ms() <= 0.0:
+		return t0
+	var v := n.span_deg() / n.duration_ms()
+	if v == 0.0:
+		return tc
+	var edge := ANGLE_TOL_DEG if v > 0.0 else -ANGLE_TOL_DEG
+	return clampf(t0 + (edge - d0) / v, t0, tc)
 
 
 func _expire_ring(r: int, t_ms: float) -> void:
