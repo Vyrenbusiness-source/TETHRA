@@ -363,6 +363,27 @@ def build_scene(rng):
     return near, far
 
 
+def build_mid(rng):
+    """Mittel-Ebene (eigene Datei fractal_sky_mid.webp): kleinere schwebende
+    Klingen und Splitter-Gruppen in mittlerer Tiefe (Parallax zwischen den
+    Giganten und dem fernen Stachelfeld). Nie vorn-unten."""
+    global KEEP_OUT
+    KEEP_OUT = keep_out_near
+    mid = []
+    for _ in range(46):
+        lon = rng.uniform(-180, 180)
+        lat = rng.uniform(-4, 48)
+        if abs(lon) < 34:
+            lat = rng.uniform(18, 52)
+        dist = rng.uniform(90, 260)
+        c = at(lat, lon, dist)
+        L = dist * rng.uniform(0.10, 0.30)
+        shard(mid, rng, c, norm(rng.standard_normal(3)), L, L * rng.uniform(0.10, 0.20),
+              flat=rng.uniform(0.15, 0.40))
+    KEEP_OUT = None
+    return mid
+
+
 # ---------------------------------------------------------------------------
 def env(r, rim_k=1.0):
     """Gespiegelte Umgebung (linear) fuer Reflexionsrichtungen r (n, 3)."""
@@ -550,6 +571,9 @@ def build(W, seed, ss, out_dir, preview, quality):
     bg = space * (1.0 - fa[..., None]) + fc
     nc, na = render(near, Ws, Hs, ss_px=ss * 0.9, log="nah")
     nc, na = down(nc, ss), down(na, ss)
+    mid = build_mid(np.random.default_rng(seed + 7))
+    mc, ma = render(mid, Ws, Hs, ss_px=ss * 0.9, log="mitte")
+    mc, ma = down(mc, ss), down(ma, ss)
     os.makedirs(out_dir, exist_ok=True)
     bg_l = tonemap(np.clip(bg, 0, None))
     p_bg = os.path.join(out_dir, "fractal_sky.webp")
@@ -566,6 +590,17 @@ def build(W, seed, ss, out_dir, preview, quality):
     p_sh = os.path.join(out_dir, "fractal_sky_shards.webp")
     Image.fromarray(np.dstack([rgb, alpha])).save(
         p_sh, "WEBP", quality=quality, alpha_quality=100, method=6, exact=True)
+    mstraight = mc / np.maximum(ma, 1e-4)[..., None]
+    mhole = ma < 1e-3
+    if mhole.any():
+        idx = ndimage.distance_transform_edt(mhole, return_distances=False, return_indices=True)
+        mstraight = mstraight[idx[0], idx[1]]
+    mrgb = to_u8(np.sqrt(tonemap(np.clip(mstraight, 0, None))), rng)
+    malpha = np.clip(np.rint(ma * 255.0), 0, 255).astype(np.uint8)
+    p_mid = os.path.join(out_dir, "fractal_sky_mid.webp")
+    Image.fromarray(np.dstack([mrgb, malpha])).save(
+        p_mid, "WEBP", quality=quality, alpha_quality=100, method=6, exact=True)
+    print("mid %.2f MB" % (os.path.getsize(p_mid) / 1e6))
     mb = (os.path.getsize(p_bg) / 1e6, os.path.getsize(p_sh) / 1e6)
     print("fractal: %dx%d ss%d  %.0f s  sky %.2f MB  shards %.2f MB" % (W, H, ss, time.time() - t0, *mb))
     if preview:
@@ -584,7 +619,7 @@ def build(W, seed, ss, out_dir, preview, quality):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--width", type=int, default=4096)
+    ap.add_argument("--width", type=int, default=8192)
     ap.add_argument("--seed", type=int, default=6661)
     ap.add_argument("--ss", type=int, default=2, help="Ueberabtastung je Achse")
     ap.add_argument("--quality", type=int, default=95)
@@ -592,8 +627,8 @@ def main():
     ap.add_argument("--preview", default="")
     a = ap.parse_args()
     mb = build(a.width, a.seed, a.ss, a.out, a.preview, a.quality)
-    if a.width >= 4096 and mb >= 2.5:
-        raise SystemExit("WebP zu gross (%.2f MB >= 2.5 MB): --quality senken" % mb)
+    if a.width >= 4096 and mb >= 6.0:
+        raise SystemExit("WebP zu gross (%.2f MB >= 6 MB): --quality senken" % mb)
 
 
 if __name__ == "__main__":

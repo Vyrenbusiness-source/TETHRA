@@ -9,6 +9,9 @@ shader_type sky;
 //   aurora_stars.webp   (stars_a/stars_b)   Sterne, Parallax/Flug wie sky_panorama
 //   aurora_aurora.webp  (aurora_a/aurora_b) Polarlicht-Ebene (obere Halbkugel),
 //                                           weht hier im Shader, wird gespiegelt.
+//   aurora_ice.webp     (ice_a)             Eisnadel-Ebenen (RGBA), rasten per beat_step.
+// Alle Texturen 8192x4096, BPTC high quality + Mipmaps, Sampler
+// filter_linear_mipmap_anisotropic; tx() sampelt mit Wrap-korrigierten Gradienten.
 // Uniform-Interface wie shaders/sky_panorama.gdshader (tint, brightness,
 // beat_pulse, star_speed/star_phase/warp, tex_a/tex_b/palette_mix, ...) plus:
 //   aurora_flow 0..2      Staerke des Wehens (0 = starr)
@@ -23,6 +26,15 @@ shader_type sky;
 // aurora.webp.import muss process/fix_alpha_border=false behalten (Alpha 0
 // hinter Eisbergen traegt echte Farbe).
 //
+// BEAT-VERTRAG (docs/worlds/beat_contract.md), Signatur "Eisnadeln im Takt":
+//   aurora_ice.webp (ice_a: R ferne Nadeln, G nahe Eisspitzen, B Kantenlicht)
+//   zieht mit beat_step ruckartig vorbei (fern 0.35, nah 0.8 Grad je Beat,
+//   Parallax), rastet genau auf dem Schlag. Die Polarlicht-Strahlen springen
+//   mit beat_step um eine Strahlbreite weiter; ein heller Ring klettert mit
+//   beat_phase den Vorhang hinauf. downbeat_pulse hebt die Baender und das
+//   Kantenlicht, drop (0..0.6) weitet das Wehen und hebt die Baender
+//   (+55 %, gedeckelt). comfort halbiert die Bewegung.
+//
 // FARBSATZ "Frost" fuer Strecke/Kanten/Pads (sRGB, keine Neon-Toene):
 //   Strecke (road base_color)   #05080A  fast schwarz, kalt
 //   Kanten / Spur-Licht         #8FB3B8  Stahl-Eis (Emission ~0.6)
@@ -34,12 +46,12 @@ shader_type sky;
 //
 // INTEGRATION wie sky_panorama (Sky + ShaderMaterial, radiance 32, incremental).
 
-uniform sampler2D tex_a : source_color, filter_linear, repeat_enable, hint_default_black;
-uniform sampler2D tex_b : source_color, filter_linear, repeat_enable, hint_default_black;
-uniform sampler2D stars_a : source_color, filter_linear, repeat_enable, hint_default_black;
-uniform sampler2D stars_b : source_color, filter_linear, repeat_enable, hint_default_black;
-uniform sampler2D aurora_a : source_color, filter_linear, repeat_enable, hint_default_black;
-uniform sampler2D aurora_b : source_color, filter_linear, repeat_enable, hint_default_black;
+uniform sampler2D tex_a : source_color, filter_linear_mipmap_anisotropic, repeat_enable, hint_default_black;
+uniform sampler2D tex_b : source_color, filter_linear_mipmap_anisotropic, repeat_enable, hint_default_black;
+uniform sampler2D stars_a : source_color, filter_linear_mipmap_anisotropic, repeat_enable, hint_default_black;
+uniform sampler2D stars_b : source_color, filter_linear_mipmap_anisotropic, repeat_enable, hint_default_black;
+uniform sampler2D aurora_a : source_color, filter_linear_mipmap_anisotropic, repeat_enable, hint_default_black;
+uniform sampler2D aurora_b : source_color, filter_linear_mipmap_anisotropic, repeat_enable, hint_default_black;
 uniform float palette_mix : hint_range(0.0, 1.0) = 0.0;
 
 uniform vec3 tint : source_color = vec3(1.0);
@@ -67,9 +79,31 @@ uniform vec3 aurora_tint : source_color = vec3(1.0);
 uniform float fog_amount : hint_range(0.0, 2.0) = 1.0;
 uniform float fog_speed : hint_range(0.0, 4.0) = 1.0;
 uniform float reflection : hint_range(0.0, 1.0) = 1.0;
+uniform sampler2D ice_a : filter_linear_mipmap_anisotropic, repeat_enable, hint_default_black;
+uniform sampler2D ice_b : filter_linear_mipmap_anisotropic, repeat_enable, hint_default_black;
+uniform float beat_phase : hint_range(0.0, 1.0) = 0.0;
+uniform float bar_phase : hint_range(0.0, 1.0) = 0.0;
+uniform float beat_step = 0.0;
+uniform float downbeat_pulse : hint_range(0.0, 1.0) = 0.0;
+uniform float kiai : hint_range(0.0, 1.0) = 0.0;
+uniform float drop : hint_range(0.0, 0.6) = 0.0;
+uniform float energy : hint_range(0.0, 1.0) = 0.0;
+uniform float comfort : hint_range(0.0, 1.0) = 0.0;
+uniform float ice_mid_deg = 0.35;
+uniform float ice_near_deg = 0.8;
 
 const int WARP_TAPS = 16;
 const vec3 FOG_COL = vec3(0.0075, 0.0168, 0.0232); // #15232A linear
+
+// Scharf bei Verkleinerung: Mip-Stufe aus dem Winkel je Pixel (UV-Ableitungen mit Wrap-Korrektur
+// am Panorama-Rand, textureGrad -> keine Naht, Anisotropie an den Polen).
+vec4 tx(sampler2D t, vec2 uv) {
+	vec2 gx = dFdx(uv);
+	vec2 gy = dFdy(uv);
+	gx.x -= round(gx.x);
+	gy.x -= round(gy.x);
+	return textureGrad(t, uv, gx, gy);
+}
 
 mat3 euler(vec3 e) {
 	float cx = cos(e.x), sx = sin(e.x);
@@ -123,18 +157,18 @@ float vnoise(vec2 p) {
 }
 
 vec4 scene_at(vec2 uv) {
-	vec4 a = textureLod(tex_a, uv, 0.0);
+	vec4 a = tx(tex_a, uv);
 	if (palette_mix > 0.001) {
-		a = mix(a, textureLod(tex_b, uv, 0.0), palette_mix);
+		a = mix(a, tx(tex_b, uv), palette_mix);
 	}
 	return vec4(dec(a.rgb), a.a * a.a);
 }
 
 vec3 stars_at(vec3 d, mat3 srot) {
 	vec2 uv = dir_uv(d * srot, stars_offset);
-	vec3 s = dec(textureLod(stars_a, uv, 0.0).rgb);
+	vec3 s = dec(tx(stars_a, uv).rgb);
 	if (palette_mix > 0.001) {
-		s = mix(s, dec(textureLod(stars_b, uv, 0.0).rgb), palette_mix);
+		s = mix(s, dec(tx(stars_b, uv).rgb), palette_mix);
 	}
 	return s;
 }
@@ -182,20 +216,26 @@ vec3 aurora_at(vec3 d, float tt) {
 	float u = atan(d.x, -d.z) * (0.5 / PI) + 0.5 + pano_offset.x;
 	float h = asin(clamp(d.y, 0.0, 1.0)) / (0.5 * PI);
 	float sway = 0.35 + 0.65 * clamp(h * 5.0, 0.0, 1.0);
-	float du = aurora_flow * sway * (
+	float dk = clamp(drop / 0.6, 0.0, 1.0);
+	float cmf = 1.0 - 0.5 * comfort;
+	float du = aurora_flow * (1.0 + 0.8 * dk) * sway * (
 			0.0040 * sin(TAU * u * 3.0 + tt * 0.21 + 1.7 * sin(TAU * u * 2.0 - tt * 0.11))
 			+ 0.0016 * sin(TAU * u * 9.0 - tt * 0.43));
 	float dv = aurora_flow * 0.0055 * sin(TAU * u * 5.0 + tt * 0.27 + sin(TAU * u * 13.0 + tt * 0.5));
 	vec2 uv = vec2(fract(u + du), clamp(1.0 - h + dv, 0.001, 0.999));
-	vec3 c = dec(textureLod(aurora_a, uv, 0.0).rgb);
+	vec3 c = dec(tx(aurora_a, uv).rgb);
 	if (palette_mix > 0.001) {
-		c = mix(c, dec(textureLod(aurora_b, uv, 0.0).rgb), palette_mix);
+		c = mix(c, dec(tx(aurora_b, uv).rgb), palette_mix);
 	}
 	// Strahlen-Schimmer wandert seitlich, langsames Atmen entlang des Bandes.
-	float sh = 0.86 + 0.14 * sin(TAU * u * 180.0 + tt * 0.9 + 3.0 * sin(TAU * u * 37.0 - tt * 0.6));
+	float sh = 0.86 + 0.14 * sin(TAU * u * 180.0 + tt * 0.9 + beat_step * 2.4 * cmf + 3.0 * sin(TAU * u * 37.0 - tt * 0.6));
 	float br = 0.82 + 0.18 * sin(tt * 0.31 + TAU * u * 2.0);
 	c *= mix(1.0, sh * br, clamp(aurora_flow, 0.0, 1.0));
-	return c * aurora_tint * aurora_intensity * (1.0 + beat_pulse * aurora_pulse);
+	// Ring klettert mit beat_phase den Vorhang hinauf (Start auf dem Schlag).
+	float on = step(0.0001, beat_step);
+	float sweep = exp(-pow((h - beat_phase * 0.55) / 0.09, 2.0)) * (1.0 - beat_phase) * on;
+	float lift = 1.0 + 0.55 * sweep * cmf + 0.35 * clamp(downbeat_pulse, 0.0, 1.0) + 0.55 * dk;
+	return c * aurora_tint * aurora_intensity * (1.0 + beat_pulse * aurora_pulse) * lift;
 }
 
 void sky() {
@@ -232,6 +272,26 @@ void sky() {
 			vec3 mw = m * transpose(euler(pano_rotation)); // zurueck in Weltrichtung
 			rc += star_field(mw, srot, false, FRAGCOORD.xy) * smoothstep(0.0, 0.06, m.y) * 0.55;
 			col += rc * sc.a * reflection;
+		}
+
+		// Eisnadeln: ziehen mit beat_step vorbei, rasten auf dem Schlag.
+		if (pd.y >= 0.0 && lat < 0.9) {
+			vec2 iuv = dir_uv(pd, pano_offset);
+			float cmf = 1.0 - 0.5 * comfort;
+			float idk = clamp(drop / 0.6, 0.0, 1.0);
+			float idb = clamp(downbeat_pulse, 0.0, 1.0);
+			float lat_d = lat * (180.0 / PI);
+			vec4 im = tx(ice_a, vec2(fract(iuv.x + beat_step * ice_mid_deg * cmf / 360.0), iuv.y));
+			float cmid = smoothstep(0.0, 0.06, im.r);
+			vec3 ic = mix(vec3(0.0015, 0.0032, 0.0040), vec3(0.012, 0.026, 0.031), im.r);
+			ic = mix(ic, FOG_COL * 1.2, 0.45 * exp(-lat_d / 6.0) + 0.2);
+			col = mix(col, ic, cmid);
+			vec4 inr = tx(ice_a, vec2(fract(iuv.x + beat_step * ice_near_deg * cmf / 360.0), iuv.y));
+			float cnr = smoothstep(0.0, 0.06, inr.g);
+			vec3 icn = mix(vec3(0.0012, 0.0026, 0.0032), vec3(0.020, 0.042, 0.050), inr.g);
+			icn += vec3(0.20, 0.44, 0.50) * inr.b * (0.20 + 0.35 * beat_pulse + 0.7 * idb + 0.7 * idk) * 0.35;
+			icn = mix(icn, FOG_COL * 1.2, 0.30 * exp(-lat_d / 4.0));
+			col = mix(col, icn, cnr);
 		}
 
 		// Kalter Nebel: treibende Baenke am Horizont (ueber und unter der Kimm).
