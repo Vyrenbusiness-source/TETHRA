@@ -117,7 +117,7 @@ var _bg_wait_set: MapSet = null
 # (ResourceLoader-Threads): SPIELEN wechselt dann per change_scene_to_packed,
 # ohne mania_3d.gd erst zu kompilieren und die Stationen zu laden. Statisch
 # gehalten -> bleiben im ResourceCache, auch fuer Retry/naechsten Song.
-const GAME_SCENES := ["res://scenes/mania_3d.tscn", "res://scenes/gameplay_3d.tscn"]
+const GAME_SCENES := ["res://scenes/mania_3d.tscn", "res://scenes/gameplay_3d.tscn", "res://scenes/orbit.tscn"]
 const GAME_ASSET_DIRS := ["res://assets_game/stations"]
 const GAME_PRELOAD_DELAY := 0.3
 static var _game_res: Dictionary = {}
@@ -139,6 +139,11 @@ var _sv_filter := false
 ## Filter/Sortierung/Sammlung/Suche bleiben ueber Map-Ende und Neustart erhalten.
 const BROWSER_STATE_PATH := "user://browser_state.cfg"
 var _state_ready := false
+## Spielmodus fuer 4K-Diffs: "mania" (Standard, unveraendert) oder "orbit"
+## (zusaetzlicher Modus). Wird mit dem Browser-Zustand gemerkt.
+const PLAY_MODES := ["mania", "orbit"]
+var _play_mode := "mania"
+var _mode_btns: Array[Button] = []
 var _saved_search := ""
 var _sv_chip: Button
 # Max-pp (SS) der ausgewaehlten Diff — rosu-pp im Hintergrund-Thread.
@@ -175,6 +180,8 @@ func _ready() -> void:
 
 	var t_ui := Time.get_ticks_usec()
 	var restore := _load_browser_state()
+	if OS.get_cmdline_args().has("--orbit"):
+		_play_mode = "orbit"  # Debug/Shots: Orbit vorwaehlen (nie gespeichert)
 	_build_ui()
 	GameSession.perf_since("Browser: UI aufbauen", t_ui)
 	t_ui = Time.get_ticks_usec()
@@ -198,6 +205,17 @@ func _ready() -> void:
 		_headless_report()
 	elif GameSession.perf_enabled:
 		_perf_flow.call_deferred()
+	elif OS.get_cmdline_args().has("--orbit") and OS.get_cmdline_args().has("--autoplay"):
+		# Debug/Shots: erste 4K-Diff im Orbit-Modus automatisch starten.
+		_play_mode = "orbit"
+		for ms in _filtered:
+			for i in ms.difficulty_count():
+				if int(ms.meta_at(i).get("mode", 0)) == 3:
+					_select_set(ms, i)
+					_selected_diff = i
+					_on_play_pressed.call_deferred()
+					return
+		push_warning("--orbit: keine 4K-Diff gefunden")
 	elif OS.get_cmdline_args().has("--mania"):
 		# Debug: erste 4K-Mania-Diff automatisch starten.
 		for ms in _filtered:
@@ -640,7 +658,13 @@ func _build_info_panel() -> void:
 		play.add_theme_stylebox_override("hover", play_hover)
 		play.add_theme_stylebox_override("focus", play_hover)
 	play.pressed.connect(_on_play_pressed)
-	vb.add_child(play)
+	play.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	# Modus-Umschalter "Mania 4K | Orbit" ruhig links neben SPIELEN.
+	var play_row := HBoxContainer.new()
+	play_row.add_theme_constant_override("separation", 8)
+	vb.add_child(play_row)
+	play_row.add_child(_build_mode_switch())
+	play_row.add_child(play)
 	_play_btn = play
 
 	# Mods + Sammlung: No-Fail als Schalter, Sammlung als Ghost-Button.
@@ -1078,6 +1102,8 @@ func _load_browser_state() -> bool:
 		var coll := str(cfg.get_value("browser", "collection", ""))
 		_active_collection = coll if CollectionStore.list_names().has(coll) else ""
 		_collection_mode = bool(cfg.get_value("browser", "collection_mode", false))
+		var pm := str(cfg.get_value("browser", "play_mode", "mania"))
+		_play_mode = pm if PLAY_MODES.has(pm) else "mania"
 	return true
 
 
@@ -1089,6 +1115,7 @@ func _save_browser_state() -> void:
 	cfg.set_value("browser", "search", _search.text if _search != null else "")
 	cfg.set_value("browser", "collection", _active_collection)
 	cfg.set_value("browser", "collection_mode", _collection_mode)
+	cfg.set_value("browser", "play_mode", _play_mode)
 	cfg.save(BROWSER_STATE_PATH)
 
 
@@ -1808,6 +1835,39 @@ func _score_row(rank: int, e: Dictionary) -> Control:
 	return row
 
 
+## Segment-Umschalter Mania 4K | Orbit (gleiche Toggle-Optik wie die Filter-Chips).
+func _build_mode_switch() -> Control:
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 4)
+	box.custom_minimum_size = Vector2(104, 54)
+	_mode_btns.clear()
+	for m in PLAY_MODES:
+		var b := _make_toggle("Mania 4K" if m == "mania" else "Orbit", 13, 8)
+		b.custom_minimum_size = Vector2(104, 25)
+		b.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		b.tooltip_text = "Klassisch: vier Spuren" if m == "mania" 				else "Zielen mit Maus/Tablet, Ring per Taste (nur 4K-Maps)"
+		var mode: String = m
+		b.pressed.connect(func(): _set_play_mode(mode))
+		box.add_child(b)
+		_mode_btns.append(b)
+	_restyle_mode_switch()
+	return box
+
+
+func _set_play_mode(mode: String) -> void:
+	if not PLAY_MODES.has(mode) or mode == _play_mode:
+		return
+	_play_mode = mode
+	_restyle_mode_switch()
+	if _state_ready:
+		_save_browser_state()
+
+
+func _restyle_mode_switch() -> void:
+	for i in _mode_btns.size():
+		_apply_toggle(_mode_btns[i], PLAY_MODES[i] == _play_mode)
+
+
 func _on_play_pressed() -> void:
 	if _selected_set == null:
 		return
@@ -1824,7 +1884,9 @@ func _on_play_pressed() -> void:
 	_preview.stop()
 	# Auto-Erkennung: Mania-Diffs (Mode 3) starten die 4K-Szene.
 	var mode := int(_selected_set.meta_at(_selected_diff).get("mode", 0))
-	if mode == 3:
+	if mode == 3 and _play_mode == "orbit":
+		_change_to_game("res://scenes/orbit.tscn")
+	elif mode == 3:
 		_change_to_game("res://scenes/mania_3d.tscn")
 	else:
 		_change_to_game("res://scenes/gameplay_3d.tscn")

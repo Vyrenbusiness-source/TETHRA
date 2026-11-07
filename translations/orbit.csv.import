@@ -1,0 +1,19 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+uid="uid://b8d6efdngl8j7"
+
+[deps]
+
+files=["res://translations/orbit.de.translation", "res://translations/orbit.en.translation"]
+
+source_file="res://translations/orbit.csv"
+dest_files=["res://translations/orbit.de.translation", "res://translations/orbit.en.translation"]
+
+[params]
+
+compress=1
+delimiter=0
+unescape_keys=false
+unescape_translations=true

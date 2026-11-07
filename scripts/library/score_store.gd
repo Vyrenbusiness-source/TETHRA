@@ -36,13 +36,26 @@ const OTHERS_CAP := 10
 const NAME_MAX := 24
 const GRADES := ["SS", "S", "A", "B", "C", "D", "F"]
 
+## Spielmodus: "" / "mania" = Mania 4K (Standard, bisherige Sektionen),
+## sonst eigene Sektionen "<mode>_scores", "<mode>_plays", "<mode>_history",
+## "<mode>_recent". Damit bleiben Orbit-Scores ("orbit") komplett getrennt
+## und fliessen nicht in Mania-Bestwerte, Profil-pp oder Statistiken.
+const MODE_MANIA := "mania"
+const MODE_ORBIT := "orbit"
+
+
+static func _sec(base: String, mode: String) -> String:
+	if mode == "" or mode == MODE_MANIA:
+		return base
+	return "%s_%s" % [mode, base]
+
 
 ## Speichert ein Ergebnis; liefert {is_new_best: bool, previous: Dictionary}.
-static func submit(osz_file: String, version: String, result: Dictionary) -> Dictionary:
+static func submit(osz_file: String, version: String, result: Dictionary, mode: String = "") -> Dictionary:
 	var key := _key(osz_file, version)
 	var cfg := ConfigFile.new()
 	cfg.load(PATH)
-	var prev = cfg.get_value("scores", key, {})
+	var prev = cfg.get_value(_sec("scores", mode), key, {})
 	var prev_dict: Dictionary = prev if prev is Dictionary else {}
 	var is_new_best := false
 	var unranked := bool(result.get("unranked", false))
@@ -76,9 +89,9 @@ static func submit(osz_file: String, version: String, result: Dictionary) -> Dic
 			"mod_mult": float(result.get("mod_mult", 1.0)),
 			"date": Time.get_datetime_string_from_system(),
 		}
-		cfg.set_value("scores", key, entry)
-	var plays := int(cfg.get_value("plays", key, 0)) + 1
-	cfg.set_value("plays", key, plays)
+		cfg.set_value(_sec("scores", mode), key, entry)
+	var plays := int(cfg.get_value(_sec("plays", mode), key, 0)) + 1
+	cfg.set_value(_sec("plays", mode), key, plays)
 	cfg.save(PATH)
 	return { "is_new_best": is_new_best, "previous": prev_dict }
 
@@ -98,8 +111,8 @@ static func _mods_of(result: Dictionary) -> Array:
 
 
 ## Bestwert-Mods als Liste (alte Eintraege ohne "mods" -> []).
-static func best_mods(osz_file: String, version: String) -> Array:
-	return _mods_of(best(osz_file, version))
+static func best_mods(osz_file: String, version: String, mode: String = "") -> Array:
+	return _mods_of(best(osz_file, version, mode))
 
 
 const HISTORY_CAP := 20
@@ -108,7 +121,7 @@ const RECENT_CAP := 12
 
 ## Jeden abgeschlossenen Play zusaetzlich in History (pro Map) und Recent
 ## (global) ablegen. map_label = "Artist - Titel" fuer die Anzeige.
-static func log_play(osz_file: String, version: String, map_label: String, result: Dictionary) -> void:
+static func log_play(osz_file: String, version: String, map_label: String, result: Dictionary, mode: String = "") -> void:
 	var key := _key(osz_file, version)
 	var cfg := ConfigFile.new()
 	cfg.load(PATH)
@@ -123,29 +136,29 @@ static func log_play(osz_file: String, version: String, map_label: String, resul
 		"failed": bool(result.get("failed", false)),
 		"date": Time.get_datetime_string_from_system(),
 	}
-	var hist: Array = cfg.get_value("history", key, [])
+	var hist: Array = cfg.get_value(_sec("history", mode), key, [])
 	hist.append(entry)
 	while hist.size() > HISTORY_CAP:
 		hist.pop_front()
-	cfg.set_value("history", key, hist)
+	cfg.set_value(_sec("history", mode), key, hist)
 	var recent_entry := entry.duplicate()
 	recent_entry["map"] = map_label
 	recent_entry["version"] = version
 	recent_entry["osz_file"] = osz_file.get_file()
-	var recent: Array = cfg.get_value("recent", "plays", [])
+	var recent: Array = cfg.get_value(_sec("recent", mode), "plays", [])
 	recent.append(recent_entry)
 	while recent.size() > RECENT_CAP:
 		recent.pop_front()
-	cfg.set_value("recent", "plays", recent)
+	cfg.set_value(_sec("recent", mode), "plays", recent)
 	cfg.save(PATH)
 
 
 ## Top-N Scores einer Map+Diff (beste zuerst, Fails ausgenommen).
-static func top_scores(osz_file: String, version: String, n: int = 5) -> Array:
+static func top_scores(osz_file: String, version: String, n: int = 5, mode: String = "") -> Array:
 	var cfg := ConfigFile.new()
 	if cfg.load(PATH) != OK:
 		return []
-	var hist: Array = cfg.get_value("history", _key(osz_file, version), [])
+	var hist: Array = cfg.get_value(_sec("history", mode), _key(osz_file, version), [])
 	var valid := hist.filter(func(e): return not bool(e.get("failed", false)))
 	valid.sort_custom(func(a, b): return int(a.score) > int(b.score))
 	return valid.slice(0, n)
@@ -255,19 +268,19 @@ static func total_plays() -> int:
 
 
 ## Bestwert fuer Map+Diff oder {}.
-static func best(osz_file: String, version: String) -> Dictionary:
+static func best(osz_file: String, version: String, mode: String = "") -> Dictionary:
 	var cfg := ConfigFile.new()
 	if cfg.load(PATH) != OK:
 		return {}
-	var v = cfg.get_value("scores", _key(osz_file, version), {})
+	var v = cfg.get_value(_sec("scores", mode), _key(osz_file, version), {})
 	return v if v is Dictionary else {}
 
 
-static func play_count(osz_file: String, version: String) -> int:
+static func play_count(osz_file: String, version: String, mode: String = "") -> int:
 	var cfg := ConfigFile.new()
 	if cfg.load(PATH) != OK:
 		return 0
-	return int(cfg.get_value("plays", _key(osz_file, version), 0))
+	return int(cfg.get_value(_sec("plays", mode), _key(osz_file, version), 0))
 
 
 static func _key(osz_file: String, version: String) -> String:

@@ -39,8 +39,10 @@ var _mode_2d_btn: CheckButton
 var _hint_2d: Control
 var _rows_3d: Array[Control] = []
 
-var _capturing := 0   # 0 = keine Aufnahme, 3..6 = Lane 1-4
+var _capturing := 0   # 0 = keine Aufnahme, 3..6 = Lane 1-4, 20/21 = Orbit innen/aussen
 var _lane_btns: Array[Button] = []
+const CAP_ORBIT := 20
+var _orbit_btns: Array[Button] = []
 var _offset_value: Label
 var _offset_slider: HSlider
 var _vol_value: Label
@@ -235,6 +237,25 @@ func _ready() -> void:
 		lane_row.add_child(b)
 		_lane_btns.append(b)
 	_row(pg_game, "Tasten 1–4", lane_row, null).tooltip_text = "Knopf anklicken, dann Taste drücken (Esc bricht ab)"
+
+	# Orbit (zusaetzlicher Modus): Ring-Tasten + Winkel-Hilfslinien.
+	_group(pg_game, "Orbit")
+	var orbit_row := HBoxContainer.new()
+	orbit_row.add_theme_constant_override("separation", 8)
+	for r in 2:
+		var ob := Button.new()
+		ob.custom_minimum_size = Vector2(0, CTRL_H)
+		ob.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		UiTheme.style_button(ob)
+		var ring := r
+		ob.pressed.connect(func(): _start_capture(CAP_ORBIT + ring))
+		orbit_row.add_child(ob)
+		_orbit_btns.append(ob)
+	_row(pg_game, "Ring innen | außen", orbit_row, null).tooltip_text = 		"Zusätzlich immer: Maus links = innen, Maus rechts = außen. Knopf anklicken, dann Taste drücken (Esc bricht ab)"
+	var guides := CheckButton.new()
+	guides.button_pressed = Settings.orbit_guides
+	guides.toggled.connect(func(on): Settings.orbit_guides = on)
+	_row(pg_game, "Winkel-Hilfslinien", guides, null).tooltip_text = "Feine Linien alle 45° als Orientierung"
 
 	# Sprache: wirkt sofort (Settings.set_language baut die Szene neu auf).
 	# Die Eintraege stehen immer in ihrer eigenen Sprache (nie uebersetzt).
@@ -954,6 +975,9 @@ func _refresh_labels() -> void:
 		_lane_btns[i].text = UiTheme.key_short(Settings.key_lanes[i])
 	if _capturing >= 3 and _capturing - 3 < _lane_btns.size():
 		_lane_btns[_capturing - 3].text = "…"
+	for r in _orbit_btns.size():
+		var code := Settings.orbit_key_outer if r == 1 else Settings.orbit_key_inner
+		_orbit_btns[r].text = "…" if _capturing == CAP_ORBIT + r else 			"%s · %s" % [UiTheme.key_short(code), tr("Maus rechts") if r == 1 else tr("Maus links")]
 	_offset_value.text = "%+d ms" % int(Settings.offset_ms)
 	_vol_value.text = tr("Stumm") if Settings.is_muted() else "%d dB" % int(Settings.volume_db)
 
@@ -973,7 +997,16 @@ func _start_capture(which: int) -> void:
 
 func _input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
-		if _capturing >= 3:
+		if _capturing >= CAP_ORBIT:
+			if event.keycode != KEY_ESCAPE:
+				if _capturing == CAP_ORBIT:
+					Settings.orbit_key_inner = event.keycode
+				else:
+					Settings.orbit_key_outer = event.keycode
+			_capturing = 0
+			_refresh_labels()
+			get_viewport().set_input_as_handled()
+		elif _capturing >= 3:
 			if event.keycode != KEY_ESCAPE:
 				Settings.key_lanes[_capturing - 3] = event.keycode
 			_capturing = 0

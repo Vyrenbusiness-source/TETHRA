@@ -51,6 +51,11 @@ var key_hook1: int = KEY_Z
 var key_hook2: int = KEY_X
 ## Mania-4K: eine Taste pro Spalte.
 var key_lanes: Array[int] = [KEY_D, KEY_F, KEY_J, KEY_K]
+## Orbit-Modus: Taste fuer den inneren / aeusseren Ring (zusaetzlich immer
+## Maus links = innen, Maus rechts = aussen) und Winkel-Hilfslinien.
+var orbit_key_inner: int = KEY_Z
+var orbit_key_outer: int = KEY_X
+var orbit_guides: bool = true
 ## Scroll Speed wie osu!lazer (1..40, ganzzahlig, Default 8 wie lazer). Rein
 ## visuell: Timing-Fenster unveraendert. Zeit von der Feldoberkante bis zur
 ## Trefferlinie = SCROLL_MAX_TIME_RANGE / scroll_speed (lazer
@@ -393,6 +398,9 @@ func load_settings(path: String = PATH) -> void:
 	key_hook2 = int(cfg.get_value("keys", "hook2", KEY_X))
 	for i in 4:
 		key_lanes[i] = int(cfg.get_value("keys", "lane%d" % i, key_lanes[i]))
+	orbit_key_inner = int(cfg.get_value("keys", "orbit_inner", KEY_Z))
+	orbit_key_outer = int(cfg.get_value("keys", "orbit_outer", KEY_X))
+	orbit_guides = bool(cfg.get_value("game", "orbit_guides", true))
 	_legacy_mania_scroll = float(cfg.get_value("game", "mania_scroll_legacy", -1.0))
 	if cfg.has_section_key("game", "scroll_speed"):
 		scroll_speed = clamp_scroll_speed(cfg.get_value("game", "scroll_speed", SCROLL_SPEED_DEFAULT))
@@ -443,6 +451,9 @@ func save(path: String = PATH) -> void:
 	cfg.set_value("keys", "hook2", key_hook2)
 	for i in 4:
 		cfg.set_value("keys", "lane%d" % i, key_lanes[i])
+	cfg.set_value("keys", "orbit_inner", orbit_key_inner)
+	cfg.set_value("keys", "orbit_outer", orbit_key_outer)
+	cfg.set_value("game", "orbit_guides", orbit_guides)
 	cfg.set_value("game", "scroll_speed", scroll_speed)
 	# Abgeleiteter Faktor fuer aeltere Versionen; Originalwert bleibt separat.
 	cfg.set_value("game", "mania_scroll", mania_from_speed(scroll_speed))
@@ -827,6 +838,15 @@ func is_hook_key(keycode: int) -> bool:
 
 
 ## Spalte (0-3) fuer eine Mania-Taste, -1 wenn keine.
+## Orbit: Ring zur Taste (0 innen, 1 aussen) oder -1.
+func orbit_ring_for_key(keycode: int) -> int:
+	if keycode == orbit_key_inner:
+		return 0
+	if keycode == orbit_key_outer:
+		return 1
+	return -1
+
+
 func lane_for_key(keycode: int) -> int:
 	for i in 4:
 		if key_lanes[i] == keycode:
