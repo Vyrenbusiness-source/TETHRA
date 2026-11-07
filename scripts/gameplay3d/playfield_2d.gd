@@ -25,6 +25,7 @@ var key_names: PackedStringArray = []
 var lane_color := Color(0.7, 0.85, 1.0)
 var show_keys := true
 var circle := false   ## Settings.NOTE_STYLE_CIRCLE
+var preview_size := Vector2.ZERO  ## > 0: Vorschau-Modus, _vs() nutzt diese Groesse statt des Viewports
 
 # Kreis-Stil: Texturen einmal beim Setup erzeugt, pro Frame nur gezeichnet.
 var _disc_tex: Texture2D
@@ -113,6 +114,8 @@ func z_to_y(z: float) -> float:
 
 
 func _vs() -> Vector2:
+	if preview_size.x > 0.0 and preview_size.y > 0.0:
+		return preview_size
 	var r := get_viewport_rect().size
 	return r if r.x > 0.0 else Vector2(1920, 1080)
 
@@ -187,6 +190,8 @@ func _draw() -> void:
 			draw_rect(r, Color(base.r, base.g, base.b, 0.9 if on else 0.55), false, 2.0)
 		if show_keys and c < key_names.size() and _font != null:
 			var fs := int(vs.y * 0.02)
+			if preview_size.x > 0.0:
+				fs = 11
 			var txt := key_names[c]
 			var tw := _font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
 			draw_string(_font, Vector2(x + (cw - tw) * 0.5, ly + nh * 0.5 + rh * 0.5 + fs * 0.35),
