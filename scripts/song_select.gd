@@ -220,6 +220,7 @@ func _ready() -> void:
 	_mirror.download_progress.connect(_on_mirror_download_progress)
 	_mirror.download_done.connect(_on_mirror_download_done)
 	_mirror.download_failed.connect(_on_mirror_download_failed)
+	_mirror.sv_checked.connect(_on_mirror_sv_checked)
 
 	var t_ui := Time.get_ticks_usec()
 	_build_ui()
@@ -305,10 +306,20 @@ func _shot_sv() -> void:
 	_open_download_panel()
 	await get_tree().create_timer(1.0).timeout
 	_dl_sv_chip.button_pressed = true
-	await get_tree().create_timer(8.0).timeout
+	# Warten, bis Suche + SV-Pruefungen (inkl. Nachladen) durch sind.
+	var waited_dl := 0.0
+	while waited_dl < 120.0:
+		await get_tree().create_timer(1.0).timeout
+		waited_dl += 1.0
+		if waited_dl >= 4.0 and not _dl_loading_more and _mirror.sv_checks_pending() == 0:
+			break
+	await get_tree().create_timer(2.0).timeout
 	await RenderingServer.frame_post_draw
 	get_viewport().get_texture().get_image().save_png(dir.path_join("sv_online.png"))
-	print("SV-DL-KARTEN: %d" % _dl_rows.size())
+	print("SV-DL-KARTEN: %d (geladen %d, %.0f s)" % [_dl_rows.size(), _dl_last_results.size(), waited_dl])
+	for r in _dl_last_results:
+		print("SV-DL|%d|%s|%s|text=%s|geprueft=%d" % [int(r.id), str(r.artist), str(r.title),
+			str(r.get("sv", false)), _mirror.sv_state(int(r.get("sv_id", 0)))])
 	get_tree().quit(0)
 
 
@@ -2274,6 +2285,8 @@ func _dl_say(msg: String) -> void:
 
 func _close_download_panel() -> void:
 	_stop_preview_soft()
+	if not _pack_active:
+		_mirror.cancel_sv_checks()
 	if _dl_overlay != null:
 		_dl_overlay.queue_free()
 		_dl_overlay = null
@@ -2294,6 +2307,7 @@ func _run_mirror_search() -> void:
 	_dl_end_reached = false
 	_dl_auto_pages = 0
 	_dl_loading_more = true
+	_mirror.cancel_sv_checks()
 	_dl_say(("Suche \"%s\"…" % q) if q != "" else "Lade Vorschläge…")
 	for c in _dl_results_box.get_children():
 		c.queue_free()
@@ -2360,9 +2374,47 @@ func _on_mirror_search_done(results: Array, raw_count: int, offset: int) -> void
 			continue
 		if is_instance_valid(_dl_results_box):
 			_dl_results_box.add_child(_make_online_card(r))
-	_dl_say("%d Sets geladen%s" % [_dl_rows.size(),
-		"  ·  Ende der Liste" if _dl_end_reached else " — weiter scrollen für mehr"])
+	if not _dl_sv_hint():
+		_dl_say("%d Sets geladen%s" % [_dl_rows.size(),
+			"  ·  Ende der Liste" if _dl_end_reached else " — weiter scrollen für mehr"])
 	_maybe_load_more()
+
+
+## SV-Pruefung einer Diff fertig: passendes Set als Karte nachreichen.
+func _on_mirror_sv_checked(beatmap_id: int, is_sv: bool) -> void:
+	if not _dl_sv:
+		return
+	if _dl_results_box == null or not is_instance_valid(_dl_results_box):
+		if _pack_active and is_sv:
+			_pack_fill()
+		return
+	if is_sv:
+		var owned := _owned_set_ids()
+		var lo: float = DL_STAR_FILTERS[_dl_star_filter][1]
+		var hi: float = DL_STAR_FILTERS[_dl_star_filter][2]
+		for r in _dl_last_results:
+			if int(r.get("sv_id", 0)) != beatmap_id or _dl_rows.has(int(r.id)):
+				continue
+			if _dl_passes(r, owned, lo, hi):
+				_dl_results_box.add_child(_make_online_card(r))
+		if _pack_active:
+			_pack_fill()
+	if _dl_sv_hint():
+		return
+	if _dl_rows.is_empty() and (_dl_end_reached or _dl_auto_pages >= 8):
+		_dl_say("Keine echten SV-Sets gefunden.")
+	else:
+		_dl_say("%d echte SV-Sets" % _dl_rows.size())
+	_maybe_load_more()
+
+
+## Dezenter Hinweis, solange SV-Pruefungen laufen. true, wenn gesetzt.
+func _dl_sv_hint() -> bool:
+	if not _dl_sv or _mirror.sv_checks_pending() == 0:
+		return false
+	_dl_say("%d echte SV-Sets  ·  prüfe SV… (%d offen)" % [
+		_dl_rows.size(), _mirror.sv_checks_pending()])
+	return true
 
 
 # ---------------------------------------------------------------------------
@@ -2444,6 +2496,9 @@ func _maybe_load_more() -> void:
 		return
 	if _dl_rows.size() >= 16 or _dl_auto_pages >= 8:
 		return
+	# SV-Filter: erst die laufenden Pruefungen abwarten (sonst Anfrage-Lawine).
+	if _dl_sv and _mirror.sv_checks_pending() > 0:
+		return
 	_dl_auto_pages += 1
 	_dl_loading_more = true
 	_dl_offset += 50
@@ -2466,20 +2521,30 @@ func _on_dl_scrolled(_v: float) -> void:
 
 
 ## Gemeinsamer Ergebnis-Filter: nicht in der Bibliothek + im Sternbereich.
+## SV-Chip: nur Sets, deren 4K-Diff die SV-Pruefung (echte .osu) bestanden
+## hat; ungepruefte werden eingereiht und kommen per sv_checked nach.
 func _dl_passes(r: Dictionary, owned: Dictionary, lo: float, hi: float) -> bool:
 	if owned.has(int(r.id)):
-		return false
-	if _dl_sv and not bool(r.get("sv", false)):
 		return false
 	if owned.has(_at_key(str(r.get("artist", "")), str(r.get("title", "")))):
 		return false
 	var star_list: Array = r.get("star_list", [])
 	if star_list.is_empty():
 		star_list = [float(r.get("stars", 0.0))]
+	var in_range := false
 	for sv in star_list:
 		if float(sv) >= lo and float(sv) < hi:
-			return true
-	return false
+			in_range = true
+			break
+	if not in_range:
+		return false
+	if _dl_sv:
+		var sv_id := int(r.get("sv_id", 0))
+		var state := _mirror.sv_state(sv_id)
+		if state < 0:
+			_mirror.check_sv(sv_id)
+		return state == 1
+	return true
 
 
 ## Ergebnisliste neu aufbauen: vorhandene Sets raus, Schwierigkeits-Filter
@@ -2504,11 +2569,13 @@ func _render_dl_results() -> void:
 			_dl_say("Suche Sets im Bereich %s…" % DL_STAR_FILTERS[_dl_star_filter][0])
 		else:
 			_dl_say("Suche neue Sets…")
+		_dl_sv_hint()
 		_maybe_load_more()
 		return
 	var hidden := _dl_last_results.size() - fresh.size()
 	var hidden_txt := ("  ·  %d ausgeblendet" % hidden) if hidden > 0 else ""
-	_dl_say("%d neue 4K-Sets%s" % [fresh.size(), hidden_txt])
+	if not _dl_sv_hint():
+		_dl_say("%d neue 4K-Sets%s" % [fresh.size(), hidden_txt])
 	for r in fresh:
 		_dl_results_box.add_child(_make_online_card(r))
 	_maybe_load_more()
@@ -2623,7 +2690,9 @@ func _make_online_card(r: Dictionary) -> Control:
 	bl.add_theme_font_size_override("font_size", 13)
 	bl.add_theme_color_override("font_color", Color(0.03, 0.05, 0.08))
 	badge.add_child(bl)
-	if bool(r.get("sv", false)):
+	# SV-Badge: geprueftes Ergebnis zaehlt; ungeprueft nur der Text-Hinweis.
+	var sv_state := _mirror.sv_state(int(r.get("sv_id", 0)))
+	if sv_state == 1 or (sv_state < 0 and bool(r.get("sv", false))):
 		hb.add_child(_sv_badge())
 	hb.add_child(badge)
 

@@ -24,6 +24,14 @@ signal cover_ready(set_id: int, texture: Texture2D)
 signal download_progress(set_id: int, ratio: float)
 signal download_done(set_id: int, osz_path: String)
 signal download_failed(set_id: int, message: String)
+## SV-Pruefung einer Diff fertig (check_sv). is_sv false auch bei Fehlern.
+signal sv_checked(beatmap_id: int, is_sv: bool)
+
+## Einzelne .osu per beatmap_id (per Testanfrage ermittelt; Mirror verlangt
+## einen User-Agent, den HTTPRequest automatisch sendet).
+const OSU_URL := "https://catboy.best/osu/"
+const SV_CACHE_PATH := "user://sv_online_cache.cfg"
+const SV_MAX_PARALLEL := 4
 
 var _search_req: HTTPRequest
 var _search_offset := 0
@@ -31,6 +39,13 @@ var _search_offset := 0
 var sv_mode := false
 ## Aktive Downloads: set_id -> {req: HTTPRequest, dest: String, idx: int}.
 var _downloads: Dictionary = {}
+## SV-Pruefung: Cache (Abschnitt v<SV_VERSION>, Schluessel beatmap_id -> bool),
+## Warteschlange, laufende Anfragen (id -> HTTPRequest), Fehlschlaege.
+var _sv_cache: ConfigFile = null
+var _sv_queue: Array[int] = []
+var _sv_active: Dictionary = {}
+var _sv_failed: Dictionary = {}
+var _sv_dirty := 0
 
 
 func _ready() -> void:
@@ -92,6 +107,7 @@ func _on_search_completed(result: int, code: int, _headers: PackedStringArray, b
 			"preview_url": _https(str(item.get("preview_url", ""))),
 			"status": str(item.get("status", "")),
 			"sv": is_sv_item(item),
+			"sv_id": sv_check_id(item),
 		})
 	search_done.emit(results, data.size(), _search_offset)
 
@@ -145,6 +161,110 @@ func _mania4k_difficulty(item: Dictionary) -> Dictionary:
 	best["count"] = count
 	best["star_list"] = star_list
 	return best
+
+
+# ---------------------------------------------------------------------------
+# SV-Pruefung: .osu einer 4K-Diff laden und mit MapLibrary.sv_stats pruefen
+# ---------------------------------------------------------------------------
+
+## Diff-ID eines Sets fuer die SV-Pruefung: 4K-Diff, deren Name SV nennt,
+## sonst die schwerste 4K-Diff. 0, wenn keine.
+static func sv_check_id(item: Dictionary) -> int:
+	var best := {}
+	for bm in item.get("beatmaps", []):
+		if not (bm is Dictionary) or int(bm.get("mode_int", -1)) != 3 \
+				or int(round(float(bm.get("cs", 0.0)))) != 4:
+			continue
+		if is_sv_text(str(bm.get("version", ""))):
+			return int(bm.get("id", 0))
+		if best.is_empty() or float(bm.get("difficulty_rating", 0.0)) \
+				> float(best.get("difficulty_rating", 0.0)):
+			best = bm
+	return int(best.get("id", 0))
+
+
+## Ergebnis der SV-Pruefung einer Diff: 1 = SV, 0 = keine SV (oder Fehler),
+## -1 = noch nicht geprueft.
+func sv_state(beatmap_id: int) -> int:
+	if beatmap_id <= 0 or _sv_failed.has(beatmap_id):
+		return 0
+	_load_sv_cache()
+	var v: Variant = _sv_cache.get_value(_sv_section(), str(beatmap_id), null)
+	if v == null:
+		return -1
+	return 1 if bool(v) else 0
+
+
+## Diff zur SV-Pruefung einreihen (max. SV_MAX_PARALLEL Anfragen parallel).
+## Ergebnis kommt ueber sv_checked.
+func check_sv(beatmap_id: int) -> void:
+	if beatmap_id <= 0 or sv_state(beatmap_id) != -1 \
+			or _sv_active.has(beatmap_id) or _sv_queue.has(beatmap_id):
+		return
+	_sv_queue.append(beatmap_id)
+	_pump_sv()
+
+
+## Offene SV-Pruefungen (wartend + laufend).
+func sv_checks_pending() -> int:
+	return _sv_queue.size() + _sv_active.size()
+
+
+## Wartende SV-Pruefungen verwerfen (neue Suche); laufende enden normal.
+func cancel_sv_checks() -> void:
+	_sv_queue.clear()
+
+
+func _sv_section() -> String:
+	return "v%d" % MapLibrary.SV_VERSION
+
+
+func _load_sv_cache() -> void:
+	if _sv_cache != null:
+		return
+	_sv_cache = ConfigFile.new()
+	_sv_cache.load(SV_CACHE_PATH)
+
+
+func _pump_sv() -> void:
+	while _sv_active.size() < SV_MAX_PARALLEL and not _sv_queue.is_empty():
+		var id: int = _sv_queue.pop_front()
+		var req := HTTPRequest.new()
+		req.timeout = 15.0
+		add_child(req)
+		req.request_completed.connect(_on_sv_completed.bind(id))
+		_sv_active[id] = req
+		if req.request(OSU_URL + str(id)) != OK:
+			_finish_sv(id, false, false)
+
+
+func _on_sv_completed(result: int, code: int, _headers: PackedStringArray, body: PackedByteArray, id: int) -> void:
+	if result != HTTPRequest.RESULT_SUCCESS or code != 200:
+		_finish_sv(id, false, false)
+		return
+	var parsed := OsuParser.parse(body.get_string_from_utf8())
+	if not parsed.get("ok", false):
+		_finish_sv(id, false, false)
+		return
+	_finish_sv(id, MapLibrary.detect_sv(parsed.beatmap), true)
+
+
+func _finish_sv(id: int, is_sv: bool, ok: bool) -> void:
+	var req: HTTPRequest = _sv_active.get(id)
+	_sv_active.erase(id)
+	if is_instance_valid(req):
+		req.queue_free()
+	if ok:
+		_load_sv_cache()
+		_sv_cache.set_value(_sv_section(), str(id), is_sv)
+		_sv_dirty += 1
+	else:
+		_sv_failed[id] = true  # in dieser Sitzung nicht erneut anfragen
+	if _sv_dirty > 0 and (_sv_dirty >= 10 or sv_checks_pending() == 0):
+		_sv_cache.save(SV_CACHE_PATH)
+		_sv_dirty = 0
+	sv_checked.emit(id, is_sv and ok)
+	_pump_sv()
 
 
 # ---------------------------------------------------------------------------
