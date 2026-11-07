@@ -76,7 +76,7 @@ uniform float readability : hint_range(0.0, 1.0) = 0.35;
 uniform vec3 grid_color : source_color = vec3(1.0, 0.17, 0.84);
 uniform vec3 grid_color_far : source_color = vec3(0.54, 0.24, 1.0);
 uniform vec3 pulse_color : source_color = vec3(0.10, 0.94, 1.0);
-uniform float grid_intensity : hint_range(0.0, 4.0) = 1.0;
+uniform float grid_intensity : hint_range(0.0, 4.0) = 0.85;
 uniform float grid_height = 3.7;
 uniform float grid_cell = 2.6;
 uniform float grid_clear = 5.4;      // halbe Breite (x) ohne Gitter unter der Strecke
@@ -147,9 +147,9 @@ vec3 neon_grid(vec3 dir) {
 	// Laengs-Linien (konstantes x, laufen zum Horizont) und Quer-Linien (konstantes z).
 	float wz = 0.022;
 	vec2 lx = grid_line(c.x, wz, 0.035 + warp * 0.03, fw.x);
-	float blur = warp * 0.22;           // Quer-Linien verwischen in Flugrichtung
+	float blur = warp * 0.10;           // Quer-Linien verwischen in Flugrichtung
 	vec2 lz = grid_line(c.y, wz + blur * 0.5, 0.035 + blur, fw.y + blur * 0.5);
-	lz *= 1.0 - warp * 0.55;
+	lz *= 1.0 - warp * 0.6;
 	float core = max(lx.x, lz.x);
 	float glow = max(lx.y, lz.y);
 

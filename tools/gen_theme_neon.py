@@ -559,7 +559,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--width", type=int, default=4096)
     ap.add_argument("--seed", type=int, default=1984)
-    ap.add_argument("--quality", type=int, default=90)
+    ap.add_argument("--quality", type=int, default=95)
     ap.add_argument("--out", default=OUT_DIR)
     ap.add_argument("--preview", default="")
     a = ap.parse_args()
