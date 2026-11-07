@@ -526,7 +526,38 @@ func _shot_pages() -> void:
 			var path := dir.path_join("settings_%s_%d.png" % ["2d" if mode_2d else "3d", i])
 			get_viewport().get_texture().get_image().save_png(path)
 			print("SHOT ", path)
+	# 2D-Seite unten (Skin-Import-Knoepfe) mit Hintergrund "Aus" in der Vorschau.
+	_show_page(1)
+	var old_bg := Settings.bg_dim
+	Settings.bg_dim = 0.0
+	_refresh_bg_preview()
+	await get_tree().process_frame
+	_scroll.scroll_vertical = int(_scroll.get_v_scroll_bar().max_value)
+	await get_tree().create_timer(0.8).timeout
+	await RenderingServer.frame_post_draw
+	_shot_save(dir, "settings_2d_bottom_bg0.png")
+	Settings.bg_dim = old_bg
+	# Name einmalig festlegen (nur wenn noch "Player"), dann gesperrte Ansicht.
+	_show_page(0)
+	var edit := _name_box.find_child("NameEdit", true, false) as LineEdit
+	if edit != null:
+		edit.text = "x"
+		(_name_box.find_child("NameSave", true, false) as Button).pressed.emit()
+		await get_tree().create_timer(0.5).timeout
+		await RenderingServer.frame_post_draw
+		_shot_save(dir, "settings_name_invalid.png")
+		edit.text = "Gexanx"
+		(_name_box.find_child("NameSave", true, false) as Button).pressed.emit()
+		await get_tree().create_timer(0.8).timeout
+		await RenderingServer.frame_post_draw
+		_shot_save(dir, "settings_name_set.png")
 	get_tree().quit(0)
+
+
+func _shot_save(dir: String, file: String) -> void:
+	var path := dir.path_join(file)
+	get_viewport().get_texture().get_image().save_png(path)
+	print("SHOT ", path)
 
 
 ## Kategorie: Chip in der Reiter-Leiste + Seite (VBox) im Stapel.
