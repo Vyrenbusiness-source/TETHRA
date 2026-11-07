@@ -205,6 +205,9 @@ func _ready() -> void:
 	elif OS.get_cmdline_args().has("--shot-online"):
 		# Harness: Online-Tab (Raster, Genre, Download, Fehler) als PNGs.
 		_shot_online.call_deferred()
+	elif OS.get_cmdline_args().has("--shot-settings"):
+		# Harness: Einstellungen oeffnen, das Panel fotografiert seine Reiter selbst.
+		add_child.call_deferred(SettingsPanel.new())
 	elif OS.get_cmdline_args().has("--shot"):
 		_capture_screenshot_and_quit()
 
