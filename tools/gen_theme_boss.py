@@ -265,8 +265,8 @@ def render_towers(W, H, det, seed):
             rxr, ryr, z0 = rx * D2R, ry * D2R, zc * D2R
             v0 = (0.5 - la0 / math.pi) * H
             u0 = (plo * D2R / (2 * math.pi) + 0.5) * W
-            hh = int(ryr * 1.25 / pxa) + 2
-            hw = int(rxr * 1.25 / pxa / max(math.cos(la0), 0.2)) + 2
+            hh = int(ryr * 1.5 / pxa) + 2
+            hw = int(rxr * 1.5 / pxa / max(math.cos(la0 + math.copysign(ryr, la0)), 0.2)) + 2
             ys = np.arange(max(0, int(v0) - hh), min(H, int(v0) + hh + 1))
             if len(ys) == 0:
                 continue
