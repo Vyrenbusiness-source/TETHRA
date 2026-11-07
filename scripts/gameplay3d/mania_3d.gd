@@ -249,6 +249,8 @@ var _sky_phase := 0.0
 var _world_theme := WorldTheme.GALAXY
 var _theme_lightning := 0.0
 var _bs_smooth := 0.0     # monotone, geglaettete beat_step-Zeit
+var _bs_flow_prev := 0.0  # beat_step des letzten Frames (flow_phase-Integral)
+var _flow_phase := 0.0    # Vorwaerts-Weg in Schlaegen (Sturm-Durchflug), monoton
 var _beat_total := 0     # gezaehlte Beat-Kanten (beat_step, monoton)
 var _bc_kiai := false
 var _kiai_t0 := -1.0
@@ -4458,7 +4460,16 @@ func _update_beat_contract(delta: float = 0.016) -> void:
 	m.set_shader_parameter(&"beat_step", _bs_smooth if on else 0.0)
 	m.set_shader_parameter(&"downbeat_pulse", WorldTheme.downbeat_pulse(_clock.bar_phase, _meter_at(_vt)) if on else 0.0)
 	m.set_shader_parameter(&"kiai", _ch_kiai_w if on else 0.0)
-	m.set_shader_parameter(&"drop", WorldTheme.drop_env(since_start, since_end, _comfort) if on else 0.0)
+	var drop_v := WorldTheme.drop_env(since_start, since_end, _comfort) if on else 0.0
+	m.set_shader_parameter(&"drop", drop_v)
+	# Vorwaerts-Fluss (Sturm-Durchflug): Integral ueber beat_step, im Drop
+	# gedeckelt schneller (bis 1.8x), Komfort halb. Glatt: nur der Zuwachs von
+	# beat_step zaehlt, ein Seek (> 2 Schlaege) setzt nur die Referenz neu.
+	var dbs := _bs_smooth - _bs_flow_prev
+	_bs_flow_prev = _bs_smooth
+	if on and dbs > 0.0 and dbs < 2.0:
+		_flow_phase += dbs * (1.0 + 0.8 * drop_v / WorldTheme.DROP_MAX) * (0.5 if _comfort else 1.0)
+	m.set_shader_parameter(&"flow_phase", _flow_phase)
 	m.set_shader_parameter(&"energy", _music_energy if on else 0.0)
 	m.set_shader_parameter(&"comfort", 1.0 if _comfort else 0.0)
 

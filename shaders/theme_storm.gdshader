@@ -121,12 +121,17 @@ uniform float readability : hint_range(0.0, 1.0) = 0.35;
 uniform float eye_lat = 1.2;          // Grad, = EYE_LAT im Generator
 uniform float eye_lon = 0.0;          // Grad, = EYE_LON
 uniform float eye_radius = 4.4;       // Grad, = R_EYE
-uniform float swirl_speed = 0.020;    // rad/s Dauerdrift der fernen Ebene (unterschwellig)
-uniform float swirl_parallax = 1.9;   // mittlere/nahe Ebene driften so viel schneller
-uniform float notch_far = 0.030;      // rad je Schlag (Ratsche), ferne Ebene
-uniform float notch_mid = 0.062;      // mittlere Ebene
-uniform float notch_near = 0.115;     // Regenschleier
-uniform float notch_debris = 0.075;   // Gier der Truemmer je Schlag (rad)
+uniform float swirl_speed = 0.016;    // rad/s Dauerdrift der fernen Ebene (0.92 Grad/s)
+uniform float swirl_parallax = 1.9;   // mittlere/nahe Ebene driften so viel schneller (max 2.6 Grad/s)
+// Durchflug: flow_phase = Vorwaerts-Weg in Schlaegen (mania_3d integriert
+// beat_step, Drop gedeckelt bis 1.8x schneller, Komfort halb). Zyklen je Schlag
+// (1 Zyklus = das Muster waechst um x2 auf den Spieler zu), Parallax fern < nah.
+uniform float flow_phase = 0.0;
+uniform float flow_mid = 0.07;        // Wolkenwand
+uniform float flow_rain = 0.12;       // Regenschleier
+uniform float flow_debris = 0.18;     // Truemmer (naheste Ebene)
+uniform float twist_mid = 1.9;        // ~TWIST im Generator (Billow-Anteil 0.7)
+uniform float twist_rain = 1.25;      // = TWIST_RAIN
 uniform float breath : hint_range(0.0, 2.0) = 1.0;
 uniform vec3 glow_color : source_color = vec3(0.62, 0.60, 0.74);
 
@@ -221,6 +226,27 @@ vec3 funnel_dir(vec3 e, vec3 rr, vec3 uu, float r, float th) {
 	return e * cos(r) + (rr * cos(th) + uu * sin(th)) * sin(r);
 }
 
+// Vorwaerts-Fluss einer Trichter-Ebene: cyc = Zyklen (1 Zyklus = Zoom x2).
+// Zwei Kopien, um einen halben Zyklus versetzt, Gewicht sin^2 / cos^2 (Summe 1,
+// jede Kopie wird bei Gewicht 0 neu gesetzt -> kein Sprung). Quellradius
+// r * 2^-f schrumpft -> das Muster waechst aus dem Auge auf den Spieler zu.
+// twist = Windung der Arme (Generator): th + twist*f*ln2 haelt die Spiralarme
+// still, die Wolken laufen an ihnen entlang nach aussen (keine Scheindrehung).
+vec4 flow_layer(int which, vec3 e, vec3 rr, vec3 uu, float r, float th, float cyc, float twist, float g_lod) {
+	vec4 acc = vec4(0.0);
+	for (int k = 0; k < 2; k++) {
+		float c = cyc + 0.5 * float(k);
+		float f = fract(c);
+		float w = 0.5 - 0.5 * cos(TAU_ * f);
+		float z = exp2(-f);
+		float jit = hash12(vec2(floor(c), 1.3 + float(k) + float(which) * 5.0)) * TAU_;
+		vec2 uv = dir_uv(funnel_dir(e, rr, uu, r * z, th + twist * f * 0.693147 + jit), stars_offset);
+		float lod = max(g_lod + log2(z), 0.0);
+		acc += w * (which == 0 ? sample_mid_l(uv, lod) : sample_rain_l(uv, lod));
+	}
+	return acc;
+}
+
 void sky() {
 	vec3 dir = normalize(EYEDIR);
 	float g_lod = clamp(log2(max(length(fwidth(dir)), 1e-6) * float(textureSize(tex_a, 0).x) / 6.28318530718), 0.0, 6.0);
@@ -240,14 +266,13 @@ void sky() {
 		float en = 0.85 + 0.30 * clamp(energy, 0.0, 1.0);
 
 		// Komfort-Regeln (beat_contract.md): kein Rollen, Tornado dreht gleichmaessig
-		// <= 4 Grad/s (hier max ~3.3 Grad/s in der naechsten Ebene), keine Beat-Spruenge.
-		// beat_step nur als sanftes Atmen (periodisch je Schlag), nie als Winkel.
-		float ratch = 0.0;
+		// <= 3 Grad/s (naechste Ebene 0.016*1.9*1.5 rad/s = 2.6 Grad/s), keine
+		// Beat-Spruenge. beat_step (ueber flow_phase) nur als Vorwaerts-Fluss.
 		float drift = TIME * swirl_speed;
 		float a_far = drift;
 		float a_mid = drift * swirl_parallax;
 		float a_near = drift * swirl_parallax * 1.5;
-		float flow = sin(beat_step * TAU_) * cf;
+		float fwd = flow_phase;
 		float blur = warp * 0.10;
 
 		// Drop: Trichter zieht sich enger (Quellradius waechst = Muster rueckt zum Auge).
@@ -261,7 +286,7 @@ void sky() {
 		float th = atan(dot(dp, uu), dot(dp, rr));
 		float rdeg = degrees(r);
 		float inner = exp(-max(rdeg - eye_radius, 0.0) / 9.0);
-		float s_far = open_k * (1.0 + pull * exp(-rdeg / 30.0) + 0.006 * flow * breath);
+		float s_far = open_k * (1.0 + pull * exp(-rdeg / 30.0));
 		vec3 far = vec3(0.0);
 		if (blur > 0.001) {
 			for (int i = 0; i < WARP_TAPS; i++) {
@@ -278,33 +303,35 @@ void sky() {
 		float rn = acos(clamp(dot(dn3, e), -1.0, 1.0));
 		float tn = atan(dot(dn3, uu), dot(dn3, rr));
 		float rndeg = degrees(rn);
-		float s_mid = open_k * (1.0 + 1.4 * pull * exp(-rndeg / 26.0) + 0.012 * flow * breath);
-		float s_rain = open_k * (1.0 + 2.0 * pull * exp(-rndeg / 22.0) + 0.020 * flow * breath);
-		vec4 mid = vec4(0.0);
-		vec4 rain = vec4(0.0);
-		if (blur > 0.001) {
-			for (int i = 0; i < WARP_TAPS; i++) {
-				float k = float(i) / float(WARP_TAPS - 1);
-				mid += sample_mid(dir_uv(funnel_dir(e, rr, uu, rn * s_mid, tn + a_mid + blur * k), stars_offset));
-				rain += sample_rain(dir_uv(funnel_dir(e, rr, uu, rn * s_rain, tn + a_near + blur * 1.3 * k), stars_offset));
-			}
-			mid /= float(WARP_TAPS);
-			rain /= float(WARP_TAPS);
-		} else {
-			mid = sample_mid(dir_uv(funnel_dir(e, rr, uu, rn * s_mid, tn + a_mid), stars_offset));
-			rain = sample_rain(dir_uv(funnel_dir(e, rr, uu, rn * s_rain, tn + a_near), stars_offset));
-		}
+		float s_mid = open_k * (1.0 + 1.4 * pull * exp(-rndeg / 26.0));
+		float s_rain = open_k * (1.0 + 2.0 * pull * exp(-rndeg / 22.0));
+		// DURCHFLUG: Wolkenwand und Regenschleier stroemen aus dem Auge auf den
+		// Spieler zu (radialer Zoom-Loop, je Ebene zwei um einen halben Zyklus
+		// versetzte Kopien, Summe der Gewichte = 1, kein Ueberblend-Sprung).
+		// Parallax: nahe Ebene stroemt schneller als die mittlere, die ferne steht.
+		vec4 mid = flow_layer(0, e, rr, uu, rn * s_mid, tn + a_mid, fwd * flow_mid, twist_mid, g_lod);
+		vec4 rain = flow_layer(1, e, rr, uu, rn * s_rain, tn + a_near, fwd * flow_rain, twist_rain, g_lod);
 
 		vec3 col = far * (1.0 - mid.a) + mid.rgb * star_brightness;
 		col = col * (1.0 - rain.a) + rain.rgb * star_brightness * (en + 0.25 * dn);
 
-		// Truemmer: Gier um den Spieler (Ratsche), Parallax durch eigene Rate,
-		// Drop holt sie naeher (Zoom um vorn). Nur ueber dem Horizont gezeichnet.
+		// Truemmer: stroemen am schnellsten auf den Spieler zu (Zoom-Loop um vorn,
+		// naheste Parallax-Ebene), langsame Gier <= 2.4 Grad/s, Drop holt sie
+		// naeher. Nur ueber dem Horizont gezeichnet.
 		float yaw = drift * 2.6;
-		float s_d = 1.0 + 0.28 * dn + 0.030 * flow * breath;
+		float s_d = 1.0 + 0.28 * dn;
 		vec2 uv0 = dir_uv(dir * euler(stars_rotation), stars_offset);
-		vec2 ud = vec2(fract(0.5 + (uv0.x - 0.5) / s_d + yaw / TAU_), clamp(0.43 + (uv0.y - 0.43) / s_d, 0.0005, 0.9995));
-		vec4 deb = sample_debris(ud);
+		vec4 deb = vec4(0.0);
+		float cd = fwd * flow_debris;
+		for (int k = 0; k < 2; k++) {
+			float c = cd + 0.5 * float(k);
+			float f = fract(c);
+			float w = 0.5 - 0.5 * cos(TAU_ * f);
+			float z = exp2(-f) / s_d;
+			float jit = hash12(vec2(floor(c), 3.7 + float(k)));
+			vec2 ud = vec2(fract(0.5 + (uv0.x - 0.5) * z + yaw / TAU_ + jit), clamp(0.43 + (uv0.y - 0.43) * z, 0.0005, 0.9995));
+			deb += w * sample_debris_l(ud, max(g_lod + log2(z), 0.0));
+		}
 		col = col * (1.0 - deb.a) + deb.rgb * star_brightness * (1.0 + 0.90 * bp + 0.30 * dn) * en;
 
 		// Augenwand / Wetterleuchten: nur beleuchtete Wolken heben sich (Schwarz
