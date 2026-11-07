@@ -1,6 +1,8 @@
 extends SceneTree
 
-## Tests fuer ScoreStore: Mods im Bestwert, alte Eintraege ohne Mods.
+## Tests fuer ScoreStore: Mods im Bestwert, alte Eintraege ohne Mods,
+## Modus-Trennung (Mania/Orbit), SV-Stufe, Migration alter Dateien.
+## Laeuft immer auf einer Test-Datei (ScoreStore.PATH unter --script).
 
 var _failed := 0
 
@@ -83,6 +85,10 @@ func _init() -> void:
 			and ScoreStore.total_plays() == tp_before and int(ScoreStore.best("77 Song.osz", "Hard").score) == 1000, "Profil/pp/Bestwert unveraendert")
 	_check(ScoreStore.submit_others(mk, "Dee", [fe.merged({ "score": -1 }, true)]) == 0, "ungueltig abgewiesen")
 
+	_test_modes()
+	_test_sv_level()
+	_test_migration()
+
 	# aufraeumen
 	DirAccess.remove_absolute(ScoreStore.PATH)
 	if backup != "":
@@ -91,3 +97,112 @@ func _init() -> void:
 		f.close()
 	print("FAILED: %d" % _failed if _failed > 0 else "ALL OK")
 	quit(1 if _failed > 0 else 0)
+
+
+## Mania und Orbit getrennt: Bestwerte, Plays, Verlauf, Profil, Rangliste.
+func _test_modes() -> void:
+	_check(ScoreStore.PATH != "user://scores.cfg", "Test nutzt nie die echte scores.cfg")
+	var O := ScoreStore.MODE_ORBIT
+	ScoreStore.submit("88 Mix.osz", "Hard", { "score": 5000, "grade": "A", "accuracy": 0.91, "pp": 40.0 })
+	ScoreStore.log_play("88 Mix.osz", "Hard", "A - Mix", { "score": 5000, "grade": "A", "accuracy": 0.91, "pp": 40.0 })
+	var pp0 := ScoreStore.profile_pp()
+	var plays0 := ScoreStore.total_plays()
+	var best0 := ScoreStore.best_plays(99).size()
+	var recent0 := ScoreStore.recent_plays(99).size()
+	# Orbit-Score (mit pp-Wert, darf trotzdem nie in Mania-pp fliessen)
+	var r := ScoreStore.submit("88 Mix.osz", "Hard", { "score": 9000, "grade": "S", "accuracy": 0.97, "pp": 500.0, "mode": "orbit" }, O)
+	ScoreStore.log_play("88 Mix.osz", "Hard", "A - Mix", { "score": 9000, "grade": "S", "accuracy": 0.97, "pp": 500.0 }, O)
+	ScoreStore.log_play("88 Mix.osz", "Hard", "A - Mix", { "score": 100, "grade": "F", "accuracy": 0.2, "failed": true }, O)
+	_check(bool(r.is_new_best), "erster Orbit-Score ist Bestwert (Mania-Bestwert egal)")
+	_check(int(ScoreStore.best("88 Mix.osz", "Hard").score) == 5000, "Mania-Bestwert unveraendert")
+	_check(int(ScoreStore.best("88 Mix.osz", "Hard", O).score) == 9000, "Orbit-Bestwert eigen")
+	_check(str(ScoreStore.best("88 Mix.osz", "Hard", O).get("mode", "")) == "orbit", "Orbit-Eintrag traegt mode")
+	_check(str(ScoreStore.best("88 Mix.osz", "Hard").get("mode", "")) == "mania", "Mania-Eintrag traegt mode")
+	_check(is_equal_approx(ScoreStore.profile_pp(), pp0), "Mania-pp nie durch Orbit veraendert")
+	_check(ScoreStore.total_plays() == plays0 and ScoreStore.total_plays(O) == 1, "Plays je Modus")
+	_check(ScoreStore.best_plays(99).size() == best0 and ScoreStore.best_plays(99, O).size() == 1, "Bestwerte je Modus")
+	_check(ScoreStore.recent_plays(99).size() == recent0 and ScoreStore.recent_plays(99, O).size() == 2, "Verlauf je Modus")
+	_check(ScoreStore.most_played(9, O).size() == 1 and int(ScoreStore.most_played(9, O)[0].count) == 1, "Meistgespielt je Modus")
+	# Rangliste: Mania-Fremdscores nie in Orbit, Orbit-Fremdscores nie in Mania
+	var fe := { "score": 7000, "accuracy": 0.9, "grade": "A", "max_combo": 5, "pp": 10.0, "mods": [], "date": "d" }
+	ScoreStore.submit_others(ScoreStore.map_id_for_set(88, "Hard"), "Mia", [fe])
+	ScoreStore.submit_others(ScoreStore.map_id_for_set(88, "Hard"), "Oli", [fe.merged({ "score": 7100 }, true)], O)
+	var tm := ScoreStore.top_scores_all("88 Mix.osz", "Hard", 10)
+	var to := ScoreStore.top_scores_all("88 Mix.osz", "Hard", 10, O)
+	_check(tm.size() == 2 and tm.any(func(e): return e.player == "Mia") and not tm.any(func(e): return e.player == "Oli"), "Mania-Rangliste ohne Orbit")
+	_check(to.size() == 2 and to.any(func(e): return e.player == "Oli") and not to.any(func(e): return e.player == "Mia"), "Orbit-Rangliste ohne Mania")
+	_check(to.all(func(e): return e.mode == "orbit") and tm.all(func(e): return e.mode == "mania"), "Rangliste traegt Modus")
+	_check(int(to[0].score) == 9000, "Orbit-Rangliste: eigener Orbit-Score zuerst")
+	# Profil-Kennzahlen je Modus
+	var so := ScoreStore.mode_stats(O)
+	_check(int(so.plays) == 1 and int(so.maps) == 1 and int(so.best_score) == 9000, "Orbit-Kennzahlen")
+	_check(is_equal_approx(float(so.avg_acc), 0.97), "Orbit-Acc ohne Fails")
+	_check(is_equal_approx(float(so.rating), 100.0 * pow(0.97, 4.0)), "Orbit-Wertung")
+	_check(is_equal_approx(float(ScoreStore.mode_stats().rating), ScoreStore.profile_pp()), "Mania-Wertung = pp")
+	# Vergleich im Results-Screen: nur derselbe Modus
+	ScoreStore.submit("88 Mix.osz", "Hard", { "score": 9500, "grade": "S", "accuracy": 0.98 }, O)
+	var prev = ScoreStore.previous_best_for("88 Mix.osz", "Hard", O, 9500)
+	_check(prev is Dictionary and int(prev.score) == 9000, "Bestleistung: vorheriger Orbit-Score")
+	_check(ScoreStore.previous_best_for("88 Mix.osz", "Hard", "", 9500) == null, "Bestleistung: nie anderer Modus")
+	_check(ScoreStore.previous_best_for("88 Mix.osz", "Hard", O, 1) == null, "Bestleistung: nur gespeichertes Ergebnis")
+
+
+## SV-Stufe im Score: gespeichert, angezeigt, alte Eintraege ohne Stufe.
+func _test_sv_level() -> void:
+	var keep := SvMod.strength
+	SvMod.strength = SvMod.STRENGTH_NORMAL
+	ScoreStore.submit("sv.osz", "N", { "score": 10, "mods": ["SV"] })
+	ScoreStore.log_play("sv.osz", "N", "x", { "score": 10, "mods": ["SV"] })
+	SvMod.strength = SvMod.STRENGTH_STRONG
+	ScoreStore.submit("sv.osz", "S", { "score": 10, "mods": ["SV", "NF"] })
+	ScoreStore.submit("sv.osz", "X", { "score": 10, "mods": ["SV"], "sv_level": "normal" })
+	ScoreStore.submit("sv.osz", "P", { "score": 10, "mods": ["NF"] })
+	var n := ScoreStore.best("sv.osz", "N")
+	var st := ScoreStore.best("sv.osz", "S")
+	_check(str(n.get("sv_level", "")) == "normal", "SV Normal gespeichert")
+	_check(str(ScoreStore.top_scores("sv.osz", "N")[0].get("sv_level", "")) == "normal", "SV-Stufe im Verlauf")
+	_check(str(st.get("sv_level", "")) == "strong", "SV Stark gespeichert (Standard)")
+	_check(ScoreStore.sv_level(ScoreStore.best("sv.osz", "X")) == "normal", "SV-Stufe aus dem Ergebnis")
+	_check(not ScoreStore.best("sv.osz", "P").has("sv_level"), "ohne SV keine Stufe")
+	_check(ScoreStore.mods_label(n) == "SV " + TranslationServer.translate("Normal"), "Anzeige SV Normal")
+	_check(ScoreStore.mods_label(st) == "SV " + TranslationServer.translate("Stark") + " NF", "Anzeige SV Stark NF")
+	_check(ScoreStore.mods_label({ "mods": ["SV"] }) == "SV", "alter SV-Score ohne Stufe")
+	_check(ScoreStore.mods_label({}) == "", "ohne Mods leer")
+	var f := ScoreStore.sanitize_foreign({ "score": 1, "accuracy": 0.5, "grade": "D", "max_combo": 1, "pp": -1.0,
+		"mods": ["SV"], "sv_level": "strong" }, "Zed")
+	_check(str(f.get("sv_level", "")) == "strong", "Fremd-Score behaelt SV-Stufe")
+	var bad := ScoreStore.sanitize_foreign({ "score": 1, "accuracy": 0.5, "grade": "D", "max_combo": 1, "pp": -1.0,
+		"mods": [], "sv_level": 5 }, "Zed")
+	_check(not bad.is_empty() and not bad.has("sv_level"), "Fremd-Score: ungueltige Stufe verworfen")
+	SvMod.strength = keep
+
+
+## Alte Datei (Schema 1): alles bleibt Mania, nichts geht verloren; nur
+## Verlaufs-Eintraege mit mode = "orbit" wandern zu Orbit.
+func _test_migration() -> void:
+	var real := ScoreStore.PATH
+	var path := real.get_base_dir().path_join("migrate_%d.cfg" % OS.get_process_id())
+	ScoreStore.PATH = path
+	var old := ConfigFile.new()
+	var k := ScoreStore._key("10 Old.osz", "Hard")
+	old.set_value("scores", k, { "score": 800, "grade": "A", "accuracy": 0.93, "pp": 77.0 })
+	old.set_value("plays", k, 3)
+	old.set_value("history", k, [{ "score": 800, "grade": "A" }, { "score": 600, "grade": "B", "mode": "orbit" }])
+	old.set_value("recent", "plays", [{ "score": 800, "map": "x" }, { "score": 600, "map": "x", "mode": "orbit" }])
+	old.set_value("others", "10|Hard", [{ "player": "Bob", "score": 1 }])
+	old.save(path)
+	ScoreStore._migrated_path = ""
+	_check(int(ScoreStore.best("10 Old.osz", "Hard").score) == 800, "Migration: Bestwert bleibt Mania")
+	_check(ScoreStore.best("10 Old.osz", "Hard", ScoreStore.MODE_ORBIT).is_empty(), "Migration: kein Orbit-Bestwert erfunden")
+	_check(is_equal_approx(ScoreStore.profile_pp(), 77.0), "Migration: pp unveraendert")
+	_check(ScoreStore.play_count("10 Old.osz", "Hard") == 3, "Migration: Plays bleiben")
+	_check(ScoreStore.top_scores("10 Old.osz", "Hard", 9).size() == 1, "Migration: Mania-Verlauf ohne Orbit")
+	_check(ScoreStore.top_scores("10 Old.osz", "Hard", 9, ScoreStore.MODE_ORBIT).size() == 1, "Migration: Orbit-Verlauf verschoben")
+	_check(ScoreStore.recent_plays(9).size() == 1 and ScoreStore.recent_plays(9, ScoreStore.MODE_ORBIT).size() == 1, "Migration: Recent getrennt")
+	var after := ConfigFile.new()
+	after.load(path)
+	_check(int(after.get_value("meta", "schema", 0)) == ScoreStore.SCHEMA, "Migration: Schema gesetzt")
+	_check((after.get_value("others", "10|Hard", []) as Array).size() == 1, "Migration: Fremd-Scores bleiben")
+	_check(not ScoreStore.migrate(after), "Migration nur einmal")
+	DirAccess.remove_absolute(path)
+	ScoreStore.PATH = real
