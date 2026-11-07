@@ -97,3 +97,8 @@ Offen, nach Neustart fortsetzen (Worktree-Commits "WIP (Stopp wegen RAM-Leck)"):
 - lobby-redesign (opus, Nutzer will das explizit): .warmd/tasks/lobby-redesign.md, neue Texte in translations/lobby.csv (danach in project.godot registrieren).
 - note-colors: .warmd/tasks/note-colors.md (NoteColors + NoteColorPicker, translations/colors.csv registrieren, Picker ins Settings-Panel einbauen).
 - Danach: Release v1.14.0 NUR TETHRA.pck hochladen; vorher Release-Tag "worlds" mit TETHRA_worlds.pck (+Zip) anlegen (siehe memory release-checks).
+
+## v1.14.0 released (2026-11-07 nach Neustart)
+Gemergt (72c97b6) und released: i18n-core (Menues/Tutorial/Updater Englisch, Standardsprache Englisch, Sprachwahl), lobby-redesign (Vollbild-Lobby im Song-Browser-Stil, translations/lobby.csv), note-colors (Notenfarben-Picker in den Einstellungen, translations/colors.csv).
+Welten-Paket liegt jetzt im festen Release-Tag "worlds" (TETHRA_worlds.pck + TETHRA_v1.zip); normale Releases haengen nur TETHRA.pck an.
+Offen: Raumkarten ohne Cover/Modus/Schloss (Raum-Ankuendigung in lobby.gd traegt nur Name/Spielerzahl/Code); team_board.gd/royale_board.gd nutzen noch gesperrte Titel; mit eingebautem Textur-Skin ersetzen Notenfarben die Skin-Farben nicht.
