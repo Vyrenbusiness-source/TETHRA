@@ -41,6 +41,7 @@ var has_mania_block := false
 var _dir := ""
 var _names: Dictionary = {}         ## logischer Schluessel -> Dateiname aus skin.ini ("" = Standard)
 var _files: Dictionary = {}         ## lowercase relativer Pfad (ohne .png) -> echter relativer Pfad
+var _alts: Dictionary = {}          ## logischer Schluessel -> Array weiterer Dateinamen (Fallback je Element)
 var _tex: Dictionary = {}           ## logischer Schluessel -> Texture2D oder null
 
 
@@ -98,11 +99,18 @@ static func _color(v: String) -> Variant:
 	return Color(clampf(p[0] / 255.0, 0, 1), clampf(p[1] / 255.0, 0, 1), clampf(p[2] / 255.0, 0, 1), clampf(a, 0, 1))
 
 
-## Standard-Dateiname-Nummer je Spalte (4K: 1,2,2,1; sonst abwechselnd).
+## Standard-Dateiname-Suffix je Spalte wie osu!stable: symmetrisch gespiegelt,
+## links abwechselnd 1,2,1,...; bei ungerader Spaltenzahl die Mitte "S".
+## 4K: 1,2,2,1; 5K: 1,2,S,2,1; 6K: 1,2,1,1,2,1; 7K: 1,2,1,S,1,2,1.
+static func pattern_name(col: int, count: int) -> String:
+	if count % 2 == 1 and col == count / 2:
+		return "S"
+	var c := col if col < count / 2 else count - 1 - col
+	return "1" if c % 2 == 0 else "2"
+
+
 static func pattern_index(col: int, count: int) -> int:
-	if count == 4:
-		return 1 if (col == 0 or col == 3) else 2
-	return 1 if col % 2 == 0 else 2
+	return 2 if pattern_name(col, count) == "2" else 1
 
 
 static func parse(text: String, p_keys: int = 4) -> ManiaSkin:
@@ -132,19 +140,24 @@ static func parse(text: String, p_keys: int = 4) -> ManiaSkin:
 			s.colours[i] = col
 	s.colour_hold = _color(String(m.get("colourhold", "")))
 	for i in p_keys:
-		var n := "mania-note%d" % pattern_index(i, p_keys)
-		var k := "mania-key%d" % pattern_index(i, p_keys)
-		s._names["note_%d" % i] = String(m.get("noteimage%d" % i, n))
-		s._names["head_%d" % i] = String(m.get("noteimage%dh" % i, ""))
-		s._names["body_%d" % i] = String(m.get("noteimage%dl" % i, ""))
-		s._names["tail_%d" % i] = String(m.get("noteimage%dt" % i, ""))
+		var pn := pattern_name(i, p_keys)
+		var n := "mania-note" + pn
+		var k := "mania-key" + pn
+		var base := String(m.get("noteimage%d" % i, n))
+		s._names["note_%d" % i] = base
+		# H/L/T ohne eigene Zeile: NoteImage + Suffix (eigene Namensfamilie), sonst Standarddatei.
+		s._names["head_%d" % i] = String(m.get("noteimage%dh" % i, base + "H"))
+		s._names["body_%d" % i] = String(m.get("noteimage%dl" % i, base + "L"))
+		s._names["tail_%d" % i] = String(m.get("noteimage%dt" % i, base + "T"))
 		s._names["key_%d" % i] = String(m.get("keyimage%d" % i, k))
 		s._names["keyd_%d" % i] = String(m.get("keyimage%dd" % i, k + "D"))
-		# Standard-Namen fuer H/L/T, wenn die ini nichts setzt.
-		var base := String(s._names["note_%d" % i])
-		for suf in ["head", "body", "tail"]:
-			if String(s._names["%s_%d" % [suf, i]]).is_empty():
-				s._names["%s_%d" % [suf, i]] = base + {"head": "H", "body": "L", "tail": "T"}[suf]
+		# Zweite Wahl (Standard-Datei der Spalte; Kopf zuletzt die Note selbst).
+		s._alts["head_%d" % i] = [n + "H", String(s._names["note_%d" % i]), n]
+		s._alts["body_%d" % i] = [n + "L"]
+		s._alts["tail_%d" % i] = [n + "T"]
+		s._alts["note_%d" % i] = [n]
+		s._alts["key_%d" % i] = [k]
+		s._alts["keyd_%d" % i] = [k + "D"]
 	s._names["stage_left"] = String(m.get("stageleft", "mania-stage-left"))
 	s._names["stage_right"] = String(m.get("stageright", "mania-stage-right"))
 	s._names["stage_hint"] = String(m.get("stagehint", "mania-stage-hint"))
@@ -189,6 +202,10 @@ func tex(key: String) -> Texture2D:
 	_at2x_pending = false
 	if not _dir.is_empty() and _names.has(key):
 		t = _load_image(String(_names[key]))
+		for alt in _alts.get(key, []):
+			if t != null:
+				break
+			t = _load_image(String(alt))
 	_at2x[key] = t != null and _at2x_pending
 	_tex[key] = t
 	return t
@@ -214,6 +231,11 @@ func resolve(ini_path: String) -> Array:
 		return [_files[p + "@2x"], true]
 	if _files.has(p):
 		return [_files[p], false]
+	# Animation: erstes Frame (name-0) nehmen.
+	if _files.has(p + "-0@2x"):
+		return [_files[p + "-0@2x"], true]
+	if _files.has(p + "-0"):
+		return [_files[p + "-0"], false]
 	return ["", false]
 
 
@@ -321,12 +343,12 @@ static func _load_builtin(p_name: String) -> ManiaSkin:
 	return s
 
 
-static func load_skin(p_name: String) -> ManiaSkin:
+static func load_skin(p_name: String, root: String = SKINS_DIR) -> ManiaSkin:
 	if is_builtin(p_name):
 		return _load_builtin(p_name)
 	if p_name.is_empty() or p_name != safe_name(p_name):
 		return null
-	var dir := skin_path(p_name)
+	var dir := root + "/" + p_name
 	if not DirAccess.dir_exists_absolute(dir):
 		return null
 	var text := ""
@@ -399,7 +421,7 @@ static func osu_skins() -> Array:
 	return out
 
 
-static func import_skin(path: String) -> String:
+static func import_skin(path: String, root: String = SKINS_DIR) -> String:
 	last_error = ""
 	var entries: Dictionary = {}   # relativer Pfad -> Callable() -> PackedByteArray
 	var base_name := path.replace("\\", "/").trim_suffix("/").get_file().get_basename()
@@ -471,7 +493,11 @@ static func import_skin(path: String) -> String:
 		var stem := low.substr(0, low.length() - 4)
 		stems[stem] = true
 		var plain := stem.trim_suffix("@2x")
-		if low.get_file().begins_with("mania-") or wanted.has(stem) or wanted.has(plain):
+		var frame := plain
+		var dash := frame.rfind("-")
+		if dash > 0 and frame.substr(dash + 1).is_valid_int():
+			frame = frame.substr(0, dash)   # Animations-Frame name-3 -> name
+		if low.get_file().begins_with("mania-") or wanted.has(stem) or wanted.has(plain) or wanted.has(frame):
 			chosen.append(rel)
 	# @2x bevorzugt: Basisdatei weglassen, wenn die @2x-Variante auch da ist.
 	var final: Array = []
@@ -489,7 +515,7 @@ static func import_skin(path: String) -> String:
 		last_error = "Kein Mania-Skin (keine mania-Grafiken enthalten)"
 		return ""
 	var nm := safe_name(base_name)
-	var dest := SKINS_DIR + "/" + nm
+	var dest := root + "/" + nm
 	if DirAccess.dir_exists_absolute(dest):
 		_remove_tree(dest)
 	for rel in final:
@@ -527,3 +553,9 @@ static func _list_abs(base: String, rel: String) -> Array:
 	for sub in d.get_directories():
 		out.append_array(_list_abs(base, rel + ("/" if rel != "" else "") + sub))
 	return out
+
+
+## Skin-Ordner unter einem frei waehlbaren Wurzelordner loeschen (Tests).
+static func delete_skin_in(root: String, p_name: String) -> void:
+	if p_name == safe_name(p_name):
+		_remove_tree(root + "/" + p_name)
