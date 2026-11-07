@@ -2132,6 +2132,7 @@ func _sync_tournament() -> void:
 			_tpanel = null
 		if _tend == null:
 			_tend = TournamentEnd.new(t, _tour_title())
+			_tend.library = _library
 			_tend.my_id = multiplayer.get_unique_id()
 			_tend.is_host = Lobby.is_host
 			_tend.back_to_room.connect(_leave_tour_view)
@@ -2282,22 +2283,59 @@ func _tournament_shots() -> void:
 	await get_tree().create_timer(0.6).timeout
 	await shot.call("play")
 	t.phase = Tournament.Phase.BETWEEN
-	# END: Endbild.
-	t.phase = Tournament.Phase.END
-	t.order = [0, 2, 3, 5, 6, 8, 9, 1, 4, 7]
-	t.fake_wins = []
-	var wnames := ["Kenji", "Aria", "Kenji", "Tobi", "Mara", "Aria", "Lena", "Kenji", "Tobi", "Aria"]
-	for i in 10:
-		t.fake_wins.append({"map": t.pool[t.order[i]], "winner_name": wnames[i], "score": 900000 - i * 3000})
+	# END: Endbild mit echten Rundendaten (5 Spieler mit Fail, dann 2 Spieler wie im Fehlerbericht).
 	panel.queue_free()
-	var end := TournamentEnd.new(t, tr("Turnier · %s") % "Freitagsrunde")
+	var rt := Tournament.new()
+	rt.config = t.config.duplicate(true)
+	rt.pool = t.pool.duplicate(true)
+	rt.player_names = names.duplicate()
+	rt.order = [0, 2, 3, 5, 6, 8, 9, 1, 4, 7]
+	rt.phase = Tournament.Phase.END
+	rt.current_round = rt.order.size() - 1
+	var perms := [[0, 1, 2, 3, 4], [1, 0, 2, 4, 3], [0, 2, 1, 3, 4], [2, 0, 1, 3, 4], [1, 2, 0, 3, 4]]
+	for r in 10:
+		var res := {}
+		var perm: Array = perms[r % 5]
+		for k in 5:
+			var rank: int = perm.find(k)
+			var fail := r == 1 and k == 4
+			res[k + 2] = {"score": 930000 - rank * 41000 - r * 7000, "accuracy": 0.985 - rank * 0.021 - (0.04 if r % 4 == 3 else 0.0),
+				"max_combo": 400 + k * 30 + r * 11, "failed": fail, "name": who[k],
+				"place": 5 if fail else rank + 1, "points": 0 if fail else 5 - rank, "absent": r == 9 and k == 2}
+		rt.rounds.append({"map": rt.order[r], "results": res})
+	var end := TournamentEnd.new(rt, tr("Turnier · %s") % "Freitagsrunde")
 	end.harness = true
 	end.my_id = 3
+	end.library = _library
 	add_child(end)
 	await get_tree().create_timer(1.6).timeout
 	await shot.call("end")
 	var img_path := end.save_png("%s_end_image.png" % out)
 	print("END-BILD " + img_path)
+	end.queue_free()
+	# 2 Spieler, 3 Maps, in Runde 3 beide durchgefallen.
+	var t2 := Tournament.new()
+	t2.config = {"maps": 5, "stars_lo": 2.5, "stars_hi": 2.7, "mods": {"SV": false, "NF": false}}
+	t2.pool = [t.pool[0].duplicate(), t.pool[1].duplicate(), t.pool[2].duplicate()]
+	t2.player_names = {2: "Circleguard", 3: "Gexanx"}
+	t2.order = [0, 1, 2]
+	t2.phase = Tournament.Phase.END
+	t2.phase = Tournament.Phase.PLAY
+	for r in 3:
+		var fail := r == 2
+		t2.phase = Tournament.Phase.PLAY
+		t2.current_round = r
+		t2.record_round({
+			2: {"score": 610000 - r * 90000, "accuracy": 0.82 - r * 0.2, "max_combo": 301 - r * 90, "failed": fail, "name": "Circleguard"},
+			3: {"score": 540000 - r * 60000, "accuracy": 0.86 - r * 0.02, "max_combo": 255 - r * 20, "failed": fail, "name": "Gexanx"}})
+	var end2 := TournamentEnd.new(t2, tr("Turnier · %s") % "Gexanx' Room")
+	end2.harness = true
+	end2.my_id = 3
+	end2.library = _library
+	add_child(end2)
+	await get_tree().create_timer(1.2).timeout
+	await shot.call("end2")
+	end = end2
 	# Erstell-Dialog: exakter Sternwert per Eingabe.
 	end.queue_free()
 	_open_tour_setup()

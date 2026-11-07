@@ -246,14 +246,21 @@ func record_round(results: Dictionary) -> void:
 		player_names[peer] = nm
 		res[peer] = { "score": int(r.get("score", 0)), "accuracy": clampf(float(r.get("accuracy", 0.0)), 0.0, 1.0),
 			"max_combo": int(r.get("max_combo", 0)), "failed": bool(r.get("failed", false)),
-			"name": nm, "place": n, "points": 0 }
+			"name": nm, "place": n, "points": 0, "absent": bool(r.get("absent", false)) }
+	# Hat niemand bestanden, zaehlt der Score trotzdem (sonst gibt es weder Sieger noch Punkte).
+	var all_failed := true
+	for peer in res:
+		if not bool(res[peer].failed):
+			all_failed = false
 	for peer in res:
 		var e: Dictionary = res[peer]
-		if e.failed:
+		if bool(e.absent) or (e.failed and not all_failed):
 			continue
 		var better := 0
 		for o in res:
-			if not bool(res[o].failed) and int(res[o].score) > int(e.score):
+			if bool(res[o].absent) or (res[o].failed and not all_failed):
+				continue
+			if int(res[o].score) > int(e.score):
 				better += 1
 		e.place = better + 1
 		e.points = n - better
@@ -278,10 +285,11 @@ func standings() -> Array:
 				acc[peer] = _blank(peer, r.name)
 			var a: Dictionary = acc[peer]
 			a.points += int(r.points)
-			a.wins += 1 if (int(r.place) == 1 and not bool(r.failed)) else 0
-			a.avg_acc += float(r.accuracy)
+			a.wins += 1 if (int(r.place) == 1 and int(r.points) > 0) else 0
 			a.total_score += int(r.score)
-			a._n += 1
+			if not bool(r.get("absent", false)):
+				a.avg_acc += float(r.accuracy)
+				a._n += 1
 	var list: Array = acc.values()
 	for a in list:
 		if a._n > 0:
@@ -310,7 +318,7 @@ func map_winners() -> Array:
 		var best := -1
 		for peer in rd.results:
 			var r: Dictionary = rd.results[peer]
-			if not bool(r.failed) and int(r.score) > best:
+			if int(r.get("place", 0)) == 1 and int(r.points) > 0 and int(r.score) > best:
 				best = int(r.score)
 				w = str(r.name)
 				sc = int(r.score)
