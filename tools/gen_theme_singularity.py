@@ -11,6 +11,10 @@ Erzeugt (Standard 4096x2048) nach assets_game/themes/singularity/:
                             ins Loch gezogen werden (additiv, ohne Linse).
                             shaders/theme_singularity.gdshader laesst sie um das
                             Loch kreisen und einwaerts stroemen.
+  singularity_chunks.webp  nahe Objekt-Ebene (RGBA): Materie-Brocken, kreisen im Shader
+                            um den Spieler (Parallax wie Fraktal-Splitter).
+  singularity_dust.webp     Ebene dust_a: Staubkoerner nahe am Loch (nahe Ebene,
+                            dreht im Shader schneller = Parallax).
 
 Physik (vereinfacht, aber echt gerechnet): Schwarzschild-Metrik, Lichtbahnen
 u'' = -u + 3u^2 (u = M/r) je Stossparameter b numerisch integriert (RK4,
@@ -442,7 +446,7 @@ def render_streaks(W, fr, rng):
     STREAK_FLATTEN), aussen breit und blass, innen eng gewickelt und heller, bis sie
     in der Scheibe verschwinden. Feine Filamente laufen in jedem Strom mit."""
     H = W // 2
-    NS, NL = 1024, 640
+    NS, NL = int(1024 * W / 4096), int(640 * W / 4096)
     LN0, LN1 = math.log(0.6), math.log(14.0)  # ln(rho / Schattenradius)
     fil = aniso_noise(rng, (NL, NS), 2.2, 140.0)
     fil2 = aniso_noise(rng, (NL, NS), 1.2, 50.0)
@@ -495,6 +499,158 @@ def render_streaks(W, fr, rng):
     return img
 
 
+def render_dust(W, fr, rng):
+    """Staubkoerner nahe am Loch (nahe Ebene): tausende kleine Koerner auf Bahnen in
+    der Bild-Ellipse (STREAK_FLATTEN), kurze tangentiale Striche, innen dichter und
+    heller. Der Shader dreht sie schneller als die Schlieren (Parallax) und zieht
+    sie beim Drop naeher ans Loch."""
+    H = W // 2
+    rs = math.tan(math.radians(SHADOW_DEG))
+    n = int(15000 * (W / 4096.0) ** 2)
+    rho = np.exp(rng.uniform(math.log(1.25), math.log(13.0), n) + 0.0)
+    # Dichter innen: Verteilung ~ rho^-1.3 (zusaetzliche Koerner bei kleinem rho).
+    keep = rng.uniform(0, 1, n) < (rho / 1.25) ** -0.6
+    rho = rho[keep]
+    n = rho.size
+    phi = rng.uniform(-math.pi, math.pi, n)
+    mag = rng.uniform(0.25, 1.0, n) ** 2.2 * (1.0 + 2.4 * np.exp(-(rho - 1.25) / 2.2))
+    trail = rng.uniform(0.012, 0.05, n) / np.sqrt(rho)     # Strichlaenge (rad) tangential
+    acc = np.zeros((H, W), F32)
+    for k in range(-4, 5):
+        ph = phi + trail * k / 4.0
+        X = rho * rs * np.cos(ph)
+        Y = rho * rs * np.sin(ph) * STREAK_FLATTEN
+        d = norm(fr.h[None] + X[:, None] * fr.ex[None] + Y[:, None] * fr.ey[None])
+        u = (np.arctan2(d[:, 0], -d[:, 2]) / (2 * math.pi) + 0.5) * W
+        v = (0.5 - np.arcsin(np.clip(d[:, 1], -1, 1)) / math.pi) * H
+        iu = np.floor(u).astype(int) % W
+        iv = np.clip(np.floor(v).astype(int), 0, H - 1)
+        np.add.at(acc, (iv, iu), (mag * (1.0 - 0.7 * abs(k) / 4.0) / 5.0).astype(F32))
+    k = W / 4096.0
+    acc = ndimage.gaussian_filter(acc, 0.85 * k, mode=("nearest", "wrap"))
+    # Fein sichtbar machen, innen minimal waermer wie die Schlieren.
+    img = np.zeros((H, W, 3), F32)
+    img += acc[..., None] * (SILVER * 0.8 + WHITE * 0.2)[None, None]
+    return img
+
+
+def _dirs(lon_deg, lat_deg):
+    lo, la = np.radians(lon_deg), np.radians(lat_deg)
+    return np.stack([np.cos(la) * np.sin(lo), np.sin(la), -np.cos(la) * np.cos(lo)], -1)
+
+
+def render_objects(W, rng, n, lat_rng, rad_rng, light, body, rim, rim2, hard, aspect=(1.2, 2.6),
+                   opacity=(0.7, 1.0), clear=None):
+    """Nahe Objekte (Parallax-Ebene wie bei den Fraktal-Splittern): n Brocken/Fetzen auf
+    der Kugel -> (rgb vormultipliziert linear, alpha). Jeder Brocken wird in seiner
+    Tangentialebene (gnomonisch) gezeichnet: unregelmaessiger Rand (periodisches
+    Winkelrauschen), Oberflaechenrauschen, Streiflicht aus Richtung `light`
+    (lon, lat in Grad): helle Kante zur Lichtquelle, dunkler Koerper.
+    hard: 0 = weiche Fetzen, 1 = harte Kanten (Truemmer).
+    clear: (lon, lat, radius) Zone, in der Objekte nur halbtransparent liegen."""
+    H = W // 2
+    ppd = W / 360.0
+    rgb = np.zeros((H, W, 3), F32)
+    alpha = np.zeros((H, W), F32)
+    lt = _dirs(*light)
+    for _ in range(n):
+        lon0 = rng.uniform(-180.0, 180.0)
+        lat0 = rng.uniform(*lat_rng)
+        R = math.exp(rng.uniform(math.log(rad_rng[0]), math.log(rad_rng[1])))
+        asp = rng.uniform(*aspect)
+        rot = rng.uniform(0, math.pi)
+        op = rng.uniform(*opacity)
+        if clear is not None:
+            dl = abs((lon0 - clear[0] + 180) % 360 - 180)
+            if math.hypot(dl * math.cos(math.radians(lat0)), lat0 - clear[1]) < clear[2]:
+                op *= 0.45
+        kk0 = 1.0
+        half_h = R * asp * 2.0
+        half_w = min(R * asp * 2.0 / max(math.cos(math.radians(lat0)), 0.2), 170.0)
+        r0 = int((90 - lat0 - half_h) * ppd)
+        r1 = int((90 - lat0 + half_h) * ppd) + 1
+        c0 = int((lon0 + 180 - half_w) * ppd)
+        c1 = int((lon0 + 180 + half_w) * ppd) + 1
+        ri = np.arange(r0, r1)
+        rows = np.clip(ri, 0, H - 1)
+        cols = np.arange(c0, c1) % W
+        if ri.size < 8 or cols.size < 8:
+            continue
+        kk = W / 4096.0
+        lat = np.clip(90 - (ri + 0.5) / ppd, -89.9, 89.9)[:, None]
+        lon = ((np.arange(c0, c1) + 0.5) / ppd - 180)[None, :]
+        shp = (lat.shape[0], lon.shape[1])
+        d = _dirs(np.broadcast_to(lon, shp), np.broadcast_to(lat, shp))
+        c = _dirs(lon0, lat0)
+        e1 = np.cross(np.array([0.0, 1.0, 0.0]), c)
+        e1 /= np.linalg.norm(e1)
+        e2 = np.cross(c, e1)
+        dc = np.maximum(d @ c, 0.05)
+        tr = math.tan(math.radians(R))
+        x = (d @ e1) / dc / tr
+        y = (d @ e2) / dc / tr
+        xr = x * math.cos(rot) + y * math.sin(rot)
+        yr = -x * math.sin(rot) + y * math.cos(rot)
+        r = np.hypot(xr / asp, yr)
+        ang = np.arctan2(yr, xr / asp)
+        edge = np.ones_like(r)
+        for k in range(1, 7):
+            edge += rng.uniform(0.0, 0.34 + 0.2 * hard) / k ** 1.1 * np.cos(k * ang + rng.uniform(0, 6.283))
+        g = ndimage.gaussian_filter(rng.standard_normal(r.shape).astype(F32), (2.0 + 3.0 * (1.0 - hard)) * kk)
+        g /= g.std() + 1e-6
+        edge += (0.10 + 0.10 * hard) * g
+        soft = 0.30 * (1.0 - hard) + 0.045 * hard
+        mask = smoothstep(edge + soft, edge - soft, r).astype(F32)
+        t1 = ndimage.gaussian_filter(rng.standard_normal(r.shape).astype(F32), 6.0 * kk)
+        t1 /= t1.std() + 1e-6
+        t2 = ndimage.gaussian_filter(rng.standard_normal(r.shape).astype(F32), 1.6 * kk)
+        t2 /= t2.std() + 1e-6
+        dome = np.clip(1.0 - (r / np.maximum(edge, 0.3)) ** 2, 0.0, 1.0)
+        height = mask * (0.9 * np.sqrt(dome) + 0.10 * t1 + 0.02 * t2 + 0.12 * hard * np.abs(t1))
+        hs = ndimage.gaussian_filter(height, 2.2 * kk)
+        gy, gx = np.gradient(hs)
+        slope = 24.0 / max(R * asp * ppd * 0.02, 1.0)
+        ltd = max(float(lt @ c), 0.05)
+        lx = float(lt @ e1) / ltd
+        ly = float(lt @ e2) / ltd
+        ln = math.hypot(lx, ly) + 1e-6
+        lx, ly = lx / ln, ly / ln
+        lit = np.clip(-(gx * slope * lx - gy * slope * ly), 0.0, 1.0)
+        lit = lit ** (1.2 - 0.3 * hard)
+        shade = np.clip(0.55 + 0.45 * np.tanh(0.6 * t1 + 0.3 * t2), 0.1, 1.2)
+        col = body[None, None] * shade[..., None]
+        col = col + rim[None, None] * (lit * (0.65 + 0.35 * np.clip(0.5 + 0.5 * t2, 0, 1)))[..., None]
+        col = col + rim2[None, None] * (np.clip(lit - 0.6, 0, None) * 1.8)[..., None]
+        valid = ((ri >= 0) & (ri < H))[:, None]
+        a = (mask * op * valid).astype(F32)
+        sub = np.ix_(rows, cols)
+        rgb_s, al_s = rgb[sub], alpha[sub]
+        rgb[sub] = rgb_s * (1.0 - a[..., None]) + col * a[..., None]
+        alpha[sub] = al_s + a * (1.0 - al_s)
+    return rgb, alpha
+
+
+def render_chunks(W, seed):
+    """Nahe Objekt-Ebene (RGBA): Materie-Brocken, die ins Loch fallen - kantige dunkle
+    Brocken mit weissgluehender Kante zum Loch hin, dazu lange Fetzen. Nur ueber
+    dem Horizont."""
+    rng = np.random.default_rng(seed)
+    light = (HOLE_LON, HOLE_LAT)
+    body = SILVER * 0.045
+    rim = (SILVER * 0.7 + WHITE * 0.3) * 0.38
+    rim2 = WHITE * 0.6 + WARM * 0.04
+    r1, a1 = render_objects(W, rng, 14, (3.0, 32.0), (1.2, 3.5), light, body, rim, rim2, 0.9,
+                            aspect=(1.2, 2.4), opacity=(0.85, 1.0), clear=(HOLE_LON, HOLE_LAT, 10.0))
+    r2, a2 = render_objects(W, rng, 8, (3.0, 30.0), (2.0, 4.5), light, body * 0.6, rim * 0.6, rim2 * 0.4, 0.25,
+                            aspect=(2.0, 3.5), opacity=(0.35, 0.7), clear=(HOLE_LON, HOLE_LAT, 10.0))
+    rgb = r2 * (1.0 - a1[..., None]) + r1
+    a = a2 * (1.0 - a1) + a1
+    H = W // 2
+    lat = ((0.5 - (np.arange(H) + 0.5) / H) * 180.0)[:, None]
+    fade = smoothstep(0.0, 4.0, lat)
+    return (rgb * fade[..., None]).astype(F32), (a * fade).astype(F32)
+
+
 def tonemap(x, k=0.62):
     over = np.maximum(x - k, 0.0)
     return np.where(x < k, x, k + (1 - k) * (1 - np.exp(-over / (1 - k))))
@@ -535,37 +691,49 @@ def build(W, seed, out_dir, preview, quality):
     main = readability(tonemap(bloom(main * 0.75)), fr)
     streaks = render_streaks(W, fr, np.random.default_rng(seed + 3))
     streaks = readability(tonemap(streaks), fr)
+    dust = readability(tonemap(render_dust(W, fr, np.random.default_rng(seed + 5))), fr)
+    pc, ac = render_chunks(W, seed + 9)
+    pc = tonemap(np.clip(pc, 0, None))
     os.makedirs(out_dir, exist_ok=True)
+    p_chunks = os.path.join(out_dir, "singularity_chunks.webp")
+    rgba = np.concatenate([to_u8(np.sqrt(pc), rng),
+                           np.clip(np.rint(ac * 255.0), 0, 255).astype(np.uint8)[..., None]], -1)
+    Image.fromarray(rgba).save(p_chunks, "WEBP", quality=quality, alpha_quality=100, exact=True, method=6)
+    mb4 = os.path.getsize(p_chunks) / 1e6
+    p_dust = os.path.join(out_dir, "singularity_dust.webp")
+    mb3 = save(p_dust, dust, rng, quality)
     p_main = os.path.join(out_dir, "singularity_sky.webp")
     p_st = os.path.join(out_dir, "singularity_streaks.webp")
     mb = save(p_main, main, rng, quality)
     mb2 = save(p_st, streaks, rng, quality)
-    print("singularity: %dx%d  %.1f s  sky %.2f MB  streaks %.2f MB -> %s"
-          % (W, W // 2, time.time() - t0, mb, mb2, out_dir))
+    print("singularity: %dx%d  %.1f s  sky %.2f MB  streaks %.2f MB  dust %.2f MB  chunks %.2f MB -> %s"
+          % (W, W // 2, time.time() - t0, mb, mb2, mb3, mb4, out_dir))
     if preview:
         os.makedirs(preview, exist_ok=True)
 
         def dec(p):
             return srgb_to_lin(np.asarray(Image.open(p).convert("RGB"), dtype=np.float64) / 255.0) ** 2
-        comb = dec(p_main) + dec(p_st)
+        comb = dec(p_main) + dec(p_st) + dec(p_dust)
+        ch = np.asarray(Image.open(p_chunks).convert("RGBA"), dtype=np.float64) / 255.0
+        comb = comb * (1.0 - ch[..., 3:]) + srgb_to_lin(ch[..., :3]) ** 2
         for name, yaw in (("cam_sing.png", 0.0), ("cam_sing_side.png", 60.0)):
             Image.fromarray(to_u8(np.clip(camera_view(comb, yaw=yaw), 0, 1), rng)).save(os.path.join(preview, name))
         small = Image.fromarray(to_u8(np.clip(comb, 0, 1), rng)).resize((2048, 1024), Image.LANCZOS)
         small.save(os.path.join(preview, "pano_sing.png"))
-    return max(mb, mb2)
+    return max(mb, mb2, mb3, mb4)
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--width", type=int, default=4096)
+    ap.add_argument("--width", type=int, default=8192)
     ap.add_argument("--seed", type=int, default=6174)
     ap.add_argument("--quality", type=int, default=95)
     ap.add_argument("--out", default=OUT_DIR)
     ap.add_argument("--preview", default="")
     a = ap.parse_args()
     mb = build(a.width, a.seed, a.out, a.preview, a.quality)
-    if a.width >= 4096 and mb >= 2.5:
-        raise SystemExit("WebP zu gross (%.2f MB >= 2.5 MB): --quality senken" % mb)
+    if a.width >= 4096 and mb >= 6.0:
+        raise SystemExit("WebP zu gross (%.2f MB >= 6 MB): --quality senken" % mb)
 
 
 if __name__ == "__main__":

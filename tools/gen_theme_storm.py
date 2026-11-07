@@ -7,7 +7,10 @@ Erzeugt (Standard 4096x2048, equirektangular) in assets_game/themes/storm/:
                          stuerzen; Augenwand innen gedaempft grau-violett
                          beleuchtet, eingebettetes Wetterleuchten (weiche
                          Lichtherde in den Wolken, nie Blitz-Kanaele).
-  storm_sky_clouds.webp  nahe Ebene (RGBA, Farbe vormultipliziert): schaerfere
+  storm_sky_debris.webp  nahe Objekt-Ebene (RGBA): Wolkenfetzen + Truemmer, im Shader
+                         (wie Fraktal-Splitter) um den Spieler kreisend.
+  storm_sky_rain.webp    naheste Ebene (RGBA): Regenschleier, eigene Ebene.
+  storm_sky_clouds.webp  mittlere Ebene (RGBA, Farbe vormultipliziert): schaerfere
                          Wolkenbaender mit innen beleuchteten Kanten und
                          Regenschleier, die mit dem Sog ins Auge laufen.
                          Der Shader dreht sie schneller als die ferne Ebene
@@ -56,7 +59,8 @@ R_EYE = 4.4
 TWIST = 2.3          # Windung der Spiralarme (rad je e-Faktor Abstand)
 TWIST_RAIN = 1.25    # Regenschleier: steiler, laufen direkt ins Auge
 RHO0, RHO1 = -1.2, math.log(181.0 / R_EYE)
-NR, NP = 2048, 4096  # (rho, phi)-Raster
+NR, NP = 2048, 4096  # (rho, phi)-Raster (build() skaliert mit der Breite)
+EXTRA_OCT = 0
 
 
 def srgb_to_lin(c):
@@ -132,7 +136,7 @@ class Raster:
     def fbm(self, rng, base, octaves, gain=0.55, twist=TWIST, ridged=False, billow=False, aa=(1.6, 4.0)):
         acc = np.zeros((NR, NP), F32)
         norm, amp = 0.0, 1.0
-        for k in range(octaves):
+        for k in range(octaves + EXTRA_OCT):
             h, w = base[0] << k, base[1] << k
             if h > NR // 2 or w > NP // 2:
                 break
@@ -252,11 +256,6 @@ def paint_near(P, R, seed):
     dens, grad = cloud_field(P, R, rng, ((2, 7), 9, 0.58), ((7, 8), 8, 0.6), 0.5, (60.0, 160.0))
     rim = smoothstep(0.1, 2.0, grad)
 
-    rain_rng = np.random.default_rng(seed + 7)
-    streak = R.fbm(rain_rng, (1, 150), 4, gain=0.7, twist=TWIST_RAIN)
-    veil = R.fbm(rain_rng, (2, 9), 4, twist=TWIST_RAIN)
-    st = lookup(P, streak, TWIST_RAIN)
-    vl = lookup(P, veil, TWIST_RAIN)
     r = P.r
 
     # Baender erst ab etwas Abstand zum Auge (Tiefe), dann bis weit aussen.
@@ -272,15 +271,147 @@ def paint_near(P, R, seed):
     c_cl = col3(1.0 - 0.65 * thick, ANTH * 0.6) + col3(lit, VIO * 0.42) + col3(glow, VIO * 0.2 + VIO_DEEP * 0.3) \
         + col3(np.clip(lit - 0.45, 0, None) * 0.6, VIO_PALE * 0.35)
 
-    # Regenschleier: feine Striche, nur wo ein Schleier haengt, nahe der Baender.
-    curtain = smoothstep(0.0, 0.5, vl) * smoothstep(-0.1, 0.35, dens) \
-        * smoothstep(R_EYE * 2.0, R_EYE * 4.5, r) * (1.0 - smoothstep(60.0, 110.0, r))
-    a_rn = np.clip(smoothstep(0.05, 0.75, st) * curtain * 0.30, 0.0, 1.0)
-    c_rn = col3(0.35 + light * 0.9, ANTH_LIT * 0.6 + VIO * 0.12)
-
-    a = a_cl + a_rn * (1.0 - a_cl)
-    pm = c_cl * a_cl[..., None] + c_rn * (a_rn * (1.0 - a_cl))[..., None]
+    a = a_cl
+    pm = c_cl * a_cl[..., None]
     return pm.astype(F32), a.astype(F32)
+
+
+def paint_rain(P, R, seed):
+    """Naheste Ebene: Regenschleier (feine Striche in Vorhaengen) -> (rgb vormult., alpha).
+    Eigene Ebene, damit der Shader sie schneller um das Auge ratschen laesst."""
+    rng = np.random.default_rng(seed)
+    dens, grad = cloud_field(P, R, rng, ((2, 6), 8, 0.55), ((6, 7), 7, 0.6), 0.4, (50.0, 140.0))
+    streak = R.fbm(rng, (1, 170), 4, gain=0.72, twist=TWIST_RAIN)
+    fine = R.fbm(rng, (1, 520), 2, gain=0.6, twist=TWIST_RAIN)
+    veil = R.fbm(rng, (2, 8), 4, twist=TWIST_RAIN)
+    veil2 = R.fbm(rng, (3, 14), 3, twist=TWIST_RAIN)
+    st = lookup(P, streak, TWIST_RAIN) + 0.5 * lookup(P, fine, TWIST_RAIN)
+    vl = lookup(P, veil, TWIST_RAIN) + 0.5 * lookup(P, veil2, TWIST_RAIN)
+    r = P.r
+    # Vorhaenge haengen unter den Wolkenmassen; nahe dem Auge duenn.
+    curtain = smoothstep(-0.05, 0.55, vl) * smoothstep(-0.2, 0.3, dens)         * smoothstep(R_EYE * 1.8, R_EYE * 4.0, r) * (1.0 - smoothstep(70.0, 130.0, r))
+    a = np.clip(smoothstep(0.0, 0.8, st) * curtain * 0.34, 0.0, 1.0)
+    inner = np.exp(-np.maximum(r - R_EYE, 0.0) / 14.0)
+    blobs = heat_blobs(P, np.random.default_rng(seed + 90), 10, R_EYE * 2.2, 42.0)
+    light = inner * 0.8 + 0.12 * np.exp(-np.maximum(r - R_EYE, 0.0) / 40.0) + blobs * 0.4
+    c = col3(0.30 + light * 0.9, ANTH_LIT * 0.6 + VIO * 0.12)
+    return (c * a[..., None]).astype(F32), a.astype(F32)
+
+
+def _dirs(lon_deg, lat_deg):
+    lo, la = np.radians(lon_deg), np.radians(lat_deg)
+    return np.stack([np.cos(la) * np.sin(lo), np.sin(la), -np.cos(la) * np.cos(lo)], -1)
+
+
+def render_objects(W, rng, n, lat_rng, rad_rng, light, body, rim, rim2, hard, aspect=(1.2, 2.6),
+                   opacity=(0.7, 1.0), clear=None):
+    """Nahe Objekte (Parallax-Ebene wie bei den Fraktal-Splittern): n Brocken/Fetzen auf
+    der Kugel -> (rgb vormultipliziert linear, alpha). Jeder Brocken wird in seiner
+    Tangentialebene (gnomonisch) gezeichnet: unregelmaessiger Rand (periodisches
+    Winkelrauschen), Oberflaechenrauschen, Streiflicht aus Richtung `light`
+    (lon, lat in Grad): helle Kante zur Lichtquelle, dunkler Koerper.
+    hard: 0 = weiche Fetzen, 1 = harte Kanten (Truemmer).
+    clear: (lon, lat, radius) Zone, in der Objekte nur halbtransparent liegen."""
+    H = W // 2
+    ppd = W / 360.0
+    rgb = np.zeros((H, W, 3), F32)
+    alpha = np.zeros((H, W), F32)
+    lt = _dirs(*light)
+    for _ in range(n):
+        lon0 = rng.uniform(-180.0, 180.0)
+        lat0 = rng.uniform(*lat_rng)
+        R = math.exp(rng.uniform(math.log(rad_rng[0]), math.log(rad_rng[1])))
+        asp = rng.uniform(*aspect)
+        rot = rng.uniform(0, math.pi)
+        op = rng.uniform(*opacity)
+        if clear is not None:
+            dl = abs((lon0 - clear[0] + 180) % 360 - 180)
+            if math.hypot(dl * math.cos(math.radians(lat0)), lat0 - clear[1]) < clear[2]:
+                op *= 0.45
+        kk0 = 1.0
+        half_h = R * asp * 2.0
+        half_w = min(R * asp * 2.0 / max(math.cos(math.radians(lat0)), 0.2), 170.0)
+        r0 = int((90 - lat0 - half_h) * ppd)
+        r1 = int((90 - lat0 + half_h) * ppd) + 1
+        c0 = int((lon0 + 180 - half_w) * ppd)
+        c1 = int((lon0 + 180 + half_w) * ppd) + 1
+        ri = np.arange(r0, r1)
+        rows = np.clip(ri, 0, H - 1)
+        cols = np.arange(c0, c1) % W
+        if ri.size < 8 or cols.size < 8:
+            continue
+        kk = W / 4096.0
+        lat = np.clip(90 - (ri + 0.5) / ppd, -89.9, 89.9)[:, None]
+        lon = ((np.arange(c0, c1) + 0.5) / ppd - 180)[None, :]
+        shp = (lat.shape[0], lon.shape[1])
+        d = _dirs(np.broadcast_to(lon, shp), np.broadcast_to(lat, shp))
+        c = _dirs(lon0, lat0)
+        e1 = np.cross(np.array([0.0, 1.0, 0.0]), c)
+        e1 /= np.linalg.norm(e1)
+        e2 = np.cross(c, e1)
+        dc = np.maximum(d @ c, 0.05)
+        tr = math.tan(math.radians(R))
+        x = (d @ e1) / dc / tr
+        y = (d @ e2) / dc / tr
+        xr = x * math.cos(rot) + y * math.sin(rot)
+        yr = -x * math.sin(rot) + y * math.cos(rot)
+        r = np.hypot(xr / asp, yr)
+        ang = np.arctan2(yr, xr / asp)
+        edge = np.ones_like(r)
+        for k in range(1, 7):
+            edge += rng.uniform(0.0, 0.34 + 0.2 * hard) / k ** 1.1 * np.cos(k * ang + rng.uniform(0, 6.283))
+        g = ndimage.gaussian_filter(rng.standard_normal(r.shape).astype(F32), (2.0 + 3.0 * (1.0 - hard)) * kk)
+        g /= g.std() + 1e-6
+        edge += (0.10 + 0.10 * hard) * g
+        soft = 0.30 * (1.0 - hard) + 0.045 * hard
+        mask = smoothstep(edge + soft, edge - soft, r).astype(F32)
+        t1 = ndimage.gaussian_filter(rng.standard_normal(r.shape).astype(F32), 6.0 * kk)
+        t1 /= t1.std() + 1e-6
+        t2 = ndimage.gaussian_filter(rng.standard_normal(r.shape).astype(F32), 1.6 * kk)
+        t2 /= t2.std() + 1e-6
+        dome = np.clip(1.0 - (r / np.maximum(edge, 0.3)) ** 2, 0.0, 1.0)
+        height = mask * (0.9 * np.sqrt(dome) + 0.10 * t1 + 0.02 * t2 + 0.12 * hard * np.abs(t1))
+        hs = ndimage.gaussian_filter(height, 2.2 * kk)
+        gy, gx = np.gradient(hs)
+        slope = 24.0 / max(R * asp * ppd * 0.02, 1.0)
+        ltd = max(float(lt @ c), 0.05)
+        lx = float(lt @ e1) / ltd
+        ly = float(lt @ e2) / ltd
+        ln = math.hypot(lx, ly) + 1e-6
+        lx, ly = lx / ln, ly / ln
+        lit = np.clip(-(gx * slope * lx - gy * slope * ly), 0.0, 1.0)
+        lit = lit ** (1.2 - 0.3 * hard)
+        shade = np.clip(0.55 + 0.45 * np.tanh(0.6 * t1 + 0.3 * t2), 0.1, 1.2)
+        col = body[None, None] * shade[..., None]
+        col = col + rim[None, None] * (lit * (0.65 + 0.35 * np.clip(0.5 + 0.5 * t2, 0, 1)))[..., None]
+        col = col + rim2[None, None] * (np.clip(lit - 0.6, 0, None) * 1.8)[..., None]
+        valid = ((ri >= 0) & (ri < H))[:, None]
+        a = (mask * op * valid).astype(F32)
+        sub = np.ix_(rows, cols)
+        rgb_s, al_s = rgb[sub], alpha[sub]
+        rgb[sub] = rgb_s * (1.0 - a[..., None]) + col * a[..., None]
+        alpha[sub] = al_s + a * (1.0 - al_s)
+    return rgb, alpha
+
+
+def paint_debris(W, seed):
+    """Naheste Objekt-Ebene: grosse Wolkenfetzen (weich, ausgefranst) und dunkle
+    Truemmerbrocken, zum Auge hin streiflichtbeleuchtet (grau-violett). Nur ueber
+    dem Horizont (Mitte/unten der Strecke bleibt frei)."""
+    rng = np.random.default_rng(seed)
+    light = (EYE_LON, EYE_LAT)
+    r1, a1 = render_objects(W, rng, 16, (4.0, 34.0), (2.5, 7.0), light, ANTH * 0.55, VIO * 0.55,
+                            VIO_PALE * 0.35, 0.15, aspect=(1.5, 3.4), opacity=(0.55, 0.92),
+                            clear=(EYE_LON, EYE_LAT, 9.0))
+    r2, a2 = render_objects(W, rng, 12, (3.0, 30.0), (1.0, 3.0), light, ANTH * 0.5, VIO * 0.6,
+                            VIO_PALE * 0.45, 0.85, aspect=(1.1, 2.0), opacity=(0.8, 1.0),
+                            clear=(EYE_LON, EYE_LAT, 9.0))
+    rgb = r1 * (1.0 - a2[..., None]) + r2
+    a = a1 * (1.0 - a2) + a2
+    H = W // 2
+    lat = ((0.5 - (np.arange(H) + 0.5) / H) * 180.0)[:, None]
+    fade = smoothstep(0.0, 4.0, lat)
+    return (rgb * fade[..., None]).astype(F32), (a * fade).astype(F32)
 
 
 def tonemap(x):
@@ -319,6 +450,11 @@ def camera_view(pano, vw=1280, vh=720, pitch=-16.0, fov=62.0, yaw=0.0):
 
 
 def build(W, seed, out_dir, preview, quality):
+    global NR, NP, EXTRA_OCT
+    NR, NP = int(2048 * W / 4096), int(4096 * W / 4096)
+    if W > 4096:
+        NR, NP = 4096, 8192
+        EXTRA_OCT = 1
     t0 = time.time()
     P = Pano(W)
     R = Raster(P.ppd)
@@ -326,6 +462,10 @@ def build(W, seed, out_dir, preview, quality):
     far = tonemap(np.clip(paint_far(P, R, seed + 1), 0, None))
     pm, a = paint_near(P, R, seed + 2)
     pm = tonemap(np.clip(pm, 0, None))
+    pr, ar = paint_rain(P, R, seed + 3)
+    pr = tonemap(np.clip(pr, 0, None))
+    pd, ad = paint_debris(W, seed + 4)
+    pd = tonemap(np.clip(pd, 0, None))
     os.makedirs(out_dir, exist_ok=True)
     p_sky = os.path.join(out_dir, "storm_sky.webp")
     p_cl = os.path.join(out_dir, "storm_sky_clouds.webp")
@@ -333,8 +473,16 @@ def build(W, seed, out_dir, preview, quality):
     rgba = np.concatenate([to_u8(np.sqrt(pm), rng),
                            np.clip(np.rint(a * 255.0), 0, 255).astype(np.uint8)[..., None]], -1)
     Image.fromarray(rgba).save(p_cl, "WEBP", quality=quality, alpha_quality=100, exact=True, method=6)
-    mb = [os.path.getsize(p) / 1e6 for p in (p_sky, p_cl)]
-    print("storm: %dx%d  %.1f s  sky %.2f MB  clouds %.2f MB  -> %s" % (W, W // 2, time.time() - t0, mb[0], mb[1], out_dir))
+    p_rn = os.path.join(out_dir, "storm_sky_rain.webp")
+    rgba = np.concatenate([to_u8(np.sqrt(pr), rng),
+                           np.clip(np.rint(ar * 255.0), 0, 255).astype(np.uint8)[..., None]], -1)
+    Image.fromarray(rgba).save(p_rn, "WEBP", quality=quality, alpha_quality=100, exact=True, method=6)
+    p_db = os.path.join(out_dir, "storm_sky_debris.webp")
+    rgba = np.concatenate([to_u8(np.sqrt(pd), rng),
+                           np.clip(np.rint(ad * 255.0), 0, 255).astype(np.uint8)[..., None]], -1)
+    Image.fromarray(rgba).save(p_db, "WEBP", quality=quality, alpha_quality=100, exact=True, method=6)
+    mb = [os.path.getsize(p) / 1e6 for p in (p_sky, p_cl, p_rn, p_db)]
+    print("storm: %dx%d  %.1f s  sky %.2f MB  clouds %.2f MB  rain %.2f MB  debris %.2f MB -> %s" % (W, W // 2, time.time() - t0, mb[0], mb[1], mb[2], mb[3], out_dir))
     if preview:
         os.makedirs(preview, exist_ok=True)
 
@@ -342,8 +490,10 @@ def build(W, seed, out_dir, preview, quality):
             im = np.asarray(Image.open(path).convert("RGBA"), dtype=np.float64) / 255.0
             return np.concatenate([srgb_to_lin(im[..., :3]) ** 2, im[..., 3:]], -1)
 
-        s, c = dec(p_sky), dec(p_cl)
+        s, c, rn, db = dec(p_sky), dec(p_cl), dec(p_rn), dec(p_db)
         comp = s[..., :3] * (1.0 - c[..., 3:]) + c[..., :3]
+        comp = comp * (1.0 - rn[..., 3:]) + rn[..., :3]
+        comp = comp * (1.0 - db[..., 3:]) + db[..., :3]
         for name, yaw in (("cam_storm.png", 0.0), ("cam_storm_side.png", 70.0)):
             view = camera_view(comp, yaw=yaw)
             Image.fromarray(to_u8(np.clip(view, 0, 1), rng)).save(os.path.join(preview, name))
@@ -354,15 +504,15 @@ def build(W, seed, out_dir, preview, quality):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--width", type=int, default=4096)
+    ap.add_argument("--width", type=int, default=8192)
     ap.add_argument("--seed", type=int, default=1313)
     ap.add_argument("--quality", type=int, default=92)
     ap.add_argument("--out", default=OUT_DIR)
     ap.add_argument("--preview", default="")
     a = ap.parse_args()
     mb = build(a.width, a.seed, a.out, a.preview, a.quality)
-    if a.width >= 4096 and mb >= 2.5:
-        raise SystemExit("WebP zu gross (%.2f MB >= 2.5 MB): --quality senken" % mb)
+    if a.width >= 4096 and mb >= 6.0:
+        raise SystemExit("WebP zu gross (%.2f MB >= 6 MB): --quality senken" % mb)
 
 
 if __name__ == "__main__":
