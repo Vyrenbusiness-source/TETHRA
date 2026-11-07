@@ -34,6 +34,17 @@ shader_type sky;
 // (SUN_LON/SUN_LAT/SUN_R), sonst sitzt der scharfe Rand neben der Scheibe.
 // Cubemap-Pass (Radiance) ohne Asche/Rand.
 //
+// BEAT-VERTRAG (docs/worlds/beat_contract.md):
+//   beat_step       KORONA-SCHOCKRING: auf jedem Schlag schiesst ein Ring vom Sonnenrand
+//                   nach aussen (Easing: Anschlag exakt auf dem Schlag, dann Ruhe), der
+//                   Diamantring-Funke springt ein Stueck um die Sonne, die Asche stoesst
+//                   aufwaerts.
+//   downbeat_pulse  Takt-Akzent: Ring und Korona-Fuss kraeftiger, langsamer abklingend.
+//   drop            Verwandlung: Korona weitet sich weit nach aussen, Diamantring gleisst
+//                   staerker, Asche dichter und schneller; Luma gedeckelt.
+//   kiai/energy     wie bisher Korona/Ring heller; comfort halbiert alle Bewegung.
+//   beat_phase, bar_phase  Saegezaehne (Preview-Kontrolle).
+//
 // INTEGRATION (wie sky_panorama):
 //   var mat := ShaderMaterial.new()
 //   mat.shader = load("res://shaders/theme_eclipse.gdshader")
@@ -58,12 +69,13 @@ shader_type sky;
 //   Funken               #f3e4c0 (kurz, wenige), keine farbigen Partikel
 //   Ambient              #0a0a0a, Glow-Schwelle 0.92 wie mania_3d
 
-uniform sampler2D tex_a : source_color, filter_linear, repeat_enable, hint_default_black;
-uniform sampler2D tex_b : source_color, filter_linear, repeat_enable, hint_default_black;
-uniform sampler2D stars_a : source_color, filter_linear, repeat_enable, hint_default_black;
-uniform sampler2D stars_b : source_color, filter_linear, repeat_enable, hint_default_black;
-uniform sampler2D ash_a : filter_linear, repeat_enable, hint_default_transparent;
-uniform sampler2D ash_b : filter_linear, repeat_enable, hint_default_transparent;
+uniform sampler2D tex_a : source_color, filter_linear_mipmap_anisotropic, repeat_enable, hint_default_black;
+uniform sampler2D tex_b : source_color, filter_linear_mipmap_anisotropic, repeat_enable, hint_default_black;
+uniform sampler2D stars_a : source_color, filter_linear_mipmap_anisotropic, repeat_enable, hint_default_black;
+uniform sampler2D stars_b : source_color, filter_linear_mipmap_anisotropic, repeat_enable, hint_default_black;
+uniform sampler2D ash_a : filter_linear_mipmap_anisotropic, repeat_enable, hint_default_transparent;
+uniform sampler2D ash_b : filter_linear_mipmap_anisotropic, repeat_enable, hint_default_transparent;
+uniform sampler2D shards_tex : source_color, filter_linear_mipmap_anisotropic, repeat_enable, hint_default_transparent;
 uniform float palette_mix : hint_range(0.0, 1.0) = 0.0;
 
 uniform vec3 tint : source_color = vec3(1.0);
@@ -72,6 +84,13 @@ uniform float star_brightness : hint_range(0.0, 4.0) = 1.0;
 uniform float star_hdr : hint_range(1.0, 4.0) = 1.5;
 uniform float beat_pulse : hint_range(0.0, 1.0) = 0.0;
 uniform float kiai : hint_range(0.0, 1.0) = 0.0;
+uniform float beat_phase : hint_range(0.0, 1.0) = 0.0;
+uniform float bar_phase : hint_range(0.0, 1.0) = 0.0;
+uniform float beat_step = 0.0;
+uniform float downbeat_pulse : hint_range(0.0, 1.0) = 0.0;
+uniform float drop : hint_range(0.0, 0.6) = 0.0;
+uniform float energy : hint_range(0.0, 1.0) = 0.0;
+uniform float comfort : hint_range(0.0, 1.0) = 0.0;
 
 uniform vec3 pano_rotation = vec3(0.0);
 uniform vec2 pano_offset = vec2(0.0);
@@ -114,42 +133,51 @@ vec2 dir_uv(vec3 d, vec2 ofs) {
 	return vec2(fract(u), clamp(v, 0.0005, 0.9995));
 }
 
+// Mip-Sampling mit nahtfreien Gradienten (fract(u) springt an der Naht).
+vec4 tg(sampler2D s, vec2 uv) {
+	vec2 gx = dFdx(uv);
+	vec2 gy = dFdy(uv);
+	gx.x -= round(gx.x);
+	gy.x -= round(gy.x);
+	return textureGrad(s, uv, gx, gy);
+}
+
 vec3 dec(vec3 c) {
 	return c * c;
 }
 
 vec4 sample_pano(vec2 uv) {
 	if (palette_mix <= 0.001) {
-		vec4 a = textureLod(tex_a, uv, 0.0);
+		vec4 a = tg(tex_a, uv);
 		return vec4(dec(a.rgb), a.a);
 	}
 	if (palette_mix >= 0.999) {
-		vec4 b = textureLod(tex_b, uv, 0.0);
+		vec4 b = tg(tex_b, uv);
 		return vec4(dec(b.rgb), b.a);
 	}
-	vec4 a = textureLod(tex_a, uv, 0.0);
-	vec4 b = textureLod(tex_b, uv, 0.0);
+	vec4 a = tg(tex_a, uv);
+	vec4 b = tg(tex_b, uv);
 	return mix(vec4(dec(a.rgb), a.a), vec4(dec(b.rgb), b.a), palette_mix);
 }
 
 vec3 sample_stars(vec2 uv) {
 	if (palette_mix <= 0.001) {
-		return dec(textureLod(stars_a, uv, 0.0).rgb);
+		return dec(tg(stars_a, uv).rgb);
 	}
 	if (palette_mix >= 0.999) {
-		return dec(textureLod(stars_b, uv, 0.0).rgb);
+		return dec(tg(stars_b, uv).rgb);
 	}
-	return mix(dec(textureLod(stars_a, uv, 0.0).rgb), dec(textureLod(stars_b, uv, 0.0).rgb), palette_mix);
+	return mix(dec(tg(stars_a, uv).rgb), dec(tg(stars_b, uv).rgb), palette_mix);
 }
 
 vec4 sample_ash(vec2 uv) {
 	if (palette_mix <= 0.001) {
-		return textureLod(ash_a, uv, 0.0);
+		return tg(ash_a, uv);
 	}
 	if (palette_mix >= 0.999) {
-		return textureLod(ash_b, uv, 0.0);
+		return tg(ash_b, uv);
 	}
-	return mix(textureLod(ash_a, uv, 0.0), textureLod(ash_b, uv, 0.0), palette_mix);
+	return mix(tg(ash_a, uv), tg(ash_b, uv), palette_mix);
 }
 
 float hash12(vec2 p) {
@@ -207,12 +235,20 @@ void sky() {
 
 	// Korona: helle Anteile ueber die Glow-Schwelle, dezent atmend.
 	float nl = dot(pan, vec3(0.2126, 0.7152, 0.0722));
-	float cm = smoothstep(0.99, 1.03, r) * exp(-(r - 1.0) / 1.8) * step(theta, 1.2);
+	float mv = 1.0 - 0.5 * comfort;
+	float dp = drop * (1.0 - 0.5 * comfort);
+	float ep = clamp(fract(beat_step - 1e-5), 0.0, 1.0);
+	if (beat_step < 0.0001) {
+		ep = 0.0;
+	}
+	float cm = smoothstep(0.99, 1.03, r) * exp(-(r - 1.0) / (1.8 + 2.4 * dp)) * step(theta, 1.2 + 0.5 * dp);
 	float bp = clamp(beat_pulse, 0.0, 1.0);
 	float shimmer = 1.0 + 0.07 * sin(ph_ang * 11.0 + TIME * 0.35) * sin(ph_ang * 5.0 - TIME * 0.23 + r * 3.0);
-	float wave_r = 1.0 + (1.0 - bp) * 1.7;
-	float wave = exp(-pow((r - wave_r) / 0.20, 2.0)) * bp * smoothstep(0.0, 0.15, bp);
-	float lift = 1.0 + cm * (bp * (0.10 + 0.32 * exp(-(r - 1.0) / 0.22)) + wave * 0.22 + kiai * 0.30);
+	// Schockring auf beat_step: huellt sich mit sin(pi*ep) -> weder Sprung am Schlag noch Rest.
+	float wave_r = 1.0 + ep * 2.6;
+	float wave = exp(-pow((r - wave_r) / (0.16 + 0.10 * ep), 2.0)) * sin(PI * ep) * mv;
+	float lift = 1.0 + cm * (bp * (0.10 + 0.32 * exp(-(r - 1.0) / 0.22)) + wave * (0.55 + 0.7 * downbeat_pulse)
+			+ downbeat_pulse * mv * 0.22 * exp(-(r - 1.0) / 0.5) + kiai * 0.30 + dp * 0.55);
 	pan *= mix(1.0, corona_hdr, smoothstep(0.30, 0.70, nl) * cm);
 	pan *= mix(1.0, shimmer, cm) * lift;
 
@@ -233,20 +269,21 @@ void sky() {
 		float limb_n = 0.75 + 0.25 * sin(ph_ang * 23.0 + 1.3) * sin(ph_ang * 9.0 - 0.4);
 		col += corona_color * ring * limb_n * limb_intensity * (1.0 + bp * 0.7 + kiai * 0.5) * vis;
 		// Diamantring: ein Lichtfunke am Rand.
-		vec2 bpos = vec2(cos(bead_angle), sin(bead_angle)) * 1.004;
+		float bang = bead_angle + beat_step * 0.30 * mv;     // Funke rastet je Schlag ein Stueck weiter
+	vec2 bpos = vec2(cos(bang), sin(bang)) * 1.004;
 		float bd = length(q - bpos);
 		float bead = exp(-bd * bd / (0.0008 + fw * fw)) * 1.4
 				+ exp(-bd / 0.06) * 0.45 + exp(-bd / 0.35) * 0.05;
-		col += corona_color * bead * bead_intensity * (0.75 + bp * 0.9 + kiai * 0.8) * mix(0.25, 1.0, outside) * vis;
+		col += corona_color * bead * bead_intensity * (0.75 + bp * 0.9 + kiai * 0.8 + dp * 1.1 + downbeat_pulse * 0.5) * mix(0.25, 1.0, outside) * vis;
 
 		// Asche: zwei Lagen (nah grob/schnell, fern fein/langsam) + Schwaden.
 		float latd = degrees(asin(clamp(dir.y, -1.0, 1.0)));
-		float am = smoothstep(-7.0, 1.0, latd) * (1.0 - smoothstep(22.0, 55.0, latd)) * ash_density;
+		float am = smoothstep(-7.0, 1.0, latd) * (1.0 - smoothstep(22.0, 55.0, latd)) * ash_density * (1.0 + 0.5 * dp);
 		if (am > 0.001) {
 			float u = atan(dir.x, -dir.z) * (0.5 / PI);
 			float h = tan(radians(clamp(latd, -60.0, 60.0)));
 			float ph = star_phase + TIME * star_speed;
-			float t = TIME * ash_rise + ph * 0.03;
+			float t = TIME * ash_rise + ph * 0.03 + beat_step * 0.003 * mv;   // Asche stoesst je Schlag aufwaerts
 			float dr = TIME * ash_drift;
 			float jit = hash12(FRAGCOORD.xy);
 			vec4 nearl = ash_layer(u, h, 1.0, t, dr, 0.0, jit);
@@ -264,6 +301,21 @@ void sky() {
 			col = col * (1.0 - fn * 0.85) + ash_light * fn * lit * (1.0 + bp * 0.35);
 		}
 
+		// Nahe Objekt-Ebene (Stil Fraktal-Splitter): Brocken ziehen am Spieler vorbei,
+		// Gier rastet mit beat_step auf dem Schlag ein; Drop = schneller/naeher/heller.
+		{
+			float s_mv = 1.0 - 0.5 * comfort;
+			float s_dp = drop * (1.0 - 0.5 * comfort);
+			float s_yaw = TIME * 0.004 * s_mv + beat_step * 0.012 * s_mv + s_dp * 0.07;
+			vec3 s_d = dir * euler(vec3(0.0, s_yaw, 0.0));
+			s_d.y = dir.y + s_dp * 0.03 * (1.0 - abs(dir.y));          // Drop: naeher heran
+			vec4 s_sh = tg(shards_tex, dir_uv(normalize(s_d), vec2(0.0)));
+			float s_lon = atan(dir.x, -dir.z);
+			float s_lat = asin(clamp(dir.y, -1.0, 1.0));
+			float s_gate = smoothstep(0.03, 0.12, s_lat) * (1.0 - exp(-(s_lon / 0.5) * (s_lon / 0.5)) * smoothstep(0.9, 0.5, s_lat));
+			vec3 s_c = dec(s_sh.rgb) * (1.0 + beat_pulse * 0.30 + downbeat_pulse * 0.25 * s_mv + s_dp * 0.6);
+			col = mix(col, s_c, s_sh.a * s_gate * step(0.0, dir.y));
+		}
 		col *= tint * brightness;
 
 		// Lesbarkeit in Weltkoordinaten: vorn-mitte/unten zusaetzlich dunkler.
