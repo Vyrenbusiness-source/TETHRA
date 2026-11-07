@@ -35,6 +35,8 @@ var _preview_2d: Control
 var _preview_bg: TextureRect
 var _preview_bg_label: Label
 var _name_box: VBoxContainer
+var _mode_2d_btn: CheckButton
+var _hint_2d: Control
 var _rows_3d: Array[Control] = []
 
 var _capturing := 0   # 0 = keine Aufnahme, 3..6 = Lane 1-4
@@ -131,6 +133,32 @@ func _ready() -> void:
 	var pg_game := _page(side, stack, "Gameplay")
 	var pg_2d_root := _page(side, stack, "2D-Spielfeld")
 	# 2D-Seite: Regler links, Vorschau rechts (spart Hoehe).
+	# Im 3D-Modus bleibt der Reiter sichtbar (Skins, Notenform, Hintergrund immer
+	# erreichbar); oben ein ruhiger Hinweis mit Knopf zum Einschalten.
+	_hint_2d = PanelContainer.new()
+	_hint_2d.add_theme_stylebox_override("panel", _chip_box(Color(1, 1, 1, 0.05), Color(_accent, 0.35), 10))
+	var hint_row := HBoxContainer.new()
+	hint_row.add_theme_constant_override("separation", 12)
+	_hint_2d.add_child(hint_row)
+	var hint_l := Label.new()
+	hint_l.text = "Gilt für den 2D-Modus"
+	hint_l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hint_l.add_theme_font_size_override("font_size", 14)
+	hint_l.add_theme_color_override("font_color", UiTheme.TEXT)
+	hint_row.add_child(hint_l)
+	var on_btn := Button.new()
+	on_btn.text = "2D-Modus einschalten"
+	on_btn.custom_minimum_size = Vector2(0, 30)
+	UiTheme.style_button(on_btn, true)
+	on_btn.pressed.connect(func():
+		if _mode_2d_btn != null:
+			_mode_2d_btn.button_pressed = true)
+	hint_row.add_child(on_btn)
+	var hint_m := MarginContainer.new()
+	hint_m.add_theme_constant_override("margin_bottom", 6)
+	hint_m.add_child(_hint_2d)
+	pg_2d_root.add_child(hint_m)
+	_hint_2d = hint_m
 	var h2d := HBoxContainer.new()
 	h2d.add_theme_constant_override("separation", 18)
 	pg_2d_root.add_child(h2d)
@@ -164,6 +192,7 @@ func _ready() -> void:
 		if _note_colors != null:
 			_note_colors.show_mode(on))
 	_row(pg_game, "2D-Modus", mode_2d, null)
+	_mode_2d_btn = mode_2d
 
 	# Scroll Speed wie osu!lazer: 1..40, Anzeige "25 (459 ms)" = Zeit bis zur Linie.
 	# Pfeiltasten (Regler fokussiert) und Mausrad (ueber dem Regler): +-1.
@@ -584,6 +613,11 @@ func _embed_skin(pg: VBoxContainer, skin: Control) -> void:
 		return
 	for c in skin.get_children():
 		if c != opt and (c is Button or c is MenuButton):
+			# Klarere Beschriftung der Import-Knoepfe (Logik bleibt im Skin-Picker).
+			if c is MenuButton and String(c.text) == "Aus osu!":
+				c.text = "Von osu! übernehmen"
+			elif String(c.text) == "Importieren…":
+				c.text = "Skin-Datei importieren…"
 			skin.remove_child(c)
 			c.custom_minimum_size.y = CTRL_H
 			btns.add_child(c)
@@ -807,14 +841,16 @@ static func _fmt_pct0(v: float) -> String:
 	return UiTheme.fmt_num(v * 100.0, 0) + (" %" if UiTheme.is_german() else "%")
 
 
-## Modus-abhaengig: im 2D-Modus 3D-Spurbreite und Reiter "Welt" ausblenden,
-## im 3D-Modus den Reiter "2D-Spielfeld".
+## Modus-abhaengig: im 2D-Modus 3D-Spurbreite und Reiter "Welt" ausblenden.
+## Der Reiter "2D-Spielfeld" bleibt immer sichtbar; im 3D-Modus mit Hinweis oben.
 func _update_2d_rows() -> void:
 	var on := Settings.playfield_2d
 	for r in _rows_3d:
 		r.visible = not on
+	if _hint_2d != null:
+		_hint_2d.visible = not on
 	if _tabs.size() >= 3:
-		_tabs[1].visible = on
+		_tabs[1].visible = true
 		_tabs[2].visible = not on
 	if _tab_cur < _tabs.size() and not _tabs[_tab_cur].visible:
 		_show_page(0)
