@@ -82,6 +82,7 @@ var _theme_col := Color(0.22, 0.68, 0.90)
 var _theme_kiai := Color(0.92, 0.52, 0.20)
 # Snap-Farbe je hit_object (einmal beim Laden berechnet, Index = Note).
 var _snap_cols := PackedColorArray()
+var _snap_divs := PackedInt32Array()
 # Map-Hintergrundbild (einmal beim Map-Start geladen, nie im Gameplay).
 var _bg_tex: Texture2D
 
@@ -622,7 +623,7 @@ func _update_playfield_2d(t: float) -> void:
 			_pf2d.add_note(obj.column, zh, c)
 	for rb in _released_beams:
 		_pf2d.add_hold(int(rb.col), _note_z(float(rb.head), t), _note_z(float(rb.end), t),
-				CLEAN_HOLD, Playfield2D.STATE_DEAD)
+				NoteColors.color_for(int(rb.col), true, true, CLEAN_HOLD), Playfield2D.STATE_DEAD)
 	for mi in range(_missed_2d.size() - 1, -1, -1):
 		var z := _note_z(float(_missed_2d[mi][0]), t)
 		if z > Z_LINE + 12.0:
@@ -785,6 +786,7 @@ func _precompute_snap_colors() -> void:
 	if not SNAP_COLORS_ENABLED or _beatmap == null:
 		return
 	var divs := SnapColor.precompute(_beatmap)
+	_snap_divs = divs
 	var cache := {}
 	_snap_cols.resize(divs.size())
 	for i in divs.size():
@@ -1521,6 +1523,11 @@ func _on_note_spawned(index: int) -> void:
 	var has_snap := snap.a > 0.0
 	if has_snap and not obj.is_hold:
 		col = snap
+	# Eigene Notenfarben (Modus lanes/snap) ersetzen Map-/Welt-/Snap-Farbe komplett.
+	if NoteColors.is_custom(_2d):
+		var dv := _snap_divs[index] if index < _snap_divs.size() else 0
+		col = NoteColors.color_for(obj.column, obj.is_hold, _2d, col, dv)
+		has_snap = false
 
 	var root := Node3D.new()
 	if _2d:

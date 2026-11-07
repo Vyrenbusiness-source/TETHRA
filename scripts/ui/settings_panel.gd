@@ -230,6 +230,11 @@ func _ready() -> void:
 				skin.connect("changed", _refresh_2d_preview)
 			_embed_skin(pg_2d, skin)
 
+	_group(pg_2d, "Notenfarben")
+	var ncp := NoteColorPicker.new()
+	ncp.changed.connect(_refresh_2d_preview)
+	pg_2d.add_child(ncp)
+
 	_add_2d_preview(pv_col)
 
 	# --------------------------------- WELT ---------------------------------
