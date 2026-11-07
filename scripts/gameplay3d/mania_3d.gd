@@ -566,7 +566,7 @@ func _update_playfield_2d(t: float) -> void:
 		var obj := _beatmap.hit_objects[index] as ManiaNote
 		var entry: Dictionary = _notes[index]
 		var c: Color = entry.get("col", Color(1, 1, 1))
-		var held := core.active_hold(obj.column) == index
+		var held: bool = core.active_hold(obj.column) == index
 		var zh: float = (entry.root as Node3D).position.z
 		if obj.is_hold:
 			_pf2d.add_hold(obj.column, zh, _note_z(obj.end_time(), t), c,

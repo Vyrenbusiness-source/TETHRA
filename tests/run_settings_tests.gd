@@ -4,14 +4,24 @@ extends SceneTree
 ## Ausfuehren:
 ##   Godot..._console.exe --headless --audio-driver Dummy --path . --script res://tests/run_settings_tests.gd
 
-const SettingsScript := preload("res://scripts/settings.gd")
-
+# Kein preload: settings.gd braucht die Autoloads (SyncClock) zum Kompilieren.
+var SettingsScript: GDScript
 var _passed := 0
 var _failed := 0
+var _done := false
 
 
-func _initialize() -> void:
+func _process(_delta: float) -> bool:
+	if _done:
+		return true
+	_done = true
+	_run()
+	return true
+
+
+func _run() -> void:
 	print("=== TETHRA Settings-Tests ===")
+	SettingsScript = root.get_node("/root/Settings").get_script()
 	var path := "user://settings_test_tmp.cfg"
 	# Roundtrip: Werte schreiben, in frische Instanz laden.
 	var a = SettingsScript.new()
