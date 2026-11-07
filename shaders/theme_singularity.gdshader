@@ -202,10 +202,11 @@ void sky() {
 		float en = 0.85 + 0.30 * clamp(energy, 0.0, 1.0);
 
 		// Gravitationswelle: Linsenring vom Schatten nach aussen. fract(beat_step)
-		// ist 0 auf dem Schlag, steigt eased auf 1, Amplitude klingt dabei auf 0.
+		// ist 0 auf dem Schlag, steigt glatt auf 1. Komfort: die Linse setzt sanft ein
+		// (smoothstep ueber 1/4 Beat, kein Verzerrungs-Ruck auf dem Schlag) und klingt auf 0.
 		float e = fract(beat_step);
 		float th_w = radians(shadow_deg) * 1.15 + e * radians(40.0);
-		float amp = wave_amp * pow(1.0 - e, 0.8) * cf * (0.75 + 0.9 * dbp);
+		float amp = wave_amp * smoothstep(0.0, 0.25, e) * pow(1.0 - e, 0.8) * cf * (0.75 + 0.9 * dbp);
 		float cth = clamp(dot(d0, h), -1.0, 1.0);
 		float th = acos(cth);
 		float wd = (th - th_w) / (0.05 + 0.10 * e);
