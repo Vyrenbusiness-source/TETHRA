@@ -124,8 +124,11 @@ def front_mask(lon, lat):
 
 def sky_glow(up, fire):
     """Helligkeit (linear) des Himmels ueber dem Horizont, ohne Wolken."""
-    return (F32(0.30) * np.exp(-up / F32(0.035)) + F32(0.11) * np.exp(-up / F32(0.16))
-            + F32(0.03) * np.exp(-up / F32(0.60))) * fire + F32(0.0025)
+    # Azimut-Variation (Feuer-Flecken) nur am Horizont, oben gleichmaessig
+    # (sonst senkrechte Baender bis in den Zenit).
+    f = F32(1) + (fire - F32(1)) * np.exp(-up / F32(0.12))
+    return (F32(0.30) * np.exp(-up / F32(0.035)) + F32(0.065) * np.exp(-up / F32(0.14))
+            + F32(0.013) * np.exp(-up / F32(0.60))) * f + F32(0.0015)
 
 
 # ---------------------------------------------------------------------------
@@ -404,11 +407,11 @@ def ember_layer(W, H, seed):
             return core + glow
 
         splat(img, dirs[i], max(streak, r_core) * 4.5 + 3 * px, prof, col, W, H)
-    nb = 60
+    nb = 18
     bd = ember_dirs(rng, nb)
     for i in range(nb):
-        r = rng.uniform(5, 14) * px
-        col = ramp(ramp_c, np.array([rng.uniform(0.0, 0.45)]))[0] * rng.uniform(0.03, 0.09)
+        r = rng.uniform(4, 9) * px
+        col = ramp(ramp_c, np.array([rng.uniform(0.0, 0.45)]))[0] * rng.uniform(0.015, 0.04)
 
         def bprof(x, y, r=r):
             q = np.sqrt(x * x + y * y) / r
@@ -493,7 +496,7 @@ def build(W, seed, out_dir, preview, jobs):
     sky_t = tonemap(sky, 1.0)
     emb_t = tonemap(embers, 1.0)
     fl_t = tonemap(np.moveaxis(flash, 0, -1), 1.0)
-    Image.fromarray(to_u8(np.sqrt(sky_t), rng)).save(pa, "WEBP", quality=92, method=6)
+    Image.fromarray(to_u8(np.sqrt(sky_t), rng)).save(pa, "WEBP", quality=96, method=6)
     Image.fromarray(to_u8(np.sqrt(emb_t), rng)).save(pe, "WEBP", quality=90, method=6)
     Image.fromarray(to_u8(np.sqrt(fl_t), rng)).save(pf, "WEBP", quality=90, method=6)
     print("boss: %dx%d  fields %.1f s  compose %.1f s  sky %.2f MB  embers %.2f MB  flash %.2f MB" % (

@@ -2,6 +2,8 @@
 
 importer="texture"
 type="CompressedTexture2D"
+uid="uid://weu6o5yx4ari"
+path="res://.godot/imported/sky_boss_flash.webp-72a1e22b87260054864f7bdb56def384.ctex"
 metadata={
 "vram_texture": false
 }
@@ -9,6 +11,7 @@ metadata={
 [deps]
 
 source_file="res://assets_game/themes/boss/sky_boss_flash.webp"
+dest_files=["res://.godot/imported/sky_boss_flash.webp-72a1e22b87260054864f7bdb56def384.ctex"]
 
 [params]
 
