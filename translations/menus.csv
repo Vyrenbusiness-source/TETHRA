@@ -1,2 +1,579 @@
 keys,de,en
 TETHRA,TETHRA,TETHRA
+Lautstaerke   %d %%,Lautstaerke   %d %%,Volume   %d%%
+Leertaste,Leertaste,Space
+Rück,Rück,Bksp
+Strg,Strg,Ctrl
+EINSTELLUNGEN,EINSTELLUNGEN,SETTINGS
+Gameplay,Gameplay,Gameplay
+2D-Spielfeld,2D-Spielfeld,2D Playfield
+Welt,Welt,World
+Grafik,Grafik,Graphics
+Audio,Audio,Audio
+Spielfeld,Spielfeld,Playfield
+Klassische senkrechte Spuren ohne 3D-Welt; Hintergrund = Map-Bild,Klassische senkrechte Spuren ohne 3D-Welt; Hintergrund = Map-Bild,Classic vertical lanes without the 3D world; background = map image
+2D-Modus,2D-Modus,2D mode
+Scrollgeschwindigkeit,Scrollgeschwindigkeit,Scroll speed
+Spurbreite,Spurbreite,Lane width
+Abstand der Spuren in der 3D-Welt. Unter 85 % werden die Noten leicht kleiner.,Abstand der Spuren in der 3D-Welt. Unter 85 % werden die Noten leicht kleiner.,"Lane spacing in the 3D world. Below 85%, notes get slightly smaller."
+Steuerung,Steuerung,Controls
+Tasten 1–4,Tasten 1–4,Keys 1–4
+"Knopf anklicken, dann Taste drücken (Esc bricht ab)","Knopf anklicken, dann Taste drücken (Esc bricht ab)","Click a button, then press a key (Esc cancels)"
+Sprache,Sprache,Language
+Spielsprache,Spielsprache,Game language
+Noten,Noten,Notes
+Balken,Balken,Bar
+Kreis,Kreis,Circle
+Notenform,Notenform,Note shape
+Breite der 2D-Spalten (auch im Pausenmenü einstellbar),Breite der 2D-Spalten (auch im Pausenmenü einstellbar),Width of the 2D columns (also adjustable in the pause menu)
+Notengröße,Notengröße,Note size
+Höhe der Balken bzw. Größe der Kreise (auch im Pausenmenü einstellbar),Höhe der Balken bzw. Größe der Kreise (auch im Pausenmenü einstellbar),Bar height or circle size (also adjustable in the pause menu)
+Map-Bild,Map-Bild,Map image
+Hintergrund,Hintergrund,Background
+Deckkraft des Map-Bilds; 0 % = Hintergrund aus (schwarz),Deckkraft des Map-Bilds; 0 % = Hintergrund aus (schwarz),Map image opacity; 0% = background off (black)
+"Deckkraft des Spielfelds; 100 % = schwarz, Map-Bild nur links und rechts","Deckkraft des Spielfelds; 100 % = schwarz, Map-Bild nur links und rechts","Playfield opacity; 100% = black, map image only left and right"
+Hintergrund-Unschärfe,Hintergrund-Unschärfe,Background blur
+Map-Bild unscharf zeichnen,Map-Bild unscharf zeichnen,Blur the map image
+Skin,Skin,Skin
+Umgebung,Umgebung,Environment
+Automatisch,Automatisch,Automatic
+"Automatisch: düstere Welt passend zum Song
+(intensiv = Bosskampf, ruhig = Frost, sonst Eklipse, Abgrund, Fraktal, Obsidian …)","Automatisch: düstere Welt passend zum Song
+(intensiv = Bosskampf, ruhig = Frost, sonst Eklipse, Abgrund, Fraktal, Obsidian …)","Automatic: dark world matching the song
+(intense = Boss fight, calm = Frost, otherwise Eclipse, Abyss, Fractal, Obsidian …)"
+Kamera & Effekte,Kamera & Effekte,Camera & Effects
+Komfort,Komfort,Comfort
+Dynamisch,Dynamisch,Dynamic
+Kamera,Kamera,Camera
+"Komfort: ruhige Kamera, gegen Übelkeit
+Dynamisch: volle Flug-Bewegung","Komfort: ruhige Kamera, gegen Übelkeit
+Dynamisch: volle Flug-Bewegung","Comfort: calm camera, against motion sickness
+Dynamic: full flight motion"
+Aus,Aus,Off
+Dezent,Dezent,Subtle
+Voll,Voll,Full
+Effekte,Effekte,Effects
+Darstellung,Darstellung,Display
+Niedrig,Niedrig,Low
+Mittel (2x AA),Mittel (2x AA),Medium (2x AA)
+Hoch (4x AA),Hoch (4x AA),High (4x AA)
+Ultra (8x AA),Ultra (8x AA),Ultra (8x AA)
+Extrem (8x AA + SSAA),Extrem (8x AA + SSAA),Extreme (8x AA + SSAA)
+Qualität,Qualität,Quality
+Unbegrenzt,Unbegrenzt,Unlimited
+FPS-Limit,FPS-Limit,FPS limit
+Optionen,Optionen,Options
+Spur-Leuchten,Spur-Leuchten,Lane glow
+"Spur leuchtet auf, wenn die Taste gedrückt wird","Spur leuchtet auf, wenn die Taste gedrückt wird",Lane lights up when its key is pressed
+Vollbild,Vollbild,Fullscreen
+Vollbild (F11),Vollbild (F11),Fullscreen (F11)
+Lautstärke & Klang,Lautstärke & Klang,Volume & Sound
+Lautstärke,Lautstärke,Volume
+Klarheit,Klarheit,Clarity
+Hellere Höhen für mehr Klarheit,Hellere Höhen für mehr Klarheit,Brighter highs for more clarity
+Bass,Bass,Bass
+Treffer,Treffer,Hits
+Treffer-Sounds,Treffer-Sounds,Hitsounds
+Hitsound,Hitsound,Hitsound
+Treffer-Lautstärke,Treffer-Lautstärke,Hitsound volume
+Timing,Timing,Timing
+Audio-Offset,Audio-Offset,Audio offset
+Verschiebt die Noten gegenüber dem Ton,Verschiebt die Noten gegenüber dem Ton,Shifts the notes relative to the audio
+Kalibrieren,Kalibrieren,Calibrate
+Kalibrierung,Kalibrierung,Calibration
+Änderungen werden beim Schließen gespeichert  ·  Esc,Änderungen werden beim Schließen gespeichert  ·  Esc,Changes are saved on close  ·  Esc
+Galaxie,Galaxie,Galaxy
+Bosskampf,Bosskampf,Boss fight
+Frost,Frost,Frost
+Eklipse,Eklipse,Eclipse
+Abgrund,Abgrund,Abyss
+Fraktal,Fraktal,Fractal
+Singularität,Singularität,Singularity
+Sturm,Sturm,Storm
+Riss,Riss,Rift
+Nerv,Nerv,Nerve
+Alle,Alle,All
+Einstellungen,Einstellungen,Settings
+Heruntergeladen,Heruntergeladen,Downloaded
+Sammlungen,Sammlungen,Collections
+Online,Online,Online
+Maps online suchen und laden,Maps online suchen und laden,Search and download maps online
+Nur Maps mit Scroll-Velocity-Wechseln (SV),Nur Maps mit Scroll-Velocity-Wechseln (SV),Only maps with scroll velocity changes (SV)
+Titel,Titel,Title
+Sterne aufsteigend,Sterne aufsteigend,Stars ascending
+Sterne absteigend,Sterne absteigend,Stars descending
+Sortierung,Sortierung,Sort by
+Map suchen,Map suchen,Search maps
+Vorherige Schwierigkeit,Vorherige Schwierigkeit,Previous difficulty
+Naechste Schwierigkeit,Naechste Schwierigkeit,Next difficulty
+Spielen,Spielen,Play
+No-Fail,No-Fail,No Fail
+Kein Abbruch bei leerer Lebensleiste,Kein Abbruch bei leerer Lebensleiste,No fail when the health bar runs empty
+Jede Map mit Tempowechseln,Jede Map mit Tempowechseln,Any map with tempo changes
++ Sammlung,+ Sammlung,+ Collection
+Map zu einer Sammlung hinzufuegen,Map zu einer Sammlung hinzufuegen,Add map to a collection
+BESTE SCORES,BESTE SCORES,TOP SCORES
+Replay,Replay,Replay
+"Keine Sammlungen — im Info-Panel ""+ Sammlung"" nutzen","Keine Sammlungen — im Info-Panel ""+ Sammlung"" nutzen","No collections — use ""+ Collection"" in the info panel"
+"Sammlung ""%s"" löschen","Sammlung ""%s"" löschen","Delete collection ""%s"""
+"""%s"" in Sammlungen","""%s"" in Sammlungen","""%s"" in collections"
+Neue Sammlung…,Neue Sammlung…,New collection…
+Anlegen,Anlegen,Create
+Schließen,Schließen,Close
+%d Maps,%d Maps,%d maps
+  ·  %d fehlen (gelöscht?),  ·  %d fehlen (gelöscht?),  ·  %d missing (deleted?)
+Map löschen,Map löschen,Delete map
+"""%s — %s"" wirklich löschen?
+Die .osz-Datei wird vom Datenträger entfernt.","""%s — %s"" wirklich löschen?
+Die .osz-Datei wird vom Datenträger entfernt.","Really delete ""%s — %s""?
+The .osz file will be removed from disk."
+Löschen,Löschen,Delete
+Abbrechen,Abbrechen,Cancel
+Enthält Scroll-Velocity-Wechsel (SV),Enthält Scroll-Velocity-Wechsel (SV),Contains scroll velocity changes (SV)
+Map von %s,Map von %s,Mapped by %s
+%d Noten,%d Noten,%d notes
+%s  ·  %d Tasten  ·  %s,%s  ·  %d Tasten  ·  %s,%s  ·  %d keys  ·  %s
+Noch kein Score — spiel die Map!,Noch kein Score — spiel die Map!,No scores yet — play the map!
+Score von %s (Multiplayer),Score von %s (Multiplayer),Score by %s (multiplayer)
+Max. %s bei SS,Max. %s bei SS,Max %s for SS
+Max. pp wird berechnet …,Max. pp wird berechnet …,Calculating max pp …
+JETZT LÄUFT,JETZT LÄUFT,NOW PLAYING
+SPIELEN,SPIELEN,PLAY
+MULTIPLAYER,MULTIPLAYER,MULTIPLAYER
+TUTORIAL,TUTORIAL,TUTORIAL
+BEENDEN,BEENDEN,QUIT
+"Das ist DEIN PROFIL: Name, pp, Profilbild.
+Klick die Karte an — und danach wieder zu!","Das ist DEIN PROFIL: Name, pp, Profilbild.
+Klick die Karte an — und danach wieder zu!","This is YOUR PROFILE: name, pp, avatar.
+Click the card — then close it again!"
+"Hier stellst du Tasten, Scroll-Speed, Offset und FPS ein.
+Klick auf EINSTELLUNGEN — schau dich um und schließe wieder!","Hier stellst du Tasten, Scroll-Speed, Offset und FPS ein.
+Klick auf EINSTELLUNGEN — schau dich um und schließe wieder!","Set keys, scroll speed, offset and FPS here.
+Click SETTINGS — look around and close it again!"
+"SPIELEN oeffnet den Song-Browser.
+Dort findest du auch den Online-Tab (Maps laden), ★-Filter und Collections.","SPIELEN oeffnet den Song-Browser.
+Dort findest du auch den Online-Tab (Maps laden), ★-Filter und Collections.","PLAY opens the song browser.
+There you also find the Online tab (download maps), ★ filters and collections."
+"MULTIPLAYER: Raum erstellen, Code an Freunde schicken,
+die Krone 👑 wählt die Map — mit Live-Scoreboard!","MULTIPLAYER: Raum erstellen, Code an Freunde schicken,
+die Krone 👑 wählt die Map — mit Live-Scoreboard!","MULTIPLAYER: create a room, send the code to friends,
+the crown 👑 picks the map — with a live scoreboard!"
+→ klick das markierte Element,→ klick das markierte Element,→ click the highlighted element
+Tour beenden,Tour beenden,End tour
+Menü-Tour fertig!,Menü-Tour fertig!,Menu tour done!
+"Jetzt die Übungs-Map: sie hält an und zeigt dir
+Noten, Holds und Doppelnoten direkt im Spiel.","Jetzt die Übungs-Map: sie hält an und zeigt dir
+Noten, Holds und Doppelnoten direkt im Spiel.","Now the practice map: it pauses and shows you
+notes, holds and double notes right in the game."
+🚀 ÜBUNGS-MAP STARTEN,🚀 ÜBUNGS-MAP STARTEN,🚀 START PRACTICE MAP
+"📖 Wissens-Guide lesen (pp, Sterne, Acc …)","📖 Wissens-Guide lesen (pp, Sterne, Acc …)","📖 Read the guide (pp, stars, acc …)"
+%s Spiele,%s Spiele,%s plays
+Letzte Scores,Letzte Scores,Recent scores
+Noch keine Spiele — leg los!,Noch keine Spiele — leg los!,No plays yet — get started!
+Klicken: Profilbild ändern,Klicken: Profilbild ändern,Click: change avatar
+Spiele,Spiele,Plays
+Genauigkeit,Genauigkeit,Accuracy
+Spielzeit,Spielzeit,Play time
+Bild entfernen,Bild entfernen,Remove image
+TOP-LEISTUNGEN,TOP-LEISTUNGEN,TOP PLAYS
+LETZTE SPIELE,LETZTE SPIELE,RECENT PLAYS
+MEISTGESPIELT,MEISTGESPIELT,MOST PLAYED
+Profilbild auswählen,Profilbild auswählen,Choose avatar
+Bilder,Bilder,Images
+%s× gespielt,%s× gespielt,played %s×
+Map spielen,Map spielen,Play map
+Map nicht (mehr) in der Bibliothek,Map nicht (mehr) in der Bibliothek,Map no longer in the library
+"Verstehe das Grundprinzip: Taste drücken, wenn die Drohne den Ring berührt.","Verstehe das Grundprinzip: Taste drücken, wenn die Drohne den Ring berührt.",Learn the basics: press the key when the drone touches the ring.
+Lerne deine Spur-Tasten und die wichtigsten Kurztasten.,Lerne deine Spur-Tasten und die wichtigsten Kurztasten.,Learn your lane keys and the most important shortcuts.
+"Verstehe, wie genau dein Treffer gewertet wird.","Verstehe, wie genau dein Treffer gewertet wird.",Understand how precisely each hit is judged.
+"Verstehe, wie sich deine Accuracy berechnet.","Verstehe, wie sich deine Accuracy berechnet.",Understand how your accuracy is calculated.
+"Verstehe Combo, Score und HP.","Verstehe Combo, Score und HP.","Understand combo, score and HP."
+"Lerne, die Schwierigkeit einer Map einzuschätzen.","Lerne, die Schwierigkeit einer Map einzuschätzen.",Learn to judge how hard a map is.
+"Verstehe, wie pp entstehen und was sie wert sind.","Verstehe, wie pp entstehen und was sie wert sind.",Understand how pp work and what they are worth.
+"Stelle Scroll-Speed, Offset und Effekte passend für dich ein.","Stelle Scroll-Speed, Offset und Effekte passend für dich ein.","Set scroll speed, offset and effects to suit you."
+Finde neue Maps und bringe eigene ins Spiel.,Finde neue Maps und bringe eigene ins Spiel.,Find new maps and add your own.
+Spiele mit Freunden im selben Raum.,Spiele mit Freunden im selben Raum.,Play with friends in the same room.
+Starte die Übungs-Map und probiere alles direkt aus.,Starte die Übungs-Map und probiere alles direkt aus.,Start the practice map and try everything right away.
+Leer,Leer,Space
+Willkommen bei TETHRA,Willkommen bei TETHRA,Welcome to TETHRA
+"4 Spuren, 4 Ringe. Drohnen fliegen auf dich zu —
+drücke die Taste der Spur [b]genau beim Berühren des Rings[/b].
+
+Dieser Guide ist dein Nachschlagewerk (Wertung, pp, Sterne, Settings).
+Die [b]Übungs-Map[/b] (letzte Seite) zeigt dir alles direkt im Spiel.","4 Spuren, 4 Ringe. Drohnen fliegen auf dich zu —
+drücke die Taste der Spur [b]genau beim Berühren des Rings[/b].
+
+Dieser Guide ist dein Nachschlagewerk (Wertung, pp, Sterne, Settings).
+Die [b]Übungs-Map[/b] (letzte Seite) zeigt dir alles direkt im Spiel.","4 lanes, 4 rings. Drones fly towards you —
+press the lane's key [b]right as the drone touches the ring[/b].
+
+This guide is your reference (judgements, pp, stars, settings).
+The [b]practice map[/b] (last page) shows you everything in game."
+"[b]Deine 4 Spur-Tasten (links nach rechts):[/b]
+(änderbar unter Einstellungen › Gameplay › Tasten 1–4)
+
+[b]Weitere Tasten im Spiel:[/b]
+{Leertaste}  langes Intro überspringen
+{R}  Map sofort neu starten
+{Esc}  Pause (weiter mit 3-2-1-Countdown)
+{F11}  Vollbild
+
+[b]Im Song-Browser:[/b]
+{↑} {↓}  Map wechseln
+{←} {→}  Schwierigkeit wechseln
+{Enter}  Map starten
+{F2}  Zufalls-Map","[b]Deine 4 Spur-Tasten (links nach rechts):[/b]
+(änderbar unter Einstellungen › Gameplay › Tasten 1–4)
+
+[b]Weitere Tasten im Spiel:[/b]
+{Leertaste}  langes Intro überspringen
+{R}  Map sofort neu starten
+{Esc}  Pause (weiter mit 3-2-1-Countdown)
+{F11}  Vollbild
+
+[b]Im Song-Browser:[/b]
+{↑} {↓}  Map wechseln
+{←} {→}  Schwierigkeit wechseln
+{Enter}  Map starten
+{F2}  Zufalls-Map","[b]Your 4 lane keys (left to right):[/b]
+(change them in Settings › Gameplay › Keys 1–4)
+
+[b]More keys in game:[/b]
+{Space}  skip long intro
+{R}  restart the map instantly
+{Esc}  pause (resume with a 3-2-1 countdown)
+{F11}  fullscreen
+
+[b]In song select:[/b]
+{↑} {↓}  change map
+{←} {→}  change difficulty
+{Enter}  start map
+{F2}  random map"
+Treffer-Wertung,Treffer-Wertung,Hit judgements
+"Wie präzise du triffst, entscheidet die Wertung — exakt wie in osu!mania:
+
+[b]MAX[/b]  — bis ±16,5 ms daneben (perfekt!)
+[b]300[/b]  — sehr gut
+[b]200[/b]  — gut
+[b]100[/b]  — ok
+[b]50[/b]   — gerade noch
+[b]✕ MISS[/b] — daneben oder gar nicht gedrückt
+
+Die Fenster hängen von der [b]OD[/b] der Map ab (höher = strenger). Viel zu früh drücken frisst die Note übrigens auch — also nicht panisch hammern!
+
+Die kleine [b]UR-Leiste[/b] in der Bildmitte zeigt jeden Treffer als Strich: links vom Zentrum = zu früh, rechts = zu spät. Der gelbe Pfeil ist dein Trend.","Wie präzise du triffst, entscheidet die Wertung — exakt wie in osu!mania:
+
+[b]MAX[/b]  — bis ±16,5 ms daneben (perfekt!)
+[b]300[/b]  — sehr gut
+[b]200[/b]  — gut
+[b]100[/b]  — ok
+[b]50[/b]   — gerade noch
+[b]✕ MISS[/b] — daneben oder gar nicht gedrückt
+
+Die Fenster hängen von der [b]OD[/b] der Map ab (höher = strenger). Viel zu früh drücken frisst die Note übrigens auch — also nicht panisch hammern!
+
+Die kleine [b]UR-Leiste[/b] in der Bildmitte zeigt jeden Treffer als Strich: links vom Zentrum = zu früh, rechts = zu spät. Der gelbe Pfeil ist dein Trend.","How precisely you hit decides the judgement — exactly like osu!mania:
+
+[b]MAX[/b]  — up to ±16.5 ms off (perfect!)
+[b]300[/b]  — great
+[b]200[/b]  — good
+[b]100[/b]  — ok
+[b]50[/b]   — barely
+[b]✕ MISS[/b] — off or not pressed at all
+
+The windows depend on the map's [b]OD[/b] (higher = stricter). Pressing way too early also eats the note — so don't mash in panic!
+
+The small [b]UR bar[/b] in the middle of the screen shows each hit as a tick: left of the center = early, right = late. The yellow arrow is your trend."
+Accuracy genau erklärt,Accuracy genau erklärt,Accuracy explained
+"Deine Accuracy (Acc) berechnet sich genau nach der osu!mania-Formel:
+
+[b]Acc = (300·(MAX+300) + 200·n200 + 100·n100 + 50·n50) / (300 · alle Noten)[/b]
+
+Heißt: MAX und 300 zählen voll, ein 200er nur zwei Drittel, ein 100er ein Drittel, ein 50er ein Sechstel, ein Miss null.
+
+[b]Beispiel:[/b] 2 Noten — 1x MAX + 1x 200er:
+(300 + 200) / 600 = [b]83,33 %[/b]
+
+[b]Grades:[/b]
+SS = 100 %   ·   S über 95 %   ·   A über 90 %
+B über 80 %   ·   C über 70 %   ·   sonst D","Deine Accuracy (Acc) berechnet sich genau nach der osu!mania-Formel:
+
+[b]Acc = (300·(MAX+300) + 200·n200 + 100·n100 + 50·n50) / (300 · alle Noten)[/b]
+
+Heißt: MAX und 300 zählen voll, ein 200er nur zwei Drittel, ein 100er ein Drittel, ein 50er ein Sechstel, ein Miss null.
+
+[b]Beispiel:[/b] 2 Noten — 1x MAX + 1x 200er:
+(300 + 200) / 600 = [b]83,33 %[/b]
+
+[b]Grades:[/b]
+SS = 100 %   ·   S über 95 %   ·   A über 90 %
+B über 80 %   ·   C über 70 %   ·   sonst D","Your accuracy (acc) uses exactly the osu!mania formula:
+
+[b]Acc = (300·(MAX+300) + 200·n200 + 100·n100 + 50·n50) / (300 · all notes)[/b]
+
+So: MAX and 300 count fully, a 200 only two thirds, a 100 one third, a 50 one sixth, a miss nothing.
+
+[b]Example:[/b] 2 notes — 1x MAX + 1x 200:
+(300 + 200) / 600 = [b]83.33%[/b]
+
+[b]Grades:[/b]
+SS = 100%   ·   S above 95%   ·   A above 90%
+B above 80%   ·   C above 70%   ·   else D"
+"Combo, Score und HP","Combo, Score und HP","Combo, score and HP"
+"[b]Combo:[/b] Jeder Treffer +1. Ein Miss — oder das zu frühe Loslassen einer Hold-Note — setzt sie auf 0. Die Combo steht groß in der Bildmitte.
+
+[b]Score:[/b] genau die osu!mania-Formel (ScoreV1), Maximum [b]1.000.000[/b] pro Map: Die eine Hälfte sind Basispunkte je Wertung (MAX 320 … 50er 50), die andere ein [b]Bonus-Zähler[/b], der mit sauberen Treffern wächst und bei 100ern/50ern/Misses einbricht. Präzision und Konstanz zählen.
+
+[b]HP:[/b] Die kleine Leiste oben. Misses ziehen ab, Treffer heilen. Bei 0 folgt [b]Fail[/b]. Im Song-Browser kannst du [b]NF (No Fail)[/b] aktivieren, dann spielst du immer bis zum Ende.
+
+Ab Combo 50/100/150 belohnen dich Effekte: Rand-Glühen, Overdrive-Blitz und mehr (Stärke unter Einstellungen › Effekt-Intensität).","[b]Combo:[/b] Jeder Treffer +1. Ein Miss — oder das zu frühe Loslassen einer Hold-Note — setzt sie auf 0. Die Combo steht groß in der Bildmitte.
+
+[b]Score:[/b] genau die osu!mania-Formel (ScoreV1), Maximum [b]1.000.000[/b] pro Map: Die eine Hälfte sind Basispunkte je Wertung (MAX 320 … 50er 50), die andere ein [b]Bonus-Zähler[/b], der mit sauberen Treffern wächst und bei 100ern/50ern/Misses einbricht. Präzision und Konstanz zählen.
+
+[b]HP:[/b] Die kleine Leiste oben. Misses ziehen ab, Treffer heilen. Bei 0 folgt [b]Fail[/b]. Im Song-Browser kannst du [b]NF (No Fail)[/b] aktivieren, dann spielst du immer bis zum Ende.
+
+Ab Combo 50/100/150 belohnen dich Effekte: Rand-Glühen, Overdrive-Blitz und mehr (Stärke unter Einstellungen › Effekt-Intensität).","[b]Combo:[/b] Every hit +1. A miss — or releasing a hold note too early — resets it to 0. The combo shows big in the middle of the screen.
+
+[b]Score:[/b] exactly the osu!mania formula (ScoreV1), maximum [b]1,000,000[/b] per map: one half is base points per judgement (MAX 320 … 50 for a 50), the other a [b]bonus counter[/b] that grows with clean hits and drops on 100s/50s/misses. Precision and consistency count.
+
+[b]HP:[/b] The small bar at the top. Misses drain it, hits heal. At 0 you [b]fail[/b]. In song select you can turn on [b]NF (No Fail)[/b], then you always play to the end.
+
+At combo 50/100/150 effects reward you: edge glow, overdrive flash and more (strength under Settings › Effect intensity)."
+Star-Rating und Schwierigkeit,Star-Rating und Schwierigkeit,Star rating and difficulty
+"Jede Schwierigkeit (Diff) einer Map hat ein [b]Star-Rating[/b], z.B. ★ 2,20. Es wird mit [b]rosu-pp[/b] berechnet — derselben offiziellen Bibliothek, die auch osu-Tools nutzen. TETHRA erfindet keine eigenen Werte.
+
+[b]Grobe Orientierung:[/b]
+unter 2★ — Einsteiger
+2–4★ — Fortgeschritten
+4–6★ — Schwer
+6★+ — Expert
+
+Im Song-Browser sind die Karten nach Sternen [b]farbcodiert[/b], und oben rechts kannst du nach Sternbereichen [b]filtern[/b] und nach Sternen [b]sortieren[/b].
+
+Im Info-Panel links siehst du außerdem [b]""Max N pp bei SS""[/b] — die maximale pp-Ausbeute der gewählten Diff.","Jede Schwierigkeit (Diff) einer Map hat ein [b]Star-Rating[/b], z.B. ★ 2,20. Es wird mit [b]rosu-pp[/b] berechnet — derselben offiziellen Bibliothek, die auch osu-Tools nutzen. TETHRA erfindet keine eigenen Werte.
+
+[b]Grobe Orientierung:[/b]
+unter 2★ — Einsteiger
+2–4★ — Fortgeschritten
+4–6★ — Schwer
+6★+ — Expert
+
+Im Song-Browser sind die Karten nach Sternen [b]farbcodiert[/b], und oben rechts kannst du nach Sternbereichen [b]filtern[/b] und nach Sternen [b]sortieren[/b].
+
+Im Info-Panel links siehst du außerdem [b]""Max N pp bei SS""[/b] — die maximale pp-Ausbeute der gewählten Diff.","Every difficulty (diff) of a map has a [b]star rating[/b], e.g. ★ 2.20. It is calculated with [b]rosu-pp[/b] — the same official library osu tools use. TETHRA makes up no values of its own.
+
+[b]Rough guide:[/b]
+below 2★ — beginner
+2–4★ — intermediate
+4–6★ — hard
+6★+ — expert
+
+In song select the cards are [b]color-coded[/b] by stars, and at the top right you can [b]filter[/b] by star range and [b]sort[/b] by stars.
+
+The info panel on the left also shows [b]""Max N pp at SS""[/b] — the most pp the selected diff can give."
+Performance Points (pp),Performance Points (pp),Performance Points (pp)
+"pp messen, wie stark ein einzelner Play war — abhängig von [b]Star-Rating[/b] und [b]Accuracy[/b].
+
+Die Berechnung läuft über rosu-pp (offizielle Mania-Formel). Wichtig zu wissen: [b]Richtig viele pp gibt es erst ab ~80 % Accuracy[/b] — darüber steigt die Kurve steil an. Darunter sorgt ein TETHRA-Mindestwert dafür, dass trotzdem jeder Play etwas zählt.
+
+[b]Dein Profil-pp[/b] (Hauptmenü, Profilkarte): Deine besten Scores werden sortiert und gewichtet aufsummiert — der beste zählt voll, der zweite mit 95 %, der dritte mit 90,25 % usw. (wie bei osu). Nur der [b]beste Score pro Diff[/b] zählt.
+
+Kurz: Lieber eine Map sauber auf 95 %+ spielen als zehn Maps auf 70 %.","pp messen, wie stark ein einzelner Play war — abhängig von [b]Star-Rating[/b] und [b]Accuracy[/b].
+
+Die Berechnung läuft über rosu-pp (offizielle Mania-Formel). Wichtig zu wissen: [b]Richtig viele pp gibt es erst ab ~80 % Accuracy[/b] — darüber steigt die Kurve steil an. Darunter sorgt ein TETHRA-Mindestwert dafür, dass trotzdem jeder Play etwas zählt.
+
+[b]Dein Profil-pp[/b] (Hauptmenü, Profilkarte): Deine besten Scores werden sortiert und gewichtet aufsummiert — der beste zählt voll, der zweite mit 95 %, der dritte mit 90,25 % usw. (wie bei osu). Nur der [b]beste Score pro Diff[/b] zählt.
+
+Kurz: Lieber eine Map sauber auf 95 %+ spielen als zehn Maps auf 70 %.","pp measure how strong a single play was — based on [b]star rating[/b] and [b]accuracy[/b].
+
+They are calculated with rosu-pp (official mania formula). Good to know: [b]you only get lots of pp from ~80% accuracy[/b] — above that the curve rises steeply. Below it, a TETHRA minimum makes sure every play still counts a little.
+
+[b]Your profile pp[/b] (main menu, profile card): your best scores are sorted and added up weighted — the best counts fully, the second 95%, the third 90.25% and so on (like osu). Only your [b]best score per diff[/b] counts.
+
+In short: better play one map cleanly at 95%+ than ten maps at 70%."
+Einstellungen erklärt,Einstellungen erklärt,Settings explained
+"[b]Deine aktuellen Werte (live):[/b]
+Scroll x%.1f  ·  Offset %+d ms  ·  Effekte: %s
+Hitsounds: %s (%d%%)  ·  FPS: %s  ·  Vollbild: %s
+
+","[b]Deine aktuellen Werte (live):[/b]
+Scroll x%.1f  ·  Offset %+d ms  ·  Effekte: %s
+Hitsounds: %s (%d%%)  ·  FPS: %s  ·  Vollbild: %s
+
+","[b]Your current values (live):[/b]
+Scroll x%.1f  ·  Offset %+d ms  ·  Effects: %s
+Hitsounds: %s (%d%%)  ·  FPS: %s  ·  Fullscreen: %s
+
+"
+"[b]Scroll-Speed (x0,5–x3,0):[/b] Wie schnell die Noten anfliegen. Rein visuell — die Timing-Fenster bleiben exakt gleich, es ist also nie unfair. Höher = weniger Noten gleichzeitig auf dem Schirm (übersichtlicher bei schnellen Maps).
+
+[b]Audio-Offset (±200 ms):[/b] Gleicht die Latenz deines Audio-Setups aus. Schau nach einem Play auf den [b]Ø-Wert[/b] im Endscreen: steht dort z.B. ""Ø +20 ms (spät)"", stell den Offset in Richtung -20.
+
+[b]Hitsounds + Lautstärke:[/b] Klick-Feedback beim Treffen, separat regelbar.
+
+[b]Effekt-Intensität:[/b] Aus / Dezent / Voll — dimmt Wellen, Glüh-Effekte, Kamera-Bewegung usw.
+
+[b]FPS-Limit:[/b] [b]Unlimited[/b] = präziseste Eingaben (empfohlen). VSync = kein Tearing, aber mehr Latenz.
+
+[b]Vollbild:[/b] {F11} jederzeit.","[b]Scroll-Speed (x0,5–x3,0):[/b] Wie schnell die Noten anfliegen. Rein visuell — die Timing-Fenster bleiben exakt gleich, es ist also nie unfair. Höher = weniger Noten gleichzeitig auf dem Schirm (übersichtlicher bei schnellen Maps).
+
+[b]Audio-Offset (±200 ms):[/b] Gleicht die Latenz deines Audio-Setups aus. Schau nach einem Play auf den [b]Ø-Wert[/b] im Endscreen: steht dort z.B. ""Ø +20 ms (spät)"", stell den Offset in Richtung -20.
+
+[b]Hitsounds + Lautstärke:[/b] Klick-Feedback beim Treffen, separat regelbar.
+
+[b]Effekt-Intensität:[/b] Aus / Dezent / Voll — dimmt Wellen, Glüh-Effekte, Kamera-Bewegung usw.
+
+[b]FPS-Limit:[/b] [b]Unlimited[/b] = präziseste Eingaben (empfohlen). VSync = kein Tearing, aber mehr Latenz.
+
+[b]Vollbild:[/b] {F11} jederzeit.","[b]Scroll speed (x0.5–x3.0):[/b] How fast the notes approach. Purely visual — the timing windows stay exactly the same, so it is never unfair. Higher = fewer notes on screen at once (clearer on fast maps).
+
+[b]Audio offset (±200 ms):[/b] Makes up for the latency of your audio setup. After a play, check the [b]Ø value[/b] on the results screen: if it says e.g. ""Ø +20 ms (late)"", move the offset towards -20.
+
+[b]Hitsounds + volume:[/b] Click feedback on hits, with its own volume.
+
+[b]Effect intensity:[/b] Off / Subtle / Full — dims waves, glow effects, camera movement and so on.
+
+[b]FPS limit:[/b] [b]Unlimited[/b] = most precise input (recommended). VSync = no tearing, but more latency.
+
+[b]Fullscreen:[/b] {F11} at any time."
+Maps bekommen,Maps bekommen,Getting maps
+"[b]1) Online-Browser:[/b] Im Song-Browser oben auf [b]""⤓ Online""[/b]. Du siehst sofort Vorschläge — nur [b]Ranked 4K-Mania[/b]-Maps. Klick auf eine Karte = [b]Anhören[/b], ""⤓ Download"" lädt sie direkt in deine Bibliothek. Filter nach Sternen inklusive.
+
+[b]2) Eigene Dateien:[/b] Jede osu!mania-[b].osz[/b]-Datei einfach in den [b]maps[/b]-Ordner legen (neben der TETHRA.exe) — oder per Drag&Drop ins Spielfenster ziehen.
+
+[b]3) Collections:[/b] Im Info-Panel [b]""+ Sammlung""[/b] — packe Maps in eigene Listen (z.B. ""Training"", ""Favoriten"") und filtere im Browser über den Collections-Tab.
+
+Hinweis: Nur [b]4K[/b]-Diffs (4 Spalten) sind spielbar — andere werden automatisch ausgeblendet.","[b]1) Online-Browser:[/b] Im Song-Browser oben auf [b]""⤓ Online""[/b]. Du siehst sofort Vorschläge — nur [b]Ranked 4K-Mania[/b]-Maps. Klick auf eine Karte = [b]Anhören[/b], ""⤓ Download"" lädt sie direkt in deine Bibliothek. Filter nach Sternen inklusive.
+
+[b]2) Eigene Dateien:[/b] Jede osu!mania-[b].osz[/b]-Datei einfach in den [b]maps[/b]-Ordner legen (neben der TETHRA.exe) — oder per Drag&Drop ins Spielfenster ziehen.
+
+[b]3) Collections:[/b] Im Info-Panel [b]""+ Sammlung""[/b] — packe Maps in eigene Listen (z.B. ""Training"", ""Favoriten"") und filtere im Browser über den Collections-Tab.
+
+Hinweis: Nur [b]4K[/b]-Diffs (4 Spalten) sind spielbar — andere werden automatisch ausgeblendet.","[b]1) Online browser:[/b] In song select, click [b]""⤓ Online""[/b] at the top. You see suggestions right away — only [b]ranked 4K mania[/b] maps. Click a card = [b]listen[/b], ""⤓ Download"" puts it straight into your library. Star filters included.
+
+[b]2) Your own files:[/b] Put any osu!mania [b].osz[/b] file into the [b]maps[/b] folder (next to TETHRA.exe) — or drag & drop it onto the game window.
+
+[b]3) Collections:[/b] In the info panel, click [b]""+ Collection""[/b] — put maps into your own lists (e.g. ""Training"", ""Favorites"") and filter by them in the browser's Collections tab.
+
+Note: only [b]4K[/b] diffs (4 columns) are playable — others are hidden automatically."
+Multiplayer,Multiplayer,Multiplayer
+"[b]Raum erstellen:[/b] Hauptmenü › Multiplayer › ""+ Raum erstellen"". Der Port öffnet sich automatisch (UPnP) und du bekommst einen kurzen [b]Raum-Code[/b] — den schickst du deinen Freunden.
+
+[b]Beitreten:[/b] Code eintippen › Beitreten. Im selben WLAN erscheinen Räume sogar automatisch in der Liste.
+
+[b]Die Krone 👑:[/b] Wer sie trägt, wählt die Map (der Host kann sie per Klick weitergeben). Fehlt dir die gewählte Map, lädt sie [b]automatisch[/b] herunter.
+
+[b]Im Spiel:[/b] Links läuft das [b]Live-Scoreboard[/b] — du siehst sofort, wenn du jemanden überholst. Das Intro wird nur übersprungen, wenn [b]alle[/b] die {Leertaste} drücken. Am Ende zeigt die Rangliste alle Ergebnisse.
+
+Beim ersten Start fragt die Windows-Firewall — [b]""Zulassen""[/b] klicken!","[b]Raum erstellen:[/b] Hauptmenü › Multiplayer › ""+ Raum erstellen"". Der Port öffnet sich automatisch (UPnP) und du bekommst einen kurzen [b]Raum-Code[/b] — den schickst du deinen Freunden.
+
+[b]Beitreten:[/b] Code eintippen › Beitreten. Im selben WLAN erscheinen Räume sogar automatisch in der Liste.
+
+[b]Die Krone 👑:[/b] Wer sie trägt, wählt die Map (der Host kann sie per Klick weitergeben). Fehlt dir die gewählte Map, lädt sie [b]automatisch[/b] herunter.
+
+[b]Im Spiel:[/b] Links läuft das [b]Live-Scoreboard[/b] — du siehst sofort, wenn du jemanden überholst. Das Intro wird nur übersprungen, wenn [b]alle[/b] die {Leertaste} drücken. Am Ende zeigt die Rangliste alle Ergebnisse.
+
+Beim ersten Start fragt die Windows-Firewall — [b]""Zulassen""[/b] klicken!","[b]Create a room:[/b] Main menu › Multiplayer › ""+ Create room"". The port opens automatically (UPnP) and you get a short [b]room code[/b] — send it to your friends.
+
+[b]Join:[/b] Type in the code › Join. On the same Wi-Fi, rooms even show up in the list automatically.
+
+[b]The crown 👑:[/b] Whoever wears it picks the map (the host can pass it on with a click). If you don't have the picked map, it [b]downloads automatically[/b].
+
+[b]In game:[/b] The [b]live scoreboard[/b] runs on the left — you see right away when you overtake someone. The intro is only skipped when [b]everyone[/b] presses {Space}. At the end the ranking shows all results.
+
+On first start the Windows firewall asks — click [b]""Allow""[/b]!"
+Bereit? Zeit zu fliegen!,Bereit? Zeit zu fliegen!,Ready? Time to fly!
+"Jetzt kommt die [b]Übungs-Map[/b] (""tatatat - e"", 4K Beginner — schön langsam).
+
+Sie hält [b]automatisch an[/b], bevor etwas Neues passiert, und erklärt es dir:
+• deine erste [b]Note[/b]
+• deine erste [b]Hold-Note[/b] (halten!)
+• deine erste [b]Doppelnote[/b] (zwei Tasten gleichzeitig)
+• dein [b]HUD[/b]
+
+Nach jeder Erklärung geht es mit einem kurzen 3-2-1 weiter. [b]No Fail ist an[/b] — du kannst nichts falsch machen. Die Map läuft nicht in deine Statistik.
+
+Tipp: Du kannst das Tutorial jederzeit mit {R} neu starten oder mit {Esc} › Song-Browser verlassen.","Jetzt kommt die [b]Übungs-Map[/b] (""tatatat - e"", 4K Beginner — schön langsam).
+
+Sie hält [b]automatisch an[/b], bevor etwas Neues passiert, und erklärt es dir:
+• deine erste [b]Note[/b]
+• deine erste [b]Hold-Note[/b] (halten!)
+• deine erste [b]Doppelnote[/b] (zwei Tasten gleichzeitig)
+• dein [b]HUD[/b]
+
+Nach jeder Erklärung geht es mit einem kurzen 3-2-1 weiter. [b]No Fail ist an[/b] — du kannst nichts falsch machen. Die Map läuft nicht in deine Statistik.
+
+Tipp: Du kannst das Tutorial jederzeit mit {R} neu starten oder mit {Esc} › Song-Browser verlassen.","Next up is the [b]practice map[/b] (""tatatat - e"", 4K Beginner — nice and slow).
+
+It [b]pauses automatically[/b] before anything new happens and explains it to you:
+• your first [b]note[/b]
+• your first [b]hold note[/b] (hold it!)
+• your first [b]chord[/b] (two keys at once)
+• your [b]HUD[/b]
+
+After each explanation it goes on with a short 3-2-1. [b]No Fail is on[/b] — you can't do anything wrong. The map doesn't count towards your stats.
+
+Tip: you can restart the tutorial any time with {R} or leave it with {Esc} › Song select."
+an,an,on
+aus,aus,off
+ZIEL,ZIEL,GOAL
+‹ Zurück,‹ Zurück,‹ Back
+Weiter ›,Weiter ›,Next ›
+⚙ Einstellungen jetzt öffnen,⚙ Einstellungen jetzt öffnen,⚙ Open settings now
+"Übungs-Map nicht gefunden — lege ""844183 tatatat - e.osz"" in den maps-Ordner.","Übungs-Map nicht gefunden — lege ""844183 tatatat - e.osz"" in den maps-Ordner.","Practice map not found — put ""844183 tatatat - e.osz"" into the maps folder."
+Offset kalibrieren,Offset kalibrieren,Calibrate offset
+Tippe bei jedem Klick die Leertaste (oder eine Hook-Taste). Nach %d Treffern schlage ich dir einen Offset vor.,Tippe bei jedem Klick die Leertaste (oder eine Hook-Taste). Nach %d Treffern schlage ich dir einen Offset vor.,Tap Space (or a hook key) on every click. After %d hits I'll suggest an offset.
+Audio-Test starten,Audio-Test starten,Start audio test
+Bild-Test (blinkender Kreis),Bild-Test (blinkender Kreis),Visual test (blinking circle)
+Übernehmen,Übernehmen,Apply
+Nochmal,Nochmal,Retry
+Mach dich bereit …,Mach dich bereit …,Get ready …
+Einzähler … %d,Einzähler … %d,Count-in … %d
+Zu wenige Treffer – nochmal …,Zu wenige Treffer – nochmal …,Too few hits – again …
+zu spät,zu spät,late
+zu früh,zu früh,early
+"Du drückst im Schnitt %d ms %s.
+Vorschlag: Audio-Offset %+d ms (%d von %d Tipps gewertet)","Du drückst im Schnitt %d ms %s.
+Vorschlag: Audio-Offset %+d ms (%d von %d Tipps gewertet)","On average you press %d ms %s.
+Suggestion: audio offset %+d ms (%d of %d taps counted)"
+früh,früh,early
+spät,spät,late
+Später,Später,Later
+Jetzt neu starten,Jetzt neu starten,Restart now
+Update v%s wird geladen…,Update v%s wird geladen…,Downloading update v%s…
+Update v%s bereit,Update v%s bereit,Update v%s ready
+Update v%s geladen,Update v%s geladen,Update v%s downloaded
+Wird nach dem Song angeboten.,Wird nach dem Song angeboten.,Offered after the song.
+Neu in v%s,Neu in v%s,New in v%s
+Update fehlgeschlagen,Update fehlgeschlagen,Update failed
+Neustart in %d s — danach geht es ins Hauptmenü.,Neustart in %d s — danach geht es ins Hauptmenü.,Restarting in %d s — then back to the main menu.
+Neustart ins Hauptmenü.,Neustart ins Hauptmenü.,Restart to the main menu.
+"Welten werden geladen (einmalig, %d MB)…","Welten werden geladen (einmalig, %d MB)…","Downloading worlds (one time, %d MB)…"
+Welten bereit,Welten bereit,Worlds ready
+Zu wenig Speicherplatz: %d MB werden benötigt.,Zu wenig Speicherplatz: %d MB werden benötigt.,Not enough disk space: %d MB needed.
+Update fehlgeschlagen — wird später erneut versucht.,Update fehlgeschlagen — wird später erneut versucht.,Update failed — will retry later.
+Wird später erneut versucht.,Wird später erneut versucht.,Will retry later.
+Update v%s bereit — wird nach dem Song angeboten.,Update v%s bereit — wird nach dem Song angeboten.,Update v%s ready — offered after the song.
+Update v%s bereit.,Update v%s bereit.,Update v%s ready.
+Verbesserungen und Fehlerbehebungen.,Verbesserungen und Fehlerbehebungen.,Improvements and bug fixes.
+Update ließ sich nicht installieren. TETHRA schließen und neu starten — sonst neu von GitHub laden.,Update ließ sich nicht installieren. TETHRA schließen und neu starten — sonst neu von GitHub laden.,The update could not be installed. Close and restart TETHRA — otherwise download it again from GitHub.
+Importieren…,Importieren…,Import…
+Aus osu!,Aus osu!,From osu!
+Skin aus deiner osu!-Installation übernehmen,Skin aus deiner osu!-Installation übernehmen,Use a skin from your osu! install
+Standard,Standard,Default
+"osu!mania-Skin wählen (.osk, .zip oder Ordner)","osu!mania-Skin wählen (.osk, .zip oder Ordner)","Choose an osu!mania skin (.osk, .zip or folder)"
+Import fehlgeschlagen,Import fehlgeschlagen,Import failed
+„%s“ aktiv,„%s“ aktiv,"""%s"" active"
+Keine osu!-Skins mit Mania-Grafiken gefunden,Keine osu!-Skins mit Mania-Grafiken gefunden,No osu! skins with mania graphics found
+Gelöscht,Gelöscht,Deleted
+"Automatisch: Die Welt passt sich dem Song an.
+Keine feste Vorschau.","Automatisch: Die Welt passt sich dem Song an.
+Keine feste Vorschau.","Automatic: the world adapts to the song.
+No fixed preview."
+Galaxie: Standard-Weltraum mit Planeten.,Galaxie: Standard-Weltraum mit Planeten.,Galaxy: standard space with planets.
+Neon: klassischer Neon-Himmel im Spiel.,Neon: klassischer Neon-Himmel im Spiel.,Neon: classic neon sky in game.
+Welt nicht installiert,Welt nicht installiert,World not installed
+Lädt …,Lädt …,Loading …
+Neon,Neon,Neon
+Obsidian,Obsidian,Obsidian
+Monolith,Monolith,Monolith

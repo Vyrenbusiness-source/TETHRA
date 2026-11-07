@@ -15,6 +15,8 @@ func _eq(got, want, msg: String) -> void:
 
 
 func _init() -> void:
+	# Deutsche Erwartungen unabhaengig von der OS-Sprache pruefen.
+	TranslationServer.set_locale("de")
 	_eq(UiTheme.fmt_num(0.8, 1), "0,8", "fmt_num 1")
 	_eq(UiTheme.fmt_num(6.5, 1), "6,5", "fmt_num OD")
 	_eq(UiTheme.fmt_num(7.274, 2), "7,27", "fmt_num rundet")
@@ -40,5 +42,12 @@ func _init() -> void:
 	_eq(UiTheme.key_short(KEY_COMMA), ",", "key keycode Comma")
 	_eq(UiTheme.key_short(KEY_Y), "Y", "key keycode Y")
 	_eq(UiTheme.key_short("Space"), "Leertaste", "key Space")
+	# Englisches Zahlenformat.
+	TranslationServer.set_locale("en")
+	_eq(UiTheme.fmt_num(1234.5, 1), "1,234.5", "en fmt_num")
+	_eq(UiTheme.fmt_score(1234567), "1,234,567", "en fmt_score")
+	_eq(UiTheme.fmt_pct(81.0), "81.00%", "en fmt_pct")
+	_eq(UiTheme.fmt_date("2026-11-06T14:30:00"), "2026-11-06 14:30", "en fmt_date")
+	TranslationServer.set_locale("de")
 	print("FAILED: ", _failed)
 	quit(1 if _failed > 0 else 0)

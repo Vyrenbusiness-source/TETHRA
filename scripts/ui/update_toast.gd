@@ -112,7 +112,7 @@ func hide_toast() -> void:
 ## Download läuft: Fortschrittsbalken, keine Buttons.
 func show_progress(version: String, ratio: float, title: String = "") -> void:
 	_countdown = -1.0
-	_title.text = title if title != "" else "Update v%s wird geladen…" % version
+	_title.text = title if title != "" else tr("Update v%s wird geladen…") % version
 	_body.visible = false
 	_bar.visible = true
 	_bar.value = clampf(ratio, 0.0, 1.0)
@@ -122,7 +122,7 @@ func show_progress(version: String, ratio: float, title: String = "") -> void:
 
 ## Update liegt bereit; mit countdown_s > 0 startet der Neustart automatisch.
 func show_ready(version: String, countdown_s: float, title: String = "") -> void:
-	_title.text = title if title != "" else "Update v%s bereit" % version
+	_title.text = title if title != "" else tr("Update v%s bereit") % version
 	_body.visible = true
 	_bar.visible = false
 	_btn_row.visible = true
@@ -134,7 +134,7 @@ func show_ready(version: String, countdown_s: float, title: String = "") -> void
 ## Update wartet bis zum Songende.
 func show_waiting(version: String) -> void:
 	_countdown = -1.0
-	_title.text = "Update v%s geladen" % version
+	_title.text = tr("Update v%s geladen") % version
 	_body.text = "Wird nach dem Song angeboten."
 	_body.visible = true
 	_bar.visible = false
@@ -145,7 +145,7 @@ func show_waiting(version: String) -> void:
 ## "Neu in vX.Y.Z" mit Release-Notes; schließt sich selbst nach 12 s.
 func show_notes(version: String, notes: String) -> void:
 	_countdown = -1.0
-	_title.text = "Neu in v%s" % version
+	_title.text = tr("Neu in v%s") % version
 	_body.text = notes
 	_body.visible = true
 	_bar.visible = false
@@ -155,7 +155,7 @@ func show_notes(version: String, notes: String) -> void:
 	_btn_later.text = "Schließen"
 	_show_panel()
 	await get_tree().create_timer(12.0).timeout
-	if _title.text.begins_with("Neu in"):
+	if _title.text == tr("Neu in v%s") % version:
 		hide_toast()
 
 
@@ -174,7 +174,7 @@ func show_error(text: String) -> void:
 
 func _update_countdown_text() -> void:
 	if _countdown > 0.0:
-		_body.text = "Neustart in %d s — danach geht es ins Hauptmenü." % ceili(_countdown)
+		_body.text = tr("Neustart in %d s — danach geht es ins Hauptmenü.") % ceili(_countdown)
 	else:
 		_body.text = "Neustart ins Hauptmenü."
 	_btn_now.visible = true
