@@ -35,10 +35,11 @@ Gameplay-Bild: `./Godot_v4.7-stable_win64.exe --screen 1 --audio-driver Dummy --
 
 ## Release-Ablauf (bei JEDEM Update, Nutzer-Vorgabe)
 1. `CURRENT_VERSION` in `scripts/net/updater.gd` bumpen.
-2. `--import`, Parse-Check, `--export-pack "Windows" release/TETHRA.pck` (~7.8 MB; `store/ docs/ release/` haben .gdignore).
-3. Smoke: Kopie der Console-Exe + `--main-pack <pck> --headless --audio-driver Dummy --quit-after 200`, 0 Fehler.
-4. `TETHRA_v1.zip`: nur den Eintrag `TETHRA.pck` ersetzen (Python zipfile, Rest kopieren).
-5. Commit, push, `gh release create vX.Y.Z release/TETHRA.pck TETHRA_v1.zip --title ... --notes ...` (Asset MUSS `TETHRA.pck` heissen).
+2. Neue Welt hinzugekommen? `python tools/sync_world_preset.py` (schreibt die Preset-Liste "Worlds"). Nahe Ebenen bleiben `process/size_limit=0` (8192), ferne Panoramen/Nebel/Sterne `4096` in der `.import`.
+3. `--import`, Parse-Check, dann ZWEI Pakete: `--export-pack "Windows" release/TETHRA.pck` (klein, ohne `assets_game/themes/`) und `--export-pack "Worlds" release/TETHRA_worlds.pck` (gross, nur Welten). Das Welten-Paket nur neu bauen/hochladen, wenn sich Welt-Assets geaendert haben (der Updater laedt es nur bei geaenderter Signatur).
+4. Smoke: Kopie der Console-Exe als `X.console.exe` neben `X.exe` + `--main-pack <pck> --headless --audio-driver Dummy --quit-after 200`, 0 Fehler; mit `TETHRA_worlds.pck` neben der Exe UND ohne (dann faellt WorldTheme auf galaxy zurueck).
+5. `TETHRA_v1.zip`: nur den Eintrag `TETHRA.pck` ersetzen; `TETHRA_worlds.pck` kommt als eigene Datei dazu.
+6. Commit, push, `gh release create vX.Y.Z release/TETHRA.pck release/TETHRA_worlds.pck TETHRA_v1.zip --title ... --notes ...` (Assets MUESSEN `TETHRA.pck` und `TETHRA_worlds.pck` heissen). Bei einem Release OHNE Welten-Aenderung das Welten-Paket trotzdem anhaengen (gleiche Datei), sonst fehlt es Neuinstallationen.
 
 ## Regeln des Nutzers (verbindlich)
 - Gameplay ist das Wichtigste; Lesbarkeit vor Glanz; nichts grell, kein Wackeln/Blitze.

@@ -7,8 +7,14 @@ extends Node
 ## .pck offen). Accounts/Scores/Settings (user://) und der maps-Ordner werden
 ## NIE angefasst.
 ##
-## Release-Ablauf (Entwickler): CURRENT_VERSION hochzaehlen, PCK bauen,
-## `gh release create vX.Y.Z release/TETHRA.pck` — fertig.
+## Zwei Pakete: TETHRA.pck (Spiel, klein) und TETHRA_worlds.pck (Welten-Assets,
+## gross, aendert sich selten). Das Welten-Paket wird nur geladen, wenn es lokal
+## fehlt oder sich die Signatur (SHA-256-Digest bzw. Groesse+Zeitstempel des
+## GitHub-Assets) geaendert hat. Download in 32-MB-Range-Stuecken in eine
+## .part-Datei: Abbruch/Neustart setzt dort fort. Vorher Platzcheck.
+##
+## Release-Ablauf (Entwickler): CURRENT_VERSION hochzaehlen, beide PCKs bauen,
+## `gh release create vX.Y.Z release/TETHRA.pck release/TETHRA_worlds.pck`.
 
 const CURRENT_VERSION := "1.8.1"
 const REPO := "Vyrenbusiness-source/TETHRA"
@@ -24,6 +30,11 @@ const CFG_PATH := "user://updater.cfg"
 const NOTES_MAX_LINES := 6
 ## Grosse PCK (100+ MB): kein Gesamt-Timeout, stattdessen Stillstands-Wache.
 const STALL_SECONDS := 45.0
+const MAIN_ASSET := "TETHRA.pck"
+const WORLDS_ASSET := "TETHRA_worlds.pck"
+## Range-Stueckgroesse und Reserve fuer den Platzcheck.
+const CHUNK_BYTES := 32 * 1024 * 1024
+const SPACE_MARGIN := 64 * 1024 * 1024
 
 ## "", "checking", "downloading", "ready", "error" — plus Text fuers Menue.
 signal state_changed(text: String, ratio: float)
@@ -32,9 +43,13 @@ var latest_version := ""
 
 var _req: HTTPRequest
 var _dl: HTTPRequest
-var _pck_path := ""
-var _new_path := ""
-var _expected_size := 0
+var _exe_dir := ""
+## Offene Downloads: {asset, url, size, final, new, part, sig}.
+var _jobs: Array[Dictionary] = []
+var _job_i := 0
+var _job_offset := 0
+var _done_before := 0
+var _total_bytes := 0
 var _notes := ""
 var _retries := 0
 var _toast: UpdateToast
@@ -48,13 +63,12 @@ func _ready() -> void:
 	if DisplayServer.get_name() == "headless":
 		return
 	# Nur im Release aktiv: dort liegt TETHRA.pck neben der Exe.
-	var exe_dir := OS.get_executable_path().get_base_dir()
-	_pck_path = exe_dir.path_join("TETHRA.pck")
-	_new_path = exe_dir.path_join("TETHRA.pck.new")
-	if not FileAccess.file_exists(_pck_path):
+	_exe_dir = OS.get_executable_path().get_base_dir()
+	if not FileAccess.file_exists(_exe_dir.path_join(MAIN_ASSET)):
 		return
+	_commit_worlds_sig()
 	# Liegt schon ein fertiges Update vom letzten Lauf da? Sofort anwenden.
-	if FileAccess.file_exists(_new_path) and _is_pck(_new_path):
+	if not _ready_files().is_empty():
 		_apply_and_restart()
 		return
 	_toast = UpdateToast.new()
@@ -115,45 +129,220 @@ func _on_latest(result: int, code: int, _h: PackedStringArray, body: PackedByteA
 		status = ""
 		return
 	latest_version = str(data.get("tag_name", "")).trim_prefix("v")
-	if latest_version == "" or not _is_newer(latest_version, CURRENT_VERSION):
-		status = ""
-		return
 	_notes = trim_notes(str(data.get("body", "")))
-	# Download-URL und Soll-Groesse der TETHRA.pck aus den Release-Assets.
-	var url := ""
-	_expected_size = 0
-	for a in data.get("assets", []):
-		if a is Dictionary and str(a.get("name", "")) == "TETHRA.pck":
-			url = str(a.get("browser_download_url", ""))
-			_expected_size = int(a.get("size", 0))
-			break
-	if url == "":
+	var jobs: Array[Dictionary] = []
+	var assets: Array = data.get("assets", [])
+	if latest_version != "" and _is_newer(latest_version, CURRENT_VERSION):
+		var m := _make_job(assets, MAIN_ASSET)
+		if not m.is_empty():
+			jobs.append(m)
+	# Welten-Paket: nur wenn lokal weg oder Signatur anders (auch ohne neue Spielversion).
+	var w := _make_job(assets, WORLDS_ASSET)
+	if not w.is_empty() and worlds_needs_update(FileAccess.file_exists(_exe_dir.path_join(WORLDS_ASSET)),
+			_stored_worlds_sig(), str(w["sig"])):
+		jobs.append(w)
+	if jobs.is_empty():
 		status = ""
 		return
-	_start_download(url)
+	_start_jobs(jobs)
 
 
-func _start_download(url: String) -> void:
+func _make_job(assets: Array, asset: String) -> Dictionary:
+	for a in assets:
+		if a is Dictionary and str(a.get("name", "")) == asset:
+			var url := str(a.get("browser_download_url", ""))
+			var size := int(a.get("size", 0))
+			if url == "":
+				return {}
+			var fin := _exe_dir.path_join(asset)
+			return {"asset": asset, "url": url, "size": size, "final": fin,
+				"new": fin + ".new", "part": "%s.%s.part" % [fin, str(a.get("id", 0))],
+				"sig": asset_sig(a)}
+	return {}
+
+
+## Signatur eines Release-Assets: Digest (sha256:...) falls vorhanden, sonst Groesse+Zeitstempel.
+static func asset_sig(a: Dictionary) -> String:
+	var d := str(a.get("digest", ""))
+	if d != "":
+		return d
+	return "%d@%s" % [int(a.get("size", 0)), str(a.get("updated_at", ""))]
+
+
+static func worlds_needs_update(local_exists: bool, stored_sig: String, remote_sig: String) -> bool:
+	return not local_exists or stored_sig != remote_sig
+
+
+## Header "Range: bytes=a-b" fuer das Stueck ab offset (b gedeckelt auf total-1).
+static func range_header(offset: int, chunk: int, total: int) -> String:
+	var last := offset + chunk - 1
+	if total > 0:
+		last = mini(last, total - 1)
+	return "Range: bytes=%d-%d" % [offset, last]
+
+
+## Reicht der freie Platz fuer den Rest des Downloads (plus Reserve)? free < 0 = unbekannt -> ok.
+static func space_ok(free: int, remaining: int) -> bool:
+	return free < 0 or free >= remaining + SPACE_MARGIN
+
+
+func _stored_worlds_sig() -> String:
+	var cfg := ConfigFile.new()
+	cfg.load(CFG_PATH)
+	return str(cfg.get_value("updater", "worlds_sig", ""))
+
+
+## Nach dem Tausch (Neustart) die vorgemerkte Signatur als gueltig uebernehmen.
+func _commit_worlds_sig() -> void:
+	var cfg := ConfigFile.new()
+	cfg.load(CFG_PATH)
+	var pend := str(cfg.get_value("updater", "worlds_sig_pending", ""))
+	if pend != "" and FileAccess.file_exists(_exe_dir.path_join(WORLDS_ASSET)) \
+			and not FileAccess.file_exists(_exe_dir.path_join(WORLDS_ASSET + ".new")):
+		cfg.set_value("updater", "worlds_sig", pend)
+		cfg.set_value("updater", "worlds_sig_pending", "")
+		cfg.save(CFG_PATH)
+
+
+func _start_jobs(jobs: Array[Dictionary]) -> void:
+	_jobs = jobs
+	_job_i = 0
+	_done_before = 0
+	_total_bytes = 0
+	for j in jobs:
+		_total_bytes += int(j["size"])
+	# Alte .part-Reste anderer Asset-IDs aufraeumen.
+	var keep: PackedStringArray = []
+	for j in jobs:
+		keep.append(str(j["part"]).get_file())
+	var d := DirAccess.open(_exe_dir)
+	if d != null:
+		for fn in d.get_files():
+			if fn.ends_with(".part") and not keep.has(fn):
+				d.remove(fn)
 	status = "downloading"
 	state_changed.emit("⬇ Update v%s wird geladen…" % latest_version, 0.0)
+	_begin_job()
+
+
+func _begin_job() -> void:
+	var j: Dictionary = _jobs[_job_i]
+	_job_offset = _file_size(str(j["part"]))
+	if _job_offset > int(j["size"]) and int(j["size"]) > 0:
+		DirAccess.remove_absolute(str(j["part"]))
+		_job_offset = 0
+	var free := -1
+	var da := DirAccess.open(_exe_dir)
+	if da != null:
+		free = da.get_space_left()
+	if not space_ok(free, maxi(int(j["size"]) - _job_offset, 0)):
+		_fail_space(int(j["size"]) - _job_offset)
+		return
+	_next_chunk()
+
+
+func _next_chunk() -> void:
+	var j: Dictionary = _jobs[_job_i]
+	var size := int(j["size"])
+	if size > 0 and _job_offset >= size:
+		_finish_job()
+		return
 	_dl = HTTPRequest.new()
 	_dl.timeout = 0.0  # unbegrenzt; haengende Downloads faengt die Stillstands-Wache in _process
+	_dl.body_size_limit = CHUNK_BYTES + 4096
+	_dl.use_threads = true
 	_last_bytes = -1
 	_stall = 0.0
-	_dl.use_threads = true
-	_dl.download_chunk_size = 4 * 1024 * 1024
-	_dl.download_file = _new_path
 	add_child(_dl)
-	_dl.request_completed.connect(_on_download_done)
-	if _dl.request(url, ["User-Agent: TETHRA-Updater"]) != OK:
+	_dl.request_completed.connect(_on_chunk_done)
+	var hdr: PackedStringArray = ["User-Agent: TETHRA-Updater", range_header(_job_offset, CHUNK_BYTES, size)]
+	if _dl.request(str(j["url"]), hdr) != OK:
 		_dl.queue_free()
 		_dl = null
 		_download_failed()
 
 
+func _on_chunk_done(result: int, code: int, _h: PackedStringArray, body: PackedByteArray) -> void:
+	_dl.queue_free()
+	_dl = null
+	var j: Dictionary = _jobs[_job_i]
+	# 206 = Teilinhalt. 200 nur, wenn der Server die ganze (kleine) Datei von vorn schickt.
+	var whole := code == 200 and _job_offset == 0
+	if result != HTTPRequest.RESULT_SUCCESS or not (code == 206 or whole) or body.is_empty():
+		_download_failed()
+		return
+	var f := FileAccess.open(str(j["part"]), FileAccess.READ_WRITE if _job_offset > 0 else FileAccess.WRITE)
+	if f == null:
+		_download_failed()
+		return
+	f.seek_end()
+	f.store_buffer(body)
+	f.close()
+	_job_offset += body.size()
+	if whole:
+		_finish_job()
+		return
+	_next_chunk()
+
+
+func _finish_job() -> void:
+	var j: Dictionary = _jobs[_job_i]
+	var part := str(j["part"])
+	var got := _file_size(part)
+	if not size_ok(got, int(j["size"])) or not _is_pck(part):
+		DirAccess.remove_absolute(part)  # kaputt: von vorn
+		_download_failed()
+		return
+	if FileAccess.file_exists(str(j["new"])):
+		DirAccess.remove_absolute(str(j["new"]))
+	if DirAccess.rename_absolute(part, str(j["new"])) != OK:
+		_download_failed()
+		return
+	if str(j["asset"]) == WORLDS_ASSET:
+		var cfg := ConfigFile.new()
+		cfg.load(CFG_PATH)
+		cfg.set_value("updater", "worlds_sig_pending", str(j["sig"]))
+		cfg.save(CFG_PATH)
+	_done_before += int(j["size"])
+	_job_i += 1
+	if _job_i < _jobs.size():
+		_begin_job()
+		return
+	status = "ready"
+	_postponed = false
+	_offer_install()
+
+
+func _fail_space(need: int) -> void:
+	status = "error"
+	var msg := "Zu wenig Speicherplatz: %d MB werden benötigt." % int(ceil(float(need + SPACE_MARGIN) / 1048576.0))
+	state_changed.emit(msg, -1.0)
+	if _toast != null:
+		_toast.show_error(msg)
+	# Kein Backoff-Retry: erst der 10-min-Timer prueft erneut (Nutzer kann Platz schaffen).
+
+
+func _file_size(path: String) -> int:
+	var f := FileAccess.open(path, FileAccess.READ)
+	if f == null:
+		return 0
+	var n := f.get_length()
+	f.close()
+	return n
+
+
+## Fertig geladene Updates neben der Exe (.new, gueltiges PCK).
+func _ready_files() -> Array[String]:
+	var out: Array[String] = []
+	for a in [MAIN_ASSET, WORLDS_ASSET]:
+		var n: String = _exe_dir.path_join(a) + ".new"
+		if FileAccess.file_exists(n) and _is_pck(n):
+			out.append(a)
+	return out
+
+
 func _download_failed() -> void:
-	if FileAccess.file_exists(_new_path):
-		DirAccess.remove_absolute(_new_path)
+	# .part bleibt liegen: der naechste Versuch setzt dort fort (HTTP Range).
 	status = "error"
 	state_changed.emit("Update fehlgeschlagen — wird später erneut versucht.", -1.0)
 	if _toast != null:
@@ -170,14 +359,14 @@ func _download_failed() -> void:
 
 func _process(delta: float) -> void:
 	if status == "downloading" and _dl != null:
-		var total := _dl.get_body_size()
-		if total <= 0:
-			total = _expected_size
-		_watch_stall(delta, _dl.get_downloaded_bytes())
+		var cur := _dl.get_downloaded_bytes()
+		_watch_stall(delta, cur)
 		if _dl == null:
 			return
+		var total := _total_bytes
 		if total > 0:
-			var r := clampf(float(_dl.get_downloaded_bytes()) / float(total), 0.0, 1.0)
+			var got := _done_before + _job_offset + cur
+			var r := clampf(float(got) / float(total), 0.0, 1.0)
 			state_changed.emit("⬇ Update v%s wird geladen… %d %%" % [latest_version, int(r * 100.0)], r)
 			if _toast != null:
 				_toast.show_progress(latest_version, r)
@@ -204,23 +393,6 @@ func _watch_stall(delta: float, bytes: int) -> void:
 
 static func stalled(stall_time: float) -> bool:
 	return stall_time >= STALL_SECONDS
-
-
-func _on_download_done(result: int, code: int, _h: PackedStringArray, _b: PackedByteArray) -> void:
-	_dl.queue_free()
-	_dl = null
-	var got := -1
-	var f := FileAccess.open(_new_path, FileAccess.READ)
-	if f != null:
-		got = f.get_length()
-		f.close()
-	if result != HTTPRequest.RESULT_SUCCESS or code != 200 \
-			or not size_ok(got, _expected_size) or not _is_pck(_new_path):
-		_download_failed()
-		return
-	status = "ready"
-	_postponed = false
-	_offer_install()
 
 
 ## Ausserhalb des Gameplays: Toast mit Countdown. Im Gameplay: warten bis zum Songende.
@@ -297,20 +469,26 @@ static func backoff_for(attempt: int) -> float:
 	return minf(BACKOFF_START * pow(2.0, attempt), BACKOFF_MAX)
 
 
-## Batch-Skript: wartet bis die Exe zu ist, tauscht die .pck, startet neu.
+## Batch-Skript: wartet bis die Exe zu ist, tauscht die .pck(s), startet neu.
 ## `move` statt `copy`: gleiche Platte = Umbenennen, bei 1+ GB sofort.
+static func build_bat(exe_path: String, exe_dir: String, assets: Array) -> String:
+	var bat := "@echo off\r\n" \
+			+ "timeout /t 1 /nobreak >nul\r\n"
+	var i := 0
+	for a in assets:
+		var fin: String = exe_dir.path_join(str(a)).replace("/", "\\")
+		bat += ":retry%d\r\n" % i \
+				+ "move /y \"%s.new\" \"%s\" >nul 2>&1\r\n" % [fin, fin] \
+				+ "if errorlevel 1 (timeout /t 1 /nobreak >nul & goto retry%d)\r\n" % i
+		i += 1
+	return bat + "start \"\" \"%s\"\r\n" % exe_path.replace("/", "\\") + "del \"%~f0\""
+
+
 func _apply_and_restart() -> void:
 	_remember_notes()
-	var exe_dir := OS.get_executable_path().get_base_dir()
-	var bat_path := exe_dir.path_join("tethra_update.bat")
-	var bat := "@echo off\r\n" \
-			+ "timeout /t 1 /nobreak >nul\r\n" \
-			+ ":retry\r\n" \
-			+ "move /y \"%s\" \"%s\" >nul 2>&1\r\n" % [_new_path.replace("/", "\\"), _pck_path.replace("/", "\\")] \
-			+ "if errorlevel 1 (timeout /t 1 /nobreak >nul & goto retry)\r\n" \
-			+ "del \"%s\" >nul 2>&1\r\n" % _new_path.replace("/", "\\") \
-			+ "start \"\" \"%s\"\r\n" % OS.get_executable_path().replace("/", "\\") \
-			+ "del \"%~f0\""
+	var assets := _ready_files()
+	var bat_path := _exe_dir.path_join("tethra_update.bat")
+	var bat := build_bat(OS.get_executable_path(), _exe_dir, assets)
 	var f := FileAccess.open(bat_path, FileAccess.WRITE)
 	if f == null:
 		return

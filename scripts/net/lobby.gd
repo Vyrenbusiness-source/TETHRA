@@ -45,6 +45,8 @@ var players: Dictionary = {}
 var crown_id := 1
 ## {set_id, file, version, title, artist, stars}
 var sel_map: Dictionary = {}
+## Raum-Mods (vom Kronentraeger gewaehlt, fuer alle gleich): {"SV": bool, "NF": bool}
+var mods: Dictionary = { "SV": false, "NF": false }
 ## LAN-Discovery: ip -> {name, players, t}
 var lan_rooms: Dictionary = {}
 ## Intro-Skip: peer_id -> true; erst wenn ALLE gedrueckt haben, wird gesprungen.
@@ -242,6 +244,7 @@ func _reset() -> void:
 	_join_pw = ""
 	players = {}
 	sel_map = {}
+	mods = { "SV": false, "NF": false }
 	played = []
 	crown_id = 1
 
@@ -478,6 +481,50 @@ func can_start() -> bool:
 	return active and not in_game and crown_id == multiplayer.get_unique_id() and all_ready()
 
 
+@rpc("any_peer", "call_remote", "reliable")
+func srv_pick_mods(m: Dictionary) -> void:
+	if not is_host:
+		return
+	if multiplayer.get_remote_sender_id() != crown_id:
+		return
+	_apply_mods(m)
+
+
+## Mods setzen — nur der Kronentraeger.
+func pick_mods(m: Dictionary) -> void:
+	if not active:
+		return
+	if is_host:
+		if crown_id == 1:
+			_apply_mods(m)
+	elif crown_id == multiplayer.get_unique_id():
+		rpc_id(1, "srv_pick_mods", m)
+
+
+func _apply_mods(m: Dictionary) -> void:
+	var n := _norm_mods(m)
+	if in_game or n == mods:
+		return
+	mods = n
+	# Anderer Mod -> wie ein Kartenwechsel: alle muessen neu bestaetigen.
+	for id in players:
+		players[id].ready = false
+	_sync()
+
+
+static func _norm_mods(m: Dictionary) -> Dictionary:
+	return { "SV": bool(m.get("SV", false)), "NF": bool(m.get("NF", false)) }
+
+
+## "SV NF" der aktiven Mods ("" wenn keine).
+static func mods_text(m: Dictionary) -> String:
+	var parts: Array = []
+	for k in ["SV", "NF"]:
+		if bool(m.get(k, false)):
+			parts.append(k)
+	return " ".join(parts)
+
+
 ## Map waehlen — nur der Kronentraeger.
 func pick_map(data: Dictionary) -> void:
 	if not active:
@@ -534,7 +581,7 @@ func start_game() -> void:
 func _sync() -> void:
 	if not is_host:
 		return
-	rpc("cl_state", players, crown_id, sel_map, room_name, played)
+	rpc("cl_state", players, crown_id, sel_map, room_name, played, mods)
 	players_changed.emit()
 
 
@@ -543,13 +590,14 @@ func _sync() -> void:
 # ---------------------------------------------------------------------------
 
 @rpc("authority", "call_remote", "reliable")
-func cl_state(p: Dictionary, crown: int, m: Dictionary, rname: String, played_list: Array = []) -> void:
+func cl_state(p: Dictionary, crown: int, m: Dictionary, rname: String, played_list: Array = [], mods_in: Dictionary = {}) -> void:
 	var map_was := sel_map.duplicate()
 	players = p
 	crown_id = crown
 	sel_map = m
 	room_name = rname
 	played = played_list
+	mods = _norm_mods(mods_in)
 	players_changed.emit()
 	if map_was != sel_map:
 		map_changed.emit()
@@ -595,6 +643,7 @@ func _load_selection(path: String) -> bool:
 			GameSession.replay_events = []
 			GameSession.set_selection(path, i, d.beatmap.version_name(),
 				d.osu_filename, float(sel_map.get("stars", 0.0)))
+			GameSession.mods = mods.duplicate()
 			return true
 	return false
 

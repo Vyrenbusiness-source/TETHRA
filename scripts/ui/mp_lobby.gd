@@ -27,6 +27,7 @@ var _map_cover: TextureRect
 var _status_label: Label
 var _start_btn: Button
 var _pick_btn: Button
+var _mod_btns: Dictionary = {}
 var _code_label: Label
 var _downloading := false
 var _dl_set := 0
@@ -662,6 +663,30 @@ func _build_room() -> void:
 	_map_meta.add_theme_color_override("font_color", COL_DIM)
 	mv.add_child(_map_meta)
 
+	# Mod-Chips: nur der Kronentraeger schaltet, alle anderen sehen sie read-only.
+	var mrow := HBoxContainer.new()
+	mrow.add_theme_constant_override("separation", 10)
+	_room_box.add_child(mrow)
+	var ml := Label.new()
+	ml.text = "MODS"
+	ml.add_theme_font_size_override("font_size", 13)
+	ml.add_theme_color_override("font_color", COL_ACCENT)
+	mrow.add_child(ml)
+	for k in ["SV", "NF"]:
+		var mb := Button.new()
+		mb.toggle_mode = true
+		mb.custom_minimum_size = Vector2(110, 38)
+		mb.add_theme_font_size_override("font_size", 16)
+		UiTheme.style_button(mb)
+		var key: String = k
+		mb.pressed.connect(func():
+			var nm: Dictionary = Lobby.mods.duplicate()
+			nm[key] = not bool(nm.get(key, false))
+			Lobby.pick_mods(nm)
+			_refresh_room())
+		mrow.add_child(mb)
+		_mod_btns[k] = mb
+
 	var btns := HBoxContainer.new()
 	btns.add_theme_constant_override("separation", 8)
 	_room_box.add_child(btns)
@@ -781,6 +806,13 @@ func _refresh_room() -> void:
 		_map_meta.text = "[%s]   ★ %.2f" % [
 			str(Lobby.sel_map.get("version", "")), float(Lobby.sel_map.get("stars", 0.0))]
 		_map_cover.texture = _map_cover_tex()
+	for k in _mod_btns:
+		var mb: Button = _mod_btns[k]
+		var on: bool = bool(Lobby.mods.get(k, false))
+		mb.set_pressed_no_signal(on)
+		mb.text = "%s  %s" % [k, "AN" if on else "AUS"]
+		mb.disabled = Lobby.crown_id != my_id
+		mb.modulate = Color(0.45, 1.0, 0.7) if on else Color(1, 1, 1, 0.85 if not mb.disabled else 0.6)
 	_pick_btn.visible = Lobby.crown_id == my_id
 	_start_btn.visible = Lobby.crown_id == my_id
 	_start_btn.disabled = not Lobby.can_start()

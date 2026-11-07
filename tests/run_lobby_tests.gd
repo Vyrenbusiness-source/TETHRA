@@ -105,6 +105,60 @@ func _init() -> void:
 	_check(dec.get("ip", "") == "192.168.1.20" and int(dec.get("port", 0)) == 47810,
 		"Raum-Code Roundtrip")
 
+	# Mods: Sync, Ready-Reset, Rechte, spaeter Beitritt
+	L.players = { 1: L._new_player("Host"), 2: L._new_player("Anna") }
+	L.crown_id = 1
+	L.sel_map = map_a
+	for id in [1, 2]:
+		L.players[id].ready = true
+	_check(L.mods == { "SV": false, "NF": false }, "Mods starten aus")
+	L.pick_mods({ "SV": true })
+	_check(bool(L.mods.SV) and not bool(L.mods.NF), "Host setzt SV")
+	_check(not L.all_ready() and not bool(L.players[1].ready) and not bool(L.players[2].ready),
+		"Mod-Wechsel setzt Ready zurueck")
+	L.players[1].ready = true
+	L.players[2].ready = true
+	L.pick_mods({ "SV": true, "NF": false })
+	_check(L.all_ready(), "gleiche Mods: Ready bleibt")
+	L.give_crown(2)
+	L.pick_mods({ "SV": false, "NF": true })
+	_check(bool(L.mods.SV), "alter Host kann Mods nicht mehr aendern")
+	L.crown_id = 1
+	# Client-Sicht / spaeter Beitritt: cl_state liefert die Mods mit
+	var snap: Dictionary = L.mods.duplicate()
+	L.mods = { "SV": false, "NF": false }
+	L.cl_state(L.players, 1, map_a, "R", [], snap)
+	_check(bool(L.mods.SV) and not bool(L.mods.NF), "cl_state uebernimmt Mods (Beitritt)")
+	L.cl_state(L.players, 1, map_a, "R", [], {})
+	_check(L.mods == { "SV": false, "NF": false }, "fehlende Mods -> aus")
+	_check(L.mods_text({ "SV": true, "NF": true }) == "SV NF" and L.mods_text({}) == "", "mods_text")
+	L.mods = { "SV": true, "NF": false }
+	L._reset()
+	_check(L.mods == { "SV": false, "NF": false }, "Reset loescht Mods")
+
+	# Disconnect waehrend des Spiels: Spieler faellt raus, Krone wandert, Board laeuft weiter
+	L.active = true
+	L.is_host = true
+	L.in_game = true
+	L.crown_id = 1
+	L.players = { 1: L._new_player("H"), 2: L._new_player("B"), 3: L._new_player("C") }
+	L.players[1].score = 100
+	L.players[2].score = 900
+	L.players[3].score = 500
+	var upd := [0]
+	L.scores_changed.connect(func(): upd[0] += 1)
+	L.give_crown(2)
+	L._on_peer_disconnected(2)
+	_check(not L.players.has(2) and L.in_game, "Disconnect im Spiel: Spieler weg, Runde laeuft")
+	_check(L.crown_id == 1, "Disconnect im Spiel: Krone wandert")
+	_check(upd[0] >= 1, "Disconnect im Spiel: Board wird aktualisiert")
+	var rk: Array = L.ranked_players()
+	_check(rk.size() == 2 and int(rk[0].id) == 3, "Ranking ohne Gegangenen")
+	L.send_final({ "score": 100, "acc": 0.9 })
+	L._on_peer_disconnected(3)
+	_check(L.players.size() == 1 and L.ranked_players().size() == 1, "letzter Gegner weg: Rest bleibt")
+	L.in_game = false
+
 	L._reset()
 	print("FAILED: %d" % _failed)
 	quit(1 if _failed > 0 else 0)
