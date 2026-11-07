@@ -568,7 +568,11 @@ func _draw_osu() -> void:
 		draw_rect(Rect2(fr.position.x, ly, fr.size.x, maxf(1.0, _px())), Color(jc.r, jc.g, jc.b, jc.a * 0.9))
 	if sk.keys_under_notes:
 		_draw_osu_keys(xs, ws, vs)
-	for it in _items:
+	# osu!/lazer: fruehere Objekte liegen oben (naeher an der Linie = zuletzt gezeichnet),
+	# z. B. Hold-Ende ueber dem Kopf der direkt folgenden Note.
+	var order := _items.duplicate()
+	order.sort_custom(func(a: Array, b: Array) -> bool: return float(a[1]) < float(b[1]))
+	for it in order:
 		_draw_osu_item(it, xs, ws, vs, ly)
 	if not sk.keys_under_notes:
 		_draw_osu_keys(xs, ws, vs)
@@ -641,9 +645,10 @@ func _draw_osu_item(it: Array, xs: Array, ws: Array, vs: Vector2, ly: float) -> 
 	# Ohne eigene Tail-Textur bleibt das Ende leer (kein Kopf als Ende); die
 	# Koerperlaenge rechnet osu! trotzdem mit der Kopfhoehe.
 	var th := _osu_note_h(tail) if tail != null else hh
-	# Nutzer-Wunsch: kein Ball am Hold-Ende bei Kreis-Skins -> kugelfoermige
-	# (fast quadratische) Tails nicht zeichnen; Koerperlaenge bleibt wie in osu!.
-	if tail != null and float(tail.get_height()) >= float(tail.get_width()) * 0.6:
+	# Nutzer-Wunsch: kein Ball am Hold-Ende bei Kreis-Skins -> runde Tails (Ecken
+	# durchsichtig) nicht zeichnen; Koerperlaenge bleibt wie in osu!. Deckende
+	# Quadrate (z. B. schwarze Kappe) bleiben: sie beenden den Koerper wie in osu!.
+	if tail != null and sk.is_round("tail_%d" % col):
 		tail = null
 	if yh < 0.0 or yt - th > vs.y:
 		return
@@ -675,13 +680,22 @@ func _draw_osu_body(col: int, t: Texture2D, x: float, w: float, top: float, bot:
 	var rows := float(t.get_height())                           # geladene Zeilen (evtl. abgeschnitten)
 	var from_top := skin.note_body_style == 1
 	var blen := bot - top
-	var done := 0.0
+	# Nur sichtbare Kacheln: lange Holds reichen weit ueber den Bildrand, die Kachel-Phase
+	# bleibt am Anker (oben bzw. unten), es fehlt kein Stueck am Kopf.
+	var vis_top := maxf(top, 0.0)
+	var vis_bot := minf(bot, _vs().y)
+	if vis_bot <= vis_top:
+		return
+	var k0 := floorf(((vis_top - top) if from_top else (bot - vis_bot)) / tile)
+	var done := k0 * tile
 	var guard := 0
-	while done < blen - 0.01 and guard < 256:
+	while done < blen - 0.01 and guard < 4096:
 		guard += 1
 		var seg := minf(tile, blen - done)
-		var src_rows := minf(rows, seg / tile * src_h)
 		var y := (top + done) if from_top else (bot - done - seg)
+		if (from_top and y >= vis_bot) or (not from_top and y + seg <= vis_top):
+			break
+		var src_rows := minf(rows, seg / tile * src_h)
 		var sy := 0.0 if from_top else (src_h - src_rows)
 		if sy + src_rows > rows:   # unterer Teil fehlt (abgeschnitten): oberen nehmen
 			sy = maxf(0.0, rows - src_rows)

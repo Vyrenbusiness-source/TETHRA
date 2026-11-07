@@ -309,8 +309,80 @@ func tex(key: String) -> Texture2D:
 			t = _load_image(String(alt), anim)
 	_at2x[key] = t != null and _at2x_pending
 	_src_h[key] = float(_src_h_pending) if t != null and _src_h_pending > 0 else (float(t.get_height()) if t != null else 0.0)
+	if t == null and _uses_fallback(key):
+		# osu! nimmt fuer fehlende Noten-/Tastenbilder den Standard-Skin (BubbleSkinHappyEdit
+		# hat gar keine Notenbilder): hier der eingebaute "Balken"-Skin, Muster 1/2 je Spalte.
+		var fb := _fallback_skin()
+		if fb != null:
+			var fkey := _fb_key(key)
+			t = fb.tex(fkey)
+			_at2x[key] = fb._at2x.get(fkey, false)
+			_src_h[key] = fb.tex_src_h(fkey)
 	_tex[key] = t
 	return t
+
+
+## Rundes Bild (Ball): etwa quadratisch, Mitte deckend, Ecken durchsichtig. Playfield2D
+## laesst solche Hold-Enden weg (Nutzerwunsch: kein Ball am Hold-Ende). Deckende
+## Quadrate (Unknown: schwarzes noteT) sind kein Ball und bleiben wie in osu! sichtbar.
+func is_round(key: String) -> bool:
+	if _round.has(key):
+		return _round[key]
+	var t := tex(key)
+	var r := false
+	if t != null:
+		r = image_is_round(t.get_image())
+	_round[key] = r
+	return r
+
+var _round: Dictionary = {}
+
+
+static func image_is_round(img: Image) -> bool:
+	if img == null or img.is_empty():
+		return false
+	var w := img.get_width()
+	var h := img.get_height()
+	if float(h) < float(w) * 0.6 or float(w) < float(h) * 0.6:
+		return false
+	if img.get_pixel(w / 2, h / 2).a < 0.5:
+		return false
+	var ix := maxi(0, int(w * 0.08))
+	var iy := maxi(0, int(h * 0.08))
+	for p in [Vector2i(ix, iy), Vector2i(w - 1 - ix, iy), Vector2i(ix, h - 1 - iy), Vector2i(w - 1 - ix, h - 1 - iy)]:
+		if img.get_pixelv(p).a > 0.1:
+			return false
+	return true
+
+
+const FALLBACK_SKIN := "Balken"
+const FALLBACK_PREFIXES: Array = ["note_", "head_", "body_", "tail_", "key_", "keyd_"]
+static var _fb_skin: ManiaSkin = null
+
+
+func _uses_fallback(key: String) -> bool:
+	if _dir.is_empty() or _dir.begins_with("res://"):
+		return false
+	# Ende nur, wenn die Spalte gar keine eigene Note hat (sonst bleibt es wie in osu! leer).
+	if key.begins_with("tail_"):
+		var nk := "note_" + key.trim_prefix("tail_")
+		return tex(nk) != null and _fallback_skin() != null 				and tex(nk) == _fallback_skin().tex(_fb_key(nk))
+	for p in FALLBACK_PREFIXES:
+		if key.begins_with(p):
+			return true
+	return false
+
+
+func _fb_key(key: String) -> String:
+	var under := key.rfind("_")
+	var col := int(key.substr(under + 1))
+	return key.substr(0, under + 1) + ("0" if pattern_name(col, keys) == "1" else "1")
+
+
+static func _fallback_skin() -> ManiaSkin:
+	if _fb_skin == null:
+		_fb_skin = _load_builtin(BUILTIN_PREFIX + FALLBACK_SKIN)
+	return _fb_skin
 
 
 ## Originalhoehe der Bilddatei in Pixeln (vor dem Abschneiden auf MAX_TEX).
@@ -515,9 +587,31 @@ static func is_builtin(id: String) -> bool:
 	return id.begins_with(BUILTIN_PREFIX) and BUILTIN_NAMES.has(id.trim_prefix(BUILTIN_PREFIX))
 
 
-## Anzeige-Name: "builtin:Balken" -> "Balken".
-static func display_name(id: String) -> String:
-	return id.trim_prefix(BUILTIN_PREFIX) if is_builtin(id) else id
+## Datei im Skin-Ordner mit dem Originalnamen (Dateiname der .osk/.zip bzw. Ordnername).
+const NAME_FILE := "tethra_name.txt"
+
+
+## Anzeige-Name: "builtin:Balken" -> "Balken"; importierte Skins mit Originalnamen
+## (tethra_name.txt vom Import, sonst skin.ini [General] Name, sonst Ordnername).
+static func display_name(id: String, root: String = SKINS_DIR) -> String:
+	if is_builtin(id):
+		return id.trim_prefix(BUILTIN_PREFIX)
+	if id.is_empty() or id != safe_name(id):
+		return id
+	var dir := root + "/" + id
+	var f := FileAccess.open(dir + "/" + NAME_FILE, FileAccess.READ)
+	if f != null and f.get_length() <= 4096:
+		var n := f.get_as_text().strip_edges()
+		if not n.is_empty():
+			return n
+	f = FileAccess.open(dir + "/skin.ini", FileAccess.READ)
+	if f != null and f.get_length() <= MAX_FILE_BYTES:
+		for sec in parse_ini(f.get_as_text()):
+			if String(sec.get("_section", "")) == "general":
+				var gn := String(sec.get("name", "")).strip_edges()
+				if not gn.is_empty():
+					return gn
+	return id
 
 
 ## IDs: eingebaute ("builtin:Balken", ...) zuerst, dann importierte Ordnernamen.
@@ -770,6 +864,11 @@ static func import_skin(path: String, root: String = SKINS_DIR) -> String:
 		wf.close()
 	if not DirAccess.dir_exists_absolute(dest):
 		return ""
+	# Originalname fuer die Auswahl merken (Ordner-ID bleibt der bereinigte Name).
+	var nf := FileAccess.open(dest + "/" + NAME_FILE, FileAccess.WRITE)
+	if nf != null:
+		nf.store_string(base_name.strip_edges())
+		nf.close()
 	return nm
 
 
