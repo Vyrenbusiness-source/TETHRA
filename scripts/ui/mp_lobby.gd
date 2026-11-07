@@ -574,11 +574,11 @@ func _build_browser() -> void:
 static func _possessive_room(n: String) -> String:
 	var t := n.strip_edges()
 	if t.is_empty():
-		return "Raum"
+		return TranslationServer.translate("Raum")
 	var last := t.substr(t.length() - 1).to_lower()
 	if last in ["s", "x", "z"]:
-		return "%s' Raum" % t
-	return "%s's Raum" % t
+		return TranslationServer.translate("%s' Raum") % t
+	return TranslationServer.translate("%s's Raum") % t
 
 
 func _field_box() -> StyleBoxFlat:
@@ -693,7 +693,7 @@ func _room_card(badge: String, rname: String, players_n: int, sub: String,
 	for i in mini(players_n, 5):
 		bottom.add_child(_avatar(rname + str(i), 22))
 	var sl := Label.new()
-	sl.text = "   %d Spieler  ·  %s" % [players_n, sub]
+	sl.text = "   " + tr("%d Spieler  ·  %s") % [players_n, sub]
 	sl.add_theme_font_size_override("font_size", 13)
 	sl.add_theme_color_override("font_color", COL_DIM)
 	bottom.add_child(sl)
@@ -729,7 +729,7 @@ func _refresh_rooms() -> void:
 		lan_codes[str(r.get("code", ""))] = true
 		var target_ip := str(ip)
 		_rooms_list.add_child(_room_card("🏠", str(r.name), int(r.players),
-			"Dein Netzwerk", func():
+			tr("Dein Netzwerk"), func():
 				if Lobby.join_lan(target_ip):
 					_show_room()))
 		count += 1
@@ -739,7 +739,7 @@ func _refresh_rooms() -> void:
 		var o: Dictionary = Lobby.online_rooms[code]
 		var jcode := str(code)
 		_rooms_list.add_child(_room_card("🌐", str(o.name), int(o.players),
-			"Online  ·  " + jcode, func():
+			tr("Online  ·  %s") % jcode, func():
 				if Lobby.join_code(jcode):
 					_show_room()))
 		count += 1
@@ -987,7 +987,7 @@ func _show_browser() -> void:
 func _refresh_room() -> void:
 	if not _room_box.visible or _players_box == null:
 		return
-	_code_label.text = ("Raum-Code:  %s   (teilen!)" % Lobby.room_code) \
+	_code_label.text = (tr("Raum-Code:  %s   (teilen!)") % Lobby.room_code) \
 			if Lobby.room_code != "" else Lobby.room_name
 	for c in _players_box.get_children():
 		c.queue_free()
@@ -1020,7 +1020,7 @@ func _refresh_room() -> void:
 		crown.add_theme_font_size_override("font_size", 17)
 		row.add_child(crown)
 		var name_l := Label.new()
-		name_l.text = str(p.name) + ("  (du)" if id == my_id else "")
+		name_l.text = str(p.name) + (("  " + tr("(du)")) if id == my_id else "")
 		name_l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		name_l.add_theme_font_size_override("font_size", 16)
 		name_l.add_theme_color_override("font_color", COL_TEXT)
@@ -1037,7 +1037,7 @@ func _refresh_room() -> void:
 			else _chip("Wartet", COL_DIM))
 		if Lobby.crown_id == my_id and not is_crown:
 			var give := Button.new()
-			give.text = CROWN + " geben"
+			give.text = tr("%s geben") % CROWN
 			give.custom_minimum_size = Vector2(0, 32)
 			give.add_theme_font_size_override("font_size", 13)
 			UiTheme.style_button(give)
@@ -1059,7 +1059,7 @@ func _refresh_room() -> void:
 		var mb: Button = _mod_btns[k]
 		var on: bool = bool(Lobby.mods.get(k, false))
 		mb.set_pressed_no_signal(on)
-		mb.text = "%s  %s" % [k, "AN" if on else "AUS"]
+		mb.text = "%s  %s" % [k, tr("AN") if on else tr("AUS")]
 		mb.disabled = Lobby.crown_id != my_id
 		mb.modulate = Color(0.45, 1.0, 0.7) if on else Color(1, 1, 1, 0.85 if not mb.disabled else 0.6)
 	var in_tour := Lobby.tournament != null
@@ -1105,13 +1105,13 @@ func _refresh_mode(my_id: int) -> void:
 			"hint": mm.balance_hint(), "editable": not Lobby.in_game })
 		if _royale_board != null:
 			_royale_board.visible = false
-		info = "Teams %s  ·  %s" % [mm.format_label(), mm.series_label()]
+		info = tr("Teams %s  ·  %s") % [mm.format_label(), mm.series_label()]
 		if mm.rounds_played > 0:
-			info = "%s %s : %s %s  ·  %s" % [mm.team_names[0], mm.team_wins[0],
-				mm.team_wins[1], mm.team_names[1], mm.series_label()]
+			info = "%s %s : %s %s  ·  %s" % [tr(mm.team_names[0]), mm.team_wins[0],
+				mm.team_wins[1], tr(mm.team_names[1]), mm.series_label()]
 		if mm.series_over():
-			info = "Endstand %s %s : %s %s — %s" % [mm.team_names[0], mm.team_wins[0],
-				mm.team_wins[1], mm.team_names[1], _series_winner_name(mm)]
+			info = tr("Endstand %s %s : %s %s — %s") % [tr(mm.team_names[0]), mm.team_wins[0],
+				mm.team_wins[1], tr(mm.team_names[1]), _series_winner_name(mm)]
 	elif kind == MatchMode.Kind.ROYALE:
 		if _royale_board == null:
 			_royale_board = RoyaleBoard.new()
@@ -1128,9 +1128,9 @@ func _refresh_mode(my_id: int) -> void:
 			"final": mm.is_final(), "winner": mm.winner_peer })
 		if _team_board != null:
 			_team_board.visible = false
-		info = "Battle Royale · Runde %d · %d dabei" % [mm.round_no, mm.alive().size()]
+		info = tr("Battle Royale · Runde %d · %d dabei") % [mm.round_no, mm.alive().size()]
 		if mm.is_over() and Lobby.players.has(mm.winner_peer):
-			info = "Sieger: %s" % str(Lobby.players[mm.winner_peer].name)
+			info = tr("Sieger: %s") % str(Lobby.players[mm.winner_peer].name)
 		elif Lobby.spectating and Lobby.in_game:
 			info = "Du bist ausgeschieden — du schaust zu."
 	if Lobby.crown_id == my_id and Lobby.tournament == null and not Lobby.in_game:
@@ -1142,7 +1142,7 @@ func _refresh_mode(my_id: int) -> void:
 
 func _series_winner_name(mm: MatchMode) -> String:
 	var w := mm.series_winner()
-	return mm.team_names[w] if w >= 0 else "unentschieden"
+	return tr(mm.team_names[w]) if w >= 0 else tr("unentschieden")
 
 
 ## Download-Zeile der Map-Karte: nur sichtbar, wenn die Raum-Map lokal fehlt.
@@ -1159,7 +1159,7 @@ func _refresh_dl_ui() -> void:
 	_dl_cancel.visible = _downloading
 	_dl_btn.visible = not _downloading
 	_dl_btn.disabled = set_id <= 0
-	_dl_btn.tooltip_text = "Set %d vom Mirror laden" % set_id if set_id > 0 \
+	_dl_btn.tooltip_text = tr("Set %d vom Mirror laden") % set_id if set_id > 0 \
 			else "Diese Map hat keine Set-ID — Download nicht möglich."
 
 
@@ -1333,7 +1333,7 @@ func _on_dl_progress(id: int, ratio: float) -> void:
 	if _downloading and id == _dl_set:
 		_dl_bar.value = ratio
 		_dl_label.text = "%d %%" % int(ratio * 100.0)
-		_status_label.text = "Lade Map… %d %%" % int(ratio * 100.0)
+		_status_label.text = tr("Lade Map… %d %%") % int(ratio * 100.0)
 
 
 func _on_dl_done(id: int, _path: String) -> void:
@@ -1356,7 +1356,7 @@ func _on_dl_failed(id: int, message: String) -> void:
 	if id != _dl_set:
 		return
 	_downloading = false
-	_status_label.text = "Download fehlgeschlagen: " + message
+	_status_label.text = tr("Download fehlgeschlagen: %s") % message
 	_refresh_dl_ui()
 
 
@@ -1500,7 +1500,7 @@ func _open_tour_setup() -> void:
 		UiTheme.style_button(mb)
 		var key: String = k
 		var paint := func():
-			mb.text = "%s  %s" % [key, "AN" if mods[key] else "AUS"]
+			mb.text = "%s  %s" % [key, tr("AN") if mods[key] else tr("AUS")]
 			mb.modulate = Color(0.45, 1.0, 0.7) if mods[key] else Color(1, 1, 1, 0.85)
 		mb.set_pressed_no_signal(bool(mods[key]))
 		paint.call()
@@ -1576,7 +1576,7 @@ func _sync_tournament() -> void:
 
 
 func _tour_title() -> String:
-	return ("Turnier · " + Lobby.room_name) if Lobby.room_name != "" else "Turnier"
+	return (tr("Turnier · %s") % Lobby.room_name) if Lobby.room_name != "" else tr("Turnier")
 
 
 func _leave_tour_view() -> void:
@@ -1712,7 +1712,7 @@ func _tournament_shots() -> void:
 	for i in 10:
 		t.fake_wins.append({"map": t.pool[t.order[i]], "winner_name": wnames[i], "score": 900000 - i * 3000})
 	panel.queue_free()
-	var end := TournamentEnd.new(t, "Turnier · Freitagsrunde")
+	var end := TournamentEnd.new(t, tr("Turnier · %s") % "Freitagsrunde")
 	end.harness = true
 	end.my_id = 3
 	add_child(end)

@@ -1,2 +1,267 @@
 keys,de,en
-TETHRA,TETHRA,TETHRA
+Rot,Rot,Red
+Blau,Blau,Blue
+Ein Team ist leer.,Ein Team ist leer.,One team is empty.
+Ungleiche Teams: %d gegen %d.,Ungleiche Teams: %d gegen %d.,Uneven teams: %d vs %d.
+Best of %d,Best of %d,Best of %d
+%d Runden,%d Runden,%d rounds
+%d Spieler,%d Spieler,%d players
+Noch niemand. Spieler hierher ziehen.,Noch niemand. Spieler hierher ziehen.,Nobody yet. Drag players here.
+Battle Royale,Battle Royale,Battle Royale
+Runde %d,Runde %d,Round %d
+Finale,Finale,Final
+%d von %d dabei,%d von %d dabei,%d of %d still in
+Noch dabei,Noch dabei,Still in
+Raus,Raus,Out
+Noch niemand.,Noch niemand.,Nobody yet.
+%s gewinnt.,%s gewinnt.,%s wins.
+In Gefahr,In Gefahr,In danger
+Turnier,Turnier,Tournament
+Bild speichern,Bild speichern,Save image
+Ordner öffnen,Ordner öffnen,Open folder
+Zurück zum Raum,Zurück zum Raum,Back to room
+Speichern fehlgeschlagen.,Speichern fehlgeschlagen.,Saving failed.
+Gespeichert: %s,Gespeichert: %s,Saved: %s
+TURNIER  ·  ENDERGEBNIS,TURNIER  ·  ENDERGEBNIS,TOURNAMENT  ·  FINAL RESULT
+%d Maps,%d Maps,%d maps
+%s Punkte,%s Punkte,%s points
+%d Siege  ·  Ø %s,%d Siege  ·  Ø %s,%d wins  ·  Ø %s
+ALLE SPIELER,ALLE SPIELER,ALL PLAYERS
+Platz,Platz,Rank
+Spieler,Spieler,Player
+Punkte,Punkte,Points
+Siege,Siege,Wins
+Ø Acc,Ø Acc,Ø Acc
+GESPIELTE MAPS,GESPIELTE MAPS,MAPS PLAYED
+Nicht in der Auswahlphase.,Nicht in der Auswahlphase.,Not in the picking phase.
+Pool ist voll.,Pool ist voll.,The pool is full.
+Ungueltige Map.,Ungueltige Map.,Invalid map.
+Ungueltige Sterne.,Ungueltige Sterne.,Invalid star rating.
+Sterne ausserhalb des Bereichs.,Sterne ausserhalb des Bereichs.,Star rating out of range.
+Map ist schon im Pool.,Map ist schon im Pool.,Map is already in the pool.
+Du hast schon %d Maps gewaehlt.,Du hast schon %d Maps gewaehlt.,You have already picked %d maps.
+Nicht in der Ban-Phase.,Nicht in der Ban-Phase.,Not in the ban phase.
+Kein Spieler.,Kein Spieler.,Not a player.
+Alle haben schon gebannt.,Alle haben schon gebannt.,Everyone has already banned.
+Diese Map hat schon jemand gestrichen. Such dir eine andere aus.,Diese Map hat schon jemand gestrichen. Such dir eine andere aus.,Someone has already struck this map. Pick another one.
+Mindestens eine Map muss uebrig bleiben.,Mindestens eine Map muss uebrig bleiben.,At least one map has to remain.
+Mods: %s,Mods: %s,Mods: %s
+keine,keine,none
+lädt… %s %%,lädt… %s %%,loading… %s %%
+TURNIER,TURNIER,TOURNAMENT
+MAPS WÄHLEN,MAPS WÄHLEN,PICK MAPS
+BANS,BANS,BANS
+RUNDEN,RUNDEN,ROUNDS
+Turnier abbrechen,Turnier abbrechen,Cancel tournament
+"Maps für das Turnier sammeln — jeder darf mitwählen, auch Maps aus dem Online-Browser.","Maps für das Turnier sammeln — jeder darf mitwählen, auch Maps aus dem Online-Browser.","Collect maps for the tournament — everyone can pick, including maps from the online browser."
+%d / %d Maps im Pool,%d / %d Maps im Pool,%d / %d maps in pool
+Aus Bibliothek,Aus Bibliothek,From library
+Aus Online-Browser,Aus Online-Browser,From online browser
+Rest automatisch füllen,Rest automatisch füllen,Auto-fill the rest
+Weiter zu Bans,Weiter zu Bans,Continue to bans
+"Der Host startet die Bans, sobald der Pool voll ist.","Der Host startet die Bans, sobald der Pool voll ist.",The host starts the bans once the pool is full.
+noch frei,noch frei,free
+Aus dem Pool entfernen,Aus dem Pool entfernen,Remove from pool
+Reinhören,Reinhören,Preview
+gewählt von %s,gewählt von %s,picked by %s
+gestrichen von %s,gestrichen von %s,struck by %s
+✓ bereit,✓ bereit,✓ ready
+Fehler beim Laden,Fehler beim Laden,Load error
+fehlt — lädt…,fehlt — lädt…,missing — loading…
+"Streiche die Map, die du am wenigsten spielen willst.","Streiche die Map, die du am wenigsten spielen willst.",Strike the map you want to play the least.
+Alle haben gewählt — diese Maps sind raus.,Alle haben gewählt — diese Maps sind raus.,Everyone has voted — these maps are out.
+ABSTIMMUNG,ABSTIMMUNG,VOTING
+strich: %s,strich: %s,struck: %s
+hat gewählt,hat gewählt,has voted
+wählt…,wählt…,voting…
+REIHENFOLGE DER RUNDEN,REIHENFOLGE DER RUNDEN,ROUND ORDER
+"Deine Wahl ist markiert — du kannst sie ändern, bis alle gewählt haben.","Deine Wahl ist markiert — du kannst sie ändern, bis alle gewählt haben.",Your choice is marked — you can change it until everyone has voted.
+"Klicke eine Map, um sie abzuwählen.","Klicke eine Map, um sie abzuwählen.",Click a map to strike it.
+Turnier starten,Turnier starten,Start tournament
+Warte auf den Host…,Warte auf den Host…,Waiting for the host…
+Zwischenstand nach Runde %d von %d,Zwischenstand nach Runde %d von %d,Standings after round %d of %d
+GESAMTWERTUNG,GESAMTWERTUNG,OVERALL STANDINGS
+RUNDE %d  ·  %s,RUNDE %d  ·  %s,ROUND %d  ·  %s
+ALS NÄCHSTES,ALS NÄCHSTES,UP NEXT
+%d Maps noch zu spielen,%d Maps noch zu spielen,%d maps left to play
+Alle Runden gespielt.,Alle Runden gespielt.,All rounds played.
+Nächste Map,Nächste Map,Next map
+Zur Siegerehrung,Zur Siegerehrung,To the awards
+Der Host startet die nächste Runde.,Der Host startet die nächste Runde.,The host starts the next round.
+Suche online …,Suche online …,Searching online …
+Online-Suche fehlgeschlagen: %s,Online-Suche fehlgeschlagen: %s,Online search failed: %s
+Online-Suche fehlgeschlagen,Online-Suche fehlgeschlagen,Online search failed
+Nicht genug passende Maps gefunden.,Nicht genug passende Maps gefunden.,Not enough matching maps found.
+Score,Score,Score
+Acc,Acc,Acc
+Verbindung fehlgeschlagen — Code richtig? Host online?,Verbindung fehlgeschlagen — Code richtig? Host online?,Connection failed — correct code? Is the host online?
+Der Host hat den Raum geschlossen.,Der Host hat den Raum geschlossen.,The host closed the room.
+Port %d belegt — laeuft schon ein Raum?,Port %d belegt — laeuft schon ein Raum?,Port %d is in use — is a room already running?
+%s's Raum,%s's Raum,%s's Room
+%s' Raum,%s' Raum,%s' Room
+Raum,Raum,Room
+Oeffne Port am Router (UPnP)…,Oeffne Port am Router (UPnP)…,Opening port on the router (UPnP)…
+Raum offen! Code zum Teilen: %s,Raum offen! Code zum Teilen: %s,Room open! Code to share: %s
+UPnP still — ermittle externe IP…,UPnP still — ermittle externe IP…,UPnP silent — finding external IP…
+Raum-Code: %s  (falls Beitritt scheitert: Port %d im Router freigeben),Raum-Code: %s  (falls Beitritt scheitert: Port %d im Router freigeben),Room code: %s  (if joining fails: forward port %d on your router)
+Keine externe IP ermittelbar — Raum nur im eigenen Netzwerk sichtbar.,Keine externe IP ermittelbar — Raum nur im eigenen Netzwerk sichtbar.,Could not determine external IP — room only visible on your own network.
+Ungueltiger Raum-Code.,Ungueltiger Raum-Code.,Invalid room code.
+Verbindung nicht moeglich.,Verbindung nicht moeglich.,Cannot connect.
+Verbinde…,Verbinde…,Connecting…
+Falsches Passwort.,Falsches Passwort.,Wrong password.
+Map fehlt lokal — Start nicht moeglich.,Map fehlt lokal — Start nicht moeglich.,Map missing locally — cannot start.
+Map konnte nicht geladen werden.,Map konnte nicht geladen werden.,Map could not be loaded.
+Pool ist noch nicht voll.,Pool ist noch nicht voll.,The pool is not full yet.
+Es haben noch nicht alle gebannt.,Es haben noch nicht alle gebannt.,Not everyone has banned yet.
+Kein Turnier.,Kein Turnier.,No tournament.
+Unbekannter Spieler.,Unbekannter Spieler.,Unknown player.
+Entfernen nicht erlaubt.,Entfernen nicht erlaubt.,Removing not allowed.
+Frei,Frei,Free
+Teams,Teams,Teams
+Beide Teams brauchen mindestens einen Spieler.,Beide Teams brauchen mindestens einen Spieler.,Both teams need at least one player.
+Battle Royale braucht mindestens 2 Spieler.,Battle Royale braucht mindestens 2 Spieler.,Battle Royale needs at least 2 players.
+OFFENE RÄUME,OFFENE RÄUME,OPEN ROOMS
+Liste aktualisieren,Liste aktualisieren,Refresh list
+RAUM ERSTELLEN,RAUM ERSTELLEN,CREATE ROOM
+Passwort (leer = öffentlich),Passwort (leer = öffentlich),Password (empty = public)
++ Raum erstellen,+ Raum erstellen,+ Create room
+"Ohne Passwort erscheint dein Raum automatisch
+bei allen Spielern in der Liste.","Ohne Passwort erscheint dein Raum automatisch
+bei allen Spielern in der Liste.","Without a password your room automatically
+appears in every player's list."
+MIT CODE BEITRETEN,MIT CODE BEITRETEN,JOIN WITH CODE
+Code (z. B. 7K3F9-A2QXM),Code (z. B. 7K3F9-A2QXM),Code (e.g. 7K3F9-A2QXM)
+Passwort (falls gesetzt),Passwort (falls gesetzt),Password (if set)
+Beitreten,Beitreten,Join
+Spielt,Spielt,Playing
+Wartet,Wartet,Waiting
+%d Spieler  ·  %s,%d Spieler  ·  %s,%d players  ·  %s
+Dein Netzwerk,Dein Netzwerk,Your network
+Online  ·  %s,Online  ·  %s,Online  ·  %s
+Gerade ist es ruhig hier,Gerade ist es ruhig hier,It's quiet here right now
+"Keine offenen Räume. Erstelle einen, er erscheint hier automatisch bei allen Spielern.","Keine offenen Räume. Erstelle einen, er erscheint hier automatisch bei allen Spielern.",No open rooms. Create one — it automatically appears here for all players.
+SPIELER  (👑 wählt die Map und startet — der Kronenträger kann sie vergeben),SPIELER  (👑 wählt die Map und startet — der Kronenträger kann sie vergeben),PLAYERS  (👑 picks the map and starts — the crown holder can hand it over)
+MODUS,MODUS,MODE
+Auto-Ausgleich,Auto-Ausgleich,Auto-balance
+Noch keine Map gewählt.,Noch keine Map gewählt.,No map picked yet.
+Der Kronenträger wählt die Map.,Der Kronenträger wählt die Map.,The crown holder picks the map.
+Abbrechen,Abbrechen,Cancel
+⬇  Map laden,⬇  Map laden,⬇  Download map
+MODS,MODS,MODS
+Map wählen,Map wählen,Pick map
+START,START,START
+Verlassen,Verlassen,Leave
+Raum-Code:  %s   (teilen!),Raum-Code:  %s   (teilen!),Room code:  %s   (share it!)
+✓ Bereit,✓ Bereit,✓ Ready
+%s geben,%s geben,Give %s
+AN,AN,ON
+AUS,AUS,OFF
+Zum Turnier,Zum Turnier,To tournament
+Teams %s  ·  %s,Teams %s  ·  %s,Teams %s  ·  %s
+Endstand %s %s : %s %s — %s,Endstand %s %s : %s %s — %s,Final %s %s : %s %s — %s
+Battle Royale · Runde %d · %d dabei,Battle Royale · Runde %d · %d dabei,Battle Royale · Round %d · %d still in
+Sieger: %s,Sieger: %s,Winner: %s
+Du bist ausgeschieden — du schaust zu.,Du bist ausgeschieden — du schaust zu.,You are eliminated — you are spectating.
+unentschieden,unentschieden,draw
+Set %d vom Mirror laden,Set %d vom Mirror laden,Download set %d from the mirror
+Diese Map hat keine Set-ID — Download nicht möglich.,Diese Map hat keine Set-ID — Download nicht möglich.,This map has no set ID — download not possible.
+Vorschau: Audio nicht lesbar.,Vorschau: Audio nicht lesbar.,Preview: audio not readable.
+Map vorhanden — bereit!,Map vorhanden — bereit!,Map available — ready!
+Map fehlt und hat keine Set-ID — Download nicht möglich.,Map fehlt und hat keine Set-ID — Download nicht möglich.,Map missing and has no set ID — download not possible.
+Map fehlt — lade herunter…,Map fehlt — lade herunter…,Map missing — downloading…
+Lade Map… %d %%,Lade Map… %d %%,Loading map… %d %%
+Map heruntergeladen — bereit!,Map heruntergeladen — bereit!,Map downloaded — ready!
+Download fehlgeschlagen: %s,Download fehlgeschlagen: %s,Download failed: %s
+Download abgebrochen — „Map laden“ startet ihn neu.,Download abgebrochen — „Map laden“ startet ihn neu.,Download cancelled — “Download map” restarts it.
+Turnier erstellen,Turnier erstellen,Create tournament
+ANZAHL MAPS,ANZAHL MAPS,NUMBER OF MAPS
+SCHWIERIGKEIT (STERNE),SCHWIERIGKEIT (STERNE),DIFFICULTY (STARS)
+Turnier · %s,Turnier · %s,Tournament · %s
+(du),(du),(you)
+ROT,ROT,RED
+BLAU,BLAU,BLUE
+EIN TEAM IST LEER.,EIN TEAM IST LEER.,ONE TEAM IS EMPTY.
+BATTLE ROYALE,BATTLE ROYALE,BATTLE ROYALE
+FINALE,FINALE,FINAL
+NOCH DABEI,NOCH DABEI,STILL IN
+RAUS,RAUS,OUT
+NOCH NIEMAND.,NOCH NIEMAND.,NOBODY YET.
+IN GEFAHR,IN GEFAHR,IN DANGER
+BILD SPEICHERN,BILD SPEICHERN,SAVE IMAGE
+ORDNER ÖFFNEN,ORDNER ÖFFNEN,OPEN FOLDER
+ZURÜCK ZUM RAUM,ZURÜCK ZUM RAUM,BACK TO ROOM
+SPEICHERN FEHLGESCHLAGEN.,SPEICHERN FEHLGESCHLAGEN.,SAVING FAILED.
+PLATZ,PLATZ,RANK
+SPIELER,SPIELER,PLAYER
+PUNKTE,PUNKTE,POINTS
+SIEGE,SIEGE,WINS
+Ø ACC,Ø ACC,Ø ACC
+NICHT IN DER AUSWAHLPHASE.,NICHT IN DER AUSWAHLPHASE.,NOT IN THE PICKING PHASE.
+POOL IST VOLL.,POOL IST VOLL.,THE POOL IS FULL.
+UNGUELTIGE MAP.,UNGUELTIGE MAP.,INVALID MAP.
+UNGUELTIGE STERNE.,UNGUELTIGE STERNE.,INVALID STAR RATING.
+STERNE AUSSERHALB DES BEREICHS.,STERNE AUSSERHALB DES BEREICHS.,STAR RATING OUT OF RANGE.
+MAP IST SCHON IM POOL.,MAP IST SCHON IM POOL.,MAP IS ALREADY IN THE POOL.
+NICHT IN DER BAN-PHASE.,NICHT IN DER BAN-PHASE.,NOT IN THE BAN PHASE.
+KEIN SPIELER.,KEIN SPIELER.,NOT A PLAYER.
+ALLE HABEN SCHON GEBANNT.,ALLE HABEN SCHON GEBANNT.,EVERYONE HAS ALREADY BANNED.
+KEINE,KEINE,NONE
+TURNIER ABBRECHEN,TURNIER ABBRECHEN,CANCEL TOURNAMENT
+AUS BIBLIOTHEK,AUS BIBLIOTHEK,FROM LIBRARY
+AUS ONLINE-BROWSER,AUS ONLINE-BROWSER,FROM ONLINE BROWSER
+REST AUTOMATISCH FÜLLEN,REST AUTOMATISCH FÜLLEN,AUTO-FILL THE REST
+WEITER ZU BANS,WEITER ZU BANS,CONTINUE TO BANS
+NOCH FREI,NOCH FREI,FREE
+AUS DEM POOL ENTFERNEN,AUS DEM POOL ENTFERNEN,REMOVE FROM POOL
+REINHÖREN,REINHÖREN,PREVIEW
+✓ BEREIT,✓ BEREIT,✓ READY
+FEHLER BEIM LADEN,FEHLER BEIM LADEN,LOAD ERROR
+FEHLT — LÄDT…,FEHLT — LÄDT…,MISSING — LOADING…
+HAT GEWÄHLT,HAT GEWÄHLT,HAS VOTED
+WÄHLT…,WÄHLT…,VOTING…
+TURNIER STARTEN,TURNIER STARTEN,START TOURNAMENT
+WARTE AUF DEN HOST…,WARTE AUF DEN HOST…,WAITING FOR THE HOST…
+ALLE RUNDEN GESPIELT.,ALLE RUNDEN GESPIELT.,ALL ROUNDS PLAYED.
+NÄCHSTE MAP,NÄCHSTE MAP,NEXT MAP
+ZUR SIEGEREHRUNG,ZUR SIEGEREHRUNG,TO THE AWARDS
+SUCHE ONLINE …,SUCHE ONLINE …,SEARCHING ONLINE …
+ONLINE-SUCHE FEHLGESCHLAGEN,ONLINE-SUCHE FEHLGESCHLAGEN,ONLINE SEARCH FAILED
+SCORE,SCORE,SCORE
+ACC,ACC,ACC
+RAUM,RAUM,ROOM
+OEFFNE PORT AM ROUTER (UPNP)…,OEFFNE PORT AM ROUTER (UPNP)…,OPENING PORT ON THE ROUTER (UPNP)…
+UNGUELTIGER RAUM-CODE.,UNGUELTIGER RAUM-CODE.,INVALID ROOM CODE.
+VERBINDUNG NICHT MOEGLICH.,VERBINDUNG NICHT MOEGLICH.,CANNOT CONNECT.
+VERBINDE…,VERBINDE…,CONNECTING…
+FALSCHES PASSWORT.,FALSCHES PASSWORT.,WRONG PASSWORD.
+MAP KONNTE NICHT GELADEN WERDEN.,MAP KONNTE NICHT GELADEN WERDEN.,MAP COULD NOT BE LOADED.
+POOL IST NOCH NICHT VOLL.,POOL IST NOCH NICHT VOLL.,THE POOL IS NOT FULL YET.
+KEIN TURNIER.,KEIN TURNIER.,NO TOURNAMENT.
+UNBEKANNTER SPIELER.,UNBEKANNTER SPIELER.,UNKNOWN PLAYER.
+ENTFERNEN NICHT ERLAUBT.,ENTFERNEN NICHT ERLAUBT.,REMOVING NOT ALLOWED.
+FREI,FREI,FREE
+TEAMS,TEAMS,TEAMS
+LISTE AKTUALISIEREN,LISTE AKTUALISIEREN,REFRESH LIST
+PASSWORT (LEER = ÖFFENTLICH),PASSWORT (LEER = ÖFFENTLICH),PASSWORD (EMPTY = PUBLIC)
++ RAUM ERSTELLEN,+ RAUM ERSTELLEN,+ CREATE ROOM
+CODE (Z. B. 7K3F9-A2QXM),CODE (Z. B. 7K3F9-A2QXM),CODE (E.G. 7K3F9-A2QXM)
+PASSWORT (FALLS GESETZT),PASSWORT (FALLS GESETZT),PASSWORD (IF SET)
+BEITRETEN,BEITRETEN,JOIN
+SPIELT,SPIELT,PLAYING
+WARTET,WARTET,WAITING
+DEIN NETZWERK,DEIN NETZWERK,YOUR NETWORK
+GERADE IST ES RUHIG HIER,GERADE IST ES RUHIG HIER,IT'S QUIET HERE RIGHT NOW
+AUTO-AUSGLEICH,AUTO-AUSGLEICH,AUTO-BALANCE
+NOCH KEINE MAP GEWÄHLT.,NOCH KEINE MAP GEWÄHLT.,NO MAP PICKED YET.
+DER KRONENTRÄGER WÄHLT DIE MAP.,DER KRONENTRÄGER WÄHLT DIE MAP.,THE CROWN HOLDER PICKS THE MAP.
+ABBRECHEN,ABBRECHEN,CANCEL
+⬇  MAP LADEN,⬇  MAP LADEN,⬇  DOWNLOAD MAP
+MAP WÄHLEN,MAP WÄHLEN,PICK MAP
+VERLASSEN,VERLASSEN,LEAVE
+ZUM TURNIER,ZUM TURNIER,TO TOURNAMENT
+UNENTSCHIEDEN,UNENTSCHIEDEN,DRAW
+VORSCHAU: AUDIO NICHT LESBAR.,VORSCHAU: AUDIO NICHT LESBAR.,PREVIEW: AUDIO NOT READABLE.
+MAP VORHANDEN — BEREIT!,MAP VORHANDEN — BEREIT!,MAP AVAILABLE — READY!
+MAP FEHLT — LADE HERUNTER…,MAP FEHLT — LADE HERUNTER…,MAP MISSING — DOWNLOADING…
+MAP HERUNTERGELADEN — BEREIT!,MAP HERUNTERGELADEN — BEREIT!,MAP DOWNLOADED — READY!
+TURNIER ERSTELLEN,TURNIER ERSTELLEN,CREATE TOURNAMENT
