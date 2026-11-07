@@ -239,12 +239,12 @@ def iceberg_profile(x, w, h, kind, noise, seed):
         return h * (r ** rng.uniform(0.45, 0.7)) * (1.0 + 0.08 * n_lo + 0.05 * n_hi)
     # "peak": mehrere Massen (konkav/konvex), zerkluefteter Grat
     prof = np.zeros_like(q)
-    k = rng.integers(3, 6)
-    cs = np.sort(rng.uniform(-0.65, 0.65, k))
+    k = rng.integers(4, 8)
+    cs = np.sort(rng.uniform(-0.7, 0.7, k))
     for i in range(k):
         hk = 1.0 if i == k // 2 else rng.uniform(0.35, 0.8)
-        wk = rng.uniform(0.25, 0.55)
-        pk = rng.uniform(0.7, 1.6)
+        wk = rng.uniform(0.18, 0.5)
+        pk = rng.uniform(1.1, 2.2)  # konkave Flanken: scharfe, drohende Spitzen
         prof = np.maximum(prof, hk * np.clip(1.0 - np.abs(q - cs[i]) / wk, 0, 1) ** pk)
     prof = prof * (1.0 + 0.12 * n_lo) + 0.10 * n_hi * smoothstep(0.0, 0.2, prof)
     return h * np.clip(prof, 0, None) * smoothstep(1.15, 0.95, np.abs(q))
@@ -290,10 +290,10 @@ def scene(W, H, seed):
     nm2 = noise.ring(lr, 1.1, 3, z=37.0)
     nm3 = noise.ring(lr, 11.0, 4, z=41.0, kind="ridged", gain=0.6)
     al = np.abs(wrap_deg(lon1))
-    side = 0.12 + 0.88 * smoothstep(9.0, 36.0, al) * (1.0 - 0.45 * smoothstep(95.0, 140.0, al))
+    side = 0.10 + 0.90 * smoothstep(11.0, 30.0, al) * (1.0 - 0.45 * smoothstep(95.0, 140.0, al))
     r1 = (nm1 - nm1.min()) / (nm1.max() - nm1.min())
     r3 = (nm3 - nm3.min()) / (nm3.max() - nm3.min())
-    mas = (0.5 + 11.0 * r1 ** 1.9 * np.clip(0.75 + 0.6 * nm2, 0.3, 1.3)
+    mas = (0.5 + 17.0 * r1 ** 2.1 * np.clip(0.75 + 0.6 * nm2, 0.3, 1.3)
            + 0.5 * r3 ** 3 * smoothstep(0.2, 0.5, r1)) * side
     objs.append(dict(kind="massif", base=-0.28, top=mas.astype(F32), haze=0.12, dist=3000.0))
 

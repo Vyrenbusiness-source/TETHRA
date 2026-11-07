@@ -213,7 +213,7 @@ void sky() {
 		float lat = asin(clamp(pd.y, -1.0, 1.0));
 		if (pd.y >= 0.0) {
 			// Himmel: Baender + Sterne hinter Bergen/Eis (Alpha = Himmel sichtbar).
-			float ext = smoothstep(0.0, 0.06, pd.y);
+			float ext = smoothstep(0.0, 0.16, pd.y); // Extinktion am Horizont
 			vec3 st = star_field(dir, srot, true, FRAGCOORD.xy) * ext;
 			col += (aurora_at(pd, tt) + st) * sc.a;
 		} else if (sc.a > 0.002 && reflection > 0.001) {
