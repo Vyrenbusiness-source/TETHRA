@@ -157,6 +157,12 @@ func _color_row(parent: Control, title: String, hold: bool) -> Array[ColorPicker
 	return out
 
 
+## Reiter auf den aktuellen Spielmodus stellen (3D oder 2D).
+func show_mode(is_2d: bool) -> void:
+	_is_2d = is_2d
+	_sync()
+
+
 func _on_tab(is_2d: bool) -> void:
 	_is_2d = is_2d
 	_sync()
@@ -179,6 +185,9 @@ func _on_color(c: Color, lane: int, hold: bool) -> void:
 		NoteColors.set_hold_color(_is_2d, lane, c)
 	else:
 		NoteColors.set_lane_color(_is_2d, lane, c)
+	# Farbe gewaehlt = eigene Farben gewollt: aus "Automatisch" heraus schalten.
+	if NoteColors.mode(_is_2d) == "auto":
+		NoteColors.set_mode(_is_2d, "lanes")
 	_commit()
 
 
@@ -202,15 +211,15 @@ func _sync() -> void:
 	for k in _mode_btns:
 		(_mode_btns[k] as Button).button_pressed = (k == m)
 	var custom := m == "lanes"
-	_fields.modulate.a = 1.0 if custom else 0.4
-	_chip_row.modulate.a = 1.0 if custom else 0.4
+	_fields.modulate.a = 1.0 if custom else 0.7
+	_chip_row.modulate.a = 1.0 if custom else 0.7
 	var ha := NoteColors.hold_auto(_is_2d)
 	_hold_auto.button_pressed = ha
 	for i in NoteColors.LANES:
 		_lane_btns[i].color = NoteColors.lane_color(_is_2d, i)
 		_hold_btns[i].color = NoteColors.hold_color(_is_2d, i)
-		_set_enabled(_hold_btns[i], custom and not ha)
-		_set_enabled(_lane_btns[i], custom)
+		_set_enabled(_hold_btns[i], not ha)
+		_set_enabled(_lane_btns[i], true)
 	var pid := NoteColors.preset(_is_2d)
 	for id in _chips:
 		(_chips[id] as Button).button_pressed = (id == pid and custom)

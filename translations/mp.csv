@@ -265,3 +265,10 @@ MAP VORHANDEN — BEREIT!,MAP VORHANDEN — BEREIT!,MAP AVAILABLE — READY!
 MAP FEHLT — LADE HERUNTER…,MAP FEHLT — LADE HERUNTER…,MAP MISSING — DOWNLOADING…
 MAP HERUNTERGELADEN — BEREIT!,MAP HERUNTERGELADEN — BEREIT!,MAP DOWNLOADED — READY!
 TURNIER ERSTELLEN,TURNIER ERSTELLEN,CREATE TOURNAMENT
+%d von %d bereit,%d von %d bereit,%d of %d ready
+Runde starten,Runde starten,Start round
+"Wartet, bis alle die Map haben und bereit sind.","Wartet, bis alle die Map haben und bereit sind.",Waits until everyone has the map and is ready.
+Der Host startet die Runde.,Der Host startet die Runde.,The host starts the round.
+RUNDE STARTEN,RUNDE STARTEN,START ROUND
+Start in %d s,Start in %d s,Starting in %d s
+Weiter in %d s,Weiter in %d s,Next map in %d s

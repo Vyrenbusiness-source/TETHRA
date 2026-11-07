@@ -179,6 +179,10 @@ func _ready() -> void:
 	Lobby.map_changed.connect(_on_map_changed)
 	Lobby.rooms_changed.connect(_refresh_rooms)
 	Lobby.tournament_changed.connect(_sync_tournament)
+	# Bereit-Stand im Turnier-Panel (Runde starten) live nachziehen.
+	Lobby.players_changed.connect(func():
+		if _tpanel != null:
+			_tpanel.sync_from_lobby())
 	Lobby.status.connect(func(m): _status_label.text = m)
 	Lobby.left.connect(func(reason):
 		_status_label.text = reason
@@ -1369,13 +1373,13 @@ func _player_row(id: int, p: Dictionary, my_id: int, in_round: bool) -> Control:
 	# Lambdas fangen Locals beim Erzeugen ein: Knopf ueber Meta holen, er entsteht erst unten.
 	row.mouse_entered.connect(func():
 		row.add_theme_stylebox_override("panel", hv)
-		var g: Button = row.get_meta("give", null)
+		var g: Button = row.get_meta("give") if row.has_meta("give") else null
 		if g != null:
 			g.modulate.a = 1.0)
 	row.mouse_exited.connect(func():
 		row.add_theme_stylebox_override("panel", n)
 		# Knopf bleibt sichtbar, solange die Maus auf ihm steht (Kind der Zeile).
-		var g: Button = row.get_meta("give", null)
+		var g: Button = row.get_meta("give") if row.has_meta("give") else null
 		if g != null and not g.get_global_rect().has_point(g.get_global_mouse_position()):
 			g.modulate.a = 0.0)
 	var hb := HBoxContainer.new()
@@ -2272,6 +2276,12 @@ func _tournament_shots() -> void:
 	panel.refresh()
 	await get_tree().create_timer(1.0).timeout
 	await shot.call("between")
+	# Runde gewaehlt, wartet auf Start (Bereit/Runde starten).
+	t.phase = Tournament.Phase.PLAY
+	panel.refresh()
+	await get_tree().create_timer(0.6).timeout
+	await shot.call("play")
+	t.phase = Tournament.Phase.BETWEEN
 	# END: Endbild.
 	t.phase = Tournament.Phase.END
 	t.order = [0, 2, 3, 5, 6, 8, 9, 1, 4, 7]

@@ -72,6 +72,12 @@ var _listen: PacketPeerUDP
 var _bcast_t := 0.0
 var _upnp_thread: Thread
 var _upnp: UPNP
+## Turnier-Autoablauf (Host): Zwischenstand -> naechste Map nach TOUR_AUTO_NEXT s,
+## Runde startet TOUR_AUTO_START s nachdem alle bereit sind. Knoepfe bleiben fuer sofort.
+const TOUR_AUTO_NEXT := 8.0
+const TOUR_AUTO_START := 3.0
+var _tour_auto_t := -1.0
+var _tour_auto_phase := -1
 
 
 func _ready() -> void:
@@ -290,6 +296,7 @@ func stop_discovery() -> void:
 
 
 func _process(delta: float) -> void:
+	_tour_auto(delta)
 	# Host: Raum im LAN ansagen (1x pro Sekunde; nur ohne Passwort).
 	if is_host and active and not in_game and password == "":
 		if _bcast != null:
@@ -908,6 +915,38 @@ func _check_skip() -> void:
 	if skip_votes.size() >= players.size():
 		skip_votes = {}
 		skip_now.emit()
+
+
+func _tour_auto(delta: float) -> void:
+	if not is_host or not active or tournament == null or in_game:
+		_tour_auto_phase = -1
+		_tour_auto_t = -1.0
+		return
+	var ph := int(tournament.phase)
+	if ph != _tour_auto_phase:
+		_tour_auto_phase = ph
+		_tour_auto_t = TOUR_AUTO_NEXT if ph == Tournament.Phase.BETWEEN else -1.0
+	if ph == Tournament.Phase.BETWEEN:
+		_tour_auto_t -= delta
+		if _tour_auto_t <= 0.0:
+			_tour_auto_t = -1.0
+			_tour_auto_phase = -1
+			tour_next()
+	elif ph == Tournament.Phase.PLAY:
+		if not can_start():
+			_tour_auto_t = -1.0
+			return
+		if _tour_auto_t < 0.0:
+			_tour_auto_t = TOUR_AUTO_START
+		_tour_auto_t -= delta
+		if _tour_auto_t <= 0.0:
+			_tour_auto_t = -1.0
+			start_game()
+
+
+## Host: Sekunden bis zum automatischen naechsten Schritt (-1 = keiner).
+func tour_auto_left() -> float:
+	return _tour_auto_t if is_host and tournament != null and not in_game else -1.0
 
 
 ## Nach Rueckkehr in die Lobby: Runde beenden. Bereit-Status bleibt

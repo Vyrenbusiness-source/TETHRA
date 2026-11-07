@@ -45,6 +45,8 @@ var _fill_used: Dictionary = {}
 var _fill_pages := 0
 var _fill_need := 0
 var _status: Label = null
+## Countdown des Turnier-Autoablaufs (nur Host, in der Zwischenstand-/Start-Leiste).
+var _auto_lbl: Label = null
 # Song-Vorschau (Bibliothek, Online-Browser, Pool-Karten)
 var _preview: AudioStreamPlayer
 var _preview_req: HTTPRequest
@@ -933,12 +935,49 @@ func _build_between() -> void:
 	bar.add_child(lbl(tr("%d Maps noch zu spielen") % maxi(remaining, 0) if remaining > 0
 		else "Alle Runden gespielt.", 14, DIM))
 	bar.add_child(_spacer())
-	if is_host:
+	_auto_lbl = lbl("", 14, ACCENT)
+	bar.add_child(_auto_lbl)
+	# PLAY: Map der Runde steht fest, wartet auf den Start (alle bereit = Map vorhanden).
+	if t.phase == Tournament.Phase.PLAY:
+		var n_ready := 0
+		for id in Lobby.players:
+			if bool(Lobby.players[id].get("ready", false)):
+				n_ready += 1
+		bar.add_child(lbl(tr("%d von %d bereit") % [n_ready, Lobby.players.size()], 14,
+				GOOD if n_ready == Lobby.players.size() else DIM))
+		var me: Dictionary = Lobby.players.get(my_id, {})
+		if not bool(me.get("ready", false)):
+			bar.add_child(_btn("Bereit", false, 160, func():
+				if not harness:
+					Lobby.set_ready(true)))
+		if is_host:
+			var go := _btn("Runde starten", true, 220, func():
+				if not harness:
+					Lobby.start_game())
+			go.disabled = not harness and not Lobby.can_start()
+			if go.disabled:
+				go.tooltip_text = tr("Wartet, bis alle die Map haben und bereit sind.")
+			bar.add_child(go)
+		else:
+			bar.add_child(lbl("Der Host startet die Runde.", 14, DIM))
+	elif is_host:
 		bar.add_child(_btn("Nächste Map" if remaining > 0 else "Zur Siegerehrung", true, 220, func():
 			if not harness:
 				Lobby.tour_next()))
 	else:
 		bar.add_child(lbl("Der Host startet die nächste Runde.", 14, DIM))
+
+
+func _process(_delta: float) -> void:
+	if _auto_lbl == null or not is_instance_valid(_auto_lbl) or t == null:
+		return
+	var left := Lobby.tour_auto_left() if not harness else -1.0
+	if left < 0.0:
+		_auto_lbl.text = ""
+	elif t.phase == Tournament.Phase.PLAY:
+		_auto_lbl.text = tr("Start in %d s") % ceili(left)
+	else:
+		_auto_lbl.text = tr("Weiter in %d s") % ceili(left)
 
 
 func _next_row(m: Dictionary) -> Control:

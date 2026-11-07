@@ -23,6 +23,7 @@ void fragment() {
 }
 """
 
+var _note_colors: NoteColorPicker
 var _world_preview: WorldPreview
 var _panel: Control
 var _scroll: ScrollContainer
@@ -149,7 +150,9 @@ func _ready() -> void:
 	mode_2d.tooltip_text = "Klassische senkrechte Spuren ohne 3D-Welt; Hintergrund = Map-Bild"
 	mode_2d.toggled.connect(func(on):
 		Settings.playfield_2d = on
-		_update_2d_rows())
+		_update_2d_rows()
+		if _note_colors != null:
+			_note_colors.show_mode(on))
 	_row(pg_game, "2D-Modus", mode_2d, null)
 
 	_slider_row(pg_game, "Scrollgeschwindigkeit", 0.5, 3.0, 0.1, Settings.mania_scroll,
@@ -162,6 +165,13 @@ func _ready() -> void:
 		func(v): Settings.lane_spacing = Settings.clamp_lane_spacing(v / 100.0),
 		"Abstand der Spuren in der 3D-Welt. Unter 85 % werden die Noten leicht kleiner.")
 	_rows_3d.append(spacing_row)
+
+	# Notenfarben auf der Gameplay-Seite: gilt fuer 3D und 2D (die 2D-Seite ist im 3D-Modus ausgeblendet).
+	_group(pg_game, "Notenfarben")
+	_note_colors = NoteColorPicker.new()
+	_note_colors.show_mode(Settings.playfield_2d)
+	_note_colors.changed.connect(_refresh_2d_preview)
+	pg_game.add_child(_note_colors)
 
 	_group(pg_game, "Steuerung")
 	var lane_row := HBoxContainer.new()
@@ -242,11 +252,6 @@ func _ready() -> void:
 			if skin.has_signal("changed"):
 				skin.connect("changed", _refresh_2d_preview)
 			_embed_skin(pg_2d, skin)
-
-	_group(pg_2d, "Notenfarben")
-	var ncp := NoteColorPicker.new()
-	ncp.changed.connect(_refresh_2d_preview)
-	pg_2d.add_child(ncp)
 
 	_add_2d_preview(pv_col)
 
