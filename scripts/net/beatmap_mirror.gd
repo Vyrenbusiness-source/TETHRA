@@ -135,8 +135,8 @@ static func headers() -> PackedStringArray:
 static func genre_label(genre_id: int) -> String:
 	for g in GENRES:
 		if int(g[0]) == genre_id:
-			return str(g[1])
-	return "" if genre_id == 0 else "Sonstiges"
+			return TranslationServer.translate(str(g[1]))
+	return "" if genre_id == 0 else TranslationServer.translate("Sonstiges")
 
 
 ## genre_id aus einem Mirror-Eintrag: Feld genre_id, sonst genre.id bzw.
