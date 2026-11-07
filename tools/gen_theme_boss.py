@@ -8,6 +8,10 @@ Erzeugt in assets_game/themes/boss/ drei equirektangulare Texturen (4096x2048):
                         Quellwolken als Hoehenfeld aufgebaut, von unten beleuchtet).
   sky_boss_embers.webp  Glut-Ebene ohne Himmel (Parallax): aufsteigende Funken
                         mit kurzem Schweif, wenige unscharfe Bokeh-Glutflocken.
+  sky_boss_veil.webp    dritte Tiefenebene (RGBA): Rauchsaeulen ueber dem Horizont,
+                        RGB = Randlicht (additiv), A = Abdunklung (Parallax).
+  sky_boss_shards.webp  NAHE Objekt-Ebene (RGBA, Stil Fraktal-Splitter): facettierte
+                        Glut-Brocken/Truemmer mit Glutrissen, ziehen vorbei.
   sky_boss_flash.webp   Blitz-Licht (NUR additiv, Shader-Uniform `lightning`):
                         R/G/B = drei getrennte Blitz-Gruppen (je wenige Zellen
                         in Tuermen/Wolken + Blitzkanaele), Graustufen-Intensitaet.
@@ -37,7 +41,7 @@ from scipy import ndimage
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from gen_skybox import (Noise3, smoothstep, ramp, hexcol, srgb_to_lin, dir_to_px,  # noqa: E402
-                        splat, tonemap, to_u8, lonlat_dir)
+                        splat, tonemap, to_u8, lonlat_dir, lin_to_srgb)
 
 F32 = np.float32
 D2R = math.pi / 180.0
@@ -552,6 +556,145 @@ def view(dec, W, H, pitch, yaw, fov, fgain, vw=960, vh=540):
     return out
 
 
+# ---------------------------------------------------------------------------
+# Dritte Tiefenebene: Rauchsaeulen ueber dem Horizont (Parallax)
+# ---------------------------------------------------------------------------
+def fft_noise(H, W, beta, sx, sy, rng):
+    """Naht-freies Rauschen (beide Achsen periodisch), Leistung ~ f^-beta.
+    sx/sy dehnen die Merkmale: sy > 1 = hoehere Frequenz laengs v ausgedehnt."""
+    fy = np.fft.fftfreq(H)[:, None] * H / sy
+    fx = np.fft.rfftfreq(W)[None, :] * W / sx
+    f = np.sqrt(fx * fx + fy * fy)
+    f[0, 0] = 1.0
+    spec = np.fft.rfft2(rng.standard_normal((H, W))) * (f ** (-beta * 0.5))
+    spec[0, 0] = 0.0
+    n = np.fft.irfft2(spec, s=(H, W)).astype(F32)
+    lo, hi = np.percentile(n, (1.0, 99.0))
+    return np.clip((n - lo) / (hi - lo), 0.0, 1.0)
+
+
+def build_veil(W, seed, out_dir, preview):
+    """sky_boss_veil.webp (RGBA): RGB = additives Blutrot-Licht der von unten
+    angestrahlten Rauchsaeulen, A = Abdunklung (1 = unveraendert). Nur Band
+    knapp ueber dem Horizont, Zenit/Boden schwarz. Im Shader eigener Parallax-
+    Versatz (langsame Drift + Schritt auf beat_step)."""
+    H = W // 2
+    rng = np.random.default_rng(7300 + seed * 1000 + 31)
+    lat = (0.5 - (np.arange(H, dtype=F32) + 0.5) / H) * 180.0
+    lat = lat[:, None]
+    lon = ((np.arange(W, dtype=F32) + 0.5) / W - 0.5) * 360.0
+    big = fft_noise(H, W, 3.4, 1.0, 2.6, rng)           # grosse Saeulen
+    mid = fft_noise(H, W, 2.6, 1.0, 2.0, rng)           # Wirbel
+    fine = fft_noise(H, W, 1.8, 1.0, 1.4, rng)          # Faserung
+    n = 0.62 * big + 0.30 * mid + 0.08 * fine
+    band = smoothstep(-1.5, 2.5, lat) * (1.0 - smoothstep(14.0, 52.0, lat))
+    col_h = np.clip(1.0 - (np.abs(lon[None, :]) - 0.0) / 400.0, 0, 1)  # nur Leichter Verlauf
+    body = np.clip((n - 0.40) * 2.4, 0.0, 1.0) ** 1.5 * band
+    # Saeulen wachsen vom Horizont: unten dicht, nach oben ausfransend.
+    grow = np.exp(-np.maximum(lat, 0.0) / 17.0)
+    dens = ndimage.gaussian_filter(np.clip(body * (0.35 + 0.9 * grow), 0.0, 1.0), 2.5)
+    # Randlicht: nur die unteren, dem Feuer zugewandten Kanten glimmen.
+    edge = np.clip(ndimage.gaussian_filter(dens, 7.0) - dens, 0.0, 1.0) * 1.5
+    edge += 0.35 * ndimage.gaussian_filter(dens, 14.0) * grow
+    light = np.clip(edge * 2.4 + 0.05 * dens * grow, 0.0, 1.0) * band
+    hue = lin("#8c0610")
+    hue = hue / hue.max()
+    rgb = (light[..., None] * 0.17) * hue[None, None, :]
+    alpha = 1.0 - 0.55 * dens * smoothstep(0.0, 0.7, dens)
+    rng2 = np.random.default_rng(5)
+    rgb8 = to_u8(np.sqrt(np.clip(rgb, 0, 1)), rng2)
+    a8 = np.clip(np.rint(alpha * 255.0), 0, 255).astype(np.uint8)
+    path = os.path.join(out_dir, "sky_boss_veil.webp")
+    Image.fromarray(np.dstack([rgb8, a8])).save(path, "WEBP", quality=94, method=6, exact=True, alpha_quality=96)
+    print("boss_veil: %dx%d  %.2f MB" % (W, H, os.path.getsize(path) / 1e6), flush=True)
+    if preview:
+        os.makedirs(preview, exist_ok=True)
+        Image.fromarray(np.dstack([rgb8, a8])[::4, ::4, :3]).save(os.path.join(preview, "boss_veil_pano.png"))
+
+
+
+# ---------------------------------------------------------------------------
+# Nahe Objekt-Ebene (Stil wie Fraktal-Splitter): facettierte Brocken, RGBA
+# ---------------------------------------------------------------------------
+def build_shards(W, seed, path, cfg, preview=""):
+    """RGBA 4096x2048: facettierte Brocken (flach schattierte Dreiecks-Facetten,
+    Randlicht, optional Glutrisse). A = Deckung (Straight-Alpha, Shader mischt
+    col = mix(col, rgb, a)). Nur Band ueber dem Horizont; vorn-mitte und unten
+    bleibt leer. RGB wurzel-kodiert wie die Panoramen."""
+    from PIL import ImageDraw
+    H = W // 2
+    SS = 2
+    rng = np.random.default_rng(seed + cfg["seed"])
+    img = Image.new("RGBA", (W * SS, H * SS), (0, 0, 0, 0))
+    dr = ImageDraw.Draw(img)
+
+    def enc(rgb):
+        lin = np.clip(np.asarray(rgb, dtype=np.float64), 0, 1)
+        return tuple(int(round(255.0 * float(lin_to_srgb(np.sqrt(c))))) for c in lin)
+
+    base = hexcol(cfg["base"])
+    hi = hexcol(cfg["hi"])
+    rim = hexcol(cfg["rim"])
+    crack = hexcol(cfg["crack"]) if cfg.get("crack") else None
+    items = []
+    for i in range(cfg["n"]):
+        lat = cfg["lat0"] + (cfg["lat1"] - cfg["lat0"]) * rng.random() ** 1.3
+        lon = rng.uniform(-180, 180)
+        R = cfg["rmin"] + (cfg["rmax"] - cfg["rmin"]) * rng.random() ** 2.6   # Grad
+        items.append((R, lat, lon))
+    items.sort()   # kleine (ferne) zuerst
+    for R, lat, lon in items:
+        rpx = R / 360.0 * W * SS
+        cy = (0.5 - lat / 180.0) * H * SS
+        sx = 1.0 / max(math.cos(math.radians(lat)), 0.3)
+        n = int(rng.integers(5, 9))
+        ang = np.sort(rng.uniform(0, 2 * math.pi, n))
+        rad = rpx * rng.uniform(0.55, 1.0, n)
+        elong = rng.uniform(0.55, 1.0)           # flach/gestreckt
+        tilt = rng.uniform(0, math.pi)
+        pts = []
+        for a, r in zip(ang, rad):
+            x, y = math.cos(a) * r, math.sin(a) * r * elong
+            xr = x * math.cos(tilt) - y * math.sin(tilt)
+            yr = x * math.sin(tilt) + y * math.cos(tilt)
+            pts.append((xr * sx, yr))
+        apex = (rng.uniform(-0.25, 0.25) * rpx * sx, rng.uniform(-0.25, 0.25) * rpx)
+        light = np.array([-0.55, -0.75])         # Licht oben-links
+        cx0 = (lon / 360.0 + 0.5) * W * SS
+        for dx in (-W * SS, 0, W * SS):
+            cx = cx0 + dx
+            if cx + rpx * sx * 1.4 < 0 or cx - rpx * sx * 1.4 > W * SS:
+                continue
+            for k in range(n):
+                p0, p1 = pts[k], pts[(k + 1) % n]
+                mid = np.array([(p0[0] + p1[0]) * 0.5, (p0[1] + p1[1]) * 0.5]) / max(rpx, 1)
+                nrm = mid / (np.linalg.norm(mid) + 1e-6)
+                b = float(np.clip(0.5 + 0.5 * np.dot(nrm, light), 0, 1)) * rng.uniform(0.6, 1.0)
+                col = base * (1 - b) + hi * b
+                tri = [(cx + apex[0], cy + apex[1]), (cx + p0[0], cy + p0[1]), (cx + p1[0], cy + p1[1])]
+                dr.polygon(tri, fill=enc(col) + (255,))
+                # Randlicht nur an lichtzugewandten Kanten
+                if np.dot(nrm, light) > 0.1:
+                    dr.line([tri[1], tri[2]], fill=enc(rim * (0.35 + 0.65 * b)) + (255,), width=max(1, int(rpx / 90)))
+                if crack is not None and rng.random() < 0.25:
+                    dr.line([tri[0], tri[1]], fill=enc(crack * rng.uniform(0.5, 1.0)) + (255,), width=max(1, int(rpx / 70)))
+    img = img.resize((W, H), Image.LANCZOS)
+    arr = np.asarray(img)
+    a = arr[..., 3]
+    # nahe Brocken sind unverkennbar: Weichzeichnung der Alpha-Kante entfaellt (Lanczos AA reicht).
+    # Straight-Alpha: Farben unter Alpha 0 nicht benutzen -> exact=True.
+    Image.fromarray(arr).save(path, "WEBP", quality=94, method=6, exact=True, alpha_quality=96)
+    mb = os.path.getsize(path) / 1e6
+    print("%s: %dx%d  %.2f MB" % (os.path.basename(path), W, H, mb), flush=True)
+    if preview:
+        os.makedirs(preview, exist_ok=True)
+        Image.fromarray(arr[300:900, 1400:2700]).save(os.path.join(preview, os.path.basename(path) + ".png"))
+    return mb
+
+SHARDS_CFG = dict(seed=401, n=150, lat0=5.0, lat1=62.0, rmin=0.8, rmax=6.5,
+                 base="#0a0102", hi="#4a0710", rim="#c01a1e", crack="#d8281e")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--width", type=int, default=4096)
@@ -559,8 +702,19 @@ def main():
     ap.add_argument("--out", default=OUT_DIR)
     ap.add_argument("--preview", default="", help="Ordner fuer Kamera-/Panorama-PNGs")
     ap.add_argument("--jobs", type=int, default=6)
+    ap.add_argument("--only", default="", help="nur eine Ebene neu: veil")
     a = ap.parse_args()
+    if a.only == "shards":
+        os.makedirs(a.out, exist_ok=True)
+        build_shards(a.width, a.seed, os.path.join(a.out, "sky_boss_shards.webp"), SHARDS_CFG, a.preview)
+        return
+    if a.only == "veil":
+        os.makedirs(a.out, exist_ok=True)
+        build_veil(a.width, a.seed, a.out, a.preview)
+        return
     build(a.width, a.seed, a.out, a.preview, a.jobs)
+    build_veil(a.width, a.seed, a.out, a.preview)
+    build_shards(a.width, a.seed, os.path.join(a.out, "sky_boss_shards.webp"), SHARDS_CFG, a.preview)
 
 
 if __name__ == "__main__":
