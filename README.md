@@ -69,6 +69,11 @@
 
 Switch on **SV** in the song browser and any map becomes an SV map. The mod writes its scroll changes from the map's own beat grid: a bounce on every beat in the chorus, calmer waves in the verses, short reverses, jumps and teleports on strong beats. Every note still arrives exactly on time, and maps that already have strong SV keep their own. Choose between Normal and Strong.
 
+<p align="center">
+  <a href="docs/media/sv_mod.webp"><img src="docs/media/sv_mod.webp" alt="SV mod: five frames 110 ms apart, notes surge and hold on the beat" width="100%"></a><br>
+  <sub>SV mod on a map without SV: five frames, 110 ms apart. Notes hold back, then surge forward on the beat.</sub>
+</p>
+
 ## 2D mode and skins
 
 <table>
