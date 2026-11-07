@@ -47,7 +47,7 @@ func _ready() -> void:
 
 	_mat = ShaderMaterial.new()
 	_mat.shader = load("res://shaders/theme_aurora.gdshader")
-	_mat.set_shader_parameter("tex_a", load(TEX_DIR + "aurora.webp"))
+	_mat.set_shader_parameter("tex_a", load(TEX_DIR + "aurora_sky.webp"))
 	_mat.set_shader_parameter("stars_a", load(TEX_DIR + "aurora_stars.webp"))
 	_mat.set_shader_parameter("aurora_a", load(TEX_DIR + "aurora_aurora.webp"))
 	_mat.set_shader_parameter("ice_a", load(TEX_DIR + "aurora_ice.webp"))

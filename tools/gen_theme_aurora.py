@@ -3,7 +3,7 @@
 shaders/theme_aurora.gdshader. Fuer ruhige, melodische Songs.
 
 Erzeugt in assets_game/themes/aurora/:
-  aurora.webp          4096x2048 RGBA  Szene: Polarnacht-Himmel (Zenit fast
+  aurora_sky.webp       4096x2048 RGBA  Szene: Polarnacht-Himmel (Zenit fast
                        schwarz, tuerkiser Horizont-Dunst), sehr feine Milchstrasse,
                        ferne vergletscherte Bergkette, Gletscherkante, Eisberge
                        (Tafel/Spitze) mit Randlicht, spiegelglattes Eismeer mit
@@ -780,7 +780,7 @@ def main():
         Image.fromarray(np.clip(np.rint(ice * 255.0), 0, 255).astype(np.uint8)).save(
             os.path.join(a.out, "aurora_ice.webp"), "WEBP", lossless=True, quality=100, method=4)
         return
-    pa = os.path.join(a.out, "aurora.webp")
+    pa = os.path.join(a.out, "aurora_sky.webp")
     pb = os.path.join(a.out, "aurora_stars.webp")
     pc = os.path.join(a.out, "aurora_aurora.webp")
     img, alpha = scene(W, H, a.seed * 1000 + 7)
