@@ -8,6 +8,8 @@ extends Node3D
 
 const SPARK_POOL := 96
 const BRIGHT_CAP := 0.75     # Obergrenze Helligkeit (grell tut weh)
+const CALM_CAP := 0.5        # Themen-Welten: nie heller als eine Note
+const CALM_RING := 0.26      # Ring-Staerke MAX; 300 etc. kleiner
 const LANE_TIME := 0.25
 const RING_TIME := 0.18
 const LANE_LEN := 22.0
@@ -56,6 +58,9 @@ var _rail_x: Array[float] = []
 var _z_line := 0.0
 var _road_y := 0.0
 var _theme := Color(0.55, 0.85, 1.0)
+## Themen-Welten (nicht galaxy/neon): ruhig, Farbe aus der Welt-Palette, kein Weiss.
+var _calm := false
+var _calm_col := Color(0.55, 0.85, 1.0)
 
 var _mm: MultiMesh
 var _mmi: MultiMeshInstance3D
@@ -77,7 +82,9 @@ var _rng := RandomNumberGenerator.new()
 var _ready_ok := false
 
 
-func setup(rail_x: Array[float], z_line: float, road_y: float, theme: Color) -> void:
+## world: Welt-Name (optional). Leer = aus der Linienfarbe der Palette erkannt.
+func setup(rail_x: Array[float], z_line: float, road_y: float, theme: Color, world: String = "") -> void:
+	_detect_calm(theme, world)
 	_rail_x = rail_x
 	_z_line = z_line
 	_road_y = road_y
@@ -87,7 +94,23 @@ func setup(rail_x: Array[float], z_line: float, road_y: float, theme: Color) -> 
 	_ready_ok = true
 
 
+func _detect_calm(theme: Color, world: String) -> void:
+	_calm = false
+	var pals: Dictionary = WorldTheme.PALETTES
+	var names: Array = [world] if world != "" else pals.keys()
+	for n in names:
+		var pal: Dictionary = pals.get(n, {})
+		if not pal.has("note"):
+			continue
+		if world != "" or pal.line.is_equal_approx(theme):
+			_calm = true
+			_calm_col = pal.note
+			return
+
+
 func _lighten(c: Color, k: float) -> Color:
+	if _calm:
+		return _calm_col
 	return c.lerp(Color(1, 1, 1), k)
 
 
@@ -107,7 +130,7 @@ func _build() -> void:
 	quad.size = Vector2(1, 1)
 	var mat := ShaderMaterial.new()
 	mat.shader = load("res://shaders/spark.gdshader")
-	mat.set_shader_parameter("max_bright", BRIGHT_CAP)
+	mat.set_shader_parameter("max_bright", CALM_CAP if _calm else BRIGHT_CAP)
 	quad.material = mat
 	_mm = MultiMesh.new()
 	_mm.transform_format = MultiMesh.TRANSFORM_3D
@@ -147,7 +170,7 @@ func _build() -> void:
 		var rm := ShaderMaterial.new()
 		rm.shader = ring_shader
 		var rq := QuadMesh.new()
-		rq.size = Vector2(1.5, 1.5)
+		rq.size = Vector2(1.0, 1.0) if _calm else Vector2(1.5, 1.5)
 		var ri := MeshInstance3D.new()
 		ri.mesh = rq
 		ri.material_override = rm
@@ -191,6 +214,21 @@ func spark(column: int, quality: int) -> void:
 			count = 2
 		_:
 			ring = 0.18
+	if _calm:
+		# MAX: kleiner Ring + 4 Funken; 300: 2 Funken ohne Ring; Rest fast still.
+		match quality:
+			0:
+				count = 4
+				ring = CALM_RING
+			1:
+				count = 2
+				ring = 0.0
+			2:
+				count = 1
+				ring = 0.0
+			_:
+				count = 0
+				ring = 0.0
 	var origin := Vector3(_rail_x[column], _road_y + 0.12, _z_line)
 	var side := -1.0 if column < _rail_x.size() / 2 else 1.0
 	var col := _lighten(_theme, 0.2 if quality == 0 else 0.1)
@@ -204,14 +242,17 @@ func spark(column: int, quality: int) -> void:
 			_rng.randf_range(0.15, 0.55),
 			_rng.randf_range(1.0, 2.2))
 		_pos[i] = origin + Vector3(_rng.randf_range(-0.15, 0.15), 0.0, 0.15)
-		_life0[i] = _rng.randf_range(0.16, 0.26)
+		_life0[i] = _rng.randf_range(0.16, 0.26) * (0.7 if _calm else 1.0)
 		_life[i] = _life0[i]
-		_size[i] = _rng.randf_range(0.05, 0.09) * (1.0 if quality == 0 else 0.8)
-		_tint[i] = col.lerp(Color(1.0, 0.85, 0.6), _rng.randf() * 0.35)
+		_size[i] = _rng.randf_range(0.05, 0.09) * (1.0 if quality == 0 else 0.8) * (0.7 if _calm else 1.0)
+		if _calm:
+			_tint[i] = col * (0.55 if quality == 0 else 0.42)
+		else:
+			_tint[i] = col.lerp(Color(1.0, 0.85, 0.6), _rng.randf() * 0.35)
 	if ring > 0.0:
 		_ring_t[column] = 0.0
 		_ring_mats[column].set_shader_parameter("col", _vec(_lighten(_theme, 0.25)))
-		_ring_mats[column].set_shader_parameter("strength", minf(ring, BRIGHT_CAP))
+		_ring_mats[column].set_shader_parameter("strength", minf(ring, CALM_CAP if _calm else BRIGHT_CAP))
 		_rings[column].visible = true
 
 
@@ -248,7 +289,7 @@ func update(delta: float) -> void:
 		_mm.set_instance_color(i, Color(c.r, c.g, c.b, k * k))
 	for i in _ring_t.size():
 		if _ring_t[i] < 1.0:
-			_ring_t[i] = minf(1.0, _ring_t[i] + delta / RING_TIME)
+			_ring_t[i] = minf(1.0, _ring_t[i] + delta / (RING_TIME * 0.75 if _calm else RING_TIME))
 			_ring_mats[i].set_shader_parameter("t", _ring_t[i])
 			if _ring_t[i] >= 1.0:
 				_rings[i].visible = false

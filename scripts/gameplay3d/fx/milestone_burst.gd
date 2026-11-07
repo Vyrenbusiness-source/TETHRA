@@ -36,13 +36,24 @@ class Slot:
 	var big := true
 
 var _theme := Color(0.45, 0.80, 1.00)
+var _calm := false
 var _combo: Slot
 var _section: Slot
 var _ready_done := false
 
 
-func setup(theme: Color) -> void:
+## world: Welt-Name (optional). Leer = aus der Linienfarbe der Palette erkannt.
+func setup(theme: Color, world: String = "") -> void:
 	_theme = theme
+	_calm = false
+	var accent := Color.WHITE.lerp(theme, 0.25)
+	var pals: Dictionary = WorldTheme.PALETTES
+	for n in ([world] if world != "" else pals.keys()):
+		var pal: Dictionary = pals.get(n, {})
+		if pal.has("note") and (world != "" or pal.line.is_equal_approx(theme)):
+			_calm = true
+			accent = pal.note
+			break
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	if not _ready_done:
@@ -51,7 +62,7 @@ func setup(theme: Color) -> void:
 		_ready_done = true
 	for s in [_combo, _section]:
 		var sl: Slot = s
-		sl.label.add_theme_color_override("font_color", Color.WHITE.lerp(theme, 0.25))
+		sl.label.add_theme_color_override("font_color", accent)
 		sl.label.add_theme_color_override("font_outline_color", Color(theme.darkened(0.7), 0.9))
 		sl.rule.color = Color(theme, 0.85)
 	_layout()
@@ -163,8 +174,9 @@ func _draw_plate(s: Slot) -> void:
 	var cx := lerpf(-60.0, PLATE_W + 60.0, kk)
 	var w := 34.0
 	var sk := 22.0
-	var c := Color(1, 1, 1, 0.55 * sin(k * PI))
-	var c0 := Color(1, 1, 1, 0.0)
+	var base := _theme if _calm else Color.WHITE
+	var c := Color(base, (0.16 if _calm else 0.55) * sin(k * PI))
+	var c0 := Color(base, 0.0)
 	var h := PLATE_H
 	var pts := PackedVector2Array([
 		Vector2(cx - w + sk, 0), Vector2(cx + sk, 0),

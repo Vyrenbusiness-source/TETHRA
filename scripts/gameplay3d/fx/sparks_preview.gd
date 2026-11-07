@@ -4,7 +4,7 @@ extends Node3D
 const Z_LINE := 3.0
 const ROAD_Y := -1.6
 const RAIL_X: Array[float] = [-2.55, -0.85, 0.85, 2.55]
-const SHOT_PATH := "C:/Users/Gexanx/AppData/Local/Temp/claude/c--Users-Gexanx-Desktop-rhyg/b9d5e593-aabc-4b4b-a882-a5835e187db3/scratchpad/sparks_preview.png"
+const SHOT_PATH := "C:/Users/Gexanx/AppData/Local/Temp/claude/a8d2df055934fb12/80c0c6f9-06b1-4222-ad93-57c1e121669d/scratchpad/sparks_preview.png"
 
 var _sparks: HitSparks
 var _t := 0.0
@@ -21,7 +21,8 @@ func _unlit(c: Color) -> StandardMaterial3D:
 
 
 func _ready() -> void:
-	_shot = "--shot" in OS.get_cmdline_args() or "shot" in OS.get_cmdline_args()
+	var all_args := OS.get_cmdline_args() + OS.get_cmdline_user_args()
+	_shot = "--shot" in all_args or "shot" in all_args
 	var env := WorldEnvironment.new()
 	var e := Environment.new()
 	e.background_mode = Environment.BG_COLOR
@@ -53,7 +54,17 @@ func _ready() -> void:
 		add_child(pad)
 	_sparks = HitSparks.new()
 	add_child(_sparks)
-	_sparks.setup(RAIL_X, Z_LINE, ROAD_Y, Color(0.45, 0.85, 1.0))
+	var col := Color(0.45, 0.85, 1.0)
+	var world := ""
+	for a in OS.get_cmdline_args() + OS.get_cmdline_user_args():
+		if a.begins_with("--theme="):
+			world = a.substr(8)
+	var pal := WorldTheme.palette(world)
+	if pal.has("note"):
+		col = pal.line
+	else:
+		world = ""
+	_sparks.setup(RAIL_X, Z_LINE, ROAD_Y, col, world)
 
 
 func _process(delta: float) -> void:
