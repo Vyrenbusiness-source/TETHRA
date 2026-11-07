@@ -24,6 +24,11 @@ func _initialize() -> void:
 	_test_scroll_fidelity()
 	_test_core_wiring(bm)
 	_test_score()
+	_test_block_mean(bm)
+	_test_strong(bm)
+	_test_reverse_scroll()
+	_test_sparse_reverse()
+	_test_normal_level(bm)
 	_test_real_maps()
 	print("=== Ergebnis: %d bestanden, %d fehlgeschlagen ===" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
@@ -125,11 +130,16 @@ func _test_bounds(bm: Beatmap) -> void:
 	var sm := _sm(bm, tps)
 	var lo := INF
 	var hi := -INF
+	var neg_lo := 0.0
 	for m in sm._mult:
+		if m < 0.0:
+			neg_lo = minf(neg_lo, m)
+			continue
 		lo = minf(lo, m)
 		hi = maxf(hi, m)
-	_ok(lo >= SvMod.M_MIN - 1e-6, "min Multiplikator >= 0.1 (%.3f), nie rueckwaerts" % lo)
+	_ok(lo >= SvMod.M_MIN_STRONG - 1e-6, "min vorwaerts >= %.2f (%.3f)" % [SvMod.M_MIN_STRONG, lo])
 	_ok(hi <= SvMod.M_MAX + 1e-6, "max Multiplikator <= 10 (%.3f)" % hi)
+	_ok(neg_lo >= -SvMod.M_REV_MAX - 1e-6, "rueckwaerts hoechstens -%.0f (%.2f)" % [SvMod.M_REV_MAX, neg_lo])
 	var in_range := true
 	for g in _greens(tps):
 		var sv: float = -100.0 / g.beat_length
@@ -163,7 +173,7 @@ func _test_normalized(bm: Beatmap) -> void:
 	var worst := 0.0
 	for o in bm.hit_objects:
 		worst = maxf(worst, absf((sm.position(o.time) - sm.position(t0)) - (o.time - t0)))
-	_ok(worst <= 400.0, "Drift jeder Note <= 1 Beat (%.1f ms)" % worst)
+	_ok(worst <= 600.0, "Drift jeder Note <= 1,5 Beats (%.1f ms)" % worst)
 	# Takt-Mittel ueber 4 Beats
 	var bar_lo := INF
 	var bar_hi := -INF
@@ -173,7 +183,7 @@ func _test_normalized(bm: Beatmap) -> void:
 		bar_lo = minf(bar_lo, m)
 		bar_hi = maxf(bar_hi, m)
 		t += 1600.0
-	_ok(bar_lo >= 0.7 and bar_hi <= 1.3, "Takt-Mittel %.3f..%.3f im Bereich 0.7..1.3" % [bar_lo, bar_hi])
+	_ok(bar_lo >= 0.5 and bar_hi <= 1.5, "Takt-Mittel %.3f..%.3f im Bereich 0.5..1.5" % [bar_lo, bar_hi])
 
 
 ## Spielbar: keine Note unsichtbar oder ueberlagert.
@@ -189,9 +199,11 @@ func _test_fair(bm: Beatmap, label: String, tps: Array = []) -> void:
 			bad += 1
 	_ok(bad == 0, "%s: keine ueberlagerten Noten (%d Verstoesse)" % [label, bad])
 	var short := 0
+	# Stark (max): Bursts/Teleports duerfen die Sichtzeit bis 1/3 kuerzen.
+	var min_vis := 0.4 if SvMod.strength == SvMod.STRENGTH_NORMAL else 0.33
 	for preempt in [600.0, 1200.0, 2400.0]:
 		for o in bm.hit_objects:
-			if o.time - sm.spawn_time(o.time, preempt) < 0.4 * preempt:
+			if o.time - sm.spawn_time(o.time, preempt) < min_vis * preempt:
 				if short == 0:
 					var k := sm._seg_by_time(o.time)
 					var seg := []
@@ -200,7 +212,8 @@ func _test_fair(bm: Beatmap, label: String, tps: Array = []) -> void:
 					print("    kurz: t=%.0f preempt=%.0f sichtbar=%.0f  %s" % [o.time, preempt,
 						o.time - sm.spawn_time(o.time, preempt), " ".join(seg)])
 				short += 1
-	_ok(short == 0, "%s: jede Note >= 40%% der Anflugzeit sichtbar (%d zu kurz)" % [label, short])
+	_ok(short == 0, "%s: jede Note >= %d%% der Anflugzeit sichtbar (%d zu kurz)" % [label, int(min_vis * 100.0), short])
+	_test_reverse_fair(bm, sm, label)
 
 
 func _test_is_sv(bm: Beatmap) -> void:
@@ -421,6 +434,7 @@ func _test_real_maps() -> void:
 			var tps := SvMod.generate(bm, SvMod.map_seed(bm))
 			var again := SvMod.generate(bm, SvMod.map_seed(bm))
 			_ok(tps.size() == again.size(), "%s [%s]: deterministisch" % [str(f).left(30), bm.version_name()])
+			print("    %s" % _describe(_sm(bm, tps)))
 			_test_fair(bm, "%s [%s]" % [str(f).left(30), bm.version_name()], tps)
 			if report != "":
 				_dump(report, "%02d_%s" % [done, str(f).get_basename().left(30)], bm, tps)
@@ -442,3 +456,213 @@ func _dump(out_dir: String, name: String, bm: Beatmap, tps: Array) -> void:
 		else:
 			f.store_string("%d,192,%d,1,0,0:0:0:0:\n" % [64 + col * 128, int(o.time)])
 	f.close()
+
+
+## Rueckwaerts nur fair: kein Abschnitt mit m <= 0 naeher als die Marge an
+## einer Note oder einem Hold-Koerper; jede Note kommt vorwaerts an (die
+## Position steigt in den letzten 50 ms vor dem Treffer).
+func _test_reverse_fair(bm: Beatmap, sm: ScrollMap, label: String) -> void:
+	var busy := SvMod._busy(bm)
+	var bs: PackedFloat64Array = busy[0]
+	var be: PackedFloat64Array = busy[1]
+	var bad := 0
+	for k in sm._times.size():
+		if sm._mult[k] > 0.0:
+			continue
+		var ts := sm._times[k]
+		var te := sm._times[k + 1] if k + 1 < sm._times.size() else INF
+		var margin := SvMod.JUMP_MARGIN_MS if te - ts <= 12.0 else SvMod.REV_MARGIN_MS
+		for q in bs.size():
+			if bs[q] - margin < te - 0.001 and be[q] + margin > ts + 0.001:
+				bad += 1
+				if bad == 1:
+					print("    reverse %.1f..%.1f (m %.2f) zu nah an %.0f..%.0f" % [ts, te, sm._mult[k], bs[q], be[q]])
+	_ok(bad == 0, "%s: Rueckwaerts nie nahe einer Note/eines Holds (%d)" % [label, bad])
+	var late := 0
+	for o in bm.hit_objects:
+		var h: float = o.time
+		var p := sm.position(h)
+		for e in [1.0, 5.0, 20.0, 50.0]:
+			if not (p - sm.position(h - e) > 0.0):
+				late += 1
+	_ok(late == 0, "%s: jede Note kommt vorwaerts an (%d Verstoesse)" % [label, late])
+
+
+func _describe(sm: ScrollMap) -> String:
+	var rev := 0
+	var tele := 0
+	var hi := 0.0
+	var lo := INF
+	for k in sm._times.size():
+		var m := sm._mult[k]
+		if m < 0.0:
+			rev += 1
+		elif m >= 9.0:
+			tele += 1
+		if m > 0.0:
+			hi = maxf(hi, m)
+			lo = minf(lo, m)
+	return "Linien %d, Rueckwaerts %d, Teleports %d, m %.2f..%.2f" % [sm._times.size(), rev, tele, lo, hi]
+
+
+## Mittel-Regel: an jeder Taktgrenze (Blockgrenze) stimmt die Position exakt.
+func _test_block_mean(bm: Beatmap) -> void:
+	print("- Mittel = 1 je Block (Stark)")
+	var sm := _sm(bm, SvMod.timing_points_for(bm))
+	var worst := 0.0
+	var n := 0
+	for bar in range(1, 64):
+		# Ramps vor den Drops (Takt 16, 40, 48) sind Mehr-Beat-Bloecke.
+		if (bar >= 13 and bar <= 16) or (bar >= 37 and bar <= 40) or (bar >= 45 and bar <= 48):
+			continue
+		var t := 1000.0 + bar * 1600.0
+		worst = maxf(worst, absf((sm.position(t) - sm.position(1000.0)) - (t - 1000.0)))
+		n += 1
+	_ok(worst < 0.01, "%d Taktgrenzen exakt (Abweichung %.5f ms)" % [n, worst])
+
+
+## Stark: deutlich, auf dem Beat (Burst in den Beat), Teleports, fast Freeze.
+func _test_strong(bm: Beatmap) -> void:
+	print("- Stark: Beat-Tanz")
+	_ok(SvMod.strength == SvMod.STRENGTH_STRONG, "Standard-Stufe ist Stark")
+	var sm := _sm(bm, SvMod.timing_points_for(bm))
+	var into := 0
+	var beats := 0
+	var max_m := 0.0
+	var min_m := INF
+	for bar in range(16, 32):
+		for beat in 4:
+			var t1 := 1000.0 + (bar * 4 + beat + 1) * 400.0
+			beats += 1
+			var m_in := (sm.position(t1) - sm.position(t1 - 4.0)) / 4.0
+			var m_mid := (sm.position(t1 - 200.0) - sm.position(t1 - 240.0)) / 40.0
+			if m_in > 1.5 and m_in > m_mid:
+				into += 1
+	for k in sm._times.size():
+		if sm._mult[k] > 0.0:
+			max_m = maxf(max_m, sm._mult[k])
+			min_m = minf(min_m, sm._mult[k])
+	_ok(float(into) / beats >= 0.6, "Kiai: Burst genau in den Beat (%d von %d Beats)" % [into, beats])
+	_ok(max_m >= 3.5, "Bursts deutlich ueber 3x (max %.2f)" % max_m)
+	_ok(min_m <= 0.2, "fast Freeze (min %.2f)" % min_m)
+	print("    %s" % _describe(sm))
+
+
+## ScrollMap mit Reverse: Position nicht monoton, time_at = erster Zeitpunkt.
+func _test_reverse_scroll() -> void:
+	print("- ScrollMap mit Reverse")
+	var tps: Array = []
+	var r := TimingPoint.new()
+	r.time = 0.0
+	r.beat_length = 500.0
+	r.uninherited = true
+	tps.append(r)
+	for e in [[1000.0, -1.0], [1100.0, 2.0], [1200.0, 1.0]]:
+		var g := TimingPoint.new()
+		g.time = e[0]
+		g.beat_length = -100.0 / absf(float(e[1]))
+		g.uninherited = false
+		if float(e[1]) < 0.0:
+			g.set_meta(ScrollMap.SV_META, float(e[1]))
+		tps.append(g)
+	var sm := ScrollMap.new()
+	sm.build(tps, 3000.0)
+	_ok(not sm.is_monotone(), "nicht monoton erkannt")
+	_ok(absf(sm.position(1100.0) - 900.0) < 1e-6, "rueckwaerts: Position 900 bei 1100 ms")
+	_ok(absf(sm.position(1200.0) - 1100.0) < 1e-6, "danach exakt aufgeholt (1100)")
+	_ok(absf(sm.time_at(950.0) - 950.0) < 1e-6, "time_at: erster Zeitpunkt (950)")
+	_ok(absf(sm.time_at(1050.0) - 1175.0) < 1e-6, "time_at hinter dem Maximum (1175)")
+	_ok(absf(sm.spawn_time(2000.0, 850.0) - 1175.0) < 1e-6, "spawn_time = erster Moment im Bild")
+	var plain := ScrollMap.new()
+	plain.build([r], 3000.0)
+	_ok(plain.is_monotone() and plain.time_at(123.0) == 123.0, "ohne Reverse unveraendert")
+
+
+## 1/1-Map mit Holds: dort passen Reverse und Rueck-Sprung.
+func _sparse() -> Beatmap:
+	var ho := PackedStringArray()
+	var xs := [64, 192, 320, 448]
+	for bar in 48:
+		for beat in 4:
+			var t := 1000 + (bar * 4 + beat) * 400
+			var c := (bar * 3 + beat) % 4
+			if bar % 6 == 2 and beat == 1:
+				ho.append("%d,192,%d,128,0,%d:0:0:0:0:" % [xs[c], t, t + 600])
+				continue
+			if bar % 6 == 2 and beat == 2:
+				continue
+			ho.append("%d,192,%d,1,0,0:0:0:0:" % [xs[c], t])
+	var kiai := "%d,-100,4,1,0,100,0,1\n%d,-100,4,1,0,100,0,0\n" % [1000 + 8 * 1600, 1000 + 40 * 1600]
+	var txt := "osu file format v14\n\n[General]\nMode: 3\n\n[Difficulty]\nHPDrainRate: 5\nCircleSize: 4\nOverallDifficulty: 8\nApproachRate: 5\nSliderMultiplier: 1.4\n\n[TimingPoints]\n1000,400,4,1,0,100,1,0\n" \
+		+ kiai + "\n[HitObjects]\n" + "\n".join(ho) + "\n"
+	return _parse(txt)
+
+
+## Reverse/Jump/Teleport vorhanden, fair, deterministisch; ManiaCore spawnt
+## der Reihe nach und genau am Rand des Sichtfensters.
+func _test_sparse_reverse() -> void:
+	print("- Reverse/Jump auf 1/1-Map")
+	var bm := _sparse()
+	var tps := SvMod.timing_points_for(bm)
+	var sm := _sm(bm, tps)
+	var rev := 0
+	var jumps := 0
+	var tele := 0
+	for k in sm._times.size():
+		if sm._mult[k] < 0.0:
+			var dur := sm._times[k + 1] - sm._times[k]
+			if dur <= 12.0:
+				jumps += 1
+			else:
+				rev += 1
+		elif sm._mult[k] >= 9.0:
+			tele += 1
+	_ok(rev >= 10, "Noten laufen kurz rueckwaerts (%d Phasen)" % rev)
+	_ok(jumps >= 3, "Rueck-Spruenge (%d)" % jumps)
+	_ok(tele >= 3, "Teleports (%d)" % tele)
+	var a := SvMod.generate(bm, SvMod.map_seed(bm))
+	var same := a.size() == tps.size()
+	if same:
+		for i in a.size():
+			if a[i].time != tps[i].time or a[i].beat_length != tps[i].beat_length \
+					or a[i].get_meta(ScrollMap.SV_META, 1.0) != tps[i].get_meta(ScrollMap.SV_META, 1.0):
+				same = false
+				break
+	_ok(same, "deterministisch inkl. Reverse")
+	_test_fair(bm, "1/1-Map", tps)
+	var gs = root.get_node_or_null("GameSession")
+	if gs == null:
+		return
+	gs.mods = {"SV": true}
+	var core := ManiaCore.new()
+	core.setup(bm)
+	gs.mods = {}
+	_ok(not core.scroll.is_monotone(), "ManiaCore nutzt die Reverse-Tabelle")
+	var mono := true
+	for i in range(1, core._spawn_times.size()):
+		if core._spawn_times[i] < core._spawn_times[i - 1]:
+			mono = false
+	_ok(mono, "Spawn-Zeiten nicht fallend")
+	var vis := 0
+	for o in bm.hit_objects:
+		var st := core.scroll.spawn_time(o.time, core.preempt)
+		if absf((core.scroll.position(o.time) - core.scroll.position(st)) - core.preempt) > 0.01:
+			vis += 1
+	_ok(vis == 0, "Spawn genau am Rand des Sichtfensters (%d Abweichungen)" % vis)
+
+
+## Stufe Normal = Stand v1.15: nie rueckwaerts, m >= 0.1.
+func _test_normal_level(bm: Beatmap) -> void:
+	print("- Stufe Normal")
+	SvMod.strength = SvMod.STRENGTH_NORMAL
+	var tps := SvMod.timing_points_for(bm)
+	var sm := _sm(bm, tps)
+	var lo := INF
+	for m in sm._mult:
+		lo = minf(lo, m)
+	_ok(lo >= SvMod.M_MIN - 1e-6, "Normal: min %.3f >= 0.1, nie rueckwaerts" % lo)
+	_ok(sm.is_monotone(), "Normal: Position monoton")
+	_test_fair(bm, "Normal", tps)
+	SvMod.strength = SvMod.STRENGTH_STRONG
+	var again := SvMod.timing_points_for(bm)
+	_ok(again != tps, "Stufenwechsel erneuert den Cache")

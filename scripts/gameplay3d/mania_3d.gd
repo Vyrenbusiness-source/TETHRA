@@ -2081,6 +2081,12 @@ func _process(delta: float) -> void:
 		if core.active_hold(obj.column) == index:
 			head_t = maxf(obj.time, t)
 		root.position = Vector3(RAIL_X[obj.column], ROAD_Y + 0.32, _note_z(head_t, t))
+		# SV-Reverse: Noten hinter dem Horizont (kurz nach oben gelaufen) aus.
+		var in_view := root.position.z >= Z_FAR - 0.5
+		if root.visible != in_view:
+			root.visible = in_view
+			if entry.get("beam") != null:
+				(entry.beam as Node3D).visible = in_view
 		if _2d:
 			# 2D: nur Position + Hold-Zustand, keine 3D-Shader-Updates.
 			if obj.is_hold and core.active_hold(obj.column) == index:

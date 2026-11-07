@@ -138,6 +138,7 @@ func set_scroll_scale(scroll_scale: float) -> void:
 	var objs := beatmap.hit_objects
 	for i in range(_next_spawn, mini(objs.size(), _spawn_times.size())):
 		_spawn_times[i] = scroll.spawn_time(objs[i].time, preempt)
+	_monotone_spawns(_next_spawn)
 
 
 ## Baut die SV-Positionstabelle und die Spawn-Zeiten (einmal beim Laden).
@@ -147,6 +148,19 @@ func _build_scroll() -> void:
 	_spawn_times.resize(objs.size())
 	for i in objs.size():
 		_spawn_times[i] = scroll.spawn_time(objs[i].time, preempt)
+	_monotone_spawns(0)
+
+
+## Spawn-Zeiten nicht fallend machen (update() spawnt der Reihe nach). Bei
+## Reverse (SV-Mod Stark) kann eine spaetere Note frueher ins Bild kommen als
+## eine fruehere; die fruehere spawnt dann mit (Renderer blenden Noten
+## ausserhalb des Sichtfensters aus). Ohne Reverse aendert sich nichts.
+func _monotone_spawns(from: int) -> void:
+	if scroll.is_monotone():
+		return
+	for i in range(_spawn_times.size() - 2, from - 1, -1):
+		if _spawn_times[i + 1] < _spawn_times[i]:
+			_spawn_times[i] = _spawn_times[i + 1]
 
 
 ## Score-Multiplikator je Mod (kombinierbar: Produkt aller aktiven Mods).
