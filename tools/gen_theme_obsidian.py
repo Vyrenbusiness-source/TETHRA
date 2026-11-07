@@ -51,7 +51,7 @@ OUT_DIR = os.path.join(ROOT, "assets_game", "themes", "obsidian")
 
 # Lichtquellen (Laenge, Breite in Grad; Staerke). Gleiche Werte im Shader
 # (light_a / light_b / light_c), damit Wellen-Glanz und Himmel zusammenpassen.
-LIGHTS = [(-58.0, 3.2, 1.0), (63.0, 4.6, 0.8), (172.0, 2.4, 0.45)]
+LIGHTS = [(-42.0, 3.0, 1.0), (46.0, 4.2, 0.8), (172.0, 2.4, 0.45)]
 WAVE_SLOPE = 1.0  # Steigungsbereich der Wellen-Ebene (+-), Shader: wave_slope
 
 
@@ -158,26 +158,33 @@ def paint_sky(P, rng):
     # Duenne kalte Horizontlinie (Weltkante), vorn ausgeblendet.
     line = np.exp(-(E / 0.22) ** 2) * 0.030 * az * up
 
-    # Tintenschwaden: vertikal gestreckt, verwirbelt, steigen vom Horizont.
+    # Tintenschwaden: steigen vom Horizont, zweifach verwirbelt (Tinte in Wasser).
     H, W = P.H, P.W
-    wx = fbm2(rng, H, W, base=(2, 5), octaves=5)
-    wy = fbm2(rng, H, W, base=(2, 5), octaves=5)
+    sc = W / 4096.0
     yy, xx = np.mgrid[0:H, 0:W].astype(F32)
-    n = fbm2(rng, H, W, base=(3, 20), octaves=6, gain=0.58)
-    n = ndimage.map_coordinates(n, [yy + wy * 120.0, xx + wx * 260.0], order=1, mode="grid-wrap")
-    rise = np.exp(-Ep / 14.0) * up  # nur ueber dem Horizont
+    w1x = fbm2(rng, H, W, base=(3, 9), octaves=5)
+    w1y = fbm2(rng, H, W, base=(3, 9), octaves=5)
+    w2x = fbm2(rng, H, W, base=(8, 28), octaves=4)
+    w2y = fbm2(rng, H, W, base=(8, 28), octaves=4)
+    n = fbm2(rng, H, W, base=(2, 11), octaves=6, gain=0.5)
+    cy = yy + (w1y * 90.0 + w2y * 26.0) * sc
+    cx = xx + (w1x * 200.0 + w2x * 40.0) * sc
+    n = ndimage.map_coordinates(n, [cy, cx], order=1, mode="grid-wrap")
+    # Schwaden-Hoehe je Laenge verschieden (4..22 Grad).
+    top = 4.0 + 18.0 * smoothstep(-0.45, 0.45, fbm2(rng, 8, W, base=(1, 9), octaves=4)[4])[None, :]
+    rise = np.exp(-Ep / top) * up  # nur ueber dem Horizont
     col_mask = smoothstep(-0.05, 0.35, fbm2(rng, H, W, base=(1, 7), octaves=3))
-    dens = smoothstep(0.0, 0.16, n + 0.25 * col_mask - 0.10)
-    dens = dens * np.clip(rise * 1.4, 0.0, 1.0) * (0.45 + 0.55 * col_mask)
-    dens = dens.astype(F32)
-    # Kante: Gradient der Dichte, nur auf der dem Licht zugewandten Seite.
-    gy, gx = np.gradient(ndimage.gaussian_filter(dens, 1.2))
-    edge = np.clip(np.sqrt(gx * gx + gy * gy) * 9.0, 0.0, 1.0) * dens * (1.0 - dens) * 4.0
+    dens = smoothstep(-0.10, 0.30, n + 0.25 * col_mask - 0.08)
+    dens = dens * np.clip(rise * 1.3, 0.0, 1.0) * (0.40 + 0.60 * col_mask)
+    dens = ndimage.gaussian_filter(dens.astype(F32), 1.0 * sc)
+    # Kalte Kante nur an der Oberseite der Schwaden (Licht von hinten unten).
+    gy = np.gradient(ndimage.gaussian_filter(dens, 2.0 * sc), axis=0)
+    edge = np.clip(gy * 14.0 / sc, 0.0, 1.0) * up
     behind = glow[..., None] * STEEL + core[..., None] * STEEL_HI + line[..., None] * STEEL
-    occl = 1.0 - 0.93 * dens
+    occl = 1.0 - 0.92 * dens
     P.img *= (1.0 - 0.80 * dens)[..., None]
     P.img += behind * occl[..., None]
-    P.img += (edge * (glow * 0.6 + 0.004 * az) * up)[..., None] * STEEL
+    P.img += (edge * (glow * 0.35 + 0.0025 * az))[..., None] * STEEL
     P.img += (dens * 0.0006)[..., None] * INK / INK.max()
 
 
@@ -321,9 +328,9 @@ def paint_drops(P, rng):
         Drop(-35.0, 9.0, 4.2, [((0, 0, 0), 1.0, 0.4), ((0.15, -1.25, 0.1), 0.42, 0.55),
                               ((0.2, -2.05, 0.1), 0.16, 0.35)], 0.025, rng.integers(1 << 30)),
         Drop(-27.5, 4.4, 0.9, [((0, 0, 0), 1.0, 0.3)], 0.02, rng.integers(1 << 30)),
-        Drop(39.0, 11.5, 2.8, [((0, 0, 0), 1.0, 0.4), ((-0.9, 0.55, 0.2), 0.55, 0.6)], 0.03,
+        Drop(37.5, 9.0, 2.6, [((0, 0, 0), 1.0, 0.4), ((-0.9, 0.55, 0.2), 0.55, 0.6)], 0.03,
              rng.integers(1 << 30)),
-        Drop(44.5, 7.2, 0.55, [((0, 0, 0), 1.0, 0.3)], 0.0, rng.integers(1 << 30)),
+        Drop(43.0, 6.4, 0.55, [((0, 0, 0), 1.0, 0.3)], 0.0, rng.integers(1 << 30)),
         Drop(105.0, 20.0, 9.0, [((0, 0, 0), 1.0, 0.5), ((0.1, -1.3, 0.0), 0.5, 0.7),
                                 ((0.15, -2.2, 0.0), 0.22, 0.4), ((0.8, 0.7, 0.3), 0.45, 0.6)],
              0.03, rng.integers(1 << 30)),

@@ -93,25 +93,26 @@ uniform float aurora_flow = 0.0;
 uniform float flow_speed = 1.1;         // Welteinheiten/s zum Spieler
 uniform float sea_height = 5.4;
 uniform float wave_slope = 1.0;         // Steigungsbereich der Ebene (Generator WAVE_SLOPE)
-uniform float wave_tile_a = 56.0;       // grosse Duenung
-uniform float wave_tile_b = 21.0;       // mittlere Wellen (gedreht, quer)
+uniform float wave_tile_a = 96.0;       // grosse Duenung
+uniform float wave_tile_b = 34.0;       // mittlere Wellen (gedreht, quer)
 uniform float wave_gain_a = 0.85;
 uniform float wave_gain_b = 0.55;
 uniform float sea_clear = 4.4;          // halbe Breite (x) mattes Oel unter der Strecke
 uniform float sea_clear_soft = 6.0;
 uniform float sea_center_level = 0.22;  // Restglanz unter der Strecke
 uniform float sea_fade = 260.0;         // Abstand, ab dem das Panorama-Oel uebernimmt
-uniform float reflect_gain = 2.2;
+uniform float reflect_gain = 3.0;
+uniform float swell_amp = 2.4;          // Hoehe der langen Duenung (Welteinheiten)
 uniform vec3 gloss_color : source_color = vec3(0.275, 0.43, 0.63);  // #8fb0d0
 uniform vec3 gloss_core : source_color = vec3(0.69, 0.79, 0.91);    // #d8e6f5
 uniform float gloss_intensity : hint_range(0.0, 4.0) = 1.0;
 // Lichter: (Laenge Grad, Breite Grad, Staerke) - wie LIGHTS im Generator.
-uniform vec3 light_a = vec3(-58.0, 3.2, 1.0);
-uniform vec3 light_b = vec3(63.0, 4.6, 0.8);
+uniform vec3 light_a = vec3(-42.0, 3.0, 1.0);
+uniform vec3 light_b = vec3(46.0, 4.2, 0.8);
 uniform vec3 light_c = vec3(172.0, 2.4, 0.45);
 // Beat-Atmen
 uniform float swell_reach = 120.0;      // Start-Abstand der Druckwelle (vorn)
-uniform float swell_height = 1.5;       // Hoehe der Druckwelle (Welteinheiten)
+uniform float swell_height = 2.6;       // Hoehe der Druckwelle (Welteinheiten)
 uniform float swell_gloss = 0.35;       // Glanz-Anstieg auf der Welle / im Atem
 
 mat3 euler(vec3 e) {
@@ -168,6 +169,16 @@ vec2 gloss(vec3 n, vec3 v, vec3 l, float k, float sharp) {
 	return k * vec2(pow(nh, sharp) * 7.0, pow(nh, sharp * 0.09) * 0.22);
 }
 
+// Steigung (dh/dx, dh/dz) einer langen Welle: Richtung d (zum Spieler +z),
+// Wellenlaenge lam, Hoehe a, Weg off (Welteinheiten), Ausblendung f0..f1.
+vec2 swell(vec2 p, vec2 d, float lam, float a, float off, float f0, float f1) {
+	vec2 k = normalize(d) * (TAU / lam);
+	float ph = dot(k, p) - off * (TAU / lam);
+	float c = 0.5 + 0.5 * cos(ph);
+	float dh = a * 1.7 * pow(max(c, 1e-4), 0.7) * (-0.5 * sin(ph));
+	return k * dh * (1.0 - smoothstep(f0, f1, length(p)));
+}
+
 vec3 oil_sea(vec3 dir, vec3 pan, mat3 prot) {
 	float dy = -dir.y;
 	float t = sea_height / max(dy, 1e-4);
@@ -195,6 +206,14 @@ vec3 oil_sea(vec3 dir, vec3 pan, mat3 prot) {
 	float flat_far = 1.0 - smoothstep(120.0, sea_fade, dist) * 0.75;
 	vec2 s = (sa_s * flat_far + sb_s * near_detail) * has;
 
+	// Riesige Duenung: drei lange Kaemme rollen zum Spieler (analytisch,
+	// trochoidal: runde Kaemme, breite Taeler), Ferne blendet sie aus.
+	vec2 sw = vec2(0.0);
+	sw += swell(p, vec2(0.12, 1.0), 64.0, swell_amp * 1.0, flow * 1.0, 150.0, 270.0);
+	sw += swell(p, vec2(-0.38, 1.0), 39.0, swell_amp * 0.55, flow * 0.8 + 11.0, 110.0, 210.0);
+	sw += swell(p, vec2(0.7, 0.75), 23.0, swell_amp * 0.22, flow * 0.6 + 5.0, 70.0, 150.0);
+	s += sw;
+
 	// Beat-Druckwelle: gewoelbter Kamm rollt vom Horizont zum Spieler.
 	float side = smoothstep(sea_clear, sea_clear + sea_clear_soft, abs(p.x));
 	float ph = beat_phase();
@@ -202,7 +221,7 @@ vec3 oil_sea(vec3 dir, vec3 pan, mat3 prot) {
 	breath *= breath;
 	float zr = mix(swell_reach, 4.0, ph);
 	float fe = fwd + 0.0045 * p.x * p.x;
-	float ww = 3.2 + fe * 0.06;
+	float ww = 5.0 + fe * 0.07;
 	float q = (fe - zr) / ww;
 	float g = swell_height * breath * exp(-q * q) * side;
 	float dg = -2.0 * q / ww * g;       // dg/dfe
@@ -227,6 +246,7 @@ vec3 oil_sea(vec3 dir, vec3 pan, mat3 prot) {
 	vec2 gl = gloss(n, v, light_dir(light_a, prot), light_a.z, sharp)
 		+ gloss(n, v, light_dir(light_b, prot), light_b.z, sharp)
 		+ gloss(n, v, light_dir(light_c, prot), light_c.z, sharp);
+	gl *= mix(0.35, 1.0, smoothstep(5.0, 30.0, dist)); // kein Grell-Fleck vor der Kamera
 	float lift = 1.0 + swell_gloss * (crest * 2.0 + breath * 0.3 * side);
 	col += (gloss_core * gl.x + gloss_color * gl.y) * mix(0.35, 1.0, F) * gloss_intensity * lift * occ;
 	// Kamm der Druckwelle faengt kalten Schimmer (auch ohne Licht dahinter).
@@ -239,7 +259,7 @@ vec3 oil_sea(vec3 dir, vec3 pan, mat3 prot) {
 	// Unter der Strecke mattes Schwarz, nahe Kamera weich, Ferne -> Panorama.
 	col *= mix(sea_center_level, 1.0, side);
 	col *= smoothstep(1.0, 5.0, dist);
-	float far = smoothstep(sea_fade * 0.45, sea_fade, dist) + (1.0 - smoothstep(0.0, 0.012, dy));
+	float far = smoothstep(sea_fade * 0.6, sea_fade * 2.4, dist);
 	return mix(col, pan, clamp(far, 0.0, 1.0));
 }
 
