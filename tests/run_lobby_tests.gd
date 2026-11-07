@@ -277,6 +277,7 @@ func _init() -> void:
 	_modes(L)
 	_nearest(L)
 	_packet()
+	_views(L)
 
 	L._reset()
 	print("FAILED: %d" % _failed)
@@ -436,3 +437,44 @@ func _packet() -> void:
 	_check(not c.has("evil"), "unbekannte Schluessel verworfen")
 	var old := PlayerStatsCard.sanitize({ "score": 5, "acc": 0.5, "combo": 1, "failed": false, "grade": "C" })
 	_check(not old.has("ur") and not old.has("bins"), "altes Kurz-Paket bleibt kurz")
+
+
+## Darstellung je Spieler: Validierung, alte Clients, eigener Wert.
+func _views(L) -> void:
+	_check(L.norm_view("3D") == "3D" and L.norm_view("2D") == "2D" and L.norm_view("Orbit") == "Orbit", "bekannte Darstellungen")
+	_check(L.norm_view("4D") == "" and L.norm_view("") == "" and L.norm_view("3d") == "", "unbekannter Text -> leer")
+	_check(L.norm_view(3) == "" and L.norm_view(null) == "" and L.norm_view([1]) == "" and L.norm_view({}) == "", "Nicht-String -> leer")
+	_check(L.norm_view("X".repeat(500)) == "", "Riesenstring -> leer")
+	L.players = { 1: L._new_player("Host"), 2: L._new_player("Anna"), 3: L._new_player("Ben") }
+	_check(L.view_of(2) == "", "neuer Spieler: unbekannt")
+	# Alter Client: Datensatz ohne Feld "view" -> kein Absturz.
+	var legacy: Dictionary = { "name": "Alt", "ready": true, "score": 0, "combo": 0, "acc": 1.0, "final": {} }
+	L.players[4] = legacy
+	_check(L.view_of(4) == "", "altes Datensatz ohne view -> unbekannt")
+	_check(L.view_of(99) == "", "fehlender Spieler -> unbekannt")
+	L.players[3].view = "evil"
+	_check(L.view_of(3) == "", "manipulierter Wert wird beim Lesen abgewiesen")
+	L.players[2].view = "2D"
+	_check(L.view_of(2) == "2D", "gemeldete Darstellung sichtbar")
+	# Host meldet eigene Darstellung.
+	L.active = true
+	L.is_host = true
+	var S = root.get_node("Settings")
+	var was: bool = S.playfield_2d
+	S.playfield_2d = true
+	L.send_view()
+	_check(L.view_of(1) == "2D" and L.local_view() == "2D", "Host meldet 2D")
+	S.playfield_2d = false
+	L.send_view()
+	_check(L.view_of(1) == "3D", "Host-Wechsel auf 3D")
+	S.playfield_2d = was
+	# Kein Raum: nichts passiert.
+	L.active = false
+	S.playfield_2d = true
+	L.send_view()
+	_check(L.view_of(1) == "3D", "ohne Raum keine Meldung")
+	S.playfield_2d = was
+	L.active = true
+	# Server-RPC ohne bekannten Absender aendert nichts.
+	L.srv_set_view("2D")
+	_check(L.view_of(1) == "3D", "RPC ohne Spieler ignoriert")

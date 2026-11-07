@@ -90,6 +90,7 @@ func _ready() -> void:
 	multiplayer.server_disconnected.connect(func():
 		_reset()
 		left.emit(tr("Der Host hat den Raum geschlossen.")))
+	Settings.changed.connect(send_view)
 
 
 ## Gleiche Namen unterscheidbar machen: "Anna", "Anna (2)", "Anna (3)".
@@ -108,9 +109,58 @@ func _unique_name(base: String, id: int) -> String:
 	return nm
 
 
+## Bekannte Darstellungen je Spieler. "" = unbekannt (aelterer Client).
+const VIEWS := ["3D", "2D", "Orbit"]
+
+
 func _new_player(pname: String) -> Dictionary:
 	return { "name": pname, "ready": false, "score": 0, "combo": 0,
-		"acc": 1.0, "final": {} }
+		"acc": 1.0, "final": {}, "view": "" }
+
+
+## Nur bekannte Werte durchlassen, alles andere (auch Nicht-Strings) wird "".
+static func norm_view(v) -> String:
+	if typeof(v) == TYPE_STRING and VIEWS.has(v):
+		return v
+	return ""
+
+
+## Darstellung dieses Clients (Orbit kommt, sobald ein Orbit-Schalter existiert).
+static func local_view() -> String:
+	return "2D" if Settings.playfield_2d else "3D"
+
+
+## Darstellung eines Spielers; "" wenn unbekannt.
+func view_of(id: int) -> String:
+	if not players.has(id):
+		return ""
+	return norm_view(players[id].get("view", ""))
+
+
+## Eigene Darstellung melden (beim Betreten und bei Aenderung).
+func send_view() -> void:
+	if not active:
+		return
+	var v := local_view()
+	if is_host:
+		if players.has(1) and players[1].get("view", "") != v:
+			players[1].view = v
+			_sync()
+	elif multiplayer.get_unique_id() != 1:
+		rpc_id(1, "srv_set_view", v)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func srv_set_view(v: String) -> void:
+	if not is_host:
+		return
+	var id := multiplayer.get_remote_sender_id()
+	if not players.has(id):
+		return
+	var nv := norm_view(v)
+	if players[id].get("view", "") != nv:
+		players[id].view = nv
+		_sync()
 
 
 # ---------------------------------------------------------------------------
@@ -133,6 +183,7 @@ func host_room(rname: String = "", pw: String = "") -> bool:
 	crown_id = 1
 	players = { 1: _new_player(Settings.profile_name) }
 	players[1].ready = true
+	players[1].view = local_view()
 	mm = MatchMode.new()
 	_mm_live = false
 	room_code = ""
@@ -229,6 +280,7 @@ func _join(ip: String, port: int) -> bool:
 
 func _on_connected_to_server() -> void:
 	rpc_id(1, "srv_register", Settings.profile_name, _join_pw)
+	send_view()
 
 
 func leave() -> void:

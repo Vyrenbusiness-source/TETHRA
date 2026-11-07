@@ -1361,6 +1361,26 @@ func _show_browser() -> void:
 
 
 ## Eine Spielerzeile: Avatar, Krone, Name, (Score), Bereit-Status, Krone geben.
+## Kleines ruhiges Abzeichen "3D" / "2D" / "Orbit"; null bei unbekannter Darstellung.
+func _view_badge(view: String) -> Control:
+	if view == "":
+		return null
+	var pc := PanelContainer.new()
+	pc.add_theme_stylebox_override("panel", _box(Color(1, 1, 1, 0.06), 5))
+	pc.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	pc.tooltip_text = tr("Spielt in %s") % view
+	var l := _lbl(view, FS_S, COL_DIM)
+	l.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var m := MarginContainer.new()
+	m.add_theme_constant_override("margin_left", 6)
+	m.add_theme_constant_override("margin_right", 6)
+	m.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	m.add_child(l)
+	pc.add_child(m)
+	return pc
+
+
 func _player_row(id: int, p: Dictionary, my_id: int, in_round: bool) -> Control:
 	var is_crown: bool = id == Lobby.crown_id
 	var row := PanelContainer.new()
@@ -1410,6 +1430,9 @@ func _player_row(id: int, p: Dictionary, my_id: int, in_round: bool) -> Control:
 		var you := _lbl("(du)", FS_S, COL_DIM)
 		you.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		name_box.add_child(you)
+	var vb := _view_badge(Lobby.view_of(id))
+	if vb != null:
+		name_box.add_child(vb)
 	name_l.size_flags_horizontal = Control.SIZE_FILL
 	var nsp := Control.new()
 	nsp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -2708,7 +2731,10 @@ func _lobby_shots() -> void:
 	for i in who.size():
 		Lobby.players[i + 2] = Lobby._new_player(who[i])
 		Lobby.players[i + 2].ready = i % 3 != 1
+		# Gemischte Darstellung; Jonas (letzter) = alter Client ohne Angabe.
+		Lobby.players[i + 2].view = ["3D", "2D", "2D", "3D", "Orbit", "3D", ""][i]
 	Lobby.players[1].ready = true
+	Lobby.players[1].view = "3D"
 	if not _library.mapsets.is_empty():
 		var ms: MapSet = _library.mapsets[mini(3, _library.mapsets.size() - 1)]
 		var d := mini(1, ms.difficulty_count() - 1)
