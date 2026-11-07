@@ -34,6 +34,12 @@ var _dl_set := 0
 var _bg_rect: TextureRect
 var _preview: AudioStreamPlayer
 var _preview_fade: Tween
+var _picker: MapPicker = null
+var _dl_row: HBoxContainer
+var _dl_btn: Button
+var _dl_bar: ProgressBar
+var _dl_label: Label
+var _dl_cancel: Button
 
 
 func _ready() -> void:
@@ -47,6 +53,7 @@ func _ready() -> void:
 	_mirror.download_progress.connect(_on_dl_progress)
 	_mirror.download_done.connect(_on_dl_done)
 	_mirror.download_failed.connect(_on_dl_failed)
+	_mirror.download_cancelled.connect(_on_dl_cancelled)
 
 	# Hintergrund: Neon-Shader als Fallback, darueber das geblurrte Cover —
 	# beim Oeffnen das zuletzt gespielte Lied, im Raum immer die gewaehlte Map.
@@ -151,6 +158,8 @@ func _ready() -> void:
 
 	if OS.get_cmdline_args().has("--shot-mp"):
 		_capture_shot()
+	if OS.get_cmdline_args().has("--shot-picker") or OS.get_cmdline_user_args().has("--shot-picker"):
+		_picker_shots()
 	# Headless-Smoke: zwei Prozesse verbinden sich ueber localhost.
 	if OS.get_cmdline_args().has("--mp-host-test"):
 		Lobby.host_room()
@@ -271,6 +280,56 @@ func _capture_shot() -> void:
 	var path := "C:/Users/Gexanx/AppData/Local/Temp/claude/c--Users-Gexanx-Desktop-rhyg/b9d5e593-aabc-4b4b-a882-a5835e187db3/scratchpad/mp_browser.png"
 	img.save_png(path)
 	print("SHOT gespeichert: " + path)
+	get_tree().quit(0)
+
+
+## Screenshots des Map-Pickers: offen, Suche aktiv, Diff mit eigenem Score.
+## Ziel: --shot-out=<Praefix> (sonst user://picker).
+func _picker_shots() -> void:
+	var out := ProjectSettings.globalize_path("user://picker")
+	for a in OS.get_cmdline_args() + OS.get_cmdline_user_args():
+		if a.begins_with("--shot-out="):
+			out = a.substr(11)
+	var shot := func(tag: String):
+		await RenderingServer.frame_post_draw
+		var path := "%s_%s.png" % [out, tag]
+		get_viewport().get_texture().get_image().save_png(path)
+		print("SHOT " + path)
+	await get_tree().create_timer(0.5).timeout
+	_open_picker()
+	await get_tree().create_timer(1.5).timeout
+	print("PICKER %d Maps" % _picker.shown_count())
+	await shot.call("open")
+	# Suchwort aus einer Map mit eigenem Score (sonst ein haeufiger Buchstabe).
+	var q := "a"
+	var best: Dictionary = MapPicker.load_scores().best
+	for ms in _library.mapsets:
+		var hit := false
+		for i in ms.difficulty_count():
+			if best.has("%s|%s" % [ms.osz_path.get_file(), ms.version_name_at(i)]):
+				hit = true
+				break
+		if hit:
+			for w in ms.title.split(" ", false):
+				if w.length() >= 3:
+					q = w.to_lower()
+					break
+			break
+	_picker.set_query(q)
+	await get_tree().create_timer(0.8).timeout
+	print("PICKER Suche '%s': %d Treffer" % [q, _picker.shown_count()])
+	await shot.call("search")
+	print("PICKER Score-Set gefunden: %s" % str(_picker.select_first_scored()))
+	await get_tree().create_timer(0.8).timeout
+	await shot.call("score")
+	# Online-Tab (Komponente des Song-Browsers) im Picker.
+	_picker.open_online()
+	await get_tree().create_timer(4.0).timeout
+	print("PICKER Online offen: %s" % str(_picker.online_open()))
+	await shot.call("online")
+	_picker.close()
+	await get_tree().create_timer(0.3).timeout
+	print("PICKER geschlossen: %s" % str(not _picker.is_open()))
 	get_tree().quit(0)
 
 
@@ -662,6 +721,40 @@ func _build_room() -> void:
 	_map_meta.add_theme_font_size_override("font_size", 13)
 	_map_meta.add_theme_color_override("font_color", COL_DIM)
 	mv.add_child(_map_meta)
+	# Fehlt die Raum-Map: "Map laden" (genau diese Set-ID), Fortschritt, Abbruch.
+	_dl_row = HBoxContainer.new()
+	_dl_row.add_theme_constant_override("separation", 10)
+	_dl_row.visible = false
+	mh.add_child(_dl_row)
+	_dl_bar = ProgressBar.new()
+	_dl_bar.min_value = 0.0
+	_dl_bar.max_value = 1.0
+	_dl_bar.show_percentage = false
+	_dl_bar.custom_minimum_size = Vector2(150, 10)
+	_dl_bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_dl_row.add_child(_dl_bar)
+	_dl_label = Label.new()
+	_dl_label.custom_minimum_size = Vector2(52, 0)
+	_dl_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_dl_label.add_theme_font_size_override("font_size", 13)
+	_dl_label.add_theme_color_override("font_color", COL_ACCENT)
+	_dl_row.add_child(_dl_label)
+	_dl_cancel = Button.new()
+	_dl_cancel.text = "Abbrechen"
+	_dl_cancel.custom_minimum_size = Vector2(0, 36)
+	_dl_cancel.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_dl_cancel.add_theme_font_size_override("font_size", 13)
+	UiTheme.style_ghost_button(_dl_cancel, 10)
+	_dl_cancel.pressed.connect(_cancel_room_download)
+	_dl_row.add_child(_dl_cancel)
+	_dl_btn = Button.new()
+	_dl_btn.text = "⬇  Map laden"
+	_dl_btn.custom_minimum_size = Vector2(150, 40)
+	_dl_btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_dl_btn.add_theme_font_size_override("font_size", 15)
+	UiTheme.style_button(_dl_btn, true)
+	_dl_btn.pressed.connect(_download_room_map)
+	_dl_row.add_child(_dl_btn)
 
 	# Mod-Chips: nur der Kronentraeger schaltet, alle anderen sehen sie read-only.
 	var mrow := HBoxContainer.new()
@@ -816,196 +909,59 @@ func _refresh_room() -> void:
 	_pick_btn.visible = Lobby.crown_id == my_id
 	_start_btn.visible = Lobby.crown_id == my_id
 	_start_btn.disabled = not Lobby.can_start()
+	_refresh_dl_ui()
+
+
+## Download-Zeile der Map-Karte: nur sichtbar, wenn die Raum-Map lokal fehlt.
+func _refresh_dl_ui() -> void:
+	if _dl_row == null:
+		return
+	var missing := not Lobby.sel_map.is_empty() and Lobby.resolve_local_path() == ""
+	_dl_row.visible = missing
+	if not missing:
+		return
+	var set_id := int(Lobby.sel_map.get("set_id", 0))
+	_dl_bar.visible = _downloading
+	_dl_label.visible = _downloading
+	_dl_cancel.visible = _downloading
+	_dl_btn.visible = not _downloading
+	_dl_btn.disabled = set_id <= 0
+	_dl_btn.tooltip_text = "Set %d vom Mirror laden" % set_id if set_id > 0 \
+			else "Diese Map hat keine Set-ID — Download nicht möglich."
 
 
 # ---------------------------------------------------------------------------
 # Map-Wahl (Kronentraeger) + Auto-Download
 # ---------------------------------------------------------------------------
 
-## Map-Picker im Browser-Stil: Karten mit Vorschaubild, Suche und
-## Collection-Chips; Klick auf ein Set zeigt dessen Diffs.
+## Map-Picker im Stil des Song-Browsers (scripts/ui/map_picker.gd): Suche,
+## Sortierung, Sterne-Filter, eigene Bestwerte je Diff, Online-Tab.
+## Bleibt nach dem ersten Oeffnen versteckt am Leben (Cover-Cache, Scroll).
 func _open_picker() -> void:
-	var overlay := Control.new()
-	overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(overlay)
-	var pdim := ColorRect.new()
-	pdim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	pdim.color = Color(0, 0, 0, 0.6)
-	pdim.gui_input.connect(func(e):
-		if e is InputEventMouseButton and e.pressed:
-			overlay.queue_free())
-	overlay.add_child(pdim)
-	var center := CenterContainer.new()
-	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	overlay.add_child(center)
-	var panel := PanelContainer.new()
-	var sb := UiTheme.glass_box(16, 0.88)
-	sb.set_content_margin_all(20)
-	panel.add_theme_stylebox_override("panel", sb)
-	panel.custom_minimum_size = Vector2(640, 560)
-	panel.mouse_filter = Control.MOUSE_FILTER_STOP
-	center.add_child(panel)
-	var vb := VBoxContainer.new()
-	vb.add_theme_constant_override("separation", 8)
-	panel.add_child(vb)
-	var t := Label.new()
-	t.text = "Map wählen"
-	t.add_theme_font_size_override("font_size", 20)
-	vb.add_child(t)
-	var search := LineEdit.new()
-	search.placeholder_text = "Suchen…"
-	search.clear_button_enabled = true
-	search.custom_minimum_size = Vector2(0, 40)
-	search.add_theme_stylebox_override("normal", UiTheme.glass_box(8, 0.5))
-	vb.add_child(search)
-
-	# Collection-Chips (wie im Song-Browser).
-	var coll_row := HBoxContainer.new()
-	coll_row.add_theme_constant_override("separation", 6)
-	vb.add_child(coll_row)
-	var picker_state := { "coll": "", "q": "" }
-	var coll_names := CollectionStore.list_names()
-
-	var scroll := ScrollContainer.new()
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	vb.add_child(scroll)
-	var list := VBoxContainer.new()
-	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	list.add_theme_constant_override("separation", 6)
-	scroll.add_child(list)
-
-	var fill := func():
-		for c in list.get_children():
-			c.queue_free()
-		var q: String = str(picker_state.q).to_lower()
-		var coll: String = str(picker_state.coll)
-		var shown := 0
-		for ms in _library.mapsets:
-			if q != "" and not ms.search_haystack().contains(q):
-				continue
-			if coll != "" and not CollectionStore.contains(coll, ms.osz_path):
-				continue
-			var has_mania := false
-			for i in ms.difficulty_count():
-				if int(ms.meta_at(i).get("mode", 0)) == 3:
-					has_mania = true
-					break
-			if not has_mania:
-				continue
-			list.add_child(_picker_card(ms, list, overlay))
-			shown += 1
-		if shown == 0:
-			var empty := Label.new()
-			empty.text = "Nichts gefunden."
-			empty.add_theme_font_size_override("font_size", 13)
-			empty.add_theme_color_override("font_color", COL_DIM)
-			list.add_child(empty)
-
-	# Chips bauen: "Alle" + jede Sammlung.
-	var chip_defs := [""]
-	chip_defs.append_array(coll_names)
-	for cname in chip_defs:
-		var chip := Button.new()
-		chip.text = "Alle" if cname == "" else str(cname)
-		chip.custom_minimum_size = Vector2(0, 30)
-		chip.add_theme_font_size_override("font_size", 13)
-		UiTheme.style_button(chip, cname == "")
-		var target := str(cname)
-		chip.pressed.connect(func():
-			picker_state.coll = target
-			fill.call())
-		coll_row.add_child(chip)
-
-	fill.call()
-	search.text_changed.connect(func(txt):
-		picker_state.q = txt
-		fill.call())
-
-
-## Karte im Browser-Stil: Thumb links, Titel/Mapper, Sterne-Bereich rechts.
-## Klick klappt die Diff-Liste des Sets darunter auf.
-func _picker_card(ms: MapSet, list: VBoxContainer, overlay: Control) -> Control:
-	var wrap := VBoxContainer.new()
-	wrap.add_theme_constant_override("separation", 4)
-	var card := Button.new()
-	card.custom_minimum_size = Vector2(0, 66)
-	UiTheme.style_button(card)
-	var hb := HBoxContainer.new()
-	hb.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	hb.offset_left = 8
-	hb.offset_right = -8
-	hb.add_theme_constant_override("separation", 12)
-	hb.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	card.add_child(hb)
-	var thumb := TextureRect.new()
-	thumb.custom_minimum_size = Vector2(92, 52)
-	thumb.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	thumb.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-	thumb.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	thumb.texture = ms.thumb_texture()
-	thumb.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	hb.add_child(thumb)
-	var info := VBoxContainer.new()
-	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	info.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	info.add_theme_constant_override("separation", 2)
-	info.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	hb.add_child(info)
-	var title_l := Label.new()
-	title_l.text = "%s — %s" % [ms.artist, ms.title]
-	title_l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	title_l.add_theme_font_size_override("font_size", 15)
-	title_l.add_theme_color_override("font_color", COL_TEXT)
-	info.add_child(title_l)
-	var sub_l := Label.new()
-	sub_l.text = "Mapped by %s  ·  ★ %.2f" % [ms.creator, ms.max_stars()]
-	sub_l.add_theme_font_size_override("font_size", 13)
-	sub_l.add_theme_color_override("font_color", COL_DIM)
-	info.add_child(sub_l)
-	# Schon zusammen gespielt? Gruenes Badge direkt auf der Karte.
-	if Lobby.set_was_played(ms.osz_path.get_file()):
-		var pl := Label.new()
-		pl.text = "✓ gespielt"
-		pl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		pl.add_theme_font_size_override("font_size", 13)
-		pl.add_theme_color_override("font_color", Color(0.5, 1.0, 0.65))
-		pl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		hb.add_child(pl)
-	wrap.add_child(card)
-	# Klick: Diff-Zeilen ein-/ausklappen.
-	var diff_box := VBoxContainer.new()
-	diff_box.visible = false
-	diff_box.add_theme_constant_override("separation", 3)
-	wrap.add_child(diff_box)
-	card.pressed.connect(func():
-		# Anhoeren beim Auswaehlen — wie im Song-Browser.
-		_play_set_preview(ms.osz_path, ms.meta_at(0))
-		if diff_box.visible:
-			diff_box.visible = false
-			return
-		if diff_box.get_child_count() == 0:
-			for i in ms.difficulty_count():
-				if int(ms.meta_at(i).get("mode", 0)) != 3:
-					continue
-				var d := Button.new()
-				var was := Lobby.was_played(ms.osz_path.get_file(), ms.version_name_at(i))
-				d.text = "     [%s]   ★ %.2f%s" % [ms.version_name_at(i),
-					ms.stars_at(i), "   ✓ gespielt" if was else ""]
-				d.custom_minimum_size = Vector2(0, 34)
-				d.alignment = HORIZONTAL_ALIGNMENT_LEFT
-				d.add_theme_font_size_override("font_size", 13)
-				UiTheme.style_button(d)
-				if was:
-					d.add_theme_color_override("font_color", Color(0.55, 1.0, 0.7))
-				var pick_diff := i
-				d.pressed.connect(func():
-					_pick(ms, pick_diff)
-					overlay.queue_free())
-				diff_box.add_child(d)
-		diff_box.visible = true)
-	return wrap
+	if Lobby.crown_id != multiplayer.get_unique_id() and Lobby.active:
+		return
+	if _picker == null:
+		_picker = MapPicker.new(_library)
+		_picker.visible = false
+		_picker.played_fn = func(file: String, version: String) -> bool:
+			return Lobby.was_played(file, version)
+		add_child(_picker)
+		_picker.picked.connect(func(ms: MapSet, diff: int):
+			_pick(ms, diff)
+			_picker.close())
+		_picker.set_selected.connect(func(ms: MapSet):
+			if ms.difficulty_count() > 0:
+				_play_set_preview(ms.osz_path, ms.meta_at(0)))
+		_picker.preview_stream.connect(func(st: AudioStream):
+			if _preview_fade != null and _preview_fade.is_valid():
+				_preview_fade.kill()
+			_preview.stream = st
+			_preview.volume_db = -14.0
+			_preview.play())
+		_picker.preview_stop.connect(func(): _preview.stop())
+		_picker.closed.connect(_update_preview)
+	_picker.can_pick = not Lobby.active or Lobby.crown_id == multiplayer.get_unique_id()
+	_picker.open()
 
 
 ## Set-ID aus dem Dateinamen ziehen (fuehrende Zahl oder mirror_<id>).
@@ -1109,41 +1065,74 @@ func _on_map_changed() -> void:
 		Lobby.set_ready(true)
 		_status_label.text = "Map vorhanden — bereit!"
 		return
+	# Fehlt: automatisch laden (Knopf "Map laden" bleibt fuer Abbruch/Fehler).
+	_download_room_map()
+
+
+## Genau die Set-ID der Raum-Map laden; danach automatisch bereit.
+func _download_room_map() -> void:
 	var set_id := int(Lobby.sel_map.get("set_id", 0))
 	if set_id <= 0:
 		_status_label.text = "Map fehlt und hat keine Set-ID — Download nicht möglich."
+		_refresh_dl_ui()
 		return
 	if _downloading and _dl_set == set_id:
 		return  # derselbe Download laeuft schon
+	if _downloading and _dl_set != set_id:
+		_mirror.cancel_download(_dl_set)  # alte Raum-Map wird nicht mehr gebraucht
 	_downloading = true
 	_dl_set = set_id
-	_status_label.text = "Map fehlt — lade automatisch herunter…"
-	_mirror.download(set_id, _library.maps_dir)
+	_dl_bar.value = 0.0
+	_dl_label.text = "0 %"
+	_status_label.text = "Map fehlt — lade herunter…"
+	_refresh_dl_ui()
+	if not _mirror.is_downloading(set_id):
+		_mirror.download(set_id, _library.maps_dir)
+
+
+func _cancel_room_download() -> void:
+	if _downloading:
+		_mirror.cancel_download(_dl_set)
 
 
 func _on_dl_progress(id: int, ratio: float) -> void:
 	# Der Mirror ist global — nur auf den Download der Raum-Map reagieren.
-	if _downloading and id == int(Lobby.sel_map.get("set_id", 0)):
+	if _downloading and id == _dl_set:
+		_dl_bar.value = ratio
+		_dl_label.text = "%d %%" % int(ratio * 100.0)
 		_status_label.text = "Lade Map… %d %%" % int(ratio * 100.0)
 
 
 func _on_dl_done(id: int, _path: String) -> void:
+	if id == _dl_set:
+		_downloading = false
 	if id != int(Lobby.sel_map.get("set_id", 0)):
 		return
-	_downloading = false
 	_library.scan()
-	_status_label.text = "Map heruntergeladen — bereit!"
-	Lobby.set_ready(true)
+	if _picker != null and _picker.is_open():
+		_picker.reload()
+	if Lobby.resolve_local_path() != "":
+		_status_label.text = "Map heruntergeladen — bereit!"
+		Lobby.set_ready(true)
 	_refresh_room()
 	_update_bg()
 	_update_preview()
 
 
 func _on_dl_failed(id: int, message: String) -> void:
-	if id != int(Lobby.sel_map.get("set_id", 0)):
+	if id != _dl_set:
 		return
 	_downloading = false
 	_status_label.text = "Download fehlgeschlagen: " + message
+	_refresh_dl_ui()
+
+
+func _on_dl_cancelled(id: int) -> void:
+	if id != _dl_set or not _downloading:
+		return
+	_downloading = false
+	_status_label.text = "Download abgebrochen — „Map laden“ startet ihn neu."
+	_refresh_dl_ui()
 
 
 func _back() -> void:
