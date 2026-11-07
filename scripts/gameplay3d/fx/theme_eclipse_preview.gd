@@ -2,13 +2,14 @@ extends Node3D
 ## Demo: Welt-Thema "Eklipse" (shaders/theme_eclipse.gdshader + eclipse_sky.webp
 ## + eclipse_ash.webp) mit Komfort-Kamera, schwarzer Strecke im matten
 ## Gold-Weiss-Farbsatz, Pads und Noten zur Lesbarkeits-Kontrolle.
-## Ohne Argumente: 128 BPM Korona-Puls, Asche treibt.
-##   --bpm=<n> --speed=<Asche-Drift> --warp=<0..1> --kiai=<0..1>
-##   --shot [--shot-dir=<ordner>]  speichert eclipse_still / eclipse_beat /
-##        eclipse_beat_late / eclipse_kiai / eclipse_warp / eclipse_side
-##        (Blick 70 Grad seitlich) / eclipse_up (Blick zur Sonne) als PNG,
-##        dann Ende.
+## Ohne Argumente: 128 BPM, Beat-Vertrag simuliert (beat_step, downbeat_pulse,
+## Kiai/Drop-Schleife 64 Schlaege): Schockring, Diamantring-Sprung, Asche stoesst auf.
+##   --bpm=<n> --speed=<Asche-Drift> --warp=<0..1> --comfort=<0|1>
+##   --shot [--shot-dir=<ordner>]  speichert eclipse_still / _beat (phase 0.02) /
+##        _half (0.5) / _drop (Drop-Spitze) / _side (Blick 70 Grad) und druckt die
+##        [luma]-Zeilen (Grenzen: Mitte +20 %, oben +35 %), dann Ende.
 
+const NAME := "eclipse"
 const ROAD_Y := -1.6
 const Z_LINE := 3.0
 const Z_FAR := -46.0
@@ -42,6 +43,7 @@ func _ready() -> void:
 		elif a.begins_with("--shot-dir="):
 			_shot_dir = a.trim_prefix("--shot-dir=")
 	_bpm = _arg_f("--bpm=", 128.0)
+	_comfort = _arg_f("--comfort=", 0.0)
 
 	_mat = ShaderMaterial.new()
 	_mat.shader = load("res://shaders/theme_eclipse.gdshader")
@@ -142,7 +144,6 @@ func _ready() -> void:
 	if not _shot:
 		_mat.set_shader_parameter("star_speed", _arg_f("--speed=", 0.4))
 		_mat.set_shader_parameter("warp", _arg_f("--warp=", 0.0))
-		_mat.set_shader_parameter("kiai", _arg_f("--kiai=", 0.0))
 
 func _unshaded(c: Color) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
@@ -170,52 +171,119 @@ func _process(delta: float) -> void:
 	_t += delta
 	_frames += 1
 	if _shot:
-		_shot_step()
+		_shot_run()
 		return
-	var beat := _t * _bpm / 60.0
-	_set_pulse(pow(1.0 - fmod(beat, 1.0), 4.0))
+	_sim_process()
 
-## Schritt-Folge fuer --shot: je 12 Frames Einschwingen, dann speichern.
-func _shot_step() -> void:
-	if _frames % 12 != 0:
-		return
-	match _step:
-		0:
-			_set_pulse(0.0)
-		1:
-			_save("eclipse_still.png")
-			_set_pulse(1.0)
-		2:
-			_save("eclipse_beat.png")
-			_set_pulse(0.3)
-		3:
-			_save("eclipse_beat_late.png")
-			_set_pulse(0.6)
-			_mat.set_shader_parameter("kiai", 1.0)
-			_mat.set_shader_parameter("brightness", 1.32)
-		4:
-			_save("eclipse_kiai.png")
-			_mat.set_shader_parameter("kiai", 0.0)
-			_mat.set_shader_parameter("brightness", 1.0)
-			_set_pulse(0.2)
-			_mat.set_shader_parameter("star_phase", 3.0)
-			_mat.set_shader_parameter("warp", 0.8)
-		5:
-			_save("eclipse_warp.png")
-			_mat.set_shader_parameter("warp", 0.0)
-			_set_pulse(0.0)
-			_cam.rotation_degrees = Vector3(-8, 70, 0)
-		6:
-			_save("eclipse_side.png")
-			_cam.rotation_degrees = Vector3(4, 0, 0)
-		7:
-			_save("eclipse_up.png")
-			get_tree().quit(0)
-	_step += 1
+# --- Beat-Vertrag-Simulation: exakt die Formeln aus docs/worlds/beat_contract.md ---
+const METER := 4
+const DROP_PEAK := 0.6
+const DROP_HOLD := 0.3
+const DROP_MAX := 0.6
+const LOOP_BEATS := 64.0
+const KIAI_ON := 16.0   ## Beat, an dem das Kiai (der Drop) beginnt
+const KIAI_OFF := 40.0
+var _comfort := 0.0
+var _luma: Dictionary = {}
+var _shot_i := 0
 
-func _save(file: String) -> void:
+func _set_beat(beat_idx: int, phase: float, drop: float, kiai: float, energy: float) -> void:
+	var beat_ms := 60000.0 / _bpm
+	var bar_phase := (float(beat_idx % METER) + phase) / float(METER)
+	var peak := 1.15 if beat_idx % METER == 0 else 1.0
+	var cf := 1.0 - 0.5 * _comfort
+	_set_pulse(clampf(peak * exp(-phase * beat_ms / 62.0), 0.0, 1.0))
+	_mat.set_shader_parameter("beat_phase", phase)
+	_mat.set_shader_parameter("bar_phase", bar_phase)
+	_mat.set_shader_parameter("beat_step", float(beat_idx) + 1.0 - pow(1.0 - phase, 4.0))
+	_mat.set_shader_parameter("downbeat_pulse", exp(-bar_phase * float(METER) * 3.0))
+	_mat.set_shader_parameter("kiai", kiai)
+	_mat.set_shader_parameter("drop", minf(drop * cf, DROP_MAX))
+	_mat.set_shader_parameter("energy", energy)
+	_mat.set_shader_parameter("comfort", _comfort)
+
+func _beat_off() -> void:
+	_set_beat(0, 0.0, 0.0, 0.0, 0.0)
+	_set_pulse(0.0)
+	_mat.set_shader_parameter("beat_step", 0.0)
+	_mat.set_shader_parameter("downbeat_pulse", 0.0)
+	_mat.set_shader_parameter("bar_phase", 0.0)
+
+## Drop-Huellkurve: Kiai-Start 1 Beat smoothstep auf PEAK, 4 Beats auf HOLD, Ende 2 Beats auf 0.
+func _drop_at(b: float) -> float:
+	if b < KIAI_ON:
+		return 0.0
+	if b < KIAI_OFF:
+		var x := b - KIAI_ON
+		if x < 1.0:
+			return DROP_PEAK * smoothstep(0.0, 1.0, x)
+		return lerpf(DROP_PEAK, DROP_HOLD, clampf((x - 1.0) / 4.0, 0.0, 1.0))
+	return DROP_HOLD * (1.0 - clampf((b - KIAI_OFF) / 2.0, 0.0, 1.0))
+
+func _sim_process() -> void:
+	var b := fmod(_t * _bpm / 60.0, LOOP_BEATS)
+	var kiai := smoothstep(KIAI_ON - 0.5, KIAI_ON + 0.5, b) * (1.0 - smoothstep(KIAI_OFF, KIAI_OFF + 2.0, b))
+	var en := 0.35 + 0.5 * kiai
+	_set_beat(int(b), fmod(b, 1.0), _drop_at(b), kiai, en)
+
+func _mean_luma(img: Image, r: Rect2) -> float:
+	var w := img.get_width()
+	var h := img.get_height()
+	var x0 := int(r.position.x * w)
+	var x1 := int(r.end.x * w)
+	var y0 := int(r.position.y * h)
+	var y1 := int(r.end.y * h)
+	var sum := 0.0
+	var n := 0
+	for y in range(y0, y1, 3):
+		for x in range(x0, x1, 3):
+			var c := img.get_pixel(x, y)
+			sum += 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b
+			n += 1
+	return sum / maxf(n, 1)
+
+func _measure(tag: String) -> void:
 	var img := get_viewport().get_texture().get_image()
+	_luma[tag] = [_mean_luma(img, Rect2(0.25, 0.42, 0.5, 0.45)), _mean_luma(img, Rect2(0.0, 0.0, 1.0, 0.42))]
 	DirAccess.make_dir_recursive_absolute(_shot_dir)
-	var path := _shot_dir.path_join(file)
+	var path := _shot_dir.path_join("%s_%s.png" % [NAME, tag])
 	img.save_png(path)
 	print("shot: ", path)
+
+func _pct(a: float, b: float) -> float:
+	return (a / maxf(b, 1e-6) - 1.0) * 100.0
+
+func _report() -> void:
+	var s: Array = _luma["still"]
+	var be: Array = _luma["beat"]
+	var h: Array = _luma["half"]
+	var d: Array = _luma["drop"]
+	print("[luma] still=%.4f/%.4f beat=%.4f/%.4f half=%.4f/%.4f drop=%.4f/%.4f (mitte/oben)" % [s[0], s[1], be[0], be[1], h[0], h[1], d[0], d[1]])
+	print("[luma] drop vs still: mitte %+.1f%% (max +20) oben %+.1f%% (max +35) | beat vs half: oben %+.1f%% mitte %+.1f%% (oben >=6 oder Bewegung)" % [_pct(d[0], s[0]), _pct(d[1], s[1]), _pct(be[1], h[1]), _pct(be[0], h[0])])
+
+## --shot: still / beat (phase 0.02) / half (0.5) / drop (Spitze) / side. 14 Frames Einschwingen je Aufnahme.
+func _shot_run() -> void:
+	if _frames % 14 != 0:
+		return
+	match _shot_i:
+		0:
+			_beat_off()
+		1:
+			_measure("still")
+			_set_beat(8, 0.02, 0.0, 0.0, 0.5)
+		2:
+			_measure("beat")
+			_set_beat(8, 0.5, 0.0, 0.0, 0.5)
+		3:
+			_measure("half")
+			_set_beat(8, 0.02, DROP_PEAK, 1.0, 0.9)
+		4:
+			_measure("drop")
+			_set_beat(9, 0.3, DROP_PEAK, 1.0, 0.9)
+			_cam.rotation_degrees = Vector3(-6, 70, 0)
+			_cam.fov = 75.0
+		5:
+			_measure("side")
+			_report()
+			get_tree().quit(0)
+	_shot_i += 1

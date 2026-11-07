@@ -34,6 +34,17 @@ shader_type sky;
 // (SUN_LON/SUN_LAT/SUN_R), sonst sitzt der scharfe Rand neben der Scheibe.
 // Cubemap-Pass (Radiance) ohne Asche/Rand.
 //
+// BEAT-VERTRAG (docs/worlds/beat_contract.md):
+//   beat_step       KORONA-SCHOCKRING: auf jedem Schlag schiesst ein Ring vom Sonnenrand
+//                   nach aussen (Easing: Anschlag exakt auf dem Schlag, dann Ruhe), der
+//                   Diamantring-Funke springt ein Stueck um die Sonne, die Asche stoesst
+//                   aufwaerts.
+//   downbeat_pulse  Takt-Akzent: Ring und Korona-Fuss kraeftiger, langsamer abklingend.
+//   drop            Verwandlung: Korona weitet sich weit nach aussen, Diamantring gleisst
+//                   staerker, Asche dichter und schneller; Luma gedeckelt.
+//   kiai/energy     wie bisher Korona/Ring heller; comfort halbiert alle Bewegung.
+//   beat_phase, bar_phase  Saegezaehne (Preview-Kontrolle).
+//
 // INTEGRATION (wie sky_panorama):
 //   var mat := ShaderMaterial.new()
 //   mat.shader = load("res://shaders/theme_eclipse.gdshader")
@@ -73,6 +84,13 @@ uniform float star_brightness : hint_range(0.0, 4.0) = 1.0;
 uniform float star_hdr : hint_range(1.0, 4.0) = 1.5;
 uniform float beat_pulse : hint_range(0.0, 1.0) = 0.0;
 uniform float kiai : hint_range(0.0, 1.0) = 0.0;
+uniform float beat_phase : hint_range(0.0, 1.0) = 0.0;
+uniform float bar_phase : hint_range(0.0, 1.0) = 0.0;
+uniform float beat_step = 0.0;
+uniform float downbeat_pulse : hint_range(0.0, 1.0) = 0.0;
+uniform float drop : hint_range(0.0, 0.6) = 0.0;
+uniform float energy : hint_range(0.0, 1.0) = 0.0;
+uniform float comfort : hint_range(0.0, 1.0) = 0.0;
 
 uniform vec3 pano_rotation = vec3(0.0);
 uniform vec2 pano_offset = vec2(0.0);
@@ -208,12 +226,20 @@ void sky() {
 
 	// Korona: helle Anteile ueber die Glow-Schwelle, dezent atmend.
 	float nl = dot(pan, vec3(0.2126, 0.7152, 0.0722));
-	float cm = smoothstep(0.99, 1.03, r) * exp(-(r - 1.0) / 1.8) * step(theta, 1.2);
+	float mv = 1.0 - 0.5 * comfort;
+	float dp = drop * (1.0 - 0.5 * comfort);
+	float ep = clamp(fract(beat_step - 1e-5), 0.0, 1.0);
+	if (beat_step < 0.0001) {
+		ep = 0.0;
+	}
+	float cm = smoothstep(0.99, 1.03, r) * exp(-(r - 1.0) / (1.8 + 2.4 * dp)) * step(theta, 1.2 + 0.5 * dp);
 	float bp = clamp(beat_pulse, 0.0, 1.0);
 	float shimmer = 1.0 + 0.07 * sin(ph_ang * 11.0 + TIME * 0.35) * sin(ph_ang * 5.0 - TIME * 0.23 + r * 3.0);
-	float wave_r = 1.0 + (1.0 - bp) * 1.7;
-	float wave = exp(-pow((r - wave_r) / 0.20, 2.0)) * bp * smoothstep(0.0, 0.15, bp);
-	float lift = 1.0 + cm * (bp * (0.10 + 0.32 * exp(-(r - 1.0) / 0.22)) + wave * 0.22 + kiai * 0.30);
+	// Schockring auf beat_step: huellt sich mit sin(pi*ep) -> weder Sprung am Schlag noch Rest.
+	float wave_r = 1.0 + ep * 2.6;
+	float wave = exp(-pow((r - wave_r) / (0.16 + 0.10 * ep), 2.0)) * sin(PI * ep) * mv;
+	float lift = 1.0 + cm * (bp * (0.10 + 0.32 * exp(-(r - 1.0) / 0.22)) + wave * (0.55 + 0.7 * downbeat_pulse)
+			+ downbeat_pulse * mv * 0.22 * exp(-(r - 1.0) / 0.5) + kiai * 0.30 + dp * 0.55);
 	pan *= mix(1.0, corona_hdr, smoothstep(0.30, 0.70, nl) * cm);
 	pan *= mix(1.0, shimmer, cm) * lift;
 
@@ -234,20 +260,21 @@ void sky() {
 		float limb_n = 0.75 + 0.25 * sin(ph_ang * 23.0 + 1.3) * sin(ph_ang * 9.0 - 0.4);
 		col += corona_color * ring * limb_n * limb_intensity * (1.0 + bp * 0.7 + kiai * 0.5) * vis;
 		// Diamantring: ein Lichtfunke am Rand.
-		vec2 bpos = vec2(cos(bead_angle), sin(bead_angle)) * 1.004;
+		float bang = bead_angle + beat_step * 0.30 * mv;     // Funke rastet je Schlag ein Stueck weiter
+	vec2 bpos = vec2(cos(bang), sin(bang)) * 1.004;
 		float bd = length(q - bpos);
 		float bead = exp(-bd * bd / (0.0008 + fw * fw)) * 1.4
 				+ exp(-bd / 0.06) * 0.45 + exp(-bd / 0.35) * 0.05;
-		col += corona_color * bead * bead_intensity * (0.75 + bp * 0.9 + kiai * 0.8) * mix(0.25, 1.0, outside) * vis;
+		col += corona_color * bead * bead_intensity * (0.75 + bp * 0.9 + kiai * 0.8 + dp * 1.1 + downbeat_pulse * 0.5) * mix(0.25, 1.0, outside) * vis;
 
 		// Asche: zwei Lagen (nah grob/schnell, fern fein/langsam) + Schwaden.
 		float latd = degrees(asin(clamp(dir.y, -1.0, 1.0)));
-		float am = smoothstep(-7.0, 1.0, latd) * (1.0 - smoothstep(22.0, 55.0, latd)) * ash_density;
+		float am = smoothstep(-7.0, 1.0, latd) * (1.0 - smoothstep(22.0, 55.0, latd)) * ash_density * (1.0 + 0.5 * dp);
 		if (am > 0.001) {
 			float u = atan(dir.x, -dir.z) * (0.5 / PI);
 			float h = tan(radians(clamp(latd, -60.0, 60.0)));
 			float ph = star_phase + TIME * star_speed;
-			float t = TIME * ash_rise + ph * 0.03;
+			float t = TIME * ash_rise + ph * 0.03 + beat_step * 0.003 * mv;   // Asche stoesst je Schlag aufwaerts
 			float dr = TIME * ash_drift;
 			float jit = hash12(FRAGCOORD.xy);
 			vec4 nearl = ash_layer(u, h, 1.0, t, dr, 0.0, jit);

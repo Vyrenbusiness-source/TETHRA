@@ -775,7 +775,7 @@ def build_shards(W, seed, path, cfg, preview=""):
     return mb
 
 SHARDS_CFG = dict(seed=402, n=130, lat0=4.0, lat1=60.0, rmin=0.8, rmax=6.0,
-                 base="#070707", hi="#2a2823", rim="#d8c69c", crack=None)
+                 base="#070707", hi="#2a2823", rim="#8f8266", crack=None)
 
 
 def main():
