@@ -121,7 +121,7 @@ uniform float readability : hint_range(0.0, 1.0) = 0.35;
 uniform float eye_lat = 1.2;          // Grad, = EYE_LAT im Generator
 uniform float eye_lon = 0.0;          // Grad, = EYE_LON
 uniform float eye_radius = 4.4;       // Grad, = R_EYE
-uniform float swirl_speed = 0.006;    // rad/s Dauerdrift der fernen Ebene (unterschwellig)
+uniform float swirl_speed = 0.020;    // rad/s Dauerdrift der fernen Ebene (unterschwellig)
 uniform float swirl_parallax = 1.9;   // mittlere/nahe Ebene driften so viel schneller
 uniform float notch_far = 0.030;      // rad je Schlag (Ratsche), ferne Ebene
 uniform float notch_mid = 0.062;      // mittlere Ebene
@@ -143,6 +143,7 @@ const float TAU_ = 6.28318530718;
 const float DROP_PEAK_ = 0.6;
 
 mat3 euler(vec3 e) {
+	e = vec3(0.0, e.y, 0.0);   // Komfort: nur Yaw, nie Roll/Kippen (beat_contract.md)
 	float cx = cos(e.x), sx = sin(e.x);
 	float cy = cos(e.y), sy = sin(e.y);
 	float cz = cos(e.z), sz = sin(e.z);
@@ -238,17 +239,15 @@ void sky() {
 		float kg = clamp(kiai, 0.0, 1.0);
 		float en = 0.85 + 0.30 * clamp(energy, 0.0, 1.0);
 
-		// Ratsche: Winkel springt mit beat_step auf dem Schlag, ruht danach.
-		// Genauigkeit: Anteil modulo 2pi halten (beat_step waechst monoton).
-		float ratch = beat_step * cf;
-		float drift = star_phase + TIME * (swirl_speed + star_speed);
-		// Drop: Trichter dreht schneller (gedeckelt): Pendelwinkel mit Amplitude ~dn,
-		// stetig (kein Sprung bei Drop-Ein/Aus), Spitzenrate ~0.3 rad/s.
-		float spin = dn * sin(TIME * 0.85);
-		drift += 0.35 * spin;
-		float a_far = drift + mod(ratch * notch_far, TAU_);
-		float a_mid = drift * swirl_parallax + mod(ratch * notch_mid, TAU_);
-		float a_near = drift * swirl_parallax * 1.5 + mod(ratch * notch_near, TAU_);
+		// Komfort-Regeln (beat_contract.md): kein Rollen, Tornado dreht gleichmaessig
+		// <= 4 Grad/s (hier max ~3.3 Grad/s in der naechsten Ebene), keine Beat-Spruenge.
+		// beat_step nur als sanftes Atmen (periodisch je Schlag), nie als Winkel.
+		float ratch = 0.0;
+		float drift = TIME * swirl_speed;
+		float a_far = drift;
+		float a_mid = drift * swirl_parallax;
+		float a_near = drift * swirl_parallax * 1.5;
+		float flow = sin(beat_step * TAU_) * cf;
 		float blur = warp * 0.10;
 
 		// Drop: Trichter zieht sich enger (Quellradius waechst = Muster rueckt zum Auge).
@@ -262,7 +261,7 @@ void sky() {
 		float th = atan(dot(dp, uu), dot(dp, rr));
 		float rdeg = degrees(r);
 		float inner = exp(-max(rdeg - eye_radius, 0.0) / 9.0);
-		float s_far = open_k * (1.0 + pull * exp(-rdeg / 30.0));
+		float s_far = open_k * (1.0 + pull * exp(-rdeg / 30.0) + 0.006 * flow * breath);
 		vec3 far = vec3(0.0);
 		if (blur > 0.001) {
 			for (int i = 0; i < WARP_TAPS; i++) {
@@ -279,8 +278,8 @@ void sky() {
 		float rn = acos(clamp(dot(dn3, e), -1.0, 1.0));
 		float tn = atan(dot(dn3, uu), dot(dn3, rr));
 		float rndeg = degrees(rn);
-		float s_mid = open_k * (1.0 + 1.4 * pull * exp(-rndeg / 26.0));
-		float s_rain = open_k * (1.0 + 2.0 * pull * exp(-rndeg / 22.0));
+		float s_mid = open_k * (1.0 + 1.4 * pull * exp(-rndeg / 26.0) + 0.012 * flow * breath);
+		float s_rain = open_k * (1.0 + 2.0 * pull * exp(-rndeg / 22.0) + 0.020 * flow * breath);
 		vec4 mid = vec4(0.0);
 		vec4 rain = vec4(0.0);
 		if (blur > 0.001) {
@@ -301,8 +300,8 @@ void sky() {
 
 		// Truemmer: Gier um den Spieler (Ratsche), Parallax durch eigene Rate,
 		// Drop holt sie naeher (Zoom um vorn). Nur ueber dem Horizont gezeichnet.
-		float yaw = drift * 2.6 + mod(ratch * notch_debris, TAU_);
-		float s_d = 1.0 + 0.28 * dn;
+		float yaw = drift * 2.6;
+		float s_d = 1.0 + 0.28 * dn + 0.030 * flow * breath;
 		vec2 uv0 = dir_uv(dir * euler(stars_rotation), stars_offset);
 		vec2 ud = vec2(fract(0.5 + (uv0.x - 0.5) / s_d + yaw / TAU_), clamp(0.43 + (uv0.y - 0.43) / s_d, 0.0005, 0.9995));
 		vec4 deb = sample_debris(ud);

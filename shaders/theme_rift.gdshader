@@ -73,6 +73,7 @@ uniform float readability : hint_range(0.0, 1.0) = 0.35;
 const float LN4 = 1.3862944;
 
 mat3 euler(vec3 e) {
+	e = vec3(0.0, e.y, 0.0);   // Komfort: nur Yaw, nie Roll/Kippen (beat_contract.md)
 	float cx = cos(e.x), sx = sin(e.x);
 	float cy = cos(e.y), sy = sin(e.y);
 	float cz = cos(e.z), sz = sin(e.z);
@@ -146,7 +147,7 @@ void sky() {
 	vec2 puv = dir_uv(dir * euler(pano_rotation), pano_offset);
 	vec3 fd = pano_at(tex_a, tex_b, puv);   // R = Feld, G = Streulicht, B = Haarrisse (Daten, linear)
 	// Schwelle: der Riss atmet auf dem Schlag und weitet sich im Drop.
-	float thr = 0.56 - 0.10 * beat_pulse * mv - 0.08 * downbeat_pulse * mv - 0.17 * drop;
+	float thr = 0.56 - 0.10 * beat_pulse * mv - 0.08 * downbeat_pulse * mv - 0.10 * drop;
 	float core = smoothstep(thr - 0.035, thr + 0.035, fd.r);
 	vec3 pale = vec3(0.47, 0.64, 0.52);
 	vec3 far_col = pale * (core * 1.25 + fd.r * fd.r * 0.30 * (1.0 + 0.3 * drop))
@@ -207,9 +208,9 @@ void sky() {
 
 		// Nahe Prismen: Orbit per beat_step (rastet auf dem Schlag ein), schneller als die Ferne.
 		// Drop: naeher (Zoom) und etwas schneller.
-		float yaw = (beat_step * 0.045 + drop * 0.12) * mv + TIME * 0.0025;
+		float yaw = drop * 0.05 * mv + TIME * 0.0025;   // kein Beat-Ruck, Beat nur als Atmen unten
 		float cy = cos(yaw), sy = sin(yaw);
-		vec3 pd = zoom_dir(dir, 1.0 + 0.45 * drop * mv);
+		vec3 pd = zoom_dir(dir, 1.0 + 0.45 * drop * mv + 0.02 * mv * sin(beat_step * TAU));
 		pd = vec3(cy * pd.x + sy * pd.z, pd.y, -sy * pd.x + cy * pd.z);
 		vec2 pruv = dir_uv(pd, vec2(0.0));
 		vec4 pr = textureLod(prisms_a, pruv, 0.0);
