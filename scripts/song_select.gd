@@ -1528,7 +1528,8 @@ func _update_info_panel() -> void:
 	# BESTE SCORES: Top 5 dieser Difficulty als cleane Rows.
 	for c in _lb_box.get_children():
 		c.queue_free()
-	var tops := ScoreStore.top_scores(_selected_set.osz_path, _selected_set.version_name_at(_selected_diff), 5)
+	# Eigene + Scores von Mitspielern (Multiplayer-Sync), beste zuerst.
+	var tops := ScoreStore.top_scores_all(_selected_set.osz_path, _selected_set.version_name_at(_selected_diff), 5)
 	if tops.is_empty():
 		var empty := Label.new()
 		empty.text = "Noch kein Score — spiel die Map!"
@@ -1724,9 +1725,17 @@ func _score_row(rank: int, e: Dictionary) -> Control:
 	grade.add_theme_color_override("font_color", GRADE_COLOR.get(g.left(1), COL_TEXT))
 	row.add_child(grade)
 	var main := Label.new()
+	var is_self := bool(e.get("is_self", true))
 	main.text = "%s  ·  %s  ·  %dx" % [
 		UiTheme.fmt_score(int(e.get("score", 0))),
 		UiTheme.fmt_pct(float(e.get("accuracy", 0.0)) * 100.0), int(e.get("max_combo", 0))]
+	if not is_self:
+		# Mitspieler: Name vorne, Combo weglassen (Platz).
+		main.text = "%s  ·  %s  ·  %s" % [str(e.get("player", "?")),
+			UiTheme.fmt_score(int(e.get("score", 0))),
+			UiTheme.fmt_pct(float(e.get("accuracy", 0.0)) * 100.0)]
+		main.tooltip_text = "Score von %s (Multiplayer)" % str(e.get("player", "?"))
+		main.mouse_filter = Control.MOUSE_FILTER_PASS
 	main.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	main.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	main.add_theme_font_size_override("font_size", 13)
