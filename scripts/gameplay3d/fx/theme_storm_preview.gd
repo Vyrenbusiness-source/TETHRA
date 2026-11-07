@@ -3,18 +3,21 @@ extends Node3D
 ## Komfort-Kamera, dunkler Strecke im Sturm-Farbsatz, Pads und Noten zur
 ## Lesbarkeits-Kontrolle. Simuliert die Beat-Uniforms des Beat-Vertrags
 ## (docs/worlds/beat_contract.md) mit denselben Formeln wie mania_3d.gd.
-## Ohne Argumente: 150 BPM, der Mahlstrom ratscht pro Schlag eine Kerbe weiter.
+## Ohne Argumente: 150 BPM, Durchflug: Wolkenwand, Regen und Truemmer stroemen
+## aus dem Auge auf den Spieler zu (flow_phase wie mania_3d), Drehung <= 3 Grad/s.
 ##   --bpm=<n> --speed=<rad/s Zusatz-Sog> --warp=<0..1> --comfort
 ##   --kiai (Kiai ab Schlag 8: Drop, dann alle 32 Schlaege wiederholt)
 ##   --shot [--shot-dir=<ordner>]  speichert storm_still / storm_beat (Phase
 ##        0.02) / storm_half (0.5) / storm_drop (Drop-Spitze) / storm_side
-##        (Blick 70 Grad seitlich) als PNG, druckt die [luma]-Zeile, dann Ende.
+##        (Blick 70 Grad seitlich) + storm_e0/e1/e2 (je 1/8 Beat Abstand ueber
+##        einen Schlag) als PNG, druckt [luma] und [ruck] (mittlere Aenderung
+##        e0->e1 vs e1->e2, gleich gross = kein Ruck), dann Ende.
 
 const ROAD_Y := -1.6
 const Z_LINE := 3.0
 const Z_FAR := -46.0
 const RAIL_X: Array[float] = [-2.55, -0.85, 0.85, 2.55]
-const SHOT_DIR := "C:/Users/Gexanx/AppData/Local/Temp/claude/a8d2df055934fb12/80c0c6f9-06b1-4222-ad93-57c1e121669d/scratchpad/storm"
+const SHOT_DIR := "user://storm_shots"
 const DIR := "res://assets_game/themes/storm/"
 const METER := 4
 const DROP_PEAK := 0.6
@@ -47,6 +50,9 @@ var _bench := false
 var _bench_ref := false
 var _bench_ms: Array[float] = []
 var _bench_n := 0
+var _flow := 0.0
+var _bs_prev := 0.0
+var _imgs: Dictionary = {}
 
 func _ready() -> void:
 	for a in OS.get_cmdline_args() + OS.get_cmdline_user_args():
@@ -186,20 +192,13 @@ func _arg_f(prefix: String, def: float) -> float:
 			return float(a.trim_prefix(prefix))
 	return def
 
-## Beat-Vertrag simulieren: beats = gezaehlte Schlaege (Bruchteil = beat_phase),
-## since = Beats seit Kiai-Start (< 0 = kein Kiai). Formeln wie mania_3d.gd.
-func _sim(beats: float, since: float) -> void:
+func _beat_step(beats: float) -> float:
 	var phase := fposmod(beats, 1.0)
-	var total := floorf(beats)
-	var bar := fposmod(beats, float(METER)) / float(METER)
-	var beat_ms := 60000.0 / _bpm
-	var is_down := bar < 1.0 / METER
-	var pulse := exp(-phase * beat_ms / 62.0) * (1.15 if is_down else 1.0)
-	pulse = clampf(pulse, 0.0, 1.0)
+	return floorf(beats) + phase + 0.25 * ((1.0 - pow(1.0 - phase, 2.0)) - phase)
+
+func _drop_at(since: float) -> float:
 	var drop := 0.0
-	var kiai := 0.0
 	if since >= 0.0:
-		kiai = 1.0
 		if since < 1.0:
 			drop = DROP_PEAK * smoothstep(0.0, 1.0, since)
 		elif since < 5.0:
@@ -208,10 +207,40 @@ func _sim(beats: float, since: float) -> void:
 			drop = DROP_HOLD
 	if _comfort:
 		drop *= 0.5
+	return drop
+
+## flow_phase wie mania_3d._update_beat_contract: Integral ueber beat_step,
+## Drop bis 1.8x, Komfort halb. kiai_at < 0 = kein Kiai (fuer die Schuesse).
+func _flow_rate(drop: float) -> float:
+	return (1.0 + 0.8 * drop / DROP_PEAK) * (0.5 if _comfort else 1.0)
+
+func _flow_at(beats: float, kiai_at: float) -> float:
+	var f := 0.0
+	var prev := 0.0
+	var n := int(ceilf(beats * 32.0))
+	for i in n + 1:
+		var b := minf(float(i) / 32.0, beats)
+		var bs := _beat_step(b)
+		f += (bs - prev) * _flow_rate(_drop_at(b - kiai_at if kiai_at >= 0.0 else -1.0))
+		prev = bs
+	return f
+
+## Beat-Vertrag simulieren: beats = gezaehlte Schlaege (Bruchteil = beat_phase),
+## since = Beats seit Kiai-Start (< 0 = kein Kiai). Formeln wie mania_3d.gd.
+func _sim(beats: float, since: float, flow: float) -> void:
+	var phase := fposmod(beats, 1.0)
+	var bar := fposmod(beats, float(METER)) / float(METER)
+	var beat_ms := 60000.0 / _bpm
+	var is_down := bar < 1.0 / METER
+	var pulse := exp(-phase * beat_ms / 62.0) * (1.15 if is_down else 1.0)
+	pulse = clampf(pulse, 0.0, 1.0)
+	var kiai := 1.0 if since >= 0.0 else 0.0
+	var drop := _drop_at(since)
 	_mat.set_shader_parameter("beat_pulse", pulse)
 	_mat.set_shader_parameter("beat_phase", phase)
 	_mat.set_shader_parameter("bar_phase", bar)
-	_mat.set_shader_parameter("beat_step", total + phase + 0.25 * ((1.0 - pow(1.0 - phase, 2.0)) - phase))
+	_mat.set_shader_parameter("beat_step", _beat_step(beats))
+	_mat.set_shader_parameter("flow_phase", flow)
 	_mat.set_shader_parameter("downbeat_pulse", exp(-bar * METER * 3.0))
 	_mat.set_shader_parameter("kiai", kiai)
 	_mat.set_shader_parameter("drop", drop)
@@ -235,7 +264,10 @@ func _process(delta: float) -> void:
 	var since := -1.0
 	if _kiai and beats >= 8.0:
 		since = fposmod(beats - 8.0, 32.0)
-	_sim(beats, since)
+	var bs := _beat_step(beats)
+	_flow += maxf(bs - _bs_prev, 0.0) * _flow_rate(_drop_at(since))
+	_bs_prev = bs
+	_sim(beats, since, _flow)
 
 ## --bench / --bench-ref: vsync aus, max_fps 0, 120 Frames Warmup, 600 gemessen,
 ## druckt "[perf] <welt> fps_avg=... frame_ms_p99=...". Mit --resolution 1920x1080.
@@ -267,22 +299,34 @@ func _shot_step() -> void:
 	match _step:
 		0:
 			_mat.set_shader_parameter("swirl_speed", 0.0)
-			_sim(8.9, -1.0)
+			_shot_sim(8.9, -1.0)
 		1:
 			_grab("still")
-			_sim(8.02, -1.0)
+			_shot_sim(8.02, -1.0)
 		2:
 			_grab("beat")
-			_sim(9.5, -1.0)
+			_shot_sim(9.5, -1.0)
 		3:
 			_grab("half")
-			_sim(13.5, 1.0)
+			_shot_sim(13.5, 12.5)
 		4:
 			_grab("drop")
-			_sim(9.5, -1.0)
-			_cam.rotation_degrees = Vector3(-8, 70, 0)
+			_shot_sim(10.94, -1.0)
 		5:
+			_grab("e0")
+			_shot_sim(11.065, -1.0)
+		6:
+			_grab("e1")
+			_shot_sim(11.19, -1.0)
+		7:
+			_grab("e2")
+			_shot_sim(9.5, -1.0)
+			_cam.rotation_degrees = Vector3(-8, 70, 0)
+		8:
 			_grab("side")
+			var d01 := _img_diff(_imgs["e0"], _imgs["e1"])
+			var d12 := _img_diff(_imgs["e1"], _imgs["e2"])
+			print("[ruck] 1/8 Beat: e0->e1 %.5f e1->e2 %.5f (Verhaeltnis %.2f, ~1 = gleichmaessig)" % [d01, d12, d01 / maxf(d12, 0.000001)])
 			var s: Dictionary = _luma["still"]
 			var line := "[luma]"
 			for k in ["still", "beat", "half", "drop"]:
@@ -297,8 +341,26 @@ func _shot_step() -> void:
 	_step += 1
 	_wait = 10
 
+func _shot_sim(beats: float, kiai_at: float) -> void:
+	_sim(beats, beats - kiai_at if kiai_at >= 0.0 else -1.0, _flow_at(beats, kiai_at))
+
+## Mittlere Luma-Aenderung im Himmel (oben, y < 0.42) zwischen zwei Bildern.
+func _img_diff(a: Image, b: Image) -> float:
+	var s := 0.0
+	var n := 0
+	var w := a.get_width()
+	var h := a.get_height()
+	for y in range(0, int(h * 0.42), 3):
+		for x in range(0, w, 3):
+			var ca := a.get_pixel(x, y)
+			var cb := b.get_pixel(x, y)
+			s += absf((ca.r + ca.g + ca.b) - (cb.r + cb.g + cb.b)) / 3.0
+			n += 1
+	return s / maxf(n, 1)
+
 func _grab(tag: String) -> void:
 	var img := get_viewport().get_texture().get_image()
+	_imgs[tag] = img
 	var w := img.get_width()
 	var h := img.get_height()
 	var sm := 0.0
