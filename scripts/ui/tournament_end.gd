@@ -181,9 +181,9 @@ func _build_canvas() -> Control:
 
 	var info := _player_info(stand)
 	_podium(root, stand, Rect2(margin, 170, 680, 440))
-	_table(root, stand, info, Rect2(820, 170, W - 820 - margin, 440))
+	var tv := _table(root, stand, info, Rect2(820, 170, W - 820 - margin, 440))
 	if stand.size() <= 5:
-		_awards(root, stand, Rect2(820, 516, W - 820 - margin, 94))
+		_awards(tv, stand)
 	_maps(root, stand, wins, Rect2(margin, 640, W - margin * 2, 410))
 	return root
 
@@ -311,7 +311,7 @@ func _podium(root: Control, stand: Array, area: Rect2) -> void:
 		inner.add_child(dl)
 
 
-func _table(root: Control, stand: Array, info: Dictionary, area: Rect2) -> void:
+func _table(root: Control, stand: Array, info: Dictionary, area: Rect2) -> VBoxContainer:
 	var v := VBoxContainer.new()
 	v.position = area.position
 	v.size = area.size
@@ -348,6 +348,7 @@ func _table(root: Control, stand: Array, info: Dictionary, area: Rect2) -> void:
 		r.custom_minimum_size.y = row_h
 		v.add_child(r)
 		_hits.append([r, s.peer])
+	return v
 
 
 ## Mini-Verteilung der Urteile (Summe aller Runden) + Miss-Zahl.
@@ -563,16 +564,18 @@ func awards(stand: Array) -> Array:
 	return out
 
 
-## Leiste mit den Auszeichnungen (unter der Spielertabelle).
-func _awards(root: Control, stand: Array, area: Rect2) -> void:
+## Leiste mit den Auszeichnungen direkt unter der Spielertabelle (v).
+func _awards(tv: VBoxContainer, stand: Array) -> void:
 	var list := awards(stand)
 	if list.is_empty():
 		return
+	var gap := Control.new()
+	gap.custom_minimum_size = Vector2(0, 14)
+	tv.add_child(gap)
 	var h := HBoxContainer.new()
-	h.position = area.position
-	h.size = area.size
+	h.custom_minimum_size = Vector2(0, 88)
 	h.add_theme_constant_override("separation", 12)
-	root.add_child(h)
+	tv.add_child(h)
 	for a in list:
 		var p := PanelContainer.new()
 		p.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -810,6 +813,22 @@ func open_detail(peer: int, round_i: int = -1) -> void:
 	list.add_child(_map_row(-1, peer, player_stats(peer), narrow))
 	for i in t.rounds.size():
 		list.add_child(_map_row(i, peer, round_stats(t.rounds[i].results.get(peer, {})), narrow))
+	# Direktvergleich mit dem Sieger (der Sieger mit dem Zweiten), gleiche Ansicht
+	# (Summe oder gewaehlte Map).
+	var rival := -1
+	var rname := "?"
+	for s in stand:
+		if int(s.peer) != peer:
+			rival = int(s.peer)
+			rname = str(s.get("name", "?"))
+			break
+	if rival >= 0:
+		var rst: Dictionary = player_stats(rival) if round_i < 0 else round_stats(t.rounds[round_i].results.get(rival, {}))
+		if not st.is_empty() and not rst.is_empty():
+			var gap := Control.new()
+			gap.custom_minimum_size = Vector2(0, 10)
+			list.add_child(gap)
+			list.add_child(PlayerStatsCard.duel(nm, st, rname, rst, narrow))
 	if first:
 		panel.modulate.a = 0.0
 		panel.scale = Vector2(0.98, 0.98)

@@ -344,7 +344,7 @@ static func _duel_fmt(v: float, kind: String) -> String:
 		"combo":
 			return "%d×" % int(v)
 		"ur":
-			return "%.1f" % v
+			return UiTheme.fmt_num(v, 1)
 	return str(int(v))
 
 
@@ -357,7 +357,9 @@ static func _dlbl(text: String, size: int, col: Color, heading: bool, align: int
 	if heading:
 		l.add_theme_font_override("font", UiTheme.heading_font(1))
 	l.horizontal_alignment = align
-	l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	# Mittlere Spalte behaelt ihre Breite, nur die Seiten duerfen kuerzen.
+	if align != HORIZONTAL_ALIGNMENT_CENTER:
+		l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return l
 
