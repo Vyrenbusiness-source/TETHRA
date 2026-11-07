@@ -95,10 +95,10 @@ var _preview_set: MapSet = null
 var _tp_cache: Dictionary = {}
 
 ## Aktiver No-Fail-Mod: Health kann nicht auf 0 fallen, Play zaehlt unranked.
-var _nf_enabled := false
+var _nf_enabled := Settings.mod_nf
 var _nf_btn: Button
 ## SV-Mod: jede Map mit generierten Tempowechseln (SvMod), Score x1.10.
-var _sv_enabled := false
+var _sv_enabled := Settings.mod_sv
 var _sv_btn: Button
 
 # Lazy-Loading der Karten-Thumbnails (2 pro Frame).
@@ -1771,6 +1771,8 @@ func _on_play_pressed() -> void:
 
 func _on_sv_toggled(pressed: bool) -> void:
 	_sv_enabled = pressed
+	Settings.mod_sv = pressed
+	Settings.save()
 	if _sv_btn != null:
 		_sv_btn.set_pressed_no_signal(_sv_enabled)
 
@@ -1782,6 +1784,8 @@ func _current_mods() -> Dictionary:
 
 func _on_nf_toggled(pressed: bool) -> void:
 	_nf_enabled = pressed
+	Settings.mod_nf = pressed
+	Settings.save()
 	_update_nf_button()
 
 
