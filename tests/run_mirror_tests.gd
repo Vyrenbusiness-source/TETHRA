@@ -18,8 +18,9 @@ func _initialize() -> void:
 	_test_filters()
 	_test_sort()
 	_test_format()
+	_test_osz_check()
 	# Bricht ein Abschnitt per Script-Fehler ab, fehlt sein Abschluss.
-	_ok(_sections == 6, "alle 6 Abschnitte vollstaendig gelaufen (%d)" % _sections)
+	_ok(_sections == 7, "alle 7 Abschnitte vollstaendig gelaufen (%d)" % _sections)
 	print("=== Ergebnis: %d bestanden, %d fehlgeschlagen ===" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
 
@@ -197,4 +198,54 @@ func _test_format() -> void:
 		"Meta-Zeile deutsch: " + m)
 	_ok(OnlineBrowser.meta_line(_r(1, 2, [2.0], 5, 200.0)).contains("200 BPM"), "ganze BPM ohne Komma")
 	_ok(OnlineBrowser.at_key("A B", "C-(d)") == "ab|cd", "Besitz-Schluessel")
+	_sections += 1
+
+
+## Download-Pruefung: nur vollstaendige .osz mit .osu gelten (abgeschnittene
+## Teildateien und HTML-Fehlerseiten nie in die Bibliothek).
+func _test_osz_check() -> void:
+	print("-- osz-Pruefung")
+	var dir := OS.get_user_data_dir().path_join("mirror_test_tmp")
+	DirAccess.make_dir_recursive_absolute(dir)
+	var good := dir.path_join("good.osz")
+	var zp := ZIPPacker.new()
+	zp.open(good)
+	zp.start_file("Artist - Title (Mapper) [4K].osu")
+	zp.write_file("osu file format v14
+".to_utf8_buffer())
+	zp.close_file()
+	zp.start_file("bg.jpg")
+	var pad := PackedByteArray()
+	pad.resize(4096)
+	zp.write_file(pad)
+	zp.close_file()
+	zp.close()
+	_ok(BeatmapMirror.is_valid_osz(good), "vollstaendige .osz gueltig")
+
+	var all := FileAccess.get_file_as_bytes(good)
+	var cut := dir.path_join("cut.osz")
+	var f := FileAccess.open(cut, FileAccess.WRITE)
+	f.store_buffer(all.slice(0, all.size() / 2))
+	f.close()
+	_ok(not BeatmapMirror.is_valid_osz(cut), "abgeschnittene .osz abgewiesen")
+
+	var html := dir.path_join("html.osz")
+	f = FileAccess.open(html, FileAccess.WRITE)
+	f.store_string("<html><body>429 Too Many Requests</body></html>")
+	f.close()
+	_ok(not BeatmapMirror.is_valid_osz(html), "HTML-Fehlerseite abgewiesen")
+
+	var no_osu := dir.path_join("noosu.osz")
+	zp = ZIPPacker.new()
+	zp.open(no_osu)
+	zp.start_file("readme.txt")
+	zp.write_file("x".to_utf8_buffer())
+	zp.close_file()
+	zp.close()
+	_ok(not BeatmapMirror.is_valid_osz(no_osu), "ZIP ohne .osu abgewiesen")
+	_ok(not BeatmapMirror.is_valid_osz(dir.path_join("fehlt.osz")), "fehlende Datei abgewiesen")
+
+	for n in ["good.osz", "cut.osz", "html.osz", "noosu.osz"]:
+		DirAccess.remove_absolute(dir.path_join(n))
+	DirAccess.remove_absolute(dir)
 	_sections += 1

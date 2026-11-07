@@ -580,6 +580,9 @@ func download(set_id: int, dest_dir: String) -> void:
 	_downloads[set_id] = {
 		"req": req,
 		"dest": dest_dir.path_join("mirror_%d.osz" % set_id),
+		# Erst in eine Teildatei laden; die .osz entsteht nur komplett und
+		# geprueft (ein abgebrochener Lauf hinterlaesst keine kaputte Map).
+		"part": dest_dir.path_join("mirror_%d.osz.part" % set_id),
 		"idx": 0,
 		"last": -1.0,
 	}
@@ -595,8 +598,7 @@ func cancel_download(set_id: int) -> void:
 	if is_instance_valid(req):
 		req.cancel_request()
 	_finish_download(set_id)
-	if FileAccess.file_exists(d.dest):
-		DirAccess.remove_absolute(d.dest)
+	_remove_file(d.part)
 	download_cancelled.emit(set_id)
 
 
@@ -624,7 +626,8 @@ func active_ratio(set_id: int) -> float:
 func _start_download_attempt(set_id: int) -> void:
 	var d: Dictionary = _downloads[set_id]
 	var req: HTTPRequest = d.req
-	req.download_file = d.dest
+	_remove_file(d.part)
+	req.download_file = d.part
 	var err := req.request(DOWNLOAD_URLS[d.idx] + str(set_id), headers())
 	if err != OK:
 		_advance_or_fail(set_id, "Download konnte nicht starten (Fehler %d)." % err)
@@ -633,8 +636,7 @@ func _start_download_attempt(set_id: int) -> void:
 ## Naechsten Mirror probieren; erst wenn alle durch sind, endgueltig aufgeben.
 func _advance_or_fail(set_id: int, msg: String) -> void:
 	var d: Dictionary = _downloads[set_id]
-	if FileAccess.file_exists(d.dest):
-		DirAccess.remove_absolute(d.dest)
+	_remove_file(d.part)
 	d.idx += 1
 	d.last = -1.0
 	if d.idx < DOWNLOAD_URLS.size():
@@ -668,22 +670,62 @@ func _on_download_completed(result: int, code: int, _headers: PackedStringArray,
 				why = "Zeitüberschreitung"
 		_advance_or_fail(set_id, "Download fehlgeschlagen (%s)." % why)
 		return
-	# Verifizieren, dass es wirklich eine .osz (ZIP) ist.
-	var dest: String = _downloads[set_id].dest
-	if not _is_zip(dest):
+	# Verifizieren: vollstaendig geladen und eine lesbare .osz mit .osu-Datei.
+	var d: Dictionary = _downloads[set_id]
+	var req: HTTPRequest = d.req
+	var total := req.get_body_size()
+	if total > 0 and req.get_downloaded_bytes() < total:
+		_advance_or_fail(set_id, "Download unvollständig.")
+		return
+	if not is_valid_osz(d.part):
 		_advance_or_fail(set_id, "Datei ist keine gültige .osz.")
 		return
+	_remove_file(d.dest)
+	if DirAccess.rename_absolute(d.part, d.dest) != OK:
+		_advance_or_fail(set_id, "Zielordner nicht beschreibbar")
+		return
 	_finish_download(set_id)
-	download_done.emit(set_id, dest)
+	download_done.emit(set_id, d.dest)
 
 
-func _is_zip(path: String) -> bool:
+## Vollstaendige .osz? ZIP-Signatur, lesbares Inhaltsverzeichnis (fehlt bei
+## abgeschnittenen Dateien) und mindestens eine .osu-Datei.
+static func is_valid_osz(path: String) -> bool:
 	var f := FileAccess.open(path, FileAccess.READ)
-	if f == null or f.get_length() < 4:
+	if f == null or f.get_length() < 22:
 		return false
 	var sig := f.get_buffer(2)
+	if sig.size() != 2 or sig[0] != 0x50 or sig[1] != 0x4B:  # "PK"
+		f.close()
+		return false
+	# Ende-Eintrag (EOCD "PK") in den letzten 64 KB suchen: fehlt er,
+	# ist die Datei abgeschnitten — ohne ZIPReader-Fehlermeldung abweisen.
+	var n := mini(f.get_length(), 65557)
+	f.seek(f.get_length() - n)
+	var tail := f.get_buffer(n)
 	f.close()
-	return sig.size() == 2 and sig[0] == 0x50 and sig[1] == 0x4B  # "PK"
+	var eocd := false
+	for i in range(tail.size() - 22, -1, -1):
+		if tail[i] == 0x50 and tail[i + 1] == 0x4B and tail[i + 2] == 0x05 and tail[i + 3] == 0x06:
+			eocd = true
+			break
+	if not eocd:
+		return false
+	var zr := ZIPReader.new()
+	if zr.open(path) != OK:
+		return false
+	var has_osu := false
+	for fname in zr.get_files():
+		if fname.to_lower().ends_with(".osu"):
+			has_osu = true
+			break
+	zr.close()
+	return has_osu
+
+
+static func _remove_file(path: String) -> void:
+	if path != "" and FileAccess.file_exists(path):
+		DirAccess.remove_absolute(path)
 
 
 ## Eintrag + HTTPRequest-Node eines Downloads aufraeumen.

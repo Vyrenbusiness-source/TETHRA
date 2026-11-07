@@ -26,6 +26,7 @@ const CARD_RADIUS := 14
 const COVER_H := 150.0
 const GRID_SEP := 16
 const SCROLL_STEP := 140.0
+const SCROLL_GAP := 10
 ## Sichtbare Karten, ab denen nicht mehr automatisch nachgeladen wird.
 const AUTO_FILL_TARGET := 20
 
@@ -104,6 +105,9 @@ var _search: LineEdit
 var _status: Label
 var _dl_info: Label
 var _scroll: ScrollContainer
+var _scroll_pad: MarginContainer
+## Nur Harness: feste Spaltenzahl (0 = automatisch aus der Breite).
+var force_columns := 0
 var _grid: GridContainer
 var _footer: Label
 var _state_box: VBoxContainer
@@ -354,10 +358,16 @@ func _build() -> void:
 	_scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	area.add_child(_scroll)
+	# Rechter Innenabstand: der Scrollbalken liegt ueber dem Inhalt (Godot
+	# reserviert ihm keinen Platz), die letzte Spalte endet davor.
+	_scroll_pad = MarginContainer.new()
+	_scroll_pad.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_scroll_pad.add_theme_constant_override("margin_right", _gutter())
+	_scroll.add_child(_scroll_pad)
 	var content := VBoxContainer.new()
 	content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	content.add_theme_constant_override("separation", 18)
-	_scroll.add_child(content)
+	_scroll_pad.add_child(content)
 	_grid = GridContainer.new()
 	_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_grid.add_theme_constant_override("h_separation", GRID_SEP)
@@ -511,9 +521,21 @@ func _layout() -> void:
 	_panel.size = Vector2(w, h)
 
 
+## Breite rechts neben dem Raster: Scrollbalken + Abstand davor.
+func _gutter() -> int:
+	return int(ceilf(_scroll.get_v_scroll_bar().get_combined_minimum_size().x)) + SCROLL_GAP
+
+
+## Nutzbare Rasterbreite (Scroll minus Scrollbalken-Spalte).
+func _grid_width() -> float:
+	return _scroll.size.x - float(_gutter())
+
+
 func _update_columns() -> void:
-	var w := _scroll.size.x - 14.0  # Platz fuer den Scrollbalken
+	var w := _grid_width()
 	var cols := maxi(1, int((w + GRID_SEP) / (CARD_MIN_W + GRID_SEP)))
+	if force_columns > 0:
+		cols = force_columns
 	if _grid.columns != cols:
 		_grid.columns = cols
 
@@ -1449,11 +1471,16 @@ func run_shot_harness(dir: String) -> void:
 	_render()
 	await get_tree().create_timer(1.5).timeout
 	await _shot(dir.path_join("online_long.png"))
-	var widest := 0.0
-	for c in _grid.get_children():
-		widest = maxf(widest, (c as Control).size.x)
-	print("SHOT-ONLINE long: karte_breit=%.0f spalte_max=%.0f" % [widest,
-		(_scroll.size.x - 14.0 - GRID_SEP * (_grid.columns - 1)) / _grid.columns])
+	_print_fit("long")
+	# Spaltenbreite bei 3 und 5 Spalten: rechte Karte endet vor dem Scrollbalken.
+	for n in [3, 5]:
+		force_columns = n
+		_update_columns()
+		await get_tree().create_timer(0.6).timeout
+		await _shot(dir.path_join("online_cols%d.png" % n))
+		_print_fit("cols%d" % n)
+	force_columns = 0
+	_update_columns()
 	_results = real
 
 	# Genre Elektronisch + Beliebteste: alle Karten Genre 10, Plays absteigend.
@@ -1517,7 +1544,8 @@ func run_shot_harness(dir: String) -> void:
 		await get_tree().process_frame
 		var dest := download_dir_override.path_join("mirror_%d.osz" % first)
 		print("SHOT-ONLINE cancel: lief_noch=%s laufend=%d datei_weg=%s karte=%s" % [
-			was_running, _mirror.downloads_running(), not FileAccess.file_exists(dest),
+			was_running, _mirror.downloads_running(),
+			not FileAccess.file_exists(dest) and not FileAccess.file_exists(dest + ".part"),
 			(_rows[first].btn as Button).text if _rows.has(first) else "?"])
 		if FileAccess.file_exists(dest):
 			DirAccess.remove_absolute(dest)
@@ -1534,6 +1562,22 @@ func run_shot_harness(dir: String) -> void:
 	await _shot(dir.path_join("online_error.png"))
 	print("SHOT-ONLINE error: sichtbar=%s text=%s" % [_state_box.visible, _state_title.text])
 	_mirror.search_url_override = ""
+
+
+## Harness: passt jede Karte in ihre Spalte und endet vor dem Scrollbalken?
+func _print_fit(tag: String) -> void:
+	var bar := _scroll.get_v_scroll_bar()
+	var bar_x := bar.get_global_rect().position.x
+	var col_w := (_grid_width() - GRID_SEP * (_grid.columns - 1)) / _grid.columns
+	var right := 0.0
+	var widest := 0.0
+	for c in _grid.get_children():
+		var cr := (c as Control).get_global_rect()
+		right = maxf(right, cr.end.x)
+		widest = maxf(widest, cr.size.x)
+	print("SHOT-ONLINE %s: fenster=%s spalten=%d karte_breit=%.0f spalte=%.0f rechts=%.0f balken_x=%.0f balken_sichtbar=%s passt=%s" % [
+		tag, str(get_viewport_rect().size), _grid.columns, widest, col_w, right, bar_x,
+		bar.visible, widest <= col_w + 0.5 and right <= bar_x - 4.0])
 
 
 func _fake(id: int, title: String, length_s: int, bpm: float, diffs: int) -> Dictionary:
