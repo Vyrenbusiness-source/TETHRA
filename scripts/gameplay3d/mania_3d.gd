@@ -424,7 +424,8 @@ func _ready() -> void:
 	if not _2d:
 		WorldTheme.prefetch(_world_theme)
 	_precompute_snap_colors()
-	_preload_stations()
+	if not _2d:
+		_preload_stations()  # 2D: keine Stations-Meshes/Texturen laden
 	_build_world()
 	if _2d:
 		_build_playfield_2d()
@@ -441,6 +442,11 @@ func _ready() -> void:
 	_build_flight_plan()
 	_build_galaxy_chapters()
 	_apply_theme_world()
+	if _2d:
+		# 2D: versteckte Welt komplett pausieren (kein _process in Deko/FX).
+		_world.process_mode = Node.PROCESS_MODE_DISABLED
+		if _cosmos != null:
+			_cosmos.process_mode = Node.PROCESS_MODE_DISABLED
 	_build_sound()
 	_beat_player = AudioStreamPlayer.new()
 	_beat_player.stream = Sfx.beat_thump_stream()
@@ -1284,7 +1290,7 @@ func _build_starfield() -> void:
 		pm.set_shader_parameter("seed", pdef[6])
 		pm.set_shader_parameter("ring_amount", pdef[7])
 		# Echte Textur zuweisen, wenn das Asset existiert (sonst prozedural).
-		if pdef.size() > 8 and str(pdef[8]) != "":
+		if pdef.size() > 8 and str(pdef[8]) != "" and not _2d:
 			var dpath := "res://assets_game/planets/%s_diffuse.webp" % str(pdef[8])
 			if ResourceLoader.exists(dpath):
 				pm.set_shader_parameter("use_texture", 1.0)
@@ -1480,6 +1486,15 @@ func _on_note_spawned(index: int) -> void:
 		col = snap
 
 	var root := Node3D.new()
+	if _2d:
+		# 2D: nur ein leerer Positions-Traeger (Playfield2D zeichnet die Note),
+		# keine Meshes/Shader in der versteckten Welt; Hold-Laenge per _note_z.
+		root.position = Vector3(RAIL_X[obj.column], ROAD_Y + 0.32, _note_z(obj.time, _time_ms()))
+		_world.add_child(root)
+		var dummy := ShaderMaterial.new()
+		_notes[index] = { "root": root, "glow": dummy, "rim": dummy, "beam": null,
+			"on_beat": false, "col": col }
+		return
 	# 2D-KONSISTENZ: Die Note ist ein FLACHER Kreis wie das Pad — sie gleitet
 	# als Hit-Circle heran und landet exakt AUF dem Pad-Ring (kein 3D-Ball).
 	# Kern + Rim in EINEM Quad (note_disc.gdshader): beat/approach pro Frame.
@@ -1611,11 +1626,12 @@ func _on_note_judged(index: int, result: Dictionary) -> void:
 			# Ruhiger Glanz nur, solange sich die Leiste erholt (max. alle 0,6 s).
 			_hp_bar.flash_hit()
 			_hp_flash_cd = 0.6
-	_sparks.spark(col, q)
-	if _skill_fx != null:
-		_skill_fx.on_judge(col, q)
-	if q != ManiaCore.Quality.MISS:
-		_sparks.lane_shot(col)
+	if not _2d:
+		_sparks.spark(col, q)
+		if _skill_fx != null:
+			_skill_fx.on_judge(col, q)
+		if q != ManiaCore.Quality.MISS:
+			_sparks.lane_shot(col)
 	_ur_tick(result)
 	if q != ManiaCore.Quality.MISS and result.has("dt"):
 		_hit_offsets.append(float(result.dt))
@@ -1644,16 +1660,17 @@ func _on_note_judged(index: int, result: Dictionary) -> void:
 			tw.parallel().tween_property(node, "scale", Vector3.ONE * 0.3, 0.35)
 			tw.tween_callback(node.queue_free)
 		var hb: HoldBeam = entry.beam
-		if hb != null:
+		if hb != null or (_2d and (_beatmap.hit_objects[index] as ManiaNote).is_hold):
 			var hobj := _beatmap.hit_objects[index] as ManiaNote
 			var dropped: bool = result.get("hold_end", false) and not result.get("held", true)
 			if q == ManiaCore.Quality.MISS or dropped:
 				# Rest des Holds scrollt entsaettigt weiter (Loslassen sichtbar).
-				hb.set_state(HoldBeam.STATE_RELEASED)
+				if hb != null:
+					hb.set_state(HoldBeam.STATE_RELEASED)
 				_released_beams.append({ "beam": hb,
 					"head": maxf(hobj.time, _time_ms()) if dropped else hobj.time,
 					"end": hobj.end_time(), "col": hobj.column })
-			else:
+			elif hb != null:
 				hb.queue_free()
 	if q == ManiaCore.Quality.MISS:
 		_last_milestone = 0
@@ -1664,7 +1681,7 @@ func _on_note_judged(index: int, result: Dictionary) -> void:
 			if c >= 50 and _use_audio:
 				Sfx.milestone(c)
 			# Milestone-Belohnung: Sternschnuppe zieht ueber den Himmel.
-			if c >= 50 and _fx_level() > 0.0:
+			if c >= 50 and _fx_level() > 0.0 and not _2d:
 				_spawn_shooting_star(c)
 				if _skill_fx != null:
 					_skill_fx.on_milestone(c)
@@ -1700,6 +1717,8 @@ func _on_lane_pressed(column: int, hit: bool) -> void:
 ## (MAX gross und hell, 50er dezent). Bei Effekte=Aus bleibt nur der cleane
 ## Kern-Blitz + eine kleine Welle.
 func _fire_laser(column: int, target: Vector3, power: float = 1.0) -> void:
+	if _2d:
+		return  # 2D: Hit-Licht macht Playfield2D am Receptor.
 	var col := _pad_color(column)
 	var fx := _fx_level()
 
@@ -1994,6 +2013,12 @@ func _process(delta: float) -> void:
 		if core.active_hold(obj.column) == index:
 			head_t = maxf(obj.time, t)
 		root.position = Vector3(RAIL_X[obj.column], ROAD_Y + 0.32, _note_z(head_t, t))
+		if _2d:
+			# 2D: nur Position + Hold-Zustand, keine 3D-Shader-Updates.
+			if obj.is_hold and core.active_hold(obj.column) == index:
+				var h2 := clampf((t - obj.time) / 600.0, 0.0, 1.0)
+				_pad_flash[obj.column] = maxf(_pad_flash[obj.column], 0.5 + h2 * 0.3)
+			continue
 		# Lock-On: im Fenster leuchtet die Drohne weiss auf.
 		var until := obj.time - t
 		var lock: bool = absf(until) <= core.w50
@@ -2026,10 +2051,12 @@ func _process(delta: float) -> void:
 		var rbeam: HoldBeam = rb.beam
 		var z_end := _note_z(float(rb.end), t)
 		if z_end > Z_LINE + 4.0:
-			rbeam.queue_free()
+			if rbeam != null:
+				rbeam.queue_free()
 			_released_beams.remove_at(ri)
 			continue
-		rbeam.set_span(_note_z(float(rb.head), t), z_end, RAIL_X[int(rb.col)], ROAD_Y + 0.28)
+		if rbeam != null:
+			rbeam.set_span(_note_z(float(rb.head), t), z_end, RAIL_X[int(rb.col)], ROAD_Y + 0.28)
 	if _pf2d != null:
 		_update_playfield_2d(t)
 
@@ -2071,9 +2098,13 @@ func _process(delta: float) -> void:
 	_hp_flash_cd = maxf(_hp_flash_cd - delta, 0.0)
 	if _judge_disp != null:
 		_judge_disp.beat(_clock.beat_env)
+	_beat_env = maxf(_clock.beat_env, _beat_env - delta * 2.6)
+	if _2d:
+		# 2D: versteckte 3D-Welt nicht simulieren (FX, Himmel, Kapitel, Funken).
+		_process_tail(t, delta)
+		return
 	_sparks.update(delta)
 	_update_skill_fx(delta, fx)
-	_beat_env = maxf(_clock.beat_env, _beat_env - delta * 2.6)
 
 	# NOTENDICHTE (naechste Sekunde) -> Intensitaets-Surge bei Bursts;
 	# keine Note in 2.5s -> Break/Cruise, Rueckkehr mit Flash.
@@ -2490,6 +2521,11 @@ func _process(delta: float) -> void:
 			0.35 + (_treble * 0.30 + _kick * 0.10 + _sub * 0.05 + _star_burst * 0.15 + _warp_level * 0.5) * fx \
 			+ _beat_env * 0.07 + _world_pulse * 0.14)
 
+	_process_tail(t, delta)
+
+
+## Ende jedes Frames (3D und 2D): Break-Overlay, MP-Score, Fail, HUD.
+func _process_tail(t: float, delta: float) -> void:
 	_update_break_overlay(t)
 	# Multiplayer: eigenen Live-Score ~4x pro Sekunde teilen.
 	if Lobby.active and Lobby.in_game and not _ended:
@@ -3264,14 +3300,16 @@ func _build_hud() -> void:
 		_hud.add_child(rp)
 
 	# Bildschirmrand-Glut (Combo-Stufen: gluehen -> brennen), unterste Ebene.
-	var vignette := ColorRect.new()
-	vignette.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	vignette.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_vignette_mat = ShaderMaterial.new()
-	_vignette_mat.shader = load("res://shaders/screen_glow.gdshader")
-	_vignette_mat.set_shader_parameter("glow_color", _theme_col)
-	vignette.material = _vignette_mat
-	_hud.add_child(vignette)
+	# 2D: kein Vollbild-Shader (3D-Effekt, kostet nur GPU).
+	if not _2d:
+		var vignette := ColorRect.new()
+		vignette.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		vignette.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_vignette_mat = ShaderMaterial.new()
+		_vignette_mat.shader = load("res://shaders/screen_glow.gdshader")
+		_vignette_mat.set_shader_parameter("glow_color", _theme_col)
+		vignette.material = _vignette_mat
+		_hud.add_child(vignette)
 
 	# Songtitel: klein und dezent oben links (kein fetter Balken mehr in der
 	# Mitte), dimmt nach ein paar Sekunden weiter ab.
