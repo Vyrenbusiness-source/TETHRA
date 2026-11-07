@@ -162,11 +162,8 @@ static func pick_from(f: Dictionary, stars: float, theme_color: Color) -> String
 		return BOSS
 	if bpm >= BOSS_BPM and (nps >= DENSE_NPS or (nps >= NEON_NPS and kiai >= KIAI_HEAVY)):
 		return BOSS
-	# Neon: elektronisch markiert (und nicht schleppend) oder schnell + Neon-Cover.
-	if electro and bpm >= CALM_BPM and nps >= CALM_NPS:
-		return NEON
-	if bpm >= NEON_BPM_MIN and bpm < BOSS_BPM and nps >= NEON_NPS and is_neon_color(theme_color):
-		return NEON
+	# Neon wird NIE automatisch gewaehlt (Nutzer: duestere Welten, kein Neon) —
+	# nur noch manuell in den Einstellungen.
 	# Aurora: ruhig und weiche/kuehle Coverfarbe; sehr ruhig auch ohne Farbe.
 	var calm := (bpm > 0.0 and bpm < CALM_BPM) or (nps > 0.0 and nps < CALM_NPS)
 	var very_calm := (bpm > 0.0 and bpm < 100.0 and nps < 4.0) or (nps > 0.0 and nps < 2.0)

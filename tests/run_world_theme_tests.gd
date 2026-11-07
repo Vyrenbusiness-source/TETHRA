@@ -41,10 +41,10 @@ func _test_pick_from() -> void:
 	_check(WorldTheme.pick_from(_f(200, 9), 3.0, ORANGE) == "boss", "200 BPM dicht -> Bosskampf")
 	_check(WorldTheme.pick_from(_f(195, 5, 0.4), 3.0, ORANGE) == "boss", "195 BPM kiai-lastig -> Bosskampf")
 	_check(WorldTheme.pick_from(_f(195, 5, 0.1), 3.0, ORANGE) == "galaxy", "195 BPM mittel ohne Kiai -> Galaxie")
-	_check(WorldTheme.pick_from(_f(170, 6), 3.5, MAGENTA) == "neon", "170 BPM Magenta -> Neon")
-	_check(WorldTheme.pick_from(_f(150, 5), 3.5, CYAN) == "neon", "150 BPM Cyan -> Neon")
+	_check(WorldTheme.pick_from(_f(170, 6), 3.5, MAGENTA) != "neon", "170 BPM Magenta -> nie automatisch Neon")
+	_check(WorldTheme.pick_from(_f(150, 5), 3.5, CYAN) != "neon", "150 BPM Cyan -> nie automatisch Neon")
 	_check(WorldTheme.pick_from(_f(150, 5), 3.5, ORANGE) == "galaxy", "150 BPM Orange -> Galaxie")
-	_check(WorldTheme.pick_from(_f(128, 5, 0, true), 3.0, ORANGE) == "neon", "electro-Tag 128 BPM -> Neon")
+	_check(WorldTheme.pick_from(_f(128, 5, 0, true), 3.0, ORANGE) != "neon", "electro-Tag -> nie automatisch Neon")
 	_check(WorldTheme.pick_from(_f(90, 2.5, 0, true), 2.0, BLUE) == "aurora", "electro aber ruhig -> Aurora")
 	_check(WorldTheme.pick_from(_f(100, 3.5), 2.0, BLUE) == "aurora", "100 BPM blau -> Aurora")
 	_check(WorldTheme.pick_from(_f(140, 2.5), 2.0, GREY) == "aurora", "duenn + blass -> Aurora")
@@ -95,7 +95,7 @@ func _test_features() -> void:
 	var calm := _map(60000.0 / 90.0, 41, 500.0)
 	_check(WorldTheme.pick(calm, 1.5, BLUE) == "aurora", "pick: 90 BPM duenn -> Aurora")
 	var edm := _map(60000.0 / 128.0, 101, 200.0, "Song", "edm future bass")
-	_check(WorldTheme.pick(edm, 2.8, ORANGE) == "neon", "pick: edm-Tag -> Neon")
+	_check(WorldTheme.pick(edm, 2.8, ORANGE) != "neon", "pick: edm-Tag -> nie automatisch Neon")
 	_check(WorldTheme.pick(null, 5.0, ORANGE) == "galaxy", "pick: null -> Galaxie")
 
 
