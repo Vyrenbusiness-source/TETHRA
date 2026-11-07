@@ -641,15 +641,12 @@ func _draw_osu_item(it: Array, xs: Array, ws: Array, vs: Vector2, ly: float) -> 
 	var yt := z_to_y(float(it[2]))
 	var head := sk.tex("head_%d" % col)
 	var hh := _osu_note_h(head) if head != null else 0.0
+	# Importierte Skins exakt wie das Original (Nutzer-Wunsch): eigenes Tail-Bild,
+	# fehlt es, der Kopf als Ende (lazer LegacyHoldNoteTailPiece: Tail ?? Head).
 	var tail := sk.tex("tail_%d" % col)
-	# Ohne eigene Tail-Textur bleibt das Ende leer (kein Kopf als Ende); die
-	# Koerperlaenge rechnet osu! trotzdem mit der Kopfhoehe.
+	if tail == null:
+		tail = head
 	var th := _osu_note_h(tail) if tail != null else hh
-	# Nutzer-Wunsch: kein Ball am Hold-Ende bei Kreis-Skins -> runde Tails (Ecken
-	# durchsichtig) nicht zeichnen; Koerperlaenge bleibt wie in osu!. Deckende
-	# Quadrate (z. B. schwarze Kappe) bleiben: sie beenden den Koerper wie in osu!.
-	if tail != null and sk.is_round("tail_%d" % col):
-		tail = null
 	if yh < 0.0 or yt - th > vs.y:
 		return
 	var body := sk.tex("body_%d" % col)
