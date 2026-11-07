@@ -94,8 +94,9 @@ Fazit:
 - Der Generator ist bewusst etwas zahmer als die wildesten Maps. Er erzeugt keine
   Werte unter 0,1 (echte Maps gehen bis 0,001) und keine Takte mit Mittelwert weit
   ueber 1. Grund: spielbar und fair.
-- Kurztest im Spiel: Screenshot mit `--mania --sv --shot`. Die Noten sind sichtbar,
-  keine ist ueberlagert.
+- Kurztest im Spiel: Screenshot mit `res://scenes/song_select.tscn --mania --sv --shot`
+  (Flags vor `--`, das Hauptmenue leitet sie nicht weiter). Map Antinomie [toumin's basic],
+  242 BPM: Die Noten sind sichtbar, keine ist ueberlagert, der Abstand folgt der SV.
 
 ## Offen (Dateien anderer Tasks)
 
