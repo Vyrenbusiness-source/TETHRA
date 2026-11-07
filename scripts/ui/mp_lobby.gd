@@ -29,6 +29,7 @@ var _start_btn: Button
 var _pick_btn: Button
 var _code_label: Label
 var _downloading := false
+var _dl_set := 0
 var _bg_rect: TextureRect
 var _preview: AudioStreamPlayer
 var _preview_fade: Tween
@@ -537,7 +538,7 @@ func _build_room() -> void:
 	_room_box.add_child(_code_label)
 
 	var players_head := Label.new()
-	players_head.text = "SPIELER  (👑 wählt die Map — Host klickt einen Spieler, um sie zu vergeben)"
+	players_head.text = "SPIELER  (👑 wählt die Map und startet — der Kronenträger kann sie vergeben)"
 	players_head.add_theme_font_size_override("font_size", 13)
 	players_head.add_theme_color_override("font_color", COL_ACCENT)
 	_room_box.add_child(players_head)
@@ -669,15 +670,15 @@ func _refresh_room() -> void:
 		row.add_child(name_l)
 		if in_round:
 			var sc := Label.new()
-			sc.text = "%s  ·  %.1f %%  ·  %dx" % [
-				str(int(p.get("score", 0))).reverse().insert(3, " ").reverse() if int(p.get("score", 0)) >= 1000 else str(int(p.get("score", 0))),
-				float(p.get("acc", 0.0)), int(p.get("combo", 0))]
+			sc.text = "%s  ·  %s  ·  %dx" % [
+				UiTheme.fmt_score(int(p.get("score", 0))),
+				UiTheme.fmt_num(float(p.get("acc", 0.0)) * 100.0, 1) + " %", int(p.get("combo", 0))]
 			sc.add_theme_font_size_override("font_size", 14)
 			sc.add_theme_color_override("font_color", COL_ACCENT)
 			row.add_child(sc)
 		row.add_child(_chip("✓ Bereit", Color(0.5, 1.0, 0.6)) if bool(p.ready)
 			else _chip("Wartet", COL_DIM))
-		if Lobby.is_host and not is_crown:
+		if Lobby.crown_id == my_id and not is_crown:
 			var give := Button.new()
 			give.text = CROWN + " geben"
 			give.custom_minimum_size = Vector2(0, 32)
@@ -698,8 +699,8 @@ func _refresh_room() -> void:
 			str(Lobby.sel_map.get("version", "")), float(Lobby.sel_map.get("stars", 0.0))]
 		_map_cover.texture = _map_cover_tex()
 	_pick_btn.visible = Lobby.crown_id == my_id
-	_start_btn.visible = Lobby.is_host
-	_start_btn.disabled = not Lobby.all_ready()
+	_start_btn.visible = Lobby.crown_id == my_id
+	_start_btn.disabled = not Lobby.can_start()
 
 
 # ---------------------------------------------------------------------------
@@ -987,7 +988,7 @@ func _on_map_changed() -> void:
 	_refresh_room()
 	_update_bg()
 	_update_preview()
-	if Lobby.sel_map.is_empty() or _downloading:
+	if Lobby.sel_map.is_empty():
 		return
 	if Lobby.resolve_local_path() != "":
 		Lobby.set_ready(true)
@@ -997,7 +998,10 @@ func _on_map_changed() -> void:
 	if set_id <= 0:
 		_status_label.text = "Map fehlt und hat keine Set-ID — Download nicht möglich."
 		return
+	if _downloading and _dl_set == set_id:
+		return  # derselbe Download laeuft schon
 	_downloading = true
+	_dl_set = set_id
 	_status_label.text = "Map fehlt — lade automatisch herunter…"
 	_mirror.download(set_id, _library.maps_dir)
 

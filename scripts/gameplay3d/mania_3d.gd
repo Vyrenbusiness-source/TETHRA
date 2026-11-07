@@ -335,7 +335,7 @@ var _lane_held: Array[bool] = [false, false, false, false]
 var _lane_glow_mats: Array = []
 var _pad_judge_col: Array = []
 # Multiplayer: Live-Scoreboard (links) + Sende-Takt + Endscreen-Rangliste.
-var _mp_board: VBoxContainer
+var _mp_board: Control
 var _mp_send_t := 0.0
 var _mp_rank_box: VBoxContainer
 # Results-Screen (Komponente) + Clip-Export mit Fortschritt-Toast.
@@ -346,6 +346,7 @@ var _clip_toast_tw: Tween
 # Hit-Fehler (ms) aller Treffer fuer das Histogramm im Results-Screen.
 var _hit_offsets := PackedFloat32Array()
 var _mp_last_rank := -1
+var _mp_rows: Dictionary = {}
 var _acc_label: Label
 var _grade_label: Label
 var _score_label: Label
@@ -3154,12 +3155,12 @@ func _build_hud() -> void:
 	# MULTIPLAYER: Live-Scoreboard links (wie osu!mania) — sortiert nach
 	# Score, eigener Eintrag hervorgehoben; Ueberholen sieht man sofort.
 	if Lobby.active and Lobby.in_game:
-		_mp_board = VBoxContainer.new()
+		_mp_board = Control.new()
+		_mp_board.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		_mp_board.anchor_top = 0.5
 		_mp_board.anchor_bottom = 0.5
 		_mp_board.offset_left = 18
-		_mp_board.offset_top = 40
-		_mp_board.add_theme_constant_override("separation", 4)
+		_mp_board.offset_top = -60
 		_hud.add_child(_mp_board)
 		Lobby.scores_changed.connect(_refresh_mp_board)
 		Lobby.skip_now.connect(_do_skip)
@@ -3822,73 +3823,136 @@ func _close_tut_step() -> void:
 # Multiplayer-Anzeigen
 # ---------------------------------------------------------------------------
 
+const MP_ROW_H := 46.0
+
 func _refresh_mp_board() -> void:
 	if _mp_board == null or not is_instance_valid(_mp_board):
 		return
-	for c in _mp_board.get_children():
-		c.queue_free()
 	var ranked := Lobby.ranked_players()
 	var my_id := multiplayer.get_unique_id()
-	var my_rank := -1
-	for i in ranked.size():
-		if int(ranked[i].id) == my_id:
-			my_rank = i
-	_mp_last_rank = my_rank
+	var alive := {}
 	for i in ranked.size():
 		var p: Dictionary = ranked[i]
-		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 8)
-		var mine: bool = int(p.id) == my_id
-		var leading := mine and i == 0 and ranked.size() > 1
-		var num := Label.new()
-		num.text = "#%d" % (i + 1)
-		num.custom_minimum_size = Vector2(30, 0)
-		num.add_theme_font_size_override("font_size", 14)
-		num.add_theme_color_override("font_color",
-			Color(1.0, 0.85, 0.3) if i == 0 else Color(0.55, 0.58, 0.66))
-		row.add_child(num)
-		var name_l := Label.new()
-		name_l.text = str(p.name)
-		name_l.custom_minimum_size = Vector2(110, 0)
-		name_l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-		name_l.add_theme_font_size_override("font_size", 14)
-		# Eigener Eintrag: GRUEN wenn du fuehrst, sonst Cyan.
-		name_l.add_theme_color_override("font_color",
-			Color(0.45, 1.0, 0.55) if leading
-			else (Color(0.4, 0.95, 1.0) if mine else Color(0.85, 0.88, 0.95)))
-		row.add_child(name_l)
-		var score_l := Label.new()
-		score_l.text = "%d" % int(p.score)
-		score_l.add_theme_font_size_override("font_size", 14)
-		score_l.add_theme_color_override("font_color",
-			Color(0.45, 1.0, 0.55) if leading
-			else (Color(1, 1, 1) if mine else Color(0.7, 0.73, 0.8)))
-		row.add_child(score_l)
-		# Live-Differenz am eigenen Eintrag: Vorsprung (+, gruen) oder
-		# Rueckstand (-, rot) zum direkten Nachbarn.
-		if mine and ranked.size() > 1:
-			var diff_l := Label.new()
-			var d := 0
-			if i == 0:
-				d = int(p.score) - int(ranked[1].score)
-				diff_l.text = "+%s" % _fmt_score_diff(d)
-				diff_l.add_theme_color_override("font_color", Color(0.45, 1.0, 0.55))
-			else:
-				d = int(ranked[i - 1].score) - int(p.score)
-				diff_l.text = "-%s" % _fmt_score_diff(d)
-				diff_l.add_theme_color_override("font_color", Color(1.0, 0.5, 0.45))
-			diff_l.add_theme_font_size_override("font_size", 12)
-			row.add_child(diff_l)
-		_mp_board.add_child(row)
+		var id := int(p.id)
+		alive[id] = true
+		var row: Control = _mp_rows.get(id)
+		if row == null or not is_instance_valid(row):
+			row = _mp_make_row(id == my_id)
+			_mp_board.add_child(row)
+			row.position = Vector2(0, i * MP_ROW_H)
+			_mp_rows[id] = row
+		_mp_fill_row(row, i, p, ranked, id == my_id)
+		# Plaetze tauschen: weich zur neuen Zeile gleiten.
+		var ty := i * MP_ROW_H
+		if absf(float(row.get_meta("ty", -1.0)) - ty) > 0.5:
+			row.set_meta("ty", ty)
+			var old: Tween = row.get_meta("tw", null)
+			if old != null and old.is_valid():
+				old.kill()
+			var tw := row.create_tween()
+			tw.tween_property(row, "position:y", ty, 0.35) 				.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+			row.set_meta("tw", tw)
+	for id in _mp_rows.keys():
+		if not alive.has(id):
+			var gone: Control = _mp_rows[id]
+			_mp_rows.erase(id)
+			if is_instance_valid(gone):
+				gone.queue_free()
+	_mp_board.custom_minimum_size = Vector2(264, ranked.size() * MP_ROW_H)
+	_mp_last_rank = -1
+	for i in ranked.size():
+		if int(ranked[i].id) == my_id:
+			_mp_last_rank = i
+
+
+func _mp_make_row(mine: bool) -> Control:
+	var row := PanelContainer.new()
+	row.size = Vector2(264, MP_ROW_H - 4)
+	row.custom_minimum_size = Vector2(264, MP_ROW_H - 4)
+	var sb := UiTheme.glass_box(8, 0.62 if mine else 0.42, 0.45 if mine else 0.10)
+	sb.shadow_size = 0
+	sb.content_margin_left = 8
+	sb.content_margin_right = 8
+	sb.content_margin_top = 3
+	sb.content_margin_bottom = 3
+	if mine:
+		sb.border_color = Color(0.4, 0.95, 1.0, 0.6)
+		sb.bg_color = Color(0.10, 0.20, 0.28, 0.66)
+	row.add_theme_stylebox_override("panel", sb)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var hb := HBoxContainer.new()
+	hb.add_theme_constant_override("separation", 8)
+	hb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(hb)
+	var num := Label.new()
+	num.name = "Rank"
+	num.custom_minimum_size = Vector2(26, 0)
+	num.add_theme_font_size_override("font_size", 17)
+	hb.add_child(num)
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", -2)
+	vb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hb.add_child(vb)
+	var top := HBoxContainer.new()
+	top.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vb.add_child(top)
+	var name_l := Label.new()
+	name_l.name = "Name"
+	name_l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	name_l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	name_l.add_theme_font_size_override("font_size", 14)
+	top.add_child(name_l)
+	var score_l := Label.new()
+	score_l.name = "Score"
+	score_l.add_theme_font_size_override("font_size", 15)
+	top.add_child(score_l)
+	var sub := Label.new()
+	sub.name = "Sub"
+	sub.add_theme_font_size_override("font_size", 11)
+	vb.add_child(sub)
+	return row
+
+
+func _mp_fill_row(row: Control, i: int, p: Dictionary, ranked: Array, mine: bool) -> void:
+	var hb: HBoxContainer = row.get_child(0)
+	var num: Label = hb.get_node("Rank")
+	num.text = "%d" % (i + 1)
+	num.add_theme_color_override("font_color",
+		Color(1.0, 0.85, 0.3) if i == 0 else Color(0.6, 0.63, 0.72))
+	var vb: VBoxContainer = hb.get_child(1)
+	var name_l: Label = vb.get_child(0).get_node("Name")
+	var score_l: Label = vb.get_child(0).get_node("Score")
+	var sub: Label = vb.get_node("Sub")
+	name_l.text = str(p.name)
+	var leading := mine and i == 0 and ranked.size() > 1
+	name_l.add_theme_color_override("font_color",
+		Color(0.45, 1.0, 0.55) if leading
+		else (Color(0.4, 0.95, 1.0) if mine else Color(0.85, 0.88, 0.95)))
+	score_l.text = UiTheme.fmt_score(int(p.score))
+	score_l.add_theme_color_override("font_color",
+		Color(1, 1, 1) if mine else Color(0.75, 0.78, 0.85))
+	var line := "%dx  ·  %s" % [int(p.combo), UiTheme.fmt_pct(float(p.acc) * 100.0)]
+	# Eigene Zeile: Abstand zum Nachbarn (Vorsprung gruen / Rueckstand rot).
+	var col := Color(0.55, 0.58, 0.68)
+	if mine and ranked.size() > 1:
+		if i == 0:
+			line += "  ·  +" + _fmt_score_diff(int(p.score) - int(ranked[1].score))
+			col = Color(0.45, 1.0, 0.55)
+		else:
+			line += "  ·  -" + _fmt_score_diff(int(ranked[i - 1].score) - int(p.score))
+			col = Color(1.0, 0.55, 0.5)
+	sub.text = line
+	sub.add_theme_color_override("font_color", col)
 
 
 ## Punktedifferenz kompakt: 950 · 12,3k · 1,2M.
 func _fmt_score_diff(d: int) -> String:
 	if d >= 1000000:
-		return "%.1fM" % (d / 1000000.0)
+		return UiTheme.fmt_num(d / 1000000.0, 1) + "M"
 	if d >= 10000:
-		return "%.1fk" % (d / 1000.0)
-	return str(d)
+		return UiTheme.fmt_num(d / 1000.0, 1) + "k"
+	return UiTheme.fmt_score(d)
 
 
 func _refresh_mp_ranking() -> void:
@@ -3905,10 +3969,10 @@ func _refresh_mp_ranking() -> void:
 		var row := Label.new()
 		var state := ""
 		if fin.is_empty():
-			state = "spielt noch…  (%d)" % int(p.score)
+			state = "spielt noch…  (%s)" % UiTheme.fmt_score(int(p.score))
 		else:
-			state = "%d · %.2f%% · %s · %dx%s" % [int(fin.get("score", p.score)),
-				float(fin.get("acc", 0.0)) * 100.0, str(fin.get("grade", "?")),
+			state = "%s · %s · %s · %dx%s" % [UiTheme.fmt_score(int(fin.get("score", p.score))),
+				UiTheme.fmt_pct(float(fin.get("acc", 0.0)) * 100.0), str(fin.get("grade", "?")),
 				int(fin.get("combo", 0)),
 				"  [FAIL]" if bool(fin.get("failed", false)) else ""]
 		row.text = "#%d  %s   %s" % [i + 1, str(p.name), state]
