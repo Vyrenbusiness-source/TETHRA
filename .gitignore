@@ -2,7 +2,7 @@
 .godot/
 
 # Build-Artefakte (gehen als GitHub-Release-Assets raus, nicht ins Repo)
-release/
+/release/
 TETHRA_v1.zip
 *.pck
 

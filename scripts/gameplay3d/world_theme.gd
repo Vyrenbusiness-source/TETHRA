@@ -54,19 +54,87 @@ const ELECTRO_EXACT: Array[String] = ["edm", "dnb", "idm", "eurobeat"]
 ## Farbsatz je Thema: line = Strecke/Pads (Songfarbe), kiai = Akzent im Kiai.
 ## Galaxie behaelt die Coverfarbe (leeres Dict).
 const PALETTES := {
-	"boss": {"line": Color(0.78, 0.08, 0.10), "kiai": Color(1.0, 0.30, 0.26)},
-	"aurora": {"line": Color(0.46, 0.72, 0.80), "kiai": Color(0.70, 0.88, 0.92)},
-	"eclipse": {"line": Color(0.86, 0.76, 0.52), "kiai": Color(1.0, 0.94, 0.78)},
-	"abyss": {"line": Color(0.52, 0.60, 0.70), "kiai": Color(0.80, 0.86, 0.94)},
-	"fractal": {"line": Color(0.66, 0.12, 0.22), "kiai": Color(0.92, 0.36, 0.44)},
-	"singularity": {"line": Color(0.80, 0.82, 0.86), "kiai": Color(1.0, 0.96, 0.90)},
-	"storm": {"line": Color(0.52, 0.48, 0.66), "kiai": Color(0.78, 0.74, 0.92)},
-	"obsidian": {"line": Color(0.40, 0.56, 0.72), "kiai": Color(0.66, 0.80, 0.94)},
-	"monolith": {"line": Color(0.70, 0.72, 0.76), "kiai": Color(0.90, 0.92, 0.95)},
-	"rift": {"line": Color(0.56, 0.64, 0.56), "kiai": Color(0.76, 0.84, 0.74)},
-	"nerve": {"line": Color(0.42, 0.08, 0.16), "kiai": Color(0.70, 0.22, 0.32)},
+	"boss": {"line": Color(0.78, 0.08, 0.10), "kiai": Color(1.0, 0.30, 0.26),
+		"note": Color(1.0, 0.30, 0.18), "hold": Color(1.0, 0.52, 0.14)},
+	"aurora": {"line": Color(0.46, 0.72, 0.80), "kiai": Color(0.70, 0.88, 0.92),
+		"note": Color(0.62, 0.90, 1.0), "hold": Color(0.42, 0.76, 0.96)},
+	"eclipse": {"line": Color(0.86, 0.76, 0.52), "kiai": Color(1.0, 0.94, 0.78),
+		"note": Color(1.0, 0.84, 0.48), "hold": Color(1.0, 0.64, 0.28)},
+	"abyss": {"line": Color(0.52, 0.60, 0.70), "kiai": Color(0.80, 0.86, 0.94),
+		"note": Color(0.46, 0.76, 0.92), "hold": Color(0.30, 0.60, 0.82)},
+	"fractal": {"line": Color(0.66, 0.12, 0.22), "kiai": Color(0.92, 0.36, 0.44),
+		"note": Color(1.0, 0.32, 0.44), "hold": Color(0.88, 0.14, 0.30)},
+	"singularity": {"line": Color(0.80, 0.82, 0.86), "kiai": Color(1.0, 0.96, 0.90),
+		"note": Color(1.0, 0.92, 0.78), "hold": Color(1.0, 0.72, 0.38)},
+	"storm": {"line": Color(0.52, 0.48, 0.66), "kiai": Color(0.78, 0.74, 0.92),
+		"note": Color(0.76, 0.72, 1.0), "hold": Color(0.54, 0.56, 0.96)},
+	"obsidian": {"line": Color(0.40, 0.56, 0.72), "kiai": Color(0.66, 0.80, 0.94),
+		"note": Color(0.52, 0.78, 1.0), "hold": Color(0.34, 0.60, 0.92)},
+	"monolith": {"line": Color(0.70, 0.72, 0.76), "kiai": Color(0.90, 0.92, 0.95),
+		"note": Color(0.84, 0.91, 1.0), "hold": Color(0.76, 0.84, 0.96)},
+	"rift": {"line": Color(0.56, 0.64, 0.56), "kiai": Color(0.76, 0.84, 0.74),
+		"note": Color(0.72, 0.94, 0.74), "hold": Color(0.46, 0.80, 0.54)},
+	"nerve": {"line": Color(0.42, 0.08, 0.16), "kiai": Color(0.70, 0.22, 0.32),
+		"note": Color(0.94, 0.26, 0.40), "hold": Color(0.74, 0.12, 0.28)},
 	"neon": {"line": Color("#ff2bd6"), "kiai": Color("#19f0ff")},
 }
+
+
+## Snap-Staffelung in Weltfarbe: Teiler -> [Farbton-Versatz, Saettigung x, Helligkeit x].
+## Farbton bleibt (fast) der der Welt; Unterscheidung ueber Helligkeit/Saettigung.
+const SNAP_STYLE := {
+	1: [0.0, 0.30, 1.00],
+	2: [0.0, 1.00, 0.94],
+	3: [0.05, 0.90, 0.74],
+	4: [-0.03, 0.78, 0.84],
+	6: [0.07, 0.70, 0.64],
+	8: [-0.06, 1.00, 0.70],
+	12: [0.03, 0.55, 0.78],
+	16: [0.0, 0.45, 0.58],
+}
+const SNAP_V_MIN := 0.50
+const SNAP_V_MAX := 0.98
+
+
+## Hat die Welt einen eigenen Noten-Stil (Galaxie/Neon: nein)?
+static func has_note_style(theme: String) -> bool:
+	return PALETTES.get(theme, {}).has("note")
+
+
+## Notenfarbe der Welt (Galaxie/Neon: leer = unveraendert).
+static func note_color(theme: String, hold: bool) -> Color:
+	var pal: Dictionary = PALETTES.get(theme, {})
+	return pal.get("hold" if hold else "note", Color(0, 0, 0, 0))
+
+
+## Snap-Teiler -> Farbe im Farbsatz der Welt (Helligkeit/Saettigung gestaffelt).
+static func snap_style(divisor: int, note: Color) -> Color:
+	var st: Array = SNAP_STYLE.get(divisor, SNAP_STYLE[16])
+	var v := clampf(maxf(note.v, 0.85) * float(st[2]), SNAP_V_MIN, SNAP_V_MAX)
+	return Color.from_hsv(fposmod(note.h + float(st[0]), 1.0),
+			clampf(note.s * float(st[1]), 0.0, 0.9), v)
+
+
+## Asynchron vorladen (Hauptthread bleibt frei): Panorama + Ebenen der Welt.
+## Beim Kartenwechsel/Ladebild aufrufen; get_cached() holt sie spaeter ohne Hitch.
+static func prefetch(theme: String) -> void:
+	if theme == GALAXY or theme == "":
+		return
+	var dir := asset_dir(theme)
+	if not DirAccess.dir_exists_absolute(dir):
+		return
+	for fname in ResourceLoader.list_directory(dir):
+		if fname.get_extension().to_lower() in ["webp", "png", "jpg", "exr", "hdr"]:
+			var path := dir.path_join(fname)
+			if ResourceLoader.exists(path) and ResourceLoader.load_threaded_get_status(path) == ResourceLoader.THREAD_LOAD_INVALID_RESOURCE:
+				ResourceLoader.load_threaded_request(path)
+
+
+## Resource holen: war sie vorgeladen, wartet das nur auf den Rest.
+static func get_cached(path: String) -> Resource:
+	if ResourceLoader.load_threaded_get_status(path) != ResourceLoader.THREAD_LOAD_INVALID_RESOURCE:
+		return ResourceLoader.load_threaded_get(path)
+	return load(path)
 
 
 ## Thema fuer die Map. stars < 0 = unbekannt (wird ignoriert).
@@ -293,7 +361,9 @@ static func drop_env(since_start: float, since_end: float, comfort: bool) -> flo
 
 ## Monotoner Beat-Zaehler mit Easing: springt auf dem Schlag, ruht bis zum naechsten.
 static func beat_step(beats_total: int, beat_phase: float) -> float:
-	return float(beats_total) + 1.0 - pow(1.0 - clampf(beat_phase, 0.0, 1.0), 4.0)
+	# Glatt, nie still: Geschwindigkeit 1.25x auf dem Schlag .. 0.75x davor.
+	var p := clampf(beat_phase, 0.0, 1.0)
+	return float(beats_total) + p + 0.25 * ((1.0 - (1.0 - p) * (1.0 - p)) - p)
 
 
 ## downbeat_pulse: exp(-bar_phase*meter*3), 1 auf dem Takt-Anfang.

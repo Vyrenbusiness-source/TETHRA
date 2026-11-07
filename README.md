@@ -37,6 +37,22 @@ TETHRA is a **3D space-flight rhythm game**. It reads standard **osu!mania 4K** 
 - **Multiplayer.** Join friends with a room code.
 - **Auto-updater.** New versions install themselves.
 
+## Worlds
+
+- **Galaxy:** The reference world, flying through starfields and dust.
+- **Boss:** A boss fight with a red track, glowing sky and flying shards.
+- **Aurora:** A polar-light sky with curtains and stars.
+- **Neon:** A neon grid, selectable only by hand.
+- **Eclipse:** A corona and edge bands that pulse with the beat.
+- **Abyss:** Mist and glow over slow pillars.
+- **Fractal:** 3D shards flying past in time with the beat.
+- **Obsidian:** Mist, shards and waves on the beat.
+- **Storm:** Fly through a tornado, with a stronger beat accent.
+- **Singularity:** A singularity world in 8192 sharpness.
+- **Monolith:** Tunnel rows and prisms passing in time.
+- **Rift:** A split in space, with shards and dust pulsing on the beat.
+- **Nerve:** Veins and nodes pulse while lanes fly past.
+
 ## Screenshots
 
 <table>

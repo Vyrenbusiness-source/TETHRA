@@ -18,6 +18,7 @@ config/icon="res://icon.svg"
 
 [autoload]
 
+WorldPack="*res://scripts/net/world_pack.gd"
 SyncClock="*res://scripts/audio/sync_clock.gd"
 GameSession="*res://scripts/game_session.gd"
 Settings="*res://scripts/settings.gd"
