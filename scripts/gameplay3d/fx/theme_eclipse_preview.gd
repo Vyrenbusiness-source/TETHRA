@@ -46,6 +46,7 @@ func _ready() -> void:
 	_mat = ShaderMaterial.new()
 	_mat.shader = load("res://shaders/theme_eclipse.gdshader")
 	_mat.set_shader_parameter("tex_a", load("res://assets_game/themes/eclipse/eclipse_sky.webp"))
+	_mat.set_shader_parameter("shards_tex", load("res://assets_game/themes/eclipse/eclipse_shards.webp"))
 	_mat.set_shader_parameter("ash_a", load("res://assets_game/themes/eclipse/eclipse_ash.webp"))
 	_mat.set_shader_parameter("readability", 0.7)
 	var sky := Sky.new()

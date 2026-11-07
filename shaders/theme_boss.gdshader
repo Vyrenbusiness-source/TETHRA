@@ -54,6 +54,9 @@ shader_type sky;
 //   Umgebungslicht       #140405, Glow-Schwelle wie Spiel (0.92)
 //   Theme-Farbe (Hue)    0.99 (fuer _sky_pal_for_hue / UI-Akzente)
 //
+// NAHE EBENE shards_tex (sky_boss_shards.webp, RGBA): Glut-Brocken/Truemmer im Stil der Fraktal-Splitter;
+//   Parallax zur Fernebene, Gier rastet mit beat_step ein, Drop = schneller/naeher/heller
+//   (Mitte/unten in Weltkoordinaten frei). Bindung: mat.set_shader_parameter("shards_tex", load("res://assets_game/themes/boss/sky_boss_shards.webp")).
 // BEAT-VERTRAG (docs/worlds/beat_contract.md):
 //   beat_step       Glut-HERZSCHLAG: die Funken-Ebene springt auf jedem Schlag ein
 //                   Stueck aufwaerts und ruht bis zum naechsten (rastet exakt ein).
@@ -78,6 +81,7 @@ uniform sampler2D stars_a : source_color, filter_linear, repeat_enable, hint_def
 uniform sampler2D stars_b : source_color, filter_linear, repeat_enable, hint_default_black;
 uniform sampler2D veil_tex : filter_linear, repeat_enable, hint_default_black;
 uniform sampler2D flash_tex : source_color, filter_linear, repeat_enable, hint_default_black;
+uniform sampler2D shards_tex : source_color, filter_linear, repeat_enable, hint_default_transparent;
 uniform float palette_mix : hint_range(0.0, 1.0) = 0.0;
 
 uniform vec3 tint : source_color = vec3(1.0);
@@ -290,6 +294,22 @@ void sky() {
 		em *= 1.0 + beat_pulse * 0.6 + downbeat_pulse * 0.35 * mv + dp * 0.9;
 
 		vec3 col = (sky_col + em + fl) * tint * brightness;
+
+		// Nahe Objekt-Ebene (Stil Fraktal-Splitter): Brocken ziehen am Spieler vorbei,
+		// Gier rastet mit beat_step auf dem Schlag ein; Drop = schneller/naeher/heller.
+		{
+			float s_mv = 1.0 - 0.5 * comfort;
+			float s_dp = drop * (1.0 - 0.5 * comfort);
+			float s_yaw = TIME * 0.004 * s_mv + beat_step * 0.012 * s_mv + s_dp * 0.07;
+			vec3 s_d = dir * euler(vec3(0.0, s_yaw, 0.0));
+			s_d.y = dir.y + s_dp * 0.03 * (1.0 - abs(dir.y));          // Drop: naeher heran
+			vec4 s_sh = textureLod(shards_tex, dir_uv(normalize(s_d), vec2(0.0)), 0.0);
+			float s_lon = atan(dir.x, -dir.z);
+			float s_lat = asin(clamp(dir.y, -1.0, 1.0));
+			float s_gate = smoothstep(0.03, 0.12, s_lat) * (1.0 - exp(-(s_lon / 0.5) * (s_lon / 0.5)) * smoothstep(0.9, 0.5, s_lat));
+			vec3 s_c = dec(s_sh.rgb) * (1.0 + beat_pulse * 0.30 + downbeat_pulse * 0.25 * s_mv + s_dp * 0.6);
+			col = mix(col, s_c * tint * brightness, s_sh.a * s_gate);
+		}
 
 		// Lesbarkeit in Weltkoordinaten: vorn-mitte/unten zusaetzlich dunkler.
 		float front = exp(-(lon / 0.62) * (lon / 0.62)) * smoothstep(0.22, -0.30, lat);

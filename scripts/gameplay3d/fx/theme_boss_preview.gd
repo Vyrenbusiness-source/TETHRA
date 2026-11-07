@@ -49,6 +49,7 @@ func _ready() -> void:
 	_mat.shader = load("res://shaders/theme_boss.gdshader")
 	_mat.set_shader_parameter("tex_a", load(DIR + "sky_boss.webp"))
 	_mat.set_shader_parameter("stars_a", load(DIR + "sky_boss_embers.webp"))
+	_mat.set_shader_parameter("shards_tex", load(DIR + "sky_boss_shards.webp"))
 	_mat.set_shader_parameter("veil_tex", load(DIR + "sky_boss_veil.webp"))
 	_mat.set_shader_parameter("flash_tex", load(DIR + "sky_boss_flash.webp"))
 	_mat.set_shader_parameter("readability", 0.7)
