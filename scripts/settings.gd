@@ -97,7 +97,7 @@ const LANE_SPACING_STEP := 0.05
 ## und optional leicht weichgezeichnet (bg_blur).
 var playfield_2d: bool = false
 var bg_dim: float = 0.3
-## --bgdim=<0..1> (Test-/Screenshot-Laeufe): gilt nur fuer diesen Lauf; save()
+## --bgdim=<0..100> (Test-/Screenshot-Laeufe): gilt nur fuer diesen Lauf; save()
 ## schreibt den gespeicherten Wert, solange bg_dim noch dem CLI-Wert entspricht.
 var _bg_dim_cli := -1.0
 var _bg_dim_saved := 0.3
@@ -759,11 +759,11 @@ func step_scroll_speed(d: int) -> void:
 	_show_osd(txt, float(scroll_speed - SCROLL_SPEED_MIN) / float(SCROLL_SPEED_MAX - SCROLL_SPEED_MIN))
 
 
-## --bgdim=<0..1> auf der Kommandozeile (0 = Hintergrund aus), sonst -1.
+## --bgdim=<0..100> (Prozent wie in mania_3d.gd) auf der Kommandozeile (0 = aus), sonst -1.
 static func cli_bg_dim() -> float:
 	for a in OS.get_cmdline_args() + OS.get_cmdline_user_args():
 		if a.begins_with("--bgdim="):
-			return clamp_bg_dim(a.trim_prefix("--bgdim=").to_float())
+			return clamp_bg_dim(a.trim_prefix("--bgdim=").to_float() / 100.0)
 	return -1.0
 
 
