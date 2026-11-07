@@ -129,7 +129,7 @@ class Raster:
         self.r = (R_EYE * np.exp(self.rho)).astype(F32)
         self.sinr = np.sin(np.radians(np.minimum(self.r, 179.0))).astype(F32)
 
-    def fbm(self, rng, base, octaves, gain=0.55, twist=TWIST, ridged=False, aa=(1.6, 4.0)):
+    def fbm(self, rng, base, octaves, gain=0.55, twist=TWIST, ridged=False, billow=False, aa=(1.6, 4.0)):
         acc = np.zeros((NR, NP), F32)
         norm, amp = 0.0, 1.0
         for k in range(octaves):
@@ -140,6 +140,8 @@ class Raster:
             up = ndimage.zoom(g, (NR / h, NP / w), order=3, mode="grid-wrap", grid_mode=True)[:NR, :NP]
             if ridged:
                 up = (0.8 - np.abs(up)) * 1.4
+            elif billow:
+                up = (np.abs(up) - 0.55) * 1.6
             dphi = 2.0 * math.pi / w
             drho = (RHO1 - RHO0) / h
             px_t = dphi * self.sinr * 57.2958 * self.ppd
@@ -201,7 +203,7 @@ def cloud_field(P, R, rng, base, billow, k_billow, warp_amp):
     w1 = R.fbm(rng, (2, 5), 4)
     w2 = R.fbm(rng, (2, 5), 4)
     fb = R.fbm(rng, base[0], base[1], gain=base[2])
-    fq = R.fbm(rng, billow[0], billow[1], gain=billow[2], twist=TWIST_BILLOW, ridged=True)
+    fq = R.fbm(rng, billow[0], billow[1], gain=billow[2], twist=TWIST_BILLOW, billow=True)
     fb = R.warp(fb, w1 * warp_amp[0], w2 * warp_amp[1])
     fq = R.warp(fq, w2 * warp_amp[0] * 0.5, w1 * warp_amp[1] * 0.5)
     dens = lookup(P, fb) + k_billow * lookup(P, fq, TWIST_BILLOW)
