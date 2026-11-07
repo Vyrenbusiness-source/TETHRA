@@ -4,3 +4,89 @@ KEIN BAN,KEIN BAN,NO BAN
 ✓ Kein Ban,✓ Kein Ban,✓ No ban
 ✓ KEIN BAN,✓ KEIN BAN,✓ NO BAN
 Klicke eine Map, um sie abzuwählen — oder wähle Kein Ban.,Klicke eine Map, um sie abzuwählen — oder wähle Kein Ban.,Click a map to ban it — or choose No ban.
+%d %% LN,%d %% LN,%d %% LN
+%d BPM,%d BPM,%d BPM
+%d Maps ohne Long-Note-/Längen-/BPM-Daten ergänzt — Filter dort nicht geprüft.,%d Maps ohne Long-Note-/Längen-/BPM-Daten ergänzt — Filter dort nicht geprüft.,Added %d maps without long note/length/BPM data — filters not checked for them.
+%d Maps werden gespielt — in dieser Reihenfolge.,%d Maps werden gespielt — in dieser Reihenfolge.,%d maps will be played — in this order.
+%d Maps zwischen ★ %s und ★ %s.,%d Maps zwischen ★ %s und ★ %s.,%d maps between ★ %s and ★ %s.
+%s  ·  %s  ·  %dx,%s  ·  %s  ·  %dx,%s  ·  %s  ·  %dx
++ Map hinzufügen,+ Map hinzufügen,+ Add map
+AUTO-AUSWAHL,AUTO-AUSWAHL,AUTO PICK
+Alle Runden gespielt,Alle Runden gespielt,All rounds played
+Alle sind bereit.,Alle sind bereit.,Everyone is ready.
+Auto-Auswahl: %s.,Auto-Auswahl: %s.,Auto pick: %s.
+Auto-Auswahl: alle Maps im Sternbereich.,Auto-Auswahl: alle Maps im Sternbereich.,Auto pick: all maps in the star range.
+BPM,BPM,BPM
+Bans,Bans,Bans
+Bans aufgedeckt,Bans aufgedeckt,Bans revealed
+"Bei %d Spielern wählt jeder bis zu %d Maps, dann streicht jeder eine.","Bei %d Spielern wählt jeder bis zu %d Maps, dann streicht jeder eine.","With %d players everyone picks up to %d maps, then everyone bans one."
+Combo,Combo,Combo
+Danach noch %d Maps.,Danach noch %d Maps.,Then %d more maps.
+Dein Ban,Dein Ban,Your ban
+"Dein Ban — klicke eine andere Map, um zu wechseln","Dein Ban — klicke eine andere Map, um zu wechseln",Your ban — click another map to switch
+Deine Maps sind gewählt — warte auf die anderen.,Deine Maps sind gewählt — warte auf die anderen.,Your maps are picked — waiting for the others.
+Der Host kann freie Plätze automatisch füllen.,Der Host kann freie Plätze automatisch füllen.,The host can fill empty slots automatically.
+Der Mirror antwortet nicht (HTTP %d).,Der Mirror antwortet nicht (HTTP %d).,The mirror is not responding (HTTP %d).
+"Die Bans bleiben verdeckt, bis alle gewählt haben.","Die Bans bleiben verdeckt, bis alle gewählt haben.",Bans stay hidden until everyone has chosen.
+Diese Map streichen,Diese Map streichen,Ban this map
+Erst wenn alle gewählt haben.,Erst wenn alle gewählt haben.,Only once everyone has chosen.
+Erst wenn der Pool voll ist.,Erst wenn der Pool voll ist.,Only once the pool is full.
+Filter der Auto-Auswahl,Filter der Auto-Auswahl,Auto pick filters
+Gilt für »Rest automatisch füllen« — eigene Picks sind frei.,Gilt für »Rest automatisch füllen« — eigene Picks sind frei.,"Applies to ""Fill the rest automatically"" — your own picks are free."
+Jeder wählt bis zu %d Maps — auch aus dem Online-Browser.,Jeder wählt bis zu %d Maps — auch aus dem Online-Browser.,Everyone picks up to %d maps — online maps too.
+KEIN SIEGER,KEIN SIEGER,NO WINNER
+Keine Filter — alle Maps im Sternbereich.,Keine Filter — alle Maps im Sternbereich.,No filters — all maps in the star range.
+Keine Verbindung zum Mirror.,Keine Verbindung zum Mirror.,No connection to the mirror.
+"Klicke eine Map, um sie abzuwählen — oder wähle Kein Ban.","Klicke eine Map, um sie abzuwählen — oder wähle Kein Ban.",Click a map to ban it — or choose No ban.
+LETZTE MAP,LETZTE MAP,LAST MAP
+Letzte Runde.,Letzte Runde.,Last round.
+Map aus der Bibliothek wählen,Map aus der Bibliothek wählen,Pick a map from your library
+Map ist bei dir vorhanden,Map ist bei dir vorhanden,You have this map
+Maps im Pool,Maps im Pool,Maps in the pool
+Maps wählen,Maps wählen,Pick maps
+Nicht genug passende Maps gefunden — Filter lockern oder selbst wählen.,Nicht genug passende Maps gefunden — Filter lockern oder selbst wählen.,Not enough matching maps found — loosen the filters or pick yourself.
+Noch %d Maps zu spielen.,Noch %d Maps zu spielen.,%d maps left to play.
+Pkt.,Pkt.,pts
+Plätze seit der letzten Runde,Plätze seit der letzten Runde,Places since the last round
+Pool voll,Pool voll,Pool full
+RUNDE %d,RUNDE %d,ROUND %d
+RUNDENSIEGER,RUNDENSIEGER,ROUND WINNER
+Runde %d von %d,Runde %d von %d,Round %d of %d
+Runden,Runden,Rounds
+STAND,STAND,STANDINGS
+"Sterne, z. B. 4,37","Sterne, z. B. 4,37","Stars, e.g. 4.37"
+Suche läuft …,Suche läuft …,Searching …
+Warte auf den Host …,Warte auf den Host …,Waiting for the host …
+"Warte, bis alle die Map haben …","Warte, bis alle die Map haben …",Waiting until everyone has the map …
+Wirklich abbrechen?,Wirklich abbrechen?,Really cancel?
+Zurück zum Raum — das Turnier läuft weiter,Zurück zum Raum — das Turnier läuft weiter,Back to the room — the tournament keeps running
+bereit,bereit,ready
+bis,bis,to
+durchgefallen,durchgefallen,failed
+egal,egal,any
+fehlt,fehlt,missing
+frei,frei,open
+gegangen,gegangen,left
+gestrichen · %s,gestrichen · %s,banned · %s
+haben gewählt,haben gewählt,have chosen
+kein Ban,kein Ban,no ban
+lädt Map …,lädt Map …,loading map …
+lädt…,lädt…,loading…
+wählt …,wählt …,choosing …
+"»Rest automatisch füllen« nimmt zuerst passende Maps aus deiner Bibliothek, dann online.","»Rest automatisch füllen« nimmt zuerst passende Maps aus deiner Bibliothek, dann online.","""Fill the rest automatically"" takes matching maps from your library first, then online."
+≈ %d Minuten Spielzeit,≈ %d Minuten Spielzeit,≈ %d minutes of play
+✓ gewählt,✓ gewählt,✓ chosen
+SCHWIERIGKEIT,SCHWIERIGKEIT,DIFFICULTY
+ES ENTSTEHT,ES ENTSTEHT,SUMMARY
+Egal,Egal,Any
+Wenig,Wenig,Few
+Mittel,Mittel,Some
+Viel,Viel,Many
+Long Notes,Long Notes,Long notes
+Wenig Long Notes,Wenig Long Notes,Few long notes
+Mittel viele Long Notes,Mittel viele Long Notes,Some long notes
+Viele Long Notes,Viele Long Notes,Many long notes
+%d–%d %% Long Notes,%d–%d %% Long Notes,%d–%d %% long notes
+bis %s min,bis %s min,up to %s min
+ab %d BPM,ab %d BPM,from %d BPM
+bis %d BPM,bis %d BPM,up to %d BPM

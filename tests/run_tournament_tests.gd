@@ -1,6 +1,7 @@
 extends SceneTree
 
-## Headless-Tests fuer die Turnier-Logik (Pick-Regeln, Bans, Punkte, Tabelle, Sync).
+## Headless-Tests fuer die Turnier-Logik (Pick-Regeln, Bans, Punkte, Tabelle, Sync)
+## und die Auto-Auswahl-Filter (Long Notes, Laenge, BPM; lokal und online).
 
 var _failed := 0
 
@@ -285,6 +286,104 @@ func _init() -> void:
 		2: { "score": 0, "accuracy": 0.0, "max_combo": 0, "failed": true, "absent": true, "name": "B" } })
 	var sg := tg.standings()
 	_check(sg[0].points == 0 and sg[0].avg_acc == 0.0 and sg[0].wins == 0, "Gegangene: keine Punkte/Siege")
+
+	# --- Auto-Auswahl-Filter: Validierung
+	var f0 := Tournament.clean_filters({})
+	_check(f0 == { "ln_lo": 0, "ln_hi": 100, "len_max": 0, "bpm_lo": 0, "bpm_hi": 0 }, "Filter: Standard = keine Filter")
+	_check(not Tournament.filters_active(f0) and Tournament.ln_preset(f0) == "any", "Filter: Standard inaktiv, Stufe any")
+	var fj := Tournament.clean_filters({ "ln_lo": 80, "ln_hi": 20, "len_max": 99999, "bpm_lo": "x", "bpm_hi": -5 })
+	_check(fj.ln_lo == 20 and fj.ln_hi == 80 and fj.len_max == Tournament.LEN_MAX_S and fj.bpm_lo == 0 and fj.bpm_hi == 0,
+		"Filter: Bereich getauscht, Laenge geklemmt, Muell -> 0")
+	var fsw := Tournament.clean_filters({ "bpm_lo": 220, "bpm_hi": 150, "ln_lo": 0.4, "ln_hi": NAN })
+	_check(fsw.bpm_lo == 150 and fsw.bpm_hi == 220 and fsw.ln_lo == 0 and fsw.ln_hi == 100, "Filter: BPM getauscht, NaN -> Standard")
+	var fopen := Tournament.clean_filters({ "bpm_lo": 180, "bpm_hi": 0 })
+	_check(fopen.bpm_lo == 180 and fopen.bpm_hi == 0, "Filter: BPM nach oben offen bleibt offen")
+	var tfl := Tournament.create({ "maps": 5, "filters": { "ln_lo": 0, "ln_hi": 15, "len_max": 180, "bpm_lo": 120, "bpm_hi": 200 } })
+	_check(Tournament.ln_preset(tfl.config.filters) == "few" and Tournament.filters_active(tfl.config.filters), "Filter in config, Stufe few")
+	var tfb := Tournament.from_dict(tfl.to_dict())
+	_check(tfb.config.filters == tfl.config.filters and tfb.to_dict() == tfl.to_dict(), "Filter: Netz-Roundtrip identisch")
+	_check(Tournament.from_dict({ "config": { "filters": "kaputt" } }).config.filters == f0, "Filter: kaputtes Netzformat -> Standard")
+	var tm2 := Tournament.create({ "filters": { "ln_hi": 15 } })
+	_check(tm2.config.maps == 10 and tm2.config.filters.ln_hi == 15, "Filter: Teil-Angabe ergaenzt")
+
+	# --- Filter wirken (Rang 0 passt, 1 = keine Daten, -1 = passt nicht)
+	var ff: Dictionary = tfl.config.filters
+	_check(Tournament.filter_rank(ff, { "ln": 10, "len_s": 150, "bpm": 170 }) == 0, "Filter: passende Map")
+	_check(Tournament.filter_rank(ff, { "ln": 40, "len_s": 150, "bpm": 170 }) == -1, "Filter: zu viele Long Notes")
+	_check(Tournament.filter_rank(ff, { "ln": 10, "len_s": 240, "bpm": 170 }) == -1, "Filter: zu lang")
+	_check(Tournament.filter_rank(ff, { "ln": 10, "len_s": 150, "bpm": 230 }) == -1, "Filter: zu schnell")
+	_check(Tournament.filter_rank(ff, { "ln": 10, "len_s": 150, "bpm": 100 }) == -1, "Filter: zu langsam")
+	_check(Tournament.filter_rank(ff, { "ln": -1, "len_s": 150, "bpm": 170 }) == 1, "Filter: LN unbekannt -> nachrangig")
+	_check(Tournament.filter_rank(ff, {}) == 1, "Filter: keine Daten -> nachrangig")
+	_check(Tournament.filter_rank(ff, { "ln": -1, "len_s": 999, "bpm": 170 }) == -1, "Filter: unbekannt + zu lang -> raus")
+	_check(Tournament.filter_rank(f0, {}) == 0, "Ohne Filter passt alles")
+	var fmany := Tournament.clean_filters({ "ln_lo": 45, "ln_hi": 100 })
+	_check(Tournament.filter_rank(fmany, { "ln": 60 }) == 0 and Tournament.filter_rank(fmany, { "ln": 10 }) == -1, "Filter: viele LN")
+
+	# --- Online: rohe Mirror-Antwort (osu!-API-v2-Format)
+	var item := { "id": 4242, "title": "Song", "artist": "Band", "status": "ranked", "bpm": 175,
+		"beatmaps": [
+			{ "mode_int": 3, "cs": 4, "difficulty_rating": 3.6, "version": "Hard", "count_circles": 900, "count_sliders": 100, "total_length": 150, "bpm": 175 },
+			{ "mode_int": 3, "cs": 4, "difficulty_rating": 4.4, "version": "LN Insane", "count_circles": 500, "count_sliders": 500, "total_length": 150, "bpm": 175 },
+			{ "mode_int": 3, "cs": 4, "difficulty_rating": 5.9, "version": "Expert", "count_circles": 1500, "count_sliders": 10, "total_length": 150, "bpm": 175 },
+			{ "mode_int": 3, "cs": 7, "difficulty_rating": 4.0, "version": "7K", "count_circles": 900, "count_sliders": 0, "total_length": 150, "bpm": 175 },
+		] }
+	var op := Tournament.online_pick(item, 3.0, 5.0, ff)
+	_check(op.get("version", "") == "Hard" and int(op.get("rank", -1)) == 0 and op.get("ln", -1) == 10,
+		"Online: wenig LN waehlt die passende 4K-Diff im Sternbereich")
+	_check(op.get("set_id", 0) == 4242 and op.get("file", "") == "mirror_4242.osz" and op.get("online", false) and op.get("len_s", 0) == 150 and op.get("bpm", 0) == 175,
+		"Online: sel_map-Daten mit Kennwerten")
+	var op_any := Tournament.online_pick(item, 3.0, 5.0, f0)
+	_check(op_any.get("version", "") == "LN Insane", "Online: ohne Filter hoechste Diff im Bereich")
+	_check(Tournament.online_pick(item, 3.0, 5.0, fmany).get("version", "") == "LN Insane", "Online: viele LN")
+	_check(Tournament.online_pick(item, 6.5, 8.0, f0).is_empty(), "Online: nichts im Sternbereich -> leer")
+	var bare := { "id": 7, "title": "X", "artist": "Y", "beatmaps": [ { "mode_int": 3, "cs": 4, "difficulty_rating": 4.0, "version": "N" } ] }
+	var opb := Tournament.online_pick(bare, 3.0, 5.0, ff)
+	_check(int(opb.get("rank", -1)) == 1 and not opb.has("ln"), "Online: API ohne Kennwerte -> nachrangig, keine erfundenen Werte")
+	var tadd := _tour(5, [1, 2], 2.0, 6.0)
+	var od := op.duplicate()
+	od.erase("rank")
+	_check(tadd.add_map(od, 1) == "" and tadd.pool[0].ln == 10 and tadd.pool[0].bpm == 175, "add_map uebernimmt Kennwerte")
+	var junkm := _map(50)
+	junkm["ln"] = "viel"
+	junkm["bpm"] = -3
+	junkm["len_s"] = 1e9
+	_check(tadd.add_map(junkm, 2) == "" and not tadd.pool[1].has("ln") and not tadd.pool[1].has("bpm")
+		and tadd.pool[1].len_s == Tournament.LEN_MAX_S * 4, "add_map: Muell-Kennwerte verworfen/geklemmt")
+
+	# --- Bibliothek: Long Notes + BPM je Diff
+	var bm := Beatmap.new()
+	var tp1 := TimingPoint.new()
+	tp1.time = 0.0
+	tp1.beat_length = 500.0
+	tp1.uninherited = true
+	var tp2 := TimingPoint.new()
+	tp2.time = 10000.0
+	tp2.beat_length = 300.0
+	tp2.uninherited = true
+	bm.timing_points.append(tp1)
+	bm.timing_points.append(tp2)
+	for k in 9:
+		var nn := ManiaNote.new()
+		nn.time = float(k) * 5000.0
+		nn.is_hold = k % 3 == 0
+		nn.hold_end = nn.time + 400.0
+		bm.hit_objects.append(nn)
+	_check(MapLibrary.hold_count(bm) == 3, "Bibliothek: Long Notes gezaehlt")
+	_check(absf(MapLibrary.main_bpm(bm) - 200.0) < 0.01, "Bibliothek: vorherrschendes Tempo")
+	var ms := MapSet.from_dict("x/1 a.osz", { "title": "A", "diffs": [
+		{ "version": "Old", "osu_filename": "o.osu", "stars": 3.5, "mode": 3, "notes": 1000, "duration_ms": 150000.0 },
+		{ "version": "New", "osu_filename": "n.osu", "stars": 4.5, "mode": 3, "notes": 1000, "duration_ms": 200000.0, "holds": 420, "bpm": 180.0 } ] })
+	_check(ms.needs_stats() and ms.stats_at(0).ln == -1 and ms.stats_at(0).len_s == 150, "MapSet: alter Eintrag ohne LN -> unbekannt")
+	_check(ms.stats_at(1) == { "ln": 42, "len_s": 200, "bpm": 180 }, "MapSet: Kennwerte je Diff")
+	ms.apply_sv({ "o.osu": { "sv": true, "holds": 50, "bpm": 150.0 }, "n.osu": false })
+	_check(not ms.needs_stats() and ms.stats_at(0).ln == 5 and ms.has_sv() and ms.stats_at(1).ln == 42, "MapSet: Nachlauf ergaenzt Kennwerte")
+	var lib := MapLibrary.new("Z:/gibt/es/nicht")
+	lib.mapsets.append(ms)
+	var lc := Tournament.local_candidates(lib, 3.0, 5.0, ff, Callable())
+	_check(lc.size() == 1 and lc[0][1].version == "Old" and int(lc[0][0]) == 0, "Lokal: Filter wirkt (LN + Laenge)")
+	var lc2 := Tournament.local_candidates(lib, 3.0, 5.0, f0, func(d): return d.version == "Old")
+	_check(lc2.size() == 1 and lc2[0][1].version == "New" and lc2[0][1].ln == 42, "Lokal: ohne Filter + Skip, Daten mit Kennwerten")
 
 	# --- to_dict-Roundtrip
 	var d := tm.to_dict()
