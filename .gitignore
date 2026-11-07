@@ -18,3 +18,4 @@ Godot_v*.exe.zip
 tethra_update.bat
 assets/
 override.cfg
+__pycache__/
