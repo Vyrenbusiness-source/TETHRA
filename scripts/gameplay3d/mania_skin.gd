@@ -9,6 +9,14 @@ extends RefCounted
 ## Look zurueck. Keine Autoload-Abhaengigkeit (laeuft auch in Headless-Tests).
 
 const SKINS_DIR := "user://skins"
+## Eingebaute Skins (tools/gen_mania_skins.py) liegen unter res://assets_game/skins/<Name>/.
+## Export: die PNGs gehen als importierte Texturen ins .pck (load() funktioniert dort,
+## Image.load_from_file auf res:// nicht); skin.ini ist eine Rohdatei und kommt ueber
+## export_presets.cfg include_filter mit. Die Dateiliste steht in der ini ([TETHRA] Files),
+## weil ein Verzeichnis-Listing im .pck die Originalnamen nicht verlaesslich liefert.
+const BUILTIN_DIR := "res://assets_game/skins"
+const BUILTIN_PREFIX := "builtin:"
+const BUILTIN_NAMES: Array = ["Balken", "Kreise", "Pfeile"]
 const MAX_FILE_BYTES := 8 * 1024 * 1024
 const SCREEN_UNITS := 480.0   ## osu-Koordinaten: 480 Einheiten = Bildhoehe
 const DEFAULT_COLUMN_WIDTH := 30.0
@@ -214,6 +222,12 @@ func _load_image(ini_path: String) -> Texture2D:
 	var rel := String(r[0])
 	if rel.is_empty():
 		return null
+	if _dir.begins_with("res://"):
+		var path := _dir + "/" + rel
+		if not ResourceLoader.exists(path):
+			return null
+		_at2x_pending = bool(r[1])
+		return load(path) as Texture2D
 	var f := FileAccess.open(_dir + "/" + rel, FileAccess.READ)
 	if f == null or f.get_length() > MAX_FILE_BYTES or f.get_length() <= 0:
 		return null
@@ -245,18 +259,32 @@ static func safe_name(n: String) -> String:
 	return out if not out.is_empty() else "skin"
 
 
+static func is_builtin(id: String) -> bool:
+	return id.begins_with(BUILTIN_PREFIX) and BUILTIN_NAMES.has(id.trim_prefix(BUILTIN_PREFIX))
+
+
+## Anzeige-Name: "builtin:Balken" -> "Balken".
+static func display_name(id: String) -> String:
+	return id.trim_prefix(BUILTIN_PREFIX) if is_builtin(id) else id
+
+
+## IDs: eingebaute ("builtin:Balken", ...) zuerst, dann importierte Ordnernamen.
 static func list_skins() -> PackedStringArray:
 	var out := PackedStringArray()
+	for n in BUILTIN_NAMES:
+		out.append(BUILTIN_PREFIX + String(n))
 	var d := DirAccess.open(SKINS_DIR)
 	if d == null:
 		return out
-	for n in d.get_directories():
-		out.append(n)
-	out.sort()
+	var own := d.get_directories()
+	own.sort()
+	out.append_array(own)
 	return out
 
 
 static func delete_skin(p_name: String) -> bool:
+	if is_builtin(p_name):
+		return false
 	if p_name.is_empty() or p_name != safe_name(p_name):
 		return false
 	var base := skin_path(p_name)
@@ -277,7 +305,25 @@ static func _remove_tree(path: String) -> void:
 	DirAccess.remove_absolute(path)
 
 
+static func _load_builtin(p_name: String) -> ManiaSkin:
+	var dir := BUILTIN_DIR + "/" + p_name.trim_prefix(BUILTIN_PREFIX)
+	var f := FileAccess.open(dir + "/skin.ini", FileAccess.READ)
+	if f == null:
+		return null
+	var text := f.get_as_text()
+	var s := parse(text, 4)
+	s.skin_name = p_name
+	s._dir = dir
+	for sec in parse_ini(text):
+		if String(sec.get("_section", "")).to_lower() == "tethra":
+			for fn in String(sec.get("files", "")).split(",", false):
+				s._files[fn.strip_edges().to_lower() + "@2x"] = fn.strip_edges() + "@2x.png"
+	return s
+
+
 static func load_skin(p_name: String) -> ManiaSkin:
+	if is_builtin(p_name):
+		return _load_builtin(p_name)
 	if p_name.is_empty() or p_name != safe_name(p_name):
 		return null
 	var dir := skin_path(p_name)
