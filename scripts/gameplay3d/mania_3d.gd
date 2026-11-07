@@ -632,6 +632,7 @@ func _update_playfield_2d(t: float) -> void:
 			_missed_2d.remove_at(mi)
 			continue
 		_pf2d.add_note(int(_missed_2d[mi][1]), z, Color.GRAY, Playfield2D.STATE_DEAD)
+	_pf2d.set_combo(core.combo)
 	_pf2d.set_lanes(_lane_held, _pad_flash, _pad_judge_col)
 
 
@@ -1662,6 +1663,8 @@ func _on_note_judged(index: int, result: Dictionary) -> void:
 			_pad_dark[col] = 1.0
 	# FRUEH/SPAET entscheidet JudgeDisplay (erst ausserhalb des 300-Fensters);
 	# Hold-Enden ohne Zeitfehler bekommen keinen Hinweis.
+	if _pf2d != null:
+		_pf2d.on_judge(q, col)   # osu!-Skin: Judgement-Bild, LightingN
 	if _judge_disp != null:
 		var off: float = 0.0 if hold_end else float(result.get("dt", 0.0))
 		_judge_disp.show_judge(q, off)
@@ -3629,6 +3632,8 @@ func _stat_value(anchor_pos: Vector2, size: int) -> Label:
 func _update_hud() -> void:
 	if _judge_disp == null:
 		return
+	# osu!-Skin mit Judgement-Bildern: Playfield2D zeigt Judgement + Kombo wie osu!.
+	_judge_disp.visible = not (_pf2d != null and _pf2d.draws_judgements())
 	_judge_disp.set_combo(core.combo)
 	var judged_n := core.n_max + core.n300 + core.n200 + core.n100 + core.n50 + core.n_miss
 	var g := core.grade()

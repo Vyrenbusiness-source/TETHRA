@@ -228,6 +228,13 @@ func _ready() -> void:
 			_refresh_2d_preview(),
 		"Höhe der Balken bzw. Größe der Kreise (auch im Pausenmenü einstellbar)")
 
+	var hl := CheckButton.new()
+	hl.button_pressed = Settings.hit_lighting_2d
+	hl.toggled.connect(func(on):
+		Settings.hit_lighting_2d = on
+		_refresh_2d_preview())
+	_row(pg_2d, "Hit-Lighting", hl, null).tooltip_text = tr("Tasten und Skin-Lighting leuchten beim Treffer auf")
+
 	_group(pg_2d, "Map-Bild")
 	_slider_row(pg_2d, "Hintergrund", 0.0, 100.0, 5.0, Settings.bg_dim * 100.0,
 		func(v): return _fmt_bg(Settings.clamp_bg_dim(v / 100.0)),

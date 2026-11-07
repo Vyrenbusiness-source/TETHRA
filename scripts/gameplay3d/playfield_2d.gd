@@ -111,7 +111,14 @@ func field_rect() -> Rect2:
 	var vs := _vs()
 	if skin != null:
 		var sw := _skin_unit() * skin.stage_units()
-		return Rect2((vs.x - sw) * 0.5, 0.0, sw, vs.y)
+		var x := (vs.x - sw) * 0.5
+		# osu!: ColumnStart = linke Buehnenkante in 480er-Einheiten ab Bildrand (die
+		# Skins rechnen damit fuer 16:9). Nur bei Original-Spurbreite und nicht in der
+		# Vorschau; sonst mittig wie bisher.
+		if _is_osu_skin() and skin.has_column_start and is_equal_approx(lane_k, 1.0) \
+				and preview_size.x <= 0.0:
+			x = clampf(skin.column_start * vs.y / ManiaSkin.SCREEN_UNITS, 0.0, maxf(0.0, vs.x - sw))
+		return Rect2(x, 0.0, sw, vs.y)
 	var w := col_width() * columns
 	return Rect2((vs.x - w) * 0.5, 0.0, w, vs.y)
 
@@ -130,7 +137,10 @@ func _vs() -> Vector2:
 
 func _draw() -> void:
 	if skin != null:
-		_draw_skinned()
+		if _is_osu_skin():
+			_draw_osu()
+		else:
+			_draw_skinned()
 		return
 	var vs := _vs()
 	var fr := field_rect()
@@ -187,7 +197,7 @@ func _draw() -> void:
 		var x := fr.position.x + cw * c
 		var r := Rect2(x + pad, ly - nh * 0.5, cw - pad * 2.0, nh)
 		var on := c < _held.size() and bool(_held[c])
-		var fl := clampf(float(_flash[c]) if c < _flash.size() else 0.0, 0.0, 1.0)
+		var fl := clampf(float(_flash[c]) if c < _flash.size() and Settings.hit_lighting_2d else 0.0, 0.0, 1.0)
 		var fc: Color = _flash_col[c] if c < _flash_col.size() else lane_color
 		var base := lane_color.lerp(fc, fl * 0.6)
 		var fill_a := 0.14 + (0.45 if on else 0.0) + fl * 0.25
@@ -342,7 +352,7 @@ func _draw_skin_keys(xs: Array, ws: Array, ly: float, vs: Vector2) -> void:
 			draw_texture_rect(t, Rect2(x, top, w, h), false)
 		else:
 			# Fallback: eingebauter Receptor fuer genau diese Spalte.
-			var fl := clampf(float(_flash[c]) if c < _flash.size() else 0.0, 0.0, 1.0)
+			var fl := clampf(float(_flash[c]) if c < _flash.size() and Settings.hit_lighting_2d else 0.0, 0.0, 1.0)
 			var fc: Color = _flash_col[c] if c < _flash_col.size() else lane_color
 			var base := lane_color.lerp(fc, fl * 0.6)
 			var r := Rect2(x + 2.0, ly, w - 4.0, h)
@@ -435,3 +445,354 @@ func _draw_body(t: Texture2D, x: float, w: float, top: float, bot: float, mod: C
 		var sy := (tht - tht * frac) if from_bottom else 0.0
 		draw_texture_rect_region(t, Rect2(x, y, w, seg), Rect2(0.0, sy, tw, tht * frac), mod)
 		done += seg
+
+
+# ------------------------------------------------- osu!-Skin (importiert)
+# Zeichnet importierte osu!mania-Skins wie osu! (Regeln aus lazer
+# osu.Game.Rulesets.Mania.Skinning.Legacy: LegacyStageBackground, LegacyNotePiece,
+# LegacyBodyPiece, LegacyHoldNoteTailPiece, LegacyKeyArea, LegacyHitTarget,
+# LegacyColumnBackground, LegacyStageForeground, LegacyHitExplosion,
+# LegacyManiaJudgementPiece, LegacyManiaComboCounter). Masse: ini-Positionen in
+# 480er-Einheiten (u = H/480), Texturen in Pixeln des 768er-Raums (H/768, @2x halb).
+# Eingebaute Skins (res://) behalten den eigenen Look (_draw_skinned).
+
+const DARK_GRAY := Color(169.0 / 255.0, 169.0 / 255.0, 169.0 / 255.0, 1.0)  ## lazer Colour4.DarkGray (verpasst)
+const Q_MISS := 5            ## ManiaCore.Quality.MISS
+
+var _judge_q := -1           ## letztes Judgement (ManiaCore.Quality), -1 = keins
+var _judge_t0 := -1e9        ## Startzeit (ms)
+var _judge_rot := 0.0
+var _combo := 0
+var _combo_t0 := -1e9
+var _expl_t0: Array = []     ## je Spalte: Startzeit LightingN
+var _light_rel: Array = []   ## je Spalte: Loslass-Zeit fuer das StageLight-Ausblenden
+var _prev_held: Array = []
+
+
+func _is_osu_skin() -> bool:
+	return skin != null and not skin._dir.begins_with("res://")
+
+
+## Zeigt Playfield2D Judgements/Kombo selbst? (Dann blendet mania_3d die Text-Anzeige aus.)
+func draws_judgements() -> bool:
+	return _is_osu_skin() and skin.has_judgement_images()
+
+
+func _now_ms() -> float:
+	return float(Time.get_ticks_usec()) / 1000.0
+
+
+## Treffer melden (mania_3d._on_note_judged): Judgement-Bild + LightingN.
+func on_judge(quality: int, col: int) -> void:
+	_judge_q = quality
+	_judge_t0 = _now_ms()
+	_judge_rot = randf_range(-5.73, 5.73)
+	if quality != Q_MISS and col >= 0:
+		while _expl_t0.size() <= col:
+			_expl_t0.append(-1e9)
+		_expl_t0[col] = _judge_t0
+
+
+func set_combo(c: int) -> void:
+	if c > _combo:
+		_combo_t0 = _now_ms()
+	_combo = c
+
+
+func _px() -> float:
+	return _vs().y / 768.0
+
+
+## Texturgroesse in Bildpixeln (nativ im 768er-Raum, @2x halbiert).
+func _tex_px(key: String, t: Texture2D) -> Vector2:
+	return Vector2(t.get_size()) * _px() * skin.tex_scale(key)
+
+
+func _draw_osu() -> void:
+	var vs := _vs()
+	var sk := skin
+	var u := _skin_unit()
+	var fr := field_rect()
+	var ly := line_y()
+	var now := _now_ms()
+	var xs: Array = []
+	var ws: Array = []
+	for c in columns:
+		xs.append(fr.position.x + u * sk.col_offset_units(c))
+		ws.append(u * sk.col_units(c))
+	_track_press(now)
+	# Spalten-Hintergrund: Colour# (Standard Schwarz), Alpha quadriert (osu!-stable).
+	for c in columns:
+		var bc: Color = sk.colours.get(c, Color(0, 0, 0, 1))
+		draw_rect(Rect2(float(xs[c]), 0.0, float(ws[c]), vs.y), Color(bc.r, bc.g, bc.b, bc.a * bc.a))
+	# Spaltenlinien von oben bis zur Trefferlinie, Breite x 0,74 im 768er-Raum.
+	var lc := sk.colour_column_line
+	var lcol := Color(lc.r, lc.g, lc.b, lc.a * lc.a)
+	for c in columns:
+		var lw_l := float(sk.column_line_width[c]) * 0.74 * _px()
+		var lw_r := float(sk.column_line_width[c + 1]) * 0.74 * _px()
+		if lw_l > 0.0:
+			draw_rect(Rect2(float(xs[c]), 0.0, lw_l, ly), lcol)
+		if lw_r > 0.0 and (sk.version >= 2.4 or c == columns - 1):
+			draw_rect(Rect2(float(xs[c]) + float(ws[c]) - lw_r, 0.0, lw_r, ly), lcol)
+	# StageLight: Unterkante bei LightPosition, beim Druecken voll, beim Loslassen
+	# 250 ms ausblenden und in Y zusammenziehen.
+	var lt := sk.tex("stage_light")
+	if lt != null:
+		var lyb := sk.light_position * vs.y / ManiaSkin.SCREEN_UNITS
+		for c in columns:
+			var k := 1.0
+			if not (c < _held.size() and bool(_held[c])):
+				k = 1.0 - clampf((now - float(_light_rel[c])) / 250.0, 0.0, 1.0)
+			if k <= 0.0:
+				continue
+			var lh := _tex_px("stage_light", lt).y * k
+			var cl: Color = sk.colour_light.get(c, Color(55.0 / 255.0, 1, 1))
+			draw_texture_rect(lt, Rect2(float(xs[c]), lyb - lh, float(ws[c]), lh), false,
+					Color(cl.r, cl.g, cl.b, maxf(cl.a, 1.0 / 255.0) * k))
+	# Buehnenraender: native Breite, volle Hoehe.
+	var sl := sk.tex("stage_left")
+	if sl != null:
+		var w := _tex_px("stage_left", sl).x
+		draw_texture_rect(sl, Rect2(fr.position.x - w, 0.0, w, vs.y), false)
+	var sr := sk.tex("stage_right")
+	if sr != null:
+		draw_texture_rect(sr, Rect2(fr.end.x, 0.0, _tex_px("stage_right", sr).x, vs.y), false)
+	# Trefferlinie: StageHint (Hoehe x 0,9 x 1,6025, mittig auf der Linie) und/oder JudgementLine.
+	var hint := sk.tex("stage_hint")
+	if hint != null:
+		var hh := _tex_px("stage_hint", hint).y * 0.9 * 1.6025
+		draw_texture_rect(hint, Rect2(fr.position.x, ly - hh * 0.5, fr.size.x, hh), false)
+	if sk.judgement_line:
+		var jc := sk.colour_judgement_line
+		draw_rect(Rect2(fr.position.x, ly, fr.size.x, maxf(1.0, _px())), Color(jc.r, jc.g, jc.b, jc.a * 0.9))
+	if sk.keys_under_notes:
+		_draw_osu_keys(xs, ws, vs)
+	for it in _items:
+		_draw_osu_item(it, xs, ws, vs, ly)
+	if not sk.keys_under_notes:
+		_draw_osu_keys(xs, ws, vs)
+	# StageBottom (x 1,6), unten mittig, ueber Noten und Tasten.
+	var sb := sk.tex("stage_bottom")
+	if sb != null:
+		var sz := _tex_px("stage_bottom", sb) * 1.6
+		draw_texture_rect(sb, Rect2(fr.get_center().x - sz.x * 0.5, vs.y - sz.y, sz.x, sz.y), false)
+	if Settings.hit_lighting_2d:
+		_draw_osu_lighting(xs, ws, ly, now)
+	_draw_osu_judgement(fr, vs, now)
+	_draw_osu_combo(fr, vs, now)
+
+
+func _track_press(now: float) -> void:
+	while _light_rel.size() < columns:
+		_light_rel.append(-1e9)
+		_prev_held.append(false)
+	for c in columns:
+		var on := c < _held.size() and bool(_held[c])
+		if bool(_prev_held[c]) and not on:
+			_light_rel[c] = now
+		_prev_held[c] = on
+
+
+## Tasten: Spaltenbreite, native Hoehe, Unterkante am Bildrand.
+func _draw_osu_keys(xs: Array, ws: Array, vs: Vector2) -> void:
+	for c in columns:
+		var on := c < _held.size() and bool(_held[c])
+		var key := ("keyd_%d" % c) if on else ("key_%d" % c)
+		var t := skin.tex(key)
+		if t == null:
+			continue
+		var h := _tex_px(key, t).y
+		draw_texture_rect(t, Rect2(float(xs[c]), vs.y - h, float(ws[c]), h), false)
+
+
+## Notenhoehe: Texturhoehe / Texturbreite x WidthForNoteHeightScale (sonst schmalste
+## Spalte); die Notengroesse aus den Einstellungen skaliert die Hoehe.
+func _osu_note_h(t: Texture2D) -> float:
+	return float(t.get_height()) / maxf(1.0, float(t.get_width())) \
+			* skin.note_height_units() * _skin_unit() * note_k
+
+
+func _draw_osu_item(it: Array, xs: Array, ws: Array, vs: Vector2, ly: float) -> void:
+	var sk := skin
+	var col: int = it[0]
+	if col < 0 or col >= columns:
+		return
+	var x := float(xs[col])
+	var w := float(ws[col])
+	var st: int = it[4]
+	var mod := DARK_GRAY if st == STATE_DEAD else Color(1, 1, 1, 1)
+	var yh := z_to_y(float(it[1]))   # Unterkante der Note = Trefferzeit
+	if not bool(it[5]):
+		var nt := sk.tex("note_%d" % col)
+		if nt == null:
+			return
+		var nh := _osu_note_h(nt)
+		if yh < 0.0 or yh - nh > vs.y:
+			return
+		draw_texture_rect(nt, Rect2(x, yh - nh, w, nh), false, mod)
+		return
+	if st == STATE_HELD:
+		yh = minf(yh, ly)   # Kopf bleibt beim Halten an der Linie
+	var yt := z_to_y(float(it[2]))
+	var head := sk.tex("head_%d" % col)
+	var hh := _osu_note_h(head) if head != null else 0.0
+	var tail := sk.tex("tail_%d" % col)
+	# Ohne eigene Tail-Textur bleibt das Ende leer (kein Kopf als Ende); die
+	# Koerperlaenge rechnet osu! trotzdem mit der Kopfhoehe.
+	var th := _osu_note_h(tail) if tail != null else hh
+	# Nutzer-Wunsch: kein Ball am Hold-Ende bei Kreis-Skins -> kugelfoermige
+	# (fast quadratische) Tails nicht zeichnen; Koerperlaenge bleibt wie in osu!.
+	if tail != null and float(tail.get_height()) >= float(tail.get_width()) * 0.6:
+		tail = null
+	if yh < 0.0 or yt - th > vs.y:
+		return
+	var body := sk.tex("body_%d" % col)
+	var b_top := yt - th * 0.5
+	var b_bot := yh - hh * 0.5
+	if body != null and b_bot > b_top:
+		_draw_osu_body(col, body, x, w, b_top, b_bot, mod)
+	if tail != null:
+		# Ende gespiegelt (osu!/lazer: LegacyHoldNoteTailPiece dreht die Richtung um).
+		# Wie eine Note am Endzeitpunkt (yt = Unterkante), vertikal gespiegelt.
+		draw_set_transform(Vector2(0.0, yt), 0.0, Vector2(1.0, -1.0))
+		draw_texture_rect(tail, Rect2(x, 0.0, w, th), false, mod)
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	if head != null:
+		draw_texture_rect(head, Rect2(x, yh - hh, w, hh), false, mod)
+
+
+## Hold-Koerper. NoteBodyStyle 0: gestreckt. 1: ab oben (Ende) in nativer Hoehe
+## wiederholt, 2: ab unten (Kopf). Breite immer Spaltenbreite.
+func _draw_osu_body(col: int, t: Texture2D, x: float, w: float, top: float, bot: float, mod: Color) -> void:
+	var key := "body_%d" % col
+	if skin.note_body_style == 0:
+		draw_texture_rect(t, Rect2(x, top, w, bot - top), false, mod)
+		return
+	var tw := float(t.get_width())
+	var src_h := skin.tex_src_h(key)
+	var tile := maxf(1.0, src_h * _px() * skin.tex_scale(key))   # Hoehe einer Kachel in Pixeln
+	var rows := float(t.get_height())                           # geladene Zeilen (evtl. abgeschnitten)
+	var from_top := skin.note_body_style == 1
+	var blen := bot - top
+	var done := 0.0
+	var guard := 0
+	while done < blen - 0.01 and guard < 256:
+		guard += 1
+		var seg := minf(tile, blen - done)
+		var src_rows := minf(rows, seg / tile * src_h)
+		var y := (top + done) if from_top else (bot - done - seg)
+		var sy := 0.0 if from_top else (src_h - src_rows)
+		if sy + src_rows > rows:   # unterer Teil fehlt (abgeschnitten): oberen nehmen
+			sy = maxf(0.0, rows - src_rows)
+		draw_texture_rect_region(t, Rect2(x, y, w, seg), Rect2(0.0, sy, tw, src_rows), mod)
+		done += seg
+
+
+## LightingN beim Treffer (80 ms ein, 120 ms aus), LightingL solange ein Hold gehalten wird.
+func _draw_osu_lighting(xs: Array, ws: Array, ly: float, now: float) -> void:
+	var sk := skin
+	var held_cols: Dictionary = {}
+	for it in _items:
+		if bool(it[5]) and int(it[4]) == STATE_HELD:
+			held_cols[int(it[0])] = true
+	for c in columns:
+		var scale_n := 1.0
+		if sk.version >= 2.5:
+			var lw := float(sk.lighting_n_width[c]) if c < sk.lighting_n_width.size() else 0.0
+			scale_n = (lw if lw > 0.0 else sk.col_units(c)) / ManiaSkin.DEFAULT_COLUMN_WIDTH
+		var key := "lighting_l" if held_cols.has(c) else "lighting_n"
+		var t := sk.tex(key)
+		if t == null:
+			continue
+		var a := 0.0
+		if held_cols.has(c):
+			a = 1.0
+		elif c < _expl_t0.size():
+			var dt := now - float(_expl_t0[c])
+			if dt >= 0.0 and dt < 200.0:
+				a = dt / 80.0 if dt < 80.0 else 1.0 - (dt - 80.0) / 120.0
+		if a <= 0.0:
+			continue
+		var cx := float(xs[c]) + float(ws[c]) * 0.5
+		var sz := _tex_px(key, t) * scale_n
+		draw_texture_rect(t, Rect2(cx - sz.x * 0.5, ly - sz.y * 0.5, sz.x, sz.y), false,
+				Color(1, 1, 1, clampf(a, 0.0, 1.0)))
+
+
+## Judgement-Bild mittig bei ScorePosition (lazer LegacyManiaJudgementPiece):
+## 20 ms ein, 160 ms stehen, 40 ms aus; Treffer 0,8->1 (40 ms), 0,85->0,7 (40 ms),
+## 100 ms stehen, ->0,4 (40 ms); Miss 1,2->1 (100 ms) mit kleiner Drehung.
+func _draw_osu_judgement(fr: Rect2, vs: Vector2, now: float) -> void:
+	if _judge_q < 0 or _judge_q >= ManiaSkin.HIT_NAMES.size():
+		return
+	var key: String = ManiaSkin.HIT_NAMES[_judge_q]
+	var t := skin.tex(key)
+	if t == null:
+		return
+	var dt := now - _judge_t0
+	if dt < 0.0 or dt > 220.0:
+		return
+	var a := minf(1.0, dt / 20.0) if dt < 180.0 else 1.0 - (dt - 180.0) / 40.0
+	var sc := 1.0
+	var rot := 0.0
+	if _judge_q == Q_MISS:
+		var km := _ease_out(minf(1.0, dt / 100.0))
+		sc = lerpf(1.2, 1.0, km)
+		rot = deg_to_rad(_judge_rot) * km
+	elif dt < 40.0:
+		sc = lerpf(0.8, 1.0, dt / 40.0)
+	elif dt < 80.0:
+		sc = lerpf(0.85, 0.7, (dt - 40.0) / 40.0)
+	elif dt < 180.0:
+		sc = 0.7
+	else:
+		var k := minf(1.0, (dt - 180.0) / 40.0)
+		sc = lerpf(0.7, 0.4, k * k)
+	var sz := _tex_px(key, t) * sc
+	var c := Vector2(fr.get_center().x, skin.score_position * vs.y / ManiaSkin.SCREEN_UNITS)
+	draw_set_transform(c, rot, Vector2.ONE)
+	draw_texture_rect(t, Rect2(-sz * 0.5, sz), false, Color(1, 1, 1, clampf(a, 0.0, 1.0)))
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+
+static func _ease_out(k: float) -> float:
+	return 1.0 - (1.0 - k) * (1.0 - k)
+
+
+## Kombo aus den Ziffern [Fonts] ComboPrefix mittig bei ComboPosition; ab 1 sichtbar,
+## bei Zuwachs Y-Streckung 1,4 -> 1 in 300 ms.
+func _draw_osu_combo(fr: Rect2, vs: Vector2, now: float) -> void:
+	if _combo <= 0:
+		return
+	var digits := str(_combo)
+	var texs: Array = []
+	var total := 0.0
+	var over := skin.combo_overlap * _px()
+	for ch in digits:
+		var r := skin.tex_named(skin.combo_prefix + "-" + ch)
+		if r[0] == null:
+			texs.clear()
+			break
+		var sz := Vector2((r[0] as Texture2D).get_size()) * _px() * (0.5 if bool(r[1]) else 1.0)
+		texs.append([r[0], sz])
+		total += sz.x
+	var cy := skin.combo_position * vs.y / ManiaSkin.SCREEN_UNITS
+	var k := clampf((now - _combo_t0) / 300.0, 0.0, 1.0)
+	var sy := lerpf(1.4, 1.0, _ease_out(k))
+	var cx := fr.get_center().x
+	draw_set_transform(Vector2(cx, cy), 0.0, Vector2(1.0, sy))
+	if texs.is_empty():
+		if _font != null:
+			var fs := int(vs.y * 0.05)
+			var tw := _font.get_string_size(digits, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+			draw_string(_font, Vector2(-tw * 0.5, fs * 0.35), digits, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		return
+	total -= over * float(texs.size() - 1)
+	var x := -total * 0.5
+	for e in texs:
+		var sz: Vector2 = e[1]
+		draw_texture_rect(e[0], Rect2(x, -sz.y * 0.5, sz.x, sz.y), false)
+		x += sz.x - over
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
