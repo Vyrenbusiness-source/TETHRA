@@ -69,13 +69,13 @@ shader_type sky;
 //   Funken               #f3e4c0 (kurz, wenige), keine farbigen Partikel
 //   Ambient              #0a0a0a, Glow-Schwelle 0.92 wie mania_3d
 
-uniform sampler2D tex_a : source_color, filter_linear, repeat_enable, hint_default_black;
-uniform sampler2D tex_b : source_color, filter_linear, repeat_enable, hint_default_black;
-uniform sampler2D stars_a : source_color, filter_linear, repeat_enable, hint_default_black;
-uniform sampler2D stars_b : source_color, filter_linear, repeat_enable, hint_default_black;
-uniform sampler2D ash_a : filter_linear, repeat_enable, hint_default_transparent;
-uniform sampler2D ash_b : filter_linear, repeat_enable, hint_default_transparent;
-uniform sampler2D shards_tex : source_color, filter_linear, repeat_enable, hint_default_transparent;
+uniform sampler2D tex_a : source_color, filter_linear_mipmap_anisotropic, repeat_enable, hint_default_black;
+uniform sampler2D tex_b : source_color, filter_linear_mipmap_anisotropic, repeat_enable, hint_default_black;
+uniform sampler2D stars_a : source_color, filter_linear_mipmap_anisotropic, repeat_enable, hint_default_black;
+uniform sampler2D stars_b : source_color, filter_linear_mipmap_anisotropic, repeat_enable, hint_default_black;
+uniform sampler2D ash_a : filter_linear_mipmap_anisotropic, repeat_enable, hint_default_transparent;
+uniform sampler2D ash_b : filter_linear_mipmap_anisotropic, repeat_enable, hint_default_transparent;
+uniform sampler2D shards_tex : source_color, filter_linear_mipmap_anisotropic, repeat_enable, hint_default_transparent;
 uniform float palette_mix : hint_range(0.0, 1.0) = 0.0;
 
 uniform vec3 tint : source_color = vec3(1.0);
@@ -133,42 +133,51 @@ vec2 dir_uv(vec3 d, vec2 ofs) {
 	return vec2(fract(u), clamp(v, 0.0005, 0.9995));
 }
 
+// Mip-Sampling mit nahtfreien Gradienten (fract(u) springt an der Naht).
+vec4 tg(sampler2D s, vec2 uv) {
+	vec2 gx = dFdx(uv);
+	vec2 gy = dFdy(uv);
+	gx.x -= round(gx.x);
+	gy.x -= round(gy.x);
+	return textureGrad(s, uv, gx, gy);
+}
+
 vec3 dec(vec3 c) {
 	return c * c;
 }
 
 vec4 sample_pano(vec2 uv) {
 	if (palette_mix <= 0.001) {
-		vec4 a = textureLod(tex_a, uv, 0.0);
+		vec4 a = tg(tex_a, uv);
 		return vec4(dec(a.rgb), a.a);
 	}
 	if (palette_mix >= 0.999) {
-		vec4 b = textureLod(tex_b, uv, 0.0);
+		vec4 b = tg(tex_b, uv);
 		return vec4(dec(b.rgb), b.a);
 	}
-	vec4 a = textureLod(tex_a, uv, 0.0);
-	vec4 b = textureLod(tex_b, uv, 0.0);
+	vec4 a = tg(tex_a, uv);
+	vec4 b = tg(tex_b, uv);
 	return mix(vec4(dec(a.rgb), a.a), vec4(dec(b.rgb), b.a), palette_mix);
 }
 
 vec3 sample_stars(vec2 uv) {
 	if (palette_mix <= 0.001) {
-		return dec(textureLod(stars_a, uv, 0.0).rgb);
+		return dec(tg(stars_a, uv).rgb);
 	}
 	if (palette_mix >= 0.999) {
-		return dec(textureLod(stars_b, uv, 0.0).rgb);
+		return dec(tg(stars_b, uv).rgb);
 	}
-	return mix(dec(textureLod(stars_a, uv, 0.0).rgb), dec(textureLod(stars_b, uv, 0.0).rgb), palette_mix);
+	return mix(dec(tg(stars_a, uv).rgb), dec(tg(stars_b, uv).rgb), palette_mix);
 }
 
 vec4 sample_ash(vec2 uv) {
 	if (palette_mix <= 0.001) {
-		return textureLod(ash_a, uv, 0.0);
+		return tg(ash_a, uv);
 	}
 	if (palette_mix >= 0.999) {
-		return textureLod(ash_b, uv, 0.0);
+		return tg(ash_b, uv);
 	}
-	return mix(textureLod(ash_a, uv, 0.0), textureLod(ash_b, uv, 0.0), palette_mix);
+	return mix(tg(ash_a, uv), tg(ash_b, uv), palette_mix);
 }
 
 float hash12(vec2 p) {
@@ -300,7 +309,7 @@ void sky() {
 			float s_yaw = TIME * 0.004 * s_mv + beat_step * 0.012 * s_mv + s_dp * 0.07;
 			vec3 s_d = dir * euler(vec3(0.0, s_yaw, 0.0));
 			s_d.y = dir.y + s_dp * 0.03 * (1.0 - abs(dir.y));          // Drop: naeher heran
-			vec4 s_sh = textureLod(shards_tex, dir_uv(normalize(s_d), vec2(0.0)), 0.0);
+			vec4 s_sh = tg(shards_tex, dir_uv(normalize(s_d), vec2(0.0)));
 			float s_lon = atan(dir.x, -dir.z);
 			float s_lat = asin(clamp(dir.y, -1.0, 1.0));
 			float s_gate = smoothstep(0.03, 0.12, s_lat) * (1.0 - exp(-(s_lon / 0.5) * (s_lon / 0.5)) * smoothstep(0.9, 0.5, s_lat));

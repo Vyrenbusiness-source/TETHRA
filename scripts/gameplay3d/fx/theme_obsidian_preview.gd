@@ -36,10 +36,40 @@ var _shot_dir := SHOT_DIR
 var _step := 0
 var _bpm := 128.0
 
+## --bench: vsync aus, max_fps 0, 1920x1080, 120 Frames Warmup, dann 600 Frames messen;
+## druckt "[perf] <welt> fps_avg=... frame_ms_p99=...". --bench-ref: dieselbe Szene mit sky_panorama.
+var _bench := false
+var _bench_ref := false
+var _bench_n := 0
+var _bench_ms := PackedFloat64Array()
+
+func _bench_tick(delta: float) -> void:
+	_bench_n += 1
+	if _bench_n == 1:
+		DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
+		Engine.max_fps = 0
+		get_window().size = Vector2i(1920, 1080)
+		if _bench_ref:
+			_mat.shader = load("res://shaders/sky_panorama.gdshader")
+	if _bench_n > 120:
+		_bench_ms.append(delta * 1000.0)
+	if _bench_n >= 720:
+		var sorted := _bench_ms.duplicate()
+		sorted.sort()
+		var sum := 0.0
+		for v in _bench_ms:
+			sum += v
+		print("[perf] obsidian%s fps_avg=%.1f frame_ms_p99=%.2f" % ["-ref" if _bench_ref else "", 1000.0 * _bench_ms.size() / sum, sorted[int(sorted.size() * 0.99)]])
+		get_tree().quit()
+
 func _ready() -> void:
 	for a in OS.get_cmdline_args():
 		if a == "--shot":
 			_shot = true
+		elif a == "--bench":
+			_bench = true
+		elif a == "--bench-ref":
+			_bench_ref = true
 		elif a.begins_with("--shot-dir="):
 			_shot_dir = a.trim_prefix("--shot-dir=")
 	_bpm = _arg_f("--bpm=", 128.0)
@@ -171,6 +201,8 @@ func _set_pulse(p: float) -> void:
 		nm.set_shader_parameter("beat", p)
 
 func _process(delta: float) -> void:
+	if _bench:
+		_bench_tick(delta)
 	_t += delta
 	_frames += 1
 	if _shot:

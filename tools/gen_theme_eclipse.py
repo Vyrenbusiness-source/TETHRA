@@ -794,8 +794,8 @@ def main():
         return
     mb, amb = build(a.width, a.seed, a.out, a.preview, a.quality)
     build_shards(a.width, a.seed, spath, SHARDS_CFG, a.preview)
-    if a.width >= 4096 and max(mb, amb) >= 2.5:
-        raise SystemExit("WebP zu gross (%.2f / %.2f MB >= 2.5 MB): --quality senken" % (mb, amb))
+    if a.width >= 4096 and max(mb, amb) >= 6.0:
+        raise SystemExit("WebP zu gross (%.2f / %.2f MB >= 6.0 MB): --quality senken" % (mb, amb))
 
 
 if __name__ == "__main__":

@@ -75,13 +75,13 @@ shader_type sky;
 // Kosten: 1-2 Himmel-Fetches + 1 Blitz-Fetch (nur wenn lightning > 0) +
 // 2..4 Glut-Fetches (x WARP_TAPS bei warp > 0).
 
-uniform sampler2D tex_a : source_color, filter_linear, repeat_enable, hint_default_black;
-uniform sampler2D tex_b : source_color, filter_linear, repeat_enable, hint_default_black;
-uniform sampler2D stars_a : source_color, filter_linear, repeat_enable, hint_default_black;
-uniform sampler2D stars_b : source_color, filter_linear, repeat_enable, hint_default_black;
-uniform sampler2D veil_tex : filter_linear, repeat_enable, hint_default_black;
-uniform sampler2D flash_tex : source_color, filter_linear, repeat_enable, hint_default_black;
-uniform sampler2D shards_tex : source_color, filter_linear, repeat_enable, hint_default_transparent;
+uniform sampler2D tex_a : source_color, filter_linear_mipmap_anisotropic, repeat_enable, hint_default_black;
+uniform sampler2D tex_b : source_color, filter_linear_mipmap_anisotropic, repeat_enable, hint_default_black;
+uniform sampler2D stars_a : source_color, filter_linear_mipmap_anisotropic, repeat_enable, hint_default_black;
+uniform sampler2D stars_b : source_color, filter_linear_mipmap_anisotropic, repeat_enable, hint_default_black;
+uniform sampler2D veil_tex : filter_linear_mipmap_anisotropic, repeat_enable, hint_default_black;
+uniform sampler2D flash_tex : source_color, filter_linear_mipmap_anisotropic, repeat_enable, hint_default_black;
+uniform sampler2D shards_tex : source_color, filter_linear_mipmap_anisotropic, repeat_enable, hint_default_transparent;
 uniform float palette_mix : hint_range(0.0, 1.0) = 0.0;
 
 uniform vec3 tint : source_color = vec3(1.0);
@@ -147,6 +147,15 @@ vec3 zoom_dir(vec3 d, float s) {
 	return vec3(perp / l * sn, -cs);
 }
 
+// Mip-Sampling mit nahtfreien Gradienten (fract(u) springt an der Naht).
+vec4 tg(sampler2D s, vec2 uv) {
+	vec2 gx = dFdx(uv);
+	vec2 gy = dFdy(uv);
+	gx.x -= round(gx.x);
+	gy.x -= round(gy.x);
+	return textureGrad(s, uv, gx, gy);
+}
+
 vec3 dec(vec3 c) {
 	return c * c;
 }
@@ -168,12 +177,12 @@ float hash11(float p) {
 vec3 embers_at(vec3 d, mat3 srot, vec2 rise) {
 	vec2 uv = dir_uv(d * srot, stars_offset + rise);
 	if (palette_mix <= 0.001) {
-		return dec(textureLod(stars_a, uv, 0.0).rgb);
+		return dec(tg(stars_a, uv).rgb);
 	}
 	if (palette_mix >= 0.999) {
-		return dec(textureLod(stars_b, uv, 0.0).rgb);
+		return dec(tg(stars_b, uv).rgb);
 	}
-	return mix(dec(textureLod(stars_a, uv, 0.0).rgb), dec(textureLod(stars_b, uv, 0.0).rgb), palette_mix);
+	return mix(dec(tg(stars_a, uv).rgb), dec(tg(stars_b, uv).rgb), palette_mix);
 }
 
 // Weiches Flackern je Funke (Gitterzellen ~ Funkengroesse, zeitlich glatt).
@@ -193,11 +202,11 @@ void sky() {
 	vec2 puv = dir_uv(dir * euler(pano_rotation), pano_offset);
 	vec3 sky_col;
 	if (palette_mix <= 0.001) {
-		sky_col = dec(textureLod(tex_a, puv, 0.0).rgb);
+		sky_col = dec(tg(tex_a, puv).rgb);
 	} else if (palette_mix >= 0.999) {
-		sky_col = dec(textureLod(tex_b, puv, 0.0).rgb);
+		sky_col = dec(tg(tex_b, puv).rgb);
 	} else {
-		sky_col = mix(dec(textureLod(tex_a, puv, 0.0).rgb), dec(textureLod(tex_b, puv, 0.0).rgb), palette_mix);
+		sky_col = mix(dec(tg(tex_a, puv).rgb), dec(tg(tex_b, puv).rgb), palette_mix);
 	}
 	// Puls hebt die hellen Glut-Bereiche (Horizont, Wolkenraender), Schwarz bleibt.
 	float nl = dot(sky_col, vec3(0.2126, 0.7152, 0.0722));
@@ -214,7 +223,7 @@ void sky() {
 	// Tiefenebene Rauch: eigener Versatz (langsame Drift + Schlag-Ruck auf beat_step).
 	{
 		vec2 vo = pano_offset + vec2(TIME * 0.0012 + beat_step * 0.0016 * mv, 0.0);
-		vec4 vl = textureLod(veil_tex, dir_uv(dir * euler(pano_rotation), vo), 0.0);
+		vec4 vl = tg(veil_tex, dir_uv(dir * euler(pano_rotation), vo));
 		vec3 vlight = dec(vl.rgb) * (1.0 + beat_pulse * 0.25 + downbeat_pulse * 0.8 * mv + dp * 0.9);
 		sky_col = sky_col * vl.a + vlight;
 	}
@@ -226,7 +235,7 @@ void sky() {
 		if (cell < 0) {
 			cell = int(hash11(floor(TIME * 0.45)) * 2.999);
 		}
-		vec3 f = dec(textureLod(flash_tex, puv, 0.0).rgb);
+		vec3 f = dec(tg(flash_tex, puv).rgb);
 		float g = cell == 0 ? f.r : (cell == 1 ? f.g : f.b);
 		// Mehrfach-Entladung: kurze Aussetzer statt gleichmaessigem Leuchten.
 		float st = hash11(floor(TIME * 22.0) + float(cell) * 7.0);
@@ -303,7 +312,7 @@ void sky() {
 			float s_yaw = TIME * 0.004 * s_mv + beat_step * 0.012 * s_mv + s_dp * 0.07;
 			vec3 s_d = dir * euler(vec3(0.0, s_yaw, 0.0));
 			s_d.y = dir.y + s_dp * 0.03 * (1.0 - abs(dir.y));          // Drop: naeher heran
-			vec4 s_sh = textureLod(shards_tex, dir_uv(normalize(s_d), vec2(0.0)), 0.0);
+			vec4 s_sh = tg(shards_tex, dir_uv(normalize(s_d), vec2(0.0)));
 			float s_lon = atan(dir.x, -dir.z);
 			float s_lat = asin(clamp(dir.y, -1.0, 1.0));
 			float s_gate = smoothstep(0.03, 0.12, s_lat) * (1.0 - exp(-(s_lon / 0.5) * (s_lon / 0.5)) * smoothstep(0.9, 0.5, s_lat));
