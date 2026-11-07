@@ -33,6 +33,10 @@ var _note_mats: Array[ShaderMaterial] = []
 var _t := 0.0
 var _frames := 0
 var _shot := false
+var _bench := false
+var _bench_base := false
+var _bench_ms: PackedFloat64Array = PackedFloat64Array()
+var _bench_last := 0
 var _shot_dir := SHOT_DIR
 var _step := 0
 var _bpm := 150.0
@@ -184,6 +188,7 @@ func _set_state(beats: int, phase: float, drop: float, kiai: float) -> void:
 func _process(delta: float) -> void:
 	_t += delta
 	_frames += 1
+	_bench_tick()
 	if _shot:
 		_shot_step()
 		return
@@ -248,3 +253,37 @@ func _save(file: String) -> void:
 	var path := _shot_dir.path_join(file)
 	img.save_png(path)
 	print("shot: ", path)
+
+## --bench [--bench-base]: vsync aus, max_fps 0, 1920x1080, 120 Frames Warmup,
+## 600 Frames messen, druckt "[perf] <welt> fps_avg=.. frame_ms_p99=..".
+## --bench-base tauscht den Welt-Shader gegen shaders/sky_panorama.gdshader.
+func _bench_tick() -> bool:
+	if _frames == 1:
+		var args := OS.get_cmdline_args() + OS.get_cmdline_user_args()
+		_bench = args.has("--bench")
+		_bench_base = args.has("--bench-base")
+		if _bench:
+			DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
+			Engine.max_fps = 0
+			get_window().size = Vector2i(1920, 1080)
+			if _bench_base:
+				var tex = _mat.get_shader_parameter("tex_a")
+				var tex2 = _mat.get_shader_parameter("shards_a")
+				_mat.shader = load("res://shaders/sky_panorama.gdshader")
+				_mat.set_shader_parameter("tex_a", tex)
+				_mat.set_shader_parameter("stars_a", tex2)
+	if not _bench:
+		return false
+	var now := Time.get_ticks_usec()
+	if _frames > 120:
+		_bench_ms.append(float(now - _bench_last) / 1000.0)
+	_bench_last = now
+	if _bench_ms.size() >= 600:
+		var sorted := _bench_ms.duplicate()
+		sorted.sort()
+		var sum := 0.0
+		for v in _bench_ms:
+			sum += v
+		print("[perf] ", "fractal", (" base" if _bench_base else ""), " fps_avg=", snappedf(1000.0 * _bench_ms.size() / sum, 0.1), " frame_ms_p99=", snappedf(sorted[int(sorted.size() * 0.99)], 0.01))
+		get_tree().quit(0)
+	return true
