@@ -28,6 +28,9 @@ var _lane_btns: Array[Button] = []
 var _offset_value: Label
 var _offset_slider: HSlider
 var _vol_value: Label
+var _bg_dim_slider: HSlider
+var _bg_blur_btn: CheckButton
+var _note_style_opt: OptionButton
 
 
 func _ready() -> void:
@@ -99,6 +102,52 @@ func _ready() -> void:
 		Settings.mania_scroll = v
 		scroll_value.text = _fmt_x(v))
 	_row(cv_gameplay, "Scrollgeschwindigkeit", scroll_slider, scroll_value)
+
+	var spacing_slider := HSlider.new()
+	spacing_slider.min_value = Settings.LANE_SPACING_MIN * 100.0
+	spacing_slider.max_value = Settings.LANE_SPACING_MAX * 100.0
+	spacing_slider.step = Settings.LANE_SPACING_STEP * 100.0
+	spacing_slider.value = Settings.lane_spacing * 100.0
+	var spacing_value := Label.new()
+	spacing_value.text = _fmt_pct0(Settings.lane_spacing)
+	spacing_slider.value_changed.connect(func(v):
+		Settings.lane_spacing = Settings.clamp_lane_spacing(v / 100.0)
+		spacing_value.text = _fmt_pct0(Settings.lane_spacing))
+	spacing_slider.tooltip_text = "Abstand der Spuren (3D und 2D). Unter 85 % werden die Noten leicht kleiner."
+	_row(cv_gameplay, "Spurbreite", spacing_slider, spacing_value)
+
+	var mode_2d := CheckButton.new()
+	mode_2d.button_pressed = Settings.playfield_2d
+	mode_2d.tooltip_text = "Klassische senkrechte Spuren ohne 3D-Welt; Hintergrund = Map-Bild"
+	mode_2d.toggled.connect(func(on):
+		Settings.playfield_2d = on
+		_update_2d_rows())
+	_row(cv_gameplay, "2D-Modus", mode_2d, null)
+
+	_note_style_opt = OptionButton.new()
+	_note_style_opt.add_item("Balken", Settings.NOTE_STYLE_BAR)
+	_note_style_opt.add_item("Kreis", Settings.NOTE_STYLE_CIRCLE)
+	_note_style_opt.select(Settings.note_style_2d)
+	_note_style_opt.custom_minimum_size = Vector2(0, 36)
+	_note_style_opt.item_selected.connect(func(i): Settings.note_style_2d = i)
+	_row(cv_gameplay, "2D-Notenform", _note_style_opt, null)
+
+	_bg_dim_slider = HSlider.new()
+	_bg_dim_slider.min_value = 0.0
+	_bg_dim_slider.max_value = 100.0
+	_bg_dim_slider.step = 5.0
+	_bg_dim_slider.value = Settings.bg_dim * 100.0
+	var dim_value := Label.new()
+	dim_value.text = _fmt_pct0(Settings.bg_dim)
+	_bg_dim_slider.value_changed.connect(func(v):
+		Settings.bg_dim = Settings.clamp_bg_dim(v / 100.0)
+		dim_value.text = _fmt_pct0(Settings.bg_dim))
+	_row(cv_gameplay, "Hintergrund-Deckkraft", _bg_dim_slider, dim_value)
+
+	_bg_blur_btn = CheckButton.new()
+	_bg_blur_btn.button_pressed = Settings.bg_blur
+	_bg_blur_btn.toggled.connect(func(on): Settings.bg_blur = on)
+	_row(cv_gameplay, "Hintergrund-Unschärfe", _bg_blur_btn, null)
 
 	var lane_row := HBoxContainer.new()
 	lane_row.add_theme_constant_override("separation", 8)
@@ -259,6 +308,7 @@ Dynamisch: volle Flug-Bewegung"
 		_world_preview.show_world("" if i == 0 else Settings.WORLD_ORDER[i - 1]))
 	_row(cv_anzeige, "Welt", wt, null)
 	_world_row = wt
+	_update_2d_rows()
 	_world_preview = WorldPreview.new()
 	_world_preview.visible = false
 	add_child(_world_preview)
@@ -380,6 +430,28 @@ func _row(vb: VBoxContainer, caption: String, control: Control, value: Label) ->
 		value.custom_minimum_size = Vector2(VALUE_W, 0)
 		value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		row.add_child(value)
+
+
+## 0.85 -> "85 %".
+static func _fmt_pct0(v: float) -> String:
+	return UiTheme.fmt_num(v * 100.0, 0) + " %"
+
+
+## 2D-Regler nur bei 2D aktiv; Welt-Auswahl gilt nur fuer 3D (ausgegraut).
+func _update_2d_rows() -> void:
+	var on := Settings.playfield_2d
+	if _bg_dim_slider != null:
+		_bg_dim_slider.editable = on
+		_bg_dim_slider.modulate.a = 1.0 if on else 0.4
+	if _note_style_opt != null:
+		_note_style_opt.disabled = not on
+		_note_style_opt.modulate.a = 1.0 if on else 0.4
+	if _bg_blur_btn != null:
+		_bg_blur_btn.disabled = not on
+		_bg_blur_btn.modulate.a = 1.0 if on else 0.4
+	if _world_row is OptionButton:
+		(_world_row as OptionButton).disabled = on
+		_world_row.modulate.a = 0.4 if on else 1.0
 
 
 static func _fmt_x(v: float) -> String:
