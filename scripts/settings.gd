@@ -78,6 +78,8 @@ var lane_width_2d: float = 1.0
 var mod_sv: bool = false
 var mod_nf: bool = false
 var note_size_2d: float = 1.0
+## Importierter osu!mania-Skin fuer 2D (Ordnername in user://skins/), "" = Standard.
+var skin_2d: String = ""
 const SIZE_2D_MIN := 0.5
 const SIZE_2D_MAX := 2.0
 const SIZE_2D_STEP := 0.05
@@ -346,6 +348,7 @@ func load_settings(path: String = PATH) -> void:
 	mod_nf = bool(cfg.get_value("mods", "nf", false))
 	lane_width_2d = clamp_2d_size(float(cfg.get_value("game", "lane_width_2d", 1.0)))
 	note_size_2d = clamp_2d_size(float(cfg.get_value("game", "note_size_2d", 1.0)))
+	skin_2d = String(cfg.get_value("game", "skin_2d", ""))
 	hitsound_set = clampi(int(cfg.get_value("game", "hitsound_set", 0)), 0, 2)
 	hitsound_volume = clampf(float(cfg.get_value("game", "hitsound_volume", 0.8)), 0.0, 1.0)
 	fullscreen = bool(cfg.get_value("game", "fullscreen", false))
@@ -380,6 +383,7 @@ func save(path: String = PATH) -> void:
 	cfg.set_value("mods", "sv", mod_sv)
 	cfg.set_value("mods", "nf", mod_nf)
 	cfg.set_value("game", "note_size_2d", note_size_2d)
+	cfg.set_value("game", "skin_2d", skin_2d)
 	cfg.set_value("game", "hitsound_set", hitsound_set)
 	cfg.set_value("game", "hitsound_volume", hitsound_volume)
 	cfg.set_value("game", "fullscreen", fullscreen)

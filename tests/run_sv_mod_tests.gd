@@ -20,6 +20,8 @@ func _initialize() -> void:
 	_test_is_sv(bm)
 	_test_own_sv()
 	_test_bpm_change()
+	_test_weak_own_sv()
+	_test_scroll_fidelity()
 	_test_core_wiring(bm)
 	_test_score()
 	_test_real_maps()
@@ -253,6 +255,85 @@ func _test_bpm_change() -> void:
 	var r2: float = raw.position(t1 + 1.0) - raw.position(t1)
 	_ok(absf(r2 - 400.0 / 300.0) < 0.01, "ohne Mod schneller (%.3f)" % r2)
 	_test_fair(bm, "BPM-Wechsel", tps)
+
+
+## Wie xi - Happy End: viele BPM-Wechsel, nur wenige gruene Ausgleichslinien.
+## detect_sv sagt "SV" (frac), aber kaum Wechsel pro Minute -> der Mod muss
+## trotzdem deutlich spuerbares SV erzeugen.
+func _test_weak_own_sv() -> void:
+	print("- Schwaches eigenes SV (nur BPM-Wechsel) bekommt generiertes SV")
+	var reds := ""
+	var greens := ""
+	for k in 4:
+		var bl := 400 if k % 2 == 0 else 320
+		reds += "%d,%d,4,1,0,100,1,0
+" % [1000 + k * 24000, bl]
+		if k % 2 == 1:
+			greens += "%d,%.4f,4,1,0,100,0,0
+" % [1000 + k * 24000, -100.0 / (0.8 * bl / 400.0)]
+	var bm := _parse(_osu_text(reds, 64, 400.0, greens))
+	var st := MapLibrary.sv_stats(bm)
+	_ok(bool(st.sv) and float(st.jpm) < MapLibrary.SV_STRONG_JPM,
+			"als SV erkannt, aber schwach (frac %.2f, %.1f Wechsel/min)" % [float(st.frac), float(st.jpm)])
+	_ok(not SvMod.has_own_sv(bm), "schwaches SV zaehlt nicht als eigenes")
+	var tps := SvMod.timing_points_for(bm)
+	_ok(tps != bm.timing_points, "Mod erzeugt SV")
+	var t0: float = bm.hit_objects[0].time
+	var t1: float = bm.hit_objects[bm.hit_objects.size() - 1].time
+	var sm := _sm(bm, tps)
+	var dev := 0.0
+	var up := 0.0
+	var steps := 0
+	for t in range(int(t0), int(t1), 10):
+		var m := (sm.position(t + 10.0) - sm.position(float(t))) / 10.0
+		steps += 1
+		if absf(m - 1.0) > 0.1:
+			dev += 1.0
+		up = maxf(up, m)
+	_ok(dev / steps > 0.3, "deutlich spuerbar: %.0f %% der Zeit m != 1" % (100.0 * dev / steps))
+	_ok(up >= 1.5, "Noten werden schneller (max m %.2f)" % up)
+	_test_fair(bm, "schwaches SV", tps)
+
+
+## ScrollMap wie osu!lazer: gruene Linie vor der ersten roten nutzt deren
+## Tempo, bei gleicher Zeit gewinnt gruen nach rot, positive gruene Zeit = 1.
+func _test_scroll_fidelity() -> void:
+	print("- ScrollMap gegen osu!-Verhalten")
+	var txt := _osu_text("1000,400,4,1,0,100,1,0
+", 4, 400.0, "500,-50,4,1,0,100,0,0
+1000,-200,4,1,0,100,0,0
+2000,200,4,1,0,100,0,0
+")
+	var bm := _parse(txt)
+	var sm := _sm(bm, bm.timing_points)
+	var pre := sm.position(600.0) - sm.position(500.0)
+	_ok(absf(pre - 200.0) < 0.01, "SV 2.0 vor der ersten roten Linie: m = 2.0 (%.3f)" % (pre / 100.0))
+	var at := sm.position(1500.0) - sm.position(1000.0)
+	_ok(absf(at - 250.0) < 0.01, "gleiche Zeit: gruen (0.5) nach rot (%.3f)" % (at / 500.0))
+	var pos := sm.position(2500.0) - sm.position(2000.0)
+	_ok(absf(pos - 500.0) < 0.01, "positive gruene Zeit = SV 1.0 (%.3f)" % (pos / 500.0))
+	var lo := TimingPoint.new()
+	lo.beat_length = -1e6
+	lo.uninherited = false
+	var hi := TimingPoint.new()
+	hi.beat_length = -1.0
+	hi.uninherited = false
+	_ok(absf(ScrollMap.green_sv(lo) - 0.01) < 1e-9 and absf(ScrollMap.green_sv(hi) - 10.0) < 1e-9, "SV-Grenzen 0.01..10")
+	var own := _parse(_osu_text("1000,400,4,1,0,100,1,0
+", 32, 400.0, _strong_greens()))
+	var a := ManiaCore.build_scroll_map(own, {"SV": true})
+	var b := ManiaCore.build_scroll_map(own, {})
+	_ok(a.position(20000.0) == b.position(20000.0) and a.position(33333.0) == b.position(33333.0),
+			"starkes eigenes SV mit Mod 1:1 unveraendert")
+
+
+func _strong_greens() -> String:
+	var g := PackedStringArray()
+	for i in 200:
+		g.append("%d,%d,4,1,0,100,0,0" % [1000 + i * 200, -50 if i % 2 == 0 else -200])
+	return "
+".join(g) + "
+"
 
 
 func _test_core_wiring(bm: Beatmap) -> void:

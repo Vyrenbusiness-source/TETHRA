@@ -96,7 +96,7 @@ func _start_clip() -> void:
 			var data := ReplayStore.load_replay(ms.osz_path, ver)
 			if data.is_empty():
 				break
-			mods = {}
+			mods = _replay_mods(data)
 			set_selection(ms.osz_path, d, ver, ms.osu_filename_at(d), ms.stars_at(d))
 			is_replay = true
 			replay_events = data.events
@@ -231,6 +231,15 @@ func load_last_played() -> Dictionary:
 	}
 
 
+## Mods eines gespeicherten Replays (aeltere Replays ohne Eintrag: keine Mods).
+static func _replay_mods(data: Dictionary) -> Dictionary:
+	var meta = data.get("meta", {})
+	var m = meta.get("mods", {}) if meta is Dictionary else {}
+	if not (m is Dictionary):
+		return {}
+	return {"SV": bool(m.get("SV", false)), "NF": bool(m.get("NF", false))}
+
+
 ## Test-Watchdog: jeder Debug-/Screenshot-Lauf (--shot*, --autoplay) beendet sich
 ## spaetestens nach 45 s, Headless-Test-Runner (--script) nach 120 s selbst, damit keine
 ## Testfenster offen haengen bleiben. Prueft auch User-Args nach "--".
@@ -242,6 +251,10 @@ func _arm_test_watchdog() -> void:
 			limit = 45.0
 		elif (a == "--script" or a == "-s") and limit == 0.0:
 			limit = 120.0   # Headless-Test-Runner: grosszuegiger, haengt aber nie ewig
+	# Testfenster ohne Flag (nur tools/test_override.cfg als override.cfg im
+	# Projekt): ebenfalls hart begrenzen, damit nie ein Fenster offen bleibt.
+	if limit <= 0.0 and FileAccess.file_exists("res://override.cfg"):
+		limit = 60.0
 	if limit <= 0.0 or all.has("--clip"):
 		return
 	var t := Timer.new()

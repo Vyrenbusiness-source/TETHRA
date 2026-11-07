@@ -66,7 +66,9 @@ func build(timing_points: Array, map_end_ms: float) -> void:
 		if tp.uninherited:
 			reds.append(tp)
 	base_beat_length = _most_common_beat_length(reds, map_end_ms)
-	var bl := DEFAULT_BL
+	# Vor der ersten roten Linie gilt deren Tempo (lazer: TimingPointAt faellt
+	# auf den ersten Punkt zurueck), nicht DEFAULT_BL.
+	var bl := red_beat_length(reds[0]) if not reds.is_empty() else DEFAULT_BL
 	var sv := 1.0
 	for i in order:
 		var tp: TimingPoint = timing_points[i]
