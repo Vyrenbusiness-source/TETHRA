@@ -362,6 +362,10 @@ var _clip_toast_tw: Tween
 # Hit-Fehler (ms) aller Treffer fuer das Histogramm im Results-Screen.
 var _hit_offsets := PackedFloat32Array()
 var _mp_last_rank := -1
+var _mp_team_bar: LiveTeamBar = null
+var _mp_danger := -1
+var _mp_rounds_at_start := 0
+var _mp_round_no_at_start := 1
 var _mp_rows: Dictionary = {}
 ## Test-Hook (--mp-demo): erfundene Scores + Screenshots, ohne zu spielen.
 var _mp_demo := OS.get_cmdline_args().has("--mp-demo")
@@ -3441,6 +3445,18 @@ func _build_hud() -> void:
 		_hud.add_child(_mp_board)
 		Lobby.scores_changed.connect(_refresh_mp_board)
 		Lobby.skip_now.connect(_do_skip)
+		_mp_rounds_at_start = Lobby.mm.rounds_played
+		_mp_round_no_at_start = Lobby.mm.round_no
+		# Teams: Summe Rot gegen Blau live oben in der Mitte.
+		if Lobby.mm.kind == MatchMode.Kind.TEAMS:
+			_mp_team_bar = LiveTeamBar.new()
+			_mp_team_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			_mp_team_bar.custom_minimum_size = Vector2(560, 46)
+			_hud.add_child(_mp_team_bar)
+			_mp_team_bar.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
+			_mp_team_bar.offset_top = 10
+			_mp_team_bar.setup({ "names": Lobby.mm.team_names,
+				"totals": Lobby.mm.team_totals(Lobby.live_results()) })
 		_refresh_mp_board()
 
 
@@ -3879,6 +3895,7 @@ func _build_results(is_fail: bool, s: Dictionary, pp: float, unranked: bool, new
 		_mp_rank_box.add_theme_constant_override("separation", 6)
 		rvb.add_child(_mp_rank_box)
 		Lobby.scores_changed.connect(_refresh_mp_ranking)
+		Lobby.players_changed.connect(_refresh_mp_ranking)
 		_refresh_mp_ranking()
 
 
@@ -4163,6 +4180,10 @@ func _refresh_mp_board() -> void:
 		return
 	var ranked := Lobby.ranked_players()
 	var my_id := multiplayer.get_unique_id()
+	if _mp_team_bar != null and is_instance_valid(_mp_team_bar):
+		_mp_team_bar.set_totals(Lobby.mm.team_totals(Lobby.live_results()))
+	# Royale: wer gerade Letzter ist, wird ruhig markiert (kein Blinken).
+	_mp_danger = Lobby.mm.in_danger(Lobby.live_results()) 			if Lobby.mm.kind == MatchMode.Kind.ROYALE else -1
 	var alive := {}
 	for i in ranked.size():
 		var p: Dictionary = ranked[i]
@@ -4275,6 +4296,10 @@ func _mp_fill_row(row: Control, i: int, p: Dictionary, ranked: Array, mine: bool
 		else:
 			line += "  ·  -" + _fmt_score_diff(int(ranked[i - 1].score) - int(p.score))
 			col = Color(1.0, 0.55, 0.5)
+	if int(p.id) == _mp_danger:
+		line += "  ·  gerade Letzter"
+		col = Color(1.0, 0.72, 0.38)
+		name_l.add_theme_color_override("font_color", col)
 	sub.text = line
 	sub.add_theme_color_override("font_color", col)
 
@@ -4290,6 +4315,7 @@ func _fmt_score_diff(d: int) -> String:
 
 ## Platzierung unter dem Rang: erst wenn alle fertig sind, Gleichstand = gleicher Platz.
 func _update_mp_placement(ranked: Array, my_id: int) -> void:
+	_update_mp_mode_text()
 	if _results_screen == null or not is_instance_valid(_results_screen):
 		return
 	var scores := {}
@@ -4317,6 +4343,64 @@ func _update_mp_placement(ranked: Array, my_id: int) -> void:
 	elif better == 0:
 		txt = "GLEICHSTAND AUF PLATZ 1"
 	_results_screen.set_placement(txt, better == 0)
+
+
+## Teams: Teamsumme + Rundensieger; Royale: wer fliegt raus / Sieger.
+func _update_mp_mode_text() -> void:
+	if _results_screen == null or not is_instance_valid(_results_screen):
+		return
+	var mm: MatchMode = Lobby.mm
+	var txt := ""
+	var col := Color(0.85, 0.88, 0.95)
+	if mm.kind == MatchMode.Kind.TEAMS:
+		var done := mm.rounds_played > _mp_rounds_at_start and not mm.history.is_empty()
+		var tot: Array = mm.history.back().totals if done else mm.team_totals(Lobby.live_results())
+		txt = "%s %s : %s %s" % [mm.team_names[0], UiTheme.fmt_score(int(tot[0])),
+			UiTheme.fmt_score(int(tot[1])), mm.team_names[1]]
+		if done:
+			var w := int(mm.history.back().winner)
+			col = LiveTeamBar.COLS[w] if w >= 0 else col
+			txt += "
+" + (("Runde an %s" % mm.team_names[w]) if w >= 0 else "Runde unentschieden")
+			if mm.series_over():
+				var sw := mm.series_winner()
+				txt += "
+Endstand %s %s : %s %s" % [mm.team_names[0], mm.team_wins[0],
+					mm.team_wins[1], mm.team_names[1]]
+				if sw >= 0:
+					txt += "  —  %s gewinnt" % mm.team_names[sw]
+			else:
+				txt += "
+Serie %s : %s  (%s)" % [mm.team_wins[0], mm.team_wins[1], mm.series_label()]
+	elif mm.kind == MatchMode.Kind.ROYALE:
+		if mm.round_no > _mp_round_no_at_start:
+			var out: Array = []
+			for id in mm.out_order:
+				if int(mm.players[id].out_round) == _mp_round_no_at_start:
+					out.append(_mp_name(int(id)))
+			txt = ("Raus: " + ", ".join(out)) if not out.is_empty() else "Gleichstand — keiner fliegt raus"
+			var me := multiplayer.get_unique_id()
+			if mm.players.has(me) and not mm.players[me].alive:
+				txt = "Du bist raus.
+" + txt
+				col = Color(1.0, 0.72, 0.38)
+			if mm.is_over():
+				txt += "
+SIEGER: " + _mp_name(mm.winner_peer)
+				var order: Array = []
+				for id in mm.out_order:
+					order.append(_mp_name(int(id)))
+				txt += "
+Ausgeschieden: " + ", ".join(order)
+				col = Color(0.45, 1.0, 0.55)
+		else:
+			var low := mm.in_danger(Lobby.live_results())
+			txt = "Letzter fliegt raus" + (" — gerade: " + _mp_name(low) if low >= 0 else "")
+	_results_screen.set_mode_text(txt, col)
+
+
+func _mp_name(id: int) -> String:
+	return str(Lobby.players[id].name) if Lobby.players.has(id) else "?"
 
 
 func _refresh_mp_ranking() -> void:

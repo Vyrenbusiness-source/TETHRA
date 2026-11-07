@@ -28,6 +28,7 @@ signal left(reason: String)
 signal status(msg: String)
 ## Turnier-Zustand hat sich geaendert (auch: Turnier gestartet/beendet -> tournament null).
 signal tournament_changed
+signal round_ended
 
 var active := false
 var is_host := false
@@ -59,6 +60,12 @@ var played: Array = []
 var tournament: Tournament = null
 ## Server: Spieler, die die laufende Turnier-Runde gestartet haben.
 var _tour_peers: Array = []
+## Raum-Modus (Frei/Teams/Royale). Server haelt die Wahrheit, Clients bekommen to_dict.
+var mm: MatchMode = MatchMode.new()
+var _mm_peers: Array = []
+var _mm_live := false
+## Ausgeschieden (Royale): ich schaue nur zu, die Runde laeuft ohne mich.
+var spectating := false
 
 var _bcast: PacketPeerUDP
 var _listen: PacketPeerUDP
@@ -120,6 +127,8 @@ func host_room(rname: String = "", pw: String = "") -> bool:
 	crown_id = 1
 	players = { 1: _new_player(Settings.profile_name) }
 	players[1].ready = true
+	mm = MatchMode.new()
+	_mm_live = false
 	room_code = ""
 	# LAN-Ansage.
 	_bcast = PacketPeerUDP.new()
@@ -254,6 +263,10 @@ func _reset() -> void:
 	played = []
 	crown_id = 1
 	_tour_peers = []
+	mm = MatchMode.new()
+	_mm_peers = []
+	_mm_live = false
+	spectating = false
 	if tournament != null:
 		tournament = null
 		tournament_changed.emit()
@@ -395,6 +408,7 @@ func _on_peer_disconnected(id: int) -> void:
 		return
 	players.erase(id)
 	skip_votes.erase(id)
+	_mm_refresh()
 	# Kronentraeger weg -> Krone geht automatisch an einen verbleibenden Spieler.
 	if crown_id == id:
 		crown_id = _next_crown()
@@ -406,6 +420,7 @@ func _on_peer_disconnected(id: int) -> void:
 	if in_game:
 		scores_changed.emit()
 		_check_skip()
+		_mode_check_round()
 
 
 ## Naechster Kronentraeger: der Host (id 1), sonst der kleinste verbleibende Peer.
@@ -430,6 +445,7 @@ func srv_register(pname: String, pw: String = "") -> void:
 				multiplayer.multiplayer_peer.disconnect_peer(id))
 		return
 	players[id] = _new_player(_unique_name(pname.strip_edges().substr(0, 20), id))
+	_mm_refresh()
 	_sync()
 	if tournament != null:
 		_tour_refresh()
@@ -488,15 +504,17 @@ func srv_give_crown(id: int) -> void:
 func srv_start() -> void:
 	if not is_host or in_game:
 		return
-	if multiplayer.get_remote_sender_id() != crown_id or not all_ready():
+	if multiplayer.get_remote_sender_id() != crown_id or not all_ready() or mode_blocker() != "":
 		return
+	_mode_prepare_round()
 	rpc("cl_start")
 	cl_start()
 
 
 ## Darf ich starten? Nur der Kronentraeger, wenn alle bereit sind.
 func can_start() -> bool:
-	return active and not in_game and crown_id == multiplayer.get_unique_id() and all_ready()
+	return active and not in_game and crown_id == multiplayer.get_unique_id() and all_ready() \
+			and mode_blocker() == ""
 
 
 @rpc("any_peer", "call_remote", "reliable")
@@ -580,17 +598,20 @@ func all_ready() -> bool:
 	if sel_map.is_empty():
 		return false
 	for id in players:
+		if mm.kind == MatchMode.Kind.ROYALE and mm.is_spectator(int(id)):
+			continue  # Ausgeschiedene muessen nicht bereit sein
 		if not bool(players[id].ready):
 			return false
 	return true
 
 
 func start_game() -> void:
-	if not active or in_game or not all_ready():
+	if not active or in_game or not all_ready() or mode_blocker() != "":
 		return
 	if is_host:
 		if crown_id != 1:
 			return
+		_mode_prepare_round()
 		rpc("cl_start")
 		cl_start()
 	elif crown_id == multiplayer.get_unique_id():
@@ -600,7 +621,7 @@ func start_game() -> void:
 func _sync() -> void:
 	if not is_host:
 		return
-	rpc("cl_state", players, crown_id, sel_map, room_name, played, mods)
+	rpc("cl_state", players, crown_id, sel_map, room_name, played, mods, mm.to_dict())
 	players_changed.emit()
 
 
@@ -609,7 +630,7 @@ func _sync() -> void:
 # ---------------------------------------------------------------------------
 
 @rpc("authority", "call_remote", "reliable")
-func cl_state(p: Dictionary, crown: int, m: Dictionary, rname: String, played_list: Array = [], mods_in: Dictionary = {}) -> void:
+func cl_state(p: Dictionary, crown: int, m: Dictionary, rname: String, played_list: Array = [], mods_in: Dictionary = {}, mm_in: Dictionary = {}) -> void:
 	var map_was := sel_map.duplicate()
 	var new_peer := false
 	for id in p:
@@ -621,6 +642,7 @@ func cl_state(p: Dictionary, crown: int, m: Dictionary, rname: String, played_li
 	room_name = rname
 	played = played_list
 	mods = _norm_mods(mods_in)
+	mm = MatchMode.from_dict(mm_in)
 	players_changed.emit()
 	if map_was != sel_map:
 		map_changed.emit()
@@ -632,14 +654,17 @@ func cl_state(p: Dictionary, crown: int, m: Dictionary, rname: String, played_li
 
 @rpc("authority", "call_remote", "reliable")
 func cl_start() -> void:
+	spectating = mm.kind == MatchMode.Kind.ROYALE and mm.is_spectator(multiplayer.get_unique_id())
 	var path := resolve_local_path()
-	if path == "":
+	if path == "" and not spectating:
 		status.emit("Map fehlt lokal — Start nicht moeglich.")
 		return
 	in_game = true
 	skip_votes = {}
 	if is_host:
 		_tour_peers = players.keys()
+		_mm_peers = _mode_participants()
+		_mm_live = true
 	if not sel_map.is_empty():
 		var pk := "%s|%s" % [str(sel_map.get("file", "")), str(sel_map.get("version", ""))]
 		if not played.has(pk):
@@ -649,6 +674,10 @@ func cl_start() -> void:
 		players[id].combo = 0
 		players[id].acc = 1.0
 		players[id].final = {}
+	if spectating:
+		game_start.emit()
+		scores_changed.emit()
+		return
 	if not _load_selection(path):
 		in_game = false
 		status.emit("Map konnte nicht geladen werden.")
@@ -672,7 +701,38 @@ func _load_selection(path: String) -> bool:
 				d.osu_filename, float(sel_map.get("stars", 0.0)))
 			GameSession.mods = mods.duplicate()
 			return true
+	# Online-Pick ohne Diff-Name: 4K-Diff mit den naechsten Sternen waehlen.
+	var best := _nearest_4k(path, imp, float(sel_map.get("stars", 0.0)))
+	if best >= 0:
+		var d2 = imp.difficulties[best]
+		GameSession.mods = {}
+		GameSession.is_replay = false
+		GameSession.replay_events = []
+		GameSession.set_selection(path, best, d2.beatmap.version_name(),
+			d2.osu_filename, float(sel_map.get("stars", 0.0)))
+		GameSession.mods = mods.duplicate()
+		return true
 	return false
+
+
+## Index der 4K-Mania-Diff, deren Sterne am naechsten an `want` liegen; -1 = keine.
+func _nearest_4k(path: String, imp: Dictionary, want: float) -> int:
+	var star_data: Dictionary = StarService.stars_for(path)
+	var best := -1
+	var best_gap := INF
+	for i in imp.difficulties.size():
+		var bm: Beatmap = imp.difficulties[i].beatmap
+		if bm.is_mania() and bm.column_count() != 4:
+			continue
+		var fname: String = imp.difficulties[i].osu_filename
+		var st := want
+		if star_data.has(fname):
+			st = float(star_data[fname].get("stars", want))
+		var gap := absf(st - want)
+		if gap < best_gap:
+			best_gap = gap
+			best = i
+	return best
 
 
 ## Lokale .osz zur gewaehlten Map finden: exakter Dateiname, fuehrende
@@ -736,6 +796,7 @@ func send_final(stats: Dictionary) -> void:
 	rpc("cl_final", stats)
 	scores_changed.emit()
 	_tour_check_round()
+	_mode_check_round()
 
 
 @rpc("any_peer", "call_remote", "reliable")
@@ -746,6 +807,7 @@ func cl_final(stats: Dictionary) -> void:
 		_store_final(id, stats)
 		scores_changed.emit()
 		_tour_check_round()
+		_mode_check_round()
 
 
 ## Endergebnis eines Mitspielers als fremden Score speichern (nicht bei Fail).
@@ -852,12 +914,16 @@ func _check_skip() -> void:
 ## erhalten (Map ist ja bei allen vorhanden) — Neuwahl setzt ihn zurueck.
 func round_done() -> void:
 	in_game = false
+	spectating = false
 
 
 ## Spieler-Liste nach Live-Score sortiert (fuer Scoreboard/Ranking).
 func ranked_players() -> Array:
 	var list := []
 	for id in players:
+		# Frueher Ausgeschiedene (Royale) spielen nicht mehr mit.
+		if mm.kind == MatchMode.Kind.ROYALE and mm.is_spectator(int(id)) 				and (players[id].get("final", {}) as Dictionary).is_empty():
+			continue
 		var e: Dictionary = players[id].duplicate()
 		e["id"] = id
 		list.append(e)
@@ -925,12 +991,17 @@ func _tour_sync() -> void:
 	if not is_host:
 		return
 	if not _is_offline():
-		rpc("cl_tournament", tournament.to_dict() if tournament != null else {})
+		for id in players:
+			if int(id) == 1:
+				continue
+			rpc_id(int(id), "cl_tournament", tournament.to_dict_for(int(id)) if tournament != null else {})
 	tournament_changed.emit()
 
 
 @rpc("authority", "call_remote", "reliable")
 func cl_tournament(d: Dictionary) -> void:
+	if is_host:
+		return
 	tournament = Tournament.from_dict(d) if not d.is_empty() else null
 	tournament_changed.emit()
 
@@ -938,6 +1009,13 @@ func cl_tournament(d: Dictionary) -> void:
 @rpc("authority", "call_remote", "reliable")
 func cl_tour_msg(msg: String) -> void:
 	status.emit(msg)
+
+
+## Sicht auf das Turnier fuer die UI: auch der Host sieht fremde Bans erst nach Aufdecken.
+func tour_view() -> Tournament:
+	if tournament == null or not is_host:
+		return tournament
+	return Tournament.from_dict(tournament.to_dict_for(1))
 
 
 func _tour_reply(sender: int, msg: String) -> void:
@@ -957,6 +1035,8 @@ func _tour_host_ok() -> bool:
 func tour_create(cfg: Dictionary) -> void:
 	if not _tour_host_ok() or in_game or tournament != null:
 		return
+	if mm.kind != MatchMode.Kind.FREE:
+		_mode_apply(MatchMode.Kind.FREE)
 	var c := cfg.duplicate()
 	c["seed"] = randi()
 	tournament = Tournament.create(c)
@@ -1145,3 +1225,223 @@ func _tour_check_round() -> void:
 	tournament.record_round(results)
 	_tour_peers = []
 	_tour_sync()
+
+
+# ---------------------------------------------------------------------------
+# Raum-Modi: Frei / Teams / Battle Royale. Server validiert alles.
+# ---------------------------------------------------------------------------
+
+func room_kind() -> int:
+	return mm.kind
+
+
+static func mode_name(kind: int) -> String:
+	return ["Frei", "Teams", "Battle Royale"][clampi(kind, 0, 2)]
+
+
+## Warum gerade nicht gestartet werden kann ("" = alles in Ordnung).
+func mode_blocker() -> String:
+	if mm.kind == MatchMode.Kind.TEAMS:
+		var sz := mm.team_sizes()
+		if sz[0] == 0 or sz[1] == 0:
+			return "Beide Teams brauchen mindestens einen Spieler."
+	elif mm.kind == MatchMode.Kind.ROYALE and players.size() < 2:
+		return "Battle Royale braucht mindestens 2 Spieler."
+	return ""
+
+
+## Krone: Raum-Modus waehlen (nicht im Turnier, nicht mitten in der Runde).
+func set_room_mode(kind: int) -> void:
+	if not active or in_game or tournament != null or kind < 0 or kind > MatchMode.Kind.ROYALE:
+		return
+	if is_host:
+		if crown_id == 1:
+			_mode_apply(kind)
+	elif crown_id == multiplayer.get_unique_id():
+		rpc_id(1, "srv_set_mode", kind)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func srv_set_mode(kind: int) -> void:
+	if not is_host or in_game or tournament != null:
+		return
+	if multiplayer.get_remote_sender_id() != crown_id or kind < 0 or kind > MatchMode.Kind.ROYALE:
+		return
+	_mode_apply(kind)
+
+
+func _mode_apply(kind: int) -> void:
+	if kind == mm.kind and kind == MatchMode.Kind.FREE:
+		return
+	var old_names: Array = mm.team_names.duplicate()
+	mm = MatchMode.new(kind)
+	if kind == MatchMode.Kind.TEAMS:
+		mm.team_names = old_names
+	_mm_live = false
+	_mm_peers = []
+	var ids: Array = players.keys()
+	ids.sort()
+	if kind == MatchMode.Kind.TEAMS:
+		mm.auto_balance(ids, _mode_stats())
+	elif kind == MatchMode.Kind.ROYALE:
+		mm.start_royale(ids)
+	else:
+		for id in ids:
+			mm.add_player(int(id))
+	_sync()
+
+
+## Spieler -> {acc, score} der letzten Runde (fuer den Auto-Ausgleich).
+func _mode_stats() -> Dictionary:
+	var out := {}
+	for id in players:
+		var f: Dictionary = players[id].get("final", {})
+		if not f.is_empty():
+			out[int(id)] = { "acc": float(f.get("acc", 0.0)), "score": int(f.get("score", 0)) }
+	return out
+
+
+## Teams: Spieler wechselt selbst, die Krone darf jeden verschieben.
+func set_team(peer: int, team: int) -> void:
+	if not active or in_game or mm.kind != MatchMode.Kind.TEAMS:
+		return
+	if is_host:
+		_srv_set_team(1, peer, team)
+	else:
+		rpc_id(1, "srv_set_team", peer, team)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func srv_set_team(peer: int, team: int) -> void:
+	_srv_set_team(multiplayer.get_remote_sender_id(), peer, team)
+
+
+func _srv_set_team(sender: int, peer: int, team: int) -> void:
+	if not is_host or in_game or mm.kind != MatchMode.Kind.TEAMS or not players.has(sender):
+		return
+	if sender != peer and sender != crown_id:
+		return
+	if mm.set_team(peer, team):
+		_sync()
+
+
+## Krone: Teams automatisch ausgleichen.
+func auto_balance_teams() -> void:
+	if not active or in_game or mm.kind != MatchMode.Kind.TEAMS:
+		return
+	if is_host:
+		if crown_id == 1:
+			_srv_balance()
+	elif crown_id == multiplayer.get_unique_id():
+		rpc_id(1, "srv_balance")
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func srv_balance() -> void:
+	if is_host and multiplayer.get_remote_sender_id() == crown_id:
+		_srv_balance()
+
+
+func _srv_balance() -> void:
+	if in_game or mm.kind != MatchMode.Kind.TEAMS:
+		return
+	var ids: Array = players.keys()
+	ids.sort()
+	mm.auto_balance(ids, _mode_stats())
+	_sync()
+
+
+## Server: Mitgliederliste des Modus an die Spieler angleichen.
+func _mm_refresh() -> void:
+	if not is_host:
+		return
+	for id in mm.order.duplicate():
+		# Mitten in der Runde Gegangene bleiben bis zur Auswertung (zaehlen als Leaver).
+		if not players.has(id) and not _mm_peers.has(id):
+			mm.remove_player(int(id))
+	var ids: Array = players.keys()
+	ids.sort()
+	for id in ids:
+		if not mm.order.has(int(id)) and mm.add_player(int(id)):
+			# Wer mitten in einer Royale-Serie dazukommt, schaut nur zu.
+			if mm.kind == MatchMode.Kind.ROYALE and _mm_live:
+				mm.players[int(id)] = { "alive": false, "spectator": true, "out_round": 0 }
+
+
+func _mode_participants() -> Array:
+	var out: Array = []
+	for id in players:
+		if mm.kind == MatchMode.Kind.ROYALE and mm.is_spectator(int(id)):
+			continue
+		out.append(int(id))
+	return out
+
+
+## Server, vor dem Start: abgeschlossene Serie frisch beginnen.
+func _mode_prepare_round() -> void:
+	if mm.kind == MatchMode.Kind.TEAMS and mm.series_over():
+		var keep := mm
+		mm = MatchMode.new(MatchMode.Kind.TEAMS)
+		mm.team_names = keep.team_names.duplicate()
+		mm.series_mode = keep.series_mode
+		mm.series_n = keep.series_n
+		mm.order = keep.order.duplicate()
+		mm.team_of = keep.team_of.duplicate()
+	elif mm.kind == MatchMode.Kind.ROYALE and (mm.is_over() or mm.alive().size() < 2):
+		mm.start_royale(players.keys())
+		_mm_live = false
+	_sync()
+
+
+## Live-Zwischenstand aller Mitspieler im Format von MatchMode (acc in Prozent).
+func live_results() -> Array:
+	var out: Array = []
+	for id in players:
+		var p: Dictionary = players[id]
+		var f: Dictionary = p.get("final", {})
+		var src: Dictionary = f if not f.is_empty() else p
+		out.append({ "peer": int(id), "score": int(src.get("score", 0)),
+			"acc": float(src.get("acc", 0.0)) * 100.0,
+			"max_combo": int(src.get("combo", 0)),
+			"failed": bool(f.get("failed", false)), "left": false })
+	return out
+
+
+## Server: Runde auswerten, sobald alle Teilnehmer ein Endergebnis haben oder gegangen sind.
+func _mode_check_round() -> void:
+	if not is_host or tournament != null or mm.kind == MatchMode.Kind.FREE:
+		return
+	if not in_game or _mm_peers.is_empty():
+		return
+	for id in _mm_peers:
+		if players.has(id) and (players[id].final as Dictionary).is_empty():
+			return
+	var results: Array = []
+	for id in _mm_peers:
+		if players.has(id):
+			var f: Dictionary = players[id].final
+			results.append({ "peer": int(id), "score": int(f.get("score", 0)),
+				"acc": float(f.get("acc", 0.0)) * 100.0, "max_combo": int(f.get("combo", 0)),
+				"failed": bool(f.get("failed", false)), "left": false })
+		else:
+			results.append({ "peer": int(id), "score": 0, "acc": 0.0, "max_combo": 0,
+				"failed": true, "left": true })
+	if mm.kind == MatchMode.Kind.TEAMS:
+		mm.finish_team_round(results)
+	else:
+		mm.eliminate(results)
+	_mm_peers = []
+	_mm_refresh()
+	_sync()
+	rpc("cl_round_end")
+	cl_round_end()
+
+
+## Alle: Auswertung fertig. Zuschauer kehren damit in die Lobby zurueck.
+@rpc("authority", "call_remote", "reliable")
+func cl_round_end() -> void:
+	if spectating:
+		in_game = false
+		spectating = false
+	round_ended.emit()
+	players_changed.emit()

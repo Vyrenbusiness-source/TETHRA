@@ -47,6 +47,12 @@ var _tour_dialog: Control = null
 var _tpanel: TournamentPanel = null
 var _tend: TournamentEnd = null
 var _tour_phase := -1
+var _mode_btns: Array = []
+var _mode_info: Label
+var _board_holder: VBoxContainer
+var _team_board: TeamBoard = null
+var _royale_board: RoyaleBoard = null
+var _balance_btn: Button
 var _tour_hidden := false
 
 
@@ -169,6 +175,8 @@ func _ready() -> void:
 
 	if OS.get_cmdline_args().has("--shot-tournament") or OS.get_cmdline_user_args().has("--shot-tournament"):
 		_tournament_shots()
+	if OS.get_cmdline_args().has("--shot-modes") or OS.get_cmdline_user_args().has("--shot-modes"):
+		_mode_shots()
 	if OS.get_cmdline_args().has("--shot-mp"):
 		_capture_shot()
 	if OS.get_cmdline_args().has("--shot-picker") or OS.get_cmdline_user_args().has("--shot-picker"):
@@ -785,10 +793,50 @@ func _build_room() -> void:
 	players_head.add_theme_color_override("font_color", COL_ACCENT)
 	_room_box.add_child(players_head)
 
+	# Raum-Modus: Frei / Teams / Battle Royale (waehlt die Krone, alle sehen ihn).
+	var mode_row := HBoxContainer.new()
+	mode_row.add_theme_constant_override("separation", 10)
+	_room_box.add_child(mode_row)
+	var mode_l := Label.new()
+	mode_l.text = "MODUS"
+	mode_l.add_theme_font_size_override("font_size", 13)
+	mode_l.add_theme_color_override("font_color", COL_ACCENT)
+	mode_row.add_child(mode_l)
+	for k in 3:
+		var kb := Button.new()
+		kb.toggle_mode = true
+		kb.text = Lobby.mode_name(k)
+		kb.custom_minimum_size = Vector2(150 if k == 2 else 110, 38)
+		kb.add_theme_font_size_override("font_size", 15)
+		UiTheme.style_button(kb)
+		var kind: int = k
+		kb.pressed.connect(func():
+			Lobby.set_room_mode(kind)
+			_refresh_room())
+		mode_row.add_child(kb)
+		_mode_btns.append(kb)
+	_balance_btn = Button.new()
+	_balance_btn.text = "Auto-Ausgleich"
+	_balance_btn.custom_minimum_size = Vector2(0, 38)
+	_balance_btn.add_theme_font_size_override("font_size", 14)
+	UiTheme.style_ghost_button(_balance_btn, 10)
+	_balance_btn.pressed.connect(func(): Lobby.auto_balance_teams())
+	mode_row.add_child(_balance_btn)
+	_mode_info = Label.new()
+	_mode_info.add_theme_font_size_override("font_size", 13)
+	_mode_info.add_theme_color_override("font_color", COL_DIM)
+	_mode_info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_mode_info.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	mode_row.add_child(_mode_info)
+
 	_players_box = VBoxContainer.new()
 	_players_box.add_theme_constant_override("separation", 6)
 	_players_box.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_room_box.add_child(_players_box)
+	_board_holder = VBoxContainer.new()
+	_board_holder.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_board_holder.visible = false
+	_room_box.add_child(_board_holder)
 
 	var map_card := PanelContainer.new()
 	var mcs := UiTheme.glass_box(12, 0.5, 0.16)
@@ -944,12 +992,15 @@ func _refresh_room() -> void:
 	for c in _players_box.get_children():
 		c.queue_free()
 	var my_id := multiplayer.get_unique_id()
+	_refresh_mode(my_id)
 	var row_i := 0
 	var in_round := false
 	for id in Lobby.players:
 		if int(Lobby.players[id].get("score", 0)) > 0:
 			in_round = true
 	for id in Lobby.players:
+		if Lobby.room_kind() != MatchMode.Kind.FREE:
+			break  # Teams/Royale: die Tafel ersetzt die Spielerliste
 		var p: Dictionary = Lobby.players[id]
 		var is_crown: bool = id == Lobby.crown_id
 		var card := PanelContainer.new()
@@ -1012,6 +1063,12 @@ func _refresh_room() -> void:
 		mb.disabled = Lobby.crown_id != my_id
 		mb.modulate = Color(0.45, 1.0, 0.7) if on else Color(1, 1, 1, 0.85 if not mb.disabled else 0.6)
 	var in_tour := Lobby.tournament != null
+	for k in _mode_btns.size():
+		var kb: Button = _mode_btns[k]
+		kb.set_pressed_no_signal(Lobby.room_kind() == k and not in_tour)
+		kb.disabled = Lobby.crown_id != my_id or in_tour or Lobby.in_game
+		kb.visible = not in_tour
+		kb.modulate = Color(0.45, 1.0, 0.7) if kb.button_pressed else Color(1, 1, 1, 0.6 if kb.disabled else 0.9)
 	_pick_btn.visible = Lobby.crown_id == my_id and not in_tour
 	_start_btn.visible = Lobby.crown_id == my_id and not in_tour
 	_start_btn.disabled = not Lobby.can_start()
@@ -1019,6 +1076,73 @@ func _refresh_room() -> void:
 		_tour_btn.visible = in_tour or Lobby.is_host
 		_tour_btn.text = "Zum Turnier" if in_tour else "Turnier"
 	_refresh_dl_ui()
+
+
+## Teams-/Royale-Tafel statt Spielerliste; Info-Zeile mit Serienstand oder Startgrund.
+func _refresh_mode(my_id: int) -> void:
+	var kind := Lobby.room_kind()
+	var mm: MatchMode = Lobby.mm
+	_players_box.visible = kind == MatchMode.Kind.FREE
+	_board_holder.visible = kind != MatchMode.Kind.FREE
+	_balance_btn.visible = kind == MatchMode.Kind.TEAMS and Lobby.crown_id == my_id \
+			and not Lobby.in_game and Lobby.tournament == null
+	var info := ""
+	var live := Lobby.live_results() if Lobby.in_game else []
+	if kind == MatchMode.Kind.TEAMS:
+		if _team_board == null:
+			_team_board = TeamBoard.new()
+			_team_board.team_requested.connect(func(peer: int, team: int): Lobby.set_team(peer, team))
+			_board_holder.add_child(_team_board)
+		var plist: Array = []
+		for id in mm.order:
+			if Lobby.players.has(id):
+				plist.append({ "peer": id, "name": str(Lobby.players[id].name),
+					"team": int(mm.team_of.get(id, 0)),
+					"score": int(Lobby.players[id].get("score", 0)) if Lobby.in_game else 0 })
+		_team_board.visible = true
+		_team_board.setup({ "names": mm.team_names, "players": plist,
+			"totals": mm.team_totals(live) if Lobby.in_game 				else (mm.history.back().totals if not mm.history.is_empty() else [0, 0]),
+			"hint": mm.balance_hint(), "editable": not Lobby.in_game })
+		if _royale_board != null:
+			_royale_board.visible = false
+		info = "Teams %s  ·  %s" % [mm.format_label(), mm.series_label()]
+		if mm.rounds_played > 0:
+			info = "%s %s : %s %s  ·  %s" % [mm.team_names[0], mm.team_wins[0],
+				mm.team_wins[1], mm.team_names[1], mm.series_label()]
+		if mm.series_over():
+			info = "Endstand %s %s : %s %s — %s" % [mm.team_names[0], mm.team_wins[0],
+				mm.team_wins[1], mm.team_names[1], _series_winner_name(mm)]
+	elif kind == MatchMode.Kind.ROYALE:
+		if _royale_board == null:
+			_royale_board = RoyaleBoard.new()
+			_board_holder.add_child(_royale_board)
+		var rl: Array = []
+		for id in mm.order:
+			if Lobby.players.has(id) and mm.players.has(id):
+				rl.append({ "peer": id, "name": str(Lobby.players[id].name),
+					"alive": bool(mm.players[id].alive), "out_round": int(mm.players[id].out_round),
+					"score": int(Lobby.players[id].get("score", 0)) if Lobby.in_game else 0 })
+		_royale_board.visible = true
+		_royale_board.setup({ "round": mm.round_no, "players": rl,
+			"danger": mm.in_danger(live) if Lobby.in_game else -1,
+			"final": mm.is_final(), "winner": mm.winner_peer })
+		if _team_board != null:
+			_team_board.visible = false
+		info = "Battle Royale · Runde %d · %d dabei" % [mm.round_no, mm.alive().size()]
+		if mm.is_over() and Lobby.players.has(mm.winner_peer):
+			info = "Sieger: %s" % str(Lobby.players[mm.winner_peer].name)
+		elif Lobby.spectating and Lobby.in_game:
+			info = "Du bist ausgeschieden — du schaust zu."
+	if Lobby.crown_id == my_id and Lobby.tournament == null and not Lobby.in_game:
+		var why := Lobby.mode_blocker()
+		if why != "":
+			info = why
+	_mode_info.text = info
+
+
+func _series_winner_name(mm: MatchMode) -> String:
+	var w := mm.series_winner()
+	return mm.team_names[w] if w >= 0 else "unentschieden"
 
 
 ## Download-Zeile der Map-Karte: nur sichtbar, wenn die Raum-Map lokal fehlt.
@@ -1584,4 +1708,73 @@ func _tournament_shots() -> void:
 	await shot.call("end")
 	var img_path := end.save_png("%s_end_image.png" % out)
 	print("END-BILD " + img_path)
+	get_tree().quit(0)
+
+
+## Screenshots der Raum-Modi mit Fake-Raum: Teams, Teams im Spiel, Royale, Royale-Ende.
+## Ziel: --shot-out=<Praefix> (sonst user://modes).
+func _mode_shots() -> void:
+	var out := ProjectSettings.globalize_path("user://modes")
+	for a in OS.get_cmdline_args() + OS.get_cmdline_user_args():
+		if a.begins_with("--shot-out="):
+			out = a.substr(11)
+	var shot := func(tag: String):
+		await get_tree().create_timer(1.0).timeout
+		await RenderingServer.frame_post_draw
+		var path := "%s_%s.png" % [out, tag]
+		get_viewport().get_texture().get_image().save_png(path)
+		print("SHOT " + path)
+	await get_tree().create_timer(0.6).timeout
+	var who := ["Kenji", "Aria", "Mara", "Tobi", "Lena"]
+	Lobby.active = true
+	Lobby.is_host = true
+	Lobby.crown_id = 1
+	Lobby.room_name = "Freitagsrunde"
+	Lobby.players = {}
+	for i in who.size():
+		Lobby.players[i + 1] = Lobby._new_player(who[i])
+		Lobby.players[i + 1].ready = true
+	Lobby.sel_map = {"set_id": 1, "file": "", "version": "Insane", "title": "Neon Skyline",
+		"artist": "Kairo", "stars": 4.2}
+	Lobby.mm = MatchMode.new(MatchMode.Kind.TEAMS)
+	for i in 4:
+		Lobby.mm.add_player(i + 1)
+	_show_room()
+	await shot.call("teams")
+	# Teams im Spiel: Live-Summen.
+	Lobby.in_game = true
+	var sc := [812000, 744000, 698000, 655000]
+	for i in 4:
+		Lobby.players[i + 1].score = sc[i]
+	Lobby.players_changed.emit()
+	await shot.call("teams_live")
+	Lobby.in_game = false
+	Lobby.mm.finish_team_round(Lobby.live_results())
+	Lobby.mm.finish_team_round(Lobby.live_results())
+	for i in 4:
+		Lobby.players[i + 1].score = 0
+	Lobby.players_changed.emit()
+	await shot.call("teams_series")
+	# Royale: Runde 3, zwei ausgeschieden.
+	Lobby.mm = MatchMode.new()
+	Lobby.mm.start_royale([1, 2, 3, 4, 5])
+	Lobby.mm.eliminate([{"peer": 1, "score": 900}, {"peer": 2, "score": 800}, {"peer": 3, "score": 700},
+		{"peer": 4, "score": 600}, {"peer": 5, "score": 100}])
+	Lobby.mm.eliminate([{"peer": 1, "score": 900}, {"peer": 2, "score": 800}, {"peer": 3, "score": 700},
+		{"peer": 4, "score": 50}])
+	Lobby.players_changed.emit()
+	await shot.call("royale")
+	# Royale im Spiel, ich (Host, Kenji) schaue nicht zu; Letzter markiert.
+	Lobby.in_game = true
+	for i in 3:
+		Lobby.players[i + 1].score = [800000, 640000, 590000][i]
+	Lobby.players_changed.emit()
+	await shot.call("royale_live")
+	Lobby.in_game = false
+	Lobby.mm.eliminate([{"peer": 1, "score": 900}, {"peer": 2, "score": 800}, {"peer": 3, "score": 10}])
+	Lobby.mm.eliminate([{"peer": 1, "score": 900}, {"peer": 2, "score": 10}])
+	Lobby.players_changed.emit()
+	await shot.call("royale_end")
+	Lobby.set_meta("harness", true)
+	Lobby._reset()
 	get_tree().quit(0)

@@ -161,6 +161,10 @@ func _royale() -> void:
 
 
 func _roundtrip() -> void:
+	_check(MatchMode.new().series_label() == "Best of 3", "series_label Best of")
+	var sl := MatchMode.new(MatchMode.Kind.TEAMS)
+	sl.set_series(MatchMode.Series.FIXED, 5)
+	_check(sl.series_label() == "5 Runden", "series_label fix")
 	var m := MatchMode.new(MatchMode.Kind.TEAMS)
 	for p in [1, 2, 3, 4]:
 		m.add_player(p)

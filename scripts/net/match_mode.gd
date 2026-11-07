@@ -221,6 +221,11 @@ func series_over() -> bool:
 	return series_mode == Series.FIXED and rounds_played >= series_n
 
 
+## "Best of 3" bzw. "3 Runden".
+func series_label() -> String:
+	return ("Best of %d" % series_n) if series_mode == Series.BEST_OF else ("%d Runden" % series_n)
+
+
 func series_text() -> String:
 	return "%d : %d" % [team_wins[0], team_wins[1]]
 
