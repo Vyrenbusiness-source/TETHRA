@@ -1468,14 +1468,26 @@ func _open_tour_setup() -> void:
 		row.add_child(plus)
 		var step := func(d: float):
 			if is_lo:
-				lo = clampf(lo + d, 0.0, 10.0)
+				lo = snappedf(clampf(lo + d, 0.0, 10.0), 0.1)
 				hi = maxf(hi, lo)
 			else:
-				hi = clampf(hi + d, 0.0, 10.0)
+				hi = snappedf(clampf(hi + d, 0.0, 10.0), 0.1)
 				lo = minf(lo, hi)
 			upd.call()
-		minus.pressed.connect(func(): step.call(-0.5))
-		plus.pressed.connect(func(): step.call(0.5))
+		# 0,1er-Schritte; gedrueckt halten = schnell weiterzaehlen.
+		for pb in [[minus, -0.1], [plus, 0.1]]:
+			var btn: Button = pb[0]
+			var dd: float = pb[1]
+			var rep := Timer.new()
+			btn.add_child(rep)
+			rep.timeout.connect(func():
+				step.call(dd)
+				rep.wait_time = 0.06)
+			btn.button_down.connect(func():
+				step.call(dd)
+				rep.wait_time = 0.4
+				rep.start())
+			btn.button_up.connect(func(): rep.stop())
 	upd.call()
 	v.add_child(TournamentPanel.lbl("MODS", 13, COL_ACCENT, true))
 	var mrow := HBoxContainer.new()

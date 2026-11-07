@@ -45,6 +45,10 @@ var _fill_used: Dictionary = {}
 var _fill_pages := 0
 var _fill_need := 0
 var _status: Label = null
+# Song-Vorschau (Bibliothek, Online-Browser, Pool-Karten)
+var _preview: AudioStreamPlayer
+var _preview_req: HTTPRequest
+var _preview_key := ""
 
 
 class _Strike extends Control:
@@ -70,6 +74,9 @@ func _init(lib: MapLibrary) -> void:
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_STOP
+	_preview = AudioStreamPlayer.new()
+	_preview.bus = "Music"
+	add_child(_preview)
 	_mirror = get_node_or_null("/root/Mirror") as BeatmapMirror
 	if _mirror != null:
 		_mirror.download_progress.connect(_on_dl_progress)
@@ -555,6 +562,19 @@ func _card(i: int, m: Dictionary, mode: String, banned: bool = false) -> Control
 			if not harness:
 				Lobby.tour_remove_map(idx))
 		holder.add_child(x)
+	# Reinhoeren: lokal ab PreviewTime, sonst die osu!-Vorschau (b.ppy.sh).
+	var play := Button.new()
+	play.text = "▶"
+	play.tooltip_text = "Reinhören"
+	play.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
+	play.offset_left = 8
+	play.offset_top = -38
+	play.offset_right = 38
+	play.offset_bottom = -8
+	UiTheme.style_ghost_button(play, 10)
+	var pm := m
+	play.pressed.connect(func(): toggle_preview(pm))
+	holder.add_child(play)
 	var info := MarginContainer.new()
 	for side in ["left", "right"]:
 		info.add_theme_constant_override("margin_" + side, 12)
@@ -751,6 +771,58 @@ func _ban_interaction(card: Control, i: int, mine: bool) -> void:
 	card.mouse_exited.connect(func(): card.modulate = Color(1, 0.92, 0.94) if mine else Color.WHITE)
 
 
+## Vorschau einer Pool-Map an/aus.
+func toggle_preview(m: Dictionary) -> void:
+	var key := "%s|%s" % [str(m.get("file", "")), int(m.get("set_id", 0))]
+	if _preview_key == key and _preview.playing:
+		stop_preview()
+		return
+	_preview_key = key
+	var ms := local_set(m)
+	if ms != null and ms.difficulty_count() > 0:
+		_play_local(ms)
+		return
+	var sid := int(m.get("set_id", 0))
+	if sid <= 0:
+		return
+	if _preview_req != null:
+		_preview_req.queue_free()
+	_preview_req = HTTPRequest.new()
+	_preview_req.timeout = 10.0
+	add_child(_preview_req)
+	_preview_req.request_completed.connect(func(res: int, code: int, _h, body: PackedByteArray):
+		if res == HTTPRequest.RESULT_SUCCESS and code == 200 and body.size() > 1024 and _preview_key == key:
+			var st := AudioStreamMP3.new()
+			st.data = body
+			_play_stream(st))
+	_preview_req.request("https://b.ppy.sh/preview/%d.mp3" % sid,
+			["User-Agent: TETHRA"])
+
+
+func _play_local(ms: MapSet) -> void:
+	var meta: Dictionary = ms.meta_at(0)
+	var st := OszImporter.load_audio_stream_named(ms.osz_path, str(meta.get("audio_filename", "")))
+	if st == null:
+		return
+	var at := float(meta.get("preview_time", -1.0))
+	if at < 0.0:
+		at = float(meta.get("duration_ms", 0.0)) * 0.4
+	_preview.stream = st
+	_preview.volume_db = -14.0
+	_preview.play(maxf(at, 0.0) / 1000.0)
+
+
+func _play_stream(st: AudioStream) -> void:
+	_preview.stream = st
+	_preview.volume_db = -14.0
+	_preview.play()
+
+
+func stop_preview() -> void:
+	if _preview != null:
+		_preview.stop()
+
+
 func _ignore_mouse(n: Node) -> void:
 	if n is Control:
 		(n as Control).mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -926,6 +998,12 @@ func _open_library() -> void:
 			if not harness:
 				Lobby.tour_add_map(data)
 			_picker.close())
+		_picker.set_selected.connect(func(ms: MapSet):
+			if ms.difficulty_count() > 0:
+				_play_local(ms))
+		_picker.preview_stream.connect(_play_stream)
+		_picker.preview_stop.connect(stop_preview)
+		_picker.closed.connect(stop_preview)
 	var r := _range()
 	_picker.can_pick = true
 	_picker.set_star_range(r.x, r.y)
@@ -943,6 +1021,8 @@ func _open_online() -> void:
 		_online.map_chosen.connect(func(data: Dictionary):
 			if not harness:
 				Lobby.tour_add_map(data))
+		_online.preview_stream.connect(_play_stream)
+		_online.preview_stop.connect(stop_preview)
 	var r := _range()
 	_online.pick_lo = r.x
 	_online.pick_hi = r.y
