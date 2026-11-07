@@ -933,7 +933,7 @@ func _tour_auto(delta: float) -> void:
 			_tour_auto_phase = -1
 			tour_next()
 	elif ph == Tournament.Phase.PLAY:
-		if not can_start():
+		if not can_start() or not _tour_peers.is_empty():
 			_tour_auto_t = -1.0
 			return
 		if _tour_auto_t < 0.0:
@@ -1242,7 +1242,9 @@ func _srv_tour_ban(sender: int, i: int) -> String:
 ## Server: Runde auswerten, sobald alle Rundenteilnehmer ein Endergebnis haben
 ## oder gegangen sind.
 func _tour_check_round() -> void:
-	if not is_host or tournament == null or not in_game or _tour_peers.is_empty():
+	# Auch auswerten, wenn der Host schon im Raum ist (in_game false), sonst
+	# bleibt die Runde offen und wird spaeter ohne Ergebnisse neu gestartet.
+	if not is_host or tournament == null or _tour_peers.is_empty():
 		return
 	if tournament.phase != Tournament.Phase.PLAY:
 		return
@@ -1260,7 +1262,7 @@ func _tour_check_round() -> void:
 		else:
 			# Gegangen: 0 Punkte, bleibt in der Tabelle.
 			results[id] = { "score": 0, "accuracy": 0.0, "max_combo": 0, "failed": true,
-				"name": str(tournament.player_names.get(id, "?")) }
+				"absent": true, "name": str(tournament.player_names.get(id, "?")) }
 	tournament.record_round(results)
 	_tour_peers = []
 	_tour_sync()

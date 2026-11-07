@@ -225,6 +225,38 @@ func _init() -> void:
 	var s3 := t4.standings()
 	_check(s3[0].points == 5 and s3[1].points == 5 and s3[0].peer == 2 and s3[1].peer == 1, "Tie-Break: gleiche Punkte -> Gesamtscore")
 
+	# Regression Endbild: alle Spieler durchgefallen -> Score entscheidet, Sieger ist immer ein Name
+	var tf := _tour(5, [1, 2])
+	_fill(tf, [1, 2])
+	tf.start_bans()
+	tf.ban(1, 0)
+	tf.ban(2, 1)
+	tf.next_map()
+	tf.record_round({
+		1: { "score": 500, "accuracy": 0.8, "max_combo": 5, "failed": false, "name": "A" },
+		2: { "score": 400, "accuracy": 0.7, "max_combo": 5, "failed": false, "name": "B" } })
+	tf.next_map()
+	tf.record_round({
+		1: { "score": 100, "accuracy": 0.4, "max_combo": 5, "failed": true, "name": "A" },
+		2: { "score": 300, "accuracy": 0.5, "max_combo": 5, "failed": true, "name": "B" } })
+	var fw := tf.map_winners()
+	_check(fw[1].winner_name == "B" and fw[1].score == 300, "alle failed: Sieger nach Score, nie leer")
+	var fs := tf.standings()
+	_check(fs[0].points == 3 and fs[0].wins == 1 and fs[1].points == 3 and fs[1].wins == 1, "alle failed: Punkte nach Score")
+	_check(absf(fs[0].avg_acc - 0.6) < 0.001, "Fail zaehlt mit echter Acc")
+	# Gegangene Spieler: keine Acc-Wertung, kein Sieg, keine Punkte
+	var tg := _tour(5, [1, 2])
+	_fill(tg, [1, 2])
+	tg.start_bans()
+	tg.ban(1, 0)
+	tg.ban(2, 1)
+	tg.next_map()
+	tg.record_round({
+		1: { "score": 0, "accuracy": 0.0, "max_combo": 0, "failed": true, "absent": true, "name": "A" },
+		2: { "score": 0, "accuracy": 0.0, "max_combo": 0, "failed": true, "absent": true, "name": "B" } })
+	var sg := tg.standings()
+	_check(sg[0].points == 0 and sg[0].avg_acc == 0.0 and sg[0].wins == 0, "Gegangene: keine Punkte/Siege")
+
 	# --- to_dict-Roundtrip
 	var d := tm.to_dict()
 	var back := Tournament.from_dict(d)
