@@ -3,7 +3,7 @@ extends RefCounted
 
 ## TETHRA-Mania (4K): 4 Spalten, eine Taste pro Spalte, Timing-Fenster aus OD
 ## (Mania-Formeln). Hold-Notes (LN): beim Head druecken und bis zum Ende
-## halten — fruehes Loslassen degradiert auf MEH ("DROP"). Jede Note/LN zaehlt
+## halten — fruehes Loslassen ist ein Miss ("DROP"). Jede Note/LN zaehlt
 ## als EIN Acc-Objekt (konsistent mit dem Standard-Modus).
 
 signal note_spawned(index: int)
@@ -290,11 +290,25 @@ func _finish_hold(c: int, held_to_end: bool) -> void:
 	_active_hold[c] = -1
 	if idx < 0:
 		return
-	var q: int = _hold_quality[c] if held_to_end else Quality.MEH
 	var obj := beatmap.hit_objects[idx]
 	if not held_to_end:
-		# Stable-Verhalten: zu fruehes Loslassen einer LN bricht die Combo.
+		# Mitten im Hold losgelassen: Miss (Combo-Bruch + HP-Abzug wie eine verpasste Note).
+		n_miss += 1
 		combo = 0
+		_add_score(Quality.MISS)
+		hp = maxf(hp - _hp_miss_damage, 0.0)
+		hp_changed.emit(hp)
+		if hp <= 0.0 and not no_fail:
+			failed = true
+		var dropped := {
+			"quality": Quality.MISS, "column": (obj as ManiaNote).column,
+			"hold_end": true, "held": false, "miss_kind": "DROP", "late": false,
+		}
+		_judged[idx] = dropped
+		_judged_count += 1
+		note_judged.emit(idx, dropped)
+		return
+	var q: int = _hold_quality[c]
 	_count_quality(q)
 	_add_score(q)
 	hp = minf(hp + _hp_heal[q], 1.0)
