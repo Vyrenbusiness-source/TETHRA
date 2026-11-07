@@ -66,3 +66,17 @@ Gefaltetes Profil (Bezug Audio, Luma-Abweichung je 1/16 Beat ab Beat):
 - Hintergrund oben: +7.86 +6.59 +3.82 +2.33 +1.12 +0.22 -0.54 -1.49 -2.01 -2.65 -2.97 -3.47 -3.59 -3.66 -3.11 +2.18
 - Strecke: +1.02 +0.58 -0.48 -0.80 -0.61 -0.77 -0.59 -0.88 -0.73 -0.58 -0.74 +0.03 +1.29 +2.60 +1.26 -0.49
 - Pads: +21.19 +13.60 +5.27 +2.50 -0.22 -2.84 -5.63 -7.87 -8.98 -9.78 -9.47 -8.44 -7.09 -4.55 +5.37 +18.86
+
+## Welten mit Beat-Vertrag (2026-11-07)
+
+Aufruf: `python tools/beat_sync_check.py --theme=<welt> --seconds=8` (neue Option
+`--theme`, erzwingt die Welt; neon wird nicht gemessen). Bezug Audio, Hintergrund oben
+(Kriterium: |Phase Mittel| < 15 ms, Streuung < 15 ms): erfuellt.
+
+| Welt | Beats | Phase Mittel | Streuung | Profil-Spitze | Spitze/Tal | R^2 Beat | Urteil |
+|---|---|---|---|---|---|---|---|
+| abyss | 25 | +8.0 ms | 4.9 ms | +10 ms | 1.240 | 0.96 | pulsiert im Takt |
+| obsidian | 25 | +8.7 ms | 6.0 ms | +10 ms | 1.052 | 0.87 | pulsiert im Takt |
+
+Hinweis: Bezug Spieluhr lieferte in diesen Laeufen keine Daten (Probe-Zeitzuordnung
+bei 2 s Start-Countdown); Messung gilt gegen die Audio-Spur, also gegen das Gehoerte.
