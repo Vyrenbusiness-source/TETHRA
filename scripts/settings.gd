@@ -412,11 +412,20 @@ func save(path: String = PATH) -> void:
 	cfg.save(path)
 
 
+## Lautstaerke am unteren Anschlag: Master stumm.
+const VOLUME_MIN_DB := -30.0
+
+func is_muted() -> bool:
+	return volume_db <= VOLUME_MIN_DB + 0.01
+
+
 ## Einstellungen auf die laufenden Systeme anwenden.
 func apply() -> void:
 	TranslationServer.set_locale(active_language())
 	SyncClock.user_offset_ms = offset_ms
 	AudioServer.set_bus_volume_db(0, volume_db)
+	# Ganz unten = wirklich stumm (-30 dB waere noch hoerbar).
+	AudioServer.set_bus_mute(0, is_muted())
 	_apply_mastering()
 	if DisplayServer.get_name() != "headless":
 		# EXCLUSIVE_FULLSCREEN = echtes Vollbild (nicht nur randloses Fenster).
@@ -566,7 +575,7 @@ func _show_volume_overlay() -> void:
 		_vol_fill.color = Color(0.20, 0.85, 1.0)
 		bar_bg.add_child(_vol_fill)
 	var pct := int(round((volume_db + 30.0) / 30.0 * 100.0))
-	_vol_label.text = tr("Lautstaerke   %d %%") % pct
+	_vol_label.text = (tr("Lautstaerke   %d %%") % pct) if not is_muted() else (tr("Lautstaerke   %s") % tr("Stumm"))
 	_vol_fill.size = Vector2(210.0 * float(pct) / 100.0, 6)
 	_vol_layer.visible = true
 	if _vol_tween != null and _vol_tween.is_valid():

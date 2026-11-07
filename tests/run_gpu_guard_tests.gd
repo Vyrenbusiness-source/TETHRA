@@ -52,7 +52,7 @@ func _initialize() -> void:
 
 	# Sichere Standardwerte neuer Spieler (Quelltext-Pruefung: settings.gd ist
 	# im -s-Modus wegen der Autoload-Namen nicht ladbar).
-	var src := FileAccess.get_file_as_string("res://scripts/settings.gd")
+	var src := FileAccess.get_file_as_string("res://scripts/settings.gd").replace(char(13), "")
 	_check(src.contains("var graphics_quality: int = 2"), "Default graphics_quality 2 (4x MSAA)")
 	_check(src.contains('"graphics_quality", 2)'), "Lade-Default graphics_quality 2")
 	_check(src.contains("var fps_mode: int = 2"), "Default FPS mit Cap (240), nicht Unbegrenzt")

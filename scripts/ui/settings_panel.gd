@@ -353,7 +353,7 @@ func _ready() -> void:
 	_group(pg_audio, "Lautstärke & Klang")
 	_vol_value = Label.new()
 	_slider_row(pg_audio, "Lautstärke", -30.0, 0.0, 1.0, Settings.volume_db,
-		func(v): return "%d dB" % int(v),
+		func(v): return tr("Stumm") if v <= Settings.VOLUME_MIN_DB + 0.01 else "%d dB" % int(v),
 		func(v):
 			Settings.volume_db = v
 			Settings.apply(), "", _vol_value)
@@ -752,7 +752,7 @@ func _refresh_labels() -> void:
 	if _capturing >= 3 and _capturing - 3 < _lane_btns.size():
 		_lane_btns[_capturing - 3].text = "…"
 	_offset_value.text = "%+d ms" % int(Settings.offset_ms)
-	_vol_value.text = "%d dB" % int(Settings.volume_db)
+	_vol_value.text = tr("Stumm") if Settings.is_muted() else "%d dB" % int(Settings.volume_db)
 
 
 func _open_wizard() -> void:
