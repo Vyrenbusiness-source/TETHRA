@@ -14,6 +14,8 @@ signal preview_stream(stream: AudioStream)
 signal preview_stop
 ## Download fertig. select = Map direkt anwaehlen (nicht beim Pack).
 signal map_downloaded(set_id: int, osz_path: String, select: bool)
+## Turnier-Modus: Karte waehlt die Map fuer den Pool (statt sie zu laden).
+signal map_chosen(data: Dictionary)
 
 const TEXT := UiTheme.TEXT
 const DIM := UiTheme.DIM
@@ -62,6 +64,12 @@ void fragment() {
 
 var library: MapLibrary
 var _mirror: BeatmapMirror
+## Turnier-Modus: Karten waehlen statt laden, nur Sterne in [pick_lo, pick_hi].
+var pick_mode := false
+var pick_lo := 0.0
+var pick_hi := -1.0
+## Set-ID -> true fuer Maps, die schon im Turnier-Pool sind.
+var pool_ids: Dictionary = {}
 
 # Filter / Sortierung
 var star_filter := 0
@@ -693,8 +701,12 @@ func _on_search_done(results: Array, raw_count: int, offset: int) -> void:
 ## Alle Filter: nicht installiert, Genre, Sternbereich, SV (geprueft).
 func _passes(r: Dictionary, lo: float = -1.0, hi: float = -1.0) -> bool:
 	if lo < 0.0:
-		lo = STAR_FILTERS[star_filter][1]
-		hi = STAR_FILTERS[star_filter][2]
+		if pick_mode and pick_hi >= 0.0:
+			lo = pick_lo
+			hi = pick_hi + 0.0001
+		else:
+			lo = STAR_FILTERS[star_filter][1]
+			hi = STAR_FILTERS[star_filter][2]
 	if not visible_result(r, _owned, lo, hi, genre_id):
 		return false
 	if sv_filter:
@@ -1130,7 +1142,16 @@ func _make_card(r: Dictionary) -> Control:
 	btn.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	btn.text = "Herunterladen"
 	UiTheme.style_button(btn, true, 10)
-	btn.pressed.connect(start_download.bind(set_id))
+	if pick_mode:
+		btn.text = "Zum Pool hinzufügen"
+		btn.pressed.connect(func():
+			map_chosen.emit(chosen_data(r))
+			pool_ids[set_id] = true
+			btn.text = "✓  Im Pool"
+			btn.disabled = true)
+		play.custom_minimum_size = Vector2(44, 40)
+	else:
+		btn.pressed.connect(start_download.bind(set_id))
 	stack.add_child(btn)
 	var prog := ProgressBar.new()
 	prog.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -1164,7 +1185,10 @@ func _make_card(r: Dictionary) -> Control:
 	_rows[set_id] = {"card": card, "cover": cover, "btn": btn, "prog": prog,
 		"plabel": plabel, "cancel": cancel, "play": play,
 		"idle": [btn.get_theme_stylebox("normal"), btn.get_theme_stylebox("hover")]}
-	if _mirror.is_downloading(set_id):
+	if pick_mode and pool_ids.has(set_id):
+		btn.text = "✓  Im Pool"
+		btn.disabled = true
+	elif _mirror.is_downloading(set_id):
 		_row_state(set_id, "loading", maxf(_mirror.active_ratio(set_id), 0.0))
 	if _preview_set == set_id:
 		play.text = "■"
@@ -1174,6 +1198,22 @@ func _make_card(r: Dictionary) -> Control:
 	elif str(r.get("cover_url", "")) != "":
 		_mirror.fetch_cover(set_id, str(r.cover_url))
 	return card
+
+
+## Pool-Eintrag (sel_map-Format) fuer ein Online-Ergebnis: hoechste 4K-Diff
+## im Sternbereich. Der Diff-Name ist online unbekannt ("" -> der Start waehlt
+## nach Sternen); "online" = lokal nicht vorhanden.
+func chosen_data(r: Dictionary) -> Dictionary:
+	var best := -1.0
+	var hi := pick_hi if pick_hi >= 0.0 else 99.0
+	for sv in r.get("star_list", []):
+		var f := float(sv)
+		if f >= pick_lo - 0.0001 and f <= hi + 0.0001 and f > best:
+			best = f
+	if best < 0.0:
+		best = float(r.get("stars", 0.0))
+	return {"set_id": int(r.id), "file": "mirror_%d.osz" % int(r.id), "version": "", "title": str(r.title),
+		"artist": str(r.artist), "stars": best, "online": true}
 
 
 ## Alle Cover teilen ein Material; nur bei Layout-Aenderung neu setzen.
