@@ -54,7 +54,7 @@ SHAFT_LON = -27.0      # Fusspunkt am Horizont
 SHAFT_TOP_LON = -22.0  # Loch in der Wolkendecke
 SHAFT_TOP_LAT = 58.0
 SHAFT_W0 = 2.3        # halbe Breite unten
-SHAFT_W1 = 1.05        # halbe Breite oben
+SHAFT_W1 = 0.62        # halbe Breite oben
 SHAFT_DEPTH = 0.35     # Objekte mit depth > SHAFT_DEPTH stehen davor
 SHAFT_PEAK = 0.62      # Normierung fuer Kanal B
 
@@ -184,6 +184,11 @@ def paint_sky(P, rng):
     P.cloud = cloud
 
 
+def _dir(lon, lat):
+    la, lo = math.radians(lat), math.radians(lon)
+    return np.array([math.cos(la) * math.sin(lo), math.sin(la), -math.cos(la) * math.cos(lo)])
+
+
 def ang_dist(P, lon0, lat0):
     la, lo = np.radians(P.LAT()), np.radians(P.LON())
     a0, o0 = math.radians(lat0), math.radians(lon0)
@@ -220,10 +225,20 @@ def paint_stars(P, rng):
 def shaft_light(P, rng):
     """Lichtschacht (linear, Helligkeit) und Farbanteile."""
     lat, lon = P.LAT(), P.LON()
+    # Gerader Strahl im Raum = Grosskreis zwischen Fusspunkt und Loch:
+    # Abstand (Grad) zur Ebene durch beide Richtungen.
+    b = _dir(SHAFT_LON, 0.0)
+    t = _dir(SHAFT_TOP_LON, SHAFT_TOP_LAT)
+    nrm = np.cross(b, t)
+    nrm /= np.linalg.norm(nrm)
+    mid = b + t
+    la, lo = np.radians(lat), np.radians(lon)
+    dx, dy, dz = np.cos(la) * np.sin(lo), np.sin(la) * np.ones_like(lo), -np.cos(la) * np.cos(lo)
+    dl = np.degrees(np.arcsin(np.clip(dx * nrm[0] + dy * nrm[1] + dz * nrm[2], -1, 1))).astype(F32)
+    side_ok = (dx * mid[0] + dy * mid[1] + dz * mid[2]) > 0
+    dl = np.where(side_ok, dl, 90.0).astype(F32)
     s = np.clip(lat / SHAFT_TOP_LAT, 0.0, 1.0)
-    lc = SHAFT_LON + (SHAFT_TOP_LON - SHAFT_LON) * s
     w = SHAFT_W0 + (SHAFT_W1 - SHAFT_W0) * s
-    dl = wrap(lon - lc)
     x = dl / w
     # Streifen im Strahl (laufen mit dem Strahl), Baender wo er Dunst kreuzt.
     xs = np.linspace(-4.0, 4.0, 2048)
@@ -249,7 +264,10 @@ def shaft_light(P, rng):
             + 0.060 * np.exp(-(db / 14.0) ** 2) * np.exp(-np.abs(lat) / 2.4)
             + 0.016 * np.exp(-(db / 38.0) ** 2) * np.exp(-np.abs(lat) / 6.0))
     d = ang_dist(P, SHAFT_TOP_LON, SHAFT_TOP_LAT)
-    hole = 0.30 * np.exp(-(d / 1.6) ** 2) + 0.05 * np.exp(-d / 5.0)
+    # Loch = ausgerissene Wolkenluecke, kein Scheinwerfer-Kreis.
+    hn = fbm2(rng, P.H, P.W, base=(24, 48), octaves=4)
+    hd = d + 2.2 * hn * smoothstep(0.0, 2.5, d)
+    hole = 0.36 * smoothstep(2.6, 0.4, hd) + 0.10 * np.exp(-(d / 0.9) ** 2) + 0.05 * np.exp(-d / 5.0)
     beam_col = beam_l + hole
     soft = halo + pool
     return beam_col.astype(F32), soft.astype(F32)
@@ -557,7 +575,7 @@ FOG_LIT = hexcol("#bccadb")
 
 def fog_shade(lat, lon, fog):
     up = np.maximum(lat, 0.0)
-    amb = 0.010 + 0.016 * np.exp(-np.abs(lat) / 3.0)
+    amb = 0.045 + 0.110 * np.exp(-np.abs(lat) / 2.5)
     db = np.abs(wrap(lon - SHAFT_LON))
     lit = (0.30 * np.exp(-(db / 4.0) ** 2) + 0.085 * np.exp(-db / 12.0)) * np.exp(-up / 5.0)
     fc = amb[..., None] * FOG_COLOR + lit[..., None] * FOG_LIT
