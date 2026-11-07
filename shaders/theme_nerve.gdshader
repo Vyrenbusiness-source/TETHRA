@@ -148,7 +148,7 @@ void sky() {
 	vec2 puv = dir_uv(dir * euler(pano_rotation), pano_offset);
 	vec3 far_col = pano_at(tex_a, tex_b, puv, lod);
 	float fwave = 0.5 + 0.5 * cos(TAU * (puv.x * 2.0 - bar_phase));
-	far_col *= 1.0 + (0.18 * beat_pulse + 0.25 * downbeat_pulse * mv + 0.34 * drop + 0.10 * kiai)
+	far_col *= 1.0 + (0.18 * beat_pulse + 0.25 * downbeat_pulse * mv + 0.05 * drop + 0.05 * kiai)
 		+ 0.12 * fwave * (1.0 - comfort) * (0.3 + energy);
 
 	if (AT_CUBEMAP_PASS) {
@@ -173,11 +173,11 @@ void sky() {
 		float speed = 0.5 + 0.35 * drop;
 		float q = fract(ph - dirn * (beat_step * speed * mv) + fract(hsh * 37.0));
 		float pulse = smoothstep(0.0, 0.02, q) * exp(-q * 11.0) * gate;
-		float pamp = 0.55 + 0.45 * beat_pulse + 0.7 * downbeat_pulse * mv + 0.35 * energy + 0.7 * drop + 0.2 * kiai;
+		float pamp = 0.55 + 0.45 * beat_pulse + 0.7 * downbeat_pulse * mv + 0.35 * energy + 0.2 * drop + 0.1 * kiai;
 		vec3 pulse_col = PULSE_COL * pulse * pamp * smoothstep(0.35, 0.8, cov);
 		// Synapsenknoten: glimmen, atmen mit dem Schlag, gluehen im Drop.
 		float breath = 0.35 + 0.65 * exp(-beat_phase * 4.0);
-		vec3 node_col = NODE_COL * pd.a * (0.30 + 0.9 * breath * (0.4 + beat_pulse) + 0.9 * downbeat_pulse * mv + 0.9 * drop);
+		vec3 node_col = NODE_COL * pd.a * (0.30 + 0.9 * breath * (0.4 + beat_pulse) + 0.9 * downbeat_pulse * mv + 0.25 * drop);
 
 		// --- Nahe Ebene: dicke Buendel + Ganglien, schneller als das Netz (Parallax). ---
 		float yaw_n = beat_step * 0.11 * mv + TIME * 0.0030 + drop * 0.10 * mv;
@@ -188,7 +188,7 @@ void sky() {
 		// Analytische Kante: Deckkraft um 0.5 mit der Pixelbreite (fwidth) scharf ziehen.
 		float nw = max(fwidth(nr.a) * 0.75, 0.05);
 		float ncov = smoothstep(0.5 - nw, 0.5 + nw, nr.a) * smoothstep(0.0, 0.18, nr.a);
-		vec3 nrim = dec(nr.rgb) * (1.0 + 0.55 * downbeat_pulse * mv + 0.25 * beat_pulse + 0.3 * drop);
+		vec3 nrim = dec(nr.rgb) * (1.0 + 0.55 * downbeat_pulse * mv + 0.25 * beat_pulse + 0.12 * drop);
 
 		// Sporen: zwei ueberblendete Zoom-Lagen, ein Zyklus = 4 Schlaege.
 		mat3 srot = euler(stars_rotation);
@@ -203,7 +203,7 @@ void sky() {
 		}
 		float sl = dot(st, vec3(0.2126, 0.7152, 0.0722));
 		st *= star_brightness * mix(1.0, star_hdr, smoothstep(0.30, 0.8, sl));
-		st *= 1.0 + 0.4 * beat_pulse + 0.4 * energy + 0.2 * drop;
+		st *= 1.0 + 0.4 * beat_pulse + 0.4 * energy + 0.1 * drop;
 
 		// Schichtung: Ferne -> Netz (schwarz, Kantenlicht) -> Impulse -> Nah -> Sporen.
 		vec3 col = far_col * (1.0 - cov) + net_rgb * cov;
