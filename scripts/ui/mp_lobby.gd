@@ -23,6 +23,7 @@ const M := 24
 const HEAD_H := 40
 const BAR_H := 48
 const ROW_H := 40
+const PROW_H := 34
 const FS_S := 13
 const FS_M := 15
 const FS_L := 20
@@ -44,7 +45,8 @@ var _players_scroll: ScrollContainer
 var _players_head: Label
 var _ready_count: Label
 var _room_title: Label
-var _player_count: Label
+var _players_headrow: HBoxContainer
+var _map_drow: HBoxContainer
 var _copy_btn: Button
 var _map_label: Label
 var _map_artist: Label
@@ -562,6 +564,9 @@ func _btn(text: String, primary: bool = false, h: int = BAR_H) -> Button:
 		b.add_theme_color_override("font_pressed_color", COL_TEXT)
 		b.add_theme_color_override("font_focus_color", COL_TEXT)
 	var ds := _box(Color(1, 1, 1, 0.03), r, Color(1, 1, 1, 0.06))
+	if primary:
+		# Gesperrt bleibt als Primaer-Platz erkennbar (Akzent-Rand), aber ohne Fuellung.
+		ds = _box(Color(UiTheme.primary_fill(), 0.10), r, Color(UiTheme.primary_fill(), 0.30))
 	b.add_theme_color_override("font_disabled_color", Color(COL_DIM, 0.7))
 	for sb in [n, hv, pr, ds]:
 		sb.content_margin_left = 16
@@ -1072,12 +1077,6 @@ func _build_room() -> void:
 		sb.content_margin_right = 12
 	_copy_btn.pressed.connect(_copy_code)
 	code_row.add_child(_copy_btn)
-	var csp := Control.new()
-	csp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	code_row.add_child(csp)
-	_player_count = _lbl("", FS_S, COL_DIM)
-	_player_count.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	code_row.add_child(_player_count)
 
 	lv.add_child(_gap(16))
 	# Raum-Modus: Frei / Teams / Battle Royale (waehlt die Krone, alle sehen ihn).
@@ -1111,6 +1110,7 @@ func _build_room() -> void:
 	var ph := HBoxContainer.new()
 	ph.add_theme_constant_override("separation", 8)
 	lv.add_child(ph)
+	_players_headrow = ph
 	_players_head = _caption("SPIELER IM RAUM")
 	ph.add_child(_players_head)
 	var psp := Control.new()
@@ -1126,7 +1126,7 @@ func _build_room() -> void:
 	lv.add_child(_players_scroll)
 	_players_box = VBoxContainer.new()
 	_players_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_players_box.add_theme_constant_override("separation", 4)
+	_players_box.add_theme_constant_override("separation", 2)
 	_players_scroll.add_child(_players_box)
 	_board_holder = VBoxContainer.new()
 	_board_holder.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -1181,7 +1181,6 @@ func _build_room() -> void:
 	over.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	mask.add_child(over)
 	_map_empty = _lbl("Der Kronenträger wählt die Map.", FS_S, COL_DIM)
-	over.add_child(_map_empty)
 	_map_label = _lbl("Noch keine Map gewählt.", FS_XL, COL_TEXT)
 	_map_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	_map_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.5))
@@ -1191,6 +1190,7 @@ func _build_room() -> void:
 	_map_artist.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	_map_artist.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
 	over.add_child(_map_artist)
+	over.add_child(_map_empty)
 
 	var info := MarginContainer.new()
 	for side in ["margin_left", "margin_right"]:
@@ -1206,6 +1206,7 @@ func _build_room() -> void:
 	drow.custom_minimum_size = Vector2(0, 28)
 	drow.add_theme_constant_override("separation", 12)
 	iv.add_child(drow)
+	_map_drow = drow
 	_star_pill = PanelContainer.new()
 	_star_pill.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	drow.add_child(_star_pill)
@@ -1363,14 +1364,22 @@ func _player_row(id: int, p: Dictionary, my_id: int, in_round: bool) -> Control:
 	var hv: StyleBoxFlat = n.duplicate()
 	hv.bg_color = Color(1, 1, 1, 0.07)
 	row.add_theme_stylebox_override("panel", n)
-	row.custom_minimum_size = Vector2(0, ROW_H)
+	row.custom_minimum_size = Vector2(0, PROW_H)
 	row.mouse_filter = Control.MOUSE_FILTER_PASS
-	row.mouse_entered.connect(func(): row.add_theme_stylebox_override("panel", hv))
-	row.mouse_exited.connect(func(): row.add_theme_stylebox_override("panel", n))
+	var give: Button = null
+	row.mouse_entered.connect(func():
+		row.add_theme_stylebox_override("panel", hv)
+		if give != null:
+			give.modulate.a = 1.0)
+	row.mouse_exited.connect(func():
+		row.add_theme_stylebox_override("panel", n)
+		# Knopf bleibt sichtbar, solange die Maus auf ihm steht (Kind der Zeile).
+		if give != null and not give.get_global_rect().has_point(give.get_global_mouse_position()):
+			give.modulate.a = 0.0)
 	var hb := HBoxContainer.new()
 	hb.add_theme_constant_override("separation", 12)
 	row.add_child(hb)
-	hb.add_child(_avatar(str(p.name), 28))
+	hb.add_child(_avatar(str(p.name), 24))
 	var name_box := HBoxContainer.new()
 	name_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	name_box.add_theme_constant_override("separation", 8)
@@ -1380,7 +1389,9 @@ func _player_row(id: int, p: Dictionary, my_id: int, in_round: bool) -> Control:
 	name_l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	name_l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	name_l.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	name_l.clip_text = true
+	# Breite = Textbreite (max. 60 % der Zeile), Krone/(du) folgen direkt dahinter.
+	var tw := name_l.get_theme_font("font").get_string_size(str(p.name), HORIZONTAL_ALIGNMENT_LEFT, -1, FS_M).x
+	name_l.custom_minimum_size.x = minf(ceilf(tw) + 2.0, maxf(_players_scroll.size.x * 0.6, 160.0))
 	name_box.add_child(name_l)
 	if is_crown:
 		var cr := _icon_rect("crown", COL_GOLD)
@@ -1391,7 +1402,6 @@ func _player_row(id: int, p: Dictionary, my_id: int, in_round: bool) -> Control:
 		var you := _lbl("(du)", FS_S, COL_DIM)
 		you.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		name_box.add_child(you)
-	# Name nimmt nur so viel Platz wie noetig, Krone/(du) folgen direkt dahinter.
 	name_l.size_flags_horizontal = Control.SIZE_FILL
 	var nsp := Control.new()
 	nsp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1417,8 +1427,11 @@ func _player_row(id: int, p: Dictionary, my_id: int, in_round: bool) -> Control:
 	# Krone geben: nur der Kronentraeger, fester Platz fuer gleiche Kanten.
 	if Lobby.crown_id == my_id:
 		if not is_crown:
-			var give := _icon_btn(_icon("crown"), tr("%s geben") % tr("Krone"), 28)
+			give = _icon_btn(_icon("crown"), tr("%s geben") % tr("Krone"), 28)
 			give.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+			# Nur beim Hover der Zeile sichtbar: keine Reihe gleicher Icons.
+			give.modulate.a = 0.0
+			give.mouse_entered.connect(func(): give.modulate.a = 1.0)
 			var target := int(id)
 			give.pressed.connect(func(): Lobby.give_crown(target))
 			hb.add_child(give)
@@ -1437,7 +1450,6 @@ func _refresh_room() -> void:
 	var has_code := Lobby.room_code != ""
 	_code_label.text = (tr("Code  %s") % Lobby.room_code) if has_code else tr("Nur im eigenen Netzwerk")
 	_copy_btn.visible = has_code
-	_player_count.text = tr("%d Spieler") % Lobby.players.size()
 	for c in _players_box.get_children():
 		_players_box.remove_child(c)
 		c.queue_free()
@@ -1465,6 +1477,7 @@ func _refresh_room() -> void:
 	var has_map := not Lobby.sel_map.is_empty()
 	_map_empty.visible = not has_map
 	_star_pill.visible = has_map
+	_map_drow.visible = has_map
 	if has_map:
 		_map_label.text = str(Lobby.sel_map.get("title", ""))
 		_map_label.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
@@ -1596,6 +1609,8 @@ func _refresh_mode(my_id: int) -> void:
 	var mm: MatchMode = Lobby.mm
 	_players_scroll.visible = kind == MatchMode.Kind.FREE
 	_board_holder.visible = kind != MatchMode.Kind.FREE
+	# RoyaleBoard bringt eine eigene Kopfzeile mit (Runde, noch dabei).
+	_players_headrow.visible = kind != MatchMode.Kind.ROYALE
 	_players_head.text = "SPIELER IM RAUM" if kind == MatchMode.Kind.FREE else ("TEAMS" if kind == MatchMode.Kind.TEAMS else "BATTLE ROYALE")
 	_balance_btn.visible = kind == MatchMode.Kind.TEAMS and Lobby.crown_id == my_id \
 			and not Lobby.in_game and Lobby.tournament == null
@@ -1672,7 +1687,7 @@ func _refresh_dl_ui() -> void:
 		return
 	var missing := not Lobby.sel_map.is_empty() and Lobby.resolve_local_path() == ""
 	_dl_row.visible = missing
-	_map_stats.visible = not missing
+	_map_stats.visible = not missing and not Lobby.sel_map.is_empty()
 	if not missing:
 		return
 	var set_id := int(Lobby.sel_map.get("set_id", 0))
@@ -2408,7 +2423,7 @@ func _lobby_shots() -> void:
 	_dl_bar.value = 0.42
 	_dl_label.text = "42 %"
 	_status_label.text = tr("Lade Map… %d %%") % 42
-	_bg_rect.visible = false
+	_update_bg()
 	Lobby.players_changed.emit()
 	await shot.call("room_download")
 	# Sicht ohne Krone: Kenji (Peer 2) hat sie, Map fehlt, Download pausiert.
