@@ -142,15 +142,9 @@ var _tab_downloaded: Button
 var _tab_online: Button
 var _scroll: ScrollContainer
 
-# Online-Download (Mirror catboy.best).
-var _mirror: BeatmapMirror
-var _dl_overlay: Control = null
-var _dl_results_box: VBoxContainer
-var _dl_status: Label
-var _dl_search: LineEdit
-var _dl_rows: Dictionary = {}
-var _dl_preview_req: HTTPRequest
-# Schwierigkeits-Filter (client-seitig) + letzte Mirror-Antwort fuer Re-Render.
+# Online-Tab (Mirror catboy.best): eigener Browser, bleibt versteckt am Leben.
+var _online: OnlineBrowser = null
+# Schwierigkeits-Filter der Bibliothek (client-seitig).
 const STAR_FILTERS := [
 	["Alle", 0.0, 999.0],
 	["<2★", 0.0, 2.0],
@@ -158,47 +152,6 @@ const STAR_FILTERS := [
 	["4–6★", 4.0, 6.0],
 	["6★+", 6.0, 999.0],
 ]
-## Feinere Filter fuer den Online-Browser (inkl. Anfaenger-Stufe).
-const DL_STAR_FILTERS := [
-	["Alle", 0.0, 999.0],
-	["Anfänger ≤1,5★", 0.0, 1.5],
-	["1,5–2★", 1.5, 2.0],
-	["2–3★", 2.0, 3.0],
-	["3–4★", 3.0, 4.0],
-	["4–6★", 4.0, 6.0],
-	["6★ +", 6.0, 999.0],
-]
-var _dl_star_filter := 0
-var _dl_sv := false
-var _dl_sv_chip: Button
-## PACK-Download: laedt automatisch N noch fehlende Sets in einem frei
-## waehlbaren Sternbereich (z.B. 2.0–2.9).
-var _pack_active := false
-var _pack_lo := 2.0
-var _pack_hi := 2.9
-var _pack_want := 10
-var _pack_pages := 0
-var _pack_started: Dictionary = {}
-var _pack_done := 0
-var _pack_retries := 0
-var _pack_lo_spin: SpinBox
-var _pack_hi_spin: SpinBox
-var _pack_n_opt: OptionButton
-var _dl_last_results: Array = []
-# Falls der Mirror auf die leere Vorschlags-Query nichts liefert, einmal
-# breit mit "4k" nachfassen.
-var _dl_suggest_fallback := false
-# Unendliches Scrollen im Online-Browser (Server-Pagination via offset).
-var _dl_scroll: ScrollContainer
-var _dl_query := ""
-var _dl_offset := 0
-var _dl_end_reached := false
-var _dl_loading_more := false
-## Automatisch nachgeladene Seiten seit letzter Suche/Filterwahl (Kappung,
-## damit ein sehr restriktiver Filter nicht endlos Seiten zieht).
-var _dl_auto_pages := 0
-
-
 func _ready() -> void:
 	_perf_ready_t = Time.get_ticks_usec()
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -212,15 +165,6 @@ func _ready() -> void:
 	_preview.bus = "Music"
 	_preview.volume_db = PREVIEW_DB
 	add_child(_preview)
-
-	_mirror = Mirror
-	_mirror.search_done.connect(_on_mirror_search_done)
-	_mirror.search_failed.connect(_on_mirror_search_failed)
-	_mirror.cover_ready.connect(_on_mirror_cover_ready)
-	_mirror.download_progress.connect(_on_mirror_download_progress)
-	_mirror.download_done.connect(_on_mirror_download_done)
-	_mirror.download_failed.connect(_on_mirror_download_failed)
-	_mirror.sv_checked.connect(_on_mirror_sv_checked)
 
 	var t_ui := Time.get_ticks_usec()
 	_build_ui()
@@ -253,11 +197,9 @@ func _ready() -> void:
 		_on_play_pressed.call_deferred()
 	elif OS.get_cmdline_args().has("--shot-sv"):
 		_shot_sv.call_deferred()
-	elif OS.get_cmdline_args().has("--shot-dl"):
-		# Harness: Online-Panel oeffnen, restriktiven Sternfilter setzen und
-		# nach dem Auto-Nachladen Kartenzahl + Screenshot festhalten.
-		_open_download_panel.call_deferred()
-		_shot_dl_after.call_deferred()
+	elif OS.get_cmdline_args().has("--shot-online"):
+		# Harness: Online-Tab (Raster, Genre, Download, Fehler) als PNGs.
+		_shot_online.call_deferred()
 	elif OS.get_cmdline_args().has("--shot"):
 		_capture_screenshot_and_quit()
 
@@ -305,52 +247,21 @@ func _shot_sv() -> void:
 	print("SV-Sets lokal: %d von %d" % [_filtered.size(), _library.mapsets.size()])
 	_open_download_panel()
 	await get_tree().create_timer(1.0).timeout
-	_dl_sv_chip.button_pressed = true
-	# Warten, bis Suche + SV-Pruefungen (inkl. Nachladen) durch sind.
-	var waited_dl := 0.0
-	while waited_dl < 120.0:
-		await get_tree().create_timer(1.0).timeout
-		waited_dl += 1.0
-		if waited_dl >= 4.0 and not _dl_loading_more and _mirror.sv_checks_pending() == 0:
-			break
+	_online._set_sv(true)
+	await _online._wait_loaded(120.0)
 	await get_tree().create_timer(2.0).timeout
 	await RenderingServer.frame_post_draw
 	get_viewport().get_texture().get_image().save_png(dir.path_join("sv_online.png"))
-	print("SV-DL-KARTEN: %d (geladen %d, %.0f s)" % [_dl_rows.size(), _dl_last_results.size(), waited_dl])
-	for r in _dl_last_results:
-		print("SV-DL|%d|%s|%s|text=%s|geprueft=%d" % [int(r.id), str(r.artist), str(r.title),
-			str(r.get("sv", false)), _mirror.sv_state(int(r.get("sv_id", 0)))])
+	print("SV-DL-KARTEN: %d" % _online._rows.size())
 	get_tree().quit(0)
 
 
-func _shot_dl_after() -> void:
-	await get_tree().create_timer(2.0).timeout
-	if _dl_overlay == null:
-		get_tree().quit(1)
-		return
-	_dl_star_filter = 3
-	_dl_auto_pages = 0
-	_render_dl_results()
-	await get_tree().create_timer(8.0).timeout
-	print("DL-KARTEN: %d (auto_pages=%d, end=%s)" % [
-		_dl_rows.size(), _dl_auto_pages, _dl_end_reached])
-	if OS.get_cmdline_args().has("--pack-test"):
-		_pack_lo_spin.value = 2.0
-		_pack_hi_spin.value = 2.9
-		_pack_n_opt.select(0)
-		_start_pack()
-		var waited := 0.0
-		while _pack_active and waited < 90.0:
-			await get_tree().create_timer(0.5).timeout
-			waited += 0.5
-		print("DL-PACK: started=%d done=%d active=%s status=[%s]" % [
-			_pack_started.size(), _pack_done, _pack_active, _dl_status.text])
-	await RenderingServer.frame_post_draw
-	if is_inside_tree():
-		var img := get_viewport().get_texture().get_image()
-		var path := "C:/Users/Gexanx/AppData/Local/Temp/claude/c--Users-Gexanx-Desktop-rhyg/b9d5e593-aabc-4b4b-a882-a5835e187db3/scratchpad/dl_panel.png"
-		img.save_png(path)
-		print("SHOT gespeichert: " + path)
+func _shot_online() -> void:
+	var dir := OS.get_environment("ONLINE_SHOT_DIR")
+	if dir == "":
+		dir = OS.get_user_data_dir()
+	_open_download_panel()
+	await _online.run_shot_harness(dir)
 	get_tree().quit(0)
 
 
@@ -1995,13 +1906,13 @@ func _unhandled_input(event: InputEvent) -> void:
 	if not (event is InputEventKey) or not event.pressed:
 		return
 	if event.keycode == KEY_ESCAPE:
-		if _dl_overlay != null:
+		if _online_open():
 			_close_download_panel()
 			return
 		_preview.stop()
 		get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
 		return
-	if _dl_overlay != null or event.echo:
+	if _online_open() or event.echo:
 		return
 	# Tastatur-Navigation wie in osu: hoch/runter Map, links/rechts Diff,
 	# Enter startet, F2 = Zufallsmap.
@@ -2085,737 +1996,47 @@ func _on_files_dropped(files: PackedStringArray) -> void:
 
 
 # ---------------------------------------------------------------------------
-# Online-Download (Mirror catboy.best)
+# Online-Tab (scripts/ui/online_browser.gd)
 # ---------------------------------------------------------------------------
 
 func _open_download_panel() -> void:
-	if _dl_overlay != null:
-		return
+	if _online == null:
+		_online = OnlineBrowser.new(_library)
+		_online.visible = false
+		add_child(_online)
+		_online.preview_stream.connect(func(st: AudioStream): _switch_preview(st, 0.0, ""))
+		_online.preview_stop.connect(_stop_preview_soft)
+		_online.map_downloaded.connect(_on_online_downloaded)
+		_online.closed.connect(_on_online_closed)
 	_stop_preview_soft()
-	_dl_rows.clear()
-
-	_dl_overlay = Control.new()
-	_dl_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(_dl_overlay)
-
-	var dim := ColorRect.new()
-	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	dim.color = Color(0, 0, 0, 0.45)
-	dim.gui_input.connect(func(e):
-		if e is InputEventMouseButton and e.pressed:
-			_close_download_panel())
-	_dl_overlay.add_child(dim)
-
-	var panel := GlassPanel.new(20, 22, 0.62)
-	panel.anchor_left = 0.5
-	panel.anchor_top = 0.5
-	panel.anchor_right = 0.5
-	panel.anchor_bottom = 0.5
-	panel.offset_left = -600
-	panel.offset_right = 600
-	panel.offset_top = -335
-	panel.offset_bottom = 335
-	_dl_overlay.add_child(panel)
-
-	var vb := VBoxContainer.new()
-	vb.add_theme_constant_override("separation", 12)
-	panel.add(vb)
-
-	var head := HBoxContainer.new()
-	head.add_theme_constant_override("separation", 10)
-	vb.add_child(head)
-	var title := Label.new()
-	title.text = "SONGS HERUNTERLADEN"
-	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	title.add_theme_font_override("font", UiTheme.heading_font(2))
-	title.add_theme_font_size_override("font_size", 22)
-	title.add_theme_color_override("font_color", COL_TEXT)
-	head.add_child(title)
-	var close := Button.new()
-	close.text = "✕"
-	close.custom_minimum_size = Vector2(40, 40)
-	close.add_theme_font_size_override("font_size", 18)
-	UiTheme.style_button(close)
-	close.pressed.connect(_close_download_panel)
-	head.add_child(close)
-
-	var src := Label.new()
-	src.text = "Quelle: catboy.best · nur Ranked · nur 4K-Mania · vorhandene Sets ausgeblendet"
-	src.add_theme_font_size_override("font_size", 12)
-	src.add_theme_color_override("font_color", COL_DIM)
-	vb.add_child(src)
-
-	var search_row := HBoxContainer.new()
-	search_row.add_theme_constant_override("separation", 8)
-	vb.add_child(search_row)
-	_dl_search = LineEdit.new()
-	_dl_search.placeholder_text = "Titel, Artist oder Mapper suchen…"
-	_dl_search.clear_button_enabled = true
-	_dl_search.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_dl_search.custom_minimum_size = Vector2(0, 42)
-	_dl_search.add_theme_stylebox_override("normal", UiTheme.glass_box(10, 0.55))
-	_dl_search.add_theme_stylebox_override("focus", UiTheme.glass_box(10, 0.7, 0.3))
-	_dl_search.text_submitted.connect(func(_t): _run_mirror_search())
-	search_row.add_child(_dl_search)
-	var go := Button.new()
-	go.text = "Suchen"
-	go.custom_minimum_size = Vector2(110, 42)
-	UiTheme.style_button(go, true)
-	go.pressed.connect(_run_mirror_search)
-	search_row.add_child(go)
-
-	# Schwierigkeits-Filter als Chip-Reihe (wirken sofort, ohne neue Suche).
-	var filter_row := HBoxContainer.new()
-	filter_row.add_theme_constant_override("separation", 6)
-	vb.add_child(filter_row)
-	var fcap := Label.new()
-	fcap.text = "Schwierigkeit:"
-	fcap.add_theme_font_size_override("font_size", 13)
-	fcap.add_theme_color_override("font_color", COL_DIM)
-	filter_row.add_child(fcap)
-	var group := ButtonGroup.new()
-	for fi in DL_STAR_FILTERS.size():
-		var chip := Button.new()
-		chip.text = DL_STAR_FILTERS[fi][0]
-		chip.toggle_mode = true
-		chip.button_group = group
-		chip.button_pressed = fi == _dl_star_filter
-		chip.custom_minimum_size = Vector2(0, 32)
-		chip.add_theme_font_size_override("font_size", 13)
-		UiTheme.style_button(chip, fi == _dl_star_filter)
-		chip.pressed.connect(func():
-			_dl_star_filter = fi
-			_dl_auto_pages = 0
-			_render_dl_results())
-		filter_row.add_child(chip)
-	var sv_chip := Button.new()
-	sv_chip.text = "SV"
-	sv_chip.toggle_mode = true
-	sv_chip.button_pressed = _dl_sv
-	sv_chip.custom_minimum_size = Vector2(0, 32)
-	sv_chip.add_theme_font_size_override("font_size", 13)
-	sv_chip.tooltip_text = "Nur Sets mit Scroll-Velocity (SV)"
-	UiTheme.style_button(sv_chip, _dl_sv)
-	sv_chip.toggled.connect(func(on: bool):
-		_dl_sv = on
-		_mirror.sv_mode = on
-		UiTheme.style_button(sv_chip, on)
-		_run_mirror_search())
-	filter_row.add_child(sv_chip)
-	_dl_sv_chip = sv_chip
-
-	# PACK-DOWNLOAD: N fehlende Sets in einem freien Sternbereich auf einmal.
-	var pack_row := HBoxContainer.new()
-	pack_row.add_theme_constant_override("separation", 8)
-	vb.add_child(pack_row)
-	var pcap := Label.new()
-	pcap.text = "Pack-Download:"
-	pcap.add_theme_font_size_override("font_size", 13)
-	pcap.add_theme_color_override("font_color", COL_DIM)
-	pack_row.add_child(pcap)
-	_pack_lo_spin = SpinBox.new()
-	_pack_lo_spin.min_value = 0.0
-	_pack_lo_spin.max_value = 10.0
-	_pack_lo_spin.step = 0.1
-	_pack_lo_spin.value = 2.0
-	_pack_lo_spin.custom_minimum_size = Vector2(84, 32)
-	pack_row.add_child(_pack_lo_spin)
-	var pdash := Label.new()
-	pdash.text = "–"
-	pack_row.add_child(pdash)
-	_pack_hi_spin = SpinBox.new()
-	_pack_hi_spin.min_value = 0.0
-	_pack_hi_spin.max_value = 10.0
-	_pack_hi_spin.step = 0.1
-	_pack_hi_spin.value = 2.9
-	_pack_hi_spin.custom_minimum_size = Vector2(84, 32)
-	pack_row.add_child(_pack_hi_spin)
-	var pstar := Label.new()
-	pstar.text = "★  ·"
-	pack_row.add_child(pstar)
-	_pack_n_opt = OptionButton.new()
-	_pack_n_opt.add_item("5 Maps", 5)
-	_pack_n_opt.add_item("10 Maps", 10)
-	_pack_n_opt.add_item("20 Maps", 20)
-	_pack_n_opt.select(1)
-	_pack_n_opt.custom_minimum_size = Vector2(0, 32)
-	pack_row.add_child(_pack_n_opt)
-	var pack_btn := Button.new()
-	pack_btn.text = "⤓ Pack herunterladen"
-	pack_btn.custom_minimum_size = Vector2(0, 34)
-	UiTheme.style_button(pack_btn, true)
-	pack_btn.pressed.connect(_start_pack)
-	pack_row.add_child(pack_btn)
-
-	_dl_status = Label.new()
-	_dl_say("Lade Vorschläge…")
-	_dl_status.add_theme_font_size_override("font_size", 13)
-	_dl_status.add_theme_color_override("font_color", COL_DIM)
-	vb.add_child(_dl_status)
-
-	var scroll := ScrollContainer.new()
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	vb.add_child(scroll)
-	_dl_results_box = VBoxContainer.new()
-	_dl_results_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_dl_results_box.add_theme_constant_override("separation", 8)
-	scroll.add_child(_dl_results_box)
-	# Unendlich scrollen: am Listenende automatisch die naechste Seite laden.
-	_dl_scroll = scroll
-	scroll.get_v_scroll_bar().value_changed.connect(_on_dl_scrolled)
-
-	_dl_search.grab_focus.call_deferred()
-	# Sofort Vorschlaege laden — ohne dass man erst suchen muss.
-	_dl_suggest_fallback = true
-	_dl_query = ""
-	_dl_offset = 0
-	_dl_end_reached = false
-	_dl_loading_more = true
-	_mirror.sv_mode = _dl_sv
-	_mirror.search("")
-
-
-## Status-Zeile sicher setzen — das Panel kann laengst geschlossen sein,
-## waehrend Pack-Downloads im Hintergrund weiterlaufen (freed-Guard!).
-func _dl_say(msg: String) -> void:
-	if _dl_status != null and is_instance_valid(_dl_status):
-		_dl_status.text = msg
+	_online.open()
 
 
 func _close_download_panel() -> void:
-	_stop_preview_soft()
-	if not _pack_active:
-		_mirror.cancel_sv_checks()
-	if _dl_overlay != null:
-		_dl_overlay.queue_free()
-		_dl_overlay = null
-	# Dangling-Referenzen kappen: nach queue_free sind sie NICHT null,
-	# aber tot — Callbacks laufender Downloads muessen das ueberleben.
-	_dl_status = null
-	_dl_results_box = null
-	_dl_scroll = null
-	_dl_rows.clear()
+	if _online != null:
+		_online.close()
 
 
-func _run_mirror_search() -> void:
-	# Leere Suche = Vorschlaege (neueste 4K-Sets vom Mirror).
-	var q := _dl_search.text.strip_edges()
-	_dl_suggest_fallback = q == ""
-	_dl_query = q
-	_dl_offset = 0
-	_dl_end_reached = false
-	_dl_auto_pages = 0
-	_dl_loading_more = true
-	_mirror.cancel_sv_checks()
-	_dl_say(("Suche \"%s\"…" % q) if q != "" else "Lade Vorschläge…")
-	for c in _dl_results_box.get_children():
-		c.queue_free()
-	_dl_rows.clear()
-	_mirror.search(q)
+func _online_open() -> bool:
+	return _online != null and _online.visible
 
 
-func _on_mirror_search_failed(message: String) -> void:
-	_dl_loading_more = false
-	# Pack-Download: Mirror-Aussetzer nicht als Absturz werten — kurz warten
-	# und dieselbe Seite erneut anfordern (max. 5 Versuche).
-	if _pack_active:
-		_pack_retries += 1
-		if _pack_retries <= 5:
-			_dl_say("Mirror kurz nicht erreichbar — versuche erneut…")
-			get_tree().create_timer(1.5, true).timeout.connect(func():
-				if _pack_active:
-					_dl_loading_more = true
-					_mirror.search(_dl_query, _dl_offset))
-		else:
-			_pack_active = false
-			_dl_say("Pack abgebrochen: Mirror nicht erreichbar — später erneut versuchen.")
-		return
-	if _dl_suggest_fallback:
-		_dl_suggest_fallback = false
-		_dl_query = "4k"
-		_mirror.search("4k")
-		return
-	_dl_say(message)
+## Online-Tab zu: Vorschau der gewaehlten Map wieder aufnehmen.
+func _on_online_closed() -> void:
+	_play_preview()
 
 
-func _on_mirror_search_done(results: Array, raw_count: int, offset: int) -> void:
-	if _dl_results_box == null or not is_instance_valid(_dl_results_box):
-		# Panel zu — aber ein laufendes Pack braucht die Ergebnisse weiter.
-		if _pack_active:
-			_dl_loading_more = false
-			_dl_end_reached = raw_count < 50
-			_dl_last_results.append_array(results)
-			_pack_fill()
-		return
-	_dl_loading_more = false
-	_dl_end_reached = raw_count < 50
-	if offset == 0:
-		if results.is_empty() and _dl_suggest_fallback:
-			_dl_suggest_fallback = false
-			_dl_query = "4k"
-			_mirror.search("4k")
-			return
-		_dl_suggest_fallback = false
-		_dl_last_results = results
-		_render_dl_results()
-		return
-	# Naechste Seite: nur NEUE Karten anhaengen — Scrollposition bleibt.
-	_dl_last_results.append_array(results)
-	if _pack_active:
-		_pack_fill()
-	var owned := _owned_set_ids()
-	var lo: float = DL_STAR_FILTERS[_dl_star_filter][1]
-	var hi: float = DL_STAR_FILTERS[_dl_star_filter][2]
-	for r in results:
-		if _dl_rows.has(int(r.id)):
-			continue
-		if not _dl_passes(r, owned, lo, hi):
-			continue
-		if is_instance_valid(_dl_results_box):
-			_dl_results_box.add_child(_make_online_card(r))
-	if not _dl_sv_hint():
-		_dl_say("%d Sets geladen%s" % [_dl_rows.size(),
-			"  ·  Ende der Liste" if _dl_end_reached else " — weiter scrollen für mehr"])
-	_maybe_load_more()
-
-
-## SV-Pruefung einer Diff fertig: passendes Set als Karte nachreichen.
-func _on_mirror_sv_checked(beatmap_id: int, is_sv: bool) -> void:
-	if not _dl_sv:
-		return
-	if _dl_results_box == null or not is_instance_valid(_dl_results_box):
-		if _pack_active and is_sv:
-			_pack_fill()
-		return
-	if is_sv:
-		var owned := _owned_set_ids()
-		var lo: float = DL_STAR_FILTERS[_dl_star_filter][1]
-		var hi: float = DL_STAR_FILTERS[_dl_star_filter][2]
-		for r in _dl_last_results:
-			if int(r.get("sv_id", 0)) != beatmap_id or _dl_rows.has(int(r.id)):
-				continue
-			if _dl_passes(r, owned, lo, hi):
-				_dl_results_box.add_child(_make_online_card(r))
-		if _pack_active:
-			_pack_fill()
-	if _dl_sv_hint():
-		return
-	if _dl_rows.is_empty() and (_dl_end_reached or _dl_auto_pages >= 8):
-		_dl_say("Keine echten SV-Sets gefunden.")
-	else:
-		_dl_say("%d echte SV-Sets" % _dl_rows.size())
-	_maybe_load_more()
-
-
-## Dezenter Hinweis, solange SV-Pruefungen laufen. true, wenn gesetzt.
-func _dl_sv_hint() -> bool:
-	if not _dl_sv or _mirror.sv_checks_pending() == 0:
-		return false
-	_dl_say("%d echte SV-Sets  ·  prüfe SV… (%d offen)" % [
-		_dl_rows.size(), _mirror.sv_checks_pending()])
-	return true
-
-
-# ---------------------------------------------------------------------------
-# PACK-Download: N fehlende Sets im gewaehlten Sternbereich automatisch laden.
-# ---------------------------------------------------------------------------
-
-func _start_pack() -> void:
-	if _pack_active:
-		return
-	_pack_lo = minf(_pack_lo_spin.value, _pack_hi_spin.value)
-	_pack_hi = maxf(_pack_lo_spin.value, _pack_hi_spin.value)
-	_pack_want = _pack_n_opt.get_selected_id()
-	_pack_active = true
-	_pack_started = {}
-	_pack_done = 0
-	_pack_pages = 0
-	_pack_retries = 0
-	_dl_say("Pack: suche Sets im Bereich %.1f–%.1f★…" % [_pack_lo, _pack_hi])
-	_pack_fill()
-
-
-## Passende Sets aus den geladenen Ergebnissen starten; reichen sie nicht,
-## weitere Server-Seiten holen (max. 12 fuers Pack).
-func _pack_fill() -> void:
-	if not _pack_active:
-		return
-	var owned := _owned_set_ids()
-	for r in _dl_last_results:
-		if _pack_started.size() >= _pack_want:
-			break
-		var sid := int(r.id)
-		if _pack_started.has(sid) or _mirror.is_downloading(sid):
-			continue
-		if not _dl_passes(r, owned, _pack_lo, _pack_hi + 0.0001):
-			continue
-		_pack_started[sid] = true
-		_mirror.download(sid, _library.maps_dir)
-		if _dl_rows.has(sid):
-			var btn: Button = _dl_rows[sid].btn
-			if is_instance_valid(btn):
-				btn.disabled = true
-				btn.text = "0 %"
-	if _pack_started.size() < _pack_want and not _dl_end_reached \
-			and not _dl_loading_more and _pack_pages < 12:
-		_pack_pages += 1
-		_dl_loading_more = true
-		_dl_offset += 50
-		# Den Mirror nicht mit Request-Bursts fluten (drosselt sonst: HTTP 0).
-		get_tree().create_timer(0.45, true).timeout.connect(func():
-			if _pack_active:
-				_mirror.search(_dl_query, _dl_offset)
-			else:
-				_dl_loading_more = false)
-	_update_pack_status()
-
-
-func _update_pack_status() -> void:
-	if not _pack_active:
-		return
-	if _pack_started.is_empty() and (_dl_end_reached or _pack_pages >= 12):
-		_pack_active = false
-		_dl_say("Pack: nichts Passendes im Bereich %.1f–%.1f★ gefunden." % [_pack_lo, _pack_hi])
-		return
-	_dl_say("Pack (%.1f–%.1f★): %d/%d fertig  ·  %d laufen" % [
-		_pack_lo, _pack_hi, _pack_done, _pack_started.size(),
-		_pack_started.size() - _pack_done])
-	if _pack_done >= _pack_started.size() \
-			and (_pack_started.size() >= _pack_want or _dl_end_reached or _pack_pages >= 12):
-		_pack_active = false
-		_dl_say("Pack fertig: %d Maps geladen (%.1f–%.1f★) — viel Spaß!" % [
-			_pack_done, _pack_lo, _pack_hi])
-
-
-## Zu wenige sichtbare Karten (Filter/Besitz frisst viel raus)? Dann sofort
-## weitere Server-Seiten holen — sonst gibt es keinen Scrollbalken und das
-## unendliche Scrollen kaeme nie in Gang ("nur 3 Songs"-Bug).
-func _maybe_load_more() -> void:
-	if _dl_loading_more or _dl_end_reached or _dl_overlay == null:
-		return
-	if _dl_rows.size() >= 16 or _dl_auto_pages >= 8:
-		return
-	# SV-Filter: erst die laufenden Pruefungen abwarten (sonst Anfrage-Lawine).
-	if _dl_sv and _mirror.sv_checks_pending() > 0:
-		return
-	_dl_auto_pages += 1
-	_dl_loading_more = true
-	_dl_offset += 50
-	_dl_say("%d Sets  ·  lade mehr passende…" % _dl_rows.size())
-	_mirror.search(_dl_query, _dl_offset)
-
-
-## Am Listenende angekommen -> naechste Server-Seite anfordern.
-func _on_dl_scrolled(_v: float) -> void:
-	if _dl_loading_more or _dl_end_reached or _dl_overlay == null \
-			or _dl_last_results.is_empty() or _dl_scroll == null:
-		return
-	var bar := _dl_scroll.get_v_scroll_bar()
-	if bar.value + bar.page < bar.max_value - 250.0:
-		return
-	_dl_loading_more = true
-	_dl_offset += 50
-	_dl_say("Lade mehr…")
-	_mirror.search(_dl_query, _dl_offset)
-
-
-## Gemeinsamer Ergebnis-Filter: nicht in der Bibliothek + im Sternbereich.
-## SV-Chip: nur Sets, deren 4K-Diff die SV-Pruefung (echte .osu) bestanden
-## hat; ungepruefte werden eingereiht und kommen per sv_checked nach.
-func _dl_passes(r: Dictionary, owned: Dictionary, lo: float, hi: float) -> bool:
-	if owned.has(int(r.id)):
-		return false
-	if owned.has(_at_key(str(r.get("artist", "")), str(r.get("title", "")))):
-		return false
-	var star_list: Array = r.get("star_list", [])
-	if star_list.is_empty():
-		star_list = [float(r.get("stars", 0.0))]
-	var in_range := false
-	for sv in star_list:
-		if float(sv) >= lo and float(sv) < hi:
-			in_range = true
-			break
-	if not in_range:
-		return false
-	if _dl_sv:
-		var sv_id := int(r.get("sv_id", 0))
-		var state := _mirror.sv_state(sv_id)
-		if state < 0:
-			_mirror.check_sv(sv_id)
-		return state == 1
-	return true
-
-
-## Ergebnisliste neu aufbauen: vorhandene Sets raus, Schwierigkeits-Filter
-## drauf (Set passt, wenn IRGENDEINE 4K-Diff im Sternbereich liegt).
-func _render_dl_results() -> void:
-	if _dl_results_box == null:
-		return
-	for c in _dl_results_box.get_children():
-		c.queue_free()
-	_dl_rows.clear()
-	var owned := _owned_set_ids()
-	var lo: float = DL_STAR_FILTERS[_dl_star_filter][1]
-	var hi: float = DL_STAR_FILTERS[_dl_star_filter][2]
-	var fresh: Array = []
-	for r in _dl_last_results:
-		if _dl_passes(r, owned, lo, hi):
-			fresh.append(r)
-	if fresh.is_empty():
-		if _dl_last_results.is_empty():
-			_dl_say("Keine Ergebnisse.")
-		elif _dl_star_filter != 0:
-			_dl_say("Suche Sets im Bereich %s…" % DL_STAR_FILTERS[_dl_star_filter][0])
-		else:
-			_dl_say("Suche neue Sets…")
-		_dl_sv_hint()
-		_maybe_load_more()
-		return
-	var hidden := _dl_last_results.size() - fresh.size()
-	var hidden_txt := ("  ·  %d ausgeblendet" % hidden) if hidden > 0 else ""
-	if not _dl_sv_hint():
-		_dl_say("%d neue 4K-Sets%s" % [fresh.size(), hidden_txt])
-	for r in fresh:
-		_dl_results_box.add_child(_make_online_card(r))
-	_maybe_load_more()
-
-
-## Besitz-Erkennung: Set-IDs aus Dateinamen (fuehrende Zahl oder mirror_<id>)
-## PLUS "artist|titel"-Schluessel aus der Bibliothek — erkennt auch Maps,
-## deren Dateiname keine Set-ID traegt.
-func _owned_set_ids() -> Dictionary:
-	var owned := {}
-	var dir := DirAccess.open(_library.maps_dir)
-	if dir != null:
-		for fname in dir.get_files():
-			if not fname.to_lower().ends_with(".osz"):
-				continue
-			var base := fname.get_basename()
-			if base.begins_with("mirror_"):
-				var id_str := base.substr(7)
-				if id_str.is_valid_int():
-					owned[int(id_str)] = true
-			else:
-				var head := base.split(" ")[0]
-				if head.is_valid_int():
-					owned[int(head)] = true
-	for ms in _library.mapsets:
-		if ms.title != "":
-			owned[_at_key(ms.artist, ms.title)] = true
-	return owned
-
-
-static func _at_key(artist: String, title: String) -> String:
-	# Nur Buchstaben/Ziffern vergleichen — Klammern, Spaces und
-	# Sonderzeichen unterscheiden sich zwischen Mirror und Datei oft.
-	var raw := ("%s|%s" % [artist, title]).to_lower()
-	var out := ""
-	for ch in raw:
-		if (ch >= "a" and ch <= "z") or (ch >= "0" and ch <= "9") or ch == "|":
-			out += ch
-	return out
-
-
-func _make_online_card(r: Dictionary) -> Control:
-	var set_id: int = r.id
-	var card := Button.new()
-	card.custom_minimum_size = Vector2(0, 96)
-	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	card.clip_contents = true
-	var accent := _star_color(r.stars)
-	card.add_theme_stylebox_override("normal", _card_box(COL_CARD, accent))
-	card.add_theme_stylebox_override("hover", _card_box(COL_CARD_SEL, accent))
-	card.add_theme_stylebox_override("pressed", _card_box(COL_CARD_SEL, accent))
-	card.add_theme_stylebox_override("focus", _card_box(COL_CARD_SEL, accent))
-	card.tooltip_text = "Klick = Vorschau anhören"
-	card.pressed.connect(func(): _preview_online(str(r.preview_url), set_id))
-	UiTheme.attach_hover(card, 1.015)
-
-	var hb := HBoxContainer.new()
-	hb.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	hb.offset_left = 12
-	hb.offset_right = -12
-	hb.add_theme_constant_override("separation", 14)
-	hb.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	card.add_child(hb)
-
-	var thumb := TextureRect.new()
-	thumb.custom_minimum_size = Vector2(136, 76)
-	thumb.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	thumb.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-	thumb.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	thumb.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	hb.add_child(thumb)
-
-	var vb := VBoxContainer.new()
-	vb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	vb.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	vb.add_theme_constant_override("separation", 3)
-	vb.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	hb.add_child(vb)
-	var t := Label.new()
-	t.text = "%s — %s" % [str(r.artist), str(r.title)]
-	t.add_theme_font_size_override("font_size", 17)
-	t.add_theme_color_override("font_color", COL_TEXT)
-	t.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	t.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	vb.add_child(t)
-	var m := Label.new()
-	m.text = "Map von %s  ·  %d Diffs  ·  ▶ Vorschau" % [str(r.creator), int(r.diffs)]
-	m.add_theme_font_size_override("font_size", 12)
-	m.add_theme_color_override("font_color", COL_DIM)
-	m.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	m.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	vb.add_child(m)
-
-	# Sterne-Badge: Bereich aller 4K-Diffs, farbcodiert.
-	var stars_lo: float = float(r.stars)
-	var stars_hi: float = float(r.stars)
-	for sv in r.get("star_list", []):
-		stars_lo = minf(stars_lo, float(sv))
-		stars_hi = maxf(stars_hi, float(sv))
-	var badge := PanelContainer.new()
-	badge.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	var bb := UiTheme.solid_box(Color(accent.r, accent.g, accent.b, 0.92), 10)
-	bb.content_margin_left = 10
-	bb.content_margin_right = 10
-	bb.content_margin_top = 4
-	bb.content_margin_bottom = 4
-	badge.add_theme_stylebox_override("panel", bb)
-	badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var bl := Label.new()
-	bl.text = ("★ %.1f" % stars_hi) if absf(stars_hi - stars_lo) < 0.05 \
-			else "★ %.1f – %.1f" % [stars_lo, stars_hi]
-	bl.add_theme_font_size_override("font_size", 13)
-	bl.add_theme_color_override("font_color", Color(0.03, 0.05, 0.08))
-	badge.add_child(bl)
-	# SV-Badge: geprueftes Ergebnis zaehlt; ungeprueft nur der Text-Hinweis.
-	var sv_state := _mirror.sv_state(int(r.get("sv_id", 0)))
-	if sv_state == 1 or (sv_state < 0 and bool(r.get("sv", false))):
-		hb.add_child(_sv_badge())
-	hb.add_child(badge)
-
-	var dl := Button.new()
-	dl.text = "⤓ Download"
-	dl.custom_minimum_size = Vector2(132, 44)
-	dl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	UiTheme.style_button(dl, true)
-	dl.pressed.connect(func(): _start_download(set_id))
-	hb.add_child(dl)
-
-	_dl_rows[set_id] = { "card": card, "btn": dl, "thumb": thumb }
-	# Laeuft fuer dieses Set schon ein Download (vor dem Szenenwechsel
-	# gestartet)? Dann den Fortschritt direkt wieder anzeigen.
-	if _mirror.is_downloading(set_id):
-		dl.disabled = true
-		dl.text = "%d %%" % int(maxf(_mirror.active_ratio(set_id), 0.0) * 100.0)
-	if str(r.cover_url) != "":
-		_mirror.fetch_cover(set_id, str(r.cover_url))
-	return card
-
-
-func _on_mirror_cover_ready(set_id: int, texture: Texture2D) -> void:
-	if _dl_rows.has(set_id):
-		var thumb: TextureRect = _dl_rows[set_id].thumb
-		if is_instance_valid(thumb):
-			thumb.texture = texture
-
-
-func _start_download(set_id: int) -> void:
-	if not _dl_rows.has(set_id):
-		return
-	var btn: Button = _dl_rows[set_id].btn
-	btn.disabled = true
-	btn.text = "0 %"
-	_mirror.download(set_id, _library.maps_dir)
-
-
-func _on_mirror_download_progress(set_id: int, ratio: float) -> void:
-	if _dl_rows.has(set_id):
-		var btn: Button = _dl_rows[set_id].btn
-		if is_instance_valid(btn):
-			btn.text = "%d %%" % int(ratio * 100.0)
-
-
-func _on_mirror_download_failed(set_id: int, message: String) -> void:
-	if _dl_rows.has(set_id):
-		var btn: Button = _dl_rows[set_id].btn
-		if is_instance_valid(btn):
-			btn.disabled = false
-			btn.text = "Erneut"
-	if _pack_active and _pack_started.has(set_id):
-		_pack_done += 1
-		_update_pack_status()
-		return
-	_dl_say(message)
-
-
-func _on_mirror_download_done(set_id: int, osz_path: String) -> void:
-	if _dl_rows.has(set_id):
-		var btn: Button = _dl_rows[set_id].btn
-		if is_instance_valid(btn):
-			btn.text = "✓ Fertig"
-	# Bibliothek neu scannen; beim Pack-Download NICHT staendig umselektieren.
+## Download fertig: Bibliothek neu scannen, damit die Map sofort im Tab
+## "Heruntergeladen" steht; Einzel-Downloads direkt anwaehlen (Pack nicht).
+func _on_online_downloaded(_set_id: int, osz_path: String, select: bool) -> void:
 	_library.scan()
 	_refresh_filter(_search.text)
-	if _pack_active and _pack_started.has(set_id):
-		_pack_done += 1
-		_update_pack_status()
+	if not select:
 		return
-	if _dl_status != null:
-		_dl_say("Heruntergeladen — Bibliothek wird aktualisiert…")
 	for ms in _filtered:
 		if ms.osz_path == osz_path:
 			_select_set(ms, ms.difficulty_count() - 1)
 			break
-
-
-## Online-Vorschau: Preview-MP3 direkt streamen. Liefert der Mirror keine
-## preview_url, greift die offizielle osu-Preview (b.ppy.sh/preview/<id>.mp3).
-func _preview_online(url: String, set_id: int = -1) -> void:
-	url = url.strip_edges()
-	if url.begins_with("//"):
-		url = "https:" + url
-	if url == "" and set_id > 0:
-		url = "https://b.ppy.sh/preview/%d.mp3" % set_id
-	if url == "":
-		return
-	if _dl_preview_req == null:
-		_dl_preview_req = HTTPRequest.new()
-		_dl_preview_req.timeout = 12.0
-		add_child(_dl_preview_req)
-		_dl_preview_req.request_completed.connect(_on_preview_bytes)
-	_dl_preview_req.cancel_request()
-	if _dl_status != null:
-		_dl_say("♪ Vorschau lädt…")
-	if _dl_preview_req.request(url) != OK and _dl_status != null:
-		_dl_say("Vorschau nicht verfügbar.")
-
-
-func _on_preview_bytes(result: int, code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
-	if result != HTTPRequest.RESULT_SUCCESS or code != 200 or body.is_empty():
-		if _dl_status != null:
-			_dl_say("Vorschau nicht verfügbar.")
-		return
-	# b.ppy.sh liefert trotz .mp3-Endung OGG Vorbis — Magic-Bytes pruefen.
-	var stream: AudioStream = null
-	if body.size() > 4 and body[0] == 0x4F and body[1] == 0x67 \
-			and body[2] == 0x67 and body[3] == 0x53:
-		stream = AudioStreamOggVorbis.load_from_buffer(body)
-	else:
-		var mp3 := AudioStreamMP3.new()
-		mp3.data = body
-		if mp3.get_length() > 0.0:
-			stream = mp3
-	if stream == null:
-		if _dl_status != null:
-			_dl_say("Vorschau nicht abspielbar.")
-		return
-	_switch_preview(stream, 0.0, "")
-	if _dl_status != null:
-		_dl_say("♪ Vorschau läuft")
-
 
 
 # ---------------------------------------------------------------------------
