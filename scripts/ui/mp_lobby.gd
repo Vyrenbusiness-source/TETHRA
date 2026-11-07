@@ -40,6 +40,14 @@ var _dl_btn: Button
 var _dl_bar: ProgressBar
 var _dl_label: Label
 var _dl_cancel: Button
+# Turnier: Raum-Knopf, Setup-Dialog, Phasen-Ansicht und Endbild.
+var _center: Control
+var _tour_btn: Button
+var _tour_dialog: Control = null
+var _tpanel: TournamentPanel = null
+var _tend: TournamentEnd = null
+var _tour_phase := -1
+var _tour_hidden := false
 
 
 func _ready() -> void:
@@ -81,6 +89,7 @@ func _ready() -> void:
 	var center := CenterContainer.new()
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(center)
+	_center = center
 	var panel := PanelContainer.new()
 	var sb := UiTheme.glass_box(18, 0.95)
 	sb.set_content_margin_all(26)
@@ -133,6 +142,7 @@ func _ready() -> void:
 	Lobby.scores_changed.connect(_refresh_room)
 	Lobby.map_changed.connect(_on_map_changed)
 	Lobby.rooms_changed.connect(_refresh_rooms)
+	Lobby.tournament_changed.connect(_sync_tournament)
 	Lobby.status.connect(func(m): _status_label.text = m)
 	Lobby.left.connect(func(reason):
 		_status_label.text = reason
@@ -155,7 +165,10 @@ func _ready() -> void:
 			Lobby.fetch_online_rooms())
 	add_child(_fetch_timer)
 	_refresh_room()
+	_sync_tournament()
 
+	if OS.get_cmdline_args().has("--shot-tournament") or OS.get_cmdline_user_args().has("--shot-tournament"):
+		_tournament_shots()
 	if OS.get_cmdline_args().has("--shot-mp"):
 		_capture_shot()
 	if OS.get_cmdline_args().has("--shot-picker") or OS.get_cmdline_user_args().has("--shot-picker"):
@@ -876,6 +889,12 @@ func _build_room() -> void:
 	UiTheme.style_button(_pick_btn)
 	_pick_btn.pressed.connect(_open_picker)
 	btns.add_child(_pick_btn)
+	_tour_btn = Button.new()
+	_tour_btn.text = "Turnier"
+	_tour_btn.custom_minimum_size = Vector2(140, 46)
+	UiTheme.style_button(_tour_btn)
+	_tour_btn.pressed.connect(_on_tour_btn)
+	btns.add_child(_tour_btn)
 	_start_btn = Button.new()
 	_start_btn.text = "START"
 	_start_btn.custom_minimum_size = Vector2(160, 46)
@@ -992,9 +1011,13 @@ func _refresh_room() -> void:
 		mb.text = "%s  %s" % [k, "AN" if on else "AUS"]
 		mb.disabled = Lobby.crown_id != my_id
 		mb.modulate = Color(0.45, 1.0, 0.7) if on else Color(1, 1, 1, 0.85 if not mb.disabled else 0.6)
-	_pick_btn.visible = Lobby.crown_id == my_id
-	_start_btn.visible = Lobby.crown_id == my_id
+	var in_tour := Lobby.tournament != null
+	_pick_btn.visible = Lobby.crown_id == my_id and not in_tour
+	_start_btn.visible = Lobby.crown_id == my_id and not in_tour
 	_start_btn.disabled = not Lobby.can_start()
+	if _tour_btn != null:
+		_tour_btn.visible = in_tour or Lobby.is_host
+		_tour_btn.text = "Zum Turnier" if in_tour else "Turnier"
 	_refresh_dl_ui()
 
 
@@ -1230,3 +1253,335 @@ func _back() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
 		_back()
+
+
+# ---------------------------------------------------------------------------
+# Turnier: Setup-Dialog, Phasen-Ansicht, Endbild
+# ---------------------------------------------------------------------------
+
+func _on_tour_btn() -> void:
+	if Lobby.tournament != null:
+		_tour_hidden = false
+		_sync_tournament()
+	elif Lobby.is_host:
+		_open_tour_setup()
+
+
+## Host: Anzahl Maps (5/10/15), Sternbereich in 0,5er-Schritten, Mods.
+func _open_tour_setup() -> void:
+	if _tour_dialog != null:
+		return
+	var maps_n := 10
+	var lo := 3.0
+	var hi := 5.0
+	var mods: Dictionary = {"SV": bool(Lobby.mods.get("SV", false)), "NF": bool(Lobby.mods.get("NF", false))}
+	var back := UiTheme.modal_backdrop(self)
+	_tour_dialog = back
+	var center := CenterContainer.new()
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	back.add_child(center)
+	var panel := PanelContainer.new()
+	var sb := UiTheme.glass_box(18, 0.95)
+	sb.set_content_margin_all(28)
+	panel.add_theme_stylebox_override("panel", sb)
+	panel.custom_minimum_size = Vector2(560, 0)
+	center.add_child(panel)
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 14)
+	panel.add_child(v)
+	var close_dialog := func():
+		back.queue_free()
+		_tour_dialog = null
+	v.add_child(UiTheme.modal_header("Turnier erstellen", close_dialog))
+	v.add_child(TournamentPanel.lbl("ANZAHL MAPS", 13, COL_ACCENT, true))
+	var chips := HBoxContainer.new()
+	chips.add_theme_constant_override("separation", 10)
+	v.add_child(chips)
+	var chip_btns: Dictionary = {}
+	for n in [5, 10, 15]:
+		var b := Button.new()
+		b.toggle_mode = true
+		b.text = str(n)
+		b.custom_minimum_size = Vector2(110, 44)
+		UiTheme.style_button(b)
+		var nn: int = n
+		b.pressed.connect(func():
+			maps_n = nn
+			for k in chip_btns:
+				(chip_btns[k] as Button).set_pressed_no_signal(k == nn))
+		b.set_pressed_no_signal(n == maps_n)
+		chips.add_child(b)
+		chip_btns[n] = b
+	v.add_child(TournamentPanel.lbl("SCHWIERIGKEIT (STERNE)", 13, COL_ACCENT, true))
+	var val_lo := Label.new()
+	var val_hi := Label.new()
+	var upd := func():
+		val_lo.text = "★ " + UiTheme.fmt_num(lo, 1)
+		val_hi.text = "★ " + UiTheme.fmt_num(hi, 1)
+	for pair in [["von", val_lo, true], ["bis", val_hi, false]]:
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 10)
+		v.add_child(row)
+		var cap := TournamentPanel.lbl(pair[0], 16, COL_DIM)
+		cap.custom_minimum_size.x = 50
+		row.add_child(cap)
+		var is_lo: bool = pair[2]
+		var minus := Button.new()
+		minus.text = "−"
+		minus.custom_minimum_size = Vector2(48, 40)
+		UiTheme.style_button(minus)
+		row.add_child(minus)
+		var vl: Label = pair[1]
+		vl.custom_minimum_size.x = 100
+		vl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		vl.add_theme_font_size_override("font_size", 20)
+		vl.add_theme_color_override("font_color", COL_TEXT)
+		row.add_child(vl)
+		var plus := Button.new()
+		plus.text = "+"
+		plus.custom_minimum_size = Vector2(48, 40)
+		UiTheme.style_button(plus)
+		row.add_child(plus)
+		var step := func(d: float):
+			if is_lo:
+				lo = clampf(lo + d, 0.0, 10.0)
+				hi = maxf(hi, lo)
+			else:
+				hi = clampf(hi + d, 0.0, 10.0)
+				lo = minf(lo, hi)
+			upd.call()
+		minus.pressed.connect(func(): step.call(-0.5))
+		plus.pressed.connect(func(): step.call(0.5))
+	upd.call()
+	v.add_child(TournamentPanel.lbl("MODS", 13, COL_ACCENT, true))
+	var mrow := HBoxContainer.new()
+	mrow.add_theme_constant_override("separation", 10)
+	v.add_child(mrow)
+	for k in ["SV", "NF"]:
+		var mb := Button.new()
+		mb.toggle_mode = true
+		mb.custom_minimum_size = Vector2(110, 40)
+		UiTheme.style_button(mb)
+		var key: String = k
+		var paint := func():
+			mb.text = "%s  %s" % [key, "AN" if mods[key] else "AUS"]
+			mb.modulate = Color(0.45, 1.0, 0.7) if mods[key] else Color(1, 1, 1, 0.85)
+		mb.set_pressed_no_signal(bool(mods[key]))
+		paint.call()
+		mb.pressed.connect(func():
+			mods[key] = not bool(mods[key])
+			paint.call())
+		mrow.add_child(mb)
+	var bar := HBoxContainer.new()
+	bar.add_theme_constant_override("separation", 10)
+	v.add_child(bar)
+	var sp := Control.new()
+	sp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	bar.add_child(sp)
+	var cancel := Button.new()
+	cancel.text = "Abbrechen"
+	cancel.custom_minimum_size = Vector2(130, 46)
+	UiTheme.style_button(cancel)
+	cancel.pressed.connect(close_dialog)
+	bar.add_child(cancel)
+	var go := Button.new()
+	go.text = "Turnier erstellen"
+	go.custom_minimum_size = Vector2(200, 46)
+	UiTheme.style_button(go, true)
+	go.pressed.connect(func():
+		Lobby.tour_create({"maps": maps_n, "stars_lo": lo, "stars_hi": hi, "mods": mods.duplicate()})
+		close_dialog.call())
+	bar.add_child(go)
+
+
+## Passende Ansicht zum Turnier-Zustand zeigen (oder zurueck zum Raum).
+func _sync_tournament() -> void:
+	var t: Tournament = Lobby.tournament
+	if t == null:
+		_tour_phase = -1
+		_tour_hidden = false
+		_clear_tour_views()
+		if _center != null:
+			_center.visible = true
+		_refresh_room()
+		return
+	if t.phase != _tour_phase:
+		_tour_hidden = false
+	_tour_phase = t.phase
+	if _tour_hidden:
+		_clear_tour_views()
+		if _center != null:
+			_center.visible = true
+		_refresh_room()
+		return
+	if _tour_dialog != null:
+		_tour_dialog.queue_free()
+		_tour_dialog = null
+	_center.visible = false
+	if t.phase == Tournament.Phase.END:
+		if _tpanel != null:
+			_tpanel.queue_free()
+			_tpanel = null
+		if _tend == null:
+			_tend = TournamentEnd.new(t, _tour_title())
+			_tend.my_id = multiplayer.get_unique_id()
+			_tend.is_host = Lobby.is_host
+			_tend.back_to_room.connect(_leave_tour_view)
+			add_child(_tend)
+		return
+	if _tend != null:
+		_tend.queue_free()
+		_tend = null
+	if _tpanel == null:
+		_tpanel = TournamentPanel.new(_library)
+		_tpanel.back_to_room.connect(_leave_tour_view)
+		add_child(_tpanel)
+	_tpanel.sync_from_lobby()
+
+
+func _tour_title() -> String:
+	return ("Turnier · " + Lobby.room_name) if Lobby.room_name != "" else "Turnier"
+
+
+func _leave_tour_view() -> void:
+	_tour_hidden = true
+	_sync_tournament()
+
+
+func _clear_tour_views() -> void:
+	if _tpanel != null:
+		_tpanel.queue_free()
+		_tpanel = null
+	if _tend != null:
+		_tend.queue_free()
+		_tend = null
+
+
+## Fake-Turnier fuer die Screenshots (ueberschreibt nur die Auswertung).
+class _FakeTournament extends Tournament:
+	var fake_stand: Array = []
+	var fake_wins: Array = []
+
+	func standings() -> Array:
+		return fake_stand
+
+	func map_winners() -> Array:
+		return fake_wins
+
+	func play_order() -> Array[int]:
+		var o: Array[int] = []
+		for i in order:
+			o.append(int(i))
+		return o
+
+
+## Screenshots aller Turnier-Phasen mit Fake-Daten + Endbild (1920x1080).
+## Ziel: --shot-out=<Praefix> (sonst user://tournament).
+func _tournament_shots() -> void:
+	var out := ProjectSettings.globalize_path("user://tournament")
+	for a in OS.get_cmdline_args() + OS.get_cmdline_user_args():
+		if a.begins_with("--shot-out="):
+			out = a.substr(11)
+	var shot := func(tag: String):
+		await RenderingServer.frame_post_draw
+		var path := "%s_%s.png" % [out, tag]
+		get_viewport().get_texture().get_image().save_png(path)
+		print("SHOT " + path)
+	await get_tree().create_timer(0.6).timeout
+	_center.visible = false
+	var who := ["Aria", "Kenji", "Mara", "Tobi", "Lena"]
+	var names := {}
+	for i in who.size():
+		names[i + 2] = who[i]
+	var t := _FakeTournament.new()
+	t.config = {"maps": 10, "stars_lo": 3.0, "stars_hi": 5.0, "mods": {"SV": true, "NF": false}}
+	t.player_names = names
+	var titles := ["Neon Skyline", "Gravity Bloom", "Echoes of Tomorrow", "Paper Planes",
+		"Nightdrive", "Crystal Rain", "Last Light", "Pulse Garden", "Afterglow", "Zero Hour"]
+	var arts := ["Kairo", "Lumen", "Velvet Static", "Mio", "Driftwood", "Aoi", "Halo Park", "Sora", "Nova", "Eclipse"]
+	var versions := ["Insane", "Another", "4K Hard", "Expert", "Lv. 18", "Master", "Hyper", "Heavy", "Light", "Stage"]
+	var sets: Array = _library.mapsets.duplicate()
+	for i in 10:
+		var m := {"set_id": 900000 + i, "file": "", "version": versions[i],
+			"title": titles[i], "artist": arts[i], "stars": 3.1 + i * 0.19,
+			"by": 2 + (i % 5), "online": false, "banned": false}
+		if i < sets.size() and i < 8:
+			var ms: MapSet = sets[i]
+			m["file"] = ms.osz_path.get_file()
+			m["title"] = ms.title
+			m["artist"] = ms.artist
+			if ms.difficulty_count() > 0:
+				m["version"] = ms.version_name_at(0)
+		if i >= 8:
+			m["online"] = true
+		t.pool.append(m)
+	var panel := TournamentPanel.new(_library)
+	panel.harness = true
+	panel.names = names
+	panel.my_id = 3
+	panel.is_host = true
+	panel.t = t
+	add_child(panel)
+	# PICK: 8 von 10 Maps, zwei laden noch.
+	t.phase = Tournament.Phase.PICK
+	var full_pool: Array = t.pool.duplicate()
+	t.pool = full_pool.slice(0, 8)
+	t.pool[6]["file"] = ""
+	t.pool[6]["online"] = true
+	panel.refresh()
+	panel._on_dl_progress(900006, 0.42)
+	await get_tree().create_timer(1.2).timeout
+	await shot.call("pick")
+	# BAN: nur Teilstimmen sichtbar.
+	t.pool = full_pool
+	t.phase = Tournament.Phase.BAN
+	t.bans = {2: 4, 3: 1, 4: -1, 5: 4, 6: -1}
+	panel.refresh()
+	await get_tree().create_timer(1.0).timeout
+	await shot.call("ban")
+	# BAN: alle gewaehlt -> Aufdecken + Reihenfolge.
+	t.bans = {2: 4, 3: 1, 4: 7, 5: 4, 6: 1}
+	for i in [1, 4, 7]:
+		t.pool[i]["banned"] = true
+	t.order = [0, 2, 3, 5, 6, 8, 9]
+	panel._reveal_played = false
+	panel.refresh()
+	await get_tree().create_timer(3.4).timeout
+	await shot.call("ban_reveal")
+	# BETWEEN: nach Runde 3.
+	t.phase = Tournament.Phase.BETWEEN
+	t.rounds = []
+	for r in 3:
+		var res := {}
+		for k in 5:
+			res[k + 2] = {"score": 930000 - ((k + r * 2) % 5) * 41000 - r * 7000,
+				"accuracy": 0.985 - ((k + r * 2) % 5) * 0.021, "max_combo": 400 + k * 30,
+				"failed": r == 1 and k == 4, "name": who[k]}
+		t.rounds.append(res)
+	t.fake_stand = [
+		{"peer": 3, "name": "Kenji", "points": 14, "wins": 2, "avg_acc": 0.974, "total_score": 2711000, "rank": 1},
+		{"peer": 2, "name": "Aria", "points": 12, "wins": 1, "avg_acc": 0.962, "total_score": 2650000, "rank": 2},
+		{"peer": 5, "name": "Tobi", "points": 9, "wins": 0, "avg_acc": 0.951, "total_score": 2512000, "rank": 3},
+		{"peer": 4, "name": "Mara", "points": 8, "wins": 0, "avg_acc": 0.948, "total_score": 2480000, "rank": 4},
+		{"peer": 6, "name": "Lena", "points": 4, "wins": 0, "avg_acc": 0.910, "total_score": 2210000, "rank": 5},
+	]
+	panel.refresh()
+	await get_tree().create_timer(1.0).timeout
+	await shot.call("between")
+	# END: Endbild.
+	t.phase = Tournament.Phase.END
+	t.order = [0, 2, 3, 5, 6, 8, 9, 1, 4, 7]
+	t.fake_wins = []
+	var wnames := ["Kenji", "Aria", "Kenji", "Tobi", "Mara", "Aria", "Lena", "Kenji", "Tobi", "Aria"]
+	for i in 10:
+		t.fake_wins.append({"map": t.pool[t.order[i]], "winner_name": wnames[i], "score": 900000 - i * 3000})
+	panel.queue_free()
+	var end := TournamentEnd.new(t, "Turnier · Freitagsrunde")
+	end.harness = true
+	end.my_id = 3
+	add_child(end)
+	await get_tree().create_timer(1.6).timeout
+	await shot.call("end")
+	var img_path := end.save_png("%s_end_image.png" % out)
+	print("END-BILD " + img_path)
+	get_tree().quit(0)

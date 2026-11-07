@@ -61,6 +61,8 @@ const SORT_DESC := [false, false, true, true, true, true]
 var library: MapLibrary
 ## Darf waehlen (Kronentraeger). Sonst nur ansehen.
 var can_pick := true
+## Turnier: nur Diffs in diesem Sternbereich (x = von, y = bis, y < 0 = aus).
+var star_range := Vector2(0.0, -1.0)
 ## (file: String, version: String) -> bool: im Raum schon gespielt.
 var played_fn: Callable
 
@@ -719,8 +721,33 @@ func set_sort(mode: int, desc: bool) -> void:
 	_refilter(selected_set())
 
 
+## Sternbereich fuers Turnier setzen (hi < 0 = kein Bereich).
+func set_star_range(lo: float, hi: float) -> void:
+	star_range = Vector2(lo, hi)
+	if _count_label != null:
+		_refilter(selected_set())
+
+
+## Eintraege auf Diffs im Bereich [lo, hi] verengen (Kopien, Original bleibt).
+static func clamp_to_range(entries: Array, lo: float, hi: float) -> Array:
+	var out: Array = []
+	for e in entries:
+		var keep: Array = []
+		for d in e.diffs:
+			if float(d.stars) >= lo - 0.0001 and float(d.stars) <= hi + 0.0001:
+				keep.append(d)
+		if keep.is_empty():
+			continue
+		var c: Dictionary = e.duplicate()
+		c["diffs"] = keep
+		out.append(c)
+	return out
+
+
 func _refilter(keep: MapSet) -> void:
 	_shown = filter_entries(_entries, _query, _star_filter)
+	if star_range.y >= 0.0:
+		_shown = clamp_to_range(_shown, star_range.x, star_range.y)
 	sort_entries(_shown, _sort, _desc)
 	var n := _shown.size()
 	_count_label.text = ("%s von %s Maps" % [UiTheme.fmt_score(n), UiTheme.fmt_score(_entries.size())]) \

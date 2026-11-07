@@ -599,7 +599,8 @@ func _build_buttons(group: Control) -> void:
 	group.add_child(bar)
 	var is_replay := bool(_data.get("is_replay", false))
 	var lobby := bool(_data.get("lobby", false))
-	bar.add_child(_button("Zur Lobby" if lobby else "Zum Song-Browser", false,
+	bar.add_child(_button(("Zum Zwischenstand" if Lobby.tournament != null else "Zur Lobby")
+		if lobby else "Zum Song-Browser", false,
 		back_pressed.emit, "Esc"))
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
