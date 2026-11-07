@@ -1,13 +1,13 @@
 [![DevConnect](https://devconnectplatform.com/api/badge/vyren)](https://devconnectplatform.com/u/vyren)
 
 <p align="center">
-  <img src="docs/media/play_3d_hero.webp" alt="TETHRA - 3D rhythm game" width="100%">
+  <img src="docs/media/play_3d_hero.webp" alt="TETHRA, an osu!mania 4K rhythm game (VSRG) with 3D and 2D playfields" width="100%">
 </p>
 
 <h1 align="center">TETHRA</h1>
 
 <p align="center">
-  <b>Fly through space to the beat. Play your osu!mania 4K maps in 3D or classic 2D.</b>
+  <b>Free osu!mania 4K rhythm game for Windows. Play your own .osz beatmaps in 3D or classic 2D.</b>
 </p>
 
 <p align="center">
@@ -28,7 +28,7 @@
 ## Why TETHRA
 
 - **Your maps, exact scoring.** osu!mania 4K `.osz` files with osu! judgement windows, ScoreV1 and SV maps that behave like in lazer.
-- **3D or 2D.** Fly down the lane through 13 reactive worlds, or switch to a flat playfield with osu! skins.
+- **3D or 2D.** A 3D lane with 13 worlds that react to the music, or a classic vertical playfield with osu! skins.
 - **Play together.** Rooms, teams, battle royale and tournaments with picks and bans.
 - **Download in-game.** Search and fetch maps from the built-in online browser.
 
