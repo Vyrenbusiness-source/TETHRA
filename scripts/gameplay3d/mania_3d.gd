@@ -240,6 +240,10 @@ var _sky_phase := 0.0
 # gleichen Uniform-Interface (_sky_mat), Farbsatz ersetzt die Coverfarbe.
 var _world_theme := WorldTheme.GALAXY
 var _theme_lightning := 0.0
+var _beat_total := 0     # gezaehlte Beat-Kanten (beat_step, monoton)
+var _bc_kiai := false
+var _kiai_t0 := -1.0
+var _kiai_t1 := -1.0
 var _theme_flow := 0.0
 var _theme_grid := 0.0
 var _gal_scale := 1.0
@@ -2353,8 +2357,9 @@ func _on_beat_edge(beat_idx: int, downbeat: bool) -> void:
 	# Sub-Thump auf dem Taktanfang (hoerbar UND fuehlbar, uebertoent die Musik
 	# nicht); die Huellkurve kommt aus BeatClock.
 	# BOSSKAMPF: ferne Wolken-Blitze auf den Kiai-Downbeats (Komfort: schwaecher).
-	if downbeat and _world_theme == WorldTheme.BOSS and _kiai_mix > 0.5 and _fx_level() > 0.0:
-		_theme_lightning = 0.6 if _comfort else 1.0
+	if downbeat and (_world_theme == WorldTheme.BOSS or _world_theme == WorldTheme.STORM) 			and _kiai_mix > 0.5 and _fx_level() > 0.0:
+		var lmax := 0.5 if _world_theme == WorldTheme.STORM else 1.0
+		_theme_lightning = lmax * (0.6 if _comfort else 1.0)
 	if downbeat and _use_audio and _beat_player != null:
 		_beat_player.play()
 	# Downbeat-Welle: ein Lichtband rollt im Noten-Tempo vom Horizont zur
@@ -2481,7 +2486,7 @@ func _start_drop_warp() -> void:
 	if _fx_level() <= 0.0:
 		return
 	_star_burst = 1.0
-	_warp_level = 1.0
+	_warp_level = _themed_warp_cap(1.0)
 
 
 func _spawn_shooting_star(seed_i: int) -> void:
@@ -2873,7 +2878,7 @@ func _update_chapters(vt: float, fx: float) -> void:
 		var first := _gal_idx < 0
 		if not first and fx > 0.0:
 			# Nur Sternen-Warp im Hintergrund — kein Tunnel, kein FOV-Wabern.
-			_warp_level = 1.0
+			_warp_level = _themed_warp_cap(1.0)
 		_gal_from = {"col": _gal_col, "col2": _gal_col2, "stars": _gal_stars,
 				"scale": _gal_scale}
 		_ch_kiai_from = _ch_kiai_w
@@ -2898,7 +2903,7 @@ func _update_chapters(vt: float, fx: float) -> void:
 		# Themen: Kiai = eine Stufe intensiver (heller, kraeftigerer Puls).
 		var themed := _world_theme != WorldTheme.GALAXY
 		_sky_mat.set_shader_parameter(&"brightness",
-				lerpf(0.95, 1.32 if themed else 1.2, _ch_kiai_w))
+				lerpf(0.95, 1.15 if themed else 1.2, _ch_kiai_w))
 		if themed:
 			_sky_mat.set_shader_parameter(&"kiai", _ch_kiai_w)
 	_ch_w = w
@@ -4197,10 +4202,62 @@ func _apply_theme_world() -> void:
 		c.reparent(hidden, false)
 
 
+## Drop in Themen-Welten zaehmen: Warp hoechstens 0.4 (Galaxie unveraendert).
+func _themed_warp_cap(v: float) -> float:
+	if _world_theme != WorldTheme.GALAXY and _sky_mat != null:
+		return minf(v, 0.4)
+	return v
+
+
+## Beat-Vertrag (docs/worlds/beat_contract.md): Uniforms auf das Himmels-Material.
+## Zeitbasis wie _clock (SyncClock.visual_time_ms). Neon: eigener Pfad, nichts setzen.
+func _update_beat_contract() -> void:
+	if _world_theme == WorldTheme.NEON:
+		return
+	var fx := _fx_level()
+	if _clock.is_beat_edge:
+		_beat_total += 1
+	var bl := 60000.0 / _clock.bpm if _clock.bpm > 1.0 else 500.0
+	if _clock.kiai and not _bc_kiai:
+		_kiai_t0 = _vt
+		_kiai_t1 = -1.0
+	elif not _clock.kiai and _bc_kiai:
+		_kiai_t1 = _vt
+	_bc_kiai = _clock.kiai
+	var on := fx > 0.0 and _clock.bpm > 1.0
+	var since_start := (_vt - _kiai_t0) / bl if _kiai_t0 >= 0.0 else -1.0
+	var since_end := (_vt - _kiai_t1) / bl if _kiai_t1 >= 0.0 else -1.0
+	var m := _sky_mat
+	m.set_shader_parameter(&"beat_pulse", clampf(_world_pulse, 0.0, 1.0) if on else 0.0)
+	m.set_shader_parameter(&"beat_phase", _clock.beat_phase if on else 0.0)
+	m.set_shader_parameter(&"bar_phase", _clock.bar_phase if on else 0.0)
+	m.set_shader_parameter(&"beat_step", WorldTheme.beat_step(_beat_total, _clock.beat_phase) if on else 0.0)
+	m.set_shader_parameter(&"downbeat_pulse", WorldTheme.downbeat_pulse(_clock.bar_phase, _meter_at(_vt)) if on else 0.0)
+	m.set_shader_parameter(&"kiai", _ch_kiai_w if on else 0.0)
+	m.set_shader_parameter(&"drop", WorldTheme.drop_env(since_start, since_end, _comfort) if on else 0.0)
+	m.set_shader_parameter(&"energy", _music_energy if on else 0.0)
+	m.set_shader_parameter(&"comfort", 1.0 if _comfort else 0.0)
+
+
+## Taktart (Schlaege pro Takt) der roten Linie bei Zeit t.
+func _meter_at(t: float) -> int:
+	var meter := 4
+	var first := true
+	for p in _beatmap.timing_points:
+		if p.uninherited and p.beat_length > 0.0:
+			if first or p.time <= t:
+				meter = maxi(p.meter, 1)
+				first = false
+			if p.time > t:
+				break
+	return meter
+
+
 ## Pro Frame: Themen-Uniforms (Blitz-Abklingen, Wehen). Komfort = ruhiger.
 func _update_theme_sky(delta: float) -> void:
 	if _sky_mat == null or _world_theme == WorldTheme.GALAXY:
 		return
+	_update_beat_contract()
 	_theme_lightning = maxf(0.0, _theme_lightning - delta * 3.2)
 	_sky_mat.set_shader_parameter(&"lightning", _theme_lightning)
 	var flow_rate := (0.5 if _comfort else 1.0) * (1.0 + _ch_kiai_w * 0.6)
