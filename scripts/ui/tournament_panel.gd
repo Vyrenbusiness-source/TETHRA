@@ -1284,7 +1284,7 @@ func _build_ban() -> void:
 		elif revealed and int(t.bans.get(pid, -1)) >= 0:
 			var bt: String = str(t.pool[int(t.bans[pid])].get("title", "?"))
 			status = raw("✕ " + bt, 12, WARN)
-			status.custom_minimum_size.x = 120
+			status.custom_minimum_size.x = 150
 			status.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 			reveal_rows.append(status)
 		elif _has_voted(pid):
