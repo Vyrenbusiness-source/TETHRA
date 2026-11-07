@@ -41,6 +41,9 @@ var tunnel_intensity: int = 2
 ## 1 = Dynamisch (volle Flug-Bewegung). Der Schluessel ist neu: bestehende
 ## Nutzer ohne Eintrag landen dadurch einmalig auf Komfort.
 var camera_mode: int = 0
+## Welt-Thema: 0 = Automatisch (Default, WorldTheme.pick nach Song-Charakter),
+## 1 = Galaxie, 2 = Bosskampf, 3 = Aurora, 4 = Neon.
+var world_theme: int = 0
 ## Master-Lautstaerke in dB.
 var volume_db: float = 0.0
 ## Frei belegbare Hook-Tasten (zusaetzlich zu Maus links/rechts).
@@ -298,6 +301,7 @@ func load_settings() -> void:
 	offset_ms = float(cfg.get_value("game", "offset_ms", 0.0))
 	tunnel_intensity = int(cfg.get_value("game", "tunnel_intensity", 2))
 	camera_mode = clampi(int(cfg.get_value("game", "camera_mode", 0)), 0, 1)
+	world_theme = clampi(int(cfg.get_value("game", "world_theme", 0)), 0, 4)
 	volume_db = float(cfg.get_value("game", "volume_db", 0.0))
 	key_hook1 = int(cfg.get_value("keys", "hook1", KEY_Z))
 	key_hook2 = int(cfg.get_value("keys", "hook2", KEY_X))
@@ -322,6 +326,7 @@ func save() -> void:
 	cfg.set_value("game", "offset_ms", offset_ms)
 	cfg.set_value("game", "tunnel_intensity", tunnel_intensity)
 	cfg.set_value("game", "camera_mode", camera_mode)
+	cfg.set_value("game", "world_theme", world_theme)
 	cfg.set_value("game", "volume_db", volume_db)
 	cfg.set_value("keys", "hook1", key_hook1)
 	cfg.set_value("keys", "hook2", key_hook2)
@@ -484,6 +489,16 @@ func tunnel_intensity_value() -> float:
 ## true = Komfort-Kamera (ruhig, gegen Motion-Sickness).
 func comfort_camera() -> bool:
 	return camera_mode == 0
+
+
+## Fest gewaehltes Welt-Thema ("galaxy"/"boss"/"aurora"/"neon") oder "" = automatisch.
+func world_theme_name() -> String:
+	match world_theme:
+		1: return "galaxy"
+		2: return "boss"
+		3: return "aurora"
+		4: return "neon"
+	return ""
 
 
 func is_hook_key(keycode: int) -> bool:
