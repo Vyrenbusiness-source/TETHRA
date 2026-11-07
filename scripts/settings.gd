@@ -493,7 +493,7 @@ func comfort_camera() -> bool:
 
 ## Fest gewaehltes Welt-Thema ("galaxy"/"boss"/"aurora"/"neon") oder "" = automatisch.
 ## Reihenfolge der Welt-Auswahl (Index 1..n; 0 = automatisch). Neue Welten hinten anhaengen.
-const WORLD_ORDER: Array[String] = ["galaxy", "boss", "aurora", "neon", "eclipse", "abyss", "fractal", "obsidian", "storm", "singularity"]
+const WORLD_ORDER: Array[String] = ["galaxy", "boss", "aurora", "neon", "eclipse", "abyss", "fractal", "obsidian", "storm", "singularity", "monolith", "rift", "nerve"]
 
 func world_theme_name() -> String:
 	if world_theme >= 1 and world_theme <= WORLD_ORDER.size():
