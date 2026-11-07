@@ -16,9 +16,12 @@ extends Node
 ## Release-Ablauf (Entwickler): CURRENT_VERSION hochzaehlen, beide PCKs bauen,
 ## `gh release create vX.Y.Z release/TETHRA.pck release/TETHRA_worlds.pck`.
 
-const CURRENT_VERSION := "1.12.3"
+const CURRENT_VERSION := "1.13.0"
 const REPO := "Vyrenbusiness-source/TETHRA"
 const API_LATEST := "https://api.github.com/repos/" + REPO + "/releases/latest"
+## Welten-Paket liegt in einem festen Release (Tag "worlds"), damit normale
+## Releases nur das kleine TETHRA.pck brauchen. Fallback: Asset im latest-Release.
+const API_WORLDS := "https://api.github.com/repos/" + REPO + "/releases/tags/worlds"
 const HEADERS := ["User-Agent: TETHRA-Updater", "Accept: application/vnd.github+json"]
 
 const CHECK_INTERVAL := 600.0
@@ -140,10 +143,43 @@ func _on_latest(result: int, code: int, _h: PackedStringArray, body: PackedByteA
 	var assets: Array = data.get("assets", [])
 	if latest_version != "" and _is_newer(latest_version, CURRENT_VERSION):
 		var m := _make_job(assets, MAIN_ASSET)
-		if not m.is_empty():
+		# Schutz gegen Endlos-Updates: ist das Release-Paket byte-gleich mit dem
+		# lokalen (Digest), gibt es nichts zu laden — auch wenn die Versionsnummer
+		# im Paket nicht stimmt (so entstand der Neustart-Loop in v1.12.2).
+		if not m.is_empty() and not same_as_local(str(m["sig"]), _exe_dir.path_join(MAIN_ASSET)):
 			jobs.append(m)
-	# Welten-Paket: nur wenn lokal weg oder Signatur anders (auch ohne neue Spielversion).
 	var w := _make_job(assets, WORLDS_ASSET)
+	if w.is_empty():
+		_fetch_worlds_release(jobs)
+		return
+	_finish_check(jobs, w)
+
+
+## sig "sha256:<hex>" gleich dem SHA-256 der lokalen Datei?
+static func same_as_local(sig: String, path: String) -> bool:
+	if not sig.begins_with("sha256:") or not FileAccess.file_exists(path):
+		return false
+	return FileAccess.get_sha256(path) == sig.trim_prefix("sha256:").to_lower()
+
+
+func _fetch_worlds_release(jobs: Array[Dictionary]) -> void:
+	var req := HTTPRequest.new()
+	req.timeout = 10.0
+	add_child(req)
+	req.request_completed.connect(func(res: int, code: int, _hh: PackedStringArray, b: PackedByteArray):
+		req.queue_free()
+		var w := {}
+		if res == HTTPRequest.RESULT_SUCCESS and code == 200:
+			var d: Variant = JSON.parse_string(b.get_string_from_utf8())
+			if d is Dictionary:
+				w = _make_job(d.get("assets", []), WORLDS_ASSET)
+		_finish_check(jobs, w))
+	if req.request(API_WORLDS, HEADERS) != OK:
+		req.queue_free()
+		_finish_check(jobs, {})
+
+
+func _finish_check(jobs: Array[Dictionary], w: Dictionary) -> void:
 	# Welten-Paket von Hand neben die Exe gelegt (gleiche Groesse wie im Release),
 	# aber nie per Updater geladen: als aktuell uebernehmen statt 820 MB neu zu laden.
 	if not w.is_empty() and _stored_worlds_sig() == "" 			and _file_size(_exe_dir.path_join(WORLDS_ASSET)) == int(w["size"]):
@@ -209,6 +245,14 @@ func _progress_title() -> String:
 		if str(j["asset"]) == MAIN_ASSET:
 			return "Update v%s wird geladen…" % latest_version
 	return "Welten werden geladen (einmalig, %d MB)…" % int(round(float(_total_bytes) / 1048576.0))
+
+
+## "Update vX bereit" nur bei echtem Spiel-Update, sonst "Welten bereit".
+func _ready_title() -> String:
+	for a in _ready_files():
+		if a == MAIN_ASSET:
+			return ""
+	return "Welten bereit"
 
 
 func _stored_worlds_sig() -> String:
@@ -432,7 +476,7 @@ func _offer_install() -> void:
 		return
 	state_changed.emit("Update v%s bereit." % latest_version, 1.0)
 	if not _toast.is_counting():
-		_toast.show_ready(latest_version, RESTART_COUNTDOWN)
+		_toast.show_ready(latest_version, RESTART_COUNTDOWN, _ready_title())
 
 
 func _show_release_notes() -> void:

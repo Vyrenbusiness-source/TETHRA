@@ -72,6 +72,15 @@ func _init() -> void:
 			"Startargumente weitergegeben, gefaehrliche verworfen")
 	_check(U.apply_blocked(2, "1.0.0", "1.0.0") and not U.apply_blocked(1, "1.0.0", "1.0.0")
 			and not U.apply_blocked(5, "0.9.0", "1.0.0"), "Schleifen-Bremse nach 2 Versuchen derselben Version")
+	var tmpf := "user://test_tmp/same.bin"
+	DirAccess.make_dir_recursive_absolute("user://test_tmp")
+	var ff := FileAccess.open(tmpf, FileAccess.WRITE)
+	ff.store_string("TETHRA")
+	ff.close()
+	var hx := FileAccess.get_sha256(tmpf)
+	_check(U.same_as_local("sha256:" + hx, tmpf) and not U.same_as_local("sha256:00", tmpf)
+			and not U.same_as_local("", tmpf), "Digest-Vergleich gegen lokale Datei (kein Endlos-Update)")
+	DirAccess.remove_absolute(tmpf)
 	# WorldPack ohne Datei
 	var W: GDScript = load("res://scripts/net/world_pack.gd")
 	_check(not W.is_valid_file("res://nicht_da.pck"), "WorldPack: fehlende Datei ungueltig")

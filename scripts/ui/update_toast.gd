@@ -121,8 +121,8 @@ func show_progress(version: String, ratio: float, title: String = "") -> void:
 
 
 ## Update liegt bereit; mit countdown_s > 0 startet der Neustart automatisch.
-func show_ready(version: String, countdown_s: float) -> void:
-	_title.text = "Update v%s bereit" % version
+func show_ready(version: String, countdown_s: float, title: String = "") -> void:
+	_title.text = title if title != "" else "Update v%s bereit" % version
 	_body.visible = true
 	_bar.visible = false
 	_btn_row.visible = true
