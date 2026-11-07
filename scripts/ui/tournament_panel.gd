@@ -228,7 +228,7 @@ func _name_cell(peer: int, pname: String, sz: int = 28) -> Control:
 	var h := HBoxContainer.new()
 	h.add_theme_constant_override("separation", 10)
 	h.add_child(avatar(pname, sz))
-	var l := lbl(pname + ("  (du)" if peer == my_id else ""), 16)
+	var l := lbl(pname + (("  " + tr("(du)")) if peer == my_id else ""), 16)
 	l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -711,7 +711,7 @@ func _build_ban() -> void:
 		var h := HBoxContainer.new()
 		h.add_theme_constant_override("separation", 10)
 		h.add_child(avatar(_pname(pid), 26))
-		var nl := lbl(_pname(pid) + ("  (du)" if pid == my_id else ""), 15)
+		var nl := lbl(_pname(pid) + (("  " + tr("(du)")) if pid == my_id else ""), 15)
 		nl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		nl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 		h.add_child(nl)

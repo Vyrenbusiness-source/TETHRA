@@ -574,11 +574,11 @@ func _build_browser() -> void:
 static func _possessive_room(n: String) -> String:
 	var t := n.strip_edges()
 	if t.is_empty():
-		return tr("Raum")
+		return TranslationServer.translate("Raum")
 	var last := t.substr(t.length() - 1).to_lower()
 	if last in ["s", "x", "z"]:
-		return tr("%s' Raum") % t
-	return tr("%s's Raum") % t
+		return TranslationServer.translate("%s' Raum") % t
+	return TranslationServer.translate("%s's Raum") % t
 
 
 func _field_box() -> StyleBoxFlat:
@@ -1020,7 +1020,7 @@ func _refresh_room() -> void:
 		crown.add_theme_font_size_override("font_size", 17)
 		row.add_child(crown)
 		var name_l := Label.new()
-		name_l.text = str(p.name) + ("  (du)" if id == my_id else "")
+		name_l.text = str(p.name) + (("  " + tr("(du)")) if id == my_id else "")
 		name_l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		name_l.add_theme_font_size_override("font_size", 16)
 		name_l.add_theme_color_override("font_color", COL_TEXT)
