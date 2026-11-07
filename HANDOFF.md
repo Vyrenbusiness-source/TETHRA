@@ -89,3 +89,11 @@ Offen / ungetestet:
 - Sturm: Seitenroehren folgen der Spurbreite nicht. Boss-Himmel: harter rosa Streifen oben (alt).
 - 5 abgebrochene Downloads in maps/ (mirror_2538892, mirror_2556039, mirror_2597846, ...) - Nutzer entscheidet.
 Nutzer-Vorgaben (dauerhaft): Fraktal-Stil = Referenz; nichts kippt/rollt; Drop nie zu stark; maximal scharf; extrem viele FPS; Neon nicht anfassen; Discord nicht; Tests lautlos, nur Monitor 2, Fenster mit timeout; Tests nicht unnoetig wiederholen; bis 10 Agents.
+
+## Stand 2026-11-07 21:10 (Stopp: PC fror ein, Kernel-Speicherleck durch viele Prozessstarts -> NEUSTART)
+Released + gepusht: v1.13.0 (Update-Loop-Fix: Welten-Paket ohne Skripte, mount replace_files=false; Digest-Vergleich). README neu + Repo-Beschreibung/Tags. In main (nicht released): i18n-game, i18n-mp (Englisch), Genre-Uebersetzung.
+Offen, nach Neustart fortsetzen (Worktree-Commits "WIP (Stopp wegen RAM-Leck)"):
+- i18n-core (opus): Rest Menues/Tutorial/Updater-Texte, translations/menus.csv, Screenshots --lang=en, tests/run_ui_format_tests.gd sprachfest. Handoff .git/warmd-handoff/i18n-core.md. Standardsprache Englisch.
+- lobby-redesign (opus, Nutzer will das explizit): .warmd/tasks/lobby-redesign.md, neue Texte in translations/lobby.csv (danach in project.godot registrieren).
+- note-colors: .warmd/tasks/note-colors.md (NoteColors + NoteColorPicker, translations/colors.csv registrieren, Picker ins Settings-Panel einbauen).
+- Danach: Release v1.14.0 NUR TETHRA.pck hochladen; vorher Release-Tag "worlds" mit TETHRA_worlds.pck (+Zip) anlegen (siehe memory release-checks).
