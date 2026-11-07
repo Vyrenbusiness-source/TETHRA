@@ -29,6 +29,7 @@ func _initialize() -> void:
 	_test_palette()
 	_test_new_worlds()
 	_test_beat_contract()
+	_test_note_styles()
 	print("=== Ergebnis: %d fehlgeschlagen ===" % _failed)
 	quit(1 if _failed > 0 else 0)
 
@@ -172,6 +173,45 @@ func _test_beat_contract() -> void:
 			last = v
 	_check(mono, "beat_step monoton")
 	_check(absf(D.beat_step(3, 0.0) - 3.0) < 0.001, "beat_step Beat 3 Phase 0 = 3")
-	_check(D.beat_step(3, 0.99) > 3.99, "beat_step ruht vor naechstem Schlag")
+	var dmin := 9.0
+	var dmax := 0.0
+	for b in 4:
+		for k in 1000:
+			var p0 := float(k) / 1000.0
+			var dv := (D.beat_step(b, p0 + 0.001) - D.beat_step(b, p0)) / 0.001
+			dmin = minf(dmin, dv)
+			dmax = maxf(dmax, dv)
+	_check(dmin >= 0.74 and dmax <= 1.26, "beat_step Tempo 0.75..1.25 (%.3f..%.3f), nie still" % [dmin, dmax])
 	_check(absf(D.beat_step(3, 0.9999) - D.beat_step(4, 0.0)) < 0.001, "beat_step stetig am Schlag")
 	_check(D.downbeat_pulse(0.0, 4) == 1.0 and D.downbeat_pulse(0.5, 4) < 0.01, "downbeat_pulse")
+
+
+func _test_note_styles() -> void:
+	var D := WorldTheme
+	_check(not D.has_note_style("galaxy") and not D.has_note_style("neon"), "Galaxie/Neon ohne Noten-Stil")
+	var min_all := 1.0
+	for t in D.NAMES:
+		if t == "galaxy" or t == "neon":
+			continue
+		_check(D.has_note_style(t), "%s hat Noten-Stil" % t)
+		var n := D.note_color(t, false)
+		var h := D.note_color(t, true)
+		_check(n.a > 0.0 and h.a > 0.0 and n != h, "%s: Note und Hold verschieden" % t)
+		_check(n.v >= 0.8 and h.v >= 0.7, "%s: Noten hell genug (Lesbarkeit)" % t)
+		var cols: Array[Color] = []
+		for d in SnapColor.DIVISORS:
+			var c := D.snap_style(d, n)
+			cols.append(c)
+			_check(c.v >= D.SNAP_V_MIN - 0.002 and c.v <= D.SNAP_V_MAX + 0.002, "%s/%d: Helligkeit im Bereich" % [t, d])
+			var dh := absf(c.h - n.h)
+			dh = minf(dh, 1.0 - dh)
+			_check(n.s < 0.2 or dh <= 0.08, "%s/%d: Farbton bleibt Weltfarbe" % [t, d])
+		var mn := 1.0
+		for i in cols.size():
+			for j in range(i + 1, cols.size()):
+				var dist := Vector3(cols[i].r - cols[j].r, cols[i].g - cols[j].g, cols[i].b - cols[j].b).length()
+				mn = minf(mn, dist)
+		min_all = minf(min_all, mn)
+		_check(mn > 0.05, "%s: Snap-Farben unterscheidbar (min %.3f)" % [t, mn])
+	print("min snap distance over worlds: %.3f" % min_all)
+	_check(D.snap_style(99, D.note_color("boss", false)) == D.snap_style(16, D.note_color("boss", false)), "Unbekannter Teiler = 16")
