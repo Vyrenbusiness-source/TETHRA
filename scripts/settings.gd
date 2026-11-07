@@ -105,6 +105,14 @@ var graphics_quality: int = 3
 var fps_mode: int = 2
 ## Anzeigename des Spielers (Profil).
 var profile_name: String = "Player"
+## Sprache der Oberflaeche: "en" (Default, auch ohne gespeicherten Wert) oder
+## "de" (nur per Einstellungen). Eine gespeicherte Wahl bleibt erhalten.
+## Uebersetzungen: translations/*.csv (Schluessel = deutscher Text).
+const LANGUAGES: Array[String] = ["en", "de"]
+var language: String = "en"
+## --lang=xx (Test-/Screenshot-Laeufe) ueberschreibt language nur fuer diesen
+## Lauf und wird nie gespeichert.
+var _lang_override: String = ""
 
 ## Eigenes Profilbild (quadratisch beschnitten, 256px, user://avatar.png).
 const AVATAR_PATH := "user://avatar.png"
@@ -227,6 +235,7 @@ func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_migrate_from_hookline()
 	load_settings()
+	_lang_override = cli_language()
 	_setup_audio_enhance()
 	# Globales Glass-Theme: ALLE Controls (Slider, Dropdowns, Scrollbalken,
 	# Popups …) verlieren die graue Godot-Standard-Optik.
@@ -361,6 +370,7 @@ func load_settings(path: String = PATH) -> void:
 	audio_enhance = bool(cfg.get_value("game", "audio_enhance", true))
 	bass_boost = clampf(float(cfg.get_value("game", "bass_boost", 0.75)), 0.0, 1.0)
 	profile_name = str(cfg.get_value("profile", "name", "Player"))
+	language = _valid_language(str(cfg.get_value("game", "language", "en")))
 
 
 func save(path: String = PATH) -> void:
@@ -397,11 +407,13 @@ func save(path: String = PATH) -> void:
 	cfg.set_value("game", "audio_enhance", audio_enhance)
 	cfg.set_value("game", "bass_boost", bass_boost)
 	cfg.set_value("profile", "name", profile_name)
+	cfg.set_value("game", "language", language)
 	cfg.save(path)
 
 
 ## Einstellungen auf die laufenden Systeme anwenden.
 func apply() -> void:
+	TranslationServer.set_locale(active_language())
 	SyncClock.user_offset_ms = offset_ms
 	AudioServer.set_bus_volume_db(0, volume_db)
 	_apply_mastering()
@@ -459,6 +471,37 @@ func apply() -> void:
 				DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
 				Engine.max_fps = 480
 	changed.emit()
+
+
+## Aktive Sprache: --lang=xx-Override, sonst die gespeicherte Wahl.
+func active_language() -> String:
+	return _lang_override if _lang_override != "" else language
+
+
+## Sprache umschalten (Einstellungen): speichern, Locale setzen und die offene
+## Szene neu aufbauen, damit auch per Code gebaute Texte (tr()) sofort wechseln.
+func set_language(code: String) -> void:
+	code = _valid_language(code)
+	_lang_override = ""
+	if code == language and TranslationServer.get_locale().begins_with(code):
+		return
+	language = code
+	save()
+	apply()
+	if get_tree().current_scene != null:
+		get_tree().reload_current_scene.call_deferred()
+
+
+static func _valid_language(code: String) -> String:
+	return code if LANGUAGES.has(code) else "en"
+
+
+## --lang=en / --lang=de auf der Kommandozeile (auch nach "--"), sonst "".
+static func cli_language() -> String:
+	for a in OS.get_cmdline_args() + OS.get_cmdline_user_args():
+		if a.begins_with("--lang="):
+			return _valid_language(a.substr(7))
+	return ""
 
 
 ## F11 = Vollbild-Toggle · Alt+Mausrad = Master-Lautstaerke (wie osu).
