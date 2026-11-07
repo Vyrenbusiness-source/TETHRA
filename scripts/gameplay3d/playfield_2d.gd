@@ -71,9 +71,9 @@ func note_h() -> float:
 	return _vs().y * NOTE_H_FRAC * note_k
 
 
-## Kreis-Durchmesser: 86 % der Spalte bei 100 %, nie breiter als die Spalte.
+## Kreis-Durchmesser: unabhaengig von der Spurbreite (nur Notengroesse), immer rund.
 func circle_d() -> float:
-	return minf(col_width() * 0.86 * note_k, col_width())
+	return _vs().y * COL_W_FRAC * 0.86 * note_k
 
 
 func begin_frame() -> void:
@@ -374,7 +374,10 @@ func _draw_skin_item(it: Array, xs: Array, ws: Array, vs: Vector2) -> void:
 		head = sk.tex("note_%d" % col)
 	if head == null:
 		head = sk.tex("head_%d" % col)
-	var hh := (_tex_h(head, w) if head != null else vs.y * NOTE_H_FRAC) * note_k
+	# Notengroesse skaliert gleichmaessig: Breite = Spalte * note_k, Hoehe aus Seitenverhaeltnis.
+	var nw := w * note_k
+	var nx := x + (w - nw) * 0.5
+	var hh := _tex_h(head, nw) if head != null else vs.y * NOTE_H_FRAC * note_k
 	if bool(it[5]):
 		var yt := z_to_y(float(it[2]))
 		var top := minf(yh, yt)
@@ -382,7 +385,7 @@ func _draw_skin_item(it: Array, xs: Array, ws: Array, vs: Vector2) -> void:
 		if bot < -hh or top > vs.y + hh:
 			return
 		var tail := sk.tex("tail_%d" % col)
-		var th := (_tex_h(tail, w) if tail != null else (hh if head != null else vs.y * NOTE_H_FRAC * note_k))
+		var th := (_tex_h(tail, nw) if tail != null else (hh if head != null else vs.y * NOTE_H_FRAC * note_k))
 		var body := sk.tex("body_%d" % col)
 		var bm := mod
 		if st == STATE_HELD:
@@ -390,20 +393,20 @@ func _draw_skin_item(it: Array, xs: Array, ws: Array, vs: Vector2) -> void:
 		var body_bot := yh - hh * 0.5
 		if body_bot > top:
 			if body != null:
-				_draw_body(body, x, w, top, body_bot, bm)
+				_draw_body(body, nx, nw, top, body_bot, bm)
 			else:
 				var cc: Color = it[3] if st != STATE_DEAD else Color(0.36, 0.37, 0.41, 0.8)
 				var bw := w * 0.72
 				draw_rect(Rect2(x + (w - bw) * 0.5, top, bw, body_bot - top), Color(cc.r, cc.g, cc.b, 0.55 if st != STATE_HELD else 0.75))
 		# Ende: eigene Textur, sonst Kopf vertikal gespiegelt, sonst Balken.
 		if tail != null:
-			draw_texture_rect(tail, Rect2(x, top - th, w, th), false, mod)
+			draw_texture_rect(tail, Rect2(nx, top - th, nw, th), false, mod)
 		elif head != null:
-			draw_texture_rect(head, Rect2(x, top, w, -th), false, mod)
+			draw_texture_rect(head, Rect2(nx, top, nw, -th), false, mod)
 	elif yh < -hh or yh > vs.y + hh:
 		return
 	if head != null:
-		draw_texture_rect(head, Rect2(x, yh - hh, w, hh), false, mod)
+		draw_texture_rect(head, Rect2(nx, yh - hh, nw, hh), false, mod)
 	else:
 		var c: Color = it[3] if st != STATE_DEAD else Color(0.36, 0.37, 0.41, 0.8)
 		_draw_bar(Rect2(x + 2.0, yh - hh, w - 4.0, hh), c)
