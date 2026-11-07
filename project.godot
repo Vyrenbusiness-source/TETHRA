@@ -61,7 +61,7 @@ driver/mix_rate=48000
 
 [internationalization]
 
-locale/translations=PackedStringArray("res://translations/menus.en.translation", "res://translations/game.en.translation", "res://translations/mp.en.translation", "res://translations/colors.en.translation", "res://translations/lobby.en.translation")
+locale/translations=PackedStringArray("res://translations/menus.en.translation", "res://translations/game.en.translation", "res://translations/mp.en.translation", "res://translations/colors.en.translation", "res://translations/lobby.en.translation", "res://translations/tourskip.en.translation")
 locale/fallback="de"
 
 [physics]
