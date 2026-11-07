@@ -6,7 +6,24 @@ extends RefCounted
 ## werden gespeichert, aber separat markiert und ueberschreiben keine
 ## Ranked-Bestwerte.
 
+##
+## Fremde Scores (Multiplayer-Sync): Sektion "others", Key = map_id()
+## ("<set_id>|<Version>", bei unbekannter Set-ID "f:<Dateiname>|<Version>"),
+## Wert = Array von Eintraegen. Sie fliessen NIE in scores/plays/history/recent,
+## also nicht in best(), best_plays(), profile_pp() oder Statistiken.
+## Felder eines Eintrags (others und top_scores_all):
+##   player: String (max. 24 Zeichen), score: int, accuracy: float 0..1,
+##   grade: String, max_combo: int, pp: float (-1 = unbekannt),
+##   unranked: bool, mods: Array[String], date: String,
+##   is_self: bool (nur top_scores_all; eigene = Settings.profile_name)
+## Map-Identitaet: Set-ID aus Dateiname ("123 Titel.osz", "mirror_123.osz") oder
+## per register_set_id() aus der Sektion "setids" (Dateiname -> Set-ID), damit
+## unterschiedliche Dateinamen derselben Map zusammenfallen.
+
 const PATH := "user://scores.cfg"
+const OTHERS_CAP := 10
+const NAME_MAX := 24
+const GRADES := ["SS", "S", "A", "B", "C", "D", "F"]
 
 
 ## Speichert ein Ergebnis; liefert {is_new_best: bool, previous: Dictionary}.
@@ -244,3 +261,166 @@ static func play_count(osz_file: String, version: String) -> int:
 
 static func _key(osz_file: String, version: String) -> String:
 	return "%s|%s" % [osz_file.get_file(), version]
+
+
+# ---------------------------------------------------------------------------
+# Fremde Scores
+# ---------------------------------------------------------------------------
+
+## Set-ID einer lokalen .osz: Registry, sonst aus dem Dateinamen; 0 = unbekannt.
+static func set_id_of(osz_file: String, cfg: ConfigFile = null) -> int:
+	var f := osz_file.get_file()
+	if cfg == null:
+		cfg = ConfigFile.new()
+		cfg.load(PATH)
+	var reg := int(cfg.get_value("setids", f, 0))
+	if reg > 0:
+		return reg
+	var base := f.get_basename()
+	if base.begins_with("mirror_") and base.substr(7).is_valid_int():
+		return int(base.substr(7))
+	var head := base.split(" ")[0]
+	if head.is_valid_int():
+		return int(head)
+	return 0
+
+
+## Merkt sich Dateiname -> Set-ID (z. B. aus der .osu oder der Lobby-Auswahl).
+static func register_set_id(osz_file: String, set_id: int) -> void:
+	if set_id <= 0 or osz_file.get_file() == "":
+		return
+	var cfg := ConfigFile.new()
+	cfg.load(PATH)
+	if int(cfg.get_value("setids", osz_file.get_file(), 0)) == set_id:
+		return
+	cfg.set_value("setids", osz_file.get_file(), set_id)
+	cfg.save(PATH)
+
+
+static func map_id_for_set(set_id: int, version: String) -> String:
+	return "%d|%s" % [set_id, version]
+
+
+## Dateinamen-unabhaengiger Map-Schluessel.
+static func map_id(osz_file: String, version: String, cfg: ConfigFile = null) -> String:
+	var sid := set_id_of(osz_file, cfg)
+	if sid > 0:
+		return map_id_for_set(sid, version)
+	return "f:%s|%s" % [osz_file.get_file().get_basename(), version]
+
+
+## Prueft/normalisiert einen Fremd-Eintrag; {} wenn ungueltig.
+static func sanitize_foreign(e: Variant, player: String) -> Dictionary:
+	if not (e is Dictionary):
+		return {}
+	var d: Dictionary = e
+	var pname := ""
+	for ch in player.strip_edges():
+		if ch.unicode_at(0) >= 32:
+			pname += ch
+	pname = pname.substr(0, NAME_MAX).strip_edges()
+	if pname == "":
+		return {}
+	for k in ["score", "accuracy", "max_combo", "pp"]:
+		if not (d.get(k, 0) is int or d.get(k, 0) is float):
+			return {}
+	var score := int(d.get("score", 0))
+	var acc := float(d.get("accuracy", 0.0))
+	var combo := int(d.get("max_combo", 0))
+	var pp := float(d.get("pp", -1.0))
+	if is_nan(acc) or is_nan(pp) or is_inf(acc) or is_inf(pp):
+		return {}
+	if score < 0 or score > 100000000 or acc < 0.0 or acc > 1.0 			or combo < 0 or combo > 1000000 or pp < -1.0 or pp > 100000.0:
+		return {}
+	if bool(d.get("failed", false)):
+		return {}
+	var grade = d.get("grade", "D")
+	if not (grade is String) or not GRADES.has(grade):
+		return {}
+	var mods: Array = []
+	var m = d.get("mods", [])
+	if not (m is Array) or m.size() > 8:
+		return {}
+	for x in m:
+		if not (x is String) or x.length() > 8:
+			return {}
+		mods.append(x)
+	var date = d.get("date", "")
+	if not (date is String) or date.length() > 32:
+		return {}
+	return {
+		"player": pname, "score": score, "accuracy": acc, "grade": grade,
+		"max_combo": combo, "pp": pp, "unranked": bool(d.get("unranked", false)),
+		"mods": mods, "date": date,
+	}
+
+
+## Speichert Fremd-Scores einer Map (map_key aus map_id/map_id_for_set).
+## Duplikate (gleicher Spieler + Score) werden uebersprungen; pro Spieler
+## und Map bleiben die OTHERS_CAP besten. Liefert die Zahl neuer Eintraege.
+static func submit_others(map_key: String, player: String, entries: Array) -> int:
+	if map_key == "":
+		return 0
+	var clean: Array = []
+	for e in entries:
+		var c := sanitize_foreign(e, player)
+		if not c.is_empty():
+			clean.append(c)
+	if clean.is_empty():
+		return 0
+	var cfg := ConfigFile.new()
+	cfg.load(PATH)
+	var list: Array = cfg.get_value("others", map_key, [])
+	var added := 0
+	for c in clean:
+		var dup := false
+		for o in list:
+			if o is Dictionary and str(o.get("player", "")) == c.player 					and int(o.get("score", -1)) == int(c.score):
+				dup = true
+				break
+		if not dup:
+			list.append(c)
+			added += 1
+	if added == 0:
+		return 0
+	# pro Spieler auf die besten OTHERS_CAP kappen
+	list.sort_custom(func(a, b): return int(a.score) > int(b.score))
+	var count := {}
+	var kept: Array = []
+	for o in list:
+		var n := int(count.get(o.player, 0))
+		if n < OTHERS_CAP:
+			kept.append(o)
+			count[o.player] = n + 1
+	cfg.set_value("others", map_key, kept)
+	cfg.save(PATH)
+	return added
+
+
+## Eigene + fremde Scores einer Map gemischt (beste zuerst, max. n).
+## Jeder Eintrag hat "player" und "is_self".
+static func top_scores_all(osz_file: String, version: String, n: int = 5) -> Array:
+	var cfg := ConfigFile.new()
+	var loaded := cfg.load(PATH) == OK
+	var out: Array = []
+	for e in top_scores(osz_file, version, HISTORY_CAP):
+		var d: Dictionary = e.duplicate()
+		d["player"] = _self_name()
+		d["is_self"] = true
+		out.append(d)
+	if loaded:
+		var others: Array = cfg.get_value("others", map_id(osz_file, version, cfg), [])
+		for o in others:
+			if o is Dictionary:
+				var d: Dictionary = o.duplicate()
+				d["is_self"] = false
+				out.append(d)
+	out.sort_custom(func(a, b): return int(a.score) > int(b.score))
+	return out.slice(0, n)
+
+
+## Eigener Profilname (Autoload per Pfad, damit Tests ohne Autoload-Symbol kompilieren).
+static func _self_name() -> String:
+	var tree := Engine.get_main_loop() as SceneTree
+	var st = tree.root.get_node_or_null("Settings") if tree != null else null
+	return str(st.profile_name) if st != null else "Player"
