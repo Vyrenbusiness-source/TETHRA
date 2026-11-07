@@ -18,7 +18,9 @@ var sv_ver: int = 0
 
 ## Pro Difficulty ein Dictionary (leicht -> schwer sortiert):
 ## { version, osu_filename, stars, max_combo, notes, duration_ms,
-##   cs, ar, od, preview_time, audio_filename, sv }
+##   cs, ar, od, preview_time, audio_filename, sv, holds, bpm }
+## holds = Anzahl Long Notes, bpm = vorherrschendes Tempo (fehlen in alten
+## Cache-Eintraegen, bis der Hintergrund-Nachlauf sie ergaenzt).
 var diffs: Array = []
 
 var _thumb_cache: Texture2D = null
@@ -58,11 +60,41 @@ func has_sv() -> bool:
 	return sv
 
 
-## Ergebnis der SV-Erkennung uebernehmen: by_file = { osu_filename: bool }.
+## Alte Cache-Eintraege ohne Long-Note-/BPM-Werte: Nachlauf noetig.
+func needs_stats() -> bool:
+	for d in diffs:
+		if not d.has("holds"):
+			return true
+	return false
+
+
+## Kennwerte einer Diff fuer Filter: {ln (Long-Note-Anteil %), len_s, bpm};
+## -1 = unbekannt.
+func stats_at(index: int) -> Dictionary:
+	var m := meta_at(index)
+	var notes := int(m.get("notes", 0))
+	var ln := -1
+	if m.has("holds") and notes > 0:
+		ln = roundi(float(m.holds) * 100.0 / float(notes))
+	var dur := float(m.get("duration_ms", 0.0))
+	return { "ln": ln, "len_s": roundi(dur / 1000.0) if dur > 0.0 else -1,
+		"bpm": roundi(float(m.bpm)) if float(m.get("bpm", 0.0)) > 0.0 else -1 }
+
+
+## Ergebnis des Hintergrund-Nachlaufs uebernehmen: by_file = { osu_filename:
+## bool (nur SV) oder {sv, holds, bpm} }.
 func apply_sv(by_file: Dictionary) -> void:
 	sv = false
 	for d in diffs:
-		var v := bool(by_file.get(str(d.get("osu_filename", "")), false))
+		var r = by_file.get(str(d.get("osu_filename", "")), false)
+		var v := false
+		if r is Dictionary:
+			v = bool(r.get("sv", false))
+			if r.has("holds"):
+				d["holds"] = int(r.holds)
+				d["bpm"] = float(r.get("bpm", 0.0))
+		else:
+			v = bool(r)
 		d["sv"] = v
 		sv = sv or v
 	sv_ver = MapLibrary.SV_VERSION
