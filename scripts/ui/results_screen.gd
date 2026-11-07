@@ -121,7 +121,7 @@ func show_toast(text: String, sticky: bool, folder: String = "") -> void:
 		_toast_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		hb.add_child(_toast_label)
 		_toast_btn = Button.new()
-		_toast_btn.text = "Ordner öffnen"
+		_toast_btn.text = tr("Ordner öffnen")
 		UiTheme.style_button(_toast_btn, false)
 		_toast_btn.pressed.connect(func() -> void: open_folder(_toast_folder))
 		hb.add_child(_toast_btn)
@@ -145,6 +145,16 @@ func open_folder(folder: String) -> int:
 	if folder == "":
 		return ERR_INVALID_PARAMETER
 	return OS.shell_open(ProjectSettings.globalize_path(folder))
+
+
+## Clip-Export-Fortschritt als stehender Toast mit Prozent und Restzeit
+## (ClipExporter.progress_info). eta_s < 0 = noch keine Schaetzung.
+func show_clip_progress(fraction: float, eta_s: float, phase: String = "render") -> void:
+	var pct := int(clampf(fraction, 0.0, 1.0) * 100.0)
+	var text := tr("Clip wird umgewandelt … %d %%") % pct if phase == "encode" 		else tr("Clip wird aufgenommen … %d %%") % pct
+	if eta_s >= 0.0:
+		text += "  " + tr("noch ca. %d s") % int(ceilf(eta_s))
+	show_toast(text, true)
 
 
 ## Clip-Export-Ergebnis als Toast: "Clip gespeichert: <Pfad>" + Ordner-Button,
