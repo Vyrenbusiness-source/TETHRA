@@ -235,6 +235,12 @@ var _sky_stars: Array = []
 var _sky_a := -1
 var _sky_b := -1
 var _sky_phase := 0.0
+# WELT-THEMA (WorldTheme): beim Map-Start gewaehlt. "galaxy" = sky_panorama
+# mit Kapitel-Paletten; boss/aurora/neon = eigener Himmels-Shader mit dem
+# gleichen Uniform-Interface (_sky_mat), Farbsatz ersetzt die Coverfarbe.
+var _world_theme := WorldTheme.GALAXY
+var _theme_lightning := 0.0
+var _theme_flow := 0.0
 var _gal_scale := 1.0
 ## Grund-Reisetempo aus dem BPM der Map (140 BPM = neutral).
 var _bpm_factor := 1.0
@@ -371,6 +377,7 @@ func _ready() -> void:
 	_ring_shader = load("res://shaders/hit_ring.gdshader")
 	_note_shader = load("res://shaders/note_disc.gdshader")
 	_extract_theme_color()
+	_choose_world_theme()
 	_precompute_snap_colors()
 	_preload_stations()
 	_build_world()
@@ -385,6 +392,7 @@ func _ready() -> void:
 	# Kapitel-Punkte unten entfernt (QA: unklar, doppelt zum Song-Fortschritt).
 	_build_flight_plan()
 	_build_galaxy_chapters()
+	_apply_theme_world()
 	_build_sound()
 	_beat_player = AudioStreamPlayer.new()
 	_beat_player.stream = Sfx.beat_thump_stream()
@@ -2099,6 +2107,7 @@ func _process(delta: float) -> void:
 	_star_scroll += delta * _flow * (cruise * (1.0 + surge_m) + (_warp_level * 55.0 + _star_burst * 18.0) * fx * _flow) * (1.0 - dock_mix * 0.75)
 	# Panorama: ferne Sternen-Ebene stroemt langsamer (Parallaxe), gleicher
 	# Beat-Schub; Welt-Puls + minimaler Warp auf dem Schlag.
+	_update_theme_sky(delta)
 	if _sky_mat != null:
 		_sky_phase += delta * _flow * (0.05 * cruise / 9.0 * (1.0 + surge_m * fx) + _warp_level * 0.45 * fx * _flow) * (1.0 - dock_mix * 0.75)
 		_sky_mat.set_shader_parameter(&"star_phase", _sky_phase)
@@ -2339,6 +2348,9 @@ func _on_beat_edge(beat_idx: int, downbeat: bool) -> void:
 		_star_burst = 1.0
 	# Sub-Thump auf dem Taktanfang (hoerbar UND fuehlbar, uebertoent die Musik
 	# nicht); die Huellkurve kommt aus BeatClock.
+	# BOSSKAMPF: ferne Wolken-Blitze auf den Kiai-Downbeats (Komfort: schwaecher).
+	if downbeat and _world_theme == WorldTheme.BOSS and _kiai_mix > 0.5 and _fx_level() > 0.0:
+		_theme_lightning = 0.6 if _comfort else 1.0
 	if downbeat and _use_audio and _beat_player != null:
 		_beat_player.play()
 	# Downbeat-Welle: ein Lichtband rollt im Noten-Tempo vom Horizont zur
@@ -2879,7 +2891,12 @@ func _update_chapters(vt: float, fx: float) -> void:
 			_sky_set(true, _sky_b)
 			_sky_b = -1
 		_sky_mat.set_shader_parameter(&"palette_mix", w if _sky_b >= 0 else 0.0)
-		_sky_mat.set_shader_parameter(&"brightness", lerpf(0.95, 1.2, _ch_kiai_w))
+		# Themen: Kiai = eine Stufe intensiver (heller, kraeftigerer Puls).
+		var themed := _world_theme != WorldTheme.GALAXY
+		_sky_mat.set_shader_parameter(&"brightness",
+				lerpf(0.95, 1.32 if themed else 1.2, _ch_kiai_w))
+		if themed:
+			_sky_mat.set_shader_parameter(&"kiai", _ch_kiai_w)
 	_ch_w = w
 	_gal_col = (_gal_from.col as Color).lerp(ch.col, w)
 	_gal_col2 = (_gal_from.col2 as Color).lerp(ch.col2, w)
@@ -3973,6 +3990,9 @@ func _capture_after_first_note() -> void:
 
 ## Panorama-Himmel als Basis (BG_SKY); false, wenn Shader/Texturen fehlen.
 func _build_sky(env: Environment) -> bool:
+	if _world_theme != WorldTheme.GALAXY and _build_theme_sky(env):
+		return true
+	_world_theme = WorldTheme.GALAXY
 	var sp := "res://shaders/sky_panorama.gdshader"
 	if not ResourceLoader.exists(sp):
 		return false
@@ -4036,7 +4056,7 @@ func _sky_set(slot_a: bool, pal: int) -> void:
 
 ## Kapitelwechsel: neue Palette in Slot b, Mischung laeuft ab dem Downbeat.
 func _sky_begin_chapter(pal: int, first: bool) -> void:
-	if _sky_mat == null:
+	if _sky_mat == null or _world_theme != WorldTheme.GALAXY:
 		return
 	if _sky_b >= 0:
 		# Wechsel mitten in einer Ueberblendung: b war das Ziel -> wird Basis.
@@ -4048,3 +4068,137 @@ func _sky_begin_chapter(pal: int, first: bool) -> void:
 		_sky_set(false, pal)
 		_sky_b = pal
 	_sky_mat.set_shader_parameter(&"palette_mix", 0.0)
+
+
+## Welt-Thema waehlen: --theme=<name> (Screenshots) > Einstellung > Automatisch.
+## Fehlt Shader oder Panorama eines Themas -> Galaxie (laeuft immer).
+func _choose_world_theme() -> void:
+	var forced := Settings.world_theme_name()
+	for a in OS.get_cmdline_args():
+		if a.begins_with("--theme="):
+			forced = a.substr(8)
+	var stars := GameSession.stars
+	var t := WorldTheme.resolve(forced, _beatmap, stars, _theme_col)
+	if t != WorldTheme.GALAXY and _theme_files(t).is_empty():
+		t = WorldTheme.GALAXY
+	_world_theme = t
+	var pal := WorldTheme.palette(t)
+	if not pal.is_empty():
+		_theme_col = pal.line
+		_theme_kiai = pal.kiai
+	print("[world] theme=%s (setting=%s, stars=%.2f)" % [t, forced if forced != "" else "auto", stars])
+
+
+## Bilddateien des Themas: Stamm -> res-Pfad ({} = Shader oder Panorama fehlt).
+func _theme_files(t: String) -> Dictionary:
+	var sp := WorldTheme.shader_path(t)
+	if sp == "" or not ResourceLoader.exists(sp):
+		return {}
+	var dir := WorldTheme.asset_dir(t)
+	var out := {}
+	if not DirAccess.dir_exists_absolute(dir):
+		return {}
+	for fname in ResourceLoader.list_directory(dir):
+		var ext := fname.get_extension().to_lower()
+		if ext in ["webp", "png", "jpg", "exr", "hdr"]:
+			var path := dir.path_join(fname)
+			if ResourceLoader.exists(path):
+				out[fname.get_basename()] = path
+	return out
+
+
+## Themen-Himmel: Shader-Uniforms per Konvention mit Texturen fuellen.
+## tex_a/tex_b = Panorama (Stamm ohne Ebenen-Suffix), <key>_a/<key>_b =
+## Ebene *_<key> (stars, embers, aurora, ...). Slot b = Slot a (palette_mix
+## wird bei Themen nicht genutzt).
+func _build_theme_sky(env: Environment) -> bool:
+	var files := _theme_files(_world_theme)
+	if files.is_empty():
+		return false
+	var sh: Shader = load(WorldTheme.shader_path(_world_theme))
+	if sh == null:
+		return false
+	var samplers: Array[String] = []
+	for u in sh.get_shader_uniform_list():
+		if int(u.type) == TYPE_OBJECT:
+			samplers.append(str(u.name))
+	var keys := {}
+	for sn in samplers:
+		var base := sn
+		if base.ends_with("_a") or base.ends_with("_b"):
+			base = base.substr(0, base.length() - 2)
+		keys[sn] = base
+	# Ebenen-Dateien (Suffix passt zu einem Sampler) vs. Panorama.
+	var layer_of := {}
+	var pano := ""
+	var stems: Array = files.keys()
+	stems.sort()
+	for stem in stems:
+		var hit := ""
+		for sn in keys:
+			var b: String = keys[sn]
+			if b != "tex" and (stem == b or stem.ends_with("_" + b)):
+				hit = b
+		if hit != "":
+			layer_of[hit] = files[stem]
+		elif pano == "" or stem.length() < pano.get_file().get_basename().length():
+			pano = files[stem]
+	if pano == "":
+		return false
+	_sky_mat = ShaderMaterial.new()
+	_sky_mat.shader = sh
+	for sn in keys:
+		var b: String = keys[sn]
+		var path: String = pano if b == "tex" else str(layer_of.get(b, ""))
+		if path != "":
+			_sky_mat.set_shader_parameter(sn, load(path))
+	_sky_mat.set_shader_parameter("readability", 0.7)
+	_sky_mat.set_shader_parameter("star_speed", 0.0)
+	_sky_mat.set_shader_parameter("palette_mix", 0.0)
+	var sky := Sky.new()
+	sky.sky_material = _sky_mat
+	sky.radiance_size = Sky.RADIANCE_SIZE_32
+	sky.process_mode = Sky.PROCESS_MODE_INCREMENTAL
+	env.background_mode = Environment.BG_SKY
+	env.sky = sky
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	env.ambient_light_color = Color(0, 0, 0)
+	env.reflected_light_source = Environment.REFLECTION_SOURCE_DISABLED
+	print("[world] sky %s: pano=%s layers=%s" % [_world_theme, pano.get_file(), str(layer_of.keys())])
+	return true
+
+
+## Themen-Welt: Weltraum-Deko (Planeten, Galaxien, Landmarks, Station,
+## Sonnenaufgang, alte Aurora) passt nicht in Inferno/Polarnacht/Synthwave ->
+## in einen unsichtbaren Traeger. Sternenstrom, Horizont-Glow,
+## Atmosphaeren-Kante und God-Rays bleiben (in Themenfarbe).
+func _apply_theme_world() -> void:
+	if _world_theme == WorldTheme.GALAXY or _cosmos == null:
+		return
+	for ch in _gal_chapters:
+		ch.col = _theme_col.lerp(_theme_kiai, 0.35) if ch.kiai else _theme_col
+		ch.col2 = _theme_kiai
+	_gal_col = _theme_col
+	_gal_col2 = _theme_kiai
+	var keep := [_star_mat, _horizon_mat, _edge_band_mat, _rays_mat]
+	var hidden := Node3D.new()
+	hidden.name = "GalaxyOnly"
+	hidden.visible = false
+	var kids := _cosmos.get_children()
+	_cosmos.add_child(hidden)
+	for c in kids:
+		var m: Material = c.material_override if c is GeometryInstance3D else null
+		if m != null and keep.has(m):
+			continue
+		c.reparent(hidden, false)
+
+
+## Pro Frame: Themen-Uniforms (Blitz-Abklingen, Wehen). Komfort = ruhiger.
+func _update_theme_sky(delta: float) -> void:
+	if _sky_mat == null or _world_theme == WorldTheme.GALAXY:
+		return
+	_theme_lightning = maxf(0.0, _theme_lightning - delta * 3.2)
+	_sky_mat.set_shader_parameter(&"lightning", _theme_lightning)
+	var flow_rate := (0.5 if _comfort else 1.0) * (1.0 + _ch_kiai_w * 0.6)
+	_theme_flow += delta * flow_rate
+	_sky_mat.set_shader_parameter(&"aurora_flow", _theme_flow)
