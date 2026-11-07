@@ -57,6 +57,8 @@ var skip_votes: Dictionary = {}
 var played: Array = []
 ## Turnier (null = normaler Raum). Server haelt die Wahrheit, Clients bekommen to_dict().
 var tournament: Tournament = null
+## Server: Spieler, die die laufende Turnier-Runde gestartet haben.
+var _tour_peers: Array = []
 
 var _bcast: PacketPeerUDP
 var _listen: PacketPeerUDP
@@ -251,6 +253,10 @@ func _reset() -> void:
 	mods = { "SV": false, "NF": false }
 	played = []
 	crown_id = 1
+	_tour_peers = []
+	if tournament != null:
+		tournament = null
+		tournament_changed.emit()
 
 
 # ---------------------------------------------------------------------------
@@ -393,6 +399,10 @@ func _on_peer_disconnected(id: int) -> void:
 	if crown_id == id:
 		crown_id = _next_crown()
 	_sync()
+	if tournament != null:
+		_tour_refresh()
+		_tour_check_round()
+		_tour_sync()
 	if in_game:
 		scores_changed.emit()
 		_check_skip()
@@ -421,6 +431,9 @@ func srv_register(pname: String, pw: String = "") -> void:
 		return
 	players[id] = _new_player(_unique_name(pname.strip_edges().substr(0, 20), id))
 	_sync()
+	if tournament != null:
+		_tour_refresh()
+		_tour_sync()  # Neue/rejoinende Spieler bekommen den Turnier-Stand
 	send_my_scores()  # Neuer Spieler bekommt meine Scores der gewaehlten Map
 
 
@@ -508,7 +521,7 @@ func pick_mods(m: Dictionary) -> void:
 
 func _apply_mods(m: Dictionary) -> void:
 	var n := _norm_mods(m)
-	if in_game or n == mods:
+	if in_game or n == mods or tournament != null:
 		return
 	mods = n
 	# Anderer Mod -> wie ein Kartenwechsel: alle muessen neu bestaetigen.
@@ -542,7 +555,7 @@ func pick_map(data: Dictionary) -> void:
 
 
 func _apply_map(data: Dictionary) -> void:
-	if in_game or data == sel_map:
+	if in_game or data == sel_map or tournament != null:
 		return
 	sel_map = data
 	# Neue Map -> alle muessen sie (ggf. nach Download) neu bestaetigen.
@@ -625,6 +638,8 @@ func cl_start() -> void:
 		return
 	in_game = true
 	skip_votes = {}
+	if is_host:
+		_tour_peers = players.keys()
 	if not sel_map.is_empty():
 		var pk := "%s|%s" % [str(sel_map.get("file", "")), str(sel_map.get("version", ""))]
 		if not played.has(pk):
@@ -720,6 +735,7 @@ func send_final(stats: Dictionary) -> void:
 		players[me].final = stats
 	rpc("cl_final", stats)
 	scores_changed.emit()
+	_tour_check_round()
 
 
 @rpc("any_peer", "call_remote", "reliable")
@@ -729,6 +745,7 @@ func cl_final(stats: Dictionary) -> void:
 		players[id].final = stats
 		_store_final(id, stats)
 		scores_changed.emit()
+		_tour_check_round()
 
 
 ## Endergebnis eines Mitspielers als fremden Score speichern (nicht bei Fail).
@@ -887,49 +904,244 @@ static func _decode_code(code: String) -> Dictionary:
 
 
 # ---------------------------------------------------------------------------
-# Turnier (API-Stubs; Ausbau folgt)
+# Turnier. Server (= Host-Peer 1) validiert alles und verteilt to_dict().
 # ---------------------------------------------------------------------------
 
+func _tour_refresh() -> void:
+	if tournament == null:
+		return
+	var names := {}
+	for id in players:
+		names[id] = str(players[id].name)
+	tournament.set_players(players.keys(), names)
+
+
+func _is_offline() -> bool:
+	return multiplayer.multiplayer_peer == null or multiplayer.multiplayer_peer is OfflineMultiplayerPeer
+
+
+## Zustand an alle (reliable) + lokal melden.
+func _tour_sync() -> void:
+	if not is_host:
+		return
+	if not _is_offline():
+		rpc("cl_tournament", tournament.to_dict() if tournament != null else {})
+	tournament_changed.emit()
+
+
+@rpc("authority", "call_remote", "reliable")
+func cl_tournament(d: Dictionary) -> void:
+	tournament = Tournament.from_dict(d) if not d.is_empty() else null
+	tournament_changed.emit()
+
+
+@rpc("authority", "call_remote", "reliable")
+func cl_tour_msg(msg: String) -> void:
+	status.emit(msg)
+
+
+func _tour_reply(sender: int, msg: String) -> void:
+	if msg == "":
+		return
+	if sender == 1 or _is_offline():
+		status.emit(msg)
+	else:
+		rpc_id(sender, "cl_tour_msg", msg)
+
+
+func _tour_host_ok() -> bool:
+	return active and is_host
+
+
 ## Host: Turnier anlegen. cfg {maps: 5/10/15, stars_lo, stars_hi, mods}.
-func tour_create(_cfg: Dictionary) -> void:
-	pass
+func tour_create(cfg: Dictionary) -> void:
+	if not _tour_host_ok() or in_game or tournament != null:
+		return
+	var c := cfg.duplicate()
+	c["seed"] = randi()
+	tournament = Tournament.create(c)
+	tournament.host_id = 1
+	_tour_refresh()
+	for id in players:
+		players[id].ready = false
+	_tour_sync()
+	_sync()
 
 
-## Host: Auto-Fuellung der Picks abgeschlossen (Pool voll, weiter zu Bans).
+## Host: Auto-Fuellung freigegeben (Host darf freie Plaetze fuellen, Bans auch ohne vollen Pool).
 func tour_autofill_done() -> void:
-	pass
+	if not _tour_host_ok() or tournament == null or tournament.phase != Tournament.Phase.PICK:
+		return
+	tournament.autofill_done = true
+	_tour_sync()
 
 
 ## Host: PICK -> BAN.
 func tour_start_bans() -> void:
-	pass
+	if not _tour_host_ok() or tournament == null:
+		return
+	if not (tournament.is_pool_full() or tournament.autofill_done):
+		status.emit("Pool ist noch nicht voll.")
+		return
+	_tour_refresh()
+	if not tournament.start_bans():
+		return
+	_tour_sync()
 
 
 ## Host: BAN -> PLAY (erste Runde).
 func tour_begin() -> void:
-	pass
+	if not _tour_host_ok() or tournament == null or in_game:
+		return
+	if tournament.phase != Tournament.Phase.BAN:
+		return
+	_tour_refresh()
+	if not tournament.all_banned(tournament.player_ids):
+		status.emit("Es haben noch nicht alle gebannt.")
+		return
+	_tour_next_round()
 
 
 ## Host: BETWEEN -> naechste Runde oder END.
 func tour_next() -> void:
-	pass
+	if not _tour_host_ok() or tournament == null or in_game:
+		return
+	if tournament.phase != Tournament.Phase.BETWEEN:
+		return
+	_tour_next_round()
+
+
+func _tour_next_round() -> void:
+	var m := tournament.next_map()
+	if not m.is_empty():
+		sel_map = {}
+		for k in ["set_id", "file", "version", "title", "artist", "stars"]:
+			sel_map[k] = m.get(k)
+		mods = _norm_mods(tournament.config.mods)
+		for id in players:
+			players[id].ready = false
+		_sync()
+		map_changed.emit()
+		send_my_scores()
+	_tour_sync()
 
 
 ## Host: Turnier abbrechen (tournament = null).
 func tour_cancel() -> void:
-	pass
+	if not _tour_host_ok() or tournament == null:
+		return
+	tournament = null
+	_tour_peers = []
+	_tour_sync()
 
 
 ## Alle: Map vorschlagen (sel_map-Format; online-Maps erlaubt).
-func tour_add_map(_data: Dictionary) -> void:
-	pass
+func tour_add_map(data: Dictionary) -> void:
+	if not active or tournament == null:
+		return
+	if is_host:
+		_srv_tour_add(1, data)
+	else:
+		rpc_id(1, "srv_tour_add_map", data)
 
 
 ## Alle: eigenen Pick entfernen (Host: jeden).
-func tour_remove_map(_i: int) -> void:
-	pass
+func tour_remove_map(i: int) -> void:
+	if not active or tournament == null:
+		return
+	if is_host:
+		_srv_tour_remove(1, i)
+	else:
+		rpc_id(1, "srv_tour_remove_map", i)
 
 
 ## Alle: Hass-Map abwaehlen (Pool-Index).
-func tour_ban(_i: int) -> void:
-	pass
+func tour_ban(i: int) -> void:
+	if not active or tournament == null:
+		return
+	if is_host:
+		_srv_tour_ban(1, i)
+	else:
+		rpc_id(1, "srv_tour_ban", i)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func srv_tour_add_map(data: Dictionary) -> void:
+	_srv_tour_add(multiplayer.get_remote_sender_id(), data)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func srv_tour_remove_map(i: int) -> void:
+	_srv_tour_remove(multiplayer.get_remote_sender_id(), i)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func srv_tour_ban(i: int) -> void:
+	_srv_tour_ban(multiplayer.get_remote_sender_id(), i)
+
+
+func _tour_guard(sender: int) -> String:
+	if not is_host or not active or tournament == null:
+		return "Kein Turnier."
+	if not players.has(sender):
+		return "Unbekannter Spieler."
+	return ""
+
+
+func _srv_tour_add(sender: int, data: Dictionary) -> String:
+	var err := _tour_guard(sender)
+	if err == "":
+		_tour_refresh()
+		err = tournament.add_map(data, sender)
+	_tour_reply(sender, err)
+	if err == "":
+		_tour_sync()
+	return err
+
+
+func _srv_tour_remove(sender: int, i: int) -> String:
+	var err := _tour_guard(sender)
+	if err == "" and not tournament.remove_map(i, sender):
+		err = "Entfernen nicht erlaubt."
+	_tour_reply(sender, err)
+	if err == "":
+		_tour_sync()
+	return err
+
+
+func _srv_tour_ban(sender: int, i: int) -> String:
+	var err := _tour_guard(sender)
+	if err == "":
+		_tour_refresh()
+		err = tournament.ban(sender, i)
+	_tour_reply(sender, err)
+	if err == "":
+		_tour_sync()
+	return err
+
+
+## Server: Runde auswerten, sobald alle Rundenteilnehmer ein Endergebnis haben
+## oder gegangen sind.
+func _tour_check_round() -> void:
+	if not is_host or tournament == null or not in_game or _tour_peers.is_empty():
+		return
+	if tournament.phase != Tournament.Phase.PLAY:
+		return
+	for id in _tour_peers:
+		if players.has(id) and (players[id].final as Dictionary).is_empty():
+			return
+	var results := {}
+	for id in _tour_peers:
+		if players.has(id):
+			var f: Dictionary = players[id].final
+			results[id] = { "score": clampi(int(f.get("score", 0)), 0, 2000000000),
+				"accuracy": clampf(float(f.get("acc", 0.0)), 0.0, 1.0),
+				"max_combo": clampi(int(f.get("combo", 0)), 0, 1000000),
+				"failed": bool(f.get("failed", false)), "name": str(players[id].name) }
+		else:
+			# Gegangen: 0 Punkte, bleibt in der Tabelle.
+			results[id] = { "score": 0, "accuracy": 0.0, "max_combo": 0, "failed": true,
+				"name": str(tournament.player_names.get(id, "?")) }
+	tournament.record_round(results)
+	_tour_peers = []
+	_tour_sync()
