@@ -57,6 +57,7 @@ void fragment() {
 
 var _data: Dictionary = {}
 var _stats: Dictionary = {}
+var _place_tag: Label
 var _offsets: PackedFloat32Array = PackedFloat32Array()
 var _hist: PackedFloat32Array = PackedFloat32Array()
 var _hist_range := 100.0
@@ -152,6 +153,17 @@ func show_clip_result(ok: bool, path: String, error: String = "") -> void:
 		show_toast("Clip gespeichert: %s" % path, false, path.get_base_dir())
 	else:
 		show_toast("Clip-Export fehlgeschlagen: %s" % (error if error != "" else "unbekannt"), false)
+
+
+## Multiplayer: Platzierungs-Text unter dem Rang, weich eingeblendet.
+func set_placement(text: String, win: bool) -> void:
+	if _place_tag == null or not is_instance_valid(_place_tag) or _place_tag.text == text:
+		return
+	_place_tag.text = text
+	_place_tag.add_theme_color_override("font_color",
+		UiTheme.ACCENT if win else UiTheme.TEXT)
+	_place_tag.modulate.a = 0.0
+	create_tween().tween_property(_place_tag, "modulate:a", 1.0, 0.5)
 
 
 func show_results(data: Dictionary) -> void:

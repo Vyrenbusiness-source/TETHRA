@@ -2311,7 +2311,7 @@ func _process(delta: float) -> void:
 				Lobby.send_score(core.score, core.combo, core.accuracy())
 	if _mp_demo:
 		_mp_demo_step(delta)
-	if core.failed:
+	if core.failed and not _mp_demo:
 		_show_results(true)
 	_update_hud()
 
@@ -3166,10 +3166,8 @@ func _build_hud() -> void:
 	if Lobby.active and Lobby.in_game:
 		_mp_board = Control.new()
 		_mp_board.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		_mp_board.anchor_top = 0.5
-		_mp_board.anchor_bottom = 0.5
 		_mp_board.offset_left = 18
-		_mp_board.offset_top = -60
+		_mp_board.offset_top = 56
 		_hud.add_child(_mp_board)
 		Lobby.scores_changed.connect(_refresh_mp_board)
 		Lobby.skip_now.connect(_do_skip)
@@ -3456,6 +3454,8 @@ func _restart() -> void:
 
 
 func _back_to_browser() -> void:
+	if _mp_demo and _mp_demo_shots < 4:
+		return
 	GameSession.tutorial = false
 	get_tree().paused = false
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -3839,7 +3839,7 @@ func _mp_demo_send() -> void:
 	var phase := 0.0 if Lobby.is_host else 2.4
 	var t := _mp_demo_t
 	var sc := int(t * 9000.0 + 22000.0 * sin(t * 0.45 + phase))
-	Lobby.send_score(maxi(sc, 0), int(t * 3.0) % 120, 1.0 - 0.02 * sin(t + phase) - 0.01)
+	Lobby.send_score(maxi(sc, 0), int(t * 3.0) % 120, 0.97 - 0.02 * sin(t + phase))
 
 
 func _mp_demo_shot(tag: String) -> void:
@@ -3898,7 +3898,7 @@ func _refresh_mp_board() -> void:
 			if old != null and old.is_valid():
 				old.kill()
 			var tw := row.create_tween()
-			tw.tween_property(row, "position:y", ty, 0.35) 				.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+			tw.tween_property(row, "position:y", ty, 0.35).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 			row.set_meta("tw", tw)
 	for id in _mp_rows.keys():
 		if not alive.has(id):
@@ -3972,7 +3972,7 @@ func _mp_fill_row(row: Control, i: int, p: Dictionary, ranked: Array, mine: bool
 	var name_l: Label = vb.get_child(0).get_node("Name")
 	var score_l: Label = vb.get_child(0).get_node("Score")
 	var sub: Label = vb.get_node("Sub")
-	name_l.text = str(p.name)
+	name_l.text = str(p.name) + ("  (du)" if mine else "")
 	var leading := mine and i == 0 and ranked.size() > 1
 	name_l.add_theme_color_override("font_color",
 		Color(0.45, 1.0, 0.55) if leading
@@ -4003,6 +4003,37 @@ func _fmt_score_diff(d: int) -> String:
 	return UiTheme.fmt_score(d)
 
 
+## Platzierung unter dem Rang: erst wenn alle fertig sind, Gleichstand = gleicher Platz.
+func _update_mp_placement(ranked: Array, my_id: int) -> void:
+	if _results_screen == null or not is_instance_valid(_results_screen):
+		return
+	var scores := {}
+	for p in ranked:
+		var fin: Dictionary = p.get("final", {})
+		if fin.is_empty():
+			return
+		scores[int(p.id)] = int(fin.get("score", p.score))
+	if not scores.has(my_id):
+		return
+	var mine: int = scores[my_id]
+	var better := 0
+	var tied := 0
+	for id in scores:
+		if id == my_id:
+			continue
+		if int(scores[id]) > mine:
+			better += 1
+		elif int(scores[id]) == mine:
+			tied += 1
+	var n := scores.size()
+	var txt := "PLATZ %d VON %d" % [better + 1, n]
+	if better == 0 and tied == 0:
+		txt = "SIEG"
+	elif better == 0:
+		txt = "GLEICHSTAND AUF PLATZ 1"
+	_results_screen.set_placement(txt, better == 0)
+
+
 func _refresh_mp_ranking() -> void:
 	if _mp_rank_box == null or not is_instance_valid(_mp_rank_box):
 		return
@@ -4010,6 +4041,7 @@ func _refresh_mp_ranking() -> void:
 		c.queue_free()
 	var ranked := Lobby.ranked_players()
 	var my_id := multiplayer.get_unique_id()
+	_update_mp_placement(ranked, my_id)
 	for i in ranked.size():
 		var p: Dictionary = ranked[i]
 		var fin: Dictionary = p.get("final", {})

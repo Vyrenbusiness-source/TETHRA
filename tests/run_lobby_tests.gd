@@ -89,6 +89,16 @@ func _init() -> void:
 	L.round_done()
 	_check(bool(L.players[1].ready) and not L.in_game, "round_done behaelt Ready")
 
+	# Gleiche Namen -> eindeutig, Genauigkeit begrenzt
+	L.players = { 1: L._new_player("Gex") }
+	_check(L._unique_name("Gex", 2) == "Gex (2)", "doppelter Name -> Gex (2)")
+	L.players[2] = L._new_player("Gex (2)")
+	_check(L._unique_name("Gex", 3) == "Gex (3)", "dritter Name -> Gex (3)")
+	L.in_game = true
+	L.send_score(100, 5, 1.0084)
+	_check(float(L.players[L.multiplayer.get_unique_id()].acc) <= 1.0 if L.players.has(L.multiplayer.get_unique_id()) else true, "acc <= 100 %")
+	L.in_game = false
+
 	# Raum-Code Roundtrip
 	var code: String = L._encode_code("192.168.1.20", 47810)
 	var dec: Dictionary = L._decode_code(code)

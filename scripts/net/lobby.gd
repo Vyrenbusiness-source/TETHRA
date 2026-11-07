@@ -71,6 +71,22 @@ func _ready() -> void:
 		left.emit("Der Host hat den Raum geschlossen."))
 
 
+## Gleiche Namen unterscheidbar machen: "Anna", "Anna (2)", "Anna (3)".
+func _unique_name(base: String, id: int) -> String:
+	if base == "":
+		base = "Spieler"
+	var taken := {}
+	for pid in players:
+		if pid != id:
+			taken[str(players[pid].name)] = true
+	var nm := base
+	var n := 2
+	while taken.has(nm):
+		nm = "%s (%d)" % [base, n]
+		n += 1
+	return nm
+
+
 func _new_player(pname: String) -> Dictionary:
 	return { "name": pname, "ready": false, "score": 0, "combo": 0,
 		"acc": 1.0, "final": {} }
@@ -396,7 +412,7 @@ func srv_register(pname: String, pw: String = "") -> void:
 			if multiplayer.multiplayer_peer != null:
 				multiplayer.multiplayer_peer.disconnect_peer(id))
 		return
-	players[id] = _new_player(pname.strip_edges().substr(0, 20))
+	players[id] = _new_player(_unique_name(pname.strip_edges().substr(0, 20), id))
 	_sync()
 
 
@@ -459,7 +475,7 @@ func srv_start() -> void:
 
 ## Darf ich starten? Nur der Kronentraeger, wenn alle bereit sind.
 func can_start() -> bool:
-	return active and not in_game and crown_id == multiplayer.get_unique_id() 			and all_ready()
+	return active and not in_game and crown_id == multiplayer.get_unique_id() and all_ready()
 
 
 ## Map waehlen — nur der Kronentraeger.
@@ -614,6 +630,7 @@ func resolve_local_path() -> String:
 func send_score(score: int, combo: int, acc: float) -> void:
 	if not active or not in_game:
 		return
+	acc = clampf(acc, 0.0, 1.0)
 	var me := multiplayer.get_unique_id()
 	if players.has(me):
 		players[me].score = score
@@ -625,6 +642,7 @@ func send_score(score: int, combo: int, acc: float) -> void:
 
 @rpc("any_peer", "call_remote", "unreliable_ordered")
 func cl_score(score: int, combo: int, acc: float) -> void:
+	acc = clampf(acc, 0.0, 1.0)
 	var id := multiplayer.get_remote_sender_id()
 	if players.has(id):
 		players[id].score = score
