@@ -20,7 +20,18 @@ extends RefCounted
 ## per register_set_id() aus der Sektion "setids" (Dateiname -> Set-ID), damit
 ## unterschiedliche Dateinamen derselben Map zusammenfallen.
 
-const PATH := "user://scores.cfg"
+## Echte Scores: user://scores.cfg. Headless-Testlaeufe (--script) bekommen
+## IMMER eine eigene Datei pro Prozess, damit kein Test (auch parallel oder
+## abgebrochen) die echten Scores des Spielers loeschen kann.
+static var PATH: String = _default_path()
+
+
+static func _default_path() -> String:
+	for a in OS.get_cmdline_args():
+		if a == "--script" or a == "-s":
+			DirAccess.make_dir_recursive_absolute("user://test_tmp")
+			return "user://test_tmp/scores_%d.cfg" % OS.get_process_id()
+	return "user://scores.cfg"
 const OTHERS_CAP := 10
 const NAME_MAX := 24
 const GRADES := ["SS", "S", "A", "B", "C", "D", "F"]

@@ -16,7 +16,7 @@ extends Node
 ## Release-Ablauf (Entwickler): CURRENT_VERSION hochzaehlen, beide PCKs bauen,
 ## `gh release create vX.Y.Z release/TETHRA.pck release/TETHRA_worlds.pck`.
 
-const CURRENT_VERSION := "1.12.0"
+const CURRENT_VERSION := "1.12.1"
 const REPO := "Vyrenbusiness-source/TETHRA"
 const API_LATEST := "https://api.github.com/repos/" + REPO + "/releases/latest"
 const HEADERS := ["User-Agent: TETHRA-Updater", "Accept: application/vnd.github+json"]
@@ -144,6 +144,10 @@ func _on_latest(result: int, code: int, _h: PackedStringArray, body: PackedByteA
 			jobs.append(m)
 	# Welten-Paket: nur wenn lokal weg oder Signatur anders (auch ohne neue Spielversion).
 	var w := _make_job(assets, WORLDS_ASSET)
+	# Welten-Paket von Hand neben die Exe gelegt (gleiche Groesse wie im Release),
+	# aber nie per Updater geladen: als aktuell uebernehmen statt 820 MB neu zu laden.
+	if not w.is_empty() and _stored_worlds_sig() == "" 			and _file_size(_exe_dir.path_join(WORLDS_ASSET)) == int(w["size"]):
+		_store_worlds_sig(str(w["sig"]))
 	if not w.is_empty() and worlds_needs_update(FileAccess.file_exists(_exe_dir.path_join(WORLDS_ASSET)),
 			_stored_worlds_sig(), str(w["sig"])):
 		jobs.append(w)
@@ -192,6 +196,21 @@ static func space_ok(free: int, remaining: int) -> bool:
 	return free < 0 or free >= remaining + SPACE_MARGIN
 
 
+func _store_worlds_sig(sig: String) -> void:
+	var cfg := ConfigFile.new()
+	cfg.load(CFG_PATH)
+	cfg.set_value("updater", "worlds_sig", sig)
+	cfg.save(CFG_PATH)
+
+
+## Anzeigetext: echtes Spiel-Update oder nur das (einmalige) Welten-Paket?
+func _progress_title() -> String:
+	for j in _jobs:
+		if str(j["asset"]) == MAIN_ASSET:
+			return "Update v%s wird geladen…" % latest_version
+	return "Welten werden geladen (einmalig, %d MB)…" % int(round(float(_total_bytes) / 1048576.0))
+
+
 func _stored_worlds_sig() -> String:
 	var cfg := ConfigFile.new()
 	cfg.load(CFG_PATH)
@@ -227,7 +246,7 @@ func _start_jobs(jobs: Array[Dictionary]) -> void:
 			if fn.ends_with(".part") and not keep.has(fn):
 				d.remove(fn)
 	status = "downloading"
-	state_changed.emit("⬇ Update v%s wird geladen…" % latest_version, 0.0)
+	state_changed.emit("⬇ " + _progress_title(), 0.0)
 	_begin_job()
 
 
@@ -373,9 +392,9 @@ func _process(delta: float) -> void:
 		if total > 0:
 			var got := _done_before + _job_offset + cur
 			var r := clampf(float(got) / float(total), 0.0, 1.0)
-			state_changed.emit("⬇ Update v%s wird geladen… %d %%" % [latest_version, int(r * 100.0)], r)
+			state_changed.emit("⬇ %s %d %%" % [_progress_title(), int(r * 100.0)], r)
 			if _toast != null:
-				_toast.show_progress(latest_version, r)
+				_toast.show_progress(latest_version, r, _progress_title())
 	elif status == "ready":
 		_gate_acc += delta
 		if _gate_acc >= 0.5:

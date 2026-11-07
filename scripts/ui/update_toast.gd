@@ -110,9 +110,9 @@ func hide_toast() -> void:
 
 
 ## Download läuft: Fortschrittsbalken, keine Buttons.
-func show_progress(version: String, ratio: float) -> void:
+func show_progress(version: String, ratio: float, title: String = "") -> void:
 	_countdown = -1.0
-	_title.text = "Update v%s wird geladen…" % version
+	_title.text = title if title != "" else "Update v%s wird geladen…" % version
 	_body.visible = false
 	_bar.visible = true
 	_bar.value = clampf(ratio, 0.0, 1.0)
