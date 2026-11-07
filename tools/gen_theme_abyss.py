@@ -723,7 +723,7 @@ def build(W, seed, out_dir, preview, quality, fog_w):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--width", type=int, default=4096)
+    ap.add_argument("--width", type=int, default=8192)
     ap.add_argument("--fog-width", type=int, default=0, help="Standard: width/2")
     ap.add_argument("--seed", type=int, default=6660)
     ap.add_argument("--quality", type=int, default=95)
@@ -731,7 +731,7 @@ def main():
     ap.add_argument("--preview", default="")
     a = ap.parse_args()
     mb, fmb = build(a.width, a.seed, a.out, a.preview, a.quality, a.fog_width)
-    if a.width >= 4096 and max(mb, fmb) >= 2.5:
+    if a.width >= 4096 and max(mb, fmb) >= 6.0:
         raise SystemExit("WebP zu gross (%.2f / %.2f MB >= 2.5 MB)" % (mb, fmb))
 
 

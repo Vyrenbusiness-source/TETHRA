@@ -62,12 +62,12 @@ shader_type sky;
 //   Ambient              #07090c, Glow-Schwelle 0.92 wie mania_3d
 //   WorldTheme-Palette   line #9aabbf, kiai #e6eef7
 
-uniform sampler2D tex_a : source_color, filter_linear, repeat_enable, hint_default_black;
-uniform sampler2D tex_b : source_color, filter_linear, repeat_enable, hint_default_black;
-uniform sampler2D stars_a : source_color, filter_linear, repeat_enable, hint_default_black;
-uniform sampler2D stars_b : source_color, filter_linear, repeat_enable, hint_default_black;
-uniform sampler2D fog_a : filter_linear, repeat_enable, hint_default_black;
-uniform sampler2D fog_b : filter_linear, repeat_enable, hint_default_black;
+uniform sampler2D tex_a : source_color, filter_linear_mipmap_anisotropic, repeat_enable, hint_default_black;
+uniform sampler2D tex_b : source_color, filter_linear_mipmap_anisotropic, repeat_enable, hint_default_black;
+uniform sampler2D stars_a : source_color, filter_linear_mipmap_anisotropic, repeat_enable, hint_default_black;
+uniform sampler2D stars_b : source_color, filter_linear_mipmap_anisotropic, repeat_enable, hint_default_black;
+uniform sampler2D fog_a : filter_linear_mipmap_anisotropic, repeat_enable, hint_default_black;
+uniform sampler2D fog_b : filter_linear_mipmap_anisotropic, repeat_enable, hint_default_black;
 uniform float palette_mix : hint_range(0.0, 1.0) = 0.0;
 
 uniform vec3 tint : source_color = vec3(1.0);
@@ -96,8 +96,8 @@ uniform float downbeat_pulse : hint_range(0.0, 1.0) = 0.0;
 uniform float drop : hint_range(0.0, 0.6) = 0.0;
 uniform float energy : hint_range(0.0, 1.0) = 0.0;
 uniform float comfort : hint_range(0.0, 1.0) = 0.0;
-uniform sampler2D near_a : filter_linear, repeat_enable, hint_default_black;
-uniform sampler2D near_b : filter_linear, repeat_enable, hint_default_black;
+uniform sampler2D near_a : filter_linear_mipmap_anisotropic, repeat_enable, hint_default_black;
+uniform sampler2D near_b : filter_linear_mipmap_anisotropic, repeat_enable, hint_default_black;
 uniform float slab_mid_deg = 0.35;       // Grad je Beat (ferne Platten)
 uniform float slab_near_deg = 0.8;       // Grad je Beat (nahe Platten)
 uniform vec3 fog_color : source_color = vec3(0.49, 0.55, 0.63);
@@ -114,6 +114,14 @@ uniform float ground_height = 3.7;       // Bodenebene unter der Kamera
 uniform float ground_clear = 4.6;        // halbe Breite (x) mit duennem Nebel
 uniform float ground_clear_soft = 5.0;
 uniform float fog_flight = 40.0;         // Welteinheiten je star_phase
+
+// Scharf bei Verkleinerung: Mip-Stufe aus dem Winkel je Pixel (aus der
+// stetigen Blickrichtung, daher keine Naht am Panorama-Rand).
+float afp = 0.0;
+vec4 tx(sampler2D t, vec2 uv) {
+	float lod = max(log2(max(afp * float(textureSize(t, 0).x), 1.0)), 0.0);
+	return textureLod(t, uv, lod);
+}
 
 mat3 euler(vec3 e) {
 	float cx = cos(e.x), sx = sin(e.x);
@@ -137,19 +145,19 @@ vec3 dec(vec3 c) {
 
 vec3 sample_pair(sampler2D a, sampler2D b, vec2 uv) {
 	if (palette_mix <= 0.001) {
-		return dec(textureLod(a, uv, 0.0).rgb);
+		return dec(tx(a, uv).rgb);
 	}
 	if (palette_mix >= 0.999) {
-		return dec(textureLod(b, uv, 0.0).rgb);
+		return dec(tx(b, uv).rgb);
 	}
-	return mix(dec(textureLod(a, uv, 0.0).rgb), dec(textureLod(b, uv, 0.0).rgb), palette_mix);
+	return mix(dec(tx(a, uv).rgb), dec(tx(b, uv).rgb), palette_mix);
 }
 
 vec3 fog_tex(vec2 uv) {
 	if (palette_mix <= 0.001) {
-		return dec(textureLod(fog_a, uv, 0.0).rgb);
+		return dec(tx(fog_a, uv).rgb);
 	}
-	return mix(dec(textureLod(fog_a, uv, 0.0).rgb), dec(textureLod(fog_b, uv, 0.0).rgb), palette_mix);
+	return mix(dec(tx(fog_a, uv).rgb), dec(tx(fog_b, uv).rgb), palette_mix);
 }
 
 float hash12(vec2 p) {
@@ -268,6 +276,7 @@ vec3 slab_color(float rim, float v, float lon, float lat, float haze, float atem
 
 void sky() {
 	vec3 dir = normalize(EYEDIR);
+	afp = length(fwidth(dir)) * 0.159155;
 	vec3 pdir = dir * euler(pano_rotation);
 	vec2 puv = dir_uv(pdir, pano_offset);
 	vec3 pan = sample_pair(tex_a, tex_b, puv);
@@ -289,7 +298,7 @@ void sky() {
 		col += st * star_brightness * (1.0 + beat_pulse * 0.3) * step(0.0, dir.y);
 
 		// Schacht: B = sichtbares Schachtlicht (normiert).
-		vec3 fs = dec(textureLod(fog_a, puv, 0.0).rgb);
+		vec3 fs = dec(tx(fog_a, puv).rgb);
 		float sb = fs.b;
 		col += shaft_color * sb * shaft_gain * atem;
 		col += shaft_color * shaft_dust(lon, lat) * smoothstep(0.05, 0.5, sb) * sb * 0.22 * dust * (1.0 + atem);
@@ -310,11 +319,11 @@ void sky() {
 		// Platten rutschen mit beat_step (springt auf dem Schlag, ruht dazwischen).
 		float su_mid = beat_step * slab_mid_deg * cm / 360.0;
 		float su_near = beat_step * slab_near_deg * cm / 360.0;
-		vec4 nm = textureLod(near_a, vec2(fract(puv.x + su_mid), puv.y), 0.0);
+		vec4 nm = tx(near_a, vec2(fract(puv.x + su_mid), puv.y));
 		float cm_mid = smoothstep(0.0, 0.06, nm.r);
 		col = mix(col, slab_color(0.0, nm.r, lon, lat, 0.55 * exp(-max(lat, 0.0) / 6.0) + 0.25, atem, dk, dbp), cm_mid);
 		col = mix(col, fc, clamp(r * 0.85 * fd, 0.0, 1.0));
-		vec4 nn = textureLod(near_a, vec2(fract(puv.x + su_near), puv.y), 0.0);
+		vec4 nn = tx(near_a, vec2(fract(puv.x + su_near), puv.y));
 		float cm_near = smoothstep(0.0, 0.06, nn.g);
 		col = mix(col, slab_color(nn.b, nn.g, lon, lat, 0.30 * exp(-max(lat, 0.0) / 4.0), atem, dk, dbp), cm_near);
 		// Schacht flammt auf dem Taktanfang auf und weitet sich im Drop.

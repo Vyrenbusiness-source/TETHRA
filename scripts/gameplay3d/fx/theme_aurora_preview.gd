@@ -3,9 +3,11 @@ extends Node3D
 ## Komfort-Kamera, dunkler Strecke, Pads und Noten im Frost-Farbsatz zur
 ## Lesbarkeits-Kontrolle. Polarlicht weht, Beat bei 90 BPM (ruhige Songs).
 ##   --pulse=<0..1>  --flow=<0..2>  --speed=<Zyklen/s Sternflug>
-##   --shot [--shot-dir=<ordner>]  speichert aurora_main.png, aurora_beat.png,
-##        aurora_flow.png (andere Wehen-Phase), aurora_side.png (Blick links),
-##        aurora_up.png (Blick nach oben), aurora_warp.png, dann Ende.
+##   --shot [--shot-dir=<ordner>]  speichert aurora_still / aurora_beat
+##        (phase 0.02) / aurora_half (phase 0.5) / aurora_drop (Drop-Spitze) /
+##        aurora_side, druckt [luma] still=.. beat=.. drop=.. (Strecke: x .25-.75,
+##        y .42-.87 | oben: y 0-.42). Beat-Uniforms nach docs/worlds/beat_contract.md.
+##   --drop=<0..0.6> --kiai=<0..1> im Dauerlauf.
 
 const ROAD_Y := -1.6
 const Z_LINE := 3.0
@@ -33,7 +35,7 @@ var _shot_dir := SHOT_DIR
 var _step := 0
 
 func _ready() -> void:
-	for a in OS.get_cmdline_args():
+	for a in OS.get_cmdline_args() + OS.get_cmdline_user_args():
 		if a == "--shot":
 			_shot = true
 		elif a.begins_with("--shot-dir="):
@@ -44,6 +46,7 @@ func _ready() -> void:
 	_mat.set_shader_parameter("tex_a", load(TEX_DIR + "aurora.webp"))
 	_mat.set_shader_parameter("stars_a", load(TEX_DIR + "aurora_stars.webp"))
 	_mat.set_shader_parameter("aurora_a", load(TEX_DIR + "aurora_aurora.webp"))
+	_mat.set_shader_parameter("ice_a", load(TEX_DIR + "aurora_ice.webp"))
 	_mat.set_shader_parameter("aurora_flow", _arg_f("--flow=", 1.0))
 	_mat.set_shader_parameter("star_speed", 0.0 if _shot else _arg_f("--speed=", 0.0))
 	var sky := Sky.new()
@@ -127,10 +130,27 @@ func _unshaded(c: Color) -> StandardMaterial3D:
 	return m
 
 func _arg_f(prefix: String, def: float) -> float:
-	for a in OS.get_cmdline_args():
+	for a in OS.get_cmdline_args() + OS.get_cmdline_user_args():
 		if a.begins_with(prefix):
 			return float(a.trim_prefix(prefix))
 	return def
+
+func _set_state(beats: int, phase: float, drop: float, kiai: float) -> void:
+	var beat_ms := 60000.0 / BPM
+	var meter := 4
+	var bar_phase := (float(beats % meter) + phase) / float(meter)
+	var p := exp(-phase * beat_ms / 62.0)
+	if beats % meter == 0:
+		p = minf(p * 1.15, 1.0)
+	_mat.set_shader_parameter("beat_pulse", p)
+	_mat.set_shader_parameter("beat_phase", phase)
+	_mat.set_shader_parameter("bar_phase", bar_phase)
+	_mat.set_shader_parameter("beat_step", float(beats) + 1.0 - pow(1.0 - phase, 4.0))
+	_mat.set_shader_parameter("downbeat_pulse", exp(-bar_phase * float(meter) * 3.0))
+	_mat.set_shader_parameter("drop", drop)
+	_mat.set_shader_parameter("kiai", kiai)
+	_mat.set_shader_parameter("energy", 0.5)
+	_mat.set_shader_parameter("comfort", 0.0)
 
 func _process(delta: float) -> void:
 	_t += delta
@@ -138,9 +158,28 @@ func _process(delta: float) -> void:
 	if _shot:
 		_shot_step()
 		return
-	# Weicher Beat-Puls (90 BPM), langsam abklingend: atmen statt blitzen.
-	var ph := fmod(_t * BPM / 60.0, 1.0)
-	_mat.set_shader_parameter("beat_pulse", pow(1.0 - ph, 2.5) * _arg_f("--pulse=", 0.6))
+	var b := _t * BPM / 60.0
+	var d := clampf(float(_arg_f("--drop=", 0.0)), 0.0, 0.6)
+	_set_state(int(floor(b)), fmod(b, 1.0), d, _arg_f("--kiai=", 0.0))
+
+func _luma(img: Image, y0: float, y1: float) -> float:
+	var im := img.duplicate() as Image
+	im.resize(160, 90)
+	var s := 0.0
+	var n := 0
+	for y in range(int(y0 * 90), int(y1 * 90)):
+		for x in range(int(0.25 * 160), int(0.75 * 160)) if y0 > 0.1 else range(0, 160):
+			var c := im.get_pixel(x, y)
+			s += 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b
+			n += 1
+	return s / float(maxi(n, 1))
+
+var _lm: Dictionary = {}
+
+func _grab(key: String) -> void:
+	var img := get_viewport().get_texture().get_image()
+	_lm[key] = [_luma(img, 0.42, 0.87), _luma(img, 0.0, 0.42)]
+	_save("aurora_%s.png" % key)
 
 ## Schritt-Folge fuer --shot: je 12 Frames Einschwingen, dann speichern.
 func _shot_step() -> void:
@@ -148,36 +187,35 @@ func _shot_step() -> void:
 		return
 	match _step:
 		0:
-			_mat.set_shader_parameter("aurora_phase", 0.0)
+			_set_state(8, 0.5, 0.0, 0.0)
 		1:
-			_save("aurora_main.png")
-			_mat.set_shader_parameter("beat_pulse", 1.0)
+			_grab("still")
+			_set_state(8, 0.02, 0.0, 0.0)
 		2:
-			_save("aurora_beat.png")
-			_mat.set_shader_parameter("beat_pulse", 0.0)
-			_mat.set_shader_parameter("aurora_phase", 40.0)
+			_grab("beat")
+			_set_state(8, 0.5, 0.0, 0.0)
 		3:
-			_save("aurora_flow.png")
-			_mat.set_shader_parameter("aurora_phase", 0.0)
-			_cam.rotation_degrees = Vector3(-4, 38, 0)
+			_grab("half")
+			_set_state(8, 0.02, 0.6, 1.0)
 		4:
-			_save("aurora_side.png")
-			_cam.rotation_degrees = Vector3(12, -20, 0)
-			_cam.fov = 75.0
+			_grab("drop")
+			_set_state(8, 0.5, 0.0, 0.0)
+			_cam.rotation_degrees = Vector3(-8, 70, 0)
 		5:
-			_save("aurora_up.png")
-			_cam.rotation_degrees = CAM_ROT
-			_cam.fov = 62.0
-			_mat.set_shader_parameter("star_phase", 0.3)
-			_mat.set_shader_parameter("warp", 0.6)
-		_:
-			_save("aurora_warp.png")
+			_grab("side")
+			var s: Array = _lm["still"]
+			var bt: Array = _lm["beat"]
+			var h: Array = _lm["half"]
+			var dr: Array = _lm["drop"]
+			print("[luma] still=%.4f beat=%.4f drop=%.4f (Strecke) | oben still=%.4f beat=%.4f half=%.4f drop=%.4f" % [s[0], bt[0], dr[0], s[1], bt[1], h[1], dr[1]])
+			print("[luma] Strecke drop/still=%+.1f%% (max +20) | oben drop/still=%+.1f%% (max +35) | beat/half oben=%+.1f%%" % [
+				100.0 * (dr[0] / maxf(s[0], 1e-5) - 1.0), 100.0 * (dr[1] / maxf(s[1], 1e-5) - 1.0), 100.0 * (bt[1] / maxf(h[1], 1e-5) - 1.0)])
 			get_tree().quit(0)
 	_step += 1
 
 func _save(file: String) -> void:
-	DirAccess.make_dir_recursive_absolute(_shot_dir)
 	var img := get_viewport().get_texture().get_image()
+	DirAccess.make_dir_recursive_absolute(_shot_dir)
 	var path := _shot_dir.path_join(file)
 	img.save_png(path)
 	print("shot: ", path)

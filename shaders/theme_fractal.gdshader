@@ -33,6 +33,16 @@ shader_type sky;
 // Ueberblendung mit palette_mix), shards_rotation/shards_offset, shards_drift,
 // pano_drift, edge_hdr, wave_*, shimmer.
 //
+// BEAT-VERTRAG (docs/worlds/beat_contract.md):
+//   Signatur "Zahnrad": drei Splitter-Ebenen (fern fractal_sky, Mitte
+//   fractal_sky_mid, nah fractal_sky_shards) rasten mit beat_step ruckartig
+//   weiter, gegenlaeufig (nah +0.9, Mitte -1.4, fern +0.3 Grad je Beat);
+//   Rasten genau auf dem Schlag, Ruhe bis zum naechsten.
+//   downbeat_pulse: zweiter, breiterer Bruchring ab Fluchtpunkt (Taktanfang).
+//   drop: die Splitter ruecken naeher (Zoom bis +18 %), Kanten gluehen
+//   staerker, Nebelschein weitet sich; gedeckelt, kein Blitz.
+//   comfort: Rasten halbiert.
+//
 // beat_pulse: 1 auf dem Schlag, klingt bis zum naechsten ab (beliebige
 // monotone Kurve, z.B. exp-Abfall oder pow(1 - beat_phase, 4)). Die Welle
 // steht bei beat_pulse = 1 am Fluchtpunkt und erreicht wave_reach (rad), wenn
@@ -62,12 +72,12 @@ shader_type sky;
 //   Funken / Laser       #d8455c / #e6e2e4
 //   Ambient              #0a0507, Glow-Schwelle 0.92 wie mania_3d
 
-uniform sampler2D tex_a : source_color, filter_linear, repeat_enable, hint_default_black;
-uniform sampler2D tex_b : source_color, filter_linear, repeat_enable, hint_default_black;
-uniform sampler2D stars_a : source_color, filter_linear, repeat_enable, hint_default_black;
-uniform sampler2D stars_b : source_color, filter_linear, repeat_enable, hint_default_black;
-uniform sampler2D shards_a : source_color, filter_linear, repeat_enable, hint_default_transparent;
-uniform sampler2D shards_b : source_color, filter_linear, repeat_enable, hint_default_transparent;
+uniform sampler2D tex_a : source_color, filter_linear_mipmap_anisotropic, repeat_enable, hint_default_black;
+uniform sampler2D tex_b : source_color, filter_linear_mipmap_anisotropic, repeat_enable, hint_default_black;
+uniform sampler2D stars_a : source_color, filter_linear_mipmap_anisotropic, repeat_enable, hint_default_black;
+uniform sampler2D stars_b : source_color, filter_linear_mipmap_anisotropic, repeat_enable, hint_default_black;
+uniform sampler2D shards_a : source_color, filter_linear_mipmap_anisotropic, repeat_enable, hint_default_transparent;
+uniform sampler2D shards_b : source_color, filter_linear_mipmap_anisotropic, repeat_enable, hint_default_transparent;
 uniform float palette_mix : hint_range(0.0, 1.0) = 0.0;
 
 uniform vec3 tint : source_color = vec3(1.0);
@@ -97,8 +107,29 @@ uniform float wave_intensity : hint_range(0.0, 4.0) = 1.0;
 uniform float wave_reach = 1.9;       // rad vom Fluchtpunkt, Endradius der Welle
 uniform float wave_width = 0.16;      // rad
 uniform float shimmer : hint_range(0.0, 1.0) = 0.5;
+uniform sampler2D mid_a : source_color, filter_linear_mipmap_anisotropic, repeat_enable, hint_default_transparent;
+uniform sampler2D mid_b : source_color, filter_linear_mipmap_anisotropic, repeat_enable, hint_default_transparent;
+uniform float beat_phase : hint_range(0.0, 1.0) = 0.0;
+uniform float bar_phase : hint_range(0.0, 1.0) = 0.0;
+uniform float beat_step = 0.0;
+uniform float downbeat_pulse : hint_range(0.0, 1.0) = 0.0;
+uniform float kiai : hint_range(0.0, 1.0) = 0.0;
+uniform float drop : hint_range(0.0, 0.6) = 0.0;
+uniform float energy : hint_range(0.0, 1.0) = 0.0;
+uniform float comfort : hint_range(0.0, 1.0) = 0.0;
+uniform float ratchet_near = 0.9;     // Grad je Beat
+uniform float ratchet_mid = -1.4;
+uniform float ratchet_far = 0.3;
 
 const int WARP_TAPS = 12;
+
+// Scharf bei Verkleinerung: Mip-Stufe aus dem Winkel je Pixel (aus der
+// stetigen Blickrichtung, daher keine Naht am Panorama-Rand).
+float afp = 0.0;
+vec4 tx(sampler2D t, vec2 uv) {
+	float lod = max(log2(max(afp * float(textureSize(t, 0).x), 1.0)), 0.0);
+	return textureLod(t, uv, lod);
+}
 
 mat3 euler(vec3 e) {
 	float cx = cos(e.x), sx = sin(e.x);
@@ -137,23 +168,23 @@ vec3 dec(vec3 c) {
 
 vec3 sample_pair(sampler2D a, sampler2D b, vec2 uv) {
 	if (palette_mix <= 0.001) {
-		return dec(textureLod(a, uv, 0.0).rgb);
+		return dec(tx(a, uv).rgb);
 	}
 	if (palette_mix >= 0.999) {
-		return dec(textureLod(b, uv, 0.0).rgb);
+		return dec(tx(b, uv).rgb);
 	}
-	return mix(dec(textureLod(a, uv, 0.0).rgb), dec(textureLod(b, uv, 0.0).rgb), palette_mix);
+	return mix(dec(tx(a, uv).rgb), dec(tx(b, uv).rgb), palette_mix);
 }
 
 // Splitter: Farbe linear vormultipliziert (rgb * a), a = Deckung.
 vec4 shard_at(vec2 uv) {
 	vec4 s;
 	if (palette_mix <= 0.001) {
-		s = textureLod(shards_a, uv, 0.0);
+		s = tx(shards_a, uv);
 	} else if (palette_mix >= 0.999) {
-		s = textureLod(shards_b, uv, 0.0);
+		s = tx(shards_b, uv);
 	} else {
-		s = mix(textureLod(shards_a, uv, 0.0), textureLod(shards_b, uv, 0.0), palette_mix);
+		s = mix(tx(shards_a, uv), tx(shards_b, uv), palette_mix);
 	}
 	return vec4(dec(s.rgb) * s.a, s.a);
 }
@@ -164,19 +195,32 @@ float hash12(vec2 p) {
 	return fract((p3.x + p3.y) * p3.z);
 }
 
+vec4 mid_at(vec2 uv) {
+	vec4 s = tx(mid_a, uv);
+	return vec4(dec(s.rgb) * s.a, s.a);
+}
+
 float luma(vec3 c) {
 	return dot(c, vec3(0.2126, 0.7152, 0.0722));
 }
 
 void sky() {
 	vec3 dir = normalize(EYEDIR);
+	afp = length(fwidth(dir)) * 0.159155;
 	float ph = star_phase + TIME * star_speed;
-	vec3 prot = pano_rotation + vec3(0.0, ph * pano_drift, 0.0);
-	vec3 srot = shards_rotation + vec3(0.0, ph * shards_drift, 0.0);
+	float cm = 1.0 - 0.5 * comfort;
+	float rk = radians(cm) * beat_step;
+	float dk = clamp(drop / 0.6, 0.0, 1.0);
+	vec3 prot = pano_rotation + vec3(0.0, ph * pano_drift + rk * ratchet_far, 0.0);
+	vec3 srot = shards_rotation + vec3(0.0, ph * shards_drift + rk * ratchet_near, 0.0);
+	vec3 mrot = vec3(0.0, ph * (pano_drift + shards_drift) * 0.5 + rk * ratchet_mid, 0.0);
+	float zs = 1.0 + 0.18 * dk;
 	vec3 pan = sample_pair(tex_a, tex_b, dir_uv(dir * euler(prot), pano_offset));
 
 	if (AT_CUBEMAP_PASS) {
 		vec4 sh = shard_at(dir_uv(dir * euler(srot), shards_offset));
+		vec4 mh = mid_at(dir_uv(dir * euler(mrot), shards_offset));
+		pan = pan * (1.0 - mh.a) + mh.rgb;
 		COLOR = (pan * (1.0 - sh.a) + sh.rgb) * tint * brightness * 0.5;
 	} else {
 		float bp = clamp(beat_pulse, 0.0, 1.0);
@@ -195,7 +239,7 @@ void sky() {
 			}
 			sh = acc / wsum;
 		} else {
-			sh = shard_at(dir_uv(dir * sm, shards_offset));
+			sh = shard_at(dir_uv(zoom_dir(dir, zs) * sm, shards_offset));
 		}
 
 		// Lesbarkeit in Weltkoordinaten: vorn-mitte/unten (hinter der Strecke).
@@ -214,7 +258,11 @@ void sky() {
 		float wr = wave_reach * (1.0 - bp);
 		float band = exp(-pow((ang - wr) / wave_width, 2.0));
 		float tail = exp(-max(wr - ang, 0.0) / (wave_width * 3.0)) * step(ang, wr) * 0.35;
-		float wave = (band + tail) * smoothstep(0.0, 0.15, bp) * smoothstep(0.05, 0.4, ang) * open;
+		// Taktanfang: breiterer zweiter Ring (langsamer, downbeat_pulse).
+		float dbp = clamp(downbeat_pulse, 0.0, 1.0);
+		float wr2 = wave_reach * (1.0 - dbp);
+		float ring2 = exp(-pow((ang - wr2) / (wave_width * 2.2), 2.0)) * smoothstep(0.0, 0.2, dbp) * 0.6;
+		float wave = (band + tail + ring2) * smoothstep(0.0, 0.15, bp) * smoothstep(0.05, 0.4, ang) * open;
 
 		// Schliff-Glanz: langsamer Schimmer ueber die Facetten (ohne Beat).
 		vec3 sd = dir * sm;
@@ -232,6 +280,14 @@ void sky() {
 		pan *= 1.0 + bp * (0.08 + 4.0 * pl) * open;
 		pan += wave_color * wave * smoothstep(0.004, 0.03, pl) * 0.04 * wave_intensity;
 
+		shc *= 1.0 + dk * 0.9 * edge * open;
+		// Mittel-Ebene (Zahnrad gegenlaeufig), vor dem Fern-Panorama, hinter den Giganten.
+		vec4 mh = mid_at(dir_uv(zoom_dir(dir, 1.0 + 0.10 * dk) * euler(mrot), shards_offset));
+		float ml = luma(mh.rgb);
+		float medge = smoothstep(0.010, 0.08, ml);
+		vec3 mc = mh.rgb * (1.0 + medge * (edge_hdr - 1.0) * (0.45 + 0.4 * bp + 0.6 * dk) * open);
+		mc += wave_color * ring2 * medge * mh.a * wave_intensity * 0.5 * open;
+		pan = pan * (1.0 - mh.a) + mc;
 		vec3 col = pan * (1.0 - sh.a) + shc;
 		vec3 st = sample_pair(stars_a, stars_b, dir_uv(dir * euler(stars_rotation), stars_offset));
 		float stl = luma(st);
