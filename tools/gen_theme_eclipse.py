@@ -501,7 +501,7 @@ def paint_ruins(P, rng):
         rim = rim_of(m) * (lat > -0.2)
         fill = dark * (1 + 2.0 * bl)
         img[:] = img * (1 - m[..., None]) + (fill[..., None] * ANTHRACITE / ANTHRACITE.max()) * m[..., None]
-        img += (rim * rim_k * bl ** 1.6)[..., None] * mix3(WHITE_GOLD, MATTE_GOLD, 0.4)
+        img += (rim * rim_k * bl ** 1.6 * (1.0 - 0.6 * np.exp(-P.theta[rows] / SUN_R) ))[..., None] * mix3(WHITE_GOLD, MATTE_GOLD, 0.4)
         P.occ[rows] = np.maximum(P.occ[rows], m)
     P.img[rows] = img
 
@@ -579,13 +579,13 @@ def build_ash(W, seed):
     rng = np.random.default_rng(seed)
     H = W // 4
     flakes = np.zeros((H, W), F32)
-    n = int(5200 * (W / 4096.0) ** 2)
+    n = int(7500 * (W / 4096.0) ** 2)
     k = W / 4096.0
     xs = rng.uniform(0, W, n)
     ys = rng.uniform(0, H, n)
-    size = (rng.pareto(2.6, n) + 1.0) * 0.75 * k
-    size = np.minimum(size, 7.0 * k)
-    bright = rng.uniform(0.35, 1.0, n) * np.where(size > 3.0 * k, 0.55, 1.0)
+    size = (rng.pareto(3.2, n) + 1.0) * 0.6 * k
+    size = np.minimum(size, 3.6 * k)
+    bright = rng.uniform(0.3, 1.0, n) * np.where(size > 2.2 * k, 0.5, 1.0)
     ang = rng.uniform(0, math.pi, n)
     elong = rng.uniform(1.0, 2.6, n)
     for i in range(n):
