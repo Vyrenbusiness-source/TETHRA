@@ -96,22 +96,22 @@ func picks_of(peer: int) -> int:
 ## Map vorschlagen. Fehlertext, "" = ok.
 func add_map(data: Dictionary, by: int) -> String:
 	if phase != Phase.PICK:
-		return "Nicht in der Auswahlphase."
+		return tr("Nicht in der Auswahlphase.")
 	if pool.size() >= int(config.maps):
-		return "Pool ist voll."
+		return tr("Pool ist voll.")
 	var file = data.get("file", "")
 	var version = data.get("version", "")
 	if not (file is String) or not (version is String) or file == "" or file.length() > 300 or version.length() > 120:
-		return "Ungueltige Map."
+		return tr("Ungueltige Map.")
 	var st = data.get("stars", null)
 	if not (st is float or st is int):
-		return "Ungueltige Sterne."
+		return tr("Ungueltige Sterne.")
 	var stars := float(st)
 	if is_nan(stars) or stars < float(config.stars_lo) or stars > float(config.stars_hi):
-		return "Sterne ausserhalb des Bereichs."
+		return tr("Sterne ausserhalb des Bereichs.")
 	var sid = data.get("set_id", 0)
 	if not (sid is int or sid is float):
-		return "Ungueltige Map."
+		return tr("Ungueltige Map.")
 	var clean := {
 		"set_id": int(sid), "file": file, "version": version,
 		"title": str(data.get("title", "")).substr(0, 200),
@@ -122,9 +122,9 @@ func add_map(data: Dictionary, by: int) -> String:
 	var k := _key(clean)
 	for m in pool:
 		if _key(m) == k:
-			return "Map ist schon im Pool."
+			return tr("Map ist schon im Pool.")
 	if picks_of(by) >= max_per_player() and not (autofill_done and by == host_id):
-		return "Du hast schon %d Maps gewaehlt." % max_per_player()
+		return tr("Du hast schon %d Maps gewaehlt.") % max_per_player()
 	pool.append(clean)
 	return ""
 
@@ -164,21 +164,21 @@ func remaining() -> int:
 ## Hass-Map abwaehlen. Aendern erlaubt, bis alle gebannt haben. "" = ok.
 func ban(peer: int, i: int) -> String:
 	if phase != Phase.BAN:
-		return "Nicht in der Ban-Phase."
+		return tr("Nicht in der Ban-Phase.")
 	if not player_ids.has(peer):
-		return "Kein Spieler."
+		return tr("Kein Spieler.")
 	if i < 0 or i >= pool.size():
-		return "Ungueltige Map."
+		return tr("Ungueltige Map.")
 	if not player_ids.is_empty() and player_ids.all(func(x): return bans.has(x)):
-		return "Alle haben schon gebannt."
+		return tr("Alle haben schon gebannt.")
 	if bans.get(peer, -1) == i:
 		return ""
 	if bool(pool[i].banned):
-		return "Diese Map hat schon jemand gestrichen. Such dir eine andere aus."
+		return tr("Diese Map hat schon jemand gestrichen. Such dir eine andere aus.")
 	# Mindestens 1 Map bleibt: beim Wechsel wird erst die alte frei.
 	var freed := 1 if bans.has(peer) else 0
 	if remaining() + freed <= 1:
-		return "Mindestens eine Map muss uebrig bleiben."
+		return tr("Mindestens eine Map muss uebrig bleiben.")
 	if bans.has(peer):
 		pool[int(bans[peer])].banned = false
 	bans[peer] = i

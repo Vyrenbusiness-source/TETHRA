@@ -122,13 +122,13 @@ func _column(team: int) -> Control:
 	dot.custom_minimum_size = Vector2(4, 22)
 	head.add_child(dot)
 	var title := Label.new()
-	title.text = _names[team]
+	title.text = tr(_names[team])
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title.add_theme_font_override("font", UiTheme.heading_font())
 	title.add_theme_font_size_override("font_size", 20)
 	title.add_theme_color_override("font_color", col)
 	head.add_child(title)
-	var count := make_chip("%d Spieler" % _count(team), DIM)
+	var count := make_chip(tr("%d Spieler") % _count(team), DIM)
 	head.add_child(count)
 
 	var total := Label.new()
