@@ -60,8 +60,18 @@ func _init() -> void:
 	_check(not U.space_ok(900 * 1048576, 900 * 1048576), "Reserve fehlt -> zu wenig Platz")
 	var bat: String = U.build_bat("C:/g/TETHRA.exe", "C:/g", ["TETHRA.pck", "TETHRA_worlds.pck"])
 	_check(bat.contains("move /y") and bat.contains("TETHRA.pck.new")
-			and bat.contains("TETHRA_worlds.pck.new") and bat.contains("goto retry1"), "Batch tauscht beide Pakete")
+			and bat.contains("TETHRA_worlds.pck.new") and bat.contains(":retry1"), "Batch tauscht beide Pakete")
 	_check(bat.find("TETHRA_worlds.pck.new") < bat.find("start \"\""), "Batch startet erst nach dem Tausch")
+	var bat2: String = U.build_bat("C:/g/TETHRA.exe", "C:/g", ["TETHRA.pck"], 4242,
+			PackedStringArray(["--rendering-driver", "opengl3", "x&y"]))
+	_check(bat2.contains("PID eq 4242") and bat2.find("PID eq 4242") < bat2.find("move /y"),
+			"Batch wartet auf das Ende des Spielprozesses vor dem Tausch")
+	_check(bat2.contains("if not exist \"C:\\g\\TETHRA.pck.new\" goto done0"), "Erfolg per if exist")
+	_check(not bat2.contains("timeout /t"), "keine timeout-Pause (ohne Konsole kaputt)")
+	_check(bat2.contains("\"--rendering-driver\" \"opengl3\"") and not bat2.contains("x&y"),
+			"Startargumente weitergegeben, gefaehrliche verworfen")
+	_check(U.apply_blocked(2, "1.0.0", "1.0.0") and not U.apply_blocked(1, "1.0.0", "1.0.0")
+			and not U.apply_blocked(5, "0.9.0", "1.0.0"), "Schleifen-Bremse nach 2 Versuchen derselben Version")
 	# WorldPack ohne Datei
 	var W: GDScript = load("res://scripts/net/world_pack.gd")
 	_check(not W.is_valid_file("res://nicht_da.pck"), "WorldPack: fehlende Datei ungueltig")

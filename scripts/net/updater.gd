@@ -482,44 +482,32 @@ static func backoff_for(attempt: int) -> float:
 ## `move` statt `copy`: gleiche Platte = Umbenennen, bei 1+ GB sofort.
 static func build_bat(exe_path: String, exe_dir: String, assets: Array, pid: int = 0,
 		args: PackedStringArray = PackedStringArray()) -> String:
-	var bat := "@echo off
-"
+	var L: PackedStringArray = ["@echo off"]
 	if pid > 0:
-		bat += "set n=0
-" 				+ ":wait
-" 				+ "tasklist /fi \"PID eq %d\" 2>nul | find \"%d\" >nul
-" % [pid, pid] 				+ "if errorlevel 1 goto gone
-" 				+ "set /a n+=1
-" 				+ "if %n% geq 60 goto gone
-" 				+ "ping -n 2 127.0.0.1 >nul
-" 				+ "goto wait
-" 				+ ":gone
-"
-	bat += "ping -n 2 127.0.0.1 >nul
-"
+		L.append_array(["set n=0", ":wait",
+			"tasklist /fi \"PID eq %d\" 2>nul | find \"%d\" >nul" % [pid, pid],
+			"if errorlevel 1 goto gone", "set /a n+=1", "if %n% geq 60 goto gone",
+			"ping -n 2 127.0.0.1 >nul", "goto wait", ":gone"])
+	L.append("ping -n 2 127.0.0.1 >nul")
 	var i := 0
 	for a in assets:
 		var fin: String = exe_dir.path_join(str(a)).replace("/", "\\")
-		bat += "set t=0
-" 				+ ":retry%d
-" % i 				+ "move /y \"%s.new\" \"%s\" >nul 2>&1
-" % [fin, fin] 				+ "if not exist \"%s.new\" goto done%d
-" % [fin, i] 				+ "set /a t+=1
-" 				+ "if %%t%% geq 30 goto done%d
-" % i 				+ "ping -n 2 127.0.0.1 >nul
-" 				+ "goto retry%d
-" % i 				+ ":done%d
-" % i
+		L.append_array(["set t=0", ":retry%d" % i,
+			"move /y \"%s.new\" \"%s\" >nul 2>&1" % [fin, fin],
+			"if not exist \"%s.new\" goto done%d" % [fin, i],
+			"set /a t+=1", "if %t% geq 30 goto done" + str(i),
+			"ping -n 2 127.0.0.1 >nul", "goto retry%d" % i, ":done%d" % i])
 		i += 1
 	var arg_s := ""
 	for a in args:
 		var x := str(a)
-		if x.contains("\"") or x.contains("&") or x.contains("|"):
+		if x.contains("\"") or x.contains("&") or x.contains("|") or x.contains("%"):
 			continue
 		arg_s += " \"%s\"" % x
-	return bat + "start \"\" /d \"%s\" \"%s\"%s
-" % [exe_dir.replace("/", "\\"),
-			exe_path.replace("/", "\\"), arg_s] + "del \"%~f0\""
+	L.append("start \"\" /d \"%s\" \"%s\"%s" % [exe_dir.replace("/", "\\"),
+			exe_path.replace("/", "\\"), arg_s])
+	L.append("del \"%~f0\"")
+	return "\r\n".join(L)
 
 
 ## Schleifen-Bremse: wie oft wurde fuer diese Spielversion schon ein Tausch
