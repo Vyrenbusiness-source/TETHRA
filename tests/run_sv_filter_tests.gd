@@ -14,6 +14,8 @@ func _initialize() -> void:
 	_test_text()
 	_test_item()
 	_test_mapset()
+	if OS.get_environment("SV_REPORT") != "":
+		_report(OS.get_environment("SV_REPORT"))
 	print("=== Ergebnis: %d bestanden, %d fehlgeschlagen ===" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
 
@@ -114,13 +116,14 @@ func _test_detect() -> void:
 		_tp(60000.0, -100.0, false)]
 	st = MapLibrary.sv_stats_tp(slow, 0.0, 100000.0)
 	_ok(st.sv and absf(float(st.frac) - 0.2) < 0.001, "20 %% SV-Abschnitt: SV (%s)" % str(st))
-	# Stutter-SV: 14 kurze Stopps (SV 0.01, 200 ms) -> 28 Wechsel, frac klein.
+	# Stutter-SV: 14 kurze Stopps (SV 0.01, 200 ms) -> 14 gezaehlte Wechsel
+	# (Rueckkehr nach 200 ms liegt unter SV_JUMP_GAP_MS), frac klein.
 	var stut: Array = [_tp(0, 500.0, true)]
 	for i in 14:
 		stut.append(_tp(5000.0 + i * 6000.0, -10000.0, false))
 		stut.append(_tp(5200.0 + i * 6000.0, -100.0, false))
 	st = MapLibrary.sv_stats_tp(stut, 0.0, 100000.0)
-	_ok(st.sv and int(st.jumps) == 28, "14 Stopps: SV durch Wechsel (%s)" % str(st))
+	_ok(st.sv and int(st.jumps) == 14, "14 Stopps: SV durch Wechsel (%s)" % str(st))
 	# BPM-Abschnitt 240 BPM mit Ausgleich (SV 0.5 -> m = 1), danach ohne.
 	var mix: Array = [_tp(0, 500.0, true), _tp(30000.0, 250.0, true),
 		_tp(30000.0, -200.0, false), _tp(50000.0, -100.0, false),
@@ -133,6 +136,13 @@ func _test_detect() -> void:
 		_tp(70000.0, 500.0, true), _tp(70000.0, -200.0, false)]
 	st = MapLibrary.sv_stats_tp(mix2, 0.0, 100000.0)
 	_ok(st.sv and absf(float(st.frac) - 0.3) < 0.001, "SV 0.5 nach Ausgleichsabschnitt: SV (%s)" % str(st))
+	# Ein einzelner SV-Burst: 16 Wechsel in 0.6 s -> keine SV-Map.
+	var burst: Array = [_tp(0, 500.0, true)]
+	for i in 16:
+		burst.append(_tp(50000.0 + i * 40.0, -100.0 / (0.2 if i % 2 == 0 else 1.8), false))
+	burst.append(_tp(50640.0, -100.0, false))
+	st = MapLibrary.sv_stats_tp(burst, 0.0, 100000.0)
+	_ok(not st.sv and int(st.jumps) < 5, "einzelner SV-Burst: keine SV (%s)" % str(st))
 	# Fenster: SV nur vor der ersten Note zaehlt nicht.
 	var intro: Array = [_tp(0, 500.0, true), _tp(0, -200.0, false), _tp(20000.0, -100.0, false)]
 	_ok(not _sv(intro, 20000.0, 100000.0), "SV nur im Intro vor der ersten Note: keine SV")
@@ -178,3 +188,32 @@ func _test_mapset() -> void:
 	_ok(bool(ms.diffs[1].sv) and not bool(ms.diffs[0].sv), "Diff-Felder gesetzt")
 	var back := MapSet.from_dict("a.osz", ms.to_dict())
 	_ok(back.has_sv() and back.sv_ver == MapLibrary.SV_VERSION, "Cache-Roundtrip")
+
+
+## Bericht ueber echte Maps (keine Pruefung): SV_REPORT=<Ordner> setzen,
+## optional SV_REPORT_FILTER=<Teilstring der Dateinamen, | getrennt>.
+func _report(dir_path: String) -> void:
+	var dir := DirAccess.open(dir_path)
+	if dir == null:
+		print("SV-REPORT: Ordner fehlt: " + dir_path)
+		return
+	var filt := OS.get_environment("SV_REPORT_FILTER").split("|", false)
+	for fname in dir.get_files():
+		if not fname.to_lower().ends_with(".osz"):
+			continue
+		if not filt.is_empty():
+			var hit := false
+			for f in filt:
+				hit = hit or fname.contains(f)
+			if not hit:
+				continue
+		var imp := OszImporter._import_uncached(dir_path.path_join(fname))
+		if not imp.get("ok", false):
+			continue
+		for d in imp.difficulties:
+			var bm: Beatmap = d.beatmap
+			if not bm.is_mania() or bm.column_count() != 4:
+				continue
+			var st := MapLibrary.sv_stats(bm)
+			print("SV-REPORT|%s|%s|%s|frac=%.3f|jumps=%d" % [fname.get_basename(),
+				bm.version_name(), "SV" if st.sv else "-", st.frac, st.jumps])

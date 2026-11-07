@@ -26,6 +26,9 @@ const SV_MIN_JUMPS := 12
 ## Abschnitte kuerzer als das (und mit weniger Versatz) ignorieren die
 ## Wechsel-Zaehlung: rote Linie + Ausgleichslinie 1 ms spaeter o.ae.
 const SV_SIG_MS := 5.0
+## Wechsel naeher als das am letzten gezaehlten zaehlen nicht: ein einzelner
+## kurzer SV-Effekt (10 Linien in 0.5 s) macht noch keine SV-Map.
+const SV_JUMP_GAP_MS := 250.0
 
 ## Sets aus dem Cache ohne aktuelle SV-Erkennung (siehe start_sv_backfill).
 var sv_pending: Array[String] = []
@@ -199,7 +202,7 @@ static func sv_stats(bm: Beatmap) -> Dictionary:
 ## g (= m * bl / base) vom neutralen g abweicht: reine BPM-Wechsel ohne
 ## gruene Linie zaehlen nicht, BPM-Ausgleichslinien (m ~ 1) ebenfalls nicht.
 ## Wechsel: Sprung |dm| / m_dom > SV_JUMP zwischen signifikanten Abschnitten
-## mit unterschiedlichem g.
+## mit unterschiedlichem g, hoechstens einer je SV_JUMP_GAP_MS.
 ## SV-Map, wenn frac >= SV_MIN_FRAC oder jumps >= SV_MIN_JUMPS.
 static func sv_stats_tp(timing_points: Array, t0: float, t1: float) -> Dictionary:
 	var res := {"sv": false, "frac": 0.0, "jumps": 0}
@@ -217,7 +220,7 @@ static func sv_stats_tp(timing_points: Array, t0: float, t1: float) -> Dictionar
 		if tp.uninherited:
 			reds.append(tp)
 	reds.sort_custom(func(a, b): return a.time < b.time)
-	# Abschnitte im Fenster: [dauer, m, g].
+	# Abschnitte im Fenster: [dauer, m, g, start].
 	var segs: Array = []
 	var ri := -1
 	for i in times.size():
@@ -229,7 +232,7 @@ static func sv_stats_tp(timing_points: Array, t0: float, t1: float) -> Dictionar
 		if e <= s:
 			continue
 		var m: float = mults[i]
-		segs.append([e - s, m, m * bl / sm.base_beat_length])
+		segs.append([e - s, m, m * bl / sm.base_beat_length, s])
 	if segs.is_empty():
 		return res
 	var m_dom := _dominant(segs, 1, 100.0)
@@ -245,6 +248,7 @@ static func sv_stats_tp(timing_points: Array, t0: float, t1: float) -> Dictionar
 	var dev_ms := 0.0
 	var jumps := 0
 	var prev: Array = []
+	var last_jump := -INF
 	for seg in segs:
 		var rel: float = seg[1] / m_dom
 		var green_off: bool = absf(seg[2] - g_dom) > 0.001
@@ -253,8 +257,9 @@ static func sv_stats_tp(timing_points: Array, t0: float, t1: float) -> Dictionar
 		var sig: bool = seg[0] >= SV_SIG_MS or absf(rel - 1.0) * seg[0] >= SV_SIG_MS
 		if not sig:
 			continue
-		if not prev.is_empty() and absf(seg[1] - prev[1]) / m_dom > SV_JUMP 				and absf(seg[2] - prev[2]) > 0.001:
+		if not prev.is_empty() and absf(seg[1] - prev[1]) / m_dom > SV_JUMP 				and absf(seg[2] - prev[2]) > 0.001 and seg[3] - last_jump >= SV_JUMP_GAP_MS:
 			jumps += 1
+			last_jump = seg[3]
 		prev = seg
 	res.frac = dev_ms / span
 	res.jumps = jumps
