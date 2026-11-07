@@ -207,7 +207,6 @@ func _ready() -> void:
 		_shot_online.call_deferred()
 	elif OS.get_cmdline_args().has("--shot-settings"):
 		# Harness: Einstellungen oeffnen, das Panel fotografiert seine Reiter selbst.
-		printerr("DBG branch")
 		add_child.call_deferred(SettingsPanel.new())
 	elif OS.get_cmdline_args().has("--shot"):
 		_capture_screenshot_and_quit()

@@ -11,7 +11,7 @@ const COL_DIM := UiTheme.DIM
 const VALUE_W := 72.0
 const CAP_W := 180.0
 const ROW_H := 40.0
-const PAGE_H := 440.0
+const PAGE_H := 480.0
 const CTRL_H := 34.0
 
 const BLUR_SHADER := """shader_type canvas_item;
@@ -178,6 +178,13 @@ func _ready() -> void:
 	blur_btn.button_pressed = Settings.bg_blur
 	blur_btn.toggled.connect(func(on): Settings.bg_blur = on)
 	_row(pg_2d, "Hintergrund-Unschärfe", blur_btn, null).tooltip_text = "Map-Bild unscharf zeichnen"
+
+	if ResourceLoader.exists("res://scripts/ui/skin_picker.gd"):
+		var skin = load("res://scripts/ui/skin_picker.gd").new()
+		if skin is Control:
+			if skin.has_signal("changed"):
+				skin.connect("changed", _refresh_2d_preview)
+			_row(pg_2d, "Skin", skin, null)
 
 	_add_2d_preview(pg_2d)
 
@@ -358,7 +365,6 @@ func _intro(panel: Control) -> void:
 
 ## Harness (--shot-settings): jede Kategorie als PNG, danach 2D-Modus-Wechsel.
 func _shot_pages() -> void:
-	printerr("DBG pages ", _pages.size())
 	var dir := OS.get_environment("SETTINGS_SHOT_DIR")
 	if dir == "":
 		dir = OS.get_user_data_dir()
