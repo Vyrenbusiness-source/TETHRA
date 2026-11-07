@@ -171,13 +171,7 @@ func _hint(row: HBoxContainer, key: String, text: String) -> void:
 
 ## Tausendertrenner mit Punkt: 1234 -> "1.234".
 static func fmt_int(v: int) -> String:
-	var s := str(absi(v))
-	var out := ""
-	for i in s.length():
-		if i > 0 and (s.length() - i) % 3 == 0:
-			out += "."
-		out += s[i]
-	return ("-" + out) if v < 0 else out
+	return UiTheme.fmt_score(v)
 
 
 ## Sekunden -> "m:ss".
@@ -258,7 +252,7 @@ func _step_field(d: float) -> void:
 
 func _refresh_values() -> void:
 	_offset_val.text = "%+.0f ms" % Settings.offset_ms
-	_scroll_val.text = ("%.2f" % Settings.mania_scroll).replace(".", ",") + "x"
+	_scroll_val.text = UiTheme.fmt_num(Settings.mania_scroll, 2) + "x"
 	_lane2d_val.text = _pct(Settings.lane_width_2d)
 	_note2d_val.text = _pct(Settings.note_size_2d)
 	_bg_val.text = "Aus" if Settings.bg_dim <= 0.001 else _pct(Settings.bg_dim)
@@ -273,7 +267,7 @@ func open(info: Dictionary = {}) -> void:
 	_song.text = str(info.get("title", ""))
 	_bar.value = clampf(float(info.get("progress", 0.0)), 0.0, 1.0)
 	_stats.text = "%s   |   %s %%" % [fmt_int(int(info.get("score", 0))),
-		("%.2f" % float(info.get("acc", 100.0))).replace(".", ",")]
+		UiTheme.fmt_num(float(info.get("acc", 100.0)), 2)]
 	var len_ms := float(info.get("length_ms", 0.0))
 	_time.visible = len_ms > 0.0
 	if len_ms > 0.0:

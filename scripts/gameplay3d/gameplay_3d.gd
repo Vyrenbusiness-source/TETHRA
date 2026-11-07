@@ -1266,7 +1266,7 @@ func _build_hud() -> void:
 	_hud.add_child(_hp_fill)
 
 	_hint_label = Label.new()
-	_hint_label.text = "Maus zielen · %s/%s druecken, wenn die Note im Ring landet · Slider: halten · Esc = Pause" % [
+	_hint_label.text = tr("Maus zielen · %s/%s druecken, wenn die Note im Ring landet · Slider: halten · Esc = Pause") % [
 		OS.get_keycode_string(Settings.key_hook1), OS.get_keycode_string(Settings.key_hook2)]
 	_hint_label.anchor_left = 0.5
 	_hint_label.anchor_right = 0.5
