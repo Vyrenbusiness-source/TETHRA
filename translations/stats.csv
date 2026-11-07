@@ -1,0 +1,37 @@
+keys,de,en
+Max. Kombo,Max. Kombo,Max combo
+UR,UR,UR
+Ø Abweichung,Ø Abweichung,Mean offset
+eher spät,eher spät,tends late
+eher früh,eher früh,tends early
+Holds,Holds,Holds
+alle gehalten,alle gehalten,all held
+%d losgelassen,%d losgelassen,%d released early
+Früh / Spät,Früh / Spät,Early / Late
+Trefferfehler,Trefferfehler,Hit error
+Genauigkeit je Runde,Genauigkeit je Runde,Accuracy per round
+Genauigkeit im Verlauf,Genauigkeit im Verlauf,Accuracy over time
+%d. Platz,%d. Platz,#%d
+Nicht geschafft,Nicht geschafft,Failed
+spielt noch…,spielt noch…,still playing…
+"Die Stats erscheinen, sobald die Runde fertig ist.","Die Stats erscheinen, sobald die Runde fertig ist.",Stats appear once the round is over.
+Runde,Runde,Round
+Start,Start,Start
+Ende,Ende,End
+links,links,left
+rechts,rechts,right
+Du,Du,You
+Miss,Miss,miss
+FULL COMBO,FULL COMBO,FULL COMBO
+Klick: Spieler rechts anzeigen  ·  Rechtsklick: links,Klick: Spieler rechts anzeigen  ·  Rechtsklick: links,Click: show player on the right  ·  Right-click: left
+Klick auf einen Spieler zeigt seine Stats.,Klick auf einen Spieler zeigt seine Stats.,Click a player to see their stats.
+Treffer,Treffer,Hits
+%d. Platz  ·  %d Punkte  ·  %d Siege  ·  Ø %s,%d. Platz  ·  %d Punkte  ·  %d Siege  ·  Ø %s,#%d  ·  %d points  ·  %d wins  ·  Ø %s
+Gesamt über %d Maps,Gesamt über %d Maps,Total over %d maps
+%d× nicht geschafft,%d× nicht geschafft,failed %d×
+Map %d,Map %d,Map %d
+Nicht gespielt (gegangen),Nicht gespielt (gegangen),Not played (left)
+Je Map,Je Map,Per map
+Gesamt,Gesamt,Total
+alle Maps zusammen,alle Maps zusammen,all maps combined
+gegangen,gegangen,left
