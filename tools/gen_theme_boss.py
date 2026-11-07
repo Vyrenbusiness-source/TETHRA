@@ -8,6 +8,8 @@ Erzeugt in assets_game/themes/boss/ drei equirektangulare Texturen (4096x2048):
                         Quellwolken als Hoehenfeld aufgebaut, von unten beleuchtet).
   sky_boss_embers.webp  Glut-Ebene ohne Himmel (Parallax): aufsteigende Funken
                         mit kurzem Schweif, wenige unscharfe Bokeh-Glutflocken.
+  sky_boss_veil.webp    dritte Tiefenebene (RGBA): Rauchsaeulen ueber dem Horizont,
+                        RGB = Randlicht (additiv), A = Abdunklung (Parallax).
   sky_boss_flash.webp   Blitz-Licht (NUR additiv, Shader-Uniform `lightning`):
                         R/G/B = drei getrennte Blitz-Gruppen (je wenige Zellen
                         in Tuermen/Wolken + Blitzkanaele), Graustufen-Intensitaet.
@@ -552,6 +554,62 @@ def view(dec, W, H, pitch, yaw, fov, fgain, vw=960, vh=540):
     return out
 
 
+# ---------------------------------------------------------------------------
+# Dritte Tiefenebene: Rauchsaeulen ueber dem Horizont (Parallax)
+# ---------------------------------------------------------------------------
+def fft_noise(H, W, beta, sx, sy, rng):
+    """Naht-freies Rauschen (beide Achsen periodisch), Leistung ~ f^-beta.
+    sx/sy dehnen die Merkmale: sy > 1 = hoehere Frequenz laengs v ausgedehnt."""
+    fy = np.fft.fftfreq(H)[:, None] * H / sy
+    fx = np.fft.rfftfreq(W)[None, :] * W / sx
+    f = np.sqrt(fx * fx + fy * fy)
+    f[0, 0] = 1.0
+    spec = np.fft.rfft2(rng.standard_normal((H, W))) * (f ** (-beta * 0.5))
+    spec[0, 0] = 0.0
+    n = np.fft.irfft2(spec, s=(H, W)).astype(F32)
+    lo, hi = np.percentile(n, (1.0, 99.0))
+    return np.clip((n - lo) / (hi - lo), 0.0, 1.0)
+
+
+def build_veil(W, seed, out_dir, preview):
+    """sky_boss_veil.webp (RGBA): RGB = additives Blutrot-Licht der von unten
+    angestrahlten Rauchsaeulen, A = Abdunklung (1 = unveraendert). Nur Band
+    knapp ueber dem Horizont, Zenit/Boden schwarz. Im Shader eigener Parallax-
+    Versatz (langsame Drift + Schritt auf beat_step)."""
+    H = W // 2
+    rng = np.random.default_rng(7300 + seed * 1000 + 31)
+    lat = (0.5 - (np.arange(H, dtype=F32) + 0.5) / H) * 180.0
+    lat = lat[:, None]
+    lon = ((np.arange(W, dtype=F32) + 0.5) / W - 0.5) * 360.0
+    big = fft_noise(H, W, 3.4, 1.0, 2.6, rng)           # grosse Saeulen
+    mid = fft_noise(H, W, 2.6, 1.0, 2.0, rng)           # Wirbel
+    fine = fft_noise(H, W, 1.8, 1.0, 1.4, rng)          # Faserung
+    n = 0.62 * big + 0.30 * mid + 0.08 * fine
+    band = smoothstep(-1.5, 2.5, lat) * (1.0 - smoothstep(14.0, 52.0, lat))
+    col_h = np.clip(1.0 - (np.abs(lon[None, :]) - 0.0) / 400.0, 0, 1)  # nur Leichter Verlauf
+    body = np.clip((n - 0.40) * 2.4, 0.0, 1.0) ** 1.5 * band
+    # Saeulen wachsen vom Horizont: unten dicht, nach oben ausfransend.
+    grow = np.exp(-np.maximum(lat, 0.0) / 17.0)
+    dens = ndimage.gaussian_filter(np.clip(body * (0.35 + 0.9 * grow), 0.0, 1.0), 2.5)
+    # Randlicht: nur die unteren, dem Feuer zugewandten Kanten glimmen.
+    edge = np.clip(ndimage.gaussian_filter(dens, 7.0) - dens, 0.0, 1.0) * 1.5
+    edge += 0.35 * ndimage.gaussian_filter(dens, 14.0) * grow
+    light = np.clip(edge * 2.4 + 0.05 * dens * grow, 0.0, 1.0) * band
+    hue = lin("#8c0610")
+    hue = hue / hue.max()
+    rgb = (light[..., None] * 0.17) * hue[None, None, :]
+    alpha = 1.0 - 0.55 * dens * smoothstep(0.0, 0.7, dens)
+    rng2 = np.random.default_rng(5)
+    rgb8 = to_u8(np.sqrt(np.clip(rgb, 0, 1)), rng2)
+    a8 = np.clip(np.rint(alpha * 255.0), 0, 255).astype(np.uint8)
+    path = os.path.join(out_dir, "sky_boss_veil.webp")
+    Image.fromarray(np.dstack([rgb8, a8])).save(path, "WEBP", quality=94, method=6, exact=True, alpha_quality=96)
+    print("boss_veil: %dx%d  %.2f MB" % (W, H, os.path.getsize(path) / 1e6), flush=True)
+    if preview:
+        os.makedirs(preview, exist_ok=True)
+        Image.fromarray(np.dstack([rgb8, a8])[::4, ::4, :3]).save(os.path.join(preview, "boss_veil_pano.png"))
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--width", type=int, default=4096)
@@ -559,8 +617,14 @@ def main():
     ap.add_argument("--out", default=OUT_DIR)
     ap.add_argument("--preview", default="", help="Ordner fuer Kamera-/Panorama-PNGs")
     ap.add_argument("--jobs", type=int, default=6)
+    ap.add_argument("--only", default="", help="nur eine Ebene neu: veil")
     a = ap.parse_args()
+    if a.only == "veil":
+        os.makedirs(a.out, exist_ok=True)
+        build_veil(a.width, a.seed, a.out, a.preview)
+        return
     build(a.width, a.seed, a.out, a.preview, a.jobs)
+    build_veil(a.width, a.seed, a.out, a.preview)
 
 
 if __name__ == "__main__":
