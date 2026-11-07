@@ -8,17 +8,18 @@ extends Control
 signal closed
 
 const COL_DIM := UiTheme.DIM
-const VALUE_W := 72.0
-const CAP_W := 180.0
-const ROW_H := 40.0
-const PAGE_H := 480.0
+const VALUE_W := 76.0
+const CAP_W := 170.0
+const ROW_H := 38.0
 const CTRL_H := 34.0
 
 const BLUR_SHADER := """shader_type canvas_item;
 uniform sampler2D screen_tex : hint_screen_texture, filter_linear_mipmap;
 void fragment() {
-	vec3 c = textureLod(screen_tex, SCREEN_UV, 3.0).rgb;
-	COLOR = vec4(c * 0.38, 1.0);
+	vec3 c = textureLod(screen_tex, SCREEN_UV, 2.0).rgb;
+	vec2 d = SCREEN_UV - vec2(0.5);
+	float vig = 1.0 - dot(d, d) * 0.9;
+	COLOR = vec4(c * 0.55 * vig, 1.0);
 }
 """
 
@@ -27,6 +28,7 @@ var _panel: Control
 var _pages: Array[Control] = []
 var _tabs: Array[Button] = []
 var _tab_cur := 0
+var _accent := UiTheme.ACCENT
 var _preview_2d: Control
 var _rows_3d: Array[Control] = []
 
@@ -62,10 +64,15 @@ func _ready() -> void:
 	add_child(center)
 
 	var panel := PanelContainer.new()
-	var sb := UiTheme.glass_box(18, 0.95)
-	sb.set_content_margin_all(24)
+	var sb := UiTheme.glass_box(18, 0.82)
+	sb.content_margin_left = 26
+	sb.content_margin_right = 26
+	sb.content_margin_top = 20
+	sb.content_margin_bottom = 22
+	sb.shadow_size = 24
+	sb.shadow_color = Color(0, 0, 0, 0.45)
 	panel.add_theme_stylebox_override("panel", sb)
-	panel.custom_minimum_size = Vector2(780, 0)
+	panel.custom_minimum_size = Vector2(840, 0)
 	panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	center.add_child(panel)
 	_panel = panel
@@ -74,42 +81,55 @@ func _ready() -> void:
 	vb.add_theme_constant_override("separation", 14)
 	panel.add_child(vb)
 
-	# Kopfzeile mit Schliessen-Knopf.
+	# Kopfzeile: Akzent-Streifen, Titel, Schliessen-Knopf.
 	var head := HBoxContainer.new()
+	head.add_theme_constant_override("separation", 10)
 	vb.add_child(head)
+	var bar := ColorRect.new()
+	bar.color = _accent
+	bar.custom_minimum_size = Vector2(3, 18)
+	bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	head.add_child(bar)
 	var title := Label.new()
 	title.text = "EINSTELLUNGEN"
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title.add_theme_font_override("font", UiTheme.heading_font(3))
-	title.add_theme_font_size_override("font_size", 22)
+	title.add_theme_font_size_override("font_size", 18)
 	head.add_child(title)
 	var close_x := Button.new()
 	close_x.text = "✕"
-	close_x.custom_minimum_size = Vector2(36, 36)
+	close_x.custom_minimum_size = Vector2(34, 34)
 	UiTheme.style_button(close_x)
 	close_x.pressed.connect(_close)
 	head.add_child(close_x)
 
-	# Kategorie-Leiste links, Seiten rechts.
-	var body := HBoxContainer.new()
-	body.add_theme_constant_override("separation", 20)
-	vb.add_child(body)
-	var side := VBoxContainer.new()
-	side.add_theme_constant_override("separation", 4)
-	side.custom_minimum_size = Vector2(150, 0)
-	body.add_child(side)
-	var stack := Control.new()
+	# Reiter-Chips wie im Song-Browser, darunter die Seiten.
+	var side := HBoxContainer.new()
+	side.add_theme_constant_override("separation", 8)
+	vb.add_child(side)
+	var stack := VBoxContainer.new()
 	stack.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	stack.custom_minimum_size = Vector2(0, PAGE_H)
-	body.add_child(stack)
+	vb.add_child(stack)
 
 	var pg_game := _page(side, stack, "Gameplay")
-	var pg_2d := _page(side, stack, "2D-Spielfeld")
+	var pg_2d_root := _page(side, stack, "2D-Spielfeld")
+	# 2D-Seite: Regler links, Vorschau rechts (spart Hoehe).
+	var h2d := HBoxContainer.new()
+	h2d.add_theme_constant_override("separation", 18)
+	pg_2d_root.add_child(h2d)
+	var pg_2d := VBoxContainer.new()
+	pg_2d.add_theme_constant_override("separation", 2)
+	pg_2d.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	h2d.add_child(pg_2d)
+	var pv_col := VBoxContainer.new()
+	pv_col.custom_minimum_size = Vector2(250, 0)
+	h2d.add_child(pv_col)
 	var pg_world := _page(side, stack, "Welt")
 	var pg_gfx := _page(side, stack, "Grafik")
 	var pg_audio := _page(side, stack, "Audio")
 
 	# ------------------------------- GAMEPLAY -------------------------------
+	_group(pg_game, "Spielfeld")
 	var mode_2d := CheckButton.new()
 	mode_2d.button_pressed = Settings.playfield_2d
 	mode_2d.tooltip_text = "Klassische senkrechte Spuren ohne 3D-Welt; Hintergrund = Map-Bild"
@@ -129,6 +149,7 @@ func _ready() -> void:
 		"Abstand der Spuren in der 3D-Welt. Unter 85 % werden die Noten leicht kleiner.")
 	_rows_3d.append(spacing_row)
 
+	_group(pg_game, "Steuerung")
 	var lane_row := HBoxContainer.new()
 	lane_row.add_theme_constant_override("separation", 8)
 	for i in 4:
@@ -143,6 +164,7 @@ func _ready() -> void:
 	_row(pg_game, "Tasten 1–4", lane_row, null).tooltip_text = "Knopf anklicken, dann Taste drücken (Esc bricht ab)"
 
 	# ------------------------------ 2D-SPIELFELD ----------------------------
+	_group(pg_2d, "Noten")
 	var note_style := OptionButton.new()
 	note_style.add_item("Balken", Settings.NOTE_STYLE_BAR)
 	note_style.add_item("Kreis", Settings.NOTE_STYLE_CIRCLE)
@@ -169,6 +191,7 @@ func _ready() -> void:
 			_refresh_2d_preview(),
 		"Höhe der Balken bzw. Größe der Kreise (auch im Pausenmenü einstellbar)")
 
+	_group(pg_2d, "Map-Bild")
 	_slider_row(pg_2d, "Hintergrund", 0.0, 100.0, 5.0, Settings.bg_dim * 100.0,
 		func(v): return _fmt_bg(Settings.clamp_bg_dim(v / 100.0)),
 		func(v): Settings.bg_dim = Settings.clamp_bg_dim(v / 100.0),
@@ -180,15 +203,17 @@ func _ready() -> void:
 	_row(pg_2d, "Hintergrund-Unschärfe", blur_btn, null).tooltip_text = "Map-Bild unscharf zeichnen"
 
 	if ResourceLoader.exists("res://scripts/ui/skin_picker.gd"):
+		_group(pg_2d, "Aussehen")
 		var skin = load("res://scripts/ui/skin_picker.gd").new()
 		if skin is Control:
 			if skin.has_signal("changed"):
 				skin.connect("changed", _refresh_2d_preview)
 			_row(pg_2d, "Skin", skin, null)
 
-	_add_2d_preview(pg_2d)
+	_add_2d_preview(pv_col)
 
 	# --------------------------------- WELT ---------------------------------
+	_group(pg_world, "Umgebung")
 	var wt := OptionButton.new()
 	wt.add_item("Automatisch", 0)
 	for wi in Settings.WORLD_ORDER.size():
@@ -207,10 +232,11 @@ func _ready() -> void:
 	_world_preview = WorldPreview.new()
 	var wp_center := CenterContainer.new()
 	wp_center.custom_minimum_size = Vector2(0, WorldPreview.SIZE_PX.y + 8)
-	pg_world.add_child(wp_center)
+	pg_world.add_child(_framed(wp_center))
 	wp_center.add_child(_world_preview)
 	_world_preview.show_world(Settings.world_theme_name())
 
+	_group(pg_world, "Kamera & Effekte")
 	var cam := OptionButton.new()
 	cam.add_item("Komfort", 0)
 	cam.add_item("Dynamisch", 1)
@@ -229,6 +255,7 @@ func _ready() -> void:
 	_row(pg_world, "Effekte", fx, null)
 
 	# -------------------------------- GRAFIK --------------------------------
+	_group(pg_gfx, "Darstellung")
 	var gfx := OptionButton.new()
 	gfx.add_item("Niedrig", 0)
 	gfx.add_item("Mittel (2x AA)", 1)
@@ -255,6 +282,7 @@ func _ready() -> void:
 		Settings.apply())
 	_row(pg_gfx, "FPS-Limit", fps, null)
 
+	_group(pg_gfx, "Optionen")
 	var lg := CheckButton.new()
 	lg.button_pressed = Settings.lane_glow
 	lg.toggled.connect(func(on): Settings.lane_glow = on)
@@ -266,6 +294,7 @@ func _ready() -> void:
 	_row(pg_gfx, "Vollbild", fs, null).tooltip_text = "Vollbild (F11)"
 
 	# --------------------------------- AUDIO --------------------------------
+	_group(pg_audio, "Lautstärke & Klang")
 	_vol_value = Label.new()
 	_slider_row(pg_audio, "Lautstärke", -30.0, 0.0, 1.0, Settings.volume_db,
 		func(v): return "%d dB" % int(v),
@@ -301,6 +330,7 @@ func _ready() -> void:
 	bass_ref[0] = bass_row.get_meta("slider")
 	set_bass_fill.call(Settings.bass_boost)
 
+	_group(pg_audio, "Treffer")
 	var hs := CheckButton.new()
 	hs.button_pressed = Settings.hitsounds
 	hs.toggled.connect(func(on): Settings.hitsounds = on)
@@ -321,6 +351,7 @@ func _ready() -> void:
 		func(v): return "%d %%" % int(v * 100.0),
 		func(v): Settings.hitsound_volume = v)
 
+	_group(pg_audio, "Timing")
 	_offset_value = Label.new()
 	var off_row := _slider_row(pg_audio, "Audio-Offset", -200.0, 200.0, 1.0, Settings.offset_ms,
 		func(v): return "%+d ms" % int(v),
@@ -335,13 +366,13 @@ func _ready() -> void:
 	calib_btn.pressed.connect(_open_wizard)
 	_row(pg_audio, "Kalibrierung", calib_btn, null)
 
-	# Fusszeile.
-	var save := Button.new()
-	save.text = "Speichern & Schließen"
-	save.custom_minimum_size = Vector2(0, 44)
-	UiTheme.style_button(save, true)
-	save.pressed.connect(_close)
-	vb.add_child(save)
+	# Fusszeile: Aenderungen gelten sofort, gespeichert wird beim Schliessen.
+	var foot := Label.new()
+	foot.text = "Änderungen werden beim Schließen gespeichert  ·  Esc"
+	foot.add_theme_font_size_override("font_size", 12)
+	foot.add_theme_color_override("font_color", Color(COL_DIM, 0.7))
+	foot.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vb.add_child(foot)
 
 	_update_2d_rows()
 	_show_page(0)
@@ -384,28 +415,22 @@ func _shot_pages() -> void:
 	get_tree().quit(0)
 
 
-## Kategorie: Knopf in der Leiste + Seite (VBox) im Stapel.
-func _page(side: VBoxContainer, stack: Control, caption: String) -> VBoxContainer:
+## Kategorie: Chip in der Reiter-Leiste + Seite (VBox) im Stapel.
+func _page(side: HBoxContainer, stack: Control, caption: String) -> VBoxContainer:
 	var idx := _pages.size()
 	var pg := VBoxContainer.new()
-	pg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	pg.add_theme_constant_override("separation", 4)
+	pg.add_theme_constant_override("separation", 2)
 	pg.visible = false
 	stack.add_child(pg)
 	_pages.append(pg)
 	var b := Button.new()
 	b.text = caption
-	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
-	b.custom_minimum_size = Vector2(0, 38)
+	b.custom_minimum_size = Vector2(0, 34)
 	b.focus_mode = Control.FOCUS_NONE
-	b.add_theme_font_size_override("font_size", 15)
+	b.add_theme_font_size_override("font_size", 14)
 	b.add_theme_color_override("font_hover_color", UiTheme.TEXT)
-	var hv := StyleBoxFlat.new()
-	hv.bg_color = Color(1, 1, 1, 0.06)
-	hv.set_corner_radius_all(12)
-	hv.content_margin_left = 14
-	b.add_theme_stylebox_override("hover", hv)
-	b.add_theme_stylebox_override("pressed", hv)
+	b.add_theme_stylebox_override("hover", _chip_box(Color(1, 1, 1, 0.09), Color(1, 1, 1, 0.22)))
+	b.add_theme_stylebox_override("pressed", _chip_box(Color(1, 1, 1, 0.09), Color(1, 1, 1, 0.22)))
 	b.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 	b.pressed.connect(func():
 		Sfx.ui_click()
@@ -415,26 +440,53 @@ func _page(side: VBoxContainer, stack: Control, caption: String) -> VBoxContaine
 	return pg
 
 
+static func _chip_box(bg: Color, border: Color, radius: int = 12) -> StyleBoxFlat:
+	var c := StyleBoxFlat.new()
+	c.bg_color = bg
+	c.border_color = border
+	c.set_border_width_all(1)
+	c.set_corner_radius_all(radius)
+	c.content_margin_left = 16
+	c.content_margin_right = 16
+	c.content_margin_top = 4
+	c.content_margin_bottom = 4
+	return c
+
+
 func _show_page(i: int) -> void:
 	_tab_cur = i
 	for k in _pages.size():
 		_pages[k].visible = k == i
 		var b := _tabs[k]
 		if k == i:
-			# Aktiv wie die Chips im Song-Browser: Akzent-Fuellung + Rand.
-			var sel := StyleBoxFlat.new()
-			sel.bg_color = Color(UiTheme.ACCENT, 0.16)
-			sel.border_color = Color(UiTheme.ACCENT, 0.60)
-			sel.set_border_width_all(1)
-			sel.set_corner_radius_all(12)
-			sel.content_margin_left = 14
-			b.add_theme_stylebox_override("normal", sel)
-			b.add_theme_color_override("font_color", UiTheme.ACCENT)
+			b.add_theme_stylebox_override("normal",
+				_chip_box(Color(_accent, 0.14), Color(_accent, 0.55)))
+			b.add_theme_color_override("font_color", _accent)
 		else:
-			var n := StyleBoxEmpty.new()
-			n.content_margin_left = 14
-			b.add_theme_stylebox_override("normal", n)
+			b.add_theme_stylebox_override("normal",
+				_chip_box(Color(0.08, 0.09, 0.14, 0.55), Color(1, 1, 1, 0.10)))
 			b.add_theme_color_override("font_color", UiTheme.DIM)
+
+
+## Gruppen-Ueberschrift: kleine gesperrte Versalien in DIM, feine Linie darunter.
+func _group(pg: VBoxContainer, text: String) -> void:
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 5)
+	var l := Label.new()
+	l.text = text.to_upper()
+	l.add_theme_font_override("font", UiTheme.heading_font(2))
+	l.add_theme_font_size_override("font_size", 11)
+	l.add_theme_color_override("font_color", COL_DIM)
+	box.add_child(l)
+	var line := ColorRect.new()
+	line.color = Color(1, 1, 1, 0.08)
+	line.custom_minimum_size = Vector2(0, 1)
+	box.add_child(line)
+	var m := MarginContainer.new()
+	m.add_theme_constant_override("margin_top", 6 if pg.get_child_count() == 0 else 12)
+	m.add_theme_constant_override("margin_bottom", 3)
+	m.add_child(box)
+	pg.add_child(m)
 
 
 ## Regler-Zeile: fmt(v) -> Text, on_change(v). Optional eigenes Wert-Label.
@@ -458,6 +510,20 @@ func _slider_row(pg: VBoxContainer, caption: String, mn: float, mx: float, step:
 	return r
 
 
+## Vorschau-Rahmen: dunkle Glasflaeche mit feinem Rand, gleiche Sprache wie die Karten.
+func _framed(inner: Control) -> Control:
+	var pc := PanelContainer.new()
+	var fb := _chip_box(Color(0.03, 0.04, 0.07, 0.55), Color(1, 1, 1, 0.10), 12)
+	fb.content_margin_left = 8
+	fb.content_margin_right = 8
+	fb.content_margin_top = 8
+	fb.content_margin_bottom = 8
+	pc.add_theme_stylebox_override("panel", fb)
+	pc.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	pc.add_child(inner)
+	return pc
+
+
 ## 2D-Vorschau-Haken (Task playfield-preview): nur wenn das Skript existiert.
 func _add_2d_preview(parent: Control) -> void:
 	if not (ClassDB.class_exists("PlayfieldPreview") or ResourceLoader.exists("res://scripts/ui/playfield_preview.gd")):
@@ -467,7 +533,7 @@ func _add_2d_preview(parent: Control) -> void:
 		return
 	_preview_2d = scr.new()
 	var cc := CenterContainer.new()
-	parent.add_child(cc)
+	parent.add_child(_framed(cc))
 	cc.add_child(_preview_2d)
 
 
@@ -514,12 +580,21 @@ func _row(vb: VBoxContainer, caption: String, control: Control, value: Label) ->
 	control.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(control)
 	if value == null:
-		value = Label.new()
-	value.add_theme_font_size_override("font_size", 14)
-	value.add_theme_color_override("font_color", COL_DIM)
-	value.custom_minimum_size = Vector2(VALUE_W, 0)
-	value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	row.add_child(value)
+		return hov
+	value.add_theme_font_size_override("font_size", 13)
+	value.add_theme_color_override("font_color", UiTheme.TEXT)
+	value.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var chip := PanelContainer.new()
+	var cb := _chip_box(Color(1, 1, 1, 0.06), Color(1, 1, 1, 0.10), 9)
+	cb.content_margin_left = 8
+	cb.content_margin_right = 8
+	cb.content_margin_top = 2
+	cb.content_margin_bottom = 2
+	chip.add_theme_stylebox_override("panel", cb)
+	chip.custom_minimum_size = Vector2(VALUE_W, 0)
+	chip.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	chip.add_child(value)
+	row.add_child(chip)
 	return hov
 
 
