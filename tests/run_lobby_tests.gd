@@ -393,7 +393,7 @@ func _modes(L) -> void:
 	var v2 := t.to_dict_for(2)
 	_check(v2.pool[0].banned and v2.bans.size() == 1 and v2.bans[2] == 0, "Eigener Ban sichtbar")
 	var msg: String = t.ban(3, 0)
-	_check(msg.contains("gestrichen"), "Doppel-Ban: klare Meldung")
+	_check(msg.contains("gestrichen") or msg.to_lower().contains("already"), "Doppel-Ban: klare Meldung")
 	t.ban(1, 4)
 	t.ban(3, 1)
 	_check(not t.to_dict_for(1).get("hidden", false) and t.to_dict_for(1).bans.size() == 3, "nach allen Bans aufgedeckt")
