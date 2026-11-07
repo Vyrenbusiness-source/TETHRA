@@ -719,18 +719,67 @@ def load_lin(path):
     return rgb, a
 
 
+def ice_layer(W, seed):
+    """Ebene `ice` (Daten, linear): R ferne Eisnadeln, G nahe Eisspitzen,
+    B Kantenlicht. Der Shader schiebt R/G mit beat_step verschieden weit
+    (Vorbeiflug, rastet auf dem Schlag). Nie vorn-mitte."""
+    H = W // 2
+    rng = np.random.default_rng(seed)
+    out = np.zeros((H, W, 3), F32)
+    lat_c = (0.5 - (np.arange(H) + 0.5) / H) * 180.0
+    SUN = -40.0  # Lichtseite (Polarlicht-Schein)
+
+    def spire(ch, c, w, top, rough, lean):
+        half = w / 2.0
+        ppd = W / 360.0
+        x0, x1 = int((c - half - 4) / 360.0 * W + W / 2), int((c + half + 4) / 360.0 * W + W / 2)
+        cols = np.arange(x0, x1)
+        n = len(cols)
+        dl = (cols / W - 0.5) * 360.0 - c
+        edge = np.interp(np.arange(n) / n * 256, np.arange(256), np.convolve(rng.standard_normal(256), np.ones(5) / 5, "same"))
+        # Spitze: Hoehe faellt linear mit |dl|, schiefe Spitze (lean), raue Flanke
+        slope = top / max(half, 0.1)
+        tp = top - slope * np.abs(dl - lean * half) * (0.8 + 0.4 * rng.random()) + rough * edge * 2.0
+        m = ((lat_c[:, None] < tp[None, :]) & (lat_c[:, None] > -1.5) & (np.abs(dl)[None, :] < half)).astype(F32)
+        m = ndimage.gaussian_filter(m, 0.9 * ppd / 22.75)
+        fac = np.clip((lat_c[:, None] + 1.5) / max(top, 1.0), 0, 1)
+        flank = np.clip(0.5 + 0.5 * np.sign(SUN - c) * dl / half, 0, 1)[None, :]
+        nz = ndimage.gaussian_filter(rng.standard_normal((H // 4, n // 4 + 1)).astype(F32), 1.2)
+        nz = ndimage.zoom(nz, (4, 4), order=3)[:H, :n]
+        sh = np.clip(0.18 + 0.42 * flank + 0.22 * fac + 0.12 * nz, 0, 1)
+        v = np.clip(m * (0.06 + 0.94 * sh), 0, 1)
+        out[:, x0:x1, ch] = np.maximum(out[:, x0:x1, ch], v)
+        toward = np.sign(SUN - c)
+        e = np.clip(1.0 - np.abs(toward * dl - half * (1.0 - fac)) / 0.3, 0, 1) * (m > 0.5) * flank
+        out[:, x0:x1, 2] = np.maximum(out[:, x0:x1, 2], (e * np.clip(0.4 + 0.6 * sh, 0, 1) * 0.9).astype(F32))
+    for c in np.sort(rng.uniform(-165, 165, 34)):
+        if abs(c) < 16 and rng.random() < 0.6:
+            continue
+        spire(0, c, rng.uniform(2.5, 6.0), rng.uniform(5, 20), rng.uniform(0.2, 0.7), rng.uniform(-0.5, 0.5))
+    for c in (-152, -122, -92, -62, 48, 74, 104, 134, 158):
+        c += rng.uniform(-7, 7)
+        spire(1, c, rng.uniform(8, 15), rng.uniform(22, 40), rng.uniform(0.6, 1.4), rng.uniform(-0.4, 0.4))
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--width", type=int, default=4096)
+    ap.add_argument("--width", type=int, default=8192)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--out", default=OUT_DIR)
     ap.add_argument("--preview", default="", help="Ordner fuer Kamera-/Panorama-PNGs")
+    ap.add_argument("--ice-only", action="store_true")
     a = ap.parse_args()
     W = a.width
     H = W // 2
     t0 = time.time()
     rng = np.random.default_rng(a.seed + 9)
     os.makedirs(a.out, exist_ok=True)
+    if a.ice_only:
+        ice = ice_layer(W, a.seed * 1000 + 11)
+        Image.fromarray(np.clip(np.rint(ice * 255.0), 0, 255).astype(np.uint8)).save(
+            os.path.join(a.out, "aurora_ice.webp"), "WEBP", lossless=True, quality=100, method=4)
+        return
     pa = os.path.join(a.out, "aurora.webp")
     pb = os.path.join(a.out, "aurora_stars.webp")
     pc = os.path.join(a.out, "aurora_aurora.webp")
@@ -741,7 +790,11 @@ def main():
     print("stars %.1f s" % (time.time() - t0), flush=True)
     save_rgb(pc, aurora_layer(W, a.seed * 1000 + 7), rng)
     print("aurora %.1f s" % (time.time() - t0), flush=True)
-    for p in (pa, pb, pc):
+    pd_ = os.path.join(a.out, "aurora_ice.webp")
+    ice = ice_layer(W, a.seed * 1000 + 11)
+    Image.fromarray(np.clip(np.rint(ice * 255.0), 0, 255).astype(np.uint8)).save(
+        pd_, "WEBP", lossless=True, quality=100, method=4)
+    for p in (pa, pb, pc, pd_):
         print("  %s %.2f MB" % (os.path.basename(p), os.path.getsize(p) / 1e6))
     if a.preview:
         os.makedirs(a.preview, exist_ok=True)

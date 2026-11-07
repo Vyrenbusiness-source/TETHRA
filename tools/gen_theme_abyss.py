@@ -511,6 +511,63 @@ def build_shape(rng, kind, lon, w, top, ex):
     return shape_lean(rng, lon, w, top, **ex)
 
 
+def near_layer(W, seed):
+    """Ebene `near` (Daten, verlustfrei, linear): R ferne Platten, G nahe riesige
+    Platten (Oberflaechenhelligkeit, 0 = leer), B Kantenlicht zum Schacht.
+    Der Shader schiebt R/G mit beat_step verschieden weit (Parallax-Einrasten)."""
+    P = Pano(W)
+    rng = np.random.default_rng(seed)
+    H = P.H
+    out = np.zeros((H, W, 3), F32)
+    lat = P.LAT()
+    lon = P.LON()
+    ss = 3
+    def slab(ch, c, w, top, taper, tilt, rough):
+        half = w / 2.0
+        x0, x1 = int(P.x(c - half - 4)), int(P.x(c + half + 4))
+        cols = np.arange(x0, x1)
+        lo = (cols / W - 0.5) * 360.0
+        dl = lo - c
+        n = len(cols)
+        edge = fbm1(rng, 512, base=8, octaves=6)
+        tn = np.interp((np.arange(n) / n) * 512, np.arange(512), edge)
+        # hoehe pro Spalte: Kante rau, Taper
+        tp = top + rough * tn * 2.0 - taper * np.abs(dl)
+        lat_c = (0.5 - (np.arange(H) + 0.5) / H) * 180.0
+        halfw = half - np.maximum(lat_c[:, None], 0.0) * tilt
+        ins = (np.abs(dl)[None, :] < halfw).astype(F32)
+        under = (lat_c[:, None] < tp[None, :]).astype(F32)
+        under *= (lat_c[:, None] > -1.5)
+        m = ins * under
+        m = ndimage.gaussian_filter(m, 0.9)
+        # Oberflaeche: Schichtung (Streifen in Breitenrichtung) + Verwitterung
+        strat = fbm1(np.random.default_rng(int(c * 100) % 9999 + 7), H, base=40, octaves=5)[:, None]
+        wea = ndimage.zoom(rng.standard_normal((H // 8, n // 8 + 1)).astype(F32), (8, 8), order=3)[:H, :n]
+        # Seite zum Schacht heller
+        toward = np.sign(P.lon[0] * 0 + (SHAFT_LON - c))
+        side = np.clip(0.5 + 0.5 * toward * dl / max(half, 0.1), 0, 1)
+        sh = 0.25 + 0.45 * side[None, :] + 0.18 * strat + 0.10 * wea
+        sh *= np.clip(0.65 + 0.35 * (lat_c[:, None] + 1.5) / 14.0, 0, 1)
+        v = np.clip(m * (0.06 + 0.94 * np.clip(sh, 0, 1)), 0, 1)
+        out[:, x0:x0 + n, ch] = np.maximum(out[:, x0:x0 + n, ch], v)
+        # Kantenlicht (nur Seite zum Schacht, zum Schacht staerker)
+        near_sh = math.exp(-abs(wrap(SHAFT_LON - c)) / 60.0)
+        e = np.clip(1.0 - np.abs(toward * (dl) - halfw) / 0.35, 0, 1) * (m > 0.5)
+        out[:, x0:x0 + n, 2] = np.maximum(out[:, x0:x0 + n, 2], (e * near_sh * 0.9 * np.clip(0.4 + 0.6 * sh, 0, 1)).astype(F32))
+    # ferne Platten (R): 38 Stueck, ueberall, niedrig-mittel
+    lons = np.sort(rng.uniform(-163, 163, 38))
+    for c in lons:
+        if abs(c) < 14 and rng.random() < 0.5:
+            continue
+        slab(0, c, rng.uniform(2.0, 5.5), rng.uniform(4, 22), rng.uniform(0.0, 0.15), rng.uniform(-0.02, 0.05), rng.uniform(0.2, 0.8))
+    # nahe riesige Platten (G): Seiten, nie vorn-mitte, nie im Schacht
+    cands = [-150, -118, -86, -58, 46, 70, 98, 128, 158]
+    for c in cands:
+        c = c + rng.uniform(-8, 8)
+        slab(1, c, rng.uniform(7, 14), rng.uniform(24, 46), rng.uniform(0.0, 0.2), rng.uniform(0.0, 0.08), rng.uniform(0.6, 1.6))
+    return out
+
+
 def paint_world(P, rng, beam, soft):
     objs = make_objects(rng)
     shaft_done = False
@@ -624,6 +681,10 @@ def build(W, seed, out_dir, preview, quality, fog_w):
     fpath = os.path.join(out_dir, "abyss_sky_fog.webp")
     fu8 = np.clip(np.rint(np.sqrt(fog) * 255.0), 0, 255).astype(np.uint8)
     Image.fromarray(fu8).save(fpath, "WEBP", lossless=True, quality=100, method=6)
+    nl = near_layer(W, seed + 9)
+    npath = os.path.join(out_dir, "abyss_sky_near.webp")
+    Image.fromarray(np.clip(np.rint(nl * 255.0), 0, 255).astype(np.uint8)).save(npath, "WEBP", lossless=True, quality=100, method=4)
+    print("near layer %.2f MB" % (os.path.getsize(npath) / 1e6))
     mb = os.path.getsize(path) / 1e6
     fmb = os.path.getsize(fpath) / 1e6
     print("abyss_sky: %dx%d %.2f MB, fog %dx%d %.2f MB, %.1f s" % (
@@ -662,7 +723,7 @@ def build(W, seed, out_dir, preview, quality, fog_w):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--width", type=int, default=4096)
+    ap.add_argument("--width", type=int, default=8192)
     ap.add_argument("--fog-width", type=int, default=0, help="Standard: width/2")
     ap.add_argument("--seed", type=int, default=6660)
     ap.add_argument("--quality", type=int, default=95)
@@ -670,7 +731,7 @@ def main():
     ap.add_argument("--preview", default="")
     a = ap.parse_args()
     mb, fmb = build(a.width, a.seed, a.out, a.preview, a.quality, a.fog_width)
-    if a.width >= 4096 and max(mb, fmb) >= 2.5:
+    if a.width >= 4096 and max(mb, fmb) >= 6.0:
         raise SystemExit("WebP zu gross (%.2f / %.2f MB >= 2.5 MB)" % (mb, fmb))
 
 

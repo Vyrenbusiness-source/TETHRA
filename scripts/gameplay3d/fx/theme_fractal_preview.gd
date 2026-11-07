@@ -4,9 +4,12 @@ extends Node3D
 ## Karmin-Farbsatz, Pads und Noten zur Lesbarkeits-Kontrolle.
 ## Ohne Argumente: 150 BPM Bruch-Welle, Splitter kreisen langsam.
 ##   --bpm=<n> --speed=<Phase/s> --warp=<0..1>
-##   --shot [--shot-dir=<ordner>]  speichert fractal_still / fractal_beat_hit /
-##        fractal_beat_mid / fractal_beat_late / fractal_warp / fractal_drift /
-##        fractal_side (Blick 70 Grad seitlich) als PNG, dann Ende.
+##   --shot [--shot-dir=<ordner>]  speichert fractal_still / fractal_beat
+##        (phase 0.02) / fractal_half (phase 0.5) / fractal_drop (Drop-Spitze) /
+##        fractal_side (70 Grad) als PNG, druckt [luma] still=.. beat=.. drop=..
+##        (Strecke: x .25-.75, y .42-.87 | oben: y 0-.42), dann Ende.
+## Beat-Uniforms mit den Formeln aus docs/worlds/beat_contract.md.
+##   --drop=<0..0.6> --kiai=<0..1> im Dauerlauf.
 
 const ROAD_Y := -1.6
 const Z_LINE := 3.0
@@ -30,12 +33,16 @@ var _note_mats: Array[ShaderMaterial] = []
 var _t := 0.0
 var _frames := 0
 var _shot := false
+var _bench := false
+var _bench_base := false
+var _bench_ms: PackedFloat64Array = PackedFloat64Array()
+var _bench_last := 0
 var _shot_dir := SHOT_DIR
 var _step := 0
 var _bpm := 150.0
 
 func _ready() -> void:
-	for a in OS.get_cmdline_args():
+	for a in OS.get_cmdline_args() + OS.get_cmdline_user_args():
 		if a == "--shot":
 			_shot = true
 		elif a.begins_with("--shot-dir="):
@@ -46,6 +53,7 @@ func _ready() -> void:
 	_mat.shader = load("res://shaders/theme_fractal.gdshader")
 	_mat.set_shader_parameter("tex_a", load("res://assets_game/themes/fractal/fractal_sky.webp"))
 	_mat.set_shader_parameter("shards_a", load("res://assets_game/themes/fractal/fractal_sky_shards.webp"))
+	_mat.set_shader_parameter("mid_a", load("res://assets_game/themes/fractal/fractal_sky_mid.webp"))
 	_mat.set_shader_parameter("readability", 0.7)
 	var sky := Sky.new()
 	sky.sky_material = _mat
@@ -150,13 +158,27 @@ func _unshaded(c: Color) -> StandardMaterial3D:
 	return m
 
 func _arg_f(prefix: String, def: float) -> float:
-	for a in OS.get_cmdline_args():
+	for a in OS.get_cmdline_args() + OS.get_cmdline_user_args():
 		if a.begins_with(prefix):
 			return float(a.trim_prefix(prefix))
 	return def
 
-func _set_pulse(p: float) -> void:
+func _set_state(beats: int, phase: float, drop: float, kiai: float) -> void:
+	var beat_ms := 60000.0 / _bpm
+	var meter := 4
+	var bar_phase := (float(beats % meter) + phase) / float(meter)
+	var p := exp(-phase * beat_ms / 62.0)
+	if beats % meter == 0:
+		p = minf(p * 1.15, 1.0)
 	_mat.set_shader_parameter("beat_pulse", p)
+	_mat.set_shader_parameter("beat_phase", phase)
+	_mat.set_shader_parameter("bar_phase", bar_phase)
+	_mat.set_shader_parameter("beat_step", float(beats) + 1.0 - pow(1.0 - phase, 4.0))
+	_mat.set_shader_parameter("downbeat_pulse", exp(-bar_phase * float(meter) * 3.0))
+	_mat.set_shader_parameter("drop", drop)
+	_mat.set_shader_parameter("kiai", kiai)
+	_mat.set_shader_parameter("energy", 0.5)
+	_mat.set_shader_parameter("comfort", 0.0)
 	for em in _edge_mats:
 		em.emission = C_EDGE.lerp(C_EDGE_HOT, p)
 		em.emission_energy_multiplier = 0.75 + 0.85 * p
@@ -166,12 +188,32 @@ func _set_pulse(p: float) -> void:
 func _process(delta: float) -> void:
 	_t += delta
 	_frames += 1
+	_bench_tick()
 	if _shot:
 		_shot_step()
 		return
-	var beat := _t * _bpm / 60.0
-	# Wie mania_3d._world_pulse: steiler Anstieg, ~180 ms Abfall.
-	_set_pulse(exp(-fmod(beat, 1.0) * 60.0 / _bpm * 1000.0 / 180.0))
+	var b := _t * _bpm / 60.0
+	var d := clampf(float(_arg_f("--drop=", 0.0)), 0.0, 0.6)
+	_set_state(int(floor(b)), fmod(b, 1.0), d, _arg_f("--kiai=", 0.0))
+
+func _luma(img: Image, y0: float, y1: float) -> float:
+	var im := img.duplicate() as Image
+	im.resize(160, 90)
+	var s := 0.0
+	var n := 0
+	for y in range(int(y0 * 90), int(y1 * 90)):
+		for x in range(int(0.25 * 160), int(0.75 * 160)) if y0 > 0.1 else range(0, 160):
+			var c := im.get_pixel(x, y)
+			s += 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b
+			n += 1
+	return s / float(maxi(n, 1))
+
+var _lm: Dictionary = {}
+
+func _grab(key: String) -> void:
+	var img := get_viewport().get_texture().get_image()
+	_lm[key] = [_luma(img, 0.42, 0.87), _luma(img, 0.0, 0.42)]
+	_save("fractal_%s.png" % key)
 
 ## Schritt-Folge fuer --shot: je 12 Frames Einschwingen, dann speichern.
 func _shot_step() -> void:
@@ -179,36 +221,29 @@ func _shot_step() -> void:
 		return
 	match _step:
 		0:
-			_set_pulse(0.0)
+			_set_state(8, 0.5, 0.0, 0.0)
 		1:
-			_save("fractal_still.png")
-			_set_pulse(0.92)
+			_grab("still")
+			_set_state(8, 0.02, 0.0, 0.0)
 		2:
-			_save("fractal_beat_hit.png")
-			_set_pulse(0.5)
+			_grab("beat")
+			_set_state(8, 0.5, 0.0, 0.0)
 		3:
-			_save("fractal_beat_mid.png")
-			_set_pulse(0.18)
+			_grab("half")
+			_set_state(8, 0.02, 0.6, 1.0)
 		4:
-			_save("fractal_beat_late.png")
-			_set_pulse(0.3)
-			_mat.set_shader_parameter("warp", 0.8)
-		5:
-			_save("fractal_warp.png")
-			_mat.set_shader_parameter("warp", 0.0)
-			_set_pulse(0.0)
-			_mat.set_shader_parameter("star_phase", 1.2)
-		6:
-			_save("fractal_drift.png")
-			_mat.set_shader_parameter("star_phase", 0.0)
-			_set_pulse(0.5)
+			_grab("drop")
+			_set_state(8, 0.5, 0.0, 0.0)
 			_cam.rotation_degrees = Vector3(-8, 70, 0)
-		7:
-			_save("fractal_side.png")
-			_set_pulse(0.0)
-			_cam.rotation_degrees = Vector3(-8, 180, 0)
-		8:
-			_save("fractal_back.png")
+		5:
+			_grab("side")
+			var s: Array = _lm["still"]
+			var bt: Array = _lm["beat"]
+			var h: Array = _lm["half"]
+			var dr: Array = _lm["drop"]
+			print("[luma] still=%.4f beat=%.4f drop=%.4f (Strecke) | oben still=%.4f beat=%.4f half=%.4f drop=%.4f" % [s[0], bt[0], dr[0], s[1], bt[1], h[1], dr[1]])
+			print("[luma] Strecke drop/still=%+.1f%% (max +20) | oben drop/still=%+.1f%% (max +35) | beat/half oben=%+.1f%%" % [
+				100.0 * (dr[0] / maxf(s[0], 1e-5) - 1.0), 100.0 * (dr[1] / maxf(s[1], 1e-5) - 1.0), 100.0 * (bt[1] / maxf(h[1], 1e-5) - 1.0)])
 			get_tree().quit(0)
 	_step += 1
 
@@ -218,3 +253,37 @@ func _save(file: String) -> void:
 	var path := _shot_dir.path_join(file)
 	img.save_png(path)
 	print("shot: ", path)
+
+## --bench [--bench-base]: vsync aus, max_fps 0, 1920x1080, 120 Frames Warmup,
+## 600 Frames messen, druckt "[perf] <welt> fps_avg=.. frame_ms_p99=..".
+## --bench-base tauscht den Welt-Shader gegen shaders/sky_panorama.gdshader.
+func _bench_tick() -> bool:
+	if _frames == 1:
+		var args := OS.get_cmdline_args() + OS.get_cmdline_user_args()
+		_bench = args.has("--bench")
+		_bench_base = args.has("--bench-base")
+		if _bench:
+			DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
+			Engine.max_fps = 0
+			get_window().size = Vector2i(1920, 1080)
+			if _bench_base:
+				var tex = _mat.get_shader_parameter("tex_a")
+				var tex2 = _mat.get_shader_parameter("shards_a")
+				_mat.shader = load("res://shaders/sky_panorama.gdshader")
+				_mat.set_shader_parameter("tex_a", tex)
+				_mat.set_shader_parameter("stars_a", tex2)
+	if not _bench:
+		return false
+	var now := Time.get_ticks_usec()
+	if _frames > 120:
+		_bench_ms.append(float(now - _bench_last) / 1000.0)
+	_bench_last = now
+	if _bench_ms.size() >= 600:
+		var sorted := _bench_ms.duplicate()
+		sorted.sort()
+		var sum := 0.0
+		for v in _bench_ms:
+			sum += v
+		print("[perf] ", "fractal", (" base" if _bench_base else ""), " fps_avg=", snappedf(1000.0 * _bench_ms.size() / sum, 0.1), " frame_ms_p99=", snappedf(sorted[int(sorted.size() * 0.99)], 0.01))
+		get_tree().quit(0)
+	return true
