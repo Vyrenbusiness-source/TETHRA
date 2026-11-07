@@ -49,6 +49,8 @@ var _status: Label = null
 var _auto_lbl: Label = null
 # Song-Vorschau (Bibliothek, Online-Browser, Pool-Karten)
 var _preview: AudioStreamPlayer
+## Gemeinsamer Vorschau-Player der Lobby (genau eine Musikquelle); null = eigener.
+var shared_preview: AudioStreamPlayer = null
 var _preview_req: HTTPRequest
 var _preview_key := ""
 
@@ -76,9 +78,13 @@ func _init(lib: MapLibrary) -> void:
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_STOP
-	_preview = AudioStreamPlayer.new()
-	_preview.bus = "Music"
-	add_child(_preview)
+	if shared_preview != null and is_instance_valid(shared_preview):
+		_preview = shared_preview
+		_preview.stop()
+	else:
+		_preview = AudioStreamPlayer.new()
+		_preview.bus = "Music"
+		add_child(_preview)
 	_mirror = get_node_or_null("/root/Mirror") as BeatmapMirror
 	if _mirror != null:
 		_mirror.download_progress.connect(_on_dl_progress)
@@ -695,6 +701,7 @@ func _build_ban() -> void:
 	g.get_parent().reparent(row)
 	var banned := _banned_set() if revealed else {}
 	var mine := int(t.bans.get(my_id, -1))
+	var skipped := t.bans.has(my_id) and mine < 0
 	for i in t.pool.size():
 		var c := _card(i, t.pool[i], "ban", banned.has(i) and revealed)
 		g.add_child(c)
@@ -717,7 +724,9 @@ func _build_ban() -> void:
 		nl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		nl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 		h.add_child(nl)
-		if revealed and int(t.bans.get(pid, -1)) >= 0:
+		if revealed and t.bans.has(pid) and int(t.bans[pid]) < 0:
+			h.add_child(chip(tr("Kein Ban"), DIM, 11))
+		elif revealed and int(t.bans.get(pid, -1)) >= 0:
 			var bt: String = str(t.pool[int(t.bans[pid])].get("title", "?"))
 			h.add_child(chip(tr("strich: %s") % bt.left(14), WARN, 11))
 		else:
@@ -743,7 +752,12 @@ func _build_ban() -> void:
 	var bar := _bar()
 	if not revealed:
 		bar.add_child(lbl(("Deine Wahl ist markiert — du kannst sie ändern, bis alle gewählt haben."
-			if mine >= 0 else "Klicke eine Map, um sie abzuwählen."), 14, DIM))
+			if (mine >= 0 or skipped) else "Klicke eine Map, um sie abzuwählen — oder wähle Kein Ban."), 14, DIM))
+		var sk := _btn(tr("✓ Kein Ban") if skipped else tr("Kein Ban"), skipped, 200, func():
+			if not harness:
+				Lobby.tour_ban(Tournament.SKIP))
+		sk.name = "SkipBan"
+		bar.add_child(sk)
 	bar.add_child(_spacer())
 	if is_host:
 		var go := _btn("Turnier starten", true, 220, func():
@@ -821,7 +835,7 @@ func _play_stream(st: AudioStream) -> void:
 
 
 func stop_preview() -> void:
-	if _preview != null:
+	if _preview != null and is_instance_valid(_preview):
 		_preview.stop()
 
 
