@@ -115,12 +115,14 @@ uniform float ground_clear = 4.6;        // halbe Breite (x) mit duennem Nebel
 uniform float ground_clear_soft = 5.0;
 uniform float fog_flight = 40.0;         // Welteinheiten je star_phase
 
-// Scharf bei Verkleinerung: Mip-Stufe aus dem Winkel je Pixel (aus der
-// stetigen Blickrichtung, daher keine Naht am Panorama-Rand).
-float afp = 0.0;
+// Scharf bei Verkleinerung: Mip-Stufe aus dem Winkel je Pixel (UV-Ableitungen mit Wrap-Korrektur
+// am Panorama-Rand, textureGrad -> keine Naht, Anisotropie an den Polen).
 vec4 tx(sampler2D t, vec2 uv) {
-	float lod = max(log2(max(afp * float(textureSize(t, 0).x), 1.0)), 0.0);
-	return textureLod(t, uv, lod);
+	vec2 gx = dFdx(uv);
+	vec2 gy = dFdy(uv);
+	gx.x -= round(gx.x);
+	gy.x -= round(gy.x);
+	return textureGrad(t, uv, gx, gy);
 }
 
 mat3 euler(vec3 e) {
@@ -195,6 +197,14 @@ float fbm(vec2 p) {
 	return s / 0.9375;
 }
 
+// Guenstige Variante (2 Oktaven) fuer die Domain-Warp-Vektoren.
+float fbm2(vec2 p) {
+	mat2 r = mat2(vec2(0.80, 0.60), vec2(-0.60, 0.80));
+	float s = 0.5 * vnoise(p);
+	p = r * p * 2.03 + vec2(17.1, 3.7);
+	return (s + 0.25 * vnoise(p)) / 0.75;
+}
+
 // Wrap auf (-180, 180].
 float wrap_deg(float d) {
 	return d - 360.0 * floor((d + 180.0) / 360.0);
@@ -250,7 +260,7 @@ vec4 ground_fog_layer(vec3 dir, float lon, float bp) {
 	float flight = (star_phase + TIME * star_speed) * fog_flight;
 	float stretch = 1.0 + warp * 5.0;
 	vec2 q = vec2(p.x * 0.055 + TIME * 0.012, (p.y + flight) * 0.055 / stretch);
-	vec2 w = vec2(fbm(q * 0.6 + vec2(TIME * 0.02, 0.0)), fbm(q * 0.6 + vec2(5.2, 1.3)));
+	vec2 w = vec2(fbm2(q * 0.6 + vec2(TIME * 0.02, 0.0)), fbm2(q * 0.6 + vec2(5.2, 1.3)));
 	float n = fbm(q + 1.6 * w);
 	// Ferne: Rauschen mittelt sich aus (kein Flimmern am Horizont).
 	n = mix(n, 0.5, smoothstep(60.0, 220.0, dist));
@@ -276,7 +286,6 @@ vec3 slab_color(float rim, float v, float lon, float lat, float haze, float atem
 
 void sky() {
 	vec3 dir = normalize(EYEDIR);
-	afp = length(fwidth(dir)) * 0.159155;
 	vec3 pdir = dir * euler(pano_rotation);
 	vec2 puv = dir_uv(pdir, pano_offset);
 	vec3 pan = sample_pair(tex_a, tex_b, puv);
@@ -301,7 +310,9 @@ void sky() {
 		vec3 fs = dec(tx(fog_a, puv).rgb);
 		float sb = fs.b;
 		col += shaft_color * sb * shaft_gain * atem;
-		col += shaft_color * shaft_dust(lon, lat) * smoothstep(0.05, 0.5, sb) * sb * 0.22 * dust * (1.0 + atem);
+		if (sb > 0.05) {
+			col += shaft_color * shaft_dust(lon, lat) * smoothstep(0.05, 0.5, sb) * sb * 0.22 * dust * (1.0 + atem);
+		}
 
 		// Nebelbaenke: zwei Ebenen rollen verschieden schnell, Oberkante wogt.
 		float rt = TIME * fog_roll;

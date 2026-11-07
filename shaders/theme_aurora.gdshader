@@ -9,6 +9,9 @@ shader_type sky;
 //   aurora_stars.webp   (stars_a/stars_b)   Sterne, Parallax/Flug wie sky_panorama
 //   aurora_aurora.webp  (aurora_a/aurora_b) Polarlicht-Ebene (obere Halbkugel),
 //                                           weht hier im Shader, wird gespiegelt.
+//   aurora_ice.webp     (ice_a)             Eisnadel-Ebenen (RGBA), rasten per beat_step.
+// Alle Texturen 8192x4096, BPTC high quality + Mipmaps, Sampler
+// filter_linear_mipmap_anisotropic; tx() sampelt mit Wrap-korrigierten Gradienten.
 // Uniform-Interface wie shaders/sky_panorama.gdshader (tint, brightness,
 // beat_pulse, star_speed/star_phase/warp, tex_a/tex_b/palette_mix, ...) plus:
 //   aurora_flow 0..2      Staerke des Wehens (0 = starr)
@@ -92,12 +95,14 @@ uniform float ice_near_deg = 0.8;
 const int WARP_TAPS = 16;
 const vec3 FOG_COL = vec3(0.0075, 0.0168, 0.0232); // #15232A linear
 
-// Scharf bei Verkleinerung: Mip-Stufe aus dem Winkel je Pixel (aus der
-// stetigen Blickrichtung, daher keine Naht am Panorama-Rand).
-float afp = 0.0;
+// Scharf bei Verkleinerung: Mip-Stufe aus dem Winkel je Pixel (UV-Ableitungen mit Wrap-Korrektur
+// am Panorama-Rand, textureGrad -> keine Naht, Anisotropie an den Polen).
 vec4 tx(sampler2D t, vec2 uv) {
-	float lod = max(log2(max(afp * float(textureSize(t, 0).x), 1.0)), 0.0);
-	return textureLod(t, uv, lod);
+	vec2 gx = dFdx(uv);
+	vec2 gy = dFdy(uv);
+	gx.x -= round(gx.x);
+	gy.x -= round(gy.x);
+	return textureGrad(t, uv, gx, gy);
 }
 
 mat3 euler(vec3 e) {
@@ -235,7 +240,6 @@ vec3 aurora_at(vec3 d, float tt) {
 
 void sky() {
 	vec3 dir = normalize(EYEDIR);
-	afp = length(fwidth(dir)) * 0.159155;
 	vec3 pd = dir * euler(pano_rotation);
 	vec4 sc = scene_at(dir_uv(pd, pano_offset));
 	vec3 col = sc.rgb * (1.0 + beat_pulse * 0.04);

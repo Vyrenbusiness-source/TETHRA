@@ -5,7 +5,10 @@ shader_type sky;
 // Abstrakt, duester, schneidend, fast monochrom (Schwarz, kaltes Grau, Karmin).
 // Panoramen offline: tools/gen_theme_fractal.py -> assets_game/themes/fractal/
 //   fractal_sky.webp          fern: Raum, Karmin-Schein am Horizont, fernes Stachelfeld
+//   fractal_sky_mid.webp      mittlere Splitterebene (RGBA, Zahnrad-Rasten per beat_step)
 //   fractal_sky_shards.webp   nah (RGBA, Alpha = Deckung): Riesen-Splitter/-Drusen
+// Alle Texturen 8192x4096, BPTC high quality + Mipmaps, Sampler
+// filter_linear_mipmap_anisotropic; tx() sampelt mit Wrap-korrigierten Gradienten.
 //
 // Bewegung (thementypisch, nie Flackern, nie Vollbild-Blitz):
 //   - Splitter-Ebene kreist langsam um den Spieler (star_phase * shards_drift,
@@ -123,12 +126,14 @@ uniform float ratchet_far = 0.3;
 
 const int WARP_TAPS = 12;
 
-// Scharf bei Verkleinerung: Mip-Stufe aus dem Winkel je Pixel (aus der
-// stetigen Blickrichtung, daher keine Naht am Panorama-Rand).
-float afp = 0.0;
+// Scharf bei Verkleinerung: Mip-Stufe aus dem Winkel je Pixel (UV-Ableitungen mit Wrap-Korrektur
+// am Panorama-Rand, textureGrad -> keine Naht, Anisotropie an den Polen).
 vec4 tx(sampler2D t, vec2 uv) {
-	float lod = max(log2(max(afp * float(textureSize(t, 0).x), 1.0)), 0.0);
-	return textureLod(t, uv, lod);
+	vec2 gx = dFdx(uv);
+	vec2 gy = dFdy(uv);
+	gx.x -= round(gx.x);
+	gy.x -= round(gy.x);
+	return textureGrad(t, uv, gx, gy);
 }
 
 mat3 euler(vec3 e) {
@@ -206,7 +211,6 @@ float luma(vec3 c) {
 
 void sky() {
 	vec3 dir = normalize(EYEDIR);
-	afp = length(fwidth(dir)) * 0.159155;
 	float ph = star_phase + TIME * star_speed;
 	float cm = 1.0 - 0.5 * comfort;
 	float rk = radians(cm) * beat_step;
