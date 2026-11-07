@@ -278,7 +278,7 @@ func _bench_step(delta: float) -> void:
 
 # --- Komfort-Pruefung (docs/worlds/beat_contract.md, Komfort-Regel 5) ---
 # Nach den --shot-Aufnahmen: zwei Paare im Abstand 1/8 Beat, Licht eingefroren
-# (nur beat_step + TIME laufen). mitte = 8.4375 -> 8.5625, schlag = 8.9375 -> 9.0625.
+# (Licht fest, nur beat_step + TIME laufen). mitte = 8.4375 -> 8.5625, schlag = 8.9375 -> 9.0625.
 # Glatter Fluss: schlag/mitte ~ 1; Rasten/Stop-and-go auf dem Schlag gaebe >> 1.
 const JK_NAME := "monolith"
 const JK_BEATS: Array[float] = [8.4375, 8.5625, 8.9375, 9.0625]
@@ -313,12 +313,11 @@ func _jerk_tick() -> void:
 		return
 	var b: float = JK_BEATS[_jk]
 	var bi := int(floor(b))
-	_jk_set.call(bi, b - float(bi))
-	# Licht einfrieren: nur die Bewegung vergleichen.
-	_mat.set_shader_parameter("beat_pulse", 0.3)
-	_mat.set_shader_parameter("downbeat_pulse", 0.0)
-	_mat.set_shader_parameter("beat_phase", 0.5)
-	_mat.set_shader_parameter("bar_phase", 0.5)
+	var p := b - float(bi)
+	# Licht (Himmel, Kanten, Noten) einfrieren auf Schlag 8, Phase 0.5: nur beat_step
+	# (glatte Formel) und TIME laufen, damit nur die Bewegung verglichen wird.
+	_jk_set.call(8, 0.5)
+	_mat.set_shader_parameter("beat_step", float(bi) + p + 0.25 * ((1.0 - pow(1.0 - p, 2.0)) - p))
 	_jk += 1
 
 func _jk_diff(a: Image, b: Image) -> float:
