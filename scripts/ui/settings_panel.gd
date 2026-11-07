@@ -8,7 +8,7 @@ extends Control
 signal closed
 
 const COL_DIM := UiTheme.DIM
-const VALUE_W := 76.0
+const VALUE_W := 88.0
 const CAP_W := 170.0
 const ROW_H := 38.0
 const CTRL_H := 34.0
@@ -25,6 +25,7 @@ void fragment() {
 
 var _world_preview: WorldPreview
 var _panel: Control
+var _scroll: ScrollContainer
 var _pages: Array[Control] = []
 var _tabs: Array[Button] = []
 var _tab_cur := 0
@@ -72,7 +73,9 @@ func _ready() -> void:
 	sb.shadow_size = 24
 	sb.shadow_color = Color(0, 0, 0, 0.45)
 	panel.add_theme_stylebox_override("panel", sb)
-	panel.custom_minimum_size = Vector2(840, 0)
+	# Feste Panelgroesse ueber alle Reiter; Inhalt scrollt bei Bedarf.
+	var vp := get_viewport().get_visible_rect().size
+	panel.custom_minimum_size = Vector2(clampf(vp.x - 80.0, 600.0, 980.0), clampf(vp.y - 70.0, 380.0, 760.0))
 	panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	center.add_child(panel)
 	_panel = panel
@@ -107,9 +110,19 @@ func _ready() -> void:
 	var side := HBoxContainer.new()
 	side.add_theme_constant_override("separation", 8)
 	vb.add_child(side)
+	_scroll = ScrollContainer.new()
+	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_style_scrollbar(_scroll.get_v_scroll_bar())
+	vb.add_child(_scroll)
 	var stack := VBoxContainer.new()
 	stack.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	vb.add_child(stack)
+	var stack_m := MarginContainer.new()
+	stack_m.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	stack_m.add_theme_constant_override("margin_right", 12)
+	stack_m.add_child(stack)
+	_scroll.add_child(stack_m)
 
 	var pg_game := _page(side, stack, "Gameplay")
 	var pg_2d_root := _page(side, stack, "2D-Spielfeld")
@@ -123,6 +136,7 @@ func _ready() -> void:
 	h2d.add_child(pg_2d)
 	var pv_col := VBoxContainer.new()
 	pv_col.custom_minimum_size = Vector2(250, 0)
+	pv_col.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	h2d.add_child(pv_col)
 	var pg_world := _page(side, stack, "Welt")
 	var pg_gfx := _page(side, stack, "Grafik")
@@ -209,12 +223,12 @@ func _ready() -> void:
 	_row(pg_2d, "Hintergrund-Unschärfe", blur_btn, null).tooltip_text = "Map-Bild unscharf zeichnen"
 
 	if ResourceLoader.exists("res://scripts/ui/skin_picker.gd"):
-		_group(pg_2d, "Aussehen")
+		_group(pg_2d, "Skin")
 		var skin = load("res://scripts/ui/skin_picker.gd").new()
 		if skin is Control:
 			if skin.has_signal("changed"):
 				skin.connect("changed", _refresh_2d_preview)
-			_row(pg_2d, "Skin", skin, null)
+			_embed_skin(pg_2d, skin)
 
 	_add_2d_preview(pv_col)
 
@@ -461,6 +475,8 @@ static func _chip_box(bg: Color, border: Color, radius: int = 12) -> StyleBoxFla
 
 func _show_page(i: int) -> void:
 	_tab_cur = i
+	if _scroll != null:
+		_scroll.scroll_vertical = 0
 	for k in _pages.size():
 		_pages[k].visible = k == i
 		var b := _tabs[k]
@@ -472,6 +488,69 @@ func _show_page(i: int) -> void:
 			b.add_theme_stylebox_override("normal",
 				_chip_box(Color(0.08, 0.09, 0.14, 0.55), Color(1, 1, 1, 0.10)))
 			b.add_theme_color_override("font_color", UiTheme.DIM)
+
+
+## Skin-Bereich: Dropdown volle Breite, Knoepfe darunter, Status umbrechend.
+## Die Kinder des SkinPickers wandern nach Typ in dieses Layout; der Picker
+## selbst bleibt unsichtbar im Baum (Besitzer von Dialog und Logik).
+func _embed_skin(pg: VBoxContainer, skin: Control) -> void:
+	var m := MarginContainer.new()
+	m.add_theme_constant_override("margin_left", 10)
+	m.add_theme_constant_override("margin_right", 10)
+	m.add_theme_constant_override("margin_top", 4)
+	pg.add_child(m)
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 8)
+	m.add_child(col)
+	skin.visible = false
+	col.add_child(skin)
+	var btns := HFlowContainer.new()
+	btns.add_theme_constant_override("h_separation", 8)
+	btns.add_theme_constant_override("v_separation", 8)
+	var opt: Control = null
+	var status: Label = null
+	for c in skin.get_children():
+		if c is OptionButton:
+			opt = c
+		elif c is Label:
+			status = c
+	if opt == null:
+		skin.visible = true
+		return
+	for c in skin.get_children():
+		if c != opt and (c is Button or c is MenuButton):
+			skin.remove_child(c)
+			c.custom_minimum_size.y = CTRL_H
+			btns.add_child(c)
+	skin.remove_child(opt)
+	opt.custom_minimum_size = Vector2(0, CTRL_H)
+	opt.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	col.add_child(opt)
+	col.add_child(btns)
+	if status != null:
+		skin.remove_child(status)
+		status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		status.custom_minimum_size.x = 100
+		status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		col.add_child(status)
+
+
+## Scrollbalken im Spiel-Look: schmal, abgerundet, Akzent beim Anfassen.
+func _style_scrollbar(sb: VScrollBar) -> void:
+	var track := StyleBoxFlat.new()
+	track.bg_color = Color(1, 1, 1, 0.04)
+	track.set_corner_radius_all(4)
+	sb.add_theme_stylebox_override("scroll", track)
+	var mk := func(c: Color) -> StyleBoxFlat:
+		var g := StyleBoxFlat.new()
+		g.bg_color = c
+		g.set_corner_radius_all(4)
+		g.content_margin_left = 4
+		g.content_margin_right = 4
+		return g
+	sb.add_theme_stylebox_override("grabber", mk.call(Color(1, 1, 1, 0.22)))
+	sb.add_theme_stylebox_override("grabber_highlight", mk.call(Color(_accent, 0.6)))
+	sb.add_theme_stylebox_override("grabber_pressed", mk.call(Color(_accent, 0.9)))
 
 
 ## Gruppen-Ueberschrift: kleine gesperrte Versalien in DIM, feine Linie darunter.
