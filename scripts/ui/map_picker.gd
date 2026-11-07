@@ -549,7 +549,7 @@ func _build() -> void:
 	_count_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	head.add_child(_count_label)
 	var online := Button.new()
-	online.text = "Online  ⬇"
+	online.text = "Online-Maps"
 	online.tooltip_text = "Maps online suchen und laden — fertige Downloads werden direkt gewählt"
 	online.focus_mode = Control.FOCUS_NONE
 	online.custom_minimum_size = Vector2(130, 40)

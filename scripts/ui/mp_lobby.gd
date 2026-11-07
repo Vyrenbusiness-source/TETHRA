@@ -322,6 +322,14 @@ func _picker_shots() -> void:
 	print("PICKER Score-Set gefunden: %s" % str(_picker.select_first_scored()))
 	await get_tree().create_timer(0.8).timeout
 	await shot.call("score")
+	# Online-Tab (Komponente des Song-Browsers) im Picker.
+	_picker.open_online()
+	await get_tree().create_timer(4.0).timeout
+	print("PICKER Online offen: %s" % str(_picker.online_open()))
+	await shot.call("online")
+	_picker.close()
+	await get_tree().create_timer(0.3).timeout
+	print("PICKER geschlossen: %s" % str(not _picker.is_open()))
 	get_tree().quit(0)
 
 
