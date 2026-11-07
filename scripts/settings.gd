@@ -56,6 +56,8 @@ var key_lanes: Array[int] = [KEY_D, KEY_F, KEY_J, KEY_K]
 var mania_scroll: float = 1.0
 ## Spur-Aufleuchten beim Tastendruck (Lane-Highlight) an/aus.
 var lane_glow: bool = true
+## 2D: Aufleuchten der Tasten/Lighting beim Treffer (osu! "Hit Lighting").
+var hit_lighting_2d: bool = true
 ## Spurbreite: Abstand der 4 Spuren relativ zum Standard (0.7..1.2, 5er-Schritte).
 ## Noten bleiben bis 85 % gleich gross, darunter schrumpfen sie leicht mit.
 var lane_spacing: float = 1.0
@@ -352,6 +354,7 @@ func load_settings(path: String = PATH) -> void:
 	mania_scroll = clampf(float(cfg.get_value("game", "mania_scroll", 1.0)), 0.5, 3.0)
 	hitsounds = bool(cfg.get_value("game", "hitsounds", true))
 	lane_glow = bool(cfg.get_value("game", "lane_glow", true))
+	hit_lighting_2d = bool(cfg.get_value("game", "hit_lighting_2d", true))
 	lane_spacing = clamp_lane_spacing(float(cfg.get_value("game", "lane_spacing", 1.0)))
 	playfield_2d = bool(cfg.get_value("game", "playfield_2d", false))
 	bg_dim = clamp_bg_dim(float(cfg.get_value("game", "bg_dim", 0.3)))
@@ -389,6 +392,7 @@ func save(path: String = PATH) -> void:
 	cfg.set_value("game", "mania_scroll", mania_scroll)
 	cfg.set_value("game", "hitsounds", hitsounds)
 	cfg.set_value("game", "lane_glow", lane_glow)
+	cfg.set_value("game", "hit_lighting_2d", hit_lighting_2d)
 	cfg.set_value("game", "lane_spacing", lane_spacing)
 	cfg.set_value("game", "playfield_2d", playfield_2d)
 	cfg.set_value("game", "bg_dim", bg_dim)

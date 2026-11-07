@@ -197,7 +197,7 @@ func _draw() -> void:
 		var x := fr.position.x + cw * c
 		var r := Rect2(x + pad, ly - nh * 0.5, cw - pad * 2.0, nh)
 		var on := c < _held.size() and bool(_held[c])
-		var fl := clampf(float(_flash[c]) if c < _flash.size() else 0.0, 0.0, 1.0)
+		var fl := clampf(float(_flash[c]) if c < _flash.size() and Settings.hit_lighting_2d else 0.0, 0.0, 1.0)
 		var fc: Color = _flash_col[c] if c < _flash_col.size() else lane_color
 		var base := lane_color.lerp(fc, fl * 0.6)
 		var fill_a := 0.14 + (0.45 if on else 0.0) + fl * 0.25
@@ -352,7 +352,7 @@ func _draw_skin_keys(xs: Array, ws: Array, ly: float, vs: Vector2) -> void:
 			draw_texture_rect(t, Rect2(x, top, w, h), false)
 		else:
 			# Fallback: eingebauter Receptor fuer genau diese Spalte.
-			var fl := clampf(float(_flash[c]) if c < _flash.size() else 0.0, 0.0, 1.0)
+			var fl := clampf(float(_flash[c]) if c < _flash.size() and Settings.hit_lighting_2d else 0.0, 0.0, 1.0)
 			var fc: Color = _flash_col[c] if c < _flash_col.size() else lane_color
 			var base := lane_color.lerp(fc, fl * 0.6)
 			var r := Rect2(x + 2.0, ly, w - 4.0, h)
@@ -577,7 +577,8 @@ func _draw_osu() -> void:
 	if sb != null:
 		var sz := _tex_px("stage_bottom", sb) * 1.6
 		draw_texture_rect(sb, Rect2(fr.get_center().x - sz.x * 0.5, vs.y - sz.y, sz.x, sz.y), false)
-	_draw_osu_lighting(xs, ws, ly, now)
+	if Settings.hit_lighting_2d:
+		_draw_osu_lighting(xs, ws, ly, now)
 	_draw_osu_judgement(fr, vs, now)
 	_draw_osu_combo(fr, vs, now)
 
@@ -640,6 +641,10 @@ func _draw_osu_item(it: Array, xs: Array, ws: Array, vs: Vector2, ly: float) -> 
 	# Ohne eigene Tail-Textur bleibt das Ende leer (kein Kopf als Ende); die
 	# Koerperlaenge rechnet osu! trotzdem mit der Kopfhoehe.
 	var th := _osu_note_h(tail) if tail != null else hh
+	# Nutzer-Wunsch: kein Ball am Hold-Ende bei Kreis-Skins -> kugelfoermige
+	# (fast quadratische) Tails nicht zeichnen; Koerperlaenge bleibt wie in osu!.
+	if tail != null and float(tail.get_height()) >= float(tail.get_width()) * 0.6:
+		tail = null
 	if yh < 0.0 or yt - th > vs.y:
 		return
 	var body := sk.tex("body_%d" % col)
@@ -649,7 +654,10 @@ func _draw_osu_item(it: Array, xs: Array, ws: Array, vs: Vector2, ly: float) -> 
 		_draw_osu_body(col, body, x, w, b_top, b_bot, mod)
 	if tail != null:
 		# Ende gespiegelt (osu!/lazer: LegacyHoldNoteTailPiece dreht die Richtung um).
-		draw_texture_rect(tail, Rect2(x, yt, w, -th), false, mod)
+		# Wie eine Note am Endzeitpunkt (yt = Unterkante), vertikal gespiegelt.
+		draw_set_transform(Vector2(0.0, yt), 0.0, Vector2(1.0, -1.0))
+		draw_texture_rect(tail, Rect2(x, 0.0, w, th), false, mod)
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	if head != null:
 		draw_texture_rect(head, Rect2(x, yh - hh, w, hh), false, mod)
 
