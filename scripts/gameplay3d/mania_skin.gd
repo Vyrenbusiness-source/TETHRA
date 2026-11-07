@@ -515,9 +515,31 @@ static func is_builtin(id: String) -> bool:
 	return id.begins_with(BUILTIN_PREFIX) and BUILTIN_NAMES.has(id.trim_prefix(BUILTIN_PREFIX))
 
 
-## Anzeige-Name: "builtin:Balken" -> "Balken".
-static func display_name(id: String) -> String:
-	return id.trim_prefix(BUILTIN_PREFIX) if is_builtin(id) else id
+## Datei im Skin-Ordner mit dem Originalnamen (Dateiname der .osk/.zip bzw. Ordnername).
+const NAME_FILE := "tethra_name.txt"
+
+
+## Anzeige-Name: "builtin:Balken" -> "Balken"; importierte Skins mit Originalnamen
+## (tethra_name.txt vom Import, sonst skin.ini [General] Name, sonst Ordnername).
+static func display_name(id: String, root: String = SKINS_DIR) -> String:
+	if is_builtin(id):
+		return id.trim_prefix(BUILTIN_PREFIX)
+	if id.is_empty() or id != safe_name(id):
+		return id
+	var dir := root + "/" + id
+	var f := FileAccess.open(dir + "/" + NAME_FILE, FileAccess.READ)
+	if f != null and f.get_length() <= 4096:
+		var n := f.get_as_text().strip_edges()
+		if not n.is_empty():
+			return n
+	f = FileAccess.open(dir + "/skin.ini", FileAccess.READ)
+	if f != null and f.get_length() <= MAX_FILE_BYTES:
+		for sec in parse_ini(f.get_as_text()):
+			if String(sec.get("_section", "")) == "general":
+				var gn := String(sec.get("name", "")).strip_edges()
+				if not gn.is_empty():
+					return gn
+	return id
 
 
 ## IDs: eingebaute ("builtin:Balken", ...) zuerst, dann importierte Ordnernamen.
@@ -770,6 +792,11 @@ static func import_skin(path: String, root: String = SKINS_DIR) -> String:
 		wf.close()
 	if not DirAccess.dir_exists_absolute(dest):
 		return ""
+	# Originalname fuer die Auswahl merken (Ordner-ID bleibt der bereinigte Name).
+	var nf := FileAccess.open(dest + "/" + NAME_FILE, FileAccess.WRITE)
+	if nf != null:
+		nf.store_string(base_name.strip_edges())
+		nf.close()
 	return nm
 
 
