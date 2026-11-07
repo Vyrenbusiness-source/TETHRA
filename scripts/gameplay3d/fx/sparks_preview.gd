@@ -21,7 +21,8 @@ func _unlit(c: Color) -> StandardMaterial3D:
 
 
 func _ready() -> void:
-	_shot = "--shot" in OS.get_cmdline_args() or "shot" in OS.get_cmdline_args()
+	var all_args := OS.get_cmdline_args() + OS.get_cmdline_user_args()
+	_shot = "--shot" in all_args or "shot" in all_args
 	var env := WorldEnvironment.new()
 	var e := Environment.new()
 	e.background_mode = Environment.BG_COLOR
