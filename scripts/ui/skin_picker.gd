@@ -1,8 +1,8 @@
 class_name SkinPicker
 extends HBoxContainer
 
-## Auswahl fuer den osu!mania-Skin im 2D-Modus: Dropdown ("Standard" + importierte
-## Skins), "Importieren…" (.osk/.zip oder Skin-Ordner) und Löschen des gewählten Skins.
+## Auswahl fuer den osu!mania-Skin im 2D-Modus: Dropdown ("Standard", die 3 eingebauten
+## Skins Balken/Kreise/Pfeile, dann importierte), "Importieren…" (.osk/.zip oder Skin-Ordner) und Löschen (nur importierte Skins).
 ## Auswahl setzt Settings.skin_2d und speichert; Signal changed fuer Vorschau-Refresh.
 
 signal changed
@@ -60,20 +60,20 @@ func refresh() -> void:
 	_names = ManiaSkin.list_skins()
 	var sel := 0
 	for i in _names.size():
-		_opt.add_item(_names[i])
+		_opt.add_item(ManiaSkin.display_name(_names[i]))
 		if _names[i] == Settings.skin_2d:
 			sel = i + 1
 	if sel == 0 and Settings.skin_2d != "":
 		Settings.skin_2d = ""
 		Settings.save()
 	_opt.select(sel)
-	_del_btn.disabled = sel == 0
+	_del_btn.disabled = sel == 0 or ManiaSkin.is_builtin(Settings.skin_2d)
 
 
 func _on_selected(idx: int) -> void:
 	Settings.skin_2d = "" if idx <= 0 or idx > _names.size() else _names[idx - 1]
 	Settings.save()
-	_del_btn.disabled = idx <= 0
+	_del_btn.disabled = idx <= 0 or ManiaSkin.is_builtin(Settings.skin_2d)
 	_status.text = ""
 	changed.emit()
 
@@ -118,7 +118,7 @@ func _fill_osu_menu() -> void:
 
 func _on_delete() -> void:
 	var nm := Settings.skin_2d
-	if nm == "":
+	if nm == "" or ManiaSkin.is_builtin(nm):
 		return
 	ManiaSkin.delete_skin(nm)
 	Settings.skin_2d = ""

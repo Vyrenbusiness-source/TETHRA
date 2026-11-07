@@ -46,6 +46,7 @@ func _run() -> void:
 	_test_safe_rel()
 	_test_import_zip()
 	_test_import_dir()
+	_test_builtin()
 	_cleanup()
 	print("--- %d bestanden, %d fehlgeschlagen ---" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
@@ -173,3 +174,24 @@ func _test_import_dir() -> void:
 
 func _cleanup() -> void:
 	ManiaSkin._remove_tree(_tmp)
+
+
+func _test_builtin() -> void:
+	var l := ManiaSkin.list_skins()
+	_ok(l.size() >= 3 and l[0] == "builtin:Balken" and l[1] == "builtin:Kreise" and l[2] == "builtin:Pfeile", "eingebaute zuerst in list_skins")
+	_ok(ManiaSkin.display_name("builtin:Kreise") == "Kreise", "Anzeige-Name")
+	for id in ["builtin:Balken", "builtin:Kreise", "builtin:Pfeile"]:
+		var s := ManiaSkin.load_skin(id)
+		_ok(s != null and s.has_mania_block, id + " laedt")
+		if s == null:
+			continue
+		var ok := true
+		for c in 4:
+			for key in ["note_%d", "head_%d", "body_%d", "tail_%d", "key_%d", "keyd_%d"]:
+				if s.tex(key % c) == null:
+					ok = false
+					print("    fehlt: ", id, " ", key % c)
+		_ok(ok, id + ": alle Texturen je Spalte vorhanden")
+		_ok(s.tex("stage_hint") != null and s.tex_scale("note_0") == 0.5, id + ": Stage-Hint, @2x")
+		_ok(not ManiaSkin.delete_skin(id), id + " nicht loeschbar")
+	_ok(ManiaSkin.load_skin("builtin:Gibtsnicht") == null, "unbekannter builtin -> null")
