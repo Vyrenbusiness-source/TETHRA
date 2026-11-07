@@ -203,20 +203,12 @@ func show_results(data: Dictionary) -> void:
 
 ## 923412 -> "923.412" (Tausenderpunkt, keine fuehrenden Nullen).
 static func fmt_int(n: int) -> String:
-	var s := str(absi(n))
-	var out := ""
-	var c := 0
-	for i in range(s.length() - 1, -1, -1):
-		out = s[i] + out
-		c += 1
-		if c % 3 == 0 and i > 0:
-			out = "." + out
-	return ("-" if n < 0 else "") + out
+	return UiTheme.fmt_score(n)
 
 
 ## 96.666 -> "96,67" (Dezimalkomma).
 static func fmt_dec(v: float, decimals: int) -> String:
-	return (("%." + str(decimals) + "f") % v).replace(".", ",")
+	return UiTheme.fmt_num(v, decimals)
 
 
 ## 0.9667 -> "96,67 %".
@@ -228,11 +220,7 @@ static func fmt_pct(frac: float, decimals: int = 2) -> String:
 static func fmt_date(iso: String) -> String:
 	if iso.strip_edges() == "":
 		return ""
-	var d := Time.get_datetime_dict_from_datetime_string(iso, false)
-	if int(d.get("year", 0)) <= 0:
-		return iso
-	return "%02d.%02d.%04d %02d:%02d" % [int(d.get("day", 0)), int(d.get("month", 0)),
-		int(d.get("year", 0)), int(d.get("hour", 0)), int(d.get("minute", 0))]
+	return UiTheme.fmt_date(iso)
 
 
 # ---------------------------------------------------------------------------

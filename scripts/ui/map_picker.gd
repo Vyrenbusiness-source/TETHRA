@@ -912,7 +912,7 @@ func _bind_row(row: Dictionary, e: Dictionary) -> void:
 	(row.title as Label).text = ms.title
 	var sub := ms.artist
 	if ms.creator != "":
-		sub += tr("  ·  von ") + ms.creator
+		sub += "  ·  " + tr("von") + " " + ms.creator
 	(row.sub as Label).text = sub
 	var diffs: Array = e.diffs
 	var pills: Array = row.pills

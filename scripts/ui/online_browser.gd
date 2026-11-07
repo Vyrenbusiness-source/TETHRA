@@ -753,16 +753,16 @@ func _update_status() -> void:
 	_update_dl_info()
 	var n := _rows.size()
 	var parts: Array[String] = []
-	parts.append("%s %s" % [UiTheme.fmt_score(n), tr("Map") if n == 1 else tr("Maps")])
+	parts.append((tr("%s Map") if n == 1 else tr("%s Maps")) % UiTheme.fmt_score(n))
 	if genre_id != 0:
-		parts.append(BeatmapMirror.genre_label(genre_id))
+		parts.append(tr(BeatmapMirror.genre_label(genre_id)))
 	if star_filter != 0:
 		parts.append(str(STAR_FILTERS[star_filter][0]) + " ★")
 	if sv_filter:
 		parts.append("SV")
-	parts.append("sortiert: " + str(BeatmapMirror.SORT_LABELS[sort_mode]))
+	parts.append(tr("sortiert:") + " " + tr(str(BeatmapMirror.SORT_LABELS[sort_mode])))
 	if sv_filter and _mirror.sv_checks_pending() > 0:
-		parts.append("prüfe SV … (%d offen)" % _mirror.sv_checks_pending())
+		parts.append(tr("prüfe SV … (%d offen)") % _mirror.sv_checks_pending())
 	if not _pack_active:
 		_say("  ·  ".join(parts))
 	if _loading:
@@ -1309,7 +1309,7 @@ func _on_dl_failed(set_id: int, message: String) -> void:
 		_update_pack_status()
 		return
 	if _rows.has(set_id):
-		_say(tr("Download fehlgeschlagen: ") + message.trim_prefix("Download fehlgeschlagen "))
+		_say(tr("Download fehlgeschlagen:") + " " + message.trim_prefix("Download fehlgeschlagen "))
 
 
 func _on_dl_cancelled(set_id: int) -> void:

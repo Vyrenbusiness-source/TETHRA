@@ -3621,7 +3621,7 @@ func _update_hud() -> void:
 	else:
 		_grade_label.text = g
 		_grade_label.add_theme_color_override("font_color", GRADE_COLOR.get(g, Color.WHITE))
-		_acc_label.text = ("%.2f %%" % (core.accuracy() * 100.0)).replace(".", ",")
+		_acc_label.text = UiTheme.fmt_pct(core.accuracy() * 100.0)
 	# Farbecho des On-Fire-Zustands: Gold ab 97%, Eisblau ab 99.5%.
 	var hud_j := core.n_max + core.n300 + core.n200 + core.n100 + core.n50 + core.n_miss
 	var hud_acc := core.accuracy()
@@ -4278,7 +4278,7 @@ func _mp_fill_row(row: Control, i: int, p: Dictionary, ranked: Array, mine: bool
 	var name_l: Label = vb.get_child(0).get_node("Name")
 	var score_l: Label = vb.get_child(0).get_node("Score")
 	var sub: Label = vb.get_node("Sub")
-	name_l.text = str(p.name) + (tr("  (du)") if mine else "")
+	name_l.text = str(p.name) + ("  " + tr("(du)") if mine else "")
 	var leading := mine and i == 0 and ranked.size() > 1
 	name_l.add_theme_color_override("font_color",
 		Color(0.45, 1.0, 0.55) if leading
@@ -4297,7 +4297,7 @@ func _mp_fill_row(row: Control, i: int, p: Dictionary, ranked: Array, mine: bool
 			line += "  ·  -" + _fmt_score_diff(int(ranked[i - 1].score) - int(p.score))
 			col = Color(1.0, 0.55, 0.5)
 	if int(p.id) == _mp_danger:
-		line += tr("  ·  gerade Letzter")
+		line += "  ·  " + tr("gerade Letzter")
 		col = Color(1.0, 0.72, 0.38)
 		name_l.add_theme_color_override("font_color", col)
 	sub.text = line
@@ -4368,7 +4368,7 @@ func _update_mp_mode_text() -> void:
 " + tr("Endstand %s %s : %s %s") % [mm.team_names[0], mm.team_wins[0],
 					mm.team_wins[1], mm.team_names[1]]
 				if sw >= 0:
-					txt += tr("  —  %s gewinnt") % mm.team_names[sw]
+					txt += "  —  " + tr("%s gewinnt") % mm.team_names[sw]
 			else:
 				txt += "
 " + tr("Serie %s : %s  (%s)") % [mm.team_wins[0], mm.team_wins[1], mm.series_label()]
@@ -4378,7 +4378,7 @@ func _update_mp_mode_text() -> void:
 			for id in mm.out_order:
 				if int(mm.players[id].out_round) == _mp_round_no_at_start:
 					out.append(_mp_name(int(id)))
-			txt = (tr("Raus: ") + ", ".join(out)) if not out.is_empty() else tr("Gleichstand — keiner fliegt raus")
+			txt = (tr("Raus:") + " " + ", ".join(out)) if not out.is_empty() else tr("Gleichstand — keiner fliegt raus")
 			var me := multiplayer.get_unique_id()
 			if mm.players.has(me) and not mm.players[me].alive:
 				txt = tr("Du bist raus.") + "
@@ -4386,16 +4386,16 @@ func _update_mp_mode_text() -> void:
 				col = Color(1.0, 0.72, 0.38)
 			if mm.is_over():
 				txt += "
-" + tr("SIEGER: ") + _mp_name(mm.winner_peer)
+" + tr("SIEGER:") + " " + _mp_name(mm.winner_peer)
 				var order: Array = []
 				for id in mm.out_order:
 					order.append(_mp_name(int(id)))
 				txt += "
-" + tr("Ausgeschieden: ") + ", ".join(order)
+" + tr("Ausgeschieden:") + " " + ", ".join(order)
 				col = Color(0.45, 1.0, 0.55)
 		else:
 			var low := mm.in_danger(Lobby.live_results())
-			txt = tr("Letzter fliegt raus") + (tr(" — gerade: ") + _mp_name(low) if low >= 0 else "")
+			txt = tr("Letzter fliegt raus") + (" — " + tr("gerade:") + " " + _mp_name(low) if low >= 0 else "")
 	_results_screen.set_mode_text(txt, col)
 
 

@@ -1,2 +1,331 @@
 keys,de,en
-TETHRA,TETHRA,TETHRA
+Fortsetzen,Fortsetzen,Resume
+Neu starten,Neu starten,Restart
+Zum Song-Browser,Zum Song-Browser,Back to song select
+Schnelleinstellungen,Schnelleinstellungen,Quick settings
+Audio-Offset,Audio-Offset,Audio offset
+Scrollgeschwindigkeit,Scrollgeschwindigkeit,Scroll speed
+Spurbreite,Spurbreite,Lane width
+Notengröße,Notengröße,Note size
+Hintergrund,Hintergrund,Background
+Spielfeld,Spielfeld,Playfield
+Auswählen,Auswählen,Select
+Aus,Aus,Off
+Leertaste: Intro überspringen,Leertaste: Intro überspringen,Space: skip intro
+bis zur nächsten Note,bis zur nächsten Note,until next note
+FRÜH,FRÜH,EARLY
+SPÄT,SPÄT,LATE
+Ordner öffnen,Ordner öffnen,Open folder
+Clip gespeichert: %s,Clip gespeichert: %s,Clip saved: %s
+Clip-Export fehlgeschlagen: %s,Clip-Export fehlgeschlagen: %s,Clip export failed: %s
+unbekannt,unbekannt,unknown
+gespielt von,gespielt von,played by
+PUNKTE,PUNKTE,SCORE
+GENAUIGKEIT,GENAUIGKEIT,ACCURACY
+MAX. KOMBO,MAX. KOMBO,MAX COMBO
+zu spät,zu spät,late
+zu früh,zu früh,early
+keine Timing-Daten,keine Timing-Daten,no timing data
+NICHT GESCHAFFT,NICHT GESCHAFFT,FAILED
+GESCHAFFT,GESCHAFFT,CLEARED
+WARTE AUF ANDERE…,WARTE AUF ANDERE…,WAITING FOR OTHERS…
+Zur Siegerehrung,Zur Siegerehrung,To the awards
+Zum Zwischenstand,Zum Zwischenstand,To the standings
+Zur Lobby,Zur Lobby,Back to lobby
+⤓  Clip speichern,⤓  Clip speichern,⤓  Save clip
+Selbst spielen,Selbst spielen,Play it yourself
+▶  Replay ansehen,▶  Replay ansehen,▶  Watch replay
+Nochmal ansehen,Nochmal ansehen,Watch again
+Nochmal,Nochmal,Retry
+NEUER REKORD,NEUER REKORD,NEW BEST
+UNGEWERTET,UNGEWERTET,UNRANKED
+LEISTUNG,LEISTUNG,PERFORMANCE
+Map ist nicht gewertet – keine PP,Map ist nicht gewertet – keine PP,Map is unranked – no PP
+PP für diese Map nicht berechenbar,PP für diese Map nicht berechenbar,PP can't be calculated for this map
+ungewertet,ungewertet,unranked
+nicht verfügbar,nicht verfügbar,unavailable
+−%d ms  früh,−%d ms  früh,−%d ms  early
+spät  +%d ms,spät  +%d ms,late  +%d ms
+RANG,RANG,RANK
+FEHLER,FEHLER,MISSES
+NOTEN,NOTEN,NOTES
+RANGLISTE,RANGLISTE,LEADERBOARD
+Kein gespeichertes Replay für diese Map,Kein gespeichertes Replay für diese Map,No saved replay for this map
+Clip wird bereits aufgenommen …,Clip wird bereits aufgenommen …,Clip is already being recorded …
+Clip wird aufgenommen … %d s,Clip wird aufgenommen … %d s,Recording clip … %d s
+Clip-Export fehlgeschlagen,Clip-Export fehlgeschlagen,Clip export failed
+Clip wird aufgenommen …,Clip wird aufgenommen …,Recording clip …
+WEITER  (Enter),WEITER  (Enter),CONTINUE  (Enter)
+DEINE TASTEN,DEINE TASTEN,YOUR KEYS
+ERSTE NOTE,ERSTE NOTE,FIRST NOTE
+HOLD-NOTE,HOLD-NOTE,HOLD NOTE
+DOPPELNOTE,DOPPELNOTE,CHORD
+DEIN HUD,DEIN HUD,YOUR HUD
+"%s  %s  %s  %s — eine Taste pro Spur (Pfeil: die Ringe).
+Drücke GENAU, wenn eine Drohne ihren Ring berührt.","%s  %s  %s  %s — eine Taste pro Spur (Pfeil: die Ringe).
+Drücke GENAU, wenn eine Drohne ihren Ring berührt.","%s  %s  %s  %s — one key per lane (arrow: the rings).
+Press EXACTLY when a drone touches its ring."
+"Gleich kommt eine Drohne auf DIESEN Ring zu.
+Drücke [%s] genau beim Berühren.
+Deine Wertung (MAX … 50) erscheint danach in der Bildmitte.","Gleich kommt eine Drohne auf DIESEN Ring zu.
+Drücke [%s] genau beim Berühren.
+Deine Wertung (MAX … 50) erscheint danach in der Bildmitte.","A drone is about to reach THIS ring.
+Press [%s] right as it touches.
+Your judgement (MAX … 50) then shows in the middle of the screen."
+"Die Drohne mit dem langen Beam: [%s] drücken und HALTEN,
+bis der Beam vorbei ist. Zu früh loslassen = Combo weg!","Die Drohne mit dem langen Beam: [%s] drücken und HALTEN,
+bis der Beam vorbei ist. Zu früh loslassen = Combo weg!","The drone with the long beam: press [%s] and HOLD
+until the beam is over. Release too early = combo lost!"
+"Zwei Drohnen gleichzeitig — beide Pfeile!
+[%s] + [%s] EXAKT ZUSAMMEN drücken.","Zwei Drohnen gleichzeitig — beide Pfeile!
+[%s] + [%s] EXAKT ZUSAMMEN drücken.","Two drones at once — both arrows!
+Press [%s] + [%s] EXACTLY TOGETHER."
+"Der Pfeil zeigt auf die Timing-Leiste: Strich links = zu früh,
+rechts = zu spät. Darüber: Combo + Wertung.
+Links: Accuracy · Rechts: Score · Oben: HP.
+Jetzt spiel die Map zu Ende — viel Spaß!","Der Pfeil zeigt auf die Timing-Leiste: Strich links = zu früh,
+rechts = zu spät. Darüber: Combo + Wertung.
+Links: Accuracy · Rechts: Score · Oben: HP.
+Jetzt spiel die Map zu Ende — viel Spaß!","The arrow points at the timing bar: tick on the left = early,
+right = late. Above it: combo + judgement.
+Left: accuracy · Right: score · Top: HP.
+Now finish the map — have fun!"
+(du),(du),(you)
+gerade Letzter,gerade Letzter,currently last
+PLATZ %d VON %d,PLATZ %d VON %d,PLACE %d OF %d
+SIEG,SIEG,VICTORY
+GLEICHSTAND AUF PLATZ 1,GLEICHSTAND AUF PLATZ 1,TIE FOR 1ST PLACE
+Runde an %s,Runde an %s,Round to %s
+Runde unentschieden,Runde unentschieden,Round drawn
+Endstand %s %s : %s %s,Endstand %s %s : %s %s,Final %s %s : %s %s
+%s gewinnt,%s gewinnt,%s wins
+Serie %s : %s  (%s),Serie %s : %s  (%s),Series %s : %s  (%s)
+Raus:,Raus:,Out:
+Gleichstand — keiner fliegt raus,Gleichstand — keiner fliegt raus,Tie — nobody is eliminated
+Du bist raus.,Du bist raus.,You are out.
+SIEGER:,SIEGER:,WINNER:
+Ausgeschieden:,Ausgeschieden:,Eliminated:
+Letzter fliegt raus,Letzter fliegt raus,Last place is eliminated
+gerade:,gerade:,currently:
+spielt noch…  (%s),spielt noch…  (%s),still playing…  (%s)
+Alle,Alle,All
+Titel,Titel,Title
+Sterne,Sterne,Stars
+Länge,Länge,Length
+Zuletzt gespielt,Zuletzt gespielt,Recently played
+MAP WÄHLEN,MAP WÄHLEN,SELECT MAP
+Online-Maps,Online-Maps,Online maps
+Maps online suchen und laden — fertige Downloads werden direkt gewählt,Maps online suchen und laden — fertige Downloads werden direkt gewählt,Search and download maps online — finished downloads are selected right away
+"Suchen: Titel, Artist, Mapper, Tags","Suchen: Titel, Artist, Mapper, Tags","Search: title, artist, mapper, tags"
+Sortierung,Sortierung,Sort by
+Richtung umkehren,Richtung umkehren,Reverse order
+↑↓ wählen  ·  Enter übernehmen  ·  Esc schließen,↑↓ wählen  ·  Enter übernehmen  ·  Esc schließen,↑↓ select  ·  Enter confirm  ·  Esc close
+Nichts gefunden.,Nichts gefunden.,Nothing found.
+%s von %s Maps,%s von %s Maps,%s of %s maps
+%s Maps,%s Maps,%s maps
+✓ im Raum,✓ im Raum,✓ in room
+von,von,by
+%s  ·  von %s,%s  ·  von %s,%s  ·  by %s
+Keine Map,Keine Map,No map
+Suche anpassen oder online laden.,Suche anpassen oder online laden.,Adjust your search or download online.
+%d Diffs,%d Diffs,%d diffs
+1 Diff,1 Diff,1 diff
+Nur der Kronenträger wählt die Map.,Nur der Kronenträger wählt die Map.,Only the crown holder picks the map.
+Noch kein eigener Score,Noch kein eigener Score,No score of your own yet
+Im Raum schon gespielt,Im Raum schon gespielt,Already played in this room
+"Anfänger ≤ 1,5","Anfänger ≤ 1,5",Beginner ≤ 1.5
+"1,5–2","1,5–2",1.5–2
+ONLINE-MAPS,ONLINE-MAPS,ONLINE MAPS
+4K-Mania  ·  catboy.best  ·  installierte Maps ausgeblendet,4K-Mania  ·  catboy.best  ·  installierte Maps ausgeblendet,4K mania  ·  catboy.best  ·  installed maps hidden
+Schließen (Esc),Schließen (Esc),Close (Esc)
+"Titel, Artist oder Mapper suchen …","Titel, Artist oder Mapper suchen …","Search title, artist or mapper …"
+Suchen,Suchen,Search
+Mehrere fehlende Maps eines Sternbereichs auf einmal laden,Mehrere fehlende Maps eines Sternbereichs auf einmal laden,Download several missing maps of a star range at once
+Nur Maps mit Scroll-Velocity (geprüft an der echten .osu),Nur Maps mit Scroll-Velocity (geprüft an der echten .osu),Only maps with scroll velocity (checked against the real .osu)
+Sortieren,Sortieren,Sort
+Pack-Download,Pack-Download,Pack download
+%d Maps,%d Maps,%d maps
+Pack laden,Pack laden,Download pack
+Suche „%s“ …,Suche „%s“ …,Searching “%s” …
+Lade Maps …,Lade Maps …,Loading maps …
+Lade weitere Maps …,Lade weitere Maps …,Loading more maps …
+Mirror kurz nicht erreichbar – neuer Versuch …,Mirror kurz nicht erreichbar – neuer Versuch …,Mirror briefly unreachable – retrying …
+Pack abgebrochen: Mirror nicht erreichbar.,Pack abgebrochen: Mirror nicht erreichbar.,Pack cancelled: mirror unreachable.
+Weitere Maps konnten nicht geladen werden – weiter scrollen für neuen Versuch.,Weitere Maps konnten nicht geladen werden – weiter scrollen für neuen Versuch.,Couldn't load more maps – keep scrolling to retry.
+Mirror nicht erreichbar,Mirror nicht erreichbar,Mirror unreachable
+Internetverbindung prüfen und erneut versuchen.,Internetverbindung prüfen und erneut versuchen.,Check your internet connection and try again.
+Erneut versuchen,Erneut versuchen,Try again
+%s Map,%s Map,%s map
+Ende der Liste,Ende der Liste,End of list
+Weiter scrollen für mehr,Weiter scrollen für mehr,Keep scrolling for more
+Suche passende Maps …,Suche passende Maps …,Finding matching maps …
+Lade weitere Seiten vom Mirror.,Lade weitere Seiten vom Mirror.,Loading more pages from the mirror.
+Keine passenden Maps,Keine passenden Maps,No matching maps
+Mit diesen Filtern gibt es hier nichts Neues. Filter lockern oder anders suchen.,Mit diesen Filtern gibt es hier nichts Neues. Filter lockern oder anders suchen.,Nothing new with these filters. Loosen the filters or search differently.
+Filter zurücksetzen,Filter zurücksetzen,Reset filters
+Keine Treffer,Keine Treffer,No results
+Der Mirror kennt dazu keine 4K-Mania-Maps.,Der Mirror kennt dazu keine 4K-Mania-Maps.,The mirror knows no 4K mania maps for this.
+Alles schon installiert,Alles schon installiert,Everything is already installed
+Alle Treffer dieser Suche sind bereits in deiner Bibliothek.,Alle Treffer dieser Suche sind bereits in deiner Bibliothek.,All results of this search are already in your library.
+Vorschau anhören,Vorschau anhören,Play preview
+Herunterladen,Herunterladen,Download
+Zum Pool hinzufügen,Zum Pool hinzufügen,Add to pool
+✓  Im Pool,✓  Im Pool,✓  In pool
+Download abbrechen,Download abbrechen,Cancel download
+Verbinde …,Verbinde …,Connecting …
+ERNEUT VERSUCHEN,ERNEUT VERSUCHEN,TRY AGAIN
+✓  INSTALLIERT,✓  INSTALLIERT,✓  INSTALLED
+HERUNTERLADEN,HERUNTERLADEN,DOWNLOAD
+%d Download läuft,%d Download läuft,%d download running
+%d Downloads laufen,%d Downloads laufen,%d downloads running
+Download fehlgeschlagen:,Download fehlgeschlagen:,Download failed:
+Pack: suche Maps zwischen %s und %s ★ …,Pack: suche Maps zwischen %s und %s ★ …,Pack: looking for maps between %s and %s ★ …
+Pack: nichts Passendes im Bereich %s gefunden.,Pack: nichts Passendes im Bereich %s gefunden.,Pack: nothing suitable found in range %s.
+Pack (%s): %d von %d fertig  ·  %d laufen,Pack (%s): %d von %d fertig  ·  %d laufen,Pack (%s): %d of %d done  ·  %d running
+Pack fertig: %d Maps geladen (%s).,Pack fertig: %d Maps geladen (%s).,Pack done: %d maps downloaded (%s).
+Vorschau nicht verfügbar.,Vorschau nicht verfügbar.,Preview unavailable.
+Vorschau nicht abspielbar.,Vorschau nicht abspielbar.,Preview can't be played.
+Relevanz,Relevanz,Relevance
+Neueste,Neueste,Newest
+Beliebteste,Beliebteste,Most popular
+Videospiel,Videospiel,Video game
+Elektronisch,Elektronisch,Electronic
+Klassik,Klassik,Classical
+Sonstiges,Sonstiges,Other
+Ohne Genre,Ohne Genre,No genre
+Galaxie,Galaxie,Galaxy
+Bosskampf,Bosskampf,Boss fight
+Eklipse,Eklipse,Eclipse
+Abgrund,Abgrund,Abyss
+Fraktal,Fraktal,Fractal
+Singularität,Singularität,Singularity
+Sturm,Sturm,Storm
+Riss,Riss,Rift
+Nerv,Nerv,Nerve
+Weiter,Weiter,Resume
+Einstellungen,Einstellungen,Settings
+Song-Browser,Song-Browser,Song select
+"Maus zielen · %s/%s druecken, wenn die Note im Ring landet · Slider: halten · Esc = Pause","Maus zielen · %s/%s druecken, wenn die Note im Ring landet · Slider: halten · Esc = Pause",Aim with the mouse · press %s/%s when the note lands in the ring · Sliders: hold · Esc = Pause
+sortiert:,sortiert:,sorted by:
+prüfe SV … (%d offen),prüfe SV … (%d offen),checking SV … (%d open)
+FORTSETZEN,FORTSETZEN,RESUME
+NEU STARTEN,NEU STARTEN,RESTART
+ZUM SONG-BROWSER,ZUM SONG-BROWSER,BACK TO SONG SELECT
+SCHNELLEINSTELLUNGEN,SCHNELLEINSTELLUNGEN,QUICK SETTINGS
+AUDIO-OFFSET,AUDIO-OFFSET,AUDIO OFFSET
+SCROLLGESCHWINDIGKEIT,SCROLLGESCHWINDIGKEIT,SCROLL SPEED
+SPURBREITE,SPURBREITE,LANE WIDTH
+NOTENGRÖSSE,NOTENGRÖSSE,NOTE SIZE
+HINTERGRUND,HINTERGRUND,BACKGROUND
+SPIELFELD,SPIELFELD,PLAYFIELD
+AUSWÄHLEN,AUSWÄHLEN,SELECT
+AUS,AUS,OFF
+LEERTASTE: INTRO ÜBERSPRINGEN,LEERTASTE: INTRO ÜBERSPRINGEN,SPACE: SKIP INTRO
+BIS ZUR NÄCHSTEN NOTE,BIS ZUR NÄCHSTEN NOTE,UNTIL NEXT NOTE
+ORDNER ÖFFNEN,ORDNER ÖFFNEN,OPEN FOLDER
+UNBEKANNT,UNBEKANNT,UNKNOWN
+GESPIELT VON,GESPIELT VON,PLAYED BY
+ZU SPÄT,ZU SPÄT,LATE
+ZU FRÜH,ZU FRÜH,EARLY
+KEINE TIMING-DATEN,KEINE TIMING-DATEN,NO TIMING DATA
+ZUR SIEGEREHRUNG,ZUR SIEGEREHRUNG,TO THE AWARDS
+ZUM ZWISCHENSTAND,ZUM ZWISCHENSTAND,TO THE STANDINGS
+ZUR LOBBY,ZUR LOBBY,BACK TO LOBBY
+⤓  CLIP SPEICHERN,⤓  CLIP SPEICHERN,⤓  SAVE CLIP
+SELBST SPIELEN,SELBST SPIELEN,PLAY IT YOURSELF
+▶  REPLAY ANSEHEN,▶  REPLAY ANSEHEN,▶  WATCH REPLAY
+NOCHMAL ANSEHEN,NOCHMAL ANSEHEN,WATCH AGAIN
+NOCHMAL,NOCHMAL,RETRY
+MAP IST NICHT GEWERTET – KEINE PP,MAP IST NICHT GEWERTET – KEINE PP,MAP IS UNRANKED – NO PP
+PP FÜR DIESE MAP NICHT BERECHENBAR,PP FÜR DIESE MAP NICHT BERECHENBAR,PP CAN'T BE CALCULATED FOR THIS MAP
+NICHT VERFÜGBAR,NICHT VERFÜGBAR,UNAVAILABLE
+KEIN GESPEICHERTES REPLAY FÜR DIESE MAP,KEIN GESPEICHERTES REPLAY FÜR DIESE MAP,NO SAVED REPLAY FOR THIS MAP
+CLIP WIRD BEREITS AUFGENOMMEN …,CLIP WIRD BEREITS AUFGENOMMEN …,CLIP IS ALREADY BEING RECORDED …
+CLIP-EXPORT FEHLGESCHLAGEN,CLIP-EXPORT FEHLGESCHLAGEN,CLIP EXPORT FAILED
+CLIP WIRD AUFGENOMMEN …,CLIP WIRD AUFGENOMMEN …,RECORDING CLIP …
+WEITER  (ENTER),WEITER  (ENTER),CONTINUE  (ENTER)
+(DU),(DU),(YOU)
+GERADE LETZTER,GERADE LETZTER,CURRENTLY LAST
+RUNDE UNENTSCHIEDEN,RUNDE UNENTSCHIEDEN,ROUND DRAWN
+RAUS:,RAUS:,OUT:
+GLEICHSTAND — KEINER FLIEGT RAUS,GLEICHSTAND — KEINER FLIEGT RAUS,TIE — NOBODY IS ELIMINATED
+DU BIST RAUS.,DU BIST RAUS.,YOU ARE OUT.
+AUSGESCHIEDEN:,AUSGESCHIEDEN:,ELIMINATED:
+LETZTER FLIEGT RAUS,LETZTER FLIEGT RAUS,LAST PLACE IS ELIMINATED
+GERADE:,GERADE:,CURRENTLY:
+ALLE,ALLE,ALL
+TITEL,TITEL,TITLE
+STERNE,STERNE,STARS
+LÄNGE,LÄNGE,LENGTH
+ZULETZT GESPIELT,ZULETZT GESPIELT,RECENTLY PLAYED
+MAPS ONLINE SUCHEN UND LADEN — FERTIGE DOWNLOADS WERDEN DIREKT GEWÄHLT,MAPS ONLINE SUCHEN UND LADEN — FERTIGE DOWNLOADS WERDEN DIREKT GEWÄHLT,SEARCH AND DOWNLOAD MAPS ONLINE — FINISHED DOWNLOADS ARE SELECTED RIGHT AWAY
+"SUCHEN: TITEL, ARTIST, MAPPER, TAGS","SUCHEN: TITEL, ARTIST, MAPPER, TAGS","SEARCH: TITLE, ARTIST, MAPPER, TAGS"
+SORTIERUNG,SORTIERUNG,SORT BY
+RICHTUNG UMKEHREN,RICHTUNG UMKEHREN,REVERSE ORDER
+↑↓ WÄHLEN  ·  ENTER ÜBERNEHMEN  ·  ESC SCHLIESSEN,↑↓ WÄHLEN  ·  ENTER ÜBERNEHMEN  ·  ESC SCHLIESSEN,↑↓ SELECT  ·  ENTER CONFIRM  ·  ESC CLOSE
+NICHTS GEFUNDEN.,NICHTS GEFUNDEN.,NOTHING FOUND.
+✓ IM RAUM,✓ IM RAUM,✓ IN ROOM
+VON,VON,BY
+KEINE MAP,KEINE MAP,NO MAP
+SUCHE ANPASSEN ODER ONLINE LADEN.,SUCHE ANPASSEN ODER ONLINE LADEN.,ADJUST YOUR SEARCH OR DOWNLOAD ONLINE.
+1 DIFF,1 DIFF,1 DIFF
+NUR DER KRONENTRÄGER WÄHLT DIE MAP.,NUR DER KRONENTRÄGER WÄHLT DIE MAP.,ONLY THE CROWN HOLDER PICKS THE MAP.
+NOCH KEIN EIGENER SCORE,NOCH KEIN EIGENER SCORE,NO SCORE OF YOUR OWN YET
+IM RAUM SCHON GESPIELT,IM RAUM SCHON GESPIELT,ALREADY PLAYED IN THIS ROOM
+"ANFÄNGER ≤ 1,5","ANFÄNGER ≤ 1,5",BEGINNER ≤ 1.5
+4K-MANIA  ·  CATBOY.BEST  ·  INSTALLIERTE MAPS AUSGEBLENDET,4K-MANIA  ·  CATBOY.BEST  ·  INSTALLIERTE MAPS AUSGEBLENDET,4K MANIA  ·  CATBOY.BEST  ·  INSTALLED MAPS HIDDEN
+SCHLIESSEN (ESC),SCHLIESSEN (ESC),CLOSE (ESC)
+"TITEL, ARTIST ODER MAPPER SUCHEN …","TITEL, ARTIST ODER MAPPER SUCHEN …","SEARCH TITLE, ARTIST OR MAPPER …"
+SUCHEN,SUCHEN,SEARCH
+MEHRERE FEHLENDE MAPS EINES STERNBEREICHS AUF EINMAL LADEN,MEHRERE FEHLENDE MAPS EINES STERNBEREICHS AUF EINMAL LADEN,DOWNLOAD SEVERAL MISSING MAPS OF A STAR RANGE AT ONCE
+NUR MAPS MIT SCROLL-VELOCITY (GEPRÜFT AN DER ECHTEN .OSU),NUR MAPS MIT SCROLL-VELOCITY (GEPRÜFT AN DER ECHTEN .OSU),ONLY MAPS WITH SCROLL VELOCITY (CHECKED AGAINST THE REAL .OSU)
+SORTIEREN,SORTIEREN,SORT
+PACK-DOWNLOAD,PACK-DOWNLOAD,PACK DOWNLOAD
+PACK LADEN,PACK LADEN,DOWNLOAD PACK
+LADE MAPS …,LADE MAPS …,LOADING MAPS …
+LADE WEITERE MAPS …,LADE WEITERE MAPS …,LOADING MORE MAPS …
+MIRROR KURZ NICHT ERREICHBAR – NEUER VERSUCH …,MIRROR KURZ NICHT ERREICHBAR – NEUER VERSUCH …,MIRROR BRIEFLY UNREACHABLE – RETRYING …
+PACK ABGEBROCHEN: MIRROR NICHT ERREICHBAR.,PACK ABGEBROCHEN: MIRROR NICHT ERREICHBAR.,PACK CANCELLED: MIRROR UNREACHABLE.
+WEITERE MAPS KONNTEN NICHT GELADEN WERDEN – WEITER SCROLLEN FÜR NEUEN VERSUCH.,WEITERE MAPS KONNTEN NICHT GELADEN WERDEN – WEITER SCROLLEN FÜR NEUEN VERSUCH.,COULDN'T LOAD MORE MAPS – KEEP SCROLLING TO RETRY.
+MIRROR NICHT ERREICHBAR,MIRROR NICHT ERREICHBAR,MIRROR UNREACHABLE
+INTERNETVERBINDUNG PRÜFEN UND ERNEUT VERSUCHEN.,INTERNETVERBINDUNG PRÜFEN UND ERNEUT VERSUCHEN.,CHECK YOUR INTERNET CONNECTION AND TRY AGAIN.
+ENDE DER LISTE,ENDE DER LISTE,END OF LIST
+WEITER SCROLLEN FÜR MEHR,WEITER SCROLLEN FÜR MEHR,KEEP SCROLLING FOR MORE
+SUCHE PASSENDE MAPS …,SUCHE PASSENDE MAPS …,FINDING MATCHING MAPS …
+LADE WEITERE SEITEN VOM MIRROR.,LADE WEITERE SEITEN VOM MIRROR.,LOADING MORE PAGES FROM THE MIRROR.
+KEINE PASSENDEN MAPS,KEINE PASSENDEN MAPS,NO MATCHING MAPS
+MIT DIESEN FILTERN GIBT ES HIER NICHTS NEUES. FILTER LOCKERN ODER ANDERS SUCHEN.,MIT DIESEN FILTERN GIBT ES HIER NICHTS NEUES. FILTER LOCKERN ODER ANDERS SUCHEN.,NOTHING NEW WITH THESE FILTERS. LOOSEN THE FILTERS OR SEARCH DIFFERENTLY.
+FILTER ZURÜCKSETZEN,FILTER ZURÜCKSETZEN,RESET FILTERS
+KEINE TREFFER,KEINE TREFFER,NO RESULTS
+DER MIRROR KENNT DAZU KEINE 4K-MANIA-MAPS.,DER MIRROR KENNT DAZU KEINE 4K-MANIA-MAPS.,THE MIRROR KNOWS NO 4K MANIA MAPS FOR THIS.
+ALLES SCHON INSTALLIERT,ALLES SCHON INSTALLIERT,EVERYTHING IS ALREADY INSTALLED
+ALLE TREFFER DIESER SUCHE SIND BEREITS IN DEINER BIBLIOTHEK.,ALLE TREFFER DIESER SUCHE SIND BEREITS IN DEINER BIBLIOTHEK.,ALL RESULTS OF THIS SEARCH ARE ALREADY IN YOUR LIBRARY.
+VORSCHAU ANHÖREN,VORSCHAU ANHÖREN,PLAY PREVIEW
+ZUM POOL HINZUFÜGEN,ZUM POOL HINZUFÜGEN,ADD TO POOL
+✓  IM POOL,✓  IM POOL,✓  IN POOL
+DOWNLOAD ABBRECHEN,DOWNLOAD ABBRECHEN,CANCEL DOWNLOAD
+VERBINDE …,VERBINDE …,CONNECTING …
+DOWNLOAD FEHLGESCHLAGEN:,DOWNLOAD FEHLGESCHLAGEN:,DOWNLOAD FAILED:
+VORSCHAU NICHT VERFÜGBAR.,VORSCHAU NICHT VERFÜGBAR.,PREVIEW UNAVAILABLE.
+VORSCHAU NICHT ABSPIELBAR.,VORSCHAU NICHT ABSPIELBAR.,PREVIEW CAN'T BE PLAYED.
+RELEVANZ,RELEVANZ,RELEVANCE
+NEUESTE,NEUESTE,NEWEST
+BELIEBTESTE,BELIEBTESTE,MOST POPULAR
+VIDEOSPIEL,VIDEOSPIEL,VIDEO GAME
+ELEKTRONISCH,ELEKTRONISCH,ELECTRONIC
+KLASSIK,KLASSIK,CLASSICAL
+SONSTIGES,SONSTIGES,OTHER
+OHNE GENRE,OHNE GENRE,NO GENRE
+GALAXIE,GALAXIE,GALAXY
+BOSSKAMPF,BOSSKAMPF,BOSS FIGHT
+EKLIPSE,EKLIPSE,ECLIPSE
+ABGRUND,ABGRUND,ABYSS
+FRAKTAL,FRAKTAL,FRACTAL
+SINGULARITÄT,SINGULARITÄT,SINGULARITY
+STURM,STURM,STORM
+RISS,RISS,RIFT
+NERV,NERV,NERVE
+WEITER,WEITER,RESUME
+EINSTELLUNGEN,EINSTELLUNGEN,SETTINGS
+SONG-BROWSER,SONG-BROWSER,SONG SELECT
+SORTIERT:,SORTIERT:,SORTED BY:
