@@ -146,7 +146,7 @@ func _draw() -> void:
 			if yh < -nh or yh > vs.y + nh:
 				continue
 			_draw_bar(Rect2(x0, yh - nh * 0.5, w, nh), c)
-	# Abfanglinie + Receptors.
+	# Keine durchgehende Abfanglinie: nur die Receptors markieren die Trefferposition.
 	var rh := vs.y * RECEPTOR_H_FRAC
 	draw_rect(Rect2(fr.position.x, ly + nh * 0.5, fr.size.x, vs.y - ly), Color(0.0, 0.0, 0.0, 0.55))
 	for c in columns:
@@ -171,7 +171,6 @@ func _draw() -> void:
 			var tw := _font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
 			draw_string(_font, Vector2(x + (cw - tw) * 0.5, ly + nh * 0.5 + rh * 0.5 + fs * 0.35),
 					txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(1, 1, 1, 0.75 if on else 0.4))
-	draw_line(Vector2(fr.position.x, ly), Vector2(fr.end.x, ly), Color(1, 1, 1, 0.55), 2.0)
 
 
 ## Kreis-Stil: runde Note; Hold = Balken mit runden Enden (Kopf-Kreis + Endkappe).
