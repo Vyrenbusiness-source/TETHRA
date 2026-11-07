@@ -197,6 +197,8 @@ func _init() -> void:
 	L._tour_check_round()
 	_check(L.tournament.rounds.size() == 1 and L.tournament.phase == Tournament.Phase.BETWEEN, "Runde gewertet")
 	var res1: Dictionary = L.tournament.rounds[0].results
+	_check(res1[1].has("stats") and int(res1[1].stats.score) == 500 and not res1[3].has("stats"),
+		"Turnier-Runde speichert Detail-Stats (Gegangener ohne)")
 	_check(res1[3].points == 0 and res1[2].points == 3 and res1[1].points == 2, "Gegangener 0 Punkte, Rest 3/2")
 	_check(L.tournament.standings().size() == 3, "Gegangener bleibt in Tabelle")
 	L.tour_next()
@@ -274,6 +276,7 @@ func _init() -> void:
 
 	_modes(L)
 	_nearest(L)
+	_packet()
 
 	L._reset()
 	print("FAILED: %d" % _failed)
@@ -411,3 +414,25 @@ func _nearest(L) -> void:
 	_check(i == 1, "Fallback-Diff ist 4K (nicht 7K)")
 	var none := { "ok": true, "difficulties": [mk.call(3, 7.0)] }
 	_check(L._nearest_4k("res://nonexistent.osz", none, 4.0) == -1, "nur 7K -> keine Diff")
+
+
+## Endergebnis-Paket: klein, fremde Werte werden geklemmt.
+func _packet() -> void:
+	var good := PlayerStatsCard.fake(5, 0.8, 3000)
+	_check(var_to_bytes(good).size() < 2048, "Paket < 2 KB (%d B)" % var_to_bytes(good).size())
+	_check(good.bins.size() == PlayerStatsCard.BINS and good.trace.size() == PlayerStatsCard.TRACE, "Bins/Verlauf feste Laenge")
+	var junk := { "score": 9.0e12, "acc": 7.5, "combo": -4, "grade": "ZZ", "failed": "yes",
+		"n_max": -10, "n_miss": 1.0e9, "ur": NAN, "mean": -9999.0, "early": 3, "late": 4,
+		"h_ok": 2, "h_drop": 1, "mods": ["SV", "X".repeat(500), 7, "NF", "a", "b", "c", "d"],
+		"bins": ["x", 5, -3], "trace": range(300), "evil": "payload" }
+	var c := PlayerStatsCard.sanitize(junk)
+	_check(int(c.score) == 2000000000 and float(c.acc) == 1.0 and int(c.combo) == 0, "Score/Acc/Kombo geklemmt")
+	_check(c.grade == "D" and c.failed == false, "Grade/Fail validiert")
+	_check(int(c.n_max) == 0 and int(c.n_miss) == PlayerStatsCard.MAX_COUNT, "Zaehler geklemmt")
+	_check(float(c.ur) == 0.0 and float(c.mean) == -500.0, "UR NaN -> 0, Abweichung geklemmt")
+	_check(c.mods.size() <= 6 and str(c.mods[1]).length() <= 8 and not c.mods.has(7), "Mods begrenzt")
+	_check(c.bins.size() == PlayerStatsCard.BINS and int(c.bins[0]) == 0 and int(c.bins[1]) == 5 and int(c.bins[2]) == 0, "Bins bereinigt")
+	_check(c.trace.size() == PlayerStatsCard.TRACE and int(c.trace[39]) == 39, "Verlauf gekuerzt")
+	_check(not c.has("evil"), "unbekannte Schluessel verworfen")
+	var old := PlayerStatsCard.sanitize({ "score": 5, "acc": 0.5, "combo": 1, "failed": false, "grade": "C" })
+	_check(not old.has("ur") and not old.has("bins"), "altes Kurz-Paket bleibt kurz")

@@ -353,8 +353,6 @@ var _pad_judge_col: Array = []
 # Multiplayer: Live-Scoreboard (links) + Sende-Takt + Endscreen-Rangliste.
 var _mp_board: Control
 var _mp_send_t := 0.0
-var _mp_rank_box: VBoxContainer
-var _mp_rank_head: Label
 # Results-Screen (Komponente) + Clip-Export mit Fortschritt-Toast.
 var _results_screen: ResultsScreen
 var _clip_exporter: ClipExporter
@@ -362,6 +360,10 @@ var _clip_toast: PanelContainer
 var _clip_toast_tw: Tween
 # Hit-Fehler (ms) aller Treffer fuer das Histogramm im Results-Screen.
 var _hit_offsets := PackedFloat32Array()
+# Multiplayer-Stats: Acc nach jedem Urteil, Hold-Ergebnisse.
+var _acc_trace := PackedFloat32Array()
+var _hold_ok := 0
+var _hold_drop := 0
 var _mp_last_rank := -1
 var _mp_team_bar: LiveTeamBar = null
 var _mp_danger := -1
@@ -1677,6 +1679,12 @@ func _on_note_judged(index: int, result: Dictionary) -> void:
 		if q != ManiaCore.Quality.MISS:
 			_sparks.lane_shot(col)
 	_ur_tick(result)
+	_acc_trace.append(core.accuracy())
+	if hold_end:
+		if bool(result.get("held", false)):
+			_hold_ok += 1
+		else:
+			_hold_drop += 1
 	if q != ManiaCore.Quality.MISS and result.has("dt"):
 		_hit_offsets.append(float(result.dt))
 	if _notes.has(index):
@@ -3797,11 +3805,8 @@ func _show_results(is_fail: bool) -> void:
 	# Multiplayer: letzten Live-Stand + Finale an alle melden.
 	if Lobby.active and Lobby.in_game:
 		Lobby.send_score(core.score, core.combo, core.accuracy())
-		Lobby.send_final({ "score": core.score, "acc": core.accuracy(),
-			"grade": core.grade(), "combo": core.max_combo,
-			"failed": is_fail,
-			"n_max": core.n_max, "n300": core.n300, "n200": core.n200,
-			"n100": core.n100, "n50": core.n50, "n_miss": core.n_miss })
+		Lobby.send_final(PlayerStatsCard.pack(s, _hit_offsets, _acc_trace,
+			_hold_ok, _hold_drop, is_fail))
 	var unranked := false  # Mania ist immer ranked (Scroll rein visuell)
 	s["unranked"] = unranked
 	var pp := -1.0
@@ -3870,6 +3875,11 @@ func _build_results(is_fail: bool, s: Dictionary, pp: float, unranked: bool, new
 		"is_replay": GameSession.is_replay,
 		"lobby": Lobby.active,
 	}
+	if Lobby.active:
+		var me := multiplayer.get_unique_id()
+		data["my_id"] = me
+		if Lobby.players.has(me):
+			data["final"] = Lobby.players[me].get("final", {})
 	if cover != null:
 		data["cover"] = cover
 	rs.show_results(data)
@@ -3879,32 +3889,9 @@ func _build_results(is_fail: bool, s: Dictionary, pp: float, unranked: bool, new
 		if is_inside_tree() and _use_audio:
 			Sfx.rank_reveal(grade))
 
-	# MULTIPLAYER-Endscreen: Rangliste (traeufelt live ein, wenn andere
-	# fertig werden). Nach show_results anhaengen (das leert die Kinder).
+	# MULTIPLAYER-Endscreen: Rangliste + Stats-Karten im ResultsScreen
+	# (traeufeln live ein, wenn andere fertig werden).
 	if Lobby.active:
-		var rank_panel := PanelContainer.new()
-		rank_panel.anchor_left = 1.0
-		rank_panel.anchor_right = 1.0
-		rank_panel.offset_left = -420
-		rank_panel.offset_right = -40
-		rank_panel.offset_top = 112
-		var rsb := UiTheme.glass_box(16, 0.85)
-		rsb.set_content_margin_all(20)
-		rank_panel.add_theme_stylebox_override("panel", rsb)
-		rs.add_child(rank_panel)
-		var rvb := VBoxContainer.new()
-		rvb.add_theme_constant_override("separation", 8)
-		rank_panel.add_child(rvb)
-		var rhead := Label.new()
-		rhead.text = "RANGLISTE"
-		rhead.add_theme_font_override("font", UiTheme.heading_font(2))
-		rhead.add_theme_font_size_override("font_size", 15)
-		rhead.add_theme_color_override("font_color", Color(0.45, 0.8, 1.0))
-		rvb.add_child(rhead)
-		_mp_rank_head = rhead
-		_mp_rank_box = VBoxContainer.new()
-		_mp_rank_box.add_theme_constant_override("separation", 6)
-		rvb.add_child(_mp_rank_box)
 		Lobby.scores_changed.connect(_refresh_mp_ranking)
 		Lobby.players_changed.connect(_refresh_mp_ranking)
 		_refresh_mp_ranking()
@@ -4415,46 +4402,16 @@ func _mp_name(id: int) -> String:
 
 
 func _refresh_mp_ranking() -> void:
-	if _mp_rank_box == null or not is_instance_valid(_mp_rank_box):
+	if _results_screen == null or not is_instance_valid(_results_screen):
 		return
-	for c in _mp_rank_box.get_children():
-		c.queue_free()
-	if _mp_rank_head != null and is_instance_valid(_mp_rank_head):
-		# Dezentes Mod-Badge (SV/NF) hinter der Ueberschrift.
-		var mt := Lobby.mods_text(GameSession.mods)
-		_mp_rank_head.text = tr("RANGLISTE") if mt == "" else tr("RANGLISTE") + "  ·  " + mt
 	var ranked := Lobby.ranked_players()
 	var my_id := multiplayer.get_unique_id()
 	_update_mp_placement(ranked, my_id)
-	for i in ranked.size():
-		var p: Dictionary = ranked[i]
-		var fin: Dictionary = p.get("final", {})
-		var mine := int(p.id) == my_id
-		var row := Label.new()
-		var state := ""
-		if fin.is_empty():
-			state = tr("spielt noch…  (%s)") % UiTheme.fmt_score(int(p.score))
-		else:
-			state = "%s · %s · %s · %dx%s" % [UiTheme.fmt_score(int(fin.get("score", p.score))),
-				UiTheme.fmt_pct(float(fin.get("acc", 0.0)) * 100.0), str(fin.get("grade", "?")),
-				int(fin.get("combo", 0)),
-				"  [FAIL]" if bool(fin.get("failed", false)) else ""]
-		row.text = "#%d  %s   %s" % [i + 1, str(p.name), state]
-		row.add_theme_font_size_override("font_size", 15)
-		row.add_theme_color_override("font_color",
-			Color(0.4, 0.95, 1.0) if mine else Color(0.85, 0.88, 0.95))
-		_mp_rank_box.add_child(row)
-		# Detail-Zeile: alle Judgements — jeder sieht, wer wo gemisst hat.
-		if not fin.is_empty():
-			var det := Label.new()
-			det.text = "      MAX %d · 300 %d · 200 %d · 100 %d · 50 %d · ✕ %d" % [
-				int(fin.get("n_max", 0)), int(fin.get("n300", 0)),
-				int(fin.get("n200", 0)), int(fin.get("n100", 0)),
-				int(fin.get("n50", 0)), int(fin.get("n_miss", 0))]
-			det.add_theme_font_size_override("font_size", 12)
-			det.add_theme_color_override("font_color",
-				Color(0.62, 0.66, 0.75) if not mine else Color(0.55, 0.85, 0.95))
-			_mp_rank_box.add_child(det)
+	var entries: Array = []
+	for p in ranked:
+		entries.append({ "id": int(p.id), "name": str(p.name),
+			"final": p.get("final", {}), "score": int(p.get("score", 0)) })
+	_results_screen.set_board(entries, my_id, Lobby.mods_text(GameSession.mods))
 
 
 # ---------------------------------------------------------------------------

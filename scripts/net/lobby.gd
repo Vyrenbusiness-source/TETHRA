@@ -798,6 +798,7 @@ func send_final(stats: Dictionary) -> void:
 	if not active or not in_game:
 		return
 	var me := multiplayer.get_unique_id()
+	stats = PlayerStatsCard.sanitize(stats)
 	if players.has(me):
 		players[me].final = stats
 	rpc("cl_final", stats)
@@ -809,6 +810,7 @@ func send_final(stats: Dictionary) -> void:
 @rpc("any_peer", "call_remote", "reliable")
 func cl_final(stats: Dictionary) -> void:
 	var id := multiplayer.get_remote_sender_id()
+	stats = PlayerStatsCard.sanitize(stats)  # fremdes Paket klemmen
 	if players.has(id):
 		players[id].final = stats
 		_store_final(id, stats)
@@ -1258,12 +1260,20 @@ func _tour_check_round() -> void:
 			results[id] = { "score": clampi(int(f.get("score", 0)), 0, 2000000000),
 				"accuracy": clampf(float(f.get("acc", 0.0)), 0.0, 1.0),
 				"max_combo": clampi(int(f.get("combo", 0)), 0, 1000000),
-				"failed": bool(f.get("failed", false)), "name": str(players[id].name) }
+				"failed": bool(f.get("failed", false)), "name": str(players[id].name),
+				"stats": PlayerStatsCard.sanitize(f) }
 		else:
 			# Gegangen: 0 Punkte, bleibt in der Tabelle.
 			results[id] = { "score": 0, "accuracy": 0.0, "max_combo": 0, "failed": true,
 				"absent": true, "name": str(tournament.player_names.get(id, "?")) }
+	var n_before: int = tournament.rounds.size()
 	tournament.record_round(results)
+	# record_round kopiert nur Score/Acc/Kombo/Fail: Detail-Stats hier nachtragen.
+	if tournament.rounds.size() > n_before:
+		var saved: Dictionary = (tournament.rounds.back() as Dictionary).results
+		for id in results:
+			if saved.has(id) and results[id].has("stats"):
+				saved[id]["stats"] = results[id].stats
 	_tour_peers = []
 	_tour_sync()
 
