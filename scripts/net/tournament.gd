@@ -10,14 +10,22 @@ enum Phase { PICK, BAN, PLAY, BETWEEN, END }
 
 const ALLOWED_MAPS := [5, 10, 15]
 const MAX_STARS := 30.0
+## Grenzen der Auto-Auswahl-Filter (config.filters).
+const LEN_MAX_S := 1800
+const BPM_MAX := 500
+## Long-Note-Anteil (Prozent der Noten) je Stufe: [min, max].
+const LN_PRESETS := { "any": [0, 100], "few": [0, 15], "mid": [15, 45], "many": [45, 100] }
 ## ban(peer, SKIP) = "Kein Ban" (zaehlt als gewaehlt).
 const SKIP := -1
 
 var phase: int = Phase.PICK
-## {maps: int (5/10/15), stars_lo: float, stars_hi: float, mods: Dictionary, seed: int}
-var config: Dictionary = { "maps": 10, "stars_lo": 0.0, "stars_hi": MAX_STARS, "mods": {}, "seed": 1 }
+## {maps: int (5/10/15), stars_lo: float, stars_hi: float, mods: Dictionary, seed: int,
+##  filters: Dictionary (Auto-Auswahl, siehe clean_filters)}
+var config: Dictionary = { "maps": 10, "stars_lo": 0.0, "stars_hi": MAX_STARS, "mods": {}, "seed": 1,
+	"filters": clean_filters({}) }
 ## Map-Dicts: sel_map-Format {set_id, file, version, title, artist, stars}
-## plus "by": peer_id, "online": bool (nicht lokal vorhanden), "banned": bool.
+## plus "by": peer_id, "online": bool (nicht lokal vorhanden), "banned": bool,
+## optional ln (Long-Note-Anteil %), len_s (Laenge s), bpm (nur wenn bekannt).
 var pool: Array = []
 ## peer_id -> Pool-Index des Bans
 var bans: Dictionary = {}
@@ -59,8 +67,117 @@ static func clean_config(cfg: Dictionary) -> Dictionary:
 	for k in ["SV", "NF"]:
 		if bool(m.get(k, false)):
 			mods[k] = true
+	var f = cfg.get("filters", {})
 	return { "maps": n, "stars_lo": lo, "stars_hi": hi, "mods": mods,
-		"seed": int(cfg.get("seed", 1)) }
+		"seed": int(cfg.get("seed", 1)), "filters": clean_filters(f if f is Dictionary else {}) }
+
+
+static func _int_in(v, lo: int, hi: int, fallback: int) -> int:
+	if not (v is int or v is float) or is_nan(float(v)):
+		return fallback
+	return clampi(int(round(float(v))), lo, hi)
+
+
+## Filter der Auto-Auswahl ("Rest automatisch fuellen"), alles ganzzahlig:
+## ln_lo/ln_hi = Long-Note-Anteil in Prozent, len_max = max. Laenge in s
+## (0 = egal), bpm_lo/bpm_hi = BPM-Bereich (bpm_hi 0 = nach oben offen).
+static func clean_filters(f: Dictionary) -> Dictionary:
+	var ln_lo := _int_in(f.get("ln_lo", 0), 0, 100, 0)
+	var ln_hi := _int_in(f.get("ln_hi", 100), 0, 100, 100)
+	if ln_lo > ln_hi:
+		var t := ln_lo
+		ln_lo = ln_hi
+		ln_hi = t
+	var bpm_lo := _int_in(f.get("bpm_lo", 0), 0, BPM_MAX, 0)
+	var bpm_hi := _int_in(f.get("bpm_hi", 0), 0, BPM_MAX, 0)
+	if bpm_hi > 0 and bpm_lo > bpm_hi:
+		var t2 := bpm_lo
+		bpm_lo = bpm_hi
+		bpm_hi = t2
+	return { "ln_lo": ln_lo, "ln_hi": ln_hi, "len_max": _int_in(f.get("len_max", 0), 0, LEN_MAX_S, 0),
+		"bpm_lo": bpm_lo, "bpm_hi": bpm_hi }
+
+
+## Stufe des LN-Filters ("any"/"few"/"mid"/"many"), "" = eigener Bereich.
+static func ln_preset(f: Dictionary) -> String:
+	for k in LN_PRESETS:
+		if int(f.get("ln_lo", 0)) == LN_PRESETS[k][0] and int(f.get("ln_hi", 100)) == LN_PRESETS[k][1]:
+			return k
+	return ""
+
+
+static func filters_active(f: Dictionary) -> bool:
+	return int(f.get("ln_lo", 0)) > 0 or int(f.get("ln_hi", 100)) < 100 or int(f.get("len_max", 0)) > 0 		or int(f.get("bpm_lo", 0)) > 0 or int(f.get("bpm_hi", 0)) > 0
+
+
+## Passt eine Map zu den Filtern? info: {ln (%), len_s, bpm}; fehlender Wert oder < 0 = unbekannt.
+## 0 = passt, 1 = passt nur mangels Daten (nachrangig), -1 = passt nicht.
+static func filter_rank(f: Dictionary, info: Dictionary) -> int:
+	var unknown := false
+	var ln := float(info.get("ln", -1.0))
+	if int(f.get("ln_lo", 0)) > 0 or int(f.get("ln_hi", 100)) < 100:
+		if ln < 0.0:
+			unknown = true
+		elif ln < float(f.ln_lo) - 0.001 or ln > float(f.ln_hi) + 0.001:
+			return -1
+	var len_s := float(info.get("len_s", -1.0))
+	if int(f.get("len_max", 0)) > 0:
+		if len_s <= 0.0:
+			unknown = true
+		elif len_s > float(f.len_max) + 0.5:
+			return -1
+	var bpm := float(info.get("bpm", -1.0))
+	if int(f.get("bpm_lo", 0)) > 0 or int(f.get("bpm_hi", 0)) > 0:
+		if bpm <= 0.0:
+			unknown = true
+		elif bpm < float(f.bpm_lo) - 0.5 or (int(f.bpm_hi) > 0 and bpm > float(f.bpm_hi) + 0.5):
+			return -1
+	return 1 if unknown else 0
+
+
+## Beste 4K-Diff eines rohen Mirror-Eintrags (osu!-API-v2-Format) fuer die
+## Auto-Auswahl: im Sternbereich, nach Filter-Rang, dann hoechste Sterne.
+## {} wenn keine passt; sonst sel_map-Daten plus "rank" (siehe filter_rank).
+static func online_pick(item: Dictionary, lo: float, hi: float, f: Dictionary) -> Dictionary:
+	var best := {}
+	var sid := int(BeatmapMirror._num(item.get("id", 0)))
+	if sid <= 0:
+		return {}
+	for bm in item.get("beatmaps", []):
+		if not (bm is Dictionary) or int(BeatmapMirror._num(bm.get("mode_int", -1))) != 3:
+			continue
+		if int(round(BeatmapMirror._num(bm.get("cs", 0.0)))) != 4:
+			continue
+		var st := BeatmapMirror._num(bm.get("difficulty_rating", -1.0))
+		if st < lo - 0.0001 or st > hi + 0.0001:
+			continue
+		var info := online_info(item, bm)
+		var rank := filter_rank(f, info)
+		if rank < 0:
+			continue
+		if not best.is_empty() and (rank > int(best.rank) or (rank == int(best.rank) and st <= float(best.stars))):
+			continue
+		best = { "set_id": sid, "file": "mirror_%d.osz" % sid, "version": str(bm.get("version", "")),
+			"title": str(item.get("title", "?")), "artist": str(item.get("artist", "?")), "stars": st,
+			"online": true, "rank": rank }
+		for k in info:
+			if float(info[k]) >= 0.0:
+				best[k] = info[k]
+	return best
+
+
+## {ln, len_s, bpm} einer Online-Diff; -1 = API liefert den Wert nicht.
+## Mania: count_sliders = Long Notes, count_circles = normale Noten.
+static func online_info(item: Dictionary, bm: Dictionary) -> Dictionary:
+	var ln := -1.0
+	if bm.has("count_sliders") and bm.has("count_circles"):
+		var c := BeatmapMirror._num(bm.count_circles)
+		var s := BeatmapMirror._num(bm.count_sliders)
+		if c + s > 0.0:
+			ln = roundf(s * 100.0 / (c + s))
+	var len_s := BeatmapMirror._num(bm.get("total_length", null), -1.0)
+	var bpm := BeatmapMirror._num(bm.get("bpm", null), BeatmapMirror._num(item.get("bpm", null), -1.0))
+	return { "ln": int(ln), "len_s": int(len_s), "bpm": int(round(bpm)) }
 
 
 static func create(cfg: Dictionary) -> Tournament:
@@ -121,6 +238,11 @@ func add_map(data: Dictionary, by: int) -> String:
 		"stars": stars, "by": by, "online": bool(data.get("online", false)),
 		"banned": false,
 	}
+	# Kennwerte (nur Anzeige/Filter): nur gueltige Zahlen uebernehmen.
+	for kk in [["ln", 100], ["len_s", LEN_MAX_S * 4], ["bpm", BPM_MAX * 4]]:
+		var v = data.get(kk[0], null)
+		if (v is int or v is float) and not is_nan(float(v)) and float(v) >= 0.0:
+			clean[kk[0]] = clampi(int(round(float(v))), 0, int(kk[1]))
 	var k := _key(clean)
 	for m in pool:
 		if _key(m) == k:

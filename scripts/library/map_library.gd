@@ -35,7 +35,8 @@ const SV_JUMP_GAP_MS := 250.0
 ## die schwaechste echte SV-Map (MX) bei 6,1.
 const SV_STRONG_JPM := 5.0
 
-## Sets aus dem Cache ohne aktuelle SV-Erkennung (siehe start_sv_backfill).
+## Sets aus dem Cache ohne aktuelle SV-Erkennung oder ohne Long-Note-/BPM-
+## Werte (siehe start_sv_backfill).
 var sv_pending: Array[String] = []
 var _sv_thread: Thread = null
 var _sv_cancel := false
@@ -92,7 +93,7 @@ func scan() -> int:
 				var ms := MapSet.from_dict(path, cached)
 				if ms.difficulty_count() > 0:
 					mapsets.append(ms)
-					if ms.sv_ver != SV_VERSION:
+					if ms.sv_ver != SV_VERSION or ms.needs_stats():
 						sv_pending.append(path)
 				continue
 		fresh.append(path)
@@ -178,6 +179,40 @@ func _build_mapset_full(osz_path: String) -> MapSet:
 	ms.creator = str(first.metadata.get("Creator", ""))
 	ms.build_thumb()
 	return ms
+
+
+## Anzahl Long Notes (Mania-Holds; Standard: Slider).
+static func hold_count(bm: Beatmap) -> int:
+	var n := 0
+	for h in bm.hit_objects:
+		if h is ManiaNote:
+			if (h as ManiaNote).is_hold:
+				n += 1
+		elif h.kind == HitObject.Kind.SLIDER:
+			n += 1
+	return n
+
+
+## Vorherrschendes Tempo: BPM der roten Linie, die die meiste Zeit der
+## Notenspanne gilt (0 = keine Timing-Linie).
+static func main_bpm(bm: Beatmap) -> float:
+	var reds: Array = []
+	for tp in bm.timing_points:
+		if tp.uninherited and tp.beat_length > 0.0:
+			reds.append(tp)
+	if reds.is_empty():
+		return 0.0
+	var end := bm.duration_ms()
+	var start: float = bm.hit_objects[0].time if not bm.hit_objects.is_empty() else 0.0
+	var best := 0.0
+	var best_bpm: float = reds[0].bpm()
+	for i in reds.size():
+		var a := maxf(float(reds[i].time), start)
+		var b := end if i + 1 >= reds.size() else minf(float(reds[i + 1].time), end)
+		if b - a > best:
+			best = b - a
+			best_bpm = reds[i].bpm()
+	return snappedf(best_bpm, 0.01)
 
 
 ## Echte SV fuer eine geparste Map (siehe sv_stats).
@@ -297,8 +332,8 @@ func sv_backfill_running() -> bool:
 	return _sv_thread != null
 
 
-## Rechnet die SV-Erkennung fuer Cache-Eintraege ohne aktuelle Version im
-## Hintergrund nach. on_done() kommt im Hauptthread, nachdem Sets und
+## Rechnet SV-Erkennung, Long Notes und BPM fuer Cache-Eintraege ohne
+## aktuelle Werte im Hintergrund nach (ein Parse pro Set). on_done() kommt im Hauptthread, nachdem Sets und
 ## library.cfg aktualisiert sind.
 func start_sv_backfill(on_done: Callable) -> void:
 	if _sv_thread != null or sv_pending.is_empty():
@@ -319,7 +354,8 @@ func _sv_worker(paths: Array[String], on_done: Callable) -> void:
 		var by_file := {}
 		if imp.get("ok", false):
 			for d in imp.difficulties:
-				by_file[str(d.osu_filename)] = detect_sv(d.beatmap)
+				var bm: Beatmap = d.beatmap
+				by_file[str(d.osu_filename)] = { "sv": detect_sv(bm), "holds": hold_count(bm), "bpm": main_bpm(bm) }
 		out[path] = by_file
 	_sv_finish.call_deferred(out, on_done)
 
