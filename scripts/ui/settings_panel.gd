@@ -240,14 +240,15 @@ Dynamisch: volle Flug-Bewegung"
 
 	var wt := OptionButton.new()
 	wt.add_item("Automatisch", 0)
-	wt.add_item("Galaxie", 1)
-	wt.add_item("Bosskampf", 2)
-	wt.add_item("Aurora", 3)
-	wt.add_item("Neon", 4)
+	for wi in Settings.WORLD_ORDER.size():
+		var wname: String = Settings.WORLD_ORDER[wi]
+		wt.add_item(str(WorldTheme.LABELS.get(wname, wname)), wi + 1)
+		if wname != "galaxy" and not WorldTheme.is_available(wname):
+			wt.set_item_disabled(wt.get_item_count() - 1, true)
 	wt.select(Settings.world_theme)
 	wt.custom_minimum_size = Vector2(0, 36)
-	wt.tooltip_text = "Automatisch: Welt passt sich dem Song an
-(ruhig = Aurora, elektronisch = Neon, intensiv = Bosskampf)"
+	wt.tooltip_text = "Automatisch: düstere Welt passend zum Song
+(intensiv = Bosskampf, ruhig = Frost, sonst Eklipse, Abgrund, Fraktal, Obsidian …)"
 	wt.item_selected.connect(func(i): Settings.world_theme = i)
 	_row(cv_anzeige, "Welt", wt, null)
 

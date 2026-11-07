@@ -301,7 +301,7 @@ func load_settings() -> void:
 	offset_ms = float(cfg.get_value("game", "offset_ms", 0.0))
 	tunnel_intensity = int(cfg.get_value("game", "tunnel_intensity", 2))
 	camera_mode = clampi(int(cfg.get_value("game", "camera_mode", 0)), 0, 1)
-	world_theme = clampi(int(cfg.get_value("game", "world_theme", 0)), 0, 4)
+	world_theme = clampi(int(cfg.get_value("game", "world_theme", 0)), 0, WORLD_ORDER.size())
 	volume_db = float(cfg.get_value("game", "volume_db", 0.0))
 	key_hook1 = int(cfg.get_value("keys", "hook1", KEY_Z))
 	key_hook2 = int(cfg.get_value("keys", "hook2", KEY_X))
@@ -492,12 +492,12 @@ func comfort_camera() -> bool:
 
 
 ## Fest gewaehltes Welt-Thema ("galaxy"/"boss"/"aurora"/"neon") oder "" = automatisch.
+## Reihenfolge der Welt-Auswahl (Index 1..n; 0 = automatisch). Neue Welten hinten anhaengen.
+const WORLD_ORDER: Array[String] = ["galaxy", "boss", "aurora", "neon", "eclipse", "abyss", "fractal", "obsidian", "storm", "singularity"]
+
 func world_theme_name() -> String:
-	match world_theme:
-		1: return "galaxy"
-		2: return "boss"
-		3: return "aurora"
-		4: return "neon"
+	if world_theme >= 1 and world_theme <= WORLD_ORDER.size():
+		return WORLD_ORDER[world_theme - 1]
 	return ""
 
 

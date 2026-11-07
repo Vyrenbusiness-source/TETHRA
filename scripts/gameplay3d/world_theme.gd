@@ -13,7 +13,21 @@ const GALAXY := "galaxy"
 const BOSS := "boss"
 const AURORA := "aurora"
 const NEON := "neon"
-const NAMES: Array[String] = [GALAXY, BOSS, AURORA, NEON]
+const ECLIPSE := "eclipse"
+const ABYSS := "abyss"
+const FRACTAL := "fractal"
+const SINGULARITY := "singularity"
+const STORM := "storm"
+const OBSIDIAN := "obsidian"
+const NAMES: Array[String] = [GALAXY, BOSS, AURORA, NEON, ECLIPSE, ABYSS, FRACTAL, SINGULARITY, STORM, OBSIDIAN]
+## Dunkle Welten in Rueckfall-Reihenfolge (fehlt eine, nimmt resolve die naechste).
+const DARK: Array[String] = [BOSS, ECLIPSE, ABYSS, FRACTAL, OBSIDIAN, STORM, SINGULARITY, AURORA]
+## Anzeige-Namen (Einstellungen).
+const LABELS := {"galaxy": "Galaxie", "boss": "Bosskampf", "aurora": "Frost", "neon": "Neon",
+	"eclipse": "Eklipse", "abyss": "Abgrund", "fractal": "Fraktal", "singularity": "Singularität",
+	"storm": "Sturm", "obsidian": "Obsidian"}
+## Galaxie (mit Planeten) nur noch extrem selten (Nutzer-Wunsch).
+const GALAXY_SHARE := 0.03
 
 ## Schwellen (Noten pro Sekunde ueber die Spielzeit, Mania-typisch).
 const BOSS_STARS := 4.5
@@ -34,8 +48,14 @@ const ELECTRO_EXACT: Array[String] = ["edm", "dnb", "idm", "eurobeat"]
 ## Farbsatz je Thema: line = Strecke/Pads (Songfarbe), kiai = Akzent im Kiai.
 ## Galaxie behaelt die Coverfarbe (leeres Dict).
 const PALETTES := {
-	"boss": {"line": Color(0.96, 0.30, 0.10), "kiai": Color(1.0, 0.80, 0.42)},
-	"aurora": {"line": Color(0.42, 0.80, 0.98), "kiai": Color(0.45, 0.98, 0.76)},
+	"boss": {"line": Color(0.78, 0.08, 0.10), "kiai": Color(1.0, 0.30, 0.26)},
+	"aurora": {"line": Color(0.46, 0.72, 0.80), "kiai": Color(0.70, 0.88, 0.92)},
+	"eclipse": {"line": Color(0.86, 0.76, 0.52), "kiai": Color(1.0, 0.94, 0.78)},
+	"abyss": {"line": Color(0.52, 0.60, 0.70), "kiai": Color(0.80, 0.86, 0.94)},
+	"fractal": {"line": Color(0.66, 0.12, 0.22), "kiai": Color(0.92, 0.36, 0.44)},
+	"singularity": {"line": Color(0.80, 0.82, 0.86), "kiai": Color(1.0, 0.96, 0.90)},
+	"storm": {"line": Color(0.52, 0.48, 0.66), "kiai": Color(0.78, 0.74, 0.92)},
+	"obsidian": {"line": Color(0.40, 0.56, 0.72), "kiai": Color(0.66, 0.80, 0.94)},
 	"neon": {"line": Color("#ff2bd6"), "kiai": Color("#19f0ff")},
 }
 
@@ -53,7 +73,34 @@ static func resolve(forced: String, beatmap: Beatmap, stars: float, theme_color:
 		return forced
 	if beatmap == null:
 		return GALAXY
-	return pick(beatmap, stars, theme_color)
+	var t := pick(beatmap, stars, theme_color)
+	if t == GALAXY or is_available(t):
+		return t
+	for d in DARK:
+		if is_available(d):
+			return d
+	return GALAXY
+
+
+## Hat das Thema Shader + Assets (spaeter gemergte Welten erscheinen so automatisch)?
+static func is_available(theme: String) -> bool:
+	var sp := shader_path(theme)
+	if sp == "" or not ResourceLoader.exists(sp):
+		return false
+	var dir := asset_dir(theme)
+	if not DirAccess.dir_exists_absolute(dir):
+		return false
+	for fname in ResourceLoader.list_directory(dir):
+		if fname.get_extension().to_lower() in ["webp", "png", "jpg"]:
+			return true
+	return false
+
+
+## Deterministischer Wert 0..1 pro Map (gleiche Map = gleiche Welt).
+static func _h(f: Dictionary, stars: float, salt: int) -> float:
+	var key := "%.2f|%.3f|%.3f|%.2f|%d" % [float(f.get("bpm", 0.0)), float(f.get("nps", 0.0)),
+		float(f.get("kiai", 0.0)), stars, salt]
+	return float(absi(hash(key)) % 10000) / 10000.0
 
 
 ## Kennzahlen der Map: bpm (dominant, nach Dauer), nps, kiai (Anteil 0..1), electro.
@@ -162,14 +209,24 @@ static func pick_from(f: Dictionary, stars: float, theme_color: Color) -> String
 		return BOSS
 	if bpm >= BOSS_BPM and (nps >= DENSE_NPS or (nps >= NEON_NPS and kiai >= KIAI_HEAVY)):
 		return BOSS
-	# Neon wird NIE automatisch gewaehlt (Nutzer: duestere Welten, kein Neon) —
-	# nur noch manuell in den Einstellungen.
-	# Aurora: ruhig und weiche/kuehle Coverfarbe; sehr ruhig auch ohne Farbe.
+	# Neon wird NIE automatisch gewaehlt (Nutzer: duestere Welten, kein Neon).
+	# Galaxie nur extrem selten.
+	if _h(f, stars, 7) < GALAXY_SHARE:
+		return GALAXY
+	# Frost: ruhig und weiche/kuehle Coverfarbe; sehr ruhig auch ohne Farbe.
 	var calm := (bpm > 0.0 and bpm < CALM_BPM) or (nps > 0.0 and nps < CALM_NPS)
 	var very_calm := (bpm > 0.0 and bpm < 100.0 and nps < 4.0) or (nps > 0.0 and nps < 2.0)
 	if calm and (is_soft_color(theme_color) or very_calm):
 		return AURORA
-	return GALAXY
+	# Sonst eine dunkle Welt nach Charakter, per Hash variiert.
+	var pool: Array[String]
+	if kiai >= KIAI_HEAVY or stars >= 3.0:
+		pool = [ECLIPSE, STORM, SINGULARITY]
+	elif nps >= DENSE_NPS * 0.7:
+		pool = [FRACTAL, ECLIPSE, STORM]
+	else:
+		pool = [ABYSS, OBSIDIAN, FRACTAL]
+	return pool[mini(int(_h(f, stars, 13) * pool.size()), pool.size() - 1)]
 
 
 ## Farbsatz {line, kiai} oder {} (Galaxie: Coverfarbe bleibt).

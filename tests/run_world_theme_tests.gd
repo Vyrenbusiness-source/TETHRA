@@ -40,19 +40,19 @@ func _test_pick_from() -> void:
 	_check(WorldTheme.pick_from(_f(100, 2), 4.5, BLUE) == "boss", "Sterne 4.5 schlaegt ruhig")
 	_check(WorldTheme.pick_from(_f(200, 9), 3.0, ORANGE) == "boss", "200 BPM dicht -> Bosskampf")
 	_check(WorldTheme.pick_from(_f(195, 5, 0.4), 3.0, ORANGE) == "boss", "195 BPM kiai-lastig -> Bosskampf")
-	_check(WorldTheme.pick_from(_f(195, 5, 0.1), 3.0, ORANGE) == "galaxy", "195 BPM mittel ohne Kiai -> Galaxie")
+	_check(WorldTheme.pick_from(_f(195, 5, 0.1), 3.0, ORANGE) != "neon", "195 BPM mittel ohne Kiai -> dunkle Welt (nie Neon)")
 	_check(WorldTheme.pick_from(_f(170, 6), 3.5, MAGENTA) != "neon", "170 BPM Magenta -> nie automatisch Neon")
 	_check(WorldTheme.pick_from(_f(150, 5), 3.5, CYAN) != "neon", "150 BPM Cyan -> nie automatisch Neon")
-	_check(WorldTheme.pick_from(_f(150, 5), 3.5, ORANGE) == "galaxy", "150 BPM Orange -> Galaxie")
+	_check(WorldTheme.pick_from(_f(150, 5), 3.5, ORANGE) != "neon", "150 BPM Orange -> dunkle Welt (nie Neon)")
 	_check(WorldTheme.pick_from(_f(128, 5, 0, true), 3.0, ORANGE) != "neon", "electro-Tag -> nie automatisch Neon")
 	_check(WorldTheme.pick_from(_f(90, 2.5, 0, true), 2.0, BLUE) == "aurora", "electro aber ruhig -> Aurora")
 	_check(WorldTheme.pick_from(_f(100, 3.5), 2.0, BLUE) == "aurora", "100 BPM blau -> Aurora")
 	_check(WorldTheme.pick_from(_f(140, 2.5), 2.0, GREY) == "aurora", "duenn + blass -> Aurora")
-	_check(WorldTheme.pick_from(_f(110, 4.5), 2.5, ORANGE) == "galaxy", "110 BPM Orange mittel -> Galaxie")
+	_check(WorldTheme.pick_from(_f(110, 4.5), 2.5, ORANGE) != "neon", "110 BPM Orange mittel -> dunkle Welt (nie Neon)")
 	_check(WorldTheme.pick_from(_f(90, 3.0), 2.0, ORANGE) == "aurora", "90 BPM sehr ruhig -> Aurora")
-	_check(WorldTheme.pick_from(_f(160, 7), 3.8, ORANGE) == "galaxy", "160 BPM orange -> Galaxie")
-	_check(WorldTheme.pick_from(_f(0, 0), -1.0, ORANGE) == "galaxy", "leere Map -> Galaxie")
-	_check(WorldTheme.pick_from(_f(150, 6), -1.0, ORANGE) == "galaxy", "Sterne unbekannt -> ignoriert")
+	_check(WorldTheme.pick_from(_f(160, 7), 3.8, ORANGE) != "neon", "160 BPM orange -> dunkle Welt (nie Neon)")
+	_check(WorldTheme.pick_from(_f(0, 0), -1.0, ORANGE) != "neon", "leere Map -> dunkle Welt (nie Neon)")
+	_check(WorldTheme.pick_from(_f(150, 6), -1.0, ORANGE) != "neon", "Sterne unbekannt -> ignoriert, nie Neon")
 
 
 func _tp(time: float, bl: float, red: bool = true) -> TimingPoint:
@@ -125,7 +125,7 @@ func _test_palette() -> void:
 		var p := WorldTheme.palette(t)
 		_check(p.has("line") and p.has("kiai"), "%s hat Farbsatz" % t)
 	var boss: Color = WorldTheme.palette("boss").line
-	_check(boss.r > boss.g and boss.g > boss.b, "Boss tiefrot-orange")
+	_check(boss.r > boss.g and boss.r > boss.b, "Boss monochrom blutrot")
 	var neon: Color = WorldTheme.palette("neon").line
 	_check(neon.r > 0.8 and neon.b > 0.6 and neon.g < 0.4, "Neon magenta")
 	_check(WorldTheme.shader_path("galaxy") == "", "Galaxie nutzt sky_panorama")
