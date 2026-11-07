@@ -48,12 +48,17 @@ func _formula() -> void:
 
 
 func _conversion() -> void:
-	# ManiaCore: preempt = BASE_PREEMPT / clampf(mania_scroll, 0.5, 3.0) -> exakt lazer-Zeit.
+	# ManiaCore.preempt_for(mania_scroll) -> exakt lazer-Zeit fuer alle 1..40 (kein Deckel).
 	var s = SettingsScript.new()
-	for sp in [5, 8, 10, 15, 20, 25, 28]:
+	for sp in [1, 5, 8, 10, 15, 20, 25, 28, 40]:
 		s.scroll_speed = sp
-		var preempt: float = ManiaCore.BASE_PREEMPT / clampf(s.mania_scroll, 0.5, 3.0)
+		var preempt: float = ManiaCore.preempt_for(s.mania_scroll)
 		_ok(absf(preempt - 11485.0 / sp) < 0.01, "Speed %d: preempt %.1f ms = lazer" % [sp, preempt])
+	# Live-Umstellung: Core-preempt folgt set_scroll_scale.
+	var core := ManiaCore.new()
+	s.scroll_speed = 25
+	core.set_scroll_scale(s.mania_scroll)
+	_ok(absf(core.preempt - 459.4) < 0.1, "set_scroll_scale: Speed 25 -> 459 ms")
 	# Rundweg Speed -> Faktor -> Speed fuer alle 40 Stufen.
 	var all_ok := true
 	for sp in range(1, 41):

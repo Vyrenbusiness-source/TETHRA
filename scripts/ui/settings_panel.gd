@@ -645,8 +645,15 @@ func _embed_skin(pg: VBoxContainer, skin: Control) -> void:
 	for c in skin.get_children():
 		if c != opt and (c is Button or c is MenuButton):
 			# Klarere Beschriftung der Import-Knoepfe (Logik bleibt im Skin-Picker).
-			if c is MenuButton and String(c.text) == "Aus osu!":
-				c.text = "Von osu! übernehmen"
+			if c is MenuButton:
+				# MenuButton ist standardmaessig flach (sieht aus wie Text):
+				# echter Knopf im selben Stil wie "Skin-Datei importieren…".
+				var mb := c as MenuButton
+				mb.flat = false
+				mb.theme_type_variation = &"Button"
+				mb.focus_mode = Control.FOCUS_ALL
+				if String(mb.text) == "Aus osu!":
+					mb.text = "Von osu! übernehmen"
 			elif String(c.text) == "Importieren…":
 				c.text = "Skin-Datei importieren…"
 			skin.remove_child(c)

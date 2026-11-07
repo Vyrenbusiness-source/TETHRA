@@ -97,6 +97,10 @@ const LANE_SPACING_STEP := 0.05
 ## und optional leicht weichgezeichnet (bg_blur).
 var playfield_2d: bool = false
 var bg_dim: float = 0.3
+## --bgdim=<0..1> (Test-/Screenshot-Laeufe): gilt nur fuer diesen Lauf; save()
+## schreibt den gespeicherten Wert, solange bg_dim noch dem CLI-Wert entspricht.
+var _bg_dim_cli := -1.0
+var _bg_dim_saved := 0.3
 var bg_blur: bool = true
 ## 2D-Notenform: 0 = Balken (flache Rechtecke), 1 = Kreis (runde Noten,
 ## Holds mit runden Enden, Receptors als Ringe).
@@ -273,6 +277,10 @@ func _ready() -> void:
 	load_settings()
 	_lang_override = cli_language()
 	_scroll_override = cli_scroll_speed()
+	_bg_dim_cli = cli_bg_dim()
+	if _bg_dim_cli >= 0.0:
+		_bg_dim_saved = bg_dim
+		bg_dim = _bg_dim_cli
 	_setup_audio_enhance()
 	# Globales Glass-Theme: ALLE Controls (Slider, Dropdowns, Scrollbalken,
 	# Popups …) verlieren die graue Godot-Standard-Optik.
@@ -445,7 +453,8 @@ func save(path: String = PATH) -> void:
 	cfg.set_value("game", "hit_lighting_2d", hit_lighting_2d)
 	cfg.set_value("game", "lane_spacing", lane_spacing)
 	cfg.set_value("game", "playfield_2d", playfield_2d)
-	cfg.set_value("game", "bg_dim", bg_dim)
+	var bg_keep := _bg_dim_cli >= 0.0 and is_equal_approx(bg_dim, _bg_dim_cli)
+	cfg.set_value("game", "bg_dim", _bg_dim_saved if bg_keep else bg_dim)
 	cfg.set_value("game", "bg_blur", bg_blur)
 	cfg.set_value("game", "note_style_2d", note_style_2d)
 	cfg.set_value("game", "lane_width_2d", lane_width_2d)
@@ -748,6 +757,14 @@ func step_scroll_speed(d: int) -> void:
 	if scene != null and not live and "core" in scene:
 		txt += "  ·  " + tr("ab dem nächsten Start")
 	_show_osd(txt, float(scroll_speed - SCROLL_SPEED_MIN) / float(SCROLL_SPEED_MAX - SCROLL_SPEED_MIN))
+
+
+## --bgdim=<0..1> auf der Kommandozeile (0 = Hintergrund aus), sonst -1.
+static func cli_bg_dim() -> float:
+	for a in OS.get_cmdline_args() + OS.get_cmdline_user_args():
+		if a.begins_with("--bgdim="):
+			return clamp_bg_dim(a.trim_prefix("--bgdim=").to_float())
+	return -1.0
 
 
 ## --scroll=<1..40> auf der Kommandozeile, sonst 0.

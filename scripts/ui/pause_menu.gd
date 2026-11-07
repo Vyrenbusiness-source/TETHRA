@@ -115,7 +115,8 @@ func _init() -> void:
 	_offset_val = Label.new()
 	_quick.add_child(_stepper("Audio-Offset", _offset_val, -5.0, 5.0, func(d: float): _step_offset(d)))
 	_scroll_val = Label.new()
-	_quick.add_child(_stepper("Scrollgeschwindigkeit", _scroll_val, -0.1, 0.1, func(d: float): _step_scroll(d)))
+	_quick.add_child(_stepper("Scroll Speed", _scroll_val, -1.0, 1.0, func(d: float): _step_scroll(d)))
+	_scroll_val.custom_minimum_size = Vector2(112, 0)
 	_lane2d_val = Label.new()
 	_rows_2d.append(_stepper("Spurbreite", _lane2d_val, -0.1, 0.1,
 			func(d: float): _step_2d("lane_width_2d", d)))
@@ -220,9 +221,10 @@ func _step_offset(d: float) -> void:
 	_refresh_values()
 
 
+## Scroll Speed 1..40 wie lazer: speichert, zieht das laufende Spiel live
+## nach (mania_3d.apply_scroll_speed) und zeigt "Scroll Speed 25 (459 ms)".
 func _step_scroll(d: float) -> void:
-	Settings.mania_scroll = clampf(snappedf(Settings.mania_scroll + d, 0.05), 0.5, 3.0)
-	Settings.save()
+	Settings.step_scroll_speed(roundi(d))
 	_refresh_values()
 
 
@@ -252,7 +254,7 @@ func _step_field(d: float) -> void:
 
 func _refresh_values() -> void:
 	_offset_val.text = "%+.0f ms" % Settings.offset_ms
-	_scroll_val.text = UiTheme.fmt_num(Settings.mania_scroll, 2) + "x"
+	_scroll_val.text = Settings.scroll_value_text(Settings.scroll_speed)
 	_lane2d_val.text = _pct(Settings.lane_width_2d)
 	_note2d_val.text = _pct(Settings.note_size_2d)
 	_bg_val.text = "Aus" if Settings.bg_dim <= 0.001 else _pct(Settings.bg_dim)

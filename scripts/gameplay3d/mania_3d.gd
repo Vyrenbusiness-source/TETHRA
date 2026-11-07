@@ -660,7 +660,7 @@ func _load_beatmap() -> bool:
 		var scroll := Settings.mania_scroll
 		if GameSession.tutorial:
 			scroll = minf(scroll, 1.0) * 0.65
-		var preempt := ManiaCore.BASE_PREEMPT / clampf(scroll, 0.5, 3.0)
+		var preempt := ManiaCore.preempt_for(scroll)
 		var lead := _beatmap.audio_lead_in()
 		var first_t: float = _beatmap.hit_objects[0].time
 		# SV: Anflugzeit der ersten Note folgt der Scroll-Position (lazer).
@@ -1497,6 +1497,15 @@ func _emissive_mat(col: Color, energy: float) -> StandardMaterial3D:
 # Noten auf den Schienen (Scroll-Velocity wie osu!lazer: Abstand ueber
 # core.scroll.position, ohne SV/BPM-Wechsel exakt konstante Geschwindigkeit)
 # ---------------------------------------------------------------------------
+
+## Scroll Speed live (Settings.step_scroll_speed: F3/F4, Pausenmenue). Die
+## ruhige Anzeige "Scroll Speed 25 (459 ms)" zeigt Settings selbst.
+func apply_scroll_speed(_speed: int) -> void:
+	var scroll := Settings.mania_scroll
+	if GameSession.tutorial:
+		scroll = minf(scroll, 1.0) * 0.65
+	core.set_scroll_scale(scroll)
+
 
 func _note_z(hit_time: float, t: float) -> float:
 	var sm := core.scroll
