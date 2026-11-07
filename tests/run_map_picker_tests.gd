@@ -94,6 +94,12 @@ func _init() -> void:
 	_check(_titles(MapPicker.filter_entries(entries, "", 2)) == ["Blue Sky"], "Sterne 2-4 (4,2 liegt drueber)")
 	_check(_titles(MapPicker.filter_entries(entries, "", 4)) == ["Apex"], "Sterne 6+ (Std-Diff zaehlt nicht)")
 	_check(MapPicker.filter_entries(entries, "ghost", 4).is_empty(), "Suche + Sterne kombiniert")
+	var coll := ["1 a.osz", "4 d.osz"]
+	_check(_titles(MapPicker.filter_entries(entries, "", 0, coll)) == ["Ghost", "Apex"], "Sammlung: nur ihre Sets")
+	_check(MapPicker.filter_entries(entries, "", 0, []).is_empty(), "leere Sammlung: nichts")
+	_check(MapPicker.filter_entries(entries, "", 0, null).size() == 3, "keine Sammlung: alles")
+	_check(_titles(MapPicker.filter_entries(entries, "mapper1", 4, coll)) == ["Apex"], "Sammlung + Suche + Sterne")
+	_check(MapPicker.filter_entries(entries, "anime", 0, coll).is_empty(), "Sammlung + Suche ohne Treffer")
 
 	# Sortierung
 	var arr := entries.duplicate()

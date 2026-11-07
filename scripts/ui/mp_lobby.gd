@@ -1815,6 +1815,8 @@ func _play_set_preview(osz_path: String, meta: Dictionary) -> void:
 
 ## Leise Vorschau der gewaehlten Map (ab PreviewTime, mit Einblendung).
 func _update_preview() -> void:
+	if _tpanel != null or _tend != null:
+		return  # Turnier-Ansicht offen: keine zweite Musikquelle
 	if Lobby.sel_map.is_empty():
 		_preview.stop()
 		return
@@ -2128,9 +2130,11 @@ func _sync_tournament() -> void:
 	_center.visible = false
 	if t.phase == Tournament.Phase.END:
 		if _tpanel != null:
+			_stop_room_preview()  # Panel-Vorschau (geteilter Player) verstummt mit der Ansicht
 			_tpanel.queue_free()
 			_tpanel = null
 		if _tend == null:
+			_stop_room_preview()
 			_tend = TournamentEnd.new(t, _tour_title())
 			_tend.library = _library
 			_tend.my_id = multiplayer.get_unique_id()
@@ -2142,7 +2146,9 @@ func _sync_tournament() -> void:
 		_tend.queue_free()
 		_tend = null
 	if _tpanel == null:
+		_stop_room_preview()
 		_tpanel = TournamentPanel.new(_library)
+		_tpanel.shared_preview = _preview
 		_tpanel.back_to_room.connect(_leave_tour_view)
 		add_child(_tpanel)
 	_tpanel.sync_from_lobby()
@@ -2157,7 +2163,17 @@ func _leave_tour_view() -> void:
 	_sync_tournament()
 
 
+## Raum-Vorschau anhalten (Fade-Tween inklusive): sonst laeuft sie unter der
+## Turnier-Ansicht weiter und doppelt sich mit der Panel-Vorschau.
+func _stop_room_preview() -> void:
+	if _preview_fade != null and _preview_fade.is_valid():
+		_preview_fade.kill()
+	if _preview != null:
+		_preview.stop()
+
+
 func _clear_tour_views() -> void:
+	_stop_room_preview()
 	if _tpanel != null:
 		_tpanel.queue_free()
 		_tpanel = null
@@ -2182,6 +2198,47 @@ class _FakeTournament extends Tournament:
 		for i in order:
 			o.append(int(i))
 		return o
+
+
+func _count_playing(n: Node) -> int:
+	var c := 1 if (n is AudioStreamPlayer and (n as AudioStreamPlayer).playing) else 0
+	for ch in n.get_children():
+		c += _count_playing(ch)
+	return c
+
+
+func _count_players(n: Node) -> int:
+	var c := 1 if n is AudioStreamPlayer else 0
+	for ch in n.get_children():
+		c += _count_players(ch)
+	return c
+
+
+## Harness: Raum-Vorschau laeuft, Turnier-Ansicht oeffnet und schliesst, mehrfach
+## (Ende -> Raum -> neues Turnier): immer hoechstens ein spielender Player.
+func _audio_single_source_check() -> void:
+	var base := _count_players(self)
+	var ok := true
+	for round_i in 3:
+		_preview.stream = AudioStreamGenerator.new()
+		_preview.play()
+		var p := TournamentPanel.new(_library)
+		p.harness = true
+		p.shared_preview = _preview
+		_tpanel = p
+		_stop_room_preview()
+		add_child(p)
+		p._play_stream(AudioStreamGenerator.new())
+		var during := _count_playing(self)
+		var players := _count_players(self)
+		_clear_tour_views()
+		await get_tree().process_frame
+		await get_tree().process_frame
+		var after := _count_playing(self)
+		print("AUDIO round=%d playing_during=%d playing_after=%d players=%d base=%d" % [
+			round_i, during, after, players, base])
+		ok = ok and during == 1 and after == 0 and players == base
+	print("AUDIO-CHECK " + ("OK" if ok else "FAIL"))
 
 
 ## Screenshots aller Turnier-Phasen mit Fake-Daten + Endbild (1920x1080).
@@ -2248,6 +2305,13 @@ func _tournament_shots() -> void:
 	panel.refresh()
 	await get_tree().create_timer(1.0).timeout
 	await shot.call("ban")
+	# BAN: ich habe "Kein Ban" gewaehlt.
+	t.bans = {2: 4, 3: -1, 5: 4}
+	panel.refresh()
+	await get_tree().create_timer(0.6).timeout
+	await shot.call("ban_skip")
+	t.bans = {2: 4, 3: 1, 4: -1, 5: 4, 6: -1}
+	await _audio_single_source_check()
 	# BAN: alle gewaehlt -> Aufdecken + Reihenfolge.
 	t.bans = {2: 4, 3: 1, 4: 7, 5: 4, 6: 1}
 	for i in [1, 4, 7]:

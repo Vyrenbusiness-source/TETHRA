@@ -10,6 +10,8 @@ enum Phase { PICK, BAN, PLAY, BETWEEN, END }
 
 const ALLOWED_MAPS := [5, 10, 15]
 const MAX_STARS := 30.0
+## ban(peer, SKIP) = "Kein Ban" (zaehlt als gewaehlt).
+const SKIP := -1
 
 var phase: int = Phase.PICK
 ## {maps: int (5/10/15), stars_lo: float, stars_hi: float, mods: Dictionary, seed: int}
@@ -161,25 +163,31 @@ func remaining() -> int:
 	return n
 
 
-## Hass-Map abwaehlen. Aendern erlaubt, bis alle gebannt haben. "" = ok.
+## Hass-Map abwaehlen (i = SKIP: keinen Ban). Aendern erlaubt, bis alle gebannt haben. "" = ok.
 func ban(peer: int, i: int) -> String:
 	if phase != Phase.BAN:
 		return tr("Nicht in der Ban-Phase.")
 	if not player_ids.has(peer):
 		return tr("Kein Spieler.")
-	if i < 0 or i >= pool.size():
+	if i < SKIP or i >= pool.size():
 		return tr("Ungueltige Map.")
 	if not player_ids.is_empty() and player_ids.all(func(x): return bans.has(x)):
 		return tr("Alle haben schon gebannt.")
-	if bans.get(peer, -1) == i:
+	if bans.has(peer) and int(bans[peer]) == i:
+		return ""
+	if i == SKIP:
+		# Kein Ban: zaehlt als gewaehlt; ein frueherer Ban wird frei.
+		if bans.has(peer) and int(bans[peer]) >= 0:
+			pool[int(bans[peer])].banned = false
+		bans[peer] = SKIP
 		return ""
 	if bool(pool[i].banned):
 		return tr("Diese Map hat schon jemand gestrichen. Such dir eine andere aus.")
 	# Mindestens 1 Map bleibt: beim Wechsel wird erst die alte frei.
-	var freed := 1 if bans.has(peer) else 0
+	var freed := 1 if (bans.has(peer) and int(bans[peer]) >= 0) else 0
 	if remaining() + freed <= 1:
 		return tr("Mindestens eine Map muss uebrig bleiben.")
-	if bans.has(peer):
+	if bans.has(peer) and int(bans[peer]) >= 0:
 		pool[int(bans[peer])].banned = false
 	bans[peer] = i
 	pool[i].banned = true
@@ -346,13 +354,13 @@ func to_dict_for(peer: int) -> Dictionary:
 	var pl: Array = d.pool
 	for i in pl.size():
 		pl[i].banned = (i == mine)
-	d["bans"] = { peer: mine } if mine >= 0 else {}
+	d["bans"] = { peer: mine } if bans.has(peer) else {}
 	d["hidden"] = true
 	return d
 
 
 func has_voted(peer: int) -> bool:
-	return int(bans.get(peer, -1)) >= 0 or voted.has(peer)
+	return bans.has(peer) or voted.has(peer)
 
 
 static func from_dict(d: Dictionary) -> Tournament:
