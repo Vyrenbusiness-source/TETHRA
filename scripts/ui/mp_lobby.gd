@@ -2448,12 +2448,16 @@ func _tour_phase_shots(shot: Callable, np: int) -> void:
 	t.phase = Tournament.Phase.PICK
 	t.pool = full_pool.slice(0, maps - 3 if np > 2 else 3)
 	var dl_i: int = t.pool.size() - 1
+	var dl_keep: Dictionary = t.pool[dl_i].duplicate()
 	t.pool[dl_i]["file"] = ""
 	t.pool[dl_i]["online"] = true
 	panel.refresh()
 	panel._on_dl_progress(int(t.pool[dl_i].set_id), 0.42)
 	await get_tree().create_timer(1.2).timeout
 	await shot.call(tag + "pick")
+	# Download fertig: ab hier hat die Map wieder Datei und Cover.
+	full_pool[dl_i]["file"] = dl_keep.file
+	full_pool[dl_i]["online"] = dl_keep.online
 	# BAN verdeckt: ich habe gebannt, ein Teil der anderen hat gewaehlt.
 	t.pool = full_pool
 	t.phase = Tournament.Phase.BAN

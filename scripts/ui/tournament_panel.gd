@@ -27,6 +27,8 @@ const BRONZE := Color(0.85, 0.58, 0.40)
 const LINE := Color(1, 1, 1, 0.08)
 const CARD := Color(0.08, 0.08, 0.11, 0.94)
 const COVER_H := 112
+## Cover-Hoehe der Pool-Karten, je Ansicht an Fenster und Map-Anzahl angepasst.
+var _cov_h := COVER_H
 const SIDE_W := 300
 const MAX_ONLINE_PAGES := 8
 ## Schrift: 4 Groessen wie die Lobby (+ grosse Zahlen).
@@ -358,8 +360,12 @@ func _name_cell(peer: int, pname: String, sz: int = 28, fs: int = FS_M) -> Contr
 	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	h.add_child(l)
 	if peer == my_id:
+		# Clippendes Label schrumpft sonst auf 0: Namensbreite messen (max. 150).
 		var you := lbl(tr("(du)"), FS_S, DIM)
 		you.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		var f := l.get_theme_font("font")
+		var w := f.get_string_size(pname, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x if f != null else 0.0
+		l.custom_minimum_size.x = minf(ceilf(w) + 6.0, 150.0)
 		l.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 		h.add_child(you)
 		var sp := Control.new()
@@ -627,6 +633,7 @@ func refresh() -> void:
 	_prog = {}
 	_strikes = []
 	_reveal_fx = []
+	_cov_h = COVER_H
 	_status = null
 	_auto_lbl = null
 	_auto_big = null
@@ -772,6 +779,18 @@ func _cols(reserved: float) -> int:
 	return clampi(int(w / 250.0), 2, 5)
 
 
+## Karten fuellen die Hoehe ruhig aus: Cover so hoch wie Breite (16:9) und
+## Zeilenzahl erlauben, nie kleiner als bisher.
+func _fit_cover(cols: int, n: int, reserved: float) -> void:
+	var vp := get_viewport_rect().size
+	var mg := 24.0 if _small() else 40.0
+	var cw := (vp.x - 2.0 * mg - 56.0 - reserved - float(cols - 1) * 12.0) / float(cols)
+	var rows := ceili(float(maxi(n, 1)) / float(cols))
+	var avail := vp.y - 2.0 * mg - (250.0 if _small() else 300.0)
+	var per := (avail - float(rows - 1) * 12.0) / float(rows) - 96.0
+	_cov_h = int(clampf(minf(cw * 0.56, per), 84.0, 190.0))
+
+
 func _scroll_grid(parent: Control, cols: int) -> GridContainer:
 	var sc := ScrollContainer.new()
 	sc.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -873,7 +892,9 @@ func _build_pick() -> void:
 	var want := int(t.config.get("maps", 10))
 	_header(tr("Maps wählen"), 0)
 	var row := _main_row()
-	var g := _scroll_grid(row, _cols(SIDE_W + 20))
+	var cols := _cols(SIDE_W + 20)
+	_fit_cover(cols, want, SIDE_W + 20)
+	var g := _scroll_grid(row, cols)
 	var mine := t.picks_of(my_id)
 	var can_add: bool = t.pool.size() < want and (mine < t.max_per_player() or (is_host and t.autofill_done))
 	for i in want:
@@ -916,9 +937,21 @@ func _build_pick() -> void:
 	side.add_child(_gap(6))
 	side.add_child(overline(tr("AUTO-AUSWAHL")))
 	var parts := filter_parts(_filters())
-	var fl := lbl(tr("Keine Filter — alle Maps im Sternbereich.") if parts.is_empty() else "  ·  ".join(parts), FS_S, TEXT if not parts.is_empty() else DIM)
-	fl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	side.add_child(fl)
+	if parts.is_empty():
+		var fl := lbl(tr("Keine Filter — alle Maps im Sternbereich."), FS_S, DIM)
+		fl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		side.add_child(fl)
+	# Ein Filter je Zeile: Bereiche wie "120–200 BPM" brechen nie mitten durch.
+	for part in parts:
+		var fh := HBoxContainer.new()
+		fh.add_theme_constant_override("separation", 8)
+		var dot := lbl("·", FS_S, ACCENT)
+		fh.add_child(dot)
+		var fl := raw(part, FS_S, TEXT)
+		fl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		fl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		fh.add_child(fl)
+		side.add_child(fh)
 	var hint := lbl(tr("»Rest automatisch füllen« nimmt zuerst passende Maps aus deiner Bibliothek, dann online.")
 		if is_host else tr("Der Host kann freie Plätze automatisch füllen."), 12, Color(DIM, 0.85))
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -980,7 +1013,7 @@ func _empty_slot(i: int, clickable: bool) -> Control:
 	sb.border_color = Color(1, 1, 1, 0.07)
 	c.add_theme_stylebox_override("panel", sb)
 	c.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	c.custom_minimum_size = Vector2(0, COVER_H + 84)
+	c.custom_minimum_size = Vector2(0, _cov_h + 84)
 	var v := VBoxContainer.new()
 	v.alignment = BoxContainer.ALIGNMENT_CENTER
 	v.add_theme_constant_override("separation", 4)
@@ -1017,7 +1050,7 @@ func _card(i: int, m: Dictionary, mode: String, banned: bool = false) -> Control
 	v.add_theme_constant_override("separation", 0)
 	card.add_child(v)
 	var holder := Panel.new()
-	holder.custom_minimum_size = Vector2(0, COVER_H)
+	holder.custom_minimum_size = Vector2(0, _cov_h)
 	var hb := StyleBoxFlat.new()
 	hb.bg_color = Color.from_hsv(float(str(m.get("title", "")).hash() % 360) / 360.0, 0.25, 0.22)
 	hb.corner_radius_top_left = 11
@@ -1107,7 +1140,16 @@ func _card(i: int, m: Dictionary, mode: String, banned: bool = false) -> Control
 	foot.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	col.add_child(foot)
 	var by := int(m.get("by", -1))
-	if by >= 0:
+	if banned:
+		# Gestrichene Karte: nur wer sie gestrichen hat (sonst kuerzt das
+		# clippende Label auf 0, neben dem Namen des Waehlers).
+		var bl := raw(tr("gestrichen · %s") % _banners(i), 12, WARN)
+		bl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		bl.tooltip_text = tr("gewählt von %s") % _pname(by) if by >= 0 else ""
+		bl.mouse_filter = Control.MOUSE_FILTER_PASS
+		foot.add_child(bl)
+		_decorate_ban(holder, card, cover)
+	elif by >= 0:
 		foot.add_child(avatar(_pname(by), 18))
 		var who := raw(_pname(by), 12, TEXT.darkened(0.15))
 		who.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1116,13 +1158,7 @@ func _card(i: int, m: Dictionary, mode: String, banned: bool = false) -> Control
 		foot.add_child(who)
 	else:
 		foot.add_child(_spacer())
-	if banned:
-		var bl := lbl(tr("gestrichen · %s") % _banners(i), 12, WARN)
-		bl.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
-		bl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-		foot.add_child(bl)
-		_decorate_ban(holder, card, cover)
-	else:
+	if not banned:
 		foot.add_child(_status_chip(m))
 	return card
 
@@ -1203,7 +1239,9 @@ func _build_ban() -> void:
 	var revealed := _all_voted()
 	_header(tr("Bans") if not revealed else tr("Bans aufgedeckt"), 1)
 	var row := _main_row()
-	var g := _scroll_grid(row, _cols(SIDE_W + 20))
+	var cols := _cols(SIDE_W + 20)
+	_fit_cover(cols, t.pool.size(), SIDE_W + 20)
+	var g := _scroll_grid(row, cols)
 	var banned := _banned_set() if revealed else {}
 	var mine := int(t.bans.get(my_id, -1))
 	var skipped := t.bans.has(my_id) and mine < 0
@@ -1439,13 +1477,20 @@ func _play_strikes() -> void:
 	for c in _reveal_fx:
 		(c as CanvasItem).modulate.a = 0.0
 	var tw := create_tween()
-	tw.tween_interval(0.6)
+	tw.tween_interval(0.5)
+	# Viele Bans: Schritte kuerzer, damit das Aufdecken nie zaeh wird.
+	var step := minf(0.8, 3.2 / float(_strikes.size()))
 	for e in _strikes:
-		tw.tween_method(func(p: float): _strike_state(e, p), 0.0, 1.0, 0.8) \
+		tw.tween_method(func(p: float): _strike_state(e, p), 0.0, 1.0, step) \
 			.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN_OUT)
-		tw.tween_interval(0.35)
+		tw.tween_interval(step * 0.4)
+	var first := true
 	for c in _reveal_fx:
-		tw.tween_property(c, "modulate:a", 1.0, 0.5)
+		if first:
+			tw.tween_property(c, "modulate:a", 1.0, 0.5)
+			first = false
+		else:
+			tw.parallel().tween_property(c, "modulate:a", 1.0, 0.5)
 
 
 func _strike_state(e: Array, p: float) -> void:
@@ -1570,8 +1615,19 @@ func _hero(m: Dictionary, rnd: int, total: int) -> Control:
 	holder.clip_contents = true
 	holder.custom_minimum_size = Vector2(0, 240 if _small() else 380)
 	card.add_child(holder)
-	var bg := ColorRect.new()
-	bg.color = Color.from_hsv(float(str(m.get("title", "")).hash() % 360) / 360.0, 0.25, 0.18)
+	# Ohne Cover (Online-Map, Cover laedt noch): ruhiger Verlauf im Farbton der Map.
+	var hue := float(str(m.get("title", "")).hash() % 360) / 360.0
+	var grad := Gradient.new()
+	grad.set_color(0, Color.from_hsv(hue, 0.32, 0.26))
+	grad.set_color(1, Color.from_hsv(fmod(hue + 0.08, 1.0), 0.28, 0.09))
+	var gt := GradientTexture2D.new()
+	gt.gradient = grad
+	gt.fill_from = Vector2(0, 0)
+	gt.fill_to = Vector2(1, 1)
+	var bg := TextureRect.new()
+	bg.texture = gt
+	bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	bg.stretch_mode = TextureRect.STRETCH_SCALE
 	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	holder.add_child(bg)
@@ -1588,9 +1644,8 @@ func _hero(m: Dictionary, rnd: int, total: int) -> Control:
 	v.add_theme_constant_override("separation", 6)
 	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_child(v)
-	var ol := overline(tr("RUNDE %d VON %d") % [rnd, total], ACCENT)
-	ol.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
-	v.add_child(ol)
+	# Kopfzeile nennt schon "Runde x von y"; hier nur, ob es die letzte ist.
+	v.add_child(overline(tr("LETZTE MAP") if rnd >= total else tr("ALS NÄCHSTES"), ACCENT))
 	v.add_child(raw(str(m.get("title", "?")), 34 if not _small() else 28, TEXT, true, 0))
 	var ver := str(m.get("version", ""))
 	v.add_child(raw("%s%s" % [str(m.get("artist", "")), ("  ·  " + ver) if ver != "" else ""], FS_M + 1, TEXT.darkened(0.15)))
