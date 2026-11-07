@@ -340,6 +340,7 @@ var _pad_judge_col: Array = []
 var _mp_board: Control
 var _mp_send_t := 0.0
 var _mp_rank_box: VBoxContainer
+var _mp_rank_head: Label
 # Results-Screen (Komponente) + Clip-Export mit Fortschritt-Toast.
 var _results_screen: ResultsScreen
 var _clip_exporter: ClipExporter
@@ -3625,6 +3626,7 @@ func _build_results(is_fail: bool, s: Dictionary, pp: float, unranked: bool, new
 		rhead.add_theme_font_size_override("font_size", 15)
 		rhead.add_theme_color_override("font_color", Color(0.45, 0.8, 1.0))
 		rvb.add_child(rhead)
+		_mp_rank_head = rhead
 		_mp_rank_box = VBoxContainer.new()
 		_mp_rank_box.add_theme_constant_override("separation", 6)
 		rvb.add_child(_mp_rank_box)
@@ -4074,6 +4076,10 @@ func _refresh_mp_ranking() -> void:
 		return
 	for c in _mp_rank_box.get_children():
 		c.queue_free()
+	if _mp_rank_head != null and is_instance_valid(_mp_rank_head):
+		# Dezentes Mod-Badge (SV/NF) hinter der Ueberschrift.
+		var mt := Lobby.mods_text(GameSession.mods)
+		_mp_rank_head.text = "RANGLISTE" if mt == "" else "RANGLISTE  ·  " + mt
 	var ranked := Lobby.ranked_players()
 	var my_id := multiplayer.get_unique_id()
 	_update_mp_placement(ranked, my_id)
