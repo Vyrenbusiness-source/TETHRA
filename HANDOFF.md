@@ -78,3 +78,9 @@ Gemergt in main, aber NOCH NICHT im Spiel aktiv (Auswahl-Integration fehlt):
 - Aktiv im Spiel: boss, aurora(Frost), eclipse, abyss, fractal, obsidian (+ galaxy ~3 %, neon manuell).
 - storm und singularity: noch ohne Assets (Generator tools/gen_theme_<n>.py laufen lassen / fertig bauen) — erscheinen automatisch, sobald shaders/theme_<n>.gdshader + assets_game/themes/<n>/*.webp existieren (WorldTheme.is_available).
 - Optional Feinschliff: eclipse/abyss/fractal/obsidian Previews nochmal pruefen (wurden beim Limit-Stopp gemergt).
+
+## Welten-Runde 2026-11-07 (Batch tasks42/43/44 laeuft, 8 Agents)
+- Gemergt: beat-core (Beat-Vertrag docs/worlds/beat_contract.md im Spiel, Drop gedeckelt, neue Welten monolith/rift/nerve registriert).
+- Offen: worlds-storm-sing, worlds-dark-a (boss, eclipse), worlds-dark-b (abyss, fractal, aurora), worlds-new (monolith), world-rift, world-nerve, world-obsidian, mp-check (Multiplayer: Live-Battle links, Kartenwahl, Host geben).
+- Nutzer-Vorgaben: Fraktal-Stil (vorbeifliegende 3D-Splitter) ist Referenz; Sturm = Durchflug durch Tornado; maximal scharf (8192, BPTC, anisotrop); extrem viele FPS (<=15 % Verlust ggue. sky_panorama, [perf] in Preview); Drop nicht zu stark; Neon nicht anfassen; max 8 Agents.
+- Danach: Merge, Spiel-Shots je Welt, Release (Ablauf oben).

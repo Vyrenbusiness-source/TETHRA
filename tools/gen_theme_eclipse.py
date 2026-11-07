@@ -16,6 +16,8 @@ Erzeugt nach assets_game/themes/eclipse/:
         Fensterhoehlen, durch die die Korona scheint)
       - Alpha = freier Himmel (1) / Ruinen+Boden (0): der Shader zeichnet
         Sonnenrand und Diamantring nur dort.
+  eclipse_shards.webp  4096x2048 RGBA, NAHE Objekt-Ebene (Stil Fraktal-Splitter):
+      facettierte Asche-Fragmente/Gesteinsbrocken mit Korona-Randlicht.
   eclipse_ash.webp  4096x1024, in beiden Richtungen kachelbar, fuer Parallax:
       RGB (grau) = Ascheflocken, Alpha = weiche Rauchschwaden (lineare Daten).
       shaders/theme_eclipse.gdshader bildet es zylindrisch ab und laesst es
@@ -693,6 +695,89 @@ def build(W, seed, out_dir, preview, quality):
     return mb, amb
 
 
+
+# ---------------------------------------------------------------------------
+# Nahe Objekt-Ebene (Stil wie Fraktal-Splitter): facettierte Brocken, RGBA
+# ---------------------------------------------------------------------------
+def build_shards(W, seed, path, cfg, preview=""):
+    """RGBA 4096x2048: facettierte Brocken (flach schattierte Dreiecks-Facetten,
+    Randlicht, optional Glutrisse). A = Deckung (Straight-Alpha, Shader mischt
+    col = mix(col, rgb, a)). Nur Band ueber dem Horizont; vorn-mitte und unten
+    bleibt leer. RGB wurzel-kodiert wie die Panoramen."""
+    from PIL import ImageDraw
+    H = W // 2
+    SS = 2
+    rng = np.random.default_rng(seed + cfg["seed"])
+    img = Image.new("RGBA", (W * SS, H * SS), (0, 0, 0, 0))
+    dr = ImageDraw.Draw(img)
+
+    def enc(rgb):
+        lin = np.clip(np.asarray(rgb, dtype=np.float64), 0, 1)
+        return tuple(int(round(255.0 * float(lin_to_srgb(np.sqrt(c))))) for c in lin)
+
+    base = hexcol(cfg["base"])
+    hi = hexcol(cfg["hi"])
+    rim = hexcol(cfg["rim"])
+    crack = hexcol(cfg["crack"]) if cfg.get("crack") else None
+    items = []
+    for i in range(cfg["n"]):
+        lat = cfg["lat0"] + (cfg["lat1"] - cfg["lat0"]) * rng.random() ** 1.3
+        lon = rng.uniform(-180, 180)
+        R = cfg["rmin"] + (cfg["rmax"] - cfg["rmin"]) * rng.random() ** 2.6   # Grad
+        items.append((R, lat, lon))
+    items.sort()   # kleine (ferne) zuerst
+    for R, lat, lon in items:
+        rpx = R / 360.0 * W * SS
+        cy = (0.5 - lat / 180.0) * H * SS
+        sx = 1.0 / max(math.cos(math.radians(lat)), 0.3)
+        n = int(rng.integers(5, 9))
+        ang = np.sort(rng.uniform(0, 2 * math.pi, n))
+        rad = rpx * rng.uniform(0.55, 1.0, n)
+        elong = rng.uniform(0.55, 1.0)           # flach/gestreckt
+        tilt = rng.uniform(0, math.pi)
+        pts = []
+        for a, r in zip(ang, rad):
+            x, y = math.cos(a) * r, math.sin(a) * r * elong
+            xr = x * math.cos(tilt) - y * math.sin(tilt)
+            yr = x * math.sin(tilt) + y * math.cos(tilt)
+            pts.append((xr * sx, yr))
+        apex = (rng.uniform(-0.25, 0.25) * rpx * sx, rng.uniform(-0.25, 0.25) * rpx)
+        light = np.array([-0.55, -0.75])         # Licht oben-links
+        cx0 = (lon / 360.0 + 0.5) * W * SS
+        for dx in (-W * SS, 0, W * SS):
+            cx = cx0 + dx
+            if cx + rpx * sx * 1.4 < 0 or cx - rpx * sx * 1.4 > W * SS:
+                continue
+            for k in range(n):
+                p0, p1 = pts[k], pts[(k + 1) % n]
+                mid = np.array([(p0[0] + p1[0]) * 0.5, (p0[1] + p1[1]) * 0.5]) / max(rpx, 1)
+                nrm = mid / (np.linalg.norm(mid) + 1e-6)
+                b = float(np.clip(0.5 + 0.5 * np.dot(nrm, light), 0, 1)) * rng.uniform(0.6, 1.0)
+                col = base * (1 - b) + hi * b
+                tri = [(cx + apex[0], cy + apex[1]), (cx + p0[0], cy + p0[1]), (cx + p1[0], cy + p1[1])]
+                dr.polygon(tri, fill=enc(col) + (255,))
+                # Randlicht nur an lichtzugewandten Kanten
+                if np.dot(nrm, light) > 0.1:
+                    dr.line([tri[1], tri[2]], fill=enc(rim * (0.35 + 0.65 * b)) + (255,), width=max(1, int(rpx / 90)))
+                if crack is not None and rng.random() < 0.25:
+                    dr.line([tri[0], tri[1]], fill=enc(crack * rng.uniform(0.5, 1.0)) + (255,), width=max(1, int(rpx / 70)))
+    img = img.resize((W, H), Image.LANCZOS)
+    arr = np.asarray(img)
+    a = arr[..., 3]
+    # nahe Brocken sind unverkennbar: Weichzeichnung der Alpha-Kante entfaellt (Lanczos AA reicht).
+    # Straight-Alpha: Farben unter Alpha 0 nicht benutzen -> exact=True.
+    Image.fromarray(arr).save(path, "WEBP", quality=94, method=6, exact=True, alpha_quality=96)
+    mb = os.path.getsize(path) / 1e6
+    print("%s: %dx%d  %.2f MB" % (os.path.basename(path), W, H, mb), flush=True)
+    if preview:
+        os.makedirs(preview, exist_ok=True)
+        Image.fromarray(arr[300:900, 1400:2700]).save(os.path.join(preview, os.path.basename(path) + ".png"))
+    return mb
+
+SHARDS_CFG = dict(seed=402, n=130, lat0=4.0, lat1=60.0, rmin=0.8, rmax=6.0,
+                 base="#070707", hi="#2a2823", rim="#8f8266", crack=None)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--width", type=int, default=4096)
@@ -700,10 +785,17 @@ def main():
     ap.add_argument("--quality", type=int, default=95)
     ap.add_argument("--out", default=OUT_DIR)
     ap.add_argument("--preview", default="")
+    ap.add_argument("--only", default="", help="nur eine Ebene neu: shards")
     a = ap.parse_args()
+    spath = os.path.join(a.out, "eclipse_shards.webp")
+    if a.only == "shards":
+        os.makedirs(a.out, exist_ok=True)
+        build_shards(a.width, a.seed, spath, SHARDS_CFG, a.preview)
+        return
     mb, amb = build(a.width, a.seed, a.out, a.preview, a.quality)
-    if a.width >= 4096 and max(mb, amb) >= 2.5:
-        raise SystemExit("WebP zu gross (%.2f / %.2f MB >= 2.5 MB): --quality senken" % (mb, amb))
+    build_shards(a.width, a.seed, spath, SHARDS_CFG, a.preview)
+    if a.width >= 4096 and max(mb, amb) >= 6.0:
+        raise SystemExit("WebP zu gross (%.2f / %.2f MB >= 6.0 MB): --quality senken" % (mb, amb))
 
 
 if __name__ == "__main__":
