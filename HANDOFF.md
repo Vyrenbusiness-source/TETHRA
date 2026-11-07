@@ -73,3 +73,8 @@ Gemergt in main, aber NOCH NICHT im Spiel aktiv (Auswahl-Integration fehlt):
 - Danach Release (v1.8.0 "Dunkle Welten").
 - Noch nicht eingebaut (Module fertig in main): BeatQuantizer, IntensityMap, LaneLight, MilestoneBurst.
 - Bekannt wackelig: tests/run_mastering_tests.gd (sporadisch rot, beim 2. Lauf gruen).
+
+## v1.8.0 released (dunkle Welten aktiv)
+- Aktiv im Spiel: boss, aurora(Frost), eclipse, abyss, fractal, obsidian (+ galaxy ~3 %, neon manuell).
+- storm und singularity: noch ohne Assets (Generator tools/gen_theme_<n>.py laufen lassen / fertig bauen) — erscheinen automatisch, sobald shaders/theme_<n>.gdshader + assets_game/themes/<n>/*.webp existieren (WorldTheme.is_available).
+- Optional Feinschliff: eclipse/abyss/fractal/obsidian Previews nochmal pruefen (wurden beim Limit-Stopp gemergt).
