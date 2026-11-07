@@ -29,6 +29,7 @@ func _run() -> void:
 	a.playfield_2d = true
 	a.bg_dim = 0.8
 	a.bg_blur = false
+	a.note_style_2d = 1
 	a.save(path)
 	var b = SettingsScript.new()
 	b.load_settings(path)
@@ -36,6 +37,7 @@ func _run() -> void:
 	_ok(b.playfield_2d == true, "Roundtrip playfield_2d an")
 	_ok(is_equal_approx(b.bg_dim, 0.8), "Roundtrip bg_dim 0.8")
 	_ok(b.bg_blur == false, "Roundtrip bg_blur aus")
+	_ok(b.note_style_2d == 1, "Roundtrip note_style_2d Kreis")
 	# Standardwerte ohne Eintrag.
 	var c = SettingsScript.new()
 	_ok(is_equal_approx(c.lane_spacing, 1.0) and not c.playfield_2d \
@@ -44,11 +46,14 @@ func _run() -> void:
 	var cfg := ConfigFile.new()
 	cfg.set_value("game", "lane_spacing", 3.0)
 	cfg.set_value("game", "bg_dim", -2.0)
+	cfg.set_value("game", "note_style_2d", 7)
 	cfg.save(path)
 	var d = SettingsScript.new()
 	d.load_settings(path)
 	_ok(is_equal_approx(d.lane_spacing, 1.2), "lane_spacing 3.0 -> 1.2")
 	_ok(is_equal_approx(d.bg_dim, 0.0), "bg_dim -2 -> 0")
+	_ok(d.note_style_2d == 1, "note_style_2d 7 -> 1")
+	_ok(c.note_style_2d == 0, "Standard-Notenform Balken")
 	# Grenzen + 5er-Raster.
 	_ok(is_equal_approx(SettingsScript.clamp_lane_spacing(0.1), 0.7), "clamp 0.1 -> 0.7")
 	_ok(is_equal_approx(SettingsScript.clamp_lane_spacing(0.83), 0.85), "clamp 0.83 -> 0.85")

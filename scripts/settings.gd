@@ -68,6 +68,11 @@ const LANE_SPACING_STEP := 0.05
 var playfield_2d: bool = false
 var bg_dim: float = 0.3
 var bg_blur: bool = true
+## 2D-Notenform: 0 = Balken (flache Rechtecke), 1 = Kreis (runde Noten,
+## Holds mit runden Enden, Receptors als Ringe).
+var note_style_2d: int = 0
+const NOTE_STYLE_BAR := 0
+const NOTE_STYLE_CIRCLE := 1
 ## Hitsounds an/aus + Lautstaerke (0..1).
 var hitsounds: bool = true
 var hitsound_volume: float = 0.8
@@ -326,6 +331,7 @@ func load_settings(path: String = PATH) -> void:
 	playfield_2d = bool(cfg.get_value("game", "playfield_2d", false))
 	bg_dim = clamp_bg_dim(float(cfg.get_value("game", "bg_dim", 0.3)))
 	bg_blur = bool(cfg.get_value("game", "bg_blur", true))
+	note_style_2d = clampi(int(cfg.get_value("game", "note_style_2d", 0)), 0, 1)
 	hitsound_set = clampi(int(cfg.get_value("game", "hitsound_set", 0)), 0, 2)
 	hitsound_volume = clampf(float(cfg.get_value("game", "hitsound_volume", 0.8)), 0.0, 1.0)
 	fullscreen = bool(cfg.get_value("game", "fullscreen", false))
@@ -355,6 +361,7 @@ func save(path: String = PATH) -> void:
 	cfg.set_value("game", "playfield_2d", playfield_2d)
 	cfg.set_value("game", "bg_dim", bg_dim)
 	cfg.set_value("game", "bg_blur", bg_blur)
+	cfg.set_value("game", "note_style_2d", note_style_2d)
 	cfg.set_value("game", "hitsound_set", hitsound_set)
 	cfg.set_value("game", "hitsound_volume", hitsound_volume)
 	cfg.set_value("game", "fullscreen", fullscreen)

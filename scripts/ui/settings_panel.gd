@@ -30,6 +30,7 @@ var _offset_slider: HSlider
 var _vol_value: Label
 var _bg_dim_slider: HSlider
 var _bg_blur_btn: CheckButton
+var _note_style_opt: OptionButton
 
 
 func _ready() -> void:
@@ -122,6 +123,14 @@ func _ready() -> void:
 		Settings.playfield_2d = on
 		_update_2d_rows())
 	_row(cv_gameplay, "2D-Modus", mode_2d, null)
+
+	_note_style_opt = OptionButton.new()
+	_note_style_opt.add_item("Balken", Settings.NOTE_STYLE_BAR)
+	_note_style_opt.add_item("Kreis", Settings.NOTE_STYLE_CIRCLE)
+	_note_style_opt.select(Settings.note_style_2d)
+	_note_style_opt.custom_minimum_size = Vector2(0, 36)
+	_note_style_opt.item_selected.connect(func(i): Settings.note_style_2d = i)
+	_row(cv_gameplay, "2D-Notenform", _note_style_opt, null)
 
 	_bg_dim_slider = HSlider.new()
 	_bg_dim_slider.min_value = 0.0
@@ -434,6 +443,9 @@ func _update_2d_rows() -> void:
 	if _bg_dim_slider != null:
 		_bg_dim_slider.editable = on
 		_bg_dim_slider.modulate.a = 1.0 if on else 0.4
+	if _note_style_opt != null:
+		_note_style_opt.disabled = not on
+		_note_style_opt.modulate.a = 1.0 if on else 0.4
 	if _bg_blur_btn != null:
 		_bg_blur_btn.disabled = not on
 		_bg_blur_btn.modulate.a = 1.0 if on else 0.4

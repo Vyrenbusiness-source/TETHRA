@@ -23,6 +23,11 @@ var z_far := -46.0
 var key_names: PackedStringArray = []
 var lane_color := Color(0.7, 0.85, 1.0)
 var show_keys := true
+var circle := false   ## Settings.NOTE_STYLE_CIRCLE
+
+# Kreis-Stil: Texturen einmal beim Setup erzeugt, pro Frame nur gezeichnet.
+var _disc_tex: Texture2D
+var _ring_tex: Texture2D
 
 # Pro Frame gefuellt: [col, z_head, z_tail, color, state, is_hold]
 var _items: Array = []
@@ -33,7 +38,11 @@ var _font: Font
 
 
 func setup(p_columns: int, p_lane_k: float, p_z_line: float, p_z_far: float,
-		p_keys: PackedStringArray, p_lane_color: Color) -> void:
+		p_keys: PackedStringArray, p_lane_color: Color, p_style: int = 0) -> void:
+	circle = p_style == 1
+	if circle:
+		_disc_tex = _make_circle_tex(false)
+		_ring_tex = _make_circle_tex(true)
 	columns = p_columns
 	lane_k = p_lane_k
 	z_line = p_z_line
@@ -117,6 +126,9 @@ func _draw() -> void:
 		var st: int = it[4]
 		if st == STATE_DEAD:
 			c = Color(0.36, 0.37, 0.41, 0.8)
+		if circle:
+			_draw_circle_item(it, x0, w, yh, c, st)
+			continue
 		if bool(it[5]):
 			var yt := z_to_y(float(it[2]))
 			var top := minf(yh, yt)
@@ -145,8 +157,14 @@ func _draw() -> void:
 		var fc: Color = _flash_col[c] if c < _flash_col.size() else lane_color
 		var base := lane_color.lerp(fc, fl * 0.6)
 		var fill_a := 0.14 + (0.45 if on else 0.0) + fl * 0.25
-		draw_rect(r, Color(base.r, base.g, base.b, minf(fill_a, 0.85)))
-		draw_rect(r, Color(base.r, base.g, base.b, 0.9 if on else 0.55), false, 2.0)
+		if circle:
+			var d := minf(cw - pad * 2.0, cw * 0.86)
+			var rr := Rect2(x + (cw - d) * 0.5, ly - d * 0.5, d, d)
+			draw_texture_rect(_disc_tex, rr, false, Color(base.r, base.g, base.b, minf(fill_a, 0.85) * 0.6))
+			draw_texture_rect(_ring_tex, rr, false, Color(base.r, base.g, base.b, 0.95 if on else 0.6))
+		else:
+			draw_rect(r, Color(base.r, base.g, base.b, minf(fill_a, 0.85)))
+			draw_rect(r, Color(base.r, base.g, base.b, 0.9 if on else 0.55), false, 2.0)
 		if show_keys and c < key_names.size() and _font != null:
 			var fs := int(vs.y * 0.02)
 			var txt := key_names[c]
@@ -154,6 +172,53 @@ func _draw() -> void:
 			draw_string(_font, Vector2(x + (cw - tw) * 0.5, ly + nh * 0.5 + rh * 0.5 + fs * 0.35),
 					txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(1, 1, 1, 0.75 if on else 0.4))
 	draw_line(Vector2(fr.position.x, ly), Vector2(fr.end.x, ly), Color(1, 1, 1, 0.55), 2.0)
+
+
+## Kreis-Stil: runde Note; Hold = Balken mit runden Enden (Kopf-Kreis + Endkappe).
+func _draw_circle_item(it: Array, x0: float, w: float, yh: float, c: Color, st: int) -> void:
+	var vs := _vs()
+	var d := minf(w, col_width() * 0.86)
+	var cx := x0 + w * 0.5
+	if bool(it[5]):
+		var yt := z_to_y(float(it[2]))
+		var top := minf(yh, yt)
+		var bot := maxf(yh, yt)
+		if bot < -d or top > vs.y + d:
+			return
+		var bw := d * 0.7
+		var bc := c if st != STATE_HELD else c.lerp(Color(1, 1, 1), 0.25)
+		var ba := 0.55 if st != STATE_HELD else 0.75
+		draw_rect(Rect2(cx - bw * 0.5, top, bw, bot - top), Color(bc.r, bc.g, bc.b, ba))
+		# Runde Endkappe in Koerperbreite.
+		draw_texture_rect(_disc_tex, Rect2(cx - bw * 0.5, top - bw * 0.5, bw, bw), false,
+				Color(bc.r, bc.g, bc.b, minf(ba + 0.3, 1.0)))
+	elif yh < -d or yh > vs.y + d:
+		return
+	var r := Rect2(cx - d * 0.5, yh - d * 0.5, d, d)
+	draw_texture_rect(_disc_tex, r, false, c)
+	draw_texture_rect(_ring_tex, r, false, c.lerp(Color(1, 1, 1), 0.45))
+
+
+## Weiche, kantengeglaettete Kreis- bzw. Ring-Textur (weiss, per modulate gefaerbt).
+static func _make_circle_tex(ring: bool) -> Texture2D:
+	const N := 128
+	var img := Image.create(N, N, true, Image.FORMAT_RGBA8)
+	var r_out := N * 0.5 - 1.5
+	var r_in := r_out - N * 0.11
+	for y in N:
+		for x in N:
+			var dist := Vector2(x + 0.5 - N * 0.5, y + 0.5 - N * 0.5).length()
+			var a := clampf(r_out - dist + 0.5, 0.0, 1.0)
+			if ring:
+				a *= clampf(dist - r_in + 0.5, 0.0, 1.0)
+			else:
+				# Leicht dunklerer Kern, damit der Kreis nicht flach wirkt.
+				var v := lerpf(0.82, 1.0, clampf(dist / r_out, 0.0, 1.0))
+				img.set_pixel(x, y, Color(v, v, v, a))
+				continue
+			img.set_pixel(x, y, Color(1, 1, 1, a))
+	img.generate_mipmaps()
+	return ImageTexture.create_from_image(img)
 
 
 func _draw_bar(r: Rect2, c: Color) -> void:

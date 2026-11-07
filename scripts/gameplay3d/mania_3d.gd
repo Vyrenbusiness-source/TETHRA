@@ -387,6 +387,7 @@ var RAIL_X: Array[float] = RAIL_X_BASE.duplicate()
 var _2d := false
 var _bg_opacity := 0.3
 var _bg_blur_on := true
+var _note_style_2d := 0
 var _pf2d: Playfield2D
 var _missed_2d: Array = []  ## verpasste Einzelnoten fallen grau weiter: [time, col]
 
@@ -503,6 +504,7 @@ func _setup_lane_spacing() -> void:
 	_2d = Settings.playfield_2d
 	_bg_opacity = Settings.bg_dim
 	_bg_blur_on = Settings.bg_blur
+	_note_style_2d = Settings.note_style_2d
 	for a in OS.get_cmdline_args() + OS.get_cmdline_user_args():
 		if a == "--2d":
 			_2d = true
@@ -512,6 +514,8 @@ func _setup_lane_spacing() -> void:
 			_bg_opacity = Settings.clamp_bg_dim(a.trim_prefix("--bgdim=").to_float() / 100.0)
 		elif a == "--noblur":
 			_bg_blur_on = false
+		elif a.begins_with("--notes2d="):
+			_note_style_2d = Settings.NOTE_STYLE_CIRCLE if a.ends_with("circle") 					else Settings.NOTE_STYLE_BAR
 
 
 ## 2D-Modus: 3D-Welt + Kosmos ausblenden (bleiben Logik-Traeger), Map-Bild
@@ -555,7 +559,7 @@ func _build_playfield_2d() -> void:
 	var keys := PackedStringArray()
 	for i in core.columns:
 		keys.append(_short_key_name(Settings.key_lanes[i]) if i < Settings.key_lanes.size() else "")
-	_pf2d.setup(core.columns, _lane_k, Z_LINE, Z_FAR, keys, _lane_color(0))
+	_pf2d.setup(core.columns, _lane_k, Z_LINE, Z_FAR, keys, _lane_color(0), _note_style_2d)
 	pf_layer.add_child(_pf2d)
 
 
