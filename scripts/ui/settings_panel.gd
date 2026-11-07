@@ -177,6 +177,19 @@ func _ready() -> void:
 		_lane_btns.append(b)
 	_row(pg_game, "Tasten 1–4", lane_row, null).tooltip_text = "Knopf anklicken, dann Taste drücken (Esc bricht ab)"
 
+	# Sprache: wirkt sofort (Settings.set_language baut die Szene neu auf).
+	# Die Eintraege stehen immer in ihrer eigenen Sprache (nie uebersetzt).
+	_group(pg_game, "Sprache")
+	var lang := OptionButton.new()
+	lang.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	lang.add_item("English", 0)
+	lang.add_item("Deutsch", 1)
+	lang.select(1 if Settings.active_language() == "de" else 0)
+	lang.custom_minimum_size = Vector2(0, CTRL_H)
+	lang.item_selected.connect(func(i):
+		Settings.set_language("de" if i == 1 else "en"))
+	_row(pg_game, "Spielsprache", lang, null)
+
 	# ------------------------------ 2D-SPIELFELD ----------------------------
 	_group(pg_2d, "Noten")
 	var note_style := OptionButton.new()
@@ -347,7 +360,7 @@ func _ready() -> void:
 			bs.remove_theme_stylebox_override("grabber_area")
 			bs.remove_theme_stylebox_override("grabber_area_highlight")
 	var bass_row := _slider_row(pg_audio, "Bass", 0.0, 1.0, 0.05, Settings.bass_boost,
-		func(v): return "%d %%" % int(v * 100.0),
+		func(v): return _fmt_pct0(v),
 		func(v):
 			set_bass_fill.call(v)
 			Settings.bass_boost = v
@@ -373,7 +386,7 @@ func _ready() -> void:
 	_row(pg_audio, "Hitsound", hset, null)
 
 	_slider_row(pg_audio, "Treffer-Lautstärke", 0.0, 1.0, 0.05, Settings.hitsound_volume,
-		func(v): return "%d %%" % int(v * 100.0),
+		func(v): return _fmt_pct0(v),
 		func(v): Settings.hitsound_volume = v)
 
 	_group(pg_audio, "Timing")
@@ -563,7 +576,7 @@ func _group(pg: VBoxContainer, text: String) -> void:
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 5)
 	var l := Label.new()
-	l.text = text.to_upper()
+	l.text = tr(text).to_upper()
 	l.add_theme_font_override("font", UiTheme.heading_font(2))
 	l.add_theme_font_size_override("font_size", 11)
 	l.add_theme_color_override("font_color", COL_DIM)
@@ -695,7 +708,7 @@ static func _fmt_bg(v: float) -> String:
 
 ## 0.85 -> "85 %".
 static func _fmt_pct0(v: float) -> String:
-	return UiTheme.fmt_num(v * 100.0, 0) + " %"
+	return UiTheme.fmt_num(v * 100.0, 0) + (" %" if UiTheme.is_german() else "%")
 
 
 ## Modus-abhaengig: im 2D-Modus 3D-Spurbreite und Reiter "Welt" ausblenden,
@@ -712,7 +725,7 @@ func _update_2d_rows() -> void:
 
 
 static func _fmt_x(v: float) -> String:
-	return ("%.1f" % v).replace(".", ",") + "×"
+	return UiTheme.fmt_num(v, 1) + "×"
 
 
 func _refresh_labels() -> void:

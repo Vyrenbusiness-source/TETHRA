@@ -243,8 +243,8 @@ func _store_worlds_sig(sig: String) -> void:
 func _progress_title() -> String:
 	for j in _jobs:
 		if str(j["asset"]) == MAIN_ASSET:
-			return "Update v%s wird geladen…" % latest_version
-	return "Welten werden geladen (einmalig, %d MB)…" % int(round(float(_total_bytes) / 1048576.0))
+			return tr("Update v%s wird geladen…") % latest_version
+	return tr("Welten werden geladen (einmalig, %d MB)…") % int(round(float(_total_bytes) / 1048576.0))
 
 
 ## "Update vX bereit" nur bei echtem Spiel-Update, sonst "Welten bereit".
@@ -384,7 +384,7 @@ func _finish_job() -> void:
 
 func _fail_space(need: int) -> void:
 	status = "error"
-	var msg := "Zu wenig Speicherplatz: %d MB werden benötigt." % int(ceil(float(need + SPACE_MARGIN) / 1048576.0))
+	var msg := tr("Zu wenig Speicherplatz: %d MB werden benötigt.") % int(ceil(float(need + SPACE_MARGIN) / 1048576.0))
 	state_changed.emit(msg, -1.0)
 	if _toast != null:
 		_toast.show_error(msg)
@@ -471,10 +471,10 @@ func _offer_install() -> void:
 	var cs := get_tree().current_scene
 	var path: String = cs.scene_file_path if cs != null else ""
 	if is_gameplay_scene(path):
-		state_changed.emit("Update v%s bereit — wird nach dem Song angeboten." % latest_version, 1.0)
+		state_changed.emit(tr("Update v%s bereit — wird nach dem Song angeboten.") % latest_version, 1.0)
 		_toast.show_waiting(latest_version)
 		return
-	state_changed.emit("Update v%s bereit." % latest_version, 1.0)
+	state_changed.emit(tr("Update v%s bereit.") % latest_version, 1.0)
 	if not _toast.is_counting():
 		_toast.show_ready(latest_version, RESTART_COUNTDOWN, _ready_title())
 

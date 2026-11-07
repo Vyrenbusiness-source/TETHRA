@@ -268,7 +268,7 @@ func _ready() -> void:
 	_file_dialog.access = FileDialog.ACCESS_FILESYSTEM
 	_file_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
 	_file_dialog.title = "Profilbild auswählen"
-	_file_dialog.filters = ["*.png, *.jpg, *.jpeg, *.webp, *.bmp ; Bilder"]
+	_file_dialog.filters = ["*.png, *.jpg, *.jpeg, *.webp, *.bmp ; " + tr("Bilder")]
 	_file_dialog.size = Vector2(760, 520)
 	_file_dialog.file_selected.connect(func(path):
 		if Settings.set_avatar(path):
@@ -311,20 +311,14 @@ func _rank_chip(g: String, n: int) -> Control:
 	return chip
 
 
-## Tausendertrenner mit Punkt: 1234 -> "1.234".
+## Tausendertrenner nach Sprache: 1234 -> "1.234" (de) / "1,234" (en).
 func _fmt_int(v: int) -> String:
-	var s := str(absi(v))
-	var out := ""
-	for i in s.length():
-		if i > 0 and (s.length() - i) % 3 == 0:
-			out += "."
-		out += s[i]
-	return ("-" + out) if v < 0 else out
+	return UiTheme.fmt_score(v)
 
 
-## Deutsches Prozentformat: 0.8509 -> "85,09 %".
+## Prozent nach Sprache: 0.8509 -> "85,09 %" (de) / "85.09%" (en).
 func _fmt_pct(frac: float) -> String:
-	return ("%.2f" % (frac * 100.0)).replace(".", ",") + " %"
+	return UiTheme.fmt_pct(frac * 100.0)
 
 
 ## Geschaetzte Spielzeit: Plays x Kartenlaenge (Abbrueche nicht erfasst).
@@ -440,7 +434,7 @@ func _play_row(e: Dictionary, mode: String) -> Control:
 	if str(e.get("version", "")) != "":
 		sub_parts.append(_diff_name(str(e.get("version", ""))))
 	if mode == "most":
-		sub_parts.append("%s× gespielt" % _fmt_int(int(e.get("count", 0))))
+		sub_parts.append(tr("%s× gespielt") % _fmt_int(int(e.get("count", 0))))
 	var date := _fmt_date(str(e.get("date", "")))
 	if date != "":
 		sub_parts.append(date)
@@ -546,13 +540,15 @@ func _style_ghost_icon(b: Button) -> void:
 	b.focus_mode = Control.FOCUS_NONE
 
 
-## "2026-07-19T11:33:20" -> "19.07.2026"
+## "2026-07-19T11:33:20" -> "19.07.2026" (en: "2026-07-19")
 func _fmt_date(iso: String) -> String:
 	if iso == "":
 		return ""
 	var d := iso.split("T")[0].split("-")
 	if d.size() != 3:
 		return iso
+	if not UiTheme.is_german():
+		return "%s-%s-%s" % [d[0], d[1], d[2]]
 	return "%s.%s.%s" % [d[2], d[1], d[0]]
 
 

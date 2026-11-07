@@ -103,29 +103,49 @@ static func style_ghost_button(b: Button, radius: int = 12) -> void:
 	_attach_sounds(b)
 
 
-## Zahl mit Dezimalkomma: fmt_num(0.8, 2) -> "0,80".
-static func fmt_num(v: float, decimals: int = 1) -> String:
-	var d := maxi(decimals, 0)
-	return (("%." + str(d) + "f") % v).replace(".", ",")
+## Zahlenformat folgt der Sprache (TranslationServer-Locale, gesetzt von
+## Settings.apply): de = 1.234,5 / 81,00 % · en = 1,234.5 / 81.00%.
+static func is_german() -> bool:
+	return TranslationServer.get_locale().begins_with("de")
 
 
-## Score mit Tausenderpunkt, ohne fuehrende Nullen: 923412 -> "923.412".
-static func fmt_score(v: int) -> String:
-	var digits := str(absi(v))
+## Ganzzahl-Teil mit Tausendertrenner (sep), ohne Vorzeichen.
+static func _group(digits: String, sep: String) -> String:
 	var out := ""
 	for i in digits.length():
 		if i > 0 and (digits.length() - i) % 3 == 0:
-			out += "."
+			out += sep
 		out += digits[i]
+	return out
+
+
+## Zahl mit Dezimalkomma (de) bzw. -punkt (en): fmt_num(0.8, 2) -> "0,80" / "0.80".
+## Ab 1000 mit Tausendertrenner: 1234.5 -> "1.234,5" / "1,234.5".
+static func fmt_num(v: float, decimals: int = 1) -> String:
+	var d := maxi(decimals, 0)
+	var raw := ("%." + str(d) + "f") % absf(v)
+	var int_part := raw.get_slice(".", 0)
+	var frac := raw.get_slice(".", 1) if d > 0 else ""
+	var de := is_german()
+	var out := _group(int_part, "." if de else ",")
+	if d > 0:
+		out += ("," if de else ".") + frac
+	return ("-" if v < 0.0 and raw.to_float() != 0.0 else "") + out
+
+
+## Score mit Tausendertrenner, ohne fuehrende Nullen: 923412 -> "923.412" / "923,412".
+static func fmt_score(v: int) -> String:
+	var out := _group(str(absi(v)), "." if is_german() else ",")
 	return ("-" if v < 0 else "") + out
 
 
-## Prozent (Wert schon in %): 85.09 -> "85,09 %".
+## Prozent (Wert schon in %): 85.09 -> "85,09 %" / "85.09%".
 static func fmt_pct(v: float) -> String:
-	return fmt_num(v, 2) + " %"
+	return fmt_num(v, 2) + (" %" if is_german() else "%")
 
 
-## ISO-String ("2026-11-06T14:30:00") oder Unix-Zeit -> "06.11.2026 14:30".
+## ISO-String ("2026-11-06T14:30:00") oder Unix-Zeit -> "06.11.2026 14:30"
+## (en: "2026-11-06 14:30").
 ## Unix wird in Ortszeit gewandelt, ISO-Strings unveraendert gelesen.
 static func fmt_date(iso_or_unix) -> String:
 	var dt: Dictionary
@@ -142,6 +162,8 @@ static func fmt_date(iso_or_unix) -> String:
 			return "—"
 		t += int(Time.get_time_zone_from_system().get("bias", 0)) * 60
 		dt = Time.get_datetime_dict_from_unix_time(t)
+	if not is_german():
+		return "%04d-%02d-%02d %02d:%02d" % [dt.year, dt.month, dt.day, dt.get("hour", 0), dt.get("minute", 0)]
 	return "%02d.%02d.%04d %02d:%02d" % [dt.day, dt.month, dt.year, dt.get("hour", 0), dt.get("minute", 0)]
 
 
@@ -168,7 +190,7 @@ static func key_short(keycode_or_name) -> String:
 	}
 	var k := n.to_lower()
 	if map.has(k):
-		return map[k]
+		return TranslationServer.translate(map[k])
 	return n.to_upper() if n.length() == 1 else n
 
 
@@ -219,7 +241,7 @@ static func modal_header(title: String, on_close: Callable) -> Control:
 	var row := HBoxContainer.new()
 	wrap.add_child(row)
 	var l := Label.new()
-	l.text = title.to_upper()
+	l.text = TranslationServer.translate(title).to_upper()
 	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	l.add_theme_font_override("font", heading_font(3))

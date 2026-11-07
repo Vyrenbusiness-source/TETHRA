@@ -100,7 +100,7 @@ func _import(path: String) -> void:
 	Settings.skin_2d = nm
 	Settings.save()
 	refresh()
-	_status.text = "„%s“ aktiv" % nm
+	_status.text = tr("„%s“ aktiv") % nm
 	changed.emit()
 
 

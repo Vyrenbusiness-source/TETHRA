@@ -917,7 +917,9 @@ func _tour_next() -> void:
 	vb.add_child(row)
 	if str(st.get("click", "")) == "":
 		var next := Button.new()
-		next.text = "Weiter"
+		# "Weiter" heisst im Spiel (Pause) "Resume"; hier ist es "Next" -> eigener Text statt CSV-Schluessel.
+		next.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+		next.text = "Weiter" if UiTheme.is_german() else "Next"
 		next.custom_minimum_size = Vector2(110, 36)
 		UiTheme.style_button(next, true)
 		next.pressed.connect(_tour_next)
@@ -1015,7 +1017,7 @@ func _start_practice() -> void:
 func _refresh_profile() -> void:
 	_name_label.text = Settings.profile_name
 	_pp_label.text = UiTheme.fmt_pp(ScoreStore.profile_pp())
-	_plays_label.text = "%s Spiele" % UiTheme.fmt_score(ScoreStore.total_plays())
+	_plays_label.text = tr("%s Spiele") % UiTheme.fmt_score(ScoreStore.total_plays())
 	# Avatar-Kreis: eigenes Bild oder Initial.
 	for c in _card_avatar.get_children():
 		c.queue_free()

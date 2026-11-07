@@ -562,7 +562,7 @@ func _show_volume_overlay() -> void:
 		_vol_fill.color = Color(0.20, 0.85, 1.0)
 		bar_bg.add_child(_vol_fill)
 	var pct := int(round((volume_db + 30.0) / 30.0 * 100.0))
-	_vol_label.text = "Lautstaerke   %d %%" % pct
+	_vol_label.text = tr("Lautstaerke   %d %%") % pct
 	_vol_fill.size = Vector2(210.0 * float(pct) / 100.0, 6)
 	_vol_layer.visible = true
 	if _vol_tween != null and _vol_tween.is_valid():

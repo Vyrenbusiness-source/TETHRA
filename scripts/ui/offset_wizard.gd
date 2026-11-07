@@ -112,7 +112,7 @@ func _ready() -> void:
 	_intro_box = VBoxContainer.new()
 	_intro_box.add_theme_constant_override("separation", 10)
 	vb.add_child(_intro_box)
-	_intro_box.add_child(_text("Tippe bei jedem Klick die Leertaste (oder eine Hook-Taste). Nach %d Treffern schlage ich dir einen Offset vor." % HITS_NEEDED, UiTheme.DIM))
+	_intro_box.add_child(_text(tr("Tippe bei jedem Klick die Leertaste (oder eine Hook-Taste). Nach %d Treffern schlage ich dir einen Offset vor.") % HITS_NEEDED, UiTheme.DIM))
 	var modes := HBoxContainer.new()
 	modes.add_theme_constant_override("separation", 10)
 	_intro_box.add_child(modes)
@@ -235,7 +235,7 @@ func _process(delta: float) -> void:
 				_last_beat = b
 				_flash = 1.0
 			if b < LEAD_IN:
-				_status.text = "Einzähler … %d" % maxi(LEAD_IN - b, 1)
+				_status.text = tr("Einzähler … %d") % maxi(LEAD_IN - b, 1)
 			else:
 				_status.text = "%d / %d" % [_devs.size(), HITS_NEEDED]
 		elif _phase == Phase.RUN and _last_beat >= LEAD_IN:
@@ -281,8 +281,8 @@ func _show_result() -> void:
 	var clean := reject_outliers(_devs)
 	var m := median(clean)
 	_suggest = suggest_offset(_devs)
-	var dir := "zu spät" if m > 0.0 else "zu früh"
-	_result_label.text = "Du drückst im Schnitt %d ms %s.\nVorschlag: Audio-Offset %+d ms (%d von %d Tipps gewertet)" % [
+	var dir := tr("zu spät") if m > 0.0 else tr("zu früh")
+	_result_label.text = tr("Du drückst im Schnitt %d ms %s.\nVorschlag: Audio-Offset %+d ms (%d von %d Tipps gewertet)") % [
 		int(roundf(absf(m))), dir, _suggest, clean.size(), _devs.size()]
 	_run_box.visible = false
 	_result_box.visible = true
@@ -317,8 +317,8 @@ func _draw_timeline() -> void:
 	_timeline.draw_line(Vector2(0, cy), Vector2(w, cy), Color(1, 1, 1, 0.18), 2.0)
 	_timeline.draw_line(Vector2(w * 0.5, cy - 14), Vector2(w * 0.5, cy + 14), UiTheme.GOOD, 2.0)
 	var font := ThemeDB.fallback_font
-	_timeline.draw_string(font, Vector2(2, cy + 24), "früh", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, UiTheme.DIM)
-	_timeline.draw_string(font, Vector2(w - 34, cy + 24), "spät", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, UiTheme.DIM)
+	_timeline.draw_string(font, Vector2(2, cy + 24), tr("früh"), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, UiTheme.DIM)
+	_timeline.draw_string(font, Vector2(w - 34, cy + 24), tr("spät"), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, UiTheme.DIM)
 	for d in _devs:
 		var x := w * 0.5 + clampf(d / TIMELINE_RANGE, -1.0, 1.0) * w * 0.5
 		var col := UiTheme.ACCENT2 if absf(d) > OUTLIER_MS else UiTheme.ACCENT

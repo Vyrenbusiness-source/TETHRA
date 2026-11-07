@@ -957,7 +957,7 @@ func _rebuild_chips() -> void:
 	if _active_collection != "":
 		var del := Button.new()
 		del.text = "✕"
-		del.tooltip_text = "Sammlung \"%s\" löschen" % _active_collection
+		del.tooltip_text = tr("Sammlung \"%s\" löschen") % _active_collection
 		del.custom_minimum_size = Vector2(CHIPS_H, CHIPS_H)
 		del.add_theme_font_size_override("font_size", 13)
 		UiTheme.style_ghost_button(del, 15)
@@ -994,7 +994,7 @@ func _open_collection_popup() -> void:
 	panel.add_child(vb)
 
 	var title := Label.new()
-	title.text = "\"%s\" in Sammlungen" % _selected_set.title
+	title.text = tr("\"%s\" in Sammlungen") % _selected_set.title
 	title.add_theme_font_size_override("font_size", 18)
 	vb.add_child(title)
 
@@ -1080,7 +1080,7 @@ func _refresh_filter(query: String) -> void:
 		2:
 			_filtered.sort_custom(func(a, b): return a.max_stars() > b.max_stars())
 	_rebuild_cards()
-	var count_txt := "%d Maps" % _filtered.size()
+	var count_txt := tr("%d Maps") % _filtered.size()
 	if _collection_mode and _active_collection != "":
 		# Eintraege, deren .osz nicht mehr im maps-Ordner liegt, klar ausweisen.
 		var missing := 0
@@ -1091,7 +1091,7 @@ func _refresh_filter(query: String) -> void:
 			if not have.has(f):
 				missing += 1
 		if missing > 0:
-			count_txt += "  ·  %d fehlen (gelöscht?)" % missing
+			count_txt += tr("  ·  %d fehlen (gelöscht?)") % missing
 	_count_label.text = count_txt
 
 
@@ -1314,7 +1314,7 @@ func _slide_card(card: Button, hovered: bool) -> void:
 func _confirm_delete(ms: MapSet) -> void:
 	var dlg := ConfirmationDialog.new()
 	dlg.title = "Map löschen"
-	dlg.dialog_text = "\"%s — %s\" wirklich löschen?\nDie .osz-Datei wird vom Datenträger entfernt." % [ms.artist, ms.title]
+	dlg.dialog_text = tr("\"%s — %s\" wirklich löschen?\nDie .osz-Datei wird vom Datenträger entfernt.") % [ms.artist, ms.title]
 	dlg.ok_button_text = "Löschen"
 	dlg.cancel_button_text = "Abbrechen"
 	add_child(dlg)
@@ -1506,16 +1506,16 @@ func _update_info_panel() -> void:
 	_bg_wait_set = null
 	_title_label.text = _selected_set.title
 	_artist_label.text = _selected_set.artist
-	_mapper_label.text = "Map von %s" % _selected_set.creator
+	_mapper_label.text = tr("Map von %s") % _selected_set.creator
 	var is_mania := int(m.get("mode", 0)) == 3
 	var keys := int(round(float(m.get("cs", 4.0))))
 	_diff_label.text = _selected_set.version_name_at(_selected_diff).strip_edges() 		+ (("  ·  %dK" % keys) if is_mania else "")
 	_star_label.text = _stars_text(_selected_set.stars_at(_selected_diff))
-	var notes := "%d Noten" % int(m.get("notes", 0))
+	var notes := tr("%d Noten") % int(m.get("notes", 0))
 	var od := "OD " + UiTheme.fmt_num(float(m.get("od", 0.0)))
 	if is_mania:
 		# Mania: CS ist die Tastenzahl, AR gibt es nicht.
-		_stats_label.text = "%s  ·  %d Tasten  ·  %s" % [notes, keys, od]
+		_stats_label.text = tr("%s  ·  %d Tasten  ·  %s") % [notes, keys, od]
 	else:
 		_stats_label.text = "%s  ·  CS %s  ·  AR %s  ·  %s" % [notes,
 			UiTheme.fmt_num(float(m.get("cs", 0.0))), UiTheme.fmt_num(float(m.get("ar", 0.0))), od]
@@ -1734,7 +1734,7 @@ func _score_row(rank: int, e: Dictionary) -> Control:
 		main.text = "%s  ·  %s  ·  %s" % [str(e.get("player", "?")),
 			UiTheme.fmt_score(int(e.get("score", 0))),
 			UiTheme.fmt_pct(float(e.get("accuracy", 0.0)) * 100.0)]
-		main.tooltip_text = "Score von %s (Multiplayer)" % str(e.get("player", "?"))
+		main.tooltip_text = tr("Score von %s (Multiplayer)") % str(e.get("player", "?"))
 		main.mouse_filter = Control.MOUSE_FILTER_PASS
 	main.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	main.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
@@ -1750,7 +1750,12 @@ func _score_row(rank: int, e: Dictionary) -> Control:
 	var date := Label.new()
 	var d := str(e.get("date", "")).split("T")[0]
 	var parts := d.split("-")
-	date.text = "%s.%s.%s" % [parts[2], parts[1], parts[0].substr(2)] if parts.size() == 3 else ""
+	if parts.size() != 3:
+		date.text = ""
+	elif UiTheme.is_german():
+		date.text = "%s.%s.%s" % [parts[2], parts[1], parts[0].substr(2)]
+	else:
+		date.text = "%s/%s/%s" % [parts[1], parts[2], parts[0].substr(2)]
 	date.custom_minimum_size = Vector2(58, 0)
 	date.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	date.add_theme_font_size_override("font_size", 12)
@@ -1844,7 +1849,7 @@ func _update_max_pp(m: Dictionary) -> void:
 	var inner := _selected_set.osu_filename_at(_selected_diff)
 	var cached := StarService.max_pp_cached(_selected_set.osz_path, inner)
 	if cached >= 0.0:
-		_maxpp_label.text = "Max. %s bei SS" % UiTheme.fmt_pp(cached)
+		_maxpp_label.text = tr("Max. %s bei SS") % UiTheme.fmt_pp(cached)
 		return
 	if cached > -900.0:
 		_maxpp_label.text = ""
@@ -1867,7 +1872,7 @@ func _on_maxpp_done(osz: String, inner: String, v: float) -> void:
 	if _selected_set == null:
 		return
 	if _selected_set.osz_path == osz and _selected_set.osu_filename_at(_selected_diff) == inner:
-		_maxpp_label.text = ("Max. %s bei SS" % UiTheme.fmt_pp(v)) if v >= 0.0 else ""
+		_maxpp_label.text = (tr("Max. %s bei SS") % UiTheme.fmt_pp(v)) if v >= 0.0 else ""
 	else:
 		# Auswahl hat gewechselt — fuer die neue Diff nachziehen.
 		_update_max_pp(_selected_set.meta_at(_selected_diff))
