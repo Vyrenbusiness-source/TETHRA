@@ -259,6 +259,9 @@ func _bench_step(delta: float) -> void:
 ## Schuesse: je Schritt Zustand setzen, 10 Frames warten, speichern.
 ## still = Ruhe (Phase 0.9), beat = 0.02 (Downbeat), half = 0.5, drop = Spitze.
 func _shot_step() -> void:
+	if _jk >= 0:
+		_jerk_tick()
+		return
 	if _frames < 20:
 		return
 	if _wait > 0:
@@ -293,7 +296,7 @@ func _shot_step() -> void:
 			var bt: float = (_luma["beat"]["top"] - _luma["half"]["top"]) / maxf(_luma["half"]["top"], 0.0001) * 100.0
 			line += "  | drop vs still: mid %+.1f%% (max 20) top %+.1f%% (max 35)  beat vs half top %+.1f%% (min 6)" % [dm, dt, bt]
 			print(line)
-			get_tree().quit(0)
+			_jerk_start(func(b: int, p: float) -> void: _sim(float(b) + p, -1.0))
 	_step += 1
 	_wait = 10
 
@@ -326,3 +329,61 @@ func _grab(tag: String) -> void:
 		var cr := img.get_region(Rect2i(int((w - 512) * 0.0), int((h - 512) * 0.0), mini(512, w), mini(512, h)))
 		cr.save_png(_shot_dir.path_join("sing_%s_crop.png" % tag))
 	print("shot: ", path)
+
+# --- Komfort-Pruefung (docs/worlds/beat_contract.md, Komfort-Regel 5) ---
+# Nach den --shot-Aufnahmen: zwei Paare im Abstand 1/8 Beat, Licht eingefroren
+# (nur beat_step + TIME laufen). mitte = 8.4375 -> 8.5625, schlag = 8.9375 -> 9.0625.
+# Glatter Fluss: schlag/mitte ~ 1; Rasten/Stop-and-go auf dem Schlag gaebe >> 1.
+const JK_NAME := "singularity"
+const JK_BEATS: Array[float] = [8.4375, 8.5625, 8.9375, 9.0625]
+var _jk := -1
+var _jk_f := 0
+var _jk_set: Callable
+var _jk_img: Array[Image] = []
+
+func _jerk_start(set_fn: Callable) -> void:
+	_jk_set = set_fn
+	_jk = 0
+	_jk_f = 0
+	_cam.rotation_degrees = Vector3(-16, 0, 0)
+	_cam.fov = 62.0
+
+func _jerk_tick() -> void:
+	_jk_f += 1
+	if _jk_f % 14 != 0:
+		return
+	if _jk > 0:
+		var img := get_viewport().get_texture().get_image()
+		_jk_img.append(img)
+		DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path("user://comfort_shots"))
+		var path := ProjectSettings.globalize_path("user://comfort_shots/%s_j%d.png" % [JK_NAME, _jk - 1])
+		img.save_png(path)
+		print("shot: ", path)
+	if _jk >= JK_BEATS.size():
+		var mid := _jk_diff(_jk_img[0], _jk_img[1])
+		var hit := _jk_diff(_jk_img[2], _jk_img[3])
+		print("[jerk] %s 1/8 Beat: mitte=%.5f schlag=%.5f ratio=%.2f (glatt <= 1.6)" % [JK_NAME, mid, hit, hit / maxf(mid, 1e-6)])
+		get_tree().quit(0)
+		return
+	var b: float = JK_BEATS[_jk]
+	var bi := int(floor(b))
+	_jk_set.call(bi, b - float(bi))
+	# Licht einfrieren: nur die Bewegung vergleichen.
+	_mat.set_shader_parameter("beat_pulse", 0.3)
+	_mat.set_shader_parameter("downbeat_pulse", 0.0)
+	_mat.set_shader_parameter("beat_phase", 0.5)
+	_mat.set_shader_parameter("bar_phase", 0.5)
+	_jk += 1
+
+func _jk_diff(a: Image, b: Image) -> float:
+	var ia := a.duplicate() as Image
+	var ib := b.duplicate() as Image
+	ia.resize(320, 180)
+	ib.resize(320, 180)
+	var s := 0.0
+	for y in range(180):
+		for x in range(320):
+			var ca := ia.get_pixel(x, y)
+			var cb := ib.get_pixel(x, y)
+			s += absf(ca.r - cb.r) + absf(ca.g - cb.g) + absf(ca.b - cb.b)
+	return s / (320.0 * 180.0 * 3.0)
