@@ -382,12 +382,20 @@ var _song_len_ms := 1.0
 var _lane_k := 1.0
 var _note_k := 1.0
 var RAIL_X: Array[float] = RAIL_X_BASE.duplicate()
+# 2D-Modus (Settings.playfield_2d, CLI --2d/--3d): 3D-Welt bleibt als Logik-
+# Traeger bestehen, ist aber unsichtbar; Playfield2D zeichnet die Spalten.
+var _2d := false
+var _bg_opacity := 0.3
+var _bg_blur_on := true
+var _pf2d: Playfield2D
+var _missed_2d: Array = []  ## verpasste Einzelnoten fallen grau weiter: [time, col]
 
 
 func _ready() -> void:
 	_setup_lane_spacing()
 	# Erzwungene Welt: Texturen sofort im Hintergrund laden (kein Hitch spaeter).
-	WorldTheme.prefetch(_forced_theme())
+	if not _2d:
+		WorldTheme.prefetch(_forced_theme())
 	if not _load_beatmap():
 		get_tree().change_scene_to_file.call_deferred("res://scenes/song_select.tscn")
 		return
@@ -412,10 +420,13 @@ func _ready() -> void:
 	_note_shader = load("res://shaders/note_disc.gdshader")
 	_extract_theme_color()
 	_choose_world_theme()
-	WorldTheme.prefetch(_world_theme)
+	if not _2d:
+		WorldTheme.prefetch(_world_theme)
 	_precompute_snap_colors()
 	_preload_stations()
 	_build_world()
+	if _2d:
+		_build_playfield_2d()
 	_sparks = HitSparks.new()
 	_world.add_child(_sparks)
 	_sparks.setup(RAIL_X, Z_LINE, ROAD_Y, _theme_col)
@@ -423,7 +434,8 @@ func _ready() -> void:
 	_world.add_child(_skill_fx)
 	_skill_fx.setup(RAIL_X, Z_LINE, Z_FAR, ROAD_Y, _theme_col, _theme_kiai)
 	_build_hud()
-	_build_screen_fx()
+	if not _2d:
+		_build_screen_fx()
 	# Kapitel-Punkte unten entfernt (QA: unklar, doppelt zum Song-Fortschritt).
 	_build_flight_plan()
 	_build_galaxy_chapters()
@@ -488,6 +500,89 @@ func _setup_lane_spacing() -> void:
 	RAIL_X.clear()
 	for x in RAIL_X_BASE:
 		RAIL_X.append(x * _lane_k)
+	_2d = Settings.playfield_2d
+	_bg_opacity = Settings.bg_dim
+	_bg_blur_on = Settings.bg_blur
+	for a in OS.get_cmdline_args() + OS.get_cmdline_user_args():
+		if a == "--2d":
+			_2d = true
+		elif a == "--3d":
+			_2d = false
+		elif a.begins_with("--bgdim="):
+			_bg_opacity = Settings.clamp_bg_dim(a.trim_prefix("--bgdim=").to_float() / 100.0)
+		elif a == "--noblur":
+			_bg_blur_on = false
+
+
+## 2D-Modus: 3D-Welt + Kosmos ausblenden (bleiben Logik-Traeger), Map-Bild
+## als geblurrter Vollbild-Hintergrund, darueber die 2D-Spalten.
+func _build_playfield_2d() -> void:
+	_world.visible = false
+	if _cosmos != null:
+		_cosmos.visible = false
+	var bg_layer := CanvasLayer.new()
+	bg_layer.layer = -1
+	add_child(bg_layer)
+	var bg := ColorRect.new()
+	bg.color = Color(0, 0, 0)
+	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	bg_layer.add_child(bg)
+	var tex := _bg_tex
+	if tex == null and GameSession.has_selection():
+		tex = OszImporter.load_background_texture(GameSession.osz_path, _beatmap)
+	var img: Image = tex.get_image() if tex != null else null
+	if img != null and not img.is_empty():
+		img = img.duplicate() as Image
+		if img.is_compressed():
+			img.decompress()
+		img.convert(Image.FORMAT_RGBA8)
+		# Klein genug fuer billige Mips, gross genug fuer "nur leicht" weich.
+		if img.get_width() > 1280:
+			img.resize(1280, int(1280.0 * img.get_height() / img.get_width()), Image.INTERPOLATE_BILINEAR)
+		img.generate_mipmaps()
+		var mat := ShaderMaterial.new()
+		mat.shader = load("res://shaders/bg_blur.gdshader")
+		mat.set_shader_parameter("bg_tex", ImageTexture.create_from_image(img))
+		mat.set_shader_parameter("tex_size", Vector2(img.get_width(), img.get_height()))
+		mat.set_shader_parameter("opacity", _bg_opacity)
+		mat.set_shader_parameter("blur_lod", 2.6 if _bg_blur_on else 0.0)
+		bg.material = mat
+	var pf_layer := CanvasLayer.new()
+	pf_layer.layer = 0
+	add_child(pf_layer)
+	_pf2d = Playfield2D.new()
+	var keys := PackedStringArray()
+	for i in core.columns:
+		keys.append(_short_key_name(Settings.key_lanes[i]) if i < Settings.key_lanes.size() else "")
+	_pf2d.setup(core.columns, _lane_k, Z_LINE, Z_FAR, keys, _lane_color(0))
+	pf_layer.add_child(_pf2d)
+
+
+## 2D-Modus: Notenstand dieses Frames an Playfield2D (gleiche _note_z-Rechnung).
+func _update_playfield_2d(t: float) -> void:
+	_pf2d.begin_frame()
+	for index in _notes:
+		var obj := _beatmap.hit_objects[index] as ManiaNote
+		var entry: Dictionary = _notes[index]
+		var c: Color = entry.get("col", Color(1, 1, 1))
+		var held := core.active_hold(obj.column) == index
+		var zh: float = (entry.root as Node3D).position.z
+		if obj.is_hold:
+			_pf2d.add_hold(obj.column, zh, _note_z(obj.end_time(), t), c,
+					Playfield2D.STATE_HELD if held else Playfield2D.STATE_NORMAL)
+		else:
+			_pf2d.add_note(obj.column, zh, c)
+	for rb in _released_beams:
+		_pf2d.add_hold(int(rb.col), _note_z(float(rb.head), t), _note_z(float(rb.end), t),
+				CLEAN_HOLD, Playfield2D.STATE_DEAD)
+	for mi in range(_missed_2d.size() - 1, -1, -1):
+		var z := _note_z(float(_missed_2d[mi][0]), t)
+		if z > Z_LINE + 12.0:
+			_missed_2d.remove_at(mi)
+			continue
+		_pf2d.add_note(int(_missed_2d[mi][1]), z, Color.GRAY, Playfield2D.STATE_DEAD)
+	_pf2d.set_lanes(_lane_held, _pad_flash, _pad_judge_col)
 
 
 func _load_beatmap() -> bool:
@@ -679,7 +774,11 @@ func _build_world() -> void:
 	env.glow_bloom = 0.055
 	env.glow_hdr_threshold = 0.92
 	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_ADDITIVE
-	_build_sky(env)
+	if _2d:
+		# 2D: kein Himmel, kein Bloom -> 3D-Pass rendert praktisch nichts.
+		env.glow_enabled = false
+	else:
+		_build_sky(env)
 	we.environment = env
 	add_child(we)
 
@@ -1469,7 +1568,7 @@ func _on_note_spawned(index: int) -> void:
 	root.add_child(trail)
 
 	_notes[index] = { "root": root, "glow": gm, "rim": rim, "beam": beam,
-		"on_beat": _is_on_beat(obj.time) }
+		"on_beat": _is_on_beat(obj.time), "col": col }
 
 
 func _on_note_judged(index: int, result: Dictionary) -> void:
@@ -1534,6 +1633,8 @@ func _on_note_judged(index: int, result: Dictionary) -> void:
 			# Rot gibt es nur auf dem Pad bzw. der HP-Leiste).
 			miss_mat.set_shader_parameter("rim_color", Color(0.42, 0.43, 0.47))
 			miss_mat.set_shader_parameter("base_color", Color(0.16, 0.16, 0.19))
+			if _2d and not (_beatmap.hit_objects[index] as ManiaNote).is_hold:
+				_missed_2d.append([_beatmap.hit_objects[index].time, col])
 			var tw := create_tween()
 			tw.tween_property(node, "position:z", SHIP_Z + 6.0, 0.35)
 			tw.parallel().tween_property(node, "scale", Vector3.ONE * 0.3, 0.35)
@@ -1925,6 +2026,8 @@ func _process(delta: float) -> void:
 			_released_beams.remove_at(ri)
 			continue
 		rbeam.set_span(_note_z(float(rb.head), t), z_end, RAIL_X[int(rb.col)], ROAD_Y + 0.28)
+	if _pf2d != null:
+		_update_playfield_2d(t)
 
 	for c in core.columns:
 		_pad_flash[c] = move_toward(_pad_flash[c], 0.0, delta * 5.0)
@@ -2217,7 +2320,7 @@ func _process(delta: float) -> void:
 	# Kurze Streifen auf dem Schlag (radial, minimal), Hyperspace laenger.
 	var warp_stretch := 1.0 if _comfort else 			1.0 + maxf(_surge, 0.0) * 0.8 + _warp_level * 4.0 * fx
 	var cy := _cam_pos.y + _cosmos_lift
-	for i in _star_seeds.size():
+	for i in (0 if _2d else _star_seeds.size()):
 		var seed := _star_seeds[i]
 		var z := fmod(seed.z + _star_scroll, 60.0) - 52.0
 		# Mitte hinter der Strecke bleibt dunkel: Sterne nahe dem
@@ -2538,7 +2641,7 @@ func _beat_ceil(time_ms: float) -> float:
 ## die Linie genau auf einem spaeteren Schlag.
 func _spawn_kiai_sweep() -> void:
 	var fx := _fx_level()
-	if fx <= 0.0 or _glow_shader == null:
+	if fx <= 0.0 or _glow_shader == null or _2d:
 		return
 	var sw := MeshInstance3D.new()
 	var q := QuadMesh.new()
@@ -2634,6 +2737,8 @@ func _spawn_shooting_star(seed_i: int) -> void:
 ## Downbeat-Welle: dezentes Lichtband, das im Noten-Tempo (preempt) vom
 ## Horizont zur Hit-Linie rollt — Beat als raeumliche Bewegung.
 func _spawn_beat_wave() -> void:
+	if _2d:
+		return
 	var wave := MeshInstance3D.new()
 	var wq := QuadMesh.new()
 	wq.size = Vector2(WAVE_W_BASE * _lane_k, 1.2)
@@ -3270,7 +3375,7 @@ func _place_hud_to_line() -> void:
 	if _camera == null or _judge_disp == null:
 		return
 	var vs := get_viewport().get_visible_rect().size
-	var line_y := _camera.unproject_position(Vector3(0.0, ROAD_Y, Z_LINE)).y
+	var line_y := _pf2d.line_y() if _pf2d != null 			else _camera.unproject_position(Vector3(0.0, ROAD_Y, Z_LINE)).y
 	if line_y <= 0.0 or line_y >= vs.y:
 		line_y = vs.y * 0.84
 	# Judge + FRUEH/SPAET ueber den Pads (Pad-Oberkante ~8,5 % Bildhoehe ueber der Linie).
