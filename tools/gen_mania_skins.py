@@ -129,6 +129,17 @@ def circle_note(outer, inner, size=W):
     return finish(im, size, size)
 
 
+def body_cap(col, inset, alpha):
+    """Runde Kappe oben, unten buendig mit dem Hold-Koerper (Breite W - 2*inset)."""
+    bw = W - 2 * inset
+    h = bw // 2
+    t = canvas(W, h)
+    td = ImageDraw.Draw(t)
+    td.ellipse((inset * SS, 0, (W - inset) * SS, bw * SS), fill=rgba(col, alpha))
+    t = t.filter(ImageFilter.GaussianBlur(1.5 * SS))
+    return finish(t, W, h)
+
+
 def skin_kreise():
     pal = {1: ((126, 196, 214), (34, 62, 82)), 2: ((196, 150, 214), (60, 40, 84))}
     imgs = {}
@@ -141,7 +152,9 @@ def skin_kreise():
         bd.rectangle((52 * SS, 0, (W - 52) * SS, 16 * SS), fill=rgba(mix(outer, inner, 0.45), 200))
         b = b.filter(ImageFilter.GaussianBlur(1.5 * SS))
         imgs["mania-note%dL" % k] = finish(b, W, 16)
-        imgs["mania-note%dT" % k] = circle_note(outer, inner)
+        # Ende des Holds: abgerundete Kappe in Koerperbreite/-farbe, KEIN Kreis
+        # (Nutzer: Ball am Slider-Ende stoert).
+        imgs["mania-note%dT" % k] = body_cap(mix(outer, inner, 0.45), 52, 200)
         for pressed in (False, True):
             ky = canvas(W, W)
             kd = ImageDraw.Draw(ky)

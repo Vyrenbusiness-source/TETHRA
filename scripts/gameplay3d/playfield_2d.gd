@@ -224,9 +224,11 @@ func _draw_circle_item(it: Array, x0: float, w: float, yh: float, c: Color, st: 
 		var bc := c if st != STATE_HELD else c.lerp(Color(1, 1, 1), 0.25)
 		var ba := 0.55 if st != STATE_HELD else 0.75
 		draw_rect(Rect2(cx - bw * 0.5, top, bw, bot - top), Color(bc.r, bc.g, bc.b, ba))
-		# Runde Endkappe in Koerperbreite.
-		draw_texture_rect(_disc_tex, Rect2(cx - bw * 0.5, top - bw * 0.5, bw, bw), false,
-				Color(bc.r, bc.g, bc.b, minf(ba + 0.3, 1.0)))
+		# Runde Endkappe in Koerperbreite: nur die obere Kreishaelfte, gleiche Farbe/Deckkraft
+		# wie der Koerper (kein heller Ball am Ende).
+		var ts := Vector2(_disc_tex.get_size())
+		draw_texture_rect_region(_disc_tex, Rect2(cx - bw * 0.5, top - bw * 0.5, bw, bw * 0.5),
+				Rect2(0, 0, ts.x, ts.y * 0.5), Color(bc.r, bc.g, bc.b, ba))
 	elif yh < -d or yh > vs.y + d:
 		return
 	var r := Rect2(cx - d * 0.5, yh - d * 0.5, d, d)
