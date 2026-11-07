@@ -132,7 +132,11 @@ uniform vec3 glow_color : source_color = vec3(0.62, 0.60, 0.74);
 
 // Mip-Stufe aus der Pixelgroesse (Bogen je Pixel / Bogen je Texel): scharf bei
 // 1:1, ruhig beim Verkleinern. Wird je Pixel in sky() gesetzt.
-float g_lod = 0.0;
+
+#define sample_far(uv) sample_far_l(uv, g_lod)
+#define sample_mid(uv) sample_mid_l(uv, g_lod)
+#define sample_rain(uv) sample_rain_l(uv, g_lod)
+#define sample_debris(uv) sample_debris_l(uv, g_lod)
 
 const int WARP_TAPS = 3;
 const float TAU_ = 6.28318530718;
@@ -158,7 +162,7 @@ vec3 dec(vec3 c) {
 	return c * c;
 }
 
-vec3 sample_far(vec2 uv) {
+vec3 sample_far_l(vec2 uv, float g_lod) {
 	if (palette_mix <= 0.001) {
 		return dec(textureLod(tex_a, uv, g_lod).rgb);
 	}
@@ -169,7 +173,7 @@ vec3 sample_far(vec2 uv) {
 }
 
 // Nahe Ebenen: rgb vormultipliziert (wurzel-kodiert), a = Deckung (linear).
-vec4 sample_mid(vec2 uv) {
+vec4 sample_mid_l(vec2 uv, float g_lod) {
 	vec4 a = textureLod(clouds_a, uv, g_lod);
 	if (palette_mix <= 0.001) {
 		return vec4(dec(a.rgb), a.a);
@@ -181,7 +185,7 @@ vec4 sample_mid(vec2 uv) {
 	return mix(vec4(dec(a.rgb), a.a), vec4(dec(b.rgb), b.a), palette_mix);
 }
 
-vec4 sample_rain(vec2 uv) {
+vec4 sample_rain_l(vec2 uv, float g_lod) {
 	vec4 a = textureLod(rain_a, uv, g_lod);
 	if (palette_mix <= 0.001) {
 		return vec4(dec(a.rgb), a.a);
@@ -193,7 +197,7 @@ vec4 sample_rain(vec2 uv) {
 	return mix(vec4(dec(a.rgb), a.a), vec4(dec(b.rgb), b.a), palette_mix);
 }
 
-vec4 sample_debris(vec2 uv) {
+vec4 sample_debris_l(vec2 uv, float g_lod) {
 	vec4 a = textureLod(debris_a, uv, g_lod);
 	if (palette_mix <= 0.001) {
 		return vec4(dec(a.rgb), a.a);
@@ -218,7 +222,7 @@ vec3 funnel_dir(vec3 e, vec3 rr, vec3 uu, float r, float th) {
 
 void sky() {
 	vec3 dir = normalize(EYEDIR);
-	g_lod = clamp(log2(max(length(fwidth(dir)), 1e-6) * float(textureSize(tex_a, 0).x) / 6.28318530718), 0.0, 6.0);
+	float g_lod = clamp(log2(max(length(fwidth(dir)), 1e-6) * float(textureSize(tex_a, 0).x) / 6.28318530718), 0.0, 6.0);
 	float la = radians(eye_lat), lo = radians(eye_lon);
 	vec3 e = vec3(cos(la) * sin(lo), sin(la), -cos(la) * cos(lo));
 	vec3 rr = normalize(cross(vec3(0.0, 1.0, 0.0), -e));

@@ -226,6 +226,8 @@ func _sim(beats: float, since: float) -> void:
 func _process(delta: float) -> void:
 	_t += delta
 	_frames += 1
+	if _frames % 10 == 0 or _frames < 4:
+		print("DBG f=", _frames, " ms=", Time.get_ticks_msec())
 	if _bench:
 		_bench_step(delta)
 	if _shot:

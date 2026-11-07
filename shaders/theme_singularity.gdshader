@@ -119,7 +119,7 @@ uniform float wave_amp = 0.055;       // Linsenwelle: Auslenkung (relativ zum Wi
 
 // Mip-Stufe aus der Pixelgroesse (Bogen je Pixel / Bogen je Texel): scharf bei
 // 1:1, ruhig beim Verkleinern. Wird je Pixel in sky() gesetzt.
-float g_lod = 0.0;
+#define samp(a, b, uv) samp_l(a, b, uv, g_lod)
 
 const int WARP_TAPS = 3;
 const float TAU_ = 6.28318530718;
@@ -145,7 +145,7 @@ vec3 dec(vec3 c) {
 	return c * c;
 }
 
-vec3 samp(sampler2D a, sampler2D b, vec2 uv) {
+vec3 samp_l(sampler2D a, sampler2D b, vec2 uv, float g_lod) {
 	if (palette_mix <= 0.001) {
 		return dec(textureLod(a, uv, g_lod).rgb);
 	}
@@ -183,7 +183,7 @@ vec3 spiral_dir(vec3 d, vec3 h, vec3 ex, vec3 ey, float ang, float sc) {
 
 void sky() {
 	vec3 dir = normalize(EYEDIR);
-	g_lod = clamp(log2(max(length(fwidth(dir)), 1e-6) * float(textureSize(tex_a, 0).x) / 6.28318530718), 0.0, 6.0);
+	float g_lod = clamp(log2(max(length(fwidth(dir)), 1e-6) * float(textureSize(tex_a, 0).x) / 6.28318530718), 0.0, 6.0);
 	vec3 d0 = dir * euler(pano_rotation);
 
 	if (AT_CUBEMAP_PASS) {
