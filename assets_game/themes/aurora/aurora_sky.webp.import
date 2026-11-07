@@ -2,8 +2,8 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cxjmjb1gk2a51"
-path.bptc="res://.godot/imported/aurora.webp-fe42cd11c541424067b710b917d2ed3b.bptc.ctex"
+uid="uid://c7y58dk7xjs2m"
+path.bptc="res://.godot/imported/aurora_sky.webp-5078f68b35fc16eeea6c4f807af5d95c.bptc.ctex"
 metadata={
 "imported_formats": ["s3tc_bptc"],
 "vram_texture": true
@@ -11,8 +11,8 @@ metadata={
 
 [deps]
 
-source_file="res://assets_game/themes/aurora/aurora.webp"
-dest_files=["res://.godot/imported/aurora.webp-fe42cd11c541424067b710b917d2ed3b.bptc.ctex"]
+source_file="res://assets_game/themes/aurora/aurora_sky.webp"
+dest_files=["res://.godot/imported/aurora_sky.webp-5078f68b35fc16eeea6c4f807af5d95c.bptc.ctex"]
 
 [params]
 
