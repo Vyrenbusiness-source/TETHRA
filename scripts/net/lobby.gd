@@ -80,16 +80,16 @@ func _ready() -> void:
 	multiplayer.connected_to_server.connect(_on_connected_to_server)
 	multiplayer.connection_failed.connect(func():
 		_reset()
-		left.emit("Verbindung fehlgeschlagen — Code richtig? Host online?"))
+		left.emit(tr("Verbindung fehlgeschlagen — Code richtig? Host online?")))
 	multiplayer.server_disconnected.connect(func():
 		_reset()
-		left.emit("Der Host hat den Raum geschlossen."))
+		left.emit(tr("Der Host hat den Raum geschlossen.")))
 
 
 ## Gleiche Namen unterscheidbar machen: "Anna", "Anna (2)", "Anna (3)".
 func _unique_name(base: String, id: int) -> String:
 	if base == "":
-		base = "Spieler"
+		base = tr("Spieler")
 	var taken := {}
 	for pid in players:
 		if pid != id:
@@ -114,14 +114,14 @@ func _new_player(pname: String) -> Dictionary:
 func host_room(rname: String = "", pw: String = "") -> bool:
 	var peer := ENetMultiplayerPeer.new()
 	if peer.create_server(GAME_PORT, 7) != OK:
-		status.emit("Port %d belegt — laeuft schon ein Raum?" % GAME_PORT)
+		status.emit(tr("Port %d belegt — laeuft schon ein Raum?") % GAME_PORT)
 		return false
 	multiplayer.multiplayer_peer = peer
 	is_host = true
 	active = true
 	room_name = rname.strip_edges().substr(0, 28)
 	if room_name == "":
-		room_name = "%s's Raum" % Settings.profile_name
+		room_name = tr("%s's Raum") % Settings.profile_name
 	password = pw.strip_edges()
 	_announce_t = 0.0
 	crown_id = 1
@@ -134,7 +134,7 @@ func host_room(rname: String = "", pw: String = "") -> bool:
 	_bcast = PacketPeerUDP.new()
 	_bcast.set_broadcast_enabled(true)
 	# UPnP im Thread — Router-Discovery darf die UI nicht blockieren.
-	status.emit("Oeffne Port am Router (UPnP)…")
+	status.emit(tr("Oeffne Port am Router (UPnP)…"))
 	_upnp_thread = Thread.new()
 	_upnp_thread.start(_setup_upnp)
 	players_changed.emit()
@@ -162,12 +162,12 @@ func _upnp_done(ip: String) -> void:
 		return
 	if ip != "":
 		room_code = _encode_code(ip, GAME_PORT)
-		status.emit("Raum offen! Code zum Teilen: %s" % room_code)
+		status.emit(tr("Raum offen! Code zum Teilen: %s") % room_code)
 		players_changed.emit()
 	else:
 		# Fallback: externe IP per HTTPS — der Code funktioniert dann,
 		# wenn UPnP still war oder der Port bereits freigegeben ist.
-		status.emit("UPnP still — ermittle externe IP…")
+		status.emit(tr("UPnP still — ermittle externe IP…"))
 		_fetch_external_ip()
 
 
@@ -183,13 +183,13 @@ func _fetch_external_ip() -> void:
 			var ip: String = body.get_string_from_utf8().strip_edges()
 			if ip.split(".").size() == 4:
 				room_code = _encode_code(ip, GAME_PORT)
-				status.emit("Raum-Code: %s  (falls Beitritt scheitert: Port %d im Router freigeben)" % [room_code, GAME_PORT])
+				status.emit(tr("Raum-Code: %s  (falls Beitritt scheitert: Port %d im Router freigeben)") % [room_code, GAME_PORT])
 				players_changed.emit()
 				return
-		status.emit("Keine externe IP ermittelbar — Raum nur im eigenen Netzwerk sichtbar."))
+		status.emit(tr("Keine externe IP ermittelbar — Raum nur im eigenen Netzwerk sichtbar.")))
 	if req.request("https://api.ipify.org") != OK:
 		req.queue_free()
-		status.emit("Keine externe IP ermittelbar — Raum nur im eigenen Netzwerk sichtbar.")
+		status.emit(tr("Keine externe IP ermittelbar — Raum nur im eigenen Netzwerk sichtbar."))
 
 
 # ---------------------------------------------------------------------------
@@ -199,7 +199,7 @@ func _fetch_external_ip() -> void:
 func join_code(code: String, pw: String = "") -> bool:
 	var dec := _decode_code(code)
 	if dec.is_empty():
-		status.emit("Ungueltiger Raum-Code.")
+		status.emit(tr("Ungueltiger Raum-Code."))
 		return false
 	_join_pw = pw.strip_edges()
 	return _join(dec.ip, dec.port)
@@ -212,12 +212,12 @@ func join_lan(ip: String) -> bool:
 func _join(ip: String, port: int) -> bool:
 	var peer := ENetMultiplayerPeer.new()
 	if peer.create_client(ip, port) != OK:
-		status.emit("Verbindung nicht moeglich.")
+		status.emit(tr("Verbindung nicht moeglich."))
 		return false
 	multiplayer.multiplayer_peer = peer
 	is_host = false
 	active = true
-	status.emit("Verbinde…")
+	status.emit(tr("Verbinde…"))
 	return true
 
 
@@ -314,7 +314,7 @@ func _process(delta: float) -> void:
 			var ip := _listen.get_packet_ip()
 			var data: Variant = JSON.parse_string(pkt.get_string_from_utf8())
 			if data is Dictionary and int(data.get("tethra", 0)) == 1:
-				lan_rooms[ip] = { "name": str(data.get("name", "Raum")),
+				lan_rooms[ip] = { "name": str(data.get("name", tr("Raum"))),
 					"players": int(data.get("players", 1)),
 					"t": Time.get_ticks_msec() }
 				changed = true
@@ -383,7 +383,7 @@ func fetch_online_rooms() -> void:
 				var t := float(ev.get("time", 0))
 				if t >= float(newest.get(str(d.c), 0.0)):
 					newest[str(d.c)] = t
-					found[str(d.c)] = { "name": str(d.get("n", "Raum")),
+					found[str(d.c)] = { "name": str(d.get("n", tr("Raum"))),
 						"players": int(d.get("p", 1)), "t": t }
 		# Eigenen (gerade verlassenen) Raum nicht listen.
 		if room_code != "":
@@ -456,7 +456,7 @@ func srv_register(pname: String, pw: String = "") -> void:
 @rpc("authority", "call_remote", "reliable")
 func cl_kicked(reason: String) -> void:
 	_reset()
-	left.emit(reason)
+	left.emit(tr(reason))
 
 
 @rpc("any_peer", "call_remote", "reliable")
@@ -657,7 +657,7 @@ func cl_start() -> void:
 	spectating = mm.kind == MatchMode.Kind.ROYALE and mm.is_spectator(multiplayer.get_unique_id())
 	var path := resolve_local_path()
 	if path == "" and not spectating:
-		status.emit("Map fehlt lokal — Start nicht moeglich.")
+		status.emit(tr("Map fehlt lokal — Start nicht moeglich."))
 		return
 	in_game = true
 	skip_votes = {}
@@ -680,7 +680,7 @@ func cl_start() -> void:
 		return
 	if not _load_selection(path):
 		in_game = false
-		status.emit("Map konnte nicht geladen werden.")
+		status.emit(tr("Map konnte nicht geladen werden."))
 		return
 	game_start.emit()
 	get_tree().change_scene_to_file("res://scenes/mania_3d.tscn")
@@ -1008,7 +1008,7 @@ func cl_tournament(d: Dictionary) -> void:
 
 @rpc("authority", "call_remote", "reliable")
 func cl_tour_msg(msg: String) -> void:
-	status.emit(msg)
+	status.emit(tr(msg))
 
 
 ## Sicht auf das Turnier fuer die UI: auch der Host sieht fremde Bans erst nach Aufdecken.
@@ -1061,7 +1061,7 @@ func tour_start_bans() -> void:
 	if not _tour_host_ok() or tournament == null:
 		return
 	if not (tournament.is_pool_full() or tournament.autofill_done):
-		status.emit("Pool ist noch nicht voll.")
+		status.emit(tr("Pool ist noch nicht voll."))
 		return
 	_tour_refresh()
 	if not tournament.start_bans():
@@ -1077,7 +1077,7 @@ func tour_begin() -> void:
 		return
 	_tour_refresh()
 	if not tournament.all_banned(tournament.player_ids):
-		status.emit("Es haben noch nicht alle gebannt.")
+		status.emit(tr("Es haben noch nicht alle gebannt."))
 		return
 	_tour_next_round()
 
@@ -1162,9 +1162,9 @@ func srv_tour_ban(i: int) -> void:
 
 func _tour_guard(sender: int) -> String:
 	if not is_host or not active or tournament == null:
-		return "Kein Turnier."
+		return tr("Kein Turnier.")
 	if not players.has(sender):
-		return "Unbekannter Spieler."
+		return tr("Unbekannter Spieler.")
 	return ""
 
 
@@ -1182,7 +1182,7 @@ func _srv_tour_add(sender: int, data: Dictionary) -> String:
 func _srv_tour_remove(sender: int, i: int) -> String:
 	var err := _tour_guard(sender)
 	if err == "" and not tournament.remove_map(i, sender):
-		err = "Entfernen nicht erlaubt."
+		err = tr("Entfernen nicht erlaubt.")
 	_tour_reply(sender, err)
 	if err == "":
 		_tour_sync()
@@ -1236,7 +1236,7 @@ func room_kind() -> int:
 
 
 static func mode_name(kind: int) -> String:
-	return ["Frei", "Teams", "Battle Royale"][clampi(kind, 0, 2)]
+	return TranslationServer.translate(["Frei", "Teams", "Battle Royale"][clampi(kind, 0, 2)])
 
 
 ## Warum gerade nicht gestartet werden kann ("" = alles in Ordnung).
@@ -1244,9 +1244,9 @@ func mode_blocker() -> String:
 	if mm.kind == MatchMode.Kind.TEAMS:
 		var sz := mm.team_sizes()
 		if sz[0] == 0 or sz[1] == 0:
-			return "Beide Teams brauchen mindestens einen Spieler."
+			return tr("Beide Teams brauchen mindestens einen Spieler.")
 	elif mm.kind == MatchMode.Kind.ROYALE and players.size() < 2:
-		return "Battle Royale braucht mindestens 2 Spieler."
+		return tr("Battle Royale braucht mindestens 2 Spieler.")
 	return ""
 
 

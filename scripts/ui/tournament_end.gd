@@ -110,7 +110,7 @@ func save_png(path: String = "") -> String:
 		return ""
 	_saved_path = path
 	if _info != null:
-		_info.text = "Gespeichert: " + path
+		_info.text = tr("Gespeichert: %s") % path
 		_open_btn.visible = true
 	return path
 
@@ -154,8 +154,8 @@ func _build_canvas() -> Control:
 	var hi := float(t.config.get("stars_hi", 99.0))
 	chips.add_child(TournamentPanel.chip(UiTheme.fmt_date(Time.get_unix_time_from_system()).left(10), DIM, 16))
 	chips.add_child(TournamentPanel.chip("★ %s–%s" % [UiTheme.fmt_num(lo, 1), UiTheme.fmt_num(hi, 1)], ACCENT, 16))
-	chips.add_child(TournamentPanel.chip("%d Maps" % wins.size(), DIM, 16))
-	chips.add_child(TournamentPanel.chip("%d Spieler" % stand.size(), DIM, 16))
+	chips.add_child(TournamentPanel.chip(tr("%d Maps") % wins.size(), DIM, 16))
+	chips.add_child(TournamentPanel.chip(tr("%d Spieler") % stand.size(), DIM, 16))
 	var mods: Array[String] = []
 	for k in ["SV", "NF"]:
 		if bool(t.config.get("mods", {}).get(k, false)):
@@ -246,10 +246,10 @@ func _podium(root: Control, stand: Array, area: Rect2) -> void:
 		nl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		nl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 		inner.add_child(nl)
-		var pl := TournamentPanel.lbl("%s Punkte" % UiTheme.fmt_score(int(s.get("points", 0))), 22, rc)
+		var pl := TournamentPanel.lbl(tr("%s Punkte") % UiTheme.fmt_score(int(s.get("points", 0))), 22, rc)
 		pl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		inner.add_child(pl)
-		var dl := TournamentPanel.lbl("%d Siege  ·  Ø %s" % [int(s.get("wins", 0)),
+		var dl := TournamentPanel.lbl(tr("%d Siege  ·  Ø %s") % [int(s.get("wins", 0)),
 			UiTheme.fmt_pct(float(s.get("avg_acc", 0.0)) * 100.0)], 15, DIM)
 		dl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		inner.add_child(dl)

@@ -147,9 +147,9 @@ func _strength(s) -> float:
 func balance_hint() -> String:
 	var c := team_sizes()
 	if c[0] == 0 or c[1] == 0:
-		return "Ein Team ist leer."
+		return tr("Ein Team ist leer.")
 	if c[0] != c[1]:
-		return "Ungleiche Teams: %d gegen %d." % [c[0], c[1]]
+		return tr("Ungleiche Teams: %d gegen %d.") % [c[0], c[1]]
 	return ""
 
 
@@ -223,7 +223,7 @@ func series_over() -> bool:
 
 ## "Best of 3" bzw. "3 Runden".
 func series_label() -> String:
-	return ("Best of %d" % series_n) if series_mode == Series.BEST_OF else ("%d Runden" % series_n)
+	return (tr("Best of %d") % series_n) if series_mode == Series.BEST_OF else (tr("%d Runden") % series_n)
 
 
 func series_text() -> String:

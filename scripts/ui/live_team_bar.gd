@@ -100,11 +100,11 @@ func _draw() -> void:
 	# Texte: Name + Summe aussen, Vorsprung in der Mitte
 	var fs := 15
 	var top := bar_y - 7.0
-	draw_string(_font, Vector2(0, top), _names[0], HORIZONTAL_ALIGNMENT_LEFT, w * 0.4, fs, DIM)
-	var s0 := _font.get_string_size(_names[0], HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+	draw_string(_font, Vector2(0, top), tr(_names[0]), HORIZONTAL_ALIGNMENT_LEFT, w * 0.4, fs, DIM)
+	var s0 := _font.get_string_size(tr(_names[0]), HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
 	draw_string(_font, Vector2(s0 + 10.0, top), _txt[0], HORIZONTAL_ALIGNMENT_LEFT, w * 0.4, fs + 3, TEXT)
-	draw_string(_font, Vector2(0, top), _names[1], HORIZONTAL_ALIGNMENT_RIGHT, w, fs, DIM)
-	var s1 := _font.get_string_size(_names[1], HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+	draw_string(_font, Vector2(0, top), tr(_names[1]), HORIZONTAL_ALIGNMENT_RIGHT, w, fs, DIM)
+	var s1 := _font.get_string_size(tr(_names[1]), HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
 	draw_string(_font, Vector2(-(s1 + 10.0), top), _txt[1], HORIZONTAL_ALIGNMENT_RIGHT, w, fs + 3, TEXT)
 	if _lead != "":
 		var col: Color = COLS[0] if _shown_vals[0] > _shown_vals[1] else COLS[1]

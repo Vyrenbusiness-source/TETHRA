@@ -80,14 +80,14 @@ func _build(players: Array, d: Dictionary, newly_out: Array) -> void:
 	title.add_theme_font_size_override("font_size", 22)
 	title.add_theme_color_override("font_color", UiTheme.ACCENT)
 	head.add_child(title)
-	head.add_child(TeamBoard.make_chip("Runde %d" % maxi(1, int(d.get("round", 1))), DIM))
+	head.add_child(TeamBoard.make_chip(tr("Runde %d") % maxi(1, int(d.get("round", 1))), DIM))
 	if bool(d.get("final", false)) and winner < 0:
 		head.add_child(TeamBoard.make_chip("Finale", WARN))
 	var sp := Control.new()
 	sp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	head.add_child(sp)
 	var info := Label.new()
-	info.text = "%d von %d dabei" % [alive_n, players.size()]
+	info.text = tr("%d von %d dabei") % [alive_n, players.size()]
 	info.add_theme_font_size_override("font_size", 14)
 	info.add_theme_color_override("font_color", DIM)
 	head.add_child(info)
@@ -130,7 +130,7 @@ func _build(players: Array, d: Dictionary, newly_out: Array) -> void:
 		for p in players:
 			if int(p.peer) == winner:
 				var w := Label.new()
-				w.text = "%s gewinnt." % str(p.get("name", "?"))
+				w.text = tr("%s gewinnt.") % str(p.get("name", "?"))
 				w.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 				w.add_theme_font_size_override("font_size", 16)
 				w.add_theme_color_override("font_color", UiTheme.GOOD)
@@ -151,7 +151,7 @@ func _panel(title_text: String, col: Color) -> Array:
 	v.add_theme_constant_override("separation", 8)
 	box.add_child(v)
 	var t := Label.new()
-	t.text = title_text.to_upper()
+	t.text = tr(title_text).to_upper()
 	t.add_theme_font_size_override("font_size", 13)
 	t.add_theme_color_override("font_color", col)
 	v.add_child(t)
@@ -193,7 +193,7 @@ func _row(p: Dictionary, is_winner: bool, in_danger: bool, out: bool) -> Control
 		h.add_child(TeamBoard.make_chip("In Gefahr", WARN))
 	elif out and p.has("out_round"):
 		var r := Label.new()
-		r.text = "Runde %d" % int(p.out_round)
+		r.text = tr("Runde %d") % int(p.out_round)
 		r.add_theme_font_size_override("font_size", 13)
 		r.add_theme_color_override("font_color", DIM)
 		h.add_child(r)

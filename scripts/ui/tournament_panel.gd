@@ -228,7 +228,7 @@ func _name_cell(peer: int, pname: String, sz: int = 28) -> Control:
 	var h := HBoxContainer.new()
 	h.add_theme_constant_override("separation", 10)
 	h.add_child(avatar(pname, sz))
-	var l := lbl(pname + ("  (du)" if peer == my_id else ""), 16)
+	var l := lbl(pname + (("  " + tr("(du)")) if peer == my_id else ""), 16)
 	l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -260,7 +260,7 @@ func mods_text() -> String:
 	for k in ["SV", "NF"]:
 		if bool(mods.get(k, false)):
 			parts.append(k)
-	return "Mods: " + (" + ".join(parts) if not parts.is_empty() else "keine")
+	return tr("Mods: %s") % (" + ".join(parts) if not parts.is_empty() else tr("keine"))
 
 
 # ---------------------------------------------------------------------------
@@ -325,7 +325,7 @@ func _on_dl_progress(id: int, ratio: float) -> void:
 	for pair in _prog[id]:
 		if is_instance_valid(pair[0]):
 			(pair[0] as ProgressBar).value = ratio
-			(pair[1] as Label).text = "lädt… %s %%" % UiTheme.fmt_score(int(ratio * 100.0))
+			(pair[1] as Label).text = tr("lädt… %s %%") % UiTheme.fmt_score(int(ratio * 100.0))
 
 
 func _on_dl_done(id: int, _path: String) -> void:
@@ -390,7 +390,7 @@ func _header(sub: String, step: int) -> void:
 	var meta := HBoxContainer.new()
 	meta.add_theme_constant_override("separation", 8)
 	col.add_child(meta)
-	meta.add_child(chip("%d Maps" % int(t.config.get("maps", 10)), DIM))
+	meta.add_child(chip(tr("%d Maps") % int(t.config.get("maps", 10)), DIM))
 	meta.add_child(chip(star_range_text(), DIM))
 	meta.add_child(chip(mods_text(), DIM))
 	var sl := lbl(sub, 14, DIM)
@@ -470,7 +470,7 @@ func _build_pick() -> void:
 		else:
 			g.add_child(_empty_slot(i))
 	var bar := _bar()
-	bar.add_child(lbl("%d / %d Maps im Pool" % [t.pool.size(), want], 16, ACCENT if t.pool.size() < want else GOOD))
+	bar.add_child(lbl(tr("%d / %d Maps im Pool") % [t.pool.size(), want], 16, ACCENT if t.pool.size() < want else GOOD))
 	_status = lbl(_fill_status, 13, DIM)
 	bar.add_child(_status)
 	bar.add_child(_spacer())
@@ -600,14 +600,14 @@ func _card(i: int, m: Dictionary, mode: String, banned: bool = false) -> Control
 	var by := int(m.get("by", -1))
 	if by >= 0:
 		foot.add_child(avatar(_pname(by), 18))
-		var who := lbl("gewählt von " + _pname(by), 12, TEXT.darkened(0.15))
+		var who := lbl(tr("gewählt von %s") % _pname(by), 12, TEXT.darkened(0.15))
 		who.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 		who.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		foot.add_child(who)
 	else:
 		foot.add_child(_spacer())
 	if banned:
-		foot.add_child(chip("gestrichen von " + _banners(i), WARN, 11))
+		foot.add_child(chip(tr("gestrichen von %s") % _banners(i), WARN, 11))
 		_decorate_ban(holder)
 	else:
 		foot.add_child(_status_chip(m))
@@ -711,13 +711,13 @@ func _build_ban() -> void:
 		var h := HBoxContainer.new()
 		h.add_theme_constant_override("separation", 10)
 		h.add_child(avatar(_pname(pid), 26))
-		var nl := lbl(_pname(pid) + ("  (du)" if pid == my_id else ""), 15)
+		var nl := lbl(_pname(pid) + (("  " + tr("(du)")) if pid == my_id else ""), 15)
 		nl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		nl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 		h.add_child(nl)
 		if revealed and int(t.bans.get(pid, -1)) >= 0:
 			var bt: String = str(t.pool[int(t.bans[pid])].get("title", "?"))
-			h.add_child(chip("strich: " + bt.left(14), WARN, 11))
+			h.add_child(chip(tr("strich: %s") % bt.left(14), WARN, 11))
 		else:
 			h.add_child(chip("hat gewählt", GOOD) if _has_voted(pid) else chip("wählt…", DIM))
 		sv.add_child(h)
@@ -867,7 +867,7 @@ func _play_strikes() -> void:
 func _build_between() -> void:
 	var played: int = t.rounds.size()
 	var total: int = t.order.size() if not t.order.is_empty() else t.remaining()
-	_header("Zwischenstand nach Runde %d von %d" % [played, total], 2)
+	_header(tr("Zwischenstand nach Runde %d von %d") % [played, total], 2)
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 22)
 	row.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -898,7 +898,7 @@ func _build_between() -> void:
 	var last_idx: int = played - 1
 	if last_idx >= 0 and int(t.rounds[last_idx].get("map", -1)) in range(t.pool.size()):
 		var m: Dictionary = t.pool[int(t.rounds[last_idx].map)]
-		right.add_child(lbl("RUNDE %d  ·  %s" % [played, str(m.get("title", "?")).to_upper()], 13, ACCENT, true))
+		right.add_child(lbl(tr("RUNDE %d  ·  %s") % [played, str(m.get("title", "?")).to_upper()], 13, ACCENT, true))
 		var res: Dictionary = t.rounds[last_idx].results
 		var rows: Array = []
 		for p in res:
@@ -930,7 +930,7 @@ func _build_between() -> void:
 		right.add_child(lbl("ALS NÄCHSTES", 13, ACCENT, true))
 		right.add_child(_next_row(nm))
 	var bar := _bar()
-	bar.add_child(lbl("%d Maps noch zu spielen" % maxi(remaining, 0) if remaining > 0
+	bar.add_child(lbl(tr("%d Maps noch zu spielen") % maxi(remaining, 0) if remaining > 0
 		else "Alle Runden gespielt.", 14, DIM))
 	bar.add_child(_spacer())
 	if is_host:
@@ -1118,7 +1118,7 @@ func _on_fill_page(results: Array, raw_count: int, offset: int) -> void:
 
 
 func _on_fill_failed(message: String) -> void:
-	_fill_status = "Online-Suche fehlgeschlagen: " + message
+	_fill_status = tr("Online-Suche fehlgeschlagen: %s") % message
 	_finish_fill()
 
 
@@ -1129,7 +1129,7 @@ func _finish_fill() -> void:
 		if _mirror.search_failed.is_connected(_on_fill_failed):
 			_mirror.search_failed.disconnect(_on_fill_failed)
 	_filling = false
-	if _fill_need > 0 and not _fill_status.begins_with("Online-Suche fehlgeschlagen"):
+	if _fill_need > 0 and not _fill_status.begins_with(tr("Online-Suche fehlgeschlagen")):
 		_fill_status = "Nicht genug passende Maps gefunden."
 	elif _fill_need <= 0:
 		_fill_status = ""

@@ -59,6 +59,11 @@ buffering/agile_event_flushing=true
 
 driver/mix_rate=48000
 
+[internationalization]
+
+locale/translations=PackedStringArray("res://translations/menus.en.translation", "res://translations/game.en.translation", "res://translations/mp.en.translation")
+locale/fallback="de"
+
 [physics]
 
 common/physics_ticks_per_second=240
