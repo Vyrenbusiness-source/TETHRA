@@ -70,7 +70,7 @@ class SoftBg extends Control:
 ## Kurze Tastennamen fuer die Keycaps ("," statt Comma).
 func _key_names() -> Array:
 	var short := { KEY_COMMA: ",", KEY_PERIOD: ".", KEY_SLASH: "/", KEY_SEMICOLON: ";",
-		KEY_APOSTROPHE: "'", KEY_SPACE: "Leer", KEY_BRACKETLEFT: "[", KEY_BRACKETRIGHT: "]",
+		KEY_APOSTROPHE: "'", KEY_SPACE: tr("Leer"), KEY_BRACKETLEFT: "[", KEY_BRACKETRIGHT: "]",
 		KEY_MINUS: "-", KEY_EQUAL: "=", KEY_BACKSLASH: "\\", KEY_COLON: ":" }
 	var k := []
 	for code in Settings.key_lanes:
@@ -99,16 +99,16 @@ Die [b]Übungs-Map[/b] (letzte Seite) zeigt dir alles direkt im Spiel." },
 	{ "title": "Performance Points (pp)",
 	"body": "pp messen, wie stark ein einzelner Play war — abhängig von [b]Star-Rating[/b] und [b]Accuracy[/b].\n\nDie Berechnung läuft über rosu-pp (offizielle Mania-Formel). Wichtig zu wissen: [b]Richtig viele pp gibt es erst ab ~80 % Accuracy[/b] — darüber steigt die Kurve steil an. Darunter sorgt ein TETHRA-Mindestwert dafür, dass trotzdem jeder Play etwas zählt.\n\n[b]Dein Profil-pp[/b] (Hauptmenü, Profilkarte): Deine besten Scores werden sortiert und gewichtet aufsummiert — der beste zählt voll, der zweite mit 95 %, der dritte mit 90,25 % usw. (wie bei osu). Nur der [b]beste Score pro Diff[/b] zählt.\n\nKurz: Lieber eine Map sauber auf 95 %+ spielen als zehn Maps auf 70 %." },
 	{ "title": "Einstellungen erklärt", "action": "settings",
-	"body": "[b]Deine aktuellen Werte (live):[/b]
+	"body": tr("[b]Deine aktuellen Werte (live):[/b]
 Scroll x%.1f  ·  Offset %+d ms  ·  Effekte: %s
 Hitsounds: %s (%d%%)  ·  FPS: %s  ·  Vollbild: %s
 
-" % [
+") % [
 		Settings.mania_scroll, int(Settings.offset_ms),
-		["Aus", "Dezent", "Voll"][clampi(Settings.tunnel_intensity, 0, 2)],
-		"an" if Settings.hitsounds else "aus", int(Settings.hitsound_volume * 100.0),
+		tr(["Aus", "Dezent", "Voll"][clampi(Settings.tunnel_intensity, 0, 2)]),
+		tr("an") if Settings.hitsounds else tr("aus"), int(Settings.hitsound_volume * 100.0),
 		["VSync", "Unlimited", "240 FPS", "360 FPS", "480 FPS"][clampi(Settings.fps_mode, 0, 4)],
-		"an" if Settings.fullscreen else "aus"] + "[b]Scroll-Speed (x0,5–x3,0):[/b] Wie schnell die Noten anfliegen. Rein visuell — die Timing-Fenster bleiben exakt gleich, es ist also nie unfair. Höher = weniger Noten gleichzeitig auf dem Schirm (übersichtlicher bei schnellen Maps).\n\n[b]Audio-Offset (±200 ms):[/b] Gleicht die Latenz deines Audio-Setups aus. Schau nach einem Play auf den [b]Ø-Wert[/b] im Endscreen: steht dort z.B. \"Ø +20 ms (spät)\", stell den Offset in Richtung -20.\n\n[b]Hitsounds + Lautstärke:[/b] Klick-Feedback beim Treffen, separat regelbar.\n\n[b]Effekt-Intensität:[/b] Aus / Dezent / Voll — dimmt Wellen, Glüh-Effekte, Kamera-Bewegung usw.\n\n[b]FPS-Limit:[/b] [b]Unlimited[/b] = präziseste Eingaben (empfohlen). VSync = kein Tearing, aber mehr Latenz.\n\n[b]Vollbild:[/b] {F11} jederzeit." },
+		tr("an") if Settings.fullscreen else tr("aus")] + tr("[b]Scroll-Speed (x0,5–x3,0):[/b] Wie schnell die Noten anfliegen. Rein visuell — die Timing-Fenster bleiben exakt gleich, es ist also nie unfair. Höher = weniger Noten gleichzeitig auf dem Schirm (übersichtlicher bei schnellen Maps).\n\n[b]Audio-Offset (±200 ms):[/b] Gleicht die Latenz deines Audio-Setups aus. Schau nach einem Play auf den [b]Ø-Wert[/b] im Endscreen: steht dort z.B. \"Ø +20 ms (spät)\", stell den Offset in Richtung -20.\n\n[b]Hitsounds + Lautstärke:[/b] Klick-Feedback beim Treffen, separat regelbar.\n\n[b]Effekt-Intensität:[/b] Aus / Dezent / Voll — dimmt Wellen, Glüh-Effekte, Kamera-Bewegung usw.\n\n[b]FPS-Limit:[/b] [b]Unlimited[/b] = präziseste Eingaben (empfohlen). VSync = kein Tearing, aber mehr Latenz.\n\n[b]Vollbild:[/b] {F11} jederzeit.") },
 	{ "title": "Maps bekommen",
 	"body": "[b]1) Online-Browser:[/b] Im Song-Browser oben auf [b]\"⤓ Online\"[/b]. Du siehst sofort Vorschläge — nur [b]Ranked 4K-Mania[/b]-Maps. Klick auf eine Karte = [b]Anhören[/b], \"⤓ Download\" lädt sie direkt in deine Bibliothek. Filter nach Sternen inklusive.\n\n[b]2) Eigene Dateien:[/b] Jede osu!mania-[b].osz[/b]-Datei einfach in den [b]maps[/b]-Ordner legen (neben der TETHRA.exe) — oder per Drag&Drop ins Spielfenster ziehen.\n\n[b]3) Collections:[/b] Im Info-Panel [b]\"+ Sammlung\"[/b] — packe Maps in eigene Listen (z.B. \"Training\", \"Favoriten\") und filtere im Browser über den Collections-Tab.\n\nHinweis: Nur [b]4K[/b]-Diffs (4 Spalten) sind spielbar — andere werden automatisch ausgeblendet." },
 	{ "title": "Multiplayer",
@@ -362,11 +362,12 @@ func _update_dots() -> void:
 func _goto(p: int, animate: bool = true) -> void:
 	_page = clampi(p, 0, _pages.size() - 1)
 	var pg: Dictionary = _pages[_page]
-	_title.text = str(pg.title)
-	_goal.text = str(GOALS[_page]) if _page < GOALS.size() else ""
+	_title.text = tr(str(pg.title))
+	_goal.text = tr(str(GOALS[_page])) if _page < GOALS.size() else ""
 	_goal_box.visible = _goal.text != ""
 	_keys_row.visible = pg.get("keys", false)
-	_body.text = _keycaps(str(pg.body))
+	# Fliesstext erst uebersetzen (Schluessel = deutscher Text), dann Keycaps.
+	_body.text = _keycaps(tr(str(pg.body)))
 	_scroll.scroll_vertical = 0
 	_update_fade.call_deferred()
 	_page_label.text = ""
