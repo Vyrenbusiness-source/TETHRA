@@ -17,25 +17,41 @@ const SKINS_DIR := "user://skins"
 const BUILTIN_DIR := "res://assets_game/skins"
 const BUILTIN_PREFIX := "builtin:"
 const BUILTIN_NAMES: Array = ["Balken", "Kreise", "Pfeile"]
-const MAX_FILE_BYTES := 8 * 1024 * 1024
+const MAX_FILE_BYTES := 64 * 1024 * 1024   ## echte Skins haben bis ~23 MB grosse Hold-Koerper
+const MAX_TEX := 8192
 const SCREEN_UNITS := 480.0   ## osu-Koordinaten: 480 Einheiten = Bildhoehe
 const DEFAULT_COLUMN_WIDTH := 30.0
 const DEFAULT_HIT_POSITION := 402.0
 
 var skin_name := ""
 var keys := 4
-var column_width: Array = []        ## pro Spalte, osu-Einheiten
-var column_line_width: Array = []   ## pro Spalte (Linie links davon), Einheiten
+var version := 999.0                ## [General] Version ("latest" = 999; ini ohne Version = 1.0 wie osu!)
+var column_width: Array = []        ## pro Spalte, osu-Einheiten (480er Raum)
+var column_line_width: Array = []   ## Spaltenlinien (keys+1), Einheiten im 768er Raum (osu!: ohne Faktor 1,6)
 var column_spacing: Array = []      ## zwischen Spalte i und i+1
-var column_start := 0.0
+var column_start := 136.0
+var has_column_start := false       ## ColumnStart explizit gesetzt -> Buehne ab dort (sonst mittig)
 var hit_position := DEFAULT_HIT_POSITION   ## Einheiten von oben
 var light_position := 413.0
-var score_position := 325.0
-var colours: Dictionary = {}        ## Spalte (0-basiert) -> Color
+var score_position := 300.0         ## Judgement-Mitte (Einheiten von oben), lazer-Standard 300
+var combo_position := 111.0         ## Kombo-Mitte (Einheiten von oben)
+var width_for_note_height := 0.0    ## WidthForNoteHeightScale (0 = schmalste Spalte)
+var lighting_n_width: Array = []    ## je Spalte, 0 = Spaltenbreite
+var lighting_l_width: Array = []
+var colours: Dictionary = {}        ## Spalte (0-basiert) -> Color (nur explizit gesetzte)
+var colour_light: Dictionary = {}   ## Spalte -> Color (StageLight, Doku-Standard 55,255,255)
 var colour_hold: Variant = null     ## Color oder null
+var colour_column_line := Color(1, 1, 1, 1)
+var colour_judgement_line := Color(1, 1, 1, 1)
+var colour_break := Color(1, 0, 0, 1)
+var barline_height := 1.2
 var judgement_line := true
 var note_body_style := 1            ## 0 gestreckt, 1 gekachelt ab Kopf, 2 gekachelt ab Ende
 var keys_under_notes := false
+var upside_down := false
+var light_fps := 60
+var combo_prefix := "score"         ## [Fonts] ComboPrefix
+var combo_overlap := 0.0
 var has_mania_block := false
 
 var _dir := ""
@@ -116,29 +132,60 @@ static func pattern_index(col: int, count: int) -> int:
 static func parse(text: String, p_keys: int = 4) -> ManiaSkin:
 	var s := ManiaSkin.new()
 	s.keys = p_keys
-	var m := pick_mania_block(parse_ini(text), p_keys)
+	var sections := parse_ini(text)
+	# osu!: ohne skin.ini "latest", mit skin.ini aber ohne Version 1.0 (Doku [General] Version).
+	s.version = 999.0 if text.strip_edges().is_empty() else 1.0
+	for sec in sections:
+		var sn := String(sec.get("_section", ""))
+		if sn == "general" and sec.has("version"):
+			var v := String(sec["version"]).strip_edges()
+			s.version = 999.0 if v.to_lower() == "latest" else (v.to_float() if v.is_valid_float() else 1.0)
+		elif sn == "fonts":
+			if sec.has("comboprefix"):
+				s.combo_prefix = String(sec["comboprefix"]).strip_edges()
+			if sec.has("combooverlap"):
+				s.combo_overlap = String(sec["combooverlap"]).to_float()
+	var m := pick_mania_block(sections, p_keys)
 	s.has_mania_block = not m.is_empty()
-	var cw := _floats(String(m.get("columnwidth", "")))
-	var lw := _floats(String(m.get("columnlinewidth", "")))
-	var sp := _floats(String(m.get("columnspacing", "")))
+	# Listen wie osu!: fehlende Eintraege = Standardwert (nicht der letzte Wert),
+	# ungueltige Zahl = 0 (lazer LegacyManiaSkinDecoder.parseArrayValue).
+	s.column_width = _list(String(m.get("columnwidth", "")), p_keys, DEFAULT_COLUMN_WIDTH)
 	for i in p_keys:
-		s.column_width.append(maxf(1.0, float(cw[i] if i < cw.size() else (cw[cw.size() - 1] if not cw.is_empty() else DEFAULT_COLUMN_WIDTH))))
-	for i in p_keys + 1:
-		s.column_line_width.append(maxf(0.0, float(lw[i] if i < lw.size() else (lw[lw.size() - 1] if not lw.is_empty() else 2.0))))
-	for i in maxi(0, p_keys - 1):
-		s.column_spacing.append(maxf(0.0, float(sp[i] if i < sp.size() else (sp[sp.size() - 1] if not sp.is_empty() else 0.0))))
-	s.column_start = float(String(m.get("columnstart", "0")).to_float())
-	s.hit_position = clampf(float(String(m.get("hitposition", str(DEFAULT_HIT_POSITION))).to_float()), 240.0, 479.0)
+		s.column_width[i] = maxf(1.0, float(s.column_width[i]))
+	s.column_line_width = _list(String(m.get("columnlinewidth", "")), p_keys + 1, 2.0)
+	s.column_spacing = _list(String(m.get("columnspacing", "")), maxi(0, p_keys - 1), 0.0)
+	s.lighting_n_width = _list(String(m.get("lightingnwidth", "")), p_keys, 0.0)
+	s.lighting_l_width = _list(String(m.get("lightinglwidth", "")), p_keys, 0.0)
+	s.has_column_start = m.has("columnstart")
+	s.column_start = String(m.get("columnstart", "136")).to_float()
+	s.hit_position = clampf(String(m.get("hitposition", str(DEFAULT_HIT_POSITION))).to_float(), 240.0, 480.0)
 	s.light_position = String(m.get("lightposition", "413")).to_float()
-	s.score_position = String(m.get("scoreposition", "325")).to_float()
+	s.score_position = String(m.get("scoreposition", "300")).to_float()
+	s.combo_position = String(m.get("comboposition", "111")).to_float()
+	s.width_for_note_height = maxf(0.0, String(m.get("widthfornoteheightscale", "0")).to_float())
+	s.barline_height = String(m.get("barlineheight", "1.2")).to_float()
 	s.judgement_line = String(m.get("judgementline", "1")).strip_edges() != "0"
-	s.note_body_style = clampi(int(String(m.get("notebodystyle", "1"))), 0, 2)
 	s.keys_under_notes = String(m.get("keysundernotes", "0")).strip_edges() == "1"
+	s.upside_down = String(m.get("upsidedown", "0")).strip_edges() == "1"
+	var fps := int(String(m.get("lightframepersecond", "60")).to_float())
+	s.light_fps = fps if fps > 0 else 24
+	# NoteBodyStyle: gesetzt -> Wert; sonst ab Version 2.5 gekachelt, davor gestreckt (lazer).
+	if m.has("notebodystyle"):
+		s.note_body_style = clampi(int(String(m["notebodystyle"])), 0, 2)
+	else:
+		s.note_body_style = 1 if s.version >= 2.5 else 0
 	for i in p_keys:
 		var col: Variant = _color(String(m.get("colour%d" % (i + 1), "")))
 		if col != null:
 			s.colours[i] = col
+		var cl: Variant = _color(String(m.get("colourlight%d" % (i + 1), "")))
+		s.colour_light[i] = cl if cl != null else Color(55.0 / 255.0, 1.0, 1.0)
 	s.colour_hold = _color(String(m.get("colourhold", "")))
+	for pair in [["colourcolumnline", "colour_column_line"], ["colourjudgementline", "colour_judgement_line"],
+			["colourbreak", "colour_break"]]:
+		var cc: Variant = _color(String(m.get(pair[0], "")))
+		if cc != null:
+			s.set(pair[1], cc)
 	for i in p_keys:
 		var pn := pattern_name(i, p_keys)
 		var n := "mania-note" + pn
@@ -162,7 +209,59 @@ static func parse(text: String, p_keys: int = 4) -> ManiaSkin:
 	s._names["stage_right"] = String(m.get("stageright", "mania-stage-right"))
 	s._names["stage_hint"] = String(m.get("stagehint", "mania-stage-hint"))
 	s._names["stage_bottom"] = String(m.get("stagebottom", "mania-stage-bottom"))
+	s._names["stage_light"] = String(m.get("stagelight", "mania-stage-light"))
+	s._names["lighting_n"] = String(m.get("lightingn", "lightingN"))
+	s._names["lighting_l"] = String(m.get("lightingl", "lightingL"))
+	for h in HIT_NAMES:
+		s._names[h] = String(m.get(h, "mania-" + h))
 	return s
+
+
+## Judgement-Bilder, Index = ManiaCore.Quality (MAX, PERFECT, GOOD, OK, MEH, MISS)
+## -> Hit300g, Hit300, Hit200, Hit100, Hit50, Hit0 (lazer ManiaLegacySkinTransformer).
+const HIT_NAMES: Array = ["hit300g", "hit300", "hit200", "hit100", "hit50", "hit0"]
+## Elemente, die osu! als Animation laedt (erst name-0, dann name; lazer GetAnimation).
+## Tasten, Buehnenraender und StageHint sind einfache Texturen (GetTexture).
+const ANIMATED_PREFIXES: Array = ["note_", "head_", "body_", "tail_", "hit", "stage_light",
+		"stage_bottom", "lighting_"]
+
+
+static func _list(v: String, n: int, def: float) -> Array:
+	var out: Array = []
+	out.resize(n)
+	out.fill(def)
+	if v.strip_edges().is_empty():
+		return out
+	var parts := v.split(",")
+	for i in mini(parts.size(), n):
+		var t := parts[i].strip_edges()
+		out[i] = t.to_float() if t.is_valid_float() else 0.0
+	return out
+
+
+## Bezugsbreite fuer die Notenhoehe (Einheiten): WidthForNoteHeightScale oder schmalste Spalte.
+func note_height_units() -> float:
+	if width_for_note_height > 0.0:
+		return width_for_note_height
+	var mn := INF
+	for w in column_width:
+		mn = minf(mn, float(w))
+	return mn if mn < INF else DEFAULT_COLUMN_WIDTH
+
+
+## Hat der Skin eigene Judgement-Bilder? (Dann zeigt Playfield2D sie statt der Text-Anzeige.)
+func has_judgement_images() -> bool:
+	for h in HIT_NAMES:
+		if tex(h) != null:
+			return true
+	return false
+
+
+static func _animated(key: String) -> bool:
+	for p in ANIMATED_PREFIXES:
+		if key.begins_with(p):
+			return true
+	return false
 
 
 # ------------------------------------------------------------ Geometrie
@@ -201,11 +300,12 @@ func tex(key: String) -> Texture2D:
 	var t: Texture2D = null
 	_at2x_pending = false
 	if not _dir.is_empty() and _names.has(key):
-		t = _load_image(String(_names[key]))
+		var anim := _animated(key)
+		t = _load_image(String(_names[key]), anim)
 		for alt in _alts.get(key, []):
 			if t != null:
 				break
-			t = _load_image(String(alt))
+			t = _load_image(String(alt), anim)
 	_at2x[key] = t != null and _at2x_pending
 	_tex[key] = t
 	return t
@@ -219,7 +319,9 @@ var _at2x: Dictionary = {}
 
 
 ## Pfad aus der ini -> echter relativer Pfad im Skin-Ordner ("" = nicht da).
-func resolve(ini_path: String) -> Array:
+## animated: wie osu! (GetAnimation) zuerst das Frame name-0, dann name; sonst umgekehrt
+## nur name (Frames als letzte Rettung). Je Datei @2x vor SD.
+func resolve(ini_path: String, animated: bool = false) -> Array:
 	var p := ini_path.strip_edges().replace("\\", "/").to_lower()
 	while p.begins_with("./"):
 		p = p.substr(2)
@@ -227,20 +329,28 @@ func resolve(ini_path: String) -> Array:
 		p = p.substr(0, p.length() - 4)
 	if p.is_empty() or p.contains(".."):
 		return ["", false]
-	if _files.has(p + "@2x"):
-		return [_files[p + "@2x"], true]
-	if _files.has(p):
-		return [_files[p], false]
-	# Animation: erstes Frame (name-0) nehmen.
-	if _files.has(p + "-0@2x"):
-		return [_files[p + "-0@2x"], true]
-	if _files.has(p + "-0"):
-		return [_files[p + "-0"], false]
+	var order: Array = [p + "-0", p] if animated else [p, p + "-0"]
+	for q in order:
+		if _files.has(q + "@2x"):
+			return [_files[q + "@2x"], true]
+		if _files.has(q):
+			return [_files[q], false]
 	return ["", false]
 
 
-func _load_image(ini_path: String) -> Texture2D:
-	var r := resolve(ini_path)
+## Bild unter beliebigem ini-Namen (z. B. Kombo-Ziffern "score-3"): [Texture2D|null, @2x].
+func tex_named(ini_path: String) -> Array:
+	var ck := "#" + ini_path.to_lower()
+	if not _tex.has(ck):
+		_at2x_pending = false
+		var t := _load_image(ini_path) if not _dir.is_empty() else null
+		_tex[ck] = t
+		_at2x[ck] = t != null and _at2x_pending
+	return [_tex[ck], bool(_at2x.get(ck, false))]
+
+
+func _load_image(ini_path: String, animated: bool = false) -> Texture2D:
+	var r := resolve(ini_path, animated)
 	var rel := String(r[0])
 	if rel.is_empty():
 		return null
@@ -256,8 +366,12 @@ func _load_image(ini_path: String) -> Texture2D:
 	var img := Image.new()
 	if img.load_png_from_buffer(f.get_buffer(f.get_length())) != OK or img.is_empty():
 		return null
-	if img.get_width() < 1 or img.get_height() < 1 or img.get_width() > 4096 or img.get_height() > 4096:
+	if img.get_width() < 1 or img.get_height() < 1 or img.get_width() > MAX_TEX:
 		return null
+	# Sehr hohe Hold-Koerper (z. B. 138x40000) passen in keine GPU-Textur: oberen
+	# Teil nehmen (osu! zeigt ohnehin nur den sichtbaren Ausschnitt des Koerpers).
+	if img.get_height() > MAX_TEX:
+		img = img.get_region(Rect2i(0, 0, img.get_width(), MAX_TEX))
 	_at2x_pending = bool(r[1])
 	return ImageTexture.create_from_image(img)
 
@@ -469,13 +583,19 @@ static func import_skin(path: String, root: String = SKINS_DIR) -> String:
 	if ini_key != "":
 		ini_text = _read_source(files[ini_key], zr).get_string_from_utf8()
 	# Referenzierte Bilder aus allen [Mania]-Bloecken.
+	# Alle Bild-Schluessel wie lazer LegacyManiaSkinDecoder (NoteImage*, KeyImage*, Hit*,
+	# Stage*, Lighting*), dazu die Kombo-Ziffern ([Fonts] ComboPrefix, Standard "score").
 	var wanted: Dictionary = {}
+	var combo_pre := "score"
 	for sec in parse_ini(ini_text):
+		if String(sec.get("_section", "")) == "fonts" and sec.has("comboprefix"):
+			combo_pre = String(sec["comboprefix"]).strip_edges().replace("\\", "/").to_lower()
 		if String(sec.get("_section", "")) != "mania":
 			continue
 		for k in sec:
 			var ks := String(k)
-			if ks.begins_with("noteimage") or ks.begins_with("keyimage") or ks.begins_with("stage"):
+			if ks.begins_with("noteimage") or ks.begins_with("keyimage") or ks.begins_with("stage") \
+					or ks.begins_with("hit") or ks.begins_with("lighting") and not ks.ends_with("width"):
 				var v := String(sec[k]).strip_edges().replace("\\", "/").to_lower()
 				if v.ends_with(".png"):
 					v = v.substr(0, v.length() - 4)
@@ -497,7 +617,10 @@ static func import_skin(path: String, root: String = SKINS_DIR) -> String:
 		var dash := frame.rfind("-")
 		if dash > 0 and frame.substr(dash + 1).is_valid_int():
 			frame = frame.substr(0, dash)   # Animations-Frame name-3 -> name
-		if low.get_file().begins_with("mania-") or wanted.has(stem) or wanted.has(plain) or wanted.has(frame):
+		var fn := low.get_file()
+		var is_digit := plain.begins_with(combo_pre + "-") and plain.substr(combo_pre.length() + 1).is_valid_int()
+		if fn.begins_with("mania-") or (low.count("/") == 0 and fn.begins_with("lighting")) or is_digit \
+				or wanted.has(stem) or wanted.has(plain) or wanted.has(frame):
 			chosen.append(rel)
 	# @2x bevorzugt: Basisdatei weglassen, wenn die @2x-Variante auch da ist.
 	var final: Array = []
