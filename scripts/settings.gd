@@ -62,6 +62,12 @@ var lane_spacing: float = 1.0
 const LANE_SPACING_MIN := 0.7
 const LANE_SPACING_MAX := 1.2
 const LANE_SPACING_STEP := 0.05
+## 2D-Modus: Kamera senkrecht von oben (klassische osu!mania-Spuren), keine
+## 3D-Welt; Hintergrund = Map-Bild, abgedunkelt (bg_dim = Deckkraft 0..1)
+## und optional leicht weichgezeichnet (bg_blur).
+var playfield_2d: bool = false
+var bg_dim: float = 0.3
+var bg_blur: bool = true
 ## Hitsounds an/aus + Lautstaerke (0..1).
 var hitsounds: bool = true
 var hitsound_volume: float = 0.8
@@ -317,6 +323,9 @@ func load_settings(path: String = PATH) -> void:
 	hitsounds = bool(cfg.get_value("game", "hitsounds", true))
 	lane_glow = bool(cfg.get_value("game", "lane_glow", true))
 	lane_spacing = clamp_lane_spacing(float(cfg.get_value("game", "lane_spacing", 1.0)))
+	playfield_2d = bool(cfg.get_value("game", "playfield_2d", false))
+	bg_dim = clamp_bg_dim(float(cfg.get_value("game", "bg_dim", 0.3)))
+	bg_blur = bool(cfg.get_value("game", "bg_blur", true))
 	hitsound_set = clampi(int(cfg.get_value("game", "hitsound_set", 0)), 0, 2)
 	hitsound_volume = clampf(float(cfg.get_value("game", "hitsound_volume", 0.8)), 0.0, 1.0)
 	fullscreen = bool(cfg.get_value("game", "fullscreen", false))
@@ -343,6 +352,9 @@ func save(path: String = PATH) -> void:
 	cfg.set_value("game", "hitsounds", hitsounds)
 	cfg.set_value("game", "lane_glow", lane_glow)
 	cfg.set_value("game", "lane_spacing", lane_spacing)
+	cfg.set_value("game", "playfield_2d", playfield_2d)
+	cfg.set_value("game", "bg_dim", bg_dim)
+	cfg.set_value("game", "bg_blur", bg_blur)
 	cfg.set_value("game", "hitsound_set", hitsound_set)
 	cfg.set_value("game", "hitsound_volume", hitsound_volume)
 	cfg.set_value("game", "fullscreen", fullscreen)
@@ -515,6 +527,13 @@ static func clamp_lane_spacing(v: float) -> float:
 		return 1.0
 	v = clampf(v, LANE_SPACING_MIN, LANE_SPACING_MAX)
 	return snappedf(v, LANE_SPACING_STEP)
+
+
+## Hintergrund-Deckkraft (2D) auf 0..1 ziehen, 5-%-Raster.
+static func clamp_bg_dim(v: float) -> float:
+	if is_nan(v):
+		return 0.3
+	return snappedf(clampf(v, 0.0, 1.0), 0.05)
 
 
 ## Notengroesse zur Spurbreite: bis 85 % voll, darunter leicht mitskalieren,
