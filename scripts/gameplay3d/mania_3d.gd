@@ -24,6 +24,12 @@ const PAD_MAX_SCALE := 1.15
 const NOTE_GLOW := 0.34
 ## Obergrenze der Streckenrand-Emission in Themen-Welten (Galaxie/Neon frei).
 const EDGE_MAX_THEMED := 1.15
+## Themen-Welten (Nutzer: goldene Eklipse-Waende fast weiss): Rand-/Wandbaender
+## leuchten nur mit ~40 % des Galaxie-Grundtons, der Beat hebt sie hoechstens
+## um 15 %. Pads bleiben unter den Noten, Lesbarkeit vor Glanz.
+const EDGE_THEMED_K := 0.4
+const EDGE_THEMED_BEAT := 0.15
+const PAD_THEMED_K := 0.62
 
 const QUALITY_COLOR := {
 	0: Color(1.0, 0.92, 0.55), 1: Color(1.0, 1.0, 1.0),
@@ -2059,23 +2065,34 @@ func _process(delta: float) -> void:
 			+ _groove * 3.0
 	_line_mat.emission = Color(1, 1, 1).lerp(_theme_col, _kiai_mix * 0.4)
 	var pad_energy: Array[float] = []
+	var edge_themed := _world_theme != WorldTheme.GALAXY and _world_theme != WorldTheme.NEON
+	var beat_k := minf(maxf(_groove, 0.0), 1.0)
 	for i in _pad_mats.size():
 		var pf := clampf(_pad_flash[i], 0.0, 1.0)
-		pad_energy.append((PAD_IDLE if fx > 0.0 else 0.75)
-				+ (pulse * 0.08 + _punch * 0.06 + _kick * 0.03) * fx
-				+ pf * PAD_PRESS + _groove * 1.0)
+		if edge_themed:
+			# Themen-Welten: Ring ruhig unter den Noten, Beat max +15 %.
+			pad_energy.append((PAD_IDLE if fx > 0.0 else 0.75) * PAD_THEMED_K
+					* (1.0 + EDGE_THEMED_BEAT * beat_k * fx) + pf * PAD_PRESS)
+		else:
+			pad_energy.append((PAD_IDLE if fx > 0.0 else 0.75)
+					+ (pulse * 0.08 + _punch * 0.06 + _kick * 0.03) * fx
+					+ pf * PAD_PRESS + _groove * 1.0)
 		# Druck-Feedback: Ring waechst dezent (max 1.15), kein Ueberstrahlen.
 		# Der Takt-Schlag hebt nur die Helligkeit, Groesse hoechstens 1.04.
 		if i < _pad_nodes.size():
 			_pad_nodes[i].scale = Vector3.ONE * maxf(1.0 + (PAD_MAX_SCALE - 1.0) * pf,
 					1.0 + minf(_groove, 1.0) * 0.04)
-	var edge_themed := _world_theme != WorldTheme.GALAXY and _world_theme != WorldTheme.NEON
 	for m in _edge_mats:
 		var ee := (0.28 if fx <= 0.0 else 0.4) \
 				+ (_music_energy * 0.9 + _density * 0.6
-				+ _kiai_mix * 0.7) * fx + _groove * (1.2 if edge_themed else 3.0)
-		# Themen-Welten: Rand-Baender nicht auf dem Beat ausbrennen lassen.
-		m.emission_energy_multiplier = minf(ee, EDGE_MAX_THEMED) if edge_themed else ee
+				+ _kiai_mix * 0.7) * fx
+		if edge_themed:
+			# Themen-Welten: Grundton ~40 %, Beat-Puls max +15 %, nie ueber
+			# 40 % der alten Obergrenze (Rand-Baender nicht ausbrennen lassen).
+			m.emission_energy_multiplier = minf(ee * EDGE_THEMED_K
+					* (1.0 + EDGE_THEMED_BEAT * beat_k * fx), EDGE_MAX_THEMED * EDGE_THEMED_K)
+		else:
+			m.emission_energy_multiplier = ee + _groove * 3.0
 
 	# ON FIRE: ab 97% Acc (und min. 30 gewerteten Noten) zuenden die Kanten —
 	# je naeher an 100%, desto hoeher die Flammen. Ab 99.5% kippt das Feuer
@@ -2091,8 +2108,11 @@ func _process(delta: float) -> void:
 	_fire_heat = move_toward(_fire_heat,
 			1.0 if (fire_j >= 30 and fire_acc >= 0.995) else 0.0, delta * 1.4)
 	for fmat3 in _fire_mats:
+		# Themen-Welten: Flammenwaende ~40 % Grundton, Beat max +15 %
+		# (Beat-Anteil in rail_fire zusaetzlich gedaempft, _update_groove).
 		fmat3.set_shader_parameter("intensity",
-				_fire_level * (0.55 + 0.45 * _beat_env) * fx)
+				_fire_level * 0.55 * EDGE_THEMED_K * (1.0 + EDGE_THEMED_BEAT * 0.5 * _beat_env) * fx
+				if edge_themed else _fire_level * (0.55 + 0.45 * _beat_env) * fx)
 		fmat3.set_shader_parameter("heat", _fire_heat)
 		fmat3.set_shader_parameter("t", t / 1000.0)
 
@@ -2123,7 +2143,8 @@ func _process(delta: float) -> void:
 		if fx > 0.0 and _fire_level > 0.0:
 			# Brennende Kanten gluehen heller in der Songfarbe (kein Orange/Rot
 			# entlang des Spielfelds), bei Perfection fast weiss.
-			var glow_col := _theme_col.lerp(Color(1, 1, 1), 0.45 + _fire_heat * 0.4)
+			var glow_col := _theme_col.lerp(Color(1, 1, 1), 0.45 + _fire_heat * 0.4) \
+					if not edge_themed else _theme_col.lerp(Color(1, 1, 1), 0.10 + _fire_heat * 0.10)
 			edge_col = edge_col.lerp(glow_col, _fire_level * 0.7)
 		em2.emission = edge_col
 
@@ -2458,12 +2479,16 @@ func _update_groove(vt: float) -> void:
 	var me := clampf(_music_energy * _fx_level(), 0.0, 1.0)
 	var mats: Array = [_road_mat, _vignette_mat, _nebula_mat, _nebula_mat2]
 	mats.append_array(_fire_mats)
+	var themed := _world_theme != WorldTheme.GALAXY and _world_theme != WorldTheme.NEON
 	for m in mats:
 		var sm := m as ShaderMaterial
 		if sm == null:
 			continue
-		sm.set_shader_parameter(&"beat_flash", flash)
-		sm.set_shader_parameter(&"downbeat", down)
+		# rail_fire: Puls = 1 + flash*0.5 + down*0.25. Themen-Welten: zusammen
+		# hoechstens +15 % (Wandbaender ruhig).
+		var dim := 0.2 if themed and _fire_mats.has(sm) else 1.0
+		sm.set_shader_parameter(&"beat_flash", flash * dim)
+		sm.set_shader_parameter(&"downbeat", down * dim)
 		sm.set_shader_parameter(&"music_energy", me)
 	_update_kiai_sweeps(vt)
 
