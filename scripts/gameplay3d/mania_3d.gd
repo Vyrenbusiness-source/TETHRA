@@ -11,7 +11,11 @@ const Z_FAR := -46.0        # Spawn-Horizont
 const Z_LINE := 3.0         # Abfanglinie (Hit-Moment) — nah an der Kamera
 const SHIP_Z := 3.8
 const ROAD_Y := -1.6
-const RAIL_X: Array[float] = [-2.55, -0.85, 0.85, 2.55]
+const RAIL_X_BASE: Array[float] = [-2.55, -0.85, 0.85, 2.55]
+## Strecken-Rand (Kanten/Waende) und Strassenbreite bei 100 % Spurbreite.
+const EDGE_X_BASE := 3.6
+const ROAD_W_BASE := 8.4
+const WAVE_W_BASE := 8.6
 # Receptor: gleiche Quad-Groesse wie die Note (dq.size), knapp unter ihr.
 const NOTE_SIZE := 1.12
 const PAD_SIZE := NOTE_SIZE
@@ -373,9 +377,15 @@ var _top_fill: ColorRect
 var _bottom_fill: ColorRect
 var _pause_menu: PauseMenu
 var _song_len_ms := 1.0
+# Spurbreite (Settings.lane_spacing, CLI --lane=70): skaliert alle Spur-X,
+# Noten erst unter 85 % leicht mit (Settings.lane_note_scale). Strecke mittig.
+var _lane_k := 1.0
+var _note_k := 1.0
+var RAIL_X: Array[float] = RAIL_X_BASE.duplicate()
 
 
 func _ready() -> void:
+	_setup_lane_spacing()
 	# Erzwungene Welt: Texturen sofort im Hintergrund laden (kein Hitch spaeter).
 	WorldTheme.prefetch(_forced_theme())
 	if not _load_beatmap():
@@ -465,6 +475,19 @@ func _ready() -> void:
 		get_tree().paused = true
 		SyncClock.pause()
 		_resume_with_countdown(1.0)
+
+
+## Spurbreite aus den Settings (oder --lane=<prozent>) -> RAIL_X, _note_k.
+func _setup_lane_spacing() -> void:
+	var k := Settings.lane_spacing
+	for a in OS.get_cmdline_args() + OS.get_cmdline_user_args():
+		if a.begins_with("--lane="):
+			k = a.trim_prefix("--lane=").to_float() / 100.0
+	_lane_k = Settings.clamp_lane_spacing(k)
+	_note_k = Settings.lane_note_scale(_lane_k)
+	RAIL_X.clear()
+	for x in RAIL_X_BASE:
+		RAIL_X.append(x * _lane_k)
 
 
 func _load_beatmap() -> bool:
@@ -678,7 +701,7 @@ func _build_world() -> void:
 
 	# KEINE Innen-Schienen mehr (verdeckten bei Notenhagel die Sicht) —
 	# nur Aussenkanten als Streckenrand (hell, bass-reaktiv).
-	for sx in [-3.6, 3.6]:
+	for sx in [-EDGE_X_BASE * _lane_k, EDGE_X_BASE * _lane_k]:
 		var edge := MeshInstance3D.new()
 		var ebox := BoxMesh.new()
 		ebox.size = Vector3(0.10, 0.03, absf(Z_FAR) + 8.0)
@@ -692,7 +715,7 @@ func _build_world() -> void:
 	# ON-FIRE-Kanten: prozedurale Flammenwaende ueber beiden Streckenraendern.
 	# Unsichtbar bis der Spieler sie sich mit hoher Accuracy "verdient".
 	var fire_shader: Shader = load("res://shaders/rail_fire.gdshader")
-	for sx in [-3.6, 3.6]:
+	for sx in [-EDGE_X_BASE * _lane_k, EDGE_X_BASE * _lane_k]:
 		var fmesh := MeshInstance3D.new()
 		var fq := QuadMesh.new()
 		fq.size = Vector2(absf(Z_FAR) + 8.0, 1.15)
@@ -734,7 +757,7 @@ func _build_world() -> void:
 		# eine ankommende Note an der Linie.
 		var pad := MeshInstance3D.new()
 		var pq := QuadMesh.new()
-		pq.size = Vector2(PAD_SIZE, PAD_SIZE)
+		pq.size = Vector2(PAD_SIZE, PAD_SIZE) * _note_k
 		pad.mesh = pq
 		pad.rotation_degrees = Vector3(-90, 0, 0)
 		pad.position = Vector3(RAIL_X[i], ROAD_Y + PAD_Y, Z_LINE)
@@ -758,7 +781,7 @@ func _build_world() -> void:
 		# weitet sich bei MAX kurz auf und verglimmt.
 		var mr := MeshInstance3D.new()
 		var mrq := QuadMesh.new()
-		mrq.size = Vector2(PAD_SIZE, PAD_SIZE)
+		mrq.size = Vector2(PAD_SIZE, PAD_SIZE) * _note_k
 		mr.mesh = mrq
 		mr.rotation_degrees = Vector3(-90, 0, 0)
 		mr.position = Vector3(RAIL_X[i], ROAD_Y + PAD_Y - 0.03, Z_LINE)
@@ -786,7 +809,7 @@ func _build_world() -> void:
 		# ~3 Einheiten, der Balken "startete" sichtbar hinter dem Ring.
 		# Breite = Ring-Aussendurchmesser; liegt flach auf der Bahn und laeuft
 		# damit exakt mit den Schienen zum Fluchtpunkt (perspektivisch).
-		lq.size = Vector2(PAD_SIZE * 0.93, absf(Z_FAR - Z_LINE))
+		lq.size = Vector2(PAD_SIZE * 0.93 * _note_k, absf(Z_FAR - Z_LINE))
 		lg.mesh = lq
 		lg.rotation_degrees = Vector3(-90, 0, 0)
 		lg.position = Vector3(RAIL_X[i], ROAD_Y + 0.006, (Z_LINE + Z_FAR) * 0.5)
@@ -820,6 +843,7 @@ func _build_world() -> void:
 		var is_punct := key_txt.length() == 1 and key_txt.to_upper() == key_txt.to_lower() and not key_txt.is_valid_int()
 		if is_punct:
 			label.pixel_size = 0.0019 * 2.3
+		label.pixel_size *= _note_k
 		# Mittig IM Pad-Ring statt auf dessen vorderem Rand. Satzzeichen sitzen
 		# auf der Schrift-Grundlinie -> etwas anheben, damit sie mittig wirken.
 		label.position = Vector3(RAIL_X[i], ROAD_Y + PAD_Y + (0.18 if is_punct else 0.10), Z_LINE)
@@ -899,7 +923,7 @@ func _build_horizon() -> void:
 	# Highway und trifft die Abfanglinie exakt auf dem Schlag.
 	var road := MeshInstance3D.new()
 	var rq := QuadMesh.new()
-	rq.size = Vector2(8.4, absf(Z_FAR) + 6.0)
+	rq.size = Vector2(ROAD_W_BASE * _lane_k, absf(Z_FAR) + 6.0)
 	road.mesh = rq
 	road.rotation_degrees = Vector3(-90, 0, 0)
 	road.position = Vector3(0, ROAD_Y - 0.01, (Z_FAR + Z_LINE) * 0.5)
@@ -1402,6 +1426,8 @@ func _on_note_spawned(index: int) -> void:
 	glow.position = Vector3(0, -0.02, 0)
 	root.add_child(glow)
 	root.position = Vector3(RAIL_X[obj.column], ROAD_Y + 0.32, _note_z(obj.time, _time_ms()))
+	if _note_k < 1.0:
+		root.scale = Vector3.ONE * _note_k
 	_world.add_child(root)
 
 	# Hold: Energiestrahl (HoldBeam), Laenge pro Frame ueber _note_z (SV-korrekt).
@@ -1409,7 +1435,7 @@ func _on_note_spawned(index: int) -> void:
 	if obj.is_hold:
 		beam = HoldBeam.new()
 		_world.add_child(beam)
-		beam.setup(0.92, col)
+		beam.setup(0.92 * _note_k, col)
 		beam.set_span(root.position.z, _note_z(obj.end_time(), _time_ms()),
 				RAIL_X[obj.column], ROAD_Y + 0.28)
 
@@ -2516,7 +2542,7 @@ func _spawn_kiai_sweep() -> void:
 		return
 	var sw := MeshInstance3D.new()
 	var q := QuadMesh.new()
-	q.size = Vector2(8.6, 3.4)
+	q.size = Vector2(WAVE_W_BASE * _lane_k, 3.4)
 	sw.mesh = q
 	var m := ShaderMaterial.new()
 	m.shader = _glow_shader
@@ -2610,7 +2636,7 @@ func _spawn_shooting_star(seed_i: int) -> void:
 func _spawn_beat_wave() -> void:
 	var wave := MeshInstance3D.new()
 	var wq := QuadMesh.new()
-	wq.size = Vector2(8.6, 1.2)
+	wq.size = Vector2(WAVE_W_BASE * _lane_k, 1.2)
 	wave.mesh = wq
 	var wm := ShaderMaterial.new()
 	wm.shader = _glow_shader

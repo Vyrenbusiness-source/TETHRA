@@ -56,6 +56,12 @@ var key_lanes: Array[int] = [KEY_D, KEY_F, KEY_J, KEY_K]
 var mania_scroll: float = 1.0
 ## Spur-Aufleuchten beim Tastendruck (Lane-Highlight) an/aus.
 var lane_glow: bool = true
+## Spurbreite: Abstand der 4 Spuren relativ zum Standard (0.7..1.2, 5er-Schritte).
+## Noten bleiben bis 85 % gleich gross, darunter schrumpfen sie leicht mit.
+var lane_spacing: float = 1.0
+const LANE_SPACING_MIN := 0.7
+const LANE_SPACING_MAX := 1.2
+const LANE_SPACING_STEP := 0.05
 ## Hitsounds an/aus + Lautstaerke (0..1).
 var hitsounds: bool = true
 var hitsound_volume: float = 0.8
@@ -293,9 +299,9 @@ func _migrate_from_hookline() -> void:
 			DirAccess.copy_absolute(src, dest)
 
 
-func load_settings() -> void:
+func load_settings(path: String = PATH) -> void:
 	var cfg := ConfigFile.new()
-	if cfg.load(PATH) != OK:
+	if cfg.load(path) != OK:
 		return
 	ar_override = float(cfg.get_value("game", "ar_override", -1.0))
 	offset_ms = float(cfg.get_value("game", "offset_ms", 0.0))
@@ -310,6 +316,7 @@ func load_settings() -> void:
 	mania_scroll = clampf(float(cfg.get_value("game", "mania_scroll", 1.0)), 0.5, 3.0)
 	hitsounds = bool(cfg.get_value("game", "hitsounds", true))
 	lane_glow = bool(cfg.get_value("game", "lane_glow", true))
+	lane_spacing = clamp_lane_spacing(float(cfg.get_value("game", "lane_spacing", 1.0)))
 	hitsound_set = clampi(int(cfg.get_value("game", "hitsound_set", 0)), 0, 2)
 	hitsound_volume = clampf(float(cfg.get_value("game", "hitsound_volume", 0.8)), 0.0, 1.0)
 	fullscreen = bool(cfg.get_value("game", "fullscreen", false))
@@ -320,7 +327,7 @@ func load_settings() -> void:
 	profile_name = str(cfg.get_value("profile", "name", "Player"))
 
 
-func save() -> void:
+func save(path: String = PATH) -> void:
 	var cfg := ConfigFile.new()
 	cfg.set_value("game", "ar_override", ar_override)
 	cfg.set_value("game", "offset_ms", offset_ms)
@@ -335,6 +342,7 @@ func save() -> void:
 	cfg.set_value("game", "mania_scroll", mania_scroll)
 	cfg.set_value("game", "hitsounds", hitsounds)
 	cfg.set_value("game", "lane_glow", lane_glow)
+	cfg.set_value("game", "lane_spacing", lane_spacing)
 	cfg.set_value("game", "hitsound_set", hitsound_set)
 	cfg.set_value("game", "hitsound_volume", hitsound_volume)
 	cfg.set_value("game", "fullscreen", fullscreen)
@@ -343,7 +351,7 @@ func save() -> void:
 	cfg.set_value("game", "audio_enhance", audio_enhance)
 	cfg.set_value("game", "bass_boost", bass_boost)
 	cfg.set_value("profile", "name", profile_name)
-	cfg.save(PATH)
+	cfg.save(path)
 
 
 ## Einstellungen auf die laufenden Systeme anwenden.
@@ -499,6 +507,20 @@ func world_theme_name() -> String:
 	if world_theme >= 1 and world_theme <= WORLD_ORDER.size():
 		return WORLD_ORDER[world_theme - 1]
 	return ""
+
+
+## Spurbreite auf den erlaubten Bereich + 5-%-Raster ziehen (Datei kann alles enthalten).
+static func clamp_lane_spacing(v: float) -> float:
+	if is_nan(v):
+		return 1.0
+	v = clampf(v, LANE_SPACING_MIN, LANE_SPACING_MAX)
+	return snappedf(v, LANE_SPACING_STEP)
+
+
+## Notengroesse zur Spurbreite: bis 85 % voll, darunter leicht mitskalieren,
+## damit sich Nachbarnoten nie beruehren.
+static func lane_note_scale(spacing: float) -> float:
+	return clampf(spacing / 0.85, 0.0, 1.0)
 
 
 func is_hook_key(keycode: int) -> bool:
