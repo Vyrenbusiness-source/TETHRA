@@ -151,9 +151,9 @@ func open_folder(folder: String) -> int:
 ## bei Fehler der Grund (ClipExporter.last_error).
 func show_clip_result(ok: bool, path: String, error: String = "") -> void:
 	if ok:
-		show_toast("Clip gespeichert: %s" % path, false, path.get_base_dir())
+		show_toast(tr("Clip gespeichert: %s") % path, false, path.get_base_dir())
 	else:
-		show_toast("Clip-Export fehlgeschlagen: %s" % (error if error != "" else "unbekannt"), false)
+		show_toast(tr("Clip-Export fehlgeschlagen: %s") % (error if error != "" else tr("unbekannt")), false)
 
 
 ## Multiplayer: Platzierungs-Text unter dem Rang, weich eingeblendet.
@@ -490,7 +490,7 @@ func _build_left_panel(parent: Control) -> void:
 		var variance := maxf(sq / float(_offsets.size()) - mean * mean, 0.0)
 		var sign_txt := "+" if mean >= 0.0 else "−"
 		tinfo.text = "UR %s   ·   Ø %s%s ms %s" % [fmt_dec(sqrt(variance) * 10.0, 0),
-			sign_txt, fmt_dec(absf(mean), 1), "zu spät" if mean > 0.0 else "zu früh"]
+			sign_txt, fmt_dec(absf(mean), 1), tr("zu spät") if mean > 0.0 else tr("zu früh")]
 	else:
 		tinfo.text = "keine Timing-Daten"
 	hh.add_child(tinfo)
@@ -776,8 +776,8 @@ func _pp_block() -> PanelContainer:
 	if not unranked and pp >= 0.0:
 		return _stat_block("LEISTUNG", "%s pp" % fmt_dec(pp, 1), UiTheme.ACCENT2)
 	var p := _stat_block("LEISTUNG", "–", MUTED)
-	var why := "Map ist nicht gewertet – keine PP" if unranked \
-		else "PP für diese Map nicht berechenbar"
+	var why := tr("Map ist nicht gewertet – keine PP") if unranked \
+		else tr("PP für diese Map nicht berechenbar")
 	p.tooltip_text = why
 	p.mouse_filter = Control.MOUSE_FILTER_STOP
 	var v: Label = p.get_meta("value")
@@ -1009,10 +1009,10 @@ func _draw_histogram() -> void:
 		var mx := w * 0.5 + clampf(mean / _hist_range, -1.0, 1.0) * w * 0.5
 		c.draw_line(Vector2(mx, -2), Vector2(mx, h), Color(1, 1, 1, 0.7 * _hist_t), 2.0)
 	var lc := CAPTION
-	c.draw_string(font, Vector2(0, h + 17), "−%d ms  früh" % int(_hist_range),
+	c.draw_string(font, Vector2(0, h + 17), tr("−%d ms  früh") % int(_hist_range),
 		HORIZONTAL_ALIGNMENT_LEFT, -1, 12, lc)
 	c.draw_string(font, Vector2(w * 0.5 - 20, h + 17), "0 ms", HORIZONTAL_ALIGNMENT_CENTER, 40, 12, lc)
-	c.draw_string(font, Vector2(0, h + 17), "spät  +%d ms" % int(_hist_range),
+	c.draw_string(font, Vector2(0, h + 17), tr("spät  +%d ms") % int(_hist_range),
 		HORIZONTAL_ALIGNMENT_RIGHT, w, 12, lc)
 
 

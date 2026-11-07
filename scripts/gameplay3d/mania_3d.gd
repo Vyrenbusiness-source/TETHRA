@@ -3918,16 +3918,16 @@ func _on_results_replay() -> void:
 func _on_results_clip() -> void:
 	var version := _beatmap.version_name()
 	if not ReplayStore.exists(GameSession.osz_path, version):
-		_results_toast("Kein gespeichertes Replay für diese Map", false)
+		_results_toast(tr("Kein gespeichertes Replay für diese Map"), false)
 		return
 	if _clip_exporter != null and _clip_exporter.is_running():
-		_results_toast("Clip wird bereits aufgenommen …", true)
+		_results_toast(tr("Clip wird bereits aufgenommen …"), true)
 		return
 	if _clip_exporter == null:
 		_clip_exporter = ClipExporter.new()
 		add_child(_clip_exporter)
 		_clip_exporter.progress.connect(func(sec: float):
-			_results_toast("Clip wird aufgenommen … %d s" % int(sec), true))
+			_results_toast(tr("Clip wird aufgenommen … %d s") % int(sec), true))
 		_clip_exporter.finished.connect(func(ok: bool, path: String):
 			# Fortschritts-Toast weg, Ergebnis kommt als Results-Toast mit
 			# "Ordner öffnen"-Button (bzw. dem Fehlergrund).
@@ -3938,13 +3938,13 @@ func _on_results_clip() -> void:
 					and _results_screen.has_method("show_clip_result"):
 				_results_screen.show_clip_result(ok, path, "" if ok else str(_clip_exporter.last_error))
 			elif ok:
-				_results_toast("Clip gespeichert: %s" % path, false)
+				_results_toast(tr("Clip gespeichert: %s") % path, false)
 			else:
-				_results_toast("Clip-Export fehlgeschlagen", false))
+				_results_toast(tr("Clip-Export fehlgeschlagen"), false))
 	var md5 := ("%s|%s" % [GameSession.osz_path.get_file(), version]).md5_text()
 	var out := ClipExporter.clips_dir().path_join("clip_%s.avi" % md5)
 	if _clip_exporter.export_clip(md5, out):
-		_results_toast("Clip wird aufgenommen …", true)
+		_results_toast(tr("Clip wird aufgenommen …"), true)
 
 
 ## Kleiner Glas-Toast unten mittig auf dem Results-Screen. sticky = bleibt
@@ -4018,25 +4018,25 @@ func _build_tutorial_steps() -> void:
 			chord_a = (objs[i - 1] as ManiaNote).column
 			chord_b = (objs[i] as ManiaNote).column
 	_tut_steps = []
-	_tut_steps.append({ "t": objs[0].time - 3000.0, "title": "DEINE TASTEN",
-		"body": "%s  %s  %s  %s — eine Taste pro Spur (Pfeil: die Ringe).\nDrücke GENAU, wenn eine Drohne ihren Ring berührt." % [k[0], k[1], k[2], k[3]],
+	_tut_steps.append({ "t": objs[0].time - 3000.0, "title": tr("DEINE TASTEN"),
+		"body": tr("%s  %s  %s  %s — eine Taste pro Spur (Pfeil: die Ringe).\nDrücke GENAU, wenn eine Drohne ihren Ring berührt.") % [k[0], k[1], k[2], k[3]],
 		"worlds": [Vector3(0.0, ROAD_Y + 0.3, Z_LINE)] })
 	if first_note >= 0.0:
-		_tut_steps.append({ "t": first_note - 1600.0, "title": "ERSTE NOTE",
-			"body": "Gleich kommt eine Drohne auf DIESEN Ring zu.\nDrücke [%s] genau beim Berühren.\nDeine Wertung (MAX … 50) erscheint danach in der Bildmitte." % k[note_col],
+		_tut_steps.append({ "t": first_note - 1600.0, "title": tr("ERSTE NOTE"),
+			"body": tr("Gleich kommt eine Drohne auf DIESEN Ring zu.\nDrücke [%s] genau beim Berühren.\nDeine Wertung (MAX … 50) erscheint danach in der Bildmitte.") % k[note_col],
 			"worlds": [Vector3(RAIL_X[note_col], ROAD_Y + 0.3, Z_LINE)] })
 	if first_hold >= 0.0:
-		_tut_steps.append({ "t": first_hold - 1600.0, "title": "HOLD-NOTE",
-			"body": "Die Drohne mit dem langen Beam: [%s] drücken und HALTEN,\nbis der Beam vorbei ist. Zu früh loslassen = Combo weg!" % k[hold_col],
+		_tut_steps.append({ "t": first_hold - 1600.0, "title": tr("HOLD-NOTE"),
+			"body": tr("Die Drohne mit dem langen Beam: [%s] drücken und HALTEN,\nbis der Beam vorbei ist. Zu früh loslassen = Combo weg!") % k[hold_col],
 			"worlds": [Vector3(RAIL_X[hold_col], ROAD_Y + 0.3, Z_LINE)] })
 	if first_chord >= 0.0:
-		_tut_steps.append({ "t": first_chord - 1600.0, "title": "DOPPELNOTE",
-			"body": "Zwei Drohnen gleichzeitig — beide Pfeile!\n[%s] + [%s] EXAKT ZUSAMMEN drücken." % [k[chord_a], k[chord_b]],
+		_tut_steps.append({ "t": first_chord - 1600.0, "title": tr("DOPPELNOTE"),
+			"body": tr("Zwei Drohnen gleichzeitig — beide Pfeile!\n[%s] + [%s] EXAKT ZUSAMMEN drücken.") % [k[chord_a], k[chord_b]],
 			"worlds": [Vector3(RAIL_X[chord_a], ROAD_Y + 0.3, Z_LINE),
 				Vector3(RAIL_X[chord_b], ROAD_Y + 0.3, Z_LINE)] })
 	var span := objs[objs.size() - 1].time - objs[0].time
-	_tut_steps.append({ "t": objs[0].time + span * 0.45, "title": "DEIN HUD",
-		"body": "Der Pfeil zeigt auf die Timing-Leiste: Strich links = zu früh,\nrechts = zu spät. Darüber: Combo + Wertung.\nLinks: Accuracy · Rechts: Score · Oben: HP.\nJetzt spiel die Map zu Ende — viel Spaß!",
+	_tut_steps.append({ "t": objs[0].time + span * 0.45, "title": tr("DEIN HUD"),
+		"body": tr("Der Pfeil zeigt auf die Timing-Leiste: Strich links = zu früh,\nrechts = zu spät. Darüber: Combo + Wertung.\nLinks: Accuracy · Rechts: Score · Oben: HP.\nJetzt spiel die Map zu Ende — viel Spaß!"),
 		"screen": Vector2(0.5, 0.615) })
 	_tut_steps.sort_custom(func(a, b): return float(a.t) < float(b.t))
 	# Mindestabstand zwischen Stopps, sonst nerven sie.
@@ -4278,7 +4278,7 @@ func _mp_fill_row(row: Control, i: int, p: Dictionary, ranked: Array, mine: bool
 	var name_l: Label = vb.get_child(0).get_node("Name")
 	var score_l: Label = vb.get_child(0).get_node("Score")
 	var sub: Label = vb.get_node("Sub")
-	name_l.text = str(p.name) + ("  (du)" if mine else "")
+	name_l.text = str(p.name) + (tr("  (du)") if mine else "")
 	var leading := mine and i == 0 and ranked.size() > 1
 	name_l.add_theme_color_override("font_color",
 		Color(0.45, 1.0, 0.55) if leading
@@ -4297,7 +4297,7 @@ func _mp_fill_row(row: Control, i: int, p: Dictionary, ranked: Array, mine: bool
 			line += "  ·  -" + _fmt_score_diff(int(ranked[i - 1].score) - int(p.score))
 			col = Color(1.0, 0.55, 0.5)
 	if int(p.id) == _mp_danger:
-		line += "  ·  gerade Letzter"
+		line += tr("  ·  gerade Letzter")
 		col = Color(1.0, 0.72, 0.38)
 		name_l.add_theme_color_override("font_color", col)
 	sub.text = line
@@ -4337,11 +4337,11 @@ func _update_mp_placement(ranked: Array, my_id: int) -> void:
 		elif int(scores[id]) == mine:
 			tied += 1
 	var n := scores.size()
-	var txt := "PLATZ %d VON %d" % [better + 1, n]
+	var txt := tr("PLATZ %d VON %d") % [better + 1, n]
 	if better == 0 and tied == 0:
-		txt = "SIEG"
+		txt = tr("SIEG")
 	elif better == 0:
-		txt = "GLEICHSTAND AUF PLATZ 1"
+		txt = tr("GLEICHSTAND AUF PLATZ 1")
 	_results_screen.set_placement(txt, better == 0)
 
 
@@ -4361,41 +4361,41 @@ func _update_mp_mode_text() -> void:
 			var w := int(mm.history.back().winner)
 			col = LiveTeamBar.COLS[w] if w >= 0 else col
 			txt += "
-" + (("Runde an %s" % mm.team_names[w]) if w >= 0 else "Runde unentschieden")
+" + ((tr("Runde an %s") % mm.team_names[w]) if w >= 0 else tr("Runde unentschieden"))
 			if mm.series_over():
 				var sw := mm.series_winner()
 				txt += "
-Endstand %s %s : %s %s" % [mm.team_names[0], mm.team_wins[0],
+" + tr("Endstand %s %s : %s %s") % [mm.team_names[0], mm.team_wins[0],
 					mm.team_wins[1], mm.team_names[1]]
 				if sw >= 0:
-					txt += "  —  %s gewinnt" % mm.team_names[sw]
+					txt += tr("  —  %s gewinnt") % mm.team_names[sw]
 			else:
 				txt += "
-Serie %s : %s  (%s)" % [mm.team_wins[0], mm.team_wins[1], mm.series_label()]
+" + tr("Serie %s : %s  (%s)") % [mm.team_wins[0], mm.team_wins[1], mm.series_label()]
 	elif mm.kind == MatchMode.Kind.ROYALE:
 		if mm.round_no > _mp_round_no_at_start:
 			var out: Array = []
 			for id in mm.out_order:
 				if int(mm.players[id].out_round) == _mp_round_no_at_start:
 					out.append(_mp_name(int(id)))
-			txt = ("Raus: " + ", ".join(out)) if not out.is_empty() else "Gleichstand — keiner fliegt raus"
+			txt = (tr("Raus: ") + ", ".join(out)) if not out.is_empty() else tr("Gleichstand — keiner fliegt raus")
 			var me := multiplayer.get_unique_id()
 			if mm.players.has(me) and not mm.players[me].alive:
-				txt = "Du bist raus.
+				txt = tr("Du bist raus.") + "
 " + txt
 				col = Color(1.0, 0.72, 0.38)
 			if mm.is_over():
 				txt += "
-SIEGER: " + _mp_name(mm.winner_peer)
+" + tr("SIEGER: ") + _mp_name(mm.winner_peer)
 				var order: Array = []
 				for id in mm.out_order:
 					order.append(_mp_name(int(id)))
 				txt += "
-Ausgeschieden: " + ", ".join(order)
+" + tr("Ausgeschieden: ") + ", ".join(order)
 				col = Color(0.45, 1.0, 0.55)
 		else:
 			var low := mm.in_danger(Lobby.live_results())
-			txt = "Letzter fliegt raus" + (" — gerade: " + _mp_name(low) if low >= 0 else "")
+			txt = tr("Letzter fliegt raus") + (tr(" — gerade: ") + _mp_name(low) if low >= 0 else "")
 	_results_screen.set_mode_text(txt, col)
 
 
@@ -4411,7 +4411,7 @@ func _refresh_mp_ranking() -> void:
 	if _mp_rank_head != null and is_instance_valid(_mp_rank_head):
 		# Dezentes Mod-Badge (SV/NF) hinter der Ueberschrift.
 		var mt := Lobby.mods_text(GameSession.mods)
-		_mp_rank_head.text = "RANGLISTE" if mt == "" else "RANGLISTE  ·  " + mt
+		_mp_rank_head.text = tr("RANGLISTE") if mt == "" else tr("RANGLISTE") + "  ·  " + mt
 	var ranked := Lobby.ranked_players()
 	var my_id := multiplayer.get_unique_id()
 	_update_mp_placement(ranked, my_id)
@@ -4422,7 +4422,7 @@ func _refresh_mp_ranking() -> void:
 		var row := Label.new()
 		var state := ""
 		if fin.is_empty():
-			state = "spielt noch…  (%s)" % UiTheme.fmt_score(int(p.score))
+			state = tr("spielt noch…  (%s)") % UiTheme.fmt_score(int(p.score))
 		else:
 			state = "%s · %s · %s · %dx%s" % [UiTheme.fmt_score(int(fin.get("score", p.score))),
 				UiTheme.fmt_pct(float(fin.get("acc", 0.0)) * 100.0), str(fin.get("grade", "?")),

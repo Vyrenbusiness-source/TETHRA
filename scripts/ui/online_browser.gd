@@ -492,7 +492,7 @@ func _build_pack_row(vb: VBoxContainer) -> void:
 	_pack_row.add_child(star)
 	_pack_n_opt = OptionButton.new()
 	for n in [5, 10, 20]:
-		_pack_n_opt.add_item("%d Maps" % n, n)
+		_pack_n_opt.add_item(tr("%d Maps") % n, n)
 	_pack_n_opt.select(1)
 	_pack_n_opt.custom_minimum_size = Vector2(0, 32)
 	_pack_row.add_child(_pack_n_opt)
@@ -618,7 +618,7 @@ func _run_search() -> void:
 	_mirror.sv_mode = sv_filter
 	_clear_grid()
 	_show_skeleton()
-	_say(("Suche „%s“ …" % q) if q != "" else "Lade Maps …")
+	_say((tr("Suche „%s“ …") % q) if q != "" else tr("Lade Maps …"))
 	_mirror.search(q, 0, sort_mode, status_mode)
 
 
@@ -635,14 +635,14 @@ func _on_search_failed(message: String) -> void:
 		# Mirror-Aussetzer beim Pack: kurz warten, dieselbe Seite erneut.
 		_pack_retries += 1
 		if _pack_retries <= 5:
-			_say("Mirror kurz nicht erreichbar – neuer Versuch …")
+			_say(tr("Mirror kurz nicht erreichbar – neuer Versuch …"))
 			get_tree().create_timer(1.5, true).timeout.connect(func():
 				if _pack_active:
 					_loading = true
 					_mirror.search(_query, _offset, sort_mode, status_mode))
 		else:
 			_pack_active = false
-			_say("Pack abgebrochen: Mirror nicht erreichbar.")
+			_say(tr("Pack abgebrochen: Mirror nicht erreichbar."))
 		return
 	if _suggest_fallback and _offset == 0:
 		_suggest_fallback = false
@@ -659,7 +659,7 @@ func _on_search_failed(message: String) -> void:
 	_stop_skeleton()
 	_clear_grid()
 	_say("")
-	_show_state("Mirror nicht erreichbar", message + "\nInternetverbindung prüfen und erneut versuchen.",
+	_show_state("Mirror nicht erreichbar", message + "\n" + tr("Internetverbindung prüfen und erneut versuchen."),
 		"Erneut versuchen", _run_search)
 
 
@@ -753,7 +753,7 @@ func _update_status() -> void:
 	_update_dl_info()
 	var n := _rows.size()
 	var parts: Array[String] = []
-	parts.append("%s %s" % [UiTheme.fmt_score(n), "Map" if n == 1 else "Maps"])
+	parts.append("%s %s" % [UiTheme.fmt_score(n), tr("Map") if n == 1 else tr("Maps")])
 	if genre_id != 0:
 		parts.append(BeatmapMirror.genre_label(genre_id))
 	if star_filter != 0:
@@ -1089,7 +1089,7 @@ func _make_card(r: Dictionary) -> Control:
 	var t := _label(str(r.title), 17, TEXT)
 	t.add_theme_font_override("font", UiTheme.heading_font(0))
 	info.add_child(t)
-	info.add_child(_label("%s  ·  von %s" % [str(r.artist), str(r.creator)], 13, Color(TEXT, 0.78)))
+	info.add_child(_label(tr("%s  ·  von %s") % [str(r.artist), str(r.creator)], 13, Color(TEXT, 0.78)))
 	info.add_child(_label(meta_line(r), 12, DIM))
 
 	# Sterne je 4K-Diff (aufsteigend), max. 5 + "+N", danach ggf. SV.
@@ -1288,7 +1288,7 @@ func _update_dl_info() -> void:
 	if _dl_info == null:
 		return
 	var n := _mirror.downloads_running()
-	_dl_info.text = "" if n == 0 else ("%d Download läuft" % n if n == 1 else "%d Downloads laufen" % n)
+	_dl_info.text = "" if n == 0 else (tr("%d Download läuft") % n if n == 1 else tr("%d Downloads laufen") % n)
 
 
 func _on_dl_progress(set_id: int, ratio: float) -> void:
@@ -1309,7 +1309,7 @@ func _on_dl_failed(set_id: int, message: String) -> void:
 		_update_pack_status()
 		return
 	if _rows.has(set_id):
-		_say("Download fehlgeschlagen: " + message.trim_prefix("Download fehlgeschlagen "))
+		_say(tr("Download fehlgeschlagen: ") + message.trim_prefix("Download fehlgeschlagen "))
 
 
 func _on_dl_cancelled(set_id: int) -> void:
@@ -1346,7 +1346,7 @@ func start_pack() -> void:
 	_pack_done = 0
 	_pack_pages = 0
 	_pack_retries = 0
-	_say("Pack: suche Maps zwischen %s und %s ★ …" % [UiTheme.fmt_num(_pack_lo), UiTheme.fmt_num(_pack_hi)])
+	_say(tr("Pack: suche Maps zwischen %s und %s ★ …") % [UiTheme.fmt_num(_pack_lo), UiTheme.fmt_num(_pack_hi)])
 	_pack_fill()
 
 
@@ -1384,14 +1384,14 @@ func _update_pack_status() -> void:
 	var rng := "%s–%s ★" % [UiTheme.fmt_num(_pack_lo), UiTheme.fmt_num(_pack_hi)]
 	if _pack_started.is_empty() and (_end_reached or _pack_pages >= 12):
 		_pack_active = false
-		_say("Pack: nichts Passendes im Bereich %s gefunden." % rng)
+		_say(tr("Pack: nichts Passendes im Bereich %s gefunden.") % rng)
 		return
-	_say("Pack (%s): %d von %d fertig  ·  %d laufen" % [rng, _pack_done,
+	_say(tr("Pack (%s): %d von %d fertig  ·  %d laufen") % [rng, _pack_done,
 		_pack_started.size(), _pack_started.size() - _pack_done])
 	if _pack_done >= _pack_started.size() \
 			and (_pack_started.size() >= _pack_want or _end_reached or _pack_pages >= 12):
 		_pack_active = false
-		_say("Pack fertig: %d Maps geladen (%s)." % [_pack_done, rng])
+		_say(tr("Pack fertig: %d Maps geladen (%s).") % [_pack_done, rng])
 
 
 # ---------------------------------------------------------------------------
@@ -1416,7 +1416,7 @@ func _toggle_preview(r: Dictionary) -> void:
 	_preview_req.cancel_request()
 	_set_preview_mark(set_id)
 	if _preview_req.request(url, BeatmapMirror.headers()) != OK:
-		_say("Vorschau nicht verfügbar.")
+		_say(tr("Vorschau nicht verfügbar."))
 		_set_preview_mark(-1)
 
 
@@ -1437,7 +1437,7 @@ func _stop_preview() -> void:
 
 func _on_preview_bytes(result: int, code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
 	if result != HTTPRequest.RESULT_SUCCESS or code != 200 or body.is_empty():
-		_say("Vorschau nicht verfügbar.")
+		_say(tr("Vorschau nicht verfügbar."))
 		_set_preview_mark(-1)
 		return
 	# b.ppy.sh liefert trotz .mp3-Endung OGG Vorbis — Magic-Bytes pruefen.
@@ -1451,7 +1451,7 @@ func _on_preview_bytes(result: int, code: int, _headers: PackedStringArray, body
 		if mp3.get_length() > 0.0:
 			stream = mp3
 	if stream == null:
-		_say("Vorschau nicht abspielbar.")
+		_say(tr("Vorschau nicht abspielbar."))
 		_set_preview_mark(-1)
 		return
 	preview_stream.emit(stream)

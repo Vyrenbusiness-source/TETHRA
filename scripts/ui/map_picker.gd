@@ -750,8 +750,8 @@ func _refilter(keep: MapSet) -> void:
 		_shown = clamp_to_range(_shown, star_range.x, star_range.y)
 	sort_entries(_shown, _sort, _desc)
 	var n := _shown.size()
-	_count_label.text = ("%s von %s Maps" % [UiTheme.fmt_score(n), UiTheme.fmt_score(_entries.size())]) \
-			if n != _entries.size() else ("%s Maps" % UiTheme.fmt_score(n))
+	_count_label.text = (tr("%s von %s Maps") % [UiTheme.fmt_score(n), UiTheme.fmt_score(_entries.size())]) \
+			if n != _entries.size() else (tr("%s Maps") % UiTheme.fmt_score(n))
 	_empty_label.visible = n == 0
 	_content.custom_minimum_size = Vector2(0, maxf(n * (ROW_H + ROW_GAP) - ROW_GAP, 0.0))
 	var idx := -1
@@ -912,7 +912,7 @@ func _bind_row(row: Dictionary, e: Dictionary) -> void:
 	(row.title as Label).text = ms.title
 	var sub := ms.artist
 	if ms.creator != "":
-		sub += "  ·  von " + ms.creator
+		sub += tr("  ·  von ") + ms.creator
 	(row.sub as Label).text = sub
 	var diffs: Array = e.diffs
 	var pills: Array = row.pills
@@ -1071,14 +1071,14 @@ func _show_detail() -> void:
 	var e: Dictionary = _shown[_sel]
 	_detail_cover.texture = _covers.get(e.file, null)
 	_detail_title.text = ms.title
-	_detail_sub.text = "%s  ·  von %s" % [ms.artist, ms.creator] if ms.creator != "" else ms.artist
+	_detail_sub.text = tr("%s  ·  von %s") % [ms.artist, ms.creator] if ms.creator != "" else ms.artist
 	var parts: Array[String] = []
 	var bpm: float = e.bpm
 	if bpm > 0.0:
 		parts.append(UiTheme.fmt_num(bpm, 0 if is_equal_approx(bpm, roundf(bpm)) else 1) + " BPM")
 	if float(e.length) > 0.0:
 		parts.append(OnlineBrowser.fmt_length(int(float(e.length) / 1000.0)))
-	parts.append("%d Diff%s" % [e.diffs.size(), "" if e.diffs.size() == 1 else "s"])
+	parts.append(tr("%d Diffs") % e.diffs.size() if e.diffs.size() != 1 else tr("1 Diff"))
 	_detail_meta.text = "  ·  ".join(parts)
 	if not can_pick:
 		_diff_box.add_child(_label("Nur der Kronenträger wählt die Map.", 13, DIM))
