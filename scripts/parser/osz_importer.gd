@@ -284,22 +284,31 @@ static func _load_image_uncached(osz_path: String, inner_name: String) -> Textur
 	var bytes := reader.read_file(match_name)
 	reader.close()
 
-	var img := Image.new()
-	var lower := match_name.to_lower()
-	var err := ERR_FILE_UNRECOGNIZED
-	if lower.ends_with(".jpg") or lower.ends_with(".jpeg"):
-		err = img.load_jpg_from_buffer(bytes)
-	elif lower.ends_with(".png"):
-		err = img.load_png_from_buffer(bytes)
-	elif lower.ends_with(".bmp"):
-		err = img.load_bmp_from_buffer(bytes)
-	elif lower.ends_with(".webp"):
-		err = img.load_webp_from_buffer(bytes)
-	if err != OK:
+	var img := decode_image_bytes(bytes)
+	if img == null:
 		return null
 	# Mipmaps erlauben weichen Blur (textureLod) z.B. im Main-Menue.
 	img.generate_mipmaps()
 	return ImageTexture.create_from_image(img)
+
+
+## Bild nach Magic-Bytes dekodieren (nicht nach Endung). Kaputt/unbekannt: null.
+static func decode_image_bytes(bytes: PackedByteArray) -> Image:
+	if bytes.size() < 12:
+		return null
+	var img := Image.new()
+	var err := ERR_FILE_UNRECOGNIZED
+	if bytes[0] == 0x89 and bytes[1] == 0x50 and bytes[2] == 0x4E and bytes[3] == 0x47:
+		err = img.load_png_from_buffer(bytes)
+	elif bytes[0] == 0xFF and bytes[1] == 0xD8:
+		err = img.load_jpg_from_buffer(bytes)
+	elif bytes[0] == 0x42 and bytes[1] == 0x4D:
+		err = img.load_bmp_from_buffer(bytes)
+	elif bytes[0] == 0x52 and bytes[1] == 0x49 and bytes[2] == 0x46 and bytes[3] == 0x46 			and bytes[8] == 0x57 and bytes[9] == 0x45 and bytes[10] == 0x42 and bytes[11] == 0x50:
+		err = img.load_webp_from_buffer(bytes)
+	if err != OK or img.is_empty():
+		return null
+	return img
 
 
 static func _stream_from_bytes(bytes: PackedByteArray, filename: String) -> AudioStream:

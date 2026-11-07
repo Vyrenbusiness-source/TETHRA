@@ -153,6 +153,12 @@ void sky() {
 		+ vec3(0.20, 0.27, 0.22) * fd.g * 0.10 * (1.0 + 0.6 * beat_pulse + 0.2 * drop)
 		+ pale * fd.b * 0.32 * (0.5 + 0.5 * beat_pulse + 0.5 * downbeat_pulse * mv + 0.3 * kiai);
 
+	// HUD-Spalten (links: Rang/Genauigkeit, rechts: Punkte/Noten): der helle Riss laeuft
+	// dort nicht durch, sonst sinkt die Lesbarkeit der Labels (docs/qa/worlds.md).
+	float hud_side = smoothstep(0.40, 0.62, abs(lon));
+	float hud_band = smoothstep(-0.45, -0.20, lat) * (1.0 - smoothstep(0.30, 0.50, lat));
+	far_col *= 1.0 - 0.92 * hud_side * hud_band;
+
 	if (AT_CUBEMAP_PASS) {
 		COLOR = far_col * tint * brightness * 0.5;
 	} else {

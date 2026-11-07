@@ -252,7 +252,7 @@ void sky() {
 		float blur = warp * 0.10;
 
 		// Drop: Trichter zieht sich enger (Quellradius waechst = Muster rueckt zum Auge).
-		float open_k = 1.0 + 0.30 * dn;
+		float open_k = 1.0 + 0.24 * dn;
 		// Einziehen auf dem Schlag, mehr auf dem Taktanfang.
 		float pull = (0.045 * bp + 0.040 * dbp * cf) * breath;
 
@@ -326,6 +326,10 @@ void sky() {
 		col *= 1.0 + litk * ((flash * wall + 0.16 * dn * wall) * en + storm);
 		col += glow_color * (0.006 * (bp + dbp * cf) * en + 0.010 * dn + 0.012 * kg * dbp) * inner
 			* smoothstep(eye_radius * 0.95, eye_radius * 1.3, rdeg * open_k);
+
+		// Drop: der engere Trichter zoeht dunkle Wolken nach oben (Himmel wurde dunkler).
+		// Oben gedeckelt aufhellen (+35 % Vertrag), Mitte/unten unberuehrt.
+		col *= 1.0 + 0.55 * dn * smoothstep(-0.40, 0.05, lat);
 
 		col *= tint * brightness;
 
