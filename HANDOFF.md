@@ -80,8 +80,12 @@ Gemergt in main, aber NOCH NICHT im Spiel aktiv (Auswahl-Integration fehlt):
 - storm und singularity: noch ohne Assets (Generator tools/gen_theme_<n>.py laufen lassen / fertig bauen) — erscheinen automatisch, sobald shaders/theme_<n>.gdshader + assets_game/themes/<n>/*.webp existieren (WorldTheme.is_available).
 - Optional Feinschliff: eclipse/abyss/fractal/obsidian Previews nochmal pruefen (wurden beim Limit-Stopp gemergt).
 
-## Welten-Runde 2026-11-07 (Batch tasks42/43/44 laeuft, 8 Agents)
-- Gemergt: beat-core (Beat-Vertrag docs/worlds/beat_contract.md im Spiel, Drop gedeckelt, neue Welten monolith/rift/nerve registriert).
-- Offen: worlds-storm-sing, worlds-dark-a (boss, eclipse), worlds-dark-b (abyss, fractal, aurora), worlds-new (monolith), world-rift, world-nerve, world-obsidian, mp-check (Multiplayer: Live-Battle links, Kartenwahl, Host geben).
-- Nutzer-Vorgaben: Fraktal-Stil (vorbeifliegende 3D-Splitter) ist Referenz; Sturm = Durchflug durch Tornado; maximal scharf (8192, BPTC, anisotrop); extrem viele FPS (<=15 % Verlust ggue. sky_panorama, [perf] in Preview); Drop nicht zu stark; Neon nicht anfassen; max 8 Agents.
-- Danach: Merge, Spiel-Shots je Welt, Release (Ablauf oben).
+## v1.9.0 released (2026-11-07 abends)
+Alles gemergt und released: 11 dunkle Welten (Beat-Vertrag + Komfort-Regeln docs/worlds/beat_contract.md), Noten in Weltfarbe, SV-Mod (x1,10, NF jetzt x0,50), Multiplayer (Live-Board, Kartenwahl wie Song-Browser mit eigenen Scores + Online-Download, Host geben, Mods im Raum, Platzierung), Online-Map-Browser (Genre/Sortierung), 2D-Modus (Balken/Kreis, Map-Hintergrund mit Blur + Deckkraft), Spurbreite 70-120 %, Welt-Vorschau in den Einstellungen, Welten-Paket getrennt (TETHRA_worlds.pck ~820 MB, Haupt-pck ~19 MB).
+Offen / ungetestet:
+- MP: Download-im-Raum + "Map laden" nie live getestet (Agent lief im Loop) -> Nutzer testet selbst.
+- Welten-Paket-Download des Updaters gegen echtes GitHub-Release (HTTP Range ueber Redirect) erstmals mit v1.9.0.
+- song_select laedt Welt-Texturen auch im 2D-Modus vor (unnoetig).
+- Sturm: Seitenroehren folgen der Spurbreite nicht. Boss-Himmel: harter rosa Streifen oben (alt).
+- 5 abgebrochene Downloads in maps/ (mirror_2538892, mirror_2556039, mirror_2597846, ...) - Nutzer entscheidet.
+Nutzer-Vorgaben (dauerhaft): Fraktal-Stil = Referenz; nichts kippt/rollt; Drop nie zu stark; maximal scharf; extrem viele FPS; Neon nicht anfassen; Discord nicht; Tests lautlos, nur Monitor 2, Fenster mit timeout; Tests nicht unnoetig wiederholen; bis 10 Agents.
