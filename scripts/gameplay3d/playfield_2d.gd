@@ -8,7 +8,7 @@ extends Control
 ## auf Bild-Y abgebildet (Z_FAR = Oberkante, Z_LINE = Abfanglinie).
 
 const LINE_FRAC := 0.86       ## Abfanglinie bei 86 % Bildhoehe
-const COL_W_FRAC := 0.074     ## Spaltenbreite bei 100 % Spurbreite (x Bildhoehe)
+const COL_W_FRAC := 0.10      ## Spaltenbreite bei 100 % Spurbreite (x Bildhoehe)
 const NOTE_H_FRAC := 0.026    ## Notenbalken-Hoehe (x Bildhoehe)
 const RECEPTOR_H_FRAC := 0.05 ## Receptor-Feld unter der Linie
 
@@ -18,6 +18,7 @@ const STATE_DEAD := 2         ## verpasst / losgelassen: grau
 
 var columns := 4
 var lane_k := 1.0
+var note_k := 1.0    ## Settings.note_size_2d: Balkenhoehe bzw. Kreis-Durchmesser
 var z_line := 3.0
 var z_far := -46.0
 var key_names: PackedStringArray = []
@@ -38,13 +39,15 @@ var _font: Font
 
 
 func setup(p_columns: int, p_lane_k: float, p_z_line: float, p_z_far: float,
-		p_keys: PackedStringArray, p_lane_color: Color, p_style: int = 0) -> void:
+		p_keys: PackedStringArray, p_lane_color: Color, p_style: int = 0,
+		p_note_k: float = 1.0) -> void:
 	circle = p_style == 1
 	if circle:
 		_disc_tex = _make_circle_tex(false)
 		_ring_tex = _make_circle_tex(true)
 	columns = p_columns
 	lane_k = p_lane_k
+	note_k = p_note_k
 	z_line = p_z_line
 	z_far = p_z_far
 	key_names = p_keys
@@ -52,6 +55,23 @@ func setup(p_columns: int, p_lane_k: float, p_z_line: float, p_z_far: float,
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_font = ThemeDB.fallback_font
+
+
+## Spurbreite/Notengroesse live aendern (Pausenmenue).
+func set_sizes(p_lane_k: float, p_note_k: float) -> void:
+	lane_k = p_lane_k
+	note_k = p_note_k
+	queue_redraw()
+
+
+## Notenbalken-Hoehe in Pixeln (mit Notengroesse).
+func note_h() -> float:
+	return _vs().y * NOTE_H_FRAC * note_k
+
+
+## Kreis-Durchmesser: 86 % der Spalte bei 100 %, nie breiter als die Spalte.
+func circle_d() -> float:
+	return minf(col_width() * 0.86 * note_k, col_width())
 
 
 func begin_frame() -> void:
@@ -115,7 +135,7 @@ func _draw() -> void:
 		var a := 0.30 if (c == 0 or c == columns) else 0.10
 		draw_line(Vector2(x, 0.0), Vector2(x, vs.y), Color(1, 1, 1, a), 1.0)
 	# Noten/Holds.
-	var nh := vs.y * NOTE_H_FRAC
+	var nh := note_h()
 	var pad := maxf(2.0, cw * 0.06)
 	for it in _items:
 		var col: int = it[0]
@@ -158,7 +178,7 @@ func _draw() -> void:
 		var base := lane_color.lerp(fc, fl * 0.6)
 		var fill_a := 0.14 + (0.45 if on else 0.0) + fl * 0.25
 		if circle:
-			var d := minf(cw - pad * 2.0, cw * 0.86)
+			var d := circle_d()
 			var rr := Rect2(x + (cw - d) * 0.5, ly - d * 0.5, d, d)
 			draw_texture_rect(_disc_tex, rr, false, Color(base.r, base.g, base.b, minf(fill_a, 0.85) * 0.6))
 			draw_texture_rect(_ring_tex, rr, false, Color(base.r, base.g, base.b, 0.95 if on else 0.6))
@@ -176,7 +196,7 @@ func _draw() -> void:
 ## Kreis-Stil: runde Note; Hold = Balken mit runden Enden (Kopf-Kreis + Endkappe).
 func _draw_circle_item(it: Array, x0: float, w: float, yh: float, c: Color, st: int) -> void:
 	var vs := _vs()
-	var d := minf(w, col_width() * 0.86)
+	var d := circle_d()
 	var cx := x0 + w * 0.5
 	if bool(it[5]):
 		var yt := z_to_y(float(it[2]))

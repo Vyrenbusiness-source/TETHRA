@@ -71,6 +71,13 @@ var bg_blur: bool = true
 ## 2D-Notenform: 0 = Balken (flache Rechtecke), 1 = Kreis (runde Noten,
 ## Holds mit runden Enden, Receptors als Ringe).
 var note_style_2d: int = 0
+## 2D-Spurbreite und 2D-Notengroesse (relativ, 0.5..2.0, 5er-Schritte). Eigene
+## Werte, weil die 3D-Strecke nur 70..120 % vertraegt.
+var lane_width_2d: float = 1.0
+var note_size_2d: float = 1.0
+const SIZE_2D_MIN := 0.5
+const SIZE_2D_MAX := 2.0
+const SIZE_2D_STEP := 0.05
 const NOTE_STYLE_BAR := 0
 const NOTE_STYLE_CIRCLE := 1
 ## Hitsounds an/aus + Lautstaerke (0..1).
@@ -332,6 +339,8 @@ func load_settings(path: String = PATH) -> void:
 	bg_dim = clamp_bg_dim(float(cfg.get_value("game", "bg_dim", 0.3)))
 	bg_blur = bool(cfg.get_value("game", "bg_blur", true))
 	note_style_2d = clampi(int(cfg.get_value("game", "note_style_2d", 0)), 0, 1)
+	lane_width_2d = clamp_2d_size(float(cfg.get_value("game", "lane_width_2d", 1.0)))
+	note_size_2d = clamp_2d_size(float(cfg.get_value("game", "note_size_2d", 1.0)))
 	hitsound_set = clampi(int(cfg.get_value("game", "hitsound_set", 0)), 0, 2)
 	hitsound_volume = clampf(float(cfg.get_value("game", "hitsound_volume", 0.8)), 0.0, 1.0)
 	fullscreen = bool(cfg.get_value("game", "fullscreen", false))
@@ -362,6 +371,8 @@ func save(path: String = PATH) -> void:
 	cfg.set_value("game", "bg_dim", bg_dim)
 	cfg.set_value("game", "bg_blur", bg_blur)
 	cfg.set_value("game", "note_style_2d", note_style_2d)
+	cfg.set_value("game", "lane_width_2d", lane_width_2d)
+	cfg.set_value("game", "note_size_2d", note_size_2d)
 	cfg.set_value("game", "hitsound_set", hitsound_set)
 	cfg.set_value("game", "hitsound_volume", hitsound_volume)
 	cfg.set_value("game", "fullscreen", fullscreen)
@@ -541,6 +552,13 @@ static func clamp_bg_dim(v: float) -> float:
 	if is_nan(v):
 		return 0.3
 	return snappedf(clampf(v, 0.0, 1.0), 0.05)
+
+
+## 2D-Spurbreite/-Notengroesse auf 0.5..2.0 + 5-%-Raster ziehen.
+static func clamp_2d_size(v: float) -> float:
+	if is_nan(v):
+		return 1.0
+	return snappedf(clampf(v, SIZE_2D_MIN, SIZE_2D_MAX), SIZE_2D_STEP)
 
 
 ## Notengroesse zur Spurbreite: bis 85 % voll, darunter leicht mitskalieren,

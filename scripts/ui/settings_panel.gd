@@ -30,6 +30,9 @@ var _offset_slider: HSlider
 var _vol_value: Label
 var _bg_dim_slider: HSlider
 var _bg_blur_btn: CheckButton
+var _lane2d_slider: HSlider
+var _note2d_slider: HSlider
+var _spacing_slider: HSlider
 var _note_style_opt: OptionButton
 
 
@@ -113,8 +116,9 @@ func _ready() -> void:
 	spacing_slider.value_changed.connect(func(v):
 		Settings.lane_spacing = Settings.clamp_lane_spacing(v / 100.0)
 		spacing_value.text = _fmt_pct0(Settings.lane_spacing))
-	spacing_slider.tooltip_text = "Abstand der Spuren (3D und 2D). Unter 85 % werden die Noten leicht kleiner."
-	_row(cv_gameplay, "Spurbreite", spacing_slider, spacing_value)
+	spacing_slider.tooltip_text = "Abstand der Spuren in der 3D-Welt. Unter 85 % werden die Noten leicht kleiner."
+	_spacing_slider = spacing_slider
+	_row(cv_gameplay, "Spurbreite (3D)", spacing_slider, spacing_value)
 
 	var mode_2d := CheckButton.new()
 	mode_2d.button_pressed = Settings.playfield_2d
@@ -132,16 +136,35 @@ func _ready() -> void:
 	_note_style_opt.item_selected.connect(func(i): Settings.note_style_2d = i)
 	_row(cv_gameplay, "2D-Notenform", _note_style_opt, null)
 
+	_lane2d_slider = _size_2d_slider("lane_width_2d")
+	var lane2d_value := Label.new()
+	lane2d_value.text = _fmt_pct0(Settings.lane_width_2d)
+	_lane2d_slider.value_changed.connect(func(v):
+		Settings.lane_width_2d = Settings.clamp_2d_size(v / 100.0)
+		lane2d_value.text = _fmt_pct0(Settings.lane_width_2d))
+	_lane2d_slider.tooltip_text = "Breite der 2D-Spalten (auch im Pausenmenü einstellbar)"
+	_row(cv_gameplay, "2D-Spurbreite", _lane2d_slider, lane2d_value)
+
+	_note2d_slider = _size_2d_slider("note_size_2d")
+	var note2d_value := Label.new()
+	note2d_value.text = _fmt_pct0(Settings.note_size_2d)
+	_note2d_slider.value_changed.connect(func(v):
+		Settings.note_size_2d = Settings.clamp_2d_size(v / 100.0)
+		note2d_value.text = _fmt_pct0(Settings.note_size_2d))
+	_note2d_slider.tooltip_text = "Höhe der Balken bzw. Größe der Kreise (auch im Pausenmenü einstellbar)"
+	_row(cv_gameplay, "2D-Notengröße", _note2d_slider, note2d_value)
+
 	_bg_dim_slider = HSlider.new()
 	_bg_dim_slider.min_value = 0.0
 	_bg_dim_slider.max_value = 100.0
 	_bg_dim_slider.step = 5.0
 	_bg_dim_slider.value = Settings.bg_dim * 100.0
 	var dim_value := Label.new()
-	dim_value.text = _fmt_pct0(Settings.bg_dim)
+	dim_value.text = _fmt_bg(Settings.bg_dim)
+	_bg_dim_slider.tooltip_text = "Helligkeit des Map-Bilds im 2D-Modus; 0 % = Hintergrund aus (schwarz)"
 	_bg_dim_slider.value_changed.connect(func(v):
 		Settings.bg_dim = Settings.clamp_bg_dim(v / 100.0)
-		dim_value.text = _fmt_pct0(Settings.bg_dim))
+		dim_value.text = _fmt_bg(Settings.bg_dim))
 	_row(cv_gameplay, "Hintergrund-Deckkraft", _bg_dim_slider, dim_value)
 
 	_bg_blur_btn = CheckButton.new()
@@ -432,6 +455,21 @@ func _row(vb: VBoxContainer, caption: String, control: Control, value: Label) ->
 		row.add_child(value)
 
 
+## Regler 50..200 % fuer eine 2D-Groesse (Settings-Feld key).
+func _size_2d_slider(key: String) -> HSlider:
+	var sl := HSlider.new()
+	sl.min_value = Settings.SIZE_2D_MIN * 100.0
+	sl.max_value = Settings.SIZE_2D_MAX * 100.0
+	sl.step = Settings.SIZE_2D_STEP * 100.0
+	sl.value = float(Settings.get(key)) * 100.0
+	return sl
+
+
+## Hintergrund-Deckkraft: 0 -> "Aus", sonst "30 %".
+static func _fmt_bg(v: float) -> String:
+	return "Aus" if v <= 0.001 else _fmt_pct0(v)
+
+
 ## 0.85 -> "85 %".
 static func _fmt_pct0(v: float) -> String:
 	return UiTheme.fmt_num(v * 100.0, 0) + " %"
@@ -449,6 +487,13 @@ func _update_2d_rows() -> void:
 	if _bg_blur_btn != null:
 		_bg_blur_btn.disabled = not on
 		_bg_blur_btn.modulate.a = 1.0 if on else 0.4
+	for sl in [_lane2d_slider, _note2d_slider]:
+		if sl != null:
+			sl.editable = on
+			sl.modulate.a = 1.0 if on else 0.4
+	if _spacing_slider != null:
+		_spacing_slider.editable = not on
+		_spacing_slider.modulate.a = 0.4 if on else 1.0
 	if _world_row is OptionButton:
 		(_world_row as OptionButton).disabled = on
 		_world_row.modulate.a = 0.4 if on else 1.0
