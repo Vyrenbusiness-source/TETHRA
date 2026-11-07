@@ -43,12 +43,12 @@ shader_type sky;
 // Wellen-Ebene mit Mipmaps). Cubemap-Pass (Radiance) nur Panorama.
 //
 // NAHE EBENE shards_tex (obsidian_shards.webp, RGBA): erstarrte Oel-Splitter im Stil der Fraktal-Splitter;
-//   Parallax zur Fernebene, Gier rastet mit beat_step ein, Drop = schneller/naeher/heller
+//   Parallax zur Fernebene, gleichmaessige Gier (<= 1 Grad/s, nie ueber beat_step), Drop = naeher/heller
 //   (Mitte/unten in Weltkoordinaten frei). Bindung: mat.set_shader_parameter("shards_tex", load("res://assets_game/themes/obsidian/obsidian_shards.webp")).
 // BEAT-VERTRAG (docs/worlds/beat_contract.md):
-//   beat_step       DRUCKWELLE: auf jedem Schlag schiesst der Kamm vom Horizont zum
-//                   Spieler (Easing 1-(1-p)^4: Anschlag exakt auf dem Schlag, dann
-//                   Ruhe) und die Oeltropfen (obsidian_drops.webp) springen aufwaerts.
+//   beat_step       DRUCKWELLE: je Schlag rollt der Kamm glatt vom Horizont zum
+//                   Spieler (glatte Formel, auf dem Schlag leicht schneller, nie
+//                   Stillstand) und die Oeltropfen (obsidian_drops.webp) steigen glatt auf.
 //   beat_pulse      Glanzpunkte der Tropfen und Panorama-Glanz blitzen kurz auf.
 //   downbeat_pulse  Takt-Akzent: Druckwelle ~1.8x hoeher, Seitenglanz hebt sich.
 //   drop            Verwandlung: schwarzes Oel BAEUMT sich auf (hoehere Duenung,
@@ -141,14 +141,11 @@ uniform float swell_reach = 120.0;      // Start-Abstand der Druckwelle (vorn)
 uniform float swell_height = 2.6;       // Hoehe der Druckwelle (Welteinheiten)
 uniform float swell_gloss = 0.35;       // Glanz-Anstieg auf der Welle / im Atem
 
+// Komfort (beat_contract.md): nur Gier um die Hochachse. x (Nicken) und z (Rollen)
+// werden ignoriert, damit der Horizont immer waagerecht bleibt.
 mat3 euler(vec3 e) {
-	float cx = cos(e.x), sx = sin(e.x);
 	float cy = cos(e.y), sy = sin(e.y);
-	float cz = cos(e.z), sz = sin(e.z);
-	mat3 rx = mat3(vec3(1.0, 0.0, 0.0), vec3(0.0, cx, sx), vec3(0.0, -sx, cx));
-	mat3 ry = mat3(vec3(cy, 0.0, -sy), vec3(0.0, 1.0, 0.0), vec3(sy, 0.0, cy));
-	mat3 rz = mat3(vec3(cz, sz, 0.0), vec3(-sz, cz, 0.0), vec3(0.0, 0.0, 1.0));
-	return ry * rx * rz;
+	return mat3(vec3(cy, 0.0, -sy), vec3(0.0, 1.0, 0.0), vec3(sy, 0.0, cy));
 }
 
 vec2 dir_uv(vec3 d, vec2 ofs) {
@@ -192,8 +189,8 @@ vec3 light_dir(vec3 l, mat3 m) {
 	return m * vec3(sin(lo) * cos(la), sin(la), -cos(lo) * cos(la));
 }
 
-// Eingerastete Beat-Phase 0..1: steigt auf dem Schlag schnell, ruht bis zum naechsten
-// (= fract(beat_step), Easing 1-(1-p)^4). Fallback ohne beat_step: aus beat_pulse.
+// Beat-Phase 0..1 aus beat_step (glatte Formel: nie Stillstand, auf dem Schlag leicht
+// schneller). Huelle sin^2 macht den Wrap stetig. Fallback ohne beat_step: aus beat_pulse.
 float step_phase() {
 	if (beat_step > 0.0001) {
 		return clamp(fract(beat_step - 1e-5), 0.0, 1.0);
@@ -329,7 +326,7 @@ void sky() {
 		if (dir.y < 0.0) {
 			col = oil_sea(dir, pan, prot);
 		} else {
-		// Tropfen-Ebene (Parallax): zwei ueberblendete Lagen steigen je Schlag ein Stueck.
+		// Tropfen-Ebene (Parallax): zwei ueberblendete Lagen steigen glatt (beat_step = Tempo-Akzent).
 		{
 			float mvv = 1.0 - 0.5 * comfort;
 			float rp = beat_step * 0.125 * mvv + TIME * 0.004;
@@ -347,11 +344,11 @@ void sky() {
 			col = col * asum + dsum * flare;
 		}
 		// Nahe Objekt-Ebene (Stil Fraktal-Splitter): Brocken ziehen am Spieler vorbei,
-		// Gier rastet mit beat_step auf dem Schlag ein; Drop = schneller/naeher/heller.
+		// Gier gleichmaessig ueber TIME (0.69 Grad/s, Komfort halb), nie ueber beat_step/drop; Drop = naeher/heller.
 		{
 			float s_mv = 1.0 - 0.5 * comfort;
 			float s_dp = drop * (1.0 - 0.5 * comfort);
-			float s_yaw = TIME * 0.004 * s_mv + beat_step * 0.012 * s_mv + s_dp * 0.07;
+			float s_yaw = TIME * 0.012 * s_mv;
 			vec3 s_d = dir * euler(vec3(0.0, s_yaw, 0.0));
 			s_d.y = dir.y + s_dp * 0.03 * (1.0 - abs(dir.y));          // Drop: naeher heran
 			vec4 s_sh = tg(shards_tex, dir_uv(normalize(s_d), vec2(0.0)));

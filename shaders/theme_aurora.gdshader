@@ -9,7 +9,7 @@ shader_type sky;
 //   aurora_stars.webp   (stars_a/stars_b)   Sterne, Parallax/Flug wie sky_panorama
 //   aurora_aurora.webp  (aurora_a/aurora_b) Polarlicht-Ebene (obere Halbkugel),
 //                                           weht hier im Shader, wird gespiegelt.
-//   aurora_ice.webp     (ice_a)             Eisnadel-Ebenen (RGBA), rasten per beat_step.
+//   aurora_ice.webp     (ice_a)             Eisnadel-Ebenen (RGBA), ziehen gleichmaessig (<= 1 Grad/s).
 // Alle Texturen 8192x4096, BPTC high quality + Mipmaps, Sampler
 // filter_linear_mipmap_anisotropic; tx() sampelt mit Wrap-korrigierten Gradienten.
 // Uniform-Interface wie shaders/sky_panorama.gdshader (tint, brightness,
@@ -28,9 +28,9 @@ shader_type sky;
 //
 // BEAT-VERTRAG (docs/worlds/beat_contract.md), Signatur "Eisnadeln im Takt":
 //   aurora_ice.webp (ice_a: R ferne Nadeln, G nahe Eisspitzen, B Kantenlicht)
-//   zieht mit beat_step ruckartig vorbei (fern 0.35, nah 0.8 Grad je Beat,
-//   Parallax), rastet genau auf dem Schlag. Die Polarlicht-Strahlen springen
-//   mit beat_step um eine Strahlbreite weiter; ein heller Ring klettert mit
+//   zieht gleichmaessig ueber TIME vorbei (fern 0.35, nah 0.8 Grad/s, Parallax;
+//   Komfort-Regeln: keine Gier ueber beat_step, kein Ruck). Die Polarlicht-
+//   Strahlen schimmern glatt ueber die Zeit; ein heller Ring klettert mit
 //   beat_phase den Vorhang hinauf. downbeat_pulse hebt die Baender und das
 //   Kantenlicht, drop (0..0.6) weitet das Wehen und hebt die Baender
 //   (+55 %, gedeckelt). comfort halbiert die Bewegung.
@@ -89,8 +89,8 @@ uniform float kiai : hint_range(0.0, 1.0) = 0.0;
 uniform float drop : hint_range(0.0, 0.6) = 0.0;
 uniform float energy : hint_range(0.0, 1.0) = 0.0;
 uniform float comfort : hint_range(0.0, 1.0) = 0.0;
-uniform float ice_mid_deg = 0.35;
-uniform float ice_near_deg = 0.8;
+uniform float ice_mid_deg = 0.35;    // Grad/s (Komfort: <= 1)
+uniform float ice_near_deg = 0.8;    // Grad/s (Komfort: <= 1)
 
 const int WARP_TAPS = 16;
 const vec3 FOG_COL = vec3(0.0075, 0.0168, 0.0232); // #15232A linear
@@ -105,14 +105,11 @@ vec4 tx(sampler2D t, vec2 uv) {
 	return textureGrad(t, uv, gx, gy);
 }
 
+// Komfort (beat_contract.md): nur Gier um die Hochachse. x (Nicken) und z (Rollen)
+// werden ignoriert, damit der Horizont immer waagerecht bleibt.
 mat3 euler(vec3 e) {
-	float cx = cos(e.x), sx = sin(e.x);
 	float cy = cos(e.y), sy = sin(e.y);
-	float cz = cos(e.z), sz = sin(e.z);
-	mat3 rx = mat3(vec3(1.0, 0.0, 0.0), vec3(0.0, cx, sx), vec3(0.0, -sx, cx));
-	mat3 ry = mat3(vec3(cy, 0.0, -sy), vec3(0.0, 1.0, 0.0), vec3(sy, 0.0, cy));
-	mat3 rz = mat3(vec3(cz, sz, 0.0), vec3(-sz, cz, 0.0), vec3(0.0, 0.0, 1.0));
-	return ry * rx * rz;
+	return mat3(vec3(cy, 0.0, -sy), vec3(0.0, 1.0, 0.0), vec3(sy, 0.0, cy));
 }
 
 vec2 dir_uv(vec3 d, vec2 ofs) {
@@ -228,7 +225,7 @@ vec3 aurora_at(vec3 d, float tt) {
 		c = mix(c, dec(tx(aurora_b, uv).rgb), palette_mix);
 	}
 	// Strahlen-Schimmer wandert seitlich, langsames Atmen entlang des Bandes.
-	float sh = 0.86 + 0.14 * sin(TAU * u * 180.0 + tt * 0.9 + beat_step * 2.4 * cmf + 3.0 * sin(TAU * u * 37.0 - tt * 0.6));
+	float sh = 0.86 + 0.14 * sin(TAU * u * 180.0 + tt * 0.9 + 3.0 * sin(TAU * u * 37.0 - tt * 0.6));
 	float br = 0.82 + 0.18 * sin(tt * 0.31 + TAU * u * 2.0);
 	c *= mix(1.0, sh * br, clamp(aurora_flow, 0.0, 1.0));
 	// Ring klettert mit beat_phase den Vorhang hinauf (Start auf dem Schlag).
@@ -274,19 +271,19 @@ void sky() {
 			col += rc * sc.a * reflection;
 		}
 
-		// Eisnadeln: ziehen mit beat_step vorbei, rasten auf dem Schlag.
+		// Eisnadeln: ziehen gleichmaessig vorbei (Gier ueber TIME, nie ueber beat_step).
 		if (pd.y >= 0.0 && lat < 0.9) {
 			vec2 iuv = dir_uv(pd, pano_offset);
 			float cmf = 1.0 - 0.5 * comfort;
 			float idk = clamp(drop / 0.6, 0.0, 1.0);
 			float idb = clamp(downbeat_pulse, 0.0, 1.0);
 			float lat_d = lat * (180.0 / PI);
-			vec4 im = tx(ice_a, vec2(fract(iuv.x + beat_step * ice_mid_deg * cmf / 360.0), iuv.y));
+			vec4 im = tx(ice_a, vec2(fract(iuv.x + TIME * min(ice_mid_deg, 1.0) * cmf / 360.0), iuv.y));
 			float cmid = smoothstep(0.0, 0.06, im.r);
 			vec3 ic = mix(vec3(0.0015, 0.0032, 0.0040), vec3(0.012, 0.026, 0.031), im.r);
 			ic = mix(ic, FOG_COL * 1.2, 0.45 * exp(-lat_d / 6.0) + 0.2);
 			col = mix(col, ic, cmid);
-			vec4 inr = tx(ice_a, vec2(fract(iuv.x + beat_step * ice_near_deg * cmf / 360.0), iuv.y));
+			vec4 inr = tx(ice_a, vec2(fract(iuv.x + TIME * min(ice_near_deg, 1.0) * cmf / 360.0), iuv.y));
 			float cnr = smoothstep(0.0, 0.06, inr.g);
 			vec3 icn = mix(vec3(0.0012, 0.0026, 0.0032), vec3(0.020, 0.042, 0.050), inr.g);
 			icn += vec3(0.20, 0.44, 0.50) * inr.b * (0.20 + 0.35 * beat_pulse + 0.7 * idb + 0.7 * idk) * 0.35;

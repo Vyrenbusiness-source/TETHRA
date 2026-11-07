@@ -21,10 +21,11 @@ shader_type sky;
 // BEAT-VERTRAG (docs/worlds/beat_contract.md):
 //   beat_step      SIGNATUR: (1) Gravitationswelle: auf dem Schlag laeuft ein
 //                  Linsenring vom Schatten nach aussen (Radius = fract(beat_step),
-//                  Easing aus dem Vertrag, rastet auf dem Schlag ein, ruht am Ende
-//                  bei Amplitude 0), (2) Schlieren und Staub RATSCHEN pro Schlag
-//                  eine Kerbe ins Loch (Staub schneller = Parallax), (3) die Brocken
-//                  schwingen mit eigener Kerbe an der Kamera vorbei.
+//                  glatte Formel aus dem Vertrag, Amplitude klingt bis zum naechsten
+//                  Schlag auf 0, kein Ruck). KOMFORT: Schlieren und Staub wirbeln
+//                  gleichmaessig ueber TIME ins Loch (2 / 3.4 Grad/s, Wirbel <= 4),
+//                  die Brocken gieren gleichmaessig (0.69 Grad/s); nie ueber beat_step,
+//                  nie ueber star_phase (dessen Beat-Schub wuerde stocken).
 //   beat_pulse     Scheibe/Ring (nur Helles) gluet auf dem Schlag auf.
 //   downbeat_pulse Akzent: groessere Welle, Photonenring + Kern gluehen heller.
 //   drop           Verwandlung: Linse vertieft sich, Schlieren, Staub und Brocken werden
@@ -32,7 +33,7 @@ shader_type sky;
 //                  gluet staerker. Gedeckelt (Luma Mitte/unten <= +20 %, oben <= +35 %).
 //   kiai           Schlieren/Staub etwas heller, Kern minimal waermer.
 //   energy         Helligkeit der Materie 0.85..1.15.
-//   comfort        Welle, Kerben und Pulse halbiert.
+//   comfort        Welle, Wirbel und Pulse halbiert.
 //   beat_phase / bar_phase  Feinmodulation (Funkeln der Scheibenkante).
 //
 // Uniform-Interface wie shaders/sky_panorama.gdshader (gleiche Namen/Bedeutung):
@@ -111,10 +112,9 @@ uniform float hole_lat = -2.0;        // Grad, = HOLE_LAT
 uniform float hole_roll = 10.0;       // Grad, = DISK_ROLL
 uniform float streak_flatten = 0.42;  // = STREAK_FLATTEN
 uniform float shadow_deg = 7.5;       // = SHADOW_DEG
-uniform float drift_speed = 0.004;    // rad/s Dauerdrift der Schlieren (unterschwellig)
-uniform float notch_streak = 0.11;    // rad je Schlag (Ratsche), Schlieren
-uniform float notch_dust = 0.26;      // rad je Schlag, Staub (nah = schneller)
-uniform float notch_chunk = 0.07;    // Gier der Brocken je Schlag (rad)
+uniform float whirl_streak = 0.035;   // rad/s Wirbel der Schlieren (2 Grad/s, Komfort: <= 4)
+uniform float whirl_dust = 0.06;      // rad/s Wirbel des Staubs (3.4 Grad/s, nah = schneller)
+uniform float chunk_yaw = 0.012;      // rad/s Gier der Brocken (0.69 Grad/s, Komfort: <= 1)
 uniform float wave_amp = 0.055;       // Linsenwelle: Auslenkung (relativ zum Winkel)
 
 // Mip-Stufe aus der Pixelgroesse (Bogen je Pixel / Bogen je Texel): scharf bei
@@ -125,14 +125,11 @@ const int WARP_TAPS = 3;
 const float TAU_ = 6.28318530718;
 const float DROP_PEAK_ = 0.6;
 
+// Komfort (beat_contract.md): nur Gier um die Hochachse. x (Nicken) und z (Rollen)
+// werden ignoriert, damit der Horizont immer waagerecht bleibt.
 mat3 euler(vec3 e) {
-	float cx = cos(e.x), sx = sin(e.x);
 	float cy = cos(e.y), sy = sin(e.y);
-	float cz = cos(e.z), sz = sin(e.z);
-	mat3 rx = mat3(vec3(1.0, 0.0, 0.0), vec3(0.0, cx, sx), vec3(0.0, -sx, cx));
-	mat3 ry = mat3(vec3(cy, 0.0, -sy), vec3(0.0, 1.0, 0.0), vec3(sy, 0.0, cy));
-	mat3 rz = mat3(vec3(cz, sz, 0.0), vec3(-sz, cz, 0.0), vec3(0.0, 0.0, 1.0));
-	return ry * rx * rz;
+	return mat3(vec3(cy, 0.0, -sy), vec3(0.0, 1.0, 0.0), vec3(sy, 0.0, cy));
 }
 
 vec2 dir_uv(vec3 d, vec2 ofs) {
@@ -205,10 +202,11 @@ void sky() {
 		float en = 0.85 + 0.30 * clamp(energy, 0.0, 1.0);
 
 		// Gravitationswelle: Linsenring vom Schatten nach aussen. fract(beat_step)
-		// ist 0 auf dem Schlag, steigt eased auf 1, Amplitude klingt dabei auf 0.
+		// ist 0 auf dem Schlag, steigt glatt auf 1. Komfort: die Linse setzt sanft ein
+		// (smoothstep ueber 1/4 Beat, kein Verzerrungs-Ruck auf dem Schlag) und klingt auf 0.
 		float e = fract(beat_step);
 		float th_w = radians(shadow_deg) * 1.15 + e * radians(40.0);
-		float amp = wave_amp * pow(1.0 - e, 0.8) * cf * (0.75 + 0.9 * dbp);
+		float amp = wave_amp * smoothstep(0.0, 0.25, e) * pow(1.0 - e, 0.8) * cf * (0.75 + 0.9 * dbp);
 		float cth = clamp(dot(d0, h), -1.0, 1.0);
 		float th = acos(cth);
 		float wd = (th - th_w) / (0.05 + 0.10 * e);
@@ -226,12 +224,11 @@ void sky() {
 		// Ferne Ebene.
 		vec3 far = samp(tex_a, tex_b, dir_uv(d1, pano_offset));
 
-		// Schlieren / Staub: eigene Drehung (Ratsche) um das Loch.
+		// Schlieren / Staub: gleichmaessiger Wirbel um das Loch (Komfort: nur TIME, kein Ruck).
 		vec3 d2 = d1 * euler(stars_rotation);
-		float ratch = beat_step * cf;
-		float drift = star_phase + TIME * (drift_speed + star_speed);
-		float ang_s = drift + mod(ratch * notch_streak, TAU_);
-		float ang_d = drift * 2.2 + mod(ratch * notch_dust, TAU_);
+		float wt = TIME * cf;
+		float ang_s = mod(wt * min(whirl_streak, 0.0698) + TIME * star_speed, TAU_);
+		float ang_d = mod(wt * min(whirl_dust, 0.0698) + TIME * star_speed * 2.2, TAU_);
 		float sc_s = 1.0 + 0.30 * dn;
 		float sc_d = 1.0 + 0.55 * dn;
 		float blur = warp * 0.07;
@@ -247,8 +244,8 @@ void sky() {
 		}
 		vec3 du = samp(dust_a, dust_b, dir_uv(spiral_dir(d2, h, ex, ey, ang_d, sc_d), stars_offset));
 
-		// Brocken: Gier um den Spieler (Ratsche), Drop holt sie naeher.
-		float yaw = drift * 2.8 + mod(ratch * notch_chunk, TAU_);
+		// Brocken: gleichmaessige Gier um den Spieler (<= 1 Grad/s), Drop holt sie naeher.
+		float yaw = mod(wt * min(chunk_yaw, 0.01745), TAU_);
 		float s_c = 1.0 + 0.28 * dn;
 		vec2 uvc = dir_uv(d2, stars_offset);
 		vec2 uc = vec2(fract(0.5 + (uvc.x - 0.5) / s_c + yaw / TAU_), clamp(0.43 + (uvc.y - 0.43) / s_c, 0.0005, 0.9995));

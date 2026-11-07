@@ -26,25 +26,26 @@ shader_type sky;
 //   stars_a / stars_b             optionale additive Sternen-Ebene (Standard schwarz)
 //   tint, brightness, star_brightness, star_hdr, beat_pulse, readability,
 //   pano_rotation/pano_offset, stars_rotation/stars_offset.
-//   star_speed / star_phase       hier: Kreisen der Splitter (Phase-Einheiten/s
-//                                 bzw. Phase); Winkel = Phase * shards_drift rad.
-//                                 Fuer variable Geschwindigkeit star_speed = 0,
-//                                 star_phase hochzaehlen.
+//   star_speed / star_phase       nur Interface. KOMFORT: die Splitter kreisen
+//                                 nicht mehr ueber die Phase (deren Beat-Schub
+//                                 liesse sie stocken), sondern gleichmaessig ueber
+//                                 TIME (ratchet_* in Grad/s, je <= 1).
 //   warp 0..1                     Geschwindigkeits-Unschaerfe: die Splitter
 //                                 ziehen radiale Schlieren aus dem Fluchtpunkt.
 // Fraktal-eigene Uniforms: shards_a / shards_b (Splitter-Ebene, RGBA,
-// Ueberblendung mit palette_mix), shards_rotation/shards_offset, shards_drift,
-// pano_drift, edge_hdr, wave_*, shimmer.
+// Ueberblendung mit palette_mix), shards_rotation/shards_offset, ratchet_*,
+// edge_hdr, wave_*, shimmer. shards_drift/pano_drift sind nur noch Interface.
 //
 // BEAT-VERTRAG (docs/worlds/beat_contract.md):
 //   Signatur "Zahnrad": drei Splitter-Ebenen (fern fractal_sky, Mitte
-//   fractal_sky_mid, nah fractal_sky_shards) rasten mit beat_step ruckartig
-//   weiter, gegenlaeufig (nah +0.9, Mitte -1.4, fern +0.3 Grad je Beat);
-//   Rasten genau auf dem Schlag, Ruhe bis zum naechsten.
+//   fractal_sky_mid, nah fractal_sky_shards) ziehen gleichmaessig vorbei,
+//   gegenlaeufig (nah +0.9, Mitte -1.0, fern +0.3 Grad/s, nur Gier um die
+//   Hochachse). Komfort-Regeln: keine Drehung ueber beat_step, kein Ruck, kein
+//   Rollen; der Beat zeigt sich ueber Licht (Bruch-Welle, Kantenglanz).
 //   downbeat_pulse: zweiter, breiterer Bruchring ab Fluchtpunkt (Taktanfang).
 //   drop: die Splitter ruecken naeher (Zoom bis +18 %), Kanten gluehen
 //   staerker, Nebelschein weitet sich; gedeckelt, kein Blitz.
-//   comfort: Rasten halbiert.
+//   comfort: Drehung halbiert.
 //
 // beat_pulse: 1 auf dem Schlag, klingt bis zum naechsten ab (beliebige
 // monotone Kurve, z.B. exp-Abfall oder pow(1 - beat_phase, 4)). Die Welle
@@ -120,8 +121,8 @@ uniform float kiai : hint_range(0.0, 1.0) = 0.0;
 uniform float drop : hint_range(0.0, 0.6) = 0.0;
 uniform float energy : hint_range(0.0, 1.0) = 0.0;
 uniform float comfort : hint_range(0.0, 1.0) = 0.0;
-uniform float ratchet_near = 0.9;     // Grad je Beat
-uniform float ratchet_mid = -1.4;
+uniform float ratchet_near = 0.9;     // Grad/s Gier (Komfort: |x| <= 1, wird gedeckelt)
+uniform float ratchet_mid = -1.0;
 uniform float ratchet_far = 0.3;
 
 const int WARP_TAPS = 12;
@@ -136,14 +137,11 @@ vec4 tx(sampler2D t, vec2 uv) {
 	return textureGrad(t, uv, gx, gy);
 }
 
+// Komfort (beat_contract.md): nur Gier um die Hochachse. x (Nicken) und z (Rollen)
+// werden ignoriert, damit der Horizont immer waagerecht bleibt.
 mat3 euler(vec3 e) {
-	float cx = cos(e.x), sx = sin(e.x);
 	float cy = cos(e.y), sy = sin(e.y);
-	float cz = cos(e.z), sz = sin(e.z);
-	mat3 rx = mat3(vec3(1.0, 0.0, 0.0), vec3(0.0, cx, sx), vec3(0.0, -sx, cx));
-	mat3 ry = mat3(vec3(cy, 0.0, -sy), vec3(0.0, 1.0, 0.0), vec3(sy, 0.0, cy));
-	mat3 rz = mat3(vec3(cz, sz, 0.0), vec3(-sz, cz, 0.0), vec3(0.0, 0.0, 1.0));
-	return ry * rx * rz;
+	return mat3(vec3(cy, 0.0, -sy), vec3(0.0, 1.0, 0.0), vec3(sy, 0.0, cy));
 }
 
 vec2 dir_uv(vec3 d, vec2 ofs) {
@@ -211,13 +209,13 @@ float luma(vec3 c) {
 
 void sky() {
 	vec3 dir = normalize(EYEDIR);
-	float ph = star_phase + TIME * star_speed;
 	float cm = 1.0 - 0.5 * comfort;
-	float rk = radians(cm) * beat_step;
+	// Komfort: gleichmaessige Gier ueber TIME (mod 360 Grad, stetig), nie ueber beat_step/star_phase.
+	float rk = radians(cm) * TIME;
 	float dk = clamp(drop / 0.6, 0.0, 1.0);
-	vec3 prot = pano_rotation + vec3(0.0, ph * pano_drift + rk * ratchet_far, 0.0);
-	vec3 srot = shards_rotation + vec3(0.0, ph * shards_drift + rk * ratchet_near, 0.0);
-	vec3 mrot = vec3(0.0, ph * (pano_drift + shards_drift) * 0.5 + rk * ratchet_mid, 0.0);
+	vec3 prot = pano_rotation + vec3(0.0, mod(rk * clamp(ratchet_far, -1.0, 1.0), TAU), 0.0);
+	vec3 srot = shards_rotation + vec3(0.0, mod(rk * clamp(ratchet_near, -1.0, 1.0), TAU), 0.0);
+	vec3 mrot = vec3(0.0, mod(rk * clamp(ratchet_mid, -1.0, 1.0), TAU), 0.0);
 	float zs = 1.0 + 0.18 * dk;
 	vec3 pan = sample_pair(tex_a, tex_b, dir_uv(dir * euler(prot), pano_offset));
 

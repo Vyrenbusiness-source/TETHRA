@@ -14,15 +14,16 @@ shader_type sky;
 // LOD kommt aus der naht-freien Richtungsableitung (fwidth(dir)), kein Mip-Streifen an der Naht.
 //
 // BEAT-VERTRAG (docs/worlds/beat_contract.md):
-//   beat_step      Signatur: Impulse laufen pro Schlag eine halbe Periode die Fasern entlang und
-//                  rasten auf dem Schlag ein; das Netz dreht pro Schlag einen Schritt (Parallax)
+//   beat_step      Signatur: Impulse fliessen glatt die Fasern entlang (eine halbe Periode je
+//                  Schlag, auf dem Schlag leicht schneller, kein Stop-and-go). Das Netz giert
+//                  nur gleichmaessig ueber TIME (<= 0.8 Grad/s, Parallax), nie ueber beat_step
 //   downbeat_pulse alle Impulse + Synapsenknoten akzentuiert auf dem Taktanfang, Nah-Ebene Kantenlicht
 //   bar_phase      eine langsame Bordeaux-Welle laeuft pro Takt ueber die Ferne
 //   beat_phase     Knoten atmen innerhalb des Schlags
 //   beat_pulse     Knoten + Impulse atmen auf dem Schlag
 //   kiai/energy    Dunst, Sporen, Impulse minimal heller
 //   drop           das Netz zieht sich zur Flugachse zusammen (Zoom 1 -> 0.78 mid, 0.68 nah),
-//                  Impulse schneller und heller, Knoten gluehen
+//                  Impulse heller, Knoten gluehen
 //   comfort        Bewegung halbiert, keine Welle
 //
 // FARBSATZ fuer Strecke/Kanten/Pads (Bordeaux auf Schwarz, fast monochrom, KEIN Neon):
@@ -77,14 +78,11 @@ const vec3 PULSE_COL = vec3(0.115, 0.0045, 0.0143);  // #5c0f20, dunkles Bordeau
 const vec3 NODE_COL = vec3(0.19, 0.010, 0.027);     // #7a1a2e
 const float TEX_W = 8192.0;
 
+// Komfort (beat_contract.md): nur Gier um die Hochachse. x (Nicken) und z (Rollen)
+// werden ignoriert, damit der Horizont immer waagerecht bleibt.
 mat3 euler(vec3 e) {
-	float cx = cos(e.x), sx = sin(e.x);
 	float cy = cos(e.y), sy = sin(e.y);
-	float cz = cos(e.z), sz = sin(e.z);
-	mat3 rx = mat3(vec3(1.0, 0.0, 0.0), vec3(0.0, cx, sx), vec3(0.0, -sx, cx));
-	mat3 ry = mat3(vec3(cy, 0.0, -sy), vec3(0.0, 1.0, 0.0), vec3(sy, 0.0, cy));
-	mat3 rz = mat3(vec3(cz, sz, 0.0), vec3(-sz, cz, 0.0), vec3(0.0, 0.0, 1.0));
-	return ry * rx * rz;
+	return mat3(vec3(cy, 0.0, -sy), vec3(0.0, 1.0, 0.0), vec3(sy, 0.0, cy));
 }
 
 vec2 dir_uv(vec3 d, vec2 ofs) {
@@ -154,8 +152,8 @@ void sky() {
 	if (AT_CUBEMAP_PASS) {
 		COLOR = far_col * tint * brightness * 0.5;
 	} else {
-		// --- Netz (mittlere Ebene): Orbit pro Schlag, Drop zieht das Netz zusammen. ---
-		float yaw_m = beat_step * 0.045 * mv + TIME * 0.0012;
+		// --- Netz (mittlere Ebene): gleichmaessiger Orbit (0.34 Grad/s), Drop zieht das Netz zusammen. ---
+		float yaw_m = TIME * 0.006 * mv;
 		float s_m = 1.0 - 0.36 * drop * mv;
 		vec3 dm = yaw_dir(zoom_dir(dir, s_m), yaw_m);
 		vec2 muv = dir_uv(dm, vec2(0.0));
@@ -165,12 +163,13 @@ void sky() {
 		vec3 net_rgb = dec(net.rgb);
 
 		// Impulse: Phase aus cos/sin (mip-sicher), Kopf scharf, Schweif klingt ab.
-		// Pro Schlag laeuft jeder Impuls eine halbe Periode (beat_step rastet ein).
+		// Pro Schlag laeuft jeder Impuls eine halbe Periode (glatter Fluss ueber beat_step).
+		// Feste Geschwindigkeit: ein drop-abhaengiger Faktor auf beat_step wuerde die Phase springen lassen.
 		float ph = atan(pd.g - 0.5, pd.r - 0.5) * (1.0 / TAU);
 		float hsh = pd.b;
 		float dirn = hsh > 0.66 ? -1.0 : 1.0;
 		float gate = smoothstep(0.30, 0.36, hsh);
-		float speed = 0.5 + 0.35 * drop;
+		float speed = 0.5;
 		float q = fract(ph - dirn * (beat_step * speed * mv) + fract(hsh * 37.0));
 		float pulse = smoothstep(0.0, 0.02, q) * exp(-q * 11.0) * gate;
 		float pamp = 0.55 + 0.45 * beat_pulse + 0.7 * downbeat_pulse * mv + 0.35 * energy + 0.2 * drop + 0.1 * kiai;
@@ -179,8 +178,8 @@ void sky() {
 		float breath = 0.35 + 0.65 * exp(-beat_phase * 4.0);
 		vec3 node_col = NODE_COL * pd.a * (0.30 + 0.9 * breath * (0.4 + beat_pulse) + 0.9 * downbeat_pulse * mv + 0.25 * drop);
 
-		// --- Nahe Ebene: dicke Buendel + Ganglien, schneller als das Netz (Parallax). ---
-		float yaw_n = beat_step * 0.11 * mv + TIME * 0.0030 + drop * 0.10 * mv;
+		// --- Nahe Ebene: dicke Buendel + Ganglien, schneller als das Netz (Parallax, 0.8 Grad/s). ---
+		float yaw_n = TIME * 0.014 * mv;
 		float s_n = 1.0 - 0.52 * drop * mv;
 		vec3 dn = yaw_dir(zoom_dir(dir, s_n), yaw_n);
 		vec2 nuv = dir_uv(dn, vec2(0.0));

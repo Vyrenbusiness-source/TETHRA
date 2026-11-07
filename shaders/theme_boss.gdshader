@@ -55,11 +55,11 @@ shader_type sky;
 //   Theme-Farbe (Hue)    0.99 (fuer _sky_pal_for_hue / UI-Akzente)
 //
 // NAHE EBENE shards_tex (sky_boss_shards.webp, RGBA): Glut-Brocken/Truemmer im Stil der Fraktal-Splitter;
-//   Parallax zur Fernebene, Gier rastet mit beat_step ein, Drop = schneller/naeher/heller
+//   Parallax zur Fernebene, gleichmaessige Gier (<= 1 Grad/s, nie ueber beat_step), Drop = naeher/heller
 //   (Mitte/unten in Weltkoordinaten frei). Bindung: mat.set_shader_parameter("shards_tex", load("res://assets_game/themes/boss/sky_boss_shards.webp")).
 // BEAT-VERTRAG (docs/worlds/beat_contract.md):
-//   beat_step       Glut-HERZSCHLAG: die Funken-Ebene springt auf jedem Schlag ein
-//                   Stueck aufwaerts und ruht bis zum naechsten (rastet exakt ein).
+//   beat_step       Glut-HERZSCHLAG: die Funken-Ebene steigt glatt auf, auf dem Schlag
+//                   leicht schneller (Tempo-Akzent, kein Stop-and-go, keine Drehung).
 //   downbeat_pulse  Takt-Akzent: Glut-Horizont und Turm-Raender gluehen eine Spur
 //                   heller und laenger als beat_pulse.
 //   drop            Verwandlung: Glut-Horizont weitet sich nach oben, Funken werden
@@ -117,14 +117,11 @@ uniform float ember_flicker : hint_range(0.0, 1.0) = 0.6;
 
 const int WARP_TAPS = 12;
 
+// Komfort (beat_contract.md): nur Gier um die Hochachse. x (Nicken) und z (Rollen)
+// werden ignoriert, damit der Horizont immer waagerecht bleibt.
 mat3 euler(vec3 e) {
-	float cx = cos(e.x), sx = sin(e.x);
 	float cy = cos(e.y), sy = sin(e.y);
-	float cz = cos(e.z), sz = sin(e.z);
-	mat3 rx = mat3(vec3(1.0, 0.0, 0.0), vec3(0.0, cx, sx), vec3(0.0, -sx, cx));
-	mat3 ry = mat3(vec3(cy, 0.0, -sy), vec3(0.0, 1.0, 0.0), vec3(sy, 0.0, cy));
-	mat3 rz = mat3(vec3(cz, sz, 0.0), vec3(-sz, cz, 0.0), vec3(0.0, 0.0, 1.0));
-	return ry * rx * rz;
+	return mat3(vec3(cy, 0.0, -sy), vec3(0.0, 1.0, 0.0), vec3(sy, 0.0, cy));
 }
 
 vec2 dir_uv(vec3 d, vec2 ofs) {
@@ -220,9 +217,9 @@ void sky() {
 	// Drop weitet die Glut: heller Dunstsaum steigt ueber den Horizont.
 	sky_col += vec3(0.020, 0.0010, 0.0016) * dp * 0.8 * exp(-max(lat - 0.02, 0.0) / (0.10 + 0.8 * dp)) * smoothstep(-0.04, 0.03, lat);
 
-	// Tiefenebene Rauch: eigener Versatz (langsame Drift + Schlag-Ruck auf beat_step).
+	// Tiefenebene Rauch: eigener Versatz, nur gleichmaessige Drift (0.43 Grad/s, Komfort: keine Gier ueber beat_step).
 	{
-		vec2 vo = pano_offset + vec2(TIME * 0.0012 + beat_step * 0.0016 * mv, 0.0);
+		vec2 vo = pano_offset + vec2(TIME * 0.0012 * mv, 0.0);
 		vec4 vl = tg(veil_tex, dir_uv(dir * euler(pano_rotation), vo));
 		vec3 vlight = dec(vl.rgb) * (1.0 + beat_pulse * 0.25 + downbeat_pulse * 0.8 * mv + dp * 0.9);
 		sky_col = sky_col * vl.a + vlight;
@@ -253,7 +250,7 @@ void sky() {
 		float ph = star_phase + TIME * star_speed;
 		bool moving = abs(star_speed) > 0.0001 || abs(fract(star_phase)) > 0.0001;
 		bool rising = abs(ember_rise) > 0.0001 || abs(beat_step) > 0.0001;
-		// Herzschlag: beat_step schiebt die Funken je Schlag ein Stueck hoch (8-Schlag-Zyklus).
+		// Herzschlag: beat_step laesst die Funken glatt steigen, auf dem Schlag etwas schneller (8-Schlag-Zyklus).
 		float rp = TIME * ember_rise + beat_step * 0.125 * mv;
 		vec3 em = vec3(0.0);
 		for (int rl = 0; rl < 2; rl++) {
@@ -305,11 +302,11 @@ void sky() {
 		vec3 col = (sky_col + em + fl) * tint * brightness;
 
 		// Nahe Objekt-Ebene (Stil Fraktal-Splitter): Brocken ziehen am Spieler vorbei,
-		// Gier rastet mit beat_step auf dem Schlag ein; Drop = schneller/naeher/heller.
+		// Gier gleichmaessig ueber TIME (0.69 Grad/s, Komfort halb), nie ueber beat_step/drop; Drop = naeher/heller.
 		{
 			float s_mv = 1.0 - 0.5 * comfort;
 			float s_dp = drop * (1.0 - 0.5 * comfort);
-			float s_yaw = TIME * 0.004 * s_mv + beat_step * 0.012 * s_mv + s_dp * 0.07;
+			float s_yaw = TIME * 0.012 * s_mv;
 			vec3 s_d = dir * euler(vec3(0.0, s_yaw, 0.0));
 			s_d.y = dir.y + s_dp * 0.03 * (1.0 - abs(dir.y));          // Drop: naeher heran
 			vec4 s_sh = tg(shards_tex, dir_uv(normalize(s_d), vec2(0.0)));

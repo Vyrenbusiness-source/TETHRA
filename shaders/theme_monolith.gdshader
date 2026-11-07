@@ -8,15 +8,15 @@ shader_type sky;
 //                                                      u = Winkel um -Z, v = ln(tan(a/2))/ln 4,
 //                                                      periodisch -> naht- und ueberblendungsfreier Flug
 //   Prismen  (prisms_a/prisms_b) sky_monolith_prisms.webp nahe RGBA-Ebene: grosse schwarze Prismen,
-//                                                      kreisen per beat_step schneller als die Ferne (Parallax)
+//                                                      kreisen gleichmaessig (0.69 Grad/s, nie ueber beat_step)
 //   Staub    (stars_a/stars_b) sky_monolith_stars.webp  schwebende Partikel (Panorama, Parallax)
 // Uniform-Interface wie shaders/sky_panorama.gdshader (Panorama-Abbildung
 // u = atan(d.x,-d.z)/2pi+0.5, v = 0.5-asin(d.y)/pi, Wurzel-Kodierung linear = pow(tex, 2)).
 // rows_a braucht Mipmaps (Import: mipmaps/generate=true), sonst flimmern ferne Reihen.
 //
 // BEAT-VERTRAG (docs/worlds/beat_contract.md):
-//   beat_step      Signatur: die Reihen ruecken pro Schlag EINE Reihe vor (Faktor 2^(1/4) in
-//                  der Tiefe), rasten exakt auf dem Schlag ein (Easing steckt in beat_step)
+//   beat_step      Signatur: die Reihen fliessen glatt auf den Spieler zu, EINE Reihe je Schlag (Faktor
+//                  2^(1/4) in der Tiefe), auf dem Schlag leicht schneller (kein Stop-and-go)
 //   downbeat_pulse Kantenlicht aller Platten + Lichtspalt akzentuiert auf dem Taktanfang
 //   bar_phase      eine Lichtwelle laeuft pro Takt durch die Reihen nach aussen
 //   beat_phase     feine Kantenlicht-Atmung innerhalb des Schlags
@@ -76,14 +76,11 @@ uniform float readability : hint_range(0.0, 1.0) = 0.35;
 
 const float LN4 = 1.3862944;
 
+// Komfort (beat_contract.md): nur Gier um die Hochachse. x (Nicken) und z (Rollen)
+// werden ignoriert, damit der Horizont immer waagerecht bleibt.
 mat3 euler(vec3 e) {
-	float cx = cos(e.x), sx = sin(e.x);
 	float cy = cos(e.y), sy = sin(e.y);
-	float cz = cos(e.z), sz = sin(e.z);
-	mat3 rx = mat3(vec3(1.0, 0.0, 0.0), vec3(0.0, cx, sx), vec3(0.0, -sx, cx));
-	mat3 ry = mat3(vec3(cy, 0.0, -sy), vec3(0.0, 1.0, 0.0), vec3(sy, 0.0, cy));
-	mat3 rz = mat3(vec3(cz, sz, 0.0), vec3(-sz, cz, 0.0), vec3(0.0, 0.0, 1.0));
-	return ry * rx * rz;
+	return mat3(vec3(cy, 0.0, -sy), vec3(0.0, 1.0, 0.0), vec3(sy, 0.0, cy));
 }
 
 vec2 dir_uv(vec3 d, vec2 ofs) {
@@ -200,9 +197,9 @@ void sky() {
 		st *= star_brightness * mix(1.0, star_hdr, smoothstep(0.30, 0.8, sl));
 		st *= 1.0 + 0.5 * beat_pulse + 0.4 * energy + 0.4 * drop;
 
-		// Nahe Prismen: Orbit per beat_step (rastet auf dem Schlag ein), schneller als die Ferne.
-		// Drop: naeher (Zoom) und etwas schneller.
-		float yaw = (beat_step * 0.045 + drop * 0.12) * mv + TIME * 0.0025;
+		// Nahe Prismen: gleichmaessige Gier ueber TIME (0.69 Grad/s, Komfort halb),
+		// nie ueber beat_step/drop (Komfort-Regeln). Drop: naeher (Zoom).
+		float yaw = TIME * 0.012 * mv;
 		float cy = cos(yaw), sy = sin(yaw);
 		vec3 pd = zoom_dir(dir, 1.0 + 0.45 * drop * mv);
 		pd = vec3(cy * pd.x + sy * pd.z, pd.y, -sy * pd.x + cy * pd.z);
