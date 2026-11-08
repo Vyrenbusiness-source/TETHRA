@@ -515,5 +515,21 @@ func _play(L) -> void:
 	_check(L.play_mode == "orbit", "cl_state uebernimmt Orbit")
 	L.cl_state(L.players, 1, {}, "Raum", [], {}, {}, "evil")
 	_check(L.play_mode == "mania", "cl_state validiert")
+	# Turnier im Orbit-Raum: Modus bleibt fest, Runden werten Orbit-Stats wie Mania.
+	L.is_host = true
+	L.set_play_mode("orbit")
+	L.tour_create({ "maps": 5, "stars_lo": 0.0, "stars_hi": 30.0, "mods": {} })
+	_check(L.tournament != null, "Turnier im Orbit-Raum angelegt")
+	L.set_play_mode("mania")
+	_check(L.play_mode == "orbit", "Turnier: Spielmodus fest")
+	var T = L.tournament
+	T.phase = T.Phase.PLAY
+	T.order = [0, 1]
+	T.current_round = 0
+	T.pool = [{ "set_id": 1, "file": "a", "version": "x", "title": "t", "artist": "a", "stars": 3.0 }, { "set_id": 2, "file": "b", "version": "x", "title": "t", "artist": "a", "stars": 3.0 }]
+	T.record_round({ 1: { "score": 900000, "accuracy": 0.97, "max_combo": 400, "failed": false, "name": "Host" },
+		2: { "score": 500000, "accuracy": 0.80, "max_combo": 120, "failed": true, "name": "Anna" } })
+	var stn: Array = T.standings()
+	_check(stn.size() == 2 and int(stn[0].peer) == 1, "Orbit-Stats ergeben Rangliste")
 	L._reset()
 	_check(L.play_mode == "mania", "Reset -> Mania")
