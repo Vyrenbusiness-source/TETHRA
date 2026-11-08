@@ -17,6 +17,9 @@ const CODE_ALPHABET := "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
 ## Hosts OHNE Passwort announcen Code+Name+Spielerzahl, Browser pollen die
 ## Liste — offene Raeume erscheinen weltweit automatisch.
 const ROOMS_URL := "https://ntfy.sh/tethra-rooms-v1"
+## Tatsaechliche Ports: Standard, oder --mp-port=<n> (Tests; LAN-Ansage auf n+1).
+var game_port := GAME_PORT
+var discovery_port := DISCOVERY_PORT
 
 signal rooms_changed
 signal players_changed
@@ -83,6 +86,12 @@ var _tour_auto_phase := -1
 
 
 func _ready() -> void:
+	for a in OS.get_cmdline_args():
+		if a.begins_with("--mp-port="):
+			var pn := a.trim_prefix("--mp-port=").to_int()
+			if pn > 1024 and pn < 65535:
+				game_port = pn
+				discovery_port = pn + 1
 	multiplayer.peer_connected.connect(_on_peer_connected)
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
 	multiplayer.connected_to_server.connect(_on_connected_to_server)
@@ -215,8 +224,8 @@ func srv_set_view(v: String) -> void:
 
 func host_room(rname: String = "", pw: String = "") -> bool:
 	var peer := ENetMultiplayerPeer.new()
-	if peer.create_server(GAME_PORT, 7) != OK:
-		status.emit(tr("Port %d belegt — laeuft schon ein Raum?") % GAME_PORT)
+	if peer.create_server(game_port, 7) != OK:
+		status.emit(tr("Port %d belegt — laeuft schon ein Raum?") % game_port)
 		return false
 	multiplayer.multiplayer_peer = peer
 	is_host = true
@@ -237,9 +246,11 @@ func host_room(rname: String = "", pw: String = "") -> bool:
 	_bcast = PacketPeerUDP.new()
 	_bcast.set_broadcast_enabled(true)
 	# UPnP im Thread — Router-Discovery darf die UI nicht blockieren.
-	status.emit(tr("Oeffne Port am Router (UPnP)…"))
-	_upnp_thread = Thread.new()
-	_upnp_thread.start(_setup_upnp)
+	# Headless (Smoke-Tests ueber localhost): kein Router, kein Internet.
+	if DisplayServer.get_name() != "headless":
+		status.emit(tr("Oeffne Port am Router (UPnP)…"))
+		_upnp_thread = Thread.new()
+		_upnp_thread.start(_setup_upnp)
 	players_changed.emit()
 	return true
 
@@ -251,7 +262,7 @@ func _setup_upnp() -> void:
 	for attempt in 2:
 		if _upnp.discover(3000, 2, "InternetGatewayDevice") == UPNP.UPNP_RESULT_SUCCESS \
 				and _upnp.get_gateway() != null and _upnp.get_gateway().is_valid_gateway():
-			_upnp.add_port_mapping(GAME_PORT, GAME_PORT, "TETHRA", "UDP", 0)
+			_upnp.add_port_mapping(game_port, game_port, "TETHRA", "UDP", 0)
 			ip = _upnp.query_external_address()
 			break
 	call_deferred("_upnp_done", ip)
@@ -264,7 +275,7 @@ func _upnp_done(ip: String) -> void:
 	if not is_host:
 		return
 	if ip != "":
-		room_code = _encode_code(ip, GAME_PORT)
+		room_code = _encode_code(ip, game_port)
 		status.emit(tr("Raum offen! Code zum Teilen: %s") % room_code)
 		players_changed.emit()
 	else:
@@ -285,8 +296,8 @@ func _fetch_external_ip() -> void:
 		if result == HTTPRequest.RESULT_SUCCESS and rcode == 200:
 			var ip: String = body.get_string_from_utf8().strip_edges()
 			if ip.split(".").size() == 4:
-				room_code = _encode_code(ip, GAME_PORT)
-				status.emit(tr("Raum-Code: %s  (falls Beitritt scheitert: Port %d im Router freigeben)") % [room_code, GAME_PORT])
+				room_code = _encode_code(ip, game_port)
+				status.emit(tr("Raum-Code: %s  (falls Beitritt scheitert: Port %d im Router freigeben)") % [room_code, game_port])
 				players_changed.emit()
 				return
 		status.emit(tr("Keine externe IP ermittelbar — Raum nur im eigenen Netzwerk sichtbar.")))
@@ -309,7 +320,7 @@ func join_code(code: String, pw: String = "") -> bool:
 
 
 func join_lan(ip: String) -> bool:
-	return _join(ip, GAME_PORT)
+	return _join(ip, game_port)
 
 
 func _join(ip: String, port: int) -> bool:
@@ -349,7 +360,7 @@ func _reset() -> void:
 		_upnp = null
 		var t := Thread.new()
 		t.start(func():
-			u.delete_port_mapping(GAME_PORT, "UDP")
+			u.delete_port_mapping(game_port, "UDP")
 			t.wait_to_finish.call_deferred())
 	if multiplayer.multiplayer_peer != null:
 		multiplayer.multiplayer_peer.close()
@@ -384,7 +395,7 @@ func _reset() -> void:
 func start_discovery() -> void:
 	stop_discovery()
 	_listen = PacketPeerUDP.new()
-	_listen.bind(DISCOVERY_PORT)
+	_listen.bind(discovery_port)
 	lan_rooms = {}
 
 
@@ -404,7 +415,7 @@ func _process(delta: float) -> void:
 				_bcast_t = 1.0
 				var msg := JSON.stringify({ "tethra": 1, "name": room_name,
 					"players": players.size(), "code": room_code, "mode": play_mode })
-				_bcast.set_dest_address("255.255.255.255", DISCOVERY_PORT)
+				_bcast.set_dest_address("255.255.255.255", discovery_port)
 				_bcast.put_packet(msg.to_utf8_buffer())
 		# Weltweit ansagen (alle 20s), sobald der Raum-Code steht.
 		if room_code != "" and DisplayServer.get_name() != "headless":

@@ -90,6 +90,12 @@ var _replay_end_ms := -1.0
 ## Zeit des letzten core.update (Ende des Laufs fuer meta.end_ms).
 var _last_update_t := 0.0
 var _clip_exporter: ClipExporter
+## MP-Smoke (--mp-bot): Bot spielt auch im Raum, Abbruch nach --mp-cut=<s> ab
+## erster Note, hoechster gesehener Live-Score je Mitspieler (vor dessen Finale).
+var _mp_bot := false
+var _mp_cut_ms := -1.0
+var _mp_live_seen: Dictionary = {}
+var _mp_skip_voted := false
 
 
 func _ready() -> void:
@@ -102,7 +108,8 @@ func _ready() -> void:
 	if GameSession.is_replay and not _replay:
 		GameSession.is_replay = false   # Mania-Events passen nicht zu Orbit
 		GameSession.replay_events = []
-	_autoplay = OS.get_cmdline_args().has("--autoplay") and not Lobby.active and not _replay
+	_mp_bot = Lobby.active and Lobby.in_game and OS.get_cmdline_args().has("--mp-bot")
+	_autoplay = OS.get_cmdline_args().has("--autoplay") and (not Lobby.active or _mp_bot) and not _replay
 	var jitter := 0.0
 	var aim := 0.0
 	var seed := 1
@@ -115,6 +122,8 @@ func _ready() -> void:
 			aim = maxf(0.0, a.trim_prefix("--auto-aim=").to_float())
 		elif a.begins_with("--auto-seed="):
 			seed = a.trim_prefix("--auto-seed=").to_int()
+		elif a.begins_with("--mp-cut="):
+			_mp_cut_ms = maxf(0.0, a.trim_prefix("--mp-cut=").to_float()) * 1000.0
 	_build_core()
 	if _replay:
 		_replay_events = GameSession.replay_events
@@ -140,7 +149,11 @@ func _ready() -> void:
 	if not _use_audio:
 		_debug_start_usec = Time.get_ticks_usec()
 		_debug_running = true
-	if DisplayServer.get_name() == "headless":
+	if _mp_bot:
+		if _mp_cut_ms >= 0.0 and not notes.is_empty():
+			_mp_cut_ms += float(notes[0].time_ms)
+		print("MPORBIT start: %d Ziele, autoplay=%s, cut=%d ms" % [notes.size(), _autoplay, int(_mp_cut_ms)])
+	if DisplayServer.get_name() == "headless" and not _mp_bot:
 		print("=== Orbit Smoke: %d Ziele ===" % notes.size())
 		get_tree().quit(0)
 		return
@@ -715,6 +728,10 @@ func _process(delta: float) -> void:
 	core.update(t)
 	if _ended:
 		return
+	if _mp_bot:
+		_mp_bot_tick(t)
+		if _ended:
+			return
 	if _replay and _replay_end_ms >= 0.0 and t >= _replay_end_ms \
 			and _replay_idx >= _replay_events.size():
 		# Lauf endete hier (z. B. Abbruch im Shot): Endbild wie im Lauf.
@@ -747,6 +764,22 @@ func _process(delta: float) -> void:
 		_show_results(true)
 		return
 	_update_hud()
+
+
+## MP-Smoke: Intro-Skip stimmen, Live-Scores der anderen mitschreiben, Abbruch per --mp-cut.
+func _mp_bot_tick(t: float) -> void:
+	if not _mp_skip_voted and _can_skip_intro():
+		_mp_skip_voted = true
+		Lobby.vote_skip()
+	var me := multiplayer.get_unique_id()
+	for id in Lobby.players:
+		var p: Dictionary = Lobby.players[id]
+		if int(id) == me or not (p.get("final", {}) as Dictionary).is_empty():
+			continue
+		_mp_live_seen[int(id)] = maxi(int(_mp_live_seen.get(int(id), 0)), int(p.get("score", 0)))
+	if _mp_cut_ms >= 0.0 and t >= _mp_cut_ms:
+		print("MPORBIT cut at %d ms" % int(t))
+		_show_results(bool(core.failed))
 
 
 ## Replay: Events bis t in den Core (Originalzeiten), Cursor + Ringe anzeigen.
@@ -1016,6 +1049,13 @@ func _show_results(is_fail: bool) -> void:
 			Sfx.rank_reveal(grade))
 	if OS.get_cmdline_args().has("--shot-results"):
 		_capture_results_shot()
+	if _mp_bot:
+		print("MPORBIT final score=%d acc=%.4f combo=%d failed=%s live_seen=%s" % [
+			int(s.score), float(s.accuracy), int(s.get("max_combo", 0)), str(s.failed), str(_mp_live_seen)])
+		# Wie der Klick auf "Zurueck": nach kurzem Blick auf den Endscreen in den Raum.
+		await get_tree().create_timer(1.5, true).timeout
+		if is_inside_tree():
+			_back_to_browser()
 
 
 ## Meta fuer ReplayStore (Mods: Wiedergabe mit denselben Mods; end_ms: Ende des Laufs).

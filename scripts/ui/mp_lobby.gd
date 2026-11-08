@@ -258,6 +258,14 @@ func _ready() -> void:
 	elif OS.get_cmdline_args().has("--mp-join-test"):
 		Lobby.join_lan("127.0.0.1")
 		_mp_smoke(false)
+	elif OS.get_cmdline_args().has("--mp-orbit-host"):
+		if not Lobby.active:
+			Lobby.host_room()
+		_mp_orbit(true)
+	elif OS.get_cmdline_args().has("--mp-orbit-client"):
+		if not Lobby.active:
+			Lobby.join_lan("127.0.0.1")
+		_mp_orbit(false)
 	elif OS.get_cmdline_args().has("--mp-auto-host"):
 		if not Lobby.active:
 			Lobby.host_room()
@@ -395,6 +403,150 @@ func _mp_smoke(host: bool) -> void:
 			return
 	print("MP-SMOKE %s TIMEOUT" % ("HOST" if host else "CLIENT"))
 	get_tree().quit(1)
+
+
+## Orbit-MP-Smoke: Stufe ueberlebt den Szenenwechsel Raum -> Orbit -> Raum.
+static var _mpo_stage := 0
+
+
+## Orbit-Raum + Orbit-Turnier mit zwei Prozessen (tools/mp_orbit_smoke.sh).
+## Stufe 0: Raum, Modus Orbit, Map, bereit, Start. 1: Ergebnisse, Turnier
+## (4 Maps, je 1 Ban). 2/3: Turnierrunden. Jede Zeile beginnt mit "MPORBIT".
+func _mp_orbit(host: bool) -> void:
+	var tag := "HOST" if host else "CLIENT"
+	var step := func(msg: String): print("MPORBIT %s s%d %s" % [tag, _mpo_stage, msg])
+	var fail := func(msg: String):
+		print("MPORBIT %s s%d FAIL %s" % [tag, _mpo_stage, msg])
+		get_tree().quit(1)
+	var wait_for := func(cond: Callable, secs: float) -> bool:
+		var w := 0.0
+		while w < secs and not cond.call():
+			await get_tree().create_timer(0.1).timeout
+			w += 0.1
+		return cond.call()
+	var me := multiplayer.get_unique_id()
+	if not await wait_for.call(func(): return Lobby.players.size() >= 2 and Lobby.players.has(multiplayer.get_unique_id()), 20.0):
+		fail.call("players")
+		return
+	me = multiplayer.get_unique_id()
+	var other := -1
+	for id in Lobby.players:
+		if int(id) != me:
+			other = int(id)
+	var finals_in := func() -> bool:
+		for id in Lobby.players:
+			if (Lobby.players[id].get("final", {}) as Dictionary).is_empty():
+				return false
+		return true
+	var dump := func(what: String):
+		var parts: Array = []
+		for id in Lobby.players:
+			var f: Dictionary = Lobby.players[id].get("final", {})
+			parts.append("%d:%s score=%d acc=%.4f" % [int(id), str(Lobby.players[id].name),
+				int(f.get("score", -1)), float(f.get("acc", -1.0))])
+		step.call("%s [%s]" % [what, ", ".join(parts)])
+	var sets := _library.mapsets
+	if sets.size() < 2:
+		fail.call("zu wenig Maps (%d)" % sets.size())
+		return
+	if _mpo_stage > 0:
+		# Zurueck aus einer Runde: beide Endergebnisse muessen im Raum stehen.
+		if not await wait_for.call(finals_in, 60.0):
+			dump.call("finals missing")
+			fail.call("finals")
+			return
+		dump.call("room finals")
+		step.call("back in room: in_game=%s play_mode=%s" % [Lobby.in_game, Lobby.play_mode])
+	match _mpo_stage:
+		0:
+			step.call("players synced: %d crown=%d me=%d" % [Lobby.players.size(), Lobby.crown_id, me])
+			if host:
+				Lobby.set_play_mode("orbit")
+				_pick(sets[0], 0)
+				step.call("picked '%s' mode=%s" % [str(Lobby.sel_map.get("title", "")), Lobby.play_mode])
+			elif not await wait_for.call(func(): return Lobby.play_mode == "orbit" and not Lobby.sel_map.is_empty(), 20.0):
+				fail.call("mode/map sync")
+				return
+			if not await wait_for.call(func(): return Lobby.all_ready() and Lobby.view_of(other) == "Orbit", 20.0):
+				fail.call("all_ready/view (ready=%s view=%s)" % [Lobby.all_ready(), Lobby.view_of(other)])
+				return
+			step.call("all ready, views %s/%s" % [Lobby.view_of(me), Lobby.view_of(other)])
+			_mpo_stage = 1
+			if host:
+				Lobby.start_game()
+			if not await wait_for.call(func(): return Lobby.in_game, 20.0):
+				fail.call("start")
+				return
+			step.call("game start")
+		1:
+			if host:
+				Lobby.tour_create({ "maps": 5, "stars_lo": 0.0, "stars_hi": Tournament.MAX_STARS })
+			if not await wait_for.call(func(): return Lobby.tournament != null, 20.0):
+				fail.call("tournament")
+				return
+			step.call("tournament created, play_mode=%s" % Lobby.play_mode)
+			# Je Spieler 2 Maps (Host die ersten, Client die naechsten).
+			var off := 0 if host else 2
+			var added := 0
+			for k in range(off, sets.size()):
+				if added >= 2:
+					break
+				for d in sets[k].difficulty_count():
+					if added >= 2:
+						break
+					var data := Tournament.local_data(sets[k], d)
+					if Lobby.tournament.pool.any(func(m): return Tournament._key(m) == Tournament._key(data)):
+						continue
+					var n_before := Lobby.tournament.pool.size()
+					Lobby.tour_add_map(data)
+					if await wait_for.call(func(): return Lobby.tournament.pool.size() > n_before, 5.0):
+						added += 1
+			step.call("added %d maps" % added)
+			if not await wait_for.call(func(): return Lobby.tournament.pool.size() >= 4, 20.0):
+				fail.call("pool %d" % Lobby.tournament.pool.size())
+				return
+			if host:
+				Lobby.tour_autofill_done()
+				Lobby.tour_start_bans()
+			if not await wait_for.call(func(): return Lobby.tournament.phase == Tournament.Phase.BAN, 20.0):
+				fail.call("ban phase")
+				return
+			Lobby.tour_ban(0 if host else 1)
+			if not await wait_for.call(func(): return Lobby.tournament.has_voted(me), 10.0):
+				fail.call("own ban")
+				return
+			step.call("banned %d" % (0 if host else 1))
+			if host:
+				if not await wait_for.call(func(): return Lobby.tournament.all_banned(Lobby.tournament.player_ids), 20.0):
+					fail.call("all banned")
+					return
+				Lobby.tour_begin()
+			_mpo_stage = 2
+			if not await wait_for.call(func(): return Lobby.in_game, 40.0):
+				fail.call("round 1 start (phase=%d ready=%s)" % [Lobby.tournament.phase, Lobby.all_ready()])
+				return
+			step.call("tour round 1 start: '%s' remaining=%d" % [str(Lobby.sel_map.get("title", "")), Lobby.tournament.remaining()])
+		2, 3:
+			var want := Tournament.Phase.BETWEEN if _mpo_stage == 2 else Tournament.Phase.END
+			if not await wait_for.call(func(): return Lobby.tournament != null and Lobby.tournament.phase == want, 30.0):
+				fail.call("phase %d (want %d)" % [Lobby.tournament.phase if Lobby.tournament != null else -1, want])
+				return
+			var st: Array = Lobby.tournament.standings()
+			var rows: Array = []
+			for e in st:
+				rows.append("%s pts=%s" % [str(e.get("name", "?")), str(e.get("points", "?"))])
+			step.call("tour rounds=%d standings [%s]" % [Lobby.tournament.rounds.size(), ", ".join(rows)])
+			if _mpo_stage == 3:
+				step.call("DONE")
+				await get_tree().create_timer(1.5).timeout
+				get_tree().quit(0)
+				return
+			_mpo_stage = 3
+			# Naechste Runde: Host-Autoablauf (Zwischenstand, dann Start, sobald alle bereit).
+			if not await wait_for.call(func(): return Lobby.in_game, 40.0):
+				fail.call("round 2 start (phase=%d ready=%s)" % [Lobby.tournament.phase, Lobby.all_ready()])
+				return
+			step.call("tour round 2 start: '%s'" % str(Lobby.sel_map.get("title", "")))
 
 
 ## Zwei-Instanzen-Test (Host + Client auf 127.0.0.1), Ablauf siehe Log.
