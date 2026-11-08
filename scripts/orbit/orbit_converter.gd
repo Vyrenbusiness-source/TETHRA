@@ -61,6 +61,13 @@ const JUMP_DEG := 60.0
 const STRONG_BEAT := 0.5
 const WEAK_JUMP_DEG := 50.0
 ## Orbit-Sterne: Fensterraster und Gewichte (an Mania-Sternen grob geeicht).
+## Menschliche Erreichbarkeit (Messung: docs/modes/orbit_qa.md): ein Zeiger mit
+## HUMAN_DEG_PER_MS (Maus ~250 Grad/s) faehrt vom letzten Ziel zum naechsten;
+## das Ziel liegt hoechstens HUMAN_REACH_DEG neben der so erreichbaren Stelle
+## (22 Grad Toleranz minus 2 sigma Zielstreuung). Gilt dauerhaft, nicht nur je
+## Schritt: der Rueckstand des Zeigers waechst in Streams nicht an.
+const HUMAN_DEG_PER_MS := 0.25
+const HUMAN_REACH_DEG := 10.0
 const STAR_HOP_MS := 1000.0
 const STAR_DENS_K := 0.32
 const STAR_PATH_K := 0.29
@@ -128,6 +135,7 @@ static func convert(beatmap: Beatmap) -> Array[OrbitNote]:
 	var arcs: Array = [null, null]
 	var arc_end_at := [-INF, -INF]
 	var ring_last := [-INF, -INF]
+	var vc := INF  # virtueller Zeiger (HUMAN_DEG_PER_MS), INF = noch keiner
 	for g in groups:
 		var head := objs[g[0]] as ManiaNote
 		var t := head.time
@@ -148,6 +156,7 @@ static func convert(beatmap: Beatmap) -> Array[OrbitNote]:
 		if ended != null and not any_active:
 			last_time = ended.end_ms
 			last_angle = OrbitNote.wrap_deg(ended.end_angle_deg)
+			vc = last_angle
 		if t - last_head < MIN_GAP_MS:
 			continue
 		if any_active:
@@ -187,9 +196,13 @@ static func convert(beatmap: Beatmap) -> Array[OrbitNote]:
 			# Grosse Spruenge nur auf Schlaegen; dazwischen bleibt der Fluss ruhig.
 			if absf(delta) >= JUMP_DEG and beat_strength(reds, t) < STRONG_BEAT:
 				delta = signf(delta) * WEAK_JUMP_DEG
+		var angle := OrbitNote.wrap_deg(last_angle + delta)
+		var reach := _reach(vc, gap, angle)
+		angle = reach[0]
+		if prev_col >= 0:
+			delta = OrbitNote.delta_deg(last_angle, angle)
 		if delta != 0.0:
 			dir = signf(delta)
-		var angle := OrbitNote.wrap_deg(last_angle + delta)
 
 		# Ziele des Akkords: [quell-index, ring].
 		var targets: Array = []
@@ -247,6 +260,7 @@ static func convert(beatmap: Beatmap) -> Array[OrbitNote]:
 		last_time = t
 		last_angle = angle
 		last_head = t
+		vc = reach[1]
 		prev_col = col
 		last_ring = int(targets[0][1]) if targets.size() == 1 else -1
 	out.sort_custom(func(a: OrbitNote, b: OrbitNote) -> bool:
@@ -254,6 +268,19 @@ static func convert(beatmap: Beatmap) -> Array[OrbitNote]:
 			return a.time_ms < b.time_ms
 		return a.ring < b.ring)
 	return out
+
+
+## Menschliche Erreichbarkeit: der virtuelle Zeiger vc faehrt in gap ms mit
+## HUMAN_DEG_PER_MS Richtung want; das Ziel bleibt hoechstens HUMAN_REACH_DEG
+## vor ihm. Rueckgabe [Zielwinkel, neuer Zeigerwinkel] (beide 0..360).
+static func _reach(vc: float, gap: float, want: float) -> Array:
+	if vc == INF or gap == INF:
+		return [OrbitNote.wrap_deg(want), OrbitNote.wrap_deg(want)]
+	var d := OrbitNote.delta_deg(vc, want)
+	var lim := HUMAN_DEG_PER_MS * gap
+	var mv := clampf(d, -lim, lim)
+	var rest := clampf(d - mv, -HUMAN_REACH_DEG, HUMAN_REACH_DEG)
+	return [OrbitNote.wrap_deg(vc + mv + rest), OrbitNote.wrap_deg(vc + mv)]
 
 
 ## Ring r ist zur Zeit t frei: genug Abstand zum letzten Tap und zum letzten Bogen-Ende.
@@ -291,6 +318,7 @@ static func convert_std(beatmap: Beatmap, style: int = StdStyle.POLAR) -> Array[
 	var ring_last := [-INF, -INF]
 	var prev_pos := Vector2.INF
 	var prev_vec := Vector2.ZERO
+	var vc := INF
 	for i in src:
 		var o: HitObject = objs[i]
 		var t := o.time
@@ -298,6 +326,7 @@ static func convert_std(beatmap: Beatmap, style: int = StdStyle.POLAR) -> Array[
 			arc_end_at[arc.ring] = arc.end_ms
 			last_time = arc.end_ms
 			last_angle = OrbitNote.wrap_deg(arc.end_angle_deg)
+			vc = last_angle
 			arc = null
 		if t - last_head < MIN_GAP_MS:
 			continue
@@ -333,10 +362,13 @@ static func convert_std(beatmap: Beatmap, style: int = StdStyle.POLAR) -> Array[
 			var delta := clampf(want, -lim, lim)
 			if absf(delta) >= JUMP_DEG and beat_strength(reds, t) < STRONG_BEAT:
 				delta = signf(delta) * WEAK_JUMP_DEG
+			var reached: Array = _reach(vc, gap, OrbitNote.wrap_deg(last_angle + delta))
+			delta = OrbitNote.delta_deg(last_angle, reached[0])
 			if style == StdStyle.POLAR and delta != 0.0:
 				dir = signf(delta)
 			want = delta
 		var angle := OrbitNote.wrap_deg(last_angle + want)
+		var vc_new: float = _reach(vc, gap, angle)[1]
 
 		# Ring: Abstand zur Mitte (mit Hysterese), Streams wechseln ab.
 		var rd := pos.distance_to(STD_CENTER)
@@ -391,6 +423,7 @@ static func convert_std(beatmap: Beatmap, style: int = StdStyle.POLAR) -> Array[
 		last_time = t
 		last_angle = angle
 		last_head = t
+		vc = vc_new
 		last_ring = ring
 		prev_pos = end_pos
 	out.sort_custom(func(a: OrbitNote, b: OrbitNote) -> bool:

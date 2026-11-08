@@ -563,6 +563,11 @@ func draw_radius(i: int, t: float) -> float:
 	return s if n.ring == 0 else s * DIAMOND_K * 0.85
 
 
+## Einblend-Deckkraft von Ziel i zur Zeit t (ohne Tiefe).
+func draw_alpha(i: int, t: float) -> float:
+	return _approach_alpha(float(notes[i].time_ms) - t)
+
+
 ## Fortschritt des Anflugs 0 (Spawn) .. 1 (Ring).
 func _progress(dt: float) -> float:
 	return clampf(1.0 - dt / maxf(preempt, 1.0), 0.0, 1.0)

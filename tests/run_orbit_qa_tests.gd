@@ -25,6 +25,11 @@ const V_TABLET := 0.35
 const V_MOUSE := 0.25
 const SEEDS := [3, 17]
 const DENSE_MS := 5000.0
+## Kurven schneiden: Vorhalt Richtung Folgeziel (Grad), nur bei Abstand < LEAD_GAP_MS.
+const LEAD_DEG := 8.0
+const LEAD_GAP_MS := 250.0
+## Ziele zaehlen fuer die Ueberdeckung erst ab dieser Einblend-Deckkraft.
+const VISIBLE_ALPHA := 0.5
 
 var _passed := 0
 var _failed := 0
@@ -281,6 +286,13 @@ func _human(ns: Array[OrbitNote], bm: Beatmap, vmax: float, sig_t: float, sig_a:
 			nxt += 1
 		if goal == INF and nxt < n_ns:
 			goal = ns[nxt].angle_at(ns[nxt].time_ms) + off_a[nxt]
+			# Mensch schneidet Kurven: bei dichtem Folgeziel schon etwas
+			# (hoechstens LEAD_DEG) Richtung uebernaechstes Ziel zielen.
+			var j := nxt + 1
+			while j < n_ns and ns[j].time_ms - ns[nxt].time_ms <= OrbitConverter.CHORD_EPS_MS:
+				j += 1
+			if j < n_ns and ns[j].time_ms - ns[nxt].time_ms < LEAD_GAP_MS and not ns[nxt].is_arc:
+				goal += clampf(OrbitNote.delta_deg(ns[nxt].angle_deg, ns[j].angle_deg) * 0.5, -LEAD_DEG, LEAD_DEG)
 		if goal != INF:
 			var d := OrbitNote.delta_deg(cur, goal)
 			var step := vmax * FRAME_MS
@@ -476,7 +488,7 @@ func _overlap(v: OrbitView, ns: Array[OrbitNote], t0: float) -> Dictionary:
 			var dt := ns[i].time_ms - t
 			if dt > v.preempt:
 				break
-			if dt >= 0.0:
+			if dt >= 0.0 and v.draw_alpha(i, t) >= VISIBLE_ALPHA:
 				idx.append(i)
 		var pos: Array[Vector2] = []
 		var rad: Array[float] = []
@@ -656,7 +668,7 @@ func _overlap_at(v: OrbitView, ns: Array[OrbitNote], t: float) -> float:
 		var dt := ns[i].time_ms - t
 		if dt > v.preempt:
 			break
-		if dt >= 0.0:
+		if dt >= 0.0 and v.draw_alpha(i, t) >= VISIBLE_ALPHA:
 			idx.append(i)
 	var s := 0.0
 	for a in idx.size():
