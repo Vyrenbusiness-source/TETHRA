@@ -100,6 +100,9 @@ const REPLAY_RULES := 3
 const EV_CURSOR := 0
 const EV_DOWN := 1
 const EV_UP := 3
+## Regel-Marke am Anfang jedes Replays: [0, EV_RULES, REPLAY_RULES]. Fehlt sie,
+## stammt das Replay aus einer aelteren Orbit-Version.
+const EV_RULES := 9
 
 var notes: Array[OrbitNote] = []
 var preempt: float = ManiaCore.BASE_PREEMPT
@@ -298,6 +301,8 @@ static func replay_mods(data: Dictionary) -> Dictionary:
 func set_replay_mode(record: bool) -> void:
 	deterministic = true
 	recording = record
+	if record:
+		replay_log = [[0, EV_RULES, REPLAY_RULES]]
 
 
 ## Scroll-Faktor waehrend des Spiels aendern (nur Anflugzeit).
@@ -770,7 +775,7 @@ static func count_events(events: Array) -> Dictionary:
 	var c := 0
 	var k := 0
 	for e in events:
-		if e is Array and e.size() >= 2:
+		if e is Array and e.size() >= 2 and int(e[1]) != EV_RULES:
 			if int(e[1]) == EV_CURSOR:
 				c += 1
 			else:
