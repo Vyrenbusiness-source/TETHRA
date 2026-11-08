@@ -9,7 +9,7 @@ osu! und osu!tau. Der Taktkreis ist ein eigener Mix aus vier Teilen.
 1. **Der Kreis ist ein Takt.** Ein Zeiger ("Hand") dreht im Songtempo, eine
    Umdrehung pro Takt. 12 Uhr = Takt-Eins. Die Taktart kommt aus dem roten
    Timing-Point (Beats pro Takt x Beat-Laenge); ein neuer roter Punkt beginnt
-   einen neuen Takt. Takte unter `MIN_BAR_MS` = 800 ms drehen mit zwei Takten
+   einen neuen Takt. Takte unter `MIN_BAR_MS` = 1200 ms drehen mit zwei Takten
    pro Umdrehung (sonst waere die Hand zu schnell). Ohne Timing-Point: 120 BPM
    in 4/4. Tempo-, Taktart- und SV-Wechsel aendern nur die Drehgeschwindigkeit.
 2. **Noten sitzen an ihrer Taktposition.** Winkel = Anteil des Takts x 360.
