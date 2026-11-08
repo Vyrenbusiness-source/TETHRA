@@ -149,6 +149,12 @@ var _state_ready := false
 const PLAY_MODES := ["mania", "orbit"]
 var _play_mode := "mania"
 var _mode_btns: Array[Button] = []
+## Orbit-Einfuehrung: dezenter Hinweis beim ersten Wechsel auf Orbit, bis
+## das Tutorial einmal gesehen (gestartet oder weggeklickt) ist.
+const ORBIT_TUTORIAL_SCENE := "res://scenes/orbit_tutorial.tscn"
+const ORBIT_TUTORIAL_SCRIPT := "res://scripts/orbit/orbit_tutorial.gd"
+var _orbit_hint: PanelContainer
+var _orbit_hint_force := false  # Harness: auch wenn schon gesehen
 var _saved_search := ""
 var _sv_chip: Button
 # Max-pp (SS) der ausgewaehlten Diff — rosu-pp im Hintergrund-Thread.
@@ -239,6 +245,9 @@ func _ready() -> void:
 	elif OS.get_cmdline_args().has("--shot-online"):
 		# Harness: Online-Tab (Raster, Genre, Download, Fehler) als PNGs.
 		_shot_online.call_deferred()
+	elif OS.get_cmdline_args().has("--shot-orbit-hint"):
+		# Harness: Hinweis "Orbit lernen" beim Wechsel auf Orbit als PNG.
+		_shot_orbit_hint.call_deferred()
 	elif OS.get_cmdline_args().has("--shot-settings"):
 		# Harness: Einstellungen oeffnen, das Panel fotografiert seine Reiter selbst.
 		# --skin2d=<Ordnername>: Skin fuer die Vorschau (nur im Speicher, nicht gespeichert).
@@ -2068,6 +2077,8 @@ func _set_play_mode(mode: String) -> void:
 		return
 	_play_mode = mode
 	_restyle_mode_switch()
+	if mode == "orbit":
+		_show_orbit_hint()
 	# Sichtbare Maps haengen am Modus (osu!standard nur im Orbit-Modus).
 	var keep := _selected_set
 	_refresh_filter(_search.text)
@@ -2081,6 +2092,114 @@ func _set_play_mode(mode: String) -> void:
 		_update_info_panel()
 	if _state_ready:
 		_save_browser_state()
+
+
+## Hinweis "Orbit lernen (1 Min.)" ueber dem Modus-Umschalter.
+func _show_orbit_hint() -> void:
+	if _orbit_hint != null or _mode_btns.is_empty():
+		return
+	var tut: GDScript = load(ORBIT_TUTORIAL_SCRIPT)
+	if not _orbit_hint_force and bool(tut.is_seen()):
+		return
+	var p := PanelContainer.new()
+	var sb := UiTheme.glass_box(8, 0.96, 0.22)
+	sb.content_margin_left = 14
+	sb.content_margin_right = 12
+	sb.content_margin_top = 10
+	sb.content_margin_bottom = 10
+	p.add_theme_stylebox_override("panel", sb)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 12)
+	p.add_child(row)
+	var tick := ColorRect.new()
+	tick.color = UiTheme.ACCENT
+	tick.custom_minimum_size = Vector2(3, 0)
+	row.add_child(tick)
+	var txt := Label.new()
+	txt.text = tr("Neu in Orbit?")
+	txt.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	txt.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	txt.add_theme_font_size_override("font_size", 13)
+	txt.add_theme_color_override("font_color", COL_TEXT)
+	row.add_child(txt)
+	var learn := Button.new()
+	learn.text = tr("Orbit lernen (1 Min.)")
+	learn.tooltip_text = tr("Eine kurze Einführung zeigt Zielen, Ringe und Bögen.")
+	learn.focus_mode = Control.FOCUS_NONE
+	UiTheme.style_button(learn, true, 8)
+	learn.pressed.connect(_start_orbit_tutorial)
+	row.add_child(learn)
+	var later := Button.new()
+	later.text = tr("Später")
+	later.focus_mode = Control.FOCUS_NONE
+	UiTheme.style_ghost_button(later, 8)
+	later.pressed.connect(_dismiss_orbit_hint)
+	row.add_child(later)
+	p.modulate.a = 0.0
+	add_child(p)
+	_orbit_hint = p
+	_place_orbit_hint.call_deferred()
+	create_tween().tween_property(p, "modulate:a", 1.0, 0.25)
+
+
+## Ueber den Modus-Umschalter setzen, im Bild gehalten.
+func _place_orbit_hint() -> void:
+	if _orbit_hint == null or _mode_btns.is_empty():
+		return
+	# So breit wie die Zeile Modus-Umschalter + Spielen.
+	var anchor := (_mode_btns[0].get_parent() as Control).get_global_rect()
+	if _play_btn != null:
+		anchor = anchor.merge(_play_btn.get_global_rect())
+	var sz := _orbit_hint.get_combined_minimum_size()
+	sz.x = maxf(sz.x, anchor.size.x)
+	_orbit_hint.size = sz
+	var vp := get_viewport_rect().size
+	var pos := Vector2(anchor.position.x, anchor.position.y - sz.y - 10.0)
+	_orbit_hint.position = Vector2(clampf(pos.x, 8.0, maxf(vp.x - sz.x - 8.0, 8.0)), maxf(pos.y, 8.0))
+
+
+func _dismiss_orbit_hint() -> void:
+	(load(ORBIT_TUTORIAL_SCRIPT) as GDScript).mark_seen()
+	if _orbit_hint == null:
+		return
+	var p := _orbit_hint
+	_orbit_hint = null
+	var tw := create_tween()
+	tw.tween_property(p, "modulate:a", 0.0, 0.18)
+	tw.tween_callback(p.queue_free)
+
+
+func _start_orbit_tutorial() -> void:
+	(load(ORBIT_TUTORIAL_SCRIPT) as GDScript).mark_seen()
+	_preview.stop()
+	SceneFader.go(ORBIT_TUTORIAL_SCENE)
+
+
+## Harness --shot-orbit-hint [--shot-out=<ordner>]: Wechsel Mania -> Orbit,
+## Hinweis de und en fotografieren.
+## Speichert den Browser-Zustand nicht (Modus des Nutzers bleibt).
+func _shot_orbit_hint() -> void:
+	_state_ready = false
+	_play_mode = "mania"
+	_orbit_hint_force = true
+	_set_play_mode("orbit")
+	var dir := OS.get_user_data_dir()
+	for a in OS.get_cmdline_args():
+		if a.begins_with("--shot-out="):
+			dir = a.trim_prefix("--shot-out=")
+	# Beide Sprachen in einem Lauf: Hinweis je Sprache neu bauen.
+	for lang in ["de", "en"]:
+		TranslationServer.set_locale(lang)
+		if _orbit_hint != null:
+			_orbit_hint.free()
+			_orbit_hint = null
+		_show_orbit_hint()
+		await get_tree().create_timer(0.9).timeout
+		await RenderingServer.frame_post_draw
+		var out := dir.path_join("orbit_hint_%s.png" % lang)
+		get_viewport().get_texture().get_image().save_png(out)
+		print("SHOT gespeichert: " + out)
+	get_tree().quit(0)
 
 
 ## Modus-Tag im Ranglisten-Kopf (Mania 4K = ACCENT, Orbit = ACCENT2).
