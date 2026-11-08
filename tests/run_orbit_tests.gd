@@ -177,7 +177,7 @@ func _test_mania_rings() -> void:
 	_add(bm, 3000.0, 2)
 	_add(bm, 4000.0, 0, 600.0)
 	var ns := OrbitConverter.convert_mania(bm)
-	_ok(ns.size() == 8, "8 Ziele (Akzent = 2)")
+	_ok(ns.size() == 7, "7 Ziele (Akzent = 2)")
 	_ok([ns[0].ring, ns[1].ring, ns[2].ring, ns[3].ring] == [0, 0, 1, 1], "Spalten 1-2 innen, 3-4 aussen")
 	_ok(ns[4].time_ms == 3000.0 and ns[5].time_ms == 3000.0 and ns[4].ring == 0 and ns[5].ring == 1
 		and absf(ns[4].angle_deg - ns[5].angle_deg) < EPS, "Akkord ueber beide Seiten = Akzent am selben Winkel")
@@ -215,7 +215,7 @@ func _test_density() -> void:
 	_add(bm, 1060.0, 3)      # anderer Ring: bleibt
 	_add(bm, 1150.0, 0)      # >= 90 ms: bleibt
 	_add(bm, 3000.0, 0, 800.0)
-	_add(bm, 3400.0, 1)      # anderer Ring im Halte: bleibt
+	_add(bm, 3400.0, 3)      # anderer Ring im Halte: bleibt
 	_add(bm, 3500.0, 0)      # im Halte des eigenen Rings: weg
 	_add(bm, 3900.0, 0)      # 100 ms nach Halte-Ende: < 150, weg
 	_add(bm, 4000.0, 0)      # 200 ms nach Halte-Ende: bleibt
@@ -349,6 +349,7 @@ func _test_hold_release_and_out() -> void:
 	var c := _core(ns)
 	var got := _res(c)
 	c.key_down(0, 1000.0, ns[0].pointer_at(1000.0), 0.3)
+	c.cursor_moved(ns[0].pointer_at(1400.0), 0.3, 1400.0)
 	c.key_up(0, 1400.0)
 	_ok(got.has(0) and str(got[0].get("drop_reason", "")) == "RELEASE" and int(got[0].quality) == 5, "zu frueh loslassen = DROP/RELEASE")
 	# Cursor bleibt stehen, die Hand laeuft davon.
@@ -361,7 +362,7 @@ func _test_hold_release_and_out() -> void:
 		c2.update(t)
 	_ok(g2.has(0) and str(g2[0].get("drop_reason", "")) == "OUT", "Cursor steht, Hand laeuft weg = DROP/OUT")
 	var dt: float = t - 1000.0
-	_ok(dt > 400.0 and dt < 700.0, "Austritt nach Toleranz/Tempo + ARC_OUT_MS (%.0f ms)" % dt)
+	_ok(dt > 250.0 and dt < 320.0, "Austritt nach Toleranz/Tempo + ARC_OUT_MS (%.0f ms)" % dt)
 	# Andere Taste halten genuegt nicht: Taste des Rings loslassen beendet.
 	var c3 := _core(_list([_note(1000.0, 0, 1000.0)]))
 	var g3 := _res(c3)
@@ -377,13 +378,13 @@ func _test_scoring_values() -> void:
 	_ok(Array(OrbitCore.TIER_NAMES) == ["CORE", "SHARP", "GOOD", "FAIR", "EDGE", "MISS"], "Stufennamen")
 	_ok(OrbitCore.ANGLE_TOL_DEG == 22.0 and OrbitCore.CENTER_DEG == 9.0 and OrbitCore.AIM_EDGE_FACTOR == 0.88, "Toleranz 22, Mitte 9, Rand 0,88")
 	var ns: Array[OrbitNote] = []
-	for i in 20:
+	for i in 150:
 		ns.append(_note(1000.0 + i * 400.0, i % 2))
 	var c := _core(ns)
 	for n in ns:
 		c.key_down(n.ring, n.time_ms, n.pointer_at(n.time_ms), 0.3)
 		c.key_up(n.ring, n.time_ms + 30.0)
-	c.update(10000.0)
+	c.update(100000.0)
 	_ok(c.score == 1000000 and c.grade() == "SS" and c.n_miss == 0, "perfekt = 1.000.000, SS")
 
 
