@@ -1,50 +1,58 @@
-# Orbit-Modus
+# Orbit-Modus ("Taktkreis")
 
-Eigener Modus: zielen mit Maus/Tablet, tippen mit zwei Tasten. Ziele liegen auf
-zwei Ringen um die Bildschirmmitte. Der Cursor-**Winkel** zur Mitte waehlt die
-Richtung, die **Taste** den Ring (Taste A = innen, Taste B = aussen; Standard
-Maus links/rechts und Z/X, umbelegbar). Ein Treffer zaehlt nur, wenn Zeitfenster
-**und** Winkel stimmen.
+Eigener Modus: zielen mit Maus/Tablet, tippen mit zwei Tasten. Der Kreis ist
+ein Takt: eine Hand dreht im Songtempo (eine Umdrehung pro Takt, 12 Uhr =
+Takt-Eins), die Noten sitzen fest an ihrer Taktposition auf zwei Ringen. Taste A
+(Maus links / Z) = innerer Ring, Taste B (Maus rechts / X) = aeusserer Ring,
+umbelegbar. Beide Tasten zugleich = Akzent. Der Cursor muss beim Druck auf der
+Hand liegen. Entwurf, Abgrenzung und Spass-Begruendung: `orbit_taktkreis.md`.
 
-Code: `scripts/orbit/orbit_note.gd` (Ziel), `scripts/orbit/orbit_converter.gd`
-(Map-Umwandlung), `scripts/orbit/orbit_core.gd` (Wertung),
-`scripts/orbit/orbit_view.gd` (Spielfeld), `scripts/orbit/orbit_game.gd`
-(Szene: Eingabe, HUD, Pause, Multiplayer), `scripts/orbit/orbit_results.gd`
-(Endbild). Tests: `tests/run_orbit_tests.gd`, `tests/run_orbit_play_tests.gd`.
+Code: `scripts/orbit/orbit_clock.gd` (Takt-Uhr: Hand-Winkel zu jeder Zeit),
+`orbit_note.gd` (Ziel), `orbit_converter.gd` (Map -> Ziele, Sterne),
+`orbit_core.gd` (Wertung), `orbit_view.gd` (Spielfeld), `orbit_game.gd`
+(Szene: Eingabe, HUD, Pause, Bot, Multiplayer), `orbit_results.gd` (Endbild).
+Tests: `tests/run_orbit_tests.gd` (Unit + Bibliothek), `run_orbit_play_tests.gd`,
+`run_orbit_replay_tests.gd`, `run_orbit_qa_tests.gd` (Bots, Messwerte).
 
-## Winkel
+## Winkel und Uhr
 
-0 Grad = oben, im Uhrzeigersinn steigend. `angle_deg` liegt in [0, 360).
-`end_angle_deg` ist nicht gefaltet: `end_angle_deg - angle_deg` ist der
-vorzeichenbehaftete Bogen (+ = im Uhrzeigersinn). Die Bogen-Spitze zur Zeit t
-liefert `OrbitNote.angle_at(t)`.
+0 Grad = oben, im Uhrzeigersinn. Die Hand steht zur Zeit t bei
+`OrbitClock.angle_at(t)`: eine Umdrehung pro Takt (Beats pro Takt x Beat-Laenge
+des roten Timing-Points; ein neuer roter Punkt beginnt einen neuen Takt).
+Takte unter `MIN_BAR_MS` = 1200 ms drehen mit zwei Takten pro Umdrehung, die
+Hand ist also nie schneller als 0,3 Grad/ms (300 Grad/s). Ohne Timing-Point:
+120 BPM, 4/4. Ein Ziel liegt am Winkel seiner Taktposition; der Bogen eines
+Halte-Ziels ist der Weg der Hand (`OrbitNote.pointer_at(t)`).
 
 ## Regeln (OrbitCore)
 
-- Zeitfenster (aus OD, wie Mania), HP und Zaehler kommen aus einem
-  ManiaCore-Objekt. **Score, Acc und Grade sind eigene Orbit-Regeln**, siehe
-  Wertung. `stats()` liefert dieselben Felder wie ManiaCore plus `aim_err`
-  und `mode` = "orbit".
-- Tap: Taste des richtigen Rings im 50er-Fenster, Cursor hoechstens
-  `ANGLE_TOL_DEG` = 22 Grad neben dem Ziel. Falscher Ring oder falscher Winkel
-  = kein Treffer (das Ziel bleibt offen, bis sein Fenster ablaeuft = MISS).
-- Zu frueh (zwischen 50er- und Miss-Fenster) **und** richtig gezielt: frisst das
-  Ziel als MISS, wie Mania.
-- Bogen: Kopf wie ein Tap (`arc_started`). Danach Taste halten und der
-  wandernden Spitze folgen (gleiche 22 Grad). Mehr als `ARC_OUT_MS` = 150 ms am
-  Stueck ausserhalb oder Loslassen frueher als 1,5x 50er-Fenster vor dem Ende =
-  MISS mit `miss_kind` "DROP" (`drop_reason` "OUT" bzw. "RELEASE"). Sonst zaehlt
-  am Ende die Qualitaet des Kopfs. Ein Bogen ist ein Acc-Objekt.
-- Die Austrittszeit wird exakt berechnet (Spitze laeuft linear, Cursor steht
-  zwischen zwei Events still), also unabhaengig von der Framerate.
+- Zeitfenster aus OD (ManiaCore), HP und Zaehler aus einem ManiaCore-Objekt.
+  Score, Acc und Grade sind Orbit-Regeln, siehe Wertung. `stats()` wie Mania
+  plus `aim_err` und `mode` = "orbit".
+- **Die Taste waehlt den Ring** (Taste A innen, B aussen). Der Cursor-Abstand
+  zaehlt nicht; nur in der Totzone (`DEAD_K`) in der Mitte gilt der Cursor nie
+  als gezielt.
+- **Zielen ist Pflicht**: beim Druck muss der Cursor-Winkel hoechstens
+  `ANGLE_TOL_DEG` = 30 Grad neben der Hand liegen, Radius egal. Daneben =
+  kein Treffer, Grund `ANGLE` ("neben dem Zeiger"), das Ziel bleibt offen bis
+  sein Fenster ablaeuft (MISS).
+- Zu frueh (zwischen 50er- und Miss-Fenster) und gezielt: frisst das Ziel als
+  MISS, wie Mania.
+- **Halte** (Bogen): Kopf wie ein Tap. Danach Taste halten und der Hand folgen
+  (gleiche Toleranz). Mehr als `ARC_OUT_MS` = 150 ms am Stueck neben der Hand
+  oder zu frueh loslassen (1,5x 50er-Fenster vor dem Ende) = MISS,
+  `miss_kind` "DROP", `drop_reason` "OUT" bzw. "RELEASE". Sonst zaehlt die
+  Qualitaet des Kopfs. Die Austrittszeit wird exakt berechnet (Framerate egal).
 - `note_judged(index, result)`: `quality`, `dt`, `angle_err`, `ring`,
-  `miss_kind`, `late`; Boegen zusaetzlich `hold_end`, `held`, `drop_reason`.
+  `miss_kind`, `late`; Halte zusaetzlich `hold_end`, `held`, `drop_reason`.
+- Replays tragen die Marke `REPLAY_RULES` = 3 (`EV_RULES`). Aeltere Orbit-
+  Replays (ohne Marke) werden als "aeltere Version" gemeldet und nicht
+  abgespielt.
 
-## Wertung
+## Wertung (unveraendert gegenueber dem alten Orbit)
 
-Sechs Stufen, benannt CORE / SHARP / GOOD / FAIR / EDGE / MISS (uebersetzt ueber
-`translations/orbit.csv`). Der Index entspricht der Mania-Qualitaet
-(MAX/PERFECT/GOOD/OK/MEH/MISS), die Zeitfenster sind also dieselben.
+Sechs Stufen CORE / SHARP / GOOD / FAIR / EDGE / MISS (`translations/orbit.csv`),
+Zeitfenster wie Mania.
 
 | Stufe | Zeitwert |
 |---|---|
@@ -55,18 +63,16 @@ Sechs Stufen, benannt CORE / SHARP / GOOD / FAIR / EDGE / MISS (uebersetzt ueber
 | EDGE | 0,16 |
 | MISS | 0 |
 
-- **Zielfaktor**: bis `CENTER_DEG` = 9 Grad Zielfehler 1,0, danach linear bis
-  `AIM_EDGE_FACTOR` = 0,88 am Rand der Toleranz (22 Grad). Wert eines Treffers
-  = Zeitwert x Zielfaktor (`OrbitCore.hit_value`).
+- **Zielfaktor**: bis `CENTER_DEG` = 9 Grad Winkelfehler 1,0, danach linear bis
+  `AIM_EDGE_FACTOR` = 0,88 am Rand der Toleranz (30 Grad). Wert = Zeitwert x
+  Zielfaktor (`OrbitCore.hit_value`).
 - **Acc** = Mittel der Trefferwerte aller bisher gewerteten Ziele (Miss = 0).
-- **Score** (0 bis 1.000.000, x Mod-Faktor, z. B. NF):
-  `1.000.000 x (0,9 x Summe(Wert)/N + 0,1 x Summe(Wert x min(Kombo/100, 1))/N)`
-  mit N = Zahl aller Ziele. 90 % Praezision, 10 % Streak (`STREAK_SHARE`;
-  volle Streak-Wertung ab Kombo `STREAK_FULL` = 100). Ein Bogen zaehlt als ein
-  Ziel.
-- **Grade**: SS ab Acc 98,5 % und ohne Miss, S ab 95 %, A ab 90 %, B ab 82 %,
-  C ab 72 %, sonst D. Gescheitert = F (nur Endbild).
-- Zielfehler (`aim_err`): mittlerer Winkelfehler aller Treffer in Grad.
+- **Score** (0..1.000.000, x Mod-Faktor): `1.000.000 x (0,9 x Summe(Wert)/N +
+  0,1 x Summe(Wert x min(Kombo/100, 1))/N)`. 90 % Praezision, 10 % Streak
+  (`STREAK_SHARE`, voll ab Kombo `STREAK_FULL` = 100). Ein Halte = ein Ziel.
+- **Grade**: SS ab Acc 98,5 % ohne Miss, S ab 95 %, A ab 90 %, B ab 82 %,
+  C ab 72 %, sonst D. Gescheitert = F.
+- `aim_err` = mittlerer Winkelfehler (Cursor zur Hand) aller Treffer in Grad.
 
 ## Orbit-Rating (Profil)
 
@@ -95,21 +101,21 @@ bleiben unveraendert, nur Sektion `scores`). Code: `ScoreStore.orbit_points`,
 
 ## Lesbarkeit (OrbitView)
 
-- Ein `_draw`-Durchgang, keine Nodes pro Ziel, keine Allokation pro Frame.
-- Innen = volle Scheibe in kuehlem Blau, aussen = hohle Raute in warmem
-  Bernstein: Ring ist an Form **und** Farbe erkennbar.
-- Eigene Bahnen: Innen-Ziele fliegen vom Kern zum Innenring, Aussen-Ziele vom
-  Innenring zum Aussenring. Konstante Geschwindigkeit, Ankunft genau zur
-  Trefferzeit (Anflugzeit = Scroll Speed).
-- Nur das naechste Ziel je Ring ist voll deckend, spaetere blasser
-  (`FAR_ALPHA`). Winkel-Hilfslinien (Einstellung `orbit_guides`) und der Zeiger
-  zeigen 650 ms vor der Ankunft, ob der Cursor auf dem Ziel steht.
-- Kein Leuchten, kein Wackeln: Treffer geben kurze, ruhige Marken
-  (Fehltreffer ein X), keine Partikel.
-- Endbild: links die Orbit-Karte (jedes Ziel an seinem Winkel auf seinem Ring,
-  radial um den Zeitfehler versetzt, Farbe = Stufe), rechts Score, Acc,
-  Serie, Zielfehler, Stufentabelle und Timing-Histogramm nebeneinander.
-  Die Knopfreihe (Nochmal R, Zurueck Esc) steht auch bei 1280x720 im Bild.
+- Ein `_draw`-Durchgang, keine Nodes pro Ziel. Dunkle Platte, zwei duenne Ringe,
+  Raster nur als feine Striche (Viertel, Achtel feiner).
+- Innen = volle kuehle Scheibe, aussen = warmes Quadrat: Ring an Form **und**
+  Farbe lesbar. Die Hand ist die einzige helle Linie, dahinter eine schwache
+  Zielzone (+-30 Grad).
+- Die naechste Note je Ring ist am groessten, mit hellem Rand; spaetere Noten
+  des Takts kleiner; die Noten des naechsten Takts (Vorschau) gedimmt und
+  heller, je naeher die Hand kommt.
+- Kein Leuchten, keine Partikel. Treffer = kurze Marke an der Note (Stufe in
+  der Mitte), Fehltreffer ein X, Hinweis "neben dem Zeiger" bei Zielfehlern.
+- Sound: je Ring ein eigener Treffer-Klang (Tonhoehe nach Stufe), Halte-Loop,
+  Miss-Klang (`OrbitSound` in `orbit_game.gd`).
+- Endbild: links die Orbit-Karte (Ziel an Winkel und Ring, radial um den
+  Zeitfehler versetzt, Farbe = Stufe), rechts Score, Acc, Serie, Zielfehler,
+  Stufentabelle, Timing-Histogramm. Knopfreihe auch bei 1280x720 im Bild.
 
 ## Multiplayer
 
@@ -169,86 +175,49 @@ Fail-Bild). `--shot-intro` (ohne `--shot`) fotografiert den Countdown.
 
 ## Umwandlung (OrbitConverter)
 
-Quelle: osu!mania-Maps (gedacht fuer 4K). Kein Zufall: gleiche Map = gleiches
-Muster.
+Quellen: osu!standard und osu!mania. Kein Zufall: gleiche Map = gleiches Muster.
+Jedes Ziel liegt exakt auf der Zeit seiner Quell-Note.
 
-1. **Akkord** = Notes mit <= 2 ms Abstand. Ergibt hoechstens zwei Ziele: beide
-   Ringe am selben Winkel (niedrigste Spalte innen, hoechste aussen). Die
-   Variante "derselbe Ring nebeneinander" wird nicht erzeugt: ein Tastendruck
-   trifft nur ein Ziel, zwei gleichzeitige Ziele auf einem Ring waeren
-   unspielbar.
-2. **Dichte-Reduktion**: ein Akkord weniger als `MIN_GAP_MS` = 75 ms nach dem
-   letzten behaltenen wird verworfen. Alles schneller als 1/4 bei 200 BPM wird
-   so zusammengefasst (1/6-Bursts, schnelle Jacks, Doppel-Streams).
-3. **Winkel**: die Spalten liegen gedanklich auf einem Kreis. Der kreisfoermige
-   Spaltenabstand d (4K: -1, 0, +1, +2; +2 folgt der Flussrichtung) mal
-   Schrittweite ist der Sprung. Schrittweite = 24 Grad x clamp(Abstand / 150 ms,
-   1, 2,5): kleine Abstaende = kleine Spruenge, grosse Abstaende duerfen bis
-   120 Grad springen. Jeder Sprung ist gedeckelt auf `MAX_DEG_PER_MS` = 0,6
-   Grad/ms x Abstand und `MAX_JUMP_DEG` = 150 Grad. Ergebnis: Rolls drehen im
-   Kreis, Trills pendeln, Jacks bleiben stehen (ab 300 ms Abstand wandern sie
-   einen Schritt weiter).
-4. **Ring**: Einzelnoten im Stream (Abstand < 160 ms) wechseln den Ring, die
-   Tasten werden also abgewechselt. In ruhigen Stellen entscheidet die
-   Spaltenhaelfte (linke Haelfte innen, rechte aussen). Direkt nach einem
-   Bogen-Ende (< 150 ms) kommt das naechste Ziel auf den anderen Ring.
-5. **LN -> Bogen**: Winkellaenge = Dauer x 0,12 Grad/ms, gedeckelt auf 270
-   Grad, Richtung = aktuelle Flussrichtung. LNs unter 100 ms werden Taps. Bei
-   LN-Akkorden laufen beide Boegen gleich schnell (ein Cursor folgt beiden).
-6. **Notes waehrend eines Bogens** werden Taps auf dem freien Ring genau an der
-   Bogen-Spitze (dort ist der Cursor ohnehin). Laufen zwei Boegen, werden sie
-   verworfen.
+- **std**: Ring nach osu!taiko-Regel: Whistle/Clap = aussen, sonst innen;
+  Finish = Akzent (beide Ringe). Slider und Spinner (>= `MIN_ARC_MS` = 100 ms)
+  werden Halte, gekappt auf `MAX_HOLD_MS` = 6 s. Positionen zaehlen nicht.
+  (`HitObject.hit_sound` kommt aus `osu_parser.gd`.)
+- **mania 4K**: Spalten 1-2 innen, 3-4 aussen; Akkord ueber beide Seiten =
+  Akzent; LN = Halte. Andere Spaltenzahlen: linke Haelfte innen, rechte aussen.
+- **Dichte**: je Ring `SAME_RING_MIN_MS` = 90 ms, nach einem Halte
+  `RELEASE_GAP_MS` = 150 ms; waehrend ein Halte den Ring haelt, kommt dort
+  nichts. Unter `EASY_STARS` = 2,5 gelten `EASY_RING_GAP_MS` = 220 ms (Ring) und
+  `EASY_GAP_MS` = 150 ms (gesamt).
+- `OrbitConverter.violations` prueft Zeit, Ring, Winkel, Akkord; die Bibliothek
+  hat 0 Verstoesse.
 
-Damit bleibt die Winkelgeschwindigkeit zwischen allen Cursor-Punkten (Koepfe,
-Bogen-Enden) unter 0,6 Grad/ms (bei Ringradius 300 px etwa 3100 px/s).
+## Orbit-Sterne
 
-## Spielbarkeit (2 Tasten + Zeiger)
-
-Grenzen, die der Converter erzwingt (`OrbitConverter.violations` prueft sie):
-
-1. **Zeit exakt**: jedes Ziel liegt auf der Zeit seiner Quell-Note, nichts wird
-   verschoben. Nur Akkorde teilen sich die Zeit des ersten Notes (max 2 ms).
-2. **Zeigertempo**: zwischen zwei Cursor-Punkten (Koepfe, Bogen-Enden) hoechstens
-   `MAX_DEG_PER_MS` = 0,6 Grad/ms; damit hoechstens 150 Grad in 250 ms
-   (`MAX_JUMP_DEG`) und hoechstens 90 Grad unter 150 ms Abstand
-   (`SHORT_JUMP_DEG`). Zu grosse Spruenge werden verkleinert, nie verzoegert.
-3. **Ein Finger pro Ring**: zwei Ziele auf demselben Ring brauchen
-   `SAME_RING_MIN_MS` = 90 ms (Tap zu Tap), nach einem Bogen-Ende
-   `RELEASE_GAP_MS` = 150 ms; waehrend ein Bogen den Ring haelt, kommt dort
-   kein Ziel. Schnellere Folgen wechseln auf den anderen Ring (wenn der frei
-   ist), sonst entfaellt das Ziel; ein Akkord schrumpft auf das freie Ziel.
-4. **Akkorde** (beide Ringe) liegen immer am selben Winkel.
-
-Pruefung: `tests/run_orbit_tests.gd` wandelt alle 4K-Diffs der Bibliothek
-um und zaehlt Verstoesse. Stand: 216 Sets, 899 Diffs, 878.349 Ziele,
-Verstoesse Zeit 0, Tempo 0, Flick 0, Ring 0, Akkord 0; hoechstes Tempo
-0,600 Grad/ms. Der perfekte Bot spielt die Test-Maps ohne Miss.
+Skala 0..15. Je Sekunden-Fenster (Paare, `STAR_HOP_MS`): Last = Ziele/s (Akzent
+zaehlt `STAR_ACCENT_W`, Halte `STAR_HOLD_W`, Ringwechsel unter 400 ms
+`STAR_SWITCH_W`) plus Folge-Anspruch = (Handtempo / `HAND_REF_DEG_PER_MS`)^2
+(gekappt `STAR_FOLLOW_CAP`) x min(nps/3, 1). Die haertesten Fenster zaehlen am
+meisten (`STAR_DECAY`). Ab `STAR_KNEE` = 3,5 wird mit `STAR_STRETCH` = 3,5
+gedehnt, damit die Skala genutzt wird. Bibliothek (964 Diffs): p10 2,15, p25
+2,99, Median 4,35, p75 6,37, p90 7,86, p99 10,24, Max 13,76. Rating-Formel
+(Profil) siehe oben, unveraendert.
 
 ## Konstanten
 
 | Konstante | Wert | Ort |
 |---|---|---|
-| `ANGLE_TOL_DEG` | 22 Grad | OrbitCore |
+| `ANGLE_TOL_DEG` | 30 Grad | OrbitCore |
+| `CENTER_DEG` / `AIM_EDGE_FACTOR` | 9 Grad / 0,88 | OrbitCore |
 | `ARC_OUT_MS` | 150 ms | OrbitCore |
+| `DEAD_K` | 0,045 | OrbitCore |
+| `REPLAY_RULES` | 3 | OrbitCore |
+| `MIN_BAR_MS` | 1200 ms | OrbitClock |
 | `CHORD_EPS_MS` | 2 ms | OrbitConverter |
-| `MIN_GAP_MS` | 75 ms | OrbitConverter |
-| `MAX_DEG_PER_MS` | 0,6 Grad/ms | OrbitConverter |
-| `MAX_JUMP_DEG` | 150 Grad | OrbitConverter |
-| `COL_STEP_DEG` | 24 Grad | OrbitConverter |
-| `REF_GAP_MS` / `MAX_STEP_SCALE` | 150 ms / 2,5 | OrbitConverter |
-| `DRIFT_GAP_MS` | 300 ms | OrbitConverter |
-| `STREAM_GAP_MS` | 160 ms | OrbitConverter |
-| `MIN_ARC_MS` | 100 ms | OrbitConverter |
-| `ARC_DEG_PER_MS` / `ARC_MAX_DEG` | 0,12 Grad/ms / 270 Grad | OrbitConverter |
-| `RELEASE_GAP_MS` | 150 ms | OrbitConverter |
-| `SAME_RING_MIN_MS` | 90 ms | OrbitConverter |
-| `FLICK_WINDOW_MS` / `SHORT_GAP_MS` / `SHORT_JUMP_DEG` | 250 ms / 150 ms / 90 Grad | OrbitConverter |
+| `SAME_RING_MIN_MS` / `RELEASE_GAP_MS` | 90 / 150 ms | OrbitConverter |
+| `MIN_ARC_MS` / `MAX_HOLD_MS` | 100 ms / 6 s | OrbitConverter |
+| `EASY_STARS` / `EASY_RING_GAP_MS` / `EASY_GAP_MS` | 2,5 / 220 / 150 ms | OrbitConverter |
+| `STAR_KNEE` / `STAR_STRETCH` | 3,5 / 3,5 | OrbitConverter |
 
-## Messwerte (echte Map, Testlauf)
+## Messwerte
 
-- Billain - Specialist [Advanced]: 1102 Notes (55 LN) -> 1097 Ziele (54 Boegen),
-  max 0,558 Grad/ms, Umwandlung 9 ms.
-- Billain - Specialist [GoldenJumper's Insane]: 2213 Notes (46 LN) -> 1970 Ziele
-  (5 Boegen), max 0,600 Grad/ms, 17 ms.
-- Autoplay (perfekter Spieler) erreicht auf beiden SS, also ist jedes Ziel
-  erreichbar.
+Siehe `orbit_taktkreis.md` (Handtempo, Bots, Regelmaessigkeit, Sterne).
