@@ -53,9 +53,8 @@ var _stat_col: VBoxContainer
 var _list: VBoxContainer
 ## Online-Konto (OnlineApi): Bereich unter dem Kopf, wird je Zustand neu aufgebaut.
 var _acct: VBoxContainer
-var _acct_step := "login"   # login | register | verify
+var _acct_step := "login"
 var _acct_msg := ""
-var _acct_email := ""
 var _acct_user := ""
 var _acct_pass := ""
 
@@ -214,6 +213,7 @@ func _ready() -> void:
 	_build_account()
 	if GameSession.online != null:
 		GameSession.online.state_changed.connect(_build_account)
+		GameSession.online.backfill_changed.connect(_build_account)
 	var sep2 := HSeparator.new()
 	sep2.add_theme_color_override("separator", Color(1, 1, 1, 0.08))
 	vb.add_child(sep2)
@@ -299,7 +299,8 @@ func _acct_btn(text: String, primary: bool, cb: Callable) -> Button:
 	return b
 
 
-## Online-Konto: Anmelden / Registrieren (E-Mail-Code) / angemeldet + Abmelden.
+## Online-Konto: Anmelden (Registrieren nur auf der Website) / angemeldet + Abmelden
+## + Upload alter Scores.
 func _build_account() -> void:
 	if _acct == null or not is_instance_valid(_acct):
 		return
@@ -325,51 +326,9 @@ func _build_account() -> void:
 		row.add_child(_acct_btn(tr("Profil im Browser"), true,
 			func(): api.open_profile(api.username)))
 		row.add_child(_acct_btn(tr("Abmelden"), false, func(): api.logout()))
+		_build_backfill(api)
 		return
 	match _acct_step:
-		"verify":
-			row.add_child(_acct_label(tr("Code aus der E-Mail an %s:") % _acct_email))
-			var code := _acct_edit(tr("Code"), "", false, 120)
-			row.add_child(code)
-			row.add_child(_acct_btn(tr("Bestätigen"), true, func():
-				_acct_msg = tr("Prüfe Code …")
-				api.verify(_acct_email, code.text.strip_edges(), func(ok: bool, msg: String):
-					if ok:
-						_acct_step = "login"
-						_acct_msg = tr("E-Mail bestätigt.")
-						if _acct_user != "" and _acct_pass != "":
-							api.login(_acct_user, _acct_pass, _acct_done)
-							return
-					else:
-						_acct_msg = _acct_error(msg)
-					_build_account())))
-			row.add_child(_acct_btn(tr("Zurück"), false, func():
-				_acct_step = "login"
-				_acct_msg = ""
-				_build_account()))
-		"register":
-			var u := _acct_edit(tr("Benutzername"), _acct_user, false, 150)
-			var m := _acct_edit(tr("E-Mail"), _acct_email, false, 200)
-			var pw := _acct_edit(tr("Passwort"), "", true, 150)
-			row.add_child(u)
-			row.add_child(m)
-			row.add_child(pw)
-			row.add_child(_acct_btn(tr("Konto erstellen"), true, func():
-				_acct_user = u.text.strip_edges()
-				_acct_email = m.text.strip_edges()
-				_acct_pass = pw.text
-				_acct_msg = tr("Sende …")
-				api.register(_acct_user, _acct_email, _acct_pass, func(ok: bool, msg: String):
-					if ok:
-						_acct_step = "verify"
-						_acct_msg = tr("Wir haben dir einen Code per E-Mail geschickt.")
-					else:
-						_acct_msg = _acct_error(msg)
-					_build_account())))
-			row.add_child(_acct_btn(tr("Zurück"), false, func():
-				_acct_step = "login"
-				_acct_msg = ""
-				_build_account()))
 		_:
 			var u2 := _acct_edit(tr("Benutzername"), _acct_user, false, 170)
 			var pw2 := _acct_edit(tr("Passwort"), "", true, 170)
@@ -383,10 +342,7 @@ func _build_account() -> void:
 				api.login(_acct_user, _acct_pass, _acct_done)
 			pw2.text_submitted.connect(func(_t): go.call())
 			row.add_child(_acct_btn(tr("Anmelden"), true, go))
-			row.add_child(_acct_btn(tr("Registrieren"), false, func():
-				_acct_step = "register"
-				_acct_msg = ""
-				_build_account()))
+			row.add_child(_acct_btn(tr("Registrieren"), false, func(): api.open_register()))
 	if _acct_msg != "":
 		var ml := _acct_label(_acct_msg)
 		ml.name = "Msg"
@@ -396,7 +352,51 @@ func _build_account() -> void:
 func _acct_done(ok: bool, msg: String) -> void:
 	_acct_pass = ""
 	_acct_msg = "" if ok else _acct_error(msg)
+	var api: OnlineApi = GameSession.online
+	if ok and api != null and not api.backfill_auto_done():
+		# Erster Login: alte Mania-Bestwerte einmalig hochladen.
+		api.set_backfill_auto_done()
+		api.start_backfill(_osz_files())
 	_build_account()
+
+
+## Dateiname -> Pfad aller lokalen Maps (fuer den Upload alter Scores).
+func _osz_files() -> Dictionary:
+	var out := {}
+	for f in _set_by_file:
+		out[f] = str((_set_by_file[f] as MapSet).osz_path)
+	return out
+
+
+## Alte Scores hochladen: Knopf, Fortschritt "12 / 140", Abbrechen, kurze Erklaerung.
+func _build_backfill(api: OnlineApi) -> void:
+	var st := api.backfill_state()
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	_acct.add_child(row)
+	if api.backfill_running():
+		row.add_child(_acct_label(tr("Alte Scores werden hochgeladen:")))
+		var pl := _acct_label("%d / %d" % [int(st.done), int(st.total)], false)
+		pl.name = "BackfillProgress"
+		row.add_child(pl)
+		row.add_child(_acct_btn(tr("Abbrechen"), false, func(): api.cancel_backfill()))
+	else:
+		var pending := api.backfill_pending(_osz_files())
+		if pending > 0:
+			row.add_child(_acct_btn(tr("Alte Scores hochladen"), false, func():
+				api.start_backfill(_osz_files())))
+			row.add_child(_acct_label(tr("%d Bestwert(e) bereit") % pending))
+		match str(st.state):
+			"finished":
+				row.add_child(_acct_label(tr("Hochgeladen: %d, übersprungen: %d") % [int(st.sent), int(st.skipped)]))
+			"cancelled":
+				row.add_child(_acct_label(tr("Upload abgebrochen (%d / %d).") % [int(st.done), int(st.total)]))
+			"error":
+				row.add_child(_acct_label(tr("Upload unterbrochen, Server nicht erreichbar.")))
+	var note := _acct_label(tr("Es werden nur deine Mania-Bestwerte hochgeladen. Orbit-Bestwerte nicht: sie stammen aus den alten Orbit-Regeln."))
+	note.modulate = Color(1, 1, 1, 0.6)
+	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_acct.add_child(note)
 
 
 func _acct_msg_label_update() -> void:
