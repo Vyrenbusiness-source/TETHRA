@@ -31,7 +31,7 @@ func setup(p_kind: String, p_info: Dictionary, p_overlay: Node, p_score_id: Stri
 	refresh()
 	if overlay != null and overlay.has_signal("state_changed"):
 		overlay.state_changed.connect(refresh)
-	var m := get_node_or_null("/root/Mirror") as BeatmapMirror
+	var m := (Engine.get_main_loop() as SceneTree).root.get_node_or_null("Mirror") as BeatmapMirror
 	if m != null and int(info.get("set_id", 0)) > 0:
 		m.cover_ready.connect(_on_cover)
 		var sid := int(info.set_id)
@@ -44,7 +44,7 @@ func setup(p_kind: String, p_info: Dictionary, p_overlay: Node, p_score_id: Stri
 
 func set_info(p_info: Dictionary) -> void:
 	info = p_info
-	var m := get_node_or_null("/root/Mirror") as BeatmapMirror
+	var m := (Engine.get_main_loop() as SceneTree).root.get_node_or_null("Mirror") as BeatmapMirror
 	if m != null and int(info.get("set_id", 0)) > 0:
 		var sid := int(info.set_id)
 		if not m.cover_ready.is_connected(_on_cover):

@@ -42,7 +42,10 @@ var _hint := ""
 
 func _ready() -> void:
 	name = "ChatOverlay"
-	set_anchors_preset(Control.PRESET_FULL_RECT)
+	# Unter einer CanvasLayer greifen Anker nicht: Groesse selbst an den Viewport binden.
+	position = Vector2.ZERO
+	size = get_viewport_rect().size
+	get_viewport().size_changed.connect(func(): size = get_viewport_rect().size)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	visible = true
 	var online := _gs()
@@ -321,6 +324,23 @@ func _small_button(text: String, primary: bool = false) -> Button:
 	return b
 
 
+## Winziger Textknopf ohne Rahmen (Antworten/Loeschen am Nachrichtenfuss).
+func _tiny_button(text: String, tip: String) -> Button:
+	var b := Button.new()
+	b.text = text
+	b.tooltip_text = tip
+	b.flat = true
+	b.focus_mode = Control.FOCUS_NONE
+	b.custom_minimum_size = Vector2(22, 18)
+	b.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	b.add_theme_font_size_override("font_size", 12)
+	b.add_theme_color_override("font_color", UiTheme.DIM)
+	b.add_theme_color_override("font_hover_color", UiTheme.ACCENT)
+	for st in ["normal", "hover", "pressed", "focus"]:
+		b.add_theme_stylebox_override(st, StyleBoxEmpty.new())
+	return b
+
+
 func _dim_label(text: String, size: int = 13) -> Label:
 	var l := Label.new()
 	l.text = text
@@ -467,7 +487,12 @@ func _dot(online: bool) -> Control:
 
 func _unread_pill(n: int) -> Control:
 	var p := PanelContainer.new()
-	p.add_theme_stylebox_override("panel", UiTheme.solid_box(UiTheme.ACCENT, 8))
+	var psb := UiTheme.solid_box(UiTheme.ACCENT, 8)
+	psb.content_margin_left = 7
+	psb.content_margin_right = 7
+	psb.content_margin_top = 1
+	psb.content_margin_bottom = 1
+	p.add_theme_stylebox_override("panel", psb)
 	p.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var l := Label.new()
@@ -678,11 +703,9 @@ func _bubble(m: Dictionary, mine: bool) -> Control:
 	var foot := HBoxContainer.new()
 	foot.add_theme_constant_override("separation", 6)
 	var tm := _dim_label(_time_text(str(m.created_at)), 10)
+	tm.autowrap_mode = TextServer.AUTOWRAP_OFF
 	foot.add_child(tm)
-	var rb := _small_button("↩")
-	rb.custom_minimum_size = Vector2(26, 20)
-	rb.add_theme_font_size_override("font_size", 11)
-	rb.tooltip_text = tr("Antworten")
+	var rb := _tiny_button("↩", tr("Antworten"))
 	var who := _thread_title() if not mine else tr("Du")
 	rb.pressed.connect(func():
 		_reply = {"id": m.id, "name": who, "content": m.content}
@@ -692,10 +715,7 @@ func _bubble(m: Dictionary, mine: bool) -> Control:
 			_edit.text = keep)
 	foot.add_child(rb)
 	if mine:
-		var db := _small_button("✕")
-		db.custom_minimum_size = Vector2(26, 20)
-		db.add_theme_font_size_override("font_size", 11)
-		db.tooltip_text = tr("Löschen")
+		var db := _tiny_button("✕", tr("Löschen"))
 		db.pressed.connect(func(): api.delete_message(api.open_id, str(m.id)))
 		foot.add_child(db)
 	col.add_child(foot)
@@ -714,7 +734,7 @@ func _content_widget(content: String, compact: bool) -> Control:
 		rest = str(scorelink.text)
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 6)
-	box.custom_minimum_size = Vector2(PANEL_W - 110.0 if not compact else PANEL_W - 40.0, 0)
+	box.custom_minimum_size = Vector2(PANEL_W - 150.0 if not compact else PANEL_W - 40.0, 0)
 	if rest != "":
 		var l := Label.new()
 		l.text = rest
@@ -1007,5 +1027,5 @@ func _run_shot(dir: String) -> void:
 	_render()
 	await get_tree().create_timer(3.0).timeout
 	get_viewport().get_texture().get_image().save_png(dir.path_join("chat_thread.png"))
-	print("SHOT-CHAT fertig")
+	print("SHOT-CHAT fertig ", _panel.get_global_rect(), " ", size, " vis=", _panel.visible, " api=", api.active())
 	get_tree().quit()
