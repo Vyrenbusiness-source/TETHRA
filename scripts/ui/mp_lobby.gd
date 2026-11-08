@@ -52,6 +52,12 @@ var _room_box: VBoxContainer
 var _rooms_list: VBoxContainer
 var _rooms_count: Label
 var _code_edit: LineEdit
+## Verbindungsart: false = Online (Relay-Server), true = LAN / Direkt (UPnP, bisher).
+var _direct := false
+var _tr_online: Button
+var _tr_direct: Button
+var _create_hint: Label
+var _code_hint: Label
 var _name_edit: LineEdit
 var _pw_edit: LineEdit
 var _join_pw_edit: LineEdit
@@ -263,6 +269,12 @@ func _ready() -> void:
 	elif OS.get_cmdline_args().has("--mp-join-test"):
 		Lobby.join_lan("127.0.0.1")
 		_mp_smoke(false)
+	elif OS.get_cmdline_args().has("--mp-relay-host"):
+		Lobby.host_online("Relay-Smoke")
+		_mp_relay(true)
+	elif OS.get_cmdline_args().has("--mp-relay-client"):
+		Lobby.join_online(_arg_value("--mp-relay-code="))
+		_mp_relay(false)
 	elif OS.get_cmdline_args().has("--mp-orbit-host"):
 		if not Lobby.active:
 			Lobby.host_room()
@@ -408,6 +420,53 @@ func _mp_smoke(host: bool) -> void:
 			return
 	print("MP-SMOKE %s TIMEOUT" % ("HOST" if host else "CLIENT"))
 	get_tree().quit(1)
+
+
+## Relay-Smoke (tools/mp_relay_smoke.sh): Raum ueber den Relay, Live-Score und
+## Endergebnis in beide Richtungen. Zeilen beginnen mit "MPRELAY".
+func _mp_relay(host: bool) -> void:
+	var tag := "HOST" if host else "CLIENT"
+	var wait_for := func(cond: Callable, secs: float) -> bool:
+		var w := 0.0
+		while w < secs and not cond.call():
+			await get_tree().create_timer(0.1).timeout
+			w += 0.1
+		return cond.call()
+	var fail := func(msg: String):
+		print("MPRELAY %s FAIL %s" % [tag, msg])
+		get_tree().quit(1)
+	if host:
+		if not await wait_for.call(func(): return Lobby.room_code != "", 15.0):
+			fail.call("kein Raum-Code")
+			return
+		print("MPRELAY code=%s" % Lobby.room_code)
+	if not await wait_for.call(func(): return Lobby.players.size() >= 2 and Lobby.players.has(multiplayer.get_unique_id()), 20.0):
+		fail.call("players=%d" % Lobby.players.size())
+		return
+	var me := multiplayer.get_unique_id()
+	var other := -1
+	for id in Lobby.players:
+		if int(id) != me:
+			other = int(id)
+	print("MPRELAY %s players=%d me=%d other=%d crown=%d" % [tag, Lobby.players.size(), me, other, Lobby.crown_id])
+	Lobby.in_game = true
+	var mine := 1111 if host else 2222
+	var theirs := 2222 if host else 1111
+	for _i in 6:
+		Lobby.send_score(mine, 5, 0.9)
+		await get_tree().create_timer(0.2).timeout
+	if not await wait_for.call(func(): return int(Lobby.players[other].get("score", 0)) == theirs, 10.0):
+		fail.call("live score fehlt: %s" % str(Lobby.players[other].get("score", 0)))
+		return
+	print("MPRELAY %s live score %d from %d" % [tag, theirs, other])
+	Lobby.send_final({ "score": mine, "acc": 0.9, "max_combo": 5 })
+	if not await wait_for.call(func(): return int((Lobby.players[other].get("final", {}) as Dictionary).get("score", 0)) == theirs, 10.0):
+		fail.call("final fehlt")
+		return
+	print("MPRELAY %s final score %d from %d" % [tag, theirs, other])
+	print("MPRELAY %s DONE" % tag)
+	await get_tree().create_timer(1.5).timeout
+	get_tree().quit(0)
 
 
 ## Orbit-MP-Smoke: Stufe ueberlebt den Szenenwechsel Raum -> Orbit -> Raum.
@@ -1115,6 +1174,15 @@ func _build_browser() -> void:
 	side.custom_minimum_size = Vector2(SIDE_W, 0)
 	side.add_theme_constant_override("separation", 8)
 	cols.add_child(side)
+	var trh := HBoxContainer.new()
+	trh.add_theme_constant_override("separation", 4)
+	_tr_online = _chip_toggle("Online")
+	_tr_direct = _chip_toggle("LAN / Direkt")
+	for b in [_tr_online, _tr_direct]:
+		trh.add_child(b)
+	_tr_online.pressed.connect(func(): _set_transport(false))
+	_tr_direct.pressed.connect(func(): _set_transport(true))
+	side.add_child(trh)
 	side.add_child(_section("Raum erstellen"))
 	_name_edit = _field("Raumname")
 	_name_edit.text = _possessive_room(Settings.profile_name)
@@ -1122,10 +1190,12 @@ func _build_browser() -> void:
 	side.add_child(_name_edit)
 	_pw_edit = _field("Passwort (leer = öffentlich)")
 	side.add_child(_pw_edit)
-	side.add_child(_hint("Ohne Passwort erscheint der Raum bei allen in der Liste."))
+	_create_hint = _hint("Ohne Passwort erscheint der Raum bei allen in der Liste.")
+	side.add_child(_create_hint)
 	var create := _btn("Raum erstellen", true, ROW_H)
 	var do_create := func():
-		if Lobby.host_room(_name_edit.text, _pw_edit.text):
+		var ok: bool = Lobby.host_room(_name_edit.text, _pw_edit.text) if _direct 			else Lobby.host_online(_name_edit.text, _pw_edit.text)
+		if ok:
 			_show_room()
 	create.pressed.connect(do_create)
 	_name_edit.text_submitted.connect(func(_t): do_create.call())
@@ -1143,10 +1213,12 @@ func _build_browser() -> void:
 	_join_pw_edit = _field("Passwort (falls gesetzt)")
 	_join_pw_edit.text_submitted.connect(func(_t): _join_by_code())
 	side.add_child(_join_pw_edit)
-	side.add_child(_hint("Den Code bekommst du vom Host des Raums."))
+	_code_hint = _hint("Den Code bekommst du vom Host des Raums.")
+	side.add_child(_code_hint)
 	var join := _btn("Beitreten", false, ROW_H)
 	join.pressed.connect(_join_by_code)
 	side.add_child(join)
+	_set_transport(_direct)
 
 	cols.add_child(_hgap(M))
 	var vr := _vsep()
@@ -1245,8 +1317,21 @@ static func _possessive_room(n: String) -> String:
 
 
 func _join_by_code() -> void:
-	if Lobby.join_code(_code_edit.text, _join_pw_edit.text):
+	var ok: bool = Lobby.join_code(_code_edit.text, _join_pw_edit.text) if _direct 		else Lobby.join_online(_code_edit.text, _join_pw_edit.text)
+	if ok:
 		_show_room()
+
+
+## Online (Relay) oder LAN / Direkt (UPnP) fuer Erstellen und Beitreten.
+func _set_transport(direct: bool) -> void:
+	_direct = direct
+	_tr_online.set_pressed_no_signal(not direct)
+	_tr_direct.set_pressed_no_signal(direct)
+	_paint_chip(_tr_online, not direct)
+	_paint_chip(_tr_direct, direct)
+	_code_edit.placeholder_text = tr("Code (z. B. 7K3F9-A2QXM)") if direct else tr("Code (z. B. K7M4QX)")
+	_create_hint.text = tr("Direkt über deinen Router (UPnP). Mitspieler brauchen den langen Code.") if direct 		else tr("Läuft über den Server, ohne Portfreigabe. Ohne Passwort erscheint der Raum in der Liste.")
+	_code_hint.text = tr("Den Code bekommst du vom Host des Raums.") if direct 		else tr("Der Code hat 6 Zeichen und kommt vom Host des Raums.")
 
 
 ## Ruhiges Einblenden neu aufgebauter Zeilen (index staffelt leicht).
@@ -1375,10 +1460,30 @@ func _refresh_rooms() -> void:
 			continue
 		var o: Dictionary = Lobby.online_rooms[code]
 		var jcode := str(code)
-		_rooms_list.add_child(_room_card(false, str(o.name), int(o.players), jcode,
-			str(o.get("mode", "mania")), func():
-				if Lobby.join_code(jcode):
-					_show_room()))
+		if bool(o.get("relay", false)):
+			var ver := str(o.get("version", ""))
+			var wrong: bool = ver != Lobby.UpdaterS.CURRENT_VERSION
+			var locked := bool(o.get("locked", false))
+			var where := tr("Online")
+			if wrong:
+				where = "v" + ver
+			elif locked:
+				where = tr("Passwort")
+			var rcode := str(o.get("code", ""))
+			_rooms_list.add_child(_room_card(false, str(o.name), int(o.players), where,
+				str(o.get("mode", "mania")), func():
+					if wrong:
+						_status_label.text = Lobby.relay_error_text("version", "", { "host_v": ver })
+					elif locked or rcode == "":
+						_status_label.text = tr("Dieser Raum hat ein Passwort. Gib Code und Passwort links ein.")
+						_code_edit.grab_focus()
+					elif Lobby.join_online(rcode):
+						_show_room()))
+		else:
+			_rooms_list.add_child(_room_card(false, str(o.name), int(o.players), jcode,
+				str(o.get("mode", "mania")), func():
+					if Lobby.join_code(jcode):
+						_show_room()))
 		count += 1
 	var idx := 0
 	for c in _rooms_list.get_children():

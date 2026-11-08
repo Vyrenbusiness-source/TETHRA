@@ -33,6 +33,18 @@ signal status(msg: String)
 signal tournament_changed
 signal round_ended
 
+const RelayPeerS := preload("res://scripts/net/relay_peer.gd")
+const RelayServerS := preload("res://scripts/net/relay_server.gd")
+const UpdaterS := preload("res://scripts/net/updater.gd")
+
+## Transport "Online": Relay-Server statt ENet/UPnP (siehe docs/net/relay.md).
+var online := false
+var _relay_server: Node = null
+var _relay_info_t := 0.0
+var _relay_req: HTTPRequest
+var _relay_rooms: Dictionary = {}
+var _ntfy_rooms: Dictionary = {}
+
 var active := false
 var is_host := false
 var in_game := false
@@ -86,6 +98,9 @@ var _tour_auto_phase := -1
 
 
 func _ready() -> void:
+	if OS.get_cmdline_args().has("--mp-relay"):
+		_start_relay_server()
+		return
 	for a in OS.get_cmdline_args():
 		if a.begins_with("--mp-port="):
 			var pn := a.trim_prefix("--mp-port=").to_int()
@@ -255,6 +270,117 @@ func host_room(rname: String = "", pw: String = "") -> bool:
 	return true
 
 
+## Raum ueber den Relay-Server oeffnen (kein UPnP, keine Portfreigabe).
+func host_online(rname: String = "", pw: String = "") -> bool:
+	var peer = RelayPeerS.new()
+	room_name = rname.strip_edges().substr(0, 28)
+	if room_name == "":
+		room_name = tr("%s's Raum") % Settings.profile_name
+	password = pw.strip_edges()
+	if peer.host(RelayPeerS.relay_url(), _relay_info()) != OK:
+		status.emit(tr("Server nicht erreichbar. Pruefe deine Internetverbindung oder nutze LAN/Direkt."))
+		return false
+	_relay_wire(peer)
+	peer.hosted.connect(func(code: String):
+		room_code = code
+		status.emit(tr("Raum offen! Code zum Teilen: %s") % code)
+		players_changed.emit())
+	multiplayer.multiplayer_peer = peer
+	online = true
+	is_host = true
+	active = true
+	_relay_info_t = 5.0
+	crown_id = 1
+	players = { 1: _new_player(Settings.profile_name) }
+	players[1].ready = true
+	players[1].view = local_view()
+	mm = MatchMode.new()
+	_mm_live = false
+	room_code = ""
+	status.emit(tr("Verbinde mit dem Server…"))
+	players_changed.emit()
+	return true
+
+
+func join_online(code: String, pw: String = "") -> bool:
+	var c := code.strip_edges().to_upper()
+	if c.length() != 6:
+		status.emit(tr("Ungueltiger Raum-Code."))
+		return false
+	var peer = RelayPeerS.new()
+	if peer.join(RelayPeerS.relay_url(), c, UpdaterS.CURRENT_VERSION) != OK:
+		status.emit(tr("Server nicht erreichbar. Pruefe deine Internetverbindung oder nutze LAN/Direkt."))
+		return false
+	_relay_wire(peer)
+	_join_pw = pw.strip_edges()
+	multiplayer.multiplayer_peer = peer
+	online = true
+	is_host = false
+	active = true
+	room_code = c
+	status.emit(tr("Verbinde…"))
+	return true
+
+
+func _relay_wire(peer) -> void:
+	peer.failed.connect(func(code: String, msg: String, extra: Dictionary):
+		if multiplayer.multiplayer_peer != peer:
+			return
+		_reset()
+		left.emit(relay_error_text(code, msg, extra)))
+
+
+## Verstaendlicher Fehlertext zu einem Relay-Fehlercode.
+static func relay_error_text(code: String, msg: String, extra: Dictionary) -> String:
+	match code:
+		"unreachable":
+			return TranslationServer.translate("Server nicht erreichbar. Pruefe deine Internetverbindung oder nutze LAN/Direkt.")
+		"version":
+			return TranslationServer.translate("Update noetig (Host v%s).") % str(extra.get("host_v", "?"))
+		"full":
+			return TranslationServer.translate("Raum voll.")
+		"notfound":
+			return TranslationServer.translate("Raum nicht gefunden — Code richtig?")
+		"busy":
+			return TranslationServer.translate("Server ausgelastet. Versuche es gleich noch einmal.")
+		"rate":
+			return TranslationServer.translate("Zu viele Nachrichten — Verbindung getrennt.")
+	return TranslationServer.translate(msg) if msg != "" else TranslationServer.translate("Verbindung zum Relay verloren.")
+
+
+func _relay_info() -> Dictionary:
+	var mname := ""
+	if not sel_map.is_empty():
+		mname = "%s [%s]" % [str(sel_map.get("title", sel_map.get("file", ""))), str(sel_map.get("version", ""))]
+	return { "name": room_name, "v": UpdaterS.CURRENT_VERSION, "map": mname,
+		"mode": play_mode, "locked": password != "" }
+
+
+## Eigener Relay-Server (headless, --mp-relay [--port N]).
+func _start_relay_server() -> void:
+	var p := 47900
+	var args := OS.get_cmdline_args()
+	for i in args.size():
+		if args[i] == "--port" and i + 1 < args.size():
+			p = args[i + 1].to_int()
+		elif args[i].begins_with("--port="):
+			p = args[i].trim_prefix("--port=").to_int()
+	# Das Hauptmenue beendet sich headless sofort (quit in _ready). Autoloads sind
+	# schon im Baum, die Hauptszene noch nicht bereit: Skript entfernen, dann
+	# bleibt nur ein leeres Control.
+	for n in get_tree().root.get_children():
+		if n.scene_file_path != "" and n.get_script() != null:
+			n.set_script(null)
+	_relay_server = RelayServerS.new()
+	add_child(_relay_server)
+	var err: int = _relay_server.listen(p)
+	if err != OK:
+		printerr("Relay: Port %d nicht verfuegbar (Fehler %d)" % [p, err])
+		get_tree().quit(1)
+		return
+	print("Relay lauscht auf Port %d (Version %s)" % [p, UpdaterS.CURRENT_VERSION])
+
+
 func _setup_upnp() -> void:
 	_upnp = UPNP.new()
 	var ip := ""
@@ -366,6 +492,7 @@ func _reset() -> void:
 		multiplayer.multiplayer_peer.close()
 	multiplayer.multiplayer_peer = OfflineMultiplayerPeer.new()
 	_bcast = null
+	online = false
 	active = false
 	is_host = false
 	in_game = false
@@ -407,6 +534,13 @@ func stop_discovery() -> void:
 
 func _process(delta: float) -> void:
 	_tour_auto(delta)
+	if online and is_host and active:
+		_relay_info_t -= delta
+		if _relay_info_t <= 0.0:
+			_relay_info_t = 3.0
+			var rp = multiplayer.multiplayer_peer
+			if rp is MultiplayerPeerExtension and rp.has_method("update_info"):
+				rp.update_info(_relay_info())
 	# Host: Raum im LAN ansagen (1x pro Sekunde; nur ohne Passwort).
 	if is_host and active and not in_game and password == "":
 		if _bcast != null:
@@ -418,7 +552,7 @@ func _process(delta: float) -> void:
 				_bcast.set_dest_address("255.255.255.255", discovery_port)
 				_bcast.put_packet(msg.to_utf8_buffer())
 		# Weltweit ansagen (alle 20s), sobald der Raum-Code steht.
-		if room_code != "" and DisplayServer.get_name() != "headless":
+		if room_code != "" and not online and DisplayServer.get_name() != "headless":
 			_announce_t -= delta
 			if _announce_t <= 0.0:
 				_announce_t = 20.0
@@ -475,7 +609,10 @@ func _announce_room() -> void:
 
 ## Oeffentliche Raeume abrufen (Ansagen der letzten ~70s, neueste pro Code).
 func fetch_online_rooms() -> void:
-	if _fetch_req != null or DisplayServer.get_name() == "headless":
+	if DisplayServer.get_name() == "headless":
+		return
+	_fetch_relay_rooms()
+	if _fetch_req != null:
 		return
 	_fetch_req = HTTPRequest.new()
 	_fetch_req.timeout = 8.0
@@ -506,11 +643,62 @@ func fetch_online_rooms() -> void:
 		# Eigenen (gerade verlassenen) Raum nicht listen.
 		if room_code != "":
 			found.erase(room_code)
-		online_rooms = found
-		rooms_changed.emit())
+		_ntfy_rooms = found
+		_merge_rooms())
 	if _fetch_req.request(ROOMS_URL + "/json?poll=1&since=70s") != OK:
 		_fetch_req.queue_free()
 		_fetch_req = null
+
+
+## Raumliste des Relays (HTTP GET /rooms). Gesperrte Raeume kommen ohne Code.
+func _fetch_relay_rooms() -> void:
+	if _relay_req != null:
+		return
+	_relay_req = HTTPRequest.new()
+	_relay_req.timeout = 6.0
+	add_child(_relay_req)
+	var req := _relay_req
+	req.request_completed.connect(func(result, code, _h, body):
+		req.queue_free()
+		_relay_req = null
+		if result != HTTPRequest.RESULT_SUCCESS or code != 200:
+			_relay_rooms = {}
+			_merge_rooms()
+			return
+		_relay_rooms = parse_relay_rooms(body.get_string_from_utf8())
+		_merge_rooms())
+	if req.request(RelayPeerS.rooms_url()) != OK:
+		req.queue_free()
+		_relay_req = null
+
+
+## JSON-Liste des Relays -> {schluessel: {name, players, max, mode, map, version, locked, relay, code}}.
+static func parse_relay_rooms(txt: String) -> Dictionary:
+	var out := {}
+	var arr: Variant = JSON.parse_string(txt)
+	if not (arr is Array):
+		return out
+	var n := 0
+	for r in arr:
+		if not (r is Dictionary):
+			continue
+		n += 1
+		var code := str(r.get("code", ""))
+		out[code if code != "" else "locked#%d" % n] = { "name": str(r.get("name", "")),
+			"players": int(r.get("players", 1)), "max": int(r.get("max", 16)),
+			"mode": norm_play(r.get("mode", "mania")), "map": str(r.get("map", "")),
+			"version": str(r.get("version", "")), "locked": bool(r.get("locked", false)),
+			"relay": true, "code": code, "t": 0.0 }
+	return out
+
+
+func _merge_rooms() -> void:
+	var m := _ntfy_rooms.duplicate()
+	m.merge(_relay_rooms, true)
+	if room_code != "" and online:
+		m.erase(room_code)
+	online_rooms = m
+	rooms_changed.emit()
 
 
 # ---------------------------------------------------------------------------
