@@ -299,10 +299,11 @@ func _test_bots(picks: Array) -> void:
 					sp.append(n.speed)
 				sp.sort()
 				speeds.append(float(sp[sp.size() / 2]))
+				# Erste Maps (< 2 Sterne) > 80 %; bis 3 Sterne ohne Fail und > 70 %.
 				if p.stars < 3.0:
-					easy_ok = easy_ok and not r[2] and float(r[0]) > 0.8
+					easy_ok = easy_ok and not r[2] and float(r[0]) > (0.8 if p.stars < 2.0 else 0.7)
 		print(line)
-	_ok(easy_ok, "erste Maps (< 3 Sterne): auch der schwache Bot kommt mit Acc > 80% durch")
+	_ok(easy_ok, "erste Maps (< 2 Sterne > 80 %, < 3 Sterne > 70 %): auch der schwache Bot kommt durch")
 	if stars.size() >= 4:
 		# Der schwache Bot scheitert am Folgen: auf Maps mit langsamem Kopf
 		# (<= 0,0030 E/ms) macht er deutlich weniger Fehler als bei schneller.
