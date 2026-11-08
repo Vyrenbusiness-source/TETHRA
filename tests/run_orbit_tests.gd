@@ -380,7 +380,7 @@ func _test_scoring_values() -> void:
 	print("- Wertung unveraendert")
 	_ok(Array(OrbitCore.TIER_VALUE) == [1.0, 0.94, 0.68, 0.40, 0.16, 0.0], "Stufenwerte")
 	_ok(Array(OrbitCore.TIER_NAMES) == ["CORE", "SHARP", "GOOD", "FAIR", "EDGE", "MISS"], "Stufennamen")
-	_ok(OrbitCore.ANGLE_TOL_DEG == 22.0 and OrbitCore.CENTER_DEG == 9.0 and OrbitCore.AIM_EDGE_FACTOR == 0.88, "Toleranz 22, Mitte 9, Rand 0,88")
+	_ok(OrbitCore.ANGLE_TOL_DEG == 30.0 and OrbitCore.CENTER_DEG == 9.0 and OrbitCore.AIM_EDGE_FACTOR == 0.88, "Toleranz 30, Mitte 9, Rand 0,88")
 	var ns: Array[OrbitNote] = []
 	for i in 150:
 		ns.append(_note(1000.0 + i * 400.0, i % 2))

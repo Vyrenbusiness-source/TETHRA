@@ -24,7 +24,7 @@ const PRIMARY_SCALE := 1.22
 const CURRENT_SCALE := 0.92
 const PREVIEW_SCALE := 0.78
 const HAND_OVER_K := 0.055
-const TOL_DEFAULT := 22.0
+const TOL_DEFAULT := 30.0
 
 ## Ziele ohne Takt-Uhr (Tutorial, Vorschau-Widget): Sichtfenster in ms.
 const FALLBACK_WINDOW_MS := 1200.0
