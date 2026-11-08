@@ -366,7 +366,8 @@ func _test_hold_release_and_out() -> void:
 		c2.update(t)
 	_ok(g2.has(0) and str(g2[0].get("drop_reason", "")) == "OUT", "Cursor steht, Hand laeuft weg = DROP/OUT")
 	var dt: float = t - 1000.0
-	_ok(dt > 250.0 and dt < 320.0, "Austritt nach Toleranz/Tempo + ARC_OUT_MS (%.0f ms)" % dt)
+	var exp_dt: float = OrbitCore.ANGLE_TOL_DEG / ns[0].speed + OrbitCore.ARC_OUT_MS
+	_ok(absf(dt - exp_dt) < 30.0, "Austritt nach Toleranz/Tempo + ARC_OUT_MS (%.0f ms)" % dt)
 	# Andere Taste halten genuegt nicht: Taste des Rings loslassen beendet.
 	var c3 := _core(_list([_note(1000.0, 0, 1000.0)]))
 	var g3 := _res(c3)
