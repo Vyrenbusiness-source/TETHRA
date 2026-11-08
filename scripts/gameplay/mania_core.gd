@@ -72,6 +72,20 @@ var _finished_emitted := false
 var _judged_count := 0
 
 var _hp_miss_damage := 0.08
+
+# --- Fail-Diagnose (nur Beobachtung, aendert die Wertung nie) ---
+const DIAG_LOG_MAX := 30
+const DIAG_HP_WINDOW_MS := 10000.0
+const SPIKE_MS := 50.0
+const STALL_MS := 150.0
+const QUALITY_TAG := ["MAX", "300", "200", "100", "50", "FULL"]
+## Letzte Wertungen: {t, col, kind (MAX/300/200/100/50/FULL/DROP/EARLY), hp}.
+var diag_log: Array = []
+## HP-Verlauf: [t_ms, hp], nur die letzten 10 s.
+var diag_hp: Array = []
+## Frame-Spitzen > 50 ms: {t (Ende der Luecke), ms}.
+var diag_spikes: Array = []
+var _now := 0.0
 var _hp_heal := {
 	Quality.MAX: 0.016, Quality.PERFECT: 0.014, Quality.GOOD: 0.010,
 	Quality.OK: 0.005, Quality.MEH: 0.002,
@@ -237,6 +251,7 @@ func _add_score(q: int) -> void:
 func update(t_ms: float) -> void:
 	if beatmap == null:
 		return
+	_now = t_ms
 	var objs := beatmap.hit_objects
 	while _next_spawn < objs.size() and _spawn_times[_next_spawn] <= t_ms:
 		note_spawned.emit(_next_spawn)
@@ -276,6 +291,7 @@ func key_down(c: int, t_ms: float) -> void:
 	if c < 0 or c >= columns or beatmap == null:
 		return
 	var objs := beatmap.hit_objects
+	_now = maxf(_now, t_ms)
 	_expire_lane(c, t_ms)
 	if _lane_head[c] >= _lane_notes[c].size():
 		lane_pressed.emit(c, false)
@@ -288,7 +304,7 @@ func key_down(c: int, t_ms: float) -> void:
 		return
 	if dt < -w50:
 		# Zu frueh: frisst die Note (Mania-Verhalten).
-		_miss(idx)
+		_miss(idx, "EARLY")
 		lane_pressed.emit(c, false)
 		return
 	if dt > w50:
@@ -314,6 +330,7 @@ func key_up(c: int, t_ms: float) -> void:
 	var h: int = _active_hold[c]
 	if h < 0:
 		return
+	_now = maxf(_now, t_ms)
 	var end := beatmap.hit_objects[h].end_time()
 	# Kurz vor dem Ende loslassen ist ok (1.5x 50er-Fenster), sonst DROP.
 	_finish_hold(c, t_ms >= end - w50 * 1.5)
@@ -340,6 +357,7 @@ func _finish_hold(c: int, held_to_end: bool) -> void:
 		}
 		_judged[idx] = dropped
 		_judged_count += 1
+		_diag_note("DROP", (obj as ManiaNote).column)
 		note_judged.emit(idx, dropped)
 		return
 	var q: int = _hold_quality[c]
@@ -347,6 +365,7 @@ func _finish_hold(c: int, held_to_end: bool) -> void:
 	_add_score(q)
 	hp = minf(hp + _hp_heal[q], 1.0)
 	hp_changed.emit(hp)
+	_diag_note(QUALITY_TAG[q], (obj as ManiaNote).column)
 	var result := {
 		"quality": q, "column": (obj as ManiaNote).column,
 		"hold_end": true, "held": held_to_end, "miss_kind": "",
@@ -405,6 +424,7 @@ func _apply_hit(idx: int, q: int, dt: float) -> void:
 	_add_score(q)
 	hp = minf(hp + _hp_heal[q], 1.0)
 	hp_changed.emit(hp)
+	_diag_note(QUALITY_TAG[q], (obj as ManiaNote).column)
 	var result := {
 		"quality": q, "dt": dt, "late": dt > 0.0,
 		"column": (obj as ManiaNote).column, "miss_kind": "",
@@ -414,7 +434,7 @@ func _apply_hit(idx: int, q: int, dt: float) -> void:
 	note_judged.emit(idx, result)
 
 
-func _miss(idx: int) -> void:
+func _miss(idx: int, kind: String = "FULL") -> void:
 	var obj := beatmap.hit_objects[idx]
 	n_miss += 1
 	combo = 0
@@ -423,6 +443,7 @@ func _miss(idx: int) -> void:
 	hp_changed.emit(hp)
 	if hp <= 0.0 and not no_fail:
 		failed = true
+	_diag_note(kind, (obj as ManiaNote).column)
 	var result := {
 		"quality": Quality.MISS, "column": (obj as ManiaNote).column,
 		"miss_kind": "FULL", "late": false,
@@ -474,3 +495,139 @@ func is_judged(index: int) -> bool:
 
 func active_hold(c: int) -> int:
 	return _active_hold[c]
+
+
+# ---------------------------------------------------------------------------
+# Fail-Diagnose
+# ---------------------------------------------------------------------------
+
+func _diag_note(kind: String, col: int) -> void:
+	diag_log.append({ "t": _now, "col": col, "kind": kind, "hp": hp })
+	while diag_log.size() > DIAG_LOG_MAX:
+		diag_log.pop_front()
+	diag_hp.append([_now, hp])
+	while diag_hp.size() > 1 and float(diag_hp[0][0]) < _now - DIAG_HP_WINDOW_MS:
+		diag_hp.pop_front()
+
+
+## Frame-Zeit melden (delta in ms, t_ms = Spielzeit am Frame-Ende).
+func note_frame(delta_ms: float, t_ms: float) -> void:
+	if delta_ms <= SPIKE_MS:
+		return
+	diag_spikes.append({ "t": t_ms, "ms": delta_ms })
+	while diag_spikes.size() > 20:
+		diag_spikes.pop_front()
+
+
+## Grund des Todes aus Wertungsliste + Frame-Spitzen (rein, testbar).
+## Rueckgabe {kind: stall|drop|early|burst|none, n, ms, secs}.
+static func analyze_fail(log: Array, spikes: Array, t_fail: float) -> Dictionary:
+	var misses: Array = []
+	for e in log:
+		if float(e.t) < t_fail - DIAG_HP_WINDOW_MS:
+			continue
+		if str(e.kind) in ["FULL", "DROP", "EARLY"]:
+			misses.append(e)
+	var n_drop := 0
+	var n_early := 0
+	for e in misses:
+		if str(e.kind) == "DROP":
+			n_drop += 1
+		elif str(e.kind) == "EARLY":
+			n_early += 1
+	# Ruckler: Luecke >= 150 ms, in/kurz nach der Luecke verpasste Noten.
+	var worst := {}
+	var worst_n := 0
+	for sp in spikes:
+		var ms := float(sp.ms)
+		if ms < STALL_MS or float(sp.t) < t_fail - DIAG_HP_WINDOW_MS:
+			continue
+		var lo := float(sp.t) - ms
+		var hi := float(sp.t) + 250.0
+		var n := 0
+		for e in misses:
+			if float(e.t) >= lo and float(e.t) <= hi:
+				n += 1
+		if n > 0 and (worst.is_empty() or ms > float(worst.ms)):
+			worst = sp
+			worst_n = n
+	if not worst.is_empty():
+		return { "kind": "stall", "n": worst_n, "ms": float(worst.ms), "secs": 0.0 }
+	if misses.is_empty():
+		return { "kind": "none", "n": 0, "ms": 0.0, "secs": 0.0 }
+	if n_drop >= 2 and n_drop * 2 >= misses.size():
+		return { "kind": "drop", "n": n_drop, "ms": 0.0, "secs": 0.0 }
+	if n_early >= 2 and n_early * 2 >= misses.size():
+		return { "kind": "early", "n": n_early, "ms": 0.0, "secs": 0.0 }
+	# Dichtester Fehlerblock: meiste Misses in einem 3-s-Fenster.
+	var best_n := 0
+	var best_span := 0.0
+	for i in misses.size():
+		var j := i
+		while j + 1 < misses.size() and float(misses[j + 1].t) - float(misses[i].t) <= 3000.0:
+			j += 1
+		var cnt := j - i + 1
+		if cnt > best_n:
+			best_n = cnt
+			best_span = float(misses[j].t) - float(misses[i].t)
+	return { "kind": "burst", "n": best_n, "ms": 0.0, "secs": best_span / 1000.0 }
+
+
+static var _fail_tr_loaded := false
+
+
+## translations/fail.csv zur Laufzeit anmelden (project.godot bleibt unberuehrt).
+static func _ensure_fail_translations() -> void:
+	if _fail_tr_loaded:
+		return
+	_fail_tr_loaded = true
+	for loc in ["de", "en"]:
+		var path := "res://translations/fail.%s.translation" % loc
+		if ResourceLoader.exists(path):
+			var tr_res := load(path) as Translation
+			if tr_res != null:
+				TranslationServer.add_translation(tr_res)
+
+
+## Eine Zeile fuer das Fail-Bild (uebersetzt ueber translations/fail.csv).
+static func fail_reason_text(r: Dictionary) -> String:
+	_ensure_fail_translations()
+	match str(r.get("kind", "none")):
+		"stall":
+			return TranslationServer.translate("Ruckler: %d ms ohne Bild, %d Noten verpasst") \
+					% [int(r.ms), int(r.n)]
+		"drop":
+			return TranslationServer.translate("%d Holds zu frueh losgelassen") % int(r.n)
+		"early":
+			return TranslationServer.translate("zu frueh gedrueckt (%dx)") % int(r.n)
+		"burst":
+			var secs := "%.1f" % float(r.secs)
+			if TranslationServer.get_locale().begins_with("de"):
+				secs = secs.replace(".", ",")
+			return TranslationServer.translate("%d Misses in %s s") % [int(r.n), secs]
+	return ""
+
+
+## Text fuer user://logs/fail_<datum>.txt.
+func diag_text(title: String, t_fail: float) -> String:
+	var r := ManiaCore.analyze_fail(diag_log, diag_spikes, t_fail)
+	var out: Array[String] = []
+	out.append("TETHRA Fail-Diagnose")
+	out.append("map: %s" % title)
+	out.append("zeit: %.0f ms   hp: %.3f   combo-max: %d" % [t_fail, hp, max_combo])
+	out.append("grund: %s" % (ManiaCore.fail_reason_text(r) if r.kind != "none" else "-"))
+	out.append("")
+	out.append("letzte %d Wertungen (t_ms, spalte, art, hp)" % diag_log.size())
+	for e in diag_log:
+		out.append("%9.0f  c%d  %-5s  hp %.3f" % [float(e.t), int(e.col), str(e.kind), float(e.hp)])
+	out.append("")
+	out.append("hp-verlauf letzte 10 s (t_ms, hp)")
+	for h in diag_hp:
+		out.append("%9.0f  %.3f" % [float(h[0]), float(h[1])])
+	out.append("")
+	out.append("frame-spitzen > %.0f ms (t_ms, dauer)" % SPIKE_MS)
+	if diag_spikes.is_empty():
+		out.append("keine")
+	for sp in diag_spikes:
+		out.append("%9.0f  %.0f ms" % [float(sp.t), float(sp.ms)])
+	return "\n".join(out) + "\n"

@@ -18,6 +18,11 @@ func _initialize() -> void:
 	_test_hold_drop()
 	_test_hold_head_dt()
 	_test_accuracy_weights()
+	_test_hold_release_window()
+	_test_chord_holds()
+	_test_hp_start_and_break()
+	_test_diag_log()
+	_test_fail_reason()
 	print("=== Ergebnis: %d bestanden, %d fehlgeschlagen ===" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
 
@@ -143,3 +148,94 @@ func _test_accuracy_weights() -> void:
 	_approx(core.accuracy(), 950.0 / 1500.0, "+50er -> 63.3%")
 	core.n_miss = 1
 	_approx(core.accuracy(), 950.0 / 1800.0, "+Miss -> 52.8%")
+
+
+func _test_hold_release_window() -> void:
+	print("- Hold-Ende: Loslassen im Release-Fenster zaehlt als gehalten")
+	var inside := _make_core()
+	inside.key_down(3, 1400.0)
+	inside.key_up(3, 1800.0 - 200.0)  # 200 ms vor Ende, Fenster 1.5 x 136.5 = 204.75
+	_ok(inside.n_miss == 0 and inside.n_max == 1 and inside.combo >= 1, "200 ms vor Ende -> gehalten (MAX)")
+	var late := _make_core()
+	late.key_down(3, 1400.0)
+	late.key_up(3, 1800.0 + 80.0)
+	_ok(late.n_miss == 0 and late.n_max == 1, "nach dem Ende losgelassen -> gehalten")
+	var early := _make_core()
+	early.key_down(3, 1400.0)
+	early.key_up(3, 1800.0 - 210.0)
+	_ok(early.n_miss == 1 and early.n_max == 0, "210 ms vor Ende -> DROP")
+
+
+func _test_chord_holds() -> void:
+	print("- Akkord-Holds: jede Spalte einzeln gewertet")
+	var core := _make_core("64,192,1000,128,0,1600:0:0:0:0:
+192,192,1000,128,0,1600:0:0:0:0:
+")
+	core.key_down(0, 1000.0)
+	core.key_down(1, 1004.0)
+	_ok(core.active_hold(0) >= 0 and core.active_hold(1) >= 0, "beide Holds aktiv")
+	core.key_up(0, 1300.0)  # zu frueh -> DROP nur Spalte 0
+	_ok(core.n_miss == 1 and core.active_hold(1) >= 0, "Spalte 0 DROP, Spalte 1 laeuft weiter")
+	core.key_up(1, 1500.0)  # 100 ms vor Ende -> gehalten
+	_ok(core.n_miss == 1 and core.n_max == 1, "Spalte 1 im Fenster gehalten -> MAX")
+
+
+func _test_hp_start_and_break() -> void:
+	print("- HP: Start voll, Break ohne Verlust")
+	var core := _make_core("64,192,1000,1,0,0:0:0:0:
+192,192,30000,1,0,0:0:0:0:
+")
+	_approx(core.hp, 1.0, "HP beim Start 1.0")
+	core.key_down(0, 1000.0)
+	var t := 1000.0
+	while t < 29000.0:  # 28 s Pause ohne Noten
+		t += 16.0
+		core.update(t)
+	_approx(core.hp, 1.0, "Break zieht keine HP ab")
+	_ok(core.n_miss == 0 and not core.failed, "kein Miss im Break")
+
+
+func _test_diag_log() -> void:
+	print("- Diagnose-Log: Art je Wertung")
+	var core := _make_core("64,192,1000,1,0,0:0:0:0:
+192,192,1200,1,0,0:0:0:0:
+448,192,1400,128,0,1800:0:0:0:0:
+")
+	core.key_down(0, 1000.0)       # MAX
+	core.key_down(1, 1000.0)       # 200 ms zu frueh -> ignoriert (ausserhalb 173.5)
+	core.key_down(1, 1050.0)       # 150 ms zu frueh -> frisst Note (EARLY)
+	core.key_down(3, 1400.0)
+	core.key_up(3, 1500.0)         # DROP
+	core.update(3000.0)
+	var kinds: Array = core.diag_log.map(func(e): return e.kind)
+	_ok(kinds == ["MAX", "EARLY", "DROP"], "Arten MAX/EARLY/DROP (war %s)" % str(kinds))
+	_ok(core.diag_log.size() <= ManiaCore.DIAG_LOG_MAX, "Log auf 30 begrenzt")
+	core.note_frame(20.0, 100.0)
+	core.note_frame(640.0, 2000.0)
+	_ok(core.diag_spikes.size() == 1 and int(core.diag_spikes[0].ms) == 640, "nur Spitzen > 50 ms")
+	_ok(core.diag_text("x", 3000.0).contains("DROP"), "Text enthaelt Wertungen")
+
+
+func _entry(t: float, kind: String) -> Dictionary:
+	return { "t": t, "col": 0, "kind": kind, "hp": 0.5 }
+
+
+func _test_fail_reason() -> void:
+	print("- Fail-Grund aus Wertungsliste")
+	var burst: Array = []
+	for i in 7:
+		burst.append(_entry(10000.0 + i * 350.0, "FULL"))
+	var r := ManiaCore.analyze_fail(burst, [], 12500.0)
+	_ok(r.kind == "burst" and r.n == 7, "7 Misses am Stueck -> burst (war %s)" % str(r))
+	_approx(float(r.secs), 2.1, "Spanne 2,1 s", 0.01)
+	var stall := ManiaCore.analyze_fail(burst, [{ "t": 10900.0, "ms": 640.0 }], 12500.0)
+	_ok(stall.kind == "stall" and int(stall.ms) == 640 and stall.n >= 1, "Ruckler 640 ms -> stall")
+	var spike_only := ManiaCore.analyze_fail(burst, [{ "t": 2000.0, "ms": 640.0 }], 12500.0)
+	_ok(spike_only.kind == "burst", "alter Ruckler ohne Misses -> kein stall")
+	var drops: Array = [_entry(1000.0, "DROP"), _entry(2000.0, "DROP"), _entry(3000.0, "DROP"), _entry(4000.0, "FULL")]
+	_ok(ManiaCore.analyze_fail(drops, [], 5000.0).kind == "drop", "3 Holds losgelassen -> drop")
+	var early: Array = [_entry(1000.0, "EARLY"), _entry(1500.0, "EARLY"), _entry(2000.0, "EARLY"), _entry(2500.0, "EARLY")]
+	var re := ManiaCore.analyze_fail(early, [], 3000.0)
+	_ok(re.kind == "early" and re.n == 4, "4x zu frueh -> early")
+	_ok(ManiaCore.analyze_fail([], [], 100.0).kind == "none", "leere Liste -> none")
+	_ok(ManiaCore.fail_reason_text(r).contains("7"), "Text nennt die Anzahl")
