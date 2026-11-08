@@ -26,6 +26,8 @@ func _initialize() -> void:
 	_test_acc_like_mania()
 	_test_finished_stats()
 	_test_real_map()
+	_test_bot_synthetic()
+	_test_library_maps()
 	print("=== Ergebnis: %d bestanden, %d fehlgeschlagen ===" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
 
@@ -247,9 +249,9 @@ func _test_tap_judge() -> void:
 	var got := _results(c)
 	c.key_down(0, 1000.0, 120.0)
 	_ok(not got.has(0), "30 Grad daneben = kein Treffer")
-	c.key_down(0, 1005.0, 100.0)
-	_ok(got.has(0) and got[0].quality == OrbitCore.Quality.MAX and absf(got[0].angle_err - 10.0) < EPS,
-			"Zeit + Winkel stimmen = MAX, angle_err 10")
+	c.key_down(0, 1005.0, 97.0)
+	_ok(got.has(0) and got[0].quality == OrbitCore.Quality.MAX and absf(got[0].angle_err - 7.0) < EPS,
+			"Zeit + Winkel mittig = CORE, angle_err 7")
 	c.key_down(0, 2040.0, 90.0)
 	_ok(got.has(1) and got[1].quality == OrbitCore.Quality.PERFECT and got[1].late, "dt +40 bei OD8 = PERFECT, spaet")
 	c.key_down(0, 2940.0, 10.0)
@@ -363,8 +365,9 @@ func _test_arc_tap_inside() -> void:
 
 
 func _test_acc_like_mania() -> void:
-	print("- Acc/Score wie Mania")
+	print("- Orbit-Wertung (eigene Acc/Score, HP/Kombo wie Mania)")
 	var dts := [0.0, 10.0, -30.0, 45.0, -60.0, 80.0, 110.0, -120.0, 5.0, 999.0, 20.0, -15.0]
+	var aims := [0.0, 4.0, 12.0, 20.0, 0.0, 6.0, 15.0, 2.0, 9.5, 0.0, 21.0, 3.0]
 	var bm := _bm(7.0)
 	var ns: Array[OrbitNote] = []
 	for i in dts.size():
@@ -374,21 +377,31 @@ func _test_acc_like_mania() -> void:
 	m.setup(bm)
 	var o := OrbitCore.new()
 	o.setup(ns, bm.od(), 1.0, bm.hp(), m.mods)
+	var got := _results(o)
 	for i in dts.size():
 		var t: float = 1000.0 + i * 1000.0 + float(dts[i])
 		if dts[i] < 500.0:
 			m.key_down(0, t)
-			o.key_down(0, t, 45.0)
+			o.key_down(0, t, 45.0 + float(aims[i]))
 		m.update(t + 1.0)
 		o.update(t + 1.0)
 	m.update(20000.0)
 	o.update(20000.0)
-	_ok(absf(m.accuracy() - o.accuracy()) < EPS, "accuracy gleich (%.4f)" % o.accuracy())
-	_ok(m.score == o.score and m.grade() == o.grade(), "Score + Grade gleich (%d, %s)" % [o.score, o.grade()])
+	var want := 0.0
+	for i in dts.size():
+		var r: Dictionary = got[i]
+		if r.quality != OrbitCore.Quality.MISS:
+			want += OrbitCore.hit_value(r.quality, r.angle_err)
+	want /= float(dts.size())
+	_ok(absf(o.accuracy() - want) < EPS and o.n_miss == 1, "Acc = Mittel aus Zeitwert x Zielfaktor (%.4f)" % want)
+	_ok(got[1].quality == OrbitCore.Quality.MAX and got[8].quality != OrbitCore.Quality.MAX,
+			"CORE nur mittig (9.5 Grad = SHARP)")
+	_ok(OrbitCore.hit_value(0, 0.0) == 1.0 and absf(OrbitCore.hit_value(0, 22.0) - 0.88) < EPS
+			and OrbitCore.hit_value(1, 0.0) < 1.0, "Zielfaktor 1.0 mittig, 0.88 am Rand")
+	var s := o.stats()
+	_ok(s.score == o.orbit_score() and s.grade == o.grade() and s.mode == "orbit", "stats() nutzt Orbit-Score")
+	_ok(s.score < 1000000 and s.accuracy < m.accuracy() + 0.2, "Score unter Max (%d)" % s.score)
 	_ok(absf(m.hp - o.hp) < EPS and m.max_combo == o.max_combo, "HP + Combo gleich")
-	var want := float(300 * (o.n_max + o.n300) + 200 * o.n200 + 100 * o.n100 + 50 * o.n50) \
-			/ float(300 * dts.size())
-	_ok(absf(o.accuracy() - want) < EPS and o.n_miss == 1, "osu!mania-Acc-Formel")
 
 
 func _test_finished_stats() -> void:
@@ -484,3 +497,127 @@ func _autoplay_cursor(c: OrbitCore, ns: Array[OrbitNote], t: float) -> void:
 		if h >= 0:
 			c.cursor_moved(ns[h].angle_at(t), t)
 			return
+
+
+
+# --- Bot (menschlich streuend, deterministisch) ---
+
+## Spielt ns mit einem Bot-Plan (OrbitCore.bot_plan) durch: Druck zur Zeit
+## + Versatz am Winkel + Zielfehler, Boegen mit gleichem Fehler verfolgt,
+## Taps 40 ms gehalten. Frames alle 16 ms wie im Spiel.
+func _bot_run(ns: Array[OrbitNote], od: float, hp: float, plan: Array, no_fail: bool = false) -> OrbitCore:
+	var c := OrbitCore.new()
+	c.setup(ns, od, 1.0, hp, {"NF": no_fail})
+	var ev: Array = []
+	for i in ns.size():
+		if bool(plan[i][2]):
+			continue
+		var tp: float = ns[i].time_ms + float(plan[i][0])
+		ev.append([tp, 0, i])
+		var tr: float = ns[i].end_ms + float(plan[i][0]) * 0.5 if ns[i].is_arc else tp + 40.0
+		ev.append([tr, 1, i])
+	ev.sort_custom(func(a, b): return a[0] < b[0] or (a[0] == b[0] and a[1] > b[1]))
+	var held: Array[int] = [-1, -1]
+	var t: float = ns[0].time_ms - 1000.0 if not ns.is_empty() else 0.0
+	var end_t: float = ns[-1].end_ms + 2000.0 if not ns.is_empty() else 0.0
+	var k := 0
+	while t < end_t and not c.failed:
+		while k < ev.size() and float(ev[k][0]) <= t:
+			var e: Array = ev[k]
+			k += 1
+			var te: float = e[0]
+			var n: OrbitNote = ns[e[2]]
+			c.update(te)
+			if e[1] == 0:
+				if held[n.ring] >= 0:
+					c.key_up(n.ring, te)
+				held[n.ring] = e[2]
+				c.key_down(n.ring, te, n.angle_at(te) + float(plan[e[2]][1]))
+			elif held[n.ring] == e[2]:
+				c.key_up(n.ring, te)
+				held[n.ring] = -1
+		for r in 2:
+			var h := c.active_arc(r)
+			if h >= 0:
+				c.cursor_moved(ns[h].angle_at(t) + float(plan[h][1]), t)
+				break
+		c.update(t)
+		t += 16.0
+	c.update(end_t + 5000.0)
+	return c
+
+
+func _test_bot_synthetic() -> void:
+	print("- Bot (synthetisch)")
+	var bm := _mixed_map()
+	var ns := OrbitConverter.convert(bm)
+	var perfect := _bot_run(ns, 8.0, 5.0, OrbitCore.bot_plan(ns, 1, 0.0, 0.0))
+	_ok(perfect.n_miss == 0 and perfect.accuracy() >= 1.0 - EPS, "Bot perfekt = SS")
+	var p1 := OrbitCore.bot_plan(ns, 7, 24.0, 5.0)
+	_ok(str(p1) == str(OrbitCore.bot_plan(ns, 7, 24.0, 5.0)), "Bot-Plan deterministisch (Seed)")
+	var good := _bot_run(ns, 8.0, 5.0, p1)
+	_ok(good.accuracy() > 0.85 and good.accuracy() < 1.0 and not good.failed,
+		"Bot leicht streuend: hohe Acc, kein Fail (%.3f)" % good.accuracy())
+	var s := good.stats()
+	var total := int(s.n_max) + int(s.n300) + int(s.n200) + int(s.n100) + int(s.n50) + int(s.n_miss)
+	_ok(total == ns.size(), "jedes Ziel genau einmal gewertet (%d/%d)" % [total, ns.size()])
+	var m4 := _bot_run(ns, 8.0, 5.0, OrbitCore.bot_plan(ns, 3, 0.0, 0.0, 4))
+	_ok(m4.n_miss >= ns.size() / 4 - 1 and m4.max_combo <= 3 + 3, "auto-miss 4: Misses + Kombo-Bruch")
+	var wild := _bot_run(ns, 8.0, 10.0, OrbitCore.bot_plan(ns, 5, 0.0, 0.0, 2))
+	_ok(wild.failed, "jedes 2. Ziel verpasst, HP 10: Fail")
+	var nf := _bot_run(ns, 8.0, 10.0, OrbitCore.bot_plan(ns, 5, 0.0, 0.0, 2), true)
+	_ok(not nf.failed and nf.hp >= 0.0, "NoFail: nie Fail")
+
+
+# --- Echte Maps aus der Bibliothek: Statistik + Fairness ---
+
+const LIB_MAPS := [
+	["Billain - Specialist", "Pairo's Normal"],
+	["Billain - Specialist", "Yuno's Hard"],
+	["Billain - Specialist", "GoldenJumper's Insane"],
+	["Lime - Aurora", "Hard"],
+	["goreshit - burn this moment", "fear"],
+]
+
+
+func _test_library_maps() -> void:
+	print("- Bibliothek (Statistik)")
+	var dir := MapLibrary.default_maps_dir()
+	var da := DirAccess.open(dir)
+	if da == null:
+		print("  (kein maps/-Ordner, uebersprungen)")
+		return
+	var files := Array(da.get_files())
+	for want in LIB_MAPS:
+		var bm: Beatmap = null
+		for f in files:
+			if str(f).find(want[0]) < 0:
+				continue
+			var imp := OszImporter.import(dir.path_join(f))
+			for d in imp.difficulties:
+				if d.beatmap.version_name() == want[1]:
+					bm = d.beatmap
+			break
+		if bm == null:
+			print("  (%s [%s] fehlt)" % want)
+			continue
+		_map_report("%s [%s]" % want, bm)
+
+
+func _map_report(label: String, bm: Beatmap) -> void:
+	var ns := OrbitConverter.convert(bm)
+	var a := OrbitConverter.analyze(ns, bm)
+	print("  %s: %d -> %d Ziele (%d Boegen, %d Akkorde), %.1f/s, Spruenge>=60: %d (schwach %d), Wenden %.0f%%, Tempo mittel %.3f p95 %.3f Grad/ms, Orbit-Sterne %.2f" % [
+		label, bm.hit_objects.size(), ns.size(), int(a.arcs), int(a.chords), float(a.nps),
+		int(a.jumps), int(a.weak_jumps), float(a.reversal) * 100.0, float(a.mean_speed),
+		float(a.p95_speed), OrbitConverter.stars(ns)])
+	_ok(_max_speed(ns) <= OrbitConverter.MAX_DEG_PER_MS + EPS, label + ": Tempo gedeckelt")
+	_ok(int(a.weak_jumps) == 0, label + ": grosse Spruenge nur auf starken Beats")
+	var pf := _bot_run(ns, bm.od(), bm.hp(), OrbitCore.bot_plan(ns, 11, 0.0, 0.0))
+	_ok(pf.n_miss == 0, label + ": perfekter Bot ohne Miss")
+	var b1 := _bot_run(ns, bm.od(), bm.hp(), OrbitCore.bot_plan(ns, 11, 14.0, 6.0))
+	var b2 := _bot_run(ns, bm.od(), bm.hp(), OrbitCore.bot_plan(ns, 11, 28.0, 11.0))
+	print("    Bot gut: Acc %.2f%% Miss %d %s | Bot wackelig: Acc %.2f%% Miss %d %s" % [
+		b1.accuracy() * 100.0, b1.n_miss, "FAIL" if b1.failed else "ok",
+		b2.accuracy() * 100.0, b2.n_miss, "FAIL" if b2.failed else "ok"])
+	_ok(not b1.failed and b1.accuracy() > 0.9, label + ": guter Bot schafft die Map")
