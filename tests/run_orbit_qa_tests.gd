@@ -320,11 +320,11 @@ func _human(ns: Array[OrbitNote], bm: Beatmap, vmax: float, sig_t: float, sig_a:
 				held[n.ring] = i
 				pressed[i] = 1
 				press_err[i] = OrbitNote.dist_deg(cur, n.angle_at(te))
-				c.key_down(n.ring, te, cur)
+				c.key_down(n.ring, te, cur, _rho(n.ring))
 			elif held[n.ring] == i:
 				c.key_up(n.ring, te)
 				held[n.ring] = -1
-		c.cursor_moved(cur, t1)
+		c.cursor_moved(cur, _rho(_cur_ring), t1)
 		c.update(t1)
 		t = t1
 	c.update(end_t + 5000.0)

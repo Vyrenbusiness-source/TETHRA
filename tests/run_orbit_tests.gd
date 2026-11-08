@@ -254,16 +254,16 @@ func _test_tap_judge() -> void:
 			OrbitNote.make(5000.0, 0.0, 0, 4)]
 	var c := _core(ns)
 	var got := _results(c)
-	c.key_down(0, 1000.0, 120.0)
+	c.key_down(0, 1000.0, 120.0, _rho(0))
 	_ok(not got.has(0), "30 Grad daneben = kein Treffer")
-	c.key_down(0, 1005.0, 97.0)
+	c.key_down(0, 1005.0, 97.0, _rho(0))
 	_ok(got.has(0) and got[0].quality == OrbitCore.Quality.MAX and absf(got[0].angle_err - 7.0) < EPS,
 			"Zeit + Winkel mittig = CORE, angle_err 7")
-	c.key_down(0, 2040.0, 90.0)
+	c.key_down(0, 2040.0, 90.0, _rho(0))
 	_ok(got.has(1) and got[1].quality == OrbitCore.Quality.PERFECT and got[1].late, "dt +40 bei OD8 = PERFECT, spaet")
-	c.key_down(0, 2940.0, 10.0)
+	c.key_down(0, 2940.0, 10.0, _rho(0))
 	_ok(got.has(2) and got[2].quality == OrbitCore.Quality.GOOD, "ueber 0 Grad hinweg (350 vs 10) = Treffer")
-	c.key_down(0, 4000.0 - c.w50 - 10.0, 0.0)
+	c.key_down(0, 4000.0 - c.w50 - 10.0, 0.0, _rho(0))
 	_ok(got.has(3) and got[3].quality == OrbitCore.Quality.MISS, "zu frueh gezielt frisst das Ziel")
 	c.update(5000.0 + c.w50 + 1.0)
 	_ok(got.has(4) and got[4].quality == OrbitCore.Quality.MISS and got[4].miss_kind == "FULL", "verpasst = MISS")
@@ -284,17 +284,17 @@ func _test_orbit_mods() -> void:
 	# 18 Grad daneben: ohne Mod ein Treffer, mit PR keiner.
 	var g0 := _results(plain)
 	var g1 := _results(pr)
-	plain.key_down(0, 1000.0, 108.0)
-	pr.key_down(0, 1000.0, 108.0)
+	plain.key_down(0, 1000.0, 108.0, _rho(0))
+	pr.key_down(0, 1000.0, 108.0, _rho(0))
 	_ok(g0.has(0) and g0[0].quality != OrbitCore.Quality.MISS and not g1.has(0), "PR: 18 Grad daneben trifft nicht mehr")
 	# 8 Grad daneben zeitgenau: ohne Mod CORE, mit PR nur SHARP.
-	plain.key_down(0, 2000.0, 98.0)
-	pr.key_down(0, 2000.0, 98.0)
+	plain.key_down(0, 2000.0, 98.0, _rho(0))
+	pr.key_down(0, 2000.0, 98.0, _rho(0))
 	_ok(g0[1].quality == OrbitCore.Quality.MAX and g1[1].quality == OrbitCore.Quality.PERFECT, "PR: CORE-Mitte enger")
 	# Zeitfehler zwischen PR-w50 und normalem w50: normal Treffer, PR verpasst (Ziel frisst).
 	var dt := plain.w50 * 0.85
-	plain.key_down(0, 3000.0 + dt, 90.0)
-	pr.key_down(0, 3000.0 + dt, 90.0)
+	plain.key_down(0, 3000.0 + dt, 90.0, _rho(0))
+	pr.key_down(0, 3000.0 + dt, 90.0, _rho(0))
 	pr.update(3000.0 + dt + 1.0)
 	_ok(g0[2].quality != OrbitCore.Quality.MISS and g1.has(2) and g1[2].quality == OrbitCore.Quality.MISS,
 			"PR: Zeitfehler 0,85 x w50 ist MISS")
@@ -306,13 +306,13 @@ func _test_orbit_mods() -> void:
 			"Multiplikator HD 1,06 / FI 1,06 / PR 1,12, mit NF x0,5")
 	var hd := OrbitCore.new()
 	hd.setup(ns, 8.0, 1.0, 5.0, {"HD": true})
-	hd.key_down(0, 1000.0, 90.0)
-	hd.key_down(0, 2000.0, 90.0)
-	hd.key_down(0, 3000.0, 90.0)
+	hd.key_down(0, 1000.0, 90.0, _rho(0))
+	hd.key_down(0, 2000.0, 90.0, _rho(0))
+	hd.key_down(0, 3000.0, 90.0, _rho(0))
 	var p2 := _core(ns)
-	p2.key_down(0, 1000.0, 90.0)
-	p2.key_down(0, 2000.0, 90.0)
-	p2.key_down(0, 3000.0, 90.0)
+	p2.key_down(0, 1000.0, 90.0, _rho(0))
+	p2.key_down(0, 2000.0, 90.0, _rho(0))
+	p2.key_down(0, 3000.0, 90.0, _rho(0))
 	_ok(hd.w50 == p2.w50 and hd.score == int(round(p2.score * 1.06)), "HD: Fenster gleich, Score x1,06")
 	_ok(hd.stats().mods == ["HD"] and OrbitCore.mods_text({"PR": true, "NF": true, "FI": true}) == "FI PR NF",
 			"Mods in Stats und Badge-Text")
@@ -338,9 +338,9 @@ func _test_wrong_ring() -> void:
 	var ns: Array[OrbitNote] = [OrbitNote.make(1000.0, 180.0, 1, 0)]
 	var c := _core(ns)
 	var got := _results(c)
-	c.key_down(0, 1000.0, 180.0)
+	c.key_down(0, 1000.0, 180.0, _rho(0))
 	_ok(not got.has(0), "Taste A auf aeusserem Ziel = kein Treffer")
-	c.key_down(1, 1000.0, 180.0)
+	c.key_down(1, 1000.0, 180.0, _rho(1))
 	_ok(got.has(0) and got[0].quality == OrbitCore.Quality.MAX and got[0].ring == 1, "Taste B trifft")
 
 
@@ -352,7 +352,7 @@ func _arc_notes() -> Array[OrbitNote]:
 func _follow(c: OrbitCore, n: OrbitNote, from: float, to: float, offset: float = 0.0) -> void:
 	var t := from
 	while t <= to:
-		c.cursor_moved(n.angle_at(t) + offset, t)
+		c.cursor_moved(n.angle_at(t) + offset, _rho(_cur_ring), t)
 		c.update(t)
 		t += 20.0
 
@@ -364,7 +364,7 @@ func _test_arc_hold() -> void:
 	var got := _results(c)
 	var started := []
 	c.arc_started.connect(func(i: int, q: int) -> void: started.append([i, q]))
-	c.key_down(1, 1010.0, 0.0)
+	c.key_down(1, 1010.0, 0.0, _rho(1))
 	_ok(started.size() == 1 and started[0][1] == OrbitCore.Quality.MAX and c.active_arc(1) == 0, "Kopf wie Tap, arc_started")
 	_follow(c, ns[0], 1010.0, 2000.0, 15.0)
 	c.update(2001.0)
@@ -378,14 +378,14 @@ func _test_arc_release() -> void:
 	var ns := _arc_notes()
 	var c := _core(ns)
 	var got := _results(c)
-	c.key_down(1, 1000.0, 0.0)
+	c.key_down(1, 1000.0, 0.0, _rho(1))
 	_follow(c, ns[0], 1000.0, 1500.0)
 	c.key_up(1, 1500.0)
 	_ok(got.has(0) and got[0].quality == OrbitCore.Quality.MISS and got[0].miss_kind == "DROP"
 			and got[0].drop_reason == "RELEASE", "Loslassen in der Mitte = DROP")
 	var c2 := _core(_arc_notes())
 	var got2 := _results(c2)
-	c2.key_down(1, 1000.0, 0.0)
+	c2.key_down(1, 1000.0, 0.0, _rho(1))
 	_follow(c2, c2.notes[0], 1000.0, 1900.0)
 	c2.key_up(1, 1900.0)
 	_ok(got2.has(0) and got2[0].quality == OrbitCore.Quality.MAX, "kurz vor dem Ende loslassen ist ok")
@@ -396,16 +396,16 @@ func _test_arc_out() -> void:
 	var ns := _arc_notes()
 	var c := _core(ns)
 	var got := _results(c)
-	c.key_down(1, 1000.0, 0.0)
+	c.key_down(1, 1000.0, 0.0, _rho(1))
 	c.update(1400.0)
 	_ok(got.has(0) and got[0].miss_kind == "DROP" and got[0].drop_reason == "OUT",
 			"Cursor bleibt stehen -> nach %d ms DROP" % OrbitCore.ARC_OUT_MS)
 	var c2 := _core(_arc_notes())
 	var got2 := _results(c2)
 	var n: OrbitNote = c2.notes[0]
-	c2.key_down(1, 1000.0, 0.0)
+	c2.key_down(1, 1000.0, 0.0, _rho(1))
 	_follow(c2, n, 1000.0, 1300.0)
-	c2.cursor_moved(n.angle_at(1300.0) + 40.0, 1300.0)
+	c2.cursor_moved(n.angle_at(1300.0) + 40.0, _rho(_cur_ring), 1300.0)
 	c2.update(1400.0)
 	_ok(c2.arc_out_ms(1, 1400.0) > 50.0, "arc_out_ms zaehlt die Zeit ausserhalb")
 	_follow(c2, n, 1420.0, 2000.0)
@@ -425,9 +425,9 @@ func _test_arc_tap_inside() -> void:
 		return
 	var c := _core(ns)
 	var got := _results(c)
-	c.key_down(ns[0].ring, 1000.0, ns[0].angle_deg)
+	c.key_down(ns[0].ring, 1000.0, ns[0].angle_deg, _rho(ns[0].ring))
 	_follow(c, ns[0], 1000.0, 1500.0)
-	c.key_down(ns[1].ring, 1500.0, ns[0].angle_at(1500.0))
+	c.key_down(ns[1].ring, 1500.0, ns[0].angle_at(1500.0), _rho(ns[1].ring))
 	_follow(c, ns[0], 1500.0, 2000.0)
 	c.update(2001.0)
 	_ok(got.size() == 2 and got[0].quality == OrbitCore.Quality.MAX and got[1].quality == OrbitCore.Quality.MAX,
@@ -452,7 +452,7 @@ func _test_acc_like_mania() -> void:
 		var t: float = 1000.0 + i * 1000.0 + float(dts[i])
 		if dts[i] < 500.0:
 			m.key_down(0, t)
-			o.key_down(0, t, 45.0 + float(aims[i]))
+			o.key_down(0, t, 45.0 + float(aims[i]), _rho(0))
 		m.update(t + 1.0)
 		o.update(t + 1.0)
 	m.update(20000.0)
@@ -480,7 +480,7 @@ func _test_finished_stats() -> void:
 	var c := _core(ns)
 	var fin := []
 	c.finished.connect(func(s: Dictionary) -> void: fin.append(s))
-	c.key_down(0, 1000.0, 0.0)
+	c.key_down(0, 1000.0, 0.0, _rho(0))
 	c.update(1300.0)
 	_ok(fin.is_empty(), "noch nicht fertig")
 	c.update(2000.0)
@@ -552,7 +552,7 @@ func _test_real_map() -> void:
 				_autoplay_cursor(c, ns, t)
 				c.update(t)
 				if p[1] == 0:
-					c.key_down(n.ring, t, n.angle_deg)
+					c.key_down(n.ring, t, n.angle_deg, _rho(n.ring))
 				else:
 					c.key_up(n.ring, t)
 			c.update(bm.duration_ms() + 10000.0)
@@ -565,7 +565,7 @@ func _autoplay_cursor(c: OrbitCore, ns: Array[OrbitNote], t: float) -> void:
 	for r in OrbitCore.RINGS:
 		var h := c.active_arc(r)
 		if h >= 0:
-			c.cursor_moved(ns[h].angle_at(t), t)
+			c.cursor_moved(ns[h].angle_at(t), _rho(_cur_ring), t)
 			return
 
 
@@ -602,14 +602,14 @@ func _bot_run(ns: Array[OrbitNote], od: float, hp: float, plan: Array, no_fail: 
 				if held[n.ring] >= 0:
 					c.key_up(n.ring, te)
 				held[n.ring] = e[2]
-				c.key_down(n.ring, te, n.angle_at(te) + float(plan[e[2]][1]))
+				c.key_down(n.ring, te, n.angle_at(te) + float(plan[e[2]][1]), _rho(n.ring))
 			elif held[n.ring] == e[2]:
 				c.key_up(n.ring, te)
 				held[n.ring] = -1
 		for r in 2:
 			var h := c.active_arc(r)
 			if h >= 0:
-				c.cursor_moved(ns[h].angle_at(t) + float(plan[h][1]), t)
+				c.cursor_moved(ns[h].angle_at(t) + float(plan[h][1]), _rho(_cur_ring), t)
 				break
 		c.update(t)
 		t += 16.0

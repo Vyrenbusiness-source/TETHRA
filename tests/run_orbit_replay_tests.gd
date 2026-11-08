@@ -140,9 +140,9 @@ func _live(ns: Array[OrbitNote], evs: Array, seed: int, mods: Dictionary = {}) -
 			match str(e[1]):
 				"m":
 					cursor = float(e[3])
-					c.cursor_moved(cursor, float(e[0]))
+					c.cursor_moved(cursor, _rho(_cur_ring), float(e[0]))
 				"d":
-					c.key_down(int(e[2]), float(e[0]), float(e[3]))
+					c.key_down(int(e[2]), float(e[0]), float(e[3]), _rho(int(e[2])))
 				"u":
 					c.key_up(int(e[2]), float(e[0]))
 		c.update(frame_t)
