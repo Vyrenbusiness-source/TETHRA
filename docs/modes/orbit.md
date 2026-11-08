@@ -68,6 +68,31 @@ Sechs Stufen, benannt CORE / SHARP / GOOD / FAIR / EDGE / MISS (uebersetzt ueber
   C ab 72 %, sonst D. Gescheitert = F (nur Endbild).
 - Zielfehler (`aim_err`): mittlerer Winkelfehler aller Treffer in Grad.
 
+## Orbit-Rating (Profil)
+
+Eigene Kennzahl im Profil (Reiter "Orbit"), getrennt von den Mania-pp (die
+bleiben unveraendert, nur Sektion `scores`). Code: `ScoreStore.orbit_points`,
+`ScoreStore.orbit_rating_of`, `ScoreStore.orbit_rating`; Tests:
+`tests/run_orbit_rating_tests.gd`.
+
+- **Punkte eines Laufs** (Bestwert je Map+Diff, Sektion `orbit_scores`):
+  `4 x Sterne^2 x Acc^4`. Sterne = Orbit-Sterne des Laufs (Feld `stars`,
+  `OrbitConverter.stars`, gekappt auf 0..15), Acc = Genauigkeit 0..1.
+  Beispiele: 5 Sterne / 100 % = 100; 3 Sterne / 100 % = 36;
+  6 Sterne / 95 % = 117.
+- Laeufe ohne `stars` (vor diesem Feld gespeichert) zaehlen wie 5 Sterne, also
+  `100 x Acc^4` (die fruehere Orbit-Wertung) - alte Profile bleiben gleich.
+- Gescheiterte (`failed`) und ungewertete (`unranked`) Laeufe: 0 Punkte.
+- **Rating** = Punkte absteigend sortiert, Platz i (ab 0) zaehlt
+  `Punkte_i x 0,95^i` (wie die pp-Gewichtung). Obergrenze: 20 x bester Lauf.
+- `ScoreStore.submit` speichert `stars` nur, wenn das Ergebnis-Dictionary es
+  traegt (`result["stars"]`, Modus Orbit).
+- Profil zeigt dazu die besten Orbit-Laeufe (nach Punkten sortiert), die Zahl
+  der Spiele (inkl. Fails), Ø Genauigkeit und den besten Score.
+- Einstieg: Hauptmenue-Button "Orbit" (unter "Spielen") setzt
+  `user://browser_state.cfg` `browser/play_mode = "orbit"` und oeffnet den
+  Song-Browser, der diesen Wert beim Start liest.
+
 ## Lesbarkeit (OrbitView)
 
 - Ein `_draw`-Durchgang, keine Nodes pro Ziel, keine Allokation pro Frame.
