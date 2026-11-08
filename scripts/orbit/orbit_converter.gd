@@ -68,6 +68,8 @@ const WEAK_JUMP_DEG := 50.0
 ## Schritt: der Rueckstand des Zeigers waechst in Streams nicht an.
 const HUMAN_DEG_PER_MS := 0.25
 const HUMAN_REACH_DEG := 10.0
+## Aus = alte Regeln ohne Erreichbarkeit (nur fuer Vorher/Nachher-Messungen).
+static var human_reach := true
 const STAR_HOP_MS := 1000.0
 const STAR_DENS_K := 0.32
 const STAR_PATH_K := 0.29
@@ -274,7 +276,7 @@ static func convert(beatmap: Beatmap) -> Array[OrbitNote]:
 ## HUMAN_DEG_PER_MS Richtung want; das Ziel bleibt hoechstens HUMAN_REACH_DEG
 ## vor ihm. Rueckgabe [Zielwinkel, neuer Zeigerwinkel] (beide 0..360).
 static func _reach(vc: float, gap: float, want: float) -> Array:
-	if vc == INF or gap == INF:
+	if vc == INF or gap == INF or not human_reach:
 		return [OrbitNote.wrap_deg(want), OrbitNote.wrap_deg(want)]
 	var d := OrbitNote.delta_deg(vc, want)
 	var lim := HUMAN_DEG_PER_MS * gap

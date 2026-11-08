@@ -390,12 +390,42 @@ func _bot_eval(m: Dictionary, vmax: float) -> Dictionary:
 
 
 func _test_bot(maps: Array) -> void:
+	OrbitConverter.human_reach = false
+	var old_maps: Array = []
+	for m in maps:
+		old_maps.append({"tag": m.tag, "label": m.label, "bm": m.bm, "ns": OrbitConverter.convert(m.bm)})
+	OrbitConverter.human_reach = true
+	print("  VORHER (ohne Erreichbarkeits-Regel):")
+	var old := _bot_pass(old_maps)
+	print("  NACHHER:")
+	var now := _bot_pass(maps)
+	_out["bot"] = {"before": old, "after": now}
+	_ok(maps.is_empty() or now.total.tablet < 0.03, "Tablet-Bot verliert < 3 % der Ziele")
+	_ok(maps.is_empty() or now.total.mouse < 0.06, "Maus-Bot verliert < 6 % der Ziele")
+	_ok(maps.is_empty() or now.std_pos_med <= 20.0, "osu!standard-Lage bleibt erkennbar (Median <= 20 Grad)")
+
+
+## Median-Abstand Zielwinkel <-> Richtung der osu-Position zur Mitte (nur std).
+func _std_pos_err(m: Dictionary) -> PackedFloat32Array:
+	var errs := PackedFloat32Array()
+	if m.tag != "std":
+		return errs
+	for n in m.ns:
+		var o: HitObject = m.bm.hit_objects[n.source_index]
+		if o.kind != HitObject.Kind.SPINNER and o.position().distance_to(OrbitConverter.STD_CENTER) >= OrbitConverter.STD_DEAD_PX:
+			errs.append(OrbitNote.dist_deg(n.angle_deg, OrbitConverter._polar_deg(o.position())))
+	return errs
+
+
+func _bot_pass(maps: Array) -> Dictionary:
 	print("- Menschlicher Bot (Zeit %.0f ms, Ziel %.0f Grad; Tablet %.0f, Maus %.0f Grad/s)" % [SIG_T, SIG_A, V_TABLET * 1000.0, V_MOUSE * 1000.0])
 	var rows: Array = []
 	var all_spots: Array = []
 	var tot := {"free": 0.0, "tablet": 0.0, "mouse": 0.0, "targets": 0}
 	var causes := {}
+	var pos_all := PackedFloat32Array()
 	for m in maps:
+		pos_all.append_array(_std_pos_err(m))
 		var free := _bot_eval(m, 100.0)
 		var tab := _bot_eval(m, V_TABLET)
 		var mou := _bot_eval(m, V_MOUSE)
@@ -437,10 +467,12 @@ func _test_bot(maps: Array) -> void:
 	var n := float(maxi(int(tot.targets), 1))
 	print("  Gesamt Fehlerquote: frei %.2f%%, Tablet %.2f%%, Maus %.2f%%; Ursachen (Maus) %s" % [
 		tot.free / n * 100.0, tot.tablet / n * 100.0, tot.mouse / n * 100.0, str(causes)])
-	_out["bot"] = {"rows": rows, "top20": top, "total": {"free": tot.free / n, "tablet": tot.tablet / n,
-		"mouse": tot.mouse / n}, "causes_mouse": causes}
-	_ok(maps.is_empty() or tot.tablet / n < 0.03, "Tablet-Bot verliert < 3 % der Ziele")
-	_ok(maps.is_empty() or tot.mouse / n < 0.06, "Maus-Bot verliert < 6 % der Ziele")
+	pos_all.sort()
+	var pos_med := pos_all[pos_all.size() / 2] if not pos_all.is_empty() else 0.0
+	var pos_p90 := pos_all[int(pos_all.size() * 0.9)] if not pos_all.is_empty() else 0.0
+	print("  osu!standard-Lage (Zielwinkel <-> osu-Position): Median %.1f Grad, p90 %.1f Grad" % [pos_med, pos_p90])
+	return {"rows": rows, "top20": top, "total": {"free": tot.free / n, "tablet": tot.tablet / n,
+		"mouse": tot.mouse / n}, "causes_mouse": causes, "std_pos_med": pos_med, "std_pos_p90": pos_p90}
 
 
 func _mmss(t: float) -> String:
@@ -481,8 +513,10 @@ func _overlap(v: OrbitView, ns: Array[OrbitNote], t0: float) -> Dictionary:
 	var seen := {}
 	var c := v.center()
 	var t := t0
+	var cross := 0
 	while t < t0 + DENSE_MS:
 		v.t_ms = t
+		v.layout_frame()
 		var idx: Array[int] = []
 		for i in ns.size():
 			var dt := ns[i].time_ms - t
@@ -506,6 +540,7 @@ func _overlap(v: OrbitView, ns: Array[OrbitNote], t0: float) -> Dictionary:
 				var dist := pos[a].distance_to(pos[b])
 				if dist < rad[a] + rad[b]:
 					pair_any += 1
+					cross += 1 if ns[ia].ring != ns[ib].ring else 0
 					covered[ib] = true
 					if dist < maxf(rad[a], rad[b]):
 						pair_heavy += 1
@@ -515,12 +550,22 @@ func _overlap(v: OrbitView, ns: Array[OrbitNote], t0: float) -> Dictionary:
 	return {"frames": frames, "visible": float(visible) / float(maxi(frames, 1)),
 		"pairs_any": float(pair_any) / float(maxi(frames, 1)),
 		"pairs_heavy": float(pair_heavy) / float(maxi(frames, 1)),
+		"cross_share": float(cross) / float(maxi(pair_any, 1)),
 		"covered_share": float(covered.size()) / n_seen}
 
 
 func _test_density(maps: Array) -> void:
-	print("- Lesbarkeit: dichteste 5 s je Map (1920x1080, Scroll 1,0)")
+	var old := _density_pass(maps, false)
+	var now := _density_pass(maps, true)
+	_out["density"] = {"before": old, "after": now}
+	_ok(maps.is_empty() or now.covered_mean < 0.15, "dichte Stellen: < 15 % der Ziele von anderen ueberdeckt")
+	_ok(maps.is_empty() or now.heavy_mean < 0.1, "dichte Stellen: kaum starke Ueberdeckung (< 0,1 Paare/Frame)")
+
+
+func _density_pass(maps: Array, fit: bool) -> Dictionary:
+	print("- Lesbarkeit: dichteste 5 s je Map (1920x1080, Scroll 1,0), %s" % ("NACHHER (Groessen-Anpassung)" if fit else "VORHER"))
 	var v := _new_view(1920, 1080, 1.0)
+	v.fit_enabled = fit
 	var rows: Array = []
 	var sum_cov := 0.0
 	var sum_heavy := 0.0
@@ -537,14 +582,12 @@ func _test_density(maps: Array) -> void:
 		rows.append(o)
 		sum_cov += o.covered_share
 		sum_heavy += o.pairs_heavy
-		print("  %-46s %s %4.1f/s  sichtbar %4.1f  Ueberschneidungen/Frame %4.2f (stark %4.2f)  verdeckte Ziele %4.1f%%" % [
-			m.label, _mmss(t0), o.nps, o.visible, o.pairs_any, o.pairs_heavy, o.covered_share * 100.0])
+		print("  %-46s %s %4.1f/s  sichtbar %4.1f  Ueberschneidungen/Frame %4.2f (stark %4.2f, Ring-uebergreifend %2.0f%%)  verdeckte Ziele %4.1f%%" % [
+			m.label, _mmss(t0), o.nps, o.visible, o.pairs_any, o.pairs_heavy, o.cross_share * 100.0, o.covered_share * 100.0])
 	v.free()
 	var nm := float(maxi(maps.size(), 1))
-	_out["density"] = {"rows": rows, "covered_mean": sum_cov / nm, "heavy_mean": sum_heavy / nm}
 	print("  Mittel: verdeckte Ziele %.1f%%, starke Ueberdeckung %.2f Paare/Frame" % [sum_cov / nm * 100.0, sum_heavy / nm])
-	_ok(maps.is_empty() or sum_cov / nm < 0.15, "dichte Stellen: < 15 % der Ziele von anderen ueberdeckt")
-	_ok(maps.is_empty() or sum_heavy / nm < 0.1, "dichte Stellen: kaum starke Ueberdeckung (< 0,1 Paare/Frame)")
+	return {"rows": rows, "covered_mean": sum_cov / nm, "heavy_mean": sum_heavy / nm}
 
 
 # ---------------------------------------------------------------------------
@@ -663,6 +706,8 @@ func _shots(maps: Array) -> void:
 
 func _overlap_at(v: OrbitView, ns: Array[OrbitNote], t: float) -> float:
 	var c := v.center()
+	v.t_ms = t
+	v.layout_frame()
 	var idx: Array[int] = []
 	for i in ns.size():
 		var dt := ns[i].time_ms - t
