@@ -261,6 +261,9 @@ func _ready() -> void:
 	elif OS.get_cmdline_args().has("--shot-online"):
 		# Harness: Online-Tab (Raster, Genre, Download, Fehler) als PNGs.
 		_shot_online.call_deferred()
+	elif OS.get_cmdline_args().has("--shot-import"):
+		# Harness: Import-Fenster mit Fortschritt und Drop-Hinweis als PNGs.
+		_shot_import.call_deferred()
 	elif OS.get_cmdline_args().has("--shot-orbit-hint"):
 		# Harness: Hinweis "Orbit lernen" beim Wechsel auf Orbit als PNG.
 		_shot_orbit_hint.call_deferred()
@@ -571,6 +574,15 @@ func _build_header() -> void:
 	UiTheme.style_ghost_button(_tab_online, 10)
 	_tab_online.pressed.connect(_open_download_panel)
 	top_right.add_child(_tab_online)
+
+	_import_btn = Button.new()
+	_import_btn.text = "Importieren"
+	_import_btn.tooltip_text = "Maps, Musik oder den osu!-Songs-Ordner übernehmen"
+	_import_btn.custom_minimum_size = Vector2(0, HEAD_H)
+	_import_btn.add_theme_font_size_override("font_size", 15)
+	UiTheme.style_ghost_button(_import_btn, 10)
+	_import_btn.pressed.connect(_open_import_panel)
+	top_right.add_child(_import_btn)
 
 	# Filter-Reihe: Anzahl links, Sterne-Chips + Sortierung rechtsbuendig.
 	var filter_row := HBoxContainer.new()
@@ -2483,6 +2495,9 @@ func _on_sv_backfill_done() -> void:
 
 
 func _exit_tree() -> void:
+	if _import_job != null and _import_job.is_running():
+		_import_job.cancel()
+		_import_job.wait()
 	if _library != null:
 		_library.shutdown()
 	if _maxpp_thread != null:
@@ -2566,13 +2581,16 @@ func _unhandled_input(event: InputEvent) -> void:
 	if not (event is InputEventKey) or not event.pressed:
 		return
 	if event.keycode == KEY_ESCAPE:
+		if _import_overlay != null:
+			_close_import_panel()
+			return
 		if _online_open():
 			_close_download_panel()
 			return
 		_preview.stop()
 		get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
 		return
-	if _online_open() or event.echo:
+	if _online_open() or _import_overlay != null or event.echo:
 		return
 	# Tastatur-Navigation wie in osu: hoch/runter Map, links/rechts Diff,
 	# Enter startet, F2 = Zufallsmap.
@@ -2638,21 +2656,381 @@ func _scroll_to_selected() -> void:
 # ---------------------------------------------------------------------------
 
 func _on_files_dropped(files: PackedStringArray) -> void:
-	var imported := 0
-	var last_path := ""
-	for f in files:
-		if f.to_lower().ends_with(".osz"):
-			var dest := _library.import_external(f)
-			if dest != "":
-				imported += 1
-				last_path = dest
-	if imported > 0:
+	_import_paths(files)
+
+
+# ---------------------------------------------------------------------------
+# Import (scripts/library/song_import.gd): Knopf, Dialog, osu!-Uebernahme,
+# Drag & Drop. Ruhig: eine Akzentfarbe, Text statt Symbole.
+# ---------------------------------------------------------------------------
+
+const LAZER_NOTE := "osu!lazer wird nicht unterstützt: lazer speichert Maps nicht als Ordner. Exportiere sie dort als .osz und wähle die Dateien oben."
+
+var _import_btn: Button
+var _import_job: SongImport = null
+var _import_overlay: Control = null
+var _import_prog_box: VBoxContainer
+var _import_prog_label: Label = null
+var _import_prog_bar: ProgressBar
+var _import_cancel_btn: Button
+var _import_osu_note: Label
+var _import_files_btn: Button
+var _import_osu_btn: Button
+var _import_notice: PanelContainer = null
+var _import_notice_label: Label
+var _import_notice_tween: Tween
+var _import_pending_notes: Array[String] = []
+
+
+## Gemischte Pfade (Datei-Dialog, Drop): .osz und Map-Ordner im Thread,
+## Audio ueber SongImport.import_audio, Rest -> Hinweis "nicht unterstuetzt".
+func _import_paths(paths: PackedStringArray) -> void:
+	var c := SongImport.classify(paths)
+	var notes: Array[String] = []
+	var audio_msg := ""
+	for a in c.audio:
+		var r := SongImport.import_audio(a)
+		if not bool(r.ok):
+			audio_msg = tr("Eigene Musik: %s") % tr(str(r.error))
+	if audio_msg != "":
+		notes.append(audio_msg)
+	if not c.unsupported.is_empty():
+		if c.unsupported.size() == 1:
+			notes.append(tr("Nicht unterstützt: %s") % String(c.unsupported[0]).get_file())
+		else:
+			notes.append(tr("%d Dateien nicht unterstützt") % c.unsupported.size())
+	if c.osz.is_empty() and c.folders.is_empty():
+		if notes.is_empty():
+			notes.append(tr("Nicht unterstützt"))
+		_show_import_notice("  ·  ".join(notes), false)
+		return
+	if _start_import_job(c.folders, c.osz):
+		_import_pending_notes = notes
+
+
+func _start_import_job(folders: Array, osz_files: Array) -> bool:
+	if _import_job != null and _import_job.is_running():
+		_show_import_notice(tr("Import läuft schon"), false)
+		return false
+	_import_pending_notes = []
+	_import_job = SongImport.new()
+	_import_job.progress.connect(_on_import_progress)
+	_import_job.finished.connect(_on_import_finished)
+	_import_job.start(folders, osz_files, _library.maps_dir)
+	_set_import_busy(true)
+	_on_import_progress(0, folders.size() + osz_files.size(), SongImport.PHASE_COPY)
+	return true
+
+
+func _import_progress_text(done: int, total: int, phase: String) -> String:
+	if phase == SongImport.PHASE_ANALYSE:
+		return tr("Bibliothek wird aktualisiert  %d / %d") % [done, total]
+	return tr("Maps werden übernommen  %d / %d") % [done, total]
+
+
+func _on_import_progress(done: int, total: int, phase: String) -> void:
+	var txt := _import_progress_text(done, total, phase)
+	if _import_prog_label != null:
+		_import_prog_label.text = txt
+		_import_prog_bar.max_value = maxi(total, 1)
+		_import_prog_bar.value = done
+	else:
+		_show_import_notice(txt, true, 0.0)
+
+
+func _on_import_finished(res: Dictionary) -> void:
+	var imported: Array = res.get("imported", [])
+	var last := ""
+	var orbit_only := 0
+	if not imported.is_empty():
+		# Cache ist im Thread vorgebaut (MapLibrary.prebuild): scan liest nur noch.
 		_library.scan()
 		_refresh_filter(_search.text)
+		last = String(imported[imported.size() - 1])
+		for ms in _library.mapsets:
+			if imported.has(ms.osz_path) and ms.visible_diffs("mania").is_empty():
+				orbit_only += 1
+	var parts: Array[String] = []
+	if bool(res.get("cancelled", false)):
+		parts.append(tr("Abgebrochen"))
+	if imported.size() == 1:
+		parts.append(tr("1 Map importiert"))
+	else:
+		parts.append(tr("%d Maps importiert") % imported.size())
+	if int(res.get("dup", 0)) > 0:
+		parts.append(tr("%d schon vorhanden") % int(res.dup))
+	if int(res.get("skipped", 0)) > 0:
+		parts.append(tr("%d ohne 4K oder Standard") % int(res.skipped))
+	if int(res.get("failed", 0)) > 0:
+		parts.append(tr("%d fehlgeschlagen") % int(res.failed))
+	if orbit_only > 0 and _play_mode == "mania":
+		parts.append(tr("%d nur im Orbit-Modus") % orbit_only)
+	parts.append_array(_import_pending_notes)
+	_import_pending_notes = []
+	var summary := "  ·  ".join(parts)
+	_set_import_busy(false)
+	if _import_prog_label != null:
+		_import_prog_label.text = summary
+		_import_prog_bar.max_value = 1
+		_import_prog_bar.value = 1
+	else:
+		_show_import_notice(summary, not imported.is_empty())
+	if last != "":
 		for ms in _filtered:
-			if ms.osz_path == last_path:
+			if ms.osz_path == last:
 				_select_set(ms, 0)
 				break
+
+
+func _set_import_busy(busy: bool) -> void:
+	if _import_btn != null:
+		_import_btn.disabled = busy
+	if _import_overlay == null:
+		return
+	_import_files_btn.disabled = busy
+	_import_osu_btn.disabled = busy
+	if busy:
+		_import_prog_box.visible = true
+	_import_cancel_btn.text = tr("Abbrechen") if busy else tr("Fertig")
+
+
+## Kurzer Hinweis unten mittig. hold = 0: bleibt stehen (Fortschritt).
+func _show_import_notice(text: String, good: bool, hold: float = 3.2) -> void:
+	if _import_notice == null:
+		_import_notice = PanelContainer.new()
+		_import_notice.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var sb := UiTheme.solid_box(UiTheme.SURFACE, 10)
+		sb.set_border_width_all(1)
+		sb.content_margin_left = 18
+		sb.content_margin_right = 18
+		sb.content_margin_top = 10
+		sb.content_margin_bottom = 10
+		_import_notice.add_theme_stylebox_override("panel", sb)
+		_import_notice_label = Label.new()
+		_import_notice_label.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+		_import_notice_label.add_theme_font_size_override("font_size", 14)
+		_import_notice.add_child(_import_notice_label)
+		_import_notice.anchor_left = 0.5
+		_import_notice.anchor_right = 0.5
+		_import_notice.anchor_top = 1.0
+		_import_notice.anchor_bottom = 1.0
+		_import_notice.grow_horizontal = Control.GROW_DIRECTION_BOTH
+		_import_notice.grow_vertical = Control.GROW_DIRECTION_BEGIN
+		_import_notice.offset_bottom = -28
+		add_child(_import_notice)
+	var sbx := _import_notice.get_theme_stylebox("panel") as StyleBoxFlat
+	sbx.border_color = Color(COL_ACCENT, 0.55) if good else UiTheme.LINE
+	_import_notice_label.text = text
+	_import_notice_label.add_theme_color_override("font_color", COL_TEXT if good else COL_DIM)
+	_import_notice.offset_left = 0
+	_import_notice.offset_right = 0
+	_import_notice.offset_top = -28
+	_import_notice.visible = true
+	_import_notice.modulate.a = 1.0
+	move_child(_import_notice, get_child_count() - 1)
+	if _import_notice_tween != null:
+		_import_notice_tween.kill()
+		_import_notice_tween = null
+	if hold > 0.0:
+		_import_notice_tween = create_tween()
+		_import_notice_tween.tween_interval(hold)
+		_import_notice_tween.tween_property(_import_notice, "modulate:a", 0.0, 0.4)
+		_import_notice_tween.tween_callback(func(): _import_notice.visible = false)
+
+
+## Import-Fenster: Dateien waehlen oder aus osu! uebernehmen, darunter Fortschritt.
+func _open_import_panel() -> void:
+	if _import_overlay != null:
+		return
+	if _import_notice != null:
+		_import_notice.visible = false
+	_stop_preview_soft()
+	_import_overlay = UiTheme.modal_backdrop(self)
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_import_overlay.add_child(center)
+	var panel := PanelContainer.new()
+	panel.custom_minimum_size = Vector2(540, 0)
+	var pb := UiTheme.solid_box(UiTheme.SURFACE, 14)
+	pb.set_border_width_all(1)
+	pb.border_color = UiTheme.LINE
+	pb.content_margin_left = 28
+	pb.content_margin_right = 28
+	pb.content_margin_top = 24
+	pb.content_margin_bottom = 24
+	panel.add_theme_stylebox_override("panel", pb)
+	center.add_child(panel)
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", 14)
+	panel.add_child(vb)
+	vb.add_child(UiTheme.modal_header("Songs importieren", _close_import_panel))
+
+	var actions := VBoxContainer.new()
+	actions.add_theme_constant_override("separation", 18)
+	vb.add_child(actions)
+	_import_files_btn = _import_row(actions, "Dateien wählen",
+		tr("osu!-Maps (.osz) oder eigene Musik (.mp3, .ogg, .wav). Mehrere auf einmal gehen."))
+	_import_files_btn.pressed.connect(_open_import_file_dialog)
+	var osu_dir := SongImport.find_stable_songs_dir()
+	var osu_sub := tr("Gefunden: %s") % osu_dir if osu_dir != "" else tr("osu! nicht gefunden. Du wählst den Songs-Ordner selbst.")
+	_import_osu_btn = _import_row(actions, "Aus osu! übernehmen",
+		osu_sub + "\n" + tr("Nur 4K-Mania und osu!standard, schon vorhandene Maps bleiben, wie sie sind."))
+	_import_osu_btn.pressed.connect(_import_from_osu)
+	_import_osu_note = _add_label(actions, "", 13, UiTheme.BAD)
+	_import_osu_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_import_osu_note.visible = false
+	if osu_dir == "" and SongImport.find_lazer_dir() != "":
+		_import_osu_note.text = tr(LAZER_NOTE)
+		_import_osu_note.visible = true
+	vb.add_child(UiTheme.hairline())
+	var tip := _add_label(vb, "Dateien und Ordner kannst du auch einfach ins Fenster ziehen.", 13, COL_DIM)
+	tip.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+
+	_import_prog_box = VBoxContainer.new()
+	_import_prog_box.add_theme_constant_override("separation", 10)
+	_import_prog_box.visible = false
+	vb.add_child(_import_prog_box)
+	_import_prog_label = _add_label(_import_prog_box, "", 15, COL_TEXT)
+	_import_prog_label.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	_import_prog_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_import_prog_bar = ProgressBar.new()
+	_import_prog_bar.show_percentage = false
+	_import_prog_bar.custom_minimum_size = Vector2(0, 4)
+	_import_prog_bar.add_theme_stylebox_override("background", UiTheme.solid_box(UiTheme.RAISED, 2))
+	_import_prog_bar.add_theme_stylebox_override("fill", UiTheme.solid_box(COL_ACCENT, 2))
+	_import_prog_box.add_child(_import_prog_bar)
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_END
+	_import_prog_box.add_child(row)
+	_import_cancel_btn = Button.new()
+	_import_cancel_btn.text = "Abbrechen"
+	_import_cancel_btn.custom_minimum_size = Vector2(120, 36)
+	UiTheme.style_ghost_button(_import_cancel_btn, 10)
+	_import_cancel_btn.pressed.connect(func():
+		if _import_job != null and _import_job.is_running():
+			_import_job.cancel()
+			_import_prog_label.text = tr("Wird abgebrochen …")
+		else:
+			_close_import_panel())
+	row.add_child(_import_cancel_btn)
+	if _import_job != null and _import_job.is_running():
+		_set_import_busy(true)
+		_on_import_progress(_import_job.done, _import_job.total, _import_job.phase)
+
+
+## Eine Aktion: Knopf links, Erklaerung (schon uebersetzt) darunter in DIM.
+func _import_row(parent: Node, label: String, sub: String) -> Button:
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 6)
+	parent.add_child(col)
+	var b := Button.new()
+	b.text = label
+	b.custom_minimum_size = Vector2(0, 42)
+	b.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	b.add_theme_font_size_override("font_size", 15)
+	UiTheme.style_button(b, false, 10)
+	col.add_child(b)
+	var l := _add_label(col, sub, 13, COL_DIM)
+	l.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	return b
+
+
+func _close_import_panel() -> void:
+	if _import_overlay == null:
+		return
+	_import_overlay.queue_free()
+	_import_overlay = null
+	_import_prog_label = null
+	if _import_job != null and _import_job.is_running():
+		_on_import_progress(_import_job.done, _import_job.total, _import_job.phase)
+	_play_preview()
+
+
+func _make_import_dialog(mode: FileDialog.FileMode, title: String) -> FileDialog:
+	var fd := FileDialog.new()
+	fd.file_mode = mode
+	fd.access = FileDialog.ACCESS_FILESYSTEM
+	fd.title = tr(title)
+	fd.use_native_dialog = true
+	fd.min_size = Vector2i(820, 520)
+	fd.canceled.connect(fd.queue_free)
+	add_child(fd)
+	return fd
+
+
+func _open_import_file_dialog() -> void:
+	var fd := _make_import_dialog(FileDialog.FILE_MODE_OPEN_FILES, "Maps oder Musik wählen")
+	fd.filters = PackedStringArray([
+		"*.osz, *.mp3, *.ogg, *.wav ; " + tr("Maps und Musik"),
+		"*.osz ; " + tr("osu!-Maps"),
+		"*.mp3, *.ogg, *.wav ; " + tr("Musik"),
+	])
+	fd.files_selected.connect(func(paths: PackedStringArray):
+		fd.queue_free()
+		_import_paths(paths))
+	fd.popup_centered()
+
+
+## osu!stable-Songs-Ordner uebernehmen; nicht gefunden -> Ordner waehlen.
+func _import_from_osu() -> void:
+	var dir := SongImport.find_stable_songs_dir()
+	if dir != "":
+		_import_from_folder(dir)
+		return
+	var fd := _make_import_dialog(FileDialog.FILE_MODE_OPEN_DIR, "osu!-Songs-Ordner wählen")
+	fd.dir_selected.connect(func(p: String):
+		fd.queue_free()
+		_import_from_folder(p))
+	fd.popup_centered()
+
+
+func _import_from_folder(dir: String) -> void:
+	dir = dir.replace("\\", "/")
+	if SongImport.is_lazer_dir(dir):
+		_import_osu_note.text = tr(LAZER_NOTE)
+		_import_osu_note.visible = true
+		return
+	var folders := SongImport.list_map_folders(dir)
+	if folders.is_empty():
+		_import_osu_note.text = tr("In diesem Ordner liegen keine osu!-Maps.")
+		_import_osu_note.visible = true
+		return
+	_import_osu_note.visible = false
+	_start_import_job(folders, [])
+
+
+## Harness: Import-Fenster mit laufendem Fortschritt (beide Sprachen) und
+## Drop-Hinweis als PNGs. Kein echter Import.
+func _shot_import() -> void:
+	_state_ready = false
+	var dir := OS.get_user_data_dir()
+	for a in OS.get_cmdline_args():
+		if a.begins_with("--shot-out="):
+			dir = a.trim_prefix("--shot-out=")
+	for lang in ["de", "en"]:
+		TranslationServer.set_locale(lang)
+		_close_import_panel()
+		await get_tree().process_frame
+		_open_import_panel()
+		_import_prog_box.visible = true
+		_import_files_btn.disabled = true
+		_import_osu_btn.disabled = true
+		_import_cancel_btn.text = tr("Abbrechen")
+		_on_import_progress(12, 340, SongImport.PHASE_COPY)
+		await get_tree().create_timer(0.8).timeout
+		await RenderingServer.frame_post_draw
+		var out := dir.path_join("import_%s.png" % lang)
+		get_viewport().get_texture().get_image().save_png(out)
+		print("SHOT gespeichert: " + out)
+	_close_import_panel()
+	_show_import_notice(tr("%d Maps importiert") % 3 + "  ·  " + tr("%d schon vorhanden") % 2, true, 0.0)
+	await get_tree().create_timer(0.5).timeout
+	await RenderingServer.frame_post_draw
+	var out2 := dir.path_join("import_notice.png")
+	get_viewport().get_texture().get_image().save_png(out2)
+	print("SHOT gespeichert: " + out2)
+	get_tree().quit(0)
 
 
 # ---------------------------------------------------------------------------
