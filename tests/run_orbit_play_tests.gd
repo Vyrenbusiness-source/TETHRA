@@ -7,6 +7,7 @@ extends SceneTree
 
 var _passed := 0
 var _failed := 0
+var OrbitGameScript: GDScript
 var _done := false
 
 
@@ -31,6 +32,7 @@ func _run() -> void:
 	_test_score_modes()
 	_test_settings()
 	_test_view_geometry()
+	_test_sound()
 	print("=== %d ok, %d fehlgeschlagen ===" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
 
@@ -106,3 +108,32 @@ func _test_view_geometry() -> void:
 			"polar/angle_of %.1f" % deg)
 	_check(v.deadzone_radius() < 720.0 * OrbitView.R_INNER_K, "Totzone innerhalb des inneren Rings")
 	v.free()
+
+
+func _test_sound() -> void:
+	OrbitGameScript = load("res://scripts/orbit/orbit_game.gd")
+	var a := Sfx.orbit_hit_stream(0)
+	var b := Sfx.orbit_hit_stream(1)
+	_check(a != b and a.data != b.data, "Ringe haben eigene Treffer-Klaenge")
+	_check(a.data.size() < b.data.size(), "innen kuerzer als aussen")
+	_check(Sfx.orbit_hit_stream(0) == a, "Klang gecacht")
+	_check(Sfx.orbit_hold_stream(0).loop_mode == AudioStreamWAV.LOOP_FORWARD, "Halteton geloopt")
+	var snd = OrbitGameScript.OrbitSound.new()
+	root.add_child(snd)
+	snd.on_judged(0, 1, false)
+	snd.on_judged(1, 2, false)
+	_check(snd.log == [["hit", 0], ["hit", 1]], "ein Treffer = genau ein Klang, Ring-Zuordnung")
+	snd.log.clear()
+	snd.on_arc_started(1, 1)
+	snd.on_judged(1, 1, true)
+	_check(snd.log == [["hit", 1], ["hold", 1], ["end", 1]], "Bogen: Start-Hit, Halteton, Ende-Klick")
+	snd.log.clear()
+	snd.on_judged(0, 5, false)
+	snd.on_judged(1, 5, true)
+	_check(snd.log == [["miss", 0], ["miss", 1]], "Fehltreffer: nur Miss-Klang")
+	snd.log.clear()
+	for i in 10:
+		snd.on_judged(0, 0, false)
+	_check(snd.log.size() == 10 and snd._hit[0].size() == OrbitGameScript.OrbitSound.POLY, "schnelle Folge: Polyphonie begrenzt")
+	root.remove_child(snd)
+	snd.free()
