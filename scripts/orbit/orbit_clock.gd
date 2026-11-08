@@ -94,3 +94,26 @@ func bar_at(t_ms: float) -> int:
 	var i := _idx(t_ms)
 	var s: Array = segs[i]
 	return i * 100000 + int(floorf((t_ms - float(s[0])) / float(s[1])))
+
+
+## Beginn des Takts, in dem t_ms liegt.
+func bar_start_at(t_ms: float) -> float:
+	var s: Array = segs[_idx(t_ms)]
+	var k := floorf((t_ms - float(s[0])) / float(s[1]))
+	return float(s[0]) + maxf(k, 0.0) * float(s[1])
+
+
+## Ende (= Beginn des naechsten Takts) des Takts, in dem t_ms liegt. Ein neuer
+## roter Punkt beendet den laufenden Takt vorzeitig.
+func bar_end_at(t_ms: float) -> float:
+	var i := _idx(t_ms)
+	var s: Array = segs[i]
+	var e := bar_start_at(t_ms) + float(s[1])
+	if i + 1 < segs.size():
+		e = minf(e, float(segs[i + 1][0]))
+	return e
+
+
+## Phase des Takts (0..1) zur Zeit t_ms.
+func phase_at(t_ms: float) -> float:
+	return angle_at(t_ms) / 360.0

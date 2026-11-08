@@ -1,3 +1,5 @@
+> Aktuelle Spielregeln und Bahnformen: docs/modes/orbit_bahnen.md
+
 # Orbit-Modus ("Taktkreis")
 
 Eigener Modus: zielen mit Maus/Tablet, tippen mit zwei Tasten. Der Kreis ist
@@ -5,7 +7,7 @@ ein Takt: eine Hand dreht im Songtempo (eine Umdrehung pro Takt, 12 Uhr =
 Takt-Eins), die Noten sitzen fest an ihrer Taktposition auf zwei Ringen. Taste A
 (Maus links / Z) = innerer Ring, Taste B (Maus rechts / X) = aeusserer Ring,
 umbelegbar. Beide Tasten zugleich = Akzent. Der Cursor muss beim Druck auf der
-Hand liegen. Entwurf, Abgrenzung und Spass-Begruendung: `orbit_taktkreis.md`.
+Hand liegen. Entwurf, Abgrenzung und Spass-Begruendung: `orbit_bahnen.md`.
 
 Code: `scripts/orbit/orbit_clock.gd` (Takt-Uhr: Hand-Winkel zu jeder Zeit),
 `orbit_note.gd` (Ziel), `orbit_converter.gd` (Map -> Ziele, Sterne),
@@ -220,4 +222,4 @@ gedehnt, damit die Skala genutzt wird. Bibliothek (964 Diffs): p10 2,15, p25
 
 ## Messwerte
 
-Siehe `orbit_taktkreis.md` (Handtempo, Bots, Regelmaessigkeit, Sterne).
+Siehe `orbit_bahnen.md` (Handtempo, Bots, Regelmaessigkeit, Sterne).

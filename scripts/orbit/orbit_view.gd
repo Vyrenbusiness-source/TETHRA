@@ -1,33 +1,30 @@
 class_name OrbitView
 extends Control
 
-## Taktkreis-Spielfeld, ein _draw-Durchgang ohne Nodes pro Ziel.
+## Bahnen-Spielfeld, ein _draw-Durchgang ohne Nodes pro Ziel.
 ##
-## Lesbarkeit zuerst (wie osu!): dunkle Platte, zwei duenne Ringe, Raster nur
-## als feine Striche, die HAND als einzige helle Linie (Spitze am Aussenring),
-## dazu eine sehr schwache Zielzone (+-Toleranz) hinter der Hand. Innen = kuehle
-## Scheibe, aussen = warmes Quadrat (Form UND Farbe). Die naechste Note je
-## Ring ist am groessten mit hellem Rand, die uebrigen Noten des Takts sind
-## etwas kleiner, die Vorschau (naechster Takt) deutlich blasser. Treffer: kurzer
-## Pop (schrumpfende Note + kleiner Rand), Fehler: graue Note mit kleinem X.
-## Kein Leuchten, keine Partikel, nichts bewegt sich ausser Hand und Cursor.
+## Lesbarkeit zuerst (wie osu!): dunkler ruhiger Grund, die Bahn des Takts als
+## feine helle Linie, der Spielkopf als weisser Punkt mit dezentem Zielring.
+## Links und rechts der Bahn liegen zwei Spuren: Spur A (kuehl, Scheibe) links
+## der Laufrichtung, Spur B (warm, Quadrat) rechts; am Kopf stehen beide
+## Spur-Marken, sie leuchten bei gedrueckter Taste. Die naechste Note je Spur ist
+## am groessten und hat einen hellen Rand, die uebrigen Noten des Takts sind
+## etwas kleiner, die Vorschau (naechster Takt) deutlich dunkler. Wechselt die
+## Bahnform im naechsten Takt, steht sie vorab als duenne Linie da und wird
+## auf Takt-Eins ueberblendet. Treffer: kurzer Pop, Fehler: graue Note mit X.
+## Keine Deko, kein Leuchten, keine Partikel.
 
-const R_INNER_K := OrbitCore.R_INNER_K
-const R_OUTER_K := OrbitCore.R_OUTER_K
-## Totzone (Bildhoehen) und Kern fuer Kombo/Judge.
-const DEADZONE_K := OrbitCore.DEAD_K
-const CORE_K := 0.078
-## Notengroesse (Bildhoehen): halbe Kante / Radius.
-const NOTE_K := 0.030
-const OUTER_NOTE_K := 0.028
-const PRIMARY_SCALE := 1.22
+## Bahn-Einheiten -> Pixel (Faktor, siehe path_scale).
+const PATH_W_K := 0.36
+const PATH_H_K := 0.40
+const NOTE_K := 0.0235
+const PRIMARY_SCALE := 1.25
 const CURRENT_SCALE := 0.92
-const PREVIEW_SCALE := 0.78
-const HAND_OVER_K := 0.055
-const TOL_DEFAULT := 30.0
-
-## Ziele ohne Takt-Uhr (Tutorial, Vorschau-Widget): Sichtfenster in ms.
+const PREVIEW_SCALE := 0.74
+const HEAD_K := 0.0125
 const FALLBACK_WINDOW_MS := 1200.0
+## Ueberblendzeit der Bahnlinie auf Takt-Eins.
+const FADE_MS := 450.0
 
 const INNER_COL := Color(0.47, 0.78, 0.98)
 const OUTER_COL := Color(1.0, 0.70, 0.40)
@@ -37,7 +34,8 @@ const PLATE_COL := Color(0.012, 0.016, 0.028)
 const EARLY_COL := Color(0.45, 0.80, 1.00)
 const LATE_COL := Color(1.00, 0.58, 0.45)
 const MISS_X_COL := Color(0.90, 0.48, 0.48)
-const HAND_COL := Color(0.97, 0.97, 1.0)
+const HEAD_COL := Color(0.97, 0.97, 1.0)
+const LINE_COL := Color(0.82, 0.88, 1.0)
 const CHORD_EPS_MS := 2.0
 
 ## Stufenfarben fuer den Treffer-Pop (CORE .. EDGE).
@@ -58,22 +56,25 @@ const ST_DROP := 5     # Halte verloren
 var notes: Array = []
 var t_ms := 0.0
 var preempt := 1200.0
-## Takt-Uhr (Hand + Raster + Vorschau). null = kein Taktkreis (Tutorial).
-var clock: OrbitClock = null
-var cursor_deg := 0.0
+## Bahn (Uhr + Formplan). null = nur Notenansicht ohne Kopf.
+var track: OrbitTrack = null
+## Kurzform fuer Aufrufer mit nur einer Uhr (Tutorial): fester Kreis.
+var clock: OrbitClock:
+	get:
+		return track.clock if track != null else null
+	set(c):
+		track = OrbitTrack.fixed(c, OrbitPath.CIRCLE) if c != null else null
+## Cursor in Pixeln (negativ = unbekannt) und Zieltoleranz in Aim-Punkten.
 var cursor_pos := Vector2(-1, -1)
-var cursor_in_deadzone := false
-var tol_deg := TOL_DEFAULT
-var center_deg := 9.0
+var tol := OrbitCore.AIM_TOL
 var show_guides := true
 var mod_hidden := false
 var mod_fade_in := false
 var ring_held: Array[bool] = [false, false]
-var sel_ring := -1
-## Nur fuer Aufrufer, die sie noch setzen (Tutorial): ohne Wirkung.
+## Nur fuer Aufrufer, die sie noch setzen: ohne Wirkung.
 var beat_env := 0.0
 var kiai := 0.0
-## Halte-Warnung je Ring: 0 = Cursor auf der Hand, 1 = Halte faellt gleich.
+## Halte-Warnung je Spur: 0 = Cursor auf dem Kopf, 1 = Halte faellt gleich.
 var arc_warn: Array[float] = [0.0, 0.0]
 
 var _state := PackedInt32Array()
@@ -81,7 +82,6 @@ var _state_t := PackedFloat64Array()
 var _state_q := PackedInt32Array()
 var _first := 0
 var _next: Array[int] = [-1, -1]
-var _aim_on := false
 var _p_pos := PackedVector2Array()
 var _p_t0 := PackedFloat64Array()
 var _p_why := PackedStringArray()
@@ -129,8 +129,17 @@ func unit() -> float:
 	return maxf(size.y, 1.0)
 
 
-func ring_radius(ring: int) -> float:
-	return unit() * (R_OUTER_K if ring == 1 else R_INNER_K)
+## Pixel je Bahn-Einheit.
+func path_scale() -> float:
+	return maxf(minf(size.x * PATH_W_K, size.y * PATH_H_K), 1.0)
+
+
+func to_px(p: Vector2) -> Vector2:
+	return center() + p * path_scale()
+
+
+func to_path(px: Vector2) -> Vector2:
+	return (px - center()) / path_scale()
 
 
 static func polar(c: Vector2, deg: float, r: float) -> Vector2:
@@ -144,24 +153,15 @@ static func angle_of(c: Vector2, p: Vector2) -> float:
 	return fposmod(rad_to_deg(atan2(d.x, -d.y)), 360.0)
 
 
-## Bildschirmwinkel (draw_arc: 0 = rechts, im Uhrzeigersinn) zu Orbit-Grad.
-static func _ga(deg: float) -> float:
-	return deg_to_rad(deg - 90.0)
+## Ort des Kopfes in Bahn-Einheiten (ohne Bahn: Mitte).
+func head_path() -> Vector2:
+	return track.head(t_ms) if track != null else Vector2.ZERO
 
 
-func deadzone_radius() -> float:
-	return unit() * DEADZONE_K
-
-
-## Winkel der Hand (Taktkreis); ohne Uhr der Cursorwinkel.
-func hand_deg() -> float:
-	return clock.angle_at(t_ms) if clock != null else cursor_deg
-
-
-## Liegt der Cursor auf der Hand (Winkel, Totzone)? Rein zur Anzeige.
+## Liegt der Cursor auf dem Kopf (Toleranz)? Rein zur Anzeige.
 func aim_ok() -> bool:
-	return clock != null and not cursor_in_deadzone \
-			and OrbitNote.dist_deg(cursor_deg, hand_deg()) <= tol_deg
+	return track != null and cursor_pos.x >= 0.0 \
+			and to_path(cursor_pos).distance_to(head_path()) * 100.0 <= tol
 
 
 func state_of(index: int) -> int:
@@ -194,11 +194,11 @@ func on_arc_started(index: int, q: int = 1, _dt: float = 0.0) -> void:
 	_state_q[index] = q
 
 
-## Druck ohne Treffer: kleines X an der Cursorposition.
-func on_press_missed(deg: float, rho: float, ring: int, reason: String) -> void:
+## Druck ohne Treffer: kleines X an der Cursorposition (pos in Bahn-Einheiten).
+func on_press_missed(pos: Vector2, _ring: int, reason: String) -> void:
 	if reason == "EARLY" or reason == "NONE":
 		return
-	_p_pos[_p_next] = polar(center(), deg, unit() * maxf(rho, 0.0))
+	_p_pos[_p_next] = to_px(pos)
 	_p_t0[_p_next] = t_ms
 	_p_why[_p_next] = reason
 	_p_next = (_p_next + 1) % MAX_PRESS
@@ -227,89 +227,107 @@ func _ring_col(ring: int) -> Color:
 
 
 func _horizon_ms() -> float:
-	return clock.bar_ms_at(t_ms) if clock != null else FALLBACK_WINDOW_MS
+	return track.clock.bar_ms_at(t_ms) if track != null else FALLBACK_WINDOW_MS
 
 
 func _draw() -> void:
-	var c := center()
 	var u := unit()
-	var r_in := ring_radius(0)
-	var r_out := ring_radius(1)
-	# Platte: dunkle Flaeche, damit Noten und Hand ueber jedem Map-Bild stehen.
-	draw_circle(c, r_out + u * 0.075, Color(PLATE_COL, 0.86), true, -1.0, true)
-	draw_circle(c, u * CORE_K, Color(PLATE_COL, 0.55), true, -1.0, true)
-	_draw_grid(c, u, r_in, r_out)
-	for r in 2:
-		var rad := r_in if r == 0 else r_out
-		draw_arc(c, rad, 0.0, TAU, 96, Color(_ring_col(r), 0.30 + 0.45 * _ring_a[r]),
-				1.5 + 1.5 * _ring_a[r], true)
-	var hd := hand_deg()
-	if clock != null:
-		_draw_zone(c, u, r_out, hd)
 	_layout()
 	var horizon := _horizon_ms()
+	if track != null:
+		_draw_lines(u)
+		_draw_grid(u)
 	var last := _last_visible(horizon)
 	# Spaeteste zuerst: die naechste Note liegt obenauf.
 	for i in range(last - 1, _first - 1, -1):
-		_draw_note(c, u, i, horizon)
-	if clock != null:
-		_draw_hand(c, u, r_out, hd)
+		_draw_note(u, i, horizon)
+	if track != null:
+		_draw_head(u)
 	_draw_presses(u)
-	_draw_cursor(c, u)
+	_draw_cursor(u)
 
 
-## Raster: Spalten bei Viertel (Schlag) und Achtel, aussen als Striche, die
-## Eins (12 Uhr) etwas laenger; dazu sehr schwache Speichen zwischen den Ringen.
-func _draw_grid(c: Vector2, u: float, r_in: float, r_out: float) -> void:
-	if clock == null or not show_guides:
+func _line_pts(shape: int) -> PackedVector2Array:
+	var src := OrbitPath.polyline(shape)
+	var k := path_scale()
+	var c := center()
+	var out := PackedVector2Array()
+	out.resize(src.size())
+	for i in src.size():
+		out[i] = c + src[i] * k
+	return out
+
+
+## Bahnlinie: aktuelle Form (auf Takt-Eins ueberblendet), die alte Form blendet
+## aus, die naechste Form steht als duenne Vorschau da.
+func _draw_lines(u: float) -> void:
+	var cur := track.shape_at(t_ms)
+	var bs := track.clock.bar_start_at(t_ms)
+	var old := track.shape_at(bs - 1.0)
+	var f := clampf((t_ms - bs) / FADE_MS, 0.0, 1.0)
+	f = f * f * (3.0 - 2.0 * f)
+	var main_a := 0.40
+	var pre_a := 0.16
+	var w := maxf(u * 0.0024, 1.5)
+	if old != cur and f < 1.0:
+		draw_polyline(_line_pts(old), Color(LINE_COL, main_a * (1.0 - f)), w, true)
+		draw_polyline(_line_pts(cur), Color(LINE_COL, lerpf(pre_a, main_a, f)), lerpf(1.0, w, f), true)
+	else:
+		draw_polyline(_line_pts(cur), Color(LINE_COL, main_a), w, true)
+	if track.changes_next(t_ms):
+		var nxt := track.next_shape_at(t_ms)
+		# Vorschau wird zum Takt-Ende hin etwas deutlicher.
+		var left := (track.clock.bar_end_at(t_ms) - t_ms) / maxf(track.clock.bar_ms_at(t_ms), 1.0)
+		draw_polyline(_line_pts(nxt), Color(LINE_COL, pre_a + 0.08 * (1.0 - clampf(left, 0.0, 1.0))), 1.0, true)
+
+
+## Raster: Schlaege als feine Punkte auf der Bahn, Takt-Eins als kurzer Strich.
+func _draw_grid(u: float) -> void:
+	if not show_guides:
 		return
-	var beats := clock.beats_at(t_ms)
-	for i in beats * 2:
-		var deg := 360.0 * float(i) / float(beats * 2)
-		var whole := i % 2 == 0
-		var a0 := r_out + u * 0.018
-		var a1 := a0 + u * (0.032 if whole else 0.014)
-		var al := 0.30 if whole else 0.12
+	var shape := track.shape_at(t_ms)
+	var beats := track.clock.beats_at(t_ms)
+	for i in beats:
+		var ph := float(i) / float(beats)
+		var p := to_px(OrbitPath.pos(shape, ph))
 		if i == 0:
-			a1 += u * 0.014
-			al = 0.55
-		draw_line(polar(c, deg, a0), polar(c, deg, a1), Color(1, 1, 1, al), 1.5 if whole else 1.0, true)
-		if whole:
-			draw_line(polar(c, deg, r_in), polar(c, deg, r_out), Color(1, 1, 1, 0.045), 1.0, true)
+			var nrm := OrbitPath.left(shape, 0.0) * u * 0.022
+			draw_line(p - nrm, p + nrm, Color(LINE_COL, 0.55), 1.5, true)
+		else:
+			draw_circle(p, u * 0.0035, Color(LINE_COL, 0.32), true, -1.0, true)
 
 
-## Schwache Zielzone hinter der Hand (+- Toleranz).
-func _draw_zone(c: Vector2, u: float, r_out: float, hd: float) -> void:
-	var r0 := u * DEADZONE_K
-	var r1 := r_out + u * HAND_OVER_K
-	_poly.clear()
-	var steps := 10
-	for k in steps + 1:
-		_poly.append(polar(c, hd - tol_deg + tol_deg * 2.0 * float(k) / float(steps), r1))
-	_poly.append(polar(c, hd + tol_deg, r0))
-	_poly.append(polar(c, hd - tol_deg, r0))
-	draw_colored_polygon(_poly, Color(1, 1, 1, 0.045 if not aim_ok() else 0.085))
-
-
-func _draw_hand(c: Vector2, u: float, r_out: float, hd: float) -> void:
+func _draw_head(u: float) -> void:
+	var shape := track.shape_at(t_ms)
+	var ph := track.clock.phase_at(t_ms)
+	var hp := to_px(OrbitPath.pos(shape, ph))
 	var ok := aim_ok()
-	var col := Color(HAND_COL, 1.0 if ok else 0.78)
-	var r1 := r_out + u * HAND_OVER_K
-	# Beginnt am Rand des Kerns: Kombo/Wertung in der Mitte bleiben frei lesbar.
-	draw_line(polar(c, hd, u * maxf(DEADZONE_K, CORE_K + 0.006)), polar(c, hd, r1), col, 3.0, true)
-	# Spitze: kleines Dreieck nach aussen.
-	var tip := polar(c, hd, r1 + u * 0.016)
-	var b := polar(c, hd, r1 - u * 0.006)
-	var side := Vector2(cos(deg_to_rad(hd)), sin(deg_to_rad(hd))) * u * 0.009
-	draw_colored_polygon(PackedVector2Array([tip, b + side, b - side]), col)
+	# Dezenter Zielring (Toleranz).
+	var rt := tol / 100.0 * path_scale()
+	draw_arc(hp, rt, 0.0, TAU, 56, Color(1, 1, 1, 0.26 if ok else 0.09), 1.0, true)
+	# Spur-Marken links (A, Scheibe) und rechts (B, Quadrat) vom Kopf.
+	var nrm := OrbitPath.left(shape, ph)
+	var tan_v := OrbitPath.tangent(shape, ph)
+	var off := OrbitPath.LANE_OFF * path_scale()
+	for r in 2:
+		var side := 1.0 if r == 0 else -1.0
+		var p := hp + nrm * off * side
+		var a := 0.45 + 0.55 * _ring_a[r]
+		var s := u * (0.0085 + 0.004 * _ring_a[r])
+		if r == 0:
+			draw_circle(p, s, Color(INNER_COL, a), true, -1.0, true)
+		else:
+			_square(p, tan_v, s, Color(OUTER_COL, a), true)
+	draw_circle(hp, u * HEAD_K, Color(HEAD_COL, 1.0 if ok else 0.8), true, -1.0, true)
+	draw_arc(hp, u * HEAD_K * 1.75, 0.0, TAU, 32, Color(HEAD_COL, 0.5), 1.5, true)
 
 
-func _draw_cursor(_c: Vector2, u: float) -> void:
+func _draw_cursor(u: float) -> void:
 	if cursor_pos.x < 0.0:
 		return
 	var ok := aim_ok()
 	if ok:
-		draw_circle(cursor_pos, u * 0.0075, Color(1, 1, 1, 0.95), true, -1.0, true)
+		draw_circle(cursor_pos, u * 0.0065, Color(1, 1, 1, 0.9), true, -1.0, true)
 	else:
 		draw_arc(cursor_pos, u * 0.0095, 0.0, TAU, 20, Color(MISS_X_COL, 0.9), 2.0, true)
 		draw_circle(cursor_pos, u * 0.003, Color(MISS_X_COL, 0.9), true, -1.0, true)
@@ -328,7 +346,7 @@ func _draw_presses(u: float) -> void:
 		draw_line(p + Vector2(-s, s), p + Vector2(s, -s), col, 2.0, true)
 
 
-## Bestimmt _first und die naechste offene Note je Ring.
+## Bestimmt _first und die naechste offene Note je Spur.
 func _layout() -> void:
 	while _first < notes.size():
 		var n = notes[_first]
@@ -358,7 +376,7 @@ func _last_visible(horizon: float) -> int:
 
 
 func _is_preview(n) -> bool:
-	return clock != null and clock.bar_at(float(n.time_ms)) != clock.bar_at(t_ms)
+	return track != null and track.clock.bar_at(float(n.time_ms)) != track.clock.bar_at(t_ms)
 
 
 func mod_alpha(dt: float, horizon: float) -> float:
@@ -371,30 +389,44 @@ func mod_alpha(dt: float, horizon: float) -> float:
 	return a
 
 
-func _draw_note(c: Vector2, u: float, i: int, horizon: float) -> void:
+## Ort (Pixel) und Laufrichtung der Spur ring zur Zeit tt.
+func _lane_px(tt: float, ring: int) -> Vector2:
+	if track == null:
+		return center()
+	return to_px(track.lane_pos(tt, ring))
+
+
+func _tan_at(tt: float) -> Vector2:
+	if track == null:
+		return Vector2.RIGHT
+	return OrbitPath.tangent(track.shape_at(tt), track.clock.phase_at(tt))
+
+
+func _draw_note(u: float, i: int, horizon: float) -> void:
 	var n = notes[i]
 	var st := _state[i]
 	var dt := float(n.time_ms) - t_ms
 	var ring: int = n.ring
 	var col := _ring_col(ring)
-	var deg := float(n.angle_deg)
-	var rad := ring_radius(ring)
-	var base := u * (OUTER_NOTE_K if ring == 1 else NOTE_K)
+	var base := u * NOTE_K
 	if st == ST_HIT or st == ST_ARC_DONE:
 		var age := t_ms - float(_state_t[i])
 		if age < POP_MS:
 			var q := clampi(int(_state_q[i]), 0, 4)
 			var f := age / POP_MS
-			var at := polar(c, float(n.end_angle_deg) if st == ST_ARC_DONE else deg, rad)
-			_shape(at, deg, ring, base * (1.0 - 0.55 * f), Color(TIER_POP[q], 1.0 - f), true)
-			_shape(at, deg, ring, base * (1.0 + 0.7 * f), Color(TIER_POP[q], 0.8 * (1.0 - f)), false)
+			var tt := float(n.end_ms) if st == ST_ARC_DONE else float(n.time_ms)
+			var at := _lane_px(tt, ring)
+			var tv := _tan_at(tt)
+			_shape(at, tv, ring, base * (1.0 - 0.55 * f), Color(TIER_POP[q], 1.0 - f), true)
+			_shape(at, tv, ring, base * (1.0 + 0.8 * f), Color(TIER_POP[q], 0.8 * (1.0 - f)), false)
 		return
 	if st == ST_MISS or st == ST_DROP:
 		var age := t_ms - float(_state_t[i])
 		if age < MISS_MARK_MS:
 			var a := 1.0 - age / MISS_MARK_MS
-			var at := polar(c, deg if st == ST_MISS else float(n.pointer_at(float(_state_t[i]))), rad)
-			_shape(at, deg, ring, base * 0.8, Color(MISS_COL, 0.55 * a), true)
+			var tt := float(n.time_ms) if st == ST_MISS else clampf(float(_state_t[i]), float(n.time_ms), float(n.end_ms))
+			var at := _lane_px(tt, ring)
+			_shape(at, _tan_at(tt), ring, base * 0.8, Color(MISS_COL, 0.55 * a), true)
 			var s := base * 0.7
 			draw_line(at + Vector2(-s, -s), at + Vector2(s, s), Color(MISS_X_COL, a), 2.0, true)
 			draw_line(at + Vector2(-s, s), at + Vector2(s, -s), Color(MISS_X_COL, a), 2.0, true)
@@ -406,83 +438,86 @@ func _draw_note(c: Vector2, u: float, i: int, horizon: float) -> void:
 	var alpha: float
 	var scale: float
 	if prev:
-		alpha = 0.10 + 0.20 * phase
+		alpha = 0.10 + 0.18 * phase
 		scale = PREVIEW_SCALE
 	elif primary:
 		alpha = 1.0
 		scale = PRIMARY_SCALE
 	else:
-		alpha = 0.62 + 0.25 * phase
+		alpha = 0.60 + 0.25 * phase
 		scale = CURRENT_SCALE
 	alpha *= mod_alpha(maxf(dt, 0.0), horizon)
 	if alpha <= 0.01:
 		return
 	if n.is_arc:
-		_draw_hold(c, u, i, n, col, base * scale, alpha, prev, primary, st == ST_ARC)
+		_draw_hold(u, i, n, col, base * scale, alpha, prev, primary, st == ST_ARC)
 		return
-	var p := polar(c, deg, rad)
-	_chord_stem(c, i, n, alpha * 0.5, u)
-	_shape(p, deg, ring, base * scale, Color(col, alpha), true)
+	var tt := float(n.time_ms)
+	var p := _lane_px(tt, ring)
+	var tv := _tan_at(tt)
+	_chord_stem(i, n, alpha * 0.5)
+	_shape(p, tv, ring, base * scale, Color(col, alpha), true)
 	if primary and not prev:
-		_shape(p, deg, ring, base * scale * 1.0, Color(1, 1, 1, 0.95), false)
+		_shape(p, tv, ring, base * scale, Color(1, 1, 1, 0.95), false)
 
 
-func _draw_hold(c: Vector2, u: float, i: int, n, col: Color, size_px: float, alpha: float,
+func _draw_hold(u: float, i: int, n, col: Color, size_px: float, alpha: float,
 		prev: bool, primary: bool, held: bool) -> void:
-	var rad := ring_radius(n.ring)
-	var a0 := float(n.angle_deg)
-	var total := float(n.end_angle_deg) - a0
-	var span := total
-	var w := u * 0.016
-	var from_deg := a0
+	var t0 := float(n.time_ms)
+	var t1 := float(n.end_ms)
+	var w := u * 0.015
+	var from_t := t0
 	if held:
-		var f := clampf((t_ms - float(n.time_ms)) / maxf(float(n.duration_ms()), 1.0), 0.0, 1.0)
-		from_deg = a0 + total * f
-		span = total * (1.0 - f)
-	if absf(span) > 0.5:
-		draw_arc(c, rad, _ga(from_deg), _ga(from_deg + span), maxi(int(absf(span) / 6.0), 4),
-				Color(col, alpha * (0.85 if held else 0.40)), w, true)
-	# Kopf (offen) bzw. Spitze an der Hand (gehalten).
-	var head_deg := from_deg if held else a0
-	var p := polar(c, head_deg, rad)
-	_chord_stem(c, i, n, alpha * 0.5, u)
-	_shape(p, head_deg, n.ring, size_px, Color(col, alpha), true)
+		from_t = clampf(t_ms, t0, t1)
+	# Band entlang der Bahn zwischen from_t und Ende (alle ~40 ms ein Punkt).
+	var steps := clampi(int((t1 - from_t) / 40.0), 2, 160)
+	if t1 - from_t > 1.0:
+		var pts := PackedVector2Array()
+		pts.resize(steps + 1)
+		for k in steps + 1:
+			pts[k] = _lane_px(lerpf(from_t, t1, float(k) / float(steps)), n.ring)
+		draw_polyline(pts, Color(col, alpha * (0.85 if held else 0.40)), w, true)
+	var p := _lane_px(from_t, n.ring)
+	var tv := _tan_at(from_t)
+	_chord_stem(i, n, alpha * 0.5)
+	_shape(p, tv, n.ring, size_px, Color(col, alpha), true)
 	if (primary and not prev) or held:
-		_shape(p, head_deg, n.ring, size_px, Color(1, 1, 1, 0.95), false)
-	# Ende: kleiner Strich.
-	var e := polar(c, float(n.end_angle_deg), rad)
-	draw_circle(e, w * 0.55, Color(col, alpha * 0.8), true, -1.0, true)
+		_shape(p, tv, n.ring, size_px, Color(1, 1, 1, 0.95), false)
+	# Ende: kleiner Punkt.
+	draw_circle(_lane_px(t1, n.ring), w * 0.55, Color(col, alpha * 0.8), true, -1.0, true)
 	if held and arc_warn[n.ring] > 0.05:
 		draw_arc(p, size_px * 1.45, 0.0, TAU, 20, Color(MISS_X_COL, minf(arc_warn[n.ring], 1.0)), 2.0, true)
 
 
-## Akzent: duenne Verbindung zwischen der inneren und der aeusseren Note.
-func _chord_stem(c: Vector2, i: int, n, alpha: float, u: float) -> void:
+## Akzent: duenne Verbindung zwischen der Note auf Spur A und der auf Spur B.
+func _chord_stem(i: int, n, alpha: float) -> void:
 	if n.ring != 0 or i + 1 >= notes.size():
 		return
 	var m = notes[i + 1]
 	if m.ring == 1 and absf(float(m.time_ms) - float(n.time_ms)) <= CHORD_EPS_MS:
-		var d := float(n.angle_deg)
-		draw_line(polar(c, d, ring_radius(0)), polar(c, d, ring_radius(1)),
-				Color(1, 1, 1, alpha * 0.6), 2.0, true)
+		var tt := float(n.time_ms)
+		draw_line(_lane_px(tt, 0), _lane_px(tt, 1), Color(1, 1, 1, alpha * 0.6), 2.0, true)
 
 
-## Innen: Scheibe, aussen: Quadrat (an der Tangente ausgerichtet).
-func _shape(p: Vector2, deg: float, ring: int, s: float, col: Color, filled: bool) -> void:
+## Spur A: Scheibe, Spur B: Quadrat (an der Laufrichtung ausgerichtet).
+func _shape(p: Vector2, tan_v: Vector2, ring: int, s: float, col: Color, filled: bool) -> void:
 	if ring == 0:
 		if filled:
 			draw_circle(p, s, col, true, -1.0, true)
 		else:
 			draw_arc(p, s, 0.0, TAU, 28, col, 2.0, true)
 		return
-	var a := deg_to_rad(deg)
-	var rad_v := Vector2(sin(a), -cos(a)) * s
-	var tan_v := Vector2(cos(a), sin(a)) * s
+	_square(p, tan_v, s, col, filled)
+
+
+func _square(p: Vector2, tan_v: Vector2, s: float, col: Color, filled: bool) -> void:
+	var a := tan_v * s
+	var b := Vector2(-tan_v.y, tan_v.x) * s
 	_poly.clear()
-	_poly.append(p + rad_v + tan_v)
-	_poly.append(p + rad_v - tan_v)
-	_poly.append(p - rad_v - tan_v)
-	_poly.append(p - rad_v + tan_v)
+	_poly.append(p + a + b)
+	_poly.append(p + a - b)
+	_poly.append(p - a - b)
+	_poly.append(p - a + b)
 	if filled:
 		draw_colored_polygon(_poly, col)
 	else:

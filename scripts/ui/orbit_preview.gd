@@ -2,14 +2,13 @@ class_name OrbitPreview
 extends Control
 
 ## Live-Vorschau fuer die Orbit-Einstellungen: echter OrbitView, eine kurze
-## Demo-Sequenz (Taps auf beiden Ringen, Akkord, Bogen) in Endlosschleife mit
+## Demo-Sequenz (Taps auf beiden Spuren, Akkord, Bogen, drei Bahnformen) in Endlosschleife mit
 ## Autoplay-Treffern. Liest Scroll Speed, Winkel-Hilfslinien und Hintergrund
 ## jeden Frame aus Settings (billig), laeuft nur sichtbar. Hintergrund "Welt" ist
 ## ein dunkler, ruhiger Platzhalter (keine zweite 3D-Welt in der Vorschau).
 
 const SIZE_PX := Vector2(384, 216)
 const TAIL_MS := 900.0
-const CURSOR_R_K := 0.28
 
 var _view: OrbitView
 var _bg: TextureRect
@@ -46,6 +45,7 @@ func _ready() -> void:
 	_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	frame.add_child(_view)
 	_notes = demo_notes()
+	_view.track = demo_track()
 	_view.setup(_notes)
 	_end_ms = 0.0
 	for n in _notes:
@@ -56,19 +56,29 @@ func _ready() -> void:
 	_on_vis()
 
 
-## Demo: Taps innen/aussen, Akkord (beide Ringe gleichzeitig), ein Bogen.
+## Demo: Taps auf Spur A/B, Akkord (beide Spuren gleichzeitig), ein Bogen.
+## Zeiten passen zu demo_track (2000 ms pro Takt).
 static func demo_notes() -> Array:
 	var a: Array = []
 	a.append(OrbitNote.make(0.0, 0.0, 0))
 	a.append(OrbitNote.make(450.0, 90.0, 1))
 	a.append(OrbitNote.make(900.0, 180.0, 0))
 	a.append(OrbitNote.make(1350.0, 270.0, 1))
-	a.append(OrbitNote.make(2000.0, 45.0, 0))   # Akkord
-	a.append(OrbitNote.make(2000.0, 225.0, 1))
-	a.append(OrbitNote.make_arc(2800.0, 3800.0, 300.0, 100.0, 0))
-	a.append(OrbitNote.make(3100.0, 135.0, 1))
+	a.append(OrbitNote.make(2000.0, 0.0, 0))   # Akkord
+	a.append(OrbitNote.make(2000.0, 0.0, 1))
+	a.append(OrbitNote.make_arc(2600.0, 3400.0, 108.0, 144.0, 0))
+	a.append(OrbitNote.make(3500.0, 270.0, 1))
 	a.append(OrbitNote.make(4300.0, 0.0, 1))
+	a.append(OrbitNote.make(4800.0, 0.0, 0))
 	return a
+
+
+## Demo-Bahn: Ellipse, ab Takt 2 Acht, ab Takt 3 Rose (Formwechsel sichtbar).
+static func demo_track() -> OrbitTrack:
+	var tr := OrbitTrack.fixed(OrbitClock.fixed(2000.0), OrbitPath.ELLIPSE)
+	tr.plan.append([2000.0, OrbitPath.EIGHT])
+	tr.plan.append([4000.0, OrbitPath.ROSE3])
+	return tr
 
 
 func _on_vis() -> void:
@@ -135,11 +145,9 @@ func _process(delta: float) -> void:
 	_apply_settings()
 	_t += minf(delta, 0.1) * 1000.0
 	_view.t_ms = _t
-	var c := _view.center()
-	# Autoplay: Kopf trifft exakt zur Zeit.
+	# Autoplay: Cursor sitzt auf dem Kopf, Tasten treffen exakt zur Zeit.
 	while _next < _notes.size() and float(_notes[_next].time_ms) <= _t:
 		var n = _notes[_next]
-		_view.cursor_deg = float(n.angle_deg)
 		_view.ring_held[n.ring] = true
 		if n.is_arc:
 			_view.on_arc_started(_next, 0, 0.0)
@@ -154,13 +162,11 @@ func _process(delta: float) -> void:
 			_view.on_judged(i, {"quality": 0, "dt": 0.0})
 			_arc_open.erase(i)
 			_release_at[n.ring] = _t + 90.0
-		else:
-			_view.cursor_deg = float(n.angle_at(_t))
 	for r in 2:
 		if _release_at[r] >= 0.0 and _t >= _release_at[r] and not _holds_arc(r):
 			_view.ring_held[r] = false
 			_release_at[r] = -1.0
-	_view.cursor_pos = OrbitView.polar(c, _view.cursor_deg, _view.unit() * CURSOR_R_K)
+	_view.cursor_pos = _view.to_px(_view.head_path())
 	if _t > _end_ms + TAIL_MS:
 		_restart()
 

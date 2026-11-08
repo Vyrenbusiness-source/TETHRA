@@ -1,3 +1,19 @@
+# Orbit: Bahnen (Stand 2026-11-08)
+
+Orbit ist ein eigener Modus: ein Laeufer (weisser Punkt) laeuft pro Takt eine
+geschlossene Bahn ab. Die Bahnform wechselt mit dem Song (Kreis, Ellipse,
+liegende Acht, Bluete mit 3 oder 4 Blaettern), nur auf der Takt-Eins und einen Takt
+vorher angekuendigt. Noten liegen an ihrer Taktposition auf der Bahn, links (Spur A,
+Scheibe) oder rechts (Spur B, Quadrat). Taste A/B trifft die Spur, beide = Akzent.
+Zielen ist Pflicht: der Cursor muss beim Druck am Laeufer liegen. Wertung, Score,
+Stufen und Mod-Faktoren wie in docs/modes/orbit.md. Abgrenzung: osu!tau (ein Ring,
+Winkel-Paddel), osu! (freies Feld, Annaeherungskreise), Twin Edge / Chrono Circle
+(drehender Zeiger auf festem Kreis), Cytus (Scan-Linie), Lanota (Kreis, Touch):
+taktgebundene, wechselnde Bahnfiguren mit Zwei-Spur-Tasten und Zielpflicht gibt es dort nicht.
+
+Die Vorgaengerfassung "Taktkreis" (fester Kreis, Zeiger) folgt unten; Uhr, Konverter-
+Regeln (Spuren statt Ringe), Spass-Kriterien und Messungen gelten weiter.
+
 # Orbit "Taktkreis"
 
 Neuentwurf der Orbit-Mechanik (Name bleibt Orbit). Grund: die alte Mechanik

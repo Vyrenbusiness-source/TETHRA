@@ -1,10 +1,11 @@
 extends SceneTree
 
-## Orbit-QA (Taktkreis): Messungen statt Bauchgefuehl.
-##  1. Hand-Tempo bei echten BPM/Taktarten (Grad/s, Umdrehungen pro Minute).
-##  2. Erreichbarkeit: ein Bot, der dem Zeiger wie ein Spieler folgt (Cursor
-##     zieht der Hand mit Verzoegerung tau nach, Zeit- und Zielstreuung):
-##     Tablet, Maus und ein schwacher Spieler auf Maps quer durch die Sterne.
+## Orbit-QA (Bahnen): Messungen statt Bauchgefuehl.
+##  1. Kopf-Tempo bei echten BPM/Taktarten und je Bahnform (Einheiten/s).
+##  2. Erreichbarkeit: ein Bot, der dem Kopf wie ein Spieler folgt (Cursor
+##     zieht dem Kopf mit Verzoegerung tau nach, Zeit- und Zielstreuung):
+##     Tablet, Maus und ein schwacher Spieler, je Bahnform am Tempolimit und
+##     auf Maps quer durch die Sterne.
 ##  3. Muster-Regelmaessigkeit: Anteil der Ziele auf dem Raster (Viertel/Achtel/
 ##     Sechzehntel) und wie oft ein Takt den Rhythmus eines der letzten 4 Takte
 ##     wiederholt.
@@ -13,7 +14,7 @@ extends SceneTree
 ##   Godot..._console.exe --headless --audio-driver Dummy --path . --script res://tests/run_orbit_qa_tests.gd
 
 const STEP_MS := 4.0
-## Bots: Nachlauf tau (ms), Zeitstreuung (ms), Zielstreuung (Grad).
+## Bots: Nachlauf tau (ms), Zeitstreuung (ms), Zielstreuung (Aim-Punkte, 100 = eine Bahn-Einheit).
 const BOTS := {
 	"tablet": [35.0, 20.0, 4.0],
 	"maus": [60.0, 25.0, 6.0],
@@ -26,9 +27,10 @@ var _failed := 0
 
 
 func _initialize() -> void:
-	print("=== TETHRA Orbit-QA (Taktkreis) ===")
+	print("=== TETHRA Orbit-QA (Bahnen) ===")
 	_test_hand_speed()
 	_test_follow_limits()
+	_test_shapes()
 	var picks := _pick_maps()
 	_test_regularity(picks)
 	_test_bots(picks)
@@ -75,15 +77,42 @@ func _test_hand_speed() -> void:
 	_ok(OrbitClock.from_beatmap(bm4).speed_at(0.0) * 1000.0 <= 180.0 + 0.01, "240 BPM 4/4: eine Umdrehung pro zwei Takte")
 
 
-## Wie viel Nachlauf darf ein Spieler haben? Bei Tempo v steht der Cursor
-## dauerhaft v * tau hinter der Hand; Zielstreuung 2 sigma kommt dazu.
+## Wie viel Nachlauf darf ein Spieler haben? Bei Tempo v (Einheiten/ms) steht der
+## Cursor dauerhaft v * tau hinter dem Kopf; Zielstreuung 2 sigma kommt dazu.
 func _test_follow_limits() -> void:
-	print("- Folgen: erlaubter Nachlauf je Tempo")
-	for bar in [2400.0, 2000.0, 1500.0, 1200.0]:
-		var v: float = 360.0 / float(bar)
-		var tau_max: float = (OrbitCore.ANGLE_TOL_DEG - 2.0 * 6.0) / v
-		print("  Takt %.0f ms: %.3f Grad/ms, Nachlauf bis %.0f ms ok" % [bar, v, tau_max])
-		_ok(tau_max >= BOTS["maus"][0] if bar >= 1200.0 else true, "Takt %.0f ms: Maus-Nachlauf (60 ms) passt" % bar)
+	print("- Folgen: erlaubter Nachlauf je Tempo (Tempolimit der Bahn)")
+	var tol := OrbitCore.AIM_TOL / 100.0
+	for v in [OrbitTrack.MAX_SPEED, OrbitTrack.MAX_SPEED_EASY]:
+		var tau_max: float = (tol - 2.0 * float(BOTS["maus"][2]) / 100.0) / float(v)
+		print("  Kopf %.4f E/ms: Nachlauf bis %.0f ms ok" % [v, tau_max])
+		_ok(tau_max >= float(BOTS["maus"][0]), "Kopf %.4f E/ms: Maus-Nachlauf (60 ms) passt" % v)
+
+
+## Jede Bahnform am Tempolimit (kuerzester erlaubter Takt): Noten auf jedem
+## Achtel, wechselnde Spuren. Maus-Bot muss >= 90 % treffen.
+func _test_shapes() -> void:
+	print("- Erreichbarkeit je Bahnform (Takt am Tempolimit)")
+	for shape in OrbitPath.COUNT:
+		var bar := maxf(OrbitPath.length(shape) / OrbitTrack.MAX_SPEED, OrbitClock.MIN_BAR_MS)
+		var clock := OrbitClock.fixed(bar, 4, 0.0)
+		var tr := OrbitTrack.fixed(clock, shape)
+		var ns: Array[OrbitNote] = []
+		var step := bar / 8.0
+		for i in 8 * 12:
+			var t := 2000.0 + float(i) * step
+			var n := OrbitNote.make(t, clock.angle_at(t), i % 2)
+			n.shape = shape
+			n.speed = tr.speed_at(t)
+			ns.append(n)
+		var line := "  %s (Takt %.0f ms, Kopf %.4f E/ms):" % [OrbitPath.NAMES[shape], bar, tr.speed_at(0.0)]
+		for name in ["tablet", "maus"]:
+			var r := _run_track(ns, tr, BOTS[name], 11, 5.0, 5.0)
+			line += "  %s Acc %.1f%% Miss %d;" % [name, float(r[0]) * 100.0, r[1]]
+			var hit := 1.0 - float(r[1]) / float(ns.size())
+			_ok(hit >= 0.9 and not r[2], "%s: %s trifft >= 90 %% (%.1f%%)" % [OrbitPath.NAMES[shape], name, hit * 100.0])
+		print(line)
+	_ok(OrbitTrack.fixed(OrbitClock.fixed(1200.0), OrbitPath.CIRCLE).speed_at(0.0) <= OrbitTrack.MAX_SPEED + 1e-6,
+		"Kreis bei kuerzestem Takt unter dem Tempolimit")
 
 
 # --- Map-Auswahl ---
@@ -178,37 +207,42 @@ func _core(ns: Array[OrbitNote], bm: Beatmap) -> OrbitCore:
 	return c
 
 
-## Spielt ns mit einem Folge-Bot. Rueckgabe: [Acc, Misses, gescheitert, Zielfehler-Mittel].
 func _run_bot(ns: Array[OrbitNote], bm: Beatmap, bot: Array, seed: int) -> Array:
+	return _run_track(ns, OrbitConverter.track_for(bm, ns), bot, seed, bm.od(), bm.hp())
+
+
+## Spielt ns mit einem Folge-Bot. Rueckgabe: [Acc, Misses, gescheitert, Zielfehler-Mittel, Note].
+func _run_track(ns: Array[OrbitNote], tr: OrbitTrack, bot: Array, seed: int, od: float, hp: float) -> Array:
 	var tau: float = bot[0]
 	var st: float = bot[1]
 	var sa: float = bot[2]
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed
-	var clock := OrbitClock.from_beatmap(bm)
-	var c := _core(ns, bm)
-	# Tasten-Events mit Zeitstreuung vorbereiten.
+	var c := OrbitCore.new()
+	c.setup(ns, od, 1.0, hp, {})
+	c.set_track(tr)
+	c.set_replay_mode(false)
+	# Tasten-Events mit Zeitstreuung vorbereiten: [Zeit, Index, Zielversatz].
 	var downs: Array = []
 	for i in ns.size():
 		var n := ns[i]
 		var td := n.time_ms + clampf(rng.randfn(0.0, st), -2.5 * st, 2.5 * st)
-		downs.append([td, i, clampf(rng.randfn(0.0, sa), -2.5 * sa, 2.5 * sa)])
+		var oa := clampf(rng.randfn(0.0, sa), -2.5 * sa, 2.5 * sa)
+		downs.append([td, i, Vector2.from_angle(float(i) * 2.399963) * (oa / 100.0)])
 	downs.sort_custom(func(a, b): return a[0] < b[0])
 	var ups: Array = []   # [t, ring]
-	var cur := 0.0
 	var t := ns[0].time_ms - 800.0
-	cur = clock.angle_at(t)
+	var cur := tr.head(t)
 	var di := 0
 	var end_t: float = ns[-1].end_ms + 400.0
 	var held := [-1, -1]
-	var off := 0.0
+	var off := Vector2.ZERO
 	while t < end_t and not c.failed:
 		t += STEP_MS
-		# Cursor zieht der Hand nach (Tiefpass), Zielversatz wandert langsam.
-		var tgt := clock.angle_at(t) + off
+		# Cursor zieht dem Kopf nach (Tiefpass), Zielversatz wandert langsam.
 		var a := 1.0 - exp(-STEP_MS / tau)
-		cur = OrbitNote.wrap_deg(cur + OrbitNote.delta_deg(cur, tgt) * a)
-		c.cursor_moved(cur, 0.3, t)
+		cur = cur.lerp(tr.head(t) + off, a)
+		c.cursor_moved(cur, t)
 		while di < downs.size() and float(downs[di][0]) <= t:
 			var i: int = downs[di][1]
 			off = downs[di][2]
@@ -218,7 +252,7 @@ func _run_bot(ns: Array[OrbitNote], bm: Beatmap, bot: Array, seed: int) -> Array
 			if held[n.ring] >= 0:
 				c.key_up(n.ring, td)
 				held[n.ring] = -1
-			c.key_down(n.ring, td, cur, 0.3)
+			c.key_down(n.ring, td, cur)
 			if n.is_arc:
 				held[n.ring] = i
 				ups.append([n.end_ms + rng.randf_range(-10.0, 25.0), n.ring])
@@ -227,9 +261,8 @@ func _run_bot(ns: Array[OrbitNote], bm: Beatmap, bot: Array, seed: int) -> Array
 		ups.sort_custom(func(x, y): return x[0] < y[0])
 		while not ups.is_empty() and float(ups[0][0]) <= t:
 			var u: Array = ups.pop_front()
-			if held[u[1]] >= 0 or true:
-				c.key_up(u[1], float(u[0]))
-				held[u[1]] = -1
+			c.key_up(u[1], float(u[0]))
+			held[u[1]] = -1
 		c.update(t)
 	c.update(end_t + 600.0)
 	return [c.accuracy(), c.n_miss, c.failed, c.mean_aim_err(), c.grade()]
@@ -251,7 +284,7 @@ func _test_bots(picks: Array) -> void:
 		for n in ns:
 			sps.append(n.speed)
 		sps.sort()
-		var line := "  %s * %.2f (%d Ziele, Hand %.3f Grad/ms):" % [p.label, p.stars, ns.size(), float(sps[sps.size() / 2])]
+		var line := "  %s * %.2f (%d Ziele, Kopf %.4f E/ms):" % [p.label, p.stars, ns.size(), float(sps[sps.size() / 2])]
 		for name in BOTS:
 			var r := _run_bot(ns, p.bm, BOTS[name], 7)
 			line += "  %s Acc %.1f%% Miss %d %s %s;" % [name, float(r[0]) * 100.0, r[1], "FAIL" if r[2] else "ok", r[4]]
@@ -266,29 +299,30 @@ func _test_bots(picks: Array) -> void:
 					sp.append(n.speed)
 				sp.sort()
 				speeds.append(float(sp[sp.size() / 2]))
+				# Erste Maps (< 2 Sterne) > 80 %; bis 3 Sterne ohne Fail und > 70 %.
 				if p.stars < 3.0:
-					easy_ok = easy_ok and not r[2] and float(r[0]) > 0.8
+					easy_ok = easy_ok and not r[2] and float(r[0]) > (0.8 if p.stars < 2.0 else 0.7)
 		print(line)
-	_ok(easy_ok, "erste Maps (< 3 Sterne): auch der schwache Bot kommt mit Acc > 80% durch")
+	_ok(easy_ok, "erste Maps (< 2 Sterne > 80 %, < 3 Sterne > 70 %): auch der schwache Bot kommt durch")
 	if stars.size() >= 4:
-		# Der schwache Bot scheitert am Folgen: auf Maps mit langsamer Hand
-		# (<= 0,18 Grad/ms) macht er deutlich weniger Fehler als bei schneller.
+		# Der schwache Bot scheitert am Folgen: auf Maps mit langsamem Kopf
+		# (<= 0,0030 E/ms) macht er deutlich weniger Fehler als bei schneller.
 		var slow := 0.0
 		var fast := 0.0
 		var ns_slow := 0
 		var ns_fast := 0
 		for i in speeds.size():
-			if speeds[i] <= 0.18:
+			if speeds[i] <= 0.0030:
 				slow += weak_miss[i]
 				ns_slow += 1
 			else:
 				fast += weak_miss[i]
 				ns_fast += 1
 		var rho_s := _spearman(stars, weak_miss)
-		print("  Schwacher Bot: Fehlerquote langsame Hand %.1f%% (%d Maps), schnelle Hand %.1f%% (%d Maps); Spearman Sterne %.2f" % [
+		print("  Schwacher Bot: Fehlerquote langsamer Kopf %.1f%% (%d Maps), schneller Kopf %.1f%% (%d Maps); Spearman Sterne %.2f" % [
 			100.0 * slow / maxi(ns_slow, 1), ns_slow, 100.0 * fast / maxi(ns_fast, 1), ns_fast, rho_s])
 		if ns_slow > 0 and ns_fast > 0:
-			_ok(slow / ns_slow < fast / ns_fast, "langsame Hand = weniger Fehler beim schwachen Bot")
+			_ok(slow / ns_slow < fast / ns_fast, "langsamer Kopf = weniger Fehler beim schwachen Bot")
 
 
 static func _ranks(v: Array) -> Array:

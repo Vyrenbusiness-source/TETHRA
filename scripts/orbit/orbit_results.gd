@@ -2,9 +2,10 @@ class_name OrbitResults
 extends Control
 
 ## Eigener Endscreen fuer Orbit (nicht der Mania-ResultsScreen).
-## Links die "Orbit-Karte": jedes Ziel an seinem Winkel auf seinem Ring,
-## radial versetzt um seinen Zeitfehler (innen = frueh, aussen = spaet),
-## Farbe = Stufe. In der Mitte der Rang. Rechts Score, Acc, Serie,
+## Links der Trefferverlauf (wie der Zeitfehler-Plot in osu!): Songzeit nach
+## rechts, Zeitfehler nach unten (oben = frueh, unten = spaet), Kreis = Spur A,
+## Quadrat = Spur B, Farbe = Stufe, Kreuz am unteren Rand = Fehltreffer.
+## Ueber dem Plot der Rang. Rechts Score, Acc, Serie,
 ## Zielfehler, Stufen-Tabelle und ein Timing-Histogramm.
 ## Alles in einem _draw; Texte als Labels. Ruhig, kein Leuchten.
 
@@ -55,7 +56,7 @@ func _ready() -> void:
 	_quad.resize(4)
 
 
-## data: s (OrbitCore.stats + failed), log ([Winkel, Ring, dt, Zielfehler,
+## data: s (OrbitCore.stats + failed), log ([Taktphase in Grad, Spur, dt, Zielfehler,
 ## Stufe, Zeit] je Ziel), w50/w_max (ms), title, artist, version, is_fail,
 ## new_best, allow_retry, can_replay, is_replay, can_clip.
 func show_results(data: Dictionary) -> void:
@@ -149,7 +150,7 @@ func _build(s: Dictionary) -> void:
 	row.add_theme_constant_override("separation", 34)
 	row.add_child(_stat(tr("GENAUIGKEIT"), UiTheme.fmt_pct(float(s.get("accuracy", 0.0)) * 100.0), 34))
 	row.add_child(_stat(tr("BESTE SERIE"), "%dx" % int(s.get("max_combo", 0)), 26))
-	row.add_child(_stat(tr("ZIELFEHLER"), "%s°" % UiTheme.fmt_num(float(s.get("aim_err", 0.0)), 1), 26))
+	row.add_child(_stat(tr("ZIELFEHLER"), UiTheme.fmt_num(float(s.get("aim_err", 0.0)), 1), 26))
 	_right.add_child(row)
 
 	_right.add_child(_spacer(2))
@@ -351,65 +352,66 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _chart_center() -> Vector2:
-	return Vector2(size.x * 0.26, size.y * 0.52)
+	return Vector2(size.x * 0.26, size.y * 0.25)
 
 
-func _chart_r() -> float:
-	return minf(size.y * 0.36, size.x * 0.21)
+## Plotflaeche des Trefferverlaufs.
+func _plot_rect() -> Rect2:
+	var x0 := size.x * 0.045
+	var w := size.x * 0.43
+	var y0 := size.y * 0.40
+	return Rect2(x0, y0, w, size.y * 0.46)
 
 
 func _draw() -> void:
 	if _data.is_empty():
 		return
 	draw_rect(Rect2(Vector2.ZERO, size), Color(OrbitView.PLATE_COL, 0.97))
-	var c := _chart_center()
-	var R := _chart_r()
-	var radii: Array[float] = [R * 0.56, R]
-	var band := R * 0.13
-	var cols: Array[Color] = [OrbitView.INNER_COL, OrbitView.OUTER_COL]
-	# Timing-Band je Ring (Breite = 50er-Fenster), feine Ringlinie = 0 ms.
-	for r in 2:
-		draw_arc(c, radii[r], 0.0, TAU, 160, Color(cols[r], 0.06), band * 2.0, true)
-		draw_arc(c, radii[r], 0.0, TAU, 160, Color(cols[r], 0.5), 1.5, true)
-		draw_arc(c, radii[r] - band, 0.0, TAU, 160, Color(cols[r], 0.12), 1.0, true)
-		draw_arc(c, radii[r] + band, 0.0, TAU, 160, Color(cols[r], 0.12), 1.0, true)
-	# Teilstriche alle 45 Grad.
-	for k in 8:
-		var deg := float(k) * 45.0
-		draw_line(OrbitView.polar(c, deg, R * 0.3), OrbitView.polar(c, deg, R + band + 10.0),
-			Color(1, 1, 1, 0.05), 1.0, true)
+	var r := _plot_rect()
+	var mid := r.position.y + r.size.y * 0.5
+	var half := r.size.y * 0.5
+	draw_rect(r, Color(1, 1, 1, 0.025))
+	# CORE-Fenster, 50er-Fenster (Rand) und Nulllinie.
+	var cw := clampf(_w_max / _w50, 0.02, 1.0) * half
+	draw_rect(Rect2(r.position.x, mid - cw, r.size.x, cw * 2.0), Color(OrbitView.MAX_COL, 0.05))
+	draw_line(Vector2(r.position.x, mid), Vector2(r.end.x, mid), Color(1, 1, 1, 0.30), 1.0)
+	draw_line(Vector2(r.position.x, r.position.y), Vector2(r.end.x, r.position.y), Color(1, 1, 1, 0.08), 1.0)
+	draw_line(Vector2(r.position.x, r.end.y), Vector2(r.end.x, r.end.y), Color(1, 1, 1, 0.08), 1.0)
+	var fs := 12
+	draw_string(_font, r.position + Vector2(6, 16), tr("FRÜH"), HORIZONTAL_ALIGNMENT_LEFT, -1, fs,
+		Color(OrbitView.EARLY_COL, 0.8))
+	draw_string(_font, Vector2(r.position.x + 6, r.end.y - 8), tr("SPÄT"), HORIZONTAL_ALIGNMENT_LEFT, -1, fs,
+		Color(OrbitView.LATE_COL, 0.8))
+	if _log.is_empty():
+		return
+	var t0 := INF
+	var t1 := -INF
+	for e in _log:
+		t0 = minf(t0, float(e[5]))
+		t1 = maxf(t1, float(e[5]))
+	var span := maxf(t1 - t0, 1.0)
 	# Ziele in Spielreihenfolge einblenden.
 	var shown := int(float(_log.size()) * clampf(_t / REVEAL_S, 0.0, 1.0))
 	for i in shown:
 		var e: Array = _log[i]
 		var q := int(e[4])
 		var ring := int(e[1])
-		var deg := float(e[0])
+		var x := r.position.x + 8.0 + (float(e[5]) - t0) / span * (r.size.x - 16.0)
 		if q == 5:
-			var p := OrbitView.polar(c, deg, radii[ring])
-			var h := 4.0
+			var p := Vector2(x, r.end.y - 5.0)
+			var h := 3.5
 			draw_line(p - Vector2(h, h), p + Vector2(h, h), Color(TIER_COLS[5], 0.9), 1.5, true)
 			draw_line(p - Vector2(h, -h), p + Vector2(h, -h), Color(TIER_COLS[5], 0.9), 1.5, true)
 			continue
-		var off := clampf(float(e[2]) / _w50, -1.0, 1.0) * band
-		var p := OrbitView.polar(c, deg, radii[ring] + off)
-		var col := TIER_COLS[q]
+		var y := mid + clampf(float(e[2]) / _w50, -1.0, 1.0) * (half - 6.0)
+		var col := Color(TIER_COLS[q], 0.85)
 		if ring == 0:
-			draw_circle(p, 2.6, Color(col, 0.85), true, -1.0, true)
+			draw_circle(Vector2(x, y), 2.4, col, true, -1.0, true)
 		else:
-			var a := deg_to_rad(deg)
-			var ur := Vector2(sin(a), -cos(a)) * 3.4
-			var ut := Vector2(cos(a), sin(a)) * 3.4
-			_quad[0] = p + ur
-			_quad[1] = p + ut
-			_quad[2] = p - ur
-			_quad[3] = p - ut
-			draw_colored_polygon(_quad, Color(col, 0.85))
-	# Lesehilfe unter der Karte.
-	var hint := tr("innen = früh  ·  außen = spät")
-	var fs := 12
+			draw_rect(Rect2(x - 2.2, y - 2.2, 4.4, 4.4), col)
+	var hint := tr("Trefferverlauf  ·  Kreis = Spur A, Quadrat = Spur B")
 	var tw := _font.get_string_size(hint, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
-	draw_string(_font, Vector2(c.x - tw * 0.5, c.y + R + band + 34.0), hint,
+	draw_string(_font, Vector2(r.position.x + (r.size.x - tw) * 0.5, r.end.y + 26.0), hint,
 		HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(UiTheme.DIM, 0.8))
 
 

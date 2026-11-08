@@ -1,6 +1,6 @@
 extends SceneTree
 
-## Headless-Tests fuer das Orbit-Tutorial (Taktkreis): jeder der sechs Schritte
+## Headless-Tests fuer das Orbit-Tutorial (Bahnen): jeder der sechs Schritte
 ## ist mit simulierten Eingaben (Maus-/Tasten-Events) loesbar, Fehler nennen den
 ## Grund, Tasten kommen aus den Settings, Ueberspringen, Gesehen-Merker.
 ## Das Tutorial nutzt das Autoload Settings, darum nur per load() (keine
@@ -98,15 +98,13 @@ func _test_bot_run(tut: Control) -> void:
 	_check(not bool(tut.finished) and int(tut.step) == 6, "Nochmal startet die Probe-Runde neu")
 
 
-## Alle Noten auf dem Achtel-Raster, Winkel = Taktanteil, Zeit exakt, Drehtempo gesetzt.
+## Alle Noten auf dem Achtel-Raster, Phase = Taktanteil, Zeit exakt.
 func _on_grid(ns: Array, t0: float, bm: float) -> bool:
 	for n in ns:
 		var b: float = (n.time_ms - t0) / bm
 		if absf(b * 2.0 - roundf(b * 2.0)) > 0.001:
 			return false
 		if OrbitNote.dist_deg(n.angle_deg, fposmod(b * 90.0, 360.0)) > 0.01:
-			return false
-		if absf(n.speed - 90.0 / bm) > 0.0001:
 			return false
 	return true
 
@@ -123,18 +121,18 @@ func _test_patterns(S: GDScript) -> void:
 			_check(sorted, "Schritt %d: nach Zeit sortiert" % (s + 1))
 	var keys: Array = S.pattern(2, 0.0, 1000.0, 0, 0)
 	_check(keys.any(func(n): return n.ring == 0) and keys.any(func(n): return n.ring == 1),
-			"Ringe: innen und aussen")
-	_check(keys.all(func(n): return not n.is_arc), "Ringe: nur Taps")
+			"Spuren: A und B")
+	_check(keys.all(func(n): return not n.is_arc), "Spuren: nur Taps")
 	var acc: Array = S.pattern(3, 0.0, 1000.0, 0, 0)
 	var pairs := true
 	for i in range(0, acc.size(), 2):
 		pairs = pairs and acc[i].ring == 0 and acc[i + 1].ring == 1 \
 				and acc[i].time_ms == acc[i + 1].time_ms and acc[i].angle_deg == acc[i + 1].angle_deg
-	_check(acc.size() % 2 == 0 and pairs, "Akzent: Paare innen+aussen, gleiche Zeit und Stelle")
+	_check(acc.size() % 2 == 0 and pairs, "Akzent: Paare A+B, gleiche Zeit und Stelle")
 	var holds: Array = S.pattern(4, 0.0, 1000.0, 0, 0)
 	_check(holds.all(func(n): return n.is_arc and n.duration_ms() > 0.0), "Halte: nur Boegen")
-	_check(holds.all(func(n): return absf(n.span_deg() - n.speed * n.duration_ms()) < 0.01),
-			"Halte: Bogen folgt dem Zeiger")
+	_check(holds.all(func(n): return absf(n.span_deg() - 90.0 * n.duration_ms() / 1000.0) < 0.01),
+			"Halte: Bogen folgt dem Punkt")
 	var pv: Array = S.pattern(5, 0.0, 1000.0, 0, 0)
 	_check(pv.any(func(n): return n.time_ms < 4000.0) and pv.any(func(n): return n.time_ms >= 4000.0),
 			"Vorschau: Noten in zwei Takten")
@@ -147,7 +145,7 @@ func _test_patterns(S: GDScript) -> void:
 		kinds["outer"] = kinds["outer"] or n.ring == 1
 		if i + 1 < trial.size() and trial[i + 1].time_ms == n.time_ms and trial[i + 1].ring != n.ring:
 			kinds["acc"] = true
-	_check(kinds.values().all(func(v): return v), "Probe-Runde mischt innen, aussen, Akzent, Halte")
+	_check(kinds.values().all(func(v): return v), "Probe-Runde mischt A, B, Akzent, Halte")
 
 
 func _test_tempo_rises(S: GDScript) -> void:
@@ -158,7 +156,7 @@ func _test_tempo_rises(S: GDScript) -> void:
 	_check(up and b[b.size() - 1] > b[0], "Tempo steigt von Schritt zu Schritt")
 	_check(float(b[0]) <= 70.0, "Start langsam (%.0f BPM)" % float(b[0]))
 	for bpm in b:
-		_check(60000.0 / float(bpm) * 4.0 >= OrbitClock.MIN_BAR_MS, "BPM %.0f: Hand nicht zu schnell" % float(bpm))
+		_check(60000.0 / float(bpm) * 4.0 >= OrbitClock.MIN_BAR_MS, "BPM %.0f: Kopf nicht zu schnell" % float(bpm))
 
 
 func _key(tut: Control, code: int, down: bool) -> void:
@@ -168,20 +166,20 @@ func _key(tut: Control, code: int, down: bool) -> void:
 	tut.handle_input(ev)
 
 
-## Cursor auf Winkel deg im Abstand rho (Bildhoehen).
-func _aim_rho(tut: Control, deg: float, rho: float) -> void:
+## Cursor auf den Ort p (Bahn-Einheiten).
+func _aim_p(tut: Control, p: Vector2) -> void:
 	var ev := InputEventMouseMotion.new()
-	ev.position = OrbitView.polar(tut.view_center_global(), deg, tut._view.unit() * rho)
+	ev.position = tut._view.global_position + tut._view.to_px(p)
 	tut.handle_input(ev)
 
 
-## Cursor auf den Zeiger legen (plus Versatz in Grad).
-func _on_hand(tut: Control, off: float = 0.0) -> void:
-	_aim_rho(tut, tut.hand_deg() + off, 0.28)
+## Cursor auf den Kopf legen (plus Versatz in Bahn-Einheiten).
+func _on_hand(tut: Control, off: Vector2 = Vector2.ZERO) -> void:
+	_aim_p(tut, tut.head_pos() + off)
 
 
-## Bis cond wahr ist simulieren, der Cursor folgt dem Zeiger (plus Versatz).
-func _follow_until(tut: Control, cond: Callable, off: float = 0.0, limit: int = 4000) -> bool:
+## Bis cond wahr ist simulieren, der Cursor folgt dem Kopf (plus Versatz).
+func _follow_until(tut: Control, cond: Callable, off: Vector2 = Vector2.ZERO, limit: int = 4000) -> bool:
 	for i in limit:
 		if cond.call():
 			return true
@@ -191,7 +189,7 @@ func _follow_until(tut: Control, cond: Callable, off: float = 0.0, limit: int = 
 
 
 ## Bis auf ein halbes Bild vor Zeit t, der Cursor folgt dem Zeiger.
-func _follow_to(tut: Control, t: float, off: float = 0.0) -> void:
+func _follow_to(tut: Control, t: float, off: Vector2 = Vector2.ZERO) -> void:
 	_follow_until(tut, func(): return tut.t_ms >= t - FRAME * 0.5, off)
 	_on_hand(tut, off)
 
@@ -219,21 +217,21 @@ func _test_bar_step(tut: Control) -> void:
 
 func _test_aim_step(tut: Control) -> void:
 	tut.enter_step(1)
-	# Cursor bleibt stehen, der Zeiger laeuft weg: nie lange genug auf dem Zeiger.
-	_aim_rho(tut, 180.0, 0.28)
+	# Cursor bleibt stehen, der Kopf laeuft weg: nie lange genug auf dem Kopf.
+	_aim_p(tut, Vector2(0.0, 0.9))
 	_run_until(tut, func(): return tut.t_ms >= tut._t0 + tut._bar_ms * 2.0)
 	_check(int(tut.success) == 0, "Zielen: stehender Cursor zaehlt nicht")
-	# Neben dem Zeiger mitgefuehrt (60 Grad Versatz) zaehlt auch nicht.
+	# Neben dem Kopf mitgefuehrt (0,6 Bahn-Einheiten Versatz) zaehlt auch nicht.
 	var until: float = tut.t_ms + 5000.0
-	_follow_until(tut, func(): return tut.t_ms >= until, 60.0)
-	_check(int(tut.success) == 0, "Zielen: Versatz von 60 Grad zaehlt nicht")
+	_follow_until(tut, func(): return tut.t_ms >= until, Vector2(0.0, 0.6))
+	_check(int(tut.success) == 0, "Zielen: Versatz von 0,6 zaehlt nicht")
 	# Auf dem Zeiger mitgefuehrt: Erfolg.
 	_follow_until(tut, func(): return int(tut.success) >= 1)
-	_check(int(tut.success) == 1, "Zielen: Cursor auf dem Zeiger zaehlt")
+	_check(int(tut.success) == 1, "Zielen: Cursor auf dem Kopf zaehlt")
 	# Abbruch nach dem Mitfuehren nennt den Grund.
 	tut.enter_step(1)
 	_follow_until(tut, func(): return tut.aim_progress() > 0.3)
-	_aim_rho(tut, tut.hand_deg() + 120.0, 0.28)
+	_on_hand(tut, Vector2(1.0, 0.0))
 	tut.advance(FRAME)
 	_check(str(tut._feedback.text) != "", "Zielen: Hinweis nach Abbruch")
 
@@ -245,9 +243,9 @@ func _test_keys_from_settings(tut: Control) -> void:
 	tut.bot = false
 	tut.enter_step(2)
 	_check(str(tut._body_lbl.text).contains("Q"), "Text nennt die Taste aus den Settings")
-	_check(str(tut.ring_tag(0)).contains("Q"), "Ringmarke zeigt die Belegung")
+	_check(str(tut.ring_tag(0)).contains("Q"), "Spurmarke zeigt die Belegung")
 	var n: OrbitNote = tut.notes[0]
-	_check(n.ring == 0, "erste Note innen")
+	_check(n.ring == 0, "erste Note Spur A")
 	_follow_to(tut, n.time_ms)
 	_key(tut, KEY_Z, true)
 	_key(tut, KEY_Z, false)
@@ -255,44 +253,44 @@ func _test_keys_from_settings(tut: Control) -> void:
 	_key(tut, KEY_Q, true)
 	_key(tut, KEY_Q, false)
 	_check(int(tut.success) == 1, "Taste Q aus den Settings trifft")
-	# Daneben gezielt: Cursor 90 Grad vom Zeiger weg.
+	# Daneben gezielt: Cursor 0,7 vom Kopf weg.
 	var n2: OrbitNote = tut.notes[1]
 	_follow_to(tut, n2.time_ms)
-	_on_hand(tut, 90.0)
+	_on_hand(tut, Vector2(0.7, 0.0))
 	_key(tut, KEY_Q, true)
 	_key(tut, KEY_Q, false)
-	_check(int(tut.success) == 1, "neben dem Zeiger zaehlt nicht")
-	_check(str(tut._feedback.text) == tut.tr("Neben dem Zeiger: leg den Cursor auf den Zeiger."), "Grund: neben dem Zeiger")
-	# Falsche Taste (aussen, Note innen) zaehlt nicht, Grund: anderer Ring.
+	_check(int(tut.success) == 1, "neben dem Kopf zaehlt nicht")
+	_check(str(tut._feedback.text) == tut.tr("Neben dem Punkt: leg den Cursor auf den Punkt."), "Grund: neben dem Punkt")
+	# Falsche Taste (B, Note A) zaehlt nicht, Grund: andere Spur.
 	_on_hand(tut)
 	_key(tut, st.orbit_key_outer, true)
 	_key(tut, st.orbit_key_outer, false)
-	_check(int(tut.success) == 1, "falscher Ring zaehlt nicht")
-	_check(str(tut._feedback.text) == tut.tr("Anderer Ring: die Note liegt auf der anderen Taste."), "Grund: anderer Ring")
-	# Der Cursor-Abstand entscheidet nicht: weit draussen gezeigt, Taste A trifft innen.
-	_aim_rho(tut, tut.hand_deg(), 0.4)
+	_check(int(tut.success) == 1, "falsche Spur zaehlt nicht")
+	_check(str(tut._feedback.text) == tut.tr("Andere Spur: die Note liegt auf der anderen Taste."), "Grund: andere Spur")
+	# Knapp neben dem Kopf (0,25, in der Toleranz) trifft noch.
+	_on_hand(tut, Vector2(0.25, 0.0))
 	_key(tut, KEY_Q, true)
 	_key(tut, KEY_Q, false)
-	_check(int(tut.success) == 2, "Taste entscheidet den Ring, nicht der Abstand")
+	_check(int(tut.success) == 2, "knapp neben dem Kopf trifft noch")
 	# Zu frueh: lange vor der Note gedrueckt.
 	tut.enter_step(2)
 	_on_hand(tut)
 	_key(tut, KEY_Q, true)
 	_key(tut, KEY_Q, false)
 	_check(int(tut.success) == 0, "zu frueh zaehlt nicht")
-	# Maus rechts = Taste B trifft die Note auf dem aeusseren Ring.
+	# Maus rechts = Taste B trifft die Note auf Spur B.
 	var n3: OrbitNote = tut.notes[2]
-	_check(n3.ring == 1, "dritte Note aussen")
+	_check(n3.ring == 1, "dritte Note Spur B")
 	_follow_to(tut, n3.time_ms)
 	var mb := InputEventMouseButton.new()
 	mb.button_index = MOUSE_BUTTON_RIGHT
-	mb.position = OrbitView.polar(tut.view_center_global(), tut.hand_deg(), tut._view.unit() * 0.28)
+	mb.position = tut._view.global_position + tut._view.to_px(tut.head_pos())
 	mb.pressed = true
 	tut.handle_input(mb)
 	var mb_up: InputEventMouseButton = mb.duplicate()
 	mb_up.pressed = false
 	tut.handle_input(mb_up)
-	_check(int(tut.success) == 1, "Maus rechts trifft den aeusseren Ring")
+	_check(int(tut.success) == 1, "Maus rechts trifft Spur B")
 	st.orbit_key_inner = old_in
 
 
@@ -327,7 +325,7 @@ func _test_hold_needs_hold(tut: Control) -> void:
 	_follow_until(tut, func(): return tut.t_ms > n.end_ms + 400.0)
 	_check(int(tut.success) == 0, "Halte kurz antippen zaehlt nicht")
 	_check(str(tut._feedback.text) != "", "Hinweis nach verlorener Halte")
-	# Gehalten und dem Zeiger gefolgt: zaehlt.
+	# Gehalten und dem Punkt gefolgt: zaehlt.
 	tut.enter_step(4)
 	var m: OrbitNote = tut.notes[0]
 	_follow_to(tut, m.time_ms)
@@ -335,14 +333,14 @@ func _test_hold_needs_hold(tut: Control) -> void:
 	_follow_until(tut, func(): return tut.t_ms >= m.end_ms + 5.0)
 	_key(tut, k, false)
 	_check(int(tut.success) == 1, "Halte gehalten und gefolgt zaehlt")
-	# Neben dem Zeiger gehalten: faellt.
+	# Neben dem Punkt gehalten: faellt.
 	tut.enter_step(4)
 	var d: OrbitNote = tut.notes[0]
 	_follow_to(tut, d.time_ms)
 	_key(tut, k, true)
-	_follow_until(tut, func(): return tut.t_ms >= d.end_ms + 5.0, 90.0)
+	_follow_until(tut, func(): return tut.t_ms >= d.end_ms + 5.0, Vector2(0.0, 0.9))
 	_key(tut, k, false)
-	_check(int(tut.success) == 0, "Halte neben dem Zeiger faellt")
+	_check(int(tut.success) == 0, "Halte neben dem Punkt faellt")
 
 
 func _test_preview(tut: Control) -> void:
@@ -355,7 +353,7 @@ func _test_preview(tut: Control) -> void:
 	_key(tut, k, true)
 	_key(tut, k, false)
 	_check(int(tut.success) == 0, "Vorschau: Treffer im ersten Takt zaehlt noch nicht")
-	_check(tut.first_preview() != null, "Vorschau: blasse Note des naechsten Takts vorhanden")
+	_check(tut.first_preview() != null, "Vorschau: dunkle Note des naechsten Takts vorhanden")
 
 
 func _test_skip(tut: Control) -> void:
