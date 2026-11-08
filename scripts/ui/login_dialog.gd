@@ -24,7 +24,7 @@ var osz_provider := Callable()
 var _user: LineEdit
 var _pass: LineEdit
 var _msg: Label
-var _never: CheckBox
+var _never: CheckButton
 var _login_btn: Button
 var _register_btn: Button
 var _later_btn: Button
@@ -178,7 +178,7 @@ func _build() -> void:
 	var foot := HBoxContainer.new()
 	foot.add_theme_constant_override("separation", 8)
 	vb.add_child(foot)
-	_never = CheckBox.new()
+	_never = CheckButton.new()
 	_never.text = tr("Nicht mehr fragen")
 	_never.focus_mode = Control.FOCUS_NONE
 	_never.add_theme_font_size_override("font_size", 13)
