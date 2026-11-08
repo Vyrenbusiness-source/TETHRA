@@ -214,6 +214,9 @@ static func submit(osz_file: String, version: String, result: Dictionary, mode: 
 			"mod_mult": float(result.get("mod_mult", 1.0)),
 			"date": Time.get_datetime_string_from_system(),
 		}
+		# Orbit: Orbit-Sterne des Laufs fuers Orbit-Rating (fehlt: Standard).
+		if mode_name(mode) == MODE_ORBIT and float(result.get("stars", -1.0)) >= 0.0:
+			entry["stars"] = float(result.stars)
 		cfg.set_value(_sec("scores", mode), key, _tag(entry, result, mode))
 	var plays := int(cfg.get_value(_sec("plays", mode), key, 0)) + 1
 	cfg.set_value(_sec("plays", mode), key, plays)
@@ -407,18 +410,49 @@ static func total_plays(mode: String = "") -> int:
 	return total
 
 
-## Orbit-Wertung eines Bestwerts (einfach, ohne Sterne): 100 * acc^4,
-## Fail/leer 0. Ungewertete zaehlen nicht.
+## Orbit-Rating eines Bestwerts (docs/modes/orbit.md "Orbit-Rating"):
+## ORBIT_K * Sterne^2 * Genauigkeit^4. Sterne = Orbit-Sterne des Laufs
+## (Feld "stars"); fehlen sie (alte Laeufe), zaehlen ORBIT_STARS_DEFAULT
+## Sterne, dann ist das genau 100 * acc^4. Fail/leer/ungewertet: 0.
+const ORBIT_K := 4.0
+const ORBIT_STARS_DEFAULT := 5.0
+const ORBIT_STARS_MAX := 15.0
+const ORBIT_WEIGHT := 0.95
+
 static func orbit_points(e: Dictionary) -> float:
 	if e.is_empty() or bool(e.get("failed", false)) or bool(e.get("unranked", false)):
 		return 0.0
-	return 100.0 * pow(clampf(float(e.get("accuracy", 0.0)), 0.0, 1.0), 4.0)
+	var st := float(e.get("stars", -1.0))
+	if st < 0.0:
+		st = ORBIT_STARS_DEFAULT
+	st = clampf(st, 0.0, ORBIT_STARS_MAX)
+	return ORBIT_K * st * st * pow(clampf(float(e.get("accuracy", 0.0)), 0.0, 1.0), 4.0)
+
+
+## Orbit-Rating aus Punktwerten: absteigend sortiert, Platz i (ab 0)
+## zaehlt pts[i] * 0.95^i (wie pp).
+static func orbit_rating_of(points: Array) -> float:
+	var pts: Array[float] = []
+	for p in points:
+		if float(p) > 0.0:
+			pts.append(float(p))
+	pts.sort()
+	pts.reverse()
+	var total := 0.0
+	for i in pts.size():
+		total += pts[i] * pow(ORBIT_WEIGHT, i)
+	return total
+
+
+## Orbit-Rating des Profils (Bestwerte aus Sektion "orbit_scores").
+static func orbit_rating() -> float:
+	return float(mode_stats(MODE_ORBIT).rating)
 
 
 ## Kennzahlen eines Modus fuer das Profil:
 ## {plays, maps, avg_acc (0..1, ueber alle nicht gescheiterten Plays im
 ## Verlauf), best_score, rating}. rating: Mania = profile_pp(), sonst
-## Orbit-Wertung (orbit_points der Bestwerte, gewichtet 0.95^i).
+## Orbit-Rating (orbit_points der Bestwerte, orbit_rating_of).
 static func mode_stats(mode: String = "") -> Dictionary:
 	var out := { "plays": total_plays(mode), "maps": 0, "avg_acc": 0.0,
 		"best_score": 0, "rating": 0.0 }
@@ -448,12 +482,7 @@ static func mode_stats(mode: String = "") -> Dictionary:
 	if mode == "" or mode == MODE_MANIA:
 		out.rating = profile_pp()
 	else:
-		pts.sort()
-		pts.reverse()
-		var total := 0.0
-		for i in pts.size():
-			total += pts[i] * pow(0.95, i)
-		out.rating = total
+		out.rating = orbit_rating_of(pts)
 	return out
 
 
