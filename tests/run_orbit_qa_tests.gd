@@ -324,7 +324,7 @@ func _human(ns: Array[OrbitNote], bm: Beatmap, vmax: float, sig_t: float, sig_a:
 			elif held[n.ring] == i:
 				c.key_up(n.ring, te)
 				held[n.ring] = -1
-		c.cursor_moved(cur, _rho(_cur_ring), t1)
+		c.cursor_moved(cur, _rho(ns[mini(nxt, n_ns - 1)].ring), t1)
 		c.update(t1)
 		t = t1
 	c.update(end_t + 5000.0)
@@ -362,7 +362,7 @@ func _cause(ns: Array[OrbitNote], prev: Array, i: int, res: Dictionary, vmax: fl
 		cause = "sprung"
 	elif n.is_arc:
 		cause = "bogen_einstieg"
-	elif gap < OrbitConverter.STREAM_GAP_MS:
+	elif gap < OrbitConverter.SHORT_GAP_MS:
 		cause = "dichte"
 	return {"cause": cause, "gap": gap, "deg": d, "need": need}
 
@@ -762,3 +762,8 @@ func _overlap_at(v: OrbitView, ns: Array[OrbitNote], t: float) -> float:
 			if pa.distance_to(pb) < v.draw_radius(idx[a], t) + v.draw_radius(idx[b], t):
 				s += 1.0
 	return s
+
+
+## Cursor-Abstand, der den Ring r waehlt.
+func _rho(ring: int) -> float:
+	return OrbitCore.R_OUTER_K if ring == 1 else OrbitCore.R_INNER_K

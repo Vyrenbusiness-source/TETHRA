@@ -129,6 +129,7 @@ func _live(ns: Array[OrbitNote], evs: Array, seed: int, mods: Dictionary = {}) -
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed
 	var cursor := 0.0
+	var last_ring := 0
 	var frame_t := -500.0
 	var k := 0
 	var end_t: float = ns.back().end_ms + 1500.0
@@ -140,8 +141,10 @@ func _live(ns: Array[OrbitNote], evs: Array, seed: int, mods: Dictionary = {}) -
 			match str(e[1]):
 				"m":
 					cursor = float(e[3])
-					c.cursor_moved(cursor, _rho(_cur_ring), float(e[0]))
+					var cr := maxi(c.active_arc(1), -1)
+					c.cursor_moved(cursor, _rho(1 if cr >= 0 else (0 if c.active_arc(0) >= 0 else last_ring)), float(e[0]))
 				"d":
+					last_ring = int(e[2])
 					c.key_down(int(e[2]), float(e[0]), float(e[3]), _rho(int(e[2])))
 				"u":
 					c.key_up(int(e[2]), float(e[0]))
@@ -328,3 +331,8 @@ func _test_orbit_mods() -> void:
 	var wrong := _replay(ns, pr.replay_log, 1000.0 / 60.0, {})
 	_check(not _same_stats(pr.stats(), (wrong[0] as OrbitCore).stats()) or pr.n_miss == plain.n_miss,
 		"PR-Lauf ohne PR abgespielt ist anders")
+
+
+## Cursor-Abstand, der den Ring r waehlt.
+func _rho(ring: int) -> float:
+	return OrbitCore.R_OUTER_K if ring == 1 else OrbitCore.R_INNER_K

@@ -352,7 +352,7 @@ func _arc_notes() -> Array[OrbitNote]:
 func _follow(c: OrbitCore, n: OrbitNote, from: float, to: float, offset: float = 0.0) -> void:
 	var t := from
 	while t <= to:
-		c.cursor_moved(n.angle_at(t) + offset, _rho(_cur_ring), t)
+		c.cursor_moved(n.angle_at(t) + offset, _rho(n.ring), t)
 		c.update(t)
 		t += 20.0
 
@@ -405,7 +405,7 @@ func _test_arc_out() -> void:
 	var n: OrbitNote = c2.notes[0]
 	c2.key_down(1, 1000.0, 0.0, _rho(1))
 	_follow(c2, n, 1000.0, 1300.0)
-	c2.cursor_moved(n.angle_at(1300.0) + 40.0, _rho(_cur_ring), 1300.0)
+	c2.cursor_moved(n.angle_at(1300.0) + 40.0, _rho(n.ring), 1300.0)
 	c2.update(1400.0)
 	_ok(c2.arc_out_ms(1, 1400.0) > 50.0, "arc_out_ms zaehlt die Zeit ausserhalb")
 	_follow(c2, n, 1420.0, 2000.0)
@@ -565,7 +565,7 @@ func _autoplay_cursor(c: OrbitCore, ns: Array[OrbitNote], t: float) -> void:
 	for r in OrbitCore.RINGS:
 		var h := c.active_arc(r)
 		if h >= 0:
-			c.cursor_moved(ns[h].angle_at(t), _rho(_cur_ring), t)
+			c.cursor_moved(ns[h].angle_at(t), _rho(ns[h].ring), t)
 			return
 
 
@@ -609,7 +609,7 @@ func _bot_run(ns: Array[OrbitNote], od: float, hp: float, plan: Array, no_fail: 
 		for r in 2:
 			var h := c.active_arc(r)
 			if h >= 0:
-				c.cursor_moved(ns[h].angle_at(t) + float(plan[h][1]), _rho(_cur_ring), t)
+				c.cursor_moved(ns[h].angle_at(t) + float(plan[h][1]), _rho(ns[h].ring), t)
 				break
 		c.update(t)
 		t += 16.0
@@ -1075,3 +1075,8 @@ func _test_stars_cache() -> void:
 	_ok(absf(SS.orbit_stars_cached(key, path) - st) < 0.0001, "Cache liefert gleiche Sterne (%.3f)" % st)
 	_ok(SS.orbit_stars_cached("v1|test.osz|123|Easy", path) < 0.0, "andere Version: kein Treffer")
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+
+
+## Cursor-Abstand, der den Ring r waehlt.
+func _rho(ring: int) -> float:
+	return OrbitCore.R_OUTER_K if ring == 1 else OrbitCore.R_INNER_K
