@@ -16,12 +16,12 @@ const EXPECTED := {
 		"Konstante Geschwindigkeit"],
 	"look2d": ["Aktiver Skin", "Hintergrund", "Spielfeld abdunkeln", "Hintergrund-Unschärfe", "Skin-Werte nutzen",
 		"Judgement-Position", "Kombo-Position", "Tasten unter den Noten", "Trefferlinie"],
-	"orbit": ["Orbit-Tasten (beide treffen)", "Scroll Speed", "Winkel-Hilfslinien", "Hintergrund", "Welt"],
+	"orbit": ["Orbit-Tasten: innen | außen", "Scroll Speed", "Takt-Raster", "Hintergrund", "Welt"],
 	"notes": ["Notenfarben"],
 	"audio": ["Lautstärke", "Klarheit", "Bass", "Treffer-Sounds", "Hitsound", "Treffer-Lautstärke",
 		"Audio-Offset", "Offset-Assistent"],
 	"gfx": ["Qualität", "FPS-Limit", "Vollbild", "Spur-Leuchten", "Sicherer Grafikmodus"],
-	"keys": ["Tasten 1–4", "Orbit-Tasten (beide treffen)"],
+	"keys": ["Tasten 1–4", "Orbit-Tasten: innen | außen"],
 	"profile": ["Name", "Spielsprache"],
 }
 

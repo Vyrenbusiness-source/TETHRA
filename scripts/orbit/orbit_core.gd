@@ -1,12 +1,14 @@
 class_name OrbitCore
 extends RefCounted
 
-## Orbit-Wertung: Ziele auf zwei Ringen um die Mitte. Der Cursor-WINKEL
-## waehlt die Richtung, die Taste den Ring (0 = innen, 1 = aussen). Ein
-## Treffer zaehlt nur, wenn Zeitfenster UND Winkel (+-ANGLE_TOL_DEG) stimmen.
-## Bogen: Kopf wie ein Tap, danach Taste halten und der wandernden Spitze
-## folgen. Zu frueh loslassen oder laenger als ARC_OUT_MS ausserhalb der
-## Toleranz = Miss (DROP), wie Mania-Holds.
+## Orbit-Wertung (Taktkreis): eine Hand dreht pro Takt einmal um die Mitte,
+## Ziele sitzen auf zwei Ringen an ihrer Taktposition. Die TASTE waehlt den
+## Ring (0 = innen = Taste A, 1 = aussen = Taste B), der Cursor muss beim Druck
+## auf der HAND liegen (Winkel, +-ANGLE_TOL_DEG; Radius egal ausser in der
+## Totzone). Ein Treffer zaehlt nur, wenn Zeitfenster UND Zielen stimmen.
+## Bogen (Halte): Kopf wie ein Tap, danach Taste halten und die Hand mit dem
+## Cursor verfolgen. Zu frueh loslassen oder laenger als ARC_OUT_MS neben der
+## Hand = Miss (DROP), wie Mania-Holds.
 ##
 ## Zeitfenster, Qualitaeten, Score, Acc, Grade, HP und stats() kommen aus
 ## ManiaCore: ein internes ManiaCore-Objekt (_tally) zaehlt alles, damit die
@@ -17,10 +19,10 @@ signal note_spawned(index: int)
 signal note_judged(index: int, result: Dictionary)
 signal arc_started(index: int, quality: int)
 signal ring_pressed(ring: int, hit: bool)
-## Druck ohne Treffer: Ort (Winkel, Radius in Bildhoehen), gewaehlter Ring und
-## Grund: "ANGLE" (Ziel im Fenster, Winkel daneben), "RING" (Ziel im Fenster,
-## aber auf dem anderen Ring), "EARLY" (Ziel noch zu weit weg, frisst nichts),
-## "NONE" (nichts in der Naehe).
+## Druck ohne Treffer: Ort (Winkel, Radius in Bildhoehen), Ring der Taste und
+## Grund: "ANGLE" (Ziel im Fenster, Cursor neben der Hand), "DEAD" (Cursor in
+## der Totzone), "RING" (Ziel im Fenster, aber auf dem anderen Ring = andere
+## Taste), "EARLY" (Ziel noch zu weit weg, frisst nichts), "NONE".
 signal press_missed(deg: float, rho: float, ring: int, reason: String)
 signal hp_changed(hp: float)
 signal finished(stats: Dictionary)
@@ -30,9 +32,9 @@ const Quality := ManiaCore.Quality
 const RINGS := 2
 ## Winkel-Toleranz fuer Taps, Bogen-Koepfe und das Folgen eines Bogens.
 const ANGLE_TOL_DEG := 22.0
-## Ringwahl durch Zeigen: Radien der Ringe in Bildhoehen (OrbitView nutzt
-## dieselben Werte) und die Grenze genau dazwischen. Hysterese: der Zeiger
-## muss RING_HYST_K ueber/unter die Grenze, bevor der Ring wechselt.
+## Radien der Ringe in Bildhoehen (OrbitView nutzt dieselben Werte). Die
+## Grenze dazwischen und die Hysterese gelten nur noch fuer die Anzeige des
+## Cursor-Rings (kein Einfluss auf die Wertung).
 const R_INNER_K := 0.215
 const R_OUTER_K := 0.37
 const RING_SPLIT_K := (R_INNER_K + R_OUTER_K) * 0.5
@@ -41,6 +43,8 @@ const RING_HYST_K := 0.012
 const ARC_OUT_MS := 150.0
 ## Zielmitte: nur so nah am Ziel (Grad) gibt es die beste Stufe CORE.
 const CENTER_DEG := 9.0
+## Totzone um die Mitte (Bildhoehen): ohne verlaessliche Richtung kein Treffer.
+const DEAD_K := 0.045
 
 ## --- Orbit-Mods (Schluessel im Mod-Dictionary, neben NF/SV aus ManiaCore) ---
 ## HD Hidden: Ziele verblassen auf den letzten ~40 % des Anflugs (OrbitView).
@@ -85,9 +89,10 @@ const REC_MIN_DEG := 0.5
 const REC_GAP_MS := 8.0
 ## Neuer Radius nur bei Aenderung > REC_MIN_RHO (Tausendstel Bildhoehe).
 const REC_MIN_RHO := 3
-## Replay-Format: 2 = Ring durch Zeigen (Events mit Radius). Replays ohne
-## meta.orbit_rules (Format 1: Taste = Ring) sind "alte Version".
-const REPLAY_RULES := 2
+## Replay-Format: 3 = Taktkreis (Taste = Ring, Zielen auf die Hand). Replays
+## mit kleinerem meta.orbit_rules (1: Taste = Ring, 2: Ring durch Zeigen) sind
+## "aeltere Version".
+const REPLAY_RULES := 3
 ## Replay-Event-Codes: [t_ms, EV_CURSOR, a, r] / [t_ms, EV_DOWN + taste, a, r] /
 ## [t_ms, EV_UP + taste]; t in ganzen ms, a = Winkel in 0.1 Grad (0..3599),
 ## r = Cursor-Abstand zur Mitte in Tausendstel Bildhoehe. Taste 0/1 = beide
@@ -95,6 +100,9 @@ const REPLAY_RULES := 2
 const EV_CURSOR := 0
 const EV_DOWN := 1
 const EV_UP := 3
+## Regel-Marke am Anfang jedes Replays: [0, EV_RULES, REPLAY_RULES]. Fehlt sie,
+## stammt das Replay aus einer aelteren Orbit-Version.
+const EV_RULES := 9
 
 var notes: Array[OrbitNote] = []
 var preempt: float = ManiaCore.BASE_PREEMPT
@@ -293,6 +301,8 @@ static func replay_mods(data: Dictionary) -> Dictionary:
 func set_replay_mode(record: bool) -> void:
 	deterministic = true
 	recording = record
+	if record:
+		replay_log = [[0, EV_RULES, REPLAY_RULES]]
 
 
 ## Scroll-Faktor waehrend des Spiels aendern (nur Anflugzeit).
@@ -366,8 +376,8 @@ func cursor_rho() -> float:
 	return _rho
 
 
-## Taste (0 oder 1, beide gleichwertig) gedrueckt; Cursor bei cursor_deg/rho.
-## Getroffen wird ein Ziel auf dem Ring, den der Cursor-Abstand waehlt.
+## Taste gedrueckt (0 = innen, 1 = aussen); Cursor bei cursor_deg/rho.
+## Getroffen wird ein Ziel auf dem Ring der Taste, wenn der Cursor auf der Hand liegt.
 func key_down(key: int, t_ms: float, cursor_deg: float, rho: float) -> void:
 	if key < 0 or key >= RINGS or notes.is_empty():
 		return
@@ -381,7 +391,7 @@ func key_down(key: int, t_ms: float, cursor_deg: float, rho: float) -> void:
 func _do_key_down(key: int, t_ms: float, cursor_deg: float, rho: float) -> void:
 	_do_cursor(cursor_deg, rho, t_ms)
 	_held[key] = true
-	var ring := _sel_ring
+	var ring := key
 	for r in RINGS:
 		_expire_ring(r, t_ms)
 	var lane: Array = _ring_notes[ring]
@@ -402,9 +412,9 @@ func _do_key_down(key: int, t_ms: float, cursor_deg: float, rho: float) -> void:
 			break
 		if d > w50:
 			continue
-		var e := OrbitNote.dist_deg(_cursor, n.angle_at(t_ms))
-		if e > angle_tol:
-			reason = "ANGLE"
+		var e := OrbitNote.dist_deg(_cursor, n.pointer_at(t_ms))
+		if e > angle_tol or _rho < DEAD_K:
+			reason = "DEAD" if _rho < DEAD_K else "ANGLE"
 			continue
 		idx = i
 		dt = d
@@ -454,7 +464,7 @@ func _target_waiting(ring: int, t_ms: float) -> bool:
 	return false
 
 
-## Taste losgelassen. Ein Bogen laeuft, solange IRGENDEINE Taste unten ist.
+## Taste losgelassen. Ein Bogen auf dem Ring der Taste endet damit.
 func key_up(key: int, t_ms: float) -> void:
 	if key < 0 or key >= RINGS or notes.is_empty():
 		return
@@ -468,15 +478,12 @@ func key_up(key: int, t_ms: float) -> void:
 func _do_key_up(key: int, t_ms: float) -> void:
 	_check_arcs(t_ms)
 	_held[key] = false
-	if _held[0] or _held[1]:
+	var h: int = _active_arc[key]
+	if h < 0:
 		return
-	for r in RINGS:
-		var h: int = _active_arc[r]
-		if h < 0:
-			continue
-		# Kurz vor dem Ende loslassen ist ok (1.5x 50er-Fenster, wie Mania).
-		var ok := t_ms >= notes[h].end_ms - w50 * 1.5
-		_finish_arc(r, ok, "" if ok else "RELEASE")
+	# Kurz vor dem Ende loslassen ist ok (1.5x 50er-Fenster, wie Mania).
+	var ok := t_ms >= notes[h].end_ms - w50 * 1.5
+	_finish_arc(key, ok, "" if ok else "RELEASE")
 
 
 func accuracy() -> float:
@@ -573,8 +580,8 @@ func _check_arcs(t_ms: float) -> void:
 			continue
 		var n := notes[h]
 		var tc := minf(t_ms, n.end_ms)
-		# Draussen: Winkel neben der Spitze ODER der Cursor auf dem anderen Ring.
-		if OrbitNote.dist_deg(_cursor, n.angle_at(tc)) > angle_tol or _sel_ring != r:
+		# Draussen: Cursor neben der Hand (oder in der Totzone).
+		if OrbitNote.dist_deg(_cursor, n.pointer_at(tc)) > angle_tol or _rho < DEAD_K:
 			if _out_since[r] == INF:
 				_out_since[r] = _exit_time(n, r, tc)
 			if tc - _out_since[r] > ARC_OUT_MS:
@@ -591,10 +598,10 @@ func _check_arcs(t_ms: float) -> void:
 ## hat (zwischen letzter Pruefung und tc; die Spitze laeuft linear).
 func _exit_time(n: OrbitNote, r: int, tc: float) -> float:
 	var t0 := clampf(_last_check[r], n.time_ms, tc)
-	var d0 := OrbitNote.delta_deg(_cursor, n.angle_at(t0))
+	var d0 := OrbitNote.delta_deg(_cursor, n.pointer_at(t0))
 	if absf(d0) > angle_tol or n.duration_ms() <= 0.0:
 		return t0
-	var v := n.span_deg() / n.duration_ms()
+	var v := n.speed if n.speed != 0.0 else n.span_deg() / n.duration_ms()
 	if v == 0.0:
 		return tc
 	var edge := angle_tol if v > 0.0 else -angle_tol
@@ -768,7 +775,7 @@ static func count_events(events: Array) -> Dictionary:
 	var c := 0
 	var k := 0
 	for e in events:
-		if e is Array and e.size() >= 2:
+		if e is Array and e.size() >= 2 and int(e[1]) != EV_RULES:
 			if int(e[1]) == EV_CURSOR:
 				c += 1
 			else:

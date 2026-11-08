@@ -11,8 +11,6 @@ Maus links,Maus links,Left mouse
 Maus rechts,Maus rechts,Right mouse
 Ring innen | außen,Ring innen | außen,Ring inner | outer
 "Zusätzlich immer: Maus links = innen, Maus rechts = außen. Knopf anklicken, dann Taste drücken (Esc bricht ab)","Zusätzlich immer: Maus links = innen, Maus rechts = außen. Knopf anklicken, dann Taste drücken (Esc bricht ab)","Always also: left mouse = inner, right mouse = outer. Click the button, then press a key (Esc cancels)"
-Winkel-Hilfslinien,Winkel-Hilfslinien,Angle guides
-Feine Linien alle 45° als Orientierung,Feine Linien alle 45° als Orientierung,Fine lines every 45° for orientation
 Clips gibt es nur in Mania 4K,Clips gibt es nur in Mania 4K,Clips are only available in Mania 4K
 CORE,KERN,CORE
 SHARP,SCHARF,SHARP
@@ -71,16 +69,22 @@ Orbit-Rating,Orbit-Rating,Orbit rating
 AUSSEN,AUSSEN,OUTER
 Anderer Ring: zeig näher an die Mitte oder weiter hinaus.,Anderer Ring: zeig näher an die Mitte oder weiter hinaus.,Other ring: point closer to the centre or further out.
 "Außen kommen die Ziele von außen herein. Zeig weit draußen auf das Ziel und drück, wenn es den äußeren Ring erreicht.","Außen kommen die Ziele von außen herein. Zeig weit draußen auf das Ziel und drück, wenn es den äußeren Ring erreicht.",Outer targets come in from outside. Point far out at the target and press when it reaches the outer ring.
-Außen: weit draußen zeigen,Außen: weit draußen zeigen,Outer: point far out
-Beide Tasten treffen: %s · %s oder Maus,Beide Tasten treffen: %s · %s oder Maus,Both keys hit: %s · %s or mouse
 "Beweg Maus oder Stift. Der Winkel zur Mitte ist die Richtung, der Abstand wählt den Ring: nah an der Mitte innen, weit draußen außen. Zeig auf die markierte Stelle und bleib kurz dort.","Beweg Maus oder Stift. Der Winkel zur Mitte ist die Richtung, der Abstand wählt den Ring: nah an der Mitte innen, weit draußen außen. Zeig auf die markierte Stelle und bleib kurz dort.","Move the mouse or pen. The angle to the centre is the direction, the distance picks the ring: close to the centre for inner, far out for outer. Point at the marked spot and stay there for a moment."
 "Das nächste Ziel liegt auf dem anderen Ring. Zeig vorher in die Tiefe, nah an die Mitte oder weit hinaus, und drück dann.","Das nächste Ziel liegt auf dem anderen Ring. Zeig vorher in die Tiefe, nah an die Mitte oder weit hinaus, und drück dann.","The next target is on the other ring. Point in or out first, close to the centre or far out, then press."
 Dieses Replay stammt aus einer älteren Orbit-Version und lässt sich nicht mehr abspielen.,Dieses Replay stammt aus einer älteren Orbit-Version und lässt sich nicht mehr abspielen.,This replay comes from an older Orbit version and can no longer be played.
 "Ein Bogen beginnt wie ein Ziel. Halte eine Taste gedrückt, fahr der Spitze nach und bleib dabei auf dem Ring.","Ein Bogen beginnt wie ein Ziel. Halte eine Taste gedrückt, fahr der Spitze nach und bleib dabei auf dem Ring.","An arc starts like a target. Hold a key, follow the tip and stay on the ring."
 "Halte die Taste bis zum Ende, folge der Spitze und bleib auf dem Ring.","Halte die Taste bis zum Ende, folge der Spitze und bleib auf dem Ring.","Hold the key to the end, follow the tip and stay on the ring."
 INNEN,INNEN,INNER
-Innen: nah an der Mitte zeigen,Innen: nah an der Mitte zeigen,Inner: point close to the centre
 Zeig genau auf das Ziel.,Zeig genau auf das Ziel.,Point right at the target.
 "Ziele wandern von der Mitte nach außen. Zeig nah an der Mitte auf das Ziel und drück eine Taste, wenn es den inneren Ring erreicht. Beide Tasten (%s und %s, auch Maus links und rechts) treffen: wechsle sie ab.","Ziele wandern von der Mitte nach außen. Zeig nah an der Mitte auf das Ziel und drück eine Taste, wenn es den inneren Ring erreicht. Beide Tasten (%s und %s, auch Maus links und rechts) treffen: wechsle sie ab.","Targets move from the centre outwards. Point close to the centre at the target and press a key when it reaches the inner ring. Both keys (%s and %s, also left and right mouse) hit: alternate them."
 "Zu früh: warte, bis das Ziel den Ring erreicht.","Zu früh: warte, bis das Ziel den Ring erreicht.",Too early: wait until the target reaches the ring.
-Orbit-Tasten (beide treffen),Orbit-Tasten (beide treffen),Orbit keys (both hit)
+Takt-Raster,Takt-Raster,Beat grid
+Feine Striche für Viertel und Achtel am Kreis,Feine Striche für Viertel und Achtel am Kreis,Fine ticks for quarters and eighths on the circle
+Orbit-Tasten: innen | außen,Orbit-Tasten: innen | außen,Orbit keys: inner | outer
+"Links: innerer Ring, rechts: äußerer Ring. Anklicken, dann Taste drücken (Esc bricht ab)","Links: innerer Ring, rechts: äußerer Ring. Anklicken, dann Taste drücken (Esc bricht ab)","Left: inner ring, right: outer ring. Click, then press a key (Esc cancels)"
+Außen: Taste %s,Außen: Taste %s,Outer: key %s
+Innen: Taste %s,Innen: Taste %s,Inner: key %s
+"Zeig auf die Hand, drück im Takt (auch Maus links/rechts)","Zeig auf die Hand, drück im Takt (auch Maus links/rechts)","Aim at the hand, press on the beat (mouse left/right works too)"
+neben dem Zeiger,neben dem Zeiger,off the hand
+zu nah an der Mitte,zu nah an der Mitte,too close to the centre
+andere Taste,andere Taste,other key
