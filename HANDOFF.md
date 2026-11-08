@@ -140,3 +140,4 @@ Offen (Nutzer-Wuensche, Rueckfrage gestellt):
 - Pausiert: orbit-career, Branch warmd/orbit-career @0f968f8 (Logik + Tests fertig, UI/Browser/Hauptmenue offen; Tutorial ruft OrbitCareer.offer()). Erst nach neuem Orbit fortsetzen, project.godot: orbit_career.en.translation registrieren.
 - Tutorial muss nach Taktkreis neu (Agent listet Inhalte im Bericht).
 - Server (butzebot.com): Relay + API noch nicht live (Stand 13:55). Key per DM an Nutzer erwartet; min_version 1.23.1 setzen lassen. Infos fuer Kumpel: Artifact https://claude.ai/artifact/8iox8Vm6jXZtjyVyKPtAiW.
+- warmd-Luecken (noch in warmd beheben): (a) Worktree eines laufenden Tasks (orbit-bahnen in audio-map) fiel beim naechsten split aus .git/warmd-batch (batch_prune?), Agent musste WARMD_BASE=1 nutzen; (b) `warmd batch-resume` nimmt alle alten Worktrees mit unmergten Commits als "offen" auf (16 statt 2) -> Marker wurde von Hand auf audio-map + login-start gesetzt.

@@ -8,7 +8,7 @@ extends Node
 ## zeigen auf Testdateien.
 
 const BASE_URL := "https://butzebot.com/panel-api/tethra"
-const API_KEY := ""
+const API_KEY := "70bab2e56a48e488abad5285057e6bca10815e6101f2cddc"  # nicht geheim (Open Source), Schutz = Spieler-Token + Server-Regeln
 const PROFILE_URL := "https://butzebot.com/tethra/player/"
 ## Registrierung NUR auf der Website (im Spiel nur Login).
 const REGISTER_URL := "https://butzebot.com/tethra/register"
