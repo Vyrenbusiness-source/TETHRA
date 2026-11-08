@@ -559,7 +559,7 @@ class _ColorPopup extends Control:
 		mouse_filter = Control.MOUSE_FILTER_STOP
 		_panel = PanelContainer.new()
 		var sb := UiTheme.glass_box(14, 0.97, 0.22)
-		sb.bg_color = Color(0.07, 0.08, 0.12, 0.98)
+		sb.bg_color = Color(UiTheme.SURFACE, 0.98)
 		sb.content_margin_left = 14
 		sb.content_margin_right = 14
 		sb.content_margin_top = 12

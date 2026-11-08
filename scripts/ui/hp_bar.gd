@@ -7,11 +7,11 @@ extends Control
 
 const BAR_H := 10.0
 const LOW := 0.30
-const RED := Color(1.0, 0.28, 0.32)
+const RED := UiTheme.BAD
 
 @export var label_text: String = ""   # z. B. "HP"; leer = keine Beschriftung
 
-var _theme: Color = Color(0.20, 0.85, 1.0)
+var _theme: Color = UiTheme.ACCENT
 var _target: float = 1.0
 var _shown: float = 1.0
 var _sweep: float = -1.0   # 0..1 laufender Glanz, <0 = aus

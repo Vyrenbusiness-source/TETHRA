@@ -713,7 +713,7 @@ func _show_osd(text: String, frac: float) -> void:
 		bar_bg.add_child(bg_rect)
 		_vol_fill = ColorRect.new()
 		_vol_fill.size = Vector2(0, 6)
-		_vol_fill.color = Color(0.20, 0.85, 1.0)
+		_vol_fill.color = UiTheme.ACCENT
 		bar_bg.add_child(_vol_fill)
 	_vol_label.text = text
 	_vol_fill.size = Vector2(210.0 * clampf(frac, 0.0, 1.0), 6)

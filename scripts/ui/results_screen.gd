@@ -30,10 +30,10 @@ const GRADE_COLOR := {
 	"A": Color(0.4, 1.0, 0.5), "B": Color(0.35, 0.75, 1.0),
 	"C": Color(0.9, 0.6, 1.0), "D": Color(1.0, 0.4, 0.4),
 }
-const FAIL_COLOR := Color(1.0, 0.34, 0.38)
+const FAIL_COLOR := UiTheme.BAD
 ## Mikro-Labels: hell genug fuer Kontrast auf Glas (nicht unter 12 px nutzen).
-const CAPTION := Color(0.68, 0.71, 0.80)
-const MUTED := Color(0.50, 0.53, 0.60)
+const CAPTION := Color(0.68, 0.655, 0.615)
+const MUTED := Color(0.50, 0.48, 0.45)
 const SCORE_COUNT_TIME := 0.9
 const STAGGER := 0.07
 const HIST_BINS := 41
@@ -258,11 +258,11 @@ func _build_background() -> void:
 		bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		bg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 		bg.texture = UiTheme.blurred_texture(cover, 14)
-		bg.modulate = Color(0.5, 0.5, 0.56)
+		bg.modulate = Color(0.48, 0.47, 0.45)
 		add_child(bg)
 	var dim := ColorRect.new()
 	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	dim.color = Color(0.01, 0.01, 0.03, 0.58)
+	dim.color = Color(UiTheme.BG, 0.6)
 	add_child(dim)
 	# Vignette: Raender weich abdunkeln, Mitte bleibt offen.
 	var vig := TextureRect.new()
@@ -683,7 +683,7 @@ func _build_rank_area(parent: Control) -> void:
 	disc.offset_bottom = -26
 	disc.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	disc.stretch_mode = TextureRect.STRETCH_SCALE
-	disc.texture = _disc_tex(Color(0.05, 0.06, 0.10, 0.55))
+	disc.texture = _disc_tex(Color(UiTheme.BG, 0.55))
 	disc.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_ring_ctrl.add_child(disc)
 
