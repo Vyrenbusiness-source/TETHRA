@@ -333,7 +333,7 @@ static func _unstack(angle: float, recent: Array, t: float, dir: float, from: fl
 			if cost < best_cost:
 				best_cost = cost
 				best = c
-	return best
+	return best if best_cost < 1000.0 else angle
 
 
 static func _clear(a: float, near: Array) -> bool:
