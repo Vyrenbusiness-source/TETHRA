@@ -283,9 +283,7 @@ func open(info: Dictionary = {}) -> void:
 		row.visible = is_2d
 	_quick.columns = 2 if is_2d else 1
 	_refresh_values()
-	# GlassPanel ist ein reines Control: Hoehe aus dem Inhalt ableiten.
-	_panel.custom_minimum_size = Vector2(W_2COL if is_2d else W_1COL,
-			_panel.content.get_combined_minimum_size().y)
+	_panel.custom_minimum_size = Vector2(W_2COL if is_2d else W_1COL, 0)
 	visible = true
 	modulate.a = 0.0
 	if _tween != null:
