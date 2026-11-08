@@ -179,7 +179,8 @@ func _layout() -> void:
 		_pv_world_holder.custom_minimum_size = WorldPreview.SIZE_PX * s
 	if _preview_2d != null and _preview_2d.has_method("set_box"):
 		# Groesser als im Farb-Picker; Bildhoehe waechst mit, das Feld passt in die Breite.
-		var b := Vector2(300.0, 300.0) if vp.x < 1500.0 else Vector2(340.0, 400.0)
+		# Hoehe fuellt die Vorschau-Spalte (kein Leerraum unter dem Bild).
+		var b := Vector2(300.0 if vp.x < 1500.0 else 340.0, clampf(sz.y - 230.0, 300.0, 620.0))
 		_preview_2d.call("set_box", b)
 		_preview_stack.custom_minimum_size = b
 	if _cur != "":
@@ -731,6 +732,7 @@ func _page_audio(pg: VBoxContainer) -> void:
 	calib.custom_minimum_size = Vector2(0, CTRL_H)
 	calib.size_flags_horizontal = Control.SIZE_SHRINK_END
 	UiTheme.style_button(calib)
+	calib.add_theme_font_size_override("font_size", 14)
 	calib.pressed.connect(_open_wizard)
 	_row(g, "Offset-Assistent", calib, "Offset per Mitklopfen messen")
 
@@ -1314,6 +1316,7 @@ func _embed_skin(rows: VBoxContainer, skin: Control) -> void:
 				c.text = "Datei importieren…"
 			skin.remove_child(c)
 			c.custom_minimum_size.y = CTRL_H
+			c.add_theme_font_size_override("font_size", 14)
 			btns.add_child(c)
 	col.add_child(btns)
 	if status != null:
