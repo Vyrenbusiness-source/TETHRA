@@ -163,7 +163,7 @@ func _measure(maps_dir: String, count: int) -> void:
 	var step := maxi(1, files.size() / maxi(count, 1))
 	var tmp := ProjectSettings.globalize_path("user://audio_map_measure")
 	DirAccess.make_dir_recursive_absolute(tmp)
-	print("map | bpm_map bpm_det | off_err_ms | onset_recall30 | onset_prec30 | normal_prec30 | zeit")
+	print("map | bpm_map bpm_det | off_err_ms | onset_recall30 | onset_prec30 | normal_prec30 | grid20 | grid_bias_ms | zeit")
 	var n := 0
 	var i := 0
 	while i < files.size() and n < count:
@@ -213,7 +213,16 @@ func _measure(maps_dir: String, count: int) -> void:
 		for nt in AudioMapper.pick_notes(an, "Normal"):
 			nn.append(nt[0])
 		var nprec := _hit_frac(nn, real, 30.0)
-		print("%s | %.2f %.2f | %.1f | %.2f | %.2f | %.2f | %d ms" % [name.left(40), bpm_map, an.bpm, oe, rec, prec, nprec, ms])
+		# Passt das 1/4-Raster zu den echten Noten? Anteil innerhalb 20 ms + mittlerer Versatz.
+		var q: float = 60000.0 / an.bpm / 4.0
+		var near := 0
+		var bias := 0.0
+		for rt in real:
+			var d := fposmod(rt - (an.offset_ms - AudioMapper.OSU_LEAD_MS) + q * 0.5, q) - q * 0.5
+			bias += d
+			if absf(d) <= 20.0:
+				near += 1
+		print("%s | %.2f %.2f | %.1f | %.2f | %.2f | %.2f | %.2f | %.1f | %d ms" % [name.left(40), bpm_map, an.bpm, oe, rec, prec, nprec, float(near) / real.size(), bias / real.size(), ms])
 		n += 1
 
 

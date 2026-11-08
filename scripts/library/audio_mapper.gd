@@ -15,14 +15,20 @@ const RATE := 22050
 const HOP := 110
 const HOP_MS := HOP * 1000.0 / RATE
 const BPM_MIN := 75.0
-const BPM_MAX := 175.0
-const BPM_PRIOR_CENTER := 120.0
-const BPM_PRIOR_SIGMA_OCT := 0.7
+const BPM_MAX := 190.0
+const BPM_PRIOR_CENTER := 130.0
+const BPM_PRIOR_SIGMA_OCT := 0.8
 ## Spitzen werden nur im ersten Teil des Songs fuer den groben Tempo-Scan genutzt.
 const SCAN_MAX_PEAKS := 1000
 const SCAN_MAX_MS := 100000.0
 ## Onsets ausserhalb dieses Anteils der Beat-Laenge zaehlen nicht fuer den Raster-Fit.
+## Anstieg zurueckverfolgen: max. Frames, Schwelle relativ zum Maximum.
+const RISE_BACK := 8
+const RISE_FRAC := 0.2
+const FAST_BEAT_RATIO := 0.6
 const FIT_WINDOW := 0.12
+## Gemessen an echten Maps: deren Noten liegen ~23 ms vor dem erkannten Anschlag.
+const OSU_LEAD_MS := 23.0
 const MIN_NOTE_MS := 700.0
 
 ## Schwierigkeiten: min. Abstand, feinste Teilung (Slots je Beat), Anteil der
@@ -103,7 +109,7 @@ static func analyze_samples(samples: PackedFloat32Array) -> Dictionary:
 	var dur := samples.size() * 1000.0 / RATE
 	if peaks.size() < 8:
 		return {"ok": false, "error": "Keine Onsets gefunden (Stille?)"}
-	var grid := estimate_grid(peaks)
+	var grid := estimate_grid(peaks, flux)
 	return {"ok": true, "error": "", "bpm": grid.bpm, "offset_ms": grid.offset_ms,
 			"onsets": peaks, "duration_ms": dur}
 
@@ -224,19 +230,91 @@ static func pick_peaks(flux: PackedFloat32Array) -> Array:
 				break
 		if not best:
 			continue
-		var a := flux[i - 1]
-		var c := flux[i + 1]
-		var den := a - 2.0 * v + c
+		# Zeit = Beginn des Anstiegs (Mapper setzen auf den Anschlag, nicht aufs Maximum).
+		var j := i
+		while j > 0 and i - j < RISE_BACK and flux[j - 1] < flux[j] and flux[j - 1] > RISE_FRAC * v:
+			j -= 1
 		var p := 0.0
-		if absf(den) > 1e-9:
-			p = clampf(0.5 * (a - c) / den, -0.5, 0.5)
-		peaks.append([(i + 0.5 + p) * HOP_MS, v / (lm + gmean * 0.1 + 1e-6)])
+		if j == i:
+			var a := flux[i - 1]
+			var c := flux[i + 1]
+			var den := a - 2.0 * v + c
+			if absf(den) > 1e-9:
+				p = clampf(0.5 * (a - c) / den, -0.5, 0.5)
+		peaks.append([(j + 0.5 + p) * HOP_MS, v / (lm + gmean * 0.1 + 1e-6)])
 	return peaks
 
 
+static func _lag_score(acf: PackedFloat32Array, lag: int, max_lag: int) -> float:
+	var bpm := 60000.0 / (lag * HOP_MS)
+	var oct := log(bpm / BPM_PRIOR_CENTER) / log(2.0) / BPM_PRIOR_SIGMA_OCT
+	var sc := acf[lag]
+	if 2 * lag <= max_lag:
+		sc += 0.5 * acf[2 * lag]
+	# Unterteilungen (Achtel, Sechzehntel) stuetzen den Schlag.
+	sc += 0.5 * maxf(acf[lag / 2], maxf(acf[(lag + 1) / 2], acf[lag / 2 - 1]))
+	sc += 0.25 * maxf(acf[lag / 4], maxf(acf[(lag + 2) / 4], acf[lag / 4 - 1]))
+	return sc * exp(-0.5 * oct * oct)
+
+
+## Grobes Tempo (BPM) aus der Autokorrelation des Onset-Flusses, mit
+## Oberschwingungen (2L, 4L) und Oktav-Prior.
+static func coarse_bpm(flux: PackedFloat32Array) -> float:
+	var n := mini(flux.size(), int(SCAN_MAX_MS / HOP_MS))
+	var env := PackedFloat32Array()
+	env.resize(n)
+	var win := 100
+	# Lokales Mittel abziehen (gleitend, einfach ueber Bloecke).
+	var block := 2 * win
+	var i0 := 0
+	while i0 < n:
+		var i1 := mini(n, i0 + block)
+		var m := 0.0
+		for i in range(i0, i1):
+			m += flux[i]
+		m /= (i1 - i0)
+		for i in range(i0, i1):
+			env[i] = maxf(0.0, flux[i] - m)
+		i0 = i1
+	var lag_lo := int(60000.0 / BPM_MAX / HOP_MS) - 1
+	var lag_hi := int(60000.0 / BPM_MIN / HOP_MS) + 2
+	var acf := PackedFloat32Array()
+	acf.resize(lag_hi * 4 + 1)
+	var max_lag := mini(lag_hi * 2 + 1, n / 2)
+	for lag in range(maxi(lag_lo / 4 - 1, 3), max_lag + 1):
+		var sum := 0.0
+		for i in range(n - lag):
+			sum += env[i] * env[i + lag]
+		acf[lag] = sum / (n - lag)
+	var best := -1.0
+	var best_lag := lag_lo
+	for lag in range(lag_lo, lag_hi + 1):
+		var sc := _lag_score(acf, lag, max_lag)
+		if sc > best:
+			best = sc
+			best_lag = lag
+	# Punktierte Muster (3 gegen 4): die 1,5-fache Periode ist oft nur ein
+	# Begleitrhythmus. Ist der schnellere Schlag (2/3 der Periode) fast so
+	# stark, gilt er.
+	var fast := int(roundf(best_lag * 2.0 / 3.0))
+	if fast >= lag_lo and fast < best_lag and _lag_score(acf, fast, max_lag) > FAST_BEAT_RATIO * best:
+		best_lag = fast
+	# Parabel-Verfeinerung.
+	var ya := acf[best_lag - 1]
+	var yb := acf[best_lag]
+	var yc := acf[best_lag + 1]
+	var den := ya - 2.0 * yb + yc
+	var frac := 0.0
+	if absf(den) > 1e-12:
+		frac = clampf(0.5 * (ya - yc) / den, -0.5, 0.5)
+	return 60000.0 / ((best_lag + frac) * HOP_MS)
+
+
 ## Tempo und Beat-Raster aus den Onsets. {bpm, offset_ms}.
-static func estimate_grid(peaks: Array) -> Dictionary:
-	# Grober Scan: Resultierende der Onset-Phasen je Periode, mit Oktav-Prior.
+static func estimate_grid(peaks: Array, flux: PackedFloat32Array) -> Dictionary:
+	var coarse := coarse_bpm(flux)
+	var ts := PackedFloat64Array()
+	var ws := PackedFloat64Array()
 	var scan: Array = []
 	for p in peaks:
 		if p[0] <= SCAN_MAX_MS:
@@ -244,41 +322,51 @@ static func estimate_grid(peaks: Array) -> Dictionary:
 	scan.sort_custom(func(a, b): return a[1] > b[1])
 	if scan.size() > SCAN_MAX_PEAKS:
 		scan.resize(SCAN_MAX_PEAKS)
-	var ts := PackedFloat64Array()
-	var ws := PackedFloat64Array()
 	for p in scan:
 		ts.append(p[0])
 		ws.append(sqrt(p[1]))
-	var best_score := -1.0
-	var best_bpm := 120.0
-	var bpm := BPM_MIN
-	while bpm <= BPM_MAX:
-		var w := _resultant(ts, ws, 60000.0 / bpm)
-		var oct := log(bpm / BPM_PRIOR_CENTER) / log(2.0) / BPM_PRIOR_SIGMA_OCT
-		var score: float = w[0] * exp(-0.5 * oct * oct)
-		if score > best_score:
-			best_score = score
-			best_bpm = bpm
-		bpm += 0.05
-	# Fein um den Treffer, dann Regression auf allen Onsets.
-	var fine_bpm := best_bpm
+	# Fein um den groben Wert (+-3 %): Summe von Grundton und Oberschwingungen
+	# (Schlag, Achtel, Sechzehntel stuetzen dasselbe Tempo; bei reinen
+	# Achtelketten ist der Grundton allein schwach).
+	var fine_bpm := coarse
 	var fine_best := -1.0
-	var fb := best_bpm - 0.1
-	while fb <= best_bpm + 0.1:
-		var r := _resultant(ts, ws, 60000.0 / fb)
-		if r[0] > fine_best:
-			fine_best = r[0]
+	var fb := coarse * 0.97
+	while fb <= coarse * 1.03:
+		var sc := 0.0
+		for h in [1, 2, 4]:
+			sc += _resultant(ts, ws, 60000.0 / fb / h)[0]
+		if sc > fine_best:
+			fine_best = sc
 			fine_bpm = fb
-		fb += 0.005
-	var T := 60000.0 / fine_bpm
-	var off: float = _resultant(ts, ws, T)[1]
+		fb += 0.02
+	var T0 := 60000.0 / fine_bpm
+	# Feinste tragende Teilung h: Raster der Periode T0/h fuer die Regression.
+	var h_use := 1
+	var h_best: float = _resultant(ts, ws, T0)[0]
+	for h in [2, 4]:
+		var m: float = _resultant(ts, ws, T0 / h)[0]
+		if m > h_best * 1.1:
+			h_best = m
+			h_use = h
+	var pd := T0 / h_use
+	var off: float = _resultant(ts, ws, pd)[1]
 	for _it in 4:
-		var fit := _fit(peaks, T, off)
+		var fit := _fit(peaks, pd, off)
 		if not fit.ok:
 			break
-		T = fit.T
+		pd = fit.T
 		off = fit.off
-	off = fposmod(off, T)
+	var T := pd * h_use
+	# Schlagposition unter den h Kandidaten: der, bei dem der Grundton am staerksten ist.
+	var fund := _resultant(ts, ws, T)
+	var best_k := 0
+	var best_c := -2.0
+	for k in h_use:
+		var c := cos(TAU * (fund[1] - (off + k * pd)) / T)
+		if c > best_c:
+			best_c = c
+			best_k = k
+	off = fposmod(off + best_k * pd, T)
 	return {"bpm": snappedf(60000.0 / T, 0.001), "offset_ms": snappedf(off, 0.01)}
 
 
@@ -398,7 +486,7 @@ static func pick_notes(an: Dictionary, difficulty: String) -> Array:
 	slots.sort()
 	var out: Array = []
 	for s in slots:
-		out.append([off + s * slot_ms, s, taken[s][3], posmod(s / 4 - bar_phase, 4) == 0 and s % 4 == 0])
+		out.append([off + s * slot_ms - OSU_LEAD_MS, s, taken[s][3], posmod(s / 4 - bar_phase, 4) == 0 and s % 4 == 0])
 	return out
 
 
@@ -438,7 +526,7 @@ static func build_osu(an: Dictionary, meta: Dictionary, difficulty: String, audi
 	lines.append("[Events]")
 	lines.append("")
 	lines.append("[TimingPoints]")
-	lines.append("%.2f,%.6f,4,2,0,60,1,0" % [an.offset_ms, T])
+	lines.append("%.2f,%.6f,4,2,0,60,1,0" % [an.offset_ms - OSU_LEAD_MS, T])
 	lines.append("")
 	lines.append("[HitObjects]")
 	var angle := 0.0
