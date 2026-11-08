@@ -46,7 +46,7 @@ const STACK_PATTERN := [0, 1, 2, 1]
 ## Einzelziel nahe (< STACK_NEAR_DEG) am vorherigen Ziel desselben Rings und
 ## hoechstens STACK_WINDOW_MS danach: Versatz um STACK_PUSH_DEG weg davon.
 const STACK_NEAR_DEG := 14.0
-const STACK_WINDOW_MS := 260.0
+const STACK_WINDOW_MS := 320.0
 const STACK_PUSH_DEG := 16.0
 const STREAM_GAP_MS := 160.0
 const MIN_ARC_MS := 100.0
@@ -268,8 +268,12 @@ static func convert(beatmap: Beatmap) -> Array[OrbitNote]:
 			continue
 		targets = spaced
 
-		if targets.size() == 1:
-			angle = _unstack(angle, ring_ang[targets[0][1]], t - float(ring_last[targets[0][1]]), dir)
+		# Akkorde teilen einen Winkel: der juengste Ring der Ziele zaehlt.
+		var us_r := int(targets[0][1])
+		for tg in targets:
+			if ring_last[tg[1]] > ring_last[us_r]:
+				us_r = int(tg[1])
+		angle = _unstack(angle, ring_ang[us_r], t - float(ring_last[us_r]), dir)
 		var longest := 0.0
 		for tg in targets:
 			longest = maxf(longest, _arc_len(objs[tg[0]] as ManiaNote))
