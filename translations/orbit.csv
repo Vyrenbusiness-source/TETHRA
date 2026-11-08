@@ -91,7 +91,7 @@ andere Taste,andere Taste,other key
 EINS,EINS,ONE
 NÄCHSTER TAKT,NÄCHSTER TAKT,NEXT BAR
 Probe,Probe,Trial
-"Der Kreis ist ein Takt. Der Zeiger dreht im Tempo des Songs, oben beginnt der Takt. Drück eine Taste, wenn er oben steht.","Der Kreis ist ein Takt. Der Zeiger dreht im Tempo des Songs, oben beginnt der Takt. Drück eine Taste, wenn er oben steht.","The circle is one bar. The hand turns at the song's tempo, the bar starts at the top. Press a key when it is at the top."
+"Der Kreis ist ein Takt. Der Zeiger dreht im Songtempo, oben beginnt er. Drück eine Taste, wenn er oben steht.","Der Kreis ist ein Takt. Der Zeiger dreht im Songtempo, oben beginnt er. Drück eine Taste, wenn er oben steht.","The circle is one bar. The hand turns at the song's tempo, it starts at the top. Press a key when it is at the top."
 "Zielen ist Pflicht. Leg Maus oder Stift auf den Zeiger und führ ihn mit, ohne abzusetzen.","Zielen ist Pflicht. Leg Maus oder Stift auf den Zeiger und führ ihn mit, ohne abzusetzen.",Aiming is required. Put the mouse or pen on the hand and move along with it without lifting.
 "Taste A (%s) spielt den inneren Ring, Taste B (%s) den äußeren. Maus links und rechts gehen auch. Drück, wenn der Zeiger die Note erreicht.","Taste A (%s) spielt den inneren Ring, Taste B (%s) den äußeren. Maus links und rechts gehen auch. Drück, wenn der Zeiger die Note erreicht.","Key A (%s) plays the inner ring, key B (%s) the outer ring. Left and right mouse work too. Press when the hand reaches the note."
 Zwei Noten an einer Stelle sind ein Akzent. Drück beide Tasten (%s und %s) zugleich.,Zwei Noten an einer Stelle sind ein Akzent. Drück beide Tasten (%s und %s) zugleich.,Two notes in one spot are an accent. Press both keys (%s and %s) together.

@@ -134,12 +134,10 @@ class Highlight extends Control:
 		var r_out := v.ring_radius(1)
 		match tut.step:
 			OrbitTutorial.BAR:
-				# Takt-Eins: Marke oben, pulst, wenn der Zeiger nah ist.
+				# Takt-Eins: Marke oben zwischen den Ringen, hell, wenn der Zeiger nah ist.
 				var near := absf(OrbitNote.delta_deg(tut.hand_deg(), 0.0)) / 60.0
 				var glow := clampf(1.0 - near, 0.0, 1.0)
-				draw_line(OrbitView.polar(c, 0.0, r_out + u * 0.07), OrbitView.polar(c, 0.0, r_out + u * 0.11),
-						Color(acc, 0.5 + 0.5 * glow), w * 1.5, true)
-				_tag(OrbitView.polar(c, 0.0, r_out + u * 0.15), tr("EINS"))
+				_tag(OrbitView.polar(c, 0.0, (v.ring_radius(0) + r_out) * 0.5), tr("EINS"), 0.6 + 0.4 * glow)
 			OrbitTutorial.AIM:
 				var f := tut.aim_progress()
 				var rr := r_out + u * 0.09
@@ -155,7 +153,7 @@ class Highlight extends Control:
 						on = true
 					if on:
 						draw_arc(c, v.ring_radius(rg), 0.0, TAU, 160, Color(acc, 0.06 + 0.06 * p), w * 6.0, true)
-					_tag(OrbitView.polar(c, 270.0, v.ring_radius(rg)), tut.ring_tag(rg))
+					_tag(OrbitView.polar(c, 290.0 if rg == 0 else 250.0, v.ring_radius(rg)), tut.ring_tag(rg))
 			OrbitTutorial.PREVIEW:
 				var pv := tut.first_preview()
 				if pv != null:
@@ -163,7 +161,7 @@ class Highlight extends Control:
 							tr("NÄCHSTER TAKT"))
 
 	## Ringname mit Taste auf dem Ring (flach, Bernstein-Kante).
-	func _tag(pos: Vector2, text: String) -> void:
+	func _tag(pos: Vector2, text: String, alpha: float = 1.0) -> void:
 		var font := get_theme_default_font()
 		var fs := 15
 		var ts := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
@@ -171,10 +169,10 @@ class Highlight extends Control:
 		var rect := Rect2(pos - sz * 0.5, sz)
 		var box := UiTheme.solid_box(UiTheme.BG, 6)
 		box.set_border_width_all(1)
-		box.border_color = UiTheme.ACCENT
+		box.border_color = Color(UiTheme.ACCENT, alpha)
 		draw_style_box(box, rect)
 		var base := rect.position.y + (sz.y - ts.y) * 0.5 + font.get_ascent(fs)
-		draw_string(font, Vector2(rect.position.x, base), text, HORIZONTAL_ALIGNMENT_CENTER, sz.x, fs, UiTheme.TEXT)
+		draw_string(font, Vector2(rect.position.x, base), text, HORIZONTAL_ALIGNMENT_CENTER, sz.x, fs, Color(UiTheme.TEXT, alpha))
 
 # ---------------------------------------------------------------------------
 # Gesehen-Merker (eigene Datei)
@@ -495,7 +493,7 @@ func _update_texts() -> void:
 	var kb := key_label(1)
 	match step:
 		BAR:
-			_body_lbl.text = tr("Der Kreis ist ein Takt. Der Zeiger dreht im Tempo des Songs, oben beginnt der Takt. Drück eine Taste, wenn er oben steht.")
+			_body_lbl.text = tr("Der Kreis ist ein Takt. Der Zeiger dreht im Songtempo, oben beginnt er. Drück eine Taste, wenn er oben steht.")
 		AIM:
 			_body_lbl.text = tr("Zielen ist Pflicht. Leg Maus oder Stift auf den Zeiger und führ ihn mit, ohne abzusetzen.")
 		KEYS:
@@ -1081,9 +1079,12 @@ func _shots_one(dir: String, lang: String) -> void:
 				if aim_progress() > 0.5:
 					break
 				continue
+			if s == PREVIEW:
+				if core != null and core.is_judged(0) and first_preview() != null:
+					break
+				continue
 			var nx := next_note()
-			if success >= 1 and nx != null and nx.time_ms - t_ms < 400.0 and nx.time_ms - t_ms > 330.0 \
-					and (s != PREVIEW or first_preview() != null):
+			if success >= 1 and nx != null and nx.time_ms - t_ms < 400.0 and nx.time_ms - t_ms > 330.0:
 				break
 		await _save("orbit_tut_%s_%d.png" % [lang, s + 1], dir)
 	enter_step(TRIAL)
