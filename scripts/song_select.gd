@@ -674,20 +674,15 @@ func _build_header() -> void:
 	score_row.alignment = BoxContainer.ALIGNMENT_END
 	score_row.add_theme_constant_override("separation", 6)
 	add_child(score_row)
-	var best_lbl := Label.new()
-	best_lbl.text = tr("Bestwert")
-	best_lbl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	best_lbl.add_theme_font_size_override("font_size", 13)
-	best_lbl.add_theme_color_override("font_color", COL_DIM)
-	score_row.add_child(best_lbl)
-	for bi in BEST_NAMES.size():
+	# Mit/Ohne Bestwert wie der SV-Chip: erneut klicken = wieder alle Maps.
+	for bi in [BEST_WITH, BEST_WITHOUT]:
 		var chip := _make_toggle(tr(BEST_NAMES[bi]), 13, 15)
 		chip.custom_minimum_size = Vector2(0, SCORE_H)
 		chip.pressed.connect(func():
 			var mf := _mode_filter()
-			mf["best"] = bi
-			if bi != BEST_WITH:
-				mf["grades"] = []  # Noten gibt es nur mit Bestwert
+			mf["best"] = BEST_ALL if int(mf["best"]) == bi else bi
+			if int(mf["best"]) != BEST_WITH:
+				mf["grades"] = []  # Raenge gibt es nur mit Bestwert
 			_restyle_score_chips()
 			_refresh_filter(_search.text))
 		score_row.add_child(chip)
@@ -1383,7 +1378,7 @@ func _sort_mode() -> int:
 func _restyle_score_chips() -> void:
 	var mf := _mode_filter()
 	for i in _best_chips.size():
-		_apply_toggle(_best_chips[i], i == int(mf["best"]))
+		_apply_toggle(_best_chips[i], i + BEST_WITH == int(mf["best"]))
 	for g in _grade_chips:
 		_apply_toggle(_grade_chips[g], (mf["grades"] as Array).has(g))
 	if _sort_btn != null and _sort_btn.selected != int(mf["sort"]):
@@ -1850,6 +1845,15 @@ func _rebuild_cards() -> void:
 		_card_buttons.append(card)
 		card.mouse_entered.connect(_slide_card.bind(card, true))
 		card.mouse_exited.connect(_slide_card.bind(card, false))
+	if _filtered.is_empty() and not _library.mapsets.is_empty():
+		var empty := Label.new()
+		empty.text = tr("Keine Maps für diese Filter")
+		empty.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		empty.custom_minimum_size = Vector2(0, CARD_H)
+		empty.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		empty.add_theme_font_size_override("font_size", 14)
+		empty.add_theme_color_override("font_color", COL_DIM)
+		_list_box.add_child(empty)
 	_scores_cfg = null
 	if _selected_set != null:
 		_apply_card_highlight()
