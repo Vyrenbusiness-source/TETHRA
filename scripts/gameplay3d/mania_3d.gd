@@ -415,7 +415,13 @@ func _ready() -> void:
 	var scroll := Settings.mania_scroll
 	if GameSession.tutorial:
 		scroll = minf(scroll, 1.0) * 0.65
+	# Mods dieses Laufs (FadeIn/Hidden/Cover/Konstant) ueber das vorhandene Mods-Dict
+	# weiterreichen (Scores/Replays). Replays behalten ihre gespeicherten Mods.
+	if not GameSession.is_replay:
+		GameSession.mods.merge(Settings.extra_mods(_2d), true)
 	core.setup(_beatmap, -1.0, scroll)
+	if bool(GameSession.mods.get("CS", false)):
+		_apply_constant_speed(scroll)
 	_clock.setup(_beatmap.timing_points)
 	_autoplay = OS.get_cmdline_args().has("--autoplay") 			and not GameSession.is_replay and not Lobby.active
 	_auto_release.resize(core.columns)
@@ -1505,6 +1511,36 @@ func apply_scroll_speed(_speed: int) -> void:
 	if GameSession.tutorial:
 		scroll = minf(scroll, 1.0) * 0.65
 	core.set_scroll_scale(scroll)
+
+
+## lazer Constant Speed: Scroll-Tabelle ohne SV-/BPM-Wechsel (position(t) == t),
+## Spawn-Zeiten neu (set_scroll_scale rechnet alle noch nicht erschienenen neu).
+func _apply_constant_speed(scroll_scale: float) -> void:
+	var last := 0.0
+	for obj in _beatmap.hit_objects:
+		last = maxf(last, obj.end_time())
+	var sm := ScrollMap.new()
+	sm.build([], last)
+	core.scroll = sm
+	core.set_scroll_scale(scroll_scale)
+
+
+## Mod-Anzeige fuer das HUD, z. B. "SV Stark · NF · Hidden · Konstant"; "" = keine.
+static func mods_hud_text(m: Dictionary) -> String:
+	var parts: Array = []
+	if bool(m.get("SV", false)):
+		parts.append(TranslationServer.translate("SV Stark") if SvMod.strength == SvMod.STRENGTH_STRONG else "SV")
+	if bool(m.get("NF", false)):
+		parts.append("NF")
+	if bool(m.get("FI", false)):
+		parts.append("FadeIn")
+	if bool(m.get("HD", false)):
+		parts.append("Hidden")
+	if bool(m.get("CO", false)):
+		parts.append("%s %d%%" % [TranslationServer.translate("Cover"), int(m.get("CO_pct", 50))])
+	if bool(m.get("CS", false)):
+		parts.append(TranslationServer.translate("Konstant"))
+	return "  ·  ".join(parts)
 
 
 func _note_z(hit_time: float, t: float) -> float:
@@ -3401,6 +3437,19 @@ func _build_hud() -> void:
 	var ttw := create_tween()
 	ttw.tween_interval(8.0)
 	ttw.tween_property(title, "modulate:a", 0.35, 1.5)
+	# Aktive Mods klein und ruhig unter der Titelzeile (nur wenn welche an sind).
+	var mods_txt := mods_hud_text(GameSession.mods)
+	if mods_txt != "":
+		var ml := Label.new()
+		ml.text = mods_txt
+		ml.position = Vector2(24, 34)
+		ml.add_theme_font_size_override("font_size", 12)
+		ml.add_theme_color_override("font_color", Color(0.78, 0.82, 0.92))
+		ml.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.75))
+		ml.add_theme_constant_override("shadow_offset_y", 2)
+		ml.add_theme_constant_override("shadow_outline_size", 6)
+		ml.modulate.a = 0.6
+		_hud.add_child(ml)
 
 	# Zeit: klein oben rechts.
 	_time_label = Label.new()
@@ -3503,22 +3552,42 @@ func _place_hud_to_line() -> void:
 	if _camera == null or _judge_disp == null:
 		return
 	var vs := get_viewport().get_visible_rect().size
-	var line_y := _pf2d.line_y() if _pf2d != null 			else _camera.unproject_position(Vector3(0.0, ROAD_Y, Z_LINE)).y
+	var line_y := _pf2d.screen_line_y() if _pf2d != null 			else _camera.unproject_position(Vector3(0.0, ROAD_Y, Z_LINE)).y
 	if line_y <= 0.0 or line_y >= vs.y:
 		line_y = vs.y * 0.84
 	# Judge + FRUEH/SPAET ueber den Pads (Pad-Oberkante ~8,5 % Bildhoehe ueber der Linie).
 	_judge_disp.judge_gap = vs.y * 0.085 + 44.0
+	if _pf2d != null:
+		# 2D: Judgement/Kombo folgen Trefferlinie, Richtung, Skalierung und Feldmitte;
+		# eigene Positionen (Skin-Werte aus) wie osu! ScorePosition/ComboPosition.
+		var ly_c := _pf2d.line_y()
+		var jy_c := ly_c - _judge_disp.judge_gap
+		var cy_c := jy_c - 92.0
+		if Settings.use_own_layout_2d():
+			jy_c = _pf2d.judge_y()
+			cy_c = _pf2d.combo_y()
+		var jy_s := _pf2d.to_screen(Vector2(0.0, jy_c)).y
+		_judge_disp.judge_gap = line_y - jy_s
+		_judge_disp.combo_gap = jy_s - _pf2d.to_screen(Vector2(0.0, cy_c)).y
+		_judge_disp.position.x = _pf2d.screen_field_rect().get_center().x - vs.x * 0.5
 	_judge_disp.place(line_y)
 	if _pf2d != null:
 		# 2D: UR-Leiste IM Spielfeld unten (nie breiter als das Feld), nicht
-		# quer ueber Bildschirm/Tastenbeschriftung.
-		var fr := _pf2d.field_rect()
+		# quer ueber Bildschirm/Tastenbeschriftung; bei Scroll nach oben oben.
+		var fr := _pf2d.screen_field_rect()
 		var w := clampf(fr.size.x - 16.0, 120.0, 300.0)
 		if not is_equal_approx(_err_bar.size.x, w):
 			_err_bar.custom_minimum_size = Vector2(w, _err_bar.custom_minimum_size.y)
 			_err_bar.size = _err_bar.custom_minimum_size
-		_err_bar.position = Vector2(fr.position.x + (fr.size.x - w) * 0.5,
-			vs.y - _err_bar.size.y - 4.0)
+		var ey := fr.position.y + 4.0 if Settings.scroll_up_2d 				else minf(fr.end.y, vs.y) - _err_bar.size.y - 4.0
+		_err_bar.position = Vector2(fr.position.x + (fr.size.x - w) * 0.5, maxf(ey, 0.0))
+		# Scroll nach oben: Linie oben -> HP-Leiste nach unten, sonst liegt sie auf der Linie.
+		if _hp_bar != null:
+			var a := 1.0 if Settings.scroll_up_2d else 0.0
+			_hp_bar.anchor_top = a
+			_hp_bar.anchor_bottom = a
+			_hp_bar.offset_top = -30.0 if a > 0.0 else 6.0
+			_hp_bar.offset_bottom = -6.0 if a > 0.0 else 30.0
 		return
 	_err_bar.position = Vector2((vs.x - _err_bar.size.x) * 0.5,
 		minf(line_y + 34.0, vs.y - _err_bar.size.y - 8.0))
