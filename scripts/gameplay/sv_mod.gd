@@ -54,10 +54,37 @@ const HI_STEPS := [1.25, 1.5, 1.75, 2.0, 2.5, 3.0]
 
 enum Kind { NONE, ACCENT, STUTTER2, STUTTER4, BOUNCE, TELEPORT, PULSE }
 
-## Staerke-Stufen (spaeter waehlbar; Standard Stark).
+## Staerke-Stufen (im Song-Browser am Mod-Chip SV waehlbar; Standard Stark).
+## Gemerkt in user://browser_state.cfg ("browser"/"sv_level" = "normal" |
+## "strong"); Scores speichern die Stufe (ScoreStore "sv_level").
 const STRENGTH_NORMAL := 0
 const STRENGTH_STRONG := 1
-static var strength := STRENGTH_STRONG
+const LEVEL_STATE_PATH := "user://browser_state.cfg"
+static var strength := _saved_strength()
+
+
+## Gespeicherte Stufe; Tests/Harness (--script, --shot*, --autoplay) und
+## fehlende Datei: Stark.
+static func _saved_strength() -> int:
+	for a in OS.get_cmdline_args() + OS.get_cmdline_user_args():
+		if a == "--script" or a == "-s" or a.begins_with("--shot") or a == "--autoplay":
+			return STRENGTH_STRONG
+	var cfg := ConfigFile.new()
+	if cfg.load(LEVEL_STATE_PATH) != OK:
+		return STRENGTH_STRONG
+	return level_from_name(str(cfg.get_value("browser", "sv_level", "strong")))
+
+
+## "normal" -> STRENGTH_NORMAL, alles andere -> STRENGTH_STRONG.
+static func level_from_name(n: String) -> int:
+	return STRENGTH_NORMAL if n == "normal" else STRENGTH_STRONG
+
+
+## Stufe als Name (s < 0: aktive Stufe).
+static func level_name(s: int = -1) -> String:
+	if s < 0:
+		s = strength
+	return "strong" if s >= STRENGTH_STRONG else "normal"
 
 ## Stark: kleinster Vorwaerts-Multiplikator (fast Freeze).
 const M_MIN_STRONG := 0.05

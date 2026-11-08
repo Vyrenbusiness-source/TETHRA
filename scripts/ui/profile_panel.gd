@@ -40,6 +40,17 @@ var _thumb_jobs: Array = []
 var _thumb_thread: Thread
 var _closing := false
 var _thumb_cache: Dictionary = {}
+# Laufende Cover-Liste; Moduswechsel erhoeht die Generation (alter Lauf endet).
+var _thumb_gen := 0
+
+## Angezeigter Spielmodus: "" = Mania 4K (pp, unveraendert), "orbit" = Orbit
+## (eigene Kennzahlen, beeinflusst die Mania-pp nie). Start: Modus aus dem
+## Song-Browser (browser_state.cfg, nur gelesen).
+var _mode := ""
+var _mode_btns: Array[Button] = []
+var _rating_slot: VBoxContainer
+var _stat_col: VBoxContainer
+var _list: VBoxContainer
 
 
 func _ready() -> void:
@@ -136,40 +147,12 @@ func _ready() -> void:
 		info.add_child(_name_hint)
 		name_edit.text_submitted.connect(func(t): _save_name(t))
 
-	# Gesamt-pp gross in ACCENT2.
-	var pp_row := HBoxContainer.new()
-	pp_row.add_theme_constant_override("separation", 6)
-	info.add_child(pp_row)
-	var pp_big := Label.new()
-	pp_big.text = _fmt_int(roundi(ScoreStore.profile_pp()))
-	pp_big.add_theme_font_override("font", UiTheme.heading_font(1))
-	pp_big.add_theme_font_size_override("font_size", 44)
-	pp_big.add_theme_color_override("font_color", COL_PP)
-	pp_row.add_child(pp_big)
-	var pp_cap := Label.new()
-	pp_cap.text = "pp"
-	pp_cap.size_flags_vertical = Control.SIZE_SHRINK_END
-	pp_cap.add_theme_font_size_override("font_size", 18)
-	pp_cap.add_theme_color_override("font_color", COL_DIM)
-	pp_row.add_child(pp_cap)
-
-	# Rang-Verteilung als Chips + Accuracy-Schnitt.
-	var counts := { "SS": 0, "S": 0, "A": 0, "B": 0 }
-	var acc_sum := 0.0
-	var acc_n := 0
-	for be in ScoreStore.best_plays(99999):
-		var gr := str(be.get("grade", ""))
-		if counts.has(gr):
-			counts[gr] += 1
-		if float(be.get("accuracy", 0.0)) > 0.0:
-			acc_sum += float(be.get("accuracy", 0.0))
-			acc_n += 1
-	var chips := HBoxContainer.new()
-	chips.add_theme_constant_override("separation", 8)
-	chips.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
-	info.add_child(chips)
-	for gk in ["SS", "S", "A", "B"]:
-		chips.add_child(_rank_chip(gk, int(counts[gk])))
+	# Modus-Umschalter (Mania 4K | Orbit): Kennzahlen und Listen je Modus.
+	info.add_child(_build_mode_switch())
+	# Wertung (Mania: pp, Orbit: Orbit-Wertung) + Rang-Chips, je Modus neu.
+	_rating_slot = VBoxContainer.new()
+	_rating_slot.add_theme_constant_override("separation", 6)
+	info.add_child(_rating_slot)
 
 	# Rechte Statistik-Spalte mit feiner Trennlinie.
 	var vline := ColorRect.new()
@@ -182,10 +165,7 @@ func _ready() -> void:
 	stat_col.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	stat_col.custom_minimum_size = Vector2(150, 0)
 	head.add_child(stat_col)
-	_head_stat(stat_col, _fmt_int(ScoreStore.total_plays()), "Spiele", UiTheme.TEXT)
-	_head_stat(stat_col, _fmt_pct(acc_sum / acc_n) if acc_n > 0 else "—",
-			"Genauigkeit", UiTheme.TEXT)
-	_head_stat(stat_col, _fmt_playtime(), "Spielzeit", UiTheme.TEXT)
+	_stat_col = stat_col
 
 	var head_btns := VBoxContainer.new()
 	head_btns.add_theme_constant_override("separation", 8)
@@ -248,32 +228,8 @@ func _ready() -> void:
 	fade.offset_right = -14
 	fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	scroll_wrap.add_child(fade)
-
-	_section(list, "TOP-LEISTUNGEN")
-	var best := ScoreStore.best_plays(8)
-	if best.is_empty():
-		_empty_hint(list)
-	for e in best:
-		list.add_child(_play_row(e, "best"))
-
-	_section(list, "LETZTE SPIELE")
-	var recent := ScoreStore.recent_plays(6)
-	if recent.is_empty():
-		_empty_hint(list)
-	for e in recent:
-		list.add_child(_play_row(e, "recent"))
-
-	_section(list, "MEISTGESPIELT")
-	var most := ScoreStore.most_played(5)
-	if most.is_empty():
-		_empty_hint(list)
-	for e in most:
-		list.add_child(_play_row(e, "most"))
-
-	# Cover lazy im Hintergrund laden (Panel oeffnet sofort).
-	if not _thumb_jobs.is_empty():
-		_thumb_thread = Thread.new()
-		_thumb_thread.start(_thumb_worker)
+	_list = list
+	_fill_mode()
 
 	# Datei-Dialog fuer den Bild-Upload.
 	_file_dialog = FileDialog.new()
@@ -287,6 +243,159 @@ func _ready() -> void:
 			_remove_btn.visible = true
 			_rebuild_avatar())
 	add_child(_file_dialog)
+
+
+## Segment-Umschalter Mania 4K | Orbit (Optik wie im Song-Browser).
+func _build_mode_switch() -> Control:
+	if not Settings.is_test_run():
+		var bs := ConfigFile.new()
+		if bs.load("user://browser_state.cfg") == OK \
+				and str(bs.get_value("browser", "play_mode", "")) == ScoreStore.MODE_ORBIT:
+			_mode = ScoreStore.MODE_ORBIT
+	for a in OS.get_cmdline_args():
+		if a == "--orbit":
+			_mode = ScoreStore.MODE_ORBIT
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	_mode_btns.clear()
+	for m in ["", ScoreStore.MODE_ORBIT]:
+		var b := Button.new()
+		b.text = ScoreStore.mode_label(m)
+		b.toggle_mode = true
+		b.focus_mode = Control.FOCUS_NONE
+		b.custom_minimum_size = Vector2(96, 28)
+		b.add_theme_font_size_override("font_size", 13)
+		b.tooltip_text = tr("Profilwerte für %s") % ScoreStore.mode_label(m)
+		UiTheme._attach_sounds(b)
+		var mode: String = m
+		b.pressed.connect(func(): _set_mode(mode))
+		row.add_child(b)
+		_mode_btns.append(b)
+	_restyle_mode_btns()
+	return row
+
+
+func _restyle_mode_btns() -> void:
+	var modes := ["", ScoreStore.MODE_ORBIT]
+	for i in _mode_btns.size():
+		var on: bool = modes[i] == _mode
+		var b := _mode_btns[i]
+		b.set_pressed_no_signal(on)
+		var col := COL_ACCENT if modes[i] == "" else COL_PP
+		for st in ["normal", "hover", "pressed", "hover_pressed", "focus"]:
+			var sb := StyleBoxFlat.new()
+			sb.set_corner_radius_all(8)
+			sb.set_border_width_all(1)
+			sb.content_margin_left = 10
+			sb.content_margin_right = 10
+			sb.bg_color = Color(col, 0.22) if on else Color(1, 1, 1, 0.10 if st.begins_with("hover") else 0.04)
+			sb.border_color = Color(col, 0.8) if on else Color(1, 1, 1, 0.12)
+			b.add_theme_stylebox_override(st, sb)
+		for fc in ["font_color", "font_hover_color", "font_pressed_color", "font_hover_pressed_color"]:
+			b.add_theme_color_override(fc, UiTheme.TEXT if on else COL_DIM)
+
+
+func _set_mode(mode: String) -> void:
+	if mode == _mode:
+		_restyle_mode_btns()
+		return
+	_mode = mode
+	_restyle_mode_btns()
+	_fill_mode()
+
+
+## Wertung, Rang-Chips, Statistik-Spalte und Listen fuer _mode (neu) aufbauen.
+func _fill_mode() -> void:
+	var orbit := _mode == ScoreStore.MODE_ORBIT
+	var stats := ScoreStore.mode_stats(_mode)
+	for c in _rating_slot.get_children():
+		c.queue_free()
+	for c in _stat_col.get_children():
+		c.queue_free()
+	for c in _list.get_children():
+		c.queue_free()
+
+	# Mania: Gesamt-pp gross in ACCENT2 (wie bisher). Orbit: Orbit-Wertung.
+	var pp_row := HBoxContainer.new()
+	pp_row.add_theme_constant_override("separation", 6)
+	_rating_slot.add_child(pp_row)
+	var pp_big := Label.new()
+	pp_big.text = _fmt_int(roundi(float(stats.rating) if orbit else ScoreStore.profile_pp()))
+	pp_big.add_theme_font_override("font", UiTheme.heading_font(1))
+	pp_big.add_theme_font_size_override("font_size", 44)
+	pp_big.add_theme_color_override("font_color", COL_PP)
+	pp_row.add_child(pp_big)
+	var pp_cap := Label.new()
+	pp_cap.text = tr("Orbit-Wertung") if orbit else "pp"
+	pp_cap.tooltip_text = tr("Summe der Orbit-Bestwerte (100 × Genauigkeit⁴), gewichtet wie pp") if orbit else ""
+	pp_cap.mouse_filter = Control.MOUSE_FILTER_PASS
+	pp_cap.size_flags_vertical = Control.SIZE_SHRINK_END
+	pp_cap.add_theme_font_size_override("font_size", 18)
+	pp_cap.add_theme_color_override("font_color", COL_DIM)
+	pp_row.add_child(pp_cap)
+
+	# Rang-Verteilung als Chips + Accuracy-Schnitt (Mania: ueber Bestwerte).
+	var counts := { "SS": 0, "S": 0, "A": 0, "B": 0 }
+	var acc_sum := 0.0
+	var acc_n := 0
+	for be in ScoreStore.best_plays(99999, _mode):
+		var gr := str(be.get("grade", ""))
+		if counts.has(gr):
+			counts[gr] += 1
+		if float(be.get("accuracy", 0.0)) > 0.0:
+			acc_sum += float(be.get("accuracy", 0.0))
+			acc_n += 1
+	var chips := HBoxContainer.new()
+	chips.add_theme_constant_override("separation", 8)
+	chips.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	_rating_slot.add_child(chips)
+	for gk in ["SS", "S", "A", "B"]:
+		chips.add_child(_rank_chip(gk, int(counts[gk])))
+
+	_head_stat(_stat_col, _fmt_int(int(stats.plays)), tr("Spiele"), UiTheme.TEXT)
+	if orbit:
+		# Orbit: Ø Acc ueber alle (nicht gescheiterten) Plays, bester Score.
+		_head_stat(_stat_col, _fmt_pct(float(stats.avg_acc)) if float(stats.avg_acc) > 0.0 else "—",
+				tr("Ø Genauigkeit"), UiTheme.TEXT)
+		_head_stat(_stat_col, _fmt_int(int(stats.best_score)) if int(stats.best_score) > 0 else "—",
+				tr("Bester Score"), UiTheme.TEXT)
+	else:
+		_head_stat(_stat_col, _fmt_pct(acc_sum / acc_n) if acc_n > 0 else "—",
+				tr("Genauigkeit"), UiTheme.TEXT)
+		_head_stat(_stat_col, _fmt_playtime(), tr("Spielzeit"), UiTheme.TEXT)
+
+	# Listen: Bestwerte, Verlauf, Meistgespielt — alle nur aus _mode.
+	_thumb_gen += 1
+	if _thumb_thread != null and _thumb_thread.is_started():
+		_thumb_thread.wait_to_finish()
+	_thumb_thread = null
+	_thumb_jobs = []
+	var tag := "  ·  " + ScoreStore.mode_label(_mode).to_upper()
+	_section(_list, tr("TOP-LEISTUNGEN") + tag)
+	var best := ScoreStore.best_plays(8, _mode)
+	if best.is_empty():
+		_empty_hint(_list)
+	for e in best:
+		_list.add_child(_play_row(e, "best"))
+
+	_section(_list, tr("LETZTE SPIELE") + tag)
+	var recent := ScoreStore.recent_plays(6, _mode)
+	if recent.is_empty():
+		_empty_hint(_list)
+	for e in recent:
+		_list.add_child(_play_row(e, "recent"))
+
+	_section(_list, tr("MEISTGESPIELT") + tag)
+	var most := ScoreStore.most_played(5, _mode)
+	if most.is_empty():
+		_empty_hint(_list)
+	for e in most:
+		_list.add_child(_play_row(e, "most"))
+
+	# Cover lazy im Hintergrund laden (Panel oeffnet sofort).
+	if not _thumb_jobs.is_empty():
+		_thumb_thread = Thread.new()
+		_thumb_thread.start(_thumb_worker.bind(_thumb_jobs, _thumb_gen))
 
 
 func _rank_chip(g: String, n: int) -> Control:
@@ -336,7 +445,7 @@ func _fmt_pct(frac: float) -> String:
 ## Geschaetzte Spielzeit: Plays x Kartenlaenge (Abbrueche nicht erfasst).
 func _fmt_playtime() -> String:
 	var ms := 0.0
-	for e in ScoreStore.most_played(99999):
+	for e in ScoreStore.most_played(99999, _mode):
 		var ms_set = _set_by_file.get(str(e.get("osz_file", "")))
 		if ms_set != null:
 			ms += ms_set.length_ms() * int(e.get("count", 0))
@@ -454,6 +563,9 @@ func _play_row(e: Dictionary, mode: String) -> Control:
 		sub_parts.append(_fmt_pct(float(e.get("accuracy", 0.0))))
 	if int(e.get("max_combo", 0)) > 0:
 		sub_parts.append("%sx" % _fmt_int(int(e.get("max_combo", 0))))
+	var mods_txt := ScoreStore.mods_label(e)
+	if mods_txt != "":
+		sub_parts.append(mods_txt)  # inkl. SV-Stufe ("SV Stark")
 	sub.text = "  ·  ".join(sub_parts)
 	sub.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	sub.add_theme_font_size_override("font_size", 12)
@@ -492,11 +604,16 @@ func _play_row(e: Dictionary, mode: String) -> Control:
 	var pp_label := Label.new()
 	var ppv := float(e.get("pp", -1.0))
 	pp_label.text = (_fmt_int(roundi(ppv)) + " pp") if ppv >= 0.0 else "—"
+	var pp_size := 24
+	if _mode == ScoreStore.MODE_ORBIT and mode != "most":
+		# Orbit hat keine pp: Score statt pp.
+		pp_label.text = _fmt_int(int(e.get("score", 0))) if int(e.get("score", 0)) > 0 else "—"
+		pp_size = 18
 	pp_label.custom_minimum_size = Vector2(88, 0)
 	pp_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	pp_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	pp_label.add_theme_font_override("font", UiTheme.heading_font(1))
-	pp_label.add_theme_font_size_override("font_size", 24)
+	pp_label.add_theme_font_size_override("font_size", pp_size)
 	pp_label.add_theme_color_override("font_color", COL_PP)
 	hb.add_child(pp_label)
 
@@ -579,6 +696,10 @@ func _start_map(osz_file: String, version: String) -> void:
 	GameSession.is_replay = false
 	GameSession.set_selection(ms.osz_path, idx, ms.version_name_at(idx),
 			ms.osu_filename_at(idx), ms.stars_at(idx))
+	# Orbit-Profil startet Orbit (nur 4K-Diffs), sonst wie bisher Mania.
+	if _mode == ScoreStore.MODE_ORBIT and int(ms.meta_at(idx).get("mode", 0)) == 3:
+		get_tree().change_scene_to_file("res://scenes/orbit.tscn")
+		return
 	get_tree().change_scene_to_file("res://scenes/mania_3d.tscn")
 
 
@@ -586,9 +707,9 @@ func _start_map(osz_file: String, version: String) -> void:
 # Cover-Loader (Thread): laedt die Hintergrundbilder der Zeilen nacheinander.
 # ---------------------------------------------------------------------------
 
-func _thumb_worker() -> void:
-	for job in _thumb_jobs:
-		if _closing:
+func _thumb_worker(jobs: Array, gen: int) -> void:
+	for job in jobs:
+		if _closing or gen != _thumb_gen:
 			return
 		var file: String = job.file
 		var img: Image = null

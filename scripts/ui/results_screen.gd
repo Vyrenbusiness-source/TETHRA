@@ -9,7 +9,10 @@ extends Control
 ## Aufruf: show_results(data) — Keys: is_fail, s (ManiaCore.stats()), pp,
 ## unranked, new_best, title, artist, version, cover_path, offsets (ms),
 ## player, date. Optional: cover (Texture2D), allow_retry, can_replay,
-## is_replay, lobby.
+## is_replay, lobby, mods (Dictionary, sonst GameSession.mods).
+## Modus kommt aus s.mode ("orbit", sonst Mania 4K): Abzeichen im Kopf, der
+## Bestleistungs-Vergleich nutzt nur Scores desselben Modus
+## (ScoreStore.previous_best_for).
 
 signal retry_pressed
 signal replay_pressed
@@ -281,6 +284,43 @@ func active_mods() -> Array:
 	return out
 
 
+## Spielmodus des Ergebnisses: "orbit" oder "" (Mania 4K).
+func score_mode() -> String:
+	return ScoreStore.MODE_ORBIT if str(_stats.get("mode", "")) == ScoreStore.MODE_ORBIT else ""
+
+
+## Mod-Abzeichen-Texte, SV mit Stufe ("SV Stark"): Stufe aus s.sv_level,
+## sonst die aktive SvMod-Stufe dieses Laufs.
+func mod_badge_texts() -> Array:
+	var lv := str(_stats.get("sv_level", SvMod.level_name()))
+	var out: Array = []
+	for m in active_mods():
+		out.append(ScoreStore.mods_label({ "mods": [m], "sv_level": lv }))
+	return out
+
+
+## Modus-Abzeichen (Mania 4K = ACCENT, Orbit = ACCENT2), kraeftiger als Mods.
+func _mode_badge() -> Control:
+	var orbit := score_mode() == ScoreStore.MODE_ORBIT
+	var col: Color = UiTheme.ACCENT2 if orbit else UiTheme.ACCENT
+	var p := PanelContainer.new()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(col, 0.32)
+	sb.border_color = Color(col, 0.9)
+	sb.set_border_width_all(1)
+	sb.set_corner_radius_all(10)
+	sb.content_margin_left = 9
+	sb.content_margin_right = 9
+	p.add_theme_stylebox_override("panel", sb)
+	var l := Label.new()
+	l.text = ScoreStore.mode_label(score_mode()).to_upper()
+	l.add_theme_font_override("font", UiTheme.heading_font(2))
+	l.add_theme_font_size_override("font_size", 13)
+	l.add_theme_color_override("font_color", col.lerp(Color.WHITE, 0.55))
+	p.add_child(l)
+	return p
+
+
 func _mod_badge(text: String) -> Control:
 	var p := PanelContainer.new()
 	var sb := StyleBoxFlat.new()
@@ -336,18 +376,22 @@ func _build_header() -> void:
 	title.add_theme_constant_override("shadow_offset_y", 2)
 	strip.add_child(title)
 	var sub := Label.new()
-	sub.text = "%s  ·  4K" % str(_data.get("version", "")).strip_edges()
+	# Diff-Name; der Modus steht als Abzeichen dahinter (nicht mehr "· 4K").
+	var ver := str(_data.get("version", "")).strip_edges()
+	ver = ver.trim_suffix("·  " + tr("Orbit")).trim_suffix("· " + tr("Orbit")).strip_edges()
+	sub.text = ver
 	sub.position = Vector2(41, 48)
 	sub.add_theme_font_override("font", UiTheme.heading_font(1))
 	sub.add_theme_font_size_override("font_size", 15)
 	sub.add_theme_color_override("font_color", UiTheme.ACCENT.lerp(UiTheme.TEXT, 0.35))
 	strip.add_child(sub)
-	# Mod-Badges (SV, NF) hinter der Schwierigkeit.
+	# Modus-Abzeichen + Mod-Badges (SV mit Stufe, NF) hinter der Schwierigkeit.
 	var mod_row := HBoxContainer.new()
 	mod_row.position = Vector2(41 + 8, 46)
 	mod_row.add_theme_constant_override("separation", 6)
 	strip.add_child(mod_row)
-	for m in active_mods():
+	mod_row.add_child(_mode_badge())
+	for m in mod_badge_texts():
 		mod_row.add_child(_mod_badge(m))
 	mod_row.position.x = sub.position.x + sub.get_theme_font("font").get_string_size(
 		sub.text, HORIZONTAL_ALIGNMENT_LEFT, -1, 15).x + 12
@@ -445,6 +489,10 @@ func _build_left_panel(parent: Control) -> void:
 	_score_lbl.add_theme_constant_override("line_spacing", -6)
 	vb.add_child(_score_lbl)
 	_reveal.append(_score_lbl)
+	var pb := _pb_line()
+	if pb != null:
+		vb.add_child(pb)
+		_reveal.append(pb)
 
 	# Urteils-Karten (3x2) mit Anteil-Balken.
 	var grid := GridContainer.new()
@@ -671,6 +719,44 @@ func _badges() -> Array:
 	if bool(_data.get("unranked", false)):
 		out.append(["UNGEWERTET", UiTheme.DIM])
 	return out
+
+
+## Vergleich mit der persoenlichen Bestleistung im SELBEN Modus:
+## "BESTLEISTUNG ORBIT  812.345  +12.000". null, wenn das Ergebnis nicht
+## gespeichert wurde (Replay, Autoplay, Lobby) oder ein Fail ist.
+func _pb_line() -> Control:
+	if bool(_data.get("is_fail", false)) or bool(_data.get("is_replay", false)):
+		return null
+	var mode := score_mode()
+	var score := int(_stats.get("score", 0))
+	var prev = _data.get("previous_best", null)
+	if prev == null:
+		prev = ScoreStore.previous_best_for(GameSession.osz_path, GameSession.difficulty_version, mode, score)
+	if not (prev is Dictionary):
+		return null
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	var cap := _caption(tr("BESTLEISTUNG %s") % ScoreStore.mode_label(mode).to_upper())
+	row.add_child(cap)
+	var val := Label.new()
+	val.add_theme_font_size_override("font_size", 15)
+	val.add_theme_color_override("font_color", UiTheme.TEXT)
+	row.add_child(val)
+	if (prev as Dictionary).is_empty():
+		val.text = tr("erster Score in diesem Modus")
+		return row
+	var old := int(prev.get("score", 0))
+	val.text = fmt_int(old)
+	var mods_txt := ScoreStore.mods_label(prev)
+	if mods_txt != "":
+		val.text += "  ·  " + mods_txt
+	var diff := Label.new()
+	var d := score - old
+	diff.text = ("+" if d >= 0 else "−") + fmt_int(absi(d))
+	diff.add_theme_font_size_override("font_size", 15)
+	diff.add_theme_color_override("font_color", Color(0.45, 0.95, 0.6) if d > 0 else (CAPTION if d == 0 else FAIL_COLOR))
+	row.add_child(diff)
+	return row
 
 
 func _badge(t: String, col: Color) -> PanelContainer:
