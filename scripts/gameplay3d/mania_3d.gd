@@ -3015,7 +3015,7 @@ func _draw_route() -> void:
 	for ci in _gal_chapters.size():
 		var rx := clampf(float(_gal_chapters[ci].t) / dur, 0.0, 1.0) * w
 		_route_ui.draw_circle(Vector2(rx, ry), 3.0,
-			Color(0.2, 0.85, 1.0, 0.9) if ci <= _gal_idx else Color(1, 1, 1, 0.22))
+			Color(UiTheme.ACCENT, 0.9) if ci <= _gal_idx else Color(1, 1, 1, 0.22))
 	_route_ui.draw_circle(Vector2(w, ry), 3.0, Color(0.5, 1.0, 0.75, 0.6))
 	_route_ui.draw_circle(Vector2(_route_p * w, ry), 4.5, Color(1, 1, 1, 0.9))
 
@@ -4211,7 +4211,7 @@ func _show_tut_step(step: Dictionary) -> void:
 	var title := Label.new()
 	title.text = "📘 " + str(step.title)
 	title.add_theme_font_size_override("font_size", 22)
-	title.add_theme_color_override("font_color", Color(0.20, 0.85, 1.0))
+	title.add_theme_color_override("font_color", UiTheme.ACCENT)
 	vb.add_child(title)
 	var body := Label.new()
 	body.text = str(step.body)
@@ -4220,7 +4220,7 @@ func _show_tut_step(step: Dictionary) -> void:
 	body.add_theme_font_size_override("font_size", 16)
 	vb.add_child(body)
 	var go := Button.new()
-	go.text = "WEITER  (Enter)"
+	go.text = UiTheme.sentence(tr("WEITER  (Enter)").to_upper())
 	go.custom_minimum_size = Vector2(0, 44)
 	UiTheme.style_button(go, true)
 	go.pressed.connect(_close_tut_step)

@@ -1006,7 +1006,7 @@ func _tour_finish() -> void:
 	b.add_theme_font_size_override("font_size", 15)
 	vb.add_child(b)
 	var go := Button.new()
-	go.text = "🚀 ÜBUNGS-MAP STARTEN"
+	go.text = UiTheme.sentence(tr("🚀 ÜBUNGS-MAP STARTEN").trim_prefix("🚀 "))
 	go.custom_minimum_size = Vector2(0, 48)
 	UiTheme.style_button(go, true)
 	go.pressed.connect(_start_practice)

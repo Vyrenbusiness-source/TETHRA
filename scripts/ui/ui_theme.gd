@@ -608,3 +608,25 @@ static func section_label(text: String) -> Label:
 	l.add_theme_font_size_override("font_size", 12)
 	l.add_theme_color_override("font_color", DIM)
 	return l
+
+
+## Satzschreibung fuer Knopf-Texte aus Versal-Schluesseln: "NICHT BEREIT" ->
+## "Nicht bereit", "WEITER  (ENTER)" -> "Weiter (Enter)", "ÜBUNGS-MAP" ->
+## "Übungs-Map". Gemischte Texte und Kuerzel (<= 3 Zeichen) bleiben unveraendert.
+static func sentence(t: String) -> String:
+	if t.length() <= 3 or t != t.to_upper():
+		return t
+	var out := ""
+	var cap := true
+	for i in t.length():
+		var c := t[i]
+		if c.to_upper() != c.to_lower():
+			out += c.to_upper() if cap else c.to_lower()
+			cap = false
+		else:
+			out += c
+			if c == "(" or c == "-":
+				cap = true
+	while out.contains("  "):
+		out = out.replace("  ", " ")
+	return out

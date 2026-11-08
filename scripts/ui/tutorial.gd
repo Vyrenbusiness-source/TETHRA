@@ -6,8 +6,8 @@ extends Control
 ## "tatatat - e [4k beginner]", die vor jedem neuen Element anhält und es
 ## direkt im Spiel erklärt.
 
-const COL_ACCENT := Color(0.20, 0.85, 1.0)
-const COL_DIM := Color(0.62, 0.64, 0.72)
+const COL_ACCENT := UiTheme.ACCENT
+const COL_DIM := UiTheme.DIM
 
 var _pages: Array = []
 var _page := 0
@@ -56,15 +56,15 @@ class SoftBg extends Control:
 		resized.connect(queue_redraw)
 
 	func _draw() -> void:
-		var top := Color(0.05, 0.07, 0.13)
-		var bot := Color(0.02, 0.02, 0.05)
+		var top := UiTheme.SURFACE
+		var bot := UiTheme.BG
 		draw_polygon(PackedVector2Array([Vector2.ZERO, Vector2(size.x, 0), size, Vector2(0, size.y)]),
 			PackedColorArray([top, top, bot, bot]))
 		for d in _dots:
 			var c := Vector2(d[0] * size.x, d[1] * size.y)
 			for k in 4:
 				var r: float = d[2] * (1.0 + k * 1.2)
-				draw_circle(c, r, Color(0.55, 0.85, 1.0, d[3] * 0.35 / (1.0 + k * 0.6)))
+				draw_circle(c, r, Color(UiTheme.TEXT, d[3] * 0.35 / (1.0 + k * 0.6)))
 
 
 ## Kurze Tastennamen fuer die Keycaps ("," statt Comma).
@@ -183,7 +183,7 @@ func _ready() -> void:
 	_goal_box = PanelContainer.new()
 	var gsb := StyleBoxFlat.new()
 	gsb.bg_color = Color(COL_ACCENT.r, COL_ACCENT.g, COL_ACCENT.b, 0.10)
-	gsb.set_corner_radius_all(10)
+	gsb.set_corner_radius_all(4)
 	gsb.set_border_width_all(1)
 	gsb.border_color = Color(COL_ACCENT.r, COL_ACCENT.g, COL_ACCENT.b, 0.30)
 	gsb.content_margin_left = 14
@@ -228,8 +228,8 @@ func _ready() -> void:
 	_scroll = scroll
 	scroll.get_v_scroll_bar().value_changed.connect(func(_v): _update_fade())
 	var fg := Gradient.new()
-	fg.set_color(0, Color(0.03, 0.04, 0.08, 0.0))
-	fg.set_color(1, Color(0.03, 0.04, 0.08, 0.95))
+	fg.set_color(0, Color(UiTheme.SURFACE, 0.0))
+	fg.set_color(1, Color(UiTheme.SURFACE, 0.95))
 	var fgt := GradientTexture2D.new()
 	fgt.gradient = fg
 	fgt.fill_from = Vector2(0.5, 0.0)
@@ -255,7 +255,7 @@ func _ready() -> void:
 
 	_hint = Label.new()
 	_hint.add_theme_font_size_override("font_size", 13)
-	_hint.add_theme_color_override("font_color", Color(1.0, 0.6, 0.5))
+	_hint.add_theme_color_override("font_color", UiTheme.BAD)
 	_hint.text = ""
 	vb.add_child(_hint)
 
@@ -288,7 +288,7 @@ func _ready() -> void:
 	_action_btn.visible = false
 	nav.add_child(_action_btn)
 	_start_btn = Button.new()
-	_start_btn.text = "🚀 ÜBUNGS-MAP STARTEN"
+	_start_btn.text = UiTheme.sentence(tr("🚀 ÜBUNGS-MAP STARTEN").trim_prefix("🚀 "))
 	_start_btn.custom_minimum_size = Vector2(260, 46)
 	UiTheme.style_button(_start_btn, true)
 	_start_btn.pressed.connect(_start_practice)
@@ -306,14 +306,11 @@ func _ready() -> void:
 func _make_keycap(txt: String) -> PanelContainer:
 	var cap := PanelContainer.new()
 	var sbk := StyleBoxFlat.new()
-	sbk.bg_color = Color(0.13, 0.15, 0.22, 0.95)
-	sbk.set_corner_radius_all(12)
+	sbk.bg_color = UiTheme.RAISED
+	sbk.set_corner_radius_all(6)
 	sbk.set_border_width_all(2)
 	sbk.border_width_bottom = 6
 	sbk.border_color = Color(COL_ACCENT.r, COL_ACCENT.g, COL_ACCENT.b, 0.70)
-	sbk.shadow_size = 8
-	sbk.shadow_color = Color(0, 0, 0, 0.35)
-	sbk.shadow_offset = Vector2(0, 4)
 	cap.add_theme_stylebox_override("panel", sbk)
 	cap.custom_minimum_size = Vector2(76, 76)
 	var l := Label.new()
@@ -352,7 +349,7 @@ func _update_dots() -> void:
 			col = Color(COL_ACCENT.r, COL_ACCENT.g, COL_ACCENT.b, 0.45)
 		var dsb := StyleBoxFlat.new()
 		dsb.bg_color = col
-		dsb.set_corner_radius_all(4)
+		dsb.set_corner_radius_all(2)
 		d.add_theme_stylebox_override("panel", dsb)
 		var tw := d.create_tween()
 		tw.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
