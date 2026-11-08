@@ -38,10 +38,17 @@ var tutorial := false
 ## Replay-Wiedergabe: true = aufgezeichnete Inputs abspielen statt Tastatur.
 var is_replay := false
 var replay_events: Array = []
+## Herkunft der Replay-Events (ReplayStore-Modus): "mania" ({t, lane, down})
+## oder "orbit"/"orbit_last" (OrbitCore-Events, Szene orbit.tscn).
+var replay_mode := "mania"
+## Orbit: Songzeit, zu der der aufgezeichnete Lauf endete (meta.end_ms, -1 = bis zum Ende).
+var replay_end_ms := -1.0
 
 ## Clip-Export (zweiter Prozess, siehe ClipExporter): --clip <md5> spielt das
 ## Replay mit dieser md5 automatisch ab und beendet das Spiel 3 s nach den Results.
 var clip_md5: String = ""
+## --clip-mode <ReplayStore-Modus> (fehlt = "mania").
+var clip_mode: String = "mania"
 const CLIP_QUIT_DELAY := 3.0
 var _clip_end_t := -1.0
 var _clip_end_frames := 0
@@ -75,14 +82,18 @@ func _ready() -> void:
 	var i := args.find("--clip")
 	if i >= 0 and i + 1 < args.size():
 		clip_md5 = args[i + 1]
+		var j := args.find("--clip-mode")
+		if j >= 0 and j + 1 < args.size():
+			clip_mode = args[j + 1]
 		_start_clip.call_deferred()
 
 
 ## Replay zur md5 in der Bibliothek suchen (md5 = "<osz-Dateiname>|<version>"),
-## Auswahl setzen und die Mania-Szene im Replay-Modus starten.
+## Auswahl setzen und die Mania- bzw. (clip_mode orbit*) Orbit-Szene im
+## Replay-Modus starten.
 func _start_clip() -> void:
 	await get_tree().process_frame
-	var replay_path := "%s/%s.json" % [ReplayStore.DIR, clip_md5]
+	var replay_path := ReplayStore.path_for_key(clip_md5, clip_mode)
 	if not FileAccess.file_exists(replay_path):
 		push_error("Clip: kein Replay " + replay_path)
 		get_tree().quit(1)
@@ -94,15 +105,17 @@ func _start_clip() -> void:
 			var ver: String = ms.version_name_at(d)
 			if ("%s|%s" % [ms.osz_path.get_file(), ver]).md5_text() != clip_md5:
 				continue
-			var data := ReplayStore.load_replay(ms.osz_path, ver)
+			var data := ReplayStore.load_key(clip_md5, clip_mode)
 			if data.is_empty():
 				break
 			mods = _replay_mods(data)
 			set_selection(ms.osz_path, d, ver, ms.osu_filename_at(d), ms.stars_at(d))
 			is_replay = true
 			replay_events = data.events
+			replay_mode = clip_mode
+			replay_end_ms = float(data.get("meta", {}).get("end_ms", -1.0))
 			set_process(true)
-			get_tree().change_scene_to_file("res://scenes/mania_3d.tscn")
+			get_tree().change_scene_to_file("res://scenes/orbit.tscn" if ReplayStore.is_orbit(clip_mode) 				else "res://scenes/mania_3d.tscn")
 			return
 	push_error("Clip: keine Map zu md5 " + clip_md5)
 	get_tree().quit(1)
