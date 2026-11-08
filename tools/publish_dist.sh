@@ -12,7 +12,8 @@ VER="$(sed -n 's/^const CURRENT_VERSION := "\(.*\)"/\1/p' scripts/net/updater.gd
 NOTES="${1:-}"
 PART=$((15 * 1024 * 1024))
 WT="$(mktemp -d)"
-trap 'git worktree remove --force "$WT" >/dev/null 2>&1 || rm -rf "$WT"' EXIT
+trap 'git worktree remove --force "$WT" >/dev/null 2>&1 || rm -rf "$WT"; git branch -D dist-new >/dev/null 2>&1 || true' EXIT
+git branch -D dist-new >/dev/null 2>&1 || true
 git fetch -q origin dist 2>/dev/null || true
 git worktree add -q --detach "$WT"
 (
