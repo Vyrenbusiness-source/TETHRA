@@ -159,6 +159,7 @@ func _build() -> void:
 	_show_page(_mode_pages()[0])
 	_refresh_labels()
 	_layout()
+	_layout.call_deferred()
 	_panel.modulate.a = 0.0
 	create_tween().tween_property(_panel, "modulate:a", 1.0, 0.15)
 
@@ -249,7 +250,8 @@ func _build_sidebar(parent: Control) -> void:
 	col.add_child(sp)
 	var foot := Label.new()
 	foot.text = "Wird beim Schließen gespeichert · Esc"
-	foot.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	foot.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	foot.custom_minimum_size = Vector2(SIDE_W - 32.0, 0)
 	foot.add_theme_font_size_override("font_size", 12)
 	foot.add_theme_color_override("font_color", Color(UiTheme.DIM, 0.8))
 	col.add_child(foot)
@@ -425,7 +427,7 @@ func _page_field3d(pg: VBoxContainer) -> void:
 	_choice(g, "Kamera", ["Komfort", "Dynamisch"],
 		func(s): return s.camera_mode,
 		func(i): Settings.camera_mode = i,
-		"Komfort: ruhig, gegen Übelkeit · Dynamisch: volle Flugbewegung")
+		"Komfort: ruhig · gegen Übelkeit · Dynamisch: volle Flugbewegung")
 	_choice(g, "Effekte", ["Aus", "Dezent", "Voll"],
 		func(s): return s.tunnel_intensity,
 		func(i): Settings.tunnel_intensity = i,
@@ -1399,12 +1401,11 @@ func _on_search(q: String) -> void:
 		b.clip_text = true
 		b.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
 		b.add_theme_font_size_override("font_size", 14)
-		b.vertical_alignment = VERTICAL_ALIGNMENT_TOP
 		var sb := StyleBoxFlat.new()
 		sb.bg_color = UiTheme.RAISED if i == 0 else Color(0, 0, 0, 0)
 		sb.set_corner_radius_all(UiTheme.R_SMALL + 1)
 		sb.content_margin_left = 12
-		sb.content_margin_top = 3
+		sb.content_margin_bottom = 15
 		var hv: StyleBoxFlat = sb.duplicate()
 		hv.bg_color = UiTheme.RAISED
 		b.add_theme_stylebox_override("normal", sb)
