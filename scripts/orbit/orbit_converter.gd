@@ -1,11 +1,12 @@
 class_name OrbitConverter
 extends RefCounted
 
-## Wandelt eine osu!mania- oder osu!standard-Map in Taktkreis-Ziele um. Komplett
+## Wandelt eine osu!mania- oder osu!standard-Map in Bahnen-Ziele um. Komplett
 ## deterministisch. Jedes Ziel liegt auf der Zeit seiner Quell-Note, sein Winkel
-## ist die Taktposition (Winkel der Hand zu dieser Zeit, OrbitClock).
+## ist die Taktphase (OrbitClock). Dazu waehlt plan_shapes je Takt die Bahnform
+## (Ellipse/Kreis ruhig, Acht/Rose dicht oder Kiai).
 ##
-## Ring (Details: docs/modes/orbit_taktkreis.md):
+## Spur (Details: docs/modes/orbit_bahnen.md):
 ##  - osu!standard nach osu!taiko-Regel: Whistle/Clap = aussen (Taste B), sonst
 ##    innen (Taste A); Finish = Akzent (beide Ringe am selben Winkel).
 ##    Slider/Spinner (>= MIN_ARC_MS) werden Halte.
@@ -38,9 +39,23 @@ const STAR_SWITCH_W := 0.5
 const STAR_SWITCH_GAP_MS := 400.0
 const STAR_ACCENT_W := 0.4
 const STAR_HOLD_W := 0.5
-## Drehtempo der Hand, ab dem das Folgen anspruchsvoll wird (Grad/ms): 360 Grad
-## in 2 s (4/4 bei 120 BPM) = 0,18. Folge-Anspruch = (Tempo / Referenz)^2.
-const HAND_REF_DEG_PER_MS := 0.18
+## Kopfgeschwindigkeit, ab der das Folgen anspruchsvoll wird (Bahn-Einheiten/ms):
+## Kreis bei 1,5 s/Takt = 0,0033. Folge-Anspruch = (Tempo x Kurvigkeit / Referenz)^2.
+const HEAD_REF := 0.0033
+
+## --- Bahnformen: Auswahl je Takt ---
+## Schwellen der Last L (Ziele/s im Takt, im Kiai x KIAI_BOOST, geglaettet):
+## < SHAPE_L_ELLIPSE Kreis, bis SHAPE_L_EIGHT Ellipse, bis SHAPE_L_ROSE Acht,
+## darueber Rose3 oder Acht im Wechsel, ab SHAPE_L_ROSE4 Rose4.
+const SHAPE_L_ELLIPSE := 2.0
+const SHAPE_L_EIGHT := 3.8
+const SHAPE_L_ROSE := 5.8
+const SHAPE_L_ROSE4 := 8.5
+const KIAI_BOOST := 1.35
+## Eine Form haelt mindestens so viele Takte (kein Flackern).
+const SHAPE_MIN_HOLD := 4
+## Pause: so viele Takte ohne Ziel setzen die Bahn auf den Kreis zurueck.
+const SHAPE_REST_BARS := 2
 const STAR_FOLLOW_CAP := 2.5
 const STAR_FOLLOW_K := 0.9
 const STAR_MAX := 15.0
@@ -59,9 +74,106 @@ static func convert(beatmap: Beatmap) -> Array[OrbitNote]:
 			else convert_mania_events(beatmap)
 	var clock := OrbitClock.from_beatmap(beatmap)
 	out = build(evs, clock, SAME_RING_MIN_MS, 0.0)
+	plan_shapes(beatmap, out, clock)
 	if stars(out) < EASY_STARS:
 		out = build(evs, clock, EASY_RING_GAP_MS, EASY_GAP_MS)
+		plan_shapes(beatmap, out, clock)
 	return out
+
+
+## Bahn (Uhr + Formplan) zu den umgewandelten Zielen ns einer Map. Dieselbe
+## Rechnung wie in convert (deterministisch), Ergebnis steht auch in ns[i].shape.
+static func track_for(beatmap: Beatmap, ns: Array[OrbitNote]) -> OrbitTrack:
+	return plan_shapes(beatmap, ns, OrbitClock.from_beatmap(beatmap))
+
+
+## Waehlt je Takt die Bahnform nach Dichte und Kiai und setzt shape/speed der
+## Ziele. Wechsel nur auf Takt-Eins; die Form haelt SHAPE_MIN_HOLD Takte; eine
+## Form, deren Kopf schneller als erlaubt liefe (OrbitTrack.MAX_SPEED, leichte
+## Maps MAX_SPEED_EASY), wird durch die naechst-einfachere ersetzt.
+static func plan_shapes(beatmap: Beatmap, ns: Array[OrbitNote], clock: OrbitClock) -> OrbitTrack:
+	var tr := OrbitTrack.new()
+	tr.clock = clock
+	tr.plan = [[-INF, OrbitPath.CIRCLE]]
+	if ns.is_empty() or beatmap == null:
+		_stamp(tr, ns)
+		return tr
+	var cap := OrbitTrack.MAX_SPEED_EASY 			if OrbitClock.min_bar_for(beatmap) >= OrbitClock.EASY_MIN_BAR_MS else OrbitTrack.MAX_SPEED
+	# Takte von der ersten bis zur letzten Note.
+	var starts: Array[float] = []
+	var ends: Array[float] = []
+	var t := clock.bar_start_at(ns[0].time_ms)
+	var t_last := ns[-1].end_ms
+	while t <= t_last and starts.size() < 20000:
+		var e := clock.bar_end_at(t + 0.5)
+		if e <= t + 1.0:
+			e = t + 1000.0
+		starts.append(t)
+		ends.append(e)
+		t = e
+	var nb := starts.size()
+	var count := PackedFloat32Array()
+	count.resize(nb)
+	count.fill(0.0)
+	var b := 0
+	for i in ns.size():
+		var n := ns[i]
+		if i > 0 and absf(n.time_ms - ns[i - 1].time_ms) <= CHORD_EPS_MS:
+			continue
+		while b < nb - 1 and n.time_ms >= ends[b]:
+			b += 1
+		count[b] += 1.0
+	var raw := PackedFloat32Array()
+	raw.resize(nb)
+	var kia: Array[bool] = []
+	for k in nb:
+		var secs := maxf((ends[k] - starts[k]) / 1000.0, 0.2)
+		var kk := beatmap.is_kiai((starts[k] + ends[k]) * 0.5)
+		kia.append(kk)
+		raw[k] = count[k] / secs * (KIAI_BOOST if kk else 1.0)
+	var cur := OrbitPath.CIRCLE
+	var since := SHAPE_MIN_HOLD
+	var changes := 0
+	var rest := 0
+	for k in nb:
+		var prev_v: float = raw[k - 1] if k > 0 else raw[k]
+		var next_v: float = raw[k + 1] if k + 1 < nb else raw[k]
+		var level := (prev_v + 2.0 * raw[k] + next_v) * 0.25
+		rest = rest + 1 if count[k] == 0.0 else 0
+		var want := _shape_for_level(level, changes)
+		if rest >= SHAPE_REST_BARS:
+			want = OrbitPath.CIRCLE
+		var full := clock.bar_ms_at(starts[k] + 0.5)
+		# Geschwindigkeits-Deckel: zu kurze Takte vertragen nur einfache Formen.
+		while want > OrbitPath.CIRCLE and OrbitPath.length(want) / full > cap:
+			want -= 1
+		var forced := OrbitPath.length(cur) / full > cap
+		if want != cur and (since >= SHAPE_MIN_HOLD or forced or rest >= SHAPE_REST_BARS):
+			cur = want
+			since = 0
+			changes += 1
+			(tr.plan as Array).append([starts[k], cur])
+		since += 1
+	_stamp(tr, ns)
+	return tr
+
+
+static func _shape_for_level(level: float, changes: int) -> int:
+	if level >= SHAPE_L_ROSE4:
+		return OrbitPath.ROSE4
+	if level >= SHAPE_L_ROSE:
+		return OrbitPath.ROSE3 if changes % 2 == 0 else OrbitPath.EIGHT
+	if level >= SHAPE_L_EIGHT:
+		return OrbitPath.EIGHT
+	if level >= SHAPE_L_ELLIPSE:
+		return OrbitPath.ELLIPSE
+	return OrbitPath.CIRCLE
+
+
+static func _stamp(tr: OrbitTrack, ns: Array[OrbitNote]) -> void:
+	for n in ns:
+		n.shape = tr.shape_at(n.time_ms)
+		n.speed = tr.speed_at(n.time_ms)
 
 
 static func convert_std(beatmap: Beatmap) -> Array[OrbitNote]:
@@ -243,7 +355,7 @@ static func violations(ns: Array[OrbitNote], beatmap: Beatmap) -> Dictionary:
 ## Kennzahlen eines umgewandelten Musters (Tests, Bericht).
 static func analyze(ns: Array[OrbitNote], _beatmap: Beatmap = null) -> Dictionary:
 	var a := {"arcs": 0, "chords": 0, "nps": 0.0, "switches": 0, "inner": 0,
-		"outer": 0, "max_speed": 0.0}
+		"outer": 0, "max_speed": 0.0, "shape_changes": 0, "shapes": [0, 0, 0, 0, 0]}
 	if ns.is_empty():
 		return a
 	var last_ring := -1
@@ -261,6 +373,9 @@ static func analyze(ns: Array[OrbitNote], _beatmap: Beatmap = null) -> Dictionar
 			a.switches += 1
 		last_ring = n.ring
 		a.max_speed = maxf(a.max_speed, n.speed)
+		a.shapes[clampi(n.shape, 0, OrbitPath.COUNT - 1)] += 1
+		if i > 0 and n.shape != ns[i - 1].shape:
+			a.shape_changes += 1
 	var span := maxf(ns[-1].time_ms - ns[0].time_ms, 1000.0)
 	a.nps = float(ns.size()) / (span / 1000.0)
 	return a
@@ -270,7 +385,7 @@ static func analyze(ns: Array[OrbitNote], _beatmap: Beatmap = null) -> Dictionar
 ##  Last = Ziele (Akzent-Zweitziel zaehlt STAR_ACCENT_W, Halte STAR_HOLD_W,
 ##  Ringwechsel unter STAR_SWITCH_GAP_MS STAR_SWITCH_W) je Sekunde,
 ##  Wert = STAR_DENS_K * Last^0,8 + STAR_FOLLOW_K * Folge * min(nps / 3, 1);
-##  Folge = (Drehtempo der Hand / HAND_REF)^2 (gekappt). Die haertesten Fenster
+##  Folge = (Kopftempo x Kurvigkeit der Form / HEAD_REF)^2 (gekappt). Die haertesten Fenster
 ##  zaehlen am meisten (Gewicht STAR_DECAY^k).
 static func stars(ns: Array[OrbitNote]) -> float:
 	if ns.size() < 2:
@@ -302,7 +417,7 @@ static func stars(ns: Array[OrbitNote]) -> float:
 			x += STAR_HOLD_W
 		load_w[w] += x
 		cnt[w] += 0.5 if chord else 1.0
-		spd[w] = maxf(spd[w], n.speed)
+		spd[w] = maxf(spd[w], n.speed * float(OrbitPath.CURVE[clampi(n.shape, 0, OrbitPath.COUNT - 1)]))
 		if not chord:
 			last_ring = n.ring
 			last_time = n.time_ms
@@ -311,7 +426,7 @@ static func stars(ns: Array[OrbitNote]) -> float:
 		var lw := load_w[w] + (load_w[w - 1] if w > 0 else 0.0)
 		var nps := (cnt[w] + (cnt[w - 1] if w > 0 else 0.0)) / (2.0 * STAR_HOP_MS / 1000.0)
 		var sp := maxf(spd[w], spd[w - 1] if w > 0 else 0.0)
-		var follow := minf(pow(sp / HAND_REF_DEG_PER_MS, 2.0), STAR_FOLLOW_CAP)
+		var follow := minf(pow(sp / HEAD_REF, 2.0), STAR_FOLLOW_CAP)
 		var per_s := lw / (2.0 * STAR_HOP_MS / 1000.0)
 		vals.append(STAR_DENS_K * pow(per_s, 0.8) + STAR_FOLLOW_K * follow * minf(nps / 3.0, 1.0))
 	vals.sort()

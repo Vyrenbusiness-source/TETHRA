@@ -1,14 +1,18 @@
 class_name OrbitCore
 extends RefCounted
 
-## Orbit-Wertung (Taktkreis): eine Hand dreht pro Takt einmal um die Mitte,
-## Ziele sitzen auf zwei Ringen an ihrer Taktposition. Die TASTE waehlt den
-## Ring (0 = innen = Taste A, 1 = aussen = Taste B), der Cursor muss beim Druck
-## auf der HAND liegen (Winkel, +-ANGLE_TOL_DEG; Radius egal ausser in der
-## Totzone). Ein Treffer zaehlt nur, wenn Zeitfenster UND Zielen stimmen.
-## Bogen (Halte): Kopf wie ein Tap, danach Taste halten und die Hand mit dem
-## Cursor verfolgen. Zu frueh loslassen oder laenger als ARC_OUT_MS neben der
-## Hand = Miss (DROP), wie Mania-Holds.
+## Orbit-Wertung (Bahnen): ein Spielkopf laeuft pro Takt einmal die Bahn ab
+## (Form wechselt im Song, siehe OrbitTrack), Ziele sitzen auf zwei Spuren
+## links/rechts der Bahn an ihrer Taktposition. Die TASTE waehlt die Spur
+## (0 = A = links/innen, 1 = B = rechts/aussen), der Cursor muss beim Druck
+## auf dem KOPF liegen (Abstand in Bahn-Einheiten, Toleranz AIM_TOL).
+## Ein Treffer zaehlt nur, wenn Zeitfenster UND Zielen stimmen.
+## Bogen (Halte): Kopf wie ein Tap, danach Taste halten und den Kopf mit dem
+## Cursor verfolgen. Zu frueh loslassen oder laenger als ARC_OUT_MS neben dem
+## Kopf = Miss (DROP), wie Mania-Holds.
+##
+## Zielfehler (Feld "angle_err", aim_err) = Abstand Cursor-Kopf in "Aim-Punkten":
+## 1 Punkt = 0,01 Bahn-Einheiten.
 ##
 ## Zeitfenster, Qualitaeten, Score, Acc, Grade, HP und stats() kommen aus
 ## ManiaCore: ein internes ManiaCore-Objekt (_tally) zaehlt alles, damit die
@@ -19,32 +23,24 @@ signal note_spawned(index: int)
 signal note_judged(index: int, result: Dictionary)
 signal arc_started(index: int, quality: int)
 signal ring_pressed(ring: int, hit: bool)
-## Druck ohne Treffer: Ort (Winkel, Radius in Bildhoehen), Ring der Taste und
-## Grund: "ANGLE" (Ziel im Fenster, Cursor neben der Hand), "DEAD" (Cursor in
-## der Totzone), "RING" (Ziel im Fenster, aber auf dem anderen Ring = andere
-## Taste), "EARLY" (Ziel noch zu weit weg, frisst nichts), "NONE".
-signal press_missed(deg: float, rho: float, ring: int, reason: String)
+## Druck ohne Treffer: Cursor-Ort (Bahn-Einheiten), Spur der Taste und Grund:
+## "AIM" (Ziel im Fenster, Cursor neben dem Kopf), "RING" (Ziel im Fenster,
+## aber auf der anderen Spur = andere Taste), "EARLY" (Ziel noch zu weit weg,
+## frisst nichts), "NONE".
+signal press_missed(pos: Vector2, ring: int, reason: String)
 signal hp_changed(hp: float)
 signal finished(stats: Dictionary)
 
 ## Gleiche Staffel wie ManiaCore (MAX, PERFECT, GOOD, OK, MEH, MISS).
 const Quality := ManiaCore.Quality
 const RINGS := 2
-## Winkel-Toleranz fuer Taps, Bogen-Koepfe und das Folgen eines Bogens.
-const ANGLE_TOL_DEG := 30.0
-## Radien der Ringe in Bildhoehen (OrbitView nutzt dieselben Werte). Die
-## Grenze dazwischen und die Hysterese gelten nur noch fuer die Anzeige des
-## Cursor-Rings (kein Einfluss auf die Wertung).
-const R_INNER_K := 0.215
-const R_OUTER_K := 0.37
-const RING_SPLIT_K := (R_INNER_K + R_OUTER_K) * 0.5
-const RING_HYST_K := 0.012
+## Zieltoleranz in Aim-Punkten (1/100 Bahn-Einheit) fuer Taps, Bogen-Koepfe
+## und das Folgen eines Bogens.
+const AIM_TOL := 40.0
 ## So lange darf der Cursor beim Bogen ausserhalb der Toleranz sein.
 const ARC_OUT_MS := 150.0
-## Zielmitte: nur so nah am Ziel (Grad) gibt es die beste Stufe CORE.
-const CENTER_DEG := 9.0
-## Totzone um die Mitte (Bildhoehen): ohne verlaessliche Richtung kein Treffer.
-const DEAD_K := 0.045
+## Zielmitte: nur so nah am Kopf (Aim-Punkte) gibt es die beste Stufe CORE.
+const AIM_CENTER := 12.0
 
 ## --- Orbit-Mods (Schluessel im Mod-Dictionary, neben NF/SV aus ManiaCore) ---
 ## HD Hidden: Ziele verblassen auf den letzten ~40 % des Anflugs (OrbitView).
@@ -81,22 +77,20 @@ const GRADE_STEPS := [[0.95, "S"], [0.90, "A"], [0.82, "B"], [0.72, "C"]]
 ## und 0.1 Grad gerundet und nie vor den letzten Raster-Schritt gelegt. Damit
 ## haengt die Wertung nur von der Eingabe-Liste ab, nicht von der Bildrate.
 const TICK_MS := 1.0
-## Cursor-Aufnahme: neuer Winkel nur bei Aenderung > REC_MIN_DEG und
-## fruehestens REC_GAP_MS nach dem letzten Eintrag (hoechstens 125/s). Der
-## Core sieht beim Aufnehmen nur die aufgezeichneten Winkel; Tasten-Events
-## tragen den exakten Winkel selbst (Treffer-Winkel bleibt genau).
-const REC_MIN_DEG := 0.5
+## Cursor-Aufnahme: neuer Ort nur bei Aenderung > REC_MIN_Q (Tausendstel
+## Bahn-Einheit je Achse) und fruehestens REC_GAP_MS nach dem letzten Eintrag
+## (hoechstens 125/s). Der Core sieht beim Aufnehmen nur die aufgezeichneten
+## Orte; Tasten-Events tragen den exakten Ort selbst.
+const REC_MIN_Q := 3
 const REC_GAP_MS := 8.0
-## Neuer Radius nur bei Aenderung > REC_MIN_RHO (Tausendstel Bildhoehe).
-const REC_MIN_RHO := 3
-## Replay-Format: 3 = Taktkreis (Taste = Ring, Zielen auf die Hand). Replays
-## mit kleinerem meta.orbit_rules (1: Taste = Ring, 2: Ring durch Zeigen) sind
-## "aeltere Version".
-const REPLAY_RULES := 3
-## Replay-Event-Codes: [t_ms, EV_CURSOR, a, r] / [t_ms, EV_DOWN + taste, a, r] /
-## [t_ms, EV_UP + taste]; t in ganzen ms, a = Winkel in 0.1 Grad (0..3599),
-## r = Cursor-Abstand zur Mitte in Tausendstel Bildhoehe. Taste 0/1 = beide
-## treffen jedes Ziel.
+## Wertebereich der Ortsachsen im Replay (Tausendstel Bahn-Einheit).
+const Q_LIMIT := 4000
+## Replay-Format: 4 = Bahnen (Taste = Spur, Zielen auf den Kopf in Bahn-
+## Einheiten). Kleineres meta.orbit_rules (1-3) = "aeltere Version".
+const REPLAY_RULES := 4
+## Replay-Event-Codes: [t_ms, EV_CURSOR, x, y] / [t_ms, EV_DOWN + taste, x, y] /
+## [t_ms, EV_UP + taste]; t in ganzen ms, x/y = Cursor in Tausendstel
+## Bahn-Einheit.
 const EV_CURSOR := 0
 const EV_DOWN := 1
 const EV_UP := 3
@@ -121,10 +115,9 @@ var _last_check: Array[float] = [0.0, 0.0]
 var _judged: Dictionary = {}
 var _judged_count := 0
 var _finished_emitted := false
-var _cursor := 0.0
-## Cursor-Abstand zur Mitte (Bildhoehen) und der daraus gewaehlte Ring.
-var _rho := 0.0
-var _sel_ring := 0
+var _cursor := Vector2.ZERO
+## Bahn (Uhr + Formplan); ohne Aufruf von set_track ein Kreis bei 2 s/Takt.
+var track: OrbitTrack = OrbitTrack.fixed(OrbitClock.fixed(2000.0), OrbitPath.CIRCLE)
 ## Welche der zwei Tasten gerade unten sind.
 var _held: Array[bool] = [false, false]
 ## Orbit-Wertung: Summe der Trefferwerte, Streak-Summe, gewertete Ziele.
@@ -139,8 +132,8 @@ var deterministic := false
 var recording := false
 var replay_log: Array = []
 var _tick := -INF
-var _rec_a := -1
-var _rec_r := -1
+var _rec_x := -99999
+var _rec_y := -99999
 var _rec_t := -INF
 
 # --- Zaehler und Fenster: alles liegt im ManiaCore-Zaehler ---
@@ -184,9 +177,9 @@ var w50: float:
 	get: return _tally.w50
 var w_miss: float:
 	get: return _tally.w_miss
-## Winkel-Toleranz und CORE-Mitte dieses Laufs (PR: x PR_SCALE).
-var angle_tol := ANGLE_TOL_DEG
-var center_tol := CENTER_DEG
+## Zieltoleranz und CORE-Mitte dieses Laufs (PR: x PR_SCALE), Aim-Punkte.
+var angle_tol := AIM_TOL
+var center_tol := AIM_CENTER
 
 
 ## p_notes: Ergebnis von OrbitConverter.convert (nach time_ms sortiert).
@@ -215,8 +208,8 @@ func setup(p_notes: Array[OrbitNote], od: float, scroll_scale: float = 1.0,
 	_tally.w100 *= k
 	_tally.w50 *= k
 	_tally.w_miss *= k
-	angle_tol = ANGLE_TOL_DEG * k
-	center_tol = CENTER_DEG * k
+	angle_tol = AIM_TOL * k
+	center_tol = AIM_CENTER * k
 	_tally._total_notes = notes.size()
 	preempt = ManiaCore.preempt_for(scroll_scale)
 	_ring_notes = []
@@ -243,18 +236,16 @@ func setup(p_notes: Array[OrbitNote], od: float, scroll_scale: float = 1.0,
 	_judged_count = 0
 	_next_spawn = 0
 	_finished_emitted = false
-	_cursor = 0.0
-	_rho = 0.0
-	_sel_ring = 0
+	_cursor = Vector2.ZERO
 	_held = [false, false]
-	_rec_r = -1
 	_val_sum = 0.0
 	_streak_sum = 0.0
 	_n_done = 0
 	_aim_sum = 0.0
 	_aim_n = 0
 	_tick = -INF
-	_rec_a = -1
+	_rec_x = -99999
+	_rec_y = -99999
 	_rec_t = -INF
 	replay_log = []
 
@@ -327,69 +318,58 @@ func update(t_ms: float) -> void:
 		finished.emit(stats())
 
 
-## Cursor zur Event-Zeit t_ms: Winkel (0 = oben, im Uhrzeigersinn) und Abstand
-## zur Mitte rho (in Bildhoehen). Bis t_ms stand der Cursor noch am alten Ort.
-func cursor_moved(cursor_deg: float, rho: float, t_ms: float) -> void:
+## Bahn setzen (nach setup): Uhr + Formplan aus OrbitConverter.track_for.
+func set_track(p_track: OrbitTrack) -> void:
+	if p_track != null:
+		track = p_track
+
+
+## Cursor zur Event-Zeit t_ms in Bahn-Einheiten. Bis t_ms stand der Cursor noch
+## am alten Ort.
+func cursor_moved(pos: Vector2, t_ms: float) -> void:
 	if not deterministic:
-		_do_cursor(cursor_deg, rho, t_ms)
+		_do_cursor(pos, t_ms)
 		return
 	if _tally.failed or notes.is_empty():
 		return
-	var a := _q_deg(cursor_deg)
-	var r := _q_rho(rho)
+	var qx := _q_axis(pos.x)
+	var qy := _q_axis(pos.y)
 	var te := _q_time(t_ms)
-	if a == _rec_a and r == _rec_r:
+	if qx == _rec_x and qy == _rec_y:
 		return
-	if recording and _rec_a >= 0:
-		var d := absi(a - _rec_a)
-		d = mini(d, 3600 - d)
-		if (d <= int(REC_MIN_DEG * 10.0) and absi(r - _rec_r) <= REC_MIN_RHO) \
-				or te - _rec_t < REC_GAP_MS:
+	if recording and _rec_x > -99999:
+		if absi(qx - _rec_x) <= REC_MIN_Q and absi(qy - _rec_y) <= REC_MIN_Q:
 			return
-	apply_event([int(te), EV_CURSOR, a, r])
+		if te - _rec_t < REC_GAP_MS:
+			return
+	apply_event([int(te), EV_CURSOR, qx, qy])
 
 
-func _do_cursor(cursor_deg: float, rho: float, t_ms: float) -> void:
+func _do_cursor(pos: Vector2, t_ms: float) -> void:
 	_check_arcs(t_ms)
-	_cursor = OrbitNote.wrap_deg(cursor_deg)
-	_rho = rho
-	_sel_ring = ring_for_rho(rho, _sel_ring)
+	_cursor = pos
 	_check_arcs(t_ms)
 
 
-## Gewaehlter Ring zum Cursor-Abstand rho; zwischen den Grenzen (Hysterese)
-## bleibt der bisherige Ring prev.
-static func ring_for_rho(rho: float, prev: int) -> int:
-	if rho > RING_SPLIT_K + RING_HYST_K:
-		return 1
-	if rho < RING_SPLIT_K - RING_HYST_K:
-		return 0
-	return prev
+## Aim-Punkte: Abstand des Cursors zum Kopf zur Zeit t_ms.
+func aim_dist(pos: Vector2, t_ms: float) -> float:
+	return pos.distance_to(track.head(t_ms)) * 100.0
 
 
-## Ring, den der Cursor gerade waehlt (0 innen, 1 aussen).
-func cursor_ring() -> int:
-	return _sel_ring
-
-
-func cursor_rho() -> float:
-	return _rho
-
-
-## Taste gedrueckt (0 = innen, 1 = aussen); Cursor bei cursor_deg/rho.
-## Getroffen wird ein Ziel auf dem Ring der Taste, wenn der Cursor auf der Hand liegt.
-func key_down(key: int, t_ms: float, cursor_deg: float, rho: float) -> void:
+## Taste gedrueckt (0 = Spur A, 1 = Spur B); Cursor bei pos (Bahn-Einheiten).
+## Getroffen wird ein Ziel auf der Spur der Taste, wenn der Cursor auf dem Kopf liegt.
+func key_down(key: int, t_ms: float, pos: Vector2) -> void:
 	if key < 0 or key >= RINGS or notes.is_empty():
 		return
 	if deterministic:
 		if not _tally.failed:
-			apply_event([int(_q_time(t_ms)), EV_DOWN + key, _q_deg(cursor_deg), _q_rho(rho)])
+			apply_event([int(_q_time(t_ms)), EV_DOWN + key, _q_axis(pos.x), _q_axis(pos.y)])
 		return
-	_do_key_down(key, t_ms, cursor_deg, rho)
+	_do_key_down(key, t_ms, pos)
 
 
-func _do_key_down(key: int, t_ms: float, cursor_deg: float, rho: float) -> void:
-	_do_cursor(cursor_deg, rho, t_ms)
+func _do_key_down(key: int, t_ms: float, pos: Vector2) -> void:
+	_do_cursor(pos, t_ms)
 	_held[key] = true
 	var ring := key
 	for r in RINGS:
@@ -412,9 +392,9 @@ func _do_key_down(key: int, t_ms: float, cursor_deg: float, rho: float) -> void:
 			break
 		if d > w50:
 			continue
-		var e := OrbitNote.dist_deg(_cursor, n.pointer_at(t_ms))
-		if e > angle_tol or _rho < DEAD_K:
-			reason = "DEAD" if _rho < DEAD_K else "ANGLE"
+		var e := aim_dist(_cursor, t_ms)
+		if e > angle_tol:
+			reason = "AIM"
 			continue
 		idx = i
 		dt = d
@@ -424,7 +404,7 @@ func _do_key_down(key: int, t_ms: float, cursor_deg: float, rho: float) -> void:
 		if reason == "NONE" and _target_waiting(1 - ring, t_ms):
 			reason = "RING"
 		ring_pressed.emit(ring, false)
-		press_missed.emit(_cursor, _rho, ring, reason)
+		press_missed.emit(_cursor, ring, reason)
 		return
 	var q: int = _tally._quality_for(absf(dt))
 	if q == Quality.MAX and err > center_tol:
@@ -512,14 +492,14 @@ func orbit_score() -> int:
 
 ## Wert eines Treffers: Zeitstufe x Zielfaktor (mittig 1,0, Rand 0,88).
 ## tol/center: Fenster des Laufs (PR enger), Standard ohne Mods.
-static func hit_value(q: int, angle_err: float, tol: float = ANGLE_TOL_DEG,
-		center: float = CENTER_DEG) -> float:
+static func hit_value(q: int, angle_err: float, tol: float = AIM_TOL,
+		center: float = AIM_CENTER) -> float:
 	var tv: float = TIER_VALUE[clampi(q, 0, 5)]
 	var k := clampf((angle_err - center) / maxf(tol - center, 0.001), 0.0, 1.0)
 	return tv * lerpf(1.0, AIM_EDGE_FACTOR, k)
 
 
-## Mittlerer Zielfehler (Grad) aller Treffer.
+## Mittlerer Zielfehler (Aim-Punkte) aller Treffer.
 func mean_aim_err() -> float:
 	return _aim_sum / float(maxi(_aim_n, 1))
 
@@ -553,8 +533,8 @@ func active_arc(ring: int) -> int:
 	return _active_arc[ring]
 
 
-## Letzter bekannter Cursor-Winkel (0-360).
-func cursor_deg() -> float:
+## Letzter bekannter Cursor-Ort (Bahn-Einheiten).
+func cursor_pos() -> Vector2:
 	return _cursor
 
 
@@ -580,8 +560,8 @@ func _check_arcs(t_ms: float) -> void:
 			continue
 		var n := notes[h]
 		var tc := minf(t_ms, n.end_ms)
-		# Draussen: Cursor neben der Hand (oder in der Totzone).
-		if OrbitNote.dist_deg(_cursor, n.pointer_at(tc)) > angle_tol or _rho < DEAD_K:
+		# Draussen: Cursor neben dem Kopf.
+		if aim_dist(_cursor, tc) > angle_tol:
 			if _out_since[r] == INF:
 				_out_since[r] = _exit_time(n, r, tc)
 			if tc - _out_since[r] > ARC_OUT_MS:
@@ -594,18 +574,21 @@ func _check_arcs(t_ms: float) -> void:
 			_finish_arc(r, true, "")
 
 
-## Genauer Zeitpunkt, an dem die Spitze den still stehenden Cursor verlassen
-## hat (zwischen letzter Pruefung und tc; die Spitze laeuft linear).
+## Genauer Zeitpunkt, an dem der Kopf den still stehenden Cursor verlassen
+## hat (zwischen letzter Pruefung und tc): Halbierung, deterministisch.
 func _exit_time(n: OrbitNote, r: int, tc: float) -> float:
 	var t0 := clampf(_last_check[r], n.time_ms, tc)
-	var d0 := OrbitNote.delta_deg(_cursor, n.pointer_at(t0))
-	if absf(d0) > angle_tol or n.duration_ms() <= 0.0:
+	if aim_dist(_cursor, t0) > angle_tol or tc <= t0:
 		return t0
-	var v := n.speed if n.speed != 0.0 else n.span_deg() / n.duration_ms()
-	if v == 0.0:
-		return tc
-	var edge := angle_tol if v > 0.0 else -angle_tol
-	return clampf(t0 + (edge - d0) / v, t0, tc)
+	var lo := t0
+	var hi := tc
+	for _k in 14:
+		var mid := (lo + hi) * 0.5
+		if aim_dist(_cursor, mid) > angle_tol:
+			hi = mid
+		else:
+			lo = mid
+	return hi
 
 
 func _expire_ring(r: int, t_ms: float) -> void:
@@ -616,8 +599,7 @@ func _expire_ring(r: int, t_ms: float) -> void:
 			_ring_head[r] += 1
 			continue
 		if t_ms > notes[idx].time_ms + w50 and _active_arc[r] != idx:
-			_miss(idx, t_ms - notes[idx].time_ms,
-					OrbitNote.dist_deg(_cursor, notes[idx].angle_deg))
+			_miss(idx, t_ms - notes[idx].time_ms, aim_dist(_cursor, notes[idx].time_ms))
 			continue
 		break
 
@@ -710,16 +692,16 @@ func apply_event(ev: Array) -> void:
 		return
 	if recording:
 		replay_log.append(ev.duplicate())
-	if code == EV_CURSOR and ev.size() >= 3:
-		_rec_a = int(ev[2])
-		_rec_r = int(ev[3]) if ev.size() >= 4 else 0
+	if code == EV_CURSOR and ev.size() >= 4:
+		_rec_x = int(ev[2])
+		_rec_y = int(ev[3])
 		_rec_t = te
-		_do_cursor(float(_rec_a) / 10.0, float(_rec_r) / 1000.0, te)
-	elif code >= EV_DOWN and code < EV_DOWN + RINGS and ev.size() >= 3:
-		_rec_a = int(ev[2])
-		_rec_r = int(ev[3]) if ev.size() >= 4 else 0
+		_do_cursor(Vector2(float(_rec_x), float(_rec_y)) / 1000.0, te)
+	elif code >= EV_DOWN and code < EV_DOWN + RINGS and ev.size() >= 4:
+		_rec_x = int(ev[2])
+		_rec_y = int(ev[3])
 		_rec_t = te
-		_do_key_down(code - EV_DOWN, te, float(_rec_a) / 10.0, float(_rec_r) / 1000.0)
+		_do_key_down(code - EV_DOWN, te, Vector2(float(_rec_x), float(_rec_y)) / 1000.0)
 	elif code >= EV_UP and code < EV_UP + RINGS:
 		_do_key_up(code - EV_UP, te)
 
@@ -730,12 +712,8 @@ func _q_time(t_ms: float) -> float:
 	return maxf(roundf(t_ms), _tick)
 
 
-static func _q_rho(rho: float) -> int:
-	return clampi(int(roundf(rho * 1000.0)), 0, 2000)
-
-
-static func _q_deg(deg: float) -> int:
-	return int(roundf(fposmod(deg, 360.0) * 10.0)) % 3600
+static func _q_axis(v: float) -> int:
+	return clampi(int(roundf(v * 1000.0)), -Q_LIMIT, Q_LIMIT)
 
 
 ## Raster-Schritte bis einschliesslich target. Ohne laufenden Bogen springt es
@@ -788,7 +766,7 @@ static func count_events(events: Array) -> Dictionary:
 # ---------------------------------------------------------------------------
 
 ## Plan fuer einen "menschlichen" Bot: je Ziel [Zeitversatz ms (+ = spaet),
-## Zielfehler Grad, auslassen]. Deterministisch ueber seed. sigma_t/sigma_a =
+## Zielfehler Aim-Punkte, auslassen]; bot_offset macht daraus einen Ortsversatz. Deterministisch ueber seed. sigma_t/sigma_a =
 ## Streuung (Normalverteilung, auf 3 sigma gedeckelt); miss_every > 0 laesst
 ## jedes n-te Ziel aus. sigma 0 = perfekt.
 static func bot_plan(p_notes: Array, seed: int, sigma_t: float, sigma_a: float,
@@ -806,3 +784,9 @@ static func bot_plan(p_notes: Array, seed: int, sigma_t: float, sigma_a: float,
 			oa = clampf(rng.randfn(0.0, sigma_a), -3.0 * sigma_a, 3.0 * sigma_a)
 		out[i] = [ot, oa, miss_every > 0 and i % miss_every == miss_every - 1]
 	return out
+
+
+## Ortsversatz (Bahn-Einheiten) fuer den Zielfehler err (Aim-Punkte) des Ziels i:
+## feste, gleichmaessig verteilte Richtung je Ziel (goldener Winkel).
+static func bot_offset(i: int, err: float) -> Vector2:
+	return Vector2.from_angle(float(i) * 2.399963) * (err / 100.0)
