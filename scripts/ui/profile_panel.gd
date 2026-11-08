@@ -351,12 +351,10 @@ func _build_account() -> void:
 
 func _acct_done(ok: bool, msg: String) -> void:
 	_acct_pass = ""
-	_acct_msg = "" if ok else _acct_error(msg)
-	var api: OnlineApi = GameSession.online
-	if ok and api != null and not api.backfill_auto_done():
-		# Erster Login: alte Mania-Bestwerte einmalig hochladen.
-		api.set_backfill_auto_done()
-		api.start_backfill(_osz_files())
+	_acct_msg = "" if ok else LoginDialog.error_text(msg)
+	if ok:
+		# Erster Login: alte Mania-Bestwerte einmalig hochladen (gemeinsam mit dem Start-Dialog).
+		LoginDialog.after_login(GameSession.online, _osz_files())
 	_build_account()
 
 
@@ -403,12 +401,6 @@ func _acct_msg_label_update() -> void:
 	var l := _acct.get_node_or_null("Msg") as Label
 	if l != null:
 		l.text = _acct_msg
-
-
-static func _acct_error(msg: String) -> String:
-	if msg == "offline":
-		return TranslationServer.translate("Server nicht erreichbar.")
-	return msg
 
 
 ## Segment-Umschalter Mania 4K | Orbit (Optik wie im Song-Browser).

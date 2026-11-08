@@ -178,6 +178,10 @@ func _ready() -> void:
 	elif OS.get_cmdline_args().has("--shot-settings"):
 		add_child(SettingsPanel.new())
 		_capture()
+	elif OS.get_cmdline_args().has("--shot-login"):
+		# Harness: Login-Dialog (Spielstart) erzwingen und abfotografieren.
+		_open_login_dialog()
+		_capture()
 	elif GameSession.perf_enabled:
 		# Lade-Messung: 1 s Menue zeigen, dann in den Song-Browser.
 		await get_tree().create_timer(1.0).timeout
@@ -186,6 +190,15 @@ func _ready() -> void:
 	elif OS.get_cmdline_args().has("--autoplay"):
 		# Test-Durchreiche in den Song-Browser.
 		_play.call_deferred()
+	elif LoginDialog.should_show(GameSession.online, OS.get_cmdline_args(), false):
+		# Nicht angemeldet: einmal pro Spielstart ruhig nach dem Login fragen.
+		await get_tree().create_timer(0.6).timeout
+		if is_inside_tree():
+			_open_login_dialog()
+	elif LoginDialog.should_resume_backfill(GameSession.online, OS.get_cmdline_args(), false):
+		# Angemeldet, Upload alter Scores steht noch aus (neue Merker-Version): nachholen.
+		await get_tree().create_timer(2.0).timeout
+		LoginDialog.after_login(GameSession.online, LoginDialog.scan_osz_files())
 
 
 func _begin_shader_warmup() -> void:
@@ -881,6 +894,14 @@ func _open_profile() -> void:
 	if _tour_step >= 0 and _tour_step < _tour_steps.size() \
 			and str(_tour_steps[_tour_step].get("click", "")) == "profile":
 		panel.closed.connect(_tour_next, CONNECT_ONE_SHOT)
+
+
+func _open_login_dialog() -> void:
+	var dlg := LoginDialog.new()
+	dlg.finished.connect(func(ok: bool):
+		if ok:
+			_refresh_profile())
+	add_child(dlg)
 
 
 func _open_settings() -> void:

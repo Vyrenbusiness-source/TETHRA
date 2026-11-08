@@ -21,6 +21,9 @@ const LEADERBOARD_LIMIT := 50
 ## Alte Scores: Pause zwischen zwei Uploads und nach 429.
 const BACKFILL_INTERVAL_S := 1.0
 const BACKFILL_RATE_WAIT_S := 10.0
+## Version der Upload-Merker in cfg_path [backfill]. Aeltere Merker (v1: "done",
+## gemischt aus angenommen und uebersprungen) werden verworfen und erneut versucht.
+const BACKFILL_VERSION := 2
 
 ## Zustandsaenderung (Anmeldung, Warteschlange, Update noetig).
 signal state_changed
@@ -56,6 +59,7 @@ var _busy := false
 var _retry_t := 0.0
 var _registered_md5: Dictionary = {}
 var _bf_in_flight := false
+var _bf_log: Array = []
 ## Backfill-Lauf: {running, cancel, list, idx, total, done, sent, skipped, failed, state,
 ## wait, task, out}
 var _bf := {"running": false, "total": 0, "done": 0, "sent": 0, "skipped": 0,
@@ -117,7 +121,9 @@ func load_auth() -> void:
 
 
 func _save_auth() -> void:
+	# Bestehende Datei laden: Abschnitte wie [backfill] und [prompt] bleiben erhalten.
 	var cfg := ConfigFile.new()
+	cfg.load(cfg_path)
 	cfg.set_value("auth", "token", token)
 	cfg.set_value("auth", "user_id", user_id)
 	cfg.set_value("auth", "username", username)
@@ -130,6 +136,19 @@ func logout() -> void:
 	username = ""
 	_save_auth()
 	state_changed.emit()
+
+
+## true = Login-Dialog beim Spielstart abgeschaltet ("Nicht mehr fragen").
+func login_prompt_disabled() -> bool:
+	var cfg := ConfigFile.new()
+	return cfg.load(cfg_path) == OK and bool(cfg.get_value("prompt", "never", false))
+
+
+func set_login_prompt_disabled(on: bool) -> void:
+	var cfg := ConfigFile.new()
+	cfg.load(cfg_path)
+	cfg.set_value("prompt", "never", on)
+	cfg.save(cfg_path)
 
 
 # --- Konto -------------------------------------------------------------------
@@ -460,8 +479,44 @@ static func entry_count_sum(e: Dictionary) -> int:
 	return t
 
 
-## Vorauswahl aus ScoreStore.best_plays(): nur Mania, nicht unranked/failed, mit
-## Trefferzahlen, noch nicht hochgeladen, .osz vorhanden (osz_files: Dateiname -> Pfad).
+const COUNT_KEYS := ["n_max", "n300", "n200", "n100", "n50", "n_miss"]
+
+
+## Trefferzahlen [MAX, 300, 200, 100, 50, Miss] fuer den Upload, Summe exakt total.
+## Passen die gespeicherten Zahlen, bleiben sie. Sonst aus der Genauigkeit (osu!mania-
+## Formel wie ManiaCore.accuracy) hergeleitet, Modell wie ScoreStore._counts_of:
+## Abzuege als 100er, Rest 70 % MAX / 30 % 300; reicht das nicht (Genauigkeit unter
+## 33 %), werden 100er zu 50ern, dann 50er zu Misses.
+static func backfill_counts(e: Dictionary, total: int) -> Array:
+	if total <= 0:
+		return [0, 0, 0, 0, 0, 0]
+	if entry_count_sum(e) == total:
+		var keep: Array = []
+		for k in COUNT_KEYS:
+			keep.append(maxi(int(e.get(k, 0)), 0))
+		return keep
+	var acc := clampf(float(e.get("accuracy", 0.0)), 0.0, 1.0)
+	# Abzug in Formel-Einheiten: 100er = 200, 50er = 250, Miss = 300 (von 300).
+	var ded := int(round((1.0 - acc) * 300.0 * total))
+	var n100 := 0
+	var n50 := 0
+	var miss := 0
+	if ded <= 200 * total:
+		n100 = clampi(int(round(ded / 200.0)), 0, total)
+	elif ded <= 250 * total:
+		n50 = clampi(int(round((ded - 200 * total) / 50.0)), 0, total)
+		n100 = total - n50
+	else:
+		miss = clampi(int(round((ded - 250 * total) / 50.0)), 0, total)
+		n50 = total - miss
+	var rest := total - n100 - n50 - miss
+	var n_max := int(round(rest * 0.7))
+	return [n_max, rest - n_max, 0, n100, n50, miss]
+
+
+## Vorauswahl aus ScoreStore.best_plays(): nur Mania, nicht unranked/failed, noch
+## nicht hochgeladen, .osz vorhanden (osz_files: Dateiname -> Pfad). Eintraege ohne
+## Trefferzahlen (aeltere Versionen) zaehlen mit: backfill_counts() leitet sie her.
 ## Ergebnis: [{key, osz_file, osz_path, version, entry}].
 static func backfill_candidates(entries: Array, done_keys: Array, osz_files: Dictionary) -> Array:
 	var out: Array = []
@@ -472,8 +527,6 @@ static func backfill_candidates(entries: Array, done_keys: Array, osz_files: Dic
 		if not str(e.get("mode", "mania")) in ["mania", ""]:
 			continue
 		if bool(e.get("unranked", false)) or bool(e.get("failed", false)) or str(e.get("grade", "")) == "F":
-			continue
-		if entry_count_sum(e) <= 0:
 			continue
 		var f := str(e.get("osz_file", "")).get_file()
 		var v := str(e.get("version", ""))
@@ -505,38 +558,68 @@ func _bf_job(osz_path: String, version: String, out: Dictionary) -> void:
 	out["meta"] = backfill_meta(osz_path, version)
 
 
-func backfill_done_keys() -> Array:
+## Merker laden; v1-Merker ("done") verwerfen: sie mischten angenommene und
+## lokal/serverseitig uebersprungene Scores (fehlende oder unpassende Trefferzahlen).
+## Danach laeuft der automatische Upload erneut; bereits angenommene Scores meldet der
+## Server als Duplikat und sie landen wieder in "sent".
+func _bf_cfg() -> ConfigFile:
 	var cfg := ConfigFile.new()
 	if cfg.load(cfg_path) != OK:
-		return []
-	var v: Variant = cfg.get_value("backfill", "done", [])
+		return cfg
+	if int(cfg.get_value("backfill", "v", 1)) < BACKFILL_VERSION and cfg.has_section("backfill"):
+		for k in ["done", "sent", "skipped"]:
+			if cfg.has_section_key("backfill", k):
+				cfg.erase_section_key("backfill", k)
+		cfg.set_value("backfill", "auto_done", false)
+		cfg.set_value("backfill", "v", BACKFILL_VERSION)
+		cfg.save(cfg_path)
+	return cfg
+
+
+static func _cfg_list(cfg: ConfigFile, key: String) -> Array:
+	var v: Variant = cfg.get_value("backfill", key, [])
 	return (v as Array).duplicate() if v is Array else []
 
 
-func _bf_mark(key: String) -> void:
-	var cfg := ConfigFile.new()
-	cfg.load(cfg_path)
-	var keys: Array = []
-	var v: Variant = cfg.get_value("backfill", "done", [])
-	if v is Array:
-		keys = v
+## Keys, die nicht mehr gesendet werden: vom Server angenommen ("sent") oder in
+## dieser Merker-Version uebersprungen ("skipped": Map fehlt, Server lehnt ab).
+func backfill_done_keys() -> Array:
+	var cfg := _bf_cfg()
+	return _cfg_list(cfg, "sent") + _cfg_list(cfg, "skipped")
+
+
+## Vom Server angenommene Keys.
+func backfill_sent_keys() -> Array:
+	return _cfg_list(_bf_cfg(), "sent")
+
+
+## list: "sent" | "skipped"
+func _bf_mark(key: String, list: String = "sent") -> void:
+	var cfg := _bf_cfg()
+	var keys := _cfg_list(cfg, list)
 	if not keys.has(key):
 		keys.append(key)
-	cfg.set_value("backfill", "done", keys)
+	cfg.set_value("backfill", list, keys)
+	cfg.set_value("backfill", "v", BACKFILL_VERSION)
 	cfg.save(cfg_path)
 
 
 ## true, wenn der automatische Upload nach dem ersten Login schon lief.
 func backfill_auto_done() -> bool:
-	var cfg := ConfigFile.new()
-	return cfg.load(cfg_path) == OK and bool(cfg.get_value("backfill", "auto_done", false))
+	return bool(_bf_cfg().get_value("backfill", "auto_done", false))
 
 
 func set_backfill_auto_done() -> void:
-	var cfg := ConfigFile.new()
-	cfg.load(cfg_path)
+	var cfg := _bf_cfg()
 	cfg.set_value("backfill", "auto_done", true)
+	cfg.set_value("backfill", "v", BACKFILL_VERSION)
 	cfg.save(cfg_path)
+
+
+## Protokoll des letzten Laufs: [{key, kind, code, http}] je Score (kind wie
+## classify_submit bzw. "no_map").
+func backfill_log() -> Array:
+	return _bf_log.duplicate()
 
 
 ## Fortschritt: {running, total, done, sent, skipped, state}
@@ -567,6 +650,7 @@ func start_backfill(osz_files: Dictionary, entries: Array = []) -> bool:
 	var list := backfill_candidates(entries, backfill_done_keys(), osz_files)
 	if list.is_empty():
 		return false
+	_bf_log.clear()
 	_bf = {"running": true, "cancel": false, "list": list, "idx": 0, "total": list.size(),
 		"done": 0, "sent": 0, "skipped": 0, "state": "running", "wait": 0.0,
 		"task": -1, "out": {}, "cur": {}}
@@ -643,13 +727,22 @@ func _bf_got_meta(c: Dictionary, meta: Dictionary) -> void:
 		_bf_end("cancelled")
 		return
 	var e: Dictionary = c.entry
-	if str(meta.get("md5", "")) == "" or entry_count_sum(e) != int(meta.get("total_notes", -1)):
-		# Map fehlt/geaendert oder Zahlen passen nicht: nie hochladen, nicht erneut pruefen.
-		_bf_mark(str(c.key))
+	var total := int(meta.get("total_notes", 0))
+	if str(meta.get("md5", "")) == "" or total <= 0:
+		# Map fehlt oder laesst sich nicht lesen: in dieser Merker-Version nicht erneut pruefen.
+		_bf_mark(str(c.key), "skipped")
+		_bf_log.append({"key": str(c.key), "kind": "no_map", "code": "", "http": 0})
 		_bf["skipped"] = int(_bf.skipped) + 1
 		_bf_advance(0.0)
 		return
 	var res := e.duplicate()
+	# Fehlende/unpassende Trefferzahlen (aeltere Versionen, umgerechnete Scores) aus der
+	# Genauigkeit herleiten; Score, Genauigkeit, Grade und Datum bleiben.
+	var cnt := backfill_counts(e, total)
+	for i in COUNT_KEYS.size():
+		res[COUNT_KEYS[i]] = int(cnt[i])
+	res["max_combo"] = clampi(int(e.get("max_combo", 0)), 0, total)
+	# pp unveraendert mitsenden, der Server rechnet selbst nach.
 	res["pp"] = maxf(float(e.get("pp", 0.0)), 0.0)
 	var m := meta.duplicate()
 	m["ranked"] = true
@@ -663,9 +756,12 @@ func _bf_got_meta(c: Dictionary, meta: Dictionary) -> void:
 func _bf_on_reply(c: Dictionary, reg: Dictionary, code: int, text: String) -> void:
 	var r := classify_submit(code, text)
 	last_code = str(r.code)
+	_bf_log.append({"key": str(c.key), "kind": str(r.kind), "code": str(r.code), "http": code})
+	if str(r.kind) != "ok":
+		print("Backfill %s: HTTP %d %s" % [str(c.key), code, str(r.code)])
 	match str(r.kind):
 		"ok":
-			_bf_mark(str(c.key))
+			_bf_mark(str(c.key), "sent")
 			_bf["sent"] = int(_bf.sent) + 1
 			var md5 := str(reg.get("beatmap_md5", ""))
 			if str(r.pp_source) == "client" and md5 != "" and not _registered_md5.has(md5):
@@ -673,7 +769,7 @@ func _bf_on_reply(c: Dictionary, reg: Dictionary, code: int, text: String) -> vo
 			else:
 				_bf_advance(bf_interval)
 		"drop":
-			_bf_mark(str(c.key))
+			_bf_mark(str(c.key), "skipped")
 			_bf["skipped"] = int(_bf.skipped) + 1
 			_bf_advance(bf_interval)
 		"rate":

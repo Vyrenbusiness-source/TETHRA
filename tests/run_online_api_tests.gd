@@ -331,14 +331,27 @@ func _backfill_tests() -> void:
 	var keys := []
 	for c in cands:
 		keys.append(c.key)
-	_check(keys == ["a.osz|Hard", "a.osz|Easy", "c.osz|Ok"],
-		"Auswahl: nur gueltige Mania-Bestwerte, keine Doppel (%s)" % str(keys))
-	_check(OnlineApi.backfill_candidates(entries, ["a.osz|Hard"], files).size() == 2, "bereits hochgeladen faellt raus")
+	_check(keys == ["a.osz|Hard", "a.osz|Easy", "c.osz|Old", "c.osz|Ok"],
+		"Auswahl: alle Mania-Bestwerte (auch ohne Trefferzahlen), keine Doppel (%s)" % str(keys))
+	_check(OnlineApi.backfill_candidates(entries, ["a.osz|Hard"], files).size() == 3, "bereits hochgeladen faellt raus")
+
+	# Trefferzahlen herleiten: Summe exakt total_notes, Genauigkeit passt.
+	for t in [[0.98, 60], [0.9512, 1234], [1.0, 7], [0.5, 333], [0.2, 100], [0.0, 41]]:
+		var c := OnlineApi.backfill_counts({"accuracy": t[0]}, int(t[1]))
+		var sum := 0
+		for x in c:
+			sum += int(x)
+		var acc := float(300 * (c[0] + c[1]) + 200 * c[2] + 100 * c[3] + 50 * c[4]) / float(300 * int(t[1]))
+		_check(sum == int(t[1]) and absf(acc - float(t[0])) <= 0.5 / float(t[1]) + 0.0001,
+			"ohne Zahlen: acc %.4f, %d Noten -> %s (acc %.4f)" % [t[0], t[1], str(c), acc])
+	var wrong := OnlineApi.backfill_counts({"accuracy": 0.97, "n300": 40, "n100": 9}, 60)
+	_check(wrong[0] + wrong[1] + wrong[2] + wrong[3] + wrong[4] + wrong[5] == 60, "unpassende Zahlen -> neu hergeleitet")
+	_check(OnlineApi.backfill_counts(_entry("a.osz", "X", 10), 10) == [8, 1, 0, 1, 0, 0], "passende Zahlen bleiben")
 
 	var a := _api()
 	a.bf_interval = 0.0
 	a.bf_rate_wait = 0.0
-	var notes := {"Hard": 100, "Easy": 49, "Ok": 60}   # Easy: Zahlen passen nicht
+	var notes := {"Hard": 100, "Easy": 49, "Old": 60, "Ok": 60}   # Easy: Zahlen passen nicht, Old: keine
 	a.bf_meta_provider = func(_p: String, v: String) -> Dictionary:
 		var m := _meta()
 		m["md5"] = "md5_" + v
@@ -346,31 +359,46 @@ func _backfill_tests() -> void:
 		m["total_notes"] = int(notes.get(v, 0))
 		return m
 	_script = [[200, "{\"pp_source\":\"client\"}"], [200, "{\"has_osu\":false}"], [200, "{}"],
-		[429, "{\"code\":\"too_fast\"}"], [200, "{\"success\":true}"]]
+		[200, "{}"], [200, "{}"], [429, "{\"code\":\"too_fast\"}"], [200, "{\"success\":true}"]]
 	var ticks := []
 	a.backfill_changed.connect(func(): ticks.append(a.backfill_state().done))
 	_check(a.start_backfill(files, entries), "Backfill startet")
 	var st := a.backfill_state()
 	_check(not st.running and st.state == "finished", "Backfill fertig")
-	_check(st.total == 3 and st.done == 3 and st.sent == 2 and st.skipped == 1,
-		"Fortschritt 3/3, 2 gesendet, 1 uebersprungen (%s)" % str(st))
-	_check(ticks.has(1) and ticks.has(2) and ticks.has(3), "Fortschritt gemeldet")
+	_check(st.total == 4 and st.done == 4 and st.sent == 4 and st.skipped == 0,
+		"Fortschritt 4/4, alle gesendet (%s)" % str(st))
+	_check(ticks.has(1) and ticks.has(2) and ticks.has(3) and ticks.has(4), "Fortschritt gemeldet")
 	var scores := 0
 	var first: Dictionary = {}
+	var bodies := {}
 	var registered := false
 	for l in _log:
 		if l.url.ends_with("/score"):
 			scores += 1
+			var b: Dictionary = JSON.parse_string(l.body)
+			bodies[str(b.difficulty)] = b
 			if first.is_empty():
-				first = JSON.parse_string(l.body)
+				first = b
 		if l.url.ends_with("/beatmap/register"):
 			registered = true
-	_check(scores == 3, "Score-Requests: Hard, Ok (429), Ok erneut (%d)" % scores)
+	_check(scores == 5, "Score-Requests: Hard, Easy, Old, Ok (429), Ok erneut (%d)" % scores)
+	for v in ["Easy", "Old"]:
+		var b: Dictionary = bodies.get(v, {})
+		var sum := 0
+		for k in ["count_max", "count_300", "count_200", "count_100", "count_50", "count_miss"]:
+			sum += int(b.get(k, -1))
+		_check(sum == int(notes[v]) and int(b.get("score", 0)) == 900000 and str(b.get("grade", "")) == "S"
+			and is_equal_approx(float(b.get("accuracy", 0)), 0.98) and float(b.get("pp", 0)) == 50.0,
+			"%s: Zahlen ergaenzt (Summe %d), Score/acc/Grade/pp unveraendert" % [v, sum])
+	var codes := []
+	for r in a.backfill_log():
+		codes.append(str(r.kind))
+	_check(codes == ["ok", "ok", "ok", "rate", "ok"], "Protokoll je Score (%s)" % str(codes))
 	_check(first.mode == "mania" and first.date == "2026-07-01T10:00:00" and first.beatmap_md5 == "md5_Hard",
 		"Original-Datum + md5")
 	_check(registered, "pp_source client -> Register im Backfill")
 	var done := a.backfill_done_keys()
-	_check(done.has("a.osz|Hard") and done.has("c.osz|Ok") and done.has("a.osz|Easy"), "Keys gemerkt")
+	_check(done.has("a.osz|Hard") and done.has("c.osz|Ok") and done.has("a.osz|Easy") and done.has("c.osz|Old"), "Keys gemerkt")
 	_log.clear()
 	_check(not a.start_backfill(files, entries), "kein Doppel-Upload")
 	_check(_log.is_empty(), "zweiter Lauf: kein Netz")
@@ -408,10 +436,41 @@ func _backfill_tests() -> void:
 	_script = [[400, "{\"code\":\"counts_mismatch\"}"]]
 	a.start_backfill(files, entries.slice(0, 1))
 	_check(a.backfill_state().state == "finished" and a.backfill_done_keys() == ["a.osz|Hard"], "400: erledigt")
+	_check(a.backfill_sent_keys().is_empty() and a.backfill_log().size() == 1
+		and str(a.backfill_log()[0].code) == "counts_mismatch" and int(a.backfill_log()[0].http) == 400,
+		"400: Server-Code protokolliert, nicht als angenommen gemerkt")
 	_check(not a.backfill_auto_done(), "Auto-Flag aus")
 	a.set_backfill_auto_done()
 	_check(a.backfill_auto_done() and a.backfill_done_keys() == ["a.osz|Hard"], "Auto-Flag gesetzt, Keys bleiben")
 	a.free()
+
+	# Alte v1-Merker ("done" mischte angenommen + uebersprungen): erneut versuchen.
+	var mg := _api()
+	var old := ConfigFile.new()
+	old.set_value("auth", "token", "tok")
+	old.set_value("backfill", "auto_done", true)
+	old.set_value("backfill", "done", ["a.osz|Hard", "c.osz|Old"])
+	old.save(TMP_CFG)
+	_check(not mg.backfill_auto_done(), "v1-Merker: Auto-Upload laeuft erneut")
+	_check(mg.backfill_done_keys().is_empty(), "v1-Merker verworfen")
+	_check(mg.backfill_pending(files, entries) == 4, "uebersprungene Keys wieder offen")
+	mg.bf_interval = 0.0
+	mg.bf_meta_provider = func(_p: String, v: String) -> Dictionary:
+		var m := _meta()
+		m["md5"] = "m" + v
+		m["total_notes"] = 60
+		return m
+	_script = [[200, "{\"duplicate\":true}"], [200, "{}"], [200, "{}"], [200, "{}"]]
+	mg.start_backfill(files, entries)
+	mg.set_backfill_auto_done()
+	_check(mg.backfill_sent_keys().size() == 4 and mg.backfill_auto_done(), "erneuter Lauf: alle angenommen")
+	var mg2 := OnlineApi.new()
+	mg2.cfg_path = TMP_CFG
+	_check(mg2.backfill_auto_done() and mg2.backfill_done_keys().size() == 4, "v2-Merker bleiben beim naechsten Start")
+	_check(mg2.backfill_pending(files, entries) == 0, "Angenommene bleiben erledigt")
+	mg2.free()
+	mg.free()
+
 	var nl := _api()
 	nl.token = ""
 	_check(not nl.start_backfill(files, entries), "ohne Login kein Backfill")
