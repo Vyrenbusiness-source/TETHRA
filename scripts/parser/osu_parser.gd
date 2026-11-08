@@ -232,14 +232,17 @@ static func _parse_hit_object(line: String, timing_points: Array[TimingPoint], s
 	var type := int(parts[3].strip_edges())
 
 	# Slider zuerst, dann Spinner, dann Circle — Reihenfolge wie im Pseudocode.
+	var obj: HitObject = null
 	if (type & 2) != 0:
-		return _parse_slider(parts, x, y, time, type, timing_points, slider_mult)
+		obj = _parse_slider(parts, x, y, time, type, timing_points, slider_mult)
 	elif (type & 8) != 0:
-		return _parse_spinner(parts, x, y, time, type)
+		obj = _parse_spinner(parts, x, y, time, type)
 	elif (type & 1) != 0:
-		return _parse_circle(x, y, time, type)
+		obj = _parse_circle(x, y, time, type)
 	# Unbekannter Typ -> ignorieren.
-	return null
+	if obj != null and parts.size() > 4:
+		obj.hit_sound = int(parts[4].strip_edges())
+	return obj
 
 
 ## Mania-Note (Mode 3): column = floor(x * columns / 512); Hold = type & 128,

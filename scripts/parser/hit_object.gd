@@ -22,6 +22,9 @@ var new_combo: bool = false
 ## Diskriminator fuer den konkreten Typ.
 var kind: int = Kind.CIRCLE
 
+## hitSound-Bitfeld (1 Normal, 2 Whistle, 4 Finish, 8 Clap); Orbit nutzt es fuer den Ring.
+var hit_sound: int = 0
+
 
 ## Endzeit des Objekts in ms. Circle: == time. Slider/Spinner ueberschreiben.
 func end_time() -> float:
