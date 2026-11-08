@@ -699,11 +699,13 @@ func _build_buttons() -> void:
 	var vb := VBoxContainer.new()
 	vb.anchor_left = 0.5
 	vb.anchor_right = 0.5
-	vb.anchor_top = 0.44
-	vb.anchor_bottom = 0.44
+	# Mit Orbit-Einstieg ein Button mehr: etwas hoeher, engere Abstaende,
+	# damit "Beenden" auch bei 720p ganz sichtbar bleibt.
+	vb.anchor_top = 0.415
+	vb.anchor_bottom = 0.415
 	vb.offset_left = -180
 	vb.offset_right = 180
-	vb.add_theme_constant_override("separation", 14)
+	vb.add_theme_constant_override("separation", 10)
 	add_child(vb)
 
 	_btn_play = _menu_button("SPIELEN", true)
@@ -714,7 +716,7 @@ func _build_buttons() -> void:
 	# im Orbit-Modus (Uebergabe ueber browser_state.cfg play_mode).
 	_btn_orbit = _orbit_button()
 	_btn_orbit.pressed.connect(_play_orbit)
-	_add_wrapped(vb, _btn_orbit, 70.0)
+	_add_wrapped(vb, _btn_orbit, 64.0)
 
 	_btn_mp = _menu_button("MULTIPLAYER", false)
 	_btn_mp.pressed.connect(func(): _fade_music_out(); SceneFader.go("res://scenes/mp_lobby.tscn"))
@@ -1191,7 +1193,7 @@ func _orbit_button() -> Button:
 	b.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
 	b.text = ""
 	b.tooltip_text = ""
-	b.custom_minimum_size = Vector2(360, 70)
+	b.custom_minimum_size = Vector2(360, 64)
 	UiTheme.style_ghost_button(b)
 	var a := COL_ACCENT
 	for st in ["normal", "hover", "pressed"]:
@@ -1231,6 +1233,9 @@ func _capture() -> void:
 		return
 	var img := get_viewport().get_texture().get_image()
 	var path := "C:/Users/Gexanx/AppData/Local/Temp/claude/c--Users-Gexanx-Desktop-rhyg/b9d5e593-aabc-4b4b-a882-a5835e187db3/scratchpad/main_menu.png"
+	for a in OS.get_cmdline_args():
+		if a.begins_with("--shot-out="):
+			path = a.trim_prefix("--shot-out=")
 	img.save_png(path)
 	print("SHOT gespeichert: " + path)
 	get_tree().quit(0)
