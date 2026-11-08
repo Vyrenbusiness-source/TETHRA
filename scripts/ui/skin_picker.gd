@@ -47,6 +47,9 @@ func _init() -> void:
 	_status.add_theme_font_size_override("font_size", 13)
 	_status.add_theme_color_override("font_color", Color(1, 1, 1, 0.6))
 	add_child(_status)
+	# Leerer Status nimmt keinen Platz ein (eingebettet im Einstellungsfenster).
+	_status.visible = false
+	_status.draw.connect(func(): pass)
 
 
 func _ready() -> void:
