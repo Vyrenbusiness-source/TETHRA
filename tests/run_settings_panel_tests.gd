@@ -14,7 +14,7 @@ const EXPECTED := {
 	"field2d": ["Scroll Speed", "Notenform", "Spurbreite", "Notengröße", "Hit-Lighting", "Scroll-Richtung",
 		"Position", "Skalierung", "Trefferposition", "Spaltenabstand", "Sicht", "Abdeckung von", "Abdeckung",
 		"Konstante Geschwindigkeit"],
-	"look2d": ["Skin", "Hintergrund", "Spielfeld abdunkeln", "Hintergrund-Unschärfe", "Skin-Werte nutzen",
+	"look2d": ["Aktiver Skin", "Hintergrund", "Spielfeld abdunkeln", "Hintergrund-Unschärfe", "Skin-Werte nutzen",
 		"Judgement-Position", "Kombo-Position", "Tasten unter den Noten", "Trefferlinie"],
 	"orbit": ["Ring innen | außen", "Scroll Speed", "Winkel-Hilfslinien", "Hintergrund", "Welt"],
 	"notes": ["Notenfarben"],
