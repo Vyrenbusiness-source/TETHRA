@@ -29,7 +29,7 @@
 
 ## Orbit: aim, then tap
 
-Targets travel out from the centre to two rings. Point with mouse or tablet, press the left key for the inner ring and the right key for the outer ring, exactly when the target arrives. Sliders become arcs you hold and follow. Orbit plays regular osu! maps (osu!standard): targets keep the direction the circles have in the original map, so you get its sweeps and jumps on a circle. Timing is the map's own, to the millisecond, and every target is reachable: the converter limits how far and how fast you ever have to turn.
+Targets travel out from the centre to two rings. Point with mouse or tablet, press the left key for the inner ring and the right key for the outer ring, exactly when the target arrives. Sliders become arcs you hold and follow. Orbit plays regular osu! maps (osu!standard): targets keep the direction the circles have in the original map, so you get its sweeps and jumps on a circle. Timing is the map's own, to the millisecond, and every target is reachable: the converter limits how far and how fast you ever have to turn. Mods: Hidden, Fade-In and Precision (tighter windows). Your best Orbit runs add up to an Orbit rating in your profile.
 
 <p align="center">
   <a href="docs/media/orbit.mp4"><img src="docs/media/orbit_anim.webp" alt="Orbit gameplay: targets on two rings, an arc being followed" width="420"></a><br>
