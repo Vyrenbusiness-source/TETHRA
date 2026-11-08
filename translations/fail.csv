@@ -1,0 +1,5 @@
+keys,de,en
+"Ruckler: %d ms ohne Bild, %d Noten verpasst","Ruckler: %d ms ohne Bild, %d Noten verpasst","Stutter: %d ms without a frame, %d notes missed"
+%d Holds zu frueh losgelassen,%d Holds zu frueh losgelassen,%d holds released too early
+zu frueh gedrueckt (%dx),zu frueh gedrueckt (%dx),pressed too early (%dx)
+%d Misses in %s s,%d Misses in %s s,%d misses in %s s

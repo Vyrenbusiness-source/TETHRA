@@ -688,6 +688,22 @@ func _hero_pp() -> VBoxContainer:
 	return _hero_stat("PERFORMANCE", "%s pp" % fmt_dec(pp, 1), UiTheme.ACCENT2)
 
 
+## Fail-Bild: Grund des Todes in einer Zeile (aus ManiaCore.analyze_fail).
+func _add_fail_reason(parent: Control, font_size: int) -> void:
+	var txt := str(_data.get("fail_reason", ""))
+	if not bool(_data.get("is_fail", false)) or txt == "":
+		return
+	var lbl := Label.new()
+	lbl.text = txt
+	lbl.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	lbl.add_theme_font_size_override("font_size", font_size)
+	lbl.add_theme_color_override("font_color", UiTheme.TEXT.lerp(CAPTION, 0.4))
+	parent.add_child(lbl)
+	_reveal.append(lbl)
+
+
 func _build_rank_area(parent: Control) -> void:
 	var col := VBoxContainer.new()
 	col.custom_minimum_size = Vector2(RANK_COL_W, 0)
@@ -778,6 +794,7 @@ func _build_rank_area(parent: Control) -> void:
 	else:
 		col.add_child(tag)
 		_reveal.append(tag)
+	_add_fail_reason(col, 20)
 	if Lobby.active:
 		_place_tag = Label.new()
 		_place_tag.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -1359,6 +1376,7 @@ func _build_lobby_area(parent: Control) -> void:
 		tag.add_theme_color_override("font_color", FAIL_COLOR if is_fail else UiTheme.ACCENT)
 		_lobby_col.add_child(tag)
 		_reveal.append(tag)
+		_add_fail_reason(_lobby_col, 14)
 	if Lobby.mm.kind != MatchMode.Kind.FREE:
 		_mode_tag = Label.new()
 		_mode_tag.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART

@@ -36,6 +36,8 @@ var ar_override: float = -1.0
 var offset_ms: float = 0.0
 ## 0 = Aus, 1 = Dezent, 2 = Voll.
 var tunnel_intensity: int = 2
+## Bei Fokusverlust (Alt-Tab, Overlay) automatisch pausieren (Mania).
+var pause_on_focus_loss: bool = true
 ## Kamera: 0 = Komfort (Default, gegen Uebelkeit: Strecke kippt/rollt/hebt
 ## sich nicht, ruhigere Perspektive, gedaempfte Vorwaerts-Bewegung am Rand),
 ## 1 = Dynamisch (volle Flug-Bewegung). Der Schluessel ist neu: bestehende
@@ -448,6 +450,7 @@ func load_settings(path: String = PATH) -> void:
 	ar_override = float(cfg.get_value("game", "ar_override", -1.0))
 	offset_ms = float(cfg.get_value("game", "offset_ms", 0.0))
 	tunnel_intensity = int(cfg.get_value("game", "tunnel_intensity", 2))
+	pause_on_focus_loss = bool(cfg.get_value("game", "pause_on_focus_loss", true))
 	camera_mode = clampi(int(cfg.get_value("game", "camera_mode", 0)), 0, 1)
 	world_theme = clampi(int(cfg.get_value("game", "world_theme", 0)), 0, WORLD_ORDER.size())
 	volume_db = float(cfg.get_value("game", "volume_db", 0.0))
@@ -503,6 +506,7 @@ func save(path: String = PATH) -> void:
 	cfg.set_value("game", "ar_override", ar_override)
 	cfg.set_value("game", "offset_ms", offset_ms)
 	cfg.set_value("game", "tunnel_intensity", tunnel_intensity)
+	cfg.set_value("game", "pause_on_focus_loss", pause_on_focus_loss)
 	cfg.set_value("game", "camera_mode", camera_mode)
 	cfg.set_value("game", "world_theme", world_theme)
 	cfg.set_value("game", "volume_db", volume_db)

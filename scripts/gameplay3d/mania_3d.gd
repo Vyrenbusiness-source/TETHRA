@@ -407,11 +407,14 @@ var _lane_k_2d := 1.0   ## Settings.lane_width_2d (CLI --lane2d=150)
 var _note_k_2d := 1.0   ## Settings.note_size_2d (CLI --note2d=150)
 var _bg_mat_2d: ShaderMaterial
 var _pf2d: Playfield2D
+var _fail_reason := ""
+var _parked_nodes: Array = []
 var _missed_2d: Array = []  ## verpasste Einzelnoten fallen grau weiter: [time, col]
 
 
 func _ready() -> void:
 	_setup_lane_spacing()
+	_park_background_net()
 	# Erzwungene Welt: Texturen sofort im Hintergrund laden (kein Hitch spaeter).
 	if not _2d:
 		WorldTheme.prefetch(_forced_theme())
@@ -2110,6 +2113,7 @@ func _process(delta: float) -> void:
 	if _ended or _beatmap == null:
 		return
 	var t := _time_ms()
+	core.note_frame(delta * 1000.0, t)
 	# Replay: aufgezeichnete Inputs mit ihren ORIGINAL-Zeitstempeln einspeisen.
 	if GameSession.is_replay:
 		var evs := GameSession.replay_events
@@ -3901,6 +3905,9 @@ func _show_results(is_fail: bool) -> void:
 	if _ended:
 		return
 	_ended = true
+	_fail_reason = ""
+	if is_fail:
+		_fail_reason = _write_fail_diag()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	SyncClock.stop()
 	# Full Combo: kleiner Meteorschauer am Himmel hinter dem Endscreen.
@@ -3958,6 +3965,54 @@ func _show_results(is_fail: bool) -> void:
 	_build_results(is_fail, s, pp, unranked, new_best)
 
 
+## Fail-Diagnose: Grund (eine Zeile) bestimmen und user://logs/fail_<datum>.txt
+## schreiben. Nur Beobachtung, die Wertung bleibt unveraendert.
+func _write_fail_diag() -> String:
+	var t_fail := _time_ms()
+	var reason := ManiaCore.fail_reason_text(
+			ManiaCore.analyze_fail(core.diag_log, core.diag_spikes, t_fail))
+	DirAccess.make_dir_recursive_absolute("user://logs")
+	var stamp := Time.get_datetime_string_from_system().replace(":", "-").replace("T", "_")
+	var f := FileAccess.open("user://logs/fail_%s.txt" % stamp, FileAccess.WRITE)
+	if f != null:
+		f.store_string(core.diag_text("%s - %s [%s] (%s)" % [_beatmap.artist(),
+				_beatmap.title(), _beatmap.version_name(), "2D" if _2d else "3D"], t_fail))
+		f.close()
+	return reason
+
+
+## Waehrend des Spiels ruhen Updater-Download und Mirror-Abschluss (Datei-/Zip-
+## Arbeit im Hauptthread = Ruckler). Im Multiplayer bleibt alles aktiv.
+func _park_background_net() -> void:
+	if Lobby.active:
+		return
+	for n in [Updater, Mirror]:
+		if n != null and n.process_mode != Node.PROCESS_MODE_DISABLED:
+			n.process_mode = Node.PROCESS_MODE_DISABLED
+			_parked_nodes.append(n)
+
+
+func _unpark_background_net() -> void:
+	for n in _parked_nodes:
+		if is_instance_valid(n):
+			n.process_mode = Node.PROCESS_MODE_INHERIT
+	_parked_nodes.clear()
+
+
+func _exit_tree() -> void:
+	_unpark_background_net()
+
+
+## Fokusverlust (Alt-Tab, Overlay, Benachrichtigung): Tasten-Up-Ereignisse
+## gehen verloren -> automatisch pausieren (Settings.pause_on_focus_loss).
+func _notification(what: int) -> void:
+	if what != NOTIFICATION_APPLICATION_FOCUS_OUT and what != NOTIFICATION_WM_WINDOW_FOCUS_OUT:
+		return
+	if not Settings.pause_on_focus_loss or _ended or _autoplay or _countdown_running 			or _mp_demo or GameSession.is_replay or _beatmap == null or not is_inside_tree() 			or get_tree().paused or DisplayServer.get_name() == "headless":
+		return
+	_toggle_pause(true)
+
+
 ## Online-Score (nur angemeldet, gewerteter Lauf). Asynchron + mit Warteschlange.
 func _submit_online(s: Dictionary) -> void:
 	var api: OnlineApi = GameSession.online
@@ -3983,6 +4038,7 @@ func _build_results(is_fail: bool, s: Dictionary, pp: float, unranked: bool, new
 	var cover := OszImporter.load_background_texture(GameSession.osz_path, _beatmap)
 	var data := {
 		"is_fail": is_fail,
+		"fail_reason": _fail_reason,
 		"s": s,
 		"pp": pp,
 		"unranked": unranked,

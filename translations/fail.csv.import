@@ -1,0 +1,18 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+
+[deps]
+
+files=["res://translations/fail.de.translation", "res://translations/fail.en.translation"]
+
+source_file="res://translations/fail.csv"
+dest_files=["res://translations/fail.de.translation", "res://translations/fail.en.translation"]
+
+[params]
+
+compress=1
+delimiter=0
+unescape_keys=false
+unescape_translations=true
