@@ -2644,6 +2644,16 @@ func _score_row(rank: int, e: Dictionary) -> Control:
 	pp_lbl.add_theme_font_size_override("font_size", 13)
 	pp_lbl.add_theme_color_override("font_color", UiTheme.ACCENT2)
 	row.add_child(pp_lbl)
+	var oid := str(e.get("online_id", ""))
+	if oid != "" and is_self and GameSession.chat != null:
+		var sh := Button.new()
+		sh.text = "⇪"
+		sh.tooltip_text = tr("Score teilen")
+		sh.custom_minimum_size = Vector2(26, 22)
+		sh.add_theme_font_size_override("font_size", 12)
+		UiTheme.style_ghost_button(sh, 6)
+		sh.pressed.connect(func(): ScoreShare.share(oid))
+		row.add_child(sh)
 	var date := Label.new()
 	var d := str(e.get("date", "")).split("T")[0]
 	var parts := d.split("-")

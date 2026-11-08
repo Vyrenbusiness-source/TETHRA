@@ -1203,6 +1203,11 @@ func _play_orbit() -> void:
 	cfg.load(BROWSER_STATE)
 	cfg.set_value("browser", "play_mode", "orbit")
 	cfg.save(BROWSER_STATE)
+	# Bis der Spieler gewaehlt hat, fuehrt der Orbit-Eintrag in die Karriere.
+	var career := OrbitCareer.load_state()
+	if not bool(career.get("chosen", false)):
+		career["mode"] = OrbitCareer.MODE_CAREER
+		OrbitCareer.save_state(career)
 	_play()
 
 

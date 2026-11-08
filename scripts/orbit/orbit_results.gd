@@ -229,6 +229,10 @@ func _build(s: Dictionary) -> void:
 		UiTheme.style_ghost_button(clip)
 		clip.pressed.connect(func(): clip_pressed.emit())
 		extra.add_child(clip)
+	if not is_replay and not fail:
+		extra.add_child(ScoreShare.make_button(GameSession.osz_path, GameSession.difficulty_version,
+			int(s.get("score", 0)), ScoreStore.MODE_ORBIT, "",
+			func(b: Button): UiTheme.style_ghost_button(b)))
 	if extra.get_child_count() > 0:
 		_right.add_child(extra)
 	var back := Button.new()
