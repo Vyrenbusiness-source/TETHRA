@@ -34,3 +34,29 @@ GENAUIGKEIT,GENAUIGKEIT,ACCURACY
 Objekte,Objekte,objects
 Der Mirror kennt dazu keine Orbit-Maps.,Der Mirror kennt dazu keine Orbit-Maps.,The mirror has no Orbit maps for this search.
 Orbit  ·  osu!standard-Maps  ·  catboy.best  ·  installierte Maps ausgeblendet,Orbit  ·  osu!standard-Maps  ·  catboy.best  ·  installierte Maps ausgeblendet,Orbit  ·  osu!standard maps  ·  catboy.best  ·  installed maps hidden
+Schritt überspringen  (Tab),Schritt überspringen  (Tab),Skip step  (Tab)
+Beenden  (Esc),Beenden  (Esc),Quit  (Esc)
+Schritt %d von %d,Schritt %d von %d,Step %d of %d
+Zielen,Zielen,Aiming
+Innerer Ring,Innerer Ring,Inner ring
+Äußerer Ring,Äußerer Ring,Outer ring
+Akkord,Akkord,Chord
+Bogen,Bogen,Arc
+Probe-Runde,Probe-Runde,Trial run
+Beweg Maus oder Stift um die Mitte. Der helle Sektor folgt dir. Richte ihn auf die markierte Stelle und bleib kurz dort.,Beweg Maus oder Stift um die Mitte. Der helle Sektor folgt dir. Richte ihn auf die markierte Stelle und bleib kurz dort.,Move the mouse or pen around the centre. The bright sector follows you. Point it at the marked spot and stay there for a moment.
+"Ziele wandern von der Mitte nach außen. Zeig auf das Ziel und drück %s oder die linke Maustaste genau dann, wenn es den inneren Ring erreicht.","Ziele wandern von der Mitte nach außen. Zeig auf das Ziel und drück %s oder die linke Maustaste genau dann, wenn es den inneren Ring erreicht.",Targets travel outwards from the centre. Point at the target and press %s or the left mouse button exactly when it reaches the inner ring.
+"Der äußere Ring hat seine eigene Taste: %s oder die rechte Maustaste. Gleiches Prinzip: zielen, beim Ankommen drücken.","Der äußere Ring hat seine eigene Taste: %s oder die rechte Maustaste. Gleiches Prinzip: zielen, beim Ankommen drücken.","The outer ring has its own key: %s or the right mouse button. Same idea: aim, press on arrival."
+"Zwei Ziele am selben Winkel, eins pro Ring: drück %s und %s gleichzeitig.","Zwei Ziele am selben Winkel, eins pro Ring: drück %s und %s gleichzeitig.","Two targets at the same angle, one per ring: press %s and %s together."
+"Ein Bogen beginnt wie ein Ziel. Halte %s gedrückt und fahr mit dem Zeiger der Spitze nach, bis der Bogen endet.","Ein Bogen beginnt wie ein Ziel. Halte %s gedrückt und fahr mit dem Zeiger der Spitze nach, bis der Bogen endet.",An arc starts like a target. Hold %s and follow the tip with the pointer until the arc ends.
+"Jetzt alles zusammen, einmal durch. Danach siehst du deine Wertung.","Jetzt alles zusammen, einmal durch. Danach siehst du deine Wertung.","Now everything together, once through. Your result comes right after."
+Geschafft.,Geschafft.,Done.
+Beide Tasten zusammen drücken.,Beide Tasten zusammen drücken.,Press both keys together.
+Halte die Taste bis zum Ende und folge der Spitze.,Halte die Taste bis zum Ende und folge der Spitze.,Hold the key to the end and follow the tip.
+"Zeig auf das Ziel und drück, wenn es den Ring erreicht.","Zeig auf das Ziel und drück, wenn es den Ring erreicht.",Point at the target and press when it reaches the ring.
+VERFEHLT,VERFEHLT,MISS
+Probe-Runde geschafft,Probe-Runde geschafft,Trial run complete
+Das war Orbit. Tasten änderst du in den Einstellungen unter Orbit.,Das war Orbit. Tasten änderst du in den Einstellungen unter Orbit.,That was Orbit. You can change the keys in Settings under Orbit.
+Zu den Maps,Zu den Maps,To the maps
+Orbit lernen (1 Min.),Orbit lernen (1 Min.),Learn Orbit (1 min)
+"Neu in Orbit? Eine kurze Einführung zeigt Zielen, Ringe und Bögen.","Neu in Orbit? Eine kurze Einführung zeigt Zielen, Ringe und Bögen.","New to Orbit? A short intro shows aiming, rings and arcs."
+Später,Später,Later
