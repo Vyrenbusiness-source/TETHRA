@@ -139,6 +139,28 @@ Muster.
 Damit bleibt die Winkelgeschwindigkeit zwischen allen Cursor-Punkten (Koepfe,
 Bogen-Enden) unter 0,6 Grad/ms (bei Ringradius 300 px etwa 3100 px/s).
 
+## Spielbarkeit (2 Tasten + Zeiger)
+
+Grenzen, die der Converter erzwingt (`OrbitConverter.violations` prueft sie):
+
+1. **Zeit exakt**: jedes Ziel liegt auf der Zeit seiner Quell-Note, nichts wird
+   verschoben. Nur Akkorde teilen sich die Zeit des ersten Notes (max 2 ms).
+2. **Zeigertempo**: zwischen zwei Cursor-Punkten (Koepfe, Bogen-Enden) hoechstens
+   `MAX_DEG_PER_MS` = 0,6 Grad/ms; damit hoechstens 150 Grad in 250 ms
+   (`MAX_JUMP_DEG`) und hoechstens 90 Grad unter 150 ms Abstand
+   (`SHORT_JUMP_DEG`). Zu grosse Spruenge werden verkleinert, nie verzoegert.
+3. **Ein Finger pro Ring**: zwei Ziele auf demselben Ring brauchen
+   `SAME_RING_MIN_MS` = 90 ms (Tap zu Tap), nach einem Bogen-Ende
+   `RELEASE_GAP_MS` = 150 ms; waehrend ein Bogen den Ring haelt, kommt dort
+   kein Ziel. Schnellere Folgen wechseln auf den anderen Ring (wenn der frei
+   ist), sonst entfaellt das Ziel; ein Akkord schrumpft auf das freie Ziel.
+4. **Akkorde** (beide Ringe) liegen immer am selben Winkel.
+
+Pruefung: `tests/run_orbit_tests.gd` wandelt alle 4K-Diffs der Bibliothek
+um und zaehlt Verstoesse. Stand: 216 Sets, 899 Diffs, 878.349 Ziele,
+Verstoesse Zeit 0, Tempo 0, Flick 0, Ring 0, Akkord 0; hoechstes Tempo
+0,600 Grad/ms. Der perfekte Bot spielt die Test-Maps ohne Miss.
+
 ## Konstanten
 
 | Konstante | Wert | Ort |
@@ -156,6 +178,8 @@ Bogen-Enden) unter 0,6 Grad/ms (bei Ringradius 300 px etwa 3100 px/s).
 | `MIN_ARC_MS` | 100 ms | OrbitConverter |
 | `ARC_DEG_PER_MS` / `ARC_MAX_DEG` | 0,12 Grad/ms / 270 Grad | OrbitConverter |
 | `RELEASE_GAP_MS` | 150 ms | OrbitConverter |
+| `SAME_RING_MIN_MS` | 90 ms | OrbitConverter |
+| `FLICK_WINDOW_MS` / `SHORT_GAP_MS` / `SHORT_JUMP_DEG` | 250 ms / 150 ms / 90 Grad | OrbitConverter |
 
 ## Messwerte (echte Map, Testlauf)
 

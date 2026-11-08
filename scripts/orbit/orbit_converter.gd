@@ -44,6 +44,14 @@ const ARC_DEG_PER_MS := 0.12
 const ARC_MAX_DEG := 270.0
 ## Nach einem Bogen-Ende braucht derselbe Ring so viel Pause, sonst anderer Ring.
 const RELEASE_GAP_MS := 150.0
+## Ein Finger pro Ring: zwei Ziele auf DEMSELBEN Ring brauchen mindestens so
+## viel Abstand (Tap zu Tap); schnellere Folgen wechseln den Ring oder entfallen.
+const SAME_RING_MIN_MS := 90.0
+## Zeiger-Grenzen (Tablet/Maus): innerhalb von FLICK_WINDOW_MS hoechstens
+## MAX_JUMP_DEG, unter SHORT_GAP_MS hoechstens SHORT_JUMP_DEG.
+const FLICK_WINDOW_MS := 250.0
+const SHORT_GAP_MS := 150.0
+const SHORT_JUMP_DEG := 90.0
 ## Takt: Notes so nah an einem Schlag zaehlen als "auf dem Schlag".
 const BEAT_SNAP_MS := 12.0
 ## Spruenge ab JUMP_DEG nur auf Schlaegen (beat_strength >= STRONG_BEAT);
@@ -93,6 +101,7 @@ static func convert(beatmap: Beatmap) -> Array[OrbitNote]:
 	var last_ring := -1
 	var arcs: Array = [null, null]
 	var arc_end_at := [-INF, -INF]
+	var ring_last := [-INF, -INF]
 	for g in groups:
 		var head := objs[g[0]] as ManiaNote
 		var t := head.time
@@ -124,14 +133,16 @@ static func convert(beatmap: Beatmap) -> Array[OrbitNote]:
 						free = r
 				else:
 					tip = (arcs[r] as OrbitNote).angle_at(t)
-			if free < 0:
+			if free < 0 or t - float(ring_last[free]) < SAME_RING_MIN_MS or t - float(arc_end_at[free]) < RELEASE_GAP_MS:
 				continue
 			out.append(OrbitNote.make(t, tip, free, g[0]))
+			ring_last[free] = t
 			last_head = t
 			continue
 
 		var col := head.column
 		var gap := t - last_time
+		var dir_before := dir
 		var delta := 0.0
 		if prev_col >= 0:
 			var d := posmod(col - prev_col, k)
@@ -175,7 +186,20 @@ static func convert(beatmap: Beatmap) -> Array[OrbitNote]:
 		if kept.is_empty():
 			# Beide Ringe frisch frei: der laenger freie Ring bekommt das Ziel.
 			kept = [[g[0], 0 if float(arc_end_at[0]) <= float(arc_end_at[1]) else 1]]
-		targets = kept
+		# Ein Finger pro Ring: zu schnelle Wiederholung wechselt den Ring
+		# (Einzelziel) oder entfaellt; Akkorde schrumpfen auf das freie Ziel.
+		var spaced: Array = []
+		for tg in kept:
+			var r := int(tg[1])
+			if _ring_free(ring_last, arc_end_at, r, t):
+				spaced.append(tg)
+			elif kept.size() == 1 and _ring_free(ring_last, arc_end_at, 1 - r, t):
+				tg[1] = 1 - r
+				spaced.append(tg)
+		if spaced.is_empty():
+			dir = dir_before
+			continue
+		targets = spaced
 
 		var longest := 0.0
 		for tg in targets:
@@ -193,6 +217,7 @@ static func convert(beatmap: Beatmap) -> Array[OrbitNote]:
 			else:
 				on = OrbitNote.make(t, angle, tg[1], tg[0])
 			out.append(on)
+			ring_last[tg[1]] = t
 		last_time = t
 		last_angle = angle
 		last_head = t
@@ -203,6 +228,11 @@ static func convert(beatmap: Beatmap) -> Array[OrbitNote]:
 			return a.time_ms < b.time_ms
 		return a.ring < b.ring)
 	return out
+
+
+## Ring r ist zur Zeit t frei: genug Abstand zum letzten Tap und zum letzten Bogen-Ende.
+static func _ring_free(ring_last: Array, arc_end_at: Array, r: int, t: float) -> bool:
+	return t - float(ring_last[r]) >= SAME_RING_MIN_MS and t - float(arc_end_at[r]) >= RELEASE_GAP_MS
 
 
 ## Bogen-Dauer einer Mania-Note (0 = wird Tap).
@@ -268,6 +298,52 @@ static func cursor_points(ns: Array[OrbitNote]) -> Array:
 			pts.append([n.end_ms, OrbitNote.wrap_deg(n.end_angle_deg), true])
 	pts.sort_custom(func(a, b): return a[0] < b[0])
 	return pts
+
+
+## Spielbarkeits-Pruefung (2 Tasten + Zeiger). Zaehlt Verstoesse gegen die
+## Grenzen dieser Datei; alle Zaehler muessen 0 sein.
+##  timing: Zielzeit weicht mehr als CHORD_EPS_MS von ihrer Quell-Note ab
+##  speed: Zeigerwinkel-Tempo > MAX_DEG_PER_MS
+##  flick: Sprung > MAX_JUMP_DEG in FLICK_WINDOW_MS oder > SHORT_JUMP_DEG
+##         unter SHORT_GAP_MS
+##  ring: gleicher Ring zu dicht (Tap < SAME_RING_MIN_MS, nach Bogen
+##         < RELEASE_GAP_MS) oder Druck waehrend ein Bogen den Ring haelt
+##  chord: gleichzeitige Ziele nicht am selben Winkel
+static func violations(ns: Array[OrbitNote], beatmap: Beatmap) -> Dictionary:
+	var v := {"timing": 0, "speed": 0, "flick": 0, "ring": 0, "chord": 0, "targets": ns.size()}
+	if beatmap == null:
+		return v
+	for n in ns:
+		if n.source_index >= 0 and n.source_index < beatmap.hit_objects.size():
+			if absf(float(beatmap.hit_objects[n.source_index].time) - n.time_ms) > CHORD_EPS_MS + 0.001:
+				v.timing += 1
+	var pts := cursor_points(ns)
+	for i in range(1, pts.size()):
+		var dt: float = pts[i][0] - pts[i - 1][0]
+		var d := OrbitNote.dist_deg(pts[i - 1][1], pts[i][1])
+		if dt <= CHORD_EPS_MS:
+			# Gleichzeitig = gleicher Winkel (Toleranz: Bogenlauf waehrend dt).
+			if d > ARC_DEG_PER_MS * dt + 0.01:
+				v.chord += 1
+			continue
+		if d / dt > MAX_DEG_PER_MS + 0.0005:
+			v.speed += 1
+		if (dt <= FLICK_WINDOW_MS and d > MAX_JUMP_DEG + 0.01) 				or (dt < SHORT_GAP_MS and d > SHORT_JUMP_DEG + 0.01):
+			v.flick += 1
+	for r in 2:
+		var free_at := -INF
+		var was_arc := false
+		var last_t := -INF
+		for n in ns:
+			if n.ring != r:
+				continue
+			var need := RELEASE_GAP_MS - 0.001 if was_arc else SAME_RING_MIN_MS - 0.001
+			if n.time_ms - free_at < need or n.time_ms < last_t:
+				v.ring += 1
+			last_t = n.time_ms
+			free_at = n.end_ms if n.is_arc else n.time_ms
+			was_arc = n.is_arc
+	return v
 
 
 ## Kennzahlen eines umgewandelten Musters (Tests, Bericht).
