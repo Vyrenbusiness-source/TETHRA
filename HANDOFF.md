@@ -107,3 +107,14 @@ Offen: Raumkarten ohne Cover/Modus/Schloss (Raum-Ankuendigung in lobby.gd traegt
 Released: Orbit-Modus (Vorschau, Branches orbit-core+orbit-play gemergt), starkes SV (sv_mod Stufe Stark = Standard), davor v1.15.x (Skins exakt wie Original, Scroll Speed 1-40 wie lazer, Clip schnell + ffmpeg im Installer, GPU-Schutz, Turnier-Ueberarbeitung, Detail-Stats).
 Offen: Orbit-Pause/Results/Einstellungen/Browser-Umschalter nie per Screenshot geprueft; SV-Stufe waehlbar machen (SvMod hat Normal/Stark intern); Score-Tausch im MP (Nutzer: erstmal egal); 2D-Optionen wie osu! (Richtung, HitPosition, Spaltenabstand, FadeIn/Hidden) noch offen.
 Installer: tools/installer/tethra.iss, Setup im Release-Tag "worlds" (siehe memory release-checks).
+
+## Stand 2026-11-08 ~03:40 (Nacht-Session, letztes Release v1.19.1)
+Released diese Nacht (v1.14.0 -> v1.19.1): Installer TETHRA_Setup.exe (Release-Tag "worlds", ffmpeg dabei, Stage in release/stage), neues Logo + Identitaet (Graphit + Bernstein, ui_theme.gd), Lobby/Einstellungen/Ergebnis neu, Scores je Modus, 2D-Optionen wie osu!mania, Scroll Speed 1-40, starkes SV (Normal/Stark), Skins exakt wie osu!, Notenfarben neu (auch Built-in-Skins), GPU-Schutz, Clip schnell.
+Orbit (eigener Modus, Prioritaet des Nutzers): osu!standard-Maps als Hauptquelle (POLAR), 4K als Fallback, Online-Browser Mania/Orbit, eigene Wertung CORE..MISS, eigenes Endbild, Tutorial, Replays + Clips, Multiplayer + Turnier (Smoke tools/mp_orbit_smoke.sh), 3D-Welten als Hintergrund, Einstellungsseite mit Live-Vorschau. QA: docs/modes/orbit_qa.md (Takt exakt, Bot 2,8 % Maus), Quellenvergleich docs/modes/orbit_sources.md.
+Offen:
+- warmd/orbit-stacks (Stapel-Verdeckung < 15 %, Bot-Kosten abwaegen) - falls nicht gemergt: Handoff .git/warmd-handoff/orbit-stacks.md.
+- Smoke-Skript: Client-Pruefzeilen (Zwischenstand verpasst wegen --mp-back=10, Host beendet zu frueh) - Testablauf, kein Spielfehler.
+- Social Preview docs/media/social_preview.png muss der NUTZER hochladen (GitHub Settings > Social preview).
+- Installer enthaelt Spiel v1.18.0 (Updater holt Neues) - bei naechster Welt-/exe-Aenderung neu bauen.
+- warmd-Luecken: fertige Tasks bleiben in .git/warmd-batch als Dateibesitzer (manuell Zeile loeschen), split vergibt nach batch-done belegte Worktrees, kein Befehl zum Verwerfen eines Tasks -> in warmd selbst beheben.
+Nutzer-Regeln neu: max. 4 Agents; kein KI-Look; keine leeren Testfenster; Orbit hat Vorrang; fertige Updates sofort veroeffentlichen.
