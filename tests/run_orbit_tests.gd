@@ -18,6 +18,7 @@ func _initialize() -> void:
 	_test_clock()
 	_test_paths()
 	_test_shape_plan()
+	_test_easy_shapes()
 	_test_mania_rings()
 	_test_std_rings()
 	_test_density()
@@ -599,3 +600,20 @@ func _test_library() -> void:
 	_ok(star_max <= OrbitConverter.STAR_MAX, "Sterne <= 15")
 	_ok(max_speed <= OrbitTrack.MAX_SPEED + 1e-7, "Kopf nie schneller als %.4f/ms" % OrbitTrack.MAX_SPEED)
 	_ok(perfect_miss == 0, "perfekter Spieler ohne Miss (Stichprobe)")
+
+
+## Leichte Maps: nur Kreis/Ellipse; mittlere hoechstens Acht.
+func _test_easy_shapes() -> void:
+	print("- Ruhiger Einstieg: Bahnformen nach Map-Dichte")
+	var easy: Array[OrbitNote] = []
+	for i in 40:
+		easy.append(OrbitNote.make(1000.0 + i * 600.0, 0.0, 0, i))
+	_ok(OrbitConverter.max_shape_for(easy) == OrbitPath.ELLIPSE, "1,7 Ziele/s -> hoechstens Ellipse")
+	var mid: Array[OrbitNote] = []
+	for i in 100:
+		mid.append(OrbitNote.make(1000.0 + i * 300.0, 0.0, 0, i))
+	_ok(OrbitConverter.max_shape_for(mid) == OrbitPath.EIGHT, "3,3 Ziele/s -> hoechstens Acht")
+	var hard: Array[OrbitNote] = []
+	for i in 200:
+		hard.append(OrbitNote.make(1000.0 + i * 120.0, 0.0, 0, i))
+	_ok(OrbitConverter.max_shape_for(hard) == OrbitPath.ROSE4, "8 Ziele/s -> alle Formen")

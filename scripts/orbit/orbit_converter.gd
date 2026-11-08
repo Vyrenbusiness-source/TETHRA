@@ -52,6 +52,10 @@ const SHAPE_L_EIGHT := 3.8
 const SHAPE_L_ROSE := 5.8
 const SHAPE_L_ROSE4 := 8.5
 const KIAI_BOOST := 1.35
+## Ruhiger Einstieg: leichte Maps (Ziele/s ueber die ganze Map) bekommen nur einfache
+## Formen. Unter EASY_SHAPE_NPS hoechstens Ellipse, unter MID_SHAPE_NPS hoechstens Acht.
+const EASY_SHAPE_NPS := 2.5
+const MID_SHAPE_NPS := 4.0
 ## Eine Form haelt mindestens so viele Takte (kein Flackern).
 const SHAPE_MIN_HOLD := 4
 ## Pause: so viele Takte ohne Ziel setzen die Bahn auf den Kreis zurueck.
@@ -112,6 +116,7 @@ static func plan_shapes(beatmap: Beatmap, ns: Array[OrbitNote], clock: OrbitCloc
 		ends.append(e)
 		t = e
 	var nb := starts.size()
+	var max_shape := max_shape_for(ns)
 	var count := PackedFloat32Array()
 	count.resize(nb)
 	count.fill(0.0)
@@ -140,7 +145,7 @@ static func plan_shapes(beatmap: Beatmap, ns: Array[OrbitNote], clock: OrbitCloc
 		var next_v: float = raw[k + 1] if k + 1 < nb else raw[k]
 		var level := (prev_v + 2.0 * raw[k] + next_v) * 0.25
 		rest = rest + 1 if count[k] == 0.0 else 0
-		var want := _shape_for_level(level, changes)
+		var want := mini(_shape_for_level(level, changes), max_shape)
 		if rest >= SHAPE_REST_BARS:
 			want = OrbitPath.CIRCLE
 		var full := clock.bar_ms_at(starts[k] + 0.5)
@@ -156,6 +161,19 @@ static func plan_shapes(beatmap: Beatmap, ns: Array[OrbitNote], clock: OrbitCloc
 		since += 1
 	_stamp(tr, ns)
 	return tr
+
+
+## Hoechste erlaubte Bahnform fuer die ganze Map (leichte Maps: nur Kreis/Ellipse).
+static func max_shape_for(ns: Array[OrbitNote]) -> int:
+	if ns.size() < 2:
+		return OrbitPath.ELLIPSE
+	var secs := maxf((ns[-1].time_ms - ns[0].time_ms) / 1000.0, 1.0)
+	var nps := float(ns.size()) / secs
+	if nps < EASY_SHAPE_NPS:
+		return OrbitPath.ELLIPSE
+	if nps < MID_SHAPE_NPS:
+		return OrbitPath.EIGHT
+	return OrbitPath.ROSE4
 
 
 static func _shape_for_level(level: float, changes: int) -> int:
