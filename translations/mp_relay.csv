@@ -18,3 +18,4 @@ Direkt 체ber deinen Router (UPnP). Mitspieler brauchen den langen Code.,Direkt �
 "L채uft 체ber den Server, ohne Portfreigabe. Ohne Passwort erscheint der Raum in der Liste.","L채uft 체ber den Server, ohne Portfreigabe. Ohne Passwort erscheint der Raum in der Liste.","Runs through the server, no port forwarding. Without a password the room shows up in the list."
 Der Code hat 6 Zeichen und kommt vom Host des Raums.,Der Code hat 6 Zeichen und kommt vom Host des Raums.,The code has 6 characters and comes from the room's host.
 Dieser Raum hat ein Passwort. Gib Code und Passwort links ein.,Dieser Raum hat ein Passwort. Gib Code und Passwort links ein.,This room has a password. Enter code and password on the left.
+"Online-Server noch nicht erreichbar, darum LAN / Direkt.","Online-Server noch nicht erreichbar, darum LAN / Direkt.","Online server not reachable yet, using LAN / Direct."

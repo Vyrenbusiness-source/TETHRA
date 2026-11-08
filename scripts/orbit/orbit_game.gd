@@ -1072,6 +1072,8 @@ func _show_results(is_fail: bool) -> void:
 		ScoreStore.log_play(GameSession.osz_path, _beatmap.version_name(),
 			"%s - %s" % [_beatmap.artist(), _beatmap.title()], s, MODE)
 		_save_replay(s, new_best)
+		if not is_fail:
+			_submit_online(s)
 	# Multiplayer: letzten Live-Stand + Finale an alle melden.
 	if Lobby.active and Lobby.in_game:
 		Lobby.send_score(int(s.score), int(core.combo), float(s.accuracy))
@@ -1451,3 +1453,16 @@ class OrbitSound extends Node:
 		if _on() and _miss != null:
 			_miss.volume_db = _db(MISS_DB)
 			_miss.play()
+
+
+## Online-Score (nur angemeldet, gewerteter Lauf). Asynchron + mit Warteschlange.
+func _submit_online(s: Dictionary) -> void:
+	var api: OnlineApi = GameSession.online
+	if api == null or not api.enabled() or not api.logged_in():
+		return
+	var meta := OnlineApi.meta_from_beatmap(_beatmap, GameSession.osz_path,
+		GameSession.osu_filename, float(s.get("stars", -1.0)))
+	meta["total_notes"] = notes.size()
+	var res := s.duplicate()
+	res["date"] = Time.get_datetime_string_from_system(true)
+	api.submit(res, meta, "orbit")

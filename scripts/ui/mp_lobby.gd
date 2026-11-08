@@ -1219,6 +1219,7 @@ func _build_browser() -> void:
 	join.pressed.connect(_join_by_code)
 	side.add_child(join)
 	_set_transport(_direct)
+	_probe_relay()
 
 	cols.add_child(_hgap(M))
 	var vr := _vsep()
@@ -3352,3 +3353,24 @@ func _lobby_shots() -> void:
 	Lobby.set_meta("harness", true)
 	Lobby._reset()
 	get_tree().quit(0)
+
+
+## Online-Server erreichbar? Sonst LAN/Direkt vorwaehlen und es sagen, statt dass
+## Erstellen/Beitreten still scheitert (Relay laeuft erst, wenn der Server steht).
+func _probe_relay() -> void:
+	if _direct or DisplayServer.get_name() == "headless":
+		return
+	var req := HTTPRequest.new()
+	req.timeout = 6.0
+	add_child(req)
+	req.request_completed.connect(func(res: int, code: int, _h: PackedStringArray, _b: PackedByteArray):
+		req.queue_free()
+		if res == HTTPRequest.RESULT_SUCCESS and code == 200:
+			return
+		if not _direct and is_inside_tree():
+			_set_transport(true)
+			_create_hint.text = tr("Online-Server noch nicht erreichbar, darum LAN / Direkt.")
+	)
+	if req.request(load("res://scripts/net/relay_peer.gd").rooms_url()) != OK:
+		req.queue_free()
+		_set_transport(true)
