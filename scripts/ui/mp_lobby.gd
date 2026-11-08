@@ -3363,9 +3363,11 @@ func _probe_relay() -> void:
 	var req := HTTPRequest.new()
 	req.timeout = 6.0
 	add_child(req)
-	req.request_completed.connect(func(res: int, code: int, _h: PackedStringArray, _b: PackedByteArray):
+	req.request_completed.connect(func(res: int, code: int, _h: PackedStringArray, b: PackedByteArray):
 		req.queue_free()
-		if res == HTTPRequest.RESULT_SUCCESS and code == 200:
+		# Nur eine echte Raumliste (JSON-Array) zaehlt: die Website antwortet auf
+		# unbekannte Pfade ebenfalls mit 200 (HTML-Seite).
+		if res == HTTPRequest.RESULT_SUCCESS and code == 200 				and JSON.parse_string(b.get_string_from_utf8()) is Array:
 			return
 		if not _direct and is_inside_tree():
 			_set_transport(true)

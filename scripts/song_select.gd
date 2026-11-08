@@ -929,8 +929,11 @@ func _build_info_panel() -> void:
 	_play_btn = play
 
 	# Mods + Sammlung: No-Fail als Schalter, Sammlung als Ghost-Button.
-	var mods_row := HBoxContainer.new()
-	mods_row.add_theme_constant_override("separation", 8)
+	# Umbrechend: im Orbit-Modus kommen HD/FI/PR dazu; eine starre Zeile machte das
+	# Panel breiter als INFO_W und es lief unter das Cover in der Mitte.
+	var mods_row := HFlowContainer.new()
+	mods_row.add_theme_constant_override("h_separation", 8)
+	mods_row.add_theme_constant_override("v_separation", 8)
 	vb.add_child(mods_row)
 
 	var nf := CheckButton.new()
