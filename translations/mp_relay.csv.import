@@ -1,0 +1,19 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+uid="uid://bnadviei7v81x"
+
+[deps]
+
+files=["res://translations/mp_relay.de.translation", "res://translations/mp_relay.en.translation"]
+
+source_file="res://translations/mp_relay.csv"
+dest_files=["res://translations/mp_relay.de.translation", "res://translations/mp_relay.en.translation"]
+
+[params]
+
+compress=1
+delimiter=0
+unescape_keys=false
+unescape_translations=true
