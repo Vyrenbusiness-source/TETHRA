@@ -46,6 +46,24 @@ const STREAK_FULL := 100
 const GRADE_SS := 0.985
 const GRADE_STEPS := [[0.95, "S"], [0.90, "A"], [0.82, "B"], [0.72, "C"]]
 
+## Replays (Aufnahme + Wiedergabe) brauchen exakt dieselbe Wertung. Im
+## deterministischen Modus laeuft die Zeit-Logik (Ablauf, Bogen-Pruefung) auf
+## einem festen 1-ms-Raster statt auf Bild-Zeiten, Eingaben werden auf ganze ms
+## und 0.1 Grad gerundet und nie vor den letzten Raster-Schritt gelegt. Damit
+## haengt die Wertung nur von der Eingabe-Liste ab, nicht von der Bildrate.
+const TICK_MS := 1.0
+## Cursor-Aufnahme: neuer Winkel nur bei Aenderung > REC_MIN_DEG und
+## fruehestens REC_GAP_MS nach dem letzten Eintrag (hoechstens 125/s). Der
+## Core sieht beim Aufnehmen nur die aufgezeichneten Winkel; Tasten-Events
+## tragen den exakten Winkel selbst (Treffer-Winkel bleibt genau).
+const REC_MIN_DEG := 0.5
+const REC_GAP_MS := 8.0
+## Replay-Event-Codes: [t_ms, EV_CURSOR, a] / [t_ms, EV_DOWN + ring, a] /
+## [t_ms, EV_UP + ring]; t in ganzen ms, a = Winkel in 0.1 Grad (0..3599).
+const EV_CURSOR := 0
+const EV_DOWN := 1
+const EV_UP := 3
+
 var notes: Array[OrbitNote] = []
 var preempt: float = ManiaCore.BASE_PREEMPT
 
@@ -70,6 +88,14 @@ var _streak_sum := 0.0
 var _n_done := 0
 var _aim_sum := 0.0
 var _aim_n := 0
+## Deterministischer Modus (Replays), siehe TICK_MS. recording = Eingaben in
+## replay_log mitschreiben (kompakt, siehe EV_*).
+var deterministic := false
+var recording := false
+var replay_log: Array = []
+var _tick := -INF
+var _rec_a := -1
+var _rec_t := -INF
 
 # --- Zaehler und Fenster: alles liegt im ManiaCore-Zaehler ---
 var combo: int:
@@ -165,6 +191,16 @@ func setup(p_notes: Array[OrbitNote], od: float, scroll_scale: float = 1.0,
 	_n_done = 0
 	_aim_sum = 0.0
 	_aim_n = 0
+	_tick = -INF
+	_rec_a = -1
+	_rec_t = -INF
+	replay_log = []
+
+
+## Replay-Modus einschalten (nach setup): record = Eingaben mitschreiben.
+func set_replay_mode(record: bool) -> void:
+	deterministic = true
+	recording = record
 
 
 ## Scroll-Faktor waehrend des Spiels aendern (nur Anflugzeit).
@@ -177,9 +213,12 @@ func update(t_ms: float) -> void:
 			and notes[_spawn_order[_next_spawn]].time_ms - preempt <= t_ms:
 		note_spawned.emit(_spawn_order[_next_spawn])
 		_next_spawn += 1
-	_check_arcs(t_ms)
-	for r in RINGS:
-		_expire_ring(r, t_ms)
+	if deterministic:
+		_advance(floorf(t_ms))
+	else:
+		_check_arcs(t_ms)
+		for r in RINGS:
+			_expire_ring(r, t_ms)
 	if _judged_count >= notes.size() and _next_spawn >= _spawn_order.size() \
 			and not _finished_emitted:
 		_finished_emitted = true
@@ -189,6 +228,24 @@ func update(t_ms: float) -> void:
 ## Cursor-Winkel (0 = oben, im Uhrzeigersinn) zur Event-Zeit t_ms. Bis t_ms
 ## stand der Cursor noch am alten Winkel; erst danach gilt der neue.
 func cursor_moved(cursor_deg: float, t_ms: float) -> void:
+	if not deterministic:
+		_do_cursor(cursor_deg, t_ms)
+		return
+	if _tally.failed or notes.is_empty():
+		return
+	var a := _q_deg(cursor_deg)
+	var te := _q_time(t_ms)
+	if a == _rec_a:
+		return
+	if recording and _rec_a >= 0:
+		var d := absi(a - _rec_a)
+		d = mini(d, 3600 - d)
+		if d <= int(REC_MIN_DEG * 10.0) or te - _rec_t < REC_GAP_MS:
+			return
+	apply_event([int(te), EV_CURSOR, a])
+
+
+func _do_cursor(cursor_deg: float, t_ms: float) -> void:
 	_check_arcs(t_ms)
 	_cursor = OrbitNote.wrap_deg(cursor_deg)
 	_check_arcs(t_ms)
@@ -198,7 +255,15 @@ func cursor_moved(cursor_deg: float, t_ms: float) -> void:
 func key_down(ring: int, t_ms: float, cursor_deg: float) -> void:
 	if ring < 0 or ring >= RINGS or notes.is_empty():
 		return
-	cursor_moved(cursor_deg, t_ms)
+	if deterministic:
+		if not _tally.failed:
+			apply_event([int(_q_time(t_ms)), EV_DOWN + ring, _q_deg(cursor_deg)])
+		return
+	_do_key_down(ring, t_ms, cursor_deg)
+
+
+func _do_key_down(ring: int, t_ms: float, cursor_deg: float) -> void:
+	_do_cursor(cursor_deg, t_ms)
 	_expire_ring(ring, t_ms)
 	if _active_arc[ring] >= 0:
 		ring_pressed.emit(ring, false)
@@ -253,8 +318,16 @@ func key_down(ring: int, t_ms: float, cursor_deg: float) -> void:
 
 ## Taste fuer ring losgelassen.
 func key_up(ring: int, t_ms: float) -> void:
-	if ring < 0 or ring >= RINGS:
+	if ring < 0 or ring >= RINGS or notes.is_empty():
 		return
+	if deterministic:
+		if not _tally.failed:
+			apply_event([int(_q_time(t_ms)), EV_UP + ring])
+		return
+	_do_key_up(ring, t_ms)
+
+
+func _do_key_up(ring: int, t_ms: float) -> void:
 	_check_arcs(t_ms)
 	var h: int = _active_arc[ring]
 	if h < 0:
@@ -466,6 +539,89 @@ func _store(idx: int, result: Dictionary) -> void:
 	_judged[idx] = result
 	_judged_count += 1
 	note_judged.emit(idx, result)
+
+
+# ---------------------------------------------------------------------------
+# Replay (deterministischer Modus)
+# ---------------------------------------------------------------------------
+
+## Ein Replay-Event einspeisen (Wiedergabe) bzw. eine gerundete Live-Eingabe
+## ausfuehren und mitschreiben. Vorher laeuft das Raster bis t (einschliesslich).
+func apply_event(ev: Array) -> void:
+	if ev.size() < 2 or notes.is_empty() or _tally.failed:
+		return
+	var te := float(ev[0])
+	var code := int(ev[1])
+	_advance(te)
+	if _tally.failed:
+		return
+	if recording:
+		replay_log.append(ev.duplicate())
+	if code == EV_CURSOR and ev.size() >= 3:
+		_rec_a = int(ev[2])
+		_rec_t = te
+		_do_cursor(float(_rec_a) / 10.0, te)
+	elif code >= EV_DOWN and code < EV_DOWN + RINGS and ev.size() >= 3:
+		_rec_a = int(ev[2])
+		_rec_t = te
+		_do_key_down(code - EV_DOWN, te, float(_rec_a) / 10.0)
+	elif code >= EV_UP and code < EV_UP + RINGS:
+		_do_key_up(code - EV_UP, te)
+
+
+## Ganze ms, nie vor dem letzten Raster-Schritt (sonst haengt die Reihenfolge
+## an der Bildrate).
+func _q_time(t_ms: float) -> float:
+	return maxf(roundf(t_ms), _tick)
+
+
+static func _q_deg(deg: float) -> int:
+	return int(roundf(fposmod(deg, 360.0) * 10.0)) % 3600
+
+
+## Raster-Schritte bis einschliesslich target. Ohne laufenden Bogen springt es
+## direkt zum naechsten Ablauf-Zeitpunkt (dazwischen passiert nichts). Nach
+## einem Fail steht alles (Wiedergabe endet am selben Stand).
+func _advance(target: float) -> void:
+	while _tick < target and not _tally.failed:
+		if _active_arc[0] < 0 and _active_arc[1] < 0:
+			var due := _next_due_tick()
+			if due > target:
+				_tick = target
+				return
+			_tick = maxf(due, _tick + TICK_MS)
+		else:
+			_tick += TICK_MS
+		_check_arcs(_tick)
+		for r in RINGS:
+			_expire_ring(r, _tick)
+
+
+## Erster Raster-Schritt, an dem ein offenes Ziel ablaeuft (t > time + w50).
+func _next_due_tick() -> float:
+	var best := INF
+	for r in RINGS:
+		var lane: Array = _ring_notes[r]
+		for j in range(_ring_head[r], lane.size()):
+			var i: int = lane[j]
+			if _judged.has(i):
+				continue
+			best = minf(best, floorf(float(notes[i].time_ms) + w50) + TICK_MS)
+			break
+	return best
+
+
+## Kompakter Replay-Inhalt: Anzahl Cursor- und Tasten-Events.
+static func count_events(events: Array) -> Dictionary:
+	var c := 0
+	var k := 0
+	for e in events:
+		if e is Array and e.size() >= 2:
+			if int(e[1]) == EV_CURSOR:
+				c += 1
+			else:
+				k += 1
+	return {"cursor": c, "keys": k}
 
 
 # ---------------------------------------------------------------------------
