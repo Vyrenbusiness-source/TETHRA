@@ -854,7 +854,7 @@ func _map_row(i: int, peer: int, st: Dictionary, narrow: bool) -> Control:
 	sb.content_margin_bottom = 6
 	if sel:
 		sb.border_color = Color(ACCENT, 0.6)
-		sb.bg_color = Color(0.07, 0.13, 0.18, 0.8)
+		sb.bg_color = Color(UiTheme.RAISED, 0.8)
 	p.add_theme_stylebox_override("panel", sb)
 	var hov: StyleBoxFlat = sb.duplicate()
 	hov.bg_color = sb.bg_color.lightened(0.07)

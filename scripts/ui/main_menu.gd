@@ -4,8 +4,8 @@ extends Control
 ## EINSTELLUNGEN / BEENDEN, Profilkarte (Name editierbar, Gesamt-pp, Plays)
 ## und die letzten Scores.
 
-const COL_ACCENT := Color(0.20, 0.85, 1.0)
-const COL_DIM := Color(0.6, 0.63, 0.72)
+const COL_ACCENT := UiTheme.ACCENT
+const COL_DIM := UiTheme.DIM
 const CARD_H := 94.0
 const CARD_R := 12
 const CARD_PAD := 12
@@ -72,28 +72,28 @@ const BROWSER_SCENE := "res://scenes/song_select.tscn"
 ## fuer den dunklen Menue-Hintergrund). Pfade gleich wie in logo.svg halten.
 const LOGO_SIZE := Vector2(532, 128)
 const LOGO_SVG := """<svg xmlns="http://www.w3.org/2000/svg" width="532.26" height="128" viewBox="0 0 532.26 128">
-  <path fill="#33d9ff" d="M41.9 18 L50.19 18 L34 86 L16 86 Z"/>
-  <path fill="#33d9ff" d="M52.95 18 L61.24 18 L60.43 35 L49.71 35 Z"/>
-  <path fill="#ff73e0" d="M48.76 40 L60.19 40 L59.62 52 L46.48 52 Z"/>
-  <path fill="#33d9ff" d="M45.52 57 L59.38 57 L58 86 L40 86 Z"/>
-  <path fill="#33d9ff" d="M66.76 18 L75.05 18 L88 86 L70 86 Z"/>
-  <path fill="#33d9ff" d="M77.81 18 L86.1 18 L112 86 L94 86 Z"/>
-  <path fill="#33d9ff" d="M16 96 L112 96 L112 108 L16 108 Z"/>
-  <path fill="#f2f5ff" d="M162 31 L217.44 31 L217.44 40.9 L162 40.9 Z"/>
-  <path fill="#f2f5ff" d="M184.11 31 L195.33 31 L195.33 97 L184.11 97 Z"/>
-  <path fill="#f2f5ff" d="M228.66 31 L239.88 31 L239.88 97 L228.66 97 Z"/>
-  <path fill="#f2f5ff" d="M228.66 31 L273.54 31 L273.54 40.9 L228.66 40.9 Z"/>
-  <path fill="#f2f5ff" d="M228.66 59.05 L268.26 59.05 L268.26 68.95 L228.66 68.95 Z"/>
-  <path fill="#f2f5ff" d="M228.66 87.1 L273.54 87.1 L273.54 97 L228.66 97 Z"/>
-  <path fill="#f2f5ff" d="M284.76 31 L340.2 31 L340.2 40.9 L284.76 40.9 Z"/>
-  <path fill="#f2f5ff" d="M306.87 31 L318.09 31 L318.09 97 L306.87 97 Z"/>
-  <path fill="#f2f5ff" d="M351.42 31 L362.64 31 L362.64 97 L351.42 97 Z"/>
-  <path fill="#f2f5ff" d="M391.68 31 L402.9 31 L402.9 97 L391.68 97 Z"/>
-  <path fill="#f2f5ff" d="M351.42 59.05 L402.9 59.05 L402.9 68.95 L351.42 68.95 Z"/>
-  <path fill="#f2f5ff" d="M414.12 31 L425.34 31 L425.34 97 L414.12 97 Z"/>
-  <path fill="#f2f5ff" fill-rule="evenodd" d="M414.12 31 L455.04 31 L464.28 40.24 L464.28 59.71 L455.04 68.95 L414.12 68.95 Z M425.34 40.9 L448.47 40.9 L453.06 45.49 L453.06 54.46 L448.47 59.05 L425.34 59.05 Z"/>
-  <path fill="#f2f5ff" d="M435.19 68.94 L448.13 68.94 L464.28 97 L451.33 97 Z"/>
-  <path fill="#f2f5ff" fill-rule="evenodd" d="M497.71 31 L510.05 31 L532.26 97 L475.5 97 Z M503.88 47.84 L511.98 71.92 L495.78 71.92 Z M492.45 81.82 L515.31 81.82 L520.42 97 L487.34 97 Z"/>
+  <path fill="#f2a23a" d="M41.9 18 L50.19 18 L34 86 L16 86 Z"/>
+  <path fill="#f2a23a" d="M52.95 18 L61.24 18 L60.43 35 L49.71 35 Z"/>
+  <path fill="#ece6da" d="M48.76 40 L60.19 40 L59.62 52 L46.48 52 Z"/>
+  <path fill="#f2a23a" d="M45.52 57 L59.38 57 L58 86 L40 86 Z"/>
+  <path fill="#f2a23a" d="M66.76 18 L75.05 18 L88 86 L70 86 Z"/>
+  <path fill="#f2a23a" d="M77.81 18 L86.1 18 L112 86 L94 86 Z"/>
+  <path fill="#f2a23a" d="M16 96 L112 96 L112 108 L16 108 Z"/>
+  <path fill="#ece6da" d="M162 31 L217.44 31 L217.44 40.9 L162 40.9 Z"/>
+  <path fill="#ece6da" d="M184.11 31 L195.33 31 L195.33 97 L184.11 97 Z"/>
+  <path fill="#ece6da" d="M228.66 31 L239.88 31 L239.88 97 L228.66 97 Z"/>
+  <path fill="#ece6da" d="M228.66 31 L273.54 31 L273.54 40.9 L228.66 40.9 Z"/>
+  <path fill="#ece6da" d="M228.66 59.05 L268.26 59.05 L268.26 68.95 L228.66 68.95 Z"/>
+  <path fill="#ece6da" d="M228.66 87.1 L273.54 87.1 L273.54 97 L228.66 97 Z"/>
+  <path fill="#ece6da" d="M284.76 31 L340.2 31 L340.2 40.9 L284.76 40.9 Z"/>
+  <path fill="#ece6da" d="M306.87 31 L318.09 31 L318.09 97 L306.87 97 Z"/>
+  <path fill="#ece6da" d="M351.42 31 L362.64 31 L362.64 97 L351.42 97 Z"/>
+  <path fill="#ece6da" d="M391.68 31 L402.9 31 L402.9 97 L391.68 97 Z"/>
+  <path fill="#ece6da" d="M351.42 59.05 L402.9 59.05 L402.9 68.95 L351.42 68.95 Z"/>
+  <path fill="#ece6da" d="M414.12 31 L425.34 31 L425.34 97 L414.12 97 Z"/>
+  <path fill="#ece6da" fill-rule="evenodd" d="M414.12 31 L455.04 31 L464.28 40.24 L464.28 59.71 L455.04 68.95 L414.12 68.95 Z M425.34 40.9 L448.47 40.9 L453.06 45.49 L453.06 54.46 L448.47 59.05 L425.34 59.05 Z"/>
+  <path fill="#ece6da" d="M435.19 68.94 L448.13 68.94 L464.28 97 L451.33 97 Z"/>
+  <path fill="#ece6da" fill-rule="evenodd" d="M497.71 31 L510.05 31 L532.26 97 L475.5 97 Z M503.88 47.84 L511.98 71.92 L495.78 71.92 Z M492.45 81.82 L515.31 81.82 L520.42 97 L487.34 97 Z"/>
 </svg>"""
 static var _browser_scene: PackedScene = null
 static var _browser_req := false
@@ -630,7 +630,7 @@ func _build_now_playing(bm: Beatmap, cover: Texture2D) -> void:
 	var cap := Label.new()
 	cap.text = "JETZT LÄUFT"
 	cap.add_theme_font_size_override("font_size", 12)
-	cap.add_theme_color_override("font_color", Color(0.45, 0.92, 1.0))
+	cap.add_theme_color_override("font_color", UiTheme.ACCENT)
 	cap.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	tv.add_child(cap)
 
@@ -748,6 +748,8 @@ func _add_wrapped(parent: Control, b: Button) -> void:
 	glow.position = Vector2(-4, 4)
 	glow.size = Vector2(56, 50)
 	glow.modulate.a = 0.0
+	# Kein Glow mehr (Identitaet: klare Kanten); nur die Akzent-Kante bleibt.
+	glow.visible = false
 	glow.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	w.add_child(glow)
 	var edge := ColorRect.new()
@@ -777,12 +779,28 @@ func _add_wrapped(parent: Control, b: Button) -> void:
 		tw.tween_property(b, "scale", Vector2.ONE, 0.18))
 
 
+## "MULTIPLAYER" -> "Multiplayer" (nur erster Buchstabe gross).
+static func _sentence(t: String) -> String:
+	return t.substr(0, 1).to_upper() + t.substr(1).to_lower()
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_TRANSLATION_CHANGED:
+		for b in _btns:
+			if is_instance_valid(b) and b.has_meta("key"):
+				b.text = _sentence(tr(b.get_meta("key")))
+
+
 func _menu_button(text: String, primary: bool) -> Button:
 	var b := Button.new()
-	b.text = text
+	# Satzschreibung statt Versalien: Schluessel bleiben ("SPIELEN"), Anzeige
+	# "Spielen"; bei Sprachwechsel neu gesetzt (_notification).
+	b.set_meta("key", text)
+	b.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	b.text = _sentence(tr(text))
 	b.custom_minimum_size = Vector2(360, 58)
-	b.add_theme_font_override("font", UiTheme.heading_font(3))
-	b.add_theme_font_size_override("font_size", 20)
+	b.add_theme_font_override("font", UiTheme.heading_font(0))
+	b.add_theme_font_size_override("font_size", 21)
 	if primary:
 		UiTheme.style_button(b, true)
 	else:
@@ -830,7 +848,7 @@ func _build_profile_card() -> void:
 
 	_pp_label = Label.new()
 	_pp_label.add_theme_font_size_override("font_size", 17)
-	_pp_label.add_theme_color_override("font_color", Color(1.0, 0.6, 0.9))
+	_pp_label.add_theme_color_override("font_color", UiTheme.ACCENT2)
 	_pp_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vb.add_child(_pp_label)
 
@@ -902,7 +920,7 @@ func _tour_next() -> void:
 	arrow.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	arrow.position = Vector2(r.get_center().x - 32.0, r.position.y - 96.0)
 	arrow.add_theme_font_size_override("font_size", 56)
-	arrow.add_theme_color_override("font_color", Color(0.3, 0.95, 1.0))
+	arrow.add_theme_color_override("font_color", UiTheme.ACCENT)
 	arrow.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.8))
 	arrow.add_theme_constant_override("shadow_outline_size", 10)
 	_tour_overlay.add_child(arrow)
@@ -988,7 +1006,7 @@ func _tour_finish() -> void:
 	b.add_theme_font_size_override("font_size", 15)
 	vb.add_child(b)
 	var go := Button.new()
-	go.text = "🚀 ÜBUNGS-MAP STARTEN"
+	go.text = UiTheme.sentence(tr("🚀 ÜBUNGS-MAP STARTEN").trim_prefix("🚀 "))
 	go.custom_minimum_size = Vector2(0, 48)
 	UiTheme.style_button(go, true)
 	go.pressed.connect(_start_practice)

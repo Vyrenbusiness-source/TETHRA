@@ -321,7 +321,7 @@ func _draw_timeline() -> void:
 	_timeline.draw_string(font, Vector2(w - 34, cy + 24), tr("spät"), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, UiTheme.DIM)
 	for d in _devs:
 		var x := w * 0.5 + clampf(d / TIMELINE_RANGE, -1.0, 1.0) * w * 0.5
-		var col := UiTheme.ACCENT2 if absf(d) > OUTLIER_MS else UiTheme.ACCENT
+		var col := UiTheme.BAD if absf(d) > OUTLIER_MS else UiTheme.ACCENT
 		_timeline.draw_circle(Vector2(x, cy), 5.0, col)
 
 

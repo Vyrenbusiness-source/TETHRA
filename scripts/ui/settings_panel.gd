@@ -105,10 +105,10 @@ func _ready() -> void:
 	bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	head.add_child(bar)
 	var title := Label.new()
-	title.text = "EINSTELLUNGEN"
+	title.text = "Einstellungen"
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	title.add_theme_font_override("font", UiTheme.heading_font(3))
-	title.add_theme_font_size_override("font_size", 18)
+	title.add_theme_font_override("font", UiTheme.heading_font(0))
+	title.add_theme_font_size_override("font_size", 22)
 	head.add_child(title)
 	var close_x := Button.new()
 	close_x.text = "✕"
@@ -765,7 +765,7 @@ func _show_page(i: int) -> void:
 			b.add_theme_color_override("font_color", _accent)
 		else:
 			b.add_theme_stylebox_override("normal",
-				_chip_box(Color(0.08, 0.09, 0.14, 0.55), Color(1, 1, 1, 0.10)))
+				_chip_box(Color(UiTheme.SURFACE, 0.55), Color(1, 1, 1, 0.10)))
 			b.add_theme_color_override("font_color", UiTheme.DIM)
 
 

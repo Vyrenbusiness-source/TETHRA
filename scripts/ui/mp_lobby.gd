@@ -15,10 +15,10 @@ extends Control
 const COL_ACCENT := UiTheme.ACCENT
 const COL_DIM := UiTheme.DIM
 const COL_TEXT := UiTheme.TEXT
-const COL_FAINT := Color(0.62, 0.64, 0.72, 0.5)
+const COL_FAINT := Color(0.616, 0.592, 0.553, 0.5)
 const COL_GOLD := Color(0.95, 0.79, 0.38)
-const COL_READY := Color(0.47, 0.85, 0.60)
-const COL_WARN := Color(0.96, 0.68, 0.38)
+const COL_READY := UiTheme.GOOD
+const COL_WARN := UiTheme.BAD
 const COL_HOVER := Color(1, 1, 1, 0.045)
 const COL_LINE := Color(1, 1, 1, 0.09)
 
@@ -1543,7 +1543,7 @@ func _build_room() -> void:
 	_pick_btn.custom_minimum_size.x = 168
 	_pick_btn.pressed.connect(_open_picker)
 	bar.add_child(_pick_btn)
-	_start_btn = _btn("SPIELEN", true)
+	_start_btn = _btn(UiTheme.sentence(tr("SPIELEN")), true)
 	_start_btn.custom_minimum_size.x = 264
 	_start_btn.add_theme_font_size_override("font_size", FS_M + 2)
 	_start_btn.pressed.connect(func(): Lobby.start_game())
@@ -1845,7 +1845,7 @@ func _refresh_room() -> void:
 	# Primaer-Slot: Krone startet; alle anderen sehen ihren Zustand (nicht klickbar).
 	_start_btn.visible = not in_tour
 	if is_crown:
-		_start_btn.text = "SPIELEN"
+		_start_btn.text = UiTheme.sentence(tr("SPIELEN"))
 		_start_btn.disabled = not Lobby.can_start()
 		var why := Lobby.mode_blocker()
 		if Lobby.sel_map.is_empty():
@@ -1856,7 +1856,7 @@ func _refresh_room() -> void:
 		_start_btn.add_theme_color_override("font_disabled_color", COL_FAINT)
 	else:
 		var me_ready := Lobby.players.has(my_id) and bool(Lobby.players[my_id].get("ready", false))
-		_start_btn.text = "BEREIT" if me_ready else ("MAP LÄDT" if _downloading else "NICHT BEREIT")
+		_start_btn.text = UiTheme.sentence(tr("BEREIT") if me_ready else (tr("MAP LÄDT") if _downloading else tr("NICHT BEREIT")))
 		_start_btn.disabled = true
 		_start_btn.tooltip_text = tr("Der Kronenträger startet die Runde.")
 		_start_btn.add_theme_color_override("font_disabled_color", COL_READY if me_ready else Color(COL_DIM, 0.85))

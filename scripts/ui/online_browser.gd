@@ -20,11 +20,11 @@ signal map_chosen(data: Dictionary)
 const TEXT := UiTheme.TEXT
 const DIM := UiTheme.DIM
 const ACCENT := UiTheme.ACCENT
-const CARD_BG := Color(0.075, 0.08, 0.115, 0.96)
-const CARD_BG_HOVER := Color(0.10, 0.11, 0.155, 0.98)
-const ERROR_COL := Color(1.0, 0.42, 0.45)
+const CARD_BG := Color(UiTheme.SURFACE, 0.96)
+const CARD_BG_HOVER := Color(UiTheme.RAISED, 0.98)
+const ERROR_COL := UiTheme.BAD
 const CARD_MIN_W := 360.0
-const CARD_RADIUS := 14
+const CARD_RADIUS := 6
 const COVER_H := 150.0
 const GRID_SEP := 16
 const SCROLL_STEP := 140.0
@@ -234,11 +234,11 @@ func _init_styles() -> void:
 	_cover_mat.shader = sh
 	_cover_mat.set_shader_parameter("radius", float(CARD_RADIUS))
 	_card_box = _box(CARD_BG, CARD_RADIUS, Color(1, 1, 1, 0.06), 1)
-	_card_box.shadow_size = 8
+	_card_box.shadow_size = 0
 	_card_box.shadow_color = Color(0, 0, 0, 0.28)
 	_card_box.shadow_offset = Vector2(0, 3)
 	_card_box_hover = _box(CARD_BG_HOVER, CARD_RADIUS, Color(ACCENT, 0.55), 1)
-	_card_box_hover.shadow_size = 14
+	_card_box_hover.shadow_size = 0
 	_card_box_hover.shadow_color = Color(0, 0, 0, 0.40)
 	_card_box_hover.shadow_offset = Vector2(0, 6)
 	_err_box = _box(Color(ERROR_COL, 0.10), 10, Color(ERROR_COL, 0.55), 1)
@@ -260,7 +260,7 @@ func _init_styles() -> void:
 func _box(bg: Color, radius: int, border: Color = Color.TRANSPARENT, bw: int = 0) -> StyleBoxFlat:
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = bg
-	sb.set_corner_radius_all(radius)
+	sb.set_corner_radius_all(UiTheme._rad(radius))
 	if bw > 0:
 		sb.set_border_width_all(bw)
 		sb.border_color = border
@@ -290,8 +290,8 @@ func _build() -> void:
 	head.add_theme_constant_override("separation", 14)
 	vb.add_child(head)
 	var title := Label.new()
-	title.text = "ONLINE-MAPS"
-	title.add_theme_font_override("font", UiTheme.heading_font(3))
+	title.text = "Online-Maps"
+	title.add_theme_font_override("font", UiTheme.heading_font(1))
 	title.add_theme_font_size_override("font_size", 24)
 	title.add_theme_color_override("font_color", TEXT)
 	head.add_child(title)
@@ -987,7 +987,7 @@ func _show_state(title: String, sub: String, btn_text: String, action: Callable)
 	if btn_text != "":
 		for c in _state_btn.pressed.get_connections():
 			_state_btn.pressed.disconnect(c.callable)
-		_state_btn.text = btn_text.to_upper()
+		_state_btn.text = btn_text
 		_state_btn.pressed.connect(action)
 
 
@@ -1050,7 +1050,7 @@ func _stop_skeleton() -> void:
 
 
 func _cover_placeholder() -> StyleBoxFlat:
-	var sb := _box(Color(0.11, 0.12, 0.17), 0)
+	var sb := _box(UiTheme.RAISED, 0)
 	sb.corner_radius_top_left = CARD_RADIUS
 	sb.corner_radius_top_right = CARD_RADIUS
 	return sb
@@ -1172,7 +1172,7 @@ func _make_card(r: Dictionary) -> Control:
 	holder.add_child(pills)
 	var loved := str(r.get("status", "")) == "loved"
 	pills.add_child(_pill("LOVED" if loved else "RANKED",
-		Color(UiTheme.ACCENT2 if loved else ACCENT, 0.92), Color(0.03, 0.04, 0.07), 11))
+		Color(UiTheme.ACCENT2 if loved else ACCENT, 0.92), UiTheme.ON_ACCENT, 11))
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -1216,7 +1216,7 @@ func _make_card(r: Dictionary) -> Control:
 	for i in mini(sl.size(), 5):
 		var s := float(sl[i])
 		var col := star_color(s)
-		var fg := Color(0.03, 0.04, 0.07) if s < 6.4 else Color(1, 1, 1, 0.95)
+		var fg := UiTheme.ON_ACCENT if s < 6.4 else Color(1, 1, 1, 0.95)
 		stars.add_child(_pill(("★ " if i == 0 else "") + UiTheme.fmt_num(s, 2), col, fg, 12,
 			50.0 if i == 0 else 36.0))
 	if sl.size() > 5:
@@ -1360,23 +1360,23 @@ func _row_state(set_id: int, state: String, ratio: float = 0.0, msg: String = ""
 			(row.plabel as Label).text = "Verbinde …" if ratio <= 0.0 else UiTheme.fmt_score(int(ratio * 100.0)) + " %"
 		"error":
 			btn.disabled = false
-			btn.text = "ERNEUT VERSUCHEN"
+			btn.text = UiTheme.sentence(tr("ERNEUT VERSUCHEN"))
 			btn.add_theme_stylebox_override("normal", _err_box)
 			btn.add_theme_stylebox_override("hover", _err_box_hover)
 			btn.add_theme_color_override("font_color", ERROR_COL)
 			btn.add_theme_color_override("font_hover_color", ERROR_COL.lightened(0.2))
 		"installed":
 			btn.disabled = true
-			btn.text = "✓  INSTALLIERT"
+			btn.text = UiTheme.sentence(tr("✓  INSTALLIERT"))
 			btn.add_theme_stylebox_override("disabled", _inst_box)
 			btn.add_theme_color_override("font_disabled_color", UiTheme.GOOD)
 		_:
 			btn.disabled = false
-			btn.text = "HERUNTERLADEN"
+			btn.text = UiTheme.sentence(tr("HERUNTERLADEN"))
 			btn.add_theme_stylebox_override("normal", row.idle[0])
 			btn.add_theme_stylebox_override("hover", row.idle[1])
-			btn.add_theme_color_override("font_color", Color(0.02, 0.05, 0.08))
-			btn.add_theme_color_override("font_hover_color", Color(0.02, 0.05, 0.08))
+			btn.add_theme_color_override("font_color", UiTheme.ON_ACCENT)
+			btn.add_theme_color_override("font_hover_color", UiTheme.ON_ACCENT)
 
 
 # ---------------------------------------------------------------------------

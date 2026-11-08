@@ -9,7 +9,7 @@ extends Control
 signal closed
 
 const COL_ACCENT := UiTheme.ACCENT
-const COL_DIM := Color(0.6, 0.63, 0.72)
+const COL_DIM := UiTheme.DIM
 const COL_PP := UiTheme.ACCENT2
 const BLUR_SHADER := """shader_type canvas_item;
 uniform sampler2D screen_tex : hint_screen_texture, filter_linear_mipmap;
@@ -19,7 +19,7 @@ void fragment() {
 	COLOR = vec4(mix(texture(screen_tex, SCREEN_UV).rgb, c * 0.38, amount), 1.0);
 }
 """
-const PANEL_BG := Color(0.08, 0.09, 0.14, 0.95)
+const PANEL_BG := Color(0.106, 0.102, 0.094, 0.95)
 const GRADE_COLOR := {
 	"SS": Color(1.0, 0.92, 0.55), "S": Color(1.0, 0.82, 0.38),
 	"A": Color(0.5, 0.92, 0.6), "B": Color(0.45, 0.72, 0.95),
@@ -517,7 +517,7 @@ func _play_row(e: Dictionary, mode: String) -> Control:
 	# Cover-Thumb (Platzhalter, echtes Bild kommt aus dem Loader-Thread).
 	var thumb_holder := PanelContainer.new()
 	var tb := StyleBoxFlat.new()
-	tb.bg_color = Color(0.10, 0.12, 0.18)
+	tb.bg_color = UiTheme.RAISED
 	tb.set_corner_radius_all(7)
 	thumb_holder.add_theme_stylebox_override("panel", tb)
 	thumb_holder.custom_minimum_size = Vector2(84, 48)

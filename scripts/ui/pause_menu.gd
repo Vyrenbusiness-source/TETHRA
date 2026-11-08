@@ -17,7 +17,7 @@ const W_1COL := 420.0
 const W_2COL := 780.0
 
 var _dim: ColorRect
-var _panel: GlassPanel
+var _panel: PanelContainer
 var _title: Label
 var _song: Label
 var _bar: ProgressBar
@@ -53,20 +53,24 @@ func _init() -> void:
 	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(center)
 
-	_panel = GlassPanel.new(18.0, 28, 0.7)
+	# Ruhige deckende Flaeche statt Glas-Shader (UiTheme-Identitaet).
+	_panel = PanelContainer.new()
+	var psb := UiTheme.glass_box(18, 0.94)
+	psb.set_content_margin_all(28)
+	_panel.add_theme_stylebox_override("panel", psb)
 	_panel.custom_minimum_size = Vector2(W_1COL, 0)
 	center.add_child(_panel)
 
 	var vb := VBoxContainer.new()
 	vb.add_theme_constant_override("separation", 10)
-	_panel.add(vb)
+	_panel.add_child(vb)
 	_vb = vb
 
 	_title = Label.new()
-	_title.text = "PAUSE"
+	_title.text = "Pause"
 	_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_title.add_theme_font_size_override("font_size", 34)
-	_title.add_theme_font_override("font", UiTheme.heading_font(4))
+	_title.add_theme_font_override("font", UiTheme.heading_font(0))
 	_title.add_theme_color_override("font_color", UiTheme.TEXT)
 	vb.add_child(_title)
 
@@ -147,7 +151,7 @@ func _hint_row() -> Control:
 func _hint(row: HBoxContainer, key: String, text: String) -> void:
 	var cap := PanelContainer.new()
 	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color(0.13, 0.15, 0.22, 0.9)
+	sb.bg_color = UiTheme.RAISED
 	sb.set_corner_radius_all(6)
 	sb.set_border_width_all(1)
 	sb.border_width_bottom = 3
@@ -279,9 +283,7 @@ func open(info: Dictionary = {}) -> void:
 		row.visible = is_2d
 	_quick.columns = 2 if is_2d else 1
 	_refresh_values()
-	# GlassPanel ist ein reines Control: Hoehe aus dem Inhalt ableiten.
-	_panel.custom_minimum_size = Vector2(W_2COL if is_2d else W_1COL,
-			_panel.content.get_combined_minimum_size().y)
+	_panel.custom_minimum_size = Vector2(W_2COL if is_2d else W_1COL, 0)
 	visible = true
 	modulate.a = 0.0
 	if _tween != null:
