@@ -113,6 +113,84 @@ static func _build_hit(set_index: int) -> AudioStreamWAV:
 	return _wav(data)
 
 
+# ---------------------------------------------------------------------------
+# Orbit: eigene Klaenge je Ring (nur Orbit; Mania nutzt hit_stream/miss_stream)
+# ---------------------------------------------------------------------------
+
+## Treffer je Ring: innen (0) hell und kurz, aussen (1) tiefer und weicher.
+static func orbit_hit_stream(ring: int) -> AudioStreamWAV:
+	ring = clampi(ring, 0, 1)
+	var key := "orbit_hit_%d" % ring
+	if not _cache.has(key):
+		var f := 1480.0 if ring == 0 else 330.0
+		var dur := 0.045 if ring == 0 else 0.09
+		var decay := 70.0 if ring == 0 else 30.0
+		var att := 0.0008 if ring == 0 else 0.004
+		var amp := 0.38 if ring == 0 else 0.5
+		var n := int(RATE * dur)
+		var data := PackedByteArray()
+		data.resize(n * 2)
+		for i in n:
+			var t := float(i) / RATE
+			var s := sin(TAU * f * t) + 0.25 * sin(TAU * f * 2.0 * t) * exp(-t * 90.0)
+			s *= exp(-t * decay) * minf(t / att, 1.0) * amp
+			s *= clampf((dur - t) / 0.006, 0.0, 1.0)
+			data.encode_s16(i * 2, int(clampf(s, -1.0, 1.0) * 32767.0))
+		_cache[key] = _wav(data)
+	return _cache[key]
+
+
+## Bogen-Halteton je Ring: leiser Sinus, ganze Perioden, nahtlos geloopt.
+static func orbit_hold_stream(ring: int) -> AudioStreamWAV:
+	ring = clampi(ring, 0, 1)
+	var key := "orbit_hold_%d" % ring
+	if not _cache.has(key):
+		var cycles := 88 if ring == 0 else 22  # 0.2 s: 88 = 440 Hz, 22 = 110 Hz
+		var n := int(RATE * 0.2)
+		var data := PackedByteArray()
+		data.resize(n * 2)
+		for i in n:
+			var s := sin(TAU * float(cycles) * float(i) / float(n)) * 0.22
+			data.encode_s16(i * 2, int(s * 32767.0))
+		var w := _wav(data)
+		w.loop_mode = AudioStreamWAV.LOOP_FORWARD
+		w.loop_begin = 0
+		w.loop_end = n
+		_cache[key] = w
+	return _cache[key]
+
+
+## Ende-Klick eines gehaltenen Bogens (sauber bis zum Ende gehalten).
+static func orbit_end_stream() -> AudioStreamWAV:
+	if not _cache.has("orbit_end"):
+		var n := int(RATE * 0.05)
+		var data := PackedByteArray()
+		data.resize(n * 2)
+		for i in n:
+			var t := float(i) / RATE
+			var s := sin(TAU * 990.0 * t) * exp(-t * 85.0) * minf(t / 0.001, 1.0) * 0.3
+			s *= clampf((0.05 - t) / 0.006, 0.0, 1.0)
+			data.encode_s16(i * 2, int(s * 32767.0))
+		_cache["orbit_end"] = _wav(data)
+	return _cache["orbit_end"]
+
+
+## Fehltreffer: leises, dumpfes Tippen (tiefer Sinus, kein Rauschen).
+static func orbit_miss_stream() -> AudioStreamWAV:
+	if not _cache.has("orbit_miss"):
+		var n := int(RATE * 0.08)
+		var data := PackedByteArray()
+		data.resize(n * 2)
+		for i in n:
+			var t := float(i) / RATE
+			var s := sin(TAU * (140.0 - 500.0 * t) * t) * exp(-t * 45.0) * minf(t / 0.003, 1.0) * 0.4
+			s *= clampf((0.08 - t) / 0.01, 0.0, 1.0)
+			data.encode_s16(i * 2, int(s * 32767.0))
+		_cache["orbit_miss"] = _wav(data)
+	return _cache["orbit_miss"]
+
+
+
 ## Vorbeiflug-Whoosh: tiefpass-gefiltertes Rauschen mit An-/Abschwellen.
 static func whoosh_stream() -> AudioStreamWAV:
 	var dur := 0.55
