@@ -1,7 +1,7 @@
 class_name PlayfieldPreview
 extends Control
 
-## Live-Vorschau fuer 2D-Spurbreite und Notengroesse: ein Mini-Playfield2D
+## Live-Vorschau fuer alle 2D-Spielfeld-Optionen (Groessen, Richtung, Layout, Mods): ein Mini-Playfield2D
 ## mit ruhig herunterlaufenden Beispielnoten. refresh() liest die Settings neu.
 
 const BOX := Vector2(260, 200)
@@ -75,7 +75,7 @@ func refresh() -> void:
 	var h := view_height(_pf)
 	_pf.preview_size = Vector2(BOX.x, h)
 	_pf.size = Vector2(BOX.x, h)
-	_pf.position = Vector2(0, BOX.y - h)
+	_pf.base_pos = Vector2(0, BOX.y - h)   # Playfield2D setzt position selbst (Richtung/Skalierung)
 	_prev.clear()
 	_feed()
 
