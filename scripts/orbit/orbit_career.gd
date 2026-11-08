@@ -11,6 +11,9 @@ extends RefCounted
 ##   stamp  Datum des zuletzt verarbeiteten Laufs
 ##   event  letztes Ereignis: "" | "up" | "down" | "ready"
 ##   mode   "career" | "free"
+##   offer  Hinweis "Karriere starten" nach dem Tutorial noch offen
+##   chosen Spieler hat Karriere/Frei selbst gewaehlt (sonst fuehrt das
+##          Hauptmenue in die Karriere)
 
 const PATH := "user://orbit_career.cfg"
 const START_LEVEL := 1.5
@@ -39,7 +42,7 @@ static func new_state() -> Dictionary:
 	return {
 		"level": START_LEVEL, "good": 0, "bad": 0, "great": 0,
 		"stamp": "", "event": "", "runs": 0,
-		"mode": MODE_FREE, "offer": false,
+		"mode": MODE_FREE, "offer": false, "chosen": false,
 	}
 
 
@@ -182,6 +185,12 @@ static func sync_runs(state: Dictionary, runs: Array) -> Dictionary:
 ## Anzeige "Stufe 2,1 ★".
 static func level_text(level: float) -> String:
 	return tr_("Stufe %s ★") % UiTheme.fmt_num(level, 1)
+
+
+## Fenster als Text, z. B. "1,9–2,6".
+static func range_text(level: float) -> String:
+	var w := window(level)
+	return "%s–%s" % [UiTheme.fmt_num(maxf(w.x, MIN_LEVEL), 1), UiTheme.fmt_num(w.y, 1)]
 
 
 static func next_text(state: Dictionary) -> String:

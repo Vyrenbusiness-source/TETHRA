@@ -3611,7 +3611,9 @@ func _star_color(stars: float) -> Color:
 ## Orbit-Sterne: nur fuer die gewaehlte Diff, im Thread, Ergebnis je
 ## Datei+Aenderungszeit+Version im Cache user://orbit_stars.cfg.
 const ORBIT_STARS_PATH := "user://orbit_stars.cfg"
-const ORBIT_STARS_VER := 1
+## Version hochzaehlen, sobald sich die Orbit-Sterne-Formel aendert: alte
+## Werte fallen aus dem Schluessel und werden neu berechnet.
+const ORBIT_STARS_VER := 2
 const ORBIT_STARS_DELAY := 0.25
 var _os_thread: Thread
 var _os_key := ""        # Key der laufenden Berechnung
@@ -3636,6 +3638,17 @@ static func orbit_stars_store(key: String, stars: float, path: String = ORBIT_ST
 	cfg.load(path)
 	cfg.set_value("stars", key, stars)
 	cfg.save(path)
+
+
+## Alle Eintraege des Caches auf einmal (Schluessel -> Sterne), fuer Listen.
+static func orbit_stars_cache_all(path: String = ORBIT_STARS_PATH) -> Dictionary:
+	var cfg := ConfigFile.new()
+	var out := {}
+	if cfg.load(path) != OK or not cfg.has_section("stars"):
+		return out
+	for k in cfg.get_section_keys("stars"):
+		out[k] = float(cfg.get_value("stars", k, -1.0))
+	return out
 
 
 ## Orbit-Sterne einer 4K- oder osu!standard-Diff berechnen (teuer: Import + Konvertierung).
