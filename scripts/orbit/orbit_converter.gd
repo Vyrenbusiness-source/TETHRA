@@ -60,10 +60,24 @@ const BEAT_SNAP_MS := 12.0
 const JUMP_DEG := 60.0
 const STRONG_BEAT := 0.5
 const WEAK_JUMP_DEG := 50.0
-## Orbit-Sterne: Fensterraster und Gewichte (an Mania-Sternen grob geeicht).
+## Orbit-Sterne: Fensterraster und Gewichte (am menschlichen QA-Bot geeicht).
+## Menschliche Erreichbarkeit (Messung: docs/modes/orbit_qa.md): ein Zeiger mit
+## HUMAN_DEG_PER_MS (Maus ~250 Grad/s) faehrt vom letzten Ziel zum naechsten;
+## das Ziel liegt hoechstens HUMAN_REACH_DEG neben der so erreichbaren Stelle
+## (22 Grad Toleranz minus 2 sigma Zielstreuung). Gilt dauerhaft, nicht nur je
+## Schritt: der Rueckstand des Zeigers waechst in Streams nicht an.
+const HUMAN_DEG_PER_MS := 0.25
+const HUMAN_REACH_DEG := 10.0
+## Aus = alte Regeln ohne Erreichbarkeit (nur fuer Vorher/Nachher-Messungen).
+static var human_reach := true
 const STAR_HOP_MS := 1000.0
-const STAR_DENS_K := 0.32
-const STAR_PATH_K := 0.29
+const STAR_DENS_K := 0.1
+const STAR_PATH_K := 1.0
+## Zugtempo-Gewicht im Wegterm: (Tempo / HUMAN_DEG_PER_MS)^2, gekappt bei
+## STAR_SPEED_CAP. Schnelle Zuege fordern den Zeiger, langsame kaum (QA:
+## Rangkorrelation zum Maus-Bot 0,56 -> 0,76, docs/modes/orbit_qa.md).
+const STAR_SPEED_CAP := 2.0
+const STAR_DECAY := 0.95
 
 # --- osu!standard (Mode 0), Details in docs/modes/orbit_sources.md ---
 ## FLOW: osu-Wege werden Ring-Wege (Abstand -> Winkel, Drehsinn des Musters
@@ -128,6 +142,7 @@ static func convert(beatmap: Beatmap) -> Array[OrbitNote]:
 	var arcs: Array = [null, null]
 	var arc_end_at := [-INF, -INF]
 	var ring_last := [-INF, -INF]
+	var vc := INF  # virtueller Zeiger (HUMAN_DEG_PER_MS), INF = noch keiner
 	for g in groups:
 		var head := objs[g[0]] as ManiaNote
 		var t := head.time
@@ -148,6 +163,7 @@ static func convert(beatmap: Beatmap) -> Array[OrbitNote]:
 		if ended != null and not any_active:
 			last_time = ended.end_ms
 			last_angle = OrbitNote.wrap_deg(ended.end_angle_deg)
+			vc = last_angle
 		if t - last_head < MIN_GAP_MS:
 			continue
 		if any_active:
@@ -187,9 +203,13 @@ static func convert(beatmap: Beatmap) -> Array[OrbitNote]:
 			# Grosse Spruenge nur auf Schlaegen; dazwischen bleibt der Fluss ruhig.
 			if absf(delta) >= JUMP_DEG and beat_strength(reds, t) < STRONG_BEAT:
 				delta = signf(delta) * WEAK_JUMP_DEG
+		var angle := OrbitNote.wrap_deg(last_angle + delta)
+		var reach := _reach(vc, gap, angle)
+		angle = reach[0]
+		if prev_col >= 0:
+			delta = OrbitNote.delta_deg(last_angle, angle)
 		if delta != 0.0:
 			dir = signf(delta)
-		var angle := OrbitNote.wrap_deg(last_angle + delta)
 
 		# Ziele des Akkords: [quell-index, ring].
 		var targets: Array = []
@@ -247,6 +267,7 @@ static func convert(beatmap: Beatmap) -> Array[OrbitNote]:
 		last_time = t
 		last_angle = angle
 		last_head = t
+		vc = reach[1]
 		prev_col = col
 		last_ring = int(targets[0][1]) if targets.size() == 1 else -1
 	out.sort_custom(func(a: OrbitNote, b: OrbitNote) -> bool:
@@ -254,6 +275,19 @@ static func convert(beatmap: Beatmap) -> Array[OrbitNote]:
 			return a.time_ms < b.time_ms
 		return a.ring < b.ring)
 	return out
+
+
+## Menschliche Erreichbarkeit: der virtuelle Zeiger vc faehrt in gap ms mit
+## HUMAN_DEG_PER_MS Richtung want; das Ziel bleibt hoechstens HUMAN_REACH_DEG
+## vor ihm. Rueckgabe [Zielwinkel, neuer Zeigerwinkel] (beide 0..360).
+static func _reach(vc: float, gap: float, want: float) -> Array:
+	if vc == INF or gap == INF or not human_reach:
+		return [OrbitNote.wrap_deg(want), OrbitNote.wrap_deg(want)]
+	var d := OrbitNote.delta_deg(vc, want)
+	var lim := HUMAN_DEG_PER_MS * gap
+	var mv := clampf(d, -lim, lim)
+	var rest := clampf(d - mv, -HUMAN_REACH_DEG, HUMAN_REACH_DEG)
+	return [OrbitNote.wrap_deg(vc + mv + rest), OrbitNote.wrap_deg(vc + mv)]
 
 
 ## Ring r ist zur Zeit t frei: genug Abstand zum letzten Tap und zum letzten Bogen-Ende.
@@ -291,6 +325,7 @@ static func convert_std(beatmap: Beatmap, style: int = StdStyle.POLAR) -> Array[
 	var ring_last := [-INF, -INF]
 	var prev_pos := Vector2.INF
 	var prev_vec := Vector2.ZERO
+	var vc := INF
 	for i in src:
 		var o: HitObject = objs[i]
 		var t := o.time
@@ -298,6 +333,7 @@ static func convert_std(beatmap: Beatmap, style: int = StdStyle.POLAR) -> Array[
 			arc_end_at[arc.ring] = arc.end_ms
 			last_time = arc.end_ms
 			last_angle = OrbitNote.wrap_deg(arc.end_angle_deg)
+			vc = last_angle
 			arc = null
 		if t - last_head < MIN_GAP_MS:
 			continue
@@ -333,10 +369,13 @@ static func convert_std(beatmap: Beatmap, style: int = StdStyle.POLAR) -> Array[
 			var delta := clampf(want, -lim, lim)
 			if absf(delta) >= JUMP_DEG and beat_strength(reds, t) < STRONG_BEAT:
 				delta = signf(delta) * WEAK_JUMP_DEG
+			var reached: Array = _reach(vc, gap, OrbitNote.wrap_deg(last_angle + delta))
+			delta = OrbitNote.delta_deg(last_angle, reached[0])
 			if style == StdStyle.POLAR and delta != 0.0:
 				dir = signf(delta)
 			want = delta
 		var angle := OrbitNote.wrap_deg(last_angle + want)
+		var vc_new: float = _reach(vc, gap, angle)[1]
 
 		# Ring: Abstand zur Mitte (mit Hysterese), Streams wechseln ab.
 		var rd := pos.distance_to(STD_CENTER)
@@ -391,6 +430,7 @@ static func convert_std(beatmap: Beatmap, style: int = StdStyle.POLAR) -> Array[
 		last_time = t
 		last_angle = angle
 		last_head = t
+		vc = vc_new
 		last_ring = ring
 		prev_pos = end_pos
 	out.sort_custom(func(a: OrbitNote, b: OrbitNote) -> bool:
@@ -608,8 +648,9 @@ static func analyze(ns: Array[OrbitNote], beatmap: Beatmap = null) -> Dictionary
 
 
 ## Orbit-Sterne (eigene Zahl, nicht Mania-Sterne): Fenster von 2 s,
-## Dichte (Ziele/s, Akkord-Zweitziel 0,5) plus Winkelweg (Grad/ms); die
-## haertesten Fenster zaehlen am meisten (Gewicht 0,9^k wie osu!).
+## Dichte (Ziele/s, Akkord-Zweitziel 0,5) plus Winkelweg je Sekunde, jeder
+## Zug gewichtet mit seinem Tempo (siehe STAR_SPEED_CAP); die haertesten
+## Fenster zaehlen am meisten (Gewicht STAR_DECAY^k).
 static func stars(ns: Array[OrbitNote]) -> float:
 	if ns.size() < 2:
 		return 0.0
@@ -629,7 +670,10 @@ static func stars(ns: Array[OrbitNote]) -> float:
 		dens[w] += 0.5 if chord else 1.0
 	for i in range(1, pts.size()):
 		var w := clampi(int((float(pts[i][0]) - t0) / STAR_HOP_MS), 0, n_win - 1)
-		path[w] += OrbitNote.dist_deg(pts[i - 1][1], pts[i][1])
+		var d := OrbitNote.dist_deg(pts[i - 1][1], pts[i][1])
+		var gap := maxf(float(pts[i][0]) - float(pts[i - 1][0]), 1.0)
+		var f := minf(d / gap / HUMAN_DEG_PER_MS, STAR_SPEED_CAP)
+		path[w] += d * f * f
 	# Fenster = zwei Hops (2 s), Werte je Sekunde.
 	var vals: Array[float] = []
 	for w in n_win:
@@ -646,7 +690,7 @@ static func stars(ns: Array[OrbitNote]) -> float:
 	for v in vals:
 		num += v * wt
 		den += wt
-		wt *= 0.9
+		wt *= STAR_DECAY
 		if wt < 0.001:
 			break
 	return num / maxf(den, 1e-6)
