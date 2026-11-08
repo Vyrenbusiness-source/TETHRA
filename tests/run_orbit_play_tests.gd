@@ -96,7 +96,12 @@ func _test_view_geometry() -> void:
 	for ring in 2:
 		_check(absf(v.radius_at(ring, 0.0) - v.ring_radius(ring)) < 0.001, "Ankunft = Trefferzeit (Ring %d)" % ring)
 		_check(absf(v.radius_at(ring, v.preempt) - v.spawn_radius(ring)) < 0.001, "Spawn am Anflugbeginn")
-		_check(v.radius_at(ring, -50.0) > v.ring_radius(ring), "nach der Zeit weiter aussen")
+		var past := v.radius_at(ring, -50.0) - v.ring_radius(ring)
+		_check(past > 0.0 if ring == 0 else past < 0.0, "nach der Zeit weiter in Laufrichtung (Ring %d)" % ring)
+	_check(v.spawn_radius(0) < v.ring_radius(0) and v.spawn_radius(1) > v.ring_radius(1),
+		"kein Ziel startet auf einem Trefferring: innen von innen, aussen von aussen")
+	_check(v.spawn_radius(0) < v.ring_radius(0) and v.spawn_radius(1) > v.ring_radius(1)
+		and v.spawn_radius(0) < v.ring_radius(0), "Anflugwege getrennt")
 	_check(v.ring_radius(1) > v.ring_radius(0), "aussen > innen")
 	_check(v.ring_radius(1) * 2.0 < 720.0 * 0.8, "Feld passt in die Hoehe")
 	_check(absf(OrbitView.angle_of(c, c + Vector2(0, -10))) < 0.001, "0 Grad = oben")
