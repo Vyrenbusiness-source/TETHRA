@@ -541,6 +541,28 @@ func _draw_chord(c: Vector2, a, b) -> void:
 	draw_line(pa, pb, Color(1, 1, 1, 0.3 * k), 2.0, true)
 
 
+## Bogen-Spitze zur Zeit t (wie OrbitNote.angle_at; raw = entfaltet, a1 - a0 = Bogen).
+func arc_tip_deg(n, t: float, raw: bool = false) -> float:
+	var t0 := float(n.time_ms)
+	var t1 := float(n.end_ms)
+	var k := clampf((t - t0) / maxf(t1 - t0, 1.0), 0.0, 1.0)
+	var tip := lerpf(float(n.angle_deg), float(n.end_angle_deg), k)
+	return tip if raw else fposmod(tip, 360.0)
+
+
+## Gezeichneter Mittelpunkt von Ziel i (Kopf) zur Zeit t, solange es anfliegt.
+func draw_pos(c: Vector2, i: int, t: float) -> Vector2:
+	var n = notes[i]
+	return polar(c, float(n.angle_deg), radius_at(n.ring, float(n.time_ms) - t))
+
+
+## Gezeichneter Radius von Ziel i (Kopf) zur Zeit t (Raute: mittlerer Radius).
+func draw_radius(i: int, t: float) -> float:
+	var n = notes[i]
+	var s := _note_size(unit(), n.ring) * _approach_scale(float(n.time_ms) - t)
+	return s if n.ring == 0 else s * DIAMOND_K * 0.85
+
+
 ## Fortschritt des Anflugs 0 (Spawn) .. 1 (Ring).
 func _progress(dt: float) -> float:
 	return clampf(1.0 - dt / maxf(preempt, 1.0), 0.0, 1.0)
@@ -665,7 +687,7 @@ func _draw_arc_note(c: Vector2, u: float, i: int, n) -> void:
 		# Verlorener Bogen bleibt an der Stelle stehen, an der er fiel.
 		k = clampf((_state_t[i] - t0) / maxf(t1 - t0, 1.0), 0.0, 1.0)
 	# Gleiche Spitze wie OrbitNote.angle_at, aber entfaltet (a1 - a0 = Bogen).
-	var tip := lerpf(a0, a1, k)
+	var tip := arc_tip_deg(n, t_ms, true) if not dropped else lerpf(a0, a1, k)
 	var lo := minf(tip, a1)
 	var hi := maxf(tip, a1)
 	var seg := maxi(8, int(absf(hi - lo) / 3.0))
