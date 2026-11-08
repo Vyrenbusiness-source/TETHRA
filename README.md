@@ -33,6 +33,8 @@
 
 - **Your maps, exact scoring.** osu!mania 4K `.osz` files with osu! judgement windows, ScoreV1 and SV maps that behave like in lazer.
 - **3D or 2D.** A 3D lane with 13 worlds that react to the music, or a classic vertical playfield with osu! skins.
+- **Turn any map into an SV map.** The SV mod adds beat-synced scroll changes to every map: notes bounce on the beat, surge, freeze, briefly run backwards and teleport, and still land exactly on time.
+- **Orbit mode (preview).** Aim with mouse or tablet, tap with two keys: targets come in on two rings around the center, holds become arcs you follow. Every 4K map is playable in Orbit automatically.
 - **Play together.** Rooms, teams, battle royale and tournaments with picks and bans.
 - **Download in-game.** Search and fetch maps from the built-in online browser.
 
@@ -54,6 +56,22 @@
 <p align="center">
   <a href="docs/media/play_3d_worlds.webp"><img src="docs/media/play_3d_worlds.webp" alt="TETHRA worlds" width="100%"></a><br>
   <sub>Galaxy, Boss, Aurora, Neon, Eclipse, Abyss, Fractal, Obsidian, Storm, Singularity, Monolith, Rift and Nerve. Backgrounds pulse with the beat.</sub>
+</p>
+
+## Orbit mode
+
+<p align="center">
+  <a href="docs/media/play_orbit.webp"><img src="docs/media/play_orbit.webp" alt="Orbit mode: targets on two rings around the center" width="720"></a><br>
+  <sub>Orbit: the cursor direction picks the angle, the left key hits the inner ring, the right key the outer ring. Arcs are holds. Switch between Mania 4K and Orbit in the song browser.</sub>
+</p>
+
+## SV mod
+
+Switch on **SV** in the song browser and any map becomes an SV map. The mod writes its scroll changes from the map's own beat grid: a bounce on every beat in the chorus, calmer waves in the verses, short reverses, jumps and teleports on strong beats. Every note still arrives exactly on time, and maps that already have strong SV keep their own. Choose between Normal and Strong.
+
+<p align="center">
+  <a href="docs/media/sv_mod.mp4"><img src="docs/media/sv_mod_anim.webp" alt="SV mod in the chorus of The Cyber Grind: notes surge, hold and bounce on the beat" width="360"></a><br>
+  <sub>SV mod in the chorus of meganeko – The Cyber Grind (a map without its own SV). <a href="docs/media/sv_mod.mp4"><b>▶ Watch with sound</b></a></sub>
 </p>
 
 ## 2D mode and skins
@@ -150,4 +168,4 @@ Put osu!mania 4K `.osz` files into the `maps/` folder, or use the online browser
 
 ## Deutsch
 
-TETHRA ist ein 3D-Raumflug-Rhythmusspiel für osu!mania-4K-Beatmaps (`.osz`) mit exakter osu!-Wertung, 2D-Modus mit osu!-Skins, Online-Map-Browser, Replays, Multiplayer und Turnieren. Installation: **[TETHRA_Setup.exe](https://github.com/Vyrenbusiness-source/TETHRA/releases/download/worlds/TETHRA_Setup.exe)** herunterladen (eine Datei, alles drin, kein Godot nötig), ausführen, spielen. Meldet Windows "Der Computer wurde durch Windows geschützt": **Weitere Informationen** → **Trotzdem ausführen**. Updates kommen automatisch im Spiel. Maps gehören ihren Mappern, osu! ist eine Marke von ppy.
+TETHRA ist ein 3D-Raumflug-Rhythmusspiel für osu!mania-4K-Beatmaps (`.osz`) mit exakter osu!-Wertung, 2D-Modus mit osu!-Skins, SV-Mod (jede Map wird zur SV-Map: Noten tanzen auf dem Beat), Orbit-Modus (zielen mit Maus/Tablet auf zwei Ringe, tippen mit zwei Tasten), Online-Map-Browser, Replays, Multiplayer und Turnieren. Installation: **[TETHRA_Setup.exe](https://github.com/Vyrenbusiness-source/TETHRA/releases/download/worlds/TETHRA_Setup.exe)** herunterladen (eine Datei, alles drin, kein Godot nötig), ausführen, spielen. Meldet Windows "Der Computer wurde durch Windows geschützt": **Weitere Informationen** → **Trotzdem ausführen**. Updates kommen automatisch im Spiel. Maps gehören ihren Mappern, osu! ist eine Marke von ppy.

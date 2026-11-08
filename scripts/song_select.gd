@@ -100,6 +100,11 @@ var _nf_btn: Button
 ## SV-Mod: jede Map mit generierten Tempowechseln (SvMod), Score x1.10.
 var _sv_enabled := Settings.mod_sv
 var _sv_btn: Button
+## SV-Stufe (SvMod.strength): kleine Auswahl Normal | Stark am SV-Chip.
+var _sv_level_btns: Array[Button] = []
+## Ranglisten-Kopf: Titel + Modus-Tag (Mania 4K / Orbit).
+var _lb_title: Label
+var _lb_mode_tag: Label
 
 # Lazy-Loading der Karten-Thumbnails (2 pro Frame).
 var _thumb_queue: Array = []
@@ -208,28 +213,29 @@ func _ready() -> void:
 	elif OS.get_cmdline_args().has("--orbit") and OS.get_cmdline_args().has("--autoplay"):
 		# Debug/Shots: erste 4K-Diff im Orbit-Modus automatisch starten.
 		_play_mode = "orbit"
-		for ms in _filtered:
-			for i in ms.difficulty_count():
-				if int(ms.meta_at(i).get("mode", 0)) == 3:
-					_select_set(ms, i)
-					_selected_diff = i
-					_on_play_pressed.call_deferred()
-					return
-		push_warning("--orbit: keine 4K-Diff gefunden")
+		var pk := _debug_pick()
+		if not pk.is_empty():
+			_select_set(pk[0], pk[1])
+			_selected_diff = pk[1]
+			_on_play_pressed.call_deferred()
+			return
+		push_warning("--orbit: keine passende 4K-Diff gefunden")
 	elif OS.get_cmdline_args().has("--mania"):
 		# Debug: erste 4K-Mania-Diff automatisch starten.
-		for ms in _filtered:
-			for i in ms.difficulty_count():
-				if int(ms.meta_at(i).get("mode", 0)) == 3:
-					_select_set(ms, i)
-					_selected_diff = i
-					_on_play_pressed.call_deferred()
-					return
-		push_warning("--mania: keine 4K-Diff gefunden")
+		var pk := _debug_pick()
+		if not pk.is_empty():
+			_select_set(pk[0], pk[1])
+			_selected_diff = pk[1]
+			_on_play_pressed.call_deferred()
+			return
+		push_warning("--mania: keine passende 4K-Diff gefunden")
 	elif OS.get_cmdline_args().has("--autoplay"):
 		_on_play_pressed.call_deferred()
 	elif OS.get_cmdline_args().has("--shot-sv"):
 		_shot_sv.call_deferred()
+	elif OS.get_cmdline_args().has("--shot-modes"):
+		# Harness: Scores je Modus (Browser, Results, Profil) als PNGs.
+		_shot_modes.call_deferred()
 	elif OS.get_cmdline_args().has("--shot-online"):
 		# Harness: Online-Tab (Raster, Genre, Download, Fehler) als PNGs.
 		_shot_online.call_deferred()
@@ -242,6 +248,31 @@ func _ready() -> void:
 		add_child.call_deferred(SettingsPanel.new())
 	elif OS.get_cmdline_args().has("--shot"):
 		_capture_screenshot_and_quit()
+
+
+## Debug (--mania/--orbit): erste 4K-Diff, optional gefiltert. --map=<text>
+## sucht in "artist - title [version]", --diff=<text> in der Version (beides
+## ohne Gross/Klein). Nur fuer Harness/Videos, nie gespeichert. [] = keine.
+func _debug_pick() -> Array:
+	var map_q := ""
+	var diff_q := ""
+	for a in OS.get_cmdline_args() + OS.get_cmdline_user_args():
+		if a.begins_with("--map="):
+			map_q = a.trim_prefix("--map=").to_lower()
+		elif a.begins_with("--diff="):
+			diff_q = a.trim_prefix("--diff=").to_lower()
+	for ms in _library.mapsets if map_q != "" else _filtered:
+		for i in ms.difficulty_count():
+			if int(ms.meta_at(i).get("mode", 0)) != 3:
+				continue
+			var ver := ms.version_name_at(i)
+			var full := ("%s - %s [%s]" % [ms.artist, ms.title, ver]).to_lower()
+			if map_q != "" and not full.contains(map_q):
+				continue
+			if diff_q != "" and not ver.to_lower().contains(diff_q):
+				continue
+			return [ms, i]
+	return []
 
 
 ## Lade-Messung: Map wechseln (Auswahl -> Vorschau-Ton), kurz warten, SPIELEN.
@@ -302,6 +333,108 @@ func _shot_online() -> void:
 		dir = OS.get_user_data_dir()
 	_open_download_panel()
 	await _online.run_shot_harness(dir)
+	get_tree().quit(0)
+
+
+## Harness --shot-modes: Demo-Scores (Mania, Mania+SV, Orbit) fuer die erste
+## 4K-Diff, dann Browser in beiden Modi, Results mit Modus-Abzeichen und
+## Profil in beiden Modi als PNGs (MODES_SHOT_DIR). Laeuft NUR mit
+## --scores-path=<Test-Kopie>, nie gegen user://scores.cfg; speichert weder
+## Browser-Zustand noch Settings.
+func _shot_modes() -> void:
+	var has_path := false
+	for a in OS.get_cmdline_args() + OS.get_cmdline_user_args():
+		if a.begins_with("--scores-path="):
+			has_path = true
+	if not has_path or ScoreStore.PATH == "user://scores.cfg":
+		push_error("--shot-modes braucht --scores-path=<Test-Kopie>")
+		get_tree().quit(1)
+		return
+	_state_ready = false  # nichts in browser_state.cfg schreiben
+	var dir := OS.get_environment("MODES_SHOT_DIR")
+	if dir == "":
+		dir = OS.get_user_data_dir()
+	var pick: Array = []
+	for ms in _filtered:
+		for i in ms.difficulty_count():
+			if pick.is_empty() and int(ms.meta_at(i).get("mode", 0)) == 3:
+				pick = [ms, i]
+	if pick.is_empty():
+		push_error("--shot-modes: keine 4K-Diff gefunden")
+		get_tree().quit(1)
+		return
+	var ms: MapSet = pick[0]
+	var di: int = pick[1]
+	var osz: String = ms.osz_path
+	var ver: String = ms.version_name_at(di)
+	var label := "%s - %s" % [ms.artist, ms.title]
+	var demo := [
+		[{ "score": 912340, "grade": "S", "accuracy": 0.9712, "max_combo": 611, "pp": 182.4 }, ""],
+		[{ "score": 874015, "grade": "A", "accuracy": 0.9433, "max_combo": 402, "pp": 151.0,
+			"mods": ["SV"], "sv_level": "strong" }, ""],
+		[{ "score": 801220, "grade": "A", "accuracy": 0.9301, "max_combo": 377, "pp": 139.2,
+			"mods": ["SV", "NF"], "sv_level": "normal" }, ""],
+		[{ "score": 951880, "grade": "S", "accuracy": 0.9821, "max_combo": 640, "mode": "orbit" }, ScoreStore.MODE_ORBIT],
+		[{ "score": 702115, "grade": "B", "accuracy": 0.8874, "max_combo": 210, "mode": "orbit",
+			"mods": ["SV"], "sv_level": "strong" }, ScoreStore.MODE_ORBIT],
+	]
+	for d in demo:
+		ScoreStore.submit(osz, ver, d[0], d[1])
+		ScoreStore.log_play(osz, ver, label, d[0], d[1])
+	# SV-Chip mit Stufe sichtbar, ohne Settings zu speichern.
+	_sv_enabled = true
+	if _sv_btn != null:
+		_sv_btn.set_pressed_no_signal(true)
+	_restyle_sv_level()
+	for mode in PLAY_MODES:
+		_play_mode = mode
+		_restyle_mode_switch()
+		_refresh_card_grades()
+		_select_set(ms, di)
+		_selected_diff = di
+		await get_tree().create_timer(1.2).timeout
+		await RenderingServer.frame_post_draw
+		get_viewport().get_texture().get_image().save_png(dir.path_join("modes_browser_%s.png" % mode))
+	# Results (Mania + Orbit): Fake-Daten, previous_best explizit (kein Speichern).
+	GameSession.osz_path = osz
+	GameSession.difficulty_version = ver
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7
+	var offs: Array = []
+	for _i in 300:
+		offs.append(rng.randfn(3.2, 17.0))
+	for mode in PLAY_MODES:
+		var orbit: bool = mode == "orbit"
+		var s := { "score": 958210 if orbit else 931400, "grade": "S", "accuracy": 0.9764,
+			"max_combo": 655, "combo": 0, "n_max": 700, "n300": 640, "n200": 41, "n100": 9,
+			"n50": 2, "n_miss": 8, "pp": -1.0 if orbit else 190.6, "sv_level": "normal" if orbit else "strong" }
+		if orbit:
+			s["mode"] = ScoreStore.MODE_ORBIT
+		var rs := ResultsScreen.new()
+		add_child(rs)
+		rs.show_results({
+			"s": s, "pp": float(s.pp), "new_best": true,
+			"title": ms.title, "artist": ms.artist,
+			"version": ver, "cover_path": "", "offsets": offs, "player": Settings.profile_name,
+			"date": Time.get_datetime_string_from_system(), "allow_retry": true, "can_replay": false,
+			"mods": { "SV": true, "NF": false },
+			"previous_best": ScoreStore.best(osz, ver, ScoreStore.MODE_ORBIT if orbit else ""),
+		})
+		await get_tree().create_timer(2.5).timeout
+		await RenderingServer.frame_post_draw
+		get_viewport().get_texture().get_image().save_png(dir.path_join("modes_results_%s.png" % mode))
+		rs.queue_free()
+		await get_tree().process_frame
+	# Profil in beiden Modi.
+	var pp := ProfilePanel.new()
+	add_child(pp)
+	for mode in ["", ScoreStore.MODE_ORBIT]:
+		pp._set_mode(mode)
+		await get_tree().create_timer(2.0).timeout
+		await RenderingServer.frame_post_draw
+		get_viewport().get_texture().get_image().save_png(
+			dir.path_join("modes_profile_%s.png" % ("orbit" if mode != "" else "mania")))
+	print("MODES-SHOTS: " + dir)
 	get_tree().quit(0)
 
 
@@ -716,6 +849,7 @@ func _build_info_panel() -> void:
 	sv.toggled.connect(_on_sv_toggled)
 	mods_row.add_child(sv)
 	_sv_btn = sv
+	mods_row.add_child(_build_sv_level())
 
 	var coll_btn := Button.new()
 	coll_btn.text = "+ Sammlung"
@@ -739,11 +873,23 @@ func _build_info_panel() -> void:
 	vb.add_child(lb_head)
 	var lb_title := Label.new()
 	lb_title.text = "BESTE SCORES"
-	lb_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	lb_title.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	lb_title.add_theme_font_size_override("font_size", 13)
 	lb_title.add_theme_color_override("font_color", COL_DIM)
 	lb_head.add_child(lb_title)
+	_lb_title = lb_title
+	# Modus-Tag: die Liste zeigt NUR Scores dieses Modus.
+	var tag_box := PanelContainer.new()
+	tag_box.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	tag_box.mouse_filter = Control.MOUSE_FILTER_PASS
+	lb_head.add_child(tag_box)
+	_lb_mode_tag = Label.new()
+	_lb_mode_tag.add_theme_font_size_override("font_size", 11)
+	tag_box.add_child(_lb_mode_tag)
+	var lb_fill := Control.new()
+	lb_fill.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	lb_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	lb_head.add_child(lb_fill)
 	_replay_btn = Button.new()
 	_replay_btn.text = "Replay"
 	_replay_btn.custom_minimum_size = Vector2(0, 28)
@@ -1107,6 +1253,7 @@ func _load_browser_state() -> bool:
 		_collection_mode = bool(cfg.get_value("browser", "collection_mode", false))
 		var pm := str(cfg.get_value("browser", "play_mode", "mania"))
 		_play_mode = pm if PLAY_MODES.has(pm) else "mania"
+		SvMod.strength = SvMod.level_from_name(str(cfg.get_value("browser", "sv_level", "strong")))
 	return true
 
 
@@ -1119,6 +1266,7 @@ func _save_browser_state() -> void:
 	cfg.set_value("browser", "collection", _active_collection)
 	cfg.set_value("browser", "collection_mode", _collection_mode)
 	cfg.set_value("browser", "play_mode", _play_mode)
+	cfg.set_value("browser", "sv_level", SvMod.level_name())
 	cfg.save(BROWSER_STATE_PATH)
 
 
@@ -1493,19 +1641,19 @@ func _make_card(ms: MapSet) -> Button:
 	if ms.has_sv():
 		hb.add_child(_sv_badge())
 
-	# Grade-Badge des besten Scores: klein, fester Platz, Notenfarbe.
-	var badge := _best_grade_badge(ms)
-	if badge != "":
-		var g := Label.new()
-		g.text = badge
-		g.custom_minimum_size = Vector2(28, 0)
-		g.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		g.add_theme_font_override("font", UiTheme.heading_font(0))
-		g.add_theme_font_size_override("font_size", 18)
-		g.add_theme_color_override("font_color", GRADE_COLOR.get(badge.left(1), COL_TEXT))
-		g.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		g.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		hb.add_child(g)
+	# Grade-Badge des besten Scores im aktiven Modus: klein, fester Platz,
+	# Notenfarbe. Beim Moduswechsel per _refresh_card_grades() neu.
+	var g := Label.new()
+	g.custom_minimum_size = Vector2(28, 0)
+	g.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	g.add_theme_font_override("font", UiTheme.heading_font(0))
+	g.add_theme_font_size_override("font_size", 18)
+	g.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	g.mouse_filter = Control.MOUSE_FILTER_PASS
+	hb.add_child(g)
+	card.set_meta("grade_lbl", g)
+	card.set_meta("ms", ms)
+	_set_card_grade(g, _best_grade_badge(ms))
 
 	# Rahmen oben drauf (Auswahl = ACCENT, Hover = hell, sonst fein).
 	var frame := Panel.new()
@@ -1517,15 +1665,50 @@ func _make_card(ms: MapSet) -> Button:
 
 	return card
 
+## Bester Rang des Sets im aktiven Modus (Orbit: nur 4K-Diffs, eigene
+## Orbit-Sektion; Mania: wie bisher "scores"). "" ohne Score.
 func _best_grade_badge(ms: MapSet) -> String:
 	if _scores_cfg == null:
 		return ""
+	var orbit := _play_mode == "orbit"
+	var sec := ScoreStore._sec("scores", ScoreStore.MODE_ORBIT if orbit else "")
+	var best_g := ""
+	var best_rank := 999
 	for i in range(ms.difficulty_count() - 1, -1, -1):
+		if orbit and int(ms.meta_at(i).get("mode", 0)) != 3:
+			continue
 		# Gleiche Abfrage wie ScoreStore.best(), aber ohne scores.cfg pro Aufruf neu zu lesen.
-		var best = _scores_cfg.get_value("scores", ScoreStore._key(ms.osz_path, ms.version_name_at(i)), {})
+		var best = _scores_cfg.get_value(sec, ScoreStore._key(ms.osz_path, ms.version_name_at(i)), {})
 		if best is Dictionary and not best.is_empty():
-			return str(best.get("grade", ""))
-	return ""
+			var gr := str(best.get("grade", ""))
+			var r := ScoreStore.GRADES.find(gr)
+			if r < 0:
+				r = ScoreStore.GRADES.find(gr.left(1))
+			if r < 0:
+				r = 99
+			if best_g == "" or r < best_rank:
+				best_g = gr
+				best_rank = r
+	return best_g
+
+
+func _set_card_grade(g: Label, grade: String) -> void:
+	g.text = grade
+	g.visible = grade != ""
+	g.add_theme_color_override("font_color", GRADE_COLOR.get(grade.left(1), COL_TEXT))
+	g.tooltip_text = (tr("Bester Rang (%s)") % ScoreStore.mode_label(
+		ScoreStore.MODE_ORBIT if _play_mode == "orbit" else "")) if grade != "" else ""
+
+
+## Rang-Badges aller Karten fuer den aktiven Modus neu setzen (ohne Neuaufbau).
+func _refresh_card_grades() -> void:
+	_scores_cfg = ConfigFile.new()
+	if _scores_cfg.load(ScoreStore.PATH) != OK:
+		_scores_cfg = null
+	for card in _card_buttons:
+		if is_instance_valid(card) and card.has_meta("grade_lbl"):
+			_set_card_grade(card.get_meta("grade_lbl"), _best_grade_badge(card.get_meta("ms")))
+	_scores_cfg = null
 
 
 # ---------------------------------------------------------------------------
@@ -1603,13 +1786,15 @@ func _update_info_panel() -> void:
 	for c in _lb_box.get_children():
 		c.queue_free()
 	# Eigene + Scores von Mitspielern (Multiplayer-Sync), beste zuerst.
-	# Orbit-Modus (nur 4K-Diffs): eigene Orbit-Scores, getrennt von Mania.
+	# Orbit-Modus (nur 4K-Diffs): nur Orbit-Scores, getrennt von Mania.
 	var orbit := _play_mode == "orbit" and int(m.get("mode", 0)) == 3
+	var score_mode := ScoreStore.MODE_ORBIT if orbit else ""
+	_style_lb_mode_tag(score_mode)
 	var tops := ScoreStore.top_scores_all(_selected_set.osz_path,
-		_selected_set.version_name_at(_selected_diff), 5, ScoreStore.MODE_ORBIT if orbit else "")
+		_selected_set.version_name_at(_selected_diff), 5, score_mode)
 	if tops.is_empty():
 		var empty := Label.new()
-		empty.text = "Noch kein Score — spiel die Map!"
+		empty.text = tr("Noch kein %s-Score — spiel die Map!") % ScoreStore.mode_label(score_mode)
 		empty.add_theme_font_size_override("font_size", 13)
 		empty.add_theme_color_override("font_color", COL_DIM)
 		_lb_box.add_child(empty)
@@ -1785,7 +1970,7 @@ func _preview_ms() -> float:
 ## Eine Leaderboard-Zeile: Rang, Grade, Score/Acc, pp, Datum.
 func _score_row(rank: int, e: Dictionary) -> Control:
 	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 10)
+	row.add_theme_constant_override("separation", 7)
 	var num := Label.new()
 	num.text = "#%d" % (rank + 1)
 	num.custom_minimum_size = Vector2(24, 0)
@@ -1803,12 +1988,12 @@ func _score_row(rank: int, e: Dictionary) -> Control:
 	row.add_child(grade)
 	var main := Label.new()
 	var is_self := bool(e.get("is_self", true))
-	main.text = "%s  ·  %s  ·  %dx" % [
+	main.text = "%s · %s · %dx" % [
 		UiTheme.fmt_score(int(e.get("score", 0))),
 		UiTheme.fmt_pct(float(e.get("accuracy", 0.0)) * 100.0), int(e.get("max_combo", 0))]
 	if not is_self:
 		# Mitspieler: Name vorne, Combo weglassen (Platz).
-		main.text = "%s  ·  %s  ·  %s" % [str(e.get("player", "?")),
+		main.text = "%s · %s · %s" % [str(e.get("player", "?")),
 			UiTheme.fmt_score(int(e.get("score", 0))),
 			UiTheme.fmt_pct(float(e.get("accuracy", 0.0)) * 100.0)]
 		main.tooltip_text = tr("Score von %s (Multiplayer)") % str(e.get("player", "?"))
@@ -1818,9 +2003,19 @@ func _score_row(rank: int, e: Dictionary) -> Control:
 	main.add_theme_font_size_override("font_size", 13)
 	main.add_theme_color_override("font_color", Color(0.85, 0.88, 0.95))
 	row.add_child(main)
+	# Mods des Scores (SV mit Stufe), klein vor pp.
+	var mods_txt := ScoreStore.mods_label(e)
+	if mods_txt != "":
+		var ml := Label.new()
+		ml.text = mods_txt
+		ml.add_theme_font_size_override("font_size", 11)
+		ml.add_theme_color_override("font_color", COL_ACCENT.lerp(COL_TEXT, 0.3))
+		row.add_child(ml)
 	var pp_lbl := Label.new()
 	var pp_val := float(e.get("pp", -1.0))
 	pp_lbl.text = UiTheme.fmt_pp(pp_val) if pp_val > 0.0 else "—"
+	if str(e.get("mode", "")) == ScoreStore.MODE_ORBIT:
+		pp_lbl.visible = false  # Orbit hat keine pp
 	pp_lbl.add_theme_font_size_override("font_size", 13)
 	pp_lbl.add_theme_color_override("font_color", UiTheme.ACCENT2)
 	row.add_child(pp_lbl)
@@ -1865,10 +2060,67 @@ func _set_play_mode(mode: String) -> void:
 		return
 	_play_mode = mode
 	_restyle_mode_switch()
+	_refresh_card_grades()
 	if _selected_set != null:
 		_update_info_panel()
 	if _state_ready:
 		_save_browser_state()
+
+
+## Modus-Tag im Ranglisten-Kopf (Mania 4K = ACCENT, Orbit = ACCENT2).
+func _style_lb_mode_tag(score_mode: String) -> void:
+	if _lb_mode_tag == null:
+		return
+	var col := UiTheme.ACCENT2 if score_mode == ScoreStore.MODE_ORBIT else COL_ACCENT
+	_lb_mode_tag.text = ScoreStore.mode_label(score_mode).to_upper()
+	_lb_mode_tag.add_theme_color_override("font_color", col.lerp(COL_TEXT, 0.25))
+	var box := _lb_mode_tag.get_parent() as PanelContainer
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(col, 0.16)
+	sb.border_color = Color(col, 0.6)
+	sb.set_border_width_all(1)
+	sb.set_corner_radius_all(8)
+	sb.content_margin_left = 7
+	sb.content_margin_right = 7
+	sb.content_margin_top = 1
+	sb.content_margin_bottom = 1
+	box.add_theme_stylebox_override("panel", sb)
+	box.tooltip_text = tr("Nur Scores im Modus %s") % ScoreStore.mode_label(score_mode)
+
+
+## SV-Stufe: zwei Mini-Schalter Normal | Stark (Standard Stark) neben dem SV-Mod.
+func _build_sv_level() -> Control:
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 2)
+	box.custom_minimum_size = Vector2(62, 40)
+	_sv_level_btns.clear()
+	for lv in [SvMod.STRENGTH_NORMAL, SvMod.STRENGTH_STRONG]:
+		var b := _make_toggle("Normal" if lv == SvMod.STRENGTH_NORMAL else "Stark", 11, 6)
+		b.custom_minimum_size = Vector2(62, 19)
+		b.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		b.tooltip_text = "SV-Stufe: klassische Muster" if lv == SvMod.STRENGTH_NORMAL \
+				else "SV-Stufe: Beat-Tanz mit Rücklauf und Sprüngen (Standard)"
+		var level: int = lv
+		b.pressed.connect(func(): _set_sv_level(level))
+		box.add_child(b)
+		_sv_level_btns.append(b)
+	_restyle_sv_level()
+	return box
+
+
+func _set_sv_level(level: int) -> void:
+	SvMod.strength = level
+	_restyle_sv_level()
+	if not _sv_enabled:
+		_on_sv_toggled(true)  # Stufe waehlen schaltet SV ein
+	if _state_ready:
+		_save_browser_state()
+
+
+func _restyle_sv_level() -> void:
+	for i in _sv_level_btns.size():
+		var lv := SvMod.STRENGTH_NORMAL if i == 0 else SvMod.STRENGTH_STRONG
+		_apply_toggle(_sv_level_btns[i], lv == SvMod.strength and _sv_enabled)
 
 
 func _restyle_mode_switch() -> void:
@@ -1906,6 +2158,7 @@ func _on_sv_toggled(pressed: bool) -> void:
 	Settings.save()
 	if _sv_btn != null:
 		_sv_btn.set_pressed_no_signal(_sv_enabled)
+	_restyle_sv_level()
 
 
 ## Mods fuer den naechsten Start (Schnittstelle GameSession.mods).

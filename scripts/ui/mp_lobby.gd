@@ -84,6 +84,7 @@ var _tpanel: TournamentPanel = null
 var _tend: TournamentEnd = null
 var _tour_phase := -1
 var _mode_btns: Array = []
+var _play_btns: Dictionary = {}
 var _mode_row: HBoxContainer
 var _mode_info: Label
 var _board_holder: VBoxContainer
@@ -991,6 +992,13 @@ func _room_card(lan: bool, rname: String, players_n: int, sub: String,
 	return card
 
 
+## Raumkarten-Untertitel; Orbit-Raeume werden vorn markiert (Mania ist der Standard).
+func _card_sub(base: String, mode: String) -> String:
+	if Lobby.norm_play(mode) == "orbit":
+		return "Orbit  ·  " + base
+	return base
+
+
 func _refresh_rooms() -> void:
 	if _rooms_list == null:
 		return
@@ -1006,7 +1014,7 @@ func _refresh_rooms() -> void:
 		lan_codes[str(r.get("code", ""))] = true
 		var target_ip := str(ip)
 		_rooms_list.add_child(_room_card(true, str(r.name), int(r.players),
-			tr("Dein Netzwerk"), func():
+			_card_sub(tr("Dein Netzwerk"), str(r.get("mode", "mania"))), func():
 				if Lobby.join_lan(target_ip):
 					_show_room()))
 		count += 1
@@ -1016,7 +1024,7 @@ func _refresh_rooms() -> void:
 		var o: Dictionary = Lobby.online_rooms[code]
 		var jcode := str(code)
 		_rooms_list.add_child(_room_card(false, str(o.name), int(o.players),
-			tr("Online  ·  %s") % jcode, func():
+			_card_sub(tr("Online  ·  %s") % jcode, str(o.get("mode", "mania"))), func():
 				if Lobby.join_code(jcode):
 					_show_room()))
 		count += 1
@@ -1084,7 +1092,26 @@ func _build_room() -> void:
 	_copy_btn.pressed.connect(_copy_code)
 	code_row.add_child(_copy_btn)
 
-	lv.add_child(_gap(16))
+	lv.add_child(_gap(12))
+	# Spielmodus des Raums: Mania 4K / Orbit (waehlt die Krone, alle sehen ihn).
+	var play_row := HBoxContainer.new()
+	play_row.custom_minimum_size = Vector2(0, 32)
+	play_row.add_theme_constant_override("separation", 8)
+	lv.add_child(play_row)
+	var pcap := _caption("SPIELMODUS")
+	pcap.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	play_row.add_child(pcap)
+	for pm in ["mania", "orbit"]:
+		var pb := _chip_toggle(Lobby.play_name(pm))
+		pb.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+		var pmode: String = pm
+		pb.pressed.connect(func():
+			Lobby.set_play_mode(pmode)
+			_refresh_room())
+		play_row.add_child(pb)
+		_play_btns[pm] = pb
+
+	lv.add_child(_gap(12))
 	# Raum-Modus: Frei / Teams / Battle Royale (waehlt die Krone, alle sehen ihn).
 	_mode_row = HBoxContainer.new()
 	_mode_row.custom_minimum_size = Vector2(0, 32)
@@ -1361,6 +1388,26 @@ func _show_browser() -> void:
 
 
 ## Eine Spielerzeile: Avatar, Krone, Name, (Score), Bereit-Status, Krone geben.
+## Kleines ruhiges Abzeichen "3D" / "2D" / "Orbit"; null bei unbekannter Darstellung.
+func _view_badge(view: String) -> Control:
+	if view == "":
+		return null
+	var pc := PanelContainer.new()
+	pc.add_theme_stylebox_override("panel", _box(Color(1, 1, 1, 0.06), 5))
+	pc.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	pc.tooltip_text = tr("Spielt in %s") % view
+	var l := _lbl(view, FS_S, COL_DIM)
+	l.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var m := MarginContainer.new()
+	m.add_theme_constant_override("margin_left", 6)
+	m.add_theme_constant_override("margin_right", 6)
+	m.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	m.add_child(l)
+	pc.add_child(m)
+	return pc
+
+
 func _player_row(id: int, p: Dictionary, my_id: int, in_round: bool) -> Control:
 	var is_crown: bool = id == Lobby.crown_id
 	var row := PanelContainer.new()
@@ -1410,6 +1457,9 @@ func _player_row(id: int, p: Dictionary, my_id: int, in_round: bool) -> Control:
 		var you := _lbl("(du)", FS_S, COL_DIM)
 		you.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		name_box.add_child(you)
+	var vb := _view_badge(Lobby.view_of(id))
+	if vb != null:
+		name_box.add_child(vb)
 	name_l.size_flags_horizontal = Control.SIZE_FILL
 	var nsp := Control.new()
 	nsp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1520,6 +1570,13 @@ func _refresh_room() -> void:
 		mb.tooltip_text = (tr("Kein Abbruch bei leerer Lebensleiste") if k == "NF" else tr("Jede Map mit Tempowechseln")) \
 			+ ("" if is_crown else "\n" + tr("Nur der Kronenträger schaltet Mods."))
 	var in_tour := Lobby.tournament != null
+	for pm in _play_btns:
+		var pb: Button = _play_btns[pm]
+		var pon: bool = Lobby.play_mode == pm
+		pb.set_pressed_no_signal(pon)
+		_paint_chip(pb, pon)
+		pb.disabled = not is_crown or in_tour or Lobby.in_game
+		pb.tooltip_text = tr("Alle im Raum spielen %s.") % Lobby.play_name(Lobby.play_mode) if pon 			else tr("Nur der Kronenträger wählt den Spielmodus.") if not is_crown else ""
 	for k in _mode_btns.size():
 		var kb: Button = _mode_btns[k]
 		var on: bool = Lobby.room_kind() == k and not in_tour
@@ -2708,7 +2765,10 @@ func _lobby_shots() -> void:
 	for i in who.size():
 		Lobby.players[i + 2] = Lobby._new_player(who[i])
 		Lobby.players[i + 2].ready = i % 3 != 1
+		# Gemischte Darstellung; Jonas (letzter) = alter Client ohne Angabe.
+		Lobby.players[i + 2].view = ["3D", "2D", "2D", "3D", "Orbit", "3D", ""][i]
 	Lobby.players[1].ready = true
+	Lobby.players[1].view = "3D"
 	if not _library.mapsets.is_empty():
 		var ms: MapSet = _library.mapsets[mini(3, _library.mapsets.size() - 1)]
 		var d := mini(1, ms.difficulty_count() - 1)
@@ -2718,6 +2778,16 @@ func _lobby_shots() -> void:
 	_update_bg()
 	Lobby.players_changed.emit()
 	await shot.call("room_free_8")
+	# Orbit-Raum: alle spielen Orbit, Abzeichen zeigen "Orbit".
+	Lobby.play_mode = "orbit"
+	for pid in Lobby.players:
+		Lobby.players[pid].view = "Orbit" if pid != 8 else ""
+	Lobby.players_changed.emit()
+	await shot.call("room_orbit")
+	Lobby.play_mode = "mania"
+	for pid in Lobby.players:
+		Lobby.players[pid].view = ["3D", "3D", "2D", "2D", "3D", "Orbit", "3D", ""][pid - 1]
+	Lobby.players_changed.emit()
 	# Teams (4 Spieler).
 	for i in range(5, 9):
 		Lobby.players.erase(i)

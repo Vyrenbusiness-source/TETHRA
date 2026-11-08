@@ -38,6 +38,9 @@ var _name_box: VBoxContainer
 var _mode_2d_btn: CheckButton
 var _hint_2d: Control
 var _rows_3d: Array[Control] = []
+var _cover_row: Control
+var _skinvals_btn: CheckButton
+var _adv_2d: Control
 
 var _capturing := 0   # 0 = keine Aufnahme, 3..6 = Lane 1-4, 20/21 = Orbit innen/aussen
 var _lane_btns: Array[Button] = []
@@ -305,6 +308,115 @@ func _ready() -> void:
 		_refresh_2d_preview())
 	_row(pg_2d, "Hit-Lighting", hl, null).tooltip_text = tr("Tasten und Skin-Lighting leuchten beim Treffer auf")
 
+	# Spielfeld wie osu!mania: Richtung/Groesse immer, Layout-Werte ueberschreiben die
+	# Skin-Werte (Aendern schaltet "Skin-Werte nutzen" automatisch aus).
+	_group(pg_2d, "Spielfeld")
+	_option_row(pg_2d, "Scroll-Richtung", ["Nach unten", "Nach oben"],
+		1 if Settings.scroll_up_2d else 0,
+		func(i): Settings.scroll_up_2d = i == 1,
+		"Noten laufen zur Linie unten (Standard) oder oben (osu! UpsideDown)")
+	_option_row(pg_2d, "Position", ["Links", "Mitte", "Rechts"], Settings.stage_pos_2d,
+		func(i): _set_own_2d("stage_pos_2d", i),
+		"Spielfeld links, mittig oder rechts (überschreibt den Skin)")
+	_slider_row(pg_2d, "Skalierung", Settings.STAGE_SCALE_MIN * 100.0, Settings.STAGE_SCALE_MAX * 100.0,
+		5.0, Settings.stage_scale_2d * 100.0,
+		func(v): return _fmt_pct0(Settings.clamp_2d_option("stage_scale_2d", v / 100.0)),
+		func(v):
+			Settings.set_2d_option("stage_scale_2d", v / 100.0)
+			_refresh_2d_preview(),
+		"Größe des ganzen Spielfelds")
+	_slider_row(pg_2d, "Trefferposition", Settings.HIT_POS_MIN, Settings.HIT_POS_MAX, 1.0,
+		Settings.hit_position_2d, func(v): return str(int(v)),
+		func(v): _set_own_2d("hit_position_2d", v),
+		"Höhe der Trefferlinie (osu! HitPosition, 480 = Bildrand)")
+	_slider_row(pg_2d, "Spaltenabstand", 0.0, Settings.COL_SPACING_MAX, 1.0,
+		Settings.column_spacing_2d, func(v): return str(int(v)),
+		func(v): _set_own_2d("column_spacing_2d", v),
+		"Lücke zwischen den Spalten (osu! ColumnSpacing)")
+
+	_group(pg_2d, "Mods")
+	_option_row(pg_2d, "Sicht", ["Aus", "FadeIn", "Hidden", "Cover"], Settings.mod_vis_2d,
+		func(i):
+			Settings.mod_vis_2d = i
+			if _cover_row != null:
+				_cover_row.visible = i == Settings.VIS_COVER,
+		"FadeIn: Noten tauchen spät auf · Hidden: verschwinden vor der Linie · Cover: feste Abdeckung")
+	var cov_box := HBoxContainer.new()
+	cov_box.add_theme_constant_override("separation", 10)
+	var cov_dir := OptionButton.new()
+	cov_dir.add_item("Von oben")
+	cov_dir.add_item("Von unten")
+	cov_dir.select(1 if Settings.cover_from_bottom_2d else 0)
+	cov_dir.custom_minimum_size = Vector2(0, CTRL_H)
+	cov_dir.item_selected.connect(func(i):
+		Settings.cover_from_bottom_2d = i == 1
+		_refresh_2d_preview())
+	cov_box.add_child(cov_dir)
+	var cov_sl := HSlider.new()
+	cov_sl.min_value = Settings.COVER_MIN
+	cov_sl.max_value = Settings.COVER_MAX
+	cov_sl.step = 5.0
+	cov_sl.value = Settings.cover_pct_2d
+	cov_sl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	cov_sl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	cov_box.add_child(cov_sl)
+	var cov_val := Label.new()
+	cov_val.text = _fmt_pct0(Settings.cover_pct_2d / 100.0)
+	cov_sl.value_changed.connect(func(v):
+		Settings.set_2d_option("cover_pct_2d", v)
+		cov_val.text = _fmt_pct0(Settings.cover_pct_2d / 100.0)
+		_refresh_2d_preview())
+	_cover_row = _row(pg_2d, "Abdeckung", cov_box, cov_val)
+	_cover_row.tooltip_text = tr("Cover: Anteil der Strecke, der verdeckt ist")
+	_cover_row.visible = Settings.mod_vis_2d == Settings.VIS_COVER
+	var cs := CheckButton.new()
+	cs.button_pressed = Settings.mod_constant
+	cs.toggled.connect(func(on): Settings.mod_constant = on)
+	_row(pg_2d, "Konstante Geschwindigkeit", cs, null).tooltip_text = \
+		tr("SV- und BPM-Wechsel der Map ignorieren (lazer Constant Speed)")
+
+	# Selten gebraucht: eingeklappt.
+	var adv := VBoxContainer.new()
+	adv.add_theme_constant_override("separation", 2)
+	var adv_btn := Button.new()
+	adv_btn.flat = true
+	adv_btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	adv_btn.add_theme_font_size_override("font_size", 13)
+	adv_btn.add_theme_color_override("font_color", COL_DIM)
+	var adv_txt := func(open: bool) -> String:
+		return ("▾  " if open else "▸  ") + tr("Erweitert")
+	adv_btn.text = adv_txt.call(false)
+	adv_btn.pressed.connect(func():
+		adv.visible = not adv.visible
+		adv_btn.text = adv_txt.call(adv.visible))
+	pg_2d.add_child(adv_btn)
+	pg_2d.add_child(adv)
+	adv.visible = false
+	_adv_2d = adv
+	_skinvals_btn = CheckButton.new()
+	_skinvals_btn.button_pressed = Settings.skin_values_2d
+	_skinvals_btn.toggled.connect(func(on):
+		Settings.skin_values_2d = on
+		_refresh_2d_preview())
+	_row(adv, "Skin-Werte nutzen", _skinvals_btn, null).tooltip_text = \
+		tr("An: Layout aus skin.ini · Aus: eigene Werte (Position, Trefferlinie, Abstand …)")
+	_slider_row(adv, "Judgement-Position", 0.0, 480.0, 1.0, Settings.judge_pos_2d,
+		func(v): return str(int(v)),
+		func(v): _set_own_2d("judge_pos_2d", v),
+		"Höhe der Judgements (osu! ScorePosition, 0 = oben)")
+	_slider_row(adv, "Kombo-Position", 0.0, 480.0, 1.0, Settings.combo_pos_2d,
+		func(v): return str(int(v)),
+		func(v): _set_own_2d("combo_pos_2d", v),
+		"Höhe der Kombo (osu! ComboPosition, 0 = oben)")
+	var kun := CheckButton.new()
+	kun.button_pressed = Settings.keys_under_notes_2d
+	kun.toggled.connect(func(on): _set_own_2d("keys_under_notes_2d", on))
+	_row(adv, "Tasten unter den Noten", kun, null).tooltip_text = tr("osu! KeysUnderNotes")
+	var hline := CheckButton.new()
+	hline.button_pressed = Settings.hit_line_2d
+	hline.toggled.connect(func(on): _set_own_2d("hit_line_2d", on))
+	_row(adv, "Trefferlinie", hline, null).tooltip_text = tr("Linie bzw. Skin-Markierung an der Trefferposition")
+
 	_group(pg_2d, "Map-Bild")
 	_slider_row(pg_2d, "Hintergrund", 0.0, 100.0, 5.0, Settings.bg_dim * 100.0,
 		func(v): return _fmt_bg(Settings.clamp_bg_dim(v / 100.0)),
@@ -570,6 +682,15 @@ func _shot_pages() -> void:
 	await RenderingServer.frame_post_draw
 	_shot_save(dir, "settings_2d_bottom_bg0.png")
 	Settings.bg_dim = old_bg
+	_refresh_bg_preview()
+	# 2D-Seite mit aufgeklapptem "Erweitert" (Spielfeld, Mods, Erweitert im Bild).
+	if _adv_2d != null:
+		_adv_2d.visible = true
+		await get_tree().process_frame
+		_scroll.ensure_control_visible(_adv_2d)
+		await get_tree().create_timer(0.8).timeout
+		await RenderingServer.frame_post_draw
+		_shot_save(dir, "settings_2d_advanced.png")
 	# Name einmalig festlegen (nur wenn noch "Player"), dann gesperrte Ansicht.
 	_show_page(0)
 	var edit := _name_box.find_child("NameEdit", true, false) as LineEdit
@@ -900,6 +1021,32 @@ func _row(vb: VBoxContainer, caption: String, control: Control, value: Label) ->
 	chip.add_child(value)
 	row.add_child(chip)
 	return hov
+
+
+## Auswahl-Zeile (OptionButton); on_change(index), danach Vorschau neu.
+func _option_row(pg: VBoxContainer, caption: String, items: Array, sel: int, on_change: Callable,
+		tip: String = "") -> Control:
+	var ob := OptionButton.new()
+	for it in items:
+		ob.add_item(it)
+	ob.select(sel)
+	ob.custom_minimum_size = Vector2(0, CTRL_H)
+	ob.item_selected.connect(func(i):
+		on_change.call(i)
+		_refresh_2d_preview())
+	var r := _row(pg, caption, ob, null)
+	r.tooltip_text = tip
+	return r
+
+
+## Eigener Layout-Wert (2D): setzen und "Skin-Werte nutzen" ausschalten, damit er wirkt.
+func _set_own_2d(n: String, v: Variant) -> void:
+	Settings.set_2d_option(n, v)
+	if Settings.skin_values_2d:
+		Settings.skin_values_2d = false
+		if _skinvals_btn != null:
+			_skinvals_btn.set_pressed_no_signal(false)
+	_refresh_2d_preview()
 
 
 ## Hintergrund-Deckkraft: 0 -> "Aus", sonst "30 %".

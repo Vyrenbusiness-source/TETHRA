@@ -9,7 +9,10 @@ extends Control
 ## Aufruf: show_results(data) — Keys: is_fail, s (ManiaCore.stats()), pp,
 ## unranked, new_best, title, artist, version, cover_path, offsets (ms),
 ## player, date. Optional: cover (Texture2D), allow_retry, can_replay,
-## is_replay, lobby.
+## is_replay, lobby, mods (Dictionary, sonst GameSession.mods).
+## Modus kommt aus s.mode ("orbit", sonst Mania 4K): Abzeichen im Kopf, der
+## Bestleistungs-Vergleich nutzt nur Scores desselben Modus
+## (ScoreStore.previous_best_for).
 
 signal retry_pressed
 signal replay_pressed
@@ -34,9 +37,9 @@ const MUTED := Color(0.50, 0.53, 0.60)
 const SCORE_COUNT_TIME := 0.9
 const STAGGER := 0.07
 const HIST_BINS := 41
-const PANEL_W := 640.0
-const RANK_COL_W := 560.0
-const RING := 500.0
+const PANEL_W := 700.0
+const RANK_COL_W := 380.0
+const RING := 330.0
 const GROUP_GAP := 48
 
 const SWEEP_SHADER := """
@@ -281,6 +284,43 @@ func active_mods() -> Array:
 	return out
 
 
+## Spielmodus des Ergebnisses: "orbit" oder "" (Mania 4K).
+func score_mode() -> String:
+	return ScoreStore.MODE_ORBIT if str(_stats.get("mode", "")) == ScoreStore.MODE_ORBIT else ""
+
+
+## Mod-Abzeichen-Texte, SV mit Stufe ("SV Stark"): Stufe aus s.sv_level,
+## sonst die aktive SvMod-Stufe dieses Laufs.
+func mod_badge_texts() -> Array:
+	var lv := str(_stats.get("sv_level", SvMod.level_name()))
+	var out: Array = []
+	for m in active_mods():
+		out.append(ScoreStore.mods_label({ "mods": [m], "sv_level": lv }))
+	return out
+
+
+## Modus-Abzeichen (Mania 4K = ACCENT, Orbit = ACCENT2), kraeftiger als Mods.
+func _mode_badge() -> Control:
+	var orbit := score_mode() == ScoreStore.MODE_ORBIT
+	var col: Color = UiTheme.ACCENT2 if orbit else UiTheme.ACCENT
+	var p := PanelContainer.new()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(col, 0.32)
+	sb.border_color = Color(col, 0.9)
+	sb.set_border_width_all(1)
+	sb.set_corner_radius_all(10)
+	sb.content_margin_left = 9
+	sb.content_margin_right = 9
+	p.add_theme_stylebox_override("panel", sb)
+	var l := Label.new()
+	l.text = ScoreStore.mode_label(score_mode()).to_upper()
+	l.add_theme_font_override("font", UiTheme.heading_font(2))
+	l.add_theme_font_size_override("font_size", 13)
+	l.add_theme_color_override("font_color", col.lerp(Color.WHITE, 0.55))
+	p.add_child(l)
+	return p
+
+
 func _mod_badge(text: String) -> Control:
 	var p := PanelContainer.new()
 	var sb := StyleBoxFlat.new()
@@ -336,18 +376,22 @@ func _build_header() -> void:
 	title.add_theme_constant_override("shadow_offset_y", 2)
 	strip.add_child(title)
 	var sub := Label.new()
-	sub.text = "%s  ·  4K" % str(_data.get("version", "")).strip_edges()
+	# Diff-Name; der Modus steht als Abzeichen dahinter (nicht mehr "· 4K").
+	var ver := str(_data.get("version", "")).strip_edges()
+	ver = ver.trim_suffix("·  " + tr("Orbit")).trim_suffix("· " + tr("Orbit")).strip_edges()
+	sub.text = ver
 	sub.position = Vector2(41, 48)
 	sub.add_theme_font_override("font", UiTheme.heading_font(1))
 	sub.add_theme_font_size_override("font_size", 15)
 	sub.add_theme_color_override("font_color", UiTheme.ACCENT.lerp(UiTheme.TEXT, 0.35))
 	strip.add_child(sub)
-	# Mod-Badges (SV, NF) hinter der Schwierigkeit.
+	# Modus-Abzeichen + Mod-Badges (SV mit Stufe, NF) hinter der Schwierigkeit.
 	var mod_row := HBoxContainer.new()
 	mod_row.position = Vector2(41 + 8, 46)
 	mod_row.add_theme_constant_override("separation", 6)
 	strip.add_child(mod_row)
-	for m in active_mods():
+	mod_row.add_child(_mode_badge())
+	for m in mod_badge_texts():
 		mod_row.add_child(_mod_badge(m))
 	mod_row.position.x = sub.position.x + sub.get_theme_font("font").get_string_size(
 		sub.text, HORIZONTAL_ALIGNMENT_LEFT, -1, 15).x + 12
@@ -412,19 +456,29 @@ func _build_group() -> VBoxContainer:
 	return group
 
 
+## Linke Karte im Stil der MP-/Turnier-Statistik (PlayerStatsCard): Score mit
+## Bestleistung (gleicher Modus), Genauigkeit/Kombo/pp, Judgement-Verteilung,
+## UR/Abweichung/Holds/Frueh-Spaet, Trefferfehler + Genauigkeit im Verlauf.
+## Fail: dieselben Werte bis zum Fail, ruhige Markierung im Verlauf.
+## Optionale Daten: trace (Acc nach jedem Urteil), h_ok, h_drop, fail_ms,
+## length_ms, notes_total.
 func _build_left_panel(parent: Control) -> void:
 	var panel := PanelContainer.new()
 	panel.custom_minimum_size = Vector2(PANEL_W, 0)
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var psb := UiTheme.glass_box(18, 0.72)
-	psb.set_content_margin_all(24)
+	psb.set_content_margin_all(22)
+	psb.content_margin_top = 18
+	psb.content_margin_bottom = 18
 	panel.add_theme_stylebox_override("panel", psb)
 	parent.add_child(panel)
 	_left_panel = panel
 	var vb := VBoxContainer.new()
 	vb.add_theme_constant_override("separation", 12)
 	panel.add_child(vb)
+	var st := stats_packet()
 
-	# PUNKTE + Badges.
+	# Score (zaehlt hoch) + Abzeichen, daneben Acc/Kombo/pp, darunter PB.
 	var top := HBoxContainer.new()
 	top.add_theme_constant_override("separation", 8)
 	vb.add_child(top)
@@ -435,79 +489,156 @@ func _build_left_panel(parent: Control) -> void:
 	for b in _badges():
 		top.add_child(_badge(str(b[0]), b[1]))
 	_reveal.append(top)
+	var srow := HBoxContainer.new()
+	srow.add_theme_constant_override("separation", 22)
+	vb.add_child(srow)
 	_score_lbl = Label.new()
 	_score_lbl.text = "0"
 	_score_lbl.add_theme_font_override("font", UiTheme.heading_font(3))
-	_score_lbl.add_theme_font_size_override("font_size", 64)
+	_score_lbl.add_theme_font_size_override("font_size", 54)
 	_score_lbl.add_theme_color_override("font_color", UiTheme.TEXT)
-	_score_lbl.add_theme_color_override("font_shadow_color", Color(UiTheme.ACCENT, 0.16))
-	_score_lbl.add_theme_constant_override("shadow_offset_y", 3)
 	_score_lbl.add_theme_constant_override("line_spacing", -6)
-	vb.add_child(_score_lbl)
-	_reveal.append(_score_lbl)
-
-	# Urteils-Karten (3x2) mit Anteil-Balken.
-	var grid := GridContainer.new()
-	grid.columns = 3
-	grid.add_theme_constant_override("h_separation", 10)
-	grid.add_theme_constant_override("v_separation", 10)
-	vb.add_child(grid)
-	var counts := [int(_stats.get("n_max", 0)), int(_stats.get("n300", 0)),
-		int(_stats.get("n200", 0)), int(_stats.get("n100", 0)),
-		int(_stats.get("n50", 0)), int(_stats.get("n_miss", 0))]
-	var total := 0
-	for c in counts:
-		total += int(c)
-	var tags := ["MAX", "300", "200", "100", "50", "MISS"]
-	for i in 6:
-		var frac := float(counts[i]) / float(maxi(total, 1))
-		grid.add_child(_judge_card(tags[i], int(counts[i]), frac, QUALITY_COLOR[i]))
-	_reveal.append(grid)
-
-	# Genauigkeit · Max. Kombo · PP.
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 10)
-	vb.add_child(row)
+	_score_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	srow.add_child(_score_lbl)
 	var acc: float = float(_stats.get("accuracy", 0.0))
-	var acc_block := _stat_block("GENAUIGKEIT", fmt_pct(acc), UiTheme.TEXT)
-	_acc_lbl = acc_block.get_meta("value")
-	row.add_child(acc_block)
-	row.add_child(_stat_block("MAX. KOMBO", "%s×" % fmt_int(int(_stats.get("max_combo", 0))),
-		UiTheme.TEXT))
-	row.add_child(_pp_block())
-	_reveal.append(row)
+	var acc_v := _hero_stat("GENAUIGKEIT", fmt_pct(acc), UiTheme.TEXT)
+	_acc_lbl = acc_v.get_meta("value")
+	srow.add_child(acc_v)
+	srow.add_child(_hero_stat("MAX. KOMBO", "%s×" % fmt_int(int(_stats.get("max_combo", 0))), UiTheme.TEXT))
+	srow.add_child(_hero_pp())
+	_reveal.append(srow)
+	var pb := _pb_line()
+	if pb != null:
+		vb.add_child(pb)
+		_reveal.append(pb)
 
-	# Timing: Kopf mit UR/Mittel-Offset + Histogramm.
-	var hh := HBoxContainer.new()
-	vb.add_child(hh)
-	var hcap := _caption("TIMING")
-	hcap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	hh.add_child(hcap)
-	var tinfo := Label.new()
-	tinfo.add_theme_font_size_override("font_size", 14)
-	tinfo.add_theme_color_override("font_color", CAPTION)
-	if _offsets.size() >= 2:
-		var mean := 0.0
-		var sq := 0.0
-		for o in _offsets:
-			mean += o
-			sq += o * o
-		mean /= float(_offsets.size())
-		var variance := maxf(sq / float(_offsets.size()) - mean * mean, 0.0)
-		var sign_txt := "+" if mean >= 0.0 else "−"
-		tinfo.text = "UR %s   ·   Ø %s%s ms %s" % [fmt_dec(sqrt(variance) * 10.0, 0),
-			sign_txt, fmt_dec(absf(mean), 1), tr("zu spät") if mean > 0.0 else tr("zu früh")]
-	else:
-		tinfo.text = "keine Timing-Daten"
-	hh.add_child(tinfo)
-	_reveal.append(hh)
-	_build_histogram_data()
-	_hist_ctrl = Control.new()
-	_hist_ctrl.custom_minimum_size = Vector2(0, 150)
-	_hist_ctrl.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_hist_ctrl.draw.connect(_draw_histogram)
-	vb.add_child(_hist_ctrl)
-	_reveal.append(_hist_ctrl)
+	# Verteilung, Timing und Graphen aus der Stats-Karte (gleicher Stil wie MP).
+	var card := PlayerStatsCard.new()
+	card._s = 0.86
+	var jd: Control = card._judgements(st)
+	vb.add_child(jd)
+	_reveal.append(jd)
+	if st.has("ur"):
+		var tm: Control = card._timing(st, {})
+		vb.add_child(tm)
+		_reveal.append(tm)
+		var is_fail := bool(_data.get("is_fail", false))
+		var info := {}
+		if is_fail:
+			info["trace_caption"] = "Genauigkeit bis zum Fail"
+		var gr: Control = card._graphs(st, {}, info)
+		gr.custom_minimum_size = Vector2(0, 118)
+		vb.add_child(gr)
+		_reveal.append(gr)
+		if is_fail:
+			_add_fail_marker(gr)
+	card.free()
+
+
+## Paket wie im MP (PlayerStatsCard.pack) aus Stats, Offsets und optionalem
+## Verlauf/Holds dieses Laufs.
+func stats_packet() -> Dictionary:
+	var tr_raw: Variant = _data.get("trace", PackedFloat32Array())
+	var trace := PackedFloat32Array()
+	if tr_raw is Array or tr_raw is PackedFloat32Array:
+		trace = PackedFloat32Array(tr_raw)
+	return PlayerStatsCard.pack(_stats, _offsets, trace, int(_data.get("h_ok", 0)),
+		int(_data.get("h_drop", 0)), bool(_data.get("is_fail", false)))
+
+
+## Anteil der Map bis zum Fail (0..1), -1 = unbekannt.
+func fail_fraction() -> float:
+	var len_ms := float(_data.get("length_ms", 0.0))
+	if len_ms > 0.0 and _data.has("fail_ms"):
+		return clampf(float(_data.fail_ms) / len_ms, 0.0, 1.0)
+	var notes := int(_data.get("notes_total", 0))
+	if notes > 0:
+		return clampf(float(PlayerStatsCard.total_of(stats_packet())) / float(notes), 0.0, 1.0)
+	return -1.0
+
+
+## "Fail bei 1:23 · 41 %" (Zeit nur, wenn bekannt).
+func fail_text() -> String:
+	var parts: Array = []
+	if _data.has("fail_ms"):
+		var sec := int(float(_data.fail_ms) / 1000.0)
+		parts.append("%d:%02d" % [sec / 60, sec % 60])
+	var f := fail_fraction()
+	if f >= 0.0:
+		parts.append(UiTheme.fmt_num(f * 100.0, 0) + (" %" if UiTheme.is_german() else "%"))
+	if parts.is_empty():
+		return tr("Fail")
+	return tr("Fail bei %s") % "  ·  ".join(parts)
+
+
+## Verlauf auf den gespielten Anteil stauchen, rechts davon der Rest der Map
+## (blass gestrichelt) mit einer ruhigen Fail-Linie und Beschriftung.
+func _add_fail_marker(graphs: Control) -> void:
+	var f := fail_fraction()
+	var trace_box: Control = null
+	if graphs.get_child_count() > 1:
+		trace_box = graphs.get_child(1)
+	var target: Control = null
+	if trace_box != null and trace_box.get_child_count() > 1:
+		target = trace_box.get_child(trace_box.get_child_count() - 1)
+	var label_txt := fail_text()
+	if target == null:
+		var l := _caption(label_txt.to_upper())
+		l.add_theme_color_override("font_color", FAIL_COLOR.lerp(CAPTION, 0.35))
+		graphs.get_parent().add_child(l)
+		return
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 0)
+	row.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	trace_box.remove_child(target)
+	trace_box.add_child(row)
+	var played := clampf(f, 0.12, 0.96) if f >= 0.0 else 0.96
+	target.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	target.size_flags_stretch_ratio = played
+	row.add_child(target)
+	var rest := Control.new()
+	rest.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	rest.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	rest.size_flags_stretch_ratio = 1.0 - played
+	rest.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	rest.draw.connect(func():
+		var h := rest.size.y
+		var w := rest.size.x
+		var x := 6.0
+		while x < w:
+			rest.draw_line(Vector2(x, h - 1.0), Vector2(minf(x + 5.0, w), h - 1.0), Color(1, 1, 1, 0.14), 1.0)
+			x += 10.0
+		var col := FAIL_COLOR.lerp(CAPTION, 0.25)
+		rest.draw_line(Vector2(1, 0), Vector2(1, h), Color(col, 0.85), 2.0)
+		var font := get_theme_default_font()
+		var fw := font.get_string_size(label_txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x
+		var tx := 8.0 if fw + 8.0 <= w else -fw - 8.0
+		rest.draw_string(font, Vector2(tx, 13), label_txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, col))
+	row.add_child(rest)
+
+
+## Kennzahl neben dem Score: kleine Beschriftung, Wert darunter.
+func _hero_stat(cap: String, value: String, col: Color) -> VBoxContainer:
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 0)
+	v.size_flags_vertical = Control.SIZE_SHRINK_END
+	v.add_child(_caption(cap))
+	var l := Label.new()
+	l.text = value
+	l.add_theme_font_override("font", UiTheme.heading_font(1))
+	l.add_theme_font_size_override("font_size", 26)
+	l.add_theme_color_override("font_color", col)
+	v.add_child(l)
+	v.set_meta("value", l)
+	return v
+
+
+func _hero_pp() -> VBoxContainer:
+	var pp := float(_data.get("pp", -1.0))
+	if pp < 0.0 or bool(_data.get("unranked", false)) or score_mode() == ScoreStore.MODE_ORBIT:
+		return _hero_stat("PERFORMANCE", "—", MUTED)
+	return _hero_stat("PERFORMANCE", "%s pp" % fmt_dec(pp, 1), UiTheme.ACCENT2)
 
 
 func _build_rank_area(parent: Control) -> void:
@@ -539,7 +670,7 @@ func _build_rank_area(parent: Control) -> void:
 	_rank_glow.offset_bottom = 90
 	_rank_glow.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_rank_glow.stretch_mode = TextureRect.STRETCH_SCALE
-	_rank_glow.texture = _radial_tex(Color(rc, 0.26), Color(rc, 0.0), 0.0)
+	_rank_glow.texture = null  # kein Farb-Glow hinter dem Rang (ruhiger)
 	_rank_glow.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_ring_ctrl.add_child(_rank_glow)
 	# Innenflaeche: dunkles Glas, damit der Rang klar vor dem Cover steht.
@@ -563,7 +694,7 @@ func _build_rank_area(parent: Control) -> void:
 	_rank_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_rank_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_rank_lbl.add_theme_font_override("font", UiTheme.heading_font(0 if grade.length() < 2 else -10))
-	_rank_lbl.add_theme_font_size_override("font_size", 330 if grade.length() < 2 else 250)
+	_rank_lbl.add_theme_font_size_override("font_size", 220 if grade.length() < 2 else 168)
 	_rank_lbl.add_theme_color_override("font_color", rc)
 	# Duenne, farbverwandte Kontur + weicher Schatten statt dicker Kante.
 	_rank_lbl.add_theme_color_override("font_outline_color", Color(rc.lightened(0.45), 0.55))
@@ -671,6 +802,44 @@ func _badges() -> Array:
 	if bool(_data.get("unranked", false)):
 		out.append(["UNGEWERTET", UiTheme.DIM])
 	return out
+
+
+## Vergleich mit der persoenlichen Bestleistung im SELBEN Modus:
+## "BESTLEISTUNG ORBIT  812.345  +12.000". null, wenn das Ergebnis nicht
+## gespeichert wurde (Replay, Autoplay, Lobby) oder ein Fail ist.
+func _pb_line() -> Control:
+	if bool(_data.get("is_fail", false)) or bool(_data.get("is_replay", false)):
+		return null
+	var mode := score_mode()
+	var score := int(_stats.get("score", 0))
+	var prev = _data.get("previous_best", null)
+	if prev == null:
+		prev = ScoreStore.previous_best_for(GameSession.osz_path, GameSession.difficulty_version, mode, score)
+	if not (prev is Dictionary):
+		return null
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	var cap := _caption(tr("BESTLEISTUNG %s") % ScoreStore.mode_label(mode).to_upper())
+	row.add_child(cap)
+	var val := Label.new()
+	val.add_theme_font_size_override("font_size", 15)
+	val.add_theme_color_override("font_color", UiTheme.TEXT)
+	row.add_child(val)
+	if (prev as Dictionary).is_empty():
+		val.text = tr("erster Score in diesem Modus")
+		return row
+	var old := int(prev.get("score", 0))
+	val.text = fmt_int(old)
+	var mods_txt := ScoreStore.mods_label(prev)
+	if mods_txt != "":
+		val.text += "  ·  " + mods_txt
+	var diff := Label.new()
+	var d := score - old
+	diff.text = ("+" if d >= 0 else "−") + fmt_int(absi(d))
+	diff.add_theme_font_size_override("font_size", 15)
+	diff.add_theme_color_override("font_color", Color(0.45, 0.95, 0.6) if d > 0 else (CAPTION if d == 0 else FAIL_COLOR))
+	row.add_child(diff)
+	return row
 
 
 func _badge(t: String, col: Color) -> PanelContainer:

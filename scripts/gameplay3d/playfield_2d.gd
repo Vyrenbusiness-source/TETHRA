@@ -55,8 +55,10 @@ func setup(p_columns: int, p_lane_k: float, p_z_line: float, p_z_far: float,
 	key_names = p_keys
 	lane_color = p_lane_color
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	# Kein Full-Rect-Anker: Position/Skalierung setzt _apply_stage_xf (Richtung, Groesse).
+	set_anchors_preset(Control.PRESET_TOP_LEFT)
 	_font = ThemeDB.fallback_font
+	_apply_stage_xf()
 
 
 ## Spurbreite/Notengroesse live aendern (Pausenmenue).
@@ -92,35 +94,80 @@ func set_lanes(held: Array, flash: Array, flash_col: Array) -> void:
 	_held = held
 	_flash = flash
 	_flash_col = flash_col
+	_apply_stage_xf()
 	queue_redraw()
 
 
 func line_y() -> float:
+	if _own():
+		return _vs().y * float(Settings.hit_position_2d) / ManiaSkin.SCREEN_UNITS
 	if skin != null:
 		return _vs().y * skin.hit_position / ManiaSkin.SCREEN_UNITS
 	return _vs().y * LINE_FRAC
 
 
+## Eigene Layout-Werte statt Skin-/Standard-Werten (Settings.skin_values_2d aus)?
+func _own() -> bool:
+	return not Settings.skin_values_2d
+
+
+## Spaltenabstand in osu!-Einheiten zwischen Spalte c und c+1.
+func _spacing_units(c: int) -> float:
+	if _own():
+		return float(Settings.column_spacing_2d)
+	if skin != null and c < skin.column_spacing.size():
+		return float(skin.column_spacing[c])
+	return 0.0
+
+
+## Skin: Buehnenbreite und linke Spaltenkante in osu!-Einheiten (mit Abstand-Override).
+func _sk_stage_units() -> float:
+	return _sk_col_off(columns - 1) + skin.col_units(columns - 1)
+
+
+func _sk_col_off(col: int) -> float:
+	var x := 0.0
+	for c in col:
+		x += skin.col_units(c) + _spacing_units(c)
+	return x
+
+
+## Eingebauter Look: Spaltenabstand in Pixeln, linke Kante einer Spalte.
+func _gap_px() -> float:
+	return _spacing_units(0) * _vs().y / ManiaSkin.SCREEN_UNITS * lane_k
+
+
+func _bx(fr: Rect2, c: int) -> float:
+	return fr.position.x + (col_width() + _gap_px()) * c
+
+
 func col_width() -> float:
 	if skin != null:
-		return _skin_unit() * skin.stage_units() / float(maxi(columns, 1))
+		return _skin_unit() * _sk_stage_units() / float(maxi(columns, 1))
 	return _vs().y * COL_W_FRAC * lane_k
 
 
 func field_rect() -> Rect2:
 	var vs := _vs()
+	var sw := 0.0
 	if skin != null:
-		var sw := _skin_unit() * skin.stage_units()
-		var x := (vs.x - sw) * 0.5
+		sw = _skin_unit() * _sk_stage_units()
+	else:
+		sw = col_width() * columns + _gap_px() * (columns - 1)
+	var x := (vs.x - sw) * 0.5
+	if _own():
+		if Settings.stage_pos_2d != Settings.STAGE_CENTER:
+			# osu! ColumnStart 136 (Standard) ab dem Rand; in der Vorschau knapp am Rand.
+			var m := 8.0 if preview_size.x > 0.0 else 136.0 * vs.y / ManiaSkin.SCREEN_UNITS
+			x = m if Settings.stage_pos_2d == Settings.STAGE_LEFT else vs.x - sw - m
+			x = clampf(x, 0.0, maxf(0.0, vs.x - sw))
+	elif skin != null and _is_osu_skin() and skin.has_column_start and is_equal_approx(lane_k, 1.0) \
+			and preview_size.x <= 0.0:
 		# osu!: ColumnStart = linke Buehnenkante in 480er-Einheiten ab Bildrand (die
 		# Skins rechnen damit fuer 16:9). Nur bei Original-Spurbreite und nicht in der
 		# Vorschau; sonst mittig wie bisher.
-		if _is_osu_skin() and skin.has_column_start and is_equal_approx(lane_k, 1.0) \
-				and preview_size.x <= 0.0:
-			x = clampf(skin.column_start * vs.y / ManiaSkin.SCREEN_UNITS, 0.0, maxf(0.0, vs.x - sw))
-		return Rect2(x, 0.0, sw, vs.y)
-	var w := col_width() * columns
-	return Rect2((vs.x - w) * 0.5, 0.0, w, vs.y)
+		x = clampf(skin.column_start * vs.y / ManiaSkin.SCREEN_UNITS, 0.0, maxf(0.0, vs.x - sw))
+	return Rect2(x, 0.0, sw, vs.y)
 
 
 ## Z (Strecke) -> Bild-Y: linear, Z_FAR an der Oberkante.
@@ -128,14 +175,90 @@ func z_to_y(z: float) -> float:
 	return line_y() - (z_line - z) / (z_line - z_far) * line_y()
 
 
+## osu!-Einheiten von oben (480 = Bildhoehe) -> Y im Feld.
+func units_to_y(u: float) -> float:
+	return _vs().y * u / ManiaSkin.SCREEN_UNITS
+
+
 func _vs() -> Vector2:
 	if preview_size.x > 0.0 and preview_size.y > 0.0:
 		return preview_size
+	if not is_inside_tree():   # setup() vor add_child: noch kein Viewport
+		return Vector2(1920, 1080)
 	var r := get_viewport_rect().size
 	return r if r.x > 0.0 else Vector2(1920, 1080)
 
 
+# ------------------------------------------- Buehne: Richtung + Skalierung
+# Scroll nach oben (osu! UpsideDown) und Skalierung als Control-Transform: das Feld
+# wird intern immer "nach unten" gezeichnet, scale.y = -s spiegelt es (Texturen wie
+# osu! mit NoteFlip/KeyFlip-Standard 1), Texte/Judgements werden zurueckgedreht.
+# Skaliert wird um die Unterkante (bzw. Oberkante bei "oben") der Feldmitte;
+# clip_contents schneidet das kleinere Feld oben sauber ab.
+
+## Position im Eltern-Control (Vorschau: Versatz in der Box; Spiel: 0).
+var base_pos := Vector2.ZERO
+
+
+func _up() -> bool:
+	return Settings.scroll_up_2d
+
+
+## Feld -> Eltern-/Bildkoordinaten.
+func stage_xf() -> Transform2D:
+	var vs := _vs()
+	var s := Settings.stage_scale_2d
+	var cx := field_rect().get_center().x
+	var sy := -s if _up() else s
+	# Oben: Feld-Unterkante an die Oberkante (Vorschau: Box-Oberkante, base_pos.y
+	# verschiebt nur den Ausschnitt nach unten).
+	var py := s * vs.y if _up() else base_pos.y + vs.y * (1.0 - s)
+	return Transform2D(Vector2(s, 0.0), Vector2(0.0, sy), Vector2(base_pos.x + cx * (1.0 - s), py))
+
+
+func _apply_stage_xf() -> void:
+	if preview_size.x <= 0.0:
+		var vs := _vs()
+		if size != vs:
+			size = vs
+	var t := stage_xf()
+	var sc := Vector2(t.x.x, t.y.y)
+	if scale != sc:
+		scale = sc
+	if position != t.origin:
+		position = t.origin
+	var clip := Settings.stage_scale_2d < 0.999
+	if clip_contents != clip:
+		clip_contents = clip
+
+
+func to_screen(p: Vector2) -> Vector2:
+	return stage_xf() * p
+
+
+func screen_line_y() -> float:
+	return to_screen(Vector2(0.0, line_y())).y
+
+
+func screen_field_rect() -> Rect2:
+	var fr := field_rect()
+	var a := to_screen(fr.position)
+	var b := to_screen(fr.end)
+	return Rect2(Vector2(minf(a.x, b.x), minf(a.y, b.y)), (b - a).abs())
+
+
+## Texte/Bilder lesbar halten: bei "oben" um die Zeile cy zurueckspiegeln.
+func _upright(cy: float) -> void:
+	if _up():
+		draw_set_transform_matrix(Transform2D(Vector2(1, 0), Vector2(0, -1), Vector2(0.0, 2.0 * cy)))
+
+
+func _reset_xf() -> void:
+	draw_set_transform_matrix(Transform2D.IDENTITY)
+
+
 func _draw() -> void:
+	_update_mask()
 	if skin != null:
 		if _is_osu_skin():
 			_draw_osu()
@@ -146,24 +269,39 @@ func _draw() -> void:
 	var fr := field_rect()
 	var cw := col_width()
 	var ly := line_y()
+	var gap := _gap_px()
 	# Spalten-Hintergrund: dunkel, halbtransparent; gedrueckte Spalte hellt auf.
-	draw_rect(fr, Color(0.012, 0.014, 0.02, Settings.field_dim_2d))  # Spielfeld-Deckkraft
+	if gap <= 0.0:
+		draw_rect(fr, Color(0.012, 0.014, 0.02, Settings.field_dim_2d))  # Spielfeld-Deckkraft
 	for c in columns:
-		var x := fr.position.x + cw * c
+		var x := _bx(fr, c)
+		if gap > 0.0:
+			draw_rect(Rect2(x, 0.0, cw, vs.y), Color(0.012, 0.014, 0.02, Settings.field_dim_2d))
 		if c < _held.size() and bool(_held[c]) and Settings.lane_glow:
 			var g := Rect2(x, 0.0, cw, ly)
 			draw_rect(g, Color(lane_color.r, lane_color.g, lane_color.b, 0.07))
-	# Feine Trennlinien + Rand.
+	# Feine Trennlinien + Rand (mit Spaltenabstand: beide Kanten jeder Spalte).
 	for c in columns + 1:
-		var x := fr.position.x + cw * c
+		if gap > 0.0:
+			if c < columns:
+				var xl := _bx(fr, c)
+				draw_line(Vector2(xl, 0.0), Vector2(xl, vs.y), Color(1, 1, 1, 0.30), 1.0)
+				draw_line(Vector2(xl + cw, 0.0), Vector2(xl + cw, vs.y), Color(1, 1, 1, 0.30), 1.0)
+			continue
 		var a := 0.30 if (c == 0 or c == columns) else 0.10
+		var x := fr.position.x + cw * c
 		draw_line(Vector2(x, 0.0), Vector2(x, vs.y), Color(1, 1, 1, a), 1.0)
-	# Noten/Holds.
 	var nh := note_h()
+	var keys_under := _own() and Settings.keys_under_notes_2d
+	if _own() and Settings.hit_line_2d:
+		draw_rect(Rect2(fr.position.x, ly - 1.0, fr.size.x, 2.0), Color(1, 1, 1, 0.45))
+	if keys_under:
+		_draw_receptors(fr, cw, ly, nh, vs)
+	# Noten/Holds.
 	var pad := maxf(2.0, cw * 0.06)
 	for it in _items:
 		var col: int = it[0]
-		var x0 := fr.position.x + cw * col + pad
+		var x0 := _bx(fr, col) + pad
 		var w := cw - pad * 2.0
 		var yh := z_to_y(float(it[1]))
 		var c: Color = it[3]
@@ -183,18 +321,25 @@ func _draw() -> void:
 			var bw := w * 0.72
 			var body := Rect2(x0 + (w - bw) * 0.5, top, bw, bot - top)
 			var bc := c if st != STATE_HELD else c.lerp(Color(1, 1, 1), 0.25)
-			draw_rect(body, Color(bc.r, bc.g, bc.b, 0.55 if st != STATE_HELD else 0.75))
-			draw_rect(Rect2(x0, top - nh * 0.25, w, nh * 0.5), Color(c.r, c.g, c.b, 0.95))
+			_nd_rect(body, Color(bc.r, bc.g, bc.b, 0.55 if st != STATE_HELD else 0.75))
+			_nd_rect(Rect2(x0, top - nh * 0.25, w, nh * 0.5), Color(c.r, c.g, c.b, 0.95))
 			_draw_bar(Rect2(x0, yh - nh * 0.5, w, nh), c)
 		else:
 			if yh < -nh or yh > vs.y + nh:
 				continue
 			_draw_bar(Rect2(x0, yh - nh * 0.5, w, nh), c)
+	if not keys_under:
+		_draw_receptors(fr, cw, ly, nh, vs)
+
+
+## Receptors + Tastenbeschriftung (eingebauter Look).
+func _draw_receptors(fr: Rect2, cw: float, ly: float, nh: float, vs: Vector2) -> void:
 	# Keine durchgehende Abfanglinie: nur die Receptors markieren die Trefferposition.
 	var rh := vs.y * RECEPTOR_H_FRAC
+	var pad := maxf(2.0, cw * 0.06)
 	draw_rect(Rect2(fr.position.x, ly + nh * 0.5, fr.size.x, vs.y - ly), Color(0.0, 0.0, 0.0, 0.55))
 	for c in columns:
-		var x := fr.position.x + cw * c
+		var x := _bx(fr, c)
 		var r := Rect2(x + pad, ly - nh * 0.5, cw - pad * 2.0, nh)
 		var on := c < _held.size() and bool(_held[c])
 		var fl := clampf(float(_flash[c]) if c < _flash.size() and Settings.hit_lighting_2d else 0.0, 0.0, 1.0)
@@ -215,8 +360,130 @@ func _draw() -> void:
 				fs = 11
 			var txt := key_names[c]
 			var tw := _font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
-			draw_string(_font, Vector2(x + (cw - tw) * 0.5, ly + nh * 0.5 + rh * 0.5 + fs * 0.35),
+			var by := ly + nh * 0.5 + rh * 0.5 + fs * 0.35
+			_upright(by - fs * 0.35)
+			draw_string(_font, Vector2(x + (cw - tw) * 0.5, by),
 					txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(1, 1, 1, 0.75 if on else 0.4))
+			_reset_xf()
+
+
+# ------------------------------------------------ Mods: FadeIn/Hidden/Cover
+# Wie lazer (PlayfieldCoveringWrapper): eine Abdeckung mit weichem Rand blendet
+# Noten aus, Spielfeld/Tasten bleiben sichtbar. Gezeichnet wird als Maske: jede
+# Noten-Flaeche wird in Streifen konstanter Deckkraft zerlegt (_mask_slices).
+# FadeIn: Abdeckung oben (Noten tauchen auf), Hidden: an der Linie (Noten
+# verschwinden); beide 16 % -> 40 % mit der Kombo (lazer: +0,05 % je Kombo).
+# Cover: feste Abdeckung (Settings.cover_pct_2d) von oben oder unten.
+
+const HIDDEN_MIN := 0.16
+const HIDDEN_MAX := 0.40
+const HIDDEN_PER_COMBO := 0.0005
+const MASK_FADE := 0.25   ## weicher Rand: Anteil der Abdeckung
+const MASK_STEPS := 6
+
+var _mask := false
+var _m0 := 0.0   ## Deckkraft 0 bei _m0 ...
+var _m1 := 1.0   ## ... bis 1 bei _m1 (linear), ausserhalb konstant
+
+
+## Abdeckungsanteil (0..1 der Strecke Oberkante -> Linie) fuer den aktuellen Mod.
+func cover_fraction() -> float:
+	match Settings.mod_vis_2d:
+		Settings.VIS_FADE_IN, Settings.VIS_HIDDEN:
+			return minf(HIDDEN_MAX, HIDDEN_MIN + float(_combo) * HIDDEN_PER_COMBO)
+		Settings.VIS_COVER:
+			return float(Settings.cover_pct_2d) / 100.0
+	return 0.0
+
+
+## Abdeckung von oben (true) oder von der Linie aus (false)?
+static func cover_from_top() -> bool:
+	match Settings.mod_vis_2d:
+		Settings.VIS_FADE_IN:
+			return true
+		Settings.VIS_COVER:
+			return not Settings.cover_from_bottom_2d
+	return false
+
+
+func _update_mask() -> void:
+	var f := cover_fraction()
+	_mask = f > 0.0
+	if not _mask:
+		return
+	var ly := line_y()
+	var cov := ly * f
+	var g := maxf(1.0, cov * MASK_FADE)
+	if cover_from_top():
+		_m0 = cov - g
+		_m1 = cov
+	else:
+		_m0 = ly - cov + g
+		_m1 = ly - cov
+
+
+## Deckkraft der Maske an Feld-Y.
+func mask_alpha(y: float) -> float:
+	if not _mask:
+		return 1.0
+	return clampf((y - _m0) / (_m1 - _m0), 0.0, 1.0)
+
+
+## [top, bot] -> Streifen [[y0, y1, deckkraft], ...] (unsichtbare entfallen).
+func _mask_slices(top: float, bot: float) -> Array:
+	if not _mask:
+		return [[top, bot, 1.0]]
+	var out: Array = []
+	var lo := minf(_m0, _m1)
+	var hi := maxf(_m0, _m1)
+	var cuts: Array = [top]
+	for k in MASK_STEPS + 1:
+		var y := lo + (hi - lo) * float(k) / float(MASK_STEPS)
+		if y > top and y < bot:
+			cuts.append(y)
+	cuts.append(bot)
+	for i in cuts.size() - 1:
+		var y0: float = cuts[i]
+		var y1: float = cuts[i + 1]
+		if y1 - y0 <= 0.01:
+			continue
+		var a := mask_alpha((y0 + y1) * 0.5)
+		if a > 0.004:
+			out.append([y0, y1, a])
+	return out
+
+
+## Noten-Rechteck mit Maske.
+func _nd_rect(r: Rect2, c: Color) -> void:
+	if not _mask:
+		draw_rect(r, c)
+		return
+	for s in _mask_slices(r.position.y, r.end.y):
+		draw_rect(Rect2(r.position.x, s[0], r.size.x, s[1] - s[0]), Color(c.r, c.g, c.b, c.a * s[2]))
+
+
+## Noten-Textur mit Maske; src leer = ganze Textur; flip_v = senkrecht gespiegelt.
+func _nd_tex(t: Texture2D, r: Rect2, mod: Color, src: Rect2 = Rect2(), flip_v: bool = false) -> void:
+	if src.size == Vector2.ZERO:
+		src = Rect2(Vector2.ZERO, t.get_size())
+	if not _mask and not flip_v:
+		draw_texture_rect_region(t, r, src, mod)
+		return
+	var top := r.position.y
+	var h := maxf(r.size.y, 0.001)
+	for s in _mask_slices(top, r.end.y):
+		var y0: float = s[0]
+		var y1: float = s[1]
+		var f0 := (y0 - top) / h
+		var f1 := (y1 - top) / h
+		var sy := src.position.y + ((1.0 - f1) if flip_v else f0) * src.size.y
+		var sr := Rect2(src.position.x, sy, src.size.x, (f1 - f0) * src.size.y)
+		var m := Color(mod.r, mod.g, mod.b, mod.a * s[2])
+		if flip_v:
+			draw_set_transform(Vector2(0.0, y0 + y1), 0.0, Vector2(1.0, -1.0))
+		draw_texture_rect_region(t, Rect2(r.position.x, y0, r.size.x, y1 - y0), sr, m)
+		if flip_v:
+			_reset_xf()
 
 
 ## Kreis-Stil: runde Note; Hold = Balken mit runden Enden (Kopf-Kreis + Endkappe).
@@ -233,17 +500,17 @@ func _draw_circle_item(it: Array, x0: float, w: float, yh: float, c: Color, st: 
 		var bw := d * 0.7
 		var bc := c if st != STATE_HELD else c.lerp(Color(1, 1, 1), 0.25)
 		var ba := 0.55 if st != STATE_HELD else 0.75
-		draw_rect(Rect2(cx - bw * 0.5, top, bw, bot - top), Color(bc.r, bc.g, bc.b, ba))
+		_nd_rect(Rect2(cx - bw * 0.5, top, bw, bot - top), Color(bc.r, bc.g, bc.b, ba))
 		# Runde Endkappe in Koerperbreite: nur die obere Kreishaelfte, gleiche Farbe/Deckkraft
 		# wie der Koerper (kein heller Ball am Ende).
 		var ts := Vector2(_disc_tex.get_size())
-		draw_texture_rect_region(_disc_tex, Rect2(cx - bw * 0.5, top - bw * 0.5, bw, bw * 0.5),
-				Rect2(0, 0, ts.x, ts.y * 0.5), Color(bc.r, bc.g, bc.b, ba))
+		_nd_tex(_disc_tex, Rect2(cx - bw * 0.5, top - bw * 0.5, bw, bw * 0.5),
+				Color(bc.r, bc.g, bc.b, ba), Rect2(0, 0, ts.x, ts.y * 0.5))
 	elif yh < -d or yh > vs.y + d:
 		return
 	var r := Rect2(cx - d * 0.5, yh - d * 0.5, d, d)
-	draw_texture_rect(_disc_tex, r, false, c)
-	draw_texture_rect(_ring_tex, r, false, c.lerp(Color(1, 1, 1), 0.45))
+	_nd_tex(_disc_tex, r, c)
+	_nd_tex(_ring_tex, r, c.lerp(Color(1, 1, 1), 0.45))
 
 
 ## Weiche, kantengeglaettete Kreis- bzw. Ring-Textur (weiss, per modulate gefaerbt).
@@ -269,9 +536,9 @@ static func _make_circle_tex(ring: bool) -> Texture2D:
 
 
 func _draw_bar(r: Rect2, c: Color) -> void:
-	draw_rect(r, c)
+	_nd_rect(r, c)
 	# Heller Oberkante-Glanz: Balken liest sich flach, aber klar.
-	draw_rect(Rect2(r.position, Vector2(r.size.x, maxf(2.0, r.size.y * 0.18))), c.lerp(Color(1, 1, 1), 0.45))
+	_nd_rect(Rect2(r.position, Vector2(r.size.x, maxf(2.0, r.size.y * 0.18))), c.lerp(Color(1, 1, 1), 0.45))
 
 
 # ------------------------------------------------------------ Skin-Look
@@ -296,7 +563,7 @@ func _draw_skinned() -> void:
 	var xs: Array = []
 	var ws: Array = []
 	for c in columns:
-		xs.append(fr.position.x + u * sk.col_offset_units(c))
+		xs.append(fr.position.x + u * _sk_col_off(c))
 		ws.append(u * sk.col_units(c))
 	draw_rect(fr, Color(0.012, 0.014, 0.02, Settings.field_dim_2d))  # Spielfeld-Deckkraft
 	for c in columns:
@@ -321,16 +588,18 @@ func _draw_skinned() -> void:
 		draw_texture_rect(sr, Rect2(fr.end.x, 0.0, w2, vs.y), false)
 	# Abfanglinie (StageHint) bzw. einfache Linie.
 	var hint := sk.tex("stage_hint")
-	if hint != null:
+	var line_on := Settings.hit_line_2d if _own() else true
+	if hint != null and line_on:
 		var hh := hint.get_height() * uy * sk.tex_scale("stage_hint")
 		draw_texture_rect(hint, Rect2(fr.position.x, ly - hh * 0.5, fr.size.x, hh), false)
-	elif sk.judgement_line:
+	elif (Settings.hit_line_2d if _own() else sk.judgement_line):
 		draw_rect(Rect2(fr.position.x, ly - 1.0, fr.size.x, 2.0), Color(1, 1, 1, 0.35))
-	if sk.keys_under_notes:
+	var ku := _keys_under()
+	if ku:
 		_draw_skin_keys(xs, ws, ly, vs)
 	for it in _items:
 		_draw_skin_item(it, xs, ws, vs)
-	if not sk.keys_under_notes:
+	if not ku:
 		_draw_skin_keys(xs, ws, ly, vs)
 
 
@@ -365,8 +634,11 @@ func _draw_skin_keys(xs: Array, ws: Array, ly: float, vs: Vector2) -> void:
 				fs = 11
 			var txt := key_names[c]
 			var tw := _font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
-			draw_string(_font, Vector2(x + (w - tw) * 0.5, minf(top + h * 0.5 + fs * 0.35, vs.y - 2.0)),
+			var by := minf(top + h * 0.5 + fs * 0.35, vs.y - 2.0)
+			_upright(by - fs * 0.35)
+			draw_string(_font, Vector2(x + (w - tw) * 0.5, by),
 					txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(1, 1, 1, 0.75 if on else 0.4))
+			_reset_xf()
 
 
 func _draw_skin_item(it: Array, xs: Array, ws: Array, vs: Vector2) -> void:
@@ -413,15 +685,15 @@ func _draw_skin_item(it: Array, xs: Array, ws: Array, vs: Vector2) -> void:
 			else:
 				var cc: Color = it[3] if st != STATE_DEAD else Color(0.36, 0.37, 0.41, 0.8)
 				var bw := w * 0.72
-				draw_rect(Rect2(x + (w - bw) * 0.5, top, bw, body_bot - top), Color(cc.r, cc.g, cc.b, 0.55 if st != STATE_HELD else 0.75))
+				_nd_rect(Rect2(x + (w - bw) * 0.5, top, bw, body_bot - top), Color(cc.r, cc.g, cc.b, 0.55 if st != STATE_HELD else 0.75))
 		# Ende: nur eine eigene Tail-Textur des Skins. Fehlt sie, kein gespiegelter
 		# Kopf mehr (bei Kreis-Skins war das ein zweiter Ball am Hold-Ende).
 		if tail != null:
-			draw_texture_rect(tail, Rect2(nx, top - th, nw, th), false, mod)
+			_nd_tex(tail, Rect2(nx, top - th, nw, th), mod)
 	elif yh < -hh or yh > vs.y + hh:
 		return
 	if head != null:
-		draw_texture_rect(head, Rect2(nx, yh - hh, nw, hh), false, mod)
+		_nd_tex(head, Rect2(nx, yh - hh, nw, hh), mod)
 	else:
 		var c: Color = it[3] if st != STATE_DEAD else Color(0.36, 0.37, 0.41, 0.8)
 		_draw_bar(Rect2(x + 2.0, yh - hh, w - 4.0, hh), c)
@@ -432,7 +704,7 @@ func _draw_body(t: Texture2D, x: float, w: float, top: float, bot: float, mod: C
 	var blen := bot - top
 	var th := maxf(1.0, _tex_h(t, w))
 	if skin.note_body_style == 0 or blen / th > 200.0:
-		draw_texture_rect(t, Rect2(x, top, w, blen), false, mod)
+		_nd_tex(t, Rect2(x, top, w, blen), mod)
 		return
 	var tw := float(t.get_width())
 	var tht := float(t.get_height())
@@ -443,7 +715,7 @@ func _draw_body(t: Texture2D, x: float, w: float, top: float, bot: float, mod: C
 		var frac := seg / th
 		var y := (bot - done - seg) if from_bottom else (top + done)
 		var sy := (tht - tht * frac) if from_bottom else 0.0
-		draw_texture_rect_region(t, Rect2(x, y, w, seg), Rect2(0.0, sy, tw, tht * frac), mod)
+		_nd_tex(t, Rect2(x, y, w, seg), mod, Rect2(0.0, sy, tw, tht * frac))
 		done += seg
 
 
@@ -467,6 +739,26 @@ var _combo_t0 := -1e9
 var _expl_t0: Array = []     ## je Spalte: Startzeit LightingN
 var _light_rel: Array = []   ## je Spalte: Loslass-Zeit fuer das StageLight-Ausblenden
 var _prev_held: Array = []
+
+
+## Tasten unter den Noten (osu! KeysUnderNotes)?
+func _keys_under() -> bool:
+	if _own():
+		return Settings.keys_under_notes_2d
+	return skin != null and skin.keys_under_notes
+
+
+## Judgement-/Kombo-Mitte (Feld-Y): eigene Werte oder skin.ini (Built-in: lazer-Standard).
+func judge_y() -> float:
+	if _own():
+		return units_to_y(float(Settings.judge_pos_2d))
+	return units_to_y(skin.score_position if skin != null else float(Settings.JUDGE_POS_DEFAULT))
+
+
+func combo_y() -> float:
+	if _own():
+		return units_to_y(float(Settings.combo_pos_2d))
+	return units_to_y(skin.combo_position if skin != null else float(Settings.COMBO_POS_DEFAULT))
 
 
 func _is_osu_skin() -> bool:
@@ -518,7 +810,7 @@ func _draw_osu() -> void:
 	var xs: Array = []
 	var ws: Array = []
 	for c in columns:
-		xs.append(fr.position.x + u * sk.col_offset_units(c))
+		xs.append(fr.position.x + u * _sk_col_off(c))
 		ws.append(u * sk.col_units(c))
 	_track_press(now)
 	# Spalten-Hintergrund: Colour# (Standard Schwarz), Alpha quadriert (osu!-stable).
@@ -560,13 +852,15 @@ func _draw_osu() -> void:
 		draw_texture_rect(sr, Rect2(fr.end.x, 0.0, _tex_px("stage_right", sr).x, vs.y), false)
 	# Trefferlinie: StageHint (Hoehe x 0,9 x 1,6025, mittig auf der Linie) und/oder JudgementLine.
 	var hint := sk.tex("stage_hint")
-	if hint != null:
+	var line_on := Settings.hit_line_2d if _own() else true
+	if hint != null and line_on:
 		var hh := _tex_px("stage_hint", hint).y * 0.9 * 1.6025
 		draw_texture_rect(hint, Rect2(fr.position.x, ly - hh * 0.5, fr.size.x, hh), false)
-	if sk.judgement_line:
+	if (line_on and hint == null) if _own() else sk.judgement_line:
 		var jc := sk.colour_judgement_line
 		draw_rect(Rect2(fr.position.x, ly, fr.size.x, maxf(1.0, _px())), Color(jc.r, jc.g, jc.b, jc.a * 0.9))
-	if sk.keys_under_notes:
+	var ku := _keys_under()
+	if ku:
 		_draw_osu_keys(xs, ws, vs)
 	# osu!/lazer: fruehere Objekte liegen oben (naeher an der Linie = zuletzt gezeichnet),
 	# z. B. Hold-Ende ueber dem Kopf der direkt folgenden Note.
@@ -578,7 +872,7 @@ func _draw_osu() -> void:
 	for layer in 2:
 		for it in order:
 			_draw_osu_item(it, xs, ws, vs, ly, layer)
-	if not sk.keys_under_notes:
+	if not ku:
 		_draw_osu_keys(xs, ws, vs)
 	# StageBottom (x 1,6), unten mittig, ueber Noten und Tasten.
 	var sb := sk.tex("stage_bottom")
@@ -641,7 +935,7 @@ func _draw_osu_item(it: Array, xs: Array, ws: Array, vs: Vector2, ly: float, lay
 		var nh := _osu_note_h(nt)
 		if yh < 0.0 or yh - nh > vs.y:
 			return
-		draw_texture_rect(nt, Rect2(x, yh - nh, w, nh), false, mod)
+		_nd_tex(nt, Rect2(x, yh - nh, w, nh), mod)
 		return
 	if st == STATE_HELD:
 		yh = minf(yh, ly)   # Kopf bleibt beim Halten an der Linie
@@ -658,7 +952,7 @@ func _draw_osu_item(it: Array, xs: Array, ws: Array, vs: Vector2, ly: float, lay
 		return
 	if layer == 1:
 		if head != null:
-			draw_texture_rect(head, Rect2(x, yh - hh, w, hh), false, mod)
+			_nd_tex(head, Rect2(x, yh - hh, w, hh), mod)
 		return
 	var body := sk.tex("body_%d" % col)
 	var b_top := yt - th * 0.5
@@ -668,9 +962,7 @@ func _draw_osu_item(it: Array, xs: Array, ws: Array, vs: Vector2, ly: float, lay
 	if tail != null:
 		# Ende gespiegelt (osu!/lazer: LegacyHoldNoteTailPiece dreht die Richtung um).
 		# Wie eine Note am Endzeitpunkt (yt = Unterkante), vertikal gespiegelt.
-		draw_set_transform(Vector2(0.0, yt), 0.0, Vector2(1.0, -1.0))
-		draw_texture_rect(tail, Rect2(x, 0.0, w, th), false, mod)
-		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		_nd_tex(tail, Rect2(x, yt - th, w, th), mod, Rect2(), true)
 
 
 ## Hold-Koerper. NoteBodyStyle 0: gestreckt. 1: ab oben (Ende) in nativer Hoehe
@@ -678,7 +970,7 @@ func _draw_osu_item(it: Array, xs: Array, ws: Array, vs: Vector2, ly: float, lay
 func _draw_osu_body(col: int, t: Texture2D, x: float, w: float, top: float, bot: float, mod: Color) -> void:
 	var key := "body_%d" % col
 	if skin.note_body_style == 0:
-		draw_texture_rect(t, Rect2(x, top, w, bot - top), false, mod)
+		_nd_tex(t, Rect2(x, top, w, bot - top), mod)
 		return
 	var tw := float(t.get_width())
 	var src_h := skin.tex_src_h(key)
@@ -705,7 +997,7 @@ func _draw_osu_body(col: int, t: Texture2D, x: float, w: float, top: float, bot:
 		var sy := 0.0 if from_top else (src_h - src_rows)
 		if sy + src_rows > rows:   # unterer Teil fehlt (abgeschnitten): oberen nehmen
 			sy = maxf(0.0, rows - src_rows)
-		draw_texture_rect_region(t, Rect2(x, y, w, seg), Rect2(0.0, sy, tw, src_rows), mod)
+		_nd_tex(t, Rect2(x, y, w, seg), mod, Rect2(0.0, sy, tw, src_rows))
 		done += seg
 
 
@@ -743,7 +1035,7 @@ func _draw_osu_lighting(xs: Array, ws: Array, ly: float, now: float) -> void:
 ## Judgement-Bild mittig bei ScorePosition (lazer LegacyManiaJudgementPiece):
 ## 20 ms ein, 160 ms stehen, 40 ms aus; Treffer 0,8->1 (40 ms), 0,85->0,7 (40 ms),
 ## 100 ms stehen, ->0,4 (40 ms); Miss 1,2->1 (100 ms) mit kleiner Drehung.
-func _draw_osu_judgement(fr: Rect2, vs: Vector2, now: float) -> void:
+func _draw_osu_judgement(fr: Rect2, _view: Vector2, now: float) -> void:
 	if _judge_q < 0 or _judge_q >= ManiaSkin.HIT_NAMES.size():
 		return
 	var key: String = ManiaSkin.HIT_NAMES[_judge_q]
@@ -770,8 +1062,8 @@ func _draw_osu_judgement(fr: Rect2, vs: Vector2, now: float) -> void:
 		var k := minf(1.0, (dt - 180.0) / 40.0)
 		sc = lerpf(0.7, 0.4, k * k)
 	var sz := _tex_px(key, t) * sc
-	var c := Vector2(fr.get_center().x, skin.score_position * vs.y / ManiaSkin.SCREEN_UNITS)
-	draw_set_transform(c, rot, Vector2.ONE)
+	var c := Vector2(fr.get_center().x, judge_y())
+	draw_set_transform(c, rot, Vector2(1.0, -1.0 if _up() else 1.0))
 	draw_texture_rect(t, Rect2(-sz * 0.5, sz), false, Color(1, 1, 1, clampf(a, 0.0, 1.0)))
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
@@ -797,11 +1089,11 @@ func _draw_osu_combo(fr: Rect2, vs: Vector2, now: float) -> void:
 		var sz := Vector2((r[0] as Texture2D).get_size()) * _px() * (0.5 if bool(r[1]) else 1.0)
 		texs.append([r[0], sz])
 		total += sz.x
-	var cy := skin.combo_position * vs.y / ManiaSkin.SCREEN_UNITS
+	var cy := combo_y()
 	var k := clampf((now - _combo_t0) / 300.0, 0.0, 1.0)
 	var sy := lerpf(1.4, 1.0, _ease_out(k))
 	var cx := fr.get_center().x
-	draw_set_transform(Vector2(cx, cy), 0.0, Vector2(1.0, sy))
+	draw_set_transform(Vector2(cx, cy), 0.0, Vector2(1.0, -sy if _up() else sy))
 	if texs.is_empty():
 		if _font != null:
 			var fs := int(vs.y * 0.05)

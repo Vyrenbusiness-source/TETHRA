@@ -277,6 +277,8 @@ func _init() -> void:
 	_modes(L)
 	_nearest(L)
 	_packet()
+	_views(L)
+	_play(L)
 
 	L._reset()
 	print("FAILED: %d" % _failed)
@@ -436,3 +438,98 @@ func _packet() -> void:
 	_check(not c.has("evil"), "unbekannte Schluessel verworfen")
 	var old := PlayerStatsCard.sanitize({ "score": 5, "acc": 0.5, "combo": 1, "failed": false, "grade": "C" })
 	_check(not old.has("ur") and not old.has("bins"), "altes Kurz-Paket bleibt kurz")
+
+
+## Darstellung je Spieler: Validierung, alte Clients, eigener Wert.
+func _views(L) -> void:
+	_check(L.norm_view("3D") == "3D" and L.norm_view("2D") == "2D" and L.norm_view("Orbit") == "Orbit", "bekannte Darstellungen")
+	_check(L.norm_view("4D") == "" and L.norm_view("") == "" and L.norm_view("3d") == "", "unbekannter Text -> leer")
+	_check(L.norm_view(3) == "" and L.norm_view(null) == "" and L.norm_view([1]) == "" and L.norm_view({}) == "", "Nicht-String -> leer")
+	_check(L.norm_view("X".repeat(500)) == "", "Riesenstring -> leer")
+	L.players = { 1: L._new_player("Host"), 2: L._new_player("Anna"), 3: L._new_player("Ben") }
+	_check(L.view_of(2) == "", "neuer Spieler: unbekannt")
+	# Alter Client: Datensatz ohne Feld "view" -> kein Absturz.
+	var legacy: Dictionary = { "name": "Alt", "ready": true, "score": 0, "combo": 0, "acc": 1.0, "final": {} }
+	L.players[4] = legacy
+	_check(L.view_of(4) == "", "altes Datensatz ohne view -> unbekannt")
+	_check(L.view_of(99) == "", "fehlender Spieler -> unbekannt")
+	L.players[3].view = "evil"
+	_check(L.view_of(3) == "", "manipulierter Wert wird beim Lesen abgewiesen")
+	L.players[2].view = "2D"
+	_check(L.view_of(2) == "2D", "gemeldete Darstellung sichtbar")
+	# Host meldet eigene Darstellung.
+	L.active = true
+	L.is_host = true
+	var S = root.get_node("Settings")
+	var was: bool = S.playfield_2d
+	S.playfield_2d = true
+	L.send_view()
+	_check(L.view_of(1) == "2D" and L.local_view() == "2D", "Host meldet 2D")
+	S.playfield_2d = false
+	L.send_view()
+	_check(L.view_of(1) == "3D", "Host-Wechsel auf 3D")
+	S.playfield_2d = was
+	# Kein Raum: nichts passiert.
+	L.active = false
+	S.playfield_2d = true
+	L.send_view()
+	_check(L.view_of(1) == "3D", "ohne Raum keine Meldung")
+	S.playfield_2d = was
+	L.active = true
+	# Server-RPC ohne bekannten Absender aendert nichts.
+	L.srv_set_view("2D")
+	_check(L.view_of(1) == "3D", "RPC ohne Spieler ignoriert")
+
+
+## Raum-Spielmodus: Validierung, Standard, Sync, Darstellung im Orbit-Raum.
+func _play(L) -> void:
+	L._reset()
+	L.active = true
+	L.is_host = true
+	L.crown_id = 1
+	L.players = { 1: L._new_player("Host"), 2: L._new_player("Anna") }
+	_check(L.play_mode == "mania", "Standard-Spielmodus Mania")
+	_check(L.norm_play("orbit") == "orbit" and L.norm_play("mania") == "mania", "bekannte Spielmodi")
+	_check(L.norm_play("x") == "mania" and L.norm_play(null) == "mania" and L.norm_play(5) == "mania" and L.norm_play("") == "mania", "unbekannt/fehlend -> Mania")
+	L.players[2].ready = true
+	L.set_play_mode("orbit")
+	_check(L.play_mode == "orbit", "Krone stellt Orbit ein")
+	_check(not bool(L.players[2].ready), "Moduswechsel setzt Bereit zurueck")
+	_check(L.view_of(1) == "Orbit" and L.local_view() == "Orbit", "Orbit-Raum: Darstellung Orbit")
+	L.set_play_mode("quark")
+	_check(L.play_mode == "mania", "ungueltiger Wert -> Mania")
+	L.set_play_mode("orbit")
+	L.in_game = true
+	L.set_play_mode("mania")
+	_check(L.play_mode == "orbit", "mitten in der Runde kein Wechsel")
+	L.in_game = false
+	L.crown_id = 2
+	L.set_play_mode("mania")
+	_check(L.play_mode == "orbit", "Nicht-Krone (Host ohne Krone) aendert nichts")
+	L.crown_id = 1
+	# Alter Host: cl_state ohne Spielmodus -> Mania.
+	L.is_host = false
+	L.cl_state(L.players, 1, {}, "Raum")
+	_check(L.play_mode == "mania", "alter Host ohne Feld -> Mania")
+	L.cl_state(L.players, 1, {}, "Raum", [], {}, {}, "orbit")
+	_check(L.play_mode == "orbit", "cl_state uebernimmt Orbit")
+	L.cl_state(L.players, 1, {}, "Raum", [], {}, {}, "evil")
+	_check(L.play_mode == "mania", "cl_state validiert")
+	# Turnier im Orbit-Raum: Modus bleibt fest, Runden werten Orbit-Stats wie Mania.
+	L.is_host = true
+	L.set_play_mode("orbit")
+	L.tour_create({ "maps": 5, "stars_lo": 0.0, "stars_hi": 30.0, "mods": {} })
+	_check(L.tournament != null, "Turnier im Orbit-Raum angelegt")
+	L.set_play_mode("mania")
+	_check(L.play_mode == "orbit", "Turnier: Spielmodus fest")
+	var T = L.tournament
+	T.phase = T.Phase.PLAY
+	T.order = [0, 1]
+	T.current_round = 0
+	T.pool = [{ "set_id": 1, "file": "a", "version": "x", "title": "t", "artist": "a", "stars": 3.0 }, { "set_id": 2, "file": "b", "version": "x", "title": "t", "artist": "a", "stars": 3.0 }]
+	T.record_round({ 1: { "score": 900000, "accuracy": 0.97, "max_combo": 400, "failed": false, "name": "Host" },
+		2: { "score": 500000, "accuracy": 0.80, "max_combo": 120, "failed": true, "name": "Anna" } })
+	var stn: Array = T.standings()
+	_check(stn.size() == 2 and int(stn[0].peer) == 1, "Orbit-Stats ergeben Rangliste")
+	L._reset()
+	_check(L.play_mode == "mania", "Reset -> Mania")
