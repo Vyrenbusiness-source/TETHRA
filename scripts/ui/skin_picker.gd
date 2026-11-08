@@ -47,6 +47,8 @@ func _init() -> void:
 	_status.add_theme_font_size_override("font_size", 13)
 	_status.add_theme_color_override("font_color", Color(1, 1, 1, 0.6))
 	add_child(_status)
+	# Leerer Status nimmt keinen Platz ein (eingebettet im Einstellungsfenster).
+	_status.visible = false
 
 
 func _ready() -> void:
@@ -74,7 +76,7 @@ func _on_selected(idx: int) -> void:
 	Settings.skin_2d = "" if idx <= 0 or idx > _names.size() else _names[idx - 1]
 	Settings.save()
 	_del_btn.disabled = idx <= 0 or ManiaSkin.is_builtin(Settings.skin_2d)
-	_status.text = ""
+	_set_status("")
 	changed.emit()
 
 
@@ -95,12 +97,12 @@ func _on_import_pressed() -> void:
 func _import(path: String) -> void:
 	var nm := ManiaSkin.import_skin(path)
 	if nm == "":
-		_status.text = ManiaSkin.last_error if ManiaSkin.last_error != "" else "Import fehlgeschlagen"
+		_set_status(ManiaSkin.last_error if ManiaSkin.last_error != "" else "Import fehlgeschlagen")
 		return
 	Settings.skin_2d = nm
 	Settings.save()
 	refresh()
-	_status.text = tr("„%s“ aktiv") % nm
+	_set_status(tr("„%s“ aktiv") % nm)
 	changed.emit()
 
 
@@ -124,5 +126,11 @@ func _on_delete() -> void:
 	Settings.skin_2d = ""
 	Settings.save()
 	refresh()
-	_status.text = "Gelöscht"
+	_set_status("Gelöscht")
 	changed.emit()
+
+
+## Status setzen; leer = unsichtbar, damit kein Leerraum bleibt.
+func _set_status(t: String) -> void:
+	_status.text = t
+	_status.visible = t != ""

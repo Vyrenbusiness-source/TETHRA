@@ -1,0 +1,78 @@
+keys,de,en
+Spielfeld & Welt,Spielfeld & Welt,Playfield & world
+Gilt für Mania 3D,Gilt für Mania 3D,Applies to Mania 3D
+Gilt für Mania 2D,Gilt für Mania 2D,Applies to Mania 2D
+Gilt für Orbit,Gilt für Orbit,Applies to Orbit
+Gilt für Mania 3D und 2D,Gilt für Mania 3D und 2D,Applies to Mania 3D and 2D
+Gilt für alle Modi,Gilt für alle Modi,Applies to all modes
+Gilt für %s,Gilt für %s,Applies to %s
+Skin & Bild,Skin & Bild,Skin & image
+Profil & Sprache,Profil & Sprache,Profile & language
+Einstellung suchen…,Einstellung suchen…,Search settings…
+Strg+F,Strg+F,Ctrl+F
+Mania mit 3D-Welt,Mania mit 3D-Welt,Mania with a 3D world
+Klassische senkrechte Spuren,Klassische senkrechte Spuren,Classic vertical lanes
+Zwei Ringe statt Spuren,Zwei Ringe statt Spuren,Two rings instead of lanes
+Wird beim Schließen gespeichert · Esc,Wird beim Schließen gespeichert · Esc,Saved when you close · Esc
+Allgemein,Allgemein,General
+Modus,Modus,Mode
+Keine Treffer,Keine Treffer,No matches
+Diese Gruppe auf Standard,Diese Gruppe auf Standard,Reset this group to defaults
+Abstand der Spuren. Unter 85 % werden Noten kleiner,Abstand der Spuren. Unter 85 % werden Noten kleiner,Lane spacing. Below 85% notes get smaller
+Komfort: ruhig · gegen Übelkeit · Dynamisch: volle Flugbewegung,Komfort: ruhig · gegen Übelkeit · Dynamisch: volle Flugbewegung,Comfort: calm · against motion sickness · Dynamic: full flight motion
+Tunnel- und Welt-Effekte,Tunnel- und Welt-Effekte,Tunnel and world effects
+Zeit bis zur Trefferlinie (wie osu!lazer). Im Spiel F3/F4,Zeit bis zur Trefferlinie (wie osu!lazer). Im Spiel F3/F4,Time to the hit line (like osu!lazer). In game F3/F4
+Automatisch: Welt passend zum Song,Automatisch: Welt passend zum Song,Automatic: a world that fits the song
+Breite der Spalten (auch im Pausenmenü),Breite der Spalten (auch im Pausenmenü),Column width (also in the pause menu)
+Höhe der Balken bzw. Größe der Kreise,Höhe der Balken bzw. Größe der Kreise,Bar height or circle size
+Tasten und Skin-Lighting leuchten beim Treffer,Tasten und Skin-Lighting leuchten beim Treffer,Keys and skin lighting flash on hit
+Layout,Layout,Layout
+Nach oben = osu! UpsideDown,Nach oben = osu! UpsideDown,Up = osu! UpsideDown
+Überschreibt den Skin,Überschreibt den Skin,Overrides the skin
+"osu! HitPosition, 480 = Bildrand","osu! HitPosition, 480 = Bildrand","osu! HitPosition, 480 = screen edge"
+osu! ColumnSpacing,osu! ColumnSpacing,osu! ColumnSpacing
+FadeIn: spät sichtbar · Hidden: verschwinden vor der Linie · Cover: feste Abdeckung,FadeIn: spät sichtbar · Hidden: verschwinden vor der Linie · Cover: feste Abdeckung,FadeIn: appear late · Hidden: vanish before the line · Cover: fixed cover
+Abdeckung von,Abdeckung von,Cover from
+Oben,Oben,Top
+Unten,Unten,Bottom
+Verdeckter Anteil der Strecke,Verdeckter Anteil der Strecke,Covered share of the track
+SV- und BPM-Wechsel ignorieren,SV- und BPM-Wechsel ignorieren,Ignore SV and BPM changes
+"Deckkraft des Map-Bilds, 0 % = aus","Deckkraft des Map-Bilds, 0 % = aus","Map image opacity, 0% = off"
+Spielfeld abdunkeln,Spielfeld abdunkeln,Darken playfield
+"100 % = schwarz, Map-Bild nur seitlich","100 % = schwarz, Map-Bild nur seitlich","100% = black, map image only at the sides"
+An: Layout aus skin.ini · Aus: eigene Werte,An: Layout aus skin.ini · Aus: eigene Werte,On: layout from skin.ini · Off: your own values
+"osu! ScorePosition, 0 = oben","osu! ScorePosition, 0 = oben","osu! ScorePosition, 0 = top"
+"osu! ComboPosition, 0 = oben","osu! ComboPosition, 0 = oben","osu! ComboPosition, 0 = top"
+Linie an der Trefferposition,Linie an der Trefferposition,Line at the hit position
+Feine Linien alle 45°,Feine Linien alle 45°,Fine lines every 45°
+"Welt: die 3D-Welt, ruhig und abgedunkelt","Welt: die 3D-Welt, ruhig und abgedunkelt","World: the 3D world, calm and dimmed"
+Alt+Mausrad im Spiel,Alt+Mausrad im Spiel,Alt+mouse wheel in game
+Hellere Höhen,Hellere Höhen,Brighter highs
+Assistent starten,Assistent starten,Start wizard
+Offset-Assistent,Offset-Assistent,Offset wizard
+Offset per Mitklopfen messen,Offset per Mitklopfen messen,Measure the offset by tapping along
+Auch mit F11,Auch mit F11,Also with F11
+Spur leuchtet beim Tastendruck,Spur leuchtet beim Tastendruck,Lane lights up on key press
+Stabilität,Stabilität,Stability
+"OpenGL, niedrigere Qualität, 240 FPS. Hilft bei Abstürzen","OpenGL, niedrigere Qualität, 240 FPS. Hilft bei Abstürzen","OpenGL, lower quality, 240 FPS. Helps against crashes"
+Mania,Mania,Mania
+"Anklicken, dann Taste drücken (Esc bricht ab)","Anklicken, dann Taste drücken (Esc bricht ab)","Click, then press a key (Esc cancels)"
+Maus links = innen und Maus rechts = außen gelten immer zusätzlich.,Maus links = innen und Maus rechts = außen gelten immer zusätzlich.,Left mouse = inner and right mouse = outer always work as well.
+Wirkt sofort,Wirkt sofort,Applies at once
+Speichern,Speichern,Save
+Der Name ist festgelegt und kann nicht mehr geändert werden.,Der Name ist festgelegt und kann nicht mehr geändert werden.,The name is set and can no longer be changed.
+2–16 Zeichen,2–16 Zeichen,2–16 characters
+Kann nur einmal festgelegt werden,Kann nur einmal festgelegt werden,Can only be set once
+Eigene Bilder für Noten und Tasten,Eigene Bilder für Noten und Tasten,Custom images for notes and keys
+Datei importieren…,Datei importieren…,Import file…
+Schließen (Esc),Schließen (Esc),Close (Esc)
+Ring innen | außen,Ring innen | außen,Ring inner | outer
+Vorschau,Vorschau,Preview
+Tastenkürzel,Tastenkürzel,Shortcuts
+Scroll Speed ändern,Scroll Speed ändern,Change scroll speed
+Vollbild umschalten,Vollbild umschalten,Toggle fullscreen
+Lautstärke ändern,Lautstärke ändern,Change volume
+Einstellungen durchsuchen,Einstellungen durchsuchen,Search settings
+Alt + Mausrad,Alt + Mausrad,Alt + mouse wheel
+Strg + F,Strg + F,Ctrl + F
+Aktiver Skin,Aktiver Skin,Active skin
