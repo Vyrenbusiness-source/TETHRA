@@ -60,7 +60,7 @@ const BEAT_SNAP_MS := 12.0
 const JUMP_DEG := 60.0
 const STRONG_BEAT := 0.5
 const WEAK_JUMP_DEG := 50.0
-## Orbit-Sterne: Fensterraster und Gewichte (an Mania-Sternen grob geeicht).
+## Orbit-Sterne: Fensterraster und Gewichte (am menschlichen QA-Bot geeicht).
 ## Menschliche Erreichbarkeit (Messung: docs/modes/orbit_qa.md): ein Zeiger mit
 ## HUMAN_DEG_PER_MS (Maus ~250 Grad/s) faehrt vom letzten Ziel zum naechsten;
 ## das Ziel liegt hoechstens HUMAN_REACH_DEG neben der so erreichbaren Stelle
