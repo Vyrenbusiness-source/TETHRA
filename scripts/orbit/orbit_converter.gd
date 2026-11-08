@@ -44,6 +44,16 @@ const STACK_NEAR_DEG := 7.0
 const STACK_WINDOW_MS := 320.0
 const STACK_PUSH_DEG := 8.0
 const MIN_ARC_MS := 100.0
+## Dichte Folgen auf EINEM Ring (seit der Ring per Zeigen gewaehlt wird, wechseln
+## Streams nicht mehr die Ringe): Ziele, die sich im Anflug noch ueberdecken
+## wuerden (Abstand < SEP_WINDOW_*_MS: Zieldurchmesser / Anfluggeschwindigkeit
+## bei Scroll 1,0), halten mindestens SEP_DEG_* Winkelabstand
+## (= Zieldurchmesser am Ring). Weiterdrehen in Bewegungsrichtung, nur wenn die
+## Tempo-Grenze es erlaubt; sonst bleibt der Stapel (Stapel-Hinweis der Ansicht).
+const SEP_WINDOW_INNER_MS := 300.0
+const SEP_WINDOW_OUTER_MS := 300.0
+const SEP_DEG_INNER := 17.0
+const SEP_DEG_OUTER := 13.0
 const ARC_DEG_PER_MS := 0.12
 const ARC_MAX_DEG := 270.0
 ## Ein Zeiger, zwei Bahnen (Ring wird durch Zeigen gewaehlt).
@@ -374,6 +384,7 @@ static func legalize(raw: Array[OrbitNote], reds: Array, easy: bool) -> Array[Or
 	var arc: OrbitNote = null
 	var last_t := -INF
 	var hold := EASY_HOLD_MS if easy else RING_HOLD_MS
+	var sep_dir := 1.0
 	for src in raw:
 		var t := src.time_ms
 		if arc != null and t > arc.end_ms + CHORD_EPS_MS:
@@ -420,6 +431,18 @@ static func legalize(raw: Array[OrbitNote], reds: Array, easy: bool) -> Array[Or
 				var span := n.end_angle_deg - n.angle_deg
 				n.angle_deg = OrbitNote.wrap_deg(n.angle_deg - shift)
 				n.end_angle_deg = n.angle_deg + span
+			var strong := beat_strength(reds, t) >= STRONG_BEAT
+			# Spruenge >= JUMP_DEG nur auf starken Beats (auch nachdem ein Vorgaenger
+			# durch _separate verschoben wurde).
+			var dj := OrbitNote.delta_deg(cur_a, n.angle_deg)
+			if not strong and absf(dj) >= JUMP_DEG:
+				var span2 := n.end_angle_deg - n.angle_deg
+				n.angle_deg = OrbitNote.wrap_deg(cur_a + signf(dj) * (JUMP_DEG - 0.5))
+				n.end_angle_deg = n.angle_deg + span2
+			_separate(n, out, cur_a, lim, d, sep_dir, strong)
+			var moved := OrbitNote.delta_deg(cur_a, n.angle_deg)
+			if absf(moved) > 0.5:
+				sep_dir = signf(moved)
 		out.append(n)
 		last_t = t
 		cur_t = t
@@ -427,6 +450,48 @@ static func legalize(raw: Array[OrbitNote], reds: Array, easy: bool) -> Array[Or
 		if n.is_arc:
 			arc = n
 	return out
+
+
+## Ziel n von frueheren Zielen desselben Rings (innerhalb SEP_WINDOW_*_MS) auf
+## Abstand bringen. Richtung: Bewegung d, bei Stillstand die letzte Drehrichtung.
+## Nur wenn der neue Winkel von cur_a aus innerhalb lim (Tempo-Grenze) liegt.
+static func _separate(n: OrbitNote, out: Array[OrbitNote], cur_a: float, lim: float, d: float, last_dir: float, jump_ok: bool) -> void:
+	var sep := SEP_DEG_INNER if n.ring == 0 else SEP_DEG_OUTER
+	var win := SEP_WINDOW_INNER_MS if n.ring == 0 else SEP_WINDOW_OUTER_MS
+	var near: Array[float] = []
+	for k in range(out.size() - 1, maxi(out.size() - 14, 0) - 1, -1):
+		var o: OrbitNote = out[k]
+		if n.time_ms - o.time_ms > win:
+			break
+		if o.ring == n.ring and not o.is_arc:
+			near.append(o.angle_deg)
+	if near.is_empty():
+		return
+	# Gewollter Stapel/Jack (fast gleicher Winkel wie das direkt vorige Ziel): bleibt,
+	# die Ansicht zeigt den Stapel-Hinweis.
+	var prev: OrbitNote = out[out.size() - 1]
+	if prev.ring == n.ring and OrbitNote.dist_deg(prev.angle_deg, n.angle_deg) < 0.5:
+		return
+	var dir := signf(d) if absf(d) > 0.5 else last_dir
+	var a := n.angle_deg
+	for _pass in 4:
+		var clash := false
+		for na in near:
+			if OrbitNote.dist_deg(na, a) < sep - 0.01:
+				a = OrbitNote.wrap_deg(na + dir * sep)
+				clash = true
+		if not clash:
+			break
+	# Kein neuer grosser Sprung abseits starker Beats (Spruenge nur auf Schlaegen).
+	var step := absf(OrbitNote.delta_deg(cur_a, a))
+	if a == n.angle_deg or step > lim + 0.01 or (step >= JUMP_DEG - 0.5 and not jump_ok):
+		return
+	for na in near:
+		if OrbitNote.dist_deg(na, a) < sep - 0.01:
+			return
+	var span := n.end_angle_deg - n.angle_deg
+	n.angle_deg = a
+	n.end_angle_deg = a + span
 
 
 ## osu!standard -> Orbit. Gleiche Grenzen wie bei Mania: Zeit = Originalzeit,
