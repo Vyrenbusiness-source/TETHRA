@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 250" width="1000" height="250">
+<path d="M85 61H195M140 61V131.4" fill="none" stroke="#ECE6DA" stroke-width="26" stroke-linecap="butt" stroke-linejoin="miter"/>
+<path d="M140 131.4V189" fill="none" stroke="#F2A23A" stroke-width="26" stroke-linecap="butt" stroke-linejoin="miter"/>
+<path d="M326 61H242V189H326" fill="none" stroke="#ECE6DA" stroke-width="26" stroke-linecap="butt" stroke-linejoin="miter"/>
+<path d="M242 125H313.4" fill="none" stroke="#ECE6DA" stroke-width="26" stroke-linecap="butt" stroke-linejoin="miter"/>
+<path d="M386 61H470M428 61V189" fill="none" stroke="#ECE6DA" stroke-width="26" stroke-linecap="butt" stroke-linejoin="miter"/>
+<path d="M530 61V189M614 61V189" fill="none" stroke="#ECE6DA" stroke-width="26" stroke-linecap="butt" stroke-linejoin="miter"/>
+<path d="M530 125H614" fill="none" stroke="#ECE6DA" stroke-width="26" stroke-linecap="butt" stroke-linejoin="miter"/>
+<path d="M674 189V61H724.72A33.28 33.28 0 0 1 724.72 127.56H674M709.28 127.56L758 189" fill="none" stroke="#ECE6DA" stroke-width="26" stroke-linecap="butt" stroke-linejoin="miter"/>
+<path d="M818 189L860 61L902 189" fill="none" stroke="#ECE6DA" stroke-width="26" stroke-linecap="butt" stroke-linejoin="miter"/>
+<path d="M834.8 142.92H885.2" fill="none" stroke="#ECE6DA" stroke-width="26" stroke-linecap="butt" stroke-linejoin="miter"/>
+</svg>
