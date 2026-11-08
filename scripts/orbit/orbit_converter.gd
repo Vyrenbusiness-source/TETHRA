@@ -39,6 +39,10 @@ const REF_GAP_MS := 150.0
 const MAX_STEP_SCALE := 2.5
 ## Jacks mit mindestens diesem Abstand wandern um einen Schritt weiter.
 const DRIFT_GAP_MS := 300.0
+## Jacks (gleiche Spalte, Abstand < DRIFT_GAP_MS): Winkelversatz im Zickzack
+## 0, 1, 2, 1 Stufen, damit Ziele auf demselben Ring nicht uebereinander liegen.
+const STACK_STEP_DEG := 9.0
+const STACK_PATTERN := [0, 1, 2, 1]
 const STREAM_GAP_MS := 160.0
 const MIN_ARC_MS := 100.0
 const ARC_DEG_PER_MS := 0.12
@@ -143,6 +147,8 @@ static func convert(beatmap: Beatmap) -> Array[OrbitNote]:
 	var arc_end_at := [-INF, -INF]
 	var ring_last := [-INF, -INF]
 	var vc := INF  # virtueller Zeiger (HUMAN_DEG_PER_MS), INF = noch keiner
+	var stack_run := 0  # Position im Jack-Zickzack
+	var stack_off := 0.0  # aktueller Versatz gegen den Stapel-Anfang (Grad)
 	for g in groups:
 		var head := objs[g[0]] as ManiaNote
 		var t := head.time
@@ -198,8 +204,17 @@ static func convert(beatmap: Beatmap) -> Array[OrbitNote]:
 			if d == 0:
 				if gap >= DRIFT_GAP_MS:
 					delta = dir * minf(COL_STEP_DEG, lim)
+					stack_run = 0
+					stack_off = 0.0
+				else:
+					stack_run += 1
+					var want_off: float = float(STACK_PATTERN[stack_run % STACK_PATTERN.size()]) * STACK_STEP_DEG
+					delta = clampf(dir * (want_off - stack_off), -lim, lim)
+					stack_off += dir * delta
 			else:
 				delta = clampf(df * unit, -lim, lim)
+				stack_run = 0
+				stack_off = 0.0
 			# Grosse Spruenge nur auf Schlaegen; dazwischen bleibt der Fluss ruhig.
 			if absf(delta) >= JUMP_DEG and beat_strength(reds, t) < STRONG_BEAT:
 				delta = signf(delta) * WEAK_JUMP_DEG

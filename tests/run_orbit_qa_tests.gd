@@ -47,6 +47,11 @@ func _initialize() -> void:
 	if shots:
 		_shots(maps)
 		return
+	if OS.get_environment("ORBIT_QA_ONLY") == "density":
+		_test_density(maps)
+		print("=== Ergebnis: %d bestanden, %d fehlgeschlagen ===" % [_passed, _failed])
+		quit(1 if _failed > 0 else 0)
+		return
 	_test_view_synthetic()
 	_test_timing(maps)
 	_test_view_frames(maps)
