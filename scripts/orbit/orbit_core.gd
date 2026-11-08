@@ -343,11 +343,18 @@ func _do_cursor(cursor_deg: float, rho: float, t_ms: float) -> void:
 	_check_arcs(t_ms)
 	_cursor = OrbitNote.wrap_deg(cursor_deg)
 	_rho = rho
-	if rho > RING_SPLIT_K + RING_HYST_K:
-		_sel_ring = 1
-	elif rho < RING_SPLIT_K - RING_HYST_K:
-		_sel_ring = 0
+	_sel_ring = ring_for_rho(rho, _sel_ring)
 	_check_arcs(t_ms)
+
+
+## Gewaehlter Ring zum Cursor-Abstand rho; zwischen den Grenzen (Hysterese)
+## bleibt der bisherige Ring prev.
+static func ring_for_rho(rho: float, prev: int) -> int:
+	if rho > RING_SPLIT_K + RING_HYST_K:
+		return 1
+	if rho < RING_SPLIT_K - RING_HYST_K:
+		return 0
+	return prev
 
 
 ## Ring, den der Cursor gerade waehlt (0 innen, 1 aussen).
