@@ -356,6 +356,7 @@ static func most_played(n: int = 5, mode: String = "") -> Array:
 			"pp": float(best_e.get("pp", -1.0)),
 			"accuracy": float(best_e.get("accuracy", 0.0)),
 			"date": str(best_e.get("date", "")),
+			"score": int(best_e.get("score", 0)),
 		})
 	entries.sort_custom(func(a, b): return int(a.count) > int(b.count))
 	return entries.slice(0, n)

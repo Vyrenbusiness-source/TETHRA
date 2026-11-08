@@ -235,6 +235,9 @@ func _ready() -> void:
 		_on_play_pressed.call_deferred()
 	elif OS.get_cmdline_args().has("--shot-sv"):
 		_shot_sv.call_deferred()
+	elif OS.get_cmdline_args().has("--shot-modes"):
+		# Harness: Scores je Modus (Browser, Results, Profil) als PNGs.
+		_shot_modes.call_deferred()
 	elif OS.get_cmdline_args().has("--shot-online"):
 		# Harness: Online-Tab (Raster, Genre, Download, Fehler) als PNGs.
 		_shot_online.call_deferred()
@@ -307,6 +310,108 @@ func _shot_online() -> void:
 		dir = OS.get_user_data_dir()
 	_open_download_panel()
 	await _online.run_shot_harness(dir)
+	get_tree().quit(0)
+
+
+## Harness --shot-modes: Demo-Scores (Mania, Mania+SV, Orbit) fuer die erste
+## 4K-Diff, dann Browser in beiden Modi, Results mit Modus-Abzeichen und
+## Profil in beiden Modi als PNGs (MODES_SHOT_DIR). Laeuft NUR mit
+## --scores-path=<Test-Kopie>, nie gegen user://scores.cfg; speichert weder
+## Browser-Zustand noch Settings.
+func _shot_modes() -> void:
+	var has_path := false
+	for a in OS.get_cmdline_args() + OS.get_cmdline_user_args():
+		if a.begins_with("--scores-path="):
+			has_path = true
+	if not has_path or ScoreStore.PATH == "user://scores.cfg":
+		push_error("--shot-modes braucht --scores-path=<Test-Kopie>")
+		get_tree().quit(1)
+		return
+	_state_ready = false  # nichts in browser_state.cfg schreiben
+	var dir := OS.get_environment("MODES_SHOT_DIR")
+	if dir == "":
+		dir = OS.get_user_data_dir()
+	var pick: Array = []
+	for ms in _filtered:
+		for i in ms.difficulty_count():
+			if pick.is_empty() and int(ms.meta_at(i).get("mode", 0)) == 3:
+				pick = [ms, i]
+	if pick.is_empty():
+		push_error("--shot-modes: keine 4K-Diff gefunden")
+		get_tree().quit(1)
+		return
+	var ms: MapSet = pick[0]
+	var di: int = pick[1]
+	var osz: String = ms.osz_path
+	var ver: String = ms.version_name_at(di)
+	var label := "%s - %s" % [ms.artist, ms.title]
+	var demo := [
+		[{ "score": 912340, "grade": "S", "accuracy": 0.9712, "max_combo": 611, "pp": 182.4 }, ""],
+		[{ "score": 874015, "grade": "A", "accuracy": 0.9433, "max_combo": 402, "pp": 151.0,
+			"mods": ["SV"], "sv_level": "strong" }, ""],
+		[{ "score": 801220, "grade": "A", "accuracy": 0.9301, "max_combo": 377, "pp": 139.2,
+			"mods": ["SV", "NF"], "sv_level": "normal" }, ""],
+		[{ "score": 951880, "grade": "S", "accuracy": 0.9821, "max_combo": 640, "mode": "orbit" }, ScoreStore.MODE_ORBIT],
+		[{ "score": 702115, "grade": "B", "accuracy": 0.8874, "max_combo": 210, "mode": "orbit",
+			"mods": ["SV"], "sv_level": "strong" }, ScoreStore.MODE_ORBIT],
+	]
+	for d in demo:
+		ScoreStore.submit(osz, ver, d[0], d[1])
+		ScoreStore.log_play(osz, ver, label, d[0], d[1])
+	# SV-Chip mit Stufe sichtbar, ohne Settings zu speichern.
+	_sv_enabled = true
+	if _sv_btn != null:
+		_sv_btn.set_pressed_no_signal(true)
+	_restyle_sv_level()
+	for mode in PLAY_MODES:
+		_play_mode = mode
+		_restyle_mode_switch()
+		_refresh_card_grades()
+		_select_set(ms, di)
+		_selected_diff = di
+		await get_tree().create_timer(1.2).timeout
+		await RenderingServer.frame_post_draw
+		get_viewport().get_texture().get_image().save_png(dir.path_join("modes_browser_%s.png" % mode))
+	# Results (Mania + Orbit): Fake-Daten, previous_best explizit (kein Speichern).
+	GameSession.osz_path = osz
+	GameSession.difficulty_version = ver
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7
+	var offs: Array = []
+	for _i in 300:
+		offs.append(rng.randfn(3.2, 17.0))
+	for mode in PLAY_MODES:
+		var orbit: bool = mode == "orbit"
+		var s := { "score": 958210 if orbit else 931400, "grade": "S", "accuracy": 0.9764,
+			"max_combo": 655, "combo": 0, "n_max": 700, "n300": 640, "n200": 41, "n100": 9,
+			"n50": 2, "n_miss": 8, "pp": -1.0 if orbit else 190.6, "sv_level": "normal" if orbit else "strong" }
+		if orbit:
+			s["mode"] = ScoreStore.MODE_ORBIT
+		var rs := ResultsScreen.new()
+		add_child(rs)
+		rs.show_results({
+			"s": s, "pp": float(s.pp), "new_best": true,
+			"title": ms.title, "artist": ms.artist,
+			"version": ver, "cover_path": "", "offsets": offs, "player": Settings.profile_name,
+			"date": Time.get_datetime_string_from_system(), "allow_retry": true, "can_replay": false,
+			"mods": { "SV": true, "NF": false },
+			"previous_best": ScoreStore.best(osz, ver, ScoreStore.MODE_ORBIT if orbit else ""),
+		})
+		await get_tree().create_timer(2.5).timeout
+		await RenderingServer.frame_post_draw
+		get_viewport().get_texture().get_image().save_png(dir.path_join("modes_results_%s.png" % mode))
+		rs.queue_free()
+		await get_tree().process_frame
+	# Profil in beiden Modi.
+	var pp := ProfilePanel.new()
+	add_child(pp)
+	for mode in ["", ScoreStore.MODE_ORBIT]:
+		pp._set_mode(mode)
+		await get_tree().create_timer(2.0).timeout
+		await RenderingServer.frame_post_draw
+		get_viewport().get_texture().get_image().save_png(
+			dir.path_join("modes_profile_%s.png" % ("orbit" if mode != "" else "mania")))
+	print("MODES-SHOTS: " + dir)
 	get_tree().quit(0)
 
 
@@ -1842,7 +1947,7 @@ func _preview_ms() -> float:
 ## Eine Leaderboard-Zeile: Rang, Grade, Score/Acc, pp, Datum.
 func _score_row(rank: int, e: Dictionary) -> Control:
 	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 10)
+	row.add_theme_constant_override("separation", 7)
 	var num := Label.new()
 	num.text = "#%d" % (rank + 1)
 	num.custom_minimum_size = Vector2(24, 0)
@@ -1860,12 +1965,12 @@ func _score_row(rank: int, e: Dictionary) -> Control:
 	row.add_child(grade)
 	var main := Label.new()
 	var is_self := bool(e.get("is_self", true))
-	main.text = "%s  ·  %s  ·  %dx" % [
+	main.text = "%s · %s · %dx" % [
 		UiTheme.fmt_score(int(e.get("score", 0))),
 		UiTheme.fmt_pct(float(e.get("accuracy", 0.0)) * 100.0), int(e.get("max_combo", 0))]
 	if not is_self:
 		# Mitspieler: Name vorne, Combo weglassen (Platz).
-		main.text = "%s  ·  %s  ·  %s" % [str(e.get("player", "?")),
+		main.text = "%s · %s · %s" % [str(e.get("player", "?")),
 			UiTheme.fmt_score(int(e.get("score", 0))),
 			UiTheme.fmt_pct(float(e.get("accuracy", 0.0)) * 100.0)]
 		main.tooltip_text = tr("Score von %s (Multiplayer)") % str(e.get("player", "?"))

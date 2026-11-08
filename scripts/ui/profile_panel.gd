@@ -605,7 +605,7 @@ func _play_row(e: Dictionary, mode: String) -> Control:
 	var ppv := float(e.get("pp", -1.0))
 	pp_label.text = (_fmt_int(roundi(ppv)) + " pp") if ppv >= 0.0 else "—"
 	var pp_size := 24
-	if _mode == ScoreStore.MODE_ORBIT and mode != "most":
+	if _mode == ScoreStore.MODE_ORBIT:
 		# Orbit hat keine pp: Score statt pp.
 		pp_label.text = _fmt_int(int(e.get("score", 0))) if int(e.get("score", 0)) > 0 else "—"
 		pp_size = 18
