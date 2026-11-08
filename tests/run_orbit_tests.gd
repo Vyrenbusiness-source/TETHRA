@@ -34,6 +34,7 @@ func _initialize() -> void:
 	_test_std_streams()
 	_test_std_fair_mixed()
 	_test_sources_compare()
+	_test_stars_cache()
 	print("=== Ergebnis: %d bestanden, %d fehlgeschlagen ===" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
 
@@ -1060,3 +1061,17 @@ func _source_row(tag: String, path: String, bm: Beatmap, ns: Array[OrbitNote]) -
 		float(row.flip_on_beat) * 100.0, float(a.mean_speed), float(a.p95_speed), float(a.on_beat) * 100.0,
 		float(row.stars), b1.accuracy() * 100.0, b2.accuracy() * 100.0, pos_med, pos_p90])
 	return row
+
+
+func _test_stars_cache() -> void:
+	print("- Orbit-Sterne-Cache")
+	var SS = load("res://scripts/song_select.gd")
+	var path := "user://orbit_stars_test.cfg"
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+	var st := OrbitConverter.stars(OrbitConverter.convert(_mixed_map()))
+	var key := "v1|test.osz|123|Hard"
+	_ok(SS.orbit_stars_cached(key, path) < 0.0, "leerer Cache liefert nichts")
+	SS.orbit_stars_store(key, st, path)
+	_ok(absf(SS.orbit_stars_cached(key, path) - st) < 0.0001, "Cache liefert gleiche Sterne (%.3f)" % st)
+	_ok(SS.orbit_stars_cached("v1|test.osz|123|Easy", path) < 0.0, "andere Version: kein Treffer")
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
