@@ -10,6 +10,8 @@ extends SceneTree
 var _passed := 0
 var _failed := 0
 var _done := false
+## Bahn der Testkarte: Form wechselt alle zwei Takte (Takt 2000 ms).
+var _tr: OrbitTrack
 
 
 func _process(_delta: float) -> bool:
@@ -29,7 +31,10 @@ func _check(cond: bool, label: String) -> void:
 
 
 func _run() -> void:
-	print("=== TETHRA Orbit-Replay-Tests ===")
+	print("=== TETHRA Orbit-Replay-Tests (Bahnen) ===")
+	_tr = OrbitTrack.fixed(OrbitClock.fixed(2000.0), OrbitPath.CIRCLE)
+	for k in range(1, 40):
+		_tr.plan.append([4000.0 * k, [OrbitPath.ELLIPSE, OrbitPath.EIGHT, OrbitPath.ROSE3, OrbitPath.CIRCLE][k % 4]])
 	_test_determinism()
 	_test_fail_freeze()
 	_test_compact()
@@ -42,7 +47,7 @@ func _run() -> void:
 
 # --- Testkarte und simulierter Spieler ---
 
-## Taps auf beiden Ringen, dichte Stellen, Boegen in beide Richtungen.
+## Taps auf beiden Spuren, dichte Stellen, Boegen in beide Richtungen.
 func _chart() -> Array[OrbitNote]:
 	var ns: Array[OrbitNote] = []
 	var rng := RandomNumberGenerator.new()
@@ -55,12 +60,13 @@ func _chart() -> Array[OrbitNote]:
 		var n: OrbitNote
 		if i % 9 == 4:
 			var dur := rng.randf_range(300.0, 900.0)
-			n = OrbitNote.make_arc(t, t + dur, ang, 0.18 * dur, ring)
+			n = OrbitNote.make_arc(t, t + dur, ang, 360.0 * dur / 2000.0, ring)
 			t += dur + rng.randf_range(120.0, 300.0)
 		else:
 			n = OrbitNote.make(t, ang, ring)
 			t += rng.randf_range(90.0, 380.0)
-		n.speed = 0.18
+		n.shape = _tr.shape_at(t)
+		n.speed = _tr.speed_at(t)
 		ns.append(n)
 	ns.sort_custom(func(a, b): return a.time_ms < b.time_ms)
 	return ns
@@ -69,24 +75,25 @@ func _chart() -> Array[OrbitNote]:
 func _core(ns: Array[OrbitNote], mods: Dictionary = {}) -> OrbitCore:
 	var c := OrbitCore.new()
 	c.setup(ns, 8.0, 1.0, 5.0, mods)
+	c.set_track(_tr)
 	return c
 
 
 ## Rohe Eingabe eines "Menschen": Mausbewegung ~1 kHz mit Zittern, Tasten mit
 ## Zeitstreuung, ausgelassene Ziele, zu frueh losgelassene Boegen.
-## Event: [t (float ms), "m"|"d"|"u", ring, Winkel].
+## Event: [t (float ms), "m"|"d"|"u", Spur, Ort (Bahn-Einheiten)].
 func _human(ns: Array[OrbitNote], seed: int) -> Array:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed
 	var keys: Array = []
-	var aims: Array = []   # [t, Winkel] Stuetzpunkte der Cursor-Bahn
-	aims.append([0.0, 0.0])
+	var aims: Array = []   # [t, Ort] Stuetzpunkte der Cursor-Bahn
+	aims.append([0.0, _tr.head(0.0)])
 	for i in ns.size():
 		var n := ns[i]
 		if i % 13 == 7:
 			continue   # Ziel auslassen
 		var dt := rng.randfn(0.0, 22.0)
-		var aim := n.pointer_at(n.time_ms + dt) + rng.randfn(0.0, 7.0)
+		var aim := _tr.head(n.time_ms + dt) + _noise(rng, 0.07)
 		var td := n.time_ms + dt
 		aims.append([td - 25.0, aim])
 		aims.append([td, aim])
@@ -98,10 +105,10 @@ func _human(ns: Array[OrbitNote], seed: int) -> Array:
 			var steps := int((stop - td) / 30.0)
 			for k in steps:
 				var tk := td + 30.0 * (k + 1)
-				aims.append([tk, n.pointer_at(tk) + rng.randfn(0.0, 5.0)])
-			keys.append([stop + rng.randf_range(0.0, 30.0), "u", n.ring, 0.0])
+				aims.append([tk, _tr.head(tk) + _noise(rng, 0.05)])
+			keys.append([stop + rng.randf_range(0.0, 30.0), "u", n.ring, Vector2.ZERO])
 		else:
-			keys.append([td + rng.randf_range(25.0, 70.0), "u", n.ring, 0.0])
+			keys.append([td + rng.randf_range(25.0, 70.0), "u", n.ring, Vector2.ZERO])
 	aims.sort_custom(func(a, b): return a[0] < b[0])
 	var evs: Array = []
 	# Mausbewegung: zwischen den Stuetzpunkten interpolieren, ~1 kHz, Zittern.
@@ -115,13 +122,16 @@ func _human(ns: Array[OrbitNote], seed: int) -> Array:
 		var a1: Array = aims[mini(j + 1, aims.size() - 1)]
 		var span := maxf(float(a1[0]) - float(a0[0]), 1.0)
 		var f := clampf((t - float(a0[0])) / span, 0.0, 1.0)
-		var d := OrbitNote.delta_deg(float(a0[1]), float(a1[1]))
-		var ang := float(a0[1]) + d * f + rng.randfn(0.0, 0.15)
-		evs.append([t, "m", -1, ang])
+		var pos: Vector2 = (a0[1] as Vector2).lerp(a1[1], f) + _noise(rng, 0.0015)
+		evs.append([t, "m", -1, pos])
 		t += rng.randf_range(0.6, 1.4)
 	evs.append_array(keys)
 	evs.sort_custom(func(a, b): return a[0] < b[0])
 	return evs
+
+
+func _noise(rng: RandomNumberGenerator, sigma: float) -> Vector2:
+	return Vector2(rng.randfn(0.0, sigma), rng.randfn(0.0, sigma))
 
 
 ## Live-Lauf: Bilder mit schwankender Laenge, Eingaben kommen gesammelt im
@@ -133,8 +143,6 @@ func _live(ns: Array[OrbitNote], evs: Array, seed: int, mods: Dictionary = {}) -
 	c.note_judged.connect(func(i: int, r: Dictionary) -> void: got[i] = r)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed
-	var cursor := 0.0
-	var last_ring := 0
 	var frame_t := -500.0
 	var k := 0
 	var end_t: float = ns.back().end_ms + 1500.0
@@ -145,12 +153,9 @@ func _live(ns: Array[OrbitNote], evs: Array, seed: int, mods: Dictionary = {}) -
 			k += 1
 			match str(e[1]):
 				"m":
-					cursor = float(e[3])
-					var cr := maxi(c.active_arc(1), -1)
-					c.cursor_moved(cursor, _rho(1 if cr >= 0 else (0 if c.active_arc(0) >= 0 else last_ring)), float(e[0]))
+					c.cursor_moved(e[3], float(e[0]))
 				"d":
-					last_ring = int(e[2])
-					c.key_down(int(e[2]), float(e[0]), float(e[3]), _rho(int(e[2])))
+					c.key_down(int(e[2]), float(e[0]), e[3])
 				"u":
 					c.key_up(int(e[2]), float(e[0]))
 		c.update(frame_t)
@@ -338,11 +343,6 @@ func _test_orbit_mods() -> void:
 		"PR-Lauf ohne PR abgespielt ist anders")
 
 
-## Cursor-Abstand, der den Ring r waehlt.
-func _rho(ring: int) -> float:
-	return OrbitCore.R_OUTER_K if ring == 1 else OrbitCore.R_INNER_K
-
-
 func _test_rules_marker() -> void:
 	print("- Regel-Marke: aeltere Replays erkennen")
 	var ns := _chart()
@@ -355,4 +355,5 @@ func _test_rules_marker() -> void:
 	_check(game.is_old_replay([[100, OrbitCore.EV_CURSOR, 450, 300], [120, OrbitCore.EV_DOWN, 455, 300]]),
 		"Format 2 (ohne Marke) = aeltere Version")
 	_check(game.is_old_replay([[100, OrbitCore.EV_DOWN + 1], [160, OrbitCore.EV_UP]]), "Format 1 = aeltere Version")
+	_check(game.is_old_replay([[0, OrbitCore.EV_RULES, 3]]), "Marke mit Format 3 (Taktkreis) = alt")
 	_check(game.is_old_replay([[0, OrbitCore.EV_RULES, 2]]), "Marke mit Format 2 = alt")

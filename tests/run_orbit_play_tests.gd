@@ -92,30 +92,30 @@ func _test_view_geometry() -> void:
 	v.size = Vector2(1280, 720)
 	var c := v.center()
 	_check(c.is_equal_approx(Vector2(640, 360)), "Mitte")
-	_check(v.ring_radius(1) > v.ring_radius(0), "aussen > innen")
-	_check(v.ring_radius(1) * 2.0 < 720.0 * 0.8, "Feld passt in die Hoehe")
-	_check(absf(OrbitView.angle_of(c, c + Vector2(0, -10))) < 0.001, "0 Grad = oben")
-	_check(absf(OrbitView.angle_of(c, c + Vector2(10, 0)) - 90.0) < 0.001, "90 Grad = rechts (Uhrzeigersinn)")
-	_check(absf(OrbitView.angle_of(c, c + Vector2(-10, 0)) - 270.0) < 0.001, "270 Grad = links")
-	for deg in [0.0, 37.5, 180.0, 300.0]:
-		var p := OrbitView.polar(c, deg, 100.0)
-		_check(absf(OrbitView.angle_of(c, p) - deg) < 0.01 and absf(p.distance_to(c) - 100.0) < 0.01,
-			"polar/angle_of %.1f" % deg)
-	_check(v.deadzone_radius() < 720.0 * OrbitView.R_INNER_K, "Totzone innerhalb des inneren Rings")
-	# Hand: dreht pro Takt einmal, 12 Uhr = Takt-Eins; Cursor auf der Hand = Zielen ok.
-	v.clock = OrbitClock.fixed(2000.0)
-	v.tol_deg = OrbitCore.ANGLE_TOL_DEG
+	for q in [Vector2(0.3, -0.2), Vector2(-0.5, 0.1), Vector2.ZERO]:
+		_check(v.to_path(v.to_px(q)).is_equal_approx(q), "to_px/to_path Roundtrip")
+	# Feld passt in den Bildschirm: jede Form samt Spuren.
+	for shape in OrbitPath.COUNT:
+		var ok := true
+		for p in OrbitPath.polyline(shape, 96):
+			var px := v.to_px(p)
+			if px.x < 40.0 or px.x > 1240.0 or px.y < 40.0 or px.y > 680.0:
+				ok = false
+		_check(ok, "Form %s passt ins Feld" % OrbitPath.NAMES[shape])
+	# Kopf: eine Bahn pro Takt, Takt-Eins = Startpunkt; Cursor auf dem Kopf = Zielen ok.
+	var clk := OrbitClock.fixed(2000.0)
+	v.clock = clk
+	v.track = OrbitTrack.fixed(clk, OrbitPath.ELLIPSE)
+	v.tol = OrbitCore.AIM_TOL
 	v.t_ms = 0.0
-	_check(absf(v.hand_deg()) < 0.001, "Hand bei Takt-Eins oben")
+	_check(v.head_path().is_equal_approx(OrbitPath.pos(OrbitPath.ELLIPSE, 0.0)), "Kopf bei Takt-Eins am Start")
 	v.t_ms = 500.0
-	_check(absf(v.hand_deg() - 90.0) < 0.001, "Hand nach einem Viertel rechts")
-	v.cursor_deg = 100.0
-	_check(v.aim_ok(), "Cursor 10 Grad neben der Hand zaehlt als auf der Hand")
-	v.cursor_deg = 140.0
-	_check(not v.aim_ok(), "Cursor 50 Grad daneben: nicht auf der Hand")
-	v.cursor_deg = 95.0
-	v.cursor_in_deadzone = true
-	_check(not v.aim_ok(), "Totzone: nicht auf der Hand")
+	_check(v.head_path().is_equal_approx(OrbitPath.pos(OrbitPath.ELLIPSE, 0.25)), "Kopf nach einem Viertel")
+	_check(not v.aim_ok(), "ohne Cursor: nicht auf dem Kopf")
+	v.cursor_pos = v.to_px(v.head_path()) + Vector2(5, 0)
+	_check(v.aim_ok(), "Cursor nah am Kopf zaehlt")
+	v.cursor_pos = v.to_px(v.head_path()) + Vector2(0.3 * v.path_scale(), 0)
+	_check(not v.aim_ok(), "Cursor weit weg: nicht auf dem Kopf")
 	v.free()
 
 
