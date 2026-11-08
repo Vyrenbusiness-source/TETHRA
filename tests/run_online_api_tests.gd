@@ -307,7 +307,7 @@ func _entry(f: String, v: String, n: int, extra: Dictionary = {}) -> Dictionary:
 	var e := {"osz_file": f, "version": v, "n_max": n - 2, "n300": 1, "n200": 0, "n100": 1,
 		"n50": 0, "n_miss": 0, "score": 900000, "accuracy": 0.98, "grade": "S",
 		"max_combo": n, "pp": 50.0, "mods": [], "mod_mult": 1.0, "unranked": false,
-		"mode": "mania", "date": "2026-07-01T10:00:00"}
+		"mode": "mania", "date": "2026-11-08T10:00:00"}
 	e.merge(extra, true)
 	return e
 
@@ -326,13 +326,18 @@ func _backfill_tests() -> void:
 		_entry("zzz.osz", "Gone", 60),
 		_entry("c.osz", "Ok", 60),
 		_entry("a.osz", "Hard", 100),
+		_entry("c.osz", "Before", 60, {"date": "2026-11-07T23:59:59"}),
+		_entry("c.osz", "NoDate", 60, {"date": ""}),
 	]
 	var cands := OnlineApi.backfill_candidates(entries, [], files)
 	var keys := []
 	for c in cands:
 		keys.append(c.key)
 	_check(keys == ["a.osz|Hard", "a.osz|Easy", "c.osz|Ok"],
-		"Auswahl: nur gueltige Mania-Bestwerte, keine Doppel (%s)" % str(keys))
+		"Auswahl: nur gueltige Mania-Bestwerte ab 2026-11-08, keine Doppel (%s)" % str(keys))
+	_check(OnlineApi.backfill_date_ok("2026-11-08") and OnlineApi.backfill_date_ok("2027-01-01T00:00:00")
+		and not OnlineApi.backfill_date_ok("2026-11-07T23:59:59") and not OnlineApi.backfill_date_ok(""),
+		"Stichtag BACKFILL_SINCE")
 	_check(OnlineApi.backfill_candidates(entries, ["a.osz|Hard"], files).size() == 2, "bereits hochgeladen faellt raus")
 
 	var a := _api()
@@ -366,7 +371,7 @@ func _backfill_tests() -> void:
 		if l.url.ends_with("/beatmap/register"):
 			registered = true
 	_check(scores == 3, "Score-Requests: Hard, Ok (429), Ok erneut (%d)" % scores)
-	_check(first.mode == "mania" and first.date == "2026-07-01T10:00:00" and first.beatmap_md5 == "md5_Hard",
+	_check(first.mode == "mania" and first.date == "2026-11-08T10:00:00" and first.beatmap_md5 == "md5_Hard",
 		"Original-Datum + md5")
 	_check(registered, "pp_source client -> Register im Backfill")
 	var done := a.backfill_done_keys()

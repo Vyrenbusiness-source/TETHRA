@@ -21,6 +21,9 @@ const LEADERBOARD_LIMIT := 50
 ## Alte Scores: Pause zwischen zwei Uploads und nach 429.
 const BACKFILL_INTERVAL_S := 1.0
 const BACKFILL_RATE_WAIT_S := 10.0
+## Alte Bestwerte nur ab diesem Datum hochladen (ISO-Datum, Vergleich ueber das
+## Praefix von "date"). Aeltere Bestwerte bleiben lokal.
+const BACKFILL_SINCE := "2026-11-08"
 
 ## Zustandsaenderung (Anmeldung, Warteschlange, Update noetig).
 signal state_changed
@@ -117,7 +120,9 @@ func load_auth() -> void:
 
 
 func _save_auth() -> void:
+	# Bestehende Datei laden: Abschnitte wie [backfill] und [prompt] bleiben erhalten.
 	var cfg := ConfigFile.new()
+	cfg.load(cfg_path)
 	cfg.set_value("auth", "token", token)
 	cfg.set_value("auth", "user_id", user_id)
 	cfg.set_value("auth", "username", username)
@@ -130,6 +135,19 @@ func logout() -> void:
 	username = ""
 	_save_auth()
 	state_changed.emit()
+
+
+## true = Login-Dialog beim Spielstart abgeschaltet ("Nicht mehr fragen").
+func login_prompt_disabled() -> bool:
+	var cfg := ConfigFile.new()
+	return cfg.load(cfg_path) == OK and bool(cfg.get_value("prompt", "never", false))
+
+
+func set_login_prompt_disabled(on: bool) -> void:
+	var cfg := ConfigFile.new()
+	cfg.load(cfg_path)
+	cfg.set_value("prompt", "never", on)
+	cfg.save(cfg_path)
 
 
 # --- Konto -------------------------------------------------------------------
@@ -461,7 +479,8 @@ static func entry_count_sum(e: Dictionary) -> int:
 
 
 ## Vorauswahl aus ScoreStore.best_plays(): nur Mania, nicht unranked/failed, mit
-## Trefferzahlen, noch nicht hochgeladen, .osz vorhanden (osz_files: Dateiname -> Pfad).
+## Trefferzahlen, Datum ab BACKFILL_SINCE, noch nicht hochgeladen, .osz vorhanden
+## (osz_files: Dateiname -> Pfad).
 ## Ergebnis: [{key, osz_file, osz_path, version, entry}].
 static func backfill_candidates(entries: Array, done_keys: Array, osz_files: Dictionary) -> Array:
 	var out: Array = []
@@ -475,6 +494,8 @@ static func backfill_candidates(entries: Array, done_keys: Array, osz_files: Dic
 			continue
 		if entry_count_sum(e) <= 0:
 			continue
+		if not backfill_date_ok(str(e.get("date", ""))):
+			continue
 		var f := str(e.get("osz_file", "")).get_file()
 		var v := str(e.get("version", ""))
 		var key := backfill_key(f, v)
@@ -484,6 +505,12 @@ static func backfill_candidates(entries: Array, done_keys: Array, osz_files: Dic
 		out.append({"key": key, "osz_file": f, "osz_path": str(osz_files[f]),
 			"version": v, "entry": e})
 	return out
+
+
+## true, wenn das ISO-Datum eines Bestwerts (YYYY-MM-DD...) ab BACKFILL_SINCE liegt.
+static func backfill_date_ok(date: String) -> bool:
+	var d := date.strip_edges().substr(0, 10)
+	return d.length() == 10 and d >= BACKFILL_SINCE
 
 
 ## Meta der Map fuer den Upload (Thread-tauglich): meta_from_beatmap oder {}.

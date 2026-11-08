@@ -28,3 +28,17 @@ Alte Scores hochladen,Alte Scores hochladen,Upload old scores
 Upload abgebrochen (%d / %d).,Upload abgebrochen (%d / %d).,Upload cancelled (%d / %d).
 "Upload unterbrochen, Server nicht erreichbar.","Upload unterbrochen, Server nicht erreichbar.","Upload interrupted, server unreachable."
 Es werden nur deine Mania-Bestwerte hochgeladen. Orbit-Bestwerte nicht: sie stammen aus den alten Orbit-Regeln.,Es werden nur deine Mania-Bestwerte hochgeladen. Orbit-Bestwerte nicht: sie stammen aus den alten Orbit-Regeln.,Only your Mania best scores are uploaded. Orbit best scores are not: they come from the old Orbit rules.
+Anmelden fehlgeschlagen.,Anmelden fehlgeschlagen.,Login failed.
+Bitte Benutzername und Passwort eingeben.,Bitte Benutzername und Passwort eingeben.,Please enter username and password.
+Server nicht erreichbar. Prüfe die Internetverbindung oder versuch es später.,Server nicht erreichbar. Prüfe die Internetverbindung oder versuch es später.,Server unreachable. Check your internet connection or try again later.
+E-Mail noch nicht bestätigt. Öffne den Link in der Mail von TETHRA und melde dich dann an.,E-Mail noch nicht bestätigt. Öffne den Link in der Mail von TETHRA und melde dich dann an.,"Email not confirmed yet. Open the link in the mail from TETHRA, then sign in."
+Benutzername oder Passwort falsch.,Benutzername oder Passwort falsch.,Wrong username or password.
+Zu viele Versuche. Warte kurz und versuch es noch einmal.,Zu viele Versuche. Warte kurz und versuch es noch einmal.,Too many attempts. Wait a moment and try again.
+Anmelden fehlgeschlagen: %s,Anmelden fehlgeschlagen: %s,Login failed: %s
+Online anmelden,Online anmelden,Sign in online
+Mit Konto zählen deine Scores in den Online-Ranglisten.,Mit Konto zählen deine Scores in den Online-Ranglisten.,"With an account, your scores count on the online leaderboards."
+Nicht mehr fragen,Nicht mehr fragen,Don't ask again
+Angemeldet als %s.,Angemeldet als %s.,Signed in as %s.
+Deine alten Bestwerte werden hochgeladen.,Deine alten Bestwerte werden hochgeladen.,Your old best scores are being uploaded.
+"Konto im Browser anlegen, E-Mail bestätigen, dann hier anmelden.","Konto im Browser anlegen, E-Mail bestätigen, dann hier anmelden.","Create the account in your browser, confirm the email, then sign in here."
+Hochgeladen werden Mania-Bestwerte ab 08.11.2026. Ältere Bestwerte und Orbit-Bestwerte bleiben lokal.,Hochgeladen werden Mania-Bestwerte ab 08.11.2026. Ältere Bestwerte und Orbit-Bestwerte bleiben lokal.,Mania best scores from 2026-11-08 on are uploaded. Older best scores and Orbit best scores stay local.

@@ -351,12 +351,10 @@ func _build_account() -> void:
 
 func _acct_done(ok: bool, msg: String) -> void:
 	_acct_pass = ""
-	_acct_msg = "" if ok else _acct_error(msg)
-	var api: OnlineApi = GameSession.online
-	if ok and api != null and not api.backfill_auto_done():
-		# Erster Login: alte Mania-Bestwerte einmalig hochladen.
-		api.set_backfill_auto_done()
-		api.start_backfill(_osz_files())
+	_acct_msg = "" if ok else LoginDialog.error_text(msg)
+	if ok:
+		# Erster Login: alte Mania-Bestwerte einmalig hochladen (gemeinsam mit dem Start-Dialog).
+		LoginDialog.after_login(GameSession.online, _osz_files())
 	_build_account()
 
 
@@ -393,7 +391,7 @@ func _build_backfill(api: OnlineApi) -> void:
 				row.add_child(_acct_label(tr("Upload abgebrochen (%d / %d).") % [int(st.done), int(st.total)]))
 			"error":
 				row.add_child(_acct_label(tr("Upload unterbrochen, Server nicht erreichbar.")))
-	var note := _acct_label(tr("Es werden nur deine Mania-Bestwerte hochgeladen. Orbit-Bestwerte nicht: sie stammen aus den alten Orbit-Regeln."))
+	var note := _acct_label(tr("Hochgeladen werden Mania-Bestwerte ab 08.11.2026. Ältere Bestwerte und Orbit-Bestwerte bleiben lokal."))
 	note.modulate = Color(1, 1, 1, 0.6)
 	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_acct.add_child(note)
@@ -403,12 +401,6 @@ func _acct_msg_label_update() -> void:
 	var l := _acct.get_node_or_null("Msg") as Label
 	if l != null:
 		l.text = _acct_msg
-
-
-static func _acct_error(msg: String) -> String:
-	if msg == "offline":
-		return TranslationServer.translate("Server nicht erreichbar.")
-	return msg
 
 
 ## Segment-Umschalter Mania 4K | Orbit (Optik wie im Song-Browser).
