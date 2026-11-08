@@ -934,6 +934,11 @@ func _show_results(is_fail: bool) -> void:
 		Lobby.send_final(PlayerStatsCard.pack(s, _hit_offsets, _acc_trace, 0, 0, s.failed))
 	# Eigener Orbit-Endscreen (Karte der Treffer, Stufen, Timing).
 	var rs := OrbitResults.new()
+	# Spielfeld + HUD ausblenden: der Endscreen steht fuer sich.
+	_view.visible = false
+	for ch in _hud.get_children():
+		if ch is CanvasItem:
+			ch.visible = false
 	_hud.add_child(rs)
 	_results_screen = rs
 	rs.retry_pressed.connect(_restart)
@@ -986,8 +991,21 @@ func _capture_shot() -> void:
 		get_tree().quit(0)
 		return
 	if OS.get_cmdline_args().has("--shot-results"):
-		await _wait_until(target)
-		_show_results(false)
+		# Ganze Map (oder bis --shot-at) sofort durchspielen, dann Endscreen.
+		# --shot-fail: Scheitern erlaubt (z. B. mit --auto-miss=2).
+		var has_at := false
+		for a in OS.get_cmdline_args():
+			has_at = has_at or a.begins_with("--shot-at=")
+		if OS.get_cmdline_args().has("--shot-fail"):
+			core._tally.no_fail = false
+		var t_end := target if has_at else float(notes[-1].end_ms) + 1000.0
+		var t := _time_ms()
+		while t < t_end and not bool(core.failed):
+			_run_autoplay(t)
+			core.update(t)
+			t += 16.0
+		_view.t_ms = t
+		_show_results(bool(core.failed))
 		return
 	if target - _time_ms() > 4000.0 and _use_audio:
 		# Vorspulen: Wertung neu ab dem Sprungpunkt, damit das Bild keine

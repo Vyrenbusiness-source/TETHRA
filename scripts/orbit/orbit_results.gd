@@ -138,11 +138,10 @@ func _build(s: Dictionary) -> void:
 	_score = _label(UiTheme.fmt_score(0), 64, UiTheme.TEXT, _tab)
 	_right.add_child(_score)
 	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 40)
+	row.add_theme_constant_override("separation", 34)
 	row.add_child(_stat(tr("GENAUIGKEIT"), UiTheme.fmt_pct(float(s.get("accuracy", 0.0)) * 100.0), 34))
-	row.add_child(_stat(tr("BESTE SERIE"), "%dx" % int(s.get("max_combo", 0)), 34))
-	row.add_child(_stat(tr("ZIELFEHLER"), "%s°" % UiTheme.fmt_num(float(s.get("aim_err", 0.0)), 1), 34))
-	row.add_child(_stat(tr("Ø TIMING"), "%+d ms" % int(round(_mean_dt)), 34))
+	row.add_child(_stat(tr("BESTE SERIE"), "%dx" % int(s.get("max_combo", 0)), 26))
+	row.add_child(_stat(tr("ZIELFEHLER"), "%s°" % UiTheme.fmt_num(float(s.get("aim_err", 0.0)), 1), 26))
 	_right.add_child(row)
 
 	_right.add_child(_spacer(4))
@@ -164,9 +163,10 @@ func _build(s: Dictionary) -> void:
 	_right.add_child(_spacer(4))
 	var hl := HBoxContainer.new()
 	hl.add_child(_tag(tr("FRÜH"), OrbitView.EARLY_COL))
-	var fill := Control.new()
-	fill.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	hl.add_child(fill)
+	var mean := _tag("%s  %+d ms" % [tr("Ø TIMING"), int(round(_mean_dt))], Color(OrbitView.OUTER_COL, 0.9))
+	mean.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	mean.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	hl.add_child(mean)
 	hl.add_child(_tag(tr("SPÄT"), OrbitView.LATE_COL))
 	_right.add_child(hl)
 	_hist_box = Control.new()
@@ -259,7 +259,7 @@ func _chart_r() -> float:
 func _draw() -> void:
 	if _data.is_empty():
 		return
-	draw_rect(Rect2(Vector2.ZERO, size), Color(OrbitView.PLATE_COL, 0.95))
+	draw_rect(Rect2(Vector2.ZERO, size), Color(OrbitView.PLATE_COL, 0.97))
 	var c := _chart_center()
 	var R := _chart_r()
 	var radii: Array[float] = [R * 0.56, R]
