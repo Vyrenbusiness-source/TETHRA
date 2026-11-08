@@ -273,7 +273,7 @@ static func convert(beatmap: Beatmap) -> Array[OrbitNote]:
 		for tg in targets:
 			if ring_last[tg[1]] > ring_last[us_r]:
 				us_r = int(tg[1])
-		angle = _unstack(angle, recent[us_r], t, dir)
+		angle = _unstack(angle, recent[us_r], t, dir, vc if vc != INF else last_angle, gap)
 		var longest := 0.0
 		for tg in targets:
 			longest = maxf(longest, _arc_len(objs[tg[0]] as ManiaNote))
@@ -311,23 +311,36 @@ static func convert(beatmap: Beatmap) -> Array[OrbitNote]:
 ## Stapel-Versatz: liegt das neue Ziel kurz nach dem letzten Ziel desselben
 ## Rings fast auf dessen Winkel, rutscht es um STACK_PUSH_DEG davon weg
 ## (Seite des bisherigen Versatzes, sonst Fluss-Richtung dir).
-static func _unstack(angle: float, recent: Array, t: float, dir: float) -> float:
-	# Neueste zuerst; nach einem Versatz noch einmal gegen alle pruefen.
-	for _pass in 2:
-		var moved := false
-		for k in range(recent.size() - 1, -1, -1):
-			var dt := t - float(recent[k][0])
-			if dt > STACK_WINDOW_MS or dt <= 0.0:
+static func _unstack(angle: float, recent: Array, t: float, dir: float, from: float, gap: float) -> float:
+	var near: Array = []
+	for r in recent:
+		var dt := t - float(r[0])
+		if dt > 0.0 and dt <= STACK_WINDOW_MS:
+			near.append(float(r[1]))
+	if near.is_empty() or _clear(angle, near):
+		return angle
+	# Kandidaten: beidseits jedes Nachbarn; frei, erreichbar, kleinster Weg gewinnt.
+	var reachable := HUMAN_DEG_PER_MS * minf(gap, 1000.0) + HUMAN_REACH_DEG if human_reach else 360.0
+	var best := angle
+	var best_cost := INF
+	for na in near:
+		for sgn in [-1.0, 1.0]:
+			var c := OrbitNote.wrap_deg(na + sgn * STACK_PUSH_DEG)
+			if not _clear(c, near):
 				continue
-			var d := OrbitNote.delta_deg(float(recent[k][1]), angle)
-			if absf(d) >= STACK_NEAR_DEG:
-				continue
-			var side := signf(d) if absf(d) > 0.5 else dir
-			angle = OrbitNote.wrap_deg(float(recent[k][1]) + side * STACK_PUSH_DEG)
-			moved = true
-		if not moved:
-			break
-	return angle
+			var mv := absf(OrbitNote.delta_deg(from, c))
+			var cost := mv + (1000.0 if mv > reachable else 0.0) + (0.0 if sgn == dir else 1.0)
+			if cost < best_cost:
+				best_cost = cost
+				best = c
+	return best
+
+
+static func _clear(a: float, near: Array) -> bool:
+	for na in near:
+		if absf(OrbitNote.delta_deg(float(na), a)) < STACK_NEAR_DEG:
+			return false
+	return true
 
 
 ## Menschliche Erreichbarkeit: der virtuelle Zeiger vc faehrt in gap ms mit
