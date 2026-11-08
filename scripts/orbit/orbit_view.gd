@@ -41,6 +41,13 @@ const ARC_W_K := 0.026
 const TOL_DEFAULT := 22.0
 ## So weit vor der Trefferzeit zeigt der Zeiger an, ob er auf dem Ziel steht.
 const AIM_LOOKAHEAD_MS := 650.0
+## HD: ab diesem Anflug-Fortschritt verblasst ein Ziel, bei HD_GONE ist es weg
+## (letzte ~40 % des Wegs; die letzten 8 % bleiben leer = Gedaechtnis).
+const HD_FADE_FROM := 0.60
+const HD_GONE := 0.92
+## FI: Ziel unsichtbar bis FI_FROM, dann kurzes Einblenden bis FI_FULL.
+const FI_FROM := 0.50
+const FI_FULL := 0.62
 
 const INNER_COL := Color(0.47, 0.78, 0.98)
 const OUTER_COL := Color(1.0, 0.70, 0.40)
@@ -81,6 +88,10 @@ var tol_deg := TOL_DEFAULT
 ## Halbbreite der Mitte, in der CORE moeglich ist (OrbitCore.CENTER_DEG).
 var center_deg := TOL_DEFAULT * 0.5
 var show_guides := true
+## Orbit-Mods (OrbitCore.ORBIT_MODS): HD blendet Ziele vor dem Ring aus,
+## FI blendet sie erst spaet ein. Rein visuell, die Wertung bleibt gleich.
+var mod_hidden := false
+var mod_fade_in := false
 var ring_held: Array[bool] = [false, false]
 ## Takt-Puls 0..1 (BeatClock.beat_env, nach Intensitaet gewichtet) und Kiai 0..1.
 var beat_env := 0.0
@@ -590,7 +601,10 @@ func _draw_landing(c: Vector2, u: float, i: int) -> void:
 	var win := preempt * 0.8
 	if dt < 0.0 or dt > win:
 		return
-	var k := 1.0 - dt / win
+	var ma := mod_alpha(dt)
+	if ma <= 0.002:
+		return
+	var k := (1.0 - dt / win) * sqrt(ma)
 	var nxt := _next[n.ring] == i
 	var rad := ring_radius(n.ring)
 	var col := _ring_col(n.ring)
@@ -653,9 +667,20 @@ func _progress(dt: float) -> float:
 	return clampf(1.0 - dt / maxf(preempt, 1.0), 0.0, 1.0)
 
 
-## Einblenden im ersten Siebtel des Anflugs (kein Aufploppen).
+## Einblenden im ersten Siebtel des Anflugs (kein Aufploppen), mal Mod-Faktor.
 func _approach_alpha(dt: float) -> float:
-	return clampf(_progress(dt) / 0.14, 0.0, 1.0)
+	return clampf(_progress(dt) / 0.14, 0.0, 1.0) * mod_alpha(dt)
+
+
+## Sichtbarkeit durch HD/FI (1 ohne Mods). dt = Zeit bis zum Ring.
+func mod_alpha(dt: float) -> float:
+	var p := _progress(dt)
+	var a := 1.0
+	if mod_hidden:
+		a *= 1.0 - smoothstep(HD_FADE_FROM, HD_GONE, p)
+	if mod_fade_in:
+		a *= smoothstep(FI_FROM, FI_FULL, p)
+	return a
 
 
 ## Tiefe: spaetere Ziele blasser, das naechste ihres Rings voll.
@@ -767,7 +792,9 @@ func _draw_arc_note(c: Vector2, u: float, i: int, n) -> void:
 	var held := st == ST_ARC
 	var nxt := _next[n.ring] == i
 	var rad := ring_radius(n.ring) if (held or dt < 0.0) else radius_at(n.ring, dt)
-	var alpha := _approach_alpha(dt) * fade * (1.0 if held else _depth(dt, nxt))
+	# Gehaltene / laufende Boegen bleiben trotz HD sichtbar (Folgen braucht Sicht).
+	var base_a := clampf(_progress(dt) / 0.14, 0.0, 1.0) if (held or dt < 0.0) else _approach_alpha(dt)
+	var alpha := base_a * fade * (1.0 if held else _depth(dt, nxt))
 	# Spitze: bewegt sich ab der Trefferzeit von a0 nach a1.
 	var k := clampf((t_ms - t0) / maxf(t1 - t0, 1.0), 0.0, 1.0) if (held or dt < 0.0) else 0.0
 	if dropped:
