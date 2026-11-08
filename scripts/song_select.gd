@@ -10,9 +10,9 @@ const COL_BG := Color(0.03, 0.03, 0.05)
 const COL_PANEL := Color(0.07, 0.07, 0.10, 0.92)
 const COL_CARD := Color(0.08, 0.08, 0.11, 0.94)
 const COL_CARD_SEL := Color(0.13, 0.13, 0.18, 0.98)
-const COL_ACCENT := Color(0.20, 0.85, 1.0)
-const COL_TEXT := Color(0.95, 0.96, 1.0)
-const COL_DIM := Color(0.62, 0.64, 0.72)
+const COL_ACCENT := UiTheme.ACCENT
+const COL_TEXT := UiTheme.TEXT
+const COL_DIM := UiTheme.DIM
 # Raster: 24 px Aussenrand, rechte Spalte (Toolbar, Filter, Liste) gleich breit.
 const M := 24
 const INFO_W := 400
@@ -250,7 +250,7 @@ func _ready() -> void:
 		_capture_screenshot_and_quit()
 
 
-## Debug (--mania/--orbit): erste 4K-Diff, optional gefiltert. --map=<text>
+## Debug (--mania/--orbit): erste im Modus sichtbare Diff (Orbit auch osu!standard), optional gefiltert. --map=<text>
 ## sucht in "artist - title [version]", --diff=<text> in der Version (beides
 ## ohne Gross/Klein). Nur fuer Harness/Videos, nie gespeichert. [] = keine.
 func _debug_pick() -> Array:
@@ -263,7 +263,7 @@ func _debug_pick() -> Array:
 			diff_q = a.trim_prefix("--diff=").to_lower()
 	for ms in _library.mapsets if map_q != "" else _filtered:
 		for i in ms.difficulty_count():
-			if int(ms.meta_at(i).get("mode", 0)) != 3:
+			if not MapSet.mode_shows(ms.meta_at(i), _play_mode):
 				continue
 			var ver := ms.version_name_at(i)
 			var full := ("%s - %s [%s]" % [ms.artist, ms.title, ver]).to_lower()
