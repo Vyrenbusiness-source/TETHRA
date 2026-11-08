@@ -1,14 +1,19 @@
 class_name OrbitTutorial
 extends Control
 
-## Orbit-Einfuehrung fuer neue Spieler: sechs kurze Schritte auf einem ruhigen
-## Metronom-Takt (90 BPM), jeder mit eigenem kleinen Muster. Wertung ueber
-## OrbitCore, Darstellung ueber OrbitView, genau wie im Spiel.
-##   1 Zeigen  2 Innerer Ring  3 Aeusserer Ring  4 Ringwechsel  5 Bogen  6 Probe-Runde
-## Prinzip: Winkel zur Mitte = Richtung, Abstand zur Mitte = Ring, beide Tasten
-## (Maus links/rechts, Z/X) treffen jedes Ziel.
-## Schritte 1-5 warten, bis der Spieler es NEED-mal geschafft hat (neue Runden
-## kommen von selbst nach), Schritt 6 ist eine Runde mit Wertung.
+## Orbit-Einfuehrung fuer den Taktkreis: sechs kurze Schritte, jeder mit echtem
+## Mitspielen und klarer Erfolgsbedingung, danach eine Probe-Runde mit Wertung.
+## Wertung ueber OrbitCore, Darstellung ueber OrbitView, genau wie im Spiel.
+##   1 Takt     Kreis = ein Takt, der Zeiger dreht, 12 Uhr = Eins: Taste bei Eins
+##   2 Zielen   Cursor auf den Zeiger legen und mitfuehren (Pflicht)
+##   3 Ringe    Taste A = innerer Ring, Taste B = aeusserer Ring
+##   4 Akzent   beide Tasten zugleich
+##   5 Halte    Taste halten, dem Zeiger folgen
+##   6 Vorschau blasse Noten = naechster Takt
+## Das Tempo steigt von Schritt zu Schritt (BPMS), jede Note sitzt auf ihrer
+## Taktposition. Schritte 1-6 warten, bis der Spieler es NEED-mal geschafft hat
+## (neue Runden kommen von selbst nach). Fehler nennen den Grund ("neben dem
+## Zeiger", "anderer Ring", "zu frueh").
 ## Tab = Schritt ueberspringen, Esc = beenden. Tasten aus den Settings
 ## (orbit_key_inner/outer = Taste A/B), dazu immer Maus links/rechts wie im Spiel.
 ## "Gesehen" steht in seen_path (Hinweis im Song-Browser).
@@ -18,52 +23,48 @@ extends Control
 const BROWSER := "res://scenes/song_select.tscn"
 static var seen_path := "user://orbit_tutorial.cfg"
 
-const BPM := 90.0
-const BEAT_MS := 60000.0 / BPM
+enum { BAR, AIM, KEYS, ACCENT, HOLD, PREVIEW, TRIAL }
+
+## Tempo je Schritt: langsam zum Start, dann steigend (4/4, ein Takt = 4 Schlaege).
+const BPMS: Array[float] = [60.0, 60.0, 60.0, 66.0, 72.0, 78.0, 84.0]
 const NEED := 3
 const STEP_COUNT := 6
 const DONE_PAUSE_MS := 1300.0
-## Mindest-Anflugzeit: im Tutorial nie hektischer als 1 s.
-const MIN_PREEMPT := 1000.0
 const OD := 5.0
-## Schritt 1: so lange auf dem Ziel bleiben, Toleranz in Grad, Zielwinkel.
-const AIM_HOLD_MS := 280.0
-const AIM_TOL := 14.0
-const AIM_ANGLES: Array[float] = [60.0, 200.0, 320.0]
-## Ring des Zielflecks je Versuch in Schritt 1: erst innen, dann aussen, dann innen.
-const AIM_RINGS: Array[int] = [0, 1, 0]
+## Schritt 1: so nah (ms) an Takt-Eins zaehlt der Druck.
+const BAR_TOL_MS := 220.0
+## Schritt 2: so lange am Stueck auf dem Zeiger bleiben.
+const AIM_HOLD_MS := 2200.0
 const BOT_TAP_MS := 40.0
 ## Bot drueckt im Bild, das der Trefferzeit am naechsten liegt (halbes Bild vorher).
 const BOT_LEAD_MS := 8.0
 ## Anteil der Hoehe fuer den Text oben (das Spielfeld beginnt darunter).
 const TOP_K := 0.185
 const JUDGE_MS := 520.0
+## Hinweis bleibt so lange stehen, bevor ihn ein anderer ersetzt.
+const SAY_HOLD_MS := 1400.0
 
-enum { AIM, INNER, OUTER, SWITCH, ARC, TRIAL }
-
-## Probe-Runde: [Beat, Winkel, Ring] oder [Beat, Winkel, Ring, Beats, Spanne].
-## Ringwechsel mit mindestens zwei Beats Luft (bei 90 BPM 1,3 s).
+## Probe-Runde: [Beat ab Taktanfang, Ring (0 innen, 1 aussen, 2 Akzent), Halte-Beats].
 const TRIAL_PATTERN := [
-	[0, 0.0, 0], [1, 30.0, 0], [2, 60.0, 0],
-	[4, 100.0, 1], [5, 140.0, 1], [6, 175.0, 1],
-	[8, 210.0, 0, 2, 80.0],
-	[12, 300.0, 1], [13, 330.0, 1],
-	[15, 20.0, 0], [16, 50.0, 0], [18, 90.0, 1],
+	[0.0, 0], [1.0, 0], [2.0, 1], [3.0, 1],
+	[4.0, 2], [5.5, 0], [6.0, 1, 1.5],
+	[8.0, 0, 2.0], [9.0, 1], [10.5, 2], [11.5, 0],
 ]
 
-const TITLES := ["Zeigen", "Innerer Ring", "Äußerer Ring", "Ringwechsel", "Bogen", "Probe-Runde"]
+const TITLES := ["Der Takt", "Zielen", "Zwei Ringe", "Akzent", "Halte", "Vorschau", "Probe-Runde"]
 const TIER_COLS := [
 	Color(1.0, 0.93, 0.80), Color(0.949, 0.635, 0.227), Color(0.553, 0.757, 0.549),
 	Color(0.62, 0.64, 0.62), Color(0.62, 0.59, 0.55), Color(0.871, 0.443, 0.384),
 ]
 
-var step := AIM
+var step := BAR
 var success := 0
 ## Test/Harness: Uhr von aussen (advance), Bot gibt Eingaben als Events.
 var manual_clock := false
 var bot := false
 var t_ms := 0.0
 var core: OrbitCore
+var clock: OrbitClock
 var notes: Array[OrbitNote] = []
 var finished := false
 var tiers: Array[int] = [0, 0, 0, 0, 0, 0]
@@ -71,14 +72,18 @@ var tiers: Array[int] = [0, 0, 0, 0, 0, 0]
 var _round := 0
 var _round_over := false
 var _done_t := -1.0
-var _aim_target := 60.0
-var _aim_ring := 0
-## Gewaehlter Ring des Cursors (Hysterese wie OrbitCore) und Abstand in Bildhoehen.
-var _sel_ring := 0
-var _cursor_rho := 0.0
+var _beat_ms := 1000.0
+var _bar_ms := 4000.0
+## Zeit von Takt-Eins eines beliebigen Takts dieses Schritts (Anker der Uhr).
+var _t0 := 0.0
+## Noten ab dieser Zeit zaehlen als Erfolg (Vorschau: nur der zweite Takt).
+var _count_from := -INF
+var _q_of: Dictionary = {}
+var _say_t := -INF
 var _aim_since := -1.0
 var _moved := false
 var _cursor_deg := 0.0
+var _cursor_rho := 0.0
 var _held := [[false, false], [false, false]]
 var _start_usec := 0
 var _last_beat := -1
@@ -103,14 +108,11 @@ var _hit_player: AudioStreamPlayer
 
 var _bot_idx := 0
 var _bot_release: Array[float] = [-1.0, -1.0]
-var _bot_arc: Array[int] = [-1, -1]
-var _bot_deg := 0.0
-var _bot_rho := 0.2
-var _bot_key_last := 1
+var _bot_bar_t := 0.0
 
 
-## Hervorhebung ueber der OrbitView (gleiche Koordinaten): Ziel-Sektor in
-## Schritt 1, ruhig pulsierender Ring bzw. Akkord-Linie in den Schritten 2-5.
+## Hervorhebung ueber der OrbitView (gleiche Koordinaten): Markierung bei Eins,
+## Fortschritt beim Zielen, Ringnamen mit Tasten, Beschriftung der Vorschau.
 class Highlight extends Control:
 	var tut: OrbitTutorial
 
@@ -122,49 +124,44 @@ class Highlight extends Control:
 		queue_redraw()
 
 	func _draw() -> void:
-		if tut == null or tut.finished:
+		if tut == null or tut.finished or tut._done_t >= 0.0:
 			return
 		var v := tut._view
 		var c := v.center()
-		var ph := fposmod(tut.t_ms / OrbitTutorial.BEAT_MS, 1.0)
-		var p := 0.55 + 0.45 * exp(-ph * 4.0)
+		var u := v.unit()
 		var acc := UiTheme.ACCENT
-		var w := maxf(2.0, v.unit() * 0.004)
+		var w := maxf(2.0, u * 0.004)
+		var r_out := v.ring_radius(1)
 		match tut.step:
+			OrbitTutorial.BAR:
+				# Takt-Eins: Marke oben zwischen den Ringen, hell, wenn der Zeiger nah ist.
+				var near := absf(OrbitNote.delta_deg(tut.hand_deg(), 0.0)) / 60.0
+				var glow := clampf(1.0 - near, 0.0, 1.0)
+				_tag(OrbitView.polar(c, 0.0, (v.ring_radius(0) + r_out) * 0.5), tr("EINS"), 0.6 + 0.4 * glow)
 			OrbitTutorial.AIM:
-				if tut._done_t >= 0.0:
-					return
-				# Zielfleck: Winkel UND Ring zugleich (ein Bogenstueck auf dem Ring).
-				var r := v.ring_radius(tut._aim_ring)
-				var a0 := deg_to_rad(tut._aim_target - OrbitTutorial.AIM_TOL - 90.0)
-				var a1 := deg_to_rad(tut._aim_target + OrbitTutorial.AIM_TOL - 90.0)
-				var band := v.unit() * 0.06
-				draw_arc(c, r, a0, a1, 32, Color(acc, 0.16 + 0.10 * p), band, true)
-				draw_arc(c, r + band * 0.5, a0, a1, 32, Color(acc, 0.8), w, true)
-				draw_arc(c, r - band * 0.5, a0, a1, 32, Color(acc, 0.8), w, true)
 				var f := tut.aim_progress()
+				var rr := r_out + u * 0.09
+				draw_arc(c, rr, 0.0, TAU, 96, Color(acc, 0.14), w, true)
 				if f > 0.0:
-					draw_arc(c, r + band * 0.5, a0, lerpf(a0, a1, f), 32, UiTheme.TEXT, w * 2.0, true)
-				_tag(OrbitView.polar(c, 270.0, r), tut.ring_name(tut._aim_ring))
-			OrbitTutorial.INNER, OrbitTutorial.OUTER:
-				var rr := 0 if tut.step == OrbitTutorial.INNER else 1
-				_ring(c, v.ring_radius(rr), p, w)
-				_tag(OrbitView.polar(c, 270.0, v.ring_radius(rr)), tut.ring_name(rr))
-			OrbitTutorial.ARC, OrbitTutorial.SWITCH:
-				# Der Ring des naechsten Ziels pulst: dorthin zeigen.
+					draw_arc(c, rr, -PI * 0.5, -PI * 0.5 + TAU * f, 96, UiTheme.TEXT, w * 1.6, true)
+			OrbitTutorial.KEYS, OrbitTutorial.ACCENT, OrbitTutorial.HOLD:
 				var nx := tut.next_note()
-				var rn := nx.ring if nx != null else 0
-				_ring(c, v.ring_radius(rn), p, w)
-				_tag(OrbitView.polar(c, 270.0, v.ring_radius(rn)), tut.ring_name(rn))
+				for rg in 2:
+					var p := 0.55 + 0.45 * exp(-fposmod((tut.t_ms - tut._t0) / tut._beat_ms, 1.0) * 4.0)
+					var on := nx != null and nx.ring == rg and tut.step != OrbitTutorial.ACCENT
+					if tut.step == OrbitTutorial.ACCENT:
+						on = true
+					if on:
+						draw_arc(c, v.ring_radius(rg), 0.0, TAU, 160, Color(acc, 0.06 + 0.06 * p), w * 6.0, true)
+					_tag(OrbitView.polar(c, 290.0 if rg == 0 else 250.0, v.ring_radius(rg)), tut.ring_tag(rg))
+			OrbitTutorial.PREVIEW:
+				var pv := tut.first_preview()
+				if pv != null:
+					_tag(OrbitView.polar(c, pv.angle_deg, v.ring_radius(pv.ring) + u * (0.075 if pv.ring == 1 else -0.075)),
+							tr("NÄCHSTER TAKT"))
 
-	## Hervorgehobener Ring: weiches Band plus feine Linie, pulst auf dem Takt.
-	func _ring(c: Vector2, r: float, p: float, w: float) -> void:
-		var acc := UiTheme.ACCENT
-		draw_arc(c, r, 0.0, TAU, 160, Color(acc, 0.07 + 0.07 * p), w * 6.0, true)
-		draw_arc(c, r, 0.0, TAU, 160, Color(acc, 0.45 + 0.4 * p), w, true)
-
-	## Ringname auf dem Ring (flach, Bernstein-Kante).
-	func _tag(pos: Vector2, text: String) -> void:
+	## Ringname mit Taste auf dem Ring (flach, Bernstein-Kante).
+	func _tag(pos: Vector2, text: String, alpha: float = 1.0) -> void:
 		var font := get_theme_default_font()
 		var fs := 15
 		var ts := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
@@ -172,10 +169,10 @@ class Highlight extends Control:
 		var rect := Rect2(pos - sz * 0.5, sz)
 		var box := UiTheme.solid_box(UiTheme.BG, 6)
 		box.set_border_width_all(1)
-		box.border_color = UiTheme.ACCENT
+		box.border_color = Color(UiTheme.ACCENT, alpha)
 		draw_style_box(box, rect)
 		var base := rect.position.y + (sz.y - ts.y) * 0.5 + font.get_ascent(fs)
-		draw_string(font, Vector2(rect.position.x, base), text, HORIZONTAL_ALIGNMENT_CENTER, sz.x, fs, UiTheme.TEXT)
+		draw_string(font, Vector2(rect.position.x, base), text, HORIZONTAL_ALIGNMENT_CENTER, sz.x, fs, Color(UiTheme.TEXT, alpha))
 
 # ---------------------------------------------------------------------------
 # Gesehen-Merker (eigene Datei)
@@ -227,7 +224,7 @@ func _ready() -> void:
 		bot = true
 	if DisplayServer.get_name() != "headless" and not shot:
 		Input.mouse_mode = Input.MOUSE_MODE_HIDDEN
-	enter_step(AIM)
+	enter_step(BAR)
 	if shot:
 		_run_shots.call_deferred()
 
@@ -363,24 +360,31 @@ static func _tick_stream() -> AudioStreamWAV:
 # ---------------------------------------------------------------------------
 
 func enter_step(s: int) -> void:
-	step = clampi(s, AIM, TRIAL)
+	step = clampi(s, BAR, TRIAL)
 	success = 0
 	_round = 0
 	_round_over = false
 	_done_t = -1.0
 	_aim_since = -1.0
-	_aim_target = AIM_ANGLES[0]
-	_aim_ring = AIM_RINGS[0]
 	_judge_t = -INF
+	_say_t = -INF
 	tiers = [0, 0, 0, 0, 0, 0]
 	_release_all()
 	_bot_reset()
 	_feedback.text = ""
-	if step == AIM:
-		core = null
-		notes = []
-		_view.setup(notes)
-	else:
+	# Neue Uhr: der naechste Takt-Anfang liegt 2,5 Schlaege voraus.
+	_beat_ms = 60000.0 / BPMS[step]
+	_bar_ms = _beat_ms * 4.0
+	_t0 = t_ms - _bar_ms + _beat_ms * 2.5
+	_last_beat = -1
+	clock = OrbitClock.fixed(_bar_ms, 4, _t0)
+	_view.clock = clock
+	_view.preempt = _bar_ms
+	_bot_bar_t = _next_bar_time(t_ms)
+	core = null
+	notes = []
+	_view.setup(notes)
+	if step >= KEYS:
 		_start_round(t_ms)
 	_update_texts()
 
@@ -389,7 +393,7 @@ func skip_step() -> void:
 	if finished:
 		return
 	if step == TRIAL:
-		_show_result()
+		_show_result(false)
 	else:
 		enter_step(step + 1)
 
@@ -403,24 +407,22 @@ func quit_tutorial() -> void:
 	get_tree().change_scene_to_file.call_deferred(BROWSER)
 
 
-func _preempt() -> float:
-	return maxf(ManiaCore.preempt_for(Settings.mania_scroll), MIN_PREEMPT)
-
-
-static func _bt(beat: int) -> float:
-	return float(beat) * BEAT_MS
+## Zeit des naechsten Takt-Anfangs ab t (Anker _t0).
+func _next_bar_time(t: float) -> float:
+	return _t0 + ceilf((t - _t0) / _bar_ms) * _bar_ms
 
 
 func _start_round(t: float) -> void:
-	var pre := _preempt()
-	var b0 := ceili((t + pre + BEAT_MS * 0.5) / BEAT_MS)
-	notes = pattern(step, b0, _round)
+	var k := ceili((t - _t0 + _beat_ms * 1.5) / _bar_ms)
+	var b0 := k * 4
+	notes = pattern(step, _t0, _beat_ms, b0, _round)
+	_count_from = _t0 + float(b0 + 4) * _beat_ms - 1.0 if step == PREVIEW else -INF
 	_round += 1
 	_round_over = false
+	_q_of = {}
 	core = OrbitCore.new()
 	core.setup(notes, OD, 1.0, 0.0, {"NF": true})
-	core.preempt = pre
-	_view.preempt = pre
+	core.preempt = _bar_ms
 	core.note_judged.connect(_on_judged)
 	core.arc_started.connect(_on_arc_started)
 	core.press_missed.connect(_on_press_missed)
@@ -429,48 +431,81 @@ func _start_round(t: float) -> void:
 	_bot_reset()
 
 
-## Muster je Schritt ab Beat b0; rnd verschiebt den Startwinkel je Runde.
-static func pattern(s: int, b0: int, rnd: int) -> Array[OrbitNote]:
+## Eine Note auf Taktposition beat (Schlaege ab Anker t0, Takt = 4 Schlaege):
+## Winkel = Anteil des Takts x 360, Zeit exakt. dur > 0 = Halte, die der Hand folgt.
+static func _mk(t0: float, bm: float, beat: float, ring: int, dur: float = 0.0) -> OrbitNote:
+	var ang := fposmod(beat * 90.0, 360.0)
+	var n: OrbitNote
+	if dur > 0.0:
+		n = OrbitNote.make_arc(t0 + beat * bm, t0 + (beat + dur) * bm, ang, 90.0 * dur, ring)
+	else:
+		n = OrbitNote.make(t0 + beat * bm, ang, ring)
+	n.speed = 90.0 / bm
+	return n
+
+
+## Akzent = zwei Noten (innen, aussen) zur selben Zeit am selben Winkel.
+static func _accent(out: Array[OrbitNote], t0: float, bm: float, beat: float) -> void:
+	out.append(_mk(t0, bm, beat, 0))
+	out.append(_mk(t0, bm, beat, 1))
+
+
+## Muster je Schritt; b0 = Schlag-Nummer des Takt-Anfangs (Vielfaches von 4),
+## rnd wechselt das Muster je Runde. Alle Zeiten liegen auf dem Taktraster.
+static func pattern(s: int, t0: float, bm: float, b0: int, rnd: int) -> Array[OrbitNote]:
 	var out: Array[OrbitNote] = []
-	var a := fposmod(30.0 + rnd * 75.0, 360.0)
+	var b := float(b0)
+	var odd := rnd % 2 == 1
 	match s:
-		INNER, OUTER:
+		KEYS:
+			var rings: Array = [1, 0, 1, 0] if odd else [0, 0, 1, 1]
 			for k in 4:
-				out.append(OrbitNote.make(_bt(b0 + k * 2), a + k * 40.0, 0 if s == INNER else 1))
-		SWITCH:
-			for k in 4:
-				out.append(OrbitNote.make(_bt(b0 + k * 3), a + k * 70.0, k % 2))
-		ARC:
-			for k in 3:
-				var dir := 1.0 if k % 2 == 0 else -1.0
-				out.append(OrbitNote.make_arc(_bt(b0 + k * 4), _bt(b0 + k * 4 + 2),
-					a + k * 50.0, 70.0 * dir, k % 2))
+				out.append(_mk(t0, bm, b + k, int(rings[k])))
+		ACCENT:
+			for beat in ([0.0, 1.0, 3.0] if odd else [0.0, 2.0, 3.0]):
+				_accent(out, t0, bm, b + beat)
+		HOLD:
+			var r0 := 1 if odd else 0
+			out.append(_mk(t0, bm, b, r0, 1.5))
+			out.append(_mk(t0, bm, b + 2.0, 1 - r0, 1.5))
+			out.append(_mk(t0, bm, b + 4.0, r0, 2.0))
+		PREVIEW:
+			var r1 := 1 if odd else 0
+			out.append(_mk(t0, bm, b + 1.0, r1))
+			out.append(_mk(t0, bm, b + 3.0, r1))
+			out.append(_mk(t0, bm, b + 4.0, 1 - r1))
+			out.append(_mk(t0, bm, b + 5.0, r1))
+			out.append(_mk(t0, bm, b + 6.0, 1 - r1))
 		TRIAL:
 			for e in TRIAL_PATTERN:
-				var b := b0 + int(e[0])
-				if e.size() > 3:
-					out.append(OrbitNote.make_arc(_bt(b), _bt(b + int(e[3])), float(e[1]), float(e[4]), int(e[2])))
+				var beat := b + float(e[0])
+				if int(e[1]) == 2:
+					_accent(out, t0, bm, beat)
+				elif e.size() > 2:
+					out.append(_mk(t0, bm, beat, int(e[1]), float(e[2])))
 				else:
-					out.append(OrbitNote.make(_bt(b), float(e[1]), int(e[2])))
+					out.append(_mk(t0, bm, beat, int(e[1])))
 	return out
 
 
 func _update_texts() -> void:
-	_step_lbl.text = tr("Schritt %d von %d") % [step + 1, STEP_COUNT]
+	_step_lbl.text = tr("Probe") if step == TRIAL else tr("Schritt %d von %d") % [step + 1, STEP_COUNT]
 	_title_lbl.text = tr(TITLES[step])
-	var ki := key_label(0)
-	var ko := key_label(1)
+	var ka := key_label(0)
+	var kb := key_label(1)
 	match step:
+		BAR:
+			_body_lbl.text = tr("Der Kreis ist ein Takt. Der Zeiger dreht im Songtempo, oben beginnt er. Drück eine Taste, wenn er oben steht.")
 		AIM:
-			_body_lbl.text = tr("Beweg Maus oder Stift. Der Winkel zur Mitte ist die Richtung, der Abstand wählt den Ring: nah an der Mitte innen, weit draußen außen. Zeig auf die markierte Stelle und bleib kurz dort.")
-		INNER:
-			_body_lbl.text = tr("Ziele wandern von der Mitte nach außen. Zeig nah an der Mitte auf das Ziel und drück eine Taste, wenn es den inneren Ring erreicht. Beide Tasten (%s und %s, auch Maus links und rechts) treffen: wechsle sie ab.") % [ki, ko]
-		OUTER:
-			_body_lbl.text = tr("Außen kommen die Ziele von außen herein. Zeig weit draußen auf das Ziel und drück, wenn es den äußeren Ring erreicht.")
-		SWITCH:
-			_body_lbl.text = tr("Das nächste Ziel liegt auf dem anderen Ring. Zeig vorher in die Tiefe, nah an die Mitte oder weit hinaus, und drück dann.")
-		ARC:
-			_body_lbl.text = tr("Ein Bogen beginnt wie ein Ziel. Halte eine Taste gedrückt, fahr der Spitze nach und bleib dabei auf dem Ring.")
+			_body_lbl.text = tr("Zielen ist Pflicht. Leg Maus oder Stift auf den Zeiger und führ ihn mit, ohne abzusetzen.")
+		KEYS:
+			_body_lbl.text = tr("Taste A (%s) spielt den inneren Ring, Taste B (%s) den äußeren. Maus links und rechts gehen auch. Drück, wenn der Zeiger die Note erreicht.") % [ka, kb]
+		ACCENT:
+			_body_lbl.text = tr("Zwei Noten an einer Stelle sind ein Akzent. Drück beide Tasten (%s und %s) zugleich.") % [ka, kb]
+		HOLD:
+			_body_lbl.text = tr("Ein Bogen ist eine Halte. Halt die Taste und führ den Cursor mit dem Zeiger, bis der Bogen endet.")
+		PREVIEW:
+			_body_lbl.text = tr("Blasse Noten gehören zum nächsten Takt. Lies sie voraus, bevor der Zeiger sie erreicht.")
 		TRIAL:
 			_body_lbl.text = tr("Jetzt alles zusammen, einmal durch. Danach siehst du deine Wertung.")
 	_pip_row.visible = step != TRIAL
@@ -489,13 +524,15 @@ func _add_success() -> void:
 		_done_t = t_ms
 		_feedback.text = tr("Geschafft.")
 		_feedback.add_theme_color_override("font_color", UiTheme.GOOD)
-	else:
+	elif t_ms - _say_t > SAY_HOLD_MS:
 		_feedback.text = ""
 
 
+## Hinweis mit Grund; ein juengerer Hinweis wird nicht gleich ueberschrieben.
 func _say(text: String) -> void:
 	_feedback.text = text
 	_feedback.add_theme_color_override("font_color", UiTheme.DIM)
+	_say_t = t_ms
 
 
 # ---------------------------------------------------------------------------
@@ -526,7 +563,6 @@ func tick() -> void:
 		for r in 2:
 			_view.arc_warn[r] = core.arc_out_ms(r, t) / OrbitCore.ARC_OUT_MS
 	_view.t_ms = t
-	_view.beat_env = exp(-fposmod(t / BEAT_MS, 1.0) * 5.0) * 0.6
 	if step == AIM and _done_t < 0.0:
 		_update_aim(t)
 	var a := clampf(1.0 - (t - _judge_t) / JUDGE_MS, 0.0, 1.0)
@@ -535,7 +571,7 @@ func tick() -> void:
 	if _done_t >= 0.0:
 		if t - _done_t >= DONE_PAUSE_MS:
 			if step == TRIAL:
-				_show_result()
+				_show_result(true)
 			else:
 				enter_step(step + 1)
 		return
@@ -548,12 +584,17 @@ func tick() -> void:
 
 
 func _metronome(t: float) -> void:
-	var b := floori(t / BEAT_MS)
+	var b := floori((t - _t0) / _beat_ms)
 	if b == _last_beat:
 		return
 	_last_beat = b
 	if not manual_clock and _tick_player != null:
 		_tick_player.play()
+
+
+## Winkel des Zeigers jetzt (0 = oben).
+func hand_deg() -> float:
+	return clock.angle_at(t_ms) if clock != null else 0.0
 
 
 func aim_progress() -> float:
@@ -562,27 +603,43 @@ func aim_progress() -> float:
 	return clampf((t_ms - _aim_since) / AIM_HOLD_MS, 0.0, 1.0)
 
 
+## Liegt der Cursor jetzt auf dem Zeiger (Winkel, nicht in der Totzone)?
+func on_hand(t: float) -> bool:
+	return _moved and _cursor_rho >= OrbitCore.DEAD_K \
+			and OrbitNote.dist_deg(_cursor_deg, clock.angle_at(t)) <= OrbitCore.ANGLE_TOL_DEG
+
+
 func _update_aim(t: float) -> void:
-	if _moved and OrbitNote.dist_deg(_cursor_deg, _aim_target) <= AIM_TOL and _sel_ring == _aim_ring:
+	if on_hand(t):
 		if _aim_since < 0.0:
 			_aim_since = t
 		elif t - _aim_since >= AIM_HOLD_MS:
 			_aim_since = -1.0
 			_play_hit()
 			_add_success()
-			if success < NEED:
-				_aim_target = AIM_ANGLES[success]
-				_aim_ring = AIM_RINGS[success]
 	else:
+		if _aim_since >= 0.0 and t - _aim_since > 300.0:
+			_say(tr("Neben dem Zeiger: bleib auf ihm."))
 		_aim_since = -1.0
 
 
-## Naechstes noch offenes Ziel (fuer Hervorhebung und Bot), null = keins.
+## Naechstes noch offenes Ziel (fuer Hervorhebung), null = keins.
 func next_note() -> OrbitNote:
 	if core == null:
 		return null
 	for i in notes.size():
 		if not core.is_judged(i):
+			return notes[i]
+	return null
+
+
+## Erste offene Note im naechsten Takt (Vorschau), null = keine.
+func first_preview() -> OrbitNote:
+	if core == null or clock == null:
+		return null
+	for i in notes.size():
+		if not core.is_judged(i) and clock.bar_at(notes[i].time_ms) != clock.bar_at(t_ms) \
+				and notes[i].time_ms - t_ms <= _bar_ms:
 			return notes[i]
 	return null
 
@@ -597,12 +654,13 @@ func ring_name(ring: int) -> String:
 	return tr("AUSSEN") if ring == 1 else tr("INNEN")
 
 
+## Ringname mit Belegung: "INNEN  A  Z", "AUSSEN  B  X".
+func ring_tag(ring: int) -> String:
+	return "%s  %s  %s" % [ring_name(ring), "B" if ring == 1 else "A", key_label(ring)]
+
+
 func cursor_deg() -> float:
 	return _cursor_deg
-
-
-func cursor_ring() -> int:
-	return _sel_ring
 
 
 # ---------------------------------------------------------------------------
@@ -614,9 +672,20 @@ func _on_arc_started(index: int, q: int) -> void:
 	_play_hit()
 
 
+## Partner eines Akzents (gleiche Zeit, anderer Ring), -1 = keiner.
+func accent_partner(index: int) -> int:
+	var n := notes[index]
+	for j in [index - 1, index + 1]:
+		if j >= 0 and j < notes.size() and notes[j].ring != n.ring \
+				and absf(notes[j].time_ms - n.time_ms) < 0.5:
+			return j
+	return -1
+
+
 func _on_judged(index: int, res: Dictionary) -> void:
 	_view.on_judged(index, res)
 	var q := clampi(int(res.get("quality", 5)), 0, 5)
+	_q_of[index] = q
 	if step == TRIAL:
 		tiers[q] += 1
 	if _done_t >= 0.0:
@@ -627,17 +696,25 @@ func _on_judged(index: int, res: Dictionary) -> void:
 	if step == TRIAL:
 		return
 	var n := notes[index]
+	if n.time_ms < _count_from:
+		return
+	var partner := accent_partner(index)
+	if partner >= 0:
+		if q == 5:
+			_say(tr("Akzent: beide Tasten zugleich."))
+		elif int(_q_of.get(partner, 5)) < 5:
+			_add_success()
+		return
 	var ok := q < 5
-	match step:
-		ARC:
-			ok = ok and n.is_arc and bool(res.get("held", false))
+	if step == HOLD:
+		ok = ok and n.is_arc and bool(res.get("held", false))
 	if ok:
 		_add_success()
-	elif q == 5:
+	elif q == 5 and t_ms - _say_t > SAY_HOLD_MS:
 		if str(res.get("miss_kind", "")) == "DROP":
-			_say(tr("Halte die Taste bis zum Ende, folge der Spitze und bleib auf dem Ring."))
+			_say(tr("Halte verloren: bleib mit dem Cursor auf dem Zeiger und halt die Taste bis zum Ende."))
 		else:
-			_say(tr("Zeig auf das Ziel und drück, wenn es den Ring erreicht."))
+			_say(tr("Zu spät: drück, wenn der Zeiger die Note erreicht."))
 
 
 ## Fehldruck: Hinweis je Grund, Marke am Cursor.
@@ -647,11 +724,13 @@ func _on_press_missed(deg: float, rho: float, ring: int, reason: String) -> void
 		return
 	match reason:
 		"RING":
-			_say(tr("Anderer Ring: zeig näher an die Mitte oder weiter hinaus."))
+			_say(tr("Anderer Ring: die Note liegt auf der anderen Taste."))
 		"EARLY":
-			_say(tr("Zu früh: warte, bis das Ziel den Ring erreicht."))
+			_say(tr("Zu früh: warte, bis der Zeiger die Note erreicht."))
 		"ANGLE":
-			_say(tr("Zeig genau auf das Ziel."))
+			_say(tr("Neben dem Zeiger: leg den Cursor auf den Zeiger."))
+		"DEAD":
+			_say(tr("Zu nah an der Mitte: zeig auf den Zeiger."))
 
 
 func _show_judge(q: int, res: Dictionary) -> void:
@@ -670,7 +749,7 @@ func _play_hit() -> void:
 
 
 # ---------------------------------------------------------------------------
-# Eingabe (wie OrbitGame: Winkel + Abstand zur Mitte, zwei gleichwertige Tasten)
+# Eingabe (wie OrbitGame: Winkel zur Mitte, Taste waehlt den Ring)
 # ---------------------------------------------------------------------------
 
 func _input(event: InputEvent) -> void:
@@ -719,8 +798,6 @@ func _aim_at(pos: Vector2) -> void:
 		_cursor_deg = OrbitView.angle_of(c, pos)
 		_view.cursor_deg = _cursor_deg
 		_moved = true
-	_sel_ring = OrbitCore.ring_for_rho(_cursor_rho, _sel_ring)
-	_view.sel_ring = _sel_ring
 	if core != null:
 		core.cursor_moved(_cursor_deg, _cursor_rho, t_ms)
 
@@ -730,7 +807,11 @@ func _press(key: int, source: int, down: bool) -> void:
 	_held[key][source] = down
 	var now: bool = _held[key][0] or _held[key][1]
 	_sync_glow()
-	if now == was or core == null:
+	if now == was:
+		return
+	if now and step == BAR and _done_t < 0.0:
+		_bar_press()
+	if core == null:
 		return
 	if now:
 		core.key_down(key, t_ms, _cursor_deg, _cursor_rho)
@@ -738,10 +819,26 @@ func _press(key: int, source: int, down: bool) -> void:
 		core.key_up(key, t_ms)
 
 
+## Schritt 1: Druck nahe Takt-Eins zaehlt, sonst "zu frueh" / "zu spaet".
+func _bar_press() -> void:
+	var d := fposmod(t_ms - _t0, _bar_ms)
+	var off := d if d <= _bar_ms * 0.5 else d - _bar_ms
+	if absf(off) <= BAR_TOL_MS:
+		_play_hit()
+		_judge.text = tr("Eins")
+		_judge.add_theme_color_override("font_color", TIER_COLS[1])
+		_judge_side.text = ""
+		_judge_t = t_ms
+		_add_success()
+	elif off < 0.0:
+		_say(tr("Zu früh: warte, bis der Zeiger oben steht."))
+	else:
+		_say(tr("Zu spät: der Zeiger war schon oben vorbei."))
+
+
 func _sync_glow() -> void:
-	var any: bool = _held[0][0] or _held[0][1] or _held[1][0] or _held[1][1]
-	_view.ring_held[0] = any and _sel_ring == 0
-	_view.ring_held[1] = any and _sel_ring == 1
+	for k in 2:
+		_view.ring_held[k] = _held[k][0] or _held[k][1]
 
 
 func _release_all() -> void:
@@ -761,14 +858,11 @@ func _release_all() -> void:
 func _bot_reset() -> void:
 	_bot_idx = 0
 	_bot_release = [-1.0, -1.0]
-	_bot_arc = [-1, -1]
 
 
 func _bot_move(deg: float, rho: float) -> void:
-	_bot_deg = fposmod(deg, 360.0)
-	_bot_rho = rho
 	var ev := InputEventMouseMotion.new()
-	ev.position = OrbitView.polar(view_center_global(), _bot_deg, _view.unit() * rho)
+	ev.position = OrbitView.polar(view_center_global(), fposmod(deg, 360.0), _view.unit() * rho)
 	handle_input(ev)
 
 
@@ -783,60 +877,57 @@ static func ring_rho(ring: int) -> float:
 	return OrbitCore.R_OUTER_K if ring == 1 else OrbitCore.R_INNER_K
 
 
-## Gleitet Winkel und Abstand ein Stueck zum Ziel (Grad / Bildhoehen je Bild).
-func _bot_glide(target: float, rho: float, max_step: float) -> void:
-	var d := rad_to_deg(angle_difference(deg_to_rad(_bot_deg), deg_to_rad(target)))
-	var dr := clampf(rho - _bot_rho, -0.012, 0.012)
-	_bot_move(_bot_deg + clampf(d, -max_step, max_step), _bot_rho + dr)
-
-
+## Der Bot liegt immer auf dem Zeiger und drueckt zur Notenzeit die Taste des Rings.
 func _bot_tick(t: float) -> void:
-	if step == AIM:
-		_bot_glide(_aim_target, ring_rho(_aim_ring), 6.0)
-		return
 	for k in 2:
 		if _bot_release[k] >= 0.0 and _bot_release[k] <= t:
 			_bot_key(k, false)
 			_bot_release[k] = -1.0
-			_bot_arc[k] = -1
+	var rho := 0.28
+	if core != null:
+		var nx := next_note()
+		if nx != null:
+			rho = ring_rho(nx.ring)
+	_bot_move(clock.angle_at(t), rho)
+	if step == BAR:
+		if t >= _bot_bar_t - BOT_LEAD_MS:
+			_bot_key(0, true)
+			_bot_release[0] = t + BOT_TAP_MS
+			_bot_bar_t += _bar_ms
+		return
 	while _bot_idx < notes.size() and notes[_bot_idx].time_ms <= t + BOT_LEAD_MS:
 		var n := notes[_bot_idx]
-		var i := _bot_idx
 		_bot_idx += 1
-		# Tasten abwechseln; eine Taste, die einen Bogen haelt, bleibt gedrueckt.
-		var k := 1 - _bot_key_last
-		if _bot_arc[k] >= 0:
-			k = 1 - k
-		if _bot_release[k] >= 0.0:
-			_bot_key(k, false)
-		_bot_key_last = k
-		_bot_move(n.angle_deg, ring_rho(n.ring))
-		_bot_key(k, true)
-		_bot_arc[k] = i if n.is_arc else -1
-		_bot_release[k] = n.end_ms + 10.0 if n.is_arc else t + BOT_TAP_MS
-	for k in 2:
-		if _bot_arc[k] >= 0:
-			var an := notes[_bot_arc[k]]
-			_bot_move(an.angle_at(t), ring_rho(an.ring))
-			return
-	if _bot_idx < notes.size():
-		_bot_glide(notes[_bot_idx].angle_deg, ring_rho(notes[_bot_idx].ring), 4.0)
+		_bot_key(n.ring, true)
+		_bot_release[n.ring] = n.end_ms + 10.0 if n.is_arc else t + BOT_TAP_MS
 
 
 # ---------------------------------------------------------------------------
 # Ergebnis der Probe-Runde
 # ---------------------------------------------------------------------------
 
-func _show_result() -> void:
+## Karriere ist optional (eigener Branch): nur anbieten, falls die Klasse existiert.
+func _offer_career() -> void:
+	for c in ProjectSettings.get_global_class_list():
+		if str(c.get("class", "")) == "OrbitCareer":
+			var s = load(str(c.get("path", "")))
+			if s != null and s.has_method("offer"):
+				s.offer()
+			return
+
+
+func _show_result(completed: bool) -> void:
 	if finished:
 		return
 	finished = true
 	_release_all()
 	if DisplayServer.get_name() != "headless":
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	if completed:
+		_offer_career()
 	_view.visible = false
 	_bar.visible = false
-	_step_lbl.text = tr("Schritt %d von %d") % [STEP_COUNT, STEP_COUNT]
+	_step_lbl.text = tr("Probe")
 	_title_lbl.text = tr("Probe-Runde geschafft")
 	_body_lbl.text = tr("Das war Orbit. Tasten änderst du in den Einstellungen unter Orbit.")
 	_pip_row.visible = false
@@ -968,6 +1059,7 @@ func _run_shots() -> void:
 	get_tree().quit(0)
 
 
+## Bild je Schritt: nach dem ersten Erfolg, kurz bevor die naechste Note sitzt.
 func _shots_one(dir: String, lang: String) -> void:
 	if _result != null:
 		_result.queue_free()
@@ -977,24 +1069,29 @@ func _shots_one(dir: String, lang: String) -> void:
 		_bar.visible = true
 	for s in STEP_COUNT:
 		enter_step(s)
-		# Bis ein Treffer geschafft ist und das naechste Ziel kurz vor dem Ring steht.
 		var guard := 0
-		while guard < 4000:
+		while guard < 6000:
 			guard += 1
 			advance(1000.0 / 60.0)
+			if s == BAR:
+				if success >= 1 and fposmod(t_ms - _t0, _bar_ms) > _bar_ms * 0.7:
+					break
+				continue
 			if s == AIM:
-				if success >= 1 and aim_progress() > 0.0 and aim_progress() < 0.6:
+				if aim_progress() > 0.5:
+					break
+				continue
+			if s == PREVIEW:
+				if core != null and core.is_judged(0) and first_preview() != null:
 					break
 				continue
 			var nx := next_note()
-			var want := 1 if s != TRIAL else 0
-			if (s == TRIAL and tiers[0] + tiers[1] >= 3 or success >= want) and nx != null \
-					and nx.time_ms - t_ms < 380.0 and nx.time_ms - t_ms > 300.0:
+			if success >= 1 and nx != null and nx.time_ms - t_ms < 400.0 and nx.time_ms - t_ms > 330.0:
 				break
 		await _save("orbit_tut_%s_%d.png" % [lang, s + 1], dir)
 	enter_step(TRIAL)
 	var g2 := 0
-	while not finished and g2 < 6000:
+	while not finished and g2 < 9000:
 		g2 += 1
 		advance(1000.0 / 60.0)
 	await _save("orbit_tut_%s_result.png" % lang, dir)
