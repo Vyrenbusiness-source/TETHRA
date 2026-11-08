@@ -9,31 +9,47 @@ extends Control
 ## Raum-Browser (Formulare oben, Raumkarten darunter) oder der Raum
 ## (links Raum-Panel mit Spielern, rechts Map-Karte, unten Aktionsleiste).
 
+# Farben: eine Akzentfarbe (Primaer-Aktion, aktiver Reiter, Hover), dazu nur
+# Zustandsfarben (bereit, Map fehlt, Krone). Keine Glas-Karten, keine Verlaeufe
+# ausser der Lesbarkeits-Abdunklung unter dem Cover-Titel.
 const COL_ACCENT := UiTheme.ACCENT
 const COL_DIM := UiTheme.DIM
 const COL_TEXT := UiTheme.TEXT
-## Farbe nur fuer Bedeutung: Krone, Bereit, Team-Farben (TeamBoard), Primaer.
+const COL_FAINT := Color(0.62, 0.64, 0.72, 0.5)
 const COL_GOLD := Color(0.95, 0.79, 0.38)
 const COL_READY := Color(0.47, 0.85, 0.60)
-const COL_CARD := Color(0.08, 0.08, 0.11, 0.94)
-const COL_CARD_HOVER := Color(0.12, 0.12, 0.16, 0.96)
-const COL_LINE := Color(1, 1, 1, 0.08)
-## Raster: Rand/Spaltenabstand, Zeilenhoehen. Schrift: 4 Groessen.
+const COL_WARN := Color(0.96, 0.68, 0.38)
+const COL_HOVER := Color(1, 1, 1, 0.045)
+const COL_LINE := Color(1, 1, 1, 0.09)
+
+# Raster: 8er-Schritte, Rand M, ein Eckenradius R fuer alles.
 const M := 24
+const R := 4
 const HEAD_H := 40
 const BAR_H := 48
 const ROW_H := 40
-const PROW_H := 34
+const PROW_H := 40
+const SIDE_W := 344
+# Spalten der Raumliste (Kopf und Zeilen teilen sie, damit die Kanten fluchten).
+const RC_ICON := 20
+const RC_MODE := 96
+const RC_WHERE := 148
+const RC_PLAYERS := 72
+const RC_JOIN := 104
+# Spalten der Spielerliste.
+const PC_BADGE := 56
+const PC_STATE := 112
+# Vier Groessen, zwei Schnitte: Text (Theme-Schrift) und Zahlen/Titel (Bahnschrift).
 const FS_S := 13
 const FS_M := 15
 const FS_L := 20
-const FS_XL := 26
+const FS_XL := 28
 
 var _library: MapLibrary
 var _mirror: BeatmapMirror
 var _browser_box: VBoxContainer
 var _room_box: VBoxContainer
-var _rooms_list: GridContainer
+var _rooms_list: VBoxContainer
 var _rooms_count: Label
 var _code_edit: LineEdit
 var _name_edit: LineEdit
@@ -55,7 +71,7 @@ var _map_stats: Label
 var _map_cover: TextureRect
 var _map_shade: TextureRect
 var _map_empty: Label
-var _star_pill: PanelContainer
+var _star_pill: Control
 var _star_label: Label
 var _status_label: Label
 var _start_btn: Button
@@ -98,10 +114,22 @@ var _shot_players := 0
 var _seen_rows: Dictionary = {}
 var _bpm_cache: Dictionary = {}
 var _icons: Dictionary = {}
+var _f_display: Font
+var _f_num: Font
+var _code_cap: Label
+var _kind_sep: HBoxContainer
+var _star_swatch: Control
+var _facts: Dictionary = {}
+var _players_rule: ColorRect
+var _alone_hint: Label
 
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	for a in OS.get_cmdline_args() + OS.get_cmdline_user_args():
+		if a.begins_with("--shot-"):
+			_harness_tr()
+			break
 	_library = MapLibrary.new(_arg_value("--mp-maps="))
 	_library.scan()
 	_mirror = Mirror
@@ -113,13 +141,12 @@ func _ready() -> void:
 	_mirror.download_failed.connect(_on_dl_failed)
 	_mirror.download_cancelled.connect(_on_dl_cancelled)
 
-	# Hintergrund: Neon-Shader als Fallback, darueber das geblurrte Cover —
-	# beim Oeffnen das zuletzt gespielte Lied, im Raum immer die gewaehlte Map.
+	_fonts()
+	# Hintergrund: ruhige Grundfarbe, darueber das geblurrte Cover (beim Oeffnen
+	# das zuletzt gespielte Lied, im Raum die gewaehlte Map), kraeftig abgedunkelt.
 	var bg := ColorRect.new()
 	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	var mat := ShaderMaterial.new()
-	mat.shader = load("res://shaders/menu_bg.gdshader")
-	bg.material = mat
+	bg.color = UiTheme.BG
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(bg)
 	_bg_rect = TextureRect.new()
@@ -131,18 +158,18 @@ func _ready() -> void:
 	add_child(_bg_rect)
 	var dim := ColorRect.new()
 	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	dim.color = Color(0, 0, 0, 0.66)
+	dim.color = Color(0.02, 0.02, 0.03, 0.80)
 	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(dim)
 
-	# Vollbild-Raster: Rand M ringsum, Kopfzeile + Inhalt (Browser oder Raum).
+	# Vollbild-Raster: Rand M ringsum, Kopfzeile, Haarlinie, Inhalt (Browser oder Raum).
 	var root := VBoxContainer.new()
 	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	root.offset_left = M
 	root.offset_top = M
 	root.offset_right = -M
 	root.offset_bottom = -M
-	root.add_theme_constant_override("separation", M)
+	root.add_theme_constant_override("separation", 0)
 	add_child(root)
 	_center = root
 
@@ -154,6 +181,7 @@ func _ready() -> void:
 	back.pressed.connect(_back)
 	head.add_child(back)
 	var title := _lbl("Multiplayer", FS_L, COL_TEXT)
+	title.add_theme_font_override("font", _f_display)
 	title.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	head.add_child(title)
 	_status_label = _lbl(" ", FS_S, COL_DIM)
@@ -162,6 +190,9 @@ func _ready() -> void:
 	_status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_status_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	head.add_child(_status_label)
+	root.add_child(_gap(16))
+	root.add_child(_sep())
+	root.add_child(_gap(M))
 
 	_browser_box = VBoxContainer.new()
 	_browser_box.add_theme_constant_override("separation", 0)
@@ -170,7 +201,7 @@ func _ready() -> void:
 	_build_browser()
 
 	_room_box = VBoxContainer.new()
-	_room_box.add_theme_constant_override("separation", M)
+	_room_box.add_theme_constant_override("separation", 0)
 	_room_box.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_room_box.visible = false
 	root.add_child(_room_box)
@@ -243,6 +274,30 @@ func _ready() -> void:
 		if not Lobby.active:
 			Lobby.join_lan("127.0.0.1")
 		_mp_auto(false)
+
+
+## Screenshot-Harness: Texte aus translations/lobbycraft.csv direkt laden, solange
+## die Datei (noch) nicht im Projekt registriert ist.
+static func _harness_tr() -> void:
+	if TranslationServer.translate("Spielmodus") != "Spielmodus" or TranslationServer.get_locale().begins_with("de"):
+		return
+	var f := FileAccess.open("res://translations/lobbycraft.csv", FileAccess.READ)
+	if f == null:
+		return
+	var head := f.get_csv_line()
+	var tl: Array = []
+	for i in range(1, head.size()):
+		var t := Translation.new()
+		t.locale = head[i]
+		tl.append(t)
+	while not f.eof_reached():
+		var row := f.get_csv_line()
+		if row.size() < head.size() or row[0] == "":
+			continue
+		for i in range(1, head.size()):
+			tl[i - 1].add_message(row[0], row[i])
+	for t in tl:
+		TranslationServer.add_translation(t)
 
 
 ## Wert einer Kommandozeilen-Option "--name=wert" ("" = fehlt).
@@ -493,8 +548,25 @@ func _exit_tree() -> void:
 
 
 # ---------------------------------------------------------------------------
-# Bausteine: Labels, Knoepfe, Schalter, Icons (eine Schrift, 4 Groessen)
+# Bausteine: Labels, Knoepfe, Schalter, Icons (zwei Schnitte, 4 Groessen)
 # ---------------------------------------------------------------------------
+
+## Schnitte: Bahnschrift fett fuer Titel, Bahnschrift mit Tabellenziffern fuer
+## alle Zahlen (Code, Spielerzahl, Sterne, BPM, Score) - Spalten fluchten.
+func _fonts() -> void:
+	var d := SystemFont.new()
+	d.font_names = PackedStringArray(["Bahnschrift", "Segoe UI Semibold", "Segoe UI"])
+	d.font_weight = 700
+	_f_display = d
+	var n := SystemFont.new()
+	n.font_names = PackedStringArray(["Bahnschrift", "Segoe UI"])
+	n.font_weight = 500
+	var nv := FontVariation.new()
+	nv.base_font = n
+	var ts := TextServerManager.get_primary_interface()
+	nv.opentype_features = {ts.name_to_tag("tnum"): 1, ts.name_to_tag("lnum"): 1}
+	_f_num = nv
+
 
 func _lbl(text: String, size: int, col: Color) -> Label:
 	var l := Label.new()
@@ -504,9 +576,25 @@ func _lbl(text: String, size: int, col: Color) -> Label:
 	return l
 
 
-## Kleine Abschnitts-Ueberschrift (Versalien, gedimmt, nicht gesperrt).
+## Zahl/Code: Tabellenziffern, nie uebersetzt.
+func _num(text: String, size: int, col: Color) -> Label:
+	var l := _lbl(text, size, col)
+	l.add_theme_font_override("font", _f_num)
+	l.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	l.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	return l
+
+
+## Kleine Abschnitts-Beschriftung (Satzschreibung, gedimmt).
 func _caption(text: String) -> Label:
 	var l := _lbl(text, FS_S, COL_DIM)
+	l.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	return l
+
+
+## Abschnitts-Titel (Text, mittlere Groesse, hell).
+func _section(text: String) -> Label:
+	var l := _lbl(text, FS_M, COL_TEXT)
 	l.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	return l
 
@@ -518,12 +606,37 @@ func _gap(h: int) -> Control:
 	return c
 
 
-## Dezente Trennlinie statt Kasten.
+func _hgap(w: int) -> Control:
+	var c := Control.new()
+	c.custom_minimum_size = Vector2(w, 0)
+	c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return c
+
+
+func _spacer() -> Control:
+	var c := Control.new()
+	c.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return c
+
+
+## Haarlinie statt Kasten.
 func _sep() -> ColorRect:
 	var r := ColorRect.new()
 	r.custom_minimum_size = Vector2(0, 1)
 	r.color = COL_LINE
 	r.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return r
+
+
+## Senkrechte Haarlinie (Spalten-/Gruppentrenner).
+func _vsep(h: int = 0) -> ColorRect:
+	var r := ColorRect.new()
+	r.custom_minimum_size = Vector2(1, h)
+	r.color = COL_LINE
+	r.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	if h > 0:
+		r.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	return r
 
 
@@ -538,9 +651,35 @@ func _box(bg: Color, radius: int, border: Color = Color.TRANSPARENT) -> StyleBox
 	return sb
 
 
-## Haupt-Flaeche (wie das Info-Panel im Song-Browser), Innenrand M.
+## Fremde Tafeln (Teams/Royale) an das Lobby-Raster angleichen: Ecken auf R,
+## kein Schatten, Linien statt Glas. Runde Avatare (Radius >= halbe Breite) bleiben rund.
+func _flatten(n: Node) -> void:
+	if n is Control:
+		var c := n as Control
+		for slot in ["panel", "normal", "hover", "pressed"]:
+			if not c.has_theme_stylebox_override(slot):
+				continue
+			var sb := c.get_theme_stylebox(slot) as StyleBoxFlat
+			if sb == null or sb.has_meta("lc_flat"):
+				continue
+			var w := c.custom_minimum_size.x
+			if w > 0.0 and w == c.custom_minimum_size.y and sb.corner_radius_top_left * 2 >= int(w):
+				continue
+			var f := sb.duplicate() as StyleBoxFlat
+			f.set_meta("lc_flat", true)
+			for corner in 4:
+				f.set_corner_radius(corner, mini(f.get_corner_radius(corner), R))
+			f.shadow_size = 0
+			if f.border_width_top > 0 and f.border_color.a > COL_LINE.a and f.border_color.s < 0.2:
+				f.border_color = COL_LINE
+			c.add_theme_stylebox_override(slot, f)
+	for ch in n.get_children():
+		_flatten(ch)
+
+
+## Flache Flaeche (Dialoge), Innenrand margin.
 func _panel_box(margin: int = M) -> StyleBoxFlat:
-	var sb := UiTheme.glass_box(16, 0.62, 0.10)
+	var sb := _box(Color(0.06, 0.062, 0.08, 0.96), R, COL_LINE)
 	sb.set_content_margin_all(margin)
 	return sb
 
@@ -552,29 +691,31 @@ func _btn(text: String, primary: bool = false, h: int = BAR_H) -> Button:
 	b.text = text
 	b.custom_minimum_size = Vector2(0, h)
 	b.add_theme_font_size_override("font_size", FS_M)
-	var r := 10
 	var n: StyleBoxFlat
 	var hv: StyleBoxFlat
 	var pr: StyleBoxFlat
+	var ds: StyleBoxFlat
 	if primary:
-		n = _box(UiTheme.primary_fill(), r)
-		hv = _box(UiTheme.primary_fill().lightened(0.10), r)
-		pr = _box(UiTheme.primary_fill().darkened(0.12), r)
+		n = _box(COL_ACCENT, R)
+		hv = _box(COL_ACCENT.lightened(0.18), R)
+		pr = _box(COL_ACCENT.darkened(0.15), R)
+		# Gesperrt bleibt als Primaer-Platz erkennbar (Akzent-Kante), ohne Fuellung.
+		ds = _box(Color(COL_ACCENT, 0.06), R, Color(COL_ACCENT, 0.28))
+		b.add_theme_font_override("font", _f_display)
 		for fc in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color", "font_hover_pressed_color"]:
 			b.add_theme_color_override(fc, Color(0.02, 0.05, 0.08))
 	else:
-		n = _box(Color(1, 1, 1, 0.05), r, Color(1, 1, 1, 0.12))
-		hv = _box(Color(1, 1, 1, 0.10), r, Color(1, 1, 1, 0.22))
-		pr = _box(Color(1, 1, 1, 0.03), r, Color(1, 1, 1, 0.18))
+		n = _box(Color(1, 1, 1, 0.07), R)
+		hv = _box(Color(1, 1, 1, 0.13), R)
+		pr = _box(Color(1, 1, 1, 0.04), R)
+		ds = _box(Color(1, 1, 1, 0.025), R)
 		b.add_theme_color_override("font_color", COL_TEXT)
 		b.add_theme_color_override("font_hover_color", Color(1, 1, 1))
 		b.add_theme_color_override("font_pressed_color", COL_TEXT)
 		b.add_theme_color_override("font_focus_color", COL_TEXT)
-	var ds := _box(Color(1, 1, 1, 0.03), r, Color(1, 1, 1, 0.06))
-	if primary:
-		# Gesperrt bleibt als Primaer-Platz erkennbar (Akzent-Rand), aber ohne Fuellung.
-		ds = _box(Color(UiTheme.primary_fill(), 0.10), r, Color(UiTheme.primary_fill(), 0.30))
-	b.add_theme_color_override("font_disabled_color", Color(COL_DIM, 0.7))
+		b.add_theme_color_override("icon_normal_color", COL_DIM)
+		b.add_theme_color_override("icon_hover_color", COL_TEXT)
+	b.add_theme_color_override("font_disabled_color", COL_FAINT)
 	for sb in [n, hv, pr, ds]:
 		sb.content_margin_left = 16
 		sb.content_margin_right = 16
@@ -583,9 +724,26 @@ func _btn(text: String, primary: bool = false, h: int = BAR_H) -> Button:
 	b.add_theme_stylebox_override("pressed", pr)
 	b.add_theme_stylebox_override("hover_pressed", pr)
 	b.add_theme_stylebox_override("disabled", ds)
-	b.add_theme_stylebox_override("focus", UiTheme._focus_box(r))
+	b.add_theme_stylebox_override("focus", UiTheme._focus_box(R))
 	b.add_theme_constant_override("h_separation", 8)
 	UiTheme._attach_sounds(b)
+	return b
+
+
+## Textknopf ohne Flaeche (Kopieren, Aktualisieren): Flaeche erst beim Hover.
+func _text_btn(text: String, icon_id: String = "", h: int = 28) -> Button:
+	var b := _btn(text, false, h)
+	b.add_theme_font_size_override("font_size", FS_S)
+	if icon_id != "":
+		b.icon = _icon(icon_id)
+	var n := _box(Color(1, 1, 1, 0.0), R)
+	b.add_theme_stylebox_override("normal", n)
+	b.add_theme_color_override("font_color", COL_DIM)
+	for st in ["normal", "hover", "pressed", "hover_pressed", "disabled"]:
+		var sb: StyleBoxFlat = b.get_theme_stylebox(st)
+		sb.content_margin_left = 8
+		sb.content_margin_right = 10
+	b.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	return b
 
 
@@ -597,9 +755,9 @@ func _icon_btn(icon: Texture2D, tip: String, sz: int = HEAD_H) -> Button:
 	b.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	b.custom_minimum_size = Vector2(sz, sz)
 	b.focus_mode = Control.FOCUS_NONE
-	var n := _box(Color(1, 1, 1, 0.0), 10, Color(1, 1, 1, 0.14))
-	var hv := _box(Color(1, 1, 1, 0.08), 10, Color(1, 1, 1, 0.26))
-	var pr := _box(Color(1, 1, 1, 0.14), 10, Color(1, 1, 1, 0.26))
+	var n := _box(Color(1, 1, 1, 0.0), R)
+	var hv := _box(Color(1, 1, 1, 0.09), R)
+	var pr := _box(Color(1, 1, 1, 0.14), R)
 	for sb in [n, hv, pr]:
 		sb.set_content_margin_all(0)
 	b.add_theme_stylebox_override("normal", n)
@@ -613,48 +771,47 @@ func _icon_btn(icon: Texture2D, tip: String, sz: int = HEAD_H) -> Button:
 	return b
 
 
-## Reiter-Chip im Look der Song-Browser-Tabs (aktiv = Akzent-Rand + Akzent-Text).
+## Reiter (Spielmodus, Wertung): Text, aktiv = Akzent-Unterstrich, sonst gedimmt.
 func _chip_toggle(text: String) -> Button:
 	var b := Button.new()
 	b.text = text
 	b.toggle_mode = true
 	b.focus_mode = Control.FOCUS_NONE
 	b.custom_minimum_size = Vector2(0, 32)
-	b.add_theme_font_size_override("font_size", FS_S + 1)
+	b.add_theme_font_size_override("font_size", FS_M - 1)
 	UiTheme._attach_sounds(b)
 	_paint_chip(b, false)
 	return b
 
 
 func _paint_chip(b: Button, active: bool) -> void:
-	var mk := func(hover: bool) -> StyleBoxFlat:
-		var sb: StyleBoxFlat
-		if active:
-			sb = _box(Color(COL_ACCENT, 0.22 if hover else 0.15), 10, Color(COL_ACCENT, 0.6))
-		else:
-			sb = _box(Color(1, 1, 1, 0.09 if hover else 0.04), 10, Color(1, 1, 1, 0.22 if hover else 0.12))
-		sb.content_margin_left = 14
-		sb.content_margin_right = 14
+	var mk := func(hover: bool, dis: bool) -> StyleBoxFlat:
+		var sb := StyleBoxFlat.new()
+		sb.bg_color = Color(1, 1, 1, 0.05 if hover and not active else 0.0)
+		sb.border_width_bottom = 2
+		sb.border_color = Color(COL_ACCENT, 0.55 if dis else 1.0) if active else Color(1, 1, 1, 0.0)
+		sb.corner_radius_top_left = R
+		sb.corner_radius_top_right = R
+		sb.content_margin_left = 10
+		sb.content_margin_right = 10
+		sb.content_margin_top = 2
 		return sb
-	var n: StyleBoxFlat = mk.call(false)
+	var n: StyleBoxFlat = mk.call(false, false)
 	b.add_theme_stylebox_override("normal", n)
 	b.add_theme_stylebox_override("pressed", n)
-	b.add_theme_stylebox_override("hover", mk.call(true))
-	b.add_theme_stylebox_override("hover_pressed", mk.call(true))
+	b.add_theme_stylebox_override("hover", mk.call(true, false))
+	b.add_theme_stylebox_override("hover_pressed", mk.call(true, false))
 	b.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
-	var dis: StyleBoxFlat = n.duplicate()
-	if not active:
-		dis.border_color = Color(1, 1, 1, 0.06)
-	b.add_theme_stylebox_override("disabled", dis)
-	var fg := COL_ACCENT if active else COL_DIM
+	b.add_theme_stylebox_override("disabled", mk.call(false, true))
+	var fg := COL_TEXT if active else COL_DIM
 	for fc in ["font_color", "font_pressed_color", "font_focus_color"]:
 		b.add_theme_color_override(fc, fg)
-	b.add_theme_color_override("font_hover_color", COL_ACCENT if active else COL_TEXT)
-	b.add_theme_color_override("font_hover_pressed_color", COL_ACCENT if active else COL_TEXT)
-	b.add_theme_color_override("font_disabled_color", Color(fg, 0.85) if active else Color(COL_DIM, 0.55))
+	b.add_theme_color_override("font_hover_color", COL_TEXT)
+	b.add_theme_color_override("font_hover_pressed_color", COL_TEXT)
+	b.add_theme_color_override("font_disabled_color", Color(COL_TEXT, 0.82) if active else COL_FAINT)
 
 
-## Mod-Schalter wie im Song-Browser (No-Fail / SV): Rahmen + Switch-Icon.
+## Mod-Schalter (No-Fail / SV): flache Zeile, Switch rechts.
 func _mod_toggle(text: String, tip: String) -> CheckButton:
 	var c := CheckButton.new()
 	c.text = text
@@ -662,20 +819,17 @@ func _mod_toggle(text: String, tip: String) -> CheckButton:
 	c.focus_mode = Control.FOCUS_NONE
 	c.custom_minimum_size = Vector2(0, ROW_H)
 	c.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	c.add_theme_font_size_override("font_size", FS_S + 1)
-	var mk := func(hover: bool) -> StyleBoxFlat:
-		var sb := _box(Color(1, 1, 1, 0.09 if hover else 0.04), 10, Color(1, 1, 1, 0.22 if hover else 0.12))
-		sb.content_margin_left = 14
-		sb.content_margin_right = 10
+	c.add_theme_font_size_override("font_size", FS_M - 1)
+	var mk := func(bg_a: float) -> StyleBoxFlat:
+		var sb := _box(Color(1, 1, 1, bg_a), R)
+		sb.content_margin_left = 12
+		sb.content_margin_right = 8
 		return sb
-	c.add_theme_stylebox_override("normal", mk.call(false))
-	c.add_theme_stylebox_override("pressed", mk.call(false))
-	c.add_theme_stylebox_override("hover", mk.call(true))
-	c.add_theme_stylebox_override("hover_pressed", mk.call(true))
-	var dis: StyleBoxFlat = mk.call(false)
-	dis.bg_color = Color(1, 1, 1, 0.02)
-	dis.border_color = Color(1, 1, 1, 0.07)
-	c.add_theme_stylebox_override("disabled", dis)
+	c.add_theme_stylebox_override("normal", mk.call(0.045))
+	c.add_theme_stylebox_override("pressed", mk.call(0.045))
+	c.add_theme_stylebox_override("hover", mk.call(0.08))
+	c.add_theme_stylebox_override("hover_pressed", mk.call(0.08))
+	c.add_theme_stylebox_override("disabled", mk.call(0.02))
 	c.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 	for fc in ["font_color", "font_pressed_color", "font_hover_color", "font_hover_pressed_color", "font_focus_color"]:
 		c.add_theme_color_override(fc, COL_TEXT)
@@ -718,6 +872,22 @@ func _icon(id: String) -> Texture2D:
 		"down":
 			tex = _line_icon(16, [[Vector2(8, 2), Vector2(8, 10.5)], [Vector2(4.5, 7.5), Vector2(8, 11)],
 				[Vector2(11.5, 7.5), Vector2(8, 11)], [Vector2(3, 13.5), Vector2(13, 13.5)]])
+		"refresh":
+			var rs: Array = []
+			for i in 18:
+				var a0 := -0.9 + 4.9 * i / 18.0
+				var a1 := -0.9 + 4.9 * (i + 1) / 18.0
+				rs.append([Vector2(8, 8) + Vector2(cos(a0), sin(a0)) * 5.2, Vector2(8, 8) + Vector2(cos(a1), sin(a1)) * 5.2])
+			var tip := Vector2(8, 8) + Vector2(cos(-0.9), sin(-0.9)) * 5.2
+			rs.append([tip, tip + Vector2(-3.2, -0.6)])
+			rs.append([tip, tip + Vector2(0.4, 3.2)])
+			tex = _line_icon(16, rs)
+		"cup":
+			tex = _line_icon(16, [[Vector2(4.5, 2.5), Vector2(11.5, 2.5)], [Vector2(4.5, 2.5), Vector2(5, 7)],
+				[Vector2(11.5, 2.5), Vector2(11, 7)], [Vector2(5, 7), Vector2(8, 9.5)], [Vector2(11, 7), Vector2(8, 9.5)],
+				[Vector2(8, 9.5), Vector2(8, 12.5)], [Vector2(5, 13.5), Vector2(11, 13.5)],
+				[Vector2(4.6, 4), Vector2(2.2, 4)], [Vector2(2.2, 4), Vector2(3, 6.5)], [Vector2(3, 6.5), Vector2(5, 7)],
+				[Vector2(11.4, 4), Vector2(13.8, 4)], [Vector2(13.8, 4), Vector2(13, 6.5)], [Vector2(13, 6.5), Vector2(11, 7)]])
 	_icons[id] = tex
 	return tex
 
@@ -762,13 +932,14 @@ func _icon_rect(id: String, col: Color, sz: int = 16) -> TextureRect:
 	t.custom_minimum_size = Vector2(sz, sz)
 	t.stretch_mode = TextureRect.STRETCH_KEEP_CENTERED
 	t.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	t.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return t
 
 
-## Runder Punkt (Bereit-Status).
-func _dot(col: Color, sz: int = 8) -> Control:
+## Zustandsmarke: kleines Quadrat (bereit, laedt, Map fehlt).
+func _dot(col: Color, sz: int = 6) -> Control:
 	var p := Panel.new()
-	p.add_theme_stylebox_override("panel", _box(col, sz))
+	p.add_theme_stylebox_override("panel", _box(col, 1))
 	p.custom_minimum_size = Vector2(sz, sz)
 	p.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -776,114 +947,136 @@ func _dot(col: Color, sz: int = 8) -> Control:
 
 
 # ---------------------------------------------------------------------------
-# Browser (Raum erstellen / Code / offene Raeume)
+# Browser: links Raum erstellen / Code, rechts die offenen Raeume als Tabelle
 # ---------------------------------------------------------------------------
 
 func _build_browser() -> void:
-	# Oben zwei Formulare nebeneinander: gleiche Hoehe, gleiche Kanten.
-	var forms := HBoxContainer.new()
-	forms.add_theme_constant_override("separation", M)
-	_browser_box.add_child(forms)
+	var cols := HBoxContainer.new()
+	cols.add_theme_constant_override("separation", 0)
+	cols.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_browser_box.add_child(cols)
 
-	var create_row := _form(forms, "RAUM ERSTELLEN",
-		"Ohne Passwort erscheint der Raum bei allen in der Liste.", 1.25)
-	_name_edit = _field("Raumname", 1.3)
+	# Links: zwei Formulare untereinander, feste Breite, gleiche Kanten.
+	var side := VBoxContainer.new()
+	side.custom_minimum_size = Vector2(SIDE_W, 0)
+	side.add_theme_constant_override("separation", 8)
+	cols.add_child(side)
+	side.add_child(_section("Raum erstellen"))
+	_name_edit = _field("Raumname")
 	_name_edit.text = _possessive_room(Settings.profile_name)
 	_name_edit.max_length = 28
-	create_row.add_child(_name_edit)
-	_pw_edit = _field("Passwort (leer = öffentlich)", 1.0)
-	create_row.add_child(_pw_edit)
-	var create := _btn("RAUM ERSTELLEN", true, ROW_H)
-	create.custom_minimum_size.x = 160
+	side.add_child(_name_edit)
+	_pw_edit = _field("Passwort (leer = öffentlich)")
+	side.add_child(_pw_edit)
+	side.add_child(_hint("Ohne Passwort erscheint der Raum bei allen in der Liste."))
+	var create := _btn("Raum erstellen", true, ROW_H)
 	var do_create := func():
 		if Lobby.host_room(_name_edit.text, _pw_edit.text):
 			_show_room()
 	create.pressed.connect(do_create)
 	_name_edit.text_submitted.connect(func(_t): do_create.call())
 	_pw_edit.text_submitted.connect(func(_t): do_create.call())
-	create_row.add_child(create)
+	side.add_child(create)
 
-	var join_row := _form(forms, "MIT CODE BEITRETEN",
-		"Den Code bekommst du vom Host des Raums.", 1.0)
-	_code_edit = _field("Code (z. B. 7K3F9-A2QXM)", 1.2)
+	side.add_child(_gap(M - 8))
+	side.add_child(_sep())
+	side.add_child(_gap(M - 8))
+	side.add_child(_section("Mit Code beitreten"))
+	_code_edit = _field("Code (z. B. 7K3F9-A2QXM)")
+	_code_edit.add_theme_font_override("font", _f_num)
 	_code_edit.text_submitted.connect(func(_t): _join_by_code())
-	join_row.add_child(_code_edit)
-	_join_pw_edit = _field("Passwort (falls gesetzt)", 1.0)
+	side.add_child(_code_edit)
+	_join_pw_edit = _field("Passwort (falls gesetzt)")
 	_join_pw_edit.text_submitted.connect(func(_t): _join_by_code())
-	join_row.add_child(_join_pw_edit)
+	side.add_child(_join_pw_edit)
+	side.add_child(_hint("Den Code bekommst du vom Host des Raums."))
 	var join := _btn("Beitreten", false, ROW_H)
-	join.custom_minimum_size.x = 120
 	join.pressed.connect(_join_by_code)
-	join_row.add_child(join)
+	side.add_child(join)
 
-	_browser_box.add_child(_gap(M))
-	_browser_box.add_child(_sep())
-	_browser_box.add_child(_gap(16))
+	cols.add_child(_hgap(M))
+	var vr := _vsep()
+	vr.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	cols.add_child(vr)
+	cols.add_child(_hgap(M))
 
+	# Rechts: Raumliste als Tabelle (Kopf, Spaltenkoepfe, Zeilen mit Haarlinien).
+	var main := VBoxContainer.new()
+	main.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	main.add_theme_constant_override("separation", 0)
+	cols.add_child(main)
 	var rooms_head := HBoxContainer.new()
-	rooms_head.custom_minimum_size = Vector2(0, 32)
-	rooms_head.add_theme_constant_override("separation", 8)
-	_browser_box.add_child(rooms_head)
-	rooms_head.add_child(_caption("OFFENE RÄUME"))
-	_rooms_count = _caption("")
-	_rooms_count.add_theme_color_override("font_color", COL_TEXT)
+	rooms_head.custom_minimum_size = Vector2(0, 28)
+	rooms_head.add_theme_constant_override("separation", 12)
+	main.add_child(rooms_head)
+	rooms_head.add_child(_section("Offene Räume"))
+	_rooms_count = _num("", FS_M, COL_DIM)
 	rooms_head.add_child(_rooms_count)
-	var sp := Control.new()
-	sp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	rooms_head.add_child(sp)
-	var refresh := _btn("Liste aktualisieren", false, 32)
-	refresh.add_theme_font_size_override("font_size", FS_S)
+	rooms_head.add_child(_spacer())
+	var refresh := _text_btn("Aktualisieren", "refresh")
+	refresh.tooltip_text = "Liste aktualisieren"
 	refresh.pressed.connect(func(): Lobby.fetch_online_rooms())
 	rooms_head.add_child(refresh)
-	_browser_box.add_child(_gap(8))
+	main.add_child(_gap(12))
+	var ch := _room_cols(["", "Raum", "Modus", "Verbindung", "Spielerzahl", ""])
+	ch.custom_minimum_size = Vector2(0, 24)
+	main.add_child(ch)
+	main.add_child(_sep())
 
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	_browser_box.add_child(scroll)
-	_rooms_list = GridContainer.new()
+	main.add_child(scroll)
+	_rooms_list = VBoxContainer.new()
 	_rooms_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_rooms_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_rooms_list.add_theme_constant_override("h_separation", 16)
-	_rooms_list.add_theme_constant_override("v_separation", 8)
+	_rooms_list.add_theme_constant_override("separation", 0)
 	scroll.add_child(_rooms_list)
-	# Spaltenzahl folgt der Breite (1280: 2, 1920: 3), Karten nie schmaler als 440.
-	scroll.resized.connect(func(): _layout_rooms(scroll.size.x))
 	_refresh_rooms()
 
 
-## Formular-Block: Ueberschrift, Eingabezeile, Hinweis. Gibt die Zeile zurueck.
-func _form(parent: Control, head: String, hint: String, ratio: float) -> HBoxContainer:
-	var v := VBoxContainer.new()
-	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	v.size_flags_stretch_ratio = ratio
-	v.add_theme_constant_override("separation", 8)
-	parent.add_child(v)
-	v.add_child(_caption(head))
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 8)
-	v.add_child(row)
-	var h := _lbl(hint, FS_S, COL_DIM)
-	h.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	v.add_child(h)
-	return row
+## Spaltenkopf der Raumliste (gleiche Breiten und Abstaende wie _room_card).
+func _room_cols(heads: Array) -> HBoxContainer:
+	var hb := HBoxContainer.new()
+	hb.add_theme_constant_override("separation", 16)
+	hb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var widths := [RC_ICON, 0, RC_MODE, RC_WHERE, RC_PLAYERS, RC_JOIN]
+	hb.add_child(_hgap(0))
+	for i in heads.size():
+		var l := _caption(str(heads[i]))
+		l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		if widths[i] == 0:
+			l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		else:
+			l.custom_minimum_size.x = widths[i]
+		if i == 4:
+			l.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		hb.add_child(l)
+	hb.add_child(_hgap(0))
+	return hb
 
 
-func _field(placeholder: String, ratio: float) -> LineEdit:
+func _hint(text: String) -> Label:
+	var h := _lbl(text, FS_S, COL_DIM)
+	h.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	return h
+
+
+func _field(placeholder: String) -> LineEdit:
 	var e := LineEdit.new()
 	e.placeholder_text = placeholder
 	e.custom_minimum_size = Vector2(0, ROW_H)
 	e.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	e.size_flags_stretch_ratio = ratio
 	e.add_theme_font_size_override("font_size", FS_M - 1)
+	var n := _box(Color(0, 0, 0, 0.32), R, Color(1, 1, 1, 0.10))
+	var f := _box(Color(0, 0, 0, 0.40), R, Color(COL_ACCENT, 0.7))
+	for sb in [n, f]:
+		sb.content_margin_left = 12
+		sb.content_margin_right = 12
+	e.add_theme_stylebox_override("normal", n)
+	e.add_theme_stylebox_override("focus", f)
+	e.add_theme_stylebox_override("read_only", n)
+	e.add_theme_color_override("caret_color", COL_ACCENT)
 	return e
-
-
-func _layout_rooms(w: float) -> void:
-	if _rooms_list == null:
-		return
-	var only_empty := _rooms_list.get_child_count() == 1 and _rooms_list.get_child(0).has_meta("empty")
-	_rooms_list.columns = 1 if only_empty else clampi(int((w + 16.0) / 456.0), 1, 3)
 
 
 ## Genitiv: Namen auf s/x/z (auch ss) nur mit Apostroph, sonst "s".
@@ -911,11 +1104,11 @@ func _fade_in(c: Control, idx: int = 0) -> void:
 	tw.tween_property(c, "modulate:a", 1.0, 0.18)
 
 
-## Runder Avatar mit Anfangsbuchstabe; gedeckte Farbe aus dem Namen.
+## Avatar: kleines Quadrat mit Anfangsbuchstabe, gedeckte Farbe aus dem Namen.
 func _avatar(pname: String, sz: int = 28) -> Control:
 	var p := PanelContainer.new()
 	p.add_theme_stylebox_override("panel", _box(
-		Color.from_hsv(float(absi(pname.hash()) % 360) / 360.0, 0.32, 0.46), sz))
+		Color.from_hsv(float(absi(pname.hash()) % 360) / 360.0, 0.30, 0.42), R))
 	p.custom_minimum_size = Vector2(sz, sz)
 	p.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -923,66 +1116,78 @@ func _avatar(pname: String, sz: int = 28) -> Control:
 	l.text = pname.substr(0, 1).to_upper() if pname != "" else "?"
 	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	l.add_theme_font_size_override("font_size", int(sz * 0.46))
+	l.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	l.add_theme_font_override("font", _f_display)
+	l.add_theme_font_size_override("font_size", int(sz * 0.5))
 	l.add_theme_color_override("font_color", COL_TEXT)
 	p.add_child(l)
 	return p
 
 
-## Raumkarte im Kartenstil des Song-Browsers; die ganze Karte ist der Knopf.
-## Die Raum-Ansage kennt nur Name, Spielerzahl und Code (keine Map/Modus).
-func _room_card(lan: bool, rname: String, players_n: int, sub: String,
+## Tabellenzeile der Raumliste; die ganze Zeile ist der Knopf.
+## Die Raum-Ansage kennt nur Name, Spielerzahl, Code und Spielmodus.
+func _room_card(lan: bool, rname: String, players_n: int, where: String, mode: String,
 		on_join: Callable) -> Control:
 	var card := Button.new()
-	card.custom_minimum_size = Vector2(0, 72)
+	card.custom_minimum_size = Vector2(0, 52)
 	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	card.tooltip_text = rname
-	var n := _box(COL_CARD, 12, Color(1, 1, 1, 0.06))
-	var hv := _box(COL_CARD_HOVER, 12, Color(1, 1, 1, 0.16))
-	var pr := _box(Color(0.06, 0.06, 0.09, 0.96), 12, Color(1, 1, 1, 0.16))
+	var n := StyleBoxFlat.new()
+	n.bg_color = Color(1, 1, 1, 0.0)
+	n.border_width_bottom = 1
+	n.border_color = COL_LINE
+	var hv := StyleBoxFlat.new()
+	hv.bg_color = COL_HOVER
+	hv.border_width_left = 2
+	hv.border_color = COL_ACCENT
+	var pr: StyleBoxFlat = hv.duplicate()
+	pr.bg_color = Color(1, 1, 1, 0.025)
 	card.add_theme_stylebox_override("normal", n)
 	card.add_theme_stylebox_override("hover", hv)
 	card.add_theme_stylebox_override("pressed", pr)
-	card.add_theme_stylebox_override("focus", UiTheme._focus_box(12))
+	card.add_theme_stylebox_override("focus", UiTheme._focus_box(R))
 	UiTheme._attach_sounds(card)
 	card.pressed.connect(on_join)
 	var hb := HBoxContainer.new()
 	hb.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	hb.offset_left = 16
-	hb.offset_right = -16
 	hb.add_theme_constant_override("separation", 16)
 	hb.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	card.add_child(hb)
-	var tile := PanelContainer.new()
-	tile.add_theme_stylebox_override("panel", _box(Color(1, 1, 1, 0.05), 10))
-	tile.custom_minimum_size = Vector2(40, 40)
-	tile.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	tile.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var ic := _icon_rect("lan" if lan else "globe", COL_DIM, 20)
-	ic.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	tile.add_child(ic)
-	hb.add_child(tile)
-	var mid := VBoxContainer.new()
-	mid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	mid.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	mid.add_theme_constant_override("separation", 2)
-	mid.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	hb.add_child(mid)
-	var nl := _lbl(rname, FS_M + 1, COL_TEXT)
+	hb.add_child(_hgap(0))
+	hb.add_child(_icon_rect("lan" if lan else "globe", COL_DIM, RC_ICON))
+	var nl := _lbl(rname, FS_M, COL_TEXT)
+	nl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	nl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	nl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	nl.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
-	mid.add_child(nl)
-	var sl := _lbl(sub, FS_S, COL_DIM)
-	sl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	mid.add_child(sl)
-	var cnt := _lbl(tr("1 Spieler") if players_n == 1 else tr("%d Spieler") % players_n, FS_S, COL_TEXT)
-	cnt.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	hb.add_child(nl)
+	var ml := _lbl(Lobby.play_name(Lobby.norm_play(mode)), FS_S + 1, COL_TEXT)
+	ml.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	ml.custom_minimum_size.x = RC_MODE
+	ml.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	hb.add_child(ml)
+	var wl := _lbl(where, FS_S + 1, COL_DIM) if lan else _num(where, FS_S + 1, COL_DIM)
+	wl.custom_minimum_size.x = RC_WHERE
+	wl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	wl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	hb.add_child(wl)
+	var cnt := _num(str(players_n), FS_M, COL_TEXT)
+	cnt.custom_minimum_size.x = RC_PLAYERS
+	cnt.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	hb.add_child(cnt)
-	var join := _lbl("Beitreten", FS_S, COL_DIM)
+	card.tooltip_text = "%s  ·  %s" % [rname, tr("1 Spieler") if players_n == 1 else tr("%d Spieler") % players_n]
+	var jb := HBoxContainer.new()
+	jb.custom_minimum_size.x = RC_JOIN
+	jb.alignment = BoxContainer.ALIGNMENT_END
+	jb.add_theme_constant_override("separation", 4)
+	jb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hb.add_child(jb)
+	var join := _lbl("Beitreten", FS_S + 1, COL_DIM)
 	join.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	hb.add_child(join)
+	jb.add_child(join)
 	var chev := _icon_rect("next", COL_DIM)
-	hb.add_child(chev)
+	jb.add_child(chev)
+	hb.add_child(_hgap(0))
 	card.mouse_entered.connect(func():
 		join.add_theme_color_override("font_color", COL_ACCENT)
 		chev.modulate = COL_ACCENT)
@@ -990,13 +1195,6 @@ func _room_card(lan: bool, rname: String, players_n: int, sub: String,
 		join.add_theme_color_override("font_color", COL_DIM)
 		chev.modulate = COL_DIM)
 	return card
-
-
-## Raumkarten-Untertitel; Orbit-Raeume werden vorn markiert (Mania ist der Standard).
-func _card_sub(base: String, mode: String) -> String:
-	if Lobby.norm_play(mode) == "orbit":
-		return "Orbit  ·  " + base
-	return base
 
 
 func _refresh_rooms() -> void:
@@ -1013,8 +1211,8 @@ func _refresh_rooms() -> void:
 		var r: Dictionary = Lobby.lan_rooms[ip]
 		lan_codes[str(r.get("code", ""))] = true
 		var target_ip := str(ip)
-		_rooms_list.add_child(_room_card(true, str(r.name), int(r.players),
-			_card_sub(tr("Dein Netzwerk"), str(r.get("mode", "mania"))), func():
+		_rooms_list.add_child(_room_card(true, str(r.name), int(r.players), tr("Dein Netzwerk"),
+			str(r.get("mode", "mania")), func():
 				if Lobby.join_lan(target_ip):
 					_show_room()))
 		count += 1
@@ -1023,8 +1221,8 @@ func _refresh_rooms() -> void:
 			continue
 		var o: Dictionary = Lobby.online_rooms[code]
 		var jcode := str(code)
-		_rooms_list.add_child(_room_card(false, str(o.name), int(o.players),
-			_card_sub(tr("Online  ·  %s") % jcode, str(o.get("mode", "mania"))), func():
+		_rooms_list.add_child(_room_card(false, str(o.name), int(o.players), jcode,
+			str(o.get("mode", "mania")), func():
 				if Lobby.join_code(jcode):
 					_show_room()))
 		count += 1
@@ -1035,19 +1233,18 @@ func _refresh_rooms() -> void:
 	if _rooms_count != null:
 		_rooms_count.text = str(count) if count > 0 else ""
 	if count == 0:
-		# Leerer Zustand: ruhig, linksbuendig im Raster, mit klarer naechster Aktion.
+		# Leerer Zustand: ruhig, linksbuendig in der Tabelle, mit klarer naechster Aktion.
 		var empty := VBoxContainer.new()
 		empty.set_meta("empty", true)
 		empty.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		empty.add_theme_constant_override("separation", 4)
-		empty.add_child(_gap(8))
-		empty.add_child(_lbl("Gerade ist es ruhig hier", FS_M + 1, COL_TEXT))
+		empty.add_child(_gap(M))
+		empty.add_child(_lbl("Gerade ist es ruhig hier", FS_M, COL_TEXT))
 		var el := _lbl("Keine offenen Räume. Erstelle einen, er erscheint hier automatisch bei allen Spielern.", FS_S, COL_DIM)
 		el.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		empty.add_child(el)
 		_rooms_list.add_child(empty)
 		_fade_in(empty)
-	_layout_rooms(_rooms_list.get_parent().size.x if _rooms_list.get_parent() is Control else 0.0)
 
 
 # ---------------------------------------------------------------------------
@@ -1055,52 +1252,43 @@ func _refresh_rooms() -> void:
 # ---------------------------------------------------------------------------
 
 func _build_room() -> void:
-	var cols := HBoxContainer.new()
-	cols.add_theme_constant_override("separation", M)
-	cols.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_room_box.add_child(cols)
-
-	# ---------------- Links: Raum-Panel ------------------------------------
-	var left := PanelContainer.new()
-	left.add_theme_stylebox_override("panel", _panel_box())
-	left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	cols.add_child(left)
-	var lv := VBoxContainer.new()
-	lv.add_theme_constant_override("separation", 0)
-	left.add_child(lv)
+	# ---------------- Kopf: Raumname + Code links, Spielmodus/Format rechts --
+	var head := HBoxContainer.new()
+	head.add_theme_constant_override("separation", M)
+	_room_box.add_child(head)
+	var tv := VBoxContainer.new()
+	tv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	tv.add_theme_constant_override("separation", 0)
+	head.add_child(tv)
 	_room_title = _lbl("", FS_XL, COL_TEXT)
+	_room_title.add_theme_font_override("font", _f_display)
 	_room_title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	_room_title.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
-	lv.add_child(_room_title)
+	tv.add_child(_room_title)
 	var code_row := HBoxContainer.new()
-	code_row.custom_minimum_size = Vector2(0, 32)
+	code_row.custom_minimum_size = Vector2(0, 28)
 	code_row.add_theme_constant_override("separation", 8)
-	lv.add_child(code_row)
-	_code_label = _lbl("", FS_M - 1, COL_DIM)
-	_code_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	tv.add_child(code_row)
+	_code_cap = _caption("Code")
+	code_row.add_child(_code_cap)
+	_code_label = _num("", FS_M, COL_TEXT)
 	code_row.add_child(_code_label)
-	_copy_btn = _btn("Kopieren", false, 28)
-	_copy_btn.icon = _icon("copy")
-	_copy_btn.add_theme_font_size_override("font_size", FS_S)
-	_copy_btn.add_theme_color_override("icon_normal_color", COL_DIM)
-	_copy_btn.add_theme_color_override("icon_hover_color", COL_TEXT)
-	_copy_btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	for st in ["normal", "hover", "pressed", "hover_pressed"]:
-		var sb: StyleBoxFlat = _copy_btn.get_theme_stylebox(st)
-		sb.content_margin_left = 10
-		sb.content_margin_right = 12
+	_copy_btn = _text_btn("Kopieren", "copy")
 	_copy_btn.pressed.connect(_copy_code)
 	code_row.add_child(_copy_btn)
 
-	lv.add_child(_gap(12))
-	# Spielmodus des Raums: Mania 4K / Orbit (waehlt die Krone, alle sehen ihn).
-	var play_row := HBoxContainer.new()
-	play_row.custom_minimum_size = Vector2(0, 32)
-	play_row.add_theme_constant_override("separation", 8)
-	lv.add_child(play_row)
-	var pcap := _caption("SPIELMODUS")
-	pcap.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	play_row.add_child(pcap)
+	# Spielmodus (Mania 4K / Orbit) und Format (Frei / Teams / Battle Royale)
+	# als Reiter: waehlt die Krone, alle sehen den aktiven Unterstrich.
+	var sv := VBoxContainer.new()
+	sv.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	sv.add_theme_constant_override("separation", 6)
+	head.add_child(sv)
+	var srow := HBoxContainer.new()
+	srow.alignment = BoxContainer.ALIGNMENT_END
+	srow.add_theme_constant_override("separation", 2)
+	sv.add_child(srow)
+	srow.add_child(_caption("Spielmodus"))
+	srow.add_child(_hgap(6))
 	for pm in ["mania", "orbit"]:
 		var pb := _chip_toggle(Lobby.play_name(pm))
 		pb.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
@@ -1108,15 +1296,19 @@ func _build_room() -> void:
 		pb.pressed.connect(func():
 			Lobby.set_play_mode(pmode)
 			_refresh_room())
-		play_row.add_child(pb)
+		srow.add_child(pb)
 		_play_btns[pm] = pb
-
-	lv.add_child(_gap(12))
-	# Raum-Modus: Frei / Teams / Battle Royale (waehlt die Krone, alle sehen ihn).
+	_kind_sep = HBoxContainer.new()
+	_kind_sep.add_theme_constant_override("separation", 0)
+	_kind_sep.add_child(_hgap(14))
+	_kind_sep.add_child(_vsep(20))
+	_kind_sep.add_child(_hgap(16))
+	_kind_sep.add_child(_caption("Format"))
+	_kind_sep.add_child(_hgap(8))
+	srow.add_child(_kind_sep)
 	_mode_row = HBoxContainer.new()
-	_mode_row.custom_minimum_size = Vector2(0, 32)
-	_mode_row.add_theme_constant_override("separation", 8)
-	lv.add_child(_mode_row)
+	_mode_row.add_theme_constant_override("separation", 2)
+	srow.add_child(_mode_row)
 	for k in 3:
 		var kb := _chip_toggle(Lobby.mode_name(k))
 		var kind: int = k
@@ -1125,63 +1317,34 @@ func _build_room() -> void:
 			_refresh_room())
 		_mode_row.add_child(kb)
 		_mode_btns.append(kb)
-	var msp := Control.new()
-	msp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_mode_row.add_child(msp)
-	_balance_btn = _btn("Auto-Ausgleich", false, 32)
-	_balance_btn.add_theme_font_size_override("font_size", FS_S)
-	_balance_btn.pressed.connect(func(): Lobby.auto_balance_teams())
-	_mode_row.add_child(_balance_btn)
-	lv.add_child(_gap(8))
 	_mode_info = _lbl(" ", FS_S, COL_DIM)
+	_mode_info.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_mode_info.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	lv.add_child(_mode_info)
+	_mode_info.mouse_filter = Control.MOUSE_FILTER_PASS
+	sv.add_child(_mode_info)
 
-	lv.add_child(_gap(16))
-	lv.add_child(_sep())
-	lv.add_child(_gap(16))
-	var ph := HBoxContainer.new()
-	ph.add_theme_constant_override("separation", 8)
-	lv.add_child(ph)
-	_players_headrow = ph
-	_players_head = _caption("SPIELER IM RAUM")
-	ph.add_child(_players_head)
-	var psp := Control.new()
-	psp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	ph.add_child(psp)
-	_ready_count = _caption("")
-	ph.add_child(_ready_count)
-	lv.add_child(_gap(8))
+	_room_box.add_child(_gap(16))
+	_room_box.add_child(_sep())
+	_room_box.add_child(_gap(M))
 
-	_players_scroll = ScrollContainer.new()
-	_players_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_players_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	lv.add_child(_players_scroll)
-	_players_box = VBoxContainer.new()
-	_players_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_players_box.add_theme_constant_override("separation", 2)
-	_players_scroll.add_child(_players_box)
-	_board_holder = VBoxContainer.new()
-	_board_holder.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_board_holder.visible = false
-	lv.add_child(_board_holder)
+	var cols := HBoxContainer.new()
+	cols.add_theme_constant_override("separation", 0)
+	cols.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_room_box.add_child(cols)
 
-	# ---------------- Rechts: Map-Karte -------------------------------------
-	var right := PanelContainer.new()
-	right.add_theme_stylebox_override("panel", _panel_box(8))
-	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	cols.add_child(right)
-	var rv := VBoxContainer.new()
-	rv.add_theme_constant_override("separation", 0)
-	right.add_child(rv)
-	# Cover als Held: abgerundete Maske (clip_children), Verlauf fuer den Titel.
+	# ---------------- Links: Map (Cover gross, Fakten, Mods) ----------------
+	var mapcol := VBoxContainer.new()
+	mapcol.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	mapcol.add_theme_constant_override("separation", 0)
+	cols.add_child(mapcol)
+	# Cover: harte Kante (Radius R), Abdunklung nur unter dem Titel.
 	var mask := Panel.new()
-	mask.add_theme_stylebox_override("panel", _box(Color(1, 1, 1, 1), 10))
+	mask.add_theme_stylebox_override("panel", _box(Color(1, 1, 1, 1), R))
 	mask.clip_children = CanvasItem.CLIP_CHILDREN_AND_DRAW
-	mask.self_modulate = Color(0.10, 0.11, 0.15, 1.0)
+	mask.self_modulate = Color(0.075, 0.08, 0.10, 1.0)
 	mask.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	mask.custom_minimum_size = Vector2(0, 160)
-	rv.add_child(mask)
+	mapcol.add_child(mask)
 	_map_cover = TextureRect.new()
 	_map_cover.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_map_cover.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
@@ -1189,8 +1352,8 @@ func _build_room() -> void:
 	_map_cover.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	mask.add_child(_map_cover)
 	var grad := Gradient.new()
-	grad.offsets = PackedFloat32Array([0.0, 0.45, 1.0])
-	grad.colors = PackedColorArray([Color(0.03, 0.03, 0.05, 0.0), Color(0.03, 0.03, 0.05, 0.10), Color(0.03, 0.03, 0.05, 0.86)])
+	grad.offsets = PackedFloat32Array([0.0, 0.5, 1.0])
+	grad.colors = PackedColorArray([Color(0.02, 0.02, 0.03, 0.0), Color(0.02, 0.02, 0.03, 0.0), Color(0.02, 0.02, 0.03, 0.88)])
 	var gt := GradientTexture2D.new()
 	gt.gradient = grad
 	gt.fill_from = Vector2(0, 0)
@@ -1206,81 +1369,79 @@ func _build_room() -> void:
 	mask.add_child(_map_shade)
 	var over := VBoxContainer.new()
 	over.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	over.offset_left = M - 8
-	over.offset_right = -(M - 8)
-	over.offset_bottom = -(M - 8)
+	over.offset_left = M
+	over.offset_right = -M
+	over.offset_bottom = -20
 	over.alignment = BoxContainer.ALIGNMENT_END
 	over.add_theme_constant_override("separation", 2)
 	over.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	mask.add_child(over)
-	_map_empty = _lbl("Der Kronenträger wählt die Map.", FS_S, COL_DIM)
 	_map_label = _lbl("Noch keine Map gewählt.", FS_XL, COL_TEXT)
+	_map_label.add_theme_font_override("font", _f_display)
 	_map_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	_map_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.5))
+	_map_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.45))
 	_map_label.add_theme_constant_override("shadow_offset_y", 1)
 	over.add_child(_map_label)
-	_map_artist = _lbl("", FS_M, COL_TEXT.darkened(0.1))
+	_map_artist = _lbl("", FS_M, COL_TEXT.darkened(0.08))
 	_map_artist.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	_map_artist.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
 	over.add_child(_map_artist)
+	_map_stats = _lbl(" ", FS_S, COL_DIM.lightened(0.1))
+	_map_stats.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	_map_stats.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	over.add_child(_map_stats)
+	_map_empty = _lbl("Der Kronenträger wählt die Map.", FS_S, COL_DIM)
 	over.add_child(_map_empty)
 
-	var info := MarginContainer.new()
-	for side in ["margin_left", "margin_right"]:
-		info.add_theme_constant_override(side, M - 8)
-	info.add_theme_constant_override("margin_top", 16)
-	info.add_theme_constant_override("margin_bottom", M - 8)
-	rv.add_child(info)
-	var iv := VBoxContainer.new()
-	iv.add_theme_constant_override("separation", 0)
-	info.add_child(iv)
-	# Diff-Zeile: Sterne-Pill in Sternfarbe (einziger Farbfleck), Diff-Name.
-	var drow := HBoxContainer.new()
-	drow.custom_minimum_size = Vector2(0, 28)
-	drow.add_theme_constant_override("separation", 12)
-	iv.add_child(drow)
-	_map_drow = drow
-	_star_pill = PanelContainer.new()
-	_star_pill.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	drow.add_child(_star_pill)
-	_star_label = _lbl("", FS_S, Color(0.05, 0.05, 0.08))
-	_star_pill.add_child(_star_label)
-	_map_meta = _lbl("", FS_M, COL_TEXT)
-	_map_meta.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_map_meta.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	# Faktenleiste: Beschriftung klein, Wert gross in Tabellenziffern, Haarlinien dazwischen.
+	mapcol.add_child(_gap(16))
+	_map_drow = HBoxContainer.new()
+	_map_drow.add_theme_constant_override("separation", 0)
+	mapcol.add_child(_map_drow)
+	var star := _fact("Sterne", true)
+	_star_pill = star[0]
+	_star_label = star[1]
+	_star_swatch = _dot(Color.WHITE, 8)
+	var sbox: HBoxContainer = _star_label.get_parent()
+	sbox.add_child(_star_swatch)
+	sbox.move_child(_star_swatch, 0)
+	var diff := _fact("Schwierigkeit", false)
+	_map_meta = diff[1]
 	_map_meta.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	_map_meta.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
-	drow.add_child(_map_meta)
-	iv.add_child(_gap(8))
-	_map_stats = _lbl(" ", FS_S, COL_DIM)
-	_map_stats.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	iv.add_child(_map_stats)
+	diff[0].size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_map_drow.add_child(diff[0])
+	for k in ["keys", "bpm", "len", "notes"]:
+		var cap: String = {"keys": "Tasten", "bpm": "BPM", "len": "Länge", "notes": "Noten"}[k]
+		var f := _fact(cap, false)
+		_facts[k] = f
+		_map_drow.add_child(f[0])
+	# Letzte Zelle ohne Nachlauf: rechte Kante fluchtet mit dem Cover.
+	var last_gap: Control = _facts["notes"][0].get_child(_facts["notes"][0].get_child_count() - 1)
+	last_gap.custom_minimum_size.x = 0
 
 	# Fehlt die Raum-Map: Status, "Map laden" (genau diese Set-ID), Fortschritt, Abbruch.
 	_dl_row = HBoxContainer.new()
 	_dl_row.custom_minimum_size = Vector2(0, ROW_H)
 	_dl_row.add_theme_constant_override("separation", 12)
 	_dl_row.visible = false
-	iv.add_child(_dl_row)
-	_dl_text = _lbl("Nicht in deiner Bibliothek", FS_S, COL_TEXT)
+	mapcol.add_child(_dl_row)
+	_dl_row.add_child(_dot(COL_WARN, 6))
+	_dl_text = _lbl("Nicht in deiner Bibliothek", FS_S + 1, COL_WARN)
 	_dl_text.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_dl_row.add_child(_dl_text)
 	_dl_bar = ProgressBar.new()
 	_dl_bar.min_value = 0.0
 	_dl_bar.max_value = 1.0
 	_dl_bar.show_percentage = false
-	_dl_bar.custom_minimum_size = Vector2(80, 6)
+	_dl_bar.custom_minimum_size = Vector2(80, 4)
 	_dl_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_dl_bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	var pbg := _box(Color(1, 1, 1, 0.08), 3)
-	var pfill := _box(COL_ACCENT.darkened(0.1), 3)
-	_dl_bar.add_theme_stylebox_override("background", pbg)
-	_dl_bar.add_theme_stylebox_override("fill", pfill)
+	_dl_bar.add_theme_stylebox_override("background", _box(Color(1, 1, 1, 0.10), 1))
+	_dl_bar.add_theme_stylebox_override("fill", _box(COL_ACCENT, 1))
 	_dl_row.add_child(_dl_bar)
-	_dl_label = _lbl("", FS_S, COL_TEXT)
-	_dl_label.custom_minimum_size = Vector2(40, 0)
+	_dl_label = _num("", FS_M, COL_TEXT)
+	_dl_label.custom_minimum_size = Vector2(48, 0)
 	_dl_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	_dl_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_dl_row.add_child(_dl_label)
 	_dl_cancel = _btn("Abbrechen", false, 32)
 	_dl_cancel.add_theme_font_size_override("font_size", FS_S)
@@ -1297,13 +1458,11 @@ func _build_room() -> void:
 	_dl_btn.pressed.connect(_download_room_map)
 	_dl_row.add_child(_dl_btn)
 
-	iv.add_child(_gap(16))
-	iv.add_child(_sep())
-	iv.add_child(_gap(16))
-	# Mods: Schalter wie im Song-Browser; nur der Kronentraeger schaltet.
+	mapcol.add_child(_gap(16))
+	# Mods: nur der Kronentraeger schaltet.
 	var mrow := HBoxContainer.new()
 	mrow.add_theme_constant_override("separation", 8)
-	iv.add_child(mrow)
+	mapcol.add_child(mrow)
 	for k in ["NF", "SV"]:
 		var mb := _mod_toggle("No-Fail" if k == "NF" else "SV",
 			"Kein Abbruch bei leerer Lebensleiste" if k == "NF" else "Jede Map mit Tempowechseln")
@@ -1316,21 +1475,67 @@ func _build_room() -> void:
 		mrow.add_child(mb)
 		_mod_btns[k] = mb
 
+	cols.add_child(_hgap(M))
+	var vr := _vsep()
+	vr.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	cols.add_child(vr)
+	cols.add_child(_hgap(M))
+
+	# ---------------- Rechts: Spieler (Tabelle) bzw. Teams-/Royale-Tafel -----
+	var pcol := VBoxContainer.new()
+	pcol.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	pcol.add_theme_constant_override("separation", 0)
+	cols.add_child(pcol)
+	var ph := HBoxContainer.new()
+	ph.custom_minimum_size = Vector2(0, 32)
+	ph.add_theme_constant_override("separation", 12)
+	pcol.add_child(ph)
+	_players_headrow = ph
+	_players_head = _section("Spieler im Raum")
+	ph.add_child(_players_head)
+	ph.add_child(_spacer())
+	_balance_btn = _text_btn("Auto-Ausgleich")
+	_balance_btn.pressed.connect(func(): Lobby.auto_balance_teams())
+	ph.add_child(_balance_btn)
+	_ready_count = _num("", FS_M, COL_DIM)
+	ph.add_child(_ready_count)
+	_players_rule = _sep()
+	pcol.add_child(_gap(8))
+	pcol.add_child(_players_rule)
+
+	_players_scroll = ScrollContainer.new()
+	_players_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_players_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	pcol.add_child(_players_scroll)
+	_players_box = VBoxContainer.new()
+	_players_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_players_box.add_theme_constant_override("separation", 0)
+	_players_scroll.add_child(_players_box)
+	# Allein im Raum: naechster Schritt statt leerer Flaeche.
+	_alone_hint = _hint("")
+	_alone_hint.visible = false
+	_alone_hint.custom_minimum_size = Vector2(0, 0)
+	_alone_hint.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	_board_holder = VBoxContainer.new()
+	_board_holder.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_board_holder.visible = false
+	pcol.add_child(_board_holder)
+
 	# ---------------- Aktionsleiste: alle Knoepfe gleich hoch ---------------
+	_room_box.add_child(_gap(M))
 	var bar := HBoxContainer.new()
 	bar.custom_minimum_size = Vector2(0, BAR_H)
 	bar.add_theme_constant_override("separation", 8)
 	_room_box.add_child(bar)
 	_leave_btn = _btn("Verlassen")
-	_leave_btn.custom_minimum_size.x = 168
+	_leave_btn.custom_minimum_size.x = 144
 	_leave_btn.pressed.connect(func():
 		Lobby.leave()
 		_show_browser())
 	bar.add_child(_leave_btn)
-	var bsp := Control.new()
-	bsp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	bar.add_child(bsp)
+	bar.add_child(_spacer())
 	_tour_btn = _btn("Turnier")
+	_tour_btn.icon = _icon("cup")
 	_tour_btn.custom_minimum_size.x = 168
 	_tour_btn.pressed.connect(_on_tour_btn)
 	bar.add_child(_tour_btn)
@@ -1340,9 +1545,34 @@ func _build_room() -> void:
 	bar.add_child(_pick_btn)
 	_start_btn = _btn("SPIELEN", true)
 	_start_btn.custom_minimum_size.x = 264
-	_start_btn.add_theme_font_size_override("font_size", FS_M + 1)
+	_start_btn.add_theme_font_size_override("font_size", FS_M + 2)
 	_start_btn.pressed.connect(func(): Lobby.start_game())
 	bar.add_child(_start_btn)
+
+
+## Eine Zelle der Faktenleiste: [Haarlinie] Beschriftung ueber Wert. Gibt [Zelle, Wert].
+func _fact(cap: String, first: bool) -> Array:
+	var cell := HBoxContainer.new()
+	cell.add_theme_constant_override("separation", 0)
+	cell.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	if not first:
+		cell.add_child(_vsep(36))
+		cell.add_child(_hgap(16))
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 0)
+	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	cell.add_child(v)
+	v.add_child(_caption(cap))
+	var vrow := HBoxContainer.new()
+	vrow.add_theme_constant_override("separation", 8)
+	v.add_child(vrow)
+	var val := _num("", FS_L, COL_TEXT)
+	val.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vrow.add_child(val)
+	cell.add_child(_hgap(16))
+	if first:
+		_map_drow.add_child(cell)
+	return [cell, val]
 
 
 func _copy_code() -> void:
@@ -1387,35 +1617,47 @@ func _show_browser() -> void:
 	_refresh_rooms()
 
 
-## Eine Spielerzeile: Avatar, Krone, Name, (Score), Bereit-Status, Krone geben.
-## Kleines ruhiges Abzeichen "3D" / "2D" / "Orbit"; null bei unbekannter Darstellung.
+## Ruhiges Abzeichen "3D" / "2D" / "Orbit" mit feiner Kante; null bei unbekannter Darstellung.
 func _view_badge(view: String) -> Control:
 	if view == "":
 		return null
 	var pc := PanelContainer.new()
-	pc.add_theme_stylebox_override("panel", _box(Color(1, 1, 1, 0.06), 5))
+	var sb := _box(Color(1, 1, 1, 0.0), 3, Color(1, 1, 1, 0.18))
+	sb.content_margin_left = 6
+	sb.content_margin_right = 6
+	sb.content_margin_top = 1
+	sb.content_margin_bottom = 1
+	pc.add_theme_stylebox_override("panel", sb)
 	pc.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	pc.tooltip_text = tr("Spielt in %s") % view
-	var l := _lbl(view, FS_S, COL_DIM)
-	l.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	var l := _num(view, FS_S, COL_DIM)
 	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var m := MarginContainer.new()
-	m.add_theme_constant_override("margin_left", 6)
-	m.add_theme_constant_override("margin_right", 6)
-	m.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	m.add_child(l)
-	pc.add_child(m)
+	pc.add_child(l)
 	return pc
 
 
+## Zustand einer Spielerzeile: [Text, Farbe]. Eigene Zeile kennt auch "Map fehlt"/"Laedt".
+func _row_state(id: int, p: Dictionary, my_id: int) -> Array:
+	if id == my_id and not Lobby.sel_map.is_empty() and Lobby.resolve_local_path() == "":
+		return [tr("Lädt Map"), COL_ACCENT] if _downloading else [tr("Map fehlt"), COL_WARN]
+	if bool(p.get("ready", false)):
+		return [tr("Bereit"), COL_READY]
+	return [tr("Wartet"), COL_DIM]
+
+
+## Eine Spielerzeile: Avatar, Name, Krone/Host/(du), (Score), Abzeichen, Zustand, Krone geben.
+## Abzeichen und Zustand stehen in festen Spalten, damit alle Zeilen fluchten.
 func _player_row(id: int, p: Dictionary, my_id: int, in_round: bool) -> Control:
 	var is_crown: bool = id == Lobby.crown_id
 	var row := PanelContainer.new()
-	var n := _box(Color(1, 1, 1, 0.035), 8)
-	n.content_margin_left = 8
-	n.content_margin_right = 8
+	var n := StyleBoxFlat.new()
+	n.bg_color = Color(1, 1, 1, 0.0)
+	n.border_width_bottom = 1
+	n.border_color = COL_LINE
+	n.content_margin_left = 4
+	n.content_margin_right = 4
 	var hv: StyleBoxFlat = n.duplicate()
-	hv.bg_color = Color(1, 1, 1, 0.07)
+	hv.bg_color = COL_HOVER
 	row.add_theme_stylebox_override("panel", n)
 	row.custom_minimum_size = Vector2(0, PROW_H)
 	row.mouse_filter = Control.MOUSE_FILTER_PASS
@@ -1442,43 +1684,50 @@ func _player_row(id: int, p: Dictionary, my_id: int, in_round: bool) -> Control:
 	var name_l := _lbl(str(p.name), FS_M, COL_TEXT)
 	name_l.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
 	name_l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	name_l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	name_l.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	# Breite = Textbreite (max. 60 % der Zeile), Krone/(du) folgen direkt dahinter.
+	# Breite = Textbreite, hoechstens was neben festen Spalten und Krone/Host/(du) bleibt.
 	var tw := name_l.get_theme_font("font").get_string_size(str(p.name), HORIZONTAL_ALIGNMENT_LEFT, -1, FS_M).x
-	name_l.custom_minimum_size.x = minf(ceilf(tw) + 2.0, maxf(_players_scroll.size.x * 0.6, 160.0))
+	var fixed := 36.0 + PC_BADGE + 12.0 + PC_STATE + 12.0 + 48.0 + 120.0 + (236.0 if in_round else 0.0)
+	name_l.custom_minimum_size.x = minf(ceilf(tw) + 2.0, maxf(_players_scroll.size.x - fixed, 96.0))
 	name_box.add_child(name_l)
 	if is_crown:
 		var cr := _icon_rect("crown", COL_GOLD)
 		cr.tooltip_text = "Kronenträger: wählt die Map und startet"
 		cr.mouse_filter = Control.MOUSE_FILTER_PASS
 		name_box.add_child(cr)
+	if id == 1:
+		var host := _caption("Host")
+		host.tooltip_text = "Hostet den Raum"
+		host.mouse_filter = Control.MOUSE_FILTER_PASS
+		name_box.add_child(host)
 	if id == my_id:
-		var you := _lbl("(du)", FS_S, COL_DIM)
-		you.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		name_box.add_child(you)
+		name_box.add_child(_caption("(du)"))
+	name_box.add_child(_spacer())
+	if in_round:
+		var cols := [[UiTheme.fmt_score(int(p.get("score", 0))), 88, COL_TEXT],
+			[UiTheme.fmt_num(float(p.get("acc", 0.0)) * 100.0, 1) + " %", 64, COL_DIM],
+			["%dx" % int(p.get("combo", 0)), 48, COL_DIM]]
+		for c in cols:
+			var sl := _num(str(c[0]), FS_S + 1, c[2])
+			sl.custom_minimum_size.x = int(c[1])
+			sl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+			hb.add_child(sl)
+	# Feste Spalte fuer das Darstellungs-Abzeichen (leer bei alten Clients).
+	var bslot := HBoxContainer.new()
+	bslot.custom_minimum_size = Vector2(PC_BADGE, 0)
+	bslot.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var vb := _view_badge(Lobby.view_of(id))
 	if vb != null:
-		name_box.add_child(vb)
-	name_l.size_flags_horizontal = Control.SIZE_FILL
-	var nsp := Control.new()
-	nsp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	nsp.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	name_box.add_child(nsp)
-	if in_round:
-		var sc := _lbl("%s  ·  %s  ·  %dx" % [
-			UiTheme.fmt_score(int(p.get("score", 0))),
-			UiTheme.fmt_num(float(p.get("acc", 0.0)) * 100.0, 1) + " %", int(p.get("combo", 0))],
-			FS_S, COL_TEXT)
-		sc.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		hb.add_child(sc)
+		bslot.add_child(vb)
+	hb.add_child(bslot)
 	var st := HBoxContainer.new()
-	st.custom_minimum_size = Vector2(88, 0)
+	st.custom_minimum_size = Vector2(PC_STATE, 0)
 	st.add_theme_constant_override("separation", 8)
 	st.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var ready := bool(p.ready)
-	st.add_child(_dot(COL_READY if ready else Color(COL_DIM, 0.5)))
-	var stl := _lbl("Bereit" if ready else "Wartet", FS_S, COL_READY if ready else COL_DIM)
+	var state := _row_state(id, p, my_id)
+	st.add_child(_dot(state[1]))
+	var stl := _lbl(state[0], FS_S + 1, state[1])
+	stl.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
 	stl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	st.add_child(stl)
 	hb.add_child(st)
@@ -1507,8 +1756,13 @@ func _refresh_room() -> void:
 		return
 	_room_title.text = Lobby.room_name if Lobby.room_name != "" else tr("Raum")
 	var has_code := Lobby.room_code != ""
-	_code_label.text = (tr("Code  %s") % Lobby.room_code) if has_code else tr("Nur im eigenen Netzwerk")
+	_code_cap.visible = has_code
+	_code_label.text = Lobby.room_code if has_code else tr("Nur im eigenen Netzwerk")
+	_code_label.add_theme_color_override("font_color", COL_TEXT if has_code else COL_DIM)
 	_copy_btn.visible = has_code
+	# Der Alleine-Hinweis bleibt erhalten: vor dem Leeren aushaengen.
+	if _alone_hint.get_parent() != null:
+		_alone_hint.get_parent().remove_child(_alone_hint)
 	for c in _players_box.get_children():
 		_players_box.remove_child(c)
 		c.queue_free()
@@ -1532,6 +1786,13 @@ func _refresh_room() -> void:
 			_seen_rows[id] = true
 			_fade_in(row, row_i)
 			row_i += 1
+	if Lobby.room_kind() == MatchMode.Kind.FREE and Lobby.players.size() == 1:
+		if Lobby.room_code != "":
+			_alone_hint.text = tr("Noch niemand da. Teile den Code %s, oder der Raum erscheint in der Liste offener Räume.") % Lobby.room_code
+		else:
+			_alone_hint.text = tr("Noch niemand da. Mitspieler im selben Netzwerk sehen den Raum in ihrer Liste.")
+		_alone_hint.visible = true
+		_players_box.add_child(_alone_hint)
 	# Map-Karte.
 	var has_map := not Lobby.sel_map.is_empty()
 	_map_empty.visible = not has_map
@@ -1543,14 +1804,8 @@ func _refresh_room() -> void:
 		_map_artist.text = str(Lobby.sel_map.get("artist", ""))
 		_map_artist.visible = true
 		var stars := float(Lobby.sel_map.get("stars", 0.0))
-		var pill := _box(MapPicker.star_color(stars), 8)
-		pill.content_margin_left = 10
-		pill.content_margin_right = 10
-		pill.content_margin_top = 2
-		pill.content_margin_bottom = 2
-		_star_pill.add_theme_stylebox_override("panel", pill)
-		_star_label.text = "★ " + UiTheme.fmt_num(stars, 2)
-		_star_label.add_theme_color_override("font_color", Color(0.05, 0.05, 0.08) if stars < 6.5 else Color(0.95, 0.95, 1.0))
+		_star_swatch.add_theme_stylebox_override("panel", _box(MapPicker.star_color(stars), 1))
+		_star_label.text = UiTheme.fmt_num(stars, 2)
 		_fill_map_meta()
 	else:
 		_map_label.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_INHERIT
@@ -1576,7 +1831,8 @@ func _refresh_room() -> void:
 		pb.set_pressed_no_signal(pon)
 		_paint_chip(pb, pon)
 		pb.disabled = not is_crown or in_tour or Lobby.in_game
-		pb.tooltip_text = tr("Alle im Raum spielen %s.") % Lobby.play_name(Lobby.play_mode) if pon 			else tr("Nur der Kronenträger wählt den Spielmodus.") if not is_crown else ""
+		pb.tooltip_text = tr("Alle im Raum spielen %s.") % Lobby.play_name(Lobby.play_mode) if pon \
+			else tr("Nur der Kronenträger wählt den Spielmodus.") if not is_crown else ""
 	for k in _mode_btns.size():
 		var kb: Button = _mode_btns[k]
 		var on: bool = Lobby.room_kind() == k and not in_tour
@@ -1584,6 +1840,7 @@ func _refresh_room() -> void:
 		_paint_chip(kb, on)
 		kb.disabled = not is_crown or in_tour or Lobby.in_game
 		kb.visible = not in_tour
+	_kind_sep.visible = not in_tour
 	_pick_btn.visible = is_crown and not in_tour
 	# Primaer-Slot: Krone startet; alle anderen sehen ihren Zustand (nicht klickbar).
 	_start_btn.visible = not in_tour
@@ -1596,25 +1853,28 @@ func _refresh_room() -> void:
 		elif why == "" and not Lobby.all_ready():
 			why = tr("Noch nicht alle sind bereit.")
 		_start_btn.tooltip_text = why
-		_start_btn.add_theme_color_override("font_disabled_color", Color(COL_DIM, 0.7))
+		_start_btn.add_theme_color_override("font_disabled_color", COL_FAINT)
 	else:
 		var me_ready := Lobby.players.has(my_id) and bool(Lobby.players[my_id].get("ready", false))
 		_start_btn.text = "BEREIT" if me_ready else ("MAP LÄDT" if _downloading else "NICHT BEREIT")
 		_start_btn.disabled = true
 		_start_btn.tooltip_text = tr("Der Kronenträger startet die Runde.")
-		_start_btn.add_theme_color_override("font_disabled_color", COL_READY if me_ready else Color(COL_DIM, 0.8))
+		_start_btn.add_theme_color_override("font_disabled_color", COL_READY if me_ready else Color(COL_DIM, 0.85))
 	if _tour_btn != null:
 		_tour_btn.visible = in_tour or Lobby.is_host
 		_tour_btn.text = "Zum Turnier" if in_tour else "Turnier"
 	_refresh_dl_ui()
 
 
-## Diff, Tasten, BPM, Laenge, Noten der Raum-Map (nur lokal bekannt).
+## Diff, Tasten, BPM, Laenge, Noten der Raum-Map (Tasten..Noten nur lokal bekannt).
 func _fill_map_meta() -> void:
 	var version := str(Lobby.sel_map.get("version", "")).strip_edges()
+	_map_meta.text = version
+	_map_meta.tooltip_text = version
 	var ms := _local_set()
+	for k in _facts:
+		_facts[k][0].visible = ms != null
 	if ms == null:
-		_map_meta.text = version
 		_map_stats.text = " "
 		return
 	var di := 0
@@ -1624,19 +1884,18 @@ func _fill_map_meta() -> void:
 			break
 	var m: Dictionary = ms.meta_at(di)
 	var mania := int(m.get("mode", 3)) == 3
-	_map_meta.text = version + (("  ·  %dK" % int(round(float(m.get("cs", 4.0))))) if mania else "")
-	var parts: Array = []
+	_facts["keys"][0].visible = mania
+	_facts["keys"][1].text = "%dK" % int(round(float(m.get("cs", 4.0))))
 	var bpm := _bpm_text(ms, di)
-	if bpm != "":
-		parts.append(bpm + " BPM")
+	_facts["bpm"][0].visible = bpm != ""
+	_facts["bpm"][1].text = bpm
 	var sec := int(float(m.get("duration_ms", 0.0)) / 1000.0)
-	if sec > 0:
-		parts.append("%d:%02d" % [sec / 60, sec % 60])
-	if int(m.get("notes", 0)) > 0:
-		parts.append(tr("%d Noten") % int(m.get("notes", 0)))
-	if ms.creator != "":
-		parts.append(tr("Map von %s") % ms.creator)
-	_map_stats.text = "  ·  ".join(parts) if not parts.is_empty() else " "
+	_facts["len"][0].visible = sec > 0
+	_facts["len"][1].text = "%d:%02d" % [sec / 60, sec % 60]
+	var notes := int(m.get("notes", 0))
+	_facts["notes"][0].visible = notes > 0
+	_facts["notes"][1].text = UiTheme.fmt_score(notes) if notes >= 10000 else str(notes)
+	_map_stats.text = tr("Map von %s") % ms.creator if ms.creator != "" else " "
 
 
 ## BPM (bzw. Bereich) aus den roten Timing-Linien, gecacht.
@@ -1677,7 +1936,8 @@ func _refresh_mode(my_id: int) -> void:
 	_board_holder.visible = kind != MatchMode.Kind.FREE
 	# RoyaleBoard bringt eine eigene Kopfzeile mit (Runde, noch dabei).
 	_players_headrow.visible = kind != MatchMode.Kind.ROYALE
-	_players_head.text = "SPIELER IM RAUM" if kind == MatchMode.Kind.FREE else ("TEAMS" if kind == MatchMode.Kind.TEAMS else "BATTLE ROYALE")
+	_players_rule.visible = kind != MatchMode.Kind.ROYALE
+	_players_head.text = "Spieler im Raum" if kind == MatchMode.Kind.FREE else Lobby.mode_name(kind)
 	_balance_btn.visible = kind == MatchMode.Kind.TEAMS and Lobby.crown_id == my_id \
 			and not Lobby.in_game and Lobby.tournament == null
 	var info := tr("Jeder für sich — der höchste Score gewinnt.")
@@ -1702,6 +1962,7 @@ func _refresh_mode(my_id: int) -> void:
 			"totals": mm.team_totals(live) if Lobby.in_game \
 				else (mm.history.back().totals if not mm.history.is_empty() else [0, 0]),
 			"hint": mm.balance_hint(), "editable": not Lobby.in_game })
+		_flatten(_team_board)
 		if _royale_board != null:
 			_royale_board.visible = false
 		info = tr("Teams %s  ·  %s") % [mm.format_label(), mm.series_label()]
@@ -1727,6 +1988,7 @@ func _refresh_mode(my_id: int) -> void:
 		_royale_board.setup({ "round": mm.round_no, "players": rl,
 			"danger": mm.in_danger(live) if Lobby.in_game else -1,
 			"final": mm.is_final(), "winner": mm.winner_peer })
+		_flatten(_royale_board)
 		if _team_board != null:
 			_team_board.visible = false
 		# Runde und "noch dabei" zeigt die Tafel selbst: hier nur die Regel.
@@ -1759,6 +2021,8 @@ func _refresh_dl_ui() -> void:
 		return
 	var set_id := int(Lobby.sel_map.get("set_id", 0))
 	_dl_text.text = "Wird geladen" if _downloading else "Nicht in deiner Bibliothek"
+	_dl_text.add_theme_color_override("font_color", COL_TEXT if _downloading else COL_WARN)
+	(_dl_row.get_child(0) as Control).visible = not _downloading
 	_dl_bar.visible = _downloading
 	_dl_label.visible = _downloading
 	_dl_cancel.visible = _downloading
@@ -2023,9 +2287,7 @@ func _open_tour_setup() -> void:
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	back.add_child(center)
 	var panel := PanelContainer.new()
-	var sb := UiTheme.glass_box(18, 0.95)
-	sb.set_content_margin_all(28)
-	panel.add_theme_stylebox_override("panel", sb)
+	panel.add_theme_stylebox_override("panel", _panel_box(28))
 	panel.custom_minimum_size = Vector2(900, 0)
 	center.add_child(panel)
 	var v := VBoxContainer.new()
@@ -2036,6 +2298,12 @@ func _open_tour_setup() -> void:
 		_tour_dialog = null
 	var head: Control = UiTheme.modal_header("Turnier erstellen", close_dialog)
 	head.add_theme_constant_override("margin_bottom", 4)
+	# Titel in Satzschreibung und Anzeigeschrift statt gesperrter Versalien.
+	var htitle := head.get_child(0).get_child(0) as Label
+	if htitle != null:
+		htitle.text = tr("Turnier erstellen")
+		htitle.add_theme_font_override("font", _f_display)
+		htitle.add_theme_font_size_override("font_size", FS_L + 2)
 	v.add_child(head)
 	var cols := HBoxContainer.new()
 	cols.add_theme_constant_override("separation", 36)
@@ -2072,7 +2340,7 @@ func _open_tour_setup() -> void:
 		summary.text = txt
 		est.text = tr("≈ %d Minuten Spielzeit") % (int(st.maps) * 3)
 	# --- Links: Maps, Sterne, Mods
-	left.add_child(TournamentPanel.overline("ANZAHL MAPS"))
+	left.add_child(_section(tr("Anzahl Maps")))
 	var chips := HBoxContainer.new()
 	chips.add_theme_constant_override("separation", 8)
 	left.add_child(chips)
@@ -2094,7 +2362,7 @@ func _open_tour_setup() -> void:
 	chips.add_child(TournamentPanel._gap(0))
 	chips.add_child(est)
 	left.add_child(TournamentPanel._gap(4))
-	left.add_child(TournamentPanel.overline("SCHWIERIGKEIT"))
+	left.add_child(_section(tr("Schwierigkeit")))
 	# Werte direkt eintippbar (z. B. "4,37"), -/+ fuer 0,1er-Schritte.
 	var val_lo := LineEdit.new()
 	var val_hi := LineEdit.new()
@@ -2172,7 +2440,7 @@ func _open_tour_setup() -> void:
 				rep.start())
 			btn.button_up.connect(func(): rep.stop())
 	left.add_child(TournamentPanel._gap(4))
-	left.add_child(TournamentPanel.overline("MODS"))
+	left.add_child(_section(tr("Mods")))
 	var mrow := HBoxContainer.new()
 	mrow.add_theme_constant_override("separation", 8)
 	left.add_child(mrow)
@@ -2188,7 +2456,7 @@ func _open_tour_setup() -> void:
 			upd_summary.call())
 		mrow.add_child(mb)
 	# --- Rechts: Filter der Auto-Auswahl
-	right.add_child(TournamentPanel.overline("AUTO-AUSWAHL"))
+	right.add_child(_section(tr("Auto-Auswahl")))
 	var rh := TournamentPanel.lbl("Gilt für »Rest automatisch füllen« — eigene Picks sind frei.", 12, COL_DIM)
 	rh.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	right.add_child(rh)
@@ -2257,14 +2525,14 @@ func _open_tour_setup() -> void:
 	ssb.bg_color = Color(1, 1, 1, 0.035)
 	ssb.border_color = Color(1, 1, 1, 0.08)
 	ssb.set_border_width_all(1)
-	ssb.set_corner_radius_all(12)
+	ssb.set_corner_radius_all(R)
 	ssb.set_content_margin_all(14)
 	sbox.add_theme_stylebox_override("panel", ssb)
 	v.add_child(sbox)
 	var sv := VBoxContainer.new()
 	sv.add_theme_constant_override("separation", 4)
 	sbox.add_child(sv)
-	sv.add_child(TournamentPanel.overline("ES ENTSTEHT", COL_ACCENT))
+	sv.add_child(_caption(tr("Es entsteht")))
 	sv.add_child(summary)
 	var bar := HBoxContainer.new()
 	bar.add_theme_constant_override("separation", 10)
@@ -2272,21 +2540,18 @@ func _open_tour_setup() -> void:
 	var sp := Control.new()
 	sp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	bar.add_child(sp)
-	var cancel := Button.new()
-	cancel.text = "Abbrechen"
+	var cancel := _btn("Abbrechen", false, 46)
 	cancel.custom_minimum_size = Vector2(130, 46)
-	UiTheme.style_ghost_button(cancel, 12)
 	cancel.pressed.connect(close_dialog)
 	bar.add_child(cancel)
-	var go := Button.new()
-	go.text = "Turnier erstellen"
+	var go := _btn("Turnier erstellen", true, 46)
 	go.custom_minimum_size = Vector2(220, 46)
-	UiTheme.style_button(go, true)
 	go.pressed.connect(func():
 		Lobby.tour_create(cfg_of.call())
 		close_dialog.call())
 	bar.add_child(go)
 	upd.call()
+	_flatten(panel)
 
 
 ## Passende Ansicht zum Turnier-Zustand zeigen (oder zurueck zum Raum).
