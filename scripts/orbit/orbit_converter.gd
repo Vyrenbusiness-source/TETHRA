@@ -43,6 +43,11 @@ const DRIFT_GAP_MS := 300.0
 ## 0, 1, 2, 1 Stufen, damit Ziele auf demselben Ring nicht uebereinander liegen.
 const STACK_STEP_DEG := 9.0
 const STACK_PATTERN := [0, 1, 2, 1]
+## Einzelziel nahe (< STACK_NEAR_DEG) am vorherigen Ziel desselben Rings und
+## hoechstens STACK_WINDOW_MS danach: Versatz um STACK_PUSH_DEG weg davon.
+const STACK_NEAR_DEG := 14.0
+const STACK_WINDOW_MS := 260.0
+const STACK_PUSH_DEG := 16.0
 const STREAM_GAP_MS := 160.0
 const MIN_ARC_MS := 100.0
 const ARC_DEG_PER_MS := 0.12
@@ -147,6 +152,7 @@ static func convert(beatmap: Beatmap) -> Array[OrbitNote]:
 	var arc_end_at := [-INF, -INF]
 	var ring_last := [-INF, -INF]
 	var vc := INF  # virtueller Zeiger (HUMAN_DEG_PER_MS), INF = noch keiner
+	var ring_ang := [0.0, 0.0]  # Winkel des letzten Ziels je Ring
 	var stack_run := 0  # Position im Jack-Zickzack
 	var stack_off := 0.0  # aktueller Versatz gegen den Stapel-Anfang (Grad)
 	for g in groups:
@@ -262,6 +268,8 @@ static func convert(beatmap: Beatmap) -> Array[OrbitNote]:
 			continue
 		targets = spaced
 
+		if targets.size() == 1:
+			angle = _unstack(angle, ring_ang[targets[0][1]], t - float(ring_last[targets[0][1]]), dir)
 		var longest := 0.0
 		for tg in targets:
 			longest = maxf(longest, _arc_len(objs[tg[0]] as ManiaNote))
@@ -279,6 +287,7 @@ static func convert(beatmap: Beatmap) -> Array[OrbitNote]:
 				on = OrbitNote.make(t, angle, tg[1], tg[0])
 			out.append(on)
 			ring_last[tg[1]] = t
+			ring_ang[tg[1]] = angle
 		last_time = t
 		last_angle = angle
 		last_head = t
@@ -290,6 +299,19 @@ static func convert(beatmap: Beatmap) -> Array[OrbitNote]:
 			return a.time_ms < b.time_ms
 		return a.ring < b.ring)
 	return out
+
+
+## Stapel-Versatz: liegt das neue Ziel kurz nach dem letzten Ziel desselben
+## Rings fast auf dessen Winkel, rutscht es um STACK_PUSH_DEG davon weg
+## (Seite des bisherigen Versatzes, sonst Fluss-Richtung dir).
+static func _unstack(angle: float, prev_angle: float, dt: float, dir: float) -> float:
+	if dt > STACK_WINDOW_MS or dt <= 0.0:
+		return angle
+	var d := OrbitNote.delta_deg(prev_angle, angle)
+	if absf(d) >= STACK_NEAR_DEG:
+		return angle
+	var side := signf(d) if absf(d) > 0.5 else dir
+	return OrbitNote.wrap_deg(prev_angle + side * STACK_PUSH_DEG)
 
 
 ## Menschliche Erreichbarkeit: der virtuelle Zeiger vc faehrt in gap ms mit
