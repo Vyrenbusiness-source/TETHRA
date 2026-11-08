@@ -14,17 +14,17 @@ Online angemeldet als,Online angemeldet als,Signed in online as
 "Update nötig, um Scores zu senden","Update nötig, um Scores zu senden",Update required to send scores
 Profil im Browser,Profil im Browser,Profile in browser
 Abmelden,Abmelden,Sign out
-Code aus der E-Mail an %s:,Code aus der E-Mail an %s:,Code from the email sent to %s:
-Bestätigen,Bestätigen,Confirm
-Prüfe Code …,Prüfe Code …,Checking code …
-E-Mail bestätigt.,E-Mail bestätigt.,Email confirmed.
 Benutzername,Benutzername,Username
-E-Mail,E-Mail,Email
 Passwort,Passwort,Password
-Konto erstellen,Konto erstellen,Create account
-Sende …,Sende …,Sending …
-Wir haben dir einen Code per E-Mail geschickt.,Wir haben dir einen Code per E-Mail geschickt.,We sent you a code by email.
 Melde an …,Melde an …,Signing in …
 Anmelden,Anmelden,Sign in
 Registrieren,Registrieren,Register
 Server nicht erreichbar.,Server nicht erreichbar.,Server unreachable.
+Alte Scores werden hochgeladen:,Alte Scores werden hochgeladen:,Uploading old scores:
+Abbrechen,Abbrechen,Cancel
+Alte Scores hochladen,Alte Scores hochladen,Upload old scores
+%d Bestwert(e) bereit,%d Bestwert(e) bereit,%d best score(s) ready
+"Hochgeladen: %d, übersprungen: %d","Hochgeladen: %d, übersprungen: %d","Uploaded: %d, skipped: %d"
+Upload abgebrochen (%d / %d).,Upload abgebrochen (%d / %d).,Upload cancelled (%d / %d).
+"Upload unterbrochen, Server nicht erreichbar.","Upload unterbrochen, Server nicht erreichbar.","Upload interrupted, server unreachable."
+Es werden nur deine Mania-Bestwerte hochgeladen. Orbit-Bestwerte nicht: sie stammen aus den alten Orbit-Regeln.,Es werden nur deine Mania-Bestwerte hochgeladen. Orbit-Bestwerte nicht: sie stammen aus den alten Orbit-Regeln.,Only your Mania best scores are uploaded. Orbit best scores are not: they come from the old Orbit rules.
