@@ -178,8 +178,8 @@ func _layout() -> void:
 		_world_preview.scale = Vector2(s, s)
 		_pv_world_holder.custom_minimum_size = WorldPreview.SIZE_PX * s
 	if _preview_2d != null and _preview_2d.has_method("set_box"):
-		# Hochformat wie ein echtes Mania-Feld, so hoch wie die Seite erlaubt.
-		var b := Vector2(280.0 if vp.x < 1500.0 else 320.0, clampf(sz.y - 210.0, 300.0, 560.0))
+		# Groesser als im Farb-Picker; Bildhoehe waechst mit, das Feld passt in die Breite.
+		var b := Vector2(300.0, 300.0) if vp.x < 1500.0 else Vector2(340.0, 400.0)
 		_preview_2d.call("set_box", b)
 		_preview_stack.custom_minimum_size = b
 	if _cur != "":
@@ -764,12 +764,12 @@ func _page_gfx(pg: VBoxContainer) -> void:
 		func(on):
 			GpuGuard.set_safe_mode(on)
 			Settings.apply()
-			_safe_hint.visible = true,
+			_safe_hint.get_parent().visible = true,
 		"OpenGL, niedrigere Qualität, 240 FPS. Hilft bei Abstürzen")
 	safe.set_meta("reset", Callable())
 	_safe_hint = _hint_label(g, "Neustart des Spiels nötig, damit der Renderer wechselt.")
 	_safe_hint.add_theme_color_override("font_color", UiTheme.ACCENT)
-	_safe_hint.visible = false
+	_safe_hint.get_parent().visible = false
 
 
 func _page_keys(pg: VBoxContainer) -> void:
@@ -784,9 +784,37 @@ func _page_keys(pg: VBoxContainer) -> void:
 	r.set_meta("reset", func():
 		Settings.key_lanes = _defaults.key_lanes.duplicate()
 		_refresh_labels())
+	_hint_label(g, "Anklicken, dann Taste drücken (Esc bricht ab)")
 	g = _group(pg, "Orbit")
 	_orbit_key_row(g)
 	_hint_label(g, "Maus links = innen und Maus rechts = außen gelten immer zusätzlich.")
+	# Feste Kuerzel zum Nachschlagen (nicht belegbar).
+	g = _group(pg, "Tastenkürzel", false)
+	for k in [["Scroll Speed ändern", "F3 / F4"], ["Vollbild umschalten", "F11"],
+			["Lautstärke ändern", "Alt + Mausrad"], ["Einstellungen durchsuchen", "Strg + F"]]:
+		_row(g, k[0], _keycap(k[1]))
+
+
+## Tastenkappe: kleine erhabene Flaeche mit Kuerzel (nur Anzeige).
+func _keycap(t: String) -> Control:
+	var pc := PanelContainer.new()
+	var sb := UiTheme.solid_box(UiTheme.RAISED, 6)
+	sb.set_border_width_all(1)
+	sb.border_width_bottom = 2
+	sb.border_color = Color(UiTheme.TEXT, 0.12)
+	sb.content_margin_left = 10
+	sb.content_margin_right = 10
+	sb.content_margin_top = 2
+	sb.content_margin_bottom = 2
+	pc.add_theme_stylebox_override("panel", sb)
+	pc.size_flags_horizontal = Control.SIZE_SHRINK_END
+	var l := Label.new()
+	l.text = t
+	l.add_theme_font_override("font", UiTheme.heading_font(0))
+	l.add_theme_font_size_override("font_size", 13)
+	l.add_theme_color_override("font_color", UiTheme.TEXT)
+	pc.add_child(l)
+	return pc
 
 
 func _orbit_key_row(g: VBoxContainer) -> void:
@@ -1085,7 +1113,7 @@ func _row(rows: VBoxContainer, cap: String, ctrl: Control, tip: String = "",
 	slot.alignment = BoxContainer.ALIGNMENT_END
 	h.add_child(slot)
 	ctrl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	if ctrl is CheckButton or (ctrl is Button and not ctrl is OptionButton):
+	if ctrl is CheckButton or (ctrl is Button and not ctrl is OptionButton) or ctrl is PanelContainer:
 		if ctrl.size_flags_horizontal != Control.SIZE_EXPAND_FILL:
 			ctrl.size_flags_horizontal = Control.SIZE_SHRINK_END
 	else:
