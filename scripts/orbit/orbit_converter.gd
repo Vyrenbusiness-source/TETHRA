@@ -71,8 +71,13 @@ const HUMAN_REACH_DEG := 10.0
 ## Aus = alte Regeln ohne Erreichbarkeit (nur fuer Vorher/Nachher-Messungen).
 static var human_reach := true
 const STAR_HOP_MS := 1000.0
-const STAR_DENS_K := 0.32
-const STAR_PATH_K := 0.29
+const STAR_DENS_K := 0.1
+const STAR_PATH_K := 1.0
+## Zugtempo-Gewicht im Wegterm: (Tempo / HUMAN_DEG_PER_MS)^2, gekappt bei
+## STAR_SPEED_CAP. Schnelle Zuege fordern den Zeiger, langsame kaum (QA:
+## Rangkorrelation zum Maus-Bot 0,56 -> 0,76, docs/modes/orbit_qa.md).
+const STAR_SPEED_CAP := 2.0
+const STAR_DECAY := 0.95
 
 # --- osu!standard (Mode 0), Details in docs/modes/orbit_sources.md ---
 ## FLOW: osu-Wege werden Ring-Wege (Abstand -> Winkel, Drehsinn des Musters
@@ -643,8 +648,9 @@ static func analyze(ns: Array[OrbitNote], beatmap: Beatmap = null) -> Dictionary
 
 
 ## Orbit-Sterne (eigene Zahl, nicht Mania-Sterne): Fenster von 2 s,
-## Dichte (Ziele/s, Akkord-Zweitziel 0,5) plus Winkelweg (Grad/ms); die
-## haertesten Fenster zaehlen am meisten (Gewicht 0,9^k wie osu!).
+## Dichte (Ziele/s, Akkord-Zweitziel 0,5) plus Winkelweg je Sekunde, jeder
+## Zug gewichtet mit seinem Tempo (siehe STAR_SPEED_CAP); die haertesten
+## Fenster zaehlen am meisten (Gewicht STAR_DECAY^k).
 static func stars(ns: Array[OrbitNote]) -> float:
 	if ns.size() < 2:
 		return 0.0
@@ -664,7 +670,10 @@ static func stars(ns: Array[OrbitNote]) -> float:
 		dens[w] += 0.5 if chord else 1.0
 	for i in range(1, pts.size()):
 		var w := clampi(int((float(pts[i][0]) - t0) / STAR_HOP_MS), 0, n_win - 1)
-		path[w] += OrbitNote.dist_deg(pts[i - 1][1], pts[i][1])
+		var d := OrbitNote.dist_deg(pts[i - 1][1], pts[i][1])
+		var gap := maxf(float(pts[i][0]) - float(pts[i - 1][0]), 1.0)
+		var f := minf(d / gap / HUMAN_DEG_PER_MS, STAR_SPEED_CAP)
+		path[w] += d * f * f
 	# Fenster = zwei Hops (2 s), Werte je Sekunde.
 	var vals: Array[float] = []
 	for w in n_win:
@@ -681,7 +690,7 @@ static func stars(ns: Array[OrbitNote]) -> float:
 	for v in vals:
 		num += v * wt
 		den += wt
-		wt *= 0.9
+		wt *= STAR_DECAY
 		if wt < 0.001:
 			break
 	return num / maxf(den, 1e-6)
