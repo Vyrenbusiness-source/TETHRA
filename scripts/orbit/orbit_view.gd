@@ -18,9 +18,17 @@ extends Control
 const PATH_W_K := 0.36
 const PATH_H_K := 0.40
 const NOTE_K := 0.0235
-const PRIMARY_SCALE := 1.25
-const CURRENT_SCALE := 0.92
-const PREVIEW_SCALE := 0.74
+const PRIMARY_SCALE := 1.0
+const CURRENT_SCALE := 1.0
+const PREVIEW_SCALE := 0.6
+## Hoechste Deckkraft der Vorschau (naechster Takt).
+const PREVIEW_ALPHA := 0.25
+## Quadrat-Halbseite relativ zum Kreisradius.
+const SQUARE_K := 0.88
+## Luecke im unteren Strich an Kreuzungen (Bahn-Einheiten) und Mindestabstand der Stuetzpunkte.
+const CROSS_GAP := 0.05
+const CROSS_SKIP := 12
+const LINE_N := 192
 const HEAD_K := 0.0125
 const FALLBACK_WINDOW_MS := 1200.0
 ## Ueberblendzeit der Bahnlinie auf Takt-Eins.
@@ -41,8 +49,8 @@ const CHORD_EPS_MS := 2.0
 ## Stufenfarben fuer den Treffer-Pop (CORE .. EDGE).
 const TIER_POP := [Color(1.0, 0.96, 0.86), Color(0.85, 0.95, 1.0), Color(0.60, 0.85, 0.65),
 		Color(0.95, 0.85, 0.50), Color(0.90, 0.60, 0.45)]
-const POP_MS := 170.0
-const MISS_MARK_MS := 520.0
+const POP_MS := 130.0
+const MISS_MARK_MS := 400.0
 const PRESS_MS := 420.0
 const MAX_PRESS := 6
 
@@ -76,6 +84,16 @@ var beat_env := 0.0
 var kiai := 0.0
 ## Halte-Warnung je Spur: 0 = Cursor auf dem Kopf, 1 = Halte faellt gleich.
 var arc_warn: Array[float] = [0.0, 0.0]
+## Musik-Reaktion: Dichte 0..1 (ruhig = klein), Kombo (Treffer-Pop waechst je Meilenstein).
+## Tasten-Hinweis im Auto-Modus an (leichte Maps); das Tutorial zeigt ihn immer.
+var key_hint_auto := false
+var energy := 1.0
+var combo := 0
+var _bass := 0.0
+var _calm := 0.0
+var _kiai_s := 0.0
+var _tier := 0
+var _tier_beat := -1
 
 var _state := PackedInt32Array()
 var _state_t := PackedFloat64Array()
@@ -86,7 +104,7 @@ var _p_pos := PackedVector2Array()
 var _p_t0 := PackedFloat64Array()
 var _p_why := PackedStringArray()
 var _p_next := 0
-var _poly := PackedVector2Array()
+var _skip_cache := {}
 var _ring_a: Array[float] = [0.0, 0.0]
 var _last_frame_usec := 0
 
@@ -215,7 +233,44 @@ func _process(_d: float) -> void:
 	_last_frame_usec = now
 	for r in 2:
 		_ring_a[r] = lerpf(_ring_a[r], 1.0 if ring_held[r] else 0.0, 1.0 - exp(-dt / 0.04))
+	var m := _music()
+	var bass := 0.0
+	if m > 0.0:
+		bass = SyncClock.band_energy(30.0, 250.0)
+	_bass = lerpf(_bass, bass, 1.0 - exp(-dt / 0.08))
+	var quiet := clampf((0.25 - energy) / 0.25, 0.0, 1.0)
+	_calm = lerpf(_calm, quiet, 1.0 - exp(-dt / 0.35))
+	_kiai_s = lerpf(_kiai_s, clampf(kiai, 0.0, 1.0), 1.0 - exp(-dt / 0.3))
 	queue_redraw()
+
+
+## Staerke der Musik-Reaktion: aus 0, dezent 0.6, voll 1.
+func _music() -> float:
+	return [0.0, 0.6, 1.0][clampi(Settings.orbit_music, 0, 2)]
+
+
+## Takt-Puls an der Uhr: 1 genau auf dem Schlag, faellt schnell ab; Takt-Eins staerker.
+func _beat_pulse() -> float:
+	if track == null:
+		return 0.0
+	var bar := track.clock.bar_ms_at(t_ms)
+	var beats := maxi(track.clock.beats_at(t_ms), 1)
+	var beat_ms := bar / float(beats)
+	var pos := t_ms - track.clock.bar_start_at(t_ms)
+	var k := int(floorf(pos / beat_ms))
+	var since := pos - float(k) * beat_ms
+	return exp(-since / (beat_ms * 0.2)) * (1.0 if k == 0 else 0.45)
+
+
+## Pop-Groesse waechst je 50 Kombo (max. 4 Stufen), Stufe wechselt nur auf dem Schlag.
+func _pop_k() -> float:
+	if track != null:
+		var beat_ms := track.clock.bar_ms_at(t_ms) / float(maxi(track.clock.beats_at(t_ms), 1))
+		var b := int(floorf(t_ms / maxf(beat_ms, 1.0)))
+		if b != _tier_beat:
+			_tier_beat = b
+			_tier = mini(combo / 50, 4)
+	return 1.0 + 0.05 * float(_tier) * _music()
 
 
 # ---------------------------------------------------------------------------
@@ -223,7 +278,11 @@ func _process(_d: float) -> void:
 # ---------------------------------------------------------------------------
 
 func _ring_col(ring: int) -> Color:
-	return OUTER_COL if ring == 1 else INNER_COL
+	var c := OUTER_COL if ring == 1 else INNER_COL
+	var m := _music()
+	if m > 0.0 and _kiai_s > 0.01:
+		c.s = minf(c.s * (1.0 + 0.18 * _kiai_s * m), 1.0)
+	return c
 
 
 func _horizon_ms() -> float:
@@ -238,6 +297,8 @@ func _draw() -> void:
 		_draw_lines(u)
 		_draw_grid(u)
 	var last := _last_visible(horizon)
+	if track != null:
+		_draw_fuse(u)
 	# Spaeteste zuerst: die naechste Note liegt obenauf.
 	for i in range(last - 1, _first - 1, -1):
 		_draw_note(u, i, horizon)
@@ -248,7 +309,7 @@ func _draw() -> void:
 
 
 func _line_pts(shape: int) -> PackedVector2Array:
-	var src := OrbitPath.polyline(shape)
+	var src := OrbitPath.polyline(shape, LINE_N)
 	var k := path_scale()
 	var c := center()
 	var out := PackedVector2Array()
@@ -258,27 +319,98 @@ func _line_pts(shape: int) -> PackedVector2Array:
 	return out
 
 
-## Bahnlinie: aktuelle Form (auf Takt-Eins ueberblendet), die alte Form blendet
-## aus, die naechste Form steht als duenne Vorschau da.
+## Bahnlinie: aktuelle Form (auf Takt-Eins ueberblendet, gefahrener Teil
+## abgedunkelt), die alte Form blendet aus, die naechste Form steht als
+## gestrichelte Vorschau da.
 func _draw_lines(u: float) -> void:
 	var cur := track.shape_at(t_ms)
 	var bs := track.clock.bar_start_at(t_ms)
 	var old := track.shape_at(bs - 1.0)
 	var f := clampf((t_ms - bs) / FADE_MS, 0.0, 1.0)
 	f = f * f * (3.0 - 2.0 * f)
-	var main_a := 0.40
-	var pre_a := 0.16
-	var w := maxf(u * 0.0024, 1.5)
+	var k := _path_alpha()
+	var m := _music()
+	# Takt-Puls kurz heller, Refrain heller und etwas dicker, ruhige Stellen gedimmt.
+	k *= (1.0 + 0.55 * m * _beat_pulse()) * (1.0 + 0.25 * m * _kiai_s) * (1.0 - 0.4 * m * _calm)
+	var main_a := 0.40 * k
+	var w := maxf(u * 0.002, 1.25) * (1.0 + 0.35 * m * _kiai_s)
+	var ph := track.clock.phase_at(t_ms)
 	if old != cur and f < 1.0:
-		draw_polyline(_line_pts(old), Color(LINE_COL, main_a * (1.0 - f)), w, true)
-		draw_polyline(_line_pts(cur), Color(LINE_COL, lerpf(pre_a, main_a, f)), lerpf(1.0, w, f), true)
+		_draw_path(old, main_a * (1.0 - f), w, 0.0)
+		_draw_path(cur, lerpf(0.16 * k, main_a, f), w, ph)
 	else:
-		draw_polyline(_line_pts(cur), Color(LINE_COL, main_a), w, true)
+		_draw_path(cur, main_a, w, ph)
 	if track.changes_next(t_ms):
 		var nxt := track.next_shape_at(t_ms)
 		# Vorschau wird zum Takt-Ende hin etwas deutlicher.
 		var left := (track.clock.bar_end_at(t_ms) - t_ms) / maxf(track.clock.bar_ms_at(t_ms), 1.0)
-		draw_polyline(_line_pts(nxt), Color(LINE_COL, pre_a + 0.08 * (1.0 - clampf(left, 0.0, 1.0))), 1.0, true)
+		_draw_dashed(nxt, Color(LINE_COL, (0.20 + 0.12 * (1.0 - clampf(left, 0.0, 1.0))) * maxf(k, 0.5)))
+
+
+## Zeichnet die Bahn shape; vor Phase ph (gefahren) dunkler. An Kreuzungen
+## setzt die obere Lage (spaetere Phase) eine Luecke in die untere.
+func _draw_path(shape: int, a: float, w: float, ph: float) -> void:
+	var pts := _line_pts(shape)
+	var skip := _cross_skip(shape)
+	var n := pts.size() - 1
+	var split := int(ph * float(n))
+	var run := PackedVector2Array()
+	var run_dark := false
+	for i in n:
+		var dark := i < split
+		if skip[i] == 1 or (run.size() > 0 and dark != run_dark):
+			_flush_run(run, run_dark, a, w)
+			run = PackedVector2Array()
+		if skip[i] == 1:
+			continue
+		if run.size() == 0:
+			run.append(pts[i])
+			run_dark = dark
+		run.append(pts[i + 1])
+	_flush_run(run, run_dark, a, w)
+
+
+func _flush_run(run: PackedVector2Array, dark: bool, a: float, w: float) -> void:
+	if run.size() >= 2:
+		draw_polyline(run, Color(LINE_COL, a * (0.45 if dark else 1.0)), w, true)
+
+
+func _draw_dashed(shape: int, col: Color) -> void:
+	var pts := _line_pts(shape)
+	var n := pts.size() - 1
+	var i := 0
+	while i < n:
+		var j := mini(i + 4, n)
+		draw_polyline(pts.slice(i, j + 1), col, 1.0, true)
+		i += 8
+
+
+## Segmente der Bahn, die unter einer spaeteren Lage liegen (1 = nicht zeichnen).
+func _cross_skip(shape: int) -> PackedByteArray:
+	if _skip_cache.has(shape):
+		return _skip_cache[shape]
+	var src := OrbitPath.polyline(shape, LINE_N)
+	var n := src.size() - 1
+	var out := PackedByteArray()
+	out.resize(n)
+	var g2 := CROSS_GAP * CROSS_GAP
+	for i in n:
+		for j in range(i + CROSS_SKIP, n):
+			if n - j + i < CROSS_SKIP:
+				break
+			if src[i].distance_squared_to(src[j]) < g2:
+				out[i] = 1
+				break
+	_skip_cache[shape] = out
+	return out
+
+
+func _path_alpha() -> float:
+	return clampf(float(Settings.orbit_path_alpha) / 100.0, 0.3, 1.0)
+
+
+func _note_k() -> float:
+	return clampf(float(Settings.orbit_note_size) / 100.0, 0.9, 1.2)
 
 
 ## Raster: Schlaege als feine Punkte auf der Bahn, Takt-Eins als kurzer Strich.
@@ -292,9 +424,9 @@ func _draw_grid(u: float) -> void:
 		var p := to_px(OrbitPath.pos(shape, ph))
 		if i == 0:
 			var nrm := OrbitPath.left(shape, 0.0) * u * 0.022
-			draw_line(p - nrm, p + nrm, Color(LINE_COL, 0.55), 1.5, true)
+			draw_line(p - nrm, p + nrm, Color(LINE_COL, 0.45), 1.5, true)
 		else:
-			draw_circle(p, u * 0.0035, Color(LINE_COL, 0.32), true, -1.0, true)
+			draw_circle(p, u * 0.0035, Color(LINE_COL, 0.26), true, -1.0, true)
 
 
 func _draw_head(u: float) -> void:
@@ -304,10 +436,9 @@ func _draw_head(u: float) -> void:
 	var ok := aim_ok()
 	# Dezenter Zielring (Toleranz).
 	var rt := tol / 100.0 * path_scale()
-	draw_arc(hp, rt, 0.0, TAU, 56, Color(1, 1, 1, 0.26 if ok else 0.09), 1.0, true)
+	draw_arc(hp, rt, 0.0, TAU, 56, Color(1, 1, 1, 0.30 if ok else 0.08), 1.0, true)
 	# Spur-Marken links (A, Scheibe) und rechts (B, Quadrat) vom Kopf.
 	var nrm := OrbitPath.left(shape, ph)
-	var tan_v := OrbitPath.tangent(shape, ph)
 	var off := OrbitPath.LANE_OFF * path_scale()
 	for r in 2:
 		var side := 1.0 if r == 0 else -1.0
@@ -317,9 +448,9 @@ func _draw_head(u: float) -> void:
 		if r == 0:
 			draw_circle(p, s, Color(INNER_COL, a), true, -1.0, true)
 		else:
-			_square(p, tan_v, s, Color(OUTER_COL, a), true)
+			_square(p, s, Color(OUTER_COL, a), true)
 	draw_circle(hp, u * HEAD_K, Color(HEAD_COL, 1.0 if ok else 0.8), true, -1.0, true)
-	draw_arc(hp, u * HEAD_K * 1.75, 0.0, TAU, 32, Color(HEAD_COL, 0.5), 1.5, true)
+	draw_arc(hp, u * HEAD_K * 1.75 * (1.0 + 0.12 * _music() * _bass), 0.0, TAU, 32, Color(HEAD_COL, 0.5), 1.0, true)
 
 
 func _draw_cursor(u: float) -> void:
@@ -408,43 +539,49 @@ func _draw_note(u: float, i: int, horizon: float) -> void:
 	var dt := float(n.time_ms) - t_ms
 	var ring: int = n.ring
 	var col := _ring_col(ring)
-	var base := u * NOTE_K
+	var base := u * NOTE_K * _note_k()
 	if st == ST_HIT or st == ST_ARC_DONE:
 		var age := t_ms - float(_state_t[i])
 		if age < POP_MS:
-			var q := clampi(int(_state_q[i]), 0, 4)
+			# Knackig: Form dehnt sich aus und blendet aus, in Spurfarbe.
 			var f := age / POP_MS
+			var pk := _pop_k()
 			var tt := float(n.end_ms) if st == ST_ARC_DONE else float(n.time_ms)
 			var at := _lane_px(tt, ring)
-			var tv := _tan_at(tt)
-			_shape(at, tv, ring, base * (1.0 - 0.55 * f), Color(TIER_POP[q], 1.0 - f), true)
-			_shape(at, tv, ring, base * (1.0 + 0.8 * f), Color(TIER_POP[q], 0.8 * (1.0 - f)), false)
+			_shape(at, ring, base * pk * (1.0 + 0.7 * f), Color(col, 0.9 * (1.0 - f)), true)
+			_shape(at, ring, base * pk * (1.0 + 0.7 * f), Color(col.lerp(Color.WHITE, 0.4), 1.0 - f), false)
 		return
 	if st == ST_MISS or st == ST_DROP:
 		var age := t_ms - float(_state_t[i])
 		if age < MISS_MARK_MS:
 			var a := 1.0 - age / MISS_MARK_MS
 			var tt := float(n.time_ms) if st == ST_MISS else clampf(float(_state_t[i]), float(n.time_ms), float(n.end_ms))
+			if st == ST_DROP:
+				# Losgelassene Halte: Band wird sofort grau und blendet aus.
+				_hold_band(n, tt, float(n.end_ms), Color(MISS_COL, 0.5 * a), maxf(u * 0.007, 2.5))
 			var at := _lane_px(tt, ring)
-			_shape(at, _tan_at(tt), ring, base * 0.8, Color(MISS_COL, 0.55 * a), true)
-			var s := base * 0.7
+			var s := base * 0.55
 			draw_line(at + Vector2(-s, -s), at + Vector2(s, s), Color(MISS_X_COL, a), 2.0, true)
 			draw_line(at + Vector2(-s, s), at + Vector2(s, -s), Color(MISS_X_COL, a), 2.0, true)
 		return
-	# Offene Note (oder laufende Halte).
+	# Offene Note (oder laufende Halte). Hinter dem Laeufer sofort weg.
+	if st == ST_PENDING and dt < -120.0 and not n.is_arc:
+		return
 	var prev := _is_preview(n)
+	if prev and not Settings.orbit_preview:
+		return
 	var primary := _next[ring] == i
 	var phase := clampf(1.0 - dt / maxf(horizon, 1.0), 0.0, 1.0)
 	var alpha: float
 	var scale: float
 	if prev:
-		alpha = 0.10 + 0.18 * phase
+		alpha = 0.08 + (PREVIEW_ALPHA - 0.08) * phase
 		scale = PREVIEW_SCALE
 	elif primary:
 		alpha = 1.0
 		scale = PRIMARY_SCALE
 	else:
-		alpha = 0.60 + 0.25 * phase
+		alpha = 0.62 + 0.23 * phase
 		scale = CURRENT_SCALE
 	alpha *= mod_alpha(maxf(dt, 0.0), horizon)
 	if alpha <= 0.01:
@@ -452,39 +589,90 @@ func _draw_note(u: float, i: int, horizon: float) -> void:
 	if n.is_arc:
 		_draw_hold(u, i, n, col, base * scale, alpha, prev, primary, st == ST_ARC)
 		return
-	var tt := float(n.time_ms)
-	var p := _lane_px(tt, ring)
-	var tv := _tan_at(tt)
-	_chord_stem(i, n, alpha * 0.5)
-	_shape(p, tv, ring, base * scale, Color(col, alpha), true)
-	if primary and not prev:
-		_shape(p, tv, ring, base * scale, Color(1, 1, 1, 0.95), false)
+	var p := _lane_px(float(n.time_ms), ring)
+	_chord_stem(i, n, alpha * 0.7)
+	_note_body(p, ring, base * scale, col, alpha, prev, primary)
+
+
+## Flache Note: Fuellung in Spurfarbe, hellerer Rand, naechste Note weiss umrandet.
+func _note_body(p: Vector2, ring: int, s: float, col: Color, alpha: float,
+		prev: bool, primary: bool) -> void:
+	_shape(p, ring, s, Color(col, alpha), true)
+	if prev:
+		return
+	if primary:
+		_shape(p, ring, s, Color(1, 1, 1, 0.95), false)
+		if _show_keys():
+			_key_label(p, ring, s)
+	else:
+		_shape(p, ring, s, Color(col.lerp(Color.WHITE, 0.45), alpha), false)
+
+
+func _show_keys() -> bool:
+	match Settings.orbit_key_hint:
+		1:
+			return true
+		2:
+			return false
+	return key_hint_auto or GameSession.tutorial
+
+
+## Taste der Spur in der Note (dunkel auf der Spurfarbe).
+func _key_label(p: Vector2, ring: int, s: float) -> void:
+	var code: int = Settings.orbit_key_outer if ring == 1 else Settings.orbit_key_inner
+	var txt := OS.get_keycode_string(code)
+	if txt == "":
+		return
+	var fs := maxi(int(s * 1.25), 9)
+	var font := ThemeDB.fallback_font
+	var w := font.get_string_size(txt, HORIZONTAL_ALIGNMENT_CENTER, -1, fs).x
+	draw_string(font, p + Vector2(-w * 0.5, fs * 0.36), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(0.04, 0.05, 0.09, 0.95))
+
+
+## Zuendschnur: Bahn zwischen Laeufer und der naechsten Note der Spur, brennt ab.
+func _draw_fuse(u: float) -> void:
+	if track == null:
+		return
+	for r in 2:
+		var i := _next[r]
+		if i < 0:
+			continue
+		var n = notes[i]
+		var t1 := float(n.time_ms)
+		if _is_preview(n) or t1 <= t_ms:
+			continue
+		var col := _ring_col(r)
+		_hold_band(n, t_ms, t1, Color(col.lerp(Color.WHITE, 0.25), 0.7), maxf(u * 0.0032, 2.0))
+
+
+## Band der Halte entlang der Spur zwischen den Zeiten t0 und t1.
+func _hold_band(n, t0: float, t1: float, col: Color, w: float) -> void:
+	if t1 - t0 <= 1.0:
+		return
+	var steps := clampi(int((t1 - t0) / 40.0), 2, 160)
+	var pts := PackedVector2Array()
+	pts.resize(steps + 1)
+	for k in steps + 1:
+		pts[k] = _lane_px(lerpf(t0, t1, float(k) / float(steps)), n.ring)
+	draw_polyline(pts, col, w, true)
 
 
 func _draw_hold(u: float, i: int, n, col: Color, size_px: float, alpha: float,
 		prev: bool, primary: bool, held: bool) -> void:
 	var t0 := float(n.time_ms)
 	var t1 := float(n.end_ms)
-	var w := u * 0.015
+	var w := maxf(u * 0.007, 2.5)
 	var from_t := t0
 	if held:
 		from_t = clampf(t_ms, t0, t1)
-	# Band entlang der Bahn zwischen from_t und Ende (alle ~40 ms ein Punkt).
-	var steps := clampi(int((t1 - from_t) / 40.0), 2, 160)
-	if t1 - from_t > 1.0:
-		var pts := PackedVector2Array()
-		pts.resize(steps + 1)
-		for k in steps + 1:
-			pts[k] = _lane_px(lerpf(from_t, t1, float(k) / float(steps)), n.ring)
-		draw_polyline(pts, Color(col, alpha * (0.85 if held else 0.40)), w, true)
+	# Gehalten: der Rest leuchtet, der gefahrene Teil ist verbraucht.
+	_hold_band(n, from_t, t1, Color(col, alpha * (0.85 if held else 0.38)), w)
 	var p := _lane_px(from_t, n.ring)
-	var tv := _tan_at(from_t)
-	_chord_stem(i, n, alpha * 0.5)
-	_shape(p, tv, n.ring, size_px, Color(col, alpha), true)
-	if (primary and not prev) or held:
-		_shape(p, tv, n.ring, size_px, Color(1, 1, 1, 0.95), false)
-	# Ende: kleiner Punkt.
-	draw_circle(_lane_px(t1, n.ring), w * 0.55, Color(col, alpha * 0.8), true, -1.0, true)
+	_chord_stem(i, n, alpha * 0.7)
+	_note_body(p, n.ring, size_px, col, alpha, prev, primary or held)
+	# Ende: kleine Kappe in Spurform.
+	var e := _lane_px(t1, n.ring)
+	_shape(e, n.ring, w * 0.7, Color(col.lerp(Color.WHITE, 0.3), alpha * 0.9), true)
 	if held and arc_warn[n.ring] > 0.05:
 		draw_arc(p, size_px * 1.45, 0.0, TAU, 20, Color(MISS_X_COL, minf(arc_warn[n.ring], 1.0)), 2.0, true)
 
@@ -499,27 +687,21 @@ func _chord_stem(i: int, n, alpha: float) -> void:
 		draw_line(_lane_px(tt, 0), _lane_px(tt, 1), Color(1, 1, 1, alpha * 0.6), 2.0, true)
 
 
-## Spur A: Scheibe, Spur B: Quadrat (an der Laufrichtung ausgerichtet).
-func _shape(p: Vector2, tan_v: Vector2, ring: int, s: float, col: Color, filled: bool) -> void:
+## Spur A: Scheibe, Spur B: achsparalleles Quadrat.
+func _shape(p: Vector2, ring: int, s: float, col: Color, filled: bool) -> void:
 	if ring == 0:
 		if filled:
 			draw_circle(p, s, col, true, -1.0, true)
 		else:
 			draw_arc(p, s, 0.0, TAU, 28, col, 2.0, true)
 		return
-	_square(p, tan_v, s, col, filled)
+	_square(p, s, col, filled)
 
 
-func _square(p: Vector2, tan_v: Vector2, s: float, col: Color, filled: bool) -> void:
-	var a := tan_v * s
-	var b := Vector2(-tan_v.y, tan_v.x) * s
-	_poly.clear()
-	_poly.append(p + a + b)
-	_poly.append(p + a - b)
-	_poly.append(p - a - b)
-	_poly.append(p - a + b)
+func _square(p: Vector2, s: float, col: Color, filled: bool) -> void:
+	var h := s * SQUARE_K
+	var r := Rect2(p - Vector2(h, h), Vector2(h, h) * 2.0)
 	if filled:
-		draw_colored_polygon(_poly, col)
+		draw_rect(r, col, true)
 	else:
-		_poly.append(_poly[0])
-		draw_polyline(_poly, col, 2.0, true)
+		draw_rect(r, col, false, 2.0)

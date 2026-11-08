@@ -646,6 +646,33 @@ func _page_orbit(pg: VBoxContainer) -> void:
 		func(s): return s.orbit_guides,
 		func(on): Settings.orbit_guides = on,
 		"Feine Striche für Viertel und Achtel an der Bahn")
+	var om := OptionButton.new()
+	om.add_item("Aus", 0)
+	om.add_item("Dezent", 1)
+	om.add_item("Voll", 2)
+	_choice_ob(g, "Musik-Reaktion", om,
+		func(s): return s.orbit_music,
+		func(i): Settings.orbit_music = i,
+		"Bahn pulsiert mit dem Takt, Bass und Refrain")
+	var kh := OptionButton.new()
+	kh.add_item("Auto", 0)
+	kh.add_item("An", 1)
+	kh.add_item("Aus", 2)
+	_choice_ob(g, "Tasten in Noten zeigen", kh,
+		func(s): return s.orbit_key_hint,
+		func(i): Settings.orbit_key_hint = i,
+		"Auto: bei Maps unter 3 Sternen und im Tutorial")
+	_switch(g, "Vorschau", func(s): return s.orbit_preview,
+		func(on): Settings.orbit_preview = on,
+		"Blasse Noten des nächsten Takts")
+	_slider(g, "Notengröße", 90.0, 120.0, 5.0,
+		func(s): return s.orbit_note_size,
+		func(v): Settings.orbit_note_size = int(v),
+		func(v): return "%d %%" % int(v))
+	_slider(g, "Bahn-Deckkraft", 30.0, 100.0, 5.0,
+		func(s): return s.orbit_path_alpha,
+		func(v): Settings.orbit_path_alpha = int(v),
+		func(v): return "%d %%" % int(v))
 	var obg := OptionButton.new()
 	obg.add_item("Welt", Settings.ORBIT_BG_WORLD)
 	obg.add_item("Map-Bild", Settings.ORBIT_BG_MAP)
