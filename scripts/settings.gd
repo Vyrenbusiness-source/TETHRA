@@ -56,6 +56,13 @@ var key_lanes: Array[int] = [KEY_D, KEY_F, KEY_J, KEY_K]
 var orbit_key_inner: int = KEY_Z
 var orbit_key_outer: int = KEY_X
 var orbit_guides: bool = true
+## Orbit-Hintergrund: 0 = Welt (3D-Welt wie im 3D-Modus, Auswahl world_theme;
+## ohne Welten-Paket automatisch Map-Bild), 1 = Map-Bild (abgedunkelt, bg_dim),
+## 2 = Aus (schwarz). CLI: --orbit-bg=world|map|off.
+const ORBIT_BG_WORLD := 0
+const ORBIT_BG_MAP := 1
+const ORBIT_BG_OFF := 2
+var orbit_background: int = ORBIT_BG_WORLD
 ## Scroll Speed wie osu!lazer (1..40, ganzzahlig, Default 8 wie lazer). Rein
 ## visuell: Timing-Fenster unveraendert. Zeit von der Feldoberkante bis zur
 ## Trefferlinie = SCROLL_MAX_TIME_RANGE / scroll_speed (lazer
@@ -451,6 +458,7 @@ func load_settings(path: String = PATH) -> void:
 	orbit_key_inner = int(cfg.get_value("keys", "orbit_inner", KEY_Z))
 	orbit_key_outer = int(cfg.get_value("keys", "orbit_outer", KEY_X))
 	orbit_guides = bool(cfg.get_value("game", "orbit_guides", true))
+	orbit_background = clampi(int(cfg.get_value("game", "orbit_background", ORBIT_BG_WORLD)), ORBIT_BG_WORLD, ORBIT_BG_OFF)
 	_legacy_mania_scroll = float(cfg.get_value("game", "mania_scroll_legacy", -1.0))
 	if cfg.has_section_key("game", "scroll_speed"):
 		scroll_speed = clamp_scroll_speed(cfg.get_value("game", "scroll_speed", SCROLL_SPEED_DEFAULT))
@@ -505,6 +513,7 @@ func save(path: String = PATH) -> void:
 	cfg.set_value("keys", "orbit_inner", orbit_key_inner)
 	cfg.set_value("keys", "orbit_outer", orbit_key_outer)
 	cfg.set_value("game", "orbit_guides", orbit_guides)
+	cfg.set_value("game", "orbit_background", orbit_background)
 	cfg.set_value("game", "scroll_speed", scroll_speed)
 	# Abgeleiteter Faktor fuer aeltere Versionen; Originalwert bleibt separat.
 	cfg.set_value("game", "mania_scroll", mania_from_speed(scroll_speed))
@@ -744,6 +753,20 @@ func comfort_camera() -> bool:
 ## Fest gewaehltes Welt-Thema ("galaxy"/"boss"/"aurora"/"neon") oder "" = automatisch.
 ## Reihenfolge der Welt-Auswahl (Index 1..n; 0 = automatisch). Neue Welten hinten anhaengen.
 const WORLD_ORDER: Array[String] = ["galaxy", "boss", "aurora", "neon", "eclipse", "abyss", "fractal", "obsidian", "storm", "singularity", "monolith", "rift", "nerve"]
+
+## Orbit-Hintergrund dieses Laufs: --orbit-bg=world|map|off schlaegt die Einstellung.
+func orbit_background_mode() -> int:
+	for a in OS.get_cmdline_args():
+		if a.begins_with("--orbit-bg="):
+			match a.trim_prefix("--orbit-bg="):
+				"world":
+					return ORBIT_BG_WORLD
+				"map":
+					return ORBIT_BG_MAP
+				"off":
+					return ORBIT_BG_OFF
+	return orbit_background
+
 
 func world_theme_name() -> String:
 	if world_theme >= 1 and world_theme <= WORLD_ORDER.size():

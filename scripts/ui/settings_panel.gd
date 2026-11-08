@@ -259,6 +259,17 @@ func _ready() -> void:
 	guides.button_pressed = Settings.orbit_guides
 	guides.toggled.connect(func(on): Settings.orbit_guides = on)
 	_row(pg_game, "Winkel-Hilfslinien", guides, null).tooltip_text = "Feine Linien alle 45° als Orientierung"
+	var obg := OptionButton.new()
+	obg.add_item("Welt", Settings.ORBIT_BG_WORLD)
+	obg.add_item("Map-Bild", Settings.ORBIT_BG_MAP)
+	obg.add_item("Aus", Settings.ORBIT_BG_OFF)
+	if not WorldBackdrop.has_world_pack():
+		# Ohne Welten-Paket zeigt "Welt" das Map-Bild.
+		obg.set_item_text(0, tr("Welt") + " (" + tr("Map-Bild") + ")")
+	obg.select(Settings.orbit_background)
+	obg.custom_minimum_size = Vector2(0, CTRL_H)
+	obg.item_selected.connect(func(i): Settings.orbit_background = i)
+	_row(pg_game, "Hintergrund", obg, null).tooltip_text = 			"Welt: dieselbe 3D-Welt wie im 3D-Modus (Seite Welt), ruhig und abgedunkelt hinter den Ringen"
 
 	# Sprache: wirkt sofort (Settings.set_language baut die Szene neu auf).
 	# Die Eintraege stehen immer in ihrer eigenen Sprache (nie uebersetzt).
