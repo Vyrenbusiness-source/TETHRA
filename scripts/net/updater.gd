@@ -144,7 +144,7 @@ func _on_latest(result: int, code: int, _h: PackedStringArray, body: PackedByteA
 		_check_dist(0)  # GitHub-API haengt oder drosselt: Ausweich-Quelle
 		return
 	if code != 200:
-		status = ""
+		_check_dist(0)  # unerwartete Antwort: Ausweich-Quelle entscheidet
 		return
 	_retries = 0
 	var data: Variant = JSON.parse_string(body.get_string_from_utf8())
