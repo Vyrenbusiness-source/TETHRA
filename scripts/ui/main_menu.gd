@@ -32,7 +32,7 @@ var _music: AudioStreamPlayer
 var _viz: AudioVisualizer
 var _beat_clock: BeatClock
 # Bass-Reaktivitaet: Logo, Shader-Hintergrund, Overlay.
-var _logo: Label
+var _logo: Control
 var _bg_mat: ShaderMaterial
 var _dim_overlay: ColorRect
 var _bass_avg: float = 0.0
@@ -40,7 +40,6 @@ var _bass_smooth: float = 0.0
 var _kick: float = 0.0
 var _pulse: float = 0.0 ## einheitlicher Puls: BeatClock, sonst Spektrum-Kick
 const MUSIC_DB := -14.0
-var _logo_t: float = 0.0
 # Ken-Burns-Zoom fuer das Hintergrund-Cover.
 var _bg_rect: TextureRect
 var _kb_t: float = 0.0
@@ -68,6 +67,34 @@ const WARMUP_CANVAS := ["screen_fx", "screen_glow"]
 const WARMUP_FRAMES := 3
 static var _warm_shaders: Array[Shader] = []
 const BROWSER_SCENE := "res://scenes/song_select.tscn"
+
+## Logo (Quelle: docs/media/logo.svg, hier ohne Kachel und mit heller Schrift
+## fuer den dunklen Menue-Hintergrund). Pfade gleich wie in logo.svg halten.
+const LOGO_SIZE := Vector2(532, 128)
+const LOGO_SVG := """<svg xmlns="http://www.w3.org/2000/svg" width="532.26" height="128" viewBox="0 0 532.26 128">
+  <path fill="#33d9ff" d="M41.9 18 L50.19 18 L34 86 L16 86 Z"/>
+  <path fill="#33d9ff" d="M52.95 18 L61.24 18 L60.43 35 L49.71 35 Z"/>
+  <path fill="#ff73e0" d="M48.76 40 L60.19 40 L59.62 52 L46.48 52 Z"/>
+  <path fill="#33d9ff" d="M45.52 57 L59.38 57 L58 86 L40 86 Z"/>
+  <path fill="#33d9ff" d="M66.76 18 L75.05 18 L88 86 L70 86 Z"/>
+  <path fill="#33d9ff" d="M77.81 18 L86.1 18 L112 86 L94 86 Z"/>
+  <path fill="#33d9ff" d="M16 96 L112 96 L112 108 L16 108 Z"/>
+  <path fill="#f2f5ff" d="M162 31 L217.44 31 L217.44 40.9 L162 40.9 Z"/>
+  <path fill="#f2f5ff" d="M184.11 31 L195.33 31 L195.33 97 L184.11 97 Z"/>
+  <path fill="#f2f5ff" d="M228.66 31 L239.88 31 L239.88 97 L228.66 97 Z"/>
+  <path fill="#f2f5ff" d="M228.66 31 L273.54 31 L273.54 40.9 L228.66 40.9 Z"/>
+  <path fill="#f2f5ff" d="M228.66 59.05 L268.26 59.05 L268.26 68.95 L228.66 68.95 Z"/>
+  <path fill="#f2f5ff" d="M228.66 87.1 L273.54 87.1 L273.54 97 L228.66 97 Z"/>
+  <path fill="#f2f5ff" d="M284.76 31 L340.2 31 L340.2 40.9 L284.76 40.9 Z"/>
+  <path fill="#f2f5ff" d="M306.87 31 L318.09 31 L318.09 97 L306.87 97 Z"/>
+  <path fill="#f2f5ff" d="M351.42 31 L362.64 31 L362.64 97 L351.42 97 Z"/>
+  <path fill="#f2f5ff" d="M391.68 31 L402.9 31 L402.9 97 L391.68 97 Z"/>
+  <path fill="#f2f5ff" d="M351.42 59.05 L402.9 59.05 L402.9 68.95 L351.42 68.95 Z"/>
+  <path fill="#f2f5ff" d="M414.12 31 L425.34 31 L425.34 97 L414.12 97 Z"/>
+  <path fill="#f2f5ff" fill-rule="evenodd" d="M414.12 31 L455.04 31 L464.28 40.24 L464.28 59.71 L455.04 68.95 L414.12 68.95 Z M425.34 40.9 L448.47 40.9 L453.06 45.49 L453.06 54.46 L448.47 59.05 L425.34 59.05 Z"/>
+  <path fill="#f2f5ff" d="M435.19 68.94 L448.13 68.94 L464.28 97 L451.33 97 Z"/>
+  <path fill="#f2f5ff" fill-rule="evenodd" d="M497.71 31 L510.05 31 L532.26 97 L475.5 97 Z M503.88 47.84 L511.98 71.92 L495.78 71.92 Z M492.45 81.82 L515.31 81.82 L520.42 97 L487.34 97 Z"/>
+</svg>"""
 static var _browser_scene: PackedScene = null
 static var _browser_req := false
 var _warm_pending: Array[String] = []
@@ -313,7 +340,6 @@ func _process(delta: float) -> void:
 		_start_menu_music()
 		GameSession.perf_since("Hauptmenue: Musik + Cover starten (Hauptthread)", t_music)
 		GameSession.perf_since("Hauptmenue: Musik hoerbar (seit _ready)", _music_wait_t)
-	_logo_t += delta
 	var playing := _music != null and is_instance_valid(_music) and _music.playing
 	var raw: float = SyncClock.band_energy(30.0, 120.0) if playing else 0.0
 	_bass_avg = lerpf(_bass_avg, raw, clampf(delta * 1.5, 0.0, 1.0))
@@ -352,7 +378,6 @@ func _process(delta: float) -> void:
 			_np_title.position.x = -over * u
 		else:
 			_np_title.position.x = 0.0
-	var idle: float = 0.009 * (1.0 + sin(_logo_t * TAU / 4.4))  # 0..0.018
 	var pulse_k: float = _kick
 	if _beat_clock != null and playing and _beat_clock.bpm > 0.0:
 		# Exakt auf dem Beat: Position + Mix-Offset - Ausgabe-Latenz.
@@ -362,11 +387,6 @@ func _process(delta: float) -> void:
 	_pulse = pulse_k
 	if _viz != null:
 		_viz.modulate.a = 0.6 + 0.2 * pulse_k
-	if _logo != null:
-		# Nur sanfter Glow-Puls (Alpha), kein Groessen-Puls.
-		_logo.add_theme_color_override("font_shadow_color",
-			Color(COL_ACCENT.r, COL_ACCENT.g, COL_ACCENT.b,
-				clampf(0.45 + 0.25 * idle * 50.0 + 0.2 * pulse_k, 0.0, 1.0)))
 	if _bg_mat != null:
 		_bg_mat.set_shader_parameter("bass", bass_lvl)
 		_bg_mat.set_shader_parameter("kick", _kick)
@@ -461,34 +481,28 @@ func _build_calm() -> void:
 
 
 func _build_logo() -> void:
-	var logo := Label.new()
-	logo.text = "TETHRA"
-	# Markanter Logo-Font (DIN-artig, gesperrt) statt Standard-Schrift.
-	var logo_font := SystemFont.new()
-	logo_font.font_names = PackedStringArray(["Bahnschrift", "Segoe UI Black", "Impact"])
-	logo_font.font_weight = 700
-	var logo_fv := FontVariation.new()
-	logo_fv.base_font = logo_font
-	logo_fv.spacing_glyph = 10
-	logo.add_theme_font_override("font", logo_fv)
+	# Logo statt Schrift-Label: Spur-Marke + Wortmarke als Vektor, zur Laufzeit
+	# in doppelter Aufloesung gerastert (scharf auch bei HiDPI).
+	var tex: Texture2D = null
+	var img := Image.new()
+	if img.load_svg_from_string(LOGO_SVG, 2.0) == OK:
+		img.generate_mipmaps()
+		tex = ImageTexture.create_from_image(img)
+	var logo := TextureRect.new()
+	logo.texture = tex
+	logo.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	logo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	logo.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	logo.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	logo.anchor_left = 0.5
 	logo.anchor_right = 0.5
 	logo.anchor_top = 0.16
 	logo.anchor_bottom = 0.16
-	# Glyph-Spacing haengt nach dem letzten Buchstaben 10px an: +5px ausgleichen.
-	logo.offset_left = -395
-	logo.offset_right = 405
-	logo.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	logo.add_theme_font_size_override("font_size", 110)
-	logo.add_theme_color_override("font_color", Color(0.95, 0.98, 1.0))
-	logo.add_theme_color_override("font_shadow_color", Color(COL_ACCENT.r, COL_ACCENT.g, COL_ACCENT.b, 0.6))
-	logo.add_theme_constant_override("shadow_offset_x", 0)
-	logo.add_theme_constant_override("shadow_offset_y", 0)
-	logo.add_theme_constant_override("shadow_outline_size", 10)
+	logo.offset_left = -LOGO_SIZE.x * 0.5
+	logo.offset_right = LOGO_SIZE.x * 0.5
+	logo.offset_top = 4
+	logo.offset_bottom = 4 + LOGO_SIZE.y
 	add_child(logo)
-
-	# Glow-Puls laeuft in _process (Schatten-Alpha), Outline bleibt fix.
-	logo.pivot_offset = Vector2(400, 70)
 	_logo = logo
 
 	# Untertitel auf Japanisch (Katakana) — Systemfont, da der Godot-Default

@@ -4,7 +4,12 @@
   <img src="docs/media/play_3d_hero.webp" alt="TETHRA, an osu!mania 4K rhythm game (VSRG) with 3D and 2D playfields" width="100%">
 </p>
 
-<h1 align="center">TETHRA</h1>
+<h1 align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/media/logo_wordmark.png">
+    <img src="docs/media/logo.svg" alt="TETHRA" width="420">
+  </picture>
+</h1>
 
 <p align="center">
   <b>Free osu!mania 4K rhythm game for Windows. Play your own .osz beatmaps in 3D or classic 2D.</b>
@@ -70,8 +75,8 @@
 Switch on **SV** in the song browser and any map becomes an SV map. The mod writes its scroll changes from the map's own beat grid: a bounce on every beat in the chorus, calmer waves in the verses, short reverses, jumps and teleports on strong beats. Every note still arrives exactly on time, and maps that already have strong SV keep their own. Choose between Normal and Strong.
 
 <p align="center">
-  <a href="docs/media/sv_mod.webp"><img src="docs/media/sv_mod.webp" alt="SV mod: five frames 110 ms apart, notes surge and hold on the beat" width="100%"></a><br>
-  <sub>SV mod on a map without SV: five frames, 110 ms apart. Notes hold back, then surge forward on the beat.</sub>
+  <a href="docs/media/sv_mod.mp4"><img src="docs/media/sv_mod_anim.webp" alt="SV mod in the chorus of The Cyber Grind: notes surge, hold and bounce on the beat" width="360"></a><br>
+  <sub>SV mod in the chorus of meganeko – The Cyber Grind (a map without its own SV). <a href="docs/media/sv_mod.mp4"><b>▶ Watch with sound</b></a></sub>
 </p>
 
 ## 2D mode and skins

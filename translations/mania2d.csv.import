@@ -1,0 +1,19 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+uid="uid://c845qd8lkl3nx"
+
+[deps]
+
+files=["res://translations/mania2d.de.translation", "res://translations/mania2d.en.translation"]
+
+source_file="res://translations/mania2d.csv"
+dest_files=["res://translations/mania2d.de.translation", "res://translations/mania2d.en.translation"]
+
+[params]
+
+compress=1
+delimiter=0
+unescape_keys=false
+unescape_translations=true

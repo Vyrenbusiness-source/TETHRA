@@ -122,6 +122,55 @@ var note_size_2d: float = 1.0
 var field_dim_2d: float = 0.85
 ## Importierter osu!mania-Skin fuer 2D (Ordnername in user://skins/), "" = Standard.
 var skin_2d: String = ""
+## ---- 2D-Spielfeld wie osu!mania (Layout, Mods) ----
+## Scroll-Richtung: false = nach unten (Linie unten), true = nach oben (osu! UpsideDown,
+## lazer ScrollingDirection.Up). Gilt immer, auch mit Skin-Werten.
+var scroll_up_2d: bool = false
+## true = Layout aus skin.ini (bzw. eingebauter Look) wie bisher; false = die eigenen
+## Werte unten (Trefferposition, Spaltenabstand, Position, Judgement/Kombo, Tasten, Linie).
+var skin_values_2d: bool = true
+## Trefferlinie in osu!-Einheiten von oben (480 = Bildhoehe), osu! HitPosition 240..480.
+const HIT_POS_MIN := 240
+const HIT_POS_MAX := 480
+const HIT_POS_DEFAULT := 402
+var hit_position_2d: int = HIT_POS_DEFAULT
+## Spaltenabstand in osu!-Einheiten (osu! ColumnSpacing), 0..40.
+const COL_SPACING_MAX := 40
+var column_spacing_2d: int = 0
+## Buehnen-Position: 0 links (osu! ColumnStart 136), 1 Mitte, 2 rechts.
+const STAGE_LEFT := 0
+const STAGE_CENTER := 1
+const STAGE_RIGHT := 2
+var stage_pos_2d: int = STAGE_CENTER
+## Buehnen-Skalierung 50..150 % (5er-Schritte), skaliert um die Unterkante; gilt immer.
+const STAGE_SCALE_MIN := 0.5
+const STAGE_SCALE_MAX := 1.5
+var stage_scale_2d: float = 1.0
+## Judgement- und Kombo-Mitte in osu!-Einheiten von oben (osu! ScorePosition/ComboPosition).
+const JUDGE_POS_DEFAULT := 300
+const COMBO_POS_DEFAULT := 111
+var judge_pos_2d: int = JUDGE_POS_DEFAULT
+var combo_pos_2d: int = COMBO_POS_DEFAULT
+## osu! KeysUnderNotes: Tasten unter (true) bzw. ueber (false) den Noten.
+var keys_under_notes_2d: bool = false
+## Trefferlinie (StageHint/JudgementLine) an/aus.
+var hit_line_2d: bool = true
+## Sicht-Mod wie lazer (gegenseitig exklusiv): 0 aus, 1 FadeIn, 2 Hidden, 3 Cover.
+const VIS_NONE := 0
+const VIS_FADE_IN := 1
+const VIS_HIDDEN := 2
+const VIS_COVER := 3
+var mod_vis_2d: int = VIS_NONE
+## Cover: Abdeckung in % der Strecke (lazer 20..80, Default 50), von oben (0) oder unten (1).
+const COVER_MIN := 20
+const COVER_MAX := 80
+var cover_pct_2d: int = 50
+var cover_from_bottom_2d: bool = false
+## lazer Constant Speed: SV-/BPM-Wechsel der Map ignorieren (3D und 2D).
+var mod_constant: bool = false
+## CLI-Overrides (--up, --hidden, ...): gelten nur fuer diesen Lauf; save() schreibt
+## fuer diese Werte den gespeicherten Stand.
+var _cli_saved_2d: Dictionary = {}
 const SIZE_2D_MIN := 0.5
 const SIZE_2D_MAX := 2.0
 const SIZE_2D_STEP := 0.05
@@ -286,6 +335,7 @@ func _ready() -> void:
 	if _bg_dim_cli >= 0.0:
 		_bg_dim_saved = bg_dim
 		bg_dim = _bg_dim_cli
+	apply_cli_2d(OS.get_cmdline_args() + OS.get_cmdline_user_args())
 	_setup_audio_enhance()
 	# Globales Glass-Theme: ALLE Controls (Slider, Dropdowns, Scrollbalken,
 	# Popups …) verlieren die graue Godot-Standard-Optik.
@@ -425,6 +475,7 @@ func load_settings(path: String = PATH) -> void:
 	note_size_2d = clamp_2d_size(float(cfg.get_value("game", "note_size_2d", 1.0)))
 	field_dim_2d = clamp_bg_dim(float(cfg.get_value("game", "field_dim_2d", 0.85)))
 	skin_2d = String(cfg.get_value("game", "skin_2d", ""))
+	_load_2d_layout(cfg)
 	hitsound_set = clampi(int(cfg.get_value("game", "hitsound_set", 0)), 0, 2)
 	hitsound_volume = clampf(float(cfg.get_value("game", "hitsound_volume", 0.8)), 0.0, 1.0)
 	fullscreen = bool(cfg.get_value("game", "fullscreen", false))
@@ -474,6 +525,7 @@ func save(path: String = PATH) -> void:
 	cfg.set_value("game", "note_size_2d", note_size_2d)
 	cfg.set_value("game", "field_dim_2d", field_dim_2d)
 	cfg.set_value("game", "skin_2d", skin_2d)
+	_save_2d_layout(cfg)
 	cfg.set_value("game", "hitsound_set", hitsound_set)
 	cfg.set_value("game", "hitsound_volume", hitsound_volume)
 	cfg.set_value("game", "fullscreen", fullscreen)
@@ -825,6 +877,167 @@ static func clamp_2d_size(v: float) -> float:
 	if is_nan(v):
 		return 1.0
 	return snappedf(clampf(v, SIZE_2D_MIN, SIZE_2D_MAX), SIZE_2D_STEP)
+
+
+## ---------------- 2D-Spielfeld wie osu!mania ----------------
+
+## Gespeicherte Schluessel der 2D-Layout-/Mod-Optionen: Name -> [Sektion, Schluessel].
+const LAYOUT_2D_KEYS := {
+	"scroll_up_2d": ["game", "scroll_up_2d"],
+	"skin_values_2d": ["game", "skin_values_2d"],
+	"hit_position_2d": ["game", "hit_position_2d"],
+	"column_spacing_2d": ["game", "column_spacing_2d"],
+	"stage_pos_2d": ["game", "stage_pos_2d"],
+	"stage_scale_2d": ["game", "stage_scale_2d"],
+	"judge_pos_2d": ["game", "judge_pos_2d"],
+	"combo_pos_2d": ["game", "combo_pos_2d"],
+	"keys_under_notes_2d": ["game", "keys_under_notes_2d"],
+	"hit_line_2d": ["game", "hit_line_2d"],
+	"mod_vis_2d": ["mods", "vis_2d"],
+	"cover_pct_2d": ["mods", "cover_pct"],
+	"cover_from_bottom_2d": ["mods", "cover_from_bottom"],
+	"mod_constant": ["mods", "constant_speed"],
+}
+
+
+func _load_2d_layout(cfg: ConfigFile) -> void:
+	for n in LAYOUT_2D_KEYS:
+		var k: Array = LAYOUT_2D_KEYS[n]
+		set_2d_option(n, cfg.get_value(k[0], k[1], default_2d_option(n)))
+
+
+func _save_2d_layout(cfg: ConfigFile) -> void:
+	for n in LAYOUT_2D_KEYS:
+		var k: Array = LAYOUT_2D_KEYS[n]
+		var v: Variant = get(n)
+		if _cli_saved_2d.has(n) and v == _cli_saved_2d[n][1]:
+			v = _cli_saved_2d[n][0]   # CLI-Wert dieses Laufs nie speichern
+		cfg.set_value(k[0], k[1], v)
+
+
+## Standardwert einer 2D-Option (wie osu!/lazer bzw. bisheriges Verhalten).
+static func default_2d_option(n: String) -> Variant:
+	match n:
+		"scroll_up_2d", "keys_under_notes_2d", "cover_from_bottom_2d", "mod_constant":
+			return false
+		"skin_values_2d", "hit_line_2d":
+			return true
+		"hit_position_2d":
+			return HIT_POS_DEFAULT
+		"column_spacing_2d":
+			return 0
+		"stage_pos_2d":
+			return STAGE_CENTER
+		"stage_scale_2d":
+			return 1.0
+		"judge_pos_2d":
+			return JUDGE_POS_DEFAULT
+		"combo_pos_2d":
+			return COMBO_POS_DEFAULT
+		"mod_vis_2d":
+			return VIS_NONE
+		"cover_pct_2d":
+			return 50
+	return null
+
+
+## Beliebiger Wert (Datei, CLI, UI) -> gueltiger Wert der 2D-Option.
+static func clamp_2d_option(n: String, v: Variant) -> Variant:
+	var d: Variant = default_2d_option(n)
+	if d is bool:
+		if v is String:
+			return v.strip_edges().to_lower() in ["1", "true", "on", "yes"]
+		return bool(v) if (v is bool or v is int or v is float) else d
+	var f := float(v) if (v is int or v is float or v is String) else float(d)
+	if is_nan(f) or is_inf(f):
+		return d
+	match n:
+		"hit_position_2d":
+			return clampi(roundi(f), HIT_POS_MIN, HIT_POS_MAX)
+		"column_spacing_2d":
+			return clampi(roundi(f), 0, COL_SPACING_MAX)
+		"stage_pos_2d":
+			return clampi(roundi(f), STAGE_LEFT, STAGE_RIGHT)
+		"stage_scale_2d":
+			return snappedf(clampf(f, STAGE_SCALE_MIN, STAGE_SCALE_MAX), 0.05)
+		"judge_pos_2d", "combo_pos_2d":
+			return clampi(roundi(f), 0, 480)
+		"mod_vis_2d":
+			return clampi(roundi(f), VIS_NONE, VIS_COVER)
+		"cover_pct_2d":
+			return clampi(roundi(f), COVER_MIN, COVER_MAX)
+	return d
+
+
+func set_2d_option(n: String, v: Variant) -> void:
+	if LAYOUT_2D_KEYS.has(n):
+		set(n, clamp_2d_option(n, v))
+
+
+## Test-/Screenshot-Flags (nur dieser Lauf, nie gespeichert):
+## --up, --skinvals=0|1, --hitpos=<240..480>, --colspace=<0..40>,
+## --stagepos=left|center|right, --stagescale=<50..150>, --judgepos=<0..480>,
+## --combopos=<0..480>, --keysunder=0|1, --hitline=0|1, --fadein, --hidden,
+## --cover=<20..80>, --cover-bottom, --constant.
+func apply_cli_2d(args: PackedStringArray) -> void:
+	for a in args:
+		var n := ""
+		var v: Variant = null
+		if a == "--up":
+			n = "scroll_up_2d"; v = true
+		elif a == "--fadein":
+			n = "mod_vis_2d"; v = VIS_FADE_IN
+		elif a == "--hidden":
+			n = "mod_vis_2d"; v = VIS_HIDDEN
+		elif a == "--constant":
+			n = "mod_constant"; v = true
+		elif a == "--cover-bottom":
+			n = "cover_from_bottom_2d"; v = true
+		elif a.begins_with("--cover="):
+			_cli_set("mod_vis_2d", VIS_COVER)
+			n = "cover_pct_2d"; v = a.trim_prefix("--cover=")
+		elif a.begins_with("--stagepos="):
+			n = "stage_pos_2d"
+			v = ["left", "center", "right"].find(a.trim_prefix("--stagepos="))
+			if int(v) < 0:
+				continue
+		elif a.begins_with("--stagescale="):
+			n = "stage_scale_2d"; v = a.trim_prefix("--stagescale=").to_float() / 100.0
+		else:
+			for p in [["--skinvals=", "skin_values_2d"], ["--hitpos=", "hit_position_2d"],
+					["--colspace=", "column_spacing_2d"], ["--judgepos=", "judge_pos_2d"],
+					["--combopos=", "combo_pos_2d"], ["--keysunder=", "keys_under_notes_2d"],
+					["--hitline=", "hit_line_2d"]]:
+				if a.begins_with(p[0]):
+					n = p[1]; v = a.trim_prefix(p[0])
+		if n != "":
+			_cli_set(n, v)
+
+
+func _cli_set(n: String, v: Variant) -> void:
+	var old: Variant = _cli_saved_2d[n][0] if _cli_saved_2d.has(n) else get(n)
+	set_2d_option(n, v)
+	_cli_saved_2d[n] = [old, get(n)]
+
+
+## Wirksames Layout fuer den eingebauten Look (skin == null): Skin-Werte = bisherige
+## Werte (Linie bei 86 %, kein Abstand, Mitte, Tasten ueber den Noten, keine Linie).
+func use_own_layout_2d() -> bool:
+	return not skin_values_2d
+
+
+## Mods dieses Laufs fuer Scores/Replays (lazer-Kuerzel FI/HD/CO/CS). Sicht-Mods nur in 2D.
+func extra_mods(is_2d: bool) -> Dictionary:
+	var m := {}
+	if is_2d:
+		m["FI"] = mod_vis_2d == VIS_FADE_IN
+		m["HD"] = mod_vis_2d == VIS_HIDDEN
+		m["CO"] = mod_vis_2d == VIS_COVER
+		if mod_vis_2d == VIS_COVER:
+			m["CO_pct"] = cover_pct_2d
+			m["CO_bottom"] = cover_from_bottom_2d
+	m["CS"] = mod_constant
+	return m
 
 
 ## Notengroesse zur Spurbreite: bis 85 % voll, darunter leicht mitskalieren,

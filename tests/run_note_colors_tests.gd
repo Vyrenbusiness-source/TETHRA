@@ -23,6 +23,8 @@ func _initialize() -> void:
 	_test_lanes()
 	_test_snap()
 	_test_presets()
+	_test_reset_snapshot()
+	_test_recent()
 	_test_save_load()
 	DirAccess.remove_absolute(NoteColors.path)
 	print("FAILED: %d" % _failed if _failed > 0 else "ALL OK")
@@ -94,6 +96,57 @@ func _test_presets() -> void:
 		for i in 4:
 			var hv := NoteColors.hold_color(false, i).v
 			_check(hv < NoteColors.lane_color(false, i).v and hv > 0.4, "Vorlage %s Hold %d dunkler, lesbar" % [id, i])
+
+
+func _test_reset_snapshot() -> void:
+	NoteColors.set_link_2d(false)
+	NoteColors.apply_preset(false, "neon")
+	var snap := NoteColors.snapshot(false)
+	NoteColors.set_lane_color(false, 0, Color("3366ff"))
+	_check(NoteColors.lane_color(false, 0) != NoteColors.preset_colors("neon")[0], "Spalte geaendert")
+	NoteColors.restore(false, snap)
+	_check(NoteColors.lane_color(false, 0).is_equal_approx(NoteColors.preset_colors("neon")[0]), "restore stellt Spalte wieder her")
+	_check(NoteColors.mode(false) == "lanes" and NoteColors.preset(false) == "neon", "restore stellt Modus und Vorlage wieder her")
+	NoteColors.restore(false, {})
+	_check(NoteColors.mode(false) == "lanes", "restore mit leerem Satz ignoriert")
+	# Snapshot ist eine Kopie, kein Verweis.
+	snap["lanes"] = []
+	_check(NoteColors.lane_color(false, 0).s > 0.0, "Snapshot ist unabhaengige Kopie")
+	# apply_preset aus Snapshot-Zustand schaltet immer auf lanes.
+	NoteColors.set_mode(false, "snap")
+	NoteColors.apply_preset(false, "pastel")
+	_check(NoteColors.mode(false) == "lanes", "Vorlage aus Takt-Modus -> lanes")
+	NoteColors.set_lane_color(false, 1, Color("ff0000"))
+	NoteColors.reset(false)
+	_check(NoteColors.mode(false) == "auto" and NoteColors.hold_auto(false), "reset: auto, Holds automatisch")
+	_check(NoteColors.preset(false) != "custom", "reset: Vorlage nicht custom")
+	# clamp ist idempotent.
+	for c in [Color("000000"), Color("ffffff"), Color("3366ff"), Color("ff00ff"), Color("101010")]:
+		var a := NoteColors.clamp_color(c)
+		_check(NoteColors.clamp_color(a) == a, "clamp idempotent %s" % c.to_html(false))
+
+
+func _test_recent() -> void:
+	for i in 12:
+		NoteColors.push_recent(Color.from_hsv(i / 12.0, 0.8, 0.8))
+	var r := NoteColors.recent()
+	_check(r.size() == NoteColors.RECENT_MAX, "recent: hoechstens %d" % NoteColors.RECENT_MAX)
+	_check((r[0] as Color).to_html(false) == Color.from_hsv(11 / 12.0, 0.8, 0.8).to_html(false), "recent: neueste zuerst")
+	NoteColors.push_recent(Color.from_hsv(9 / 12.0, 0.8, 0.8))
+	r = NoteColors.recent()
+	_check(r.size() == NoteColors.RECENT_MAX and (r[0] as Color).to_html(false) == Color.from_hsv(9 / 12.0, 0.8, 0.8).to_html(false), "recent: Duplikat rueckt nach vorn, keine Doppelten")
+	var seen := {}
+	for c in r:
+		seen[(c as Color).to_html(false)] = true
+	_check(seen.size() == r.size(), "recent: alle verschieden")
+	NoteColors.save()
+	var before := NoteColors.recent()
+	NoteColors.reload()
+	var after := NoteColors.recent()
+	var same := after.size() == before.size()
+	for i in mini(before.size(), after.size()):
+		same = same and (before[i] as Color).to_html(false) == (after[i] as Color).to_html(false)
+	_check(same, "recent gespeichert und geladen")
 
 
 func _test_save_load() -> void:

@@ -1,0 +1,19 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+uid="uid://bgemgdp6d6qtj"
+
+[deps]
+
+files=["res://translations/scores.de.translation", "res://translations/scores.en.translation"]
+
+source_file="res://translations/scores.csv"
+dest_files=["res://translations/scores.de.translation", "res://translations/scores.en.translation"]
+
+[params]
+
+compress=1
+delimiter=0
+unescape_keys=false
+unescape_translations=true

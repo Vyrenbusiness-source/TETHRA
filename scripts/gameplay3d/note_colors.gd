@@ -14,6 +14,8 @@ const HOLD_DARKEN := 0.28
 ## Lesbarkeit auf dem dunklen Feld: Helligkeit (HSV-V) im erlaubten Bereich.
 const MIN_V := 0.55
 const MAX_V := 0.95
+## So viele zuletzt genutzte Farben merkt sich der Farbwaehler.
+const RECENT_MAX := 8
 
 ## Reihenfolge der Vorlagen = Reihenfolge der Chips.
 const PRESET_IDS: Array[String] = ["standard", "classic", "neon", "pastel", "mono"]
@@ -39,6 +41,7 @@ static var path := "user://note_colors.cfg"
 static var _loaded := false
 static var _link_2d := false
 static var _cfg := {}   ## "3d" / "2d" -> {mode, preset, hold_auto, lanes:Array, holds:Array}
+static var _recent: Array = []   ## zuletzt gewaehlte Farben, neueste zuerst
 
 
 static func _default_set() -> Dictionary:
@@ -70,10 +73,16 @@ static func ensure_loaded() -> void:
 static func reload() -> void:
 	_loaded = true
 	_link_2d = false
+	_recent = []
 	_cfg = {"3d": _default_set(), "2d": _default_set()}
 	var f := ConfigFile.new()
 	if f.load(path) == OK:
 		_link_2d = bool(f.get_value("general", "link_2d", false))
+		var rc = f.get_value("general", "recent", [])
+		if rc is Array:
+			for c in rc:
+				if c is Color and _recent.size() < RECENT_MAX:
+					_recent.append(_clamp_col(c))
 		for sec in ["3d", "2d"]:
 			var s: Dictionary = _cfg[sec]
 			var m := String(f.get_value(sec, "mode", "auto"))
@@ -113,6 +122,7 @@ static func save() -> void:
 	ensure_loaded()
 	var f := ConfigFile.new()
 	f.set_value("general", "link_2d", _link_2d)
+	f.set_value("general", "recent", _recent)
 	for sec in ["3d", "2d"]:
 		var s: Dictionary = _cfg[sec]
 		f.set_value(sec, "mode", s.mode)
@@ -129,7 +139,45 @@ static func save() -> void:
 ## Satz fuer 3D oder 2D; bei "2D wie 3D" gilt immer der 3D-Satz.
 static func _set_of(mode_2d: bool) -> Dictionary:
 	ensure_loaded()
-	return _cfg["3d" if (not mode_2d or _link_2d) else "2d"]
+	return _cfg[_key(mode_2d)]
+
+
+static func _key(mode_2d: bool) -> String:
+	return "3d" if (not mode_2d or _link_2d) else "2d"
+
+
+## Satz auf Standard zuruecksetzen (Automatisch, Vorlage Standard, Holds automatisch).
+static func reset(mode_2d: bool) -> void:
+	ensure_loaded()
+	_cfg[_key(mode_2d)] = _default_set()
+
+
+## Kopie des Satzes (Farbwaehler: "Verwerfen" stellt sie mit restore() wieder her).
+static func snapshot(mode_2d: bool) -> Dictionary:
+	return _set_of(mode_2d).duplicate(true)
+
+
+static func restore(mode_2d: bool, snap: Dictionary) -> void:
+	ensure_loaded()
+	if snap.has("lanes") and snap.has("holds"):
+		_cfg[_key(mode_2d)] = snap.duplicate(true)
+
+
+## Zuletzt gewaehlte Farben (neueste zuerst, hoechstens RECENT_MAX).
+static func recent() -> Array:
+	ensure_loaded()
+	return _recent.duplicate()
+
+
+static func push_recent(c: Color) -> void:
+	ensure_loaded()
+	var cc := _clamp_col(c)
+	for i in range(_recent.size() - 1, -1, -1):
+		if (_recent[i] as Color).to_html(false) == cc.to_html(false):
+			_recent.remove_at(i)
+	_recent.push_front(cc)
+	if _recent.size() > RECENT_MAX:
+		_recent.resize(RECENT_MAX)
 
 
 static func link_2d() -> bool:
@@ -197,7 +245,8 @@ static func set_hold_color(mode_2d: bool, lane: int, c: Color) -> void:
 	s.preset = "custom"
 
 
-## Vorlage anwenden. switch_mode: von "auto" auf "lanes" schalten.
+## Vorlage anwenden. switch_mode: auf "lanes" schalten (eine Vorlage sind Spaltenfarben,
+## aus "auto" oder "snap" heraus waere sie sonst unsichtbar).
 static func apply_preset(mode_2d: bool, id: String, switch_mode: bool = true) -> void:
 	if not PRESETS.has(id):
 		return
@@ -206,7 +255,7 @@ static func apply_preset(mode_2d: bool, id: String, switch_mode: bool = true) ->
 	s.holds = _auto_holds(s.lanes)
 	s.hold_auto = true
 	s.preset = id
-	if switch_mode and s.mode == "auto":
+	if switch_mode:
 		s.mode = "lanes"
 
 
@@ -219,7 +268,13 @@ static func preset_colors(id: String) -> Array:
 
 
 ## Farbe in den lesbaren Bereich ziehen (nicht zu dunkel, nicht grell).
+static func clamp_color(c: Color) -> Color:
+	return _clamp_col(c)
+
+
 static func _clamp_col(c: Color) -> Color:
+	if c.a == 1.0 and c.v >= MIN_V and c.v <= MAX_V:
+		return c   # schon lesbar: unveraendert (kein Rundungs-Drift beim Neuspeichern)
 	return Color.from_hsv(c.h, c.s, clampf(c.v, MIN_V, MAX_V), 1.0)
 
 

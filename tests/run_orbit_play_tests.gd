@@ -93,7 +93,7 @@ func _test_view_geometry() -> void:
 	_check(c.is_equal_approx(Vector2(640, 360)), "Mitte")
 	for ring in 2:
 		_check(absf(v.radius_at(ring, 0.0) - v.ring_radius(ring)) < 0.001, "Ankunft = Trefferzeit (Ring %d)" % ring)
-		_check(absf(v.radius_at(ring, v.preempt) - 720.0 * OrbitView.R_SPAWN_K) < 0.001, "Spawn am Anflugbeginn")
+		_check(absf(v.radius_at(ring, v.preempt) - v.spawn_radius(ring)) < 0.001, "Spawn am Anflugbeginn")
 		_check(v.radius_at(ring, -50.0) > v.ring_radius(ring), "nach der Zeit weiter aussen")
 	_check(v.ring_radius(1) > v.ring_radius(0), "aussen > innen")
 	_check(v.ring_radius(1) * 2.0 < 720.0 * 0.8, "Feld passt in die Hoehe")

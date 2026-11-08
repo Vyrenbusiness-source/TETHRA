@@ -44,6 +44,17 @@ const ARC_DEG_PER_MS := 0.12
 const ARC_MAX_DEG := 270.0
 ## Nach einem Bogen-Ende braucht derselbe Ring so viel Pause, sonst anderer Ring.
 const RELEASE_GAP_MS := 150.0
+## Takt: Notes so nah an einem Schlag zaehlen als "auf dem Schlag".
+const BEAT_SNAP_MS := 12.0
+## Spruenge ab JUMP_DEG nur auf Schlaegen (beat_strength >= STRONG_BEAT);
+## sonst wird der Sprung auf WEAK_JUMP_DEG gedeckelt.
+const JUMP_DEG := 60.0
+const STRONG_BEAT := 0.5
+const WEAK_JUMP_DEG := 50.0
+## Orbit-Sterne: Fensterraster und Gewichte (an Mania-Sternen grob geeicht).
+const STAR_HOP_MS := 1000.0
+const STAR_DENS_K := 0.32
+const STAR_PATH_K := 0.29
 
 
 static func convert(beatmap: Beatmap) -> Array[OrbitNote]:
@@ -73,6 +84,7 @@ static func convert(beatmap: Beatmap) -> Array[OrbitNote]:
 		else:
 			groups.append([i])
 
+	var reds := red_points(beatmap)
 	var last_time := -INF
 	var last_angle := 0.0
 	var last_head := -INF
@@ -135,6 +147,9 @@ static func convert(beatmap: Beatmap) -> Array[OrbitNote]:
 					delta = dir * minf(COL_STEP_DEG, lim)
 			else:
 				delta = clampf(df * unit, -lim, lim)
+			# Grosse Spruenge nur auf Schlaegen; dazwischen bleibt der Fluss ruhig.
+			if absf(delta) >= JUMP_DEG and beat_strength(reds, t) < STRONG_BEAT:
+				delta = signf(delta) * WEAK_JUMP_DEG
 		if delta != 0.0:
 			dir = signf(delta)
 		var angle := OrbitNote.wrap_deg(last_angle + delta)
@@ -196,3 +211,151 @@ static func _arc_len(n: ManiaNote) -> float:
 		return 0.0
 	var dur := n.end_time() - n.time
 	return dur if dur >= MIN_ARC_MS else 0.0
+
+
+
+# ---------------------------------------------------------------------------
+# Takt, Analyse, Orbit-Sterne
+# ---------------------------------------------------------------------------
+
+## Rote Timing-Points (BPM/Takt) der Map, nach Zeit sortiert.
+static func red_points(beatmap: Beatmap) -> Array:
+	var reds: Array = []
+	if beatmap == null:
+		return reds
+	for tp in beatmap.timing_points:
+		if tp.uninherited and tp.beat_length > 0.0:
+			reds.append(tp)
+	reds.sort_custom(func(a, b): return a.time < b.time)
+	return reds
+
+
+## Gewicht der Taktstelle t: 1 = Taktanfang, 0,75 = Halbtakt, 0,6 = Schlag,
+## 0,35 = Achtel, 0,2 = sonst. Ohne Timing-Points immer 1 (keine Regel).
+static func beat_strength(reds: Array, t: float) -> float:
+	if reds.is_empty():
+		return 1.0
+	var tp = reds[0]
+	for r in reds:
+		if float(r.time) <= t + BEAT_SNAP_MS:
+			tp = r
+		else:
+			break
+	var bl: float = tp.beat_length
+	var meter: int = maxi(int(tp.meter), 1)
+	var ph := (t - float(tp.time)) / bl
+	var beat := roundf(ph)
+	if absf(ph - beat) * bl <= BEAT_SNAP_MS:
+		var in_bar := posmod(int(beat), meter)
+		if in_bar == 0:
+			return 1.0
+		if meter % 2 == 0 and in_bar == meter / 2:
+			return 0.75
+		return 0.6
+	var half := roundf(ph * 2.0)
+	if absf(ph * 2.0 - half) * bl * 0.5 <= BEAT_SNAP_MS:
+		return 0.35
+	return 0.2
+
+
+## Cursor-Punkte (Kopf-Zeit/Winkel, Bogen-Enden), Akkorde zusammengefasst.
+static func cursor_points(ns: Array[OrbitNote]) -> Array:
+	var pts: Array = []
+	for n in ns:
+		if pts.is_empty() or absf(float(pts[-1][0]) - n.time_ms) > CHORD_EPS_MS or pts[-1][2]:
+			pts.append([n.time_ms, n.angle_deg, false])
+		if n.is_arc:
+			pts.append([n.end_ms, OrbitNote.wrap_deg(n.end_angle_deg), true])
+	pts.sort_custom(func(a, b): return a[0] < b[0])
+	return pts
+
+
+## Kennzahlen eines umgewandelten Musters (Tests, Bericht).
+static func analyze(ns: Array[OrbitNote], beatmap: Beatmap = null) -> Dictionary:
+	var reds := red_points(beatmap)
+	var a := {"arcs": 0, "chords": 0, "nps": 0.0, "jumps": 0, "weak_jumps": 0,
+		"reversal": 0.0, "mean_speed": 0.0, "p95_speed": 0.0}
+	if ns.is_empty():
+		return a
+	for i in ns.size():
+		if ns[i].is_arc:
+			a.arcs += 1
+		if i > 0 and absf(ns[i].time_ms - ns[i - 1].time_ms) <= CHORD_EPS_MS:
+			a.chords += 1
+	var span := maxf(ns[-1].time_ms - ns[0].time_ms, 1000.0)
+	a.nps = float(ns.size()) / (span / 1000.0)
+	var pts := cursor_points(ns)
+	var speeds := PackedFloat32Array()
+	var moves := 0
+	var flips := 0
+	var last_sign := 0.0
+	for i in range(1, pts.size()):
+		var dt: float = pts[i][0] - pts[i - 1][0]
+		if dt <= CHORD_EPS_MS:
+			continue
+		var d := OrbitNote.delta_deg(pts[i - 1][1], pts[i][1])
+		speeds.append(absf(d) / dt)
+		if not pts[i][2] and absf(d) >= JUMP_DEG:
+			a.jumps += 1
+			if beat_strength(reds, pts[i][0]) < STRONG_BEAT:
+				a.weak_jumps += 1
+		if absf(d) >= 3.0 and not pts[i][2] and not pts[i - 1][2]:
+			moves += 1
+			if last_sign != 0.0 and signf(d) != last_sign:
+				flips += 1
+			last_sign = signf(d)
+	if not speeds.is_empty():
+		var sum := 0.0
+		for v in speeds:
+			sum += v
+		a.mean_speed = sum / float(speeds.size())
+		var sorted := speeds.duplicate()
+		sorted.sort()
+		a.p95_speed = sorted[int(float(sorted.size() - 1) * 0.95)]
+	a.reversal = float(flips) / float(maxi(moves, 1))
+	return a
+
+
+## Orbit-Sterne (eigene Zahl, nicht Mania-Sterne): Fenster von 2 s,
+## Dichte (Ziele/s, Akkord-Zweitziel 0,5) plus Winkelweg (Grad/ms); die
+## haertesten Fenster zaehlen am meisten (Gewicht 0,9^k wie osu!).
+static func stars(ns: Array[OrbitNote]) -> float:
+	if ns.size() < 2:
+		return 0.0
+	var pts := cursor_points(ns)
+	var t0 := ns[0].time_ms
+	var t_end := ns[-1].end_ms
+	var n_win := maxi(1, int(ceil((t_end - t0) / STAR_HOP_MS)))
+	var dens := PackedFloat32Array()
+	var path := PackedFloat32Array()
+	dens.resize(n_win)
+	path.resize(n_win)
+	dens.fill(0.0)
+	path.fill(0.0)
+	for i in ns.size():
+		var w := clampi(int((ns[i].time_ms - t0) / STAR_HOP_MS), 0, n_win - 1)
+		var chord := i > 0 and absf(ns[i].time_ms - ns[i - 1].time_ms) <= CHORD_EPS_MS
+		dens[w] += 0.5 if chord else 1.0
+	for i in range(1, pts.size()):
+		var w := clampi(int((float(pts[i][0]) - t0) / STAR_HOP_MS), 0, n_win - 1)
+		path[w] += OrbitNote.dist_deg(pts[i - 1][1], pts[i][1])
+	# Fenster = zwei Hops (2 s), Werte je Sekunde.
+	var vals: Array[float] = []
+	for w in n_win:
+		var dn := dens[w] + (dens[w - 1] if w > 0 else 0.0)
+		var pa := path[w] + (path[w - 1] if w > 0 else 0.0)
+		var nps := dn / (2.0 * STAR_HOP_MS / 1000.0)
+		var dps := pa / (2.0 * STAR_HOP_MS / 1000.0)
+		vals.append(STAR_DENS_K * pow(nps, 0.8) + STAR_PATH_K * dps / 100.0)
+	vals.sort()
+	vals.reverse()
+	var num := 0.0
+	var den := 0.0
+	var wt := 1.0
+	for v in vals:
+		num += v * wt
+		den += wt
+		wt *= 0.9
+		if wt < 0.001:
+			break
+	return num / maxf(den, 1e-6)

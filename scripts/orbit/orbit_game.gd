@@ -61,11 +61,21 @@ var _grade_label: Label
 var _time_label: Label
 var _top_fill: ColorRect
 var _pause_menu: PauseMenu
-var _results_screen: ResultsScreen
+var _results_screen: OrbitResults
 var _hit_player: AudioStreamPlayer
 var _miss_player: AudioStreamPlayer
 var _hit_offsets := PackedFloat32Array()
 var _acc_trace := PackedFloat32Array()
+## Takt + Intensitaet fuer den Ring-Puls (nur Helligkeit).
+var _beat := BeatClock.new()
+var _intensity := IntensityMap.new()
+var _last_milestone := 0
+## Bot-Plan (OrbitCore.bot_plan): je Ziel [Zeitversatz, Zielfehler, auslassen].
+var _bot_plan: Array = []
+## Je gewertetem Ziel [Winkel, Ring, dt, Zielfehler, Stufe, Zeit] fuer OrbitResults.
+var _hit_log: Array = []
+var _mp_send_cd := 0.0
+var _mods_label: Label
 
 
 func _ready() -> void:
@@ -75,10 +85,24 @@ func _ready() -> void:
 		get_tree().change_scene_to_file.call_deferred("res://scenes/song_select.tscn")
 		return
 	_autoplay = OS.get_cmdline_args().has("--autoplay") and not Lobby.active
+	var jitter := 0.0
+	var aim := 0.0
+	var seed := 1
 	for a in OS.get_cmdline_args():
 		if a.begins_with("--auto-miss="):
 			_auto_miss = maxi(0, a.trim_prefix("--auto-miss=").to_int())
+		elif a.begins_with("--auto-jitter="):
+			jitter = maxf(0.0, a.trim_prefix("--auto-jitter=").to_float())
+		elif a.begins_with("--auto-aim="):
+			aim = maxf(0.0, a.trim_prefix("--auto-aim=").to_float())
+		elif a.begins_with("--auto-seed="):
+			seed = a.trim_prefix("--auto-seed=").to_int()
 	_build_core()
+	if _autoplay:
+		# Menschlicher Bot: --auto-jitter=<ms> --auto-aim=<Grad> --auto-seed=<n>.
+		_bot_plan = OrbitCore.bot_plan(notes, seed, jitter, aim, _auto_miss)
+	_beat.setup(_beatmap.timing_points)
+	_intensity.build(_beatmap)
 	_build_bg()
 	_view = OrbitView.new()
 	add_child(_view)
@@ -86,8 +110,11 @@ func _ready() -> void:
 	_view.preempt = _preempt()
 	_view.show_guides = Settings.orbit_guides
 	_view.tol_deg = _tolerance()
+	_view.center_deg = OrbitCore.CENTER_DEG
 	_build_sound()
 	_build_hud()
+	if Lobby.active and Lobby.in_game:
+		Lobby.skip_now.connect(_do_skip)
 	if not _use_audio:
 		_debug_start_usec = Time.get_ticks_usec()
 		_debug_running = true
@@ -105,6 +132,7 @@ func _ready() -> void:
 
 
 func _load_beatmap() -> bool:
+	_cli_pick()
 	if not GameSession.has_selection():
 		return false
 	var imp := OszImporter.import(GameSession.osz_path)
@@ -130,6 +158,24 @@ func _load_beatmap() -> bool:
 		SyncClock.play(stream, lead)
 		_use_audio = true
 	return true
+
+
+## Debug/Shots: --orbit-map=<Teil des osz-Namens> [--orbit-diff=<Version>]
+## waehlt direkt eine Map aus maps/ (Szene orbit.tscn ohne Song-Browser).
+func _cli_pick() -> void:
+	var want := ""
+	for a in OS.get_cmdline_args():
+		if a.begins_with("--orbit-map="):
+			want = a.trim_prefix("--orbit-map=")
+		elif a.begins_with("--orbit-diff="):
+			GameSession.difficulty_version = a.trim_prefix("--orbit-diff=")
+	if want == "":
+		return
+	var dir := MapLibrary.default_maps_dir()
+	for f in DirAccess.get_files_at(dir):
+		if f.to_lower().ends_with(".osz") and f.findn(want) >= 0:
+			GameSession.osz_path = dir.path_join(f)
+			return
 
 
 ## Logik laden: OrbitConverter macht aus der Mania-Map die Ziele, OrbitCore
@@ -188,7 +234,8 @@ func _build_bg() -> void:
 	_bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	# Settings.bg_dim = Deckkraft des Map-Bilds (0 = aus).
-	_bg.modulate = Color(1, 1, 1, Settings.bg_dim)
+	# Orbit dimmt staerker als Mania: Ziele liegen ueber dem ganzen Bild.
+	_bg.modulate = Color(1, 1, 1, Settings.bg_dim * 0.6)
 	_bg.visible = Settings.bg_dim > 0.001
 	add_child(_bg)
 
@@ -257,8 +304,8 @@ func _build_hud() -> void:
 
 	# Werte links/rechts neben den Ringen, vertikal mittig (ruhig, nie im Feld).
 	var left := _stat_column(0.11)
-	_grade_label = _stat_block(left, tr("RANG"), 26)
-	_acc_label = _stat_block(left, tr("GENAUIGKEIT"), 28)
+	_acc_label = _stat_block(left, tr("GENAUIGKEIT"), 40)
+	_grade_label = _stat_block(left, tr("RANG"), 24)
 	var right := _stat_column(0.89)
 	_score_label = _stat_block(right, tr("PUNKTE"), 30)
 
@@ -284,7 +331,22 @@ func _build_hud() -> void:
 	_judge_disp = JudgeDisplay.new()
 	_hud.add_child(_judge_disp)
 	_judge_disp.setup(theme_col)
-	_judge_disp.window_300_ms = _w300
+	# Eigene Orbit-Stufen; FRUEH/SPAET schon ab SHARP (alles ausser CORE-Zeit).
+	_judge_disp.window_300_ms = float(core.w_max)
+	for q in OrbitCore.TIER_NAMES.size():
+		_judge_disp._judges[q].text = tr(OrbitCore.TIER_NAMES[q])
+	_judge_disp._judges[0].add_theme_color_override("font_color", OrbitView.MAX_COL)
+
+	# Mods oben links unter dem ORBIT-Tag (wie Mania), nur wenn welche aktiv.
+	var mt := Lobby.mods_text(core.mods)
+	if mt != "":
+		_mods_label = Label.new()
+		_mods_label.text = mt
+		_mods_label.position = Vector2(24, 50)
+		_mods_label.add_theme_font_override("font", UiTheme.heading_font(3))
+		_mods_label.add_theme_font_size_override("font_size", 11)
+		_mods_label.add_theme_color_override("font_color", Color(OrbitView.OUTER_COL, 0.85))
+		_hud.add_child(_mods_label)
 
 	_build_legend()
 
@@ -537,7 +599,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if event.keycode == KEY_SPACE and not _ended and Settings.orbit_ring_for_key(KEY_SPACE) == -1 \
 			and _can_skip_intro():
-		_do_skip()
+		if Lobby.active and Lobby.in_game:
+			Lobby.vote_skip()  # Multiplayer: springt erst, wenn ALLE druecken
+		else:
+			_do_skip()
 
 
 ## Autoplay: Taste exakt zur Trefferzeit auf dem exakten Winkel; Boegen
@@ -555,32 +620,33 @@ func _run_autoplay(t: float) -> void:
 			_view.ring_held[r] = false
 			_auto_release[r] = -1.0
 			_auto_arc[r] = -1
-	while _auto_idx < notes.size() and float(notes[_auto_idx].time_ms) <= t:
+	while _auto_idx < notes.size() and float(notes[_auto_idx].time_ms) + _bot_dt(_auto_idx) <= t:
 		var i := _auto_idx
 		var n = notes[i]
 		_auto_idx += 1
 		var r: int = n.ring
-		var nt := float(n.time_ms)
-		if _auto_miss > 0 and i % _auto_miss == _auto_miss - 1:
+		var nt := float(n.time_ms) + _bot_dt(i)
+		if _bot_skip(i):
 			continue
 		if _auto_release[r] >= 0.0:
 			core.key_up(r, minf(_auto_release[r], nt))
 			_auto_release[r] = -1.0
 			_auto_arc[r] = -1
-		_auto_cursor(float(n.angle_deg), nt)
-		core.key_down(r, nt, float(n.angle_deg))
+		var aim := float(n.angle_deg) + _bot_aim(i)
+		_auto_cursor(aim, nt)
+		core.key_down(r, nt, aim)
 		_view.ring_held[r] = true
-		_auto_from_deg = float(n.angle_deg)
+		_auto_from_deg = aim
 		_auto_from_t = nt
 		if n.is_arc:
 			_auto_arc[r] = i
-			_auto_release[r] = float(n.end_ms)
+			_auto_release[r] = float(n.end_ms) + _bot_dt(i) * 0.5
 		else:
 			_auto_release[r] = nt + AUTO_TAP_MS
 	# Cursor-Fuehrung fuer dieses Bild.
 	for r in 2:
 		if _auto_arc[r] >= 0:
-			_auto_cursor(notes[_auto_arc[r]].angle_at(t), t)
+			_auto_cursor(notes[_auto_arc[r]].angle_at(t) + _bot_aim(_auto_arc[r]), t)
 			return
 	if _auto_idx < notes.size():
 		var nx = notes[_auto_idx]
@@ -589,6 +655,20 @@ func _run_autoplay(t: float) -> void:
 		f = f * f * (3.0 - 2.0 * f)
 		var d := rad_to_deg(angle_difference(deg_to_rad(_auto_from_deg), deg_to_rad(float(nx.angle_deg))))
 		_auto_cursor(_auto_from_deg + d * f, t, true)
+
+
+func _bot_dt(i: int) -> float:
+	return float(_bot_plan[i][0]) if i < _bot_plan.size() else 0.0
+
+
+func _bot_aim(i: int) -> float:
+	return float(_bot_plan[i][1]) if i < _bot_plan.size() else 0.0
+
+
+func _bot_skip(i: int) -> bool:
+	if i < _bot_plan.size():
+		return bool(_bot_plan[i][2])
+	return _auto_miss > 0 and i % _auto_miss == _auto_miss - 1
 
 
 func _auto_cursor(deg: float, t: float, display_only: bool = false) -> void:
@@ -611,6 +691,20 @@ func _process(delta: float) -> void:
 		_run_autoplay(t)
 	core.update(t)
 	_view.t_ms = t
+	for r in 2:
+		_view.arc_warn[r] = core.arc_out_ms(r, t) / OrbitCore.ARC_OUT_MS
+	# Takt-Puls: nur Helligkeit, in ruhigen Stellen schwaecher.
+	_beat.update(t, delta)
+	var env := _beat.beat_env * (0.35 + 0.65 * _intensity.value_at(t))
+	_view.beat_env = env
+	_view.kiai = _beat.kiai_mix
+	_judge_disp.beat(env)
+	# Multiplayer: Live-Stand 4x pro Sekunde.
+	if Lobby.active and Lobby.in_game:
+		_mp_send_cd -= delta
+		if _mp_send_cd <= 0.0:
+			_mp_send_cd = 0.25
+			Lobby.send_score(core.orbit_score(), int(core.combo), core.accuracy())
 	_hp_flash_cd = maxf(_hp_flash_cd - delta, 0.0)
 	_update_break_overlay(t)
 	if _legend != null and _legend.visible and not notes.is_empty():
@@ -654,6 +748,11 @@ func _fmt_time(ms: float) -> String:
 func _on_note_judged(index: int, result: Dictionary) -> void:
 	var q := int(result.get("quality", 5))
 	_view.on_judged(index, result)
+	if index >= 0 and index < notes.size():
+		var n := notes[index]
+		_hit_log.append([n.angle_deg, n.ring, float(result.get("dt", 0.0)),
+			float(result.get("angle_err", 0.0)), q, n.time_ms])
+	_check_milestone(q)
 	if q == 5:
 		_play_miss()
 	else:
@@ -673,8 +772,21 @@ func _on_note_judged(index: int, result: Dictionary) -> void:
 	_acc_trace.append(core.accuracy())
 
 
-func _on_arc_started(index: int, _quality: int) -> void:
-	_view.on_arc_started(index)
+func _on_arc_started(index: int, quality: int) -> void:
+	_view.on_arc_started(index, quality, core.arc_head_dt(index))
+
+
+## Kombo-Meilensteine (50, 100, 200 ...): ruhige Welle + Klang, nie grell.
+func _check_milestone(q: int) -> void:
+	if q == 5:
+		_last_milestone = 0
+		return
+	var c := int(core.combo)
+	if (c == 50 or (c >= 100 and c % 100 == 0)) and c != _last_milestone:
+		_last_milestone = c
+		_view.start_wave(c >= 100)
+		if _use_audio:
+			Sfx.milestone(c)
 
 
 func _play_hit(pitch: float) -> void:
@@ -792,7 +904,11 @@ func _back_to_browser() -> void:
 	get_tree().paused = false
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	SyncClock.stop()
-	get_tree().change_scene_to_file("res://scenes/song_select.tscn")
+	# Multiplayer: zurueck in den Raum statt in den Song-Browser.
+	if Lobby.active:
+		get_tree().change_scene_to_file("res://scenes/mp_lobby.tscn")
+	else:
+		get_tree().change_scene_to_file("res://scenes/song_select.tscn")
 
 
 func _show_results(is_fail: bool) -> void:
@@ -812,34 +928,33 @@ func _show_results(is_fail: bool) -> void:
 		new_best = bool(save.get("is_new_best", false))
 		ScoreStore.log_play(GameSession.osz_path, _beatmap.version_name(),
 			"%s - %s" % [_beatmap.artist(), _beatmap.title()], s, MODE)
-	var rs := ResultsScreen.new()
+	# Multiplayer: letzten Live-Stand + Finale an alle melden.
+	if Lobby.active and Lobby.in_game:
+		Lobby.send_score(int(s.score), int(core.combo), float(s.accuracy))
+		Lobby.send_final(PlayerStatsCard.pack(s, _hit_offsets, _acc_trace, 0, 0, s.failed))
+	# Eigener Orbit-Endscreen (Karte der Treffer, Stufen, Timing).
+	var rs := OrbitResults.new()
+	# Spielfeld + HUD ausblenden: der Endscreen steht fuer sich.
+	_view.visible = false
+	for ch in _hud.get_children():
+		if ch is CanvasItem:
+			ch.visible = false
 	_hud.add_child(rs)
 	_results_screen = rs
 	rs.retry_pressed.connect(_restart)
 	rs.back_pressed.connect(_back_to_browser)
-	rs.clip_pressed.connect(func(): rs.show_toast(tr("Clips gibt es nur in Mania 4K"), false))
-	var data := {
+	rs.show_results({
 		"is_fail": is_fail,
 		"s": s,
-		"pp": -1.0,
-		"unranked": false,
+		"log": _hit_log,
+		"w50": float(core.w50),
+		"w_max": float(core.w_max),
 		"new_best": new_best,
 		"title": _beatmap.title(),
 		"artist": _beatmap.artist(),
-		"version": "%s  ·  %s" % [_beatmap.version_name(), tr("Orbit")],
-		"cover_path": "",
-		"offsets": _hit_offsets,
-		"player": Settings.profile_name,
-		"date": Time.get_datetime_string_from_system(),
-		"allow_retry": true,
-		"can_replay": false,
-		"is_replay": false,
-		"lobby": false,
-	}
-	var cover := OszImporter.load_background_texture(GameSession.osz_path, _beatmap)
-	if cover != null:
-		data["cover"] = cover
-	rs.show_results(data)
+		"version": _beatmap.version_name(),
+		"allow_retry": not Lobby.active,
+	})
 	var grade := "F" if is_fail else str(s.get("grade", "D"))
 	get_tree().create_timer(0.38, true).timeout.connect(func():
 		if is_inside_tree() and _use_audio:
@@ -876,8 +991,21 @@ func _capture_shot() -> void:
 		get_tree().quit(0)
 		return
 	if OS.get_cmdline_args().has("--shot-results"):
-		await _wait_until(target)
-		_show_results(false)
+		# Ganze Map (oder bis --shot-at) sofort durchspielen, dann Endscreen.
+		# --shot-fail: Scheitern erlaubt (z. B. mit --auto-miss=2).
+		var has_at := false
+		for a in OS.get_cmdline_args():
+			has_at = has_at or a.begins_with("--shot-at=")
+		if OS.get_cmdline_args().has("--shot-fail"):
+			core._tally.no_fail = false
+		var t_end := target if has_at else float(notes[-1].end_ms) + 1000.0
+		var t := _time_ms()
+		while t < t_end and not bool(core.failed):
+			_run_autoplay(t)
+			core.update(t)
+			t += 16.0
+		_view.t_ms = t
+		_show_results(bool(core.failed))
 		return
 	if target - _time_ms() > 4000.0 and _use_audio:
 		# Vorspulen: Wertung neu ab dem Sprungpunkt, damit das Bild keine
@@ -904,13 +1032,27 @@ func _capture_shot() -> void:
 func _shot_target(v: String, def: float) -> float:
 	if v.is_valid_float():
 		return v.to_float()
+	if v == "dense":
+		# Dichteste Stelle: meiste Ziele in einem Anflug-Fenster.
+		var best := -1
+		var at := def
+		var j := 0
+		var win := _preempt()
+		for i in notes.size():
+			while notes[i].time_ms - notes[j].time_ms > win:
+				j += 1
+			if notes[j].time_ms >= 8000.0 and i - j > best:
+				best = i - j
+				at = notes[j].time_ms + 40.0
+		return at
 	for i in notes.size():
 		var n := notes[i]
 		if n.time_ms < 8000.0:
 			continue
 		if v == "arc" and n.is_arc and n.duration_ms() >= 400.0:
 			return n.time_ms + n.duration_ms() * 0.45
-		if v == "chord" and i + 1 < notes.size() 				and absf(notes[i + 1].time_ms - n.time_ms) <= OrbitView.CHORD_EPS_MS:
+		if v == "chord" and i + 1 < notes.size() \
+				and absf(notes[i + 1].time_ms - n.time_ms) <= OrbitView.CHORD_EPS_MS:
 			return n.time_ms - 160.0
 	return def
 

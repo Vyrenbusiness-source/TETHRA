@@ -4,12 +4,42 @@ Note,Note,Note
 Hold,Hold,Hold
 Holds automatisch etwas dunkler,Holds automatisch etwas dunkler,Holds automatically a bit darker
 Spalte %d,Spalte %d,Lane %d
-Automatisch (nach Map),Automatisch (nach Map),Automatic (by map)
-Eigene Farbe je Spalte,Eigene Farbe je Spalte,Own color per lane
-Nach Takt-Teilung,Nach Takt-Teilung,By beat division
 Standard,Standard,Default
 Klassisch 4K,Klassisch 4K,Classic 4K
 Neon,Neon,Neon
 Pastell,Pastell,Pastel
 Monochrom,Monochrom,Monochrome
 Notenfarben,Notenfarben,Note colors
+Automatisch,Automatisch,Automatic
+Eigene Farben,Eigene Farben,Own colors
+Nach Takt,Nach Takt,By beat
+Die Noten nehmen die Farben von Map und Welt.,Die Noten nehmen die Farben von Map und Welt.,Notes take the colors of the map and world.
+Jede Spalte bekommt ihre Farbe. Vorlage wählen oder ein Farbfeld anklicken.,Jede Spalte bekommt ihre Farbe. Vorlage wählen oder ein Farbfeld anklicken.,Each lane gets its own color. Pick a preset or click a swatch.
+"Die Farbe zeigt die Takt-Teilung der Note, wie in osu!.","Die Farbe zeigt die Takt-Teilung der Note, wie in osu!.","The color shows the beat division of the note, like in osu!."
+2D nutzt dieselben Farben wie 3D,2D nutzt dieselben Farben wie 3D,2D uses the same colors as 3D
+3D + 2D,3D + 2D,3D + 2D
+Aus: jede Hold-Farbe frei wählen,Aus: jede Hold-Farbe frei wählen,Off: pick every hold color freely
+Der gewählte 2D-Skin zeichnet eigene Bilder; die Farben gelten ohne Skin.,Der gewählte 2D-Skin zeichnet eigene Bilder; die Farben gelten ohne Skin.,The selected 2D skin draws its own images; the colors apply without a skin.
+Diesen Satz auf Automatisch und Standard-Farben zurücksetzen,Diesen Satz auf Automatisch und Standard-Farben zurücksetzen,Reset this set to Automatic and the default colors
+Eigene Farben wählen,Eigene Farben wählen,Choose own colors
+Enter,Enter,Enter
+Esc,Esc,Esc
+Farbe je Spalte,Farbe je Spalte,Color per lane
+Farben für das 2D-Spielfeld,Farben für das 2D-Spielfeld,Colors for the 2D playfield
+Farben für das 3D-Spielfeld,Farben für das 3D-Spielfeld,Colors for the 3D playfield
+Farbquelle,Farbquelle,Color source
+Fertig,Fertig,Done
+"Hex-Farbe, z. B. 33D9FF. Enter übernimmt.","Hex-Farbe, z. B. 33D9FF. Enter übernimmt.","Hex color, e.g. 33D9FF. Enter applies."
+"Holds nehmen dieselbe Farbe, etwas dunkler.","Holds nehmen dieselbe Farbe, etwas dunkler.","Holds use the same color, a bit darker."
+Neue Farbe,Neue Farbe,New color
+Ohne Welt-Farben sind normale Noten hellblau und Holds orange. Welten und Kiai färben um.,Ohne Welt-Farben sind normale Noten hellblau und Holds orange. Welten und Kiai färben um.,"Without world colors, notes are light blue and holds orange. Worlds and kiai recolor them."
+Takt-Teilung,Takt-Teilung,Beat division
+Verwerfen,Verwerfen,Discard
+Vorherige Farbe,Vorherige Farbe,Previous color
+Vorlage übernehmen,Vorlage übernehmen,Apply preset
+Vorlagen,Vorlagen,Presets
+Vorschau,Vorschau,Preview
+Vorschläge,Vorschläge,Suggestions
+Zuletzt genutzt,Zuletzt genutzt,Recently used
+Zurücksetzen,Zurücksetzen,Reset
+automatisch,automatisch,automatic
