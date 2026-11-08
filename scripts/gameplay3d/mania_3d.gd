@@ -3953,7 +3953,21 @@ func _show_results(is_fail: bool) -> void:
 			"accuracy": float(s.accuracy), "date": Time.get_datetime_string_from_system(),
 			"mods": GameSession.mods.duplicate(),  # Replay laeuft mit denselben Mods
 		})
+		if not is_fail:
+			_submit_online(s)
 	_build_results(is_fail, s, pp, unranked, new_best)
+
+
+## Online-Score (nur angemeldet, gewerteter Lauf). Asynchron + mit Warteschlange.
+func _submit_online(s: Dictionary) -> void:
+	var api: OnlineApi = GameSession.online
+	if api == null or not api.enabled() or not api.logged_in():
+		return
+	var meta := OnlineApi.meta_from_beatmap(_beatmap, GameSession.osz_path,
+		GameSession.osu_filename, GameSession.stars)
+	var res := s.duplicate()
+	res["date"] = Time.get_datetime_string_from_system(true)
+	api.submit(res, meta, "mania")
 
 
 ## Results-Screen: eigenstaendige Komponente ResultsScreen (scripts/ui/
