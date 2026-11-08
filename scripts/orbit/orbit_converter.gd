@@ -1,8 +1,9 @@
 class_name OrbitConverter
 extends RefCounted
 
-## Wandelt eine osu!mania-Map (beliebige Spaltenzahl, gedacht fuer 4K) in
-## Orbit-Ziele um. Komplett deterministisch: kein Zufall, nur Spalten,
+## Wandelt eine osu!mania-Map (beliebige Spaltenzahl, gedacht fuer 4K) oder
+## eine osu!standard-Map (Mode 0, convert_std: Winkel = Richtung der Position
+## zur Mitte, Ring = Abstand) in Orbit-Ziele um. Komplett deterministisch: kein Zufall, nur Spalten,
 ## Zeitabstaende und der bisherige Musterfluss bestimmen das Ergebnis.
 ##
 ## Regeln (Details + Begruendung in docs/modes/orbit.md):
@@ -68,8 +69,9 @@ const STAR_PATH_K := 0.29
 ## FLOW: osu-Wege werden Ring-Wege (Abstand -> Winkel, Drehsinn des Musters
 ## -> Drehrichtung). POLAR: Winkel = Richtung der Position zur Mitte.
 enum StdStyle { FLOW, POLAR }
-## Umschaltbar fuer Messungen/Bericht; das Spiel nutzt den Standard.
-static var std_style: int = StdStyle.FLOW
+## Standard POLAR (Messung + Begruendung: docs/modes/orbit_sources.md);
+## umschaltbar fuer Messungen.
+static var std_style: int = StdStyle.POLAR
 const STD_CENTER := Vector2(256.0, 192.0)
 ## FLOW: Grad Ringweg pro osu-Pixel Weg.
 const STD_DEG_PER_PX := 0.45
@@ -264,7 +266,7 @@ static func _ring_free(ring_last: Array, arc_end_at: Array, r: int, t: float) ->
 ## Finger pro Ring (SAME_RING_MIN_MS, RELEASE_GAP_MS), Boegen <= ARC_DEG_PER_MS
 ## und ARC_MAX_DEG. Kreis -> Tap, Slider -> Bogen (Winkelweg aus dem Pfad),
 ## Spinner -> Bogen in Flussrichtung.
-static func convert_std(beatmap: Beatmap, style: int = StdStyle.FLOW) -> Array[OrbitNote]:
+static func convert_std(beatmap: Beatmap, style: int = StdStyle.POLAR) -> Array[OrbitNote]:
 	var out: Array[OrbitNote] = []
 	if beatmap == null:
 		return out

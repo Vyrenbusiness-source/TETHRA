@@ -1285,10 +1285,14 @@ func _refresh_filter(query: String) -> void:
 				continue
 		if _sv_filter and not ms.has_sv():
 			continue
-		# Sterne-Filter: Set passt, wenn IRGENDEINE Diff im Bereich liegt.
+		# Modus-Filter: osu!standard-Diffs nur im Orbit-Modus (MapSet.mode_shows).
+		var vis := ms.visible_diffs(_play_mode)
+		if vis.is_empty():
+			continue
+		# Sterne-Filter: Set passt, wenn IRGENDEINE sichtbare Diff im Bereich liegt.
 		if _star_filter != 0:
 			var in_range := false
-			for i in ms.difficulty_count():
+			for i in vis:
 				var st := ms.stars_at(i)
 				if st >= lo and st < hi:
 					in_range = true
@@ -1675,7 +1679,7 @@ func _best_grade_badge(ms: MapSet) -> String:
 	var best_g := ""
 	var best_rank := 999
 	for i in range(ms.difficulty_count() - 1, -1, -1):
-		if orbit and int(ms.meta_at(i).get("mode", 0)) != 3:
+		if not ms.diff_visible(i, _play_mode) or (not orbit and int(ms.meta_at(i).get("mode", 0)) != 3):
 			continue
 		# Gleiche Abfrage wie ScoreStore.best(), aber ohne scores.cfg pro Aufruf neu zu lesen.
 		var best = _scores_cfg.get_value(sec, ScoreStore._key(ms.osz_path, ms.version_name_at(i)), {})
@@ -1738,6 +1742,7 @@ func _select_set(ms: MapSet, diff_index: int) -> void:
 	_perf_select_t = Time.get_ticks_usec()
 	_selected_set = ms
 	_selected_diff = clampi(diff_index, 0, ms.difficulty_count() - 1)
+	_selected_diff = maxi(ms.nearest_visible(_selected_diff, _play_mode), 0)
 	_update_info_panel()
 	Sfx.select_chime()
 	_play_preview()
@@ -1746,7 +1751,11 @@ func _select_set(ms: MapSet, diff_index: int) -> void:
 func _cycle_difficulty(dir: int) -> void:
 	if _selected_set == null:
 		return
-	_selected_diff = wrapi(_selected_diff + dir, 0, _selected_set.difficulty_count())
+	var vis := _selected_set.visible_diffs(_play_mode)
+	if vis.is_empty():
+		return
+	var at := vis.find(_selected_diff)
+	_selected_diff = vis[wrapi((at if at >= 0 else 0) + (dir if at >= 0 else 0), 0, vis.size())]
 	_update_info_panel()
 
 
@@ -1766,7 +1775,7 @@ func _update_info_panel() -> void:
 	_mapper_label.text = tr("Map von %s") % _selected_set.creator
 	var is_mania := int(m.get("mode", 0)) == 3
 	var keys := int(round(float(m.get("cs", 4.0))))
-	_diff_label.text = _selected_set.version_name_at(_selected_diff).strip_edges() 		+ (("  ·  %dK" % keys) if is_mania else "")
+	_diff_label.text = _selected_set.version_name_at(_selected_diff).strip_edges() 		+ (("  ·  %dK" % keys) if is_mania else "  ·  osu!standard")
 	_star_label.text = _stars_text(_selected_set.stars_at(_selected_diff))
 	var notes := tr("%d Noten") % int(m.get("notes", 0))
 	var od := "OD " + UiTheme.fmt_num(float(m.get("od", 0.0)))
@@ -1787,7 +1796,7 @@ func _update_info_panel() -> void:
 		c.queue_free()
 	# Eigene + Scores von Mitspielern (Multiplayer-Sync), beste zuerst.
 	# Orbit-Modus (nur 4K-Diffs): nur Orbit-Scores, getrennt von Mania.
-	var orbit := _play_mode == "orbit" and int(m.get("mode", 0)) == 3
+	var orbit := _play_mode == "orbit" and int(m.get("mode", 0)) in [0, 3]
 	var score_mode := ScoreStore.MODE_ORBIT if orbit else ""
 	_style_lb_mode_tag(score_mode)
 	var tops := ScoreStore.top_scores_all(_selected_set.osz_path,
@@ -1888,8 +1897,7 @@ func _frame_box(col: Color, w: int) -> StyleBoxFlat:
 func _rebuild_diff_bar() -> void:
 	for c in _diff_bar.get_children():
 		c.queue_free()
-	var n := _selected_set.difficulty_count()
-	for i in n:
+	for i in _selected_set.visible_diffs(_play_mode):
 		var seg := ColorRect.new()
 		seg.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		seg.size_flags_vertical = Control.SIZE_SHRINK_CENTER
@@ -2060,8 +2068,16 @@ func _set_play_mode(mode: String) -> void:
 		return
 	_play_mode = mode
 	_restyle_mode_switch()
+	# Sichtbare Maps haengen am Modus (osu!standard nur im Orbit-Modus).
+	var keep := _selected_set
+	_refresh_filter(_search.text)
 	_refresh_card_grades()
-	if _selected_set != null:
+	if keep != null and not _filtered.has(keep):
+		_selected_set = null
+		if not _filtered.is_empty():
+			_select_set(_filtered[0], _filtered[0].difficulty_count() - 1)
+	elif _selected_set != null:
+		_selected_diff = maxi(_selected_set.nearest_visible(_selected_diff, _play_mode), 0)
 		_update_info_panel()
 	if _state_ready:
 		_save_browser_state()
@@ -2144,7 +2160,8 @@ func _on_play_pressed() -> void:
 	_preview.stop()
 	# Auto-Erkennung: Mania-Diffs (Mode 3) starten die 4K-Szene.
 	var mode := int(_selected_set.meta_at(_selected_diff).get("mode", 0))
-	if mode == 3 and _play_mode == "orbit":
+	if (mode == 3 or mode == 0) and _play_mode == "orbit":
+		# Orbit spielt 4K-Mania und osu!standard (OrbitConverter).
 		_change_to_game("res://scenes/orbit.tscn")
 	elif mode == 3:
 		_change_to_game("res://scenes/mania_3d.tscn")

@@ -60,6 +60,50 @@ func has_sv() -> bool:
 	return sv
 
 
+## Spielmodus-Filter im Song-Browser: 4K-Mania-Diffs (Mode 3) gibt es in
+## beiden Modi, osu!standard-Diffs (Mode 0) NUR im Orbit-Modus (Orbit leitet
+## seine Ziele aus den Positionen ab, Mania kann sie nicht spielen).
+## play_mode: "mania" | "orbit".
+static func mode_shows(meta: Dictionary, play_mode: String) -> bool:
+	var m := int(meta.get("mode", 0))
+	if m == 3:
+		return true
+	return m == 0 and play_mode == "orbit"
+
+
+func diff_visible(index: int, play_mode: String) -> bool:
+	return index >= 0 and index < diffs.size() and mode_shows(diffs[index], play_mode)
+
+
+## Indizes der im Modus sichtbaren Diffs (leicht -> schwer).
+func visible_diffs(play_mode: String) -> Array[int]:
+	var out: Array[int] = []
+	for i in diffs.size():
+		if mode_shows(diffs[i], play_mode):
+			out.append(i)
+	return out
+
+
+## Sichtbare Diff nahe index (index selbst, sonst die naechste darunter,
+## sonst darueber); -1 wenn das Set im Modus nichts zeigt.
+func nearest_visible(index: int, play_mode: String) -> int:
+	if diff_visible(index, play_mode):
+		return index
+	var vis := visible_diffs(play_mode)
+	if vis.is_empty():
+		return -1
+	var best := vis[0]
+	for i in vis:
+		if i <= index:
+			best = i
+	return best
+
+
+## osu!standard-Diff (Mode 0)?
+func is_standard(index: int) -> bool:
+	return int(meta_at(index).get("mode", -1)) == 0
+
+
 ## Alte Cache-Eintraege ohne Long-Note-/BPM-Werte: Nachlauf noetig.
 func needs_stats() -> bool:
 	for d in diffs:

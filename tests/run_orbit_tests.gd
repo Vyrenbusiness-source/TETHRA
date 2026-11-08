@@ -806,8 +806,9 @@ func _test_std_streams() -> void:
 	# 1/4-Stream bei 180 BPM (83 ms): alle bleiben, Ringe wechseln ab.
 	var bm := _std_bm(180.0, 1000.0)
 	for i in 32:
-		_circle(bm, 1000.0 + i * 250.0 / 3.0, 100.0 + i * 10.0, 192.0 + (i % 2) * 8.0)
-	var ns := OrbitConverter.convert_std(bm)
+		var sp := Vector2(256, 192) + Vector2(0, -150).rotated(deg_to_rad(i * 5.0))
+		_circle(bm, 1000.0 + i * 250.0 / 3.0, sp.x, sp.y)
+	var ns := OrbitConverter.convert(bm)
 	_ok(ns.size() == 32, "Stream 83 ms bleibt vollstaendig (%d)" % ns.size())
 	var alt := true
 	for i in range(1, ns.size()):
@@ -817,7 +818,8 @@ func _test_std_streams() -> void:
 	# 1/6 bei 200 BPM (50 ms): Dichte-Reduktion wie Mania.
 	var bm2 := _std_bm(200.0, 1000.0)
 	for i in 40:
-		_circle(bm2, 1000.0 + i * 50.0, 200.0 + i * 4.0, 192.0)
+		var bp := Vector2(256, 192) + Vector2(0, -150).rotated(deg_to_rad(i * 3.0))
+		_circle(bm2, 1000.0 + i * 50.0, bp.x, bp.y)
 	var ns2 := OrbitConverter.convert_std(bm2)
 	var min_gap := INF
 	for i in range(1, ns2.size()):
@@ -834,7 +836,7 @@ func _test_std_streams() -> void:
 	# Hin-und-her-Spruenge = Pendel, Kreismuster = Drehung.
 	var bm4 := _std_bm(150.0, 1000.0)
 	for i in 16:
-		_circle(bm4, 1000.0 + i * 400.0, 100.0 if i % 2 == 0 else 400.0, 192.0)
+		_circle(bm4, 1000.0 + i * 400.0, 100.0 if i % 2 == 0 else 400.0, 60.0)
 	var a4 := OrbitConverter.analyze(OrbitConverter.convert_std(bm4), bm4)
 	_ok(float(a4.reversal) > 0.9, "Hin-und-her = Pendel (Wenden %.0f%%)" % (float(a4.reversal) * 100.0))
 	var bm5 := _std_bm(150.0, 1000.0)
@@ -847,6 +849,16 @@ func _test_std_streams() -> void:
 	for i in range(1, ns5.size()):
 		turn += OrbitNote.delta_deg(ns5[i - 1].angle_deg, ns5[i].angle_deg)
 	_ok(float(a5.reversal) < 0.05 and turn > 300.0, "Kreismuster im Uhrzeigersinn = Drehung (%.0f Grad)" % turn)
+	# POLAR (Standard): Ziel zeigt genau in Richtung der osu-Position.
+	var exact := true
+	for i in ns5.size():
+		exact = exact and OrbitNote.dist_deg(ns5[i].angle_deg, fposmod(i * 45.0, 360.0)) < 0.01
+	_ok(OrbitConverter.std_style == OrbitConverter.StdStyle.POLAR and exact,
+			"POLAR: Winkel = Richtung der Position zur Mitte (wenn erreichbar)")
+	# FLOW: Hin-und-her ebenso Pendel, Kreismuster ebenso Drehung.
+	var f4 := OrbitConverter.analyze(OrbitConverter.convert_std(bm4, OrbitConverter.StdStyle.FLOW), bm4)
+	var f5 := OrbitConverter.analyze(OrbitConverter.convert_std(bm5, OrbitConverter.StdStyle.FLOW), bm5)
+	_ok(float(f4.reversal) > 0.9 and float(f5.reversal) < 0.05, "FLOW: Pendel bzw. Drehung")
 
 
 func _test_std_fair_mixed() -> void:
@@ -869,7 +881,8 @@ func _test_std_fair_mixed() -> void:
 
 const SOURCES_DIR := "user://orbit_sources"
 ## Mania-Gegenstuecke (gleiche Songs) aus der Bibliothek.
-const SOURCES_MANIA := ["Lime - Aurora", "Zekk - Fluctuation", "goreshit - burn this moment"]
+## (Lime - Aurora ist in der Bibliothek 7K und faellt darum weg.)
+const SOURCES_MANIA := ["Zekk - Fluctuation", "goreshit - burn this moment", "Billain - Specialist"]
 
 
 ## Laeuft nur, wenn user://orbit_sources/ .osz enthaelt (Testordner, nicht
@@ -905,6 +918,8 @@ func _test_sources_compare() -> void:
 			if not hit or not str(f).to_lower().ends_with(".osz"):
 				continue
 			var imp := OszImporter.import(mdir.path_join(f))
+			if not imp.ok:
+				print("  (Mania-Quelle nicht lesbar: %s)" % f)
 			for d in imp.difficulties:
 				var bm: Beatmap = d.beatmap
 				if bm.is_mania() and bm.column_count() == 4:
@@ -930,8 +945,10 @@ func _source_row(tag: String, path: String, bm: Beatmap, ns: Array[OrbitNote]) -
 	var times: Array = []
 	var arcs_ms := 0.0
 	var big_turns := 0
+	var tn: Array = []
 	for n in ns:
 		times.append(n.time_ms)
+		tn.append([n.time_ms, n.end_ms, snappedf(n.angle_deg, 0.01), snappedf(n.span_deg(), 0.01), n.ring])
 		if n.is_arc:
 			arcs_ms += n.duration_ms()
 	var span := maxf(1.0, (ns[-1].end_ms - ns[0].time_ms)) if not ns.is_empty() else 1.0
@@ -952,7 +969,18 @@ func _source_row(tag: String, path: String, bm: Beatmap, ns: Array[OrbitNote]) -
 			if OrbitConverter.beat_strength(reds, float(pts[i - 1][0])) >= 0.6:
 				flips_strong += 1
 		last_sign = signf(d)
-	var row := {"tag": tag, "file": file, "version": bm.version_name(), "objects": bm.hit_objects.size(),
+	# Treue zur osu-Position (nur Mode 0): Abstand Zielwinkel <-> Richtung der
+	# Quell-Position zur Mitte (Objekte nahe der Mitte zaehlen nicht).
+	var errs := PackedFloat32Array()
+	if bm.mode() == 0:
+		for n in ns:
+			var o: HitObject = bm.hit_objects[n.source_index]
+			if o.kind != HitObject.Kind.SPINNER and o.position().distance_to(OrbitConverter.STD_CENTER) >= OrbitConverter.STD_DEAD_PX:
+				errs.append(OrbitNote.dist_deg(n.angle_deg, OrbitConverter._polar_deg(o.position())))
+	errs.sort()
+	var pos_med := errs[errs.size() / 2] if not errs.is_empty() else -1.0
+	var pos_p90 := errs[int(errs.size() * 0.9)] if not errs.is_empty() else -1.0
+	var row := {"tag": tag, "pos_med": pos_med, "pos_p90": pos_p90, "file": file, "version": bm.version_name(), "objects": bm.hit_objects.size(),
 		"targets": ns.size(), "kept": float(ns.size()) / float(maxi(bm.hit_objects.size(), 1)),
 		"nps": a.nps, "arcs": a.arcs, "arc_share": arcs_ms / span, "chords": a.chords,
 		"jumps": a.jumps, "big_turns": big_turns, "reversal": a.reversal,
@@ -962,9 +990,9 @@ func _source_row(tag: String, path: String, bm: Beatmap, ns: Array[OrbitNote]) -
 		"bot_good_acc": b1.accuracy(), "bot_good_miss": b1.n_miss, "bot_good_fail": b1.failed,
 		"bot_wobbly_acc": b2.accuracy(), "bot_wobbly_miss": b2.n_miss, "bot_wobbly_fail": b2.failed,
 		"audio": bm.audio_filename(), "osz": ProjectSettings.globalize_path(path),
-		"times": times}
-	print("  %s: %d->%d Ziele, %.1f/s, Boegen %d, Wenden %.0f%% (auf Schlag %.0f%%), Tempo %.3f/%.3f, Schlag %.0f%%, Sterne %.2f, Bot %.1f%%/%.1f%%" % [
+		"times": times, "notes": tn}
+	print("  %s: %d->%d Ziele, %.1f/s, Boegen %d, Wenden %.0f%% (auf Schlag %.0f%%), Tempo %.3f/%.3f, Schlag %.0f%%, Sterne %.2f, Bot %.1f%%/%.1f%%, Lage %.0f/%.0f Grad" % [
 		label, bm.hit_objects.size(), ns.size(), float(a.nps), int(a.arcs), float(a.reversal) * 100.0,
 		float(row.flip_on_beat) * 100.0, float(a.mean_speed), float(a.p95_speed), float(a.on_beat) * 100.0,
-		float(row.stars), b1.accuracy() * 100.0, b2.accuracy() * 100.0])
+		float(row.stars), b1.accuracy() * 100.0, b2.accuracy() * 100.0, pos_med, pos_p90])
 	return row
