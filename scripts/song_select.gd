@@ -213,24 +213,22 @@ func _ready() -> void:
 	elif OS.get_cmdline_args().has("--orbit") and OS.get_cmdline_args().has("--autoplay"):
 		# Debug/Shots: erste 4K-Diff im Orbit-Modus automatisch starten.
 		_play_mode = "orbit"
-		for ms in _filtered:
-			for i in ms.difficulty_count():
-				if int(ms.meta_at(i).get("mode", 0)) == 3:
-					_select_set(ms, i)
-					_selected_diff = i
-					_on_play_pressed.call_deferred()
-					return
-		push_warning("--orbit: keine 4K-Diff gefunden")
+		var pk := _debug_pick()
+		if not pk.is_empty():
+			_select_set(pk[0], pk[1])
+			_selected_diff = pk[1]
+			_on_play_pressed.call_deferred()
+			return
+		push_warning("--orbit: keine passende 4K-Diff gefunden")
 	elif OS.get_cmdline_args().has("--mania"):
 		# Debug: erste 4K-Mania-Diff automatisch starten.
-		for ms in _filtered:
-			for i in ms.difficulty_count():
-				if int(ms.meta_at(i).get("mode", 0)) == 3:
-					_select_set(ms, i)
-					_selected_diff = i
-					_on_play_pressed.call_deferred()
-					return
-		push_warning("--mania: keine 4K-Diff gefunden")
+		var pk := _debug_pick()
+		if not pk.is_empty():
+			_select_set(pk[0], pk[1])
+			_selected_diff = pk[1]
+			_on_play_pressed.call_deferred()
+			return
+		push_warning("--mania: keine passende 4K-Diff gefunden")
 	elif OS.get_cmdline_args().has("--autoplay"):
 		_on_play_pressed.call_deferred()
 	elif OS.get_cmdline_args().has("--shot-sv"):
@@ -250,6 +248,31 @@ func _ready() -> void:
 		add_child.call_deferred(SettingsPanel.new())
 	elif OS.get_cmdline_args().has("--shot"):
 		_capture_screenshot_and_quit()
+
+
+## Debug (--mania/--orbit): erste 4K-Diff, optional gefiltert. --map=<text>
+## sucht in "artist - title [version]", --diff=<text> in der Version (beides
+## ohne Gross/Klein). Nur fuer Harness/Videos, nie gespeichert. [] = keine.
+func _debug_pick() -> Array:
+	var map_q := ""
+	var diff_q := ""
+	for a in OS.get_cmdline_args() + OS.get_cmdline_user_args():
+		if a.begins_with("--map="):
+			map_q = a.trim_prefix("--map=").to_lower()
+		elif a.begins_with("--diff="):
+			diff_q = a.trim_prefix("--diff=").to_lower()
+	for ms in _library.mapsets if map_q != "" else _filtered:
+		for i in ms.difficulty_count():
+			if int(ms.meta_at(i).get("mode", 0)) != 3:
+				continue
+			var ver := ms.version_name_at(i)
+			var full := ("%s - %s [%s]" % [ms.artist, ms.title, ver]).to_lower()
+			if map_q != "" and not full.contains(map_q):
+				continue
+			if diff_q != "" and not ver.to_lower().contains(diff_q):
+				continue
+			return [ms, i]
+	return []
 
 
 ## Lade-Messung: Map wechseln (Auswahl -> Vorschau-Ton), kurz warten, SPIELEN.
