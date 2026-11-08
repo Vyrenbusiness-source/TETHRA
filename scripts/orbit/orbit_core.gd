@@ -31,7 +31,7 @@ signal finished(stats: Dictionary)
 const Quality := ManiaCore.Quality
 const RINGS := 2
 ## Winkel-Toleranz fuer Taps, Bogen-Koepfe und das Folgen eines Bogens.
-const ANGLE_TOL_DEG := 22.0
+const ANGLE_TOL_DEG := 30.0
 ## Radien der Ringe in Bildhoehen (OrbitView nutzt dieselben Werte). Die
 ## Grenze dazwischen und die Hysterese gelten nur noch fuer die Anzeige des
 ## Cursor-Rings (kein Einfluss auf die Wertung).

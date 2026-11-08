@@ -366,7 +366,8 @@ func _test_hold_release_and_out() -> void:
 		c2.update(t)
 	_ok(g2.has(0) and str(g2[0].get("drop_reason", "")) == "OUT", "Cursor steht, Hand laeuft weg = DROP/OUT")
 	var dt: float = t - 1000.0
-	_ok(dt > 250.0 and dt < 320.0, "Austritt nach Toleranz/Tempo + ARC_OUT_MS (%.0f ms)" % dt)
+	var exp_dt: float = OrbitCore.ANGLE_TOL_DEG / ns[0].speed + OrbitCore.ARC_OUT_MS
+	_ok(absf(dt - exp_dt) < 30.0, "Austritt nach Toleranz/Tempo + ARC_OUT_MS (%.0f ms)" % dt)
 	# Andere Taste halten genuegt nicht: Taste des Rings loslassen beendet.
 	var c3 := _core(_list([_note(1000.0, 0, 1000.0)]))
 	var g3 := _res(c3)
@@ -380,7 +381,7 @@ func _test_scoring_values() -> void:
 	print("- Wertung unveraendert")
 	_ok(Array(OrbitCore.TIER_VALUE) == [1.0, 0.94, 0.68, 0.40, 0.16, 0.0], "Stufenwerte")
 	_ok(Array(OrbitCore.TIER_NAMES) == ["CORE", "SHARP", "GOOD", "FAIR", "EDGE", "MISS"], "Stufennamen")
-	_ok(OrbitCore.ANGLE_TOL_DEG == 22.0 and OrbitCore.CENTER_DEG == 9.0 and OrbitCore.AIM_EDGE_FACTOR == 0.88, "Toleranz 22, Mitte 9, Rand 0,88")
+	_ok(OrbitCore.ANGLE_TOL_DEG == 30.0 and OrbitCore.CENTER_DEG == 9.0 and OrbitCore.AIM_EDGE_FACTOR == 0.88, "Toleranz 30, Mitte 9, Rand 0,88")
 	var ns: Array[OrbitNote] = []
 	for i in 150:
 		ns.append(_note(1000.0 + i * 400.0, i % 2))

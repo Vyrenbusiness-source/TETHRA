@@ -24,7 +24,7 @@ const PRIMARY_SCALE := 1.22
 const CURRENT_SCALE := 0.92
 const PREVIEW_SCALE := 0.78
 const HAND_OVER_K := 0.055
-const TOL_DEFAULT := 22.0
+const TOL_DEFAULT := 30.0
 
 ## Ziele ohne Takt-Uhr (Tutorial, Vorschau-Widget): Sichtfenster in ms.
 const FALLBACK_WINDOW_MS := 1200.0
@@ -295,7 +295,8 @@ func _draw_hand(c: Vector2, u: float, r_out: float, hd: float) -> void:
 	var ok := aim_ok()
 	var col := Color(HAND_COL, 1.0 if ok else 0.78)
 	var r1 := r_out + u * HAND_OVER_K
-	draw_line(polar(c, hd, u * DEADZONE_K), polar(c, hd, r1), col, 3.0, true)
+	# Beginnt am Rand des Kerns: Kombo/Wertung in der Mitte bleiben frei lesbar.
+	draw_line(polar(c, hd, u * maxf(DEADZONE_K, CORE_K + 0.006)), polar(c, hd, r1), col, 3.0, true)
 	# Spitze: kleines Dreieck nach aussen.
 	var tip := polar(c, hd, r1 + u * 0.016)
 	var b := polar(c, hd, r1 - u * 0.006)
