@@ -38,8 +38,10 @@ static func make_button(osz_file: String, version: String, score: int, mode: Str
 		b.set_meta("oid", oid)
 	b.pressed.connect(func(): share(str(b.get_meta("oid", "")), summary))
 	upd.call()
-	OnlineApi.state_changed.connect(upd)
-	b.tree_exiting.connect(func():
-		if OnlineApi.state_changed.is_connected(upd):
-			OnlineApi.state_changed.disconnect(upd))
+	var api: OnlineApi = GameSession.online
+	if api != null:
+		api.state_changed.connect(upd)
+		b.tree_exiting.connect(func():
+			if api.state_changed.is_connected(upd):
+				api.state_changed.disconnect(upd))
 	return b
