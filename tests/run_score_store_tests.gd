@@ -88,6 +88,7 @@ func _init() -> void:
 	_test_modes()
 	_test_sv_level()
 	_test_migration()
+	_test_legacy_rescore()
 
 	# aufraeumen
 	DirAccess.remove_absolute(ScoreStore.PATH)
@@ -204,5 +205,50 @@ func _test_migration() -> void:
 	_check(int(after.get_value("meta", "schema", 0)) == ScoreStore.SCHEMA, "Migration: Schema gesetzt")
 	_check((after.get_value("others", "10|Hard", []) as Array).size() == 1, "Migration: Fremd-Scores bleiben")
 	_check(not ScoreStore.migrate(after), "Migration nur einmal")
+	DirAccess.remove_absolute(path)
+	ScoreStore.PATH = real
+
+
+## Alte Arcade-Scores (vor v1.1.5): einmalig auf ScoreV1, Bestwert neu bestimmt.
+func _test_legacy_rescore() -> void:
+	var real := ScoreStore.PATH
+	var path := real.get_base_dir().path_join("legacy_%d.cfg" % OS.get_process_id())
+	ScoreStore.PATH = path
+	var k := ScoreStore._key("5 Song.osz", "Hard")
+	var old_best := { "score": 1497224, "accuracy": 0.9163, "grade": "A", "pp": 23.0,
+		"n_max": 600, "n300": 300, "n200": 40, "n100": 60, "n50": 10, "n_miss": 20,
+		"date": "2026-07-18T20:00:00" }
+	var cfg := ConfigFile.new()
+	cfg.set_value("meta", "schema", 2)
+	cfg.set_value("scores", k, old_best)
+	cfg.set_value("history", k, [
+		{ "score": 1497224, "accuracy": 0.9163, "grade": "A", "pp": 23.0, "date": "2026-07-18T20:00:00" },
+		{ "score": 956161, "accuracy": 0.9812, "grade": "S", "pp": 45.0, "date": "2026-11-08T12:00:00" },
+		{ "score": 504624, "accuracy": 0.8599, "grade": "B", "pp": 13.0, "date": "2026-11-07T12:00:00" }])
+	cfg.set_value("others", "5|Hard", [{ "player": "Alt", "score": 1800000, "accuracy": 0.97,
+		"grade": "S", "max_combo": 1, "pp": 1.0, "mods": [], "date": "2026-07-17T10:00:00" }])
+	cfg.save(path)
+	ScoreStore._migrated_path = ""
+	var tops := ScoreStore.top_scores("5 Song.osz", "Hard", 9)
+	_check(tops.size() == 3 and is_equal_approx(float(tops[0].pp), 45.0), "Alt-Score: 98-%-Lauf jetzt vorn")
+	var maxed := true
+	for e in tops:
+		maxed = maxed and int(e.score) <= 1000000
+	_check(maxed, "Alt-Score: alle <= 1.000.000")
+	var leg: Dictionary = tops[1] if int(tops[1].get("legacy_score", 0)) == 1497224 else tops[2]
+	_check(int(leg.get("legacy_score", 0)) == 1497224, "Alt-Score: alter Wert in legacy_score")
+	var b := ScoreStore.best("5 Song.osz", "Hard")
+	_check(int(b.score) == 956161 and is_equal_approx(ScoreStore.profile_pp(), 45.0), "Alt-Score: Bestwert + pp = neuer Lauf")
+	var after := ConfigFile.new()
+	after.load(path)
+	var others: Array = after.get_value("others", "5|Hard", [])
+	_check(others.size() == 1 and int(others[0].score) <= 1000000, "Alt-Score: Fremd-Score umgerechnet")
+	_check(not ScoreStore.migrate(after), "Alt-Score: nur einmal")
+	# Perfekter Lauf ergibt exakt das Maximum.
+	_check(ScoreStore.rescore_v1({ "n_max": 500 }) == 1000000, "rescore_v1: SS = 1.000.000")
+	# Fremd-Score ueber Maximum wird beim Empfang umgerechnet.
+	var fe := ScoreStore.sanitize_foreign({ "score": 1500000, "accuracy": 0.95, "grade": "S",
+		"max_combo": 5, "pp": 2.0, "mods": [], "date": "2026-07-18T10:00:00" }, "Alt")
+	_check(int(fe.score) <= 1000000, "Fremd-Score beim Empfang umgerechnet")
 	DirAccess.remove_absolute(path)
 	ScoreStore.PATH = real

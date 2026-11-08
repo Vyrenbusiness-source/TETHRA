@@ -133,15 +133,19 @@ static func previous_best_for(osz_file: String, version: String, mode: String, s
 ## Schema der Datei ("meta"/"schema"). 2 = Modus-Trennung: Eintraege tragen
 ## "mode". Alte Dateien: alles bleibt Mania (keine Daten verloren); nur
 ## Verlaufs-Eintraege, die schon "mode" = anderer Modus tragen, wandern in
-## dessen Sektionen.
-const SCHEMA := 2
+## dessen Sektionen. 3 = alte Mania-Arcade-Scores auf ScoreV1 umgerechnet
+## (_rescore_legacy).
+const SCHEMA := 3
 static var _migrated_path := ""
 
 
 ## Laedt PATH nach cfg und migriert einmal pro Prozess und Pfad.
 static func _load(cfg: ConfigFile) -> Error:
 	var err := cfg.load(PATH)
-	if err == OK and _migrated_path != PATH:
+	if err != OK:
+		# Neue Datei: gleich aktuelles Schema, sonst migriert der naechste Load sie.
+		cfg.set_value("meta", "schema", SCHEMA)
+	elif _migrated_path != PATH:
 		_migrated_path = PATH
 		if migrate(cfg):
 			cfg.save(PATH)
@@ -150,8 +154,19 @@ static func _load(cfg: ConfigFile) -> Error:
 
 ## Migriert cfg in-place; true, wenn sich etwas geaendert hat.
 static func migrate(cfg: ConfigFile) -> bool:
-	if int(cfg.get_value("meta", "schema", 1)) >= SCHEMA:
+	var schema := int(cfg.get_value("meta", "schema", 1))
+	if schema >= SCHEMA:
 		return false
+	if schema < 2:
+		_split_modes(cfg)
+	if schema < 3:
+		_rescore_legacy(cfg)
+	cfg.set_value("meta", "schema", SCHEMA)
+	return true
+
+
+## Schema 2: Orbit-Eintraege aus history/recent in eigene Sektionen verschieben.
+static func _split_modes(cfg: ConfigFile) -> void:
 	for base in ["history", "recent"]:
 		if not cfg.has_section(base):
 			continue
@@ -171,8 +186,176 @@ static func migrate(cfg: ConfigFile) -> bool:
 					cfg.set_value(sec, key, moved)
 			if keep.size() != (list as Array).size():
 				cfg.set_value(base, key, keep)
-	cfg.set_value("meta", "schema", SCHEMA)
+
+
+# ---------------------------------------------------------------------------
+# Alte Mania-Scores (vor v1.1.5) auf ScoreV1 umrechnen (Schema 3)
+# ---------------------------------------------------------------------------
+
+## Bis v1.1.5 (2026-07-19 14:17) zaehlte Mania mit einer Arcade-Formel (Score
+## weit ueber 1 Mio. moeglich). Solche Eintraege sind mit heutigen Scores nicht
+## vergleichbar: ein alter 1,5-Mio.-Lauf mit 91 % stand vor einem 98-%-Lauf und
+## blockierte als Bestwert dessen pp. Sie werden einmalig auf die heutige
+## osu!mania-ScoreV1-Skala umgerechnet; der alte Wert bleibt in "legacy_score".
+const SCORE_V1_SINCE := "2026-07-19T14:17"
+
+
+## Score-Multiplikator aus der Mod-Liste eines Eintrags (ManiaCore.MOD_MULT).
+static func _mult_of(e: Dictionary) -> float:
+	var m := 1.0
+	var mods = e.get("mods", [])
+	if mods is Array:
+		for x in mods:
+			m *= float(ManiaCore.MOD_MULT.get(str(x), 1.0))
+	return m
+
+
+## true: Mania-Eintrag aus der alten Arcade-Wertung (vor v1.1.5 gespielt oder
+## ueber dem ScoreV1-Maximum), noch nicht umgerechnet.
+static func is_legacy_score(e: Dictionary) -> bool:
+	if e.has("legacy_score"):
+		return false
+	var m := str(e.get("mode", ""))
+	if m != "" and m != MODE_MANIA:
+		return false
+	var date := str(e.get("date", ""))
+	if date.length() >= SCORE_V1_SINCE.length() and date.substr(0, 4).is_valid_int() \
+			and date.substr(0, SCORE_V1_SINCE.length()) < SCORE_V1_SINCE:
+		return true
+	return int(e.get("score", 0)) > int(round(1000000.0 * _mult_of(e)))
+
+
+## Trefferzahlen [MAX, 300, 200, 100, 50, Miss] eines Eintrags; ohne Zahlen
+## (Verlauf, Fremd-Scores) aus der Genauigkeit geschaetzt (1000 Noten:
+## Abzuege als 100er, Rest 70 % MAX / 30 % 300).
+static func _counts_of(e: Dictionary) -> Array:
+	var c := [int(e.get("n_max", 0)), int(e.get("n300", 0)), int(e.get("n200", 0)),
+		int(e.get("n100", 0)), int(e.get("n50", 0)), int(e.get("n_miss", 0))]
+	var total := 0
+	for x in c:
+		total += maxi(int(x), 0)
+	if total > 0:
+		return c
+	var acc := clampf(float(e.get("accuracy", 0.0)), 0.0, 1.0)
+	var n100 := clampi(int(round(1500.0 * (1.0 - acc))), 0, 1000)
+	var rest := 1000 - n100
+	var n_max := int(round(rest * 0.7))
+	return [n_max, rest - n_max, 0, n100, 0, 0]
+
+
+## ScoreV1 (ManiaCore._add_score) aus Trefferzahlen; die Reihenfolge ist
+## unbekannt, darum gleichmaessig verteilt (deterministisch).
+static func rescore_v1(e: Dictionary) -> int:
+	var c := _counts_of(e)
+	var total := 0
+	for x in c:
+		total += maxi(int(x), 0)
+	if total <= 0:
+		return 0
+	var placed := [0, 0, 0, 0, 0, 0]
+	var unit := 500000.0 / float(total)
+	var bonus := 100.0
+	var s := 0.0
+	for i in total:
+		var q := 0
+		var best_d := -INF
+		for j in 6:
+			if placed[j] >= int(c[j]):
+				continue
+			var d := float(c[j]) * float(i + 1) / float(total) - float(placed[j])
+			if d > best_d:
+				best_d = d
+				q = j
+		placed[q] += 1
+		bonus = clampf(bonus + ManiaCore.BONUS_DELTA[q], 0.0, 100.0)
+		s += unit * (ManiaCore.HIT_VALUE[q] / 320.0) \
+				+ unit * (ManiaCore.HIT_BONUS_VALUE[q] * sqrt(bonus) / 320.0)
+	return int(round(s * _mult_of(e)))
+
+
+## Eintrag umrechnen (in-place); true, wenn er alt war.
+static func _rescore_entry(e: Dictionary, known: Dictionary = {}, key: String = "") -> bool:
+	if not is_legacy_score(e):
+		return false
+	var old := int(e.get("score", 0))
+	var id := "%s|%s|%d" % [key, str(e.get("date", "")), old]
+	e["legacy_score"] = old
+	e["score"] = int(known[id]) if known.has(id) else rescore_v1(e)
 	return true
+
+
+## true, wenn Verlaufs-Eintrag cand den Bestwert prev schlaegt (Regeln wie submit()).
+static func _beats_best(cand: Dictionary, prev: Dictionary) -> bool:
+	if bool(cand.get("failed", false)):
+		return false
+	if prev.is_empty():
+		return true
+	var cu := bool(cand.get("unranked", false))
+	var pu := bool(prev.get("unranked", false))
+	if pu != cu:
+		return pu
+	return int(cand.get("score", 0)) > int(prev.get("score", 0))
+
+
+static func _rescore_legacy(cfg: ConfigFile) -> void:
+	# 1) Bestwerte (mit echten Trefferzahlen); Ergebnis fuer denselben Lauf im Verlauf merken.
+	var known := {}
+	var touched := {}
+	if cfg.has_section("scores"):
+		for key in cfg.get_section_keys("scores"):
+			var e = cfg.get_value("scores", key, {})
+			if e is Dictionary:
+				var old := int(e.get("score", 0))
+				if _rescore_entry(e):
+					known["%s|%s|%d" % [key, str(e.get("date", "")), old]] = int(e.score)
+					touched[key] = true
+					cfg.set_value("scores", key, e)
+	# 2) Verlauf, Recent, Fremd-Scores.
+	if cfg.has_section("history"):
+		for key in cfg.get_section_keys("history"):
+			var list = cfg.get_value("history", key, [])
+			if not (list is Array):
+				continue
+			var changed := false
+			for e in list:
+				if e is Dictionary and _rescore_entry(e, known, key):
+					changed = true
+			if changed:
+				cfg.set_value("history", key, list)
+				touched[key] = true
+	var recent = cfg.get_value("recent", "plays", [])
+	if recent is Array and not recent.is_empty():
+		var changed := false
+		for e in recent:
+			if e is Dictionary and _rescore_entry(e, known,
+					_key(str(e.get("osz_file", "")), str(e.get("version", "")))):
+				changed = true
+		if changed:
+			cfg.set_value("recent", "plays", recent)
+	if cfg.has_section("others"):
+		for key in cfg.get_section_keys("others"):
+			var list = cfg.get_value("others", key, [])
+			if not (list is Array):
+				continue
+			var changed := false
+			for e in list:
+				if e is Dictionary and _rescore_entry(e):
+					changed = true
+			if changed:
+				list.sort_custom(func(a, b): return int(a.get("score", 0)) > int(b.get("score", 0)))
+				cfg.set_value("others", key, list)
+	# 3) Bestwert neu bestimmen: ein neuerer Lauf kann den umgerechneten jetzt schlagen.
+	for key in touched:
+		var prev = cfg.get_value("scores", key, {})
+		var best: Dictionary = prev if prev is Dictionary else {}
+		var hist = cfg.get_value("history", key, [])
+		var winner: Dictionary = {}
+		if hist is Array:
+			for e in hist:
+				if e is Dictionary and _beats_best(e, best if winner.is_empty() else winner):
+					winner = e
+		if not winner.is_empty():
+			cfg.set_value("scores", key, winner.duplicate())
 
 
 ## Speichert ein Ergebnis; liefert {is_new_best: bool, previous: Dictionary}.
@@ -266,6 +449,10 @@ static func log_play(osz_file: String, version: String, map_label: String, resul
 		"failed": bool(result.get("failed", false)),
 		"date": Time.get_datetime_string_from_system(),
 	}
+	# Trefferzahlen mitschreiben (genaue Umrechnung, falls sich die Wertung aendert).
+	for k in ["n_max", "n300", "n200", "n100", "n50", "n_miss"]:
+		if result.has(k):
+			entry[k] = int(result[k])
 	_tag(entry, result, mode)
 	var hist: Array = cfg.get_value(_sec("history", mode), key, [])
 	hist.append(entry)
@@ -591,6 +778,11 @@ static func sanitize_foreign(e: Variant, player: String) -> Dictionary:
 	var date = d.get("date", "")
 	if not (date is String) or date.length() > 32:
 		return {}
+	# Alte Arcade-Scores (Spieler ohne Update) auf ScoreV1 umrechnen. Nur ueber dem
+	# Maximum: ein alter Lauf, den der andere Client schon umgerechnet hat, traegt
+	# zwar ein altes Datum, darf aber nicht noch einmal geschaetzt werden.
+	if score > int(round(1000000.0 * _mult_of({"mods": mods}))):
+		score = rescore_v1({"accuracy": acc, "mods": mods})
 	var out := {
 		"player": pname, "score": score, "accuracy": acc, "grade": grade,
 		"max_combo": combo, "pp": pp, "unranked": bool(d.get("unranked", false)),

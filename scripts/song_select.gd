@@ -1814,7 +1814,7 @@ func _update_info_panel() -> void:
 	var keys := int(round(float(m.get("cs", 4.0))))
 	_diff_label.text = _selected_set.version_name_at(_selected_diff).strip_edges() 		+ (("  ·  %dK" % keys) if is_mania else "  ·  osu!standard")
 	_star_label.text = _stars_text(_selected_set.stars_at(_selected_diff))
-	if _play_mode == "orbit" and is_mania and keys == 4:
+	if _play_mode == "orbit" and (not is_mania or keys == 4):
 		_orbit_stars_request(_selected_set.osz_path, _selected_set.version_name_at(_selected_diff))
 	var notes := tr("%d Noten") % int(m.get("notes", 0))
 	var od := "OD " + UiTheme.fmt_num(float(m.get("od", 0.0)))
@@ -2799,14 +2799,14 @@ static func orbit_stars_store(key: String, stars: float, path: String = ORBIT_ST
 	cfg.save(path)
 
 
-## Orbit-Sterne einer 4K-Diff berechnen (teuer: Import + Konvertierung).
+## Orbit-Sterne einer 4K- oder osu!standard-Diff berechnen (teuer: Import + Konvertierung).
 static func orbit_stars_compute(osz: String, version: String) -> float:
 	var imp := OszImporter.import(osz)
 	if not imp.ok:
 		return -1.0
 	for d in imp.difficulties:
 		var bm: Beatmap = d.beatmap
-		if bm.is_mania() and bm.version_name() == version:
+		if (bm.is_mania() or bm.mode() == 0) and bm.version_name() == version:
 			return OrbitConverter.stars(OrbitConverter.convert(bm))
 	return -1.0
 
