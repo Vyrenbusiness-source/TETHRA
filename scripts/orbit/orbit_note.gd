@@ -1,7 +1,10 @@
 class_name OrbitNote
 extends RefCounted
 
-## Ein Ziel im Orbit-Modus: Richtung (Winkel zur Bildschirmmitte) + Ring.
+## Ein Ziel im Orbit-Modus (Taktkreis): Taktposition als Winkel + Ring.
+## Der Winkel ist der Winkel der Hand (Zeiger) zur Trefferzeit: 360 Grad x
+## Anteil des Takts. speed = Drehtempo der Hand in Grad/ms (0 = unbekannt,
+## dann gilt das alte Verhalten: Ziel steht still bzw. laeuft auf dem Bogen).
 ## Tap: end_ms == time_ms, end_angle_deg == angle_deg.
 ## Bogen (is_arc): Taste ab time_ms halten, der Spitze von angle_deg nach
 ## end_angle_deg mit konstanter Winkelgeschwindigkeit bis end_ms folgen.
@@ -18,6 +21,8 @@ var end_angle_deg: float = 0.0
 ## 0 = innerer Ring (Taste A), 1 = aeusserer Ring (Taste B).
 var ring: int = 0
 var is_arc: bool = false
+## Drehtempo der Hand an dieser Note (Grad/ms, 360 / Taktlaenge); 0 = unbekannt.
+var speed: float = 0.0
 ## Index der Quell-Note in beatmap.hit_objects (-1 = keine Quelle).
 var source_index: int = -1
 
@@ -58,6 +63,14 @@ func angle_at(t_ms: float) -> float:
 		return angle_deg
 	var f := clampf((t_ms - time_ms) / (end_ms - time_ms), 0.0, 1.0)
 	return wrap_deg(angle_deg + span_deg() * f)
+
+
+## Winkel der Hand zur Zeit t_ms (auch vor/nach der Note, linear mit speed).
+## Ohne speed wie angle_at. Gegen diesen Winkel wird gezielt.
+func pointer_at(t_ms: float) -> float:
+	if speed == 0.0:
+		return angle_at(t_ms)
+	return wrap_deg(angle_deg + speed * (t_ms - time_ms))
 
 
 ## Winkel auf [0, 360) falten.

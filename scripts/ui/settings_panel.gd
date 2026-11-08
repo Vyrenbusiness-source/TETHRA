@@ -642,10 +642,10 @@ func _page_orbit(pg: VBoxContainer) -> void:
 	_orbit_key_row(g)
 	g = _group(pg, "Darstellung")
 	_scroll_speed(g)
-	_switch(g, "Winkel-Hilfslinien",
+	_switch(g, "Takt-Raster",
 		func(s): return s.orbit_guides,
 		func(on): Settings.orbit_guides = on,
-		"Feine Linien alle 45°")
+		"Feine Striche für Viertel und Achtel am Kreis")
 	var obg := OptionButton.new()
 	obg.add_item("Welt", Settings.ORBIT_BG_WORLD)
 	obg.add_item("Map-Bild", Settings.ORBIT_BG_MAP)
@@ -831,7 +831,7 @@ func _orbit_key_row(g: VBoxContainer) -> void:
 		var b := _key_button(CAP_ORBIT + ring)
 		box.add_child(b)
 		_orbit_btns.append(b)
-	var r := _row(g, "Orbit-Tasten (beide treffen)", box, "Anklicken, dann Taste drücken (Esc bricht ab)")
+	var r := _row(g, "Orbit-Tasten: innen | außen", box, "Links: innerer Ring, rechts: äußerer Ring. Anklicken, dann Taste drücken (Esc bricht ab)")
 	r.set_meta("reset", func():
 		Settings.orbit_key_inner = _defaults.orbit_key_inner
 		Settings.orbit_key_outer = _defaults.orbit_key_outer
