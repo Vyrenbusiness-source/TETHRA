@@ -19,13 +19,13 @@ const DIM := UiTheme.DIM
 const ACCENT := UiTheme.ACCENT
 const GOOD := UiTheme.GOOD
 ## Gedaempfte Bedeutungsfarben (wie mp_lobby): bereit, gestrichen, Sieger.
-const READY := Color(0.47, 0.85, 0.60)
-const WARN := Color(0.96, 0.47, 0.52)
+const READY := UiTheme.GOOD
+const WARN := UiTheme.BAD
 const GOLD := Color(0.95, 0.79, 0.38)
 const SILVER := Color(0.78, 0.82, 0.9)
 const BRONZE := Color(0.85, 0.58, 0.40)
 const LINE := Color(1, 1, 1, 0.08)
-const CARD := Color(0.08, 0.08, 0.11, 0.94)
+const CARD := Color(0.106, 0.102, 0.094, 0.94)
 const COVER_H := 112
 ## Cover-Hoehe der Pool-Karten, je Ansicht an Fenster und Map-Anzahl angepasst.
 var _cov_h := COVER_H
@@ -282,7 +282,7 @@ static func avatar(pname: String, sz: int = 28) -> Control:
 	sb.bg_color = Color.from_hsv(float(pname.hash() % 360) / 360.0, 0.40, 0.58)
 	sb.set_corner_radius_all(sz)
 	sb.set_border_width_all(2)
-	sb.border_color = Color(0.08, 0.09, 0.14, 0.9)
+	sb.border_color = Color(UiTheme.SURFACE, 0.9)
 	p.add_theme_stylebox_override("panel", sb)
 	p.custom_minimum_size = Vector2(sz, sz)
 	p.size_flags_vertical = Control.SIZE_SHRINK_CENTER

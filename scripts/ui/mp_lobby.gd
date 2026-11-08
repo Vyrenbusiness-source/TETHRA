@@ -15,10 +15,10 @@ extends Control
 const COL_ACCENT := UiTheme.ACCENT
 const COL_DIM := UiTheme.DIM
 const COL_TEXT := UiTheme.TEXT
-const COL_FAINT := Color(0.62, 0.64, 0.72, 0.5)
+const COL_FAINT := Color(0.616, 0.592, 0.553, 0.5)
 const COL_GOLD := Color(0.95, 0.79, 0.38)
-const COL_READY := Color(0.47, 0.85, 0.60)
-const COL_WARN := Color(0.96, 0.68, 0.38)
+const COL_READY := UiTheme.GOOD
+const COL_WARN := UiTheme.BAD
 const COL_HOVER := Color(1, 1, 1, 0.045)
 const COL_LINE := Color(1, 1, 1, 0.09)
 

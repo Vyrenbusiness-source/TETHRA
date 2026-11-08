@@ -4,8 +4,8 @@ extends Control
 ## EINSTELLUNGEN / BEENDEN, Profilkarte (Name editierbar, Gesamt-pp, Plays)
 ## und die letzten Scores.
 
-const COL_ACCENT := Color(0.20, 0.85, 1.0)
-const COL_DIM := Color(0.6, 0.63, 0.72)
+const COL_ACCENT := UiTheme.ACCENT
+const COL_DIM := UiTheme.DIM
 const CARD_H := 94.0
 const CARD_R := 12
 const CARD_PAD := 12
@@ -630,7 +630,7 @@ func _build_now_playing(bm: Beatmap, cover: Texture2D) -> void:
 	var cap := Label.new()
 	cap.text = "JETZT LÄUFT"
 	cap.add_theme_font_size_override("font_size", 12)
-	cap.add_theme_color_override("font_color", Color(0.45, 0.92, 1.0))
+	cap.add_theme_color_override("font_color", UiTheme.ACCENT)
 	cap.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	tv.add_child(cap)
 
@@ -748,6 +748,8 @@ func _add_wrapped(parent: Control, b: Button) -> void:
 	glow.position = Vector2(-4, 4)
 	glow.size = Vector2(56, 50)
 	glow.modulate.a = 0.0
+	# Kein Glow mehr (Identitaet: klare Kanten); nur die Akzent-Kante bleibt.
+	glow.visible = false
 	glow.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	w.add_child(glow)
 	var edge := ColorRect.new()
@@ -777,12 +779,28 @@ func _add_wrapped(parent: Control, b: Button) -> void:
 		tw.tween_property(b, "scale", Vector2.ONE, 0.18))
 
 
+## "MULTIPLAYER" -> "Multiplayer" (nur erster Buchstabe gross).
+static func _sentence(t: String) -> String:
+	return t.substr(0, 1).to_upper() + t.substr(1).to_lower()
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_TRANSLATION_CHANGED:
+		for b in _btns:
+			if is_instance_valid(b) and b.has_meta("key"):
+				b.text = _sentence(tr(b.get_meta("key")))
+
+
 func _menu_button(text: String, primary: bool) -> Button:
 	var b := Button.new()
-	b.text = text
+	# Satzschreibung statt Versalien: Schluessel bleiben ("SPIELEN"), Anzeige
+	# "Spielen"; bei Sprachwechsel neu gesetzt (_notification).
+	b.set_meta("key", text)
+	b.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	b.text = _sentence(tr(text))
 	b.custom_minimum_size = Vector2(360, 58)
-	b.add_theme_font_override("font", UiTheme.heading_font(3))
-	b.add_theme_font_size_override("font_size", 20)
+	b.add_theme_font_override("font", UiTheme.heading_font(0))
+	b.add_theme_font_size_override("font_size", 21)
 	if primary:
 		UiTheme.style_button(b, true)
 	else:
@@ -830,7 +848,7 @@ func _build_profile_card() -> void:
 
 	_pp_label = Label.new()
 	_pp_label.add_theme_font_size_override("font_size", 17)
-	_pp_label.add_theme_color_override("font_color", Color(1.0, 0.6, 0.9))
+	_pp_label.add_theme_color_override("font_color", UiTheme.ACCENT2)
 	_pp_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vb.add_child(_pp_label)
 
@@ -902,7 +920,7 @@ func _tour_next() -> void:
 	arrow.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	arrow.position = Vector2(r.get_center().x - 32.0, r.position.y - 96.0)
 	arrow.add_theme_font_size_override("font_size", 56)
-	arrow.add_theme_color_override("font_color", Color(0.3, 0.95, 1.0))
+	arrow.add_theme_color_override("font_color", UiTheme.ACCENT)
 	arrow.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.8))
 	arrow.add_theme_constant_override("shadow_outline_size", 10)
 	_tour_overlay.add_child(arrow)

@@ -23,9 +23,9 @@ signal preview_stop
 const TEXT := UiTheme.TEXT
 const DIM := UiTheme.DIM
 const ACCENT := UiTheme.ACCENT
-const COL_CARD := Color(0.08, 0.08, 0.11, 0.94)
-const COL_CARD_SEL := Color(0.13, 0.13, 0.18, 0.98)
-const PLAYED_COL := Color(0.55, 1.0, 0.72)
+const COL_CARD := Color(0.106, 0.102, 0.094, 0.94)
+const COL_CARD_SEL := Color(0.153, 0.145, 0.133, 0.98)
+const PLAYED_COL := UiTheme.GOOD
 const ROW_H := 84.0
 const ROW_GAP := 8.0
 const COVER_W := 132.0
@@ -1206,7 +1206,7 @@ func _diff_row(e: Dictionary, k: int) -> Button:
 	var mods := mods_badge(best)
 	if mods != "":
 		var mp := _make_pill(hb, 11)
-		_set_pill(mp, mods, Color(1.0, 0.45, 0.88, 0.22), Color(1.0, 0.70, 0.94))
+		_set_pill(mp, mods, Color(UiTheme.ACCENT2, 0.22), UiTheme.ACCENT2)
 	var g := str(best.get("grade", ""))
 	var gl := _label(g if g != "" else "–", 24 if g != "" else 18, GRADE_COLOR.get(g.left(1), Color(DIM, 0.5)))
 	gl.add_theme_font_override("font", UiTheme.heading_font(0))

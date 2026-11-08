@@ -30,10 +30,10 @@ const GRADE_COLOR := {
 	"A": Color(0.4, 1.0, 0.5), "B": Color(0.35, 0.75, 1.0),
 	"C": Color(0.9, 0.6, 1.0), "D": Color(1.0, 0.4, 0.4),
 }
-const FAIL_COLOR := Color(1.0, 0.34, 0.38)
+const FAIL_COLOR := UiTheme.BAD
 ## Mikro-Labels: hell genug fuer Kontrast auf Glas (nicht unter 12 px nutzen).
-const CAPTION := Color(0.68, 0.71, 0.80)
-const MUTED := Color(0.50, 0.53, 0.60)
+const CAPTION := Color(0.68, 0.655, 0.615)
+const MUTED := Color(0.50, 0.48, 0.45)
 const SCORE_COUNT_TIME := 0.9
 const STAGGER := 0.07
 const HIST_BINS := 41

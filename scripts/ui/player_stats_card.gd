@@ -27,7 +27,7 @@ const LATE_COL := Color(1.0, 0.70, 0.42)
 const CENTER_COL := Color(0.62, 0.95, 0.88)
 const UP_COL := Color(0.50, 0.92, 0.66)
 const DOWN_COL := Color(1.0, 0.48, 0.52)
-const CAPTION := Color(0.66, 0.69, 0.78)
+const CAPTION := Color(0.66, 0.635, 0.595)
 ## Wie ResultsScreen (MAX, 300, 200, 100, 50, MISS) — hier dupliziert, damit die
 ## Karte ohne Autoload-abhaengige Skripte laedt (Headless-Tests).
 const QUALITY_COLOR := [
@@ -41,8 +41,8 @@ const GRADE_COLOR := {
 }
 const RANK_COLS := [Color(1.0, 0.85, 0.3), Color(0.78, 0.82, 0.9), Color(0.85, 0.55, 0.35)]
 ## Kartenfarben im Vergleich: A = Akzent (cyan), B = gedaempftes Pink.
-const SIDE_A := Color(0.30, 0.82, 1.0)
-const SIDE_B := Color(1.0, 0.56, 0.84)
+const SIDE_A := UiTheme.ACCENT
+const SIDE_B := UiTheme.ACCENT2
 
 var _compact := false
 var _s := 1.0  # Schrift-/Hoehen-Faktor (schmale Karten)
@@ -609,7 +609,7 @@ static func avatar(pname: String, sz: int = 28) -> Control:
 	sb.bg_color = Color.from_hsv(float(pname.hash() % 360) / 360.0, 0.45, 0.62)
 	sb.set_corner_radius_all(sz)
 	sb.set_border_width_all(2)
-	sb.border_color = Color(0.08, 0.09, 0.14, 0.9)
+	sb.border_color = Color(UiTheme.SURFACE, 0.9)
 	p.add_theme_stylebox_override("panel", sb)
 	p.custom_minimum_size = Vector2(sz, sz)
 	p.size_flags_vertical = Control.SIZE_SHRINK_CENTER
@@ -650,7 +650,7 @@ static func _place_badge(place: int, sz: int) -> Control:
 	sb.bg_color = Color(rc.darkened(0.15), 1.0)
 	sb.set_corner_radius_all(sz)
 	sb.set_border_width_all(2)
-	sb.border_color = Color(0.06, 0.07, 0.11, 1.0)
+	sb.border_color = UiTheme.BG
 	p.add_theme_stylebox_override("panel", sb)
 	p.custom_minimum_size = Vector2(sz, sz)
 	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -1082,7 +1082,7 @@ class _Trace extends Control:
 		draw_polyline(pts, Color(col, 0.95), 2.2, true)
 		if dots:
 			for p in pts:
-				draw_circle(p, 3.5, Color(0.07, 0.08, 0.12))
+				draw_circle(p, 3.5, UiTheme.BG)
 				draw_circle(p, 2.5, col)
 		var last := pts[pts.size() - 1]
 		draw_circle(last, 5.0, Color(col, 0.25))

@@ -63,10 +63,10 @@ func _init() -> void:
 	_vb = vb
 
 	_title = Label.new()
-	_title.text = "PAUSE"
+	_title.text = "Pause"
 	_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_title.add_theme_font_size_override("font_size", 34)
-	_title.add_theme_font_override("font", UiTheme.heading_font(4))
+	_title.add_theme_font_override("font", UiTheme.heading_font(0))
 	_title.add_theme_color_override("font_color", UiTheme.TEXT)
 	vb.add_child(_title)
 
