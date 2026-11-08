@@ -109,7 +109,8 @@ func _ready() -> void:
 		GameSession.is_replay = false   # Mania-Events passen nicht zu Orbit
 		GameSession.replay_events = []
 	_mp_bot = Lobby.active and Lobby.in_game and OS.get_cmdline_args().has("--mp-bot")
-	_autoplay = OS.get_cmdline_args().has("--autoplay") and (not Lobby.active or _mp_bot) and not _replay
+	# --mp-bot spielt selbst (ohne --autoplay: dessen 45-s-Watchdog wuerde den Smoke kappen).
+	_autoplay = ((OS.get_cmdline_args().has("--autoplay") and not Lobby.active) or _mp_bot) and not _replay
 	var jitter := 0.0
 	var aim := 0.0
 	var seed := 1

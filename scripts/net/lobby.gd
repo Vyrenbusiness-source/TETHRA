@@ -784,7 +784,9 @@ func cl_start() -> void:
 	in_game = true
 	skip_votes = {}
 	if is_host:
-		_tour_peers = players.keys()
+		# Nur Turnierrunden: eine freie Runde davor liesse _tour_peers stehen,
+		# dann startet der Turnier-Autoablauf nie (wartet auf leere Liste).
+		_tour_peers = players.keys() if tournament != null else []
 		_mm_peers = _mode_participants()
 		_mm_live = true
 	if not sel_map.is_empty():
@@ -1200,6 +1202,7 @@ func tour_create(cfg: Dictionary) -> void:
 	c["seed"] = randi()
 	tournament = Tournament.create(c)
 	tournament.host_id = 1
+	_tour_peers = []
 	_tour_refresh()
 	for id in players:
 		players[id].ready = false

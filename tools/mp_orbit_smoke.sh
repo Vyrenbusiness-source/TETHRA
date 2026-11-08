@@ -27,7 +27,7 @@ fi
 MAPS_W=$(cygpath -m "$WORK/maps" 2>/dev/null || echo "$WORK/maps")
 
 COMMON=(--headless --path . res://scenes/mp_lobby.tscn --mp-port="$PORT"
-	--maps-dir="$MAPS_W" --mp-maps="$MAPS_W" --mp-bot --autoplay --mp-cut="$CUT")
+	--maps-dir="$MAPS_W" --mp-maps="$MAPS_W" --mp-bot --mp-cut="$CUT")
 
 APPDATA=$(cygpath -w "$WORK/host" 2>/dev/null || echo "$WORK/host") \
 	timeout "$LIMIT" "$G" "${COMMON[@]}" --mp-orbit-host --auto-seed=1 \
@@ -63,7 +63,8 @@ for side in host client; do
 	# Live-Score des anderen kam waehrend der Runde an (> 0, vor dessen Finale).
 	n=$(grep -Ec "^MPORBIT final .*live_seen=\{ ?[0-9]+: [1-9]" "$WORK/$side.log")
 	[ "$n" -ge 3 ] || { echo "FAIL $side: Live-Scores nur in $n von 3 Runden"; fail=1; }
-	if grep -E "SCRIPT ERROR|Parse Error|Invalid call|Invalid access" "$WORK/$side.log" | head -5; then
+	if grep -qE "SCRIPT ERROR|Parse Error|Invalid call|Invalid access|Watchdog" "$WORK/$side.log"; then
+		grep -E -A2 "SCRIPT ERROR|Parse Error|Invalid call|Invalid access|Watchdog" "$WORK/$side.log" | head -12
 		echo "FAIL $side: Skriptfehler"; fail=1
 	fi
 done
