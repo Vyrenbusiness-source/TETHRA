@@ -449,7 +449,7 @@ func _sync() -> void:
 		if _is_2d:
 			_prev2d.refresh()   # Skin/Spurbreite neu lesen; Farben holt _feed jedes Bild
 	var sk := _skin_2d()
-	_skin_note.visible = _is_2d and sk != ""
+	_skin_note.visible = _is_2d and sk != "" and not ManiaSkin.is_builtin(sk)   # eingebaute Skins nehmen die Farben an
 	_building = false
 
 

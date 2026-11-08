@@ -653,6 +653,13 @@ func _draw_skin_item(it: Array, xs: Array, ws: Array, vs: Vector2) -> void:
 	var mod := Color(1, 1, 1, 1)
 	if st == STATE_DEAD:
 		mod = Color(0.5, 0.5, 0.55, 0.8)
+	# Eingebaute Skins: Graustufen-Bilder, hier mit Noten- bzw. Hold-Farbe getoent.
+	var tn := Color(1, 1, 1, 1)
+	var th_c := Color(1, 1, 1, 1)
+	if sk.tintable:
+		var tt := sk.tints(col, it[3], bool(it[5]))
+		tn = tt[0]
+		th_c = tt[1]
 	var head := sk.tex("head_%d" % col) if bool(it[5]) else null
 	if head == null:
 		head = sk.tex("note_%d" % col)
@@ -675,9 +682,9 @@ func _draw_skin_item(it: Array, xs: Array, ws: Array, vs: Vector2) -> void:
 			tail = null
 		var th := (_tex_h(tail, nw) if tail != null else (hh if head != null else vs.y * NOTE_H_FRAC * note_k))
 		var body := sk.tex("body_%d" % col)
-		var bm := mod
+		var bm := mod * th_c
 		if st == STATE_HELD:
-			bm = Color(1.15, 1.15, 1.15, 1)
+			bm = Color(1.15, 1.15, 1.15, 1) * th_c
 		var body_bot := yh - hh * 0.5
 		if body_bot > top:
 			if body != null:
@@ -689,11 +696,11 @@ func _draw_skin_item(it: Array, xs: Array, ws: Array, vs: Vector2) -> void:
 		# Ende: nur eine eigene Tail-Textur des Skins. Fehlt sie, kein gespiegelter
 		# Kopf mehr (bei Kreis-Skins war das ein zweiter Ball am Hold-Ende).
 		if tail != null:
-			_nd_tex(tail, Rect2(nx, top - th, nw, th), mod)
+			_nd_tex(tail, Rect2(nx, top - th, nw, th), mod * tn)
 	elif yh < -hh or yh > vs.y + hh:
 		return
 	if head != null:
-		_nd_tex(head, Rect2(nx, yh - hh, nw, hh), mod)
+		_nd_tex(head, Rect2(nx, yh - hh, nw, hh), mod * tn)
 	else:
 		var c: Color = it[3] if st != STATE_DEAD else Color(0.36, 0.37, 0.41, 0.8)
 		_draw_bar(Rect2(x + 2.0, yh - hh, w - 4.0, hh), c)

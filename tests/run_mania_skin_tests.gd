@@ -49,6 +49,7 @@ func _run() -> void:
 	_test_patterns()
 	_test_real_world()
 	_test_builtin()
+	_test_builtin_tint()
 	_test_hold_geometry()
 	_test_display_name()
 	_cleanup()
@@ -200,6 +201,87 @@ func _test_builtin() -> void:
 		_ok(s.tex("stage_hint") != null and s.tex_scale("note_0") == 0.5, id + ": Stage-Hint, @2x")
 		_ok(not ManiaSkin.delete_skin(id), id + " nicht loeschbar")
 	_ok(ManiaSkin.load_skin("builtin:Gibtsnicht") == null, "unbekannter builtin -> null")
+
+
+## Alte Farben der Built-in-Skins (vor der Graustufen-Umstellung): [Skin, Schluessel,
+## x, y, Farbe, Toleranz]. Heute: Graustufen-Pixel x AutoColor der Spalte muss sie treffen.
+## Kreise-Innenring: Verhaeltnis innen/aussen ist jetzt ein Grauwert (Toleranz groesser).
+const OLD_SAMPLES := [
+	["Balken", "note_0", 80, 10, Color8(236, 240, 248), 2],
+	["Balken", "note_0", 80, 28, Color8(207, 211, 218), 2],
+	["Balken", "note_0", 80, 36, Color8(168, 171, 177), 3],
+	["Balken", "note_1", 80, 10, Color8(96, 150, 224), 2],
+	["Balken", "note_1", 80, 28, Color8(84, 132, 197), 2],
+	["Balken", "tail_0", 80, 3, Color8(236, 240, 248), 2],
+	["Balken", "tail_0", 80, 12, Color8(207, 211, 218), 2],
+	["Kreise", "note_0", 80, 12, Color8(126, 196, 214), 2],
+	["Kreise", "note_0", 80, 40, Color8(34, 62, 82), 20],
+	["Kreise", "note_0", 80, 80, Color8(88, 109, 125), 20],
+	["Kreise", "note_1", 80, 12, Color8(196, 150, 214), 2],
+	["Kreise", "note_1", 80, 40, Color8(60, 40, 84), 20],
+	["Pfeile", "note_0", 80, 80, Color8(150, 190, 232), 2],
+	["Pfeile", "note_0", 40, 80, Color8(150, 190, 232), 2],
+	["Pfeile", "note_1", 80, 80, Color8(224, 160, 190), 2],
+	["Pfeile", "note_3", 80, 80, Color8(232, 200, 140), 2],
+]
+
+
+func _near(a: Color, b: Color, tol: int) -> bool:
+	return absi(a.r8 - b.r8) <= tol and absi(a.g8 - b.g8) <= tol and absi(a.b8 - b.b8) <= tol
+
+
+func _test_builtin_tint() -> void:
+	NoteColors.path = _tmp + "_nc.cfg"
+	NoteColors.reload()
+	NoteColors.reset(true)   # Modus auto
+	var skins := {}
+	for nm in ["Balken", "Kreise", "Pfeile"]:
+		var s := ManiaSkin.load_skin("builtin:" + nm)
+		skins[nm] = s
+		_ok(s.tintable and s.auto_colors.size() == 4, nm + ": tintable + 4 AutoColors")
+		# Noten/Holds/Kappen neutral (Grau): R == G == B an Stichproben.
+		var gray_ok := true
+		for key in ["note_0", "head_1", "body_2", "tail_3"]:
+			var img := s.tex(key).get_image()
+			for pt in [Vector2i(80, 4), Vector2i(80, 8), Vector2i(80, 12)]:
+				var p := img.get_pixelv(pt)
+				if p.a > 0.9 and (absf(p.r - p.g) > 0.01 or absf(p.g - p.b) > 0.01):
+					gray_ok = false
+		_ok(gray_ok, nm + ": Notenbilder neutral grau")
+	# Auto = alte Farben (Graustufe x Palette der Spalte).
+	var bad := 0
+	for smp in OLD_SAMPLES:
+		var s: ManiaSkin = skins[smp[0]]
+		var key: String = smp[1]
+		var col := ManiaSkin.key_col(key)
+		var g := s.tex(key).get_image().get_pixel(int(smp[2]), int(smp[3]))
+		var a := s.auto_color(col)
+		var got := Color(g.r * a.r, g.g * a.g, g.b * a.b)
+		if not _near(got, smp[4], int(smp[5])):
+			bad += 1
+			print("    ", smp[0], " ", key, " (", smp[2], ",", smp[3], ") alt ", (smp[4] as Color).to_html(false), " neu ", got.to_html(false))
+	_ok(bad == 0, "Auto-Modus: Stichproben = alte Farben (%d Abweichungen)" % bad)
+	# Toenung: auto -> Palette (+ Hold dunkler); lanes -> uebergebene Farbe, Kopf = Spaltenfarbe.
+	var pf: ManiaSkin = skins["Pfeile"]
+	var t0 := pf.tints(1, Color.RED, false)
+	_ok(_near(t0[0], pf.auto_color(1), 0) and _near(t0[1], NoteColors.hold_of(pf.auto_color(1)), 1), "tints auto: Palette, Hold dunkler")
+	NoteColors.apply_preset(true, "neon")
+	var t1 := pf.tints(2, NoteColors.hold_color(true, 2), true)
+	_ok(_near(t1[0], NoteColors.lane_color(true, 2), 0) and _near(t1[1], NoteColors.hold_color(true, 2), 0), "tints lanes: Kopf = Spaltenfarbe, Koerper = Hold-Farbe")
+	var t2 := pf.tints(0, NoteColors.lane_color(true, 0), false)
+	_ok(_near(t2[0], NoteColors.lane_color(true, 0), 0) and _near(t2[1], t2[0], 0), "tints lanes: Einzelnote")
+	NoteColors.set_mode(true, "snap")
+	var sc := NoteColors.snap_color(4)
+	var t3 := pf.tints(0, NoteColors.hold_of(sc), true)
+	_ok(_near(t3[0], sc, 3) and _near(t3[1], NoteColors.hold_of(sc), 0), "tints snap: Kopf = Takt-Farbe, Koerper dunkler")
+	# Fallback-Skin fuer importierte Skins ohne Notenbilder bleibt farbig (eingefaerbt).
+	var fb := ManiaSkin.load_skin("builtin:Balken")
+	fb.bake_auto = true
+	var px := fb.tex("note_1").get_image().get_pixel(80, 10)
+	_ok(_near(px, Color8(96, 150, 224), 2), "Fallback-Balken: Noten eingefaerbt (blau)")
+	NoteColors.reset(true)
+	NoteColors.path = "user://note_colors.cfg"
+	NoteColors.reload()
 
 
 func _test_patterns() -> void:
