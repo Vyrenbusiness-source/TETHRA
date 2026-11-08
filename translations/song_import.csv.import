@@ -1,0 +1,19 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+uid="uid://34dq3nm8dkf6"
+
+[deps]
+
+files=["res://translations/song_import.de.translation", "res://translations/song_import.en.translation"]
+
+source_file="res://translations/song_import.csv"
+dest_files=["res://translations/song_import.de.translation", "res://translations/song_import.en.translation"]
+
+[params]
+
+compress=1
+delimiter=0
+unescape_keys=false
+unescape_translations=true

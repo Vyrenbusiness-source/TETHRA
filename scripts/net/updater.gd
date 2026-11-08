@@ -16,13 +16,21 @@ extends Node
 ## Release-Ablauf (Entwickler): CURRENT_VERSION hochzaehlen, beide PCKs bauen,
 ## `gh release create vX.Y.Z release/TETHRA.pck release/TETHRA_worlds.pck`.
 
-const CURRENT_VERSION := "1.20.5"
+const CURRENT_VERSION := "1.21.1"
 const REPO := "Vyrenbusiness-source/TETHRA"
 const API_LATEST := "https://api.github.com/repos/" + REPO + "/releases/latest"
 ## Welten-Paket liegt in einem festen Release (Tag "worlds"), damit normale
 ## Releases nur das kleine TETHRA.pck brauchen. Fallback: Asset im latest-Release.
 const API_WORLDS := "https://api.github.com/repos/" + REPO + "/releases/tags/worlds"
 const HEADERS := ["User-Agent: TETHRA-Updater", "Accept: application/vnd.github+json"]
+## Ausweich-Quelle, wenn GitHub-API oder Release-Downloads haengen (kommt vor:
+## Timeouts fuer nicht angemeldete Nutzer): Branch "dist" mit latest.json und dem
+## Spiel-Paket in Teilen (< 20 MB, damit auch jsDelivr sie ausliefert).
+## Aufbau: tools/publish_dist.sh. Welten-Paket gibt es dort nicht.
+const DIST_BASES := [
+	"https://raw.githubusercontent.com/" + REPO + "/dist/",
+	"https://cdn.jsdelivr.net/gh/" + REPO + "@dist/",
+]
 
 const CHECK_INTERVAL := 600.0
 const RESTART_COUNTDOWN := 8.0
@@ -60,6 +68,9 @@ var _postponed := false
 var _gate_acc := 0.0
 var _last_bytes := -1
 var _stall := 0.0
+## Naechste Pruefung direkt ueber dist (nach einem gescheiterten GitHub-Download).
+var _prefer_dist := false
+var _dist_i := 0
 
 
 func _ready() -> void:
@@ -105,13 +116,16 @@ func _check_latest() -> void:
 	if status == "checking" or status == "downloading" or status == "ready":
 		return
 	status = "checking"
+	if _prefer_dist:
+		_check_dist(0)
+		return
 	_req = HTTPRequest.new()
 	_req.timeout = 10.0
 	add_child(_req)
 	_req.request_completed.connect(_on_latest)
 	if _req.request(API_LATEST, HEADERS) != OK:
 		_req.queue_free()
-		_net_failed()
+		_check_dist(0)
 
 
 ## Netzfehler: Retry mit Backoff (15 s, 30 s, 60 s ...), danach greift der 10-min-Timer.
@@ -126,11 +140,11 @@ func _net_failed() -> void:
 
 func _on_latest(result: int, code: int, _h: PackedStringArray, body: PackedByteArray) -> void:
 	_req.queue_free()
-	if result != HTTPRequest.RESULT_SUCCESS or code >= 500 or code == 429:
-		_net_failed()
+	if result != HTTPRequest.RESULT_SUCCESS or code >= 500 or code == 429 or code == 403:
+		_check_dist(0)  # GitHub-API haengt oder drosselt: Ausweich-Quelle
 		return
 	if code != 200:
-		status = ""
+		_check_dist(0)  # unerwartete Antwort: Ausweich-Quelle entscheidet
 		return
 	_retries = 0
 	var data: Variant = JSON.parse_string(body.get_string_from_utf8())
@@ -153,6 +167,74 @@ func _on_latest(result: int, code: int, _h: PackedStringArray, body: PackedByteA
 		_fetch_worlds_release(jobs)
 		return
 	_finish_check(jobs, w)
+
+
+## Ausweich-Pruefung ueber DIST_BASES[i]/latest.json (nur das Spiel-Paket).
+func _check_dist(i: int) -> void:
+	if i >= DIST_BASES.size():
+		_net_failed()
+		return
+	var req := HTTPRequest.new()
+	req.timeout = 15.0
+	add_child(req)
+	req.request_completed.connect(func(res: int, code: int, _hh: PackedStringArray, b: PackedByteArray):
+		req.queue_free()
+		var d: Variant = null
+		if res == HTTPRequest.RESULT_SUCCESS and code == 200:
+			d = JSON.parse_string(b.get_string_from_utf8())
+		var job := dist_job(d, str(DIST_BASES[i]), _exe_dir) if d is Dictionary else {}
+		if job.is_empty() and not (d is Dictionary):
+			_check_dist(i + 1)
+			return
+		_retries = 0
+		latest_version = str((d as Dictionary).get("version", "")) if d is Dictionary else ""
+		_notes = trim_notes(str((d as Dictionary).get("notes", ""))) if d is Dictionary else ""
+		var jobs: Array[Dictionary] = []
+		if not job.is_empty() and latest_version != "" and _is_newer(latest_version, CURRENT_VERSION) 				and not same_as_local(str(job["sig"]), str(job["final"])):
+			jobs.append(job)
+		if jobs.is_empty():
+			status = ""
+			return
+		_start_jobs(jobs))
+	if req.request(str(DIST_BASES[i]) + "latest.json?v=" + str(Time.get_unix_time_from_system() / 300),
+			PackedStringArray(["User-Agent: TETHRA-Updater"])) != OK:
+		req.queue_free()
+		_check_dist(i + 1)
+
+
+## Download-Auftrag aus dist/latest.json:
+## {version, size, sha256, parts:[{name, size}], notes}. {} wenn unbrauchbar.
+static func dist_job(d: Dictionary, base: String, exe_dir: String) -> Dictionary:
+	var parts: Array = d.get("parts", [])
+	var sha := str(d.get("sha256", "")).to_lower()
+	var size := int(d.get("size", 0))
+	if parts.is_empty() or sha.length() != 64 or size <= 0:
+		return {}
+	var urls: Array = []
+	var sizes: Array = []
+	var sum := 0
+	for p in parts:
+		if not (p is Dictionary) or str(p.get("name", "")) == "" or int(p.get("size", 0)) <= 0:
+			return {}
+		urls.append(base + str(p.name))
+		sizes.append(int(p.size))
+		sum += int(p.size)
+	if sum != size:
+		return {}
+	var fin := exe_dir.path_join(MAIN_ASSET)
+	return {"asset": MAIN_ASSET, "url": "", "urls": urls, "sizes": sizes, "size": size,
+		"final": fin, "new": fin + ".new", "part": "%s.dist-%s.part" % [fin, sha.left(12)],
+		"sig": "sha256:" + sha}
+
+
+## Welches Teilstueck beginnt bei offset? -1 = kein Teilanfang (Rest verwerfen).
+static func dist_part_at(sizes: Array, offset: int) -> int:
+	var acc := 0
+	for i in sizes.size():
+		if acc == offset:
+			return i
+		acc += int(sizes[i])
+	return -1
 
 
 ## sig "sha256:<hex>" gleich dem SHA-256 der lokalen Datei?
@@ -324,8 +406,18 @@ func _next_chunk() -> void:
 	_stall = 0.0
 	add_child(_dl)
 	_dl.request_completed.connect(_on_chunk_done)
+	var url := str(j["url"])
 	var hdr: PackedStringArray = ["User-Agent: TETHRA-Updater", range_header(_job_offset, CHUNK_BYTES, size)]
-	if _dl.request(str(j["url"]), hdr) != OK:
+	if j.has("urls"):
+		# dist: ganze Teile nacheinander, Fortsetzen an Teilgrenzen.
+		var k := dist_part_at(j["sizes"], _job_offset)
+		if k < 0:
+			DirAccess.remove_absolute(str(j["part"]))
+			_job_offset = 0
+			k = 0
+		url = str(j["urls"][k])
+		hdr = PackedStringArray(["User-Agent: TETHRA-Updater"])
+	if _dl.request(url, hdr) != OK:
 		_dl.queue_free()
 		_dl = null
 		_download_failed()
@@ -336,8 +428,9 @@ func _on_chunk_done(result: int, code: int, _h: PackedStringArray, body: PackedB
 	_dl = null
 	var j: Dictionary = _jobs[_job_i]
 	# 206 = Teilinhalt. 200 nur, wenn der Server die ganze (kleine) Datei von vorn schickt.
-	var whole := code == 200 and _job_offset == 0
-	if result != HTTPRequest.RESULT_SUCCESS or not (code == 206 or whole) or body.is_empty():
+	var whole := code == 200 and _job_offset == 0 and not j.has("urls")
+	var dist_ok := j.has("urls") and code == 200
+	if result != HTTPRequest.RESULT_SUCCESS or not (code == 206 or whole or dist_ok) or body.is_empty():
 		_download_failed()
 		return
 	var f := FileAccess.open(str(j["part"]), FileAccess.READ_WRITE if _job_offset > 0 else FileAccess.WRITE)
@@ -358,7 +451,9 @@ func _finish_job() -> void:
 	var j: Dictionary = _jobs[_job_i]
 	var part := str(j["part"])
 	var got := _file_size(part)
-	if not size_ok(got, int(j["size"])) or not _is_pck(part):
+	var sig := str(j.get("sig", ""))
+	var sha_bad := j.has("urls") and FileAccess.get_sha256(part) != sig.trim_prefix("sha256:")
+	if not size_ok(got, int(j["size"])) or not _is_pck(part) or sha_bad:
 		DirAccess.remove_absolute(part)  # kaputt: von vorn
 		_download_failed()
 		return
@@ -412,6 +507,11 @@ func _ready_files() -> Array[String]:
 
 func _download_failed() -> void:
 	# .part bleibt liegen: der naechste Versuch setzt dort fort (HTTP Range).
+	# GitHub-Release-Download gescheitert: naechster Versuch ueber die Ausweich-Quelle.
+	var from_github := false
+	for j in _jobs:
+		from_github = from_github or not j.has("urls")
+	_prefer_dist = from_github and str(_jobs[_job_i]["asset"]) == MAIN_ASSET if _job_i < _jobs.size() else _prefer_dist
 	status = "error"
 	state_changed.emit("Update fehlgeschlagen — wird später erneut versucht.", -1.0)
 	if _toast != null:

@@ -1,0 +1,38 @@
+keys,de,en
+Importieren,Importieren,Import
+"Maps, Musik oder den osu!-Songs-Ordner übernehmen","Maps, Musik oder den osu!-Songs-Ordner übernehmen","Add maps, music or your osu! Songs folder"
+Songs importieren,Songs importieren,Import songs
+Dateien wählen,Dateien wählen,Choose files
+"osu!-Maps (.osz) oder eigene Musik (.mp3, .ogg, .wav). Mehrere auf einmal gehen.","osu!-Maps (.osz) oder eigene Musik (.mp3, .ogg, .wav). Mehrere auf einmal gehen.","osu! maps (.osz) or your own music (.mp3, .ogg, .wav). Several at once work too."
+Aus osu! übernehmen,Aus osu! übernehmen,Copy from osu!
+Gefunden: %s,Gefunden: %s,Found: %s
+osu! nicht gefunden. Du wählst den Songs-Ordner selbst.,osu! nicht gefunden. Du wählst den Songs-Ordner selbst.,osu! not found. You pick the Songs folder yourself.
+"Nur 4K-Mania und osu!standard, schon vorhandene Maps bleiben, wie sie sind.","Nur 4K-Mania und osu!standard, schon vorhandene Maps bleiben, wie sie sind.",Only 4K mania and osu!standard. Maps you already have stay as they are.
+osu!lazer wird nicht unterstützt: lazer speichert Maps nicht als Ordner. Exportiere sie dort als .osz und wähle die Dateien oben.,osu!lazer wird nicht unterstützt: lazer speichert Maps nicht als Ordner. Exportiere sie dort als .osz und wähle die Dateien oben.,osu!lazer is not supported: lazer does not keep maps as folders. Export them there as .osz and choose the files above.
+In diesem Ordner liegen keine osu!-Maps.,In diesem Ordner liegen keine osu!-Maps.,There are no osu! maps in this folder.
+Dateien und Ordner kannst du auch einfach ins Fenster ziehen.,Dateien und Ordner kannst du auch einfach ins Fenster ziehen.,You can also drag files and folders onto the window.
+Maps oder Musik wählen,Maps oder Musik wählen,Choose maps or music
+osu!-Songs-Ordner wählen,osu!-Songs-Ordner wählen,Choose the osu! Songs folder
+Maps und Musik,Maps und Musik,Maps and music
+osu!-Maps,osu!-Maps,osu! maps
+Musik,Musik,Music
+Maps werden übernommen  %d / %d,Maps werden übernommen  %d / %d,Copying maps  %d / %d
+Bibliothek wird aktualisiert  %d / %d,Bibliothek wird aktualisiert  %d / %d,Updating library  %d / %d
+Wird abgebrochen …,Wird abgebrochen …,Cancelling …
+Abbrechen,Abbrechen,Cancel
+Fertig,Fertig,Done
+Abgebrochen,Abgebrochen,Cancelled
+1 Map importiert,1 Map importiert,1 map imported
+%d Maps importiert,%d Maps importiert,%d maps imported
+%d schon vorhanden,%d schon vorhanden,%d already there
+%d ohne 4K oder Standard,%d ohne 4K oder Standard,%d without 4K or standard
+%d fehlgeschlagen,%d fehlgeschlagen,%d failed
+%d nur im Orbit-Modus,%d nur im Orbit-Modus,%d only in Orbit mode
+Import läuft schon,Import läuft schon,An import is already running
+Nicht unterstützt,Nicht unterstützt,Not supported
+Nicht unterstützt: %s,Nicht unterstützt: %s,Not supported: %s
+%d Dateien nicht unterstützt,%d Dateien nicht unterstützt,%d files not supported
+Eigene Musik: %s,Eigene Musik: %s,Own music: %s
+kommt bald,kommt bald,coming soon
+nicht unterstuetzt,nicht unterstuetzt,not supported
+Eigene Musik ist im Orbit-Modus spielbar,Eigene Musik ist im Orbit-Modus spielbar,Your own music plays in Orbit mode

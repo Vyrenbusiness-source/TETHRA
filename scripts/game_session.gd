@@ -69,6 +69,7 @@ var _perf_frames: Array = []
 func _ready() -> void:
 	set_process(false)
 	_arm_test_watchdog()
+	_arm_playtime()
 	perf_enabled = OS.get_cmdline_args().has("--perf") or OS.get_cmdline_user_args().has("--perf")
 	if perf_enabled:
 		perf_since("Engine-Start -> Autoload GameSession", 0)
@@ -300,3 +301,63 @@ func _arm_test_watchdog() -> void:
 		get_tree().quit(3))
 	add_child(t)
 	t.start()
+
+
+# ---------------------------------------------------------------------------
+# Spielzeit (Profil): echte Sekunden im laufenden Song
+# ---------------------------------------------------------------------------
+
+const PLAYTIME_TICK := 1.0
+const PLAYTIME_FLUSH_MS := 15000
+var _playtime_mode := ""
+var _playtime_pending := 0
+
+
+## Zaehlt jede Sekunde, in der ein Song wirklich laeuft: Gameplay-Szene, nicht
+## pausiert, nicht im Endbild, kein Replay/Tutorial/Testlauf. Speichert alle 15 s
+## und beim Verlassen der Szene bzw. beim Beenden.
+func _arm_playtime() -> void:
+	if DisplayServer.get_name() == "headless":
+		return
+	for a in OS.get_cmdline_args():
+		if a.begins_with("--shot") or a == "--autoplay" or a == "--smoke" or a == "--perf" 				or a.begins_with("--clip") or a.begins_with("--scores-path="):
+			return
+	var t := Timer.new()
+	t.wait_time = PLAYTIME_TICK
+	t.process_mode = Node.PROCESS_MODE_ALWAYS
+	add_child(t)
+	t.timeout.connect(_playtime_tick)
+	t.start()
+
+
+## Modus einer Szene fuer die Spielzeit: "" = Mania, "orbit", null = keine Gameplay-Szene.
+static func playtime_mode_of(scene_path: String) -> Variant:
+	if scene_path.ends_with("orbit.tscn"):
+		return "orbit"
+	if scene_path.ends_with("mania_3d.tscn") or scene_path.ends_with("gameplay_3d.tscn"):
+		return ""
+	return null
+
+
+func _playtime_tick() -> void:
+	var sc := get_tree().current_scene
+	var mode: Variant = playtime_mode_of(sc.scene_file_path) if sc != null else null
+	var running: bool = mode != null and not get_tree().paused and not is_replay and not tutorial 			and not ("_ended" in sc and bool(sc.get("_ended")))
+	if not running or str(mode) != _playtime_mode:
+		_playtime_flush()
+	if running:
+		_playtime_mode = str(mode)
+		_playtime_pending += int(PLAYTIME_TICK * 1000.0)
+		if _playtime_pending >= PLAYTIME_FLUSH_MS:
+			_playtime_flush()
+
+
+func _playtime_flush() -> void:
+	if _playtime_pending > 0:
+		ScoreStore.add_playtime(_playtime_pending, _playtime_mode)
+	_playtime_pending = 0
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_CLOSE_REQUEST or what == NOTIFICATION_PREDELETE:
+		_playtime_flush()

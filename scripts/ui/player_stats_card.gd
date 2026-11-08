@@ -71,7 +71,7 @@ static func pack(s: Dictionary, offsets: PackedFloat32Array, trace: PackedFloat3
 		"score": int(s.get("score", 0)), "acc": float(s.get("accuracy", 0.0)),
 		"grade": "F" if failed else str(s.get("grade", "D")), "combo": int(s.get("max_combo", 0)),
 		"failed": failed, "h_ok": h_ok, "h_drop": h_drop,
-		"mods": s.get("mods", []),
+		"mods": s.get("mods", []), "pp": float(s.get("pp", -1.0)),
 	}
 	for k in KEYS:
 		d[k] = int(s.get(k, 0))
@@ -128,6 +128,7 @@ static func sanitize(raw: Dictionary) -> Dictionary:
 		"acc": _num(raw.get("acc", 0.0), 0.0, 1.0),
 		"combo": int(_num(raw.get("combo", 0), 0, MAX_COUNT)),
 		"failed": raw.get("failed", false) == true,
+		"pp": _num(raw.get("pp", -1.0), -1.0, 100000.0, -1.0),
 	}
 	var g := str(raw.get("grade", "D")).left(2)
 	d["grade"] = g if g in GRADES else "D"

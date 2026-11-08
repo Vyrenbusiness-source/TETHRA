@@ -21,7 +21,10 @@ const HEAD_Y := 24
 const HEAD_H := 40
 const FILTER_Y := 76
 const FILTER_H := 32
-const CHIPS_Y := 116
+## Zweite Filterreihe: Bestwert (mit/ohne) und Bestwert-Note, je Modus.
+const SCORE_Y := FILTER_Y + FILTER_H + 8
+const SCORE_H := 30
+const CHIPS_Y := SCORE_Y + SCORE_H + 8
 const CHIPS_H := 30
 const GRADE_COLOR := {
 	"S": Color(1.0, 0.85, 0.25), "A": Color(0.4, 1.0, 0.5),
@@ -78,7 +81,7 @@ var _card_cover_mat: ShaderMaterial
 var _card_cover_size := Vector2.ZERO
 const CARD_SLIDE := 8.0
 const LIST_PAD := 16
-const LIST_TOP := FILTER_Y + FILTER_H
+const LIST_TOP := SCORE_Y + SCORE_H
 const LIST_EDGE := 6
 var _list_mask: TextureRect
 var _list_grad: Gradient
@@ -148,7 +151,16 @@ var _active_collection := ""
 var _chips_row: HBoxContainer
 # Lokale Filter: Sterne-Bereich + Sortierung (clean als Chip-Reihe).
 var _star_filter := 0
-var _sort_mode := 0
+## Sortierung (SORT_*) und Bestwert-Filter je Spielmodus getrennt:
+## {"mania": {"sort": int, "best": BEST_*, "grades": Array[String]}, "orbit": {...}}
+var _mode_filters := {}
+var _sort_btn: OptionButton
+var _best_chips: Array[Button] = []
+var _grade_chips := {}
+## Je Modus einmal aus scores.cfg gebaut (build_score_index), nicht pro Karte.
+var _score_index := {}
+## Aenderungszeit der .osz (Sortierung "Zuletzt heruntergeladen"), je Pfad einmal.
+var _mtime_cache := {}
 var _star_chips: Array[Button] = []
 var _sv_filter := false
 ## Filter/Sortierung/Sammlung/Suche bleiben ueber Map-Ende und Neustart erhalten.
@@ -178,6 +190,20 @@ var _scroll: ScrollContainer
 # Online-Tab (Mirror catboy.best): eigener Browser, bleibt versteckt am Leben.
 var _online: OnlineBrowser = null
 # Schwierigkeits-Filter der Bibliothek (client-seitig).
+const SORT_TITLE := 0
+const SORT_STARS_UP := 1
+const SORT_STARS_DOWN := 2
+const SORT_RECENT := 3
+const SORT_DOWNLOADED := 4
+const SORT_MOST_PLAYED := 5
+const SORT_NAMES := ["Titel", "Sterne aufsteigend", "Sterne absteigend",
+	"Zuletzt gespielt", "Zuletzt heruntergeladen", "Meistgespielt"]
+const BEST_ALL := 0
+const BEST_WITH := 1
+const BEST_WITHOUT := 2
+const BEST_NAMES := ["Alle", "Mit Bestwert", "Ohne Bestwert"]
+## Noten-Chips; "D" umfasst auch "F".
+const GRADE_CHIPS := ["SS", "S", "A", "B", "C", "D"]
 const STAR_FILTERS := [
 	["Alle", 0.0, 999.0],
 	["<2★", 0.0, 2.0],
@@ -203,6 +229,15 @@ func _ready() -> void:
 	var restore := _load_browser_state()
 	if OS.get_cmdline_args().has("--orbit"):
 		_play_mode = "orbit"  # Debug/Shots: Orbit vorwaehlen (nie gespeichert)
+	for a in OS.get_cmdline_args():
+		# Debug/Shots: --filter=sort=3,best=1,grades=S+A fuer den aktiven Modus (nie gespeichert).
+		if a.begins_with("--filter="):
+			var d := {}
+			for part in a.trim_prefix("--filter=").split(","):
+				var kv := part.split("=")
+				if kv.size() == 2:
+					d[kv[0]] = Array(kv[1].split("+")) if kv[0] == "grades" else int(kv[1])
+			_mode_filters[_play_mode] = sanitize_mode_filter(d)
 	_build_ui()
 	GameSession.perf_since("Browser: UI aufbauen", t_ui)
 	t_ui = Time.get_ticks_usec()
@@ -261,6 +296,9 @@ func _ready() -> void:
 	elif OS.get_cmdline_args().has("--shot-online"):
 		# Harness: Online-Tab (Raster, Genre, Download, Fehler) als PNGs.
 		_shot_online.call_deferred()
+	elif OS.get_cmdline_args().has("--shot-import"):
+		# Harness: Import-Fenster mit Fortschritt und Drop-Hinweis als PNGs.
+		_shot_import.call_deferred()
 	elif OS.get_cmdline_args().has("--shot-orbit-hint"):
 		# Harness: Hinweis "Orbit lernen" beim Wechsel auf Orbit als PNG.
 		_shot_orbit_hint.call_deferred()
@@ -572,6 +610,15 @@ func _build_header() -> void:
 	_tab_online.pressed.connect(_open_download_panel)
 	top_right.add_child(_tab_online)
 
+	_import_btn = Button.new()
+	_import_btn.text = "Importieren"
+	_import_btn.tooltip_text = "Maps, Musik oder den osu!-Songs-Ordner übernehmen"
+	_import_btn.custom_minimum_size = Vector2(0, HEAD_H)
+	_import_btn.add_theme_font_size_override("font_size", 15)
+	UiTheme.style_ghost_button(_import_btn, 10)
+	_import_btn.pressed.connect(_open_import_panel)
+	top_right.add_child(_import_btn)
+
 	# Filter-Reihe: Anzahl links, Sterne-Chips + Sortierung rechtsbuendig.
 	var filter_row := HBoxContainer.new()
 	_place_right(filter_row, FILTER_Y, FILTER_H)
@@ -602,24 +649,71 @@ func _build_header() -> void:
 		_refresh_filter(_search.text))
 	filter_row.add_child(_sv_chip)
 	_restyle_star_chips()
-	var sort := OptionButton.new()
-	sort.add_item("Titel", 0)
-	sort.add_item("Sterne aufsteigend", 1)
-	sort.add_item("Sterne absteigend", 2)
-	sort.select(_sort_mode)
-	sort.tooltip_text = "Sortierung"
-	sort.fit_to_longest_item = false
-	sort.custom_minimum_size = Vector2(120, FILTER_H)
-	sort.add_theme_font_size_override("font_size", 13)
-	sort.add_theme_stylebox_override("normal", _toggle_box(false, 10))
-	sort.add_theme_stylebox_override("hover", _toggle_box(false, 10, true))
-	sort.add_theme_stylebox_override("pressed", _toggle_box(false, 10, true))
-	sort.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
-	sort.add_theme_color_override("font_color", COL_TEXT)
-	sort.item_selected.connect(func(i):
-		_sort_mode = i
+	_sort_btn = OptionButton.new()
+	for si in SORT_NAMES.size():
+		_sort_btn.add_item(tr(SORT_NAMES[si]), si)
+	_sort_btn.select(_sort_mode())
+	_sort_btn.tooltip_text = tr("Sortierung (je Modus gemerkt)")
+	# Feste Breite (laengster Eintrag): die Reihe springt beim Wechsel nicht.
+	_sort_btn.fit_to_longest_item = true
+	_sort_btn.custom_minimum_size = Vector2(120, FILTER_H)
+	_sort_btn.add_theme_font_size_override("font_size", 13)
+	_sort_btn.add_theme_stylebox_override("normal", _toggle_box(false, 10))
+	_sort_btn.add_theme_stylebox_override("hover", _toggle_box(false, 10, true))
+	_sort_btn.add_theme_stylebox_override("pressed", _toggle_box(false, 10, true))
+	_sort_btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	_sort_btn.add_theme_color_override("font_color", COL_TEXT)
+	_sort_btn.item_selected.connect(func(i):
+		_mode_filter()["sort"] = i
 		_refresh_filter(_search.text))
-	filter_row.add_child(sort)
+	filter_row.add_child(_sort_btn)
+
+	# Zweite Reihe: Bestwert-Filter (Segment) + Noten-Chips, je Modus gemerkt.
+	var score_row := HBoxContainer.new()
+	_place_right(score_row, SCORE_Y, SCORE_H)
+	score_row.alignment = BoxContainer.ALIGNMENT_END
+	score_row.add_theme_constant_override("separation", 6)
+	add_child(score_row)
+	# Mit/Ohne Bestwert wie der SV-Chip: erneut klicken = wieder alle Maps.
+	for bi in [BEST_WITH, BEST_WITHOUT]:
+		var chip := _make_toggle(tr(BEST_NAMES[bi]), 13, 15)
+		chip.custom_minimum_size = Vector2(0, SCORE_H)
+		chip.pressed.connect(func():
+			var mf := _mode_filter()
+			mf["best"] = BEST_ALL if int(mf["best"]) == bi else bi
+			if int(mf["best"]) != BEST_WITH:
+				mf["grades"] = []  # Raenge gibt es nur mit Bestwert
+			_restyle_score_chips()
+			_refresh_filter(_search.text))
+		score_row.add_child(chip)
+		_best_chips.append(chip)
+	var gap := Control.new()
+	gap.custom_minimum_size = Vector2(10, 0)
+	score_row.add_child(gap)
+	var grade_lbl := Label.new()
+	grade_lbl.text = tr("Rang")
+	grade_lbl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	grade_lbl.add_theme_font_size_override("font_size", 13)
+	grade_lbl.add_theme_color_override("font_color", COL_DIM)
+	score_row.add_child(grade_lbl)
+	for g in GRADE_CHIPS:
+		var gchip := _make_toggle(g, 13, 15)
+		gchip.custom_minimum_size = Vector2(46, SCORE_H)
+		gchip.tooltip_text = tr("Nur Maps mit Bestwert-Rang %s (mehrere möglich)") % g
+		var grade: String = g
+		gchip.pressed.connect(func():
+			var mf := _mode_filter()
+			var gs: Array = mf["grades"]
+			if gs.has(grade):
+				gs.erase(grade)
+			else:
+				gs.append(grade)
+			mf["best"] = BEST_WITH if not gs.is_empty() else mf["best"]
+			_restyle_score_chips()
+			_refresh_filter(_search.text))
+		score_row.add_child(gchip)
+		_grade_chips[g] = gchip
+	_restyle_score_chips()
 
 	# Chip-Reihe fuer Sammlungen (nur im Collections-Modus sichtbar).
 	_chips_row = HBoxContainer.new()
@@ -1269,6 +1363,28 @@ func _restyle_star_chips() -> void:
 		_apply_toggle(_sv_chip, _sv_filter)
 
 
+## Filter des aktiven Modus (Sortierung, Bestwert, Noten); legt fehlende an.
+func _mode_filter() -> Dictionary:
+	if not _mode_filters.has(_play_mode):
+		_mode_filters[_play_mode] = default_mode_filter()
+	return _mode_filters[_play_mode]
+
+
+func _sort_mode() -> int:
+	return int(_mode_filter()["sort"])
+
+
+## Sortier-Auswahl und Bestwert-Chips auf den aktiven Modus setzen.
+func _restyle_score_chips() -> void:
+	var mf := _mode_filter()
+	for i in _best_chips.size():
+		_apply_toggle(_best_chips[i], i + BEST_WITH == int(mf["best"]))
+	for g in _grade_chips:
+		_apply_toggle(_grade_chips[g], (mf["grades"] as Array).has(g))
+	if _sort_btn != null and _sort_btn.selected != int(mf["sort"]):
+		_sort_btn.select(int(mf["sort"]))
+
+
 ## Gespeicherte Browser-Filter laden (nicht in Test-/Shot-Laeufen: die brauchen den Standard).
 func _load_browser_state() -> bool:
 	var force := OS.get_cmdline_args().has("--browser-state")  # Harness: Wiederherstellung pruefen
@@ -1278,7 +1394,14 @@ func _load_browser_state() -> bool:
 	if cfg.load(BROWSER_STATE_PATH) == OK:
 		_star_filter = clampi(int(cfg.get_value("browser", "star_filter", 0)), 0, STAR_FILTERS.size() - 1)
 		_sv_filter = bool(cfg.get_value("browser", "sv_filter", false))
-		_sort_mode = clampi(int(cfg.get_value("browser", "sort_mode", 0)), 0, 2)
+		var old_sort := clampi(int(cfg.get_value("browser", "sort_mode", 0)), 0, SORT_NAMES.size() - 1)
+		var mfs = cfg.get_value("browser", "mode_filters", {})
+		for m in PLAY_MODES:
+			var raw = mfs.get(m, {}) if mfs is Dictionary else {}
+			var mf := sanitize_mode_filter(raw if raw is Dictionary else {})
+			if not (raw is Dictionary and raw.has("sort")):
+				mf["sort"] = old_sort  # alter Stand ohne Modus-Trennung
+			_mode_filters[m] = mf
 		_saved_search = str(cfg.get_value("browser", "search", ""))
 		var coll := str(cfg.get_value("browser", "collection", ""))
 		_active_collection = coll if CollectionStore.list_names().has(coll) else ""
@@ -1297,7 +1420,11 @@ func _save_browser_state() -> void:
 	var cfg := ConfigFile.new()
 	cfg.set_value("browser", "star_filter", _star_filter)
 	cfg.set_value("browser", "sv_filter", _sv_filter)
-	cfg.set_value("browser", "sort_mode", _sort_mode)
+	cfg.set_value("browser", "sort_mode", _sort_mode())
+	var mfs := {}
+	for m in PLAY_MODES:
+		mfs[m] = sanitize_mode_filter(_mode_filters.get(m, {}))
+	cfg.set_value("browser", "mode_filters", mfs)
 	cfg.set_value("browser", "search", _search.text if _search != null else "")
 	cfg.set_value("browser", "collection", _active_collection)
 	cfg.set_value("browser", "collection_mode", _collection_mode)
@@ -1313,6 +1440,14 @@ func _refresh_filter(query: String) -> void:
 	var q := query.strip_edges().to_lower()
 	var lo: float = STAR_FILTERS[_star_filter][1]
 	var hi: float = STAR_FILTERS[_star_filter][2]
+	var mf := _mode_filter()
+	var best_f := int(mf["best"])
+	var grades: Array = mf["grades"]
+	var sort_m := int(mf["sort"])
+	var by_best := best_f != BEST_ALL or not grades.is_empty()
+	var need_scores := by_best or sort_m == SORT_RECENT or sort_m == SORT_MOST_PLAYED
+	var idx: Dictionary = _scores_for_mode() if need_scores else {}
+	var rows: Array = []
 	_filtered.clear()
 	for ms in _library.mapsets:
 		if q != "" and not ms.search_haystack().contains(q):
@@ -1336,12 +1471,27 @@ func _refresh_filter(query: String) -> void:
 					break
 			if not in_range:
 				continue
-		_filtered.append(ms)
-	match _sort_mode:
-		1:
-			_filtered.sort_custom(func(a, b): return a.max_stars() < b.max_stars())
-		2:
-			_filtered.sort_custom(func(a, b): return a.max_stars() > b.max_stars())
+		var row := {"ms": ms, "i": rows.size()}
+		if need_scores:
+			# Bestwert/Plays nur der im Modus sichtbaren Diffs (wie das Rang-Badge).
+			var info: Dictionary = idx.get(ms.osz_path.get_file(), {})
+			var versions: Array = []
+			for i in vis:
+				versions.append(ms.version_name_at(i))
+			if by_best and not passes_best_filter(set_best_grade(info, versions), best_f, grades):
+				continue
+			row["last"] = set_last_played(info, versions)
+			row["plays"] = set_plays(info, versions)
+		if sort_m == SORT_STARS_UP or sort_m == SORT_STARS_DOWN:
+			row["stars"] = ms.max_stars()
+		elif sort_m == SORT_DOWNLOADED:
+			if not _mtime_cache.has(ms.osz_path):
+				_mtime_cache[ms.osz_path] = FileAccess.get_modified_time(ms.osz_path)
+			row["mtime"] = _mtime_cache[ms.osz_path]
+		rows.append(row)
+	sort_rows(rows, sort_m)
+	for r in rows:
+		_filtered.append(r["ms"])
 	_rebuild_cards()
 	var count_txt := tr("%d Maps") % _filtered.size()
 	if _collection_mode and _active_collection != "":
@@ -1356,6 +1506,157 @@ func _refresh_filter(query: String) -> void:
 		if missing > 0:
 			count_txt += tr("  ·  %d fehlen (gelöscht?)") % missing
 	_count_label.text = count_txt
+
+
+## Score-Index des aktiven Modus: scores.cfg einmal lesen, danach aus dem Cache.
+func _scores_for_mode() -> Dictionary:
+	if not _score_index.has(_play_mode):
+		var cfg := ConfigFile.new()
+		var mode := ScoreStore.MODE_ORBIT if _play_mode == "orbit" else ""
+		_score_index[_play_mode] = build_score_index(cfg, mode) 			if cfg.load(ScoreStore.PATH) == OK else {}
+	return _score_index[_play_mode]
+
+
+# ---------------------------------------------------------------------------
+# Filterlogik (statisch, ohne UI; getestet in tests/run_browser_filter_tests.gd)
+# ---------------------------------------------------------------------------
+
+static func default_mode_filter() -> Dictionary:
+	return {"sort": SORT_TITLE, "best": BEST_ALL, "grades": []}
+
+
+## Gespeicherten Modus-Filter pruefen: Werte begrenzen, unbekannte Noten weg.
+static func sanitize_mode_filter(d: Dictionary) -> Dictionary:
+	var out := default_mode_filter()
+	out["sort"] = clampi(int(d.get("sort", SORT_TITLE)), 0, SORT_NAMES.size() - 1)
+	out["best"] = clampi(int(d.get("best", BEST_ALL)), 0, BEST_NAMES.size() - 1)
+	var gs: Array = []
+	var raw = d.get("grades", [])
+	if raw is Array:
+		for g in raw:
+			if GRADE_CHIPS.has(str(g)) and not gs.has(str(g)):
+				gs.append(str(g))
+	if not gs.is_empty():
+		out["best"] = BEST_WITH  # Noten gibt es nur mit Bestwert
+	out["grades"] = gs
+	return out
+
+
+## Index aus scores.cfg fuer einen Modus ("" = Mania, "orbit"; Sektionen per
+## ScoreStore._sec): {osz-Datei: {Version: {"grade", "last", "plays"}}}.
+## "last" = juengstes Datum aus History/Recent (ISO, also als Text vergleichbar).
+static func build_score_index(cfg: ConfigFile, mode: String) -> Dictionary:
+	var idx := {}
+	var at := func(key: String) -> Dictionary:
+		var parts := key.split("|", true, 1)
+		var f := parts[0].get_file()
+		var v := parts[1] if parts.size() > 1 else ""
+		if not idx.has(f):
+			idx[f] = {}
+		if not idx[f].has(v):
+			idx[f][v] = {"grade": "", "last": "", "plays": 0}
+		return idx[f][v]
+	var sec := ScoreStore._sec("scores", mode)
+	if cfg.has_section(sec):
+		for key in cfg.get_section_keys(sec):
+			var b = cfg.get_value(sec, key, {})
+			if b is Dictionary and not b.is_empty():
+				var e: Dictionary = at.call(key)
+				e["grade"] = str(b.get("grade", ""))
+				e["last"] = maxs(e["last"], str(b.get("date", "")))
+	sec = ScoreStore._sec("plays", mode)
+	if cfg.has_section(sec):
+		for key in cfg.get_section_keys(sec):
+			at.call(key)["plays"] = int(cfg.get_value(sec, key, 0))
+	sec = ScoreStore._sec("history", mode)
+	if cfg.has_section(sec):
+		for key in cfg.get_section_keys(sec):
+			var hist = cfg.get_value(sec, key, [])
+			if hist is Array:
+				var e: Dictionary = at.call(key)
+				for h in hist:
+					if h is Dictionary:
+						e["last"] = maxs(e["last"], str(h.get("date", "")))
+	var recent = cfg.get_value(ScoreStore._sec("recent", mode), "plays", [])
+	if recent is Array:
+		for r in recent:
+			if r is Dictionary and str(r.get("osz_file", "")) != "":
+				var e: Dictionary = at.call("%s|%s" % [r.get("osz_file", ""), r.get("version", "")])
+				e["last"] = maxs(e["last"], str(r.get("date", "")))
+	return idx
+
+
+static func maxs(a: String, b: String) -> String:
+	return b if b > a else a
+
+
+## Note auf einen Chip abbilden: "SS"/"SSH"/"X" -> SS, "SH" -> S, D und F -> D.
+static func grade_bucket(grade: String) -> String:
+	var g := grade.strip_edges().to_upper()
+	if g == "":
+		return ""
+	if g.begins_with("SS") or g.begins_with("X"):
+		return "SS"
+	var c := g.left(1)
+	if c == "F":
+		return "D"
+	return c if GRADE_CHIPS.has(c) else ""
+
+
+## Beste Note (als Chip) ueber die gegebenen Versionen eines Sets, "" = kein Bestwert.
+static func set_best_grade(info: Dictionary, versions: Array) -> String:
+	var best := ""
+	for v in versions:
+		var g := grade_bucket(str(info.get(v, {}).get("grade", "")))
+		if g != "" and (best == "" or GRADE_CHIPS.find(g) < GRADE_CHIPS.find(best)):
+			best = g
+	return best
+
+
+static func set_last_played(info: Dictionary, versions: Array) -> String:
+	var last := ""
+	for v in versions:
+		last = maxs(last, str(info.get(v, {}).get("last", "")))
+	return last
+
+
+static func set_plays(info: Dictionary, versions: Array) -> int:
+	var n := 0
+	for v in versions:
+		n += int(info.get(v, {}).get("plays", 0))
+	return n
+
+
+## grade = set_best_grade(); grades leer = jede Note.
+static func passes_best_filter(grade: String, best_f: int, grades: Array) -> bool:
+	if best_f == BEST_WITHOUT:
+		return grade == ""
+	if grade == "" and (best_f == BEST_WITH or not grades.is_empty()):
+		return false
+	return grades.is_empty() or grades.has(grade)
+
+
+## Zeilen {"i": Bibliotheks-Reihenfolge, "stars", "last", "plays", "mtime"}
+## sortieren. Gleichstand und fehlende Werte: Bibliotheks-Reihenfolge (Titel).
+static func sort_rows(rows: Array, sort_m: int) -> void:
+	match sort_m:
+		SORT_STARS_UP:
+			rows.sort_custom(func(a, b): return _cmp(a, b, -float(a.get("stars", 0.0)), -float(b.get("stars", 0.0))))
+		SORT_STARS_DOWN:
+			rows.sort_custom(func(a, b): return _cmp(a, b, float(a.get("stars", 0.0)), float(b.get("stars", 0.0))))
+		SORT_RECENT:
+			rows.sort_custom(func(a, b): return _cmp(a, b, str(a.get("last", "")), str(b.get("last", ""))))
+		SORT_DOWNLOADED:
+			rows.sort_custom(func(a, b): return _cmp(a, b, int(a.get("mtime", 0)), int(b.get("mtime", 0))))
+		SORT_MOST_PLAYED:
+			rows.sort_custom(func(a, b): return _cmp(a, b, int(a.get("plays", 0)), int(b.get("plays", 0))))
+
+
+## Groesserer Wert zuerst, bei Gleichstand kleinerer Index.
+static func _cmp(a: Dictionary, b: Dictionary, va: Variant, vb: Variant) -> bool:
+	if va != vb:
+		return va > vb
+	return int(a["i"]) < int(b["i"])
 
 
 func _process(delta: float) -> void:
@@ -1544,6 +1845,15 @@ func _rebuild_cards() -> void:
 		_card_buttons.append(card)
 		card.mouse_entered.connect(_slide_card.bind(card, true))
 		card.mouse_exited.connect(_slide_card.bind(card, false))
+	if _filtered.is_empty() and not _library.mapsets.is_empty():
+		var empty := Label.new()
+		empty.text = tr("Keine Maps für diese Filter")
+		empty.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		empty.custom_minimum_size = Vector2(0, CARD_H)
+		empty.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		empty.add_theme_font_size_override("font_size", 14)
+		empty.add_theme_color_override("font_color", COL_DIM)
+		_list_box.add_child(empty)
 	_scores_cfg = null
 	if _selected_set != null:
 		_apply_card_highlight()
@@ -2112,6 +2422,7 @@ func _set_play_mode(mode: String) -> void:
 		return
 	_play_mode = mode
 	_restyle_mode_switch()
+	_restyle_score_chips()  # Sortierung/Bestwert-Filter sind je Modus gemerkt
 	_apply_mod_visibility()
 	if mode == "orbit":
 		_show_orbit_hint()
@@ -2483,6 +2794,9 @@ func _on_sv_backfill_done() -> void:
 
 
 func _exit_tree() -> void:
+	if _import_job != null and _import_job.is_running():
+		_import_job.cancel()
+		_import_job.wait()
 	if _library != null:
 		_library.shutdown()
 	if _maxpp_thread != null:
@@ -2566,13 +2880,16 @@ func _unhandled_input(event: InputEvent) -> void:
 	if not (event is InputEventKey) or not event.pressed:
 		return
 	if event.keycode == KEY_ESCAPE:
+		if _import_overlay != null:
+			_close_import_panel()
+			return
 		if _online_open():
 			_close_download_panel()
 			return
 		_preview.stop()
 		get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
 		return
-	if _online_open() or event.echo:
+	if _online_open() or _import_overlay != null or event.echo:
 		return
 	# Tastatur-Navigation wie in osu: hoch/runter Map, links/rechts Diff,
 	# Enter startet, F2 = Zufallsmap.
@@ -2638,21 +2955,377 @@ func _scroll_to_selected() -> void:
 # ---------------------------------------------------------------------------
 
 func _on_files_dropped(files: PackedStringArray) -> void:
-	var imported := 0
-	var last_path := ""
-	for f in files:
-		if f.to_lower().ends_with(".osz"):
-			var dest := _library.import_external(f)
-			if dest != "":
-				imported += 1
-				last_path = dest
-	if imported > 0:
+	_import_paths(files)
+
+
+# ---------------------------------------------------------------------------
+# Import (scripts/library/song_import.gd): Knopf, Dialog, osu!-Uebernahme,
+# Drag & Drop. Ruhig: eine Akzentfarbe, Text statt Symbole.
+# ---------------------------------------------------------------------------
+
+const LAZER_NOTE := "osu!lazer wird nicht unterstützt: lazer speichert Maps nicht als Ordner. Exportiere sie dort als .osz und wähle die Dateien oben."
+
+var _import_btn: Button
+var _import_job: SongImport = null
+var _import_overlay: Control = null
+var _import_prog_box: VBoxContainer
+var _import_prog_label: Label = null
+var _import_prog_bar: ProgressBar
+var _import_cancel_btn: Button
+var _import_osu_note: Label
+var _import_files_btn: Button
+var _import_osu_btn: Button
+var _import_notice: PanelContainer = null
+var _import_notice_label: Label
+var _import_notice_tween: Tween
+var _import_pending_notes: Array[String] = []
+
+
+## Gemischte Pfade (Datei-Dialog, Drop): .osz und Map-Ordner im Thread,
+## Audio ueber SongImport.import_audio, Rest -> Hinweis "nicht unterstuetzt".
+func _import_paths(paths: PackedStringArray) -> void:
+	var c := SongImport.classify(paths)
+	var notes: Array[String] = []
+	if not c.audio.is_empty():
+		# Eigene Musik wird zur Orbit-Map (nur im Orbit-Modus spielbar).
+		notes.append(tr("Eigene Musik ist im Orbit-Modus spielbar"))
+	if not c.unsupported.is_empty():
+		if c.unsupported.size() == 1:
+			notes.append(tr("Nicht unterstützt: %s") % String(c.unsupported[0]).get_file())
+		else:
+			notes.append(tr("%d Dateien nicht unterstützt") % c.unsupported.size())
+	if c.osz.is_empty() and c.folders.is_empty() and c.audio.is_empty():
+		if notes.is_empty():
+			notes.append(tr("Nicht unterstützt"))
+		_show_import_notice("  ·  ".join(notes), false)
+		return
+	if _start_import_job(c.folders, c.osz, c.audio):
+		_import_pending_notes = notes
+
+
+func _start_import_job(folders: Array, osz_files: Array, audio_files: Array = []) -> bool:
+	if _import_job != null and _import_job.is_running():
+		_show_import_notice(tr("Import läuft schon"), false)
+		return false
+	_import_pending_notes = []
+	_import_job = SongImport.new()
+	_import_job.progress.connect(_on_import_progress)
+	_import_job.finished.connect(_on_import_finished)
+	_import_job.start(folders, osz_files, _library.maps_dir, audio_files)
+	_set_import_busy(true)
+	_on_import_progress(0, folders.size() + osz_files.size() + audio_files.size(), SongImport.PHASE_COPY)
+	return true
+
+
+func _import_progress_text(done: int, total: int, phase: String) -> String:
+	if phase == SongImport.PHASE_ANALYSE:
+		return tr("Bibliothek wird aktualisiert  %d / %d") % [done, total]
+	return tr("Maps werden übernommen  %d / %d") % [done, total]
+
+
+func _on_import_progress(done: int, total: int, phase: String) -> void:
+	var txt := _import_progress_text(done, total, phase)
+	if _import_prog_label != null:
+		_import_prog_label.text = txt
+		_import_prog_bar.max_value = maxi(total, 1)
+		_import_prog_bar.value = done
+	else:
+		_show_import_notice(txt, true, 0.0)
+
+
+func _on_import_finished(res: Dictionary) -> void:
+	var imported: Array = res.get("imported", [])
+	var last := ""
+	var orbit_only := 0
+	if not imported.is_empty():
+		# Cache ist im Thread vorgebaut (MapLibrary.prebuild): scan liest nur noch.
 		_library.scan()
 		_refresh_filter(_search.text)
+		last = String(imported[imported.size() - 1])
+		for ms in _library.mapsets:
+			if imported.has(ms.osz_path) and ms.visible_diffs("mania").is_empty():
+				orbit_only += 1
+	var parts: Array[String] = []
+	if bool(res.get("cancelled", false)):
+		parts.append(tr("Abgebrochen"))
+	if imported.size() == 1:
+		parts.append(tr("1 Map importiert"))
+	else:
+		parts.append(tr("%d Maps importiert") % imported.size())
+	if int(res.get("dup", 0)) > 0:
+		parts.append(tr("%d schon vorhanden") % int(res.dup))
+	if int(res.get("skipped", 0)) > 0:
+		parts.append(tr("%d ohne 4K oder Standard") % int(res.skipped))
+	if int(res.get("failed", 0)) > 0:
+		parts.append(tr("%d fehlgeschlagen") % int(res.failed))
+	if orbit_only > 0 and _play_mode == "mania":
+		parts.append(tr("%d nur im Orbit-Modus") % orbit_only)
+	parts.append_array(_import_pending_notes)
+	_import_pending_notes = []
+	var summary := "  ·  ".join(parts)
+	_set_import_busy(false)
+	if _import_prog_label != null:
+		_import_prog_label.text = summary
+		_import_prog_bar.max_value = 1
+		_import_prog_bar.value = 1
+	else:
+		_show_import_notice(summary, not imported.is_empty())
+	if last != "":
 		for ms in _filtered:
-			if ms.osz_path == last_path:
+			if ms.osz_path == last:
 				_select_set(ms, 0)
 				break
+
+
+func _set_import_busy(busy: bool) -> void:
+	if _import_btn != null:
+		_import_btn.disabled = busy
+	if _import_overlay == null:
+		return
+	_import_files_btn.disabled = busy
+	_import_osu_btn.disabled = busy
+	if busy:
+		_import_prog_box.visible = true
+	_import_cancel_btn.text = tr("Abbrechen") if busy else tr("Fertig")
+
+
+## Kurzer Hinweis unten mittig. hold = 0: bleibt stehen (Fortschritt).
+func _show_import_notice(text: String, good: bool, hold: float = 3.2) -> void:
+	if _import_notice == null:
+		_import_notice = PanelContainer.new()
+		_import_notice.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var sb := UiTheme.solid_box(UiTheme.SURFACE, 10)
+		sb.set_border_width_all(1)
+		sb.content_margin_left = 18
+		sb.content_margin_right = 18
+		sb.content_margin_top = 10
+		sb.content_margin_bottom = 10
+		_import_notice.add_theme_stylebox_override("panel", sb)
+		_import_notice_label = Label.new()
+		_import_notice_label.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+		_import_notice_label.add_theme_font_size_override("font_size", 14)
+		_import_notice.add_child(_import_notice_label)
+		_import_notice.anchor_left = 0.5
+		_import_notice.anchor_right = 0.5
+		_import_notice.anchor_top = 1.0
+		_import_notice.anchor_bottom = 1.0
+		_import_notice.grow_horizontal = Control.GROW_DIRECTION_BOTH
+		_import_notice.grow_vertical = Control.GROW_DIRECTION_BEGIN
+		_import_notice.offset_bottom = -28
+		add_child(_import_notice)
+	var sbx := _import_notice.get_theme_stylebox("panel") as StyleBoxFlat
+	sbx.border_color = Color(COL_ACCENT, 0.55) if good else UiTheme.LINE
+	_import_notice_label.text = text
+	_import_notice_label.add_theme_color_override("font_color", COL_TEXT if good else COL_DIM)
+	_import_notice.offset_left = 0
+	_import_notice.offset_right = 0
+	_import_notice.offset_top = -28
+	_import_notice.visible = true
+	_import_notice.modulate.a = 1.0
+	move_child(_import_notice, get_child_count() - 1)
+	if _import_notice_tween != null:
+		_import_notice_tween.kill()
+		_import_notice_tween = null
+	if hold > 0.0:
+		_import_notice_tween = create_tween()
+		_import_notice_tween.tween_interval(hold)
+		_import_notice_tween.tween_property(_import_notice, "modulate:a", 0.0, 0.4)
+		_import_notice_tween.tween_callback(func(): _import_notice.visible = false)
+
+
+## Import-Fenster: Dateien waehlen oder aus osu! uebernehmen, darunter Fortschritt.
+func _open_import_panel() -> void:
+	if _import_overlay != null:
+		return
+	if _import_notice != null:
+		_import_notice.visible = false
+	_stop_preview_soft()
+	_import_overlay = UiTheme.modal_backdrop(self)
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_import_overlay.add_child(center)
+	var panel := PanelContainer.new()
+	panel.custom_minimum_size = Vector2(540, 0)
+	var pb := UiTheme.solid_box(UiTheme.SURFACE, 14)
+	pb.set_border_width_all(1)
+	pb.border_color = UiTheme.LINE
+	pb.content_margin_left = 28
+	pb.content_margin_right = 28
+	pb.content_margin_top = 24
+	pb.content_margin_bottom = 24
+	panel.add_theme_stylebox_override("panel", pb)
+	center.add_child(panel)
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", 14)
+	panel.add_child(vb)
+	vb.add_child(UiTheme.modal_header("Songs importieren", _close_import_panel))
+
+	var actions := VBoxContainer.new()
+	actions.add_theme_constant_override("separation", 18)
+	vb.add_child(actions)
+	_import_files_btn = _import_row(actions, "Dateien wählen",
+		tr("osu!-Maps (.osz) oder eigene Musik (.mp3, .ogg, .wav). Mehrere auf einmal gehen."))
+	_import_files_btn.pressed.connect(_open_import_file_dialog)
+	var osu_dir := SongImport.find_stable_songs_dir()
+	var osu_sub := tr("Gefunden: %s") % osu_dir if osu_dir != "" else tr("osu! nicht gefunden. Du wählst den Songs-Ordner selbst.")
+	_import_osu_btn = _import_row(actions, "Aus osu! übernehmen",
+		osu_sub + "\n" + tr("Nur 4K-Mania und osu!standard, schon vorhandene Maps bleiben, wie sie sind."))
+	_import_osu_btn.pressed.connect(_import_from_osu)
+	_import_osu_note = _add_label(actions, "", 13, UiTheme.BAD)
+	_import_osu_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_import_osu_note.visible = false
+	if osu_dir == "" and SongImport.find_lazer_dir() != "":
+		_import_osu_note.text = tr(LAZER_NOTE)
+		_import_osu_note.visible = true
+	vb.add_child(UiTheme.hairline())
+	var tip := _add_label(vb, "Dateien und Ordner kannst du auch einfach ins Fenster ziehen.", 13, COL_DIM)
+	tip.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+
+	_import_prog_box = VBoxContainer.new()
+	_import_prog_box.add_theme_constant_override("separation", 10)
+	_import_prog_box.visible = false
+	vb.add_child(_import_prog_box)
+	_import_prog_label = _add_label(_import_prog_box, "", 15, COL_TEXT)
+	_import_prog_label.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	_import_prog_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_import_prog_bar = ProgressBar.new()
+	_import_prog_bar.show_percentage = false
+	_import_prog_bar.custom_minimum_size = Vector2(0, 4)
+	_import_prog_bar.add_theme_stylebox_override("background", UiTheme.solid_box(UiTheme.RAISED, 2))
+	_import_prog_bar.add_theme_stylebox_override("fill", UiTheme.solid_box(COL_ACCENT, 2))
+	_import_prog_box.add_child(_import_prog_bar)
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_END
+	_import_prog_box.add_child(row)
+	_import_cancel_btn = Button.new()
+	_import_cancel_btn.text = "Abbrechen"
+	_import_cancel_btn.custom_minimum_size = Vector2(120, 36)
+	UiTheme.style_ghost_button(_import_cancel_btn, 10)
+	_import_cancel_btn.pressed.connect(func():
+		if _import_job != null and _import_job.is_running():
+			_import_job.cancel()
+			_import_prog_label.text = tr("Wird abgebrochen …")
+		else:
+			_close_import_panel())
+	row.add_child(_import_cancel_btn)
+	if _import_job != null and _import_job.is_running():
+		_set_import_busy(true)
+		_on_import_progress(_import_job.done, _import_job.total, _import_job.phase)
+
+
+## Eine Aktion: Knopf links, Erklaerung (schon uebersetzt) darunter in DIM.
+func _import_row(parent: Node, label: String, sub: String) -> Button:
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 6)
+	parent.add_child(col)
+	var b := Button.new()
+	b.text = label
+	b.custom_minimum_size = Vector2(0, 42)
+	b.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	b.add_theme_font_size_override("font_size", 15)
+	UiTheme.style_button(b, false, 10)
+	col.add_child(b)
+	var l := _add_label(col, sub, 13, COL_DIM)
+	l.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	return b
+
+
+func _close_import_panel() -> void:
+	if _import_overlay == null:
+		return
+	_import_overlay.queue_free()
+	_import_overlay = null
+	_import_prog_label = null
+	if _import_job != null and _import_job.is_running():
+		_on_import_progress(_import_job.done, _import_job.total, _import_job.phase)
+	_play_preview()
+
+
+func _make_import_dialog(mode: FileDialog.FileMode, title: String) -> FileDialog:
+	var fd := FileDialog.new()
+	fd.file_mode = mode
+	fd.access = FileDialog.ACCESS_FILESYSTEM
+	fd.title = tr(title)
+	fd.use_native_dialog = true
+	fd.min_size = Vector2i(820, 520)
+	fd.canceled.connect(fd.queue_free)
+	add_child(fd)
+	return fd
+
+
+func _open_import_file_dialog() -> void:
+	var fd := _make_import_dialog(FileDialog.FILE_MODE_OPEN_FILES, "Maps oder Musik wählen")
+	fd.filters = PackedStringArray([
+		"*.osz, *.mp3, *.ogg, *.wav ; " + tr("Maps und Musik"),
+		"*.osz ; " + tr("osu!-Maps"),
+		"*.mp3, *.ogg, *.wav ; " + tr("Musik"),
+	])
+	fd.files_selected.connect(func(paths: PackedStringArray):
+		fd.queue_free()
+		_import_paths(paths))
+	fd.popup_centered()
+
+
+## osu!stable-Songs-Ordner uebernehmen; nicht gefunden -> Ordner waehlen.
+func _import_from_osu() -> void:
+	var dir := SongImport.find_stable_songs_dir()
+	if dir != "":
+		_import_from_folder(dir)
+		return
+	var fd := _make_import_dialog(FileDialog.FILE_MODE_OPEN_DIR, "osu!-Songs-Ordner wählen")
+	fd.dir_selected.connect(func(p: String):
+		fd.queue_free()
+		_import_from_folder(p))
+	fd.popup_centered()
+
+
+func _import_from_folder(dir: String) -> void:
+	dir = dir.replace("\\", "/")
+	if SongImport.is_lazer_dir(dir):
+		_import_osu_note.text = tr(LAZER_NOTE)
+		_import_osu_note.visible = true
+		return
+	var folders := SongImport.list_map_folders(dir)
+	if folders.is_empty():
+		_import_osu_note.text = tr("In diesem Ordner liegen keine osu!-Maps.")
+		_import_osu_note.visible = true
+		return
+	_import_osu_note.visible = false
+	_start_import_job(folders, [])
+
+
+## Harness: Import-Fenster mit laufendem Fortschritt (beide Sprachen) und
+## Drop-Hinweis als PNGs. Kein echter Import.
+func _shot_import() -> void:
+	_state_ready = false
+	var dir := OS.get_user_data_dir()
+	for a in OS.get_cmdline_args():
+		if a.begins_with("--shot-out="):
+			dir = a.trim_prefix("--shot-out=")
+	for lang in ["de", "en"]:
+		TranslationServer.set_locale(lang)
+		_close_import_panel()
+		await get_tree().process_frame
+		_open_import_panel()
+		_import_prog_box.visible = true
+		_import_files_btn.disabled = true
+		_import_osu_btn.disabled = true
+		_import_cancel_btn.text = tr("Abbrechen")
+		_on_import_progress(12, 340, SongImport.PHASE_COPY)
+		await get_tree().create_timer(0.8).timeout
+		await RenderingServer.frame_post_draw
+		var out := dir.path_join("import_%s.png" % lang)
+		get_viewport().get_texture().get_image().save_png(out)
+		print("SHOT gespeichert: " + out)
+	_close_import_panel()
+	_show_import_notice(tr("%d Maps importiert") % 3 + "  ·  " + tr("%d schon vorhanden") % 2, true, 0.0)
+	await get_tree().create_timer(0.5).timeout
+	await RenderingServer.frame_post_draw
+	var out2 := dir.path_join("import_notice.png")
+	get_viewport().get_texture().get_image().save_png(out2)
+	print("SHOT gespeichert: " + out2)
+	get_tree().quit(0)
 
 
 # ---------------------------------------------------------------------------

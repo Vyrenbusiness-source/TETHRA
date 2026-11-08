@@ -13,6 +13,11 @@ extends Control
 ## Modus kommt aus s.mode ("orbit", sonst Mania 4K): Abzeichen im Kopf, der
 ## Bestleistungs-Vergleich nutzt nur Scores desselben Modus
 ## (ScoreStore.previous_best_for).
+## Details (optional, Mania): judge_log = Array[Vector4(Notenzeit ms, Spur,
+## Quality, Zeitfehler ms oder NAN)] in Urteils-Reihenfolge -> Reiter
+## "Details" mit Treffern pro Spur und Timing pro Abschnitt, schmales
+## Abschnitts-Band unter der Acc-Kurve. previous_best = bisheriger Bestwert
+## ({} = erster Lauf) -> Differenzen unter Score/Acc/Kombo/pp.
 
 signal retry_pressed
 signal replay_pressed
@@ -80,6 +85,9 @@ var _main_row: HBoxContainer
 var _reveal: Array[Control] = []
 var _bars: Array = []  # [Panel fill, float frac]
 var _shown := false
+var _pages: Array[Control] = []  # [Uebersicht, Details]
+var _tabs: Array[Button] = []
+var _page := 0
 
 
 func _ready() -> void:
@@ -200,6 +208,9 @@ func show_results(data: Dictionary) -> void:
 		c.queue_free()
 	_reveal.clear()
 	_bars.clear()
+	_pages.clear()
+	_tabs.clear()
+	_page = 0
 	_build_background()
 	_build_header()
 	var group := _build_group()
@@ -483,11 +494,19 @@ func _build_left_panel(parent: Control) -> void:
 	top.add_theme_constant_override("separation", 8)
 	vb.add_child(top)
 	var cap := _caption("PUNKTE")
-	cap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	cap.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	top.add_child(cap)
 	for b in _badges():
 		top.add_child(_badge(str(b[0]), b[1]))
+	var top_fill := Control.new()
+	top_fill.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	top_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	top.add_child(top_fill)
+	var jlog := judge_log()
+	var with_details := not jlog.is_empty()
+	if with_details:
+		top.add_child(_tab_button(tr("Übersicht"), 0))
+		top.add_child(_tab_button(tr("Details"), 1))
 	_reveal.append(top)
 	var srow := HBoxContainer.new()
 	srow.add_theme_constant_override("separation", 22)
@@ -498,29 +517,43 @@ func _build_left_panel(parent: Control) -> void:
 	_score_lbl.add_theme_font_size_override("font_size", 54)
 	_score_lbl.add_theme_color_override("font_color", UiTheme.TEXT)
 	_score_lbl.add_theme_constant_override("line_spacing", -6)
-	_score_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	srow.add_child(_score_lbl)
+	var deltas := hero_deltas()
+	var score_box := VBoxContainer.new()
+	score_box.add_theme_constant_override("separation", 0)
+	score_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	score_box.add_child(_score_lbl)
+	srow.add_child(score_box)
 	var acc: float = float(_stats.get("accuracy", 0.0))
 	var acc_v := _hero_stat("GENAUIGKEIT", fmt_pct(acc), UiTheme.TEXT)
 	_acc_lbl = acc_v.get_meta("value")
 	srow.add_child(acc_v)
-	srow.add_child(_hero_stat("MAX. KOMBO", "%s×" % fmt_int(int(_stats.get("max_combo", 0))), UiTheme.TEXT))
-	srow.add_child(_hero_pp())
+	var combo_v := _hero_stat("MAX. KOMBO", "%s×" % fmt_int(int(_stats.get("max_combo", 0))), UiTheme.TEXT)
+	srow.add_child(combo_v)
+	var pp_v := _hero_pp()
+	srow.add_child(pp_v)
+	if not deltas.is_empty():
+		var boxes := {"score": score_box, "acc": acc_v, "combo": combo_v, "pp": pp_v}
+		for k in boxes:
+			var d: Array = deltas.get(k, ["", CAPTION])
+			(boxes[k] as Control).add_child(_delta_label(str(d[0]), d[1]))
 	_reveal.append(srow)
-	var pb := _pb_line()
-	if pb != null:
-		vb.add_child(pb)
-		_reveal.append(pb)
 
 	# Verteilung, Timing und Graphen aus der Stats-Karte (gleicher Stil wie MP).
+	# Mit judge_log: Seite "Uebersicht" + Seite "Details" (Spur, Abschnitt, Bestwert).
+	var over := VBoxContainer.new()
+	over.add_theme_constant_override("separation", 12)
+	over.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	over.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vb.add_child(over)
+	_pages.append(over)
 	var card := PlayerStatsCard.new()
 	card._s = 0.86
 	var jd: Control = card._judgements(st)
-	vb.add_child(jd)
+	over.add_child(jd)
 	_reveal.append(jd)
 	if st.has("ur"):
 		var tm: Control = card._timing(st, {})
-		vb.add_child(tm)
+		over.add_child(tm)
 		_reveal.append(tm)
 		var is_fail := bool(_data.get("is_fail", false))
 		var info := {}
@@ -528,11 +561,18 @@ func _build_left_panel(parent: Control) -> void:
 			info["trace_caption"] = tr("Genauigkeit bis zum Fail")
 		var gr: Control = card._graphs(st, {}, info)
 		gr.custom_minimum_size = Vector2(0, 118)
-		vb.add_child(gr)
+		over.add_child(gr)
 		_reveal.append(gr)
 		if is_fail:
 			_add_fail_marker(gr)
+		if with_details:
+			_add_section_band(gr, jlog)
 	card.free()
+	if with_details:
+		var det := _build_details(jlog)
+		det.visible = false
+		vb.add_child(det)
+		_pages.append(det)
 
 
 ## Paket wie im MP (PlayerStatsCard.pack) aus Stats, Offsets und optionalem
@@ -593,8 +633,7 @@ func _add_fail_marker(graphs: Control) -> void:
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	trace_box.remove_child(target)
 	trace_box.add_child(row)
-	# Mindestens ein Drittel Breite, sonst ist der Verlauf bei fruehem Fail unlesbar.
-	var played := clampf(f, 0.35, 0.96) if f >= 0.0 else 0.96
+	var played := fail_played()
 	target.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	target.size_flags_stretch_ratio = played
 	row.add_child(target)
@@ -617,6 +656,13 @@ func _add_fail_marker(graphs: Control) -> void:
 		var tx := 8.0 if fw + 8.0 <= w else -fw - 8.0
 		rest.draw_string(font, Vector2(tx, 13), label_txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, col))
 	row.add_child(rest)
+
+
+## Breitenanteil des gespielten Verlaufs bei Fail. Mindestens ein Drittel,
+## sonst ist der Verlauf bei fruehem Fail unlesbar.
+func fail_played() -> float:
+	var f := fail_fraction()
+	return clampf(f, 0.35, 0.96) if f >= 0.0 else 0.96
 
 
 ## Kennzahl neben dem Score: kleine Beschriftung, Wert darunter.
@@ -803,44 +849,6 @@ func _badges() -> Array:
 	if bool(_data.get("unranked", false)):
 		out.append(["UNGEWERTET", UiTheme.DIM])
 	return out
-
-
-## Vergleich mit der persoenlichen Bestleistung im SELBEN Modus:
-## "BESTLEISTUNG ORBIT  812.345  +12.000". null, wenn das Ergebnis nicht
-## gespeichert wurde (Replay, Autoplay, Lobby) oder ein Fail ist.
-func _pb_line() -> Control:
-	if bool(_data.get("is_fail", false)) or bool(_data.get("is_replay", false)):
-		return null
-	var mode := score_mode()
-	var score := int(_stats.get("score", 0))
-	var prev = _data.get("previous_best", null)
-	if prev == null:
-		prev = ScoreStore.previous_best_for(GameSession.osz_path, GameSession.difficulty_version, mode, score)
-	if not (prev is Dictionary):
-		return null
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 10)
-	var cap := _caption(tr("BESTLEISTUNG %s") % ScoreStore.mode_label(mode).to_upper())
-	row.add_child(cap)
-	var val := Label.new()
-	val.add_theme_font_size_override("font_size", 15)
-	val.add_theme_color_override("font_color", UiTheme.TEXT)
-	row.add_child(val)
-	if (prev as Dictionary).is_empty():
-		val.text = tr("erster Score in diesem Modus")
-		return row
-	var old := int(prev.get("score", 0))
-	val.text = fmt_int(old)
-	var mods_txt := ScoreStore.mods_label(prev)
-	if mods_txt != "":
-		val.text += "  ·  " + mods_txt
-	var diff := Label.new()
-	var d := score - old
-	diff.text = ("+" if d >= 0 else "−") + fmt_int(absi(d))
-	diff.add_theme_font_size_override("font_size", 15)
-	diff.add_theme_color_override("font_color", Color(0.45, 0.95, 0.6) if d > 0 else (CAPTION if d == 0 else FAIL_COLOR))
-	row.add_child(diff)
-	return row
 
 
 func _badge(t: String, col: Color) -> PanelContainer:
@@ -1290,6 +1298,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif event.keycode == KEY_ESCAPE:
 			get_viewport().set_input_as_handled()
 			back_pressed.emit()
+		elif event.keycode == KEY_TAB and _pages.size() > 1:
+			get_viewport().set_input_as_handled()
+			show_page((_page + 1) % _pages.size())
 
 
 # ---------------------------------------------------------------------------
@@ -1668,3 +1679,525 @@ func _play_lobby_intro() -> void:
 	tw.chain().tween_callback(func():
 		if is_instance_valid(_main_row):
 			_main_row.queue_sort())
+
+
+# ---------------------------------------------------------------------------
+# Details: Bestwert-Vergleich, Treffer pro Spur, Timing pro Abschnitt
+# ---------------------------------------------------------------------------
+
+## Gedeckte Differenz-Farben (besser / schlechter) und Marke der schwaechsten Stelle.
+const DELTA_UP := Color(0.60, 0.76, 0.60)
+const DELTA_DOWN := Color(0.84, 0.56, 0.51)
+const WEAK_COL := Color(0.86, 0.50, 0.44)
+## Abschnitte mit weniger Urteilen zaehlen nicht als "schwaechste Stelle".
+const SECTION_MIN_NOTES := 4
+
+
+## Urteile dieses Laufs (Vector4: Notenzeit ms, Spur, Quality, Zeitfehler ms/NAN).
+func judge_log() -> Array:
+	var raw: Variant = _data.get("judge_log", [])
+	var out: Array = []
+	if raw is Array:
+		for e in raw:
+			if e is Vector4:
+				out.append(e)
+	return out
+
+
+## Bisheriger Bestwert dieser Diff: Dictionary ({} = erster Lauf) oder null,
+## wenn nichts verglichen wird (Fail, Replay, Lobby, nicht gespeichert).
+func comparison() -> Variant:
+	if bool(_data.get("is_fail", false)) or bool(_data.get("is_replay", false)) \
+			or bool(_data.get("lobby", false)):
+		return null
+	var prev: Variant = _data.get("previous_best", null)
+	if prev == null:
+		prev = ScoreStore.previous_best_for(GameSession.osz_path, GameSession.difficulty_version,
+			score_mode(), int(_stats.get("score", 0)))
+	return prev if prev is Dictionary else null
+
+
+## Differenzen zum Bestwert: {score|acc|combo|pp: [Text, Farbe]}. Erster Lauf:
+## nur score = "erster Lauf auf dieser Diff". {} = kein Vergleich.
+func hero_deltas() -> Dictionary:
+	var prev: Variant = comparison()
+	if prev == null:
+		return {}
+	var p: Dictionary = prev
+	if p.is_empty():
+		return {"score": [tr("erster Lauf auf dieser Diff"), CAPTION]}
+	var out := {}
+	out["score"] = delta_entry(float(int(_stats.get("score", 0)) - int(p.get("score", 0))), "score")
+	out["acc"] = delta_entry((float(_stats.get("accuracy", 0.0)) - float(p.get("accuracy", 0.0))) * 100.0, "acc")
+	out["combo"] = delta_entry(float(int(_stats.get("max_combo", 0)) - int(p.get("max_combo", 0))), "combo")
+	var pp := float(_data.get("pp", -1.0))
+	var old_pp := float(p.get("pp", -1.0))
+	if pp >= 0.0 and old_pp >= 0.0 and not bool(_data.get("unranked", false)) \
+			and score_mode() != ScoreStore.MODE_ORBIT:
+		out["pp"] = delta_entry(pp - old_pp, "pp")
+	return out
+
+
+## Differenz als [Text, Farbe]: "+1,26 %", "−3.400", "±0" (unter der
+## Anzeigegenauigkeit gilt als gleich).
+static func delta_entry(diff: float, kind: String) -> Array:
+	var txt := delta_text(diff, kind)
+	if txt.begins_with("±"):
+		return [txt, MUTED]
+	return [txt, DELTA_UP if diff > 0.0 else DELTA_DOWN]
+
+
+static func delta_text(diff: float, kind: String) -> String:
+	var a := absf(diff)
+	var eps := 0.5
+	var body := ""
+	match kind:
+		"acc":
+			eps = 0.005
+			body = UiTheme.fmt_num(a, 2) + (" %" if UiTheme.is_german() else "%")
+		"pp":
+			eps = 0.05
+			body = UiTheme.fmt_num(a, 1) + " pp"
+		"combo":
+			body = UiTheme.fmt_score(roundi(a)) + "×"
+		_:
+			body = UiTheme.fmt_score(roundi(a))
+	if a < eps:
+		return "±0"
+	return ("+" if diff > 0.0 else "−") + body
+
+
+func _delta_label(t: String, col: Color) -> Label:
+	var l := Label.new()
+	l.text = t if t != "" else " "
+	l.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	l.add_theme_font_size_override("font_size", 13)
+	l.add_theme_color_override("font_color", col)
+	return l
+
+
+## Genauigkeit (osu!mania-Formel) aus Zaehlern [MAX, 300, 200, 100, 50, MISS].
+static func acc_of(c: Array) -> float:
+	var total := 0
+	for x in c:
+		total += int(x)
+	if total == 0:
+		return 1.0
+	return float(300 * (int(c[0]) + int(c[1])) + 200 * int(c[2]) + 100 * int(c[3]) + 50 * int(c[4])) \
+		/ float(300 * total)
+
+
+## Je Spur: {counts [MAX..MISS], n, acc, mean (ms, NAN ohne Zeitfehler)}.
+static func lane_stats(jlog: Array, lanes: int = 4) -> Array:
+	for e in jlog:
+		lanes = maxi(lanes, int((e as Vector4).y) + 1)
+	var out: Array = []
+	for _l in lanes:
+		out.append({"counts": [0, 0, 0, 0, 0, 0], "n": 0, "sum": 0.0, "hits": 0})
+	for e in jlog:
+		var v: Vector4 = e
+		var l := int(v.y)
+		if l < 0:
+			continue
+		_count_into(out[l], v)
+	for d in out:
+		_finish_counts(d)
+	return out
+
+
+## Anzahl Abschnitte: etwa alle 15 s einer, 8 bis 12.
+static func section_count(span_ms: float) -> int:
+	return clampi(roundi(span_ms / 15000.0), 8, 12)
+
+
+## Song (erste bis letzte Note) in gleich lange Abschnitte: je {t0, t1, n,
+## counts, acc, mean, i0, i1}. i0..i1 = fortlaufende Urteils-Indizes in
+## Zeitreihenfolge (Breite im Band unter dem Verlauf, der je Urteil zaehlt).
+static func section_stats(jlog: Array, count: int = -1) -> Array:
+	if jlog.is_empty():
+		return []
+	var t0 := INF
+	var t1 := -INF
+	for e in jlog:
+		t0 = minf(t0, (e as Vector4).x)
+		t1 = maxf(t1, (e as Vector4).x)
+	var span := maxf(t1 - t0, 1.0)
+	var n := count if count > 0 else section_count(span)
+	var out: Array = []
+	for k in n:
+		out.append({"t0": t0 + span * float(k) / float(n), "t1": t0 + span * float(k + 1) / float(n),
+			"counts": [0, 0, 0, 0, 0, 0], "n": 0, "sum": 0.0, "hits": 0})
+	for e in jlog:
+		var v: Vector4 = e
+		_count_into(out[clampi(int((v.x - t0) / span * float(n)), 0, n - 1)], v)
+	var idx := 0
+	for d in out:
+		_finish_counts(d)
+		d["i0"] = idx
+		idx += int(d.n)
+		d["i1"] = idx
+	return out
+
+
+static func _count_into(d: Dictionary, v: Vector4) -> void:
+	var q := clampi(int(v.z), 0, 5)
+	d.counts[q] += 1
+	d.n += 1
+	if not is_nan(v.w):
+		d.sum += v.w
+		d.hits += 1
+
+
+static func _finish_counts(d: Dictionary) -> void:
+	d["acc"] = acc_of(d.counts)
+	d["mean"] = float(d.sum) / float(d.hits) if int(d.hits) > 0 else NAN
+
+
+## Index des Abschnitts mit der niedrigsten Genauigkeit (mind.
+## SECTION_MIN_NOTES Urteile), -1 wenn alle gleich gut sind.
+static func weakest_section(secs: Array) -> int:
+	var lo := -1
+	var best := -1.0
+	for k in secs.size():
+		var d: Dictionary = secs[k]
+		if int(d.n) < SECTION_MIN_NOTES:
+			continue
+		best = maxf(best, float(d.acc))
+		if lo < 0 or float(d.acc) < float(secs[lo].acc):
+			lo = k
+	if lo < 0 or float(secs[lo].acc) >= best - 0.0001:
+		return -1
+	return lo
+
+
+## 95300 -> "1:35".
+static func fmt_clock(ms: float) -> String:
+	var sec := maxi(int(ms / 1000.0), 0)
+	return "%d:%02d" % [sec / 60, sec % 60]
+
+
+static func signed_ms(v: float) -> String:
+	return ("+" if v >= 0.0 else "−") + UiTheme.fmt_num(absf(v), 1)
+
+
+func _plain(t: String, sz: int, col: Color, heading: bool = false) -> Label:
+	var l := Label.new()
+	l.text = t
+	l.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	l.add_theme_font_size_override("font_size", sz)
+	l.add_theme_color_override("font_color", col)
+	if heading:
+		l.add_theme_font_override("font", UiTheme.heading_font(1))
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return l
+
+
+func _caption_tr(key: String) -> Label:
+	var l := _caption(tr(key).to_upper())
+	l.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	return l
+
+
+func _hline() -> Control:
+	var c := ColorRect.new()
+	c.color = Color(1, 1, 1, 0.07)
+	c.custom_minimum_size = Vector2(0, 1)
+	c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return c
+
+
+## Reiter-Knopf oben rechts im Panel (aktiv: Text hell + Akzent-Unterstrich).
+func _tab_button(t: String, idx: int) -> Button:
+	var b := Button.new()
+	b.text = t
+	b.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	b.focus_mode = Control.FOCUS_NONE
+	b.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	b.add_theme_font_override("font", UiTheme.heading_font(1))
+	b.add_theme_font_size_override("font_size", 15)
+	b.pressed.connect(show_page.bind(idx))
+	_tabs.append(b)
+	_style_tab(b, idx == _page)
+	return b
+
+
+func _style_tab(b: Button, active: bool) -> void:
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0, 0, 0, 0)
+	sb.border_color = UiTheme.ACCENT if active else Color(1, 1, 1, 0)
+	sb.border_width_bottom = 2
+	sb.content_margin_left = 6
+	sb.content_margin_right = 6
+	sb.content_margin_top = 1
+	sb.content_margin_bottom = 3
+	for st in ["normal", "hover", "pressed", "hover_pressed", "focus"]:
+		b.add_theme_stylebox_override(st, sb)
+	var col := UiTheme.TEXT if active else CAPTION
+	for c in ["font_color", "font_pressed_color", "font_focus_color"]:
+		b.add_theme_color_override(c, col)
+	for c in ["font_hover_color", "font_hover_pressed_color"]:
+		b.add_theme_color_override(c, UiTheme.TEXT)
+
+
+## Seite 0 = Uebersicht, 1 = Details (Tab-Taste wechselt).
+func show_page(i: int) -> void:
+	if i < 0 or i >= _pages.size():
+		return
+	_page = i
+	for k in _pages.size():
+		_pages[k].visible = k == i
+	for k in _tabs.size():
+		_style_tab(_tabs[k], k == i)
+
+
+## Schmales Abschnitts-Band unter der Acc-Kurve (gleiche x-Achse: Urteile),
+## schwaechste Stelle in gedecktem Rot mit Zeitangabe.
+func _add_section_band(graphs: Control, jlog: Array) -> void:
+	if graphs.get_child_count() < 2:
+		return
+	var box: Control = graphs.get_child(1)
+	var secs := section_stats(jlog)
+	var band := _SectionBand.new()
+	band.secs = secs
+	band.total = jlog.size()
+	band.weak = weakest_section(secs)
+	if band.weak >= 0:
+		band.weak_text = tr("schwächste Stelle %s") % fmt_clock(float(secs[band.weak].t0))
+	band.custom_minimum_size = Vector2(0, 28)
+	if not bool(_data.get("is_fail", false)):
+		box.add_child(band)
+		return
+	# Fail: Band nur so breit wie der gespielte Teil des Verlaufs.
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 0)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var played := fail_played()
+	band.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	band.size_flags_stretch_ratio = played
+	row.add_child(band)
+	var rest := Control.new()
+	rest.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	rest.size_flags_stretch_ratio = 1.0 - played
+	rest.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(rest)
+	box.add_child(row)
+
+
+## Seite "Details": Bestwert, Treffer pro Spur, Timing pro Abschnitt.
+func _build_details(jlog: Array) -> VBoxContainer:
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 10)
+	v.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var prev: Variant = comparison()
+	if prev != null:
+		v.add_child(_best_row(prev))
+		v.add_child(_hline())
+
+	v.add_child(_caption_tr("Treffer pro Spur"))
+	var lanes := HBoxContainer.new()
+	lanes.add_theme_constant_override("separation", 24)
+	lanes.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var ls := lane_stats(jlog)
+	for i in ls.size():
+		lanes.add_child(_lane_col(i, ls[i]))
+	v.add_child(lanes)
+	v.add_child(_hline())
+
+	var secs := section_stats(jlog)
+	var weak := weakest_section(secs)
+	var head := HBoxContainer.new()
+	head.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var cap := _caption_tr("Timing pro Abschnitt")
+	cap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	head.add_child(cap)
+	if weak >= 0:
+		var d: Dictionary = secs[weak]
+		head.add_child(_plain(tr("schwächste Stelle %s") % ("%s–%s  ·  %s" % [
+			fmt_clock(float(d.t0)), fmt_clock(float(d.t1)), fmt_pct(float(d.acc))]), 13, WEAK_COL))
+	v.add_child(head)
+	var chart := _SectionChart.new()
+	chart.secs = secs
+	chart.weak = weak
+	chart.row_labels = [tr("Acc"), tr("Ø ms"), tr("Start")]
+	chart.custom_minimum_size = Vector2(0, 110)
+	chart.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	v.add_child(chart)
+	return v
+
+
+## "BISHERIGER BESTWERT  911.204 · 95,41 % · 398× · 212,4 pp      03.11.2026".
+func _best_row(prev: Dictionary) -> Control:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 12)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var cap := _caption_tr("Bisheriger Bestwert")
+	cap.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	row.add_child(cap)
+	if prev.is_empty():
+		row.add_child(_plain(tr("erster Lauf auf dieser Diff"), 15, CAPTION))
+		return row
+	var parts: Array = [fmt_int(int(prev.get("score", 0))), fmt_pct(float(prev.get("accuracy", 0.0))),
+		"%s×" % fmt_int(int(prev.get("max_combo", 0)))]
+	if float(prev.get("pp", -1.0)) >= 0.0 and score_mode() != ScoreStore.MODE_ORBIT:
+		parts.append("%s pp" % fmt_dec(float(prev.pp), 1))
+	var mods_txt := ScoreStore.mods_label(prev)
+	if mods_txt != "":
+		parts.append(mods_txt)
+	var val := _plain("  ·  ".join(parts), 15, UiTheme.TEXT, true)
+	val.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(val)
+	var date := str(prev.get("date", ""))
+	if date != "":
+		row.add_child(_plain(fmt_date(date), 13, CAPTION))
+	return row
+
+
+## Eine Spur: Name + Genauigkeit, Anteil-Balken, Zaehler MAX..MISS (2 Spalten),
+## mittlere Abweichung.
+func _lane_col(i: int, d: Dictionary) -> VBoxContainer:
+	var c := VBoxContainer.new()
+	c.add_theme_constant_override("separation", 6)
+	c.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var n := int(d.n)
+	var head := HBoxContainer.new()
+	head.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var name_l := _plain(tr("Spur %d") % (i + 1), 15, UiTheme.TEXT, true)
+	name_l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	head.add_child(name_l)
+	head.add_child(_plain(fmt_pct(float(d.acc)) if n > 0 else "—", 15, UiTheme.TEXT, true))
+	c.add_child(head)
+	var bar := PlayerStatsCard._Stack.new()
+	var fr: Array = []
+	for q in 6:
+		fr.append(float(d.counts[q]) / float(maxi(n, 1)))
+	bar.fracs = fr
+	bar.custom_minimum_size = Vector2(0, 6)
+	c.add_child(bar)
+	var g := GridContainer.new()
+	g.columns = 2
+	g.add_theme_constant_override("h_separation", 12)
+	g.add_theme_constant_override("v_separation", 0)
+	g.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	for q in [0, 3, 1, 4, 2, 5]:
+		var cell := HBoxContainer.new()
+		cell.add_theme_constant_override("separation", 6)
+		cell.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		cell.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var tag := _plain(str(PlayerStatsCard.TAGS[q]), 12, QUALITY_COLOR[q], true)
+		tag.custom_minimum_size = Vector2(32, 0)
+		cell.add_child(tag)
+		var cnt := int(d.counts[q])
+		cell.add_child(_plain(fmt_int(cnt), 15, UiTheme.TEXT if cnt > 0 else MUTED, true))
+		g.add_child(cell)
+	c.add_child(g)
+	var mean := float(d.mean)
+	var mt := "Ø —"
+	if not is_nan(mean):
+		mt = tr("Ø %s ms") % signed_ms(mean)
+		if absf(mean) >= 1.0:
+			mt += "  ·  " + (tr("spät") if mean > 0.0 else tr("früh"))
+	c.add_child(_plain(mt, 13, CAPTION))
+	return c
+
+
+## Band unter dem Verlauf: ein Balken je Abschnitt, Breite = Anteil Urteile,
+## Deckkraft = relative Genauigkeit; schwaechster Abschnitt gedeckt rot.
+class _SectionBand extends Control:
+	const LEFT := 10.0
+	const RIGHT := 58.0  # Platz der Prozent-Beschriftung im Verlauf
+	var secs: Array = []
+	var total := 0
+	var weak := -1
+	var weak_text := ""
+
+	func _init() -> void:
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	func _draw() -> void:
+		var w := size.x - LEFT - RIGHT
+		if secs.is_empty() or total <= 0 or w <= 4.0:
+			return
+		var lo := 1.0
+		var hi := 0.0
+		for d in secs:
+			if int(d.n) > 0:
+				lo = minf(lo, float(d.acc))
+				hi = maxf(hi, float(d.acc))
+		for k in secs.size():
+			var d: Dictionary = secs[k]
+			if int(d.n) <= 0:
+				continue
+			var x0 := LEFT + w * float(d.i0) / float(total)
+			var x1 := LEFT + w * float(d.i1) / float(total)
+			var t := 1.0 if hi - lo < 0.0001 else (float(d.acc) - lo) / (hi - lo)
+			var col := Color(UiTheme.ACCENT, 0.22 + 0.55 * t)
+			if k == weak:
+				col = Color(ResultsScreen.WEAK_COL, 0.95)
+			draw_rect(Rect2(x0 + 1.0, 2.0, maxf(x1 - x0 - 2.0, 1.0), 6.0), col)
+		if weak >= 0 and weak_text != "":
+			var d: Dictionary = secs[weak]
+			var font := get_theme_default_font()
+			var cx := LEFT + w * (float(d.i0) + float(d.i1)) * 0.5 / float(total)
+			var tw := font.get_string_size(weak_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x
+			var tx := clampf(cx - tw * 0.5, 0.0, maxf(size.x - tw, 0.0))
+			draw_string(font, Vector2(tx, 22.0), weak_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 12,
+				ResultsScreen.WEAK_COL)
+
+
+## Timing pro Abschnitt: Saeule = Genauigkeit (Wert darueber), darunter
+## mittlere Abweichung und Startzeit; links Zeilen-Beschriftung.
+class _SectionChart extends Control:
+	const GUTTER := 46.0
+	var secs: Array = []
+	var weak := -1
+	var row_labels: Array = ["Acc", "ms", "Start"]
+
+	func _init() -> void:
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	func _draw() -> void:
+		if secs.is_empty():
+			return
+		var font := get_theme_default_font()
+		var fs := 12
+		var h := size.y
+		var y_time := h - 3.0
+		var y_off := h - 21.0
+		var base := h - 36.0
+		var top := 18.0
+		var lo := 1.0
+		for d in secs:
+			if int(d.n) > 0:
+				lo = minf(lo, float(d.acc))
+		lo = clampf(floorf((lo - 0.01) * 100.0) / 100.0, 0.0, 0.99)
+		var n := secs.size()
+		var cw := (size.x - GUTTER) / float(n)
+		var bw := minf(cw * 0.4, 24.0)
+		var cap := ResultsScreen.CAPTION
+		var muted := ResultsScreen.MUTED
+		draw_string(font, Vector2(0, base - 2.0), str(row_labels[0]), HORIZONTAL_ALIGNMENT_LEFT, GUTTER, fs, muted)
+		draw_string(font, Vector2(0, y_off), str(row_labels[1]), HORIZONTAL_ALIGNMENT_LEFT, GUTTER, fs, muted)
+		draw_string(font, Vector2(0, y_time), str(row_labels[2]), HORIZONTAL_ALIGNMENT_LEFT, GUTTER, fs, muted)
+		draw_line(Vector2(GUTTER, base + 0.5), Vector2(size.x, base + 0.5), Color(1, 1, 1, 0.08), 1.0)
+		for k in n:
+			var d: Dictionary = secs[k]
+			var x := GUTTER + cw * float(k)
+			var is_weak := k == weak
+			draw_string(font, Vector2(x, y_time), ResultsScreen.fmt_clock(float(d.t0)),
+				HORIZONTAL_ALIGNMENT_CENTER, cw, fs, muted)
+			if int(d.n) <= 0:
+				draw_string(font, Vector2(x, y_off), "—", HORIZONTAL_ALIGNMENT_CENTER, cw, fs, muted)
+				continue
+			var acc := float(d.acc)
+			var t := clampf((acc - lo) / maxf(1.0 - lo, 0.0001), 0.0, 1.0)
+			var bh := 4.0 + t * (base - top - 4.0)
+			var col := ResultsScreen.WEAK_COL if is_weak else Color(UiTheme.ACCENT, 0.6)
+			draw_rect(Rect2(x + (cw - bw) * 0.5, base - bh, bw, bh), col)
+			draw_string(font, Vector2(x, base - bh - 5.0), UiTheme.fmt_num(acc * 100.0, 1),
+				HORIZONTAL_ALIGNMENT_CENTER, cw, fs, ResultsScreen.WEAK_COL if is_weak else UiTheme.TEXT)
+			var mean := float(d.mean)
+			var mt := "—" if is_nan(mean) else ResultsScreen.signed_ms(mean)
+			draw_string(font, Vector2(x, y_off), mt, HORIZONTAL_ALIGNMENT_CENTER, cw, fs, cap)
