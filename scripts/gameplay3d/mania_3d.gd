@@ -360,6 +360,14 @@ var _clip_toast: PanelContainer
 var _clip_toast_tw: Tween
 # Hit-Fehler (ms) aller Treffer fuer das Histogramm im Results-Screen.
 var _hit_offsets := PackedFloat32Array()
+# Ein Eintrag je Urteil (gleiche Reihenfolge wie _acc_trace) fuer Spur- und
+# Abschnitts-Auswertung im Endbild: Vector4(Notenzeit ms, Spur, Quality,
+# Zeitfehler ms oder NAN). Hold: Zeit/Zeitfehler des Kopfes.
+var _judge_log: Array = []
+# Zeitfehler der laufenden Hold-Koepfe (Index -> ms) bis zum Hold-Urteil.
+var _hold_head_dt := {}
+# Bisheriger Bestwert dieser Diff (ScoreStore.submit().previous), null = nicht gespeichert.
+var _prev_best: Variant = null
 # Multiplayer-Stats: Acc nach jedem Urteil, Hold-Ergebnisse.
 var _acc_trace := PackedFloat32Array()
 var _hold_ok := 0
@@ -500,14 +508,19 @@ func _ready() -> void:
 		rng.seed = 7
 		for _i in 300:
 			_hit_offsets.append(rng.randfn(3.2, 17.0))
-		# Fake-Verlauf + Holds, damit Graph und Hold-Zeile im Shot gefuellt sind.
-		var acc := 1.0
-		for i in 120:
-			acc = clampf(acc - absf(rng.randfn(0.0, 0.004)) + 0.0025, 0.9, 1.0)
-			_acc_trace.append(acc)
+		# Fake-Urteile (Spur/Abschnitt) + daraus der Acc-Verlauf, dazu Holds,
+		# damit Graph, Abschnitts-Band und Hold-Zeile im Shot gefuellt sind.
 		_hold_ok = 41
 		_hold_drop = 2
+		_fake_judge_log(rng)
+		# Fake-Bestwert fuer den Vergleich; --shot-first-run = erster Lauf.
+		_prev_best = {} if OS.get_cmdline_args().has("--shot-first-run") else {
+			"score": 911204, "accuracy": 0.9541, "max_combo": 398, "pp": 212.4,
+			"date": "2026-11-03T21:14:00", "mods": [],
+		}
 		_show_results(OS.get_cmdline_args().has("--shot-fail"))
+		if OS.get_cmdline_args().has("--shot-details") and _results_screen != null:
+			_results_screen.show_page(1)
 		_capture_results_shot()
 	elif OS.get_cmdline_args().has("--shot"):
 		_capture_after_first_note()
@@ -1718,6 +1731,7 @@ func _on_note_judged(index: int, result: Dictionary) -> void:
 			_sparks.lane_shot(col)
 	_ur_tick(result)
 	_acc_trace.append(core.accuracy())
+	_log_judgement(index, q, col, result)
 	if hold_end:
 		if bool(result.get("held", false)):
 			_hold_ok += 1
@@ -1781,6 +1795,22 @@ func _on_note_judged(index: int, result: Dictionary) -> void:
 	_update_hud()
 
 
+## Urteil fuers Endbild merken (Spur, Abschnitt); aendert am Spiel nichts.
+func _log_judgement(index: int, q: int, col: int, result: Dictionary) -> void:
+	var t := 0.0
+	if index >= 0 and index < _beatmap.hit_objects.size():
+		t = float(_beatmap.hit_objects[index].time)
+	var dt := NAN
+	if result.has("dt"):
+		dt = float(result.dt)
+	elif _hold_head_dt.has(index):
+		dt = float(_hold_head_dt[index])
+	_hold_head_dt.erase(index)
+	if q == ManiaCore.Quality.MISS and not bool(result.get("hold_end", false)):
+		dt = NAN
+	_judge_log.append(Vector4(t, float(col), float(q), dt))
+
+
 ## OVERDRIVE bei grossen Combos: Pads/Kanten kippen 2 Sekunden weich in die
 ## Kiai-Farbe. Kein Flash, kein Beben, keine Bildverzerrung.
 func _trigger_overdrive() -> void:
@@ -1796,6 +1826,7 @@ func _on_hold_started(index: int, quality: int) -> void:
 	var head_dt := core.hold_head_dt(index)
 	_ur_tick({"dt": head_dt, "quality": quality})
 	_hit_offsets.append(head_dt)
+	_hold_head_dt[index] = head_dt
 	if _notes.has(index):
 		var obj := _beatmap.hit_objects[index] as ManiaNote
 		_pad_flash[obj.column] = 1.0
@@ -3914,6 +3945,7 @@ func _show_results(is_fail: bool) -> void:
 	else:
 		var save := ScoreStore.submit(GameSession.osz_path, _beatmap.version_name(), s)
 		new_best = bool(save.get("is_new_best", false))
+		_prev_best = save.get("previous", {})
 		ScoreStore.log_play(GameSession.osz_path, _beatmap.version_name(),
 			"%s - %s" % [_beatmap.artist(), _beatmap.title()], s)
 		ReplayStore.save(GameSession.osz_path, _beatmap.version_name(), _recorded, {
@@ -3958,7 +3990,13 @@ func _build_results(is_fail: bool, s: Dictionary, pp: float, unranked: bool, new
 		"h_ok": _hold_ok,
 		"h_drop": _hold_drop,
 		"notes_total": _beatmap.hit_objects.size(),
+		# Spur/Abschnitt je Urteil (Details im Ergebnisbild).
+		"judge_log": _judge_log,
 	}
+	if _prev_best != null:
+		data["previous_best"] = _prev_best
+	if OS.get_cmdline_args().has("--shot-results") and not is_fail:
+		data["pp"] = 231.7  # Shot-Harness: pp-Vergleich sichtbar (Tutorial wertet nicht)
 	if not _beatmap.hit_objects.is_empty():
 		data["length_ms"] = float(_beatmap.hit_objects.back().end_time())
 	if is_fail:
@@ -4522,6 +4560,48 @@ func _run_smoke_test() -> void:
 	get_tree().quit(0)
 
 
+## Shot-Harness: Urteile passend zu den Fake-Zaehlern (214/91/12/3/1/4) ueber
+## 2:30 verteilt; die schwachen Treffer haeufen sich um 1:35 (Abschnitt-Marke),
+## Spur 4 trifft im Schnitt spaeter.
+func _fake_judge_log(rng: RandomNumberGenerator) -> void:
+	var counts := [214, 91, 12, 3, 1, 4]
+	var bad: Array = []
+	var good: Array = []
+	for q in counts.size():
+		for _i in counts[q]:
+			(good if q <= ManiaCore.Quality.PERFECT else bad).append(q)
+	var n := good.size() + bad.size()
+	var qs: Array = []
+	qs.resize(n)
+	qs.fill(-1)
+	# Schwache Treffer: drei Viertel im Fenster 60..70 %, der Rest verstreut.
+	for k in bad.size():
+		var at := int(n * rng.randf_range(0.60, 0.70)) if k % 4 != 0 else rng.randi_range(0, n - 1)
+		while qs[at] != -1:
+			at = (at + 1) % n
+		qs[at] = bad[k]
+	good.shuffle()
+	var gi := 0
+	for i in n:
+		if qs[i] == -1:
+			qs[i] = good[gi]
+			gi += 1
+	var len_ms := 150000.0
+	_judge_log.clear()
+	for i in n:
+		var lane := rng.randi_range(0, 3)
+		var q: int = qs[i]
+		var dt := NAN
+		if q != ManiaCore.Quality.MISS:
+			dt = rng.randfn(3.2 + (5.0 if lane == 3 else 0.0), 6.0 + 7.0 * float(q))
+		_judge_log.append(Vector4(len_ms * float(i) / float(n), float(lane), float(q), dt))
+	_acc_trace.clear()
+	var c := [0, 0, 0, 0, 0, 0]
+	for e in _judge_log:
+		c[int((e as Vector4).z)] += 1
+		_acc_trace.append(ResultsScreen.acc_of(c))
+
+
 func _capture_results_shot() -> void:
 	# Intro der Results-Komponente (Zaehler, Rank-Pop, Sweep) abwarten.
 	await get_tree().create_timer(2.6, true).timeout
@@ -4529,7 +4609,12 @@ func _capture_results_shot() -> void:
 	if not is_inside_tree():
 		return
 	var img := get_viewport().get_texture().get_image()
-	img.save_png("C:/Users/Gexanx/AppData/Local/Temp/claude/c--Users-Gexanx-Desktop-rhyg/b9d5e593-aabc-4b4b-a882-a5835e187db3/scratchpad/results.png")
+	# --shot-out=<png> ueberschreibt den Standardpfad.
+	var path := "C:/Users/Gexanx/AppData/Local/Temp/claude/c--Users-Gexanx-Desktop-rhyg/b9d5e593-aabc-4b4b-a882-a5835e187db3/scratchpad/results.png"
+	for a in OS.get_cmdline_args():
+		if a.begins_with("--shot-out="):
+			path = a.trim_prefix("--shot-out=")
+	img.save_png(path)
 	print("SHOT gespeichert (results)")
 	get_tree().quit(0)
 
