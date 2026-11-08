@@ -19,8 +19,9 @@ func _initialize() -> void:
 	_test_sort()
 	_test_format()
 	_test_osz_check()
+	_test_orbit_mode()
 	# Bricht ein Abschnitt per Script-Fehler ab, fehlt sein Abschluss.
-	_ok(_sections == 7, "alle 7 Abschnitte vollstaendig gelaufen (%d)" % _sections)
+	_ok(_sections == 8, "alle 8 Abschnitte vollstaendig gelaufen (%d)" % _sections)
 	print("=== Ergebnis: %d bestanden, %d fehlgeschlagen ===" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
 
@@ -248,4 +249,45 @@ func _test_osz_check() -> void:
 	for n in ["good.osz", "cut.osz", "html.osz", "noosu.osz"]:
 		DirAccess.remove_absolute(dir.path_join(n))
 	DirAccess.remove_absolute(dir)
+	_sections += 1
+
+
+## Orbit-Modus: osu!standard-Suche (mode=0), Filter je Modus, Mania unveraendert.
+func _test_orbit_mode() -> void:
+	print("-- Orbit-Modus (osu!standard)")
+	var u := BeatmapMirror.build_search_url("x", 0, 0, 1, true, "", BeatmapMirror.MODE_STD)
+	_ok(u.contains("&mode=0&") and not u.contains("mode=3"), "Orbit: mode=0")
+	_ok(BeatmapMirror.build_search_url("x", 0).contains("&mode=3&"), "Standard bleibt mode=3")
+	_ok(BeatmapMirror.build_search_url("x", 0, 0, 1, true, "", BeatmapMirror.MODE_MANIA) 		== BeatmapMirror.build_search_url("x", 0), "Mania explizit = Standard (URL gleich)")
+	u = BeatmapMirror.build_search_url("x", 0, BeatmapMirror.Sort.PLAYS, 4, true, "", BeatmapMirror.MODE_STD)
+	_ok(u.contains("status=4") and u.contains("sort=play_count%3Adesc"), "Orbit: Status + Sortierung")
+
+	var std_a := {"id": 1, "mode_int": 0, "cs": 4.0, "difficulty_rating": 2.5, "total_length": 100,
+		"count_circles": 120, "count_sliders": 60, "count_spinners": 2}
+	var std_b := {"id": 2, "mode_int": 0, "cs": 3.0, "difficulty_rating": 5.1, "total_length": 130,
+		"count_circles": 400, "count_sliders": 150, "count_spinners": 1}
+	var item := {"id": 9, "title": "Song", "artist": "Band", "creator": "M", "status": "ranked",
+		"genre_id": 3, "bpm": 180.0, "play_count": 10,
+		"beatmaps": [std_a, std_b, _bm(3, 3, 4, 3.0), _bm(4, 1, 5, 4.0)]}
+	var o := BeatmapMirror.parse_item(item, BeatmapMirror.MODE_STD)
+	_ok(not o.is_empty() and int(o.diffs) == 2, "Orbit: nur Standard-Diffs (jede CS)")
+	_ok(o.star_list == [2.5, 5.1] and is_equal_approx(float(o.stars), 5.1), "Orbit: Sterne")
+	_ok(int(o.length_s) == 130 and int(o.objects) == 551, "Orbit: Laenge + Objekte (%d)" % int(o.objects))
+	_ok(int(o.mode) == 0 and not bool(o.sv) and int(o.sv_id) == 0, "Orbit: kein SV")
+	var m := BeatmapMirror.parse_item(item)
+	_ok(int(m.diffs) == 1 and is_equal_approx(float(m.stars), 3.0) and int(m.mode) == 3,
+		"Mania: weiter nur 4K, Standard-Diffs ignoriert")
+	_ok(int(m.objects) == 0, "Mania: keine Objektzahl")
+	item.beatmaps = [_bm(3, 3, 4, 3.0)]
+	_ok(BeatmapMirror.parse_item(item, BeatmapMirror.MODE_STD).is_empty(), "Orbit: Set ohne Standard-Diff verworfen")
+	item.beatmaps = [std_a]
+	_ok(BeatmapMirror.parse_item(item).is_empty(), "Mania: Set ohne 4K verworfen")
+	item.status = "pending"
+	_ok(BeatmapMirror.parse_item(item, BeatmapMirror.MODE_STD).is_empty(), "Orbit: nur ranked/loved")
+	# Filter wirken je Modus gleich auf die Sternliste.
+	_ok(BeatmapMirror.passes_filters(o, 5.0, 6.0, 3) and not BeatmapMirror.passes_filters(o, 3.0, 4.0, 3),
+		"Orbit: Stern- und Genrefilter")
+	var ml := OnlineBrowser.meta_line(o)
+	_ok(ml.contains("551") and ml.contains("2:10") and ml.contains("180 BPM"), "Orbit-Meta mit Objekten: " + ml)
+	_ok(not OnlineBrowser.meta_line(m).contains("Objekt"), "Mania-Meta ohne Objekte")
 	_sections += 1
