@@ -72,30 +72,21 @@ const BROWSER_SCENE := "res://scenes/song_select.tscn"
 
 ## Logo (Quelle: docs/media/logo.svg, hier ohne Kachel und mit heller Schrift
 ## fuer den dunklen Menue-Hintergrund). Pfade gleich wie in logo.svg halten.
-const LOGO_SIZE := Vector2(532, 128)
-const LOGO_SVG := """<svg xmlns="http://www.w3.org/2000/svg" width="532.26" height="128" viewBox="0 0 532.26 128">
-  <path fill="#f2a23a" d="M41.9 18 L50.19 18 L34 86 L16 86 Z"/>
-  <path fill="#f2a23a" d="M52.95 18 L61.24 18 L60.43 35 L49.71 35 Z"/>
-  <path fill="#ece6da" d="M48.76 40 L60.19 40 L59.62 52 L46.48 52 Z"/>
-  <path fill="#f2a23a" d="M45.52 57 L59.38 57 L58 86 L40 86 Z"/>
-  <path fill="#f2a23a" d="M66.76 18 L75.05 18 L88 86 L70 86 Z"/>
-  <path fill="#f2a23a" d="M77.81 18 L86.1 18 L112 86 L94 86 Z"/>
-  <path fill="#f2a23a" d="M16 96 L112 96 L112 108 L16 108 Z"/>
-  <path fill="#ece6da" d="M162 31 L217.44 31 L217.44 40.9 L162 40.9 Z"/>
-  <path fill="#ece6da" d="M184.11 31 L195.33 31 L195.33 97 L184.11 97 Z"/>
-  <path fill="#ece6da" d="M228.66 31 L239.88 31 L239.88 97 L228.66 97 Z"/>
-  <path fill="#ece6da" d="M228.66 31 L273.54 31 L273.54 40.9 L228.66 40.9 Z"/>
-  <path fill="#ece6da" d="M228.66 59.05 L268.26 59.05 L268.26 68.95 L228.66 68.95 Z"/>
-  <path fill="#ece6da" d="M228.66 87.1 L273.54 87.1 L273.54 97 L228.66 97 Z"/>
-  <path fill="#ece6da" d="M284.76 31 L340.2 31 L340.2 40.9 L284.76 40.9 Z"/>
-  <path fill="#ece6da" d="M306.87 31 L318.09 31 L318.09 97 L306.87 97 Z"/>
-  <path fill="#ece6da" d="M351.42 31 L362.64 31 L362.64 97 L351.42 97 Z"/>
-  <path fill="#ece6da" d="M391.68 31 L402.9 31 L402.9 97 L391.68 97 Z"/>
-  <path fill="#ece6da" d="M351.42 59.05 L402.9 59.05 L402.9 68.95 L351.42 68.95 Z"/>
-  <path fill="#ece6da" d="M414.12 31 L425.34 31 L425.34 97 L414.12 97 Z"/>
-  <path fill="#ece6da" fill-rule="evenodd" d="M414.12 31 L455.04 31 L464.28 40.24 L464.28 59.71 L455.04 68.95 L414.12 68.95 Z M425.34 40.9 L448.47 40.9 L453.06 45.49 L453.06 54.46 L448.47 59.05 L425.34 59.05 Z"/>
-  <path fill="#ece6da" d="M435.19 68.94 L448.13 68.94 L464.28 97 L451.33 97 Z"/>
-  <path fill="#ece6da" fill-rule="evenodd" d="M497.71 31 L510.05 31 L532.26 97 L475.5 97 Z M503.88 47.84 L511.98 71.92 L495.78 71.92 Z M492.45 81.82 L515.31 81.82 L520.42 97 L487.34 97 Z"/>
+const LOGO_SIZE := Vector2(600, 88)
+const LOGO_SVG := """<svg xmlns="http://www.w3.org/2000/svg" viewBox="-4 -4 944 139" width="600" height="88">
+<g transform="translate(-8 -34.5)">
+<path d="M97.82 73.82L126.98 115.94A28 28 0 1 0 126.98 84.06L97.82 126.18A46 46 0 1 1 97.82 73.82Z" fill="none" stroke="#ECE6DA" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="115.95" cy="100" r="13" fill="#F2A23A"/>
+</g>
+<g transform="translate(59 -59.5)">
+<path d="M169.5 66H235.5M202.5 66V184" fill="none" stroke="#ECE6DA" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M354.5 66H288.5V184H354.5M288.5 125H344.6" fill="none" stroke="#ECE6DA" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M407.5 66H473.5M440.5 66V184" fill="none" stroke="#ECE6DA" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M526.5 66V184M592.5 66V184M526.5 125H592.5" fill="none" stroke="#ECE6DA" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M645.5 184V66H680.82A30.68 30.68 0 0 1 680.82 127.36H645.5M673.22 127.36L711.5 184" fill="none" stroke="#ECE6DA" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M764.5 184L797.5 66L830.5 184M777.7 141.52H817.3" fill="none" stroke="#ECE6DA" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="867" cy="176" r="10" fill="#F2A23A"/>
+</g>
 </svg>"""
 static var _browser_scene: PackedScene = null
 static var _browser_req := false

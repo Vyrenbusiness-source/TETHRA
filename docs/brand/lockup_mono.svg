@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-4 -4 944 139" width="944" height="139">
+<title>TETHRA</title>
+<g transform="translate(-8 -34.5)">
+<path d="M97.82 73.82L126.98 115.94A28 28 0 1 0 126.98 84.06L97.82 126.18A46 46 0 1 1 97.82 73.82Z" fill="none" stroke="#121110" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="115.95" cy="100" r="13" fill="#121110"/>
+</g>
+<g transform="translate(59 -59.5)">
+<path d="M169.5 66H235.5M202.5 66V184" fill="none" stroke="#121110" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M354.5 66H288.5V184H354.5M288.5 125H344.6" fill="none" stroke="#121110" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M407.5 66H473.5M440.5 66V184" fill="none" stroke="#121110" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M526.5 66V184M592.5 66V184M526.5 125H592.5" fill="none" stroke="#121110" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M645.5 184V66H680.82A30.68 30.68 0 0 1 680.82 127.36H645.5M673.22 127.36L711.5 184" fill="none" stroke="#121110" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M764.5 184L797.5 66L830.5 184M777.7 141.52H817.3" fill="none" stroke="#121110" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="867" cy="176" r="10" fill="#121110"/>
+</g>
+</svg>
