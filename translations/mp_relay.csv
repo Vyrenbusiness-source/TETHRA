@@ -1,0 +1,20 @@
+keys,de,en
+Online,Online,Online
+LAN / Direkt,LAN / Direkt,LAN / Direct
+Passwort,Passwort,Password
+Verbinde mit dem Server…,Verbinde mit dem Server…,Connecting to the server…
+Server nicht erreichbar. Pruefe deine Internetverbindung oder nutze LAN/Direkt.,Server nicht erreichbar. Pruefe deine Internetverbindung oder nutze LAN/Direkt.,Server unreachable. Check your internet connection or use LAN / Direct.
+Update noetig (Host v%s).,Update noetig (Host v%s).,Update needed (host v%s).
+Raum voll.,Raum voll.,Room is full.
+Raum nicht gefunden — Code richtig?,Raum nicht gefunden — Code richtig?,Room not found — is the code right?
+Server ausgelastet. Versuche es gleich noch einmal.,Server ausgelastet. Versuche es gleich noch einmal.,Server is busy. Try again in a moment.
+Zu viele Nachrichten — Verbindung getrennt.,Zu viele Nachrichten — Verbindung getrennt.,Too many messages — disconnected.
+Verbindung zum Relay verloren.,Verbindung zum Relay verloren.,Lost the connection to the server.
+Server nicht erreichbar.,Server nicht erreichbar.,Server unreachable.
+Der Host hat den Raum geschlossen.,Der Host hat den Raum geschlossen.,The host has closed the room.
+Zu viele Nachrichten.,Zu viele Nachrichten.,Too many messages.
+Code (z. B. K7M4QX),Code (z. B. K7M4QX),Code (e.g. K7M4QX)
+Direkt über deinen Router (UPnP). Mitspieler brauchen den langen Code.,Direkt über deinen Router (UPnP). Mitspieler brauchen den langen Code.,Direct through your router (UPnP). Players need the long code.
+"Läuft über den Server, ohne Portfreigabe. Ohne Passwort erscheint der Raum in der Liste.","Läuft über den Server, ohne Portfreigabe. Ohne Passwort erscheint der Raum in der Liste.","Runs through the server, no port forwarding. Without a password the room shows up in the list."
+Der Code hat 6 Zeichen und kommt vom Host des Raums.,Der Code hat 6 Zeichen und kommt vom Host des Raums.,The code has 6 characters and comes from the room's host.
+Dieser Raum hat ein Passwort. Gib Code und Passwort links ein.,Dieser Raum hat ein Passwort. Gib Code und Passwort links ein.,This room has a password. Enter code and password on the left.
