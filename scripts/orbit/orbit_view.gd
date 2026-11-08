@@ -236,7 +236,10 @@ func _process(_d: float) -> void:
 	var m := _music()
 	var bass := 0.0
 	if m > 0.0:
-		bass = SyncClock.band_energy(30.0, 250.0)
+		# Autoload per Pfad: die Ansicht laeuft auch in Testlaeufen ohne Autoloads.
+		var sc := get_node_or_null("/root/SyncClock")
+		if sc != null:
+			bass = float(sc.band_energy(30.0, 250.0))
 	_bass = lerpf(_bass, bass, 1.0 - exp(-dt / 0.08))
 	var quiet := clampf((0.25 - energy) / 0.25, 0.0, 1.0)
 	_calm = lerpf(_calm, quiet, 1.0 - exp(-dt / 0.35))
