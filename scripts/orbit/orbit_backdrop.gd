@@ -26,19 +26,19 @@ const CAM_FOV := 72.0
 const CAM_SWAY_DEG := 7.0
 const CAM_SWAY_PERIOD_S := 140.0
 ## Himmel-Helligkeit (Shader `brightness`) ruhig / im Kiai.
-const SKY_BRIGHT := 0.80
-const SKY_BRIGHT_KIAI := 0.95
+const SKY_BRIGHT := 1.0
+const SKY_BRIGHT_KIAI := 1.15
 ## Beat-Puls am Himmel (Anteil von beat_env) ruhig / im Kiai.
 const PULSE_GAIN := 0.30
 const PULSE_GAIN_KIAI := 0.55
 ## Vignette (Radien in Bildschirmhoehen ab Mitte, Deckkraft Schwarz):
 ## bis knapp hinter den Aussenring (OrbitView.R_OUTER_K = 0.37) fast deckend.
 const VIG_STOPS := [
-	[0.00, 0.86],
-	[0.44, 0.84],
-	[0.62, 0.62],
-	[0.85, 0.40],
-	[1.10, 0.30],
+	[0.00, 0.80],
+	[0.42, 0.78],
+	[0.58, 0.55],
+	[0.80, 0.28],
+	[1.10, 0.12],
 ]
 
 var mode := -1           ## tatsaechlich gezeigter Modus (BG_*)
