@@ -448,13 +448,20 @@ func _fmt_pct(frac: float) -> String:
 	return UiTheme.fmt_pct(frac * 100.0)
 
 
-## Geschaetzte Spielzeit: Plays x Kartenlaenge (Abbrueche nicht erfasst).
+## Spielzeit: gemessen von GameSession (echte Zeit im laufenden Song, ohne Pause,
+## Endbild, Replays). Vor der Messung (alte Daten) einmal die Schaetzung
+## Plays x Kartenlaenge als Startwert uebernehmen.
 func _fmt_playtime() -> String:
-	var ms := 0.0
-	for e in ScoreStore.most_played(99999, _mode):
-		var ms_set = _set_by_file.get(str(e.get("osz_file", "")))
-		if ms_set != null:
-			ms += ms_set.length_ms() * int(e.get("count", 0))
+	var measured := ScoreStore.playtime_ms(_mode)
+	if measured < 0:
+		var est := 0.0
+		for e in ScoreStore.most_played(99999, _mode):
+			var ms_set = _set_by_file.get(str(e.get("osz_file", "")))
+			if ms_set != null:
+				est += ms_set.length_ms() * int(e.get("count", 0))
+		ScoreStore.seed_playtime(int(est), _mode)
+		measured = int(est)
+	var ms := float(measured)
 	var mins := int(ms / 60000.0)
 	if mins < 1:
 		return "—"

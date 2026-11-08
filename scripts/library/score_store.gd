@@ -583,6 +583,36 @@ static func profile_pp() -> float:
 	return total
 
 
+## Gemessene Spielzeit in ms (Sektion "<mode>_stats", Schluessel "playtime_ms").
+## -1 = noch nie gemessen (Profil setzt dann einmal die alte Schaetzung als Start).
+static func playtime_ms(mode: String = "") -> int:
+	var cfg := ConfigFile.new()
+	if _load(cfg) != OK:
+		return -1
+	return int(cfg.get_value(_sec("stats", mode), "playtime_ms", -1))
+
+
+## Spielzeit addieren (GameSession misst laufende Songs ohne Pause/Endbild).
+static func add_playtime(ms: int, mode: String = "") -> void:
+	if ms <= 0:
+		return
+	var cfg := ConfigFile.new()
+	_load(cfg)
+	var cur := maxi(int(cfg.get_value(_sec("stats", mode), "playtime_ms", 0)), 0)
+	cfg.set_value(_sec("stats", mode), "playtime_ms", cur + ms)
+	cfg.save(PATH)
+
+
+## Einmaliger Startwert aus der alten Schaetzung, damit fruehere Spielzeit nicht verloren geht.
+static func seed_playtime(ms: int, mode: String = "") -> void:
+	var cfg := ConfigFile.new()
+	_load(cfg)
+	if cfg.has_section_key(_sec("stats", mode), "playtime_ms"):
+		return
+	cfg.set_value(_sec("stats", mode), "playtime_ms", maxi(ms, 0))
+	cfg.save(PATH)
+
+
 ## Gesamtzahl aller Plays.
 static func total_plays(mode: String = "") -> int:
 	var cfg := ConfigFile.new()

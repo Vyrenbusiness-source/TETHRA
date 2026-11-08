@@ -89,6 +89,7 @@ func _init() -> void:
 	_test_sv_level()
 	_test_migration()
 	_test_legacy_rescore()
+	_test_playtime()
 
 	# aufraeumen
 	DirAccess.remove_absolute(ScoreStore.PATH)
@@ -252,3 +253,17 @@ func _test_legacy_rescore() -> void:
 	_check(int(fe.score) <= 1000000, "Fremd-Score beim Empfang umgerechnet")
 	DirAccess.remove_absolute(path)
 	ScoreStore.PATH = real
+
+
+## Spielzeit: Startwert nur einmal, danach addieren, Modi getrennt.
+func _test_playtime() -> void:
+	_check(ScoreStore.playtime_ms() == -1, "Spielzeit: ungemessen = -1")
+	ScoreStore.seed_playtime(60000)
+	ScoreStore.seed_playtime(999999)
+	_check(ScoreStore.playtime_ms() == 60000, "Spielzeit: Startwert nur einmal")
+	ScoreStore.add_playtime(15000)
+	_check(ScoreStore.playtime_ms() == 75000, "Spielzeit: addiert")
+	ScoreStore.add_playtime(5000, ScoreStore.MODE_ORBIT)
+	_check(ScoreStore.playtime_ms(ScoreStore.MODE_ORBIT) == 5000 and ScoreStore.playtime_ms() == 75000, "Spielzeit: Modi getrennt")
+	var GS = load("res://scripts/game_session.gd")
+	_check(GS.playtime_mode_of("res://scenes/orbit.tscn") == "orbit" 			and GS.playtime_mode_of("res://scenes/mania_3d.tscn") == "" 			and GS.playtime_mode_of("res://scenes/song_select.tscn") == null, "Spielzeit: Szenen-Modus")
