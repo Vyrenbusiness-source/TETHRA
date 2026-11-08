@@ -651,6 +651,32 @@ func _box(bg: Color, radius: int, border: Color = Color.TRANSPARENT) -> StyleBox
 	return sb
 
 
+## Fremde Tafeln (Teams/Royale) an das Lobby-Raster angleichen: Ecken auf R,
+## kein Schatten, Linien statt Glas. Runde Avatare (Radius >= halbe Breite) bleiben rund.
+func _flatten(n: Node) -> void:
+	if n is Control:
+		var c := n as Control
+		for slot in ["panel", "normal", "hover", "pressed"]:
+			if not c.has_theme_stylebox_override(slot):
+				continue
+			var sb := c.get_theme_stylebox(slot) as StyleBoxFlat
+			if sb == null or sb.has_meta("lc_flat"):
+				continue
+			var w := c.custom_minimum_size.x
+			if w > 0.0 and w == c.custom_minimum_size.y and sb.corner_radius_top_left * 2 >= int(w):
+				continue
+			var f := sb.duplicate() as StyleBoxFlat
+			f.set_meta("lc_flat", true)
+			for corner in 4:
+				f.set_corner_radius(corner, mini(f.get_corner_radius(corner), R))
+			f.shadow_size = 0
+			if f.border_width_top > 0 and f.border_color.a > COL_LINE.a and f.border_color.s < 0.2:
+				f.border_color = COL_LINE
+			c.add_theme_stylebox_override(slot, f)
+	for ch in n.get_children():
+		_flatten(ch)
+
+
 ## Flache Flaeche (Dialoge), Innenrand margin.
 func _panel_box(margin: int = M) -> StyleBoxFlat:
 	var sb := _box(Color(0.06, 0.062, 0.08, 0.96), R, COL_LINE)
@@ -1935,6 +1961,7 @@ func _refresh_mode(my_id: int) -> void:
 			"totals": mm.team_totals(live) if Lobby.in_game \
 				else (mm.history.back().totals if not mm.history.is_empty() else [0, 0]),
 			"hint": mm.balance_hint(), "editable": not Lobby.in_game })
+		_flatten(_team_board)
 		if _royale_board != null:
 			_royale_board.visible = false
 		info = tr("Teams %s  ·  %s") % [mm.format_label(), mm.series_label()]
@@ -1960,6 +1987,7 @@ func _refresh_mode(my_id: int) -> void:
 		_royale_board.setup({ "round": mm.round_no, "players": rl,
 			"danger": mm.in_danger(live) if Lobby.in_game else -1,
 			"final": mm.is_final(), "winner": mm.winner_peer })
+		_flatten(_royale_board)
 		if _team_board != null:
 			_team_board.visible = false
 		# Runde und "noch dabei" zeigt die Tafel selbst: hier nur die Regel.
