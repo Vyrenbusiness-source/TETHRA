@@ -413,8 +413,9 @@ static func legalize(raw: Array[OrbitNote], reds: Array, easy: bool) -> Array[Or
 			var d := OrbitNote.delta_deg(cur_a, n.angle_deg)
 			if absf(d) > lim:
 				var shift := signf(d) * (absf(d) - lim)
+				var span := n.end_angle_deg - n.angle_deg
 				n.angle_deg = OrbitNote.wrap_deg(n.angle_deg - shift)
-				n.end_angle_deg -= shift
+				n.end_angle_deg = n.angle_deg + span
 		out.append(n)
 		last_t = t
 		cur_t = t
