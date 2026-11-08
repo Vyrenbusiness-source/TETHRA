@@ -25,8 +25,6 @@ const GRADE_COLOR := {
 	"SS": Color(1.0, 0.92, 0.55), "S": Color(1.0, 0.85, 0.40), "A": Color(0.45, 0.95, 0.55),
 	"B": Color(0.45, 0.70, 1.0), "C": Color(0.80, 0.55, 1.0), "D": Color(1.0, 0.45, 0.45),
 }
-const HIT_DB := -7.0
-const MISS_DB := -6.0
 
 var core: OrbitCore
 var notes: Array[OrbitNote] = []
@@ -68,8 +66,7 @@ var _time_label: Label
 var _top_fill: ColorRect
 var _pause_menu: PauseMenu
 var _results_screen: OrbitResults
-var _hit_player: AudioStreamPlayer
-var _miss_player: AudioStreamPlayer
+var _sound: OrbitSound
 var _hit_offsets := PackedFloat32Array()
 var _acc_trace := PackedFloat32Array()
 ## Takt + Intensitaet fuer den Ring-Puls (nur Helligkeit).
@@ -277,14 +274,8 @@ func _build_bg() -> void:
 			OszImporter.load_background_texture(GameSession.osz_path, _beatmap), Settings.bg_dim)
 
 func _build_sound() -> void:
-	_hit_player = AudioStreamPlayer.new()
-	_hit_player.stream = Sfx.hit_stream()
-	_hit_player.volume_db = HIT_DB
-	add_child(_hit_player)
-	_miss_player = AudioStreamPlayer.new()
-	_miss_player.stream = Sfx.miss_stream()
-	_miss_player.volume_db = MISS_DB
-	add_child(_miss_player)
+	_sound = OrbitSound.new()
+	add_child(_sound)
 
 
 func _build_hud() -> void:
@@ -837,11 +828,9 @@ func _on_note_judged(index: int, result: Dictionary) -> void:
 		_hit_log.append([n.angle_deg, n.ring, float(result.get("dt", 0.0)),
 			float(result.get("angle_err", 0.0)), q, n.time_ms])
 	_check_milestone(q)
-	if q == 5:
-		_play_miss()
-	else:
-		_play_hit([1.0, 1.0, 0.944, 0.891, 0.794][clampi(q, 0, 4)])
 	var hold_end := bool(result.get("hold_end", false))
+	var snd_ring := int(result.get("ring", notes[index].ring if index >= 0 and index < notes.size() else 0))
+	_sound.on_judged(snd_ring, q, hold_end)
 	var off: float = 0.0 if hold_end else float(result.get("dt", 0.0))
 	_judge_disp.show_judge(q, off)
 	if q == 5:
@@ -858,6 +847,8 @@ func _on_note_judged(index: int, result: Dictionary) -> void:
 
 func _on_arc_started(index: int, quality: int) -> void:
 	_view.on_arc_started(index, quality, core.arc_head_dt(index))
+	if index >= 0 and index < notes.size():
+		_sound.on_arc_started(notes[index].ring, quality)
 
 
 ## Kombo-Meilensteine (50, 100, 200 ...): ruhige Welle + Klang, nie grell.
@@ -871,21 +862,6 @@ func _check_milestone(q: int) -> void:
 		_view.start_wave(c >= 100)
 		if _use_audio:
 			Sfx.milestone(c)
-
-
-func _play_hit(pitch: float) -> void:
-	if not Settings.hitsounds or Settings.hitsound_volume <= 0.01:
-		return
-	_hit_player.volume_db = linear_to_db(Settings.hitsound_volume) + HIT_DB
-	_hit_player.pitch_scale = pitch
-	_hit_player.play()
-
-
-func _play_miss() -> void:
-	if not Settings.hitsounds or Settings.hitsound_volume <= 0.01:
-		return
-	_miss_player.volume_db = linear_to_db(Settings.hitsound_volume) + MISS_DB
-	_miss_player.play()
 
 
 # ---------------------------------------------------------------------------
@@ -1306,3 +1282,91 @@ func _capture_results_shot() -> void:
 		if _clip_exporter != null and _clip_exporter.is_running():
 			await _clip_exporter.finished
 	get_tree().quit(0)
+
+
+## Orbit-Klaenge: Treffer je Ring, Bogen-Halteton + Ende-Klick, leiser Fehlklang.
+## Lautstaerke/An-Aus ueber Settings.hitsounds / hitsound_volume. Polyphonie
+## begrenzt (Ringpuffer), Klang laeuft synchron zur Wertung (beim Tastendruck).
+class OrbitSound extends Node:
+	const POLY := 4
+	const HIT_DB := -7.0
+	const END_DB := -10.0
+	const HOLD_DB := -20.0
+	const MISS_DB := -15.0
+	const PITCH := [1.0, 1.0, 0.944, 0.891, 0.794]
+	## Protokoll der ausgeloesten Klaenge: [Art, Ring] (Art: hit, end, miss, hold)
+	var log: Array = []
+	var _hit: Array = [[], []]
+	var _next: Array = [0, 0]
+	var _hold: Array = [null, null]
+	var _end: AudioStreamPlayer
+	var _miss: AudioStreamPlayer
+
+	func _ready() -> void:
+		for r in 2:
+			for i in POLY:
+				_hit[r].append(_mk(Sfx.orbit_hit_stream(r)))
+			_hold[r] = _mk(Sfx.orbit_hold_stream(r))
+		_end = _mk(Sfx.orbit_end_stream())
+		_miss = _mk(Sfx.orbit_miss_stream())
+
+	func _mk(stream: AudioStream) -> AudioStreamPlayer:
+		var p := AudioStreamPlayer.new()
+		p.stream = stream
+		add_child(p)
+		return p
+
+	func _on() -> bool:
+		return Settings.hitsounds and Settings.hitsound_volume > 0.01
+
+	func _db(base: float) -> float:
+		return linear_to_db(Settings.hitsound_volume) + base
+
+	func on_judged(ring: int, q: int, hold_end: bool) -> void:
+		ring = clampi(ring, 0, 1)
+		if hold_end:
+			stop_hold(ring)
+			if q == 5:
+				_play_miss(ring)
+			else:
+				_play_end(ring)
+		elif q == 5:
+			_play_miss(ring)
+		else:
+			play_hit(ring, PITCH[clampi(q, 0, 4)])
+
+	func on_arc_started(ring: int, q: int) -> void:
+		ring = clampi(ring, 0, 1)
+		play_hit(ring, PITCH[clampi(q, 0, 4)])
+		log.append(["hold", ring])
+		if _on() and _hold[ring] != null:
+			var p: AudioStreamPlayer = _hold[ring]
+			p.volume_db = _db(HOLD_DB)
+			p.play()
+
+	func stop_hold(ring: int) -> void:
+		var p: AudioStreamPlayer = _hold[ring]
+		if p != null and p.playing:
+			p.stop()
+
+	func play_hit(ring: int, pitch: float = 1.0) -> void:
+		log.append(["hit", ring])
+		if not _on() or _hit[ring].is_empty():
+			return
+		var p: AudioStreamPlayer = _hit[ring][_next[ring]]
+		_next[ring] = (_next[ring] + 1) % POLY
+		p.volume_db = _db(HIT_DB)
+		p.pitch_scale = pitch
+		p.play()
+
+	func _play_end(ring: int) -> void:
+		log.append(["end", ring])
+		if _on() and _end != null:
+			_end.volume_db = _db(END_DB)
+			_end.play()
+
+	func _play_miss(ring: int) -> void:
+		log.append(["miss", ring])
+		if _on() and _miss != null:
+			_miss.volume_db = _db(MISS_DB)
+			_miss.play()
