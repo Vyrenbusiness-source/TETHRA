@@ -464,7 +464,8 @@ func _shot_modes() -> void:
 
 
 func _capture_screenshot_and_quit() -> void:
-	await get_tree().create_timer(1.0).timeout
+	# Orbit: Sterne werden asynchron berechnet, darum laenger warten.
+	await get_tree().create_timer(4.0 if _play_mode == "orbit" else 1.0).timeout
 	await RenderingServer.frame_post_draw
 	if not is_inside_tree():
 		return
