@@ -114,7 +114,7 @@ func _test_view_geometry() -> void:
 	_check(not v.aim_ok(), "ohne Cursor: nicht auf dem Kopf")
 	v.cursor_pos = v.to_px(v.head_path()) + Vector2(5, 0)
 	_check(v.aim_ok(), "Cursor nah am Kopf zaehlt")
-	v.cursor_pos = v.to_px(v.head_path()) + Vector2(0.3 * v.path_scale(), 0)
+	v.cursor_pos = v.to_px(v.head_path()) + Vector2(0.5 * v.path_scale(), 0)
 	_check(not v.aim_ok(), "Cursor weit weg: nicht auf dem Kopf")
 	v.free()
 

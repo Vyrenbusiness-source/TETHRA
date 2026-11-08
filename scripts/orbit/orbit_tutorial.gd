@@ -433,6 +433,10 @@ func _start_round(t: float) -> void:
 	_q_of = {}
 	core = OrbitCore.new()
 	core.setup(notes, OD, 1.0, 0.0, {"NF": true})
+	core.set_track(track)
+	for n in notes:
+		n.shape = track.shape_at(n.time_ms)
+		n.speed = track.speed_at(n.time_ms)
 	core.preempt = _bar_ms
 	core.note_judged.connect(_on_judged)
 	core.arc_started.connect(_on_arc_started)
