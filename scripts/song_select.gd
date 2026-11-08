@@ -464,7 +464,8 @@ func _shot_modes() -> void:
 
 
 func _capture_screenshot_and_quit() -> void:
-	await get_tree().create_timer(1.0).timeout
+	# Orbit: Sterne werden asynchron berechnet, darum laenger warten.
+	await get_tree().create_timer(4.0 if _play_mode == "orbit" else 1.0).timeout
 	await RenderingServer.frame_post_draw
 	if not is_inside_tree():
 		return
@@ -1813,6 +1814,8 @@ func _update_info_panel() -> void:
 	var keys := int(round(float(m.get("cs", 4.0))))
 	_diff_label.text = _selected_set.version_name_at(_selected_diff).strip_edges() 		+ (("  ·  %dK" % keys) if is_mania else "  ·  osu!standard")
 	_star_label.text = _stars_text(_selected_set.stars_at(_selected_diff))
+	if _play_mode == "orbit" and is_mania and keys == 4:
+		_orbit_stars_request(_selected_set.osz_path, _selected_set.version_name_at(_selected_diff))
 	var notes := tr("%d Noten") % int(m.get("notes", 0))
 	var od := "OD " + UiTheme.fmt_num(float(m.get("od", 0.0)))
 	if is_mania:
@@ -2485,6 +2488,9 @@ func _exit_tree() -> void:
 	if _maxpp_thread != null:
 		_maxpp_thread.wait_to_finish()
 		_maxpp_thread = null
+	if _os_thread != null:
+		_os_thread.wait_to_finish()
+		_os_thread = null
 
 
 func _play_preview() -> void:
@@ -2761,6 +2767,91 @@ func _star_color(stars: float) -> Color:
 			var k: float = (stars - stops[i][0]) / (stops[i + 1][0] - stops[i][0])
 			return (stops[i][1] as Color).lerp(stops[i + 1][1], clampf(k, 0.0, 1.0))
 	return stops[stops.size() - 1][1]
+
+
+## Orbit-Sterne: nur fuer die gewaehlte Diff, im Thread, Ergebnis je
+## Datei+Aenderungszeit+Version im Cache user://orbit_stars.cfg.
+const ORBIT_STARS_PATH := "user://orbit_stars.cfg"
+const ORBIT_STARS_VER := 1
+const ORBIT_STARS_DELAY := 0.25
+var _os_thread: Thread
+var _os_key := ""        # Key der laufenden Berechnung
+var _os_want := ""       # Key der aktuell gewaehlten Diff
+var _os_want_args := []
+var _os_token := 0
+
+
+static func orbit_stars_key(osz: String, version: String) -> String:
+	return "v%d|%s|%d|%s" % [ORBIT_STARS_VER, osz.get_file(), FileAccess.get_modified_time(osz), version]
+
+
+static func orbit_stars_cached(key: String, path: String = ORBIT_STARS_PATH) -> float:
+	var cfg := ConfigFile.new()
+	if cfg.load(path) != OK:
+		return -1.0
+	return float(cfg.get_value("stars", key, -1.0))
+
+
+static func orbit_stars_store(key: String, stars: float, path: String = ORBIT_STARS_PATH) -> void:
+	var cfg := ConfigFile.new()
+	cfg.load(path)
+	cfg.set_value("stars", key, stars)
+	cfg.save(path)
+
+
+## Orbit-Sterne einer 4K-Diff berechnen (teuer: Import + Konvertierung).
+static func orbit_stars_compute(osz: String, version: String) -> float:
+	var imp := OszImporter.import(osz)
+	if not imp.ok:
+		return -1.0
+	for d in imp.difficulties:
+		var bm: Beatmap = d.beatmap
+		if bm.is_mania() and bm.version_name() == version:
+			return OrbitConverter.stars(OrbitConverter.convert(bm))
+	return -1.0
+
+
+func _orbit_stars_request(osz: String, version: String) -> void:
+	var key := orbit_stars_key(osz, version)
+	_os_want = key
+	_os_want_args = [osz, version]
+	var hit := orbit_stars_cached(key)
+	if hit >= 0.0:
+		_star_label.text = "Orbit " + _stars_text(hit)
+		return
+	_star_label.text = "Orbit ★ …"
+	_os_token += 1
+	var tok := _os_token
+	await get_tree().create_timer(ORBIT_STARS_DELAY).timeout  # Scrollen: erst nach Ruhe rechnen
+	if tok != _os_token or not is_inside_tree():
+		return
+	_orbit_stars_start()
+
+
+func _orbit_stars_start() -> void:
+	if _os_thread != null or _os_want == "":
+		return
+	_os_key = _os_want
+	_os_thread = Thread.new()
+	_os_thread.start(_orbit_stars_work.bind(_os_key, _os_want_args[0], _os_want_args[1]))
+
+
+func _orbit_stars_work(key: String, osz: String, version: String) -> void:
+	var st := orbit_stars_compute(osz, version)
+	_orbit_stars_done.call_deferred(key, st)
+
+
+func _orbit_stars_done(key: String, st: float) -> void:
+	if _os_thread != null:
+		_os_thread.wait_to_finish()
+		_os_thread = null
+	if st >= 0.0:
+		orbit_stars_store(key, st)
+	if key == _os_want:
+		if st >= 0.0 and _play_mode == "orbit":
+			_star_label.text = "Orbit " + _stars_text(st)
+	elif _os_want != "":
+		_orbit_stars_start()
 
 
 ## Sterne fuer die Anzeige: "★ 7,27" (ein Stern, Dezimalkomma).
