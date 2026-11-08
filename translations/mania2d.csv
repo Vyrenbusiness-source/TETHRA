@@ -1,0 +1,39 @@
+keys,de,en
+Scroll-Richtung,Scroll-Richtung,Scroll direction
+Nach unten,Nach unten,Down
+Nach oben,Nach oben,Up
+Noten laufen zur Linie unten (Standard) oder oben (osu! UpsideDown),Noten laufen zur Linie unten (Standard) oder oben (osu! UpsideDown),Notes travel to the line at the bottom (default) or top (osu! UpsideDown)
+Position,Position,Position
+Links,Links,Left
+Mitte,Mitte,Centre
+Rechts,Rechts,Right
+"Spielfeld links, mittig oder rechts (überschreibt den Skin)","Spielfeld links, mittig oder rechts (überschreibt den Skin)","Playfield left, centred or right (overrides the skin)"
+Skalierung,Skalierung,Scale
+Größe des ganzen Spielfelds,Größe des ganzen Spielfelds,Size of the whole playfield
+Trefferposition,Trefferposition,Hit position
+"Höhe der Trefferlinie (osu! HitPosition, 480 = Bildrand)","Höhe der Trefferlinie (osu! HitPosition, 480 = Bildrand)","Height of the hit line (osu! HitPosition, 480 = screen edge)"
+Spaltenabstand,Spaltenabstand,Column spacing
+Lücke zwischen den Spalten (osu! ColumnSpacing),Lücke zwischen den Spalten (osu! ColumnSpacing),Gap between columns (osu! ColumnSpacing)
+Mods,Mods,Mods
+Sicht,Sicht,Visibility
+FadeIn: Noten tauchen spät auf · Hidden: verschwinden vor der Linie · Cover: feste Abdeckung,FadeIn: Noten tauchen spät auf · Hidden: verschwinden vor der Linie · Cover: feste Abdeckung,FadeIn: notes appear late · Hidden: notes fade before the line · Cover: fixed cover
+Von oben,Von oben,From top
+Von unten,Von unten,From bottom
+Abdeckung,Abdeckung,Coverage
+"Cover: Anteil der Strecke, der verdeckt ist","Cover: Anteil der Strecke, der verdeckt ist",Cover: share of the lane that is covered
+Konstante Geschwindigkeit,Konstante Geschwindigkeit,Constant speed
+SV- und BPM-Wechsel der Map ignorieren (lazer Constant Speed),SV- und BPM-Wechsel der Map ignorieren (lazer Constant Speed),Ignore the map's SV and BPM changes (lazer Constant Speed)
+Erweitert,Erweitert,Advanced
+Skin-Werte nutzen,Skin-Werte nutzen,Use skin values
+"An: Layout aus skin.ini · Aus: eigene Werte (Position, Trefferlinie, Abstand …)","An: Layout aus skin.ini · Aus: eigene Werte (Position, Trefferlinie, Abstand …)","On: layout from skin.ini · Off: your own values (position, hit line, spacing …)"
+Judgement-Position,Judgement-Position,Judgement position
+"Höhe der Judgements (osu! ScorePosition, 0 = oben)","Höhe der Judgements (osu! ScorePosition, 0 = oben)","Height of the judgements (osu! ScorePosition, 0 = top)"
+Kombo-Position,Kombo-Position,Combo position
+"Höhe der Kombo (osu! ComboPosition, 0 = oben)","Höhe der Kombo (osu! ComboPosition, 0 = oben)","Height of the combo (osu! ComboPosition, 0 = top)"
+Tasten unter den Noten,Tasten unter den Noten,Keys under notes
+osu! KeysUnderNotes,osu! KeysUnderNotes,osu! KeysUnderNotes
+Trefferlinie,Trefferlinie,Hit line
+Linie bzw. Skin-Markierung an der Trefferposition,Linie bzw. Skin-Markierung an der Trefferposition,Line or skin marker at the hit position
+SV Stark,SV Stark,SV Strong
+Cover,Cover,Cover
+Konstant,Konstant,Constant
