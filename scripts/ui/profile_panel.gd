@@ -315,7 +315,7 @@ func _fill_mode() -> void:
 	for c in _list.get_children():
 		c.queue_free()
 
-	# Mania: Gesamt-pp gross in ACCENT2 (wie bisher). Orbit: Orbit-Wertung.
+	# Mania: Gesamt-pp gross in ACCENT2 (wie bisher). Orbit: Orbit-Rating.
 	var pp_row := HBoxContainer.new()
 	pp_row.add_theme_constant_override("separation", 6)
 	_rating_slot.add_child(pp_row)
@@ -326,8 +326,13 @@ func _fill_mode() -> void:
 	pp_big.add_theme_color_override("font_color", COL_PP)
 	pp_row.add_child(pp_big)
 	var pp_cap := Label.new()
-	pp_cap.text = tr("Orbit-Wertung") if orbit else "pp"
-	pp_cap.tooltip_text = tr("Summe der Orbit-Bestwerte (100 × Genauigkeit⁴), gewichtet wie pp") if orbit else ""
+	# Orbit-Rating: eigene Kennzahl (Formel: ScoreStore.orbit_points,
+	# docs/modes/orbit.md); Mania-pp bleibt unveraendert.
+	pp_cap.text = "Orbit-Rating" if orbit else "pp"
+	var orbit_tip := ("Beste Orbit-Läufe: 4 × Orbit-Sterne² × Genauigkeit⁴,\nabsteigend gewichtet mit 0,95ⁿ (wie pp)"
+			if UiTheme.is_german() else
+			"Best Orbit runs: 4 × Orbit stars² × accuracy⁴,\nweighted 0.95ⁿ in descending order (like pp)")
+	pp_cap.tooltip_text = orbit_tip if orbit else ""
 	pp_cap.mouse_filter = Control.MOUSE_FILTER_PASS
 	pp_cap.size_flags_vertical = Control.SIZE_SHRINK_END
 	pp_cap.add_theme_font_size_override("font_size", 18)
