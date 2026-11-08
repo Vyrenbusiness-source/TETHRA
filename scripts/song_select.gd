@@ -2054,7 +2054,7 @@ func _build_mode_switch() -> Control:
 		var b := _make_toggle("Mania 4K" if m == "mania" else "Orbit", 13, 8)
 		b.custom_minimum_size = Vector2(104, 25)
 		b.size_flags_vertical = Control.SIZE_EXPAND_FILL
-		b.tooltip_text = "Klassisch: vier Spuren" if m == "mania" 				else "Zielen mit Maus/Tablet, Ring per Taste (nur 4K-Maps)"
+		b.tooltip_text = "Klassisch: vier Spuren" if m == "mania" 				else "Zielen mit Maus/Tablet, Ring per Taste (osu!standard- und 4K-Maps)"
 		var mode: String = m
 		b.pressed.connect(func(): _set_play_mode(mode))
 		box.add_child(b)
