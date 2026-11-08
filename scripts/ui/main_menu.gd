@@ -195,6 +195,10 @@ func _ready() -> void:
 		await get_tree().create_timer(0.6).timeout
 		if is_inside_tree():
 			_open_login_dialog()
+	elif LoginDialog.should_resume_backfill(GameSession.online, OS.get_cmdline_args(), false):
+		# Angemeldet, Upload alter Scores steht noch aus (neue Merker-Version): nachholen.
+		await get_tree().create_timer(2.0).timeout
+		LoginDialog.after_login(GameSession.online, LoginDialog.scan_osz_files())
 
 
 func _begin_shader_warmup() -> void:

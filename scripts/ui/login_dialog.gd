@@ -39,12 +39,27 @@ var _closing := false
 static func should_show(p_api: OnlineApi, args: PackedStringArray, headless: bool) -> bool:
 	if p_api == null or not p_api.enabled() or p_api.logged_in():
 		return false
-	if headless or shown_this_run:
+	if headless or shown_this_run or is_harness_run(args):
 		return false
+	return not p_api.login_prompt_disabled()
+
+
+## Shot-/Test-/Mess-Lauf (Kommandozeile): keine Dialoge, kein Netz-Upload.
+static func is_harness_run(args: PackedStringArray) -> bool:
 	for a in args:
 		if a.begins_with("--shot") or a in ["--autoplay", "--perf", "--test", "--bench"]:
-			return false
-	return not p_api.login_prompt_disabled()
+			return true
+	return false
+
+
+## Angemeldet, aber der automatische Upload alter Scores steht noch aus (z. B. nach
+## neuer Merker-Version): beim Spielstart nachholen.
+static func should_resume_backfill(p_api: OnlineApi, args: PackedStringArray, headless: bool) -> bool:
+	if p_api == null or not p_api.enabled() or not p_api.logged_in():
+		return false
+	if headless or is_harness_run(args):
+		return false
+	return not p_api.backfill_auto_done()
 
 
 ## Verstaendlicher Text zu einer Login-Fehlermeldung von OnlineApi.login().

@@ -391,7 +391,7 @@ func _build_backfill(api: OnlineApi) -> void:
 				row.add_child(_acct_label(tr("Upload abgebrochen (%d / %d).") % [int(st.done), int(st.total)]))
 			"error":
 				row.add_child(_acct_label(tr("Upload unterbrochen, Server nicht erreichbar.")))
-	var note := _acct_label(tr("Hochgeladen werden Mania-Bestwerte ab 08.11.2026. Ältere Bestwerte und Orbit-Bestwerte bleiben lokal."))
+	var note := _acct_label(tr("Es werden nur deine Mania-Bestwerte hochgeladen. Orbit-Bestwerte nicht: sie stammen aus den alten Orbit-Regeln."))
 	note.modulate = Color(1, 1, 1, 0.6)
 	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_acct.add_child(note)
