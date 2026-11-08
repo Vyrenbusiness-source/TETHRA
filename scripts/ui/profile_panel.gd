@@ -54,6 +54,8 @@ var _list: VBoxContainer
 
 
 func _ready() -> void:
+	# Ueber der "Jetzt laeuft"-Leiste des Hauptmenues (verdeckte den Schliessen-Knopf).
+	z_index = 50
 	Sfx.ui_open()
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -329,9 +331,8 @@ func _fill_mode() -> void:
 	# Orbit-Rating: eigene Kennzahl (Formel: ScoreStore.orbit_points,
 	# docs/modes/orbit.md); Mania-pp bleibt unveraendert.
 	pp_cap.text = "Orbit-Rating" if orbit else "pp"
-	var orbit_tip := ("Beste Orbit-Läufe: 4 × Orbit-Sterne² × Genauigkeit⁴,\nabsteigend gewichtet mit 0,95ⁿ (wie pp)"
-			if UiTheme.is_german() else
-			"Best Orbit runs: 4 × Orbit stars² × accuracy⁴,\nweighted 0.95ⁿ in descending order (like pp)")
+	var orbit_tip := tr("Beste Orbit-Läufe: 4 × Orbit-Sterne² × Genauigkeit⁴,
+absteigend gewichtet mit 0,95ⁿ (wie pp)")
 	pp_cap.tooltip_text = orbit_tip if orbit else ""
 	pp_cap.mouse_filter = Control.MOUSE_FILTER_PASS
 	pp_cap.size_flags_vertical = Control.SIZE_SHRINK_END

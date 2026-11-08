@@ -1183,8 +1183,8 @@ func _play_orbit() -> void:
 	_play()
 
 
-static func _orbit_sub_text() -> String:
-	return "Zielen + Tippen auf osu!-Maps" if UiTheme.is_german() else "Aim + tap on osu! maps"
+func _orbit_sub_text() -> String:
+	return tr("Zielen + Tippen auf osu!-Maps")
 
 
 ## Orbit-Button: flach, Bernstein-Kontur, Titel + ruhige Unterzeile.
