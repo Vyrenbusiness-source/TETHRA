@@ -17,6 +17,11 @@ signal note_spawned(index: int)
 signal note_judged(index: int, result: Dictionary)
 signal arc_started(index: int, quality: int)
 signal ring_pressed(ring: int, hit: bool)
+## Druck ohne Treffer: Ort (Winkel, Radius in Bildhoehen), gewaehlter Ring und
+## Grund: "ANGLE" (Ziel im Fenster, Winkel daneben), "RING" (Ziel im Fenster,
+## aber auf dem anderen Ring), "EARLY" (Ziel noch zu weit weg, frisst nichts),
+## "NONE" (nichts in der Naehe).
+signal press_missed(deg: float, rho: float, ring: int, reason: String)
 signal hp_changed(hp: float)
 signal finished(stats: Dictionary)
 
@@ -25,6 +30,13 @@ const Quality := ManiaCore.Quality
 const RINGS := 2
 ## Winkel-Toleranz fuer Taps, Bogen-Koepfe und das Folgen eines Bogens.
 const ANGLE_TOL_DEG := 22.0
+## Ringwahl durch Zeigen: Radien der Ringe in Bildhoehen (OrbitView nutzt
+## dieselben Werte) und die Grenze genau dazwischen. Hysterese: der Zeiger
+## muss RING_HYST_K ueber/unter die Grenze, bevor der Ring wechselt.
+const R_INNER_K := 0.215
+const R_OUTER_K := 0.37
+const RING_SPLIT_K := (R_INNER_K + R_OUTER_K) * 0.5
+const RING_HYST_K := 0.012
 ## So lange darf der Cursor beim Bogen ausserhalb der Toleranz sein.
 const ARC_OUT_MS := 150.0
 ## Zielmitte: nur so nah am Ziel (Grad) gibt es die beste Stufe CORE.
@@ -71,8 +83,15 @@ const TICK_MS := 1.0
 ## tragen den exakten Winkel selbst (Treffer-Winkel bleibt genau).
 const REC_MIN_DEG := 0.5
 const REC_GAP_MS := 8.0
-## Replay-Event-Codes: [t_ms, EV_CURSOR, a] / [t_ms, EV_DOWN + ring, a] /
-## [t_ms, EV_UP + ring]; t in ganzen ms, a = Winkel in 0.1 Grad (0..3599).
+## Neuer Radius nur bei Aenderung > REC_MIN_RHO (Tausendstel Bildhoehe).
+const REC_MIN_RHO := 3
+## Replay-Format: 2 = Ring durch Zeigen (Events mit Radius). Replays ohne
+## meta.orbit_rules (Format 1: Taste = Ring) sind "alte Version".
+const REPLAY_RULES := 2
+## Replay-Event-Codes: [t_ms, EV_CURSOR, a, r] / [t_ms, EV_DOWN + taste, a, r] /
+## [t_ms, EV_UP + taste]; t in ganzen ms, a = Winkel in 0.1 Grad (0..3599),
+## r = Cursor-Abstand zur Mitte in Tausendstel Bildhoehe. Taste 0/1 = beide
+## treffen jedes Ziel.
 const EV_CURSOR := 0
 const EV_DOWN := 1
 const EV_UP := 3
@@ -95,6 +114,11 @@ var _judged: Dictionary = {}
 var _judged_count := 0
 var _finished_emitted := false
 var _cursor := 0.0
+## Cursor-Abstand zur Mitte (Bildhoehen) und der daraus gewaehlte Ring.
+var _rho := 0.0
+var _sel_ring := 0
+## Welche der zwei Tasten gerade unten sind.
+var _held: Array[bool] = [false, false]
 ## Orbit-Wertung: Summe der Trefferwerte, Streak-Summe, gewertete Ziele.
 var _val_sum := 0.0
 var _streak_sum := 0.0
@@ -108,6 +132,7 @@ var recording := false
 var replay_log: Array = []
 var _tick := -INF
 var _rec_a := -1
+var _rec_r := -1
 var _rec_t := -INF
 
 # --- Zaehler und Fenster: alles liegt im ManiaCore-Zaehler ---
@@ -211,6 +236,10 @@ func setup(p_notes: Array[OrbitNote], od: float, scroll_scale: float = 1.0,
 	_next_spawn = 0
 	_finished_emitted = false
 	_cursor = 0.0
+	_rho = 0.0
+	_sel_ring = 0
+	_held = [false, false]
+	_rec_r = -1
 	_val_sum = 0.0
 	_streak_sum = 0.0
 	_n_done = 0
@@ -288,77 +317,99 @@ func update(t_ms: float) -> void:
 		finished.emit(stats())
 
 
-## Cursor-Winkel (0 = oben, im Uhrzeigersinn) zur Event-Zeit t_ms. Bis t_ms
-## stand der Cursor noch am alten Winkel; erst danach gilt der neue.
-func cursor_moved(cursor_deg: float, t_ms: float) -> void:
+## Cursor zur Event-Zeit t_ms: Winkel (0 = oben, im Uhrzeigersinn) und Abstand
+## zur Mitte rho (in Bildhoehen). Bis t_ms stand der Cursor noch am alten Ort.
+func cursor_moved(cursor_deg: float, rho: float, t_ms: float) -> void:
 	if not deterministic:
-		_do_cursor(cursor_deg, t_ms)
+		_do_cursor(cursor_deg, rho, t_ms)
 		return
 	if _tally.failed or notes.is_empty():
 		return
 	var a := _q_deg(cursor_deg)
+	var r := _q_rho(rho)
 	var te := _q_time(t_ms)
-	if a == _rec_a:
+	if a == _rec_a and r == _rec_r:
 		return
 	if recording and _rec_a >= 0:
 		var d := absi(a - _rec_a)
 		d = mini(d, 3600 - d)
-		if d <= int(REC_MIN_DEG * 10.0) or te - _rec_t < REC_GAP_MS:
+		if (d <= int(REC_MIN_DEG * 10.0) and absi(r - _rec_r) <= REC_MIN_RHO) \
+				or te - _rec_t < REC_GAP_MS:
 			return
-	apply_event([int(te), EV_CURSOR, a])
+	apply_event([int(te), EV_CURSOR, a, r])
 
 
-func _do_cursor(cursor_deg: float, t_ms: float) -> void:
+func _do_cursor(cursor_deg: float, rho: float, t_ms: float) -> void:
 	_check_arcs(t_ms)
 	_cursor = OrbitNote.wrap_deg(cursor_deg)
+	_rho = rho
+	if rho > RING_SPLIT_K + RING_HYST_K:
+		_sel_ring = 1
+	elif rho < RING_SPLIT_K - RING_HYST_K:
+		_sel_ring = 0
 	_check_arcs(t_ms)
 
 
-## Taste fuer ring gedrueckt (0 = innen, 1 = aussen), Cursor bei cursor_deg.
-func key_down(ring: int, t_ms: float, cursor_deg: float) -> void:
-	if ring < 0 or ring >= RINGS or notes.is_empty():
+## Ring, den der Cursor gerade waehlt (0 innen, 1 aussen).
+func cursor_ring() -> int:
+	return _sel_ring
+
+
+func cursor_rho() -> float:
+	return _rho
+
+
+## Taste (0 oder 1, beide gleichwertig) gedrueckt; Cursor bei cursor_deg/rho.
+## Getroffen wird ein Ziel auf dem Ring, den der Cursor-Abstand waehlt.
+func key_down(key: int, t_ms: float, cursor_deg: float, rho: float) -> void:
+	if key < 0 or key >= RINGS or notes.is_empty():
 		return
 	if deterministic:
 		if not _tally.failed:
-			apply_event([int(_q_time(t_ms)), EV_DOWN + ring, _q_deg(cursor_deg)])
+			apply_event([int(_q_time(t_ms)), EV_DOWN + key, _q_deg(cursor_deg), _q_rho(rho)])
 		return
-	_do_key_down(ring, t_ms, cursor_deg)
+	_do_key_down(key, t_ms, cursor_deg, rho)
 
 
-func _do_key_down(ring: int, t_ms: float, cursor_deg: float) -> void:
-	_do_cursor(cursor_deg, t_ms)
-	_expire_ring(ring, t_ms)
-	if _active_arc[ring] >= 0:
-		ring_pressed.emit(ring, false)
+func _do_key_down(key: int, t_ms: float, cursor_deg: float, rho: float) -> void:
+	_do_cursor(cursor_deg, rho, t_ms)
+	if _held[key]:
 		return
+	_held[key] = true
+	var ring := _sel_ring
+	for r in RINGS:
+		_expire_ring(r, t_ms)
 	var lane: Array = _ring_notes[ring]
 	var idx := -1
 	var dt := 0.0
 	var err := 0.0
+	var reason := "NONE"
 	for j in range(_ring_head[ring], lane.size()):
 		var i: int = lane[j]
 		if _judged.has(i):
 			continue
 		var n := notes[i]
 		var d := t_ms - n.time_ms
-		if d < -w_miss:
+		if d < -w50:
+			# Zu frueh: frisst das Ziel NICHT, der Druck zaehlt nur als Fehldruck.
+			if d >= -w_miss and reason == "NONE":
+				reason = "EARLY"
 			break
 		if d > w50:
 			continue
 		var e := OrbitNote.dist_deg(_cursor, n.angle_at(t_ms))
 		if e > angle_tol:
+			reason = "ANGLE"
 			continue
 		idx = i
 		dt = d
 		err = e
 		break
 	if idx < 0:
+		if reason == "NONE" and _target_waiting(1 - ring, t_ms):
+			reason = "RING"
 		ring_pressed.emit(ring, false)
-		return
-	if dt < -w50:
-		# Zu frueh, aber gezielt: frisst das Ziel (Mania-Verhalten).
-		_miss(idx, dt, err)
-		ring_pressed.emit(ring, false)
+		press_missed.emit(_cursor, _rho, ring, reason)
 		return
 	var q: int = _tally._quality_for(absf(dt))
 	if q == Quality.MAX and err > center_tol:
@@ -379,25 +430,44 @@ func _do_key_down(ring: int, t_ms: float, cursor_deg: float) -> void:
 	ring_pressed.emit(ring, true)
 
 
-## Taste fuer ring losgelassen.
-func key_up(ring: int, t_ms: float) -> void:
-	if ring < 0 or ring >= RINGS or notes.is_empty():
+## Wartet auf ring ein offenes Ziel im Trefferfenster (Zeit, egal welcher Winkel)?
+func _target_waiting(ring: int, t_ms: float) -> bool:
+	var lane: Array = _ring_notes[ring]
+	for j in range(_ring_head[ring], lane.size()):
+		var i: int = lane[j]
+		if _judged.has(i):
+			continue
+		var d := t_ms - notes[i].time_ms
+		if d < -w_miss:
+			break
+		if d <= w50:
+			return true
+	return false
+
+
+## Taste losgelassen. Ein Bogen laeuft, solange IRGENDEINE Taste unten ist.
+func key_up(key: int, t_ms: float) -> void:
+	if key < 0 or key >= RINGS or notes.is_empty():
 		return
 	if deterministic:
 		if not _tally.failed:
-			apply_event([int(_q_time(t_ms)), EV_UP + ring])
+			apply_event([int(_q_time(t_ms)), EV_UP + key])
 		return
-	_do_key_up(ring, t_ms)
+	_do_key_up(key, t_ms)
 
 
-func _do_key_up(ring: int, t_ms: float) -> void:
+func _do_key_up(key: int, t_ms: float) -> void:
 	_check_arcs(t_ms)
-	var h: int = _active_arc[ring]
-	if h < 0:
+	_held[key] = false
+	if _held[0] or _held[1]:
 		return
-	# Kurz vor dem Ende loslassen ist ok (1.5x 50er-Fenster, wie Mania).
-	var ok := t_ms >= notes[h].end_ms - w50 * 1.5
-	_finish_arc(ring, ok, "" if ok else "RELEASE")
+	for r in RINGS:
+		var h: int = _active_arc[r]
+		if h < 0:
+			continue
+		# Kurz vor dem Ende loslassen ist ok (1.5x 50er-Fenster, wie Mania).
+		var ok := t_ms >= notes[h].end_ms - w50 * 1.5
+		_finish_arc(r, ok, "" if ok else "RELEASE")
 
 
 func accuracy() -> float:
@@ -494,7 +564,8 @@ func _check_arcs(t_ms: float) -> void:
 			continue
 		var n := notes[h]
 		var tc := minf(t_ms, n.end_ms)
-		if OrbitNote.dist_deg(_cursor, n.angle_at(tc)) > angle_tol:
+		# Draussen: Winkel neben der Spitze ODER der Cursor auf dem anderen Ring.
+		if OrbitNote.dist_deg(_cursor, n.angle_at(tc)) > angle_tol or _sel_ring != r:
 			if _out_since[r] == INF:
 				_out_since[r] = _exit_time(n, r, tc)
 			if tc - _out_since[r] > ARC_OUT_MS:
@@ -625,12 +696,14 @@ func apply_event(ev: Array) -> void:
 		replay_log.append(ev.duplicate())
 	if code == EV_CURSOR and ev.size() >= 3:
 		_rec_a = int(ev[2])
+		_rec_r = int(ev[3]) if ev.size() >= 4 else 0
 		_rec_t = te
-		_do_cursor(float(_rec_a) / 10.0, te)
+		_do_cursor(float(_rec_a) / 10.0, float(_rec_r) / 1000.0, te)
 	elif code >= EV_DOWN and code < EV_DOWN + RINGS and ev.size() >= 3:
 		_rec_a = int(ev[2])
+		_rec_r = int(ev[3]) if ev.size() >= 4 else 0
 		_rec_t = te
-		_do_key_down(code - EV_DOWN, te, float(_rec_a) / 10.0)
+		_do_key_down(code - EV_DOWN, te, float(_rec_a) / 10.0, float(_rec_r) / 1000.0)
 	elif code >= EV_UP and code < EV_UP + RINGS:
 		_do_key_up(code - EV_UP, te)
 
@@ -639,6 +712,10 @@ func apply_event(ev: Array) -> void:
 ## an der Bildrate).
 func _q_time(t_ms: float) -> float:
 	return maxf(roundf(t_ms), _tick)
+
+
+static func _q_rho(rho: float) -> int:
+	return clampi(int(roundf(rho * 1000.0)), 0, 2000)
 
 
 static func _q_deg(deg: float) -> int:

@@ -7,27 +7,22 @@ extends RefCounted
 ## Zeitabstaende und der bisherige Musterfluss bestimmen das Ergebnis.
 ##
 ## Regeln (Details + Begruendung in docs/modes/orbit.md):
-##  1. Akkord = Notes mit <= CHORD_EPS_MS Abstand. Ein Akkord ergibt hoechstens
-##     ZWEI Ziele: beide Ringe am selben Winkel (niedrigste Spalte innen,
-##     hoechste aussen). Derselbe Ring nebeneinander wird nicht erzeugt, weil
-##     ein Tastendruck nur ein Ziel treffen kann.
+##  1. Akkord = Notes mit <= CHORD_EPS_MS Abstand. Ein Zeiger kann nur ein Ziel
+##     treffen: ein Akkord ergibt ein Ziel (laengster Bogen, sonst niedrigste
+##     Spalte).
 ##  2. Dichte-Reduktion: ein Akkord, der weniger als MIN_GAP_MS nach dem
-##     letzten behaltenen Akkord kommt, wird verworfen (Jacks/Streams/Bursts
-##     schneller als 1/4 bei 200 BPM werden zusammengefasst).
+##     letzten behaltenen Akkord kommt, wird verworfen.
 ##  3. Winkel: Spalten liegen gedanklich auf einem Kreis. Der kreisfoermige
-##     Spaltenabstand d (bei 4K -1..+2) mal Schrittweite ergibt den
-##     Winkelsprung; die Schrittweite waechst mit dem Zeitabstand (kleine
-##     Abstaende = kleine Spruenge, grosse Abstaende duerfen springen). Jeder
-##     Sprung ist auf MAX_DEG_PER_MS * Abstand und MAX_JUMP_DEG gedeckelt.
-##     Rolls (0123 0123) drehen so gleichmaessig im Kreis, Trills pendeln,
-##     Jacks bleiben stehen.
-##  4. Ring: Einzelnoten im Stream (Abstand < STREAM_GAP_MS) wechseln den Ring
-##     (Tasten abwechseln wie beim Trillern), sonst entscheidet die
-##     Spaltenhaelfte (linke Haelfte innen, rechte aussen).
+##     Spaltenabstand d mal Schrittweite ergibt den Winkelsprung; die
+##     Schrittweite waechst mit dem Zeitabstand. Jeder Sprung ist auf
+##     MAX_DEG_PER_MS * Abstand und MAX_JUMP_DEG gedeckelt.
+##  4. Ring (Zeigen in die Tiefe): Akzente (Taktanfang, Halbtakt) aussen, der
+##     Rest innen; legalize begrenzt die Wechsel (Zeit, Haeufigkeit, Takt).
+##     Beide Tasten treffen jedes Ziel, im Stream wechselt der Spieler sie ab.
 ##  5. LN -> Bogen: Winkellaenge = Dauer * ARC_DEG_PER_MS, gedeckelt auf
 ##     ARC_MAX_DEG, Richtung = aktuelle Flussrichtung. LNs < MIN_ARC_MS werden
-##     Taps. Waehrend ein Bogen laeuft, werden neue Notes Taps auf dem freien
-##     Ring genau an der Bogen-Spitze (Cursor ist ja dort), sonst verworfen.
+##     Taps. Waehrend ein Bogen laeuft, werden neue Notes Taps auf dem
+##     Bogen-Ring genau an der Spitze (zweite Taste), sonst verworfen.
 
 const CHORD_EPS_MS := 2.0
 const MIN_GAP_MS := 75.0
@@ -48,15 +43,32 @@ const STACK_PATTERN := [0, 1, 2, 1]
 const STACK_NEAR_DEG := 7.0
 const STACK_WINDOW_MS := 320.0
 const STACK_PUSH_DEG := 8.0
-const STREAM_GAP_MS := 160.0
 const MIN_ARC_MS := 100.0
 const ARC_DEG_PER_MS := 0.12
 const ARC_MAX_DEG := 270.0
-## Nach einem Bogen-Ende braucht derselbe Ring so viel Pause, sonst anderer Ring.
-const RELEASE_GAP_MS := 150.0
-## Ein Finger pro Ring: zwei Ziele auf DEMSELBEN Ring brauchen mindestens so
-## viel Abstand (Tap zu Tap); schnellere Folgen wechseln den Ring oder entfallen.
-const SAME_RING_MIN_MS := 90.0
+## Ein Zeiger, zwei Bahnen (Ring wird durch Zeigen gewaehlt).
+## Akzente (beat_strength >= ACCENT_STRENGTH) wollen aussen, der Rest innen.
+const ACCENT_STRENGTH := 0.75
+## Ringwechsel: mindestens so viel Zeit seit dem letzten Ziel (davon braucht der
+## Weg in die Tiefe RING_COST_MS bei MAX_DEG_PER_MS), hoechstens alle
+## RING_HOLD_MS; abseits der Schlaege (< WEAK_BEAT) erst ab RING_WEAK_GAP_MS.
+const RING_SWITCH_MIN_MS := 220.0
+const RING_COST_MS := 70.0
+const RING_HOLD_MS := 1200.0
+const RING_WEAK_GAP_MS := 450.0
+const WEAK_BEAT := 0.6
+## Leichte Muster (Orbit-Sterne unter EASY_STARS): Ringwechsel nur auf starken
+## Schlaegen (STRONG_BEAT), nach EASY_SWITCH_MIN_MS Pause, hoechstens alle
+## EASY_HOLD_MS; Winkelsprung hoechstens EASY_JUMP_DEG (ab EASY_FAR_GAP_MS
+## Pause EASY_FAR_JUMP_DEG).
+const EASY_STARS := 2.5
+const EASY_SWITCH_MIN_MS := 450.0
+const EASY_HOLD_MS := 4000.0
+const EASY_JUMP_DEG := 40.0
+const EASY_FAR_GAP_MS := 800.0
+const EASY_FAR_JUMP_DEG := 70.0
+## Orbit-Sterne: ein Ringwechsel zaehlt wie so viele Grad Zeigerweg.
+const STAR_RING_DEG := 40.0
 ## Zeiger-Grenzen (Tablet/Maus): innerhalb von FLICK_WINDOW_MS hoechstens
 ## MAX_JUMP_DEG, unter SHORT_GAP_MS hoechstens SHORT_JUMP_DEG.
 const FLICK_WINDOW_MS := 250.0
@@ -179,19 +191,13 @@ static func convert(beatmap: Beatmap) -> Array[OrbitNote]:
 		if t - last_head < MIN_GAP_MS:
 			continue
 		if any_active:
-			var free := -1
-			var tip := 0.0
+			# Ein Zeiger: Notes waehrend eines Bogens werden Taps auf dem Bogen-Ring
+			# an der Spitze (zweite Taste), alles andere entfaellt.
 			for r in 2:
-				if arcs[r] == null:
-					if free < 0:
-						free = r
-				else:
-					tip = (arcs[r] as OrbitNote).angle_at(t)
-			if free < 0 or t - float(ring_last[free]) < SAME_RING_MIN_MS or t - float(arc_end_at[free]) < RELEASE_GAP_MS:
-				continue
-			out.append(OrbitNote.make(t, tip, free, g[0]))
-			ring_last[free] = t
-			last_head = t
+				if arcs[r] != null:
+					out.append(OrbitNote.make(t, (arcs[r] as OrbitNote).angle_at(t), r, g[0]))
+					last_head = t
+					break
 			continue
 
 		var col := head.column
@@ -232,47 +238,14 @@ static func convert(beatmap: Beatmap) -> Array[OrbitNote]:
 		if delta != 0.0:
 			dir = signf(delta)
 
-		# Ziele des Akkords: [quell-index, ring].
-		var targets: Array = []
-		if g.size() >= 2:
-			targets = [[g[0], 0], [g[-1], 1]]
-		else:
-			var ring := 0 if col * 2 < k else 1
-			if gap < STREAM_GAP_MS and last_ring >= 0:
-				ring = 1 - last_ring
-			targets = [[g[0], ring]]
-		# Ring direkt nach einem Bogen-Ende gesperrt (Taste muss erst hoch).
-		var kept: Array = []
-		for tg in targets:
-			if t - float(arc_end_at[tg[1]]) < RELEASE_GAP_MS:
-				if targets.size() == 1:
-					tg[1] = 1 - int(tg[1])
-					kept.append(tg)
-			else:
-				kept.append(tg)
-		if kept.is_empty():
-			# Beide Ringe frisch frei: der laenger freie Ring bekommt das Ziel.
-			kept = [[g[0], 0 if float(arc_end_at[0]) <= float(arc_end_at[1]) else 1]]
-		# Ein Finger pro Ring: zu schnelle Wiederholung wechselt den Ring
-		# (Einzelziel) oder entfaellt; Akkorde schrumpfen auf das freie Ziel.
-		var spaced: Array = []
-		for tg in kept:
-			var r := int(tg[1])
-			if _ring_free(ring_last, arc_end_at, r, t):
-				spaced.append(tg)
-			elif kept.size() == 1 and _ring_free(ring_last, arc_end_at, 1 - r, t):
-				tg[1] = 1 - r
-				spaced.append(tg)
-		if spaced.is_empty():
-			dir = dir_before
-			continue
-		targets = spaced
-
-		# Akkorde teilen einen Winkel: der juengste Ring der Ziele zaehlt.
+		# Ein Zeiger = ein Ziel: ein Akkord wird zu einem Ziel (der laengste Bogen,
+		# sonst die niedrigste Spalte). Der Ring folgt dem Takt (_want_ring).
+		var pick: int = g[0]
+		for gi in g:
+			if _arc_len(objs[gi] as ManiaNote) > _arc_len(objs[pick] as ManiaNote):
+				pick = gi
+		var targets: Array = [[pick, _want_ring(reds, t)]]
 		var us_r := int(targets[0][1])
-		for tg in targets:
-			if ring_last[tg[1]] > ring_last[us_r]:
-				us_r = int(tg[1])
 		angle = _unstack(angle, recent[us_r], t, dir, vc if vc != INF else last_angle, gap)
 		# Der virtuelle Zeiger folgt dem versetzten Ziel, sonst rechnet der naechste
 		# Schritt von einem Ort aus, an dem niemand ist.
@@ -309,7 +282,7 @@ static func convert(beatmap: Beatmap) -> Array[OrbitNote]:
 		if a.time_ms != b.time_ms:
 			return a.time_ms < b.time_ms
 		return a.ring < b.ring)
-	return out
+	return finish(out, beatmap)
 
 
 ## Stapel-Versatz: liegt das neue Ziel kurz nach dem letzten Ziel desselben
@@ -360,14 +333,100 @@ static func _reach(vc: float, gap: float, want: float) -> Array:
 	return [OrbitNote.wrap_deg(vc + mv + rest), OrbitNote.wrap_deg(vc + mv)]
 
 
-## Ring r ist zur Zeit t frei: genug Abstand zum letzten Tap und zum letzten Bogen-Ende.
-static func _ring_free(ring_last: Array, arc_end_at: Array, r: int, t: float) -> bool:
-	return t - float(ring_last[r]) >= SAME_RING_MIN_MS and t - float(arc_end_at[r]) >= RELEASE_GAP_MS
+## Gewuenschter Ring einer Mania-Note nach dem Takt: Akzente (Taktanfang,
+## Halbtakt) liegen aussen, der Rest innen. Ob der Zeiger dort hinkommt,
+## entscheidet legalize.
+static func _want_ring(reds: Array, t: float) -> int:
+	return 1 if beat_strength(reds, t) >= ACCENT_STRENGTH else 0
+
+
+## Letzter Schritt jeder Umwandlung: Regeln fuer EINEN Zeiger (legalize).
+## Leichte Muster (Orbit-Sterne < EASY_STARS) bekommen die ruhige Variante.
+static func finish(raw: Array[OrbitNote], beatmap: Beatmap) -> Array[OrbitNote]:
+	var reds := red_points(beatmap)
+	var out := legalize(raw, reds, false)
+	if stars(out) < EASY_STARS:
+		out = legalize(raw, reds, true)
+	return out
+
+
+## Der Ring wird durch Zeigen gewaehlt, also steht der Zeiger immer auf genau
+## einem Ring. Daraus folgt (Details: docs/modes/orbit.md):
+##  - gleichzeitige Ziele gibt es nicht (Akkord = ein Ziel),
+##  - waehrend eines Bogens liegen alle Ziele auf dem Bogen-Ring (Taps an der
+##    Spitze), neue Boegen entfallen,
+##  - ein Ringwechsel braucht Zeit (RING_SWITCH_MIN_MS, davon RING_COST_MS fuer
+##    den Weg in die Tiefe), hoechstens alle RING_HOLD_MS; der Winkelsprung
+##    schrumpft um die dafuer verbrauchte Zeit,
+##  - leicht (easy): Ringwechsel nur auf starken Schlaegen, selten, und der
+##    Winkelsprung bleibt klein.
+## Gibt neue Objekte zurueck (raw bleibt unveraendert).
+static func legalize(raw: Array[OrbitNote], reds: Array, easy: bool) -> Array[OrbitNote]:
+	var out: Array[OrbitNote] = []
+	var cur_ring := -1
+	var cur_t := -INF
+	var cur_a := 0.0
+	var last_sw := -INF
+	var arc: OrbitNote = null
+	var last_t := -INF
+	var hold := EASY_HOLD_MS if easy else RING_HOLD_MS
+	for src in raw:
+		var t := src.time_ms
+		if arc != null and t > arc.end_ms + CHORD_EPS_MS:
+			cur_t = arc.end_ms
+			cur_a = OrbitNote.wrap_deg(arc.end_angle_deg)
+			arc = null
+		if t - last_t <= CHORD_EPS_MS:
+			continue
+		var n := OrbitNote.make(src.time_ms, src.angle_deg, src.ring, src.source_index)
+		n.end_ms = src.end_ms
+		n.end_angle_deg = src.end_angle_deg
+		n.is_arc = src.is_arc
+		if arc != null:
+			if n.is_arc:
+				continue
+			n.ring = arc.ring
+			n.angle_deg = arc.angle_at(t)
+			n.end_angle_deg = n.angle_deg
+			out.append(n)
+			last_t = t
+			continue
+		var gap := t - cur_t
+		var cost := 0.0
+		if cur_ring < 0:
+			cur_ring = n.ring
+		elif n.ring != cur_ring:
+			var ok := gap >= RING_SWITCH_MIN_MS and t - last_sw >= hold
+			if ok and easy:
+				ok = gap >= EASY_SWITCH_MIN_MS and beat_strength(reds, t) >= STRONG_BEAT
+			elif ok:
+				ok = gap >= RING_WEAK_GAP_MS or beat_strength(reds, t) >= WEAK_BEAT
+			if ok:
+				cur_ring = n.ring
+				last_sw = t
+				cost = RING_COST_MS
+		n.ring = cur_ring
+		if cur_t > -INF:
+			var lim := MAX_DEG_PER_MS * maxf(gap - cost, 0.0)
+			if easy:
+				lim = minf(lim, EASY_JUMP_DEG if gap < EASY_FAR_GAP_MS else EASY_FAR_JUMP_DEG)
+			var d := OrbitNote.delta_deg(cur_a, n.angle_deg)
+			if absf(d) > lim:
+				var shift := signf(d) * (absf(d) - lim)
+				n.angle_deg = OrbitNote.wrap_deg(n.angle_deg - shift)
+				n.end_angle_deg -= shift
+		out.append(n)
+		last_t = t
+		cur_t = t
+		cur_a = n.angle_deg
+		if n.is_arc:
+			arc = n
+	return out
 
 
 ## osu!standard -> Orbit. Gleiche Grenzen wie bei Mania: Zeit = Originalzeit,
 ## MIN_GAP_MS, MAX_DEG_PER_MS/MAX_JUMP_DEG, Spruenge nur auf Schlaegen, ein
-## Finger pro Ring (SAME_RING_MIN_MS, RELEASE_GAP_MS), Boegen <= ARC_DEG_PER_MS
+## Zeiger (legalize), Boegen <= ARC_DEG_PER_MS
 ## und ARC_MAX_DEG. Kreis -> Tap, Slider -> Bogen (Winkelweg aus dem Pfad),
 ## Spinner -> Bogen in Flussrichtung.
 static func convert_std(beatmap: Beatmap, style: int = StdStyle.POLAR) -> Array[OrbitNote]:
@@ -409,12 +468,9 @@ static func convert_std(beatmap: Beatmap, style: int = StdStyle.POLAR) -> Array[
 			continue
 		var pos := STD_CENTER if o.kind == HitObject.Kind.SPINNER else o.position()
 		if arc != null:
-			# Ueberlappung (selten): Tap auf dem freien Ring an der Bogen-Spitze.
-			var fr := 1 - arc.ring
-			if _ring_free(ring_last, arc_end_at, fr, t):
-				out.append(OrbitNote.make(t, arc.angle_at(t), fr, i))
-				ring_last[fr] = t
-				last_head = t
+			# Ueberlappung (selten): Tap auf dem Bogen-Ring an der Spitze.
+			out.append(OrbitNote.make(t, arc.angle_at(t), arc.ring, i))
+			last_head = t
 			continue
 		var gap := t - last_time
 		var dir_before := dir
@@ -457,15 +513,6 @@ static func convert_std(beatmap: Beatmap, style: int = StdStyle.POLAR) -> Array[
 		elif rd > STD_RING_SPLIT_PX + STD_RING_HYST_PX:
 			rad_ring = 1
 		var ring := rad_ring
-		if gap < STREAM_GAP_MS and last_ring >= 0:
-			ring = 1 - last_ring
-		if not _ring_free(ring_last, arc_end_at, ring, t):
-			ring = 1 - ring
-			if not _ring_free(ring_last, arc_end_at, ring, t):
-				dir = dir_before
-				prev_vec = vec_before
-				rad_ring = rad_before
-				continue
 
 		var dur := o.end_time() - t
 		var on: OrbitNote
@@ -507,7 +554,7 @@ static func convert_std(beatmap: Beatmap, style: int = StdStyle.POLAR) -> Array[
 		if a.time_ms != b.time_ms:
 			return a.time_ms < b.time_ms
 		return a.ring < b.ring)
-	return out
+	return finish(out, beatmap)
 
 
 ## Orbit-Winkel einer osu-Position (0 = oben, im Uhrzeigersinn).
@@ -607,9 +654,9 @@ static func cursor_points(ns: Array[OrbitNote]) -> Array:
 	var pts: Array = []
 	for n in ns:
 		if pts.is_empty() or absf(float(pts[-1][0]) - n.time_ms) > CHORD_EPS_MS or pts[-1][2]:
-			pts.append([n.time_ms, n.angle_deg, false])
+			pts.append([n.time_ms, n.angle_deg, false, n.ring])
 		if n.is_arc:
-			pts.append([n.end_ms, OrbitNote.wrap_deg(n.end_angle_deg), true])
+			pts.append([n.end_ms, OrbitNote.wrap_deg(n.end_angle_deg), true, n.ring])
 	pts.sort_custom(func(a, b): return a[0] < b[0])
 	return pts
 
@@ -646,19 +693,38 @@ static func violations(ns: Array[OrbitNote], beatmap: Beatmap) -> Dictionary:
 			v.speed += 1
 		if (dt <= FLICK_WINDOW_MS and d > MAX_JUMP_DEG + 0.01) 				or (dt < SHORT_GAP_MS and d > SHORT_JUMP_DEG + 0.01):
 			v.flick += 1
-	for r in 2:
-		var free_at := -INF
-		var was_arc := false
-		var last_t := -INF
-		for n in ns:
-			if n.ring != r:
-				continue
-			var need := RELEASE_GAP_MS - 0.001 if was_arc else SAME_RING_MIN_MS - 0.001
-			if n.time_ms - free_at < need or n.time_ms < last_t:
+	# Ein Zeiger: kein Ziel waehrend eines Bogens ausser Taps auf dessen Ring,
+	# Ringwechsel nur mit genug Zeit.
+	var arc_end := -INF
+	var arc_ring := -1
+	var prev: OrbitNote = null
+	var pt_t := -INF
+	var pt_a := 0.0
+	var pt_ring := -1
+	for n in ns:
+		if prev != null and n.time_ms - prev.time_ms <= CHORD_EPS_MS:
+			v.chord += 1
+		if n.time_ms <= arc_end:
+			if n.ring != arc_ring or n.is_arc:
 				v.ring += 1
-			last_t = n.time_ms
-			free_at = n.end_ms if n.is_arc else n.time_ms
-			was_arc = n.is_arc
+			prev = n
+			continue
+		if pt_ring >= 0 and n.ring != pt_ring:
+			var gap := n.time_ms - pt_t
+			if gap < RING_SWITCH_MIN_MS - 0.001:
+				v.ring += 1
+			elif OrbitNote.dist_deg(pt_a, n.angle_deg) > MAX_DEG_PER_MS * (gap - RING_COST_MS) + 0.01:
+				v.speed += 1
+		pt_ring = n.ring
+		if n.is_arc:
+			arc_end = n.end_ms
+			arc_ring = n.ring
+			pt_t = n.end_ms
+			pt_a = OrbitNote.wrap_deg(n.end_angle_deg)
+		else:
+			pt_t = n.time_ms
+			pt_a = n.angle_deg
+		prev = n
 	return v
 
 
@@ -742,6 +808,8 @@ static func stars(ns: Array[OrbitNote]) -> float:
 		var w := clampi(int((float(pts[i][0]) - t0) / STAR_HOP_MS), 0, n_win - 1)
 		var d := OrbitNote.dist_deg(pts[i - 1][1], pts[i][1])
 		var gap := maxf(float(pts[i][0]) - float(pts[i - 1][0]), 1.0)
+		if int(pts[i][3]) != int(pts[i - 1][3]):
+			d += STAR_RING_DEG
 		var f := minf(d / gap / HUMAN_DEG_PER_MS, STAR_SPEED_CAP)
 		path[w] += d * f * f
 	# Fenster = zwei Hops (2 s), Werte je Sekunde.
