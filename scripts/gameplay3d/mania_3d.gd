@@ -3995,7 +3995,7 @@ func _build_results(is_fail: bool, s: Dictionary, pp: float, unranked: bool, new
 	}
 	if _prev_best != null:
 		data["previous_best"] = _prev_best
-	if OS.get_cmdline_args().has("--shot-results"):
+	if OS.get_cmdline_args().has("--shot-results") and not is_fail:
 		data["pp"] = 231.7  # Shot-Harness: pp-Vergleich sichtbar (Tutorial wertet nicht)
 	if not _beatmap.hit_objects.is_empty():
 		data["length_ms"] = float(_beatmap.hit_objects.back().end_time())
