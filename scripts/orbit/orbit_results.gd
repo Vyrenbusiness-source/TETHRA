@@ -110,13 +110,13 @@ func _build(s: Dictionary) -> void:
 	add_child(_grade)
 
 	_right = VBoxContainer.new()
-	_right.anchor_left = 0.56
-	_right.anchor_right = 0.93
+	_right.anchor_left = 0.50
+	_right.anchor_right = 0.95
 	_right.anchor_top = 0.0
 	_right.anchor_bottom = 1.0
 	_right.offset_top = 64
 	_right.offset_bottom = -48
-	_right.add_theme_constant_override("separation", 14)
+	_right.add_theme_constant_override("separation", 10)
 	_right.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_right)
 
@@ -144,36 +144,48 @@ func _build(s: Dictionary) -> void:
 	row.add_child(_stat(tr("ZIELFEHLER"), "%s°" % UiTheme.fmt_num(float(s.get("aim_err", 0.0)), 1), 26))
 	_right.add_child(row)
 
-	_right.add_child(_spacer(4))
+	_right.add_child(_spacer(2))
+	# Stufentabelle links, Timing-Histogramm rechts: spart Hoehe, Knoepfe bleiben im Bild.
+	var mid := HBoxContainer.new()
+	mid.add_theme_constant_override("separation", 26)
+	mid.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_right.add_child(mid)
 	_tier_rows = Control.new()
-	_tier_rows.custom_minimum_size = Vector2(0, 6 * 26)
+	_tier_rows.custom_minimum_size = Vector2(250, 6 * 26)
+	_tier_rows.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_tier_rows.size_flags_stretch_ratio = 1.0
 	_tier_rows.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_tier_rows.draw.connect(_draw_tiers)
-	_right.add_child(_tier_rows)
+	mid.add_child(_tier_rows)
 	for q in 6:
 		var name := _label(tr(OrbitCore.TIER_NAMES[q]), 13, TIER_COLS[q], UiTheme.heading_font(3))
 		name.position = Vector2(0, q * 26 + 3)
 		_tier_rows.add_child(name)
 		var cnt := _label(str(_counts[q]), 15, UiTheme.TEXT, _tab)
-		cnt.position = Vector2(96, q * 26 + 1)
-		cnt.size = Vector2(56, 22)
+		cnt.position = Vector2(66, q * 26 + 1)
+		cnt.size = Vector2(50, 22)
 		cnt.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		_tier_rows.add_child(cnt)
 
-	_right.add_child(_spacer(4))
+	var hv := VBoxContainer.new()
+	hv.add_theme_constant_override("separation", 6)
+	hv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hv.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	mid.add_child(hv)
 	var hl := HBoxContainer.new()
 	hl.add_child(_tag(tr("FRÜH"), OrbitView.EARLY_COL))
-	var mean := _tag("%s  %+d ms" % [tr("Ø TIMING"), int(round(_mean_dt))], Color(OrbitView.OUTER_COL, 0.9))
+	# Normale Schrift: die Ueberschriftschrift hat kein "Ø".
+	var mean := _label("%s  %+d ms" % [tr("Ø TIMING"), int(round(_mean_dt))], 12, Color(OrbitView.OUTER_COL, 0.9), _tab)
 	mean.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	mean.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	hl.add_child(mean)
 	hl.add_child(_tag(tr("SPÄT"), OrbitView.LATE_COL))
-	_right.add_child(hl)
+	hv.add_child(hl)
 	_hist_box = Control.new()
-	_hist_box.custom_minimum_size = Vector2(0, 84)
+	_hist_box.custom_minimum_size = Vector2(0, 6 * 26 - 24)
 	_hist_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_hist_box.draw.connect(_draw_hist)
-	_right.add_child(_hist_box)
+	hv.add_child(_hist_box)
 
 	var grow := Control.new()
 	grow.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -249,11 +261,11 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _chart_center() -> Vector2:
-	return Vector2(size.x * 0.29, size.y * 0.52)
+	return Vector2(size.x * 0.26, size.y * 0.52)
 
 
 func _chart_r() -> float:
-	return minf(size.y * 0.36, size.x * 0.24)
+	return minf(size.y * 0.36, size.x * 0.21)
 
 
 func _draw() -> void:
@@ -315,7 +327,7 @@ func _draw_tiers() -> void:
 	var total := 0
 	for v in _counts:
 		total += v
-	var x0 := 170.0
+	var x0 := 124.0
 	var w := maxf(_tier_rows.size.x - x0, 10.0)
 	var k := clampf(_t / REVEAL_S, 0.0, 1.0)
 	for q in 6:
