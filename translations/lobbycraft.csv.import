@@ -1,0 +1,19 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+uid="uid://cyixg864w14fp"
+
+[deps]
+
+files=["res://translations/lobbycraft.de.translation", "res://translations/lobbycraft.en.translation"]
+
+source_file="res://translations/lobbycraft.csv"
+dest_files=["res://translations/lobbycraft.de.translation", "res://translations/lobbycraft.en.translation"]
+
+[params]
+
+compress=1
+delimiter=0
+unescape_keys=false
+unescape_translations=true
