@@ -1705,9 +1705,26 @@ func _shot_pages() -> void:
 	_shot_translations()
 	await get_tree().create_timer(1.2).timeout
 	if OS.get_cmdline_args().has("--shot-orbit"):
+		# Messung: Bilder/s auf einer Seite ohne Vorschau, dann auf der Orbit-Seite.
 		_set_mode(MODE_ORBIT)
-		await get_tree().create_timer(0.6).timeout
-		await _shot_save(dir, "settings_orbit.png")
+		_show_page("audio")
+		await get_tree().create_timer(1.0).timeout
+		print("FPS audio ", Engine.get_frames_per_second())
+		_show_page("orbit")
+		await get_tree().create_timer(1.5).timeout
+		print("FPS orbit ", Engine.get_frames_per_second())
+		for lang in ["de", "en"]:
+			TranslationServer.set_locale(lang)
+			_rebuild()
+			_set_mode(MODE_ORBIT)
+			_show_page("orbit")
+			if lang == "en":
+				# Live: andere Einstellungen muessen sofort in der Vorschau wirken.
+				Settings.orbit_guides = false
+				Settings.orbit_background = Settings.ORBIT_BG_MAP
+				Settings.scroll_speed = 20
+			await get_tree().create_timer(2.2).timeout
+			await _shot_save(dir, "settings_orbit_%s.png" % lang)
 		get_tree().quit(0)
 		return
 	var sizes := [Vector2i(1280, 720), Vector2i(1920, 1080)]
