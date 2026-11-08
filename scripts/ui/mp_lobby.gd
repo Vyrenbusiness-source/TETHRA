@@ -121,6 +121,7 @@ var _kind_sep: HBoxContainer
 var _star_swatch: Control
 var _facts: Dictionary = {}
 var _players_rule: ColorRect
+var _alone_hint: Label
 
 
 func _ready() -> void:
