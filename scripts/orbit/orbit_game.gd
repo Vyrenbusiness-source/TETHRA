@@ -1165,6 +1165,11 @@ func _capture_shot() -> void:
 
 ## --fps-sec=<s> (nach dem Shot, Autoplay laeuft weiter): Frame-Zeiten messen.
 func _measure_fps(sec: float) -> void:
+	# Ohne VSync/Cap messen: Reserve sichtbar statt Bildschirmtakt.
+	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
+	Engine.max_fps = 0
+	for i in 10:
+		await RenderingServer.frame_post_draw
 	var times := PackedFloat32Array()
 	var last := Time.get_ticks_usec()
 	var t0 := last
