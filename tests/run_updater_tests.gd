@@ -25,6 +25,17 @@ func _init() -> void:
 	_check(u._is_newer("2.0", "1.9.9"), "2.0 > 1.9.9 (kurze Version)")
 	_check(not u._is_newer("1.6", "1.6.0"), "1.6 == 1.6.0")
 	_check(u._is_newer("1.6.1.1", "1.6.1"), "4. Segment zaehlt")
+	# Ausweich-Quelle dist/latest.json
+	var sha := "a".repeat(64)
+	var dj: Dictionary = U.dist_job({"version": "1.2.3", "size": 30, "sha256": sha,
+		"parts": [{"name": "TETHRA.pck.000", "size": 20}, {"name": "TETHRA.pck.001", "size": 10}]}, "https://x/", "C:/g")
+	_check(dj.get("urls", []) == ["https://x/TETHRA.pck.000", "https://x/TETHRA.pck.001"] and int(dj.size) == 30 			and str(dj.sig) == "sha256:" + sha and str(dj.new).ends_with("TETHRA.pck.new"), "dist: Auftrag aus latest.json")
+	_check(U.dist_job({"version": "1", "size": 31, "sha256": sha, "parts": [{"name": "a", "size": 30}]}, "b/", "c").is_empty(),
+		"dist: Teilsumme falsch -> verworfen")
+	_check(U.dist_job({"version": "1", "size": 30, "sha256": "x", "parts": [{"name": "a", "size": 30}]}, "b/", "c").is_empty(),
+		"dist: ohne SHA-256 -> verworfen")
+	_check(U.dist_part_at([20, 10], 0) == 0 and U.dist_part_at([20, 10], 20) == 1 and U.dist_part_at([20, 10], 7) == -1,
+		"dist: Fortsetzen nur an Teilgrenzen")
 	# Groesse
 	_check(U.size_ok(1000, 1000), "Groesse gleich")
 	_check(not U.size_ok(999, 1000), "Groesse zu klein")

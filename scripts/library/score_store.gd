@@ -294,7 +294,7 @@ static func _beats_best(cand: Dictionary, prev: Dictionary) -> bool:
 	var pu := bool(prev.get("unranked", false))
 	if pu != cu:
 		return pu
-	return int(cand.get("score", 0)) > int(prev.get("score", 0))
+	return ranks_higher(cand, prev)
 
 
 static func _rescore_legacy(cfg: ConfigFile) -> void:
@@ -342,7 +342,7 @@ static func _rescore_legacy(cfg: ConfigFile) -> void:
 				if e is Dictionary and _rescore_entry(e):
 					changed = true
 			if changed:
-				list.sort_custom(func(a, b): return int(a.get("score", 0)) > int(b.get("score", 0)))
+				list.sort_custom(func(a, b): return ranks_higher(a, b))
 				cfg.set_value("others", key, list)
 	# 3) Bestwert neu bestimmen: ein neuerer Lauf kann den umgerechneten jetzt schlagen.
 	for key in touched:
@@ -356,6 +356,17 @@ static func _rescore_legacy(cfg: ConfigFile) -> void:
 					winner = e
 		if not winner.is_empty():
 			cfg.set_value("scores", key, winner.duplicate())
+
+
+## Rangfolge zweier Laeufe derselben Map: zuerst Genauigkeit, dann Score.
+## Der Score allein taeuscht: MAX zaehlt dort 320 statt 300, und SV hebt ihn um
+## 10 % (Nutzer: "94,98 % stand vor 95,25 %"). Gleiche Acc (auf 0,01 %) -> Score.
+static func ranks_higher(a: Dictionary, b: Dictionary) -> bool:
+	var aa := roundf(float(a.get("accuracy", 0.0)) * 10000.0)
+	var ab := roundf(float(b.get("accuracy", 0.0)) * 10000.0)
+	if aa != ab:
+		return aa > ab
+	return int(a.get("score", 0)) > int(b.get("score", 0))
 
 
 ## Speichert ein Ergebnis; liefert {is_new_best: bool, previous: Dictionary}.
@@ -378,7 +389,7 @@ static func submit(osz_file: String, version: String, result: Dictionary, mode: 
 	elif unranked and not prev_unranked:
 		is_new_best = false  # Unranked ueberschreibt Ranked nie
 	else:
-		is_new_best = int(result.get("score", 0)) > int(prev_dict.get("score", 0))
+		is_new_best = ranks_higher(result, prev_dict)
 	if is_new_best:
 		var entry := {
 			"score": int(result.get("score", 0)),
@@ -478,7 +489,7 @@ static func top_scores(osz_file: String, version: String, n: int = 5, mode: Stri
 		return []
 	var hist: Array = cfg.get_value(_sec("history", mode), _key(osz_file, version), [])
 	var valid := hist.filter(func(e): return not bool(e.get("failed", false)))
-	valid.sort_custom(func(a, b): return int(a.score) > int(b.score))
+	valid.sort_custom(func(a, b): return ranks_higher(a, b))
 	return valid.slice(0, n)
 
 
@@ -862,7 +873,7 @@ static func submit_others(map_key: String, player: String, entries: Array, mode:
 			cfg.save(PATH)
 		return 0
 	# pro Spieler auf die besten OTHERS_CAP kappen
-	list.sort_custom(func(a, b): return int(a.score) > int(b.score))
+	list.sort_custom(func(a, b): return ranks_higher(a, b))
 	var count := {}
 	var kept: Array = []
 	for o in list:
@@ -897,7 +908,7 @@ static func top_scores_all(osz_file: String, version: String, n: int = 5, mode: 
 				d["is_self"] = false
 				d["mode"] = mode_name(mode)
 				out.append(d)
-	out.sort_custom(func(a, b): return int(a.score) > int(b.score))
+	out.sort_custom(func(a, b): return ranks_higher(a, b))
 	return out.slice(0, n)
 
 
