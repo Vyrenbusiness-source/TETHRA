@@ -18,11 +18,12 @@ const NAMES: Array[String] = ["CIRCLE", "ELLIPSE", "EIGHT", "ROSE3", "ROSE4"]
 ## Kreis = 1, mehr Kurven = mehr Richtungswechsel pro Strecke.
 const CURVE := [1.0, 1.08, 1.3, 1.45, 1.6]
 ## Abstand der beiden Spuren zur Bahnlinie (Bahn-Einheiten, je Seite).
-const LANE_OFF := 0.075
+const LANE_OFF := 0.085
 const STEPS := 720
 
 static var _cum: Array = []      # je Form: kumulierte Bogenlaenge (0..1) an STEPS+1 Stuetzstellen
 static var _len: Array = []      # je Form: Gesamtlaenge in Bahn-Einheiten
+static var _poly: Dictionary = {}  # (Form, n) -> Punkte
 
 
 ## Punkt der Form bei Kurvenparameter s in [0, 1] (NICHT bogenlaengentreu).
@@ -119,3 +120,18 @@ static func left(shape: int, f: float) -> Vector2:
 static func lane_pos(shape: int, f: float, lane: int) -> Vector2:
 	var side := 1.0 if lane == 0 else -1.0
 	return pos(shape, f) + left(shape, f) * (LANE_OFF * side)
+
+
+## Bahn als Linienzug mit n+1 gleich weit auseinander liegenden Punkten
+## (letzter = erster), zum Zeichnen. Zwischengespeichert; nicht veraendern.
+static func polyline(shape: int, n: int = 192) -> PackedVector2Array:
+	var key := shape * 100000 + n
+	if _poly.has(key):
+		return _poly[key]
+	var pts := PackedVector2Array()
+	pts.resize(n + 1)
+	for i in n:
+		pts[i] = pos(shape, float(i) / float(n))
+	pts[n] = pts[0]
+	_poly[key] = pts
+	return pts
