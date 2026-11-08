@@ -94,7 +94,45 @@ Sechs Stufen, benannt CORE / SHARP / GOOD / FAIR / EDGE / MISS (uebersetzt ueber
 - Im MP kein Neustart (R und "Nochmal" aus), Leertaste ist eine Skip-Abstimmung
   (springt erst, wenn alle druecken), Zurueck fuehrt in den Raum statt in den
   Song-Browser.
-- Autoplay-Flag gilt in der Lobby nie.
+- Autoplay-Flag gilt in der Lobby nie; nur `--mp-bot` spielt dort selbst
+  (nur Smoke-Test, siehe unten).
+
+### MP-Smoke (zwei echte Prozesse)
+
+`tools/mp_orbit_smoke.sh` startet Host und Client headless mit je `timeout`
+(Standard 300 s) ueber `127.0.0.1:11110` (`--mp-port=<n>`, LAN-Ansage auf n+1;
+headless ohne UPnP/Internet). Jeder Prozess bekommt ein eigenes `APPDATA`
+(eigenes `user://`), die Maps sind die 4 kleinsten `.osz` aus `maps/` in einem
+Testordner (`--maps-dir=`, `--mp-maps=`). Exit 0 = gruen, Logs bleiben bei
+Fehler (oder mit `KEEP=1`) liegen.
+
+Ablauf (`mp_lobby.gd _mp_orbit`, Zeilen `MPORBIT <Rolle> s<Stufe> ...`):
+
+1. Raum, Krone stellt Modus Orbit, waehlt Map; beide bereit, beide Darstellung
+   "Orbit"; Start.
+2. Beide spielen Orbit (`--mp-bot`, Client mit `--auto-miss=6`),
+   Intro-Skip per Abstimmung, Abbruch `--mp-cut=<s>` nach der ersten Note.
+   `MPORBIT final ... live_seen={peer: score}` = hoechster Live-Score des
+   anderen, der VOR dessen Finale ankam.
+3. Zurueck im Raum (`in_game=false`, Modus bleibt Orbit), beide Endergebnisse
+   in `Lobby.players[*].final`.
+4. Orbit-Turnier: je Spieler 2 Maps (Pool 4, Host gibt Auto-Fuellung frei),
+   je 1 Ban, 2 Runden mit Host-Autoablauf (Zwischenstand, dann Start), Endstand.
+
+Flags in `orbit_game.gd`: `--mp-bot` (nur mit aktiver Lobby-Runde: Bot spielt,
+headless kein Sofort-Ende, nach dem Endscreen nach `--mp-back=<s>` (1,5 s)
+zurueck in den Raum), `--mp-cut=<s>`. Der Client bleibt 10 s im Endscreen,
+laenger als der Turnier-Autoablauf bis zur naechsten Map.
+
+Gefunden + behoben:
+
+- Freie Runde vor dem Turnier liess `Lobby._tour_peers` stehen, der
+  Turnier-Autostart wartete dann ewig (nur der Start-Knopf half).
+- Wer beim Kartenwechsel noch im Endscreen war, kam unbereit in den Raum
+  zurueck (Turnier hing bis zum Bereit-Klick); `mp_lobby` meldet jetzt bei der
+  Rueckkehr bereit, wenn die Map lokal vorliegt.
+- `--autoplay` armiert den 45-s-Test-Watchdog (game_session.gd); der Bot im
+  Raum laeuft daher ueber `--mp-bot` allein.
 
 ## Screenshot-Harness
 

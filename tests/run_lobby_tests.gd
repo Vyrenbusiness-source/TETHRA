@@ -518,8 +518,11 @@ func _play(L) -> void:
 	# Turnier im Orbit-Raum: Modus bleibt fest, Runden werten Orbit-Stats wie Mania.
 	L.is_host = true
 	L.set_play_mode("orbit")
+	# Freie Runde davor (cl_start ohne Turnier) darf keine Turnier-Teilnehmer hinterlassen.
+	L._tour_peers = [1, 2]
 	L.tour_create({ "maps": 5, "stars_lo": 0.0, "stars_hi": 30.0, "mods": {} })
 	_check(L.tournament != null, "Turnier im Orbit-Raum angelegt")
+	_check(L._tour_peers.is_empty(), "Turnier neu: keine alten Rundenteilnehmer (Autostart frei)")
 	L.set_play_mode("mania")
 	_check(L.play_mode == "orbit", "Turnier: Spielmodus fest")
 	var T = L.tournament
