@@ -18,6 +18,7 @@ func _initialize() -> void:
 	_test_arc_length()
 	_test_ring_flow()
 	_test_tap_judge()
+	_test_orbit_mods()
 	_test_wrong_ring()
 	_test_arc_hold()
 	_test_arc_release()
@@ -266,6 +267,69 @@ func _test_tap_judge() -> void:
 	c.update(5000.0 + c.w50 + 1.0)
 	_ok(got.has(4) and got[4].quality == OrbitCore.Quality.MISS and got[4].miss_kind == "FULL", "verpasst = MISS")
 	_ok(c.combo == 0 and c.max_combo == 3, "Combo wie Mania")
+
+
+func _test_orbit_mods() -> void:
+	print("- Orbit-Mods (Fenster, Multiplikator, Anzeige)")
+	var ns: Array[OrbitNote] = [OrbitNote.make(1000.0, 90.0, 0, 0), OrbitNote.make(2000.0, 90.0, 0, 1),
+			OrbitNote.make(3000.0, 90.0, 0, 2)]
+	var plain := _core(ns)
+	var pr := OrbitCore.new()
+	pr.setup(ns, 8.0, 1.0, 5.0, {"PR": true})
+	_ok(absf(pr.w300 - plain.w300 * 0.7) < EPS and absf(pr.w50 - plain.w50 * 0.7) < EPS
+			and absf(pr.w_miss - plain.w_miss * 0.7) < EPS, "PR: Zeitfenster x0,7")
+	_ok(absf(pr.angle_tol - 22.0 * 0.7) < EPS and absf(pr.center_tol - 9.0 * 0.7) < EPS
+			and plain.angle_tol == OrbitCore.ANGLE_TOL_DEG, "PR: Winkel 15,4 / Mitte 6,3, ohne Mod 22 / 9")
+	# 18 Grad daneben: ohne Mod ein Treffer, mit PR keiner.
+	var g0 := _results(plain)
+	var g1 := _results(pr)
+	plain.key_down(0, 1000.0, 108.0)
+	pr.key_down(0, 1000.0, 108.0)
+	_ok(g0.has(0) and g0[0].quality != OrbitCore.Quality.MISS and not g1.has(0), "PR: 18 Grad daneben trifft nicht mehr")
+	# 8 Grad daneben zeitgenau: ohne Mod CORE, mit PR nur SHARP.
+	plain.key_down(0, 2000.0, 98.0)
+	pr.key_down(0, 2000.0, 98.0)
+	_ok(g0[1].quality == OrbitCore.Quality.MAX and g1[1].quality == OrbitCore.Quality.PERFECT, "PR: CORE-Mitte enger")
+	# Zeitfehler zwischen PR-w50 und normalem w50: normal Treffer, PR verpasst (Ziel frisst).
+	var dt := plain.w50 * 0.85
+	plain.key_down(0, 3000.0 + dt, 90.0)
+	pr.key_down(0, 3000.0 + dt, 90.0)
+	pr.update(3000.0 + dt + 1.0)
+	_ok(g0[2].quality != OrbitCore.Quality.MISS and g1.has(2) and g1[2].quality == OrbitCore.Quality.MISS,
+			"PR: Zeitfehler 0,85 x w50 ist MISS")
+	_ok(absf(OrbitCore.mod_multiplier({}) - 1.0) < EPS
+			and absf(OrbitCore.mod_multiplier({"HD": true}) - 1.06) < EPS
+			and absf(OrbitCore.mod_multiplier({"FI": true}) - 1.06) < EPS
+			and absf(OrbitCore.mod_multiplier({"PR": true}) - 1.12) < EPS
+			and absf(OrbitCore.mod_multiplier({"HD": true, "PR": true, "NF": true}) - 1.06 * 1.12 * 0.5) < EPS,
+			"Multiplikator HD 1,06 / FI 1,06 / PR 1,12, mit NF x0,5")
+	var hd := OrbitCore.new()
+	hd.setup(ns, 8.0, 1.0, 5.0, {"HD": true})
+	hd.key_down(0, 1000.0, 90.0)
+	hd.key_down(0, 2000.0, 90.0)
+	hd.key_down(0, 3000.0, 90.0)
+	var p2 := _core(ns)
+	p2.key_down(0, 1000.0, 90.0)
+	p2.key_down(0, 2000.0, 90.0)
+	p2.key_down(0, 3000.0, 90.0)
+	_ok(hd.w50 == p2.w50 and hd.score == int(round(p2.score * 1.06)), "HD: Fenster gleich, Score x1,06")
+	_ok(hd.stats().mods == ["HD"] and OrbitCore.mods_text({"PR": true, "NF": true, "FI": true}) == "FI PR NF",
+			"Mods in Stats und Badge-Text")
+	var rm := OrbitCore.replay_mods({"meta": {"mods": {"HD": true, "PR": true, "NF": false}}})
+	_ok(rm.HD and rm.PR and not rm.FI and not rm.NF and OrbitCore.replay_mods({}).is_empty() == false
+			and not OrbitCore.replay_mods({}).HD, "Replay-Meta liefert HD/FI/PR (alte Replays: keine)")
+	# Darstellung: HD verblasst auf den letzten 40 %, FI erscheint spaet.
+	var v := OrbitView.new()
+	v.preempt = 1000.0
+	var a_far := v.mod_alpha(900.0)
+	v.mod_hidden = true
+	_ok(a_far == 1.0 and v.mod_alpha(700.0) == 1.0 and v.mod_alpha(150.0) < 0.3 and v.mod_alpha(50.0) == 0.0,
+			"HD: sichtbar bis 60 %, weg vor dem Ring")
+	v.mod_hidden = false
+	v.mod_fade_in = true
+	_ok(v.mod_alpha(900.0) == 0.0 and v.mod_alpha(550.0) == 0.0 and v.mod_alpha(300.0) == 1.0,
+			"FI: erst ab der Haelfte sichtbar")
+	v.free()
 
 
 func _test_wrong_ring() -> void:

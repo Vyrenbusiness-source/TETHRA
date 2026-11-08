@@ -30,6 +30,19 @@ const ARC_OUT_MS := 150.0
 ## Zielmitte: nur so nah am Ziel (Grad) gibt es die beste Stufe CORE.
 const CENTER_DEG := 9.0
 
+## --- Orbit-Mods (Schluessel im Mod-Dictionary, neben NF/SV aus ManiaCore) ---
+## HD Hidden: Ziele verblassen auf den letzten ~40 % des Anflugs (OrbitView).
+## FI Fade-In: Ziele erscheinen erst nach gut der Haelfte des Anflugs.
+## PR Praezision: Zeit- und Winkelfenster x PR_SCALE.
+const ORBIT_MODS := ["HD", "FI", "PR"]
+## Anzeige-Reihenfolge aller Mods im Orbit (Badge oben links, Score-Eintrag).
+const ORBIT_MOD_ORDER := ["HD", "FI", "PR", "NF", "SV"]
+## Faktoren: HD und FI nehmen je eine Haelfte der Lesezeit weg (wie osu! HD
+## 1,06); PR verengt beide Fenster um 30 %, also Zeit UND Ziel, darum doppelt
+## (1,12). NF 0,5 und SV 1,1 kommen aus ManiaCore.MOD_MULT.
+const ORBIT_MOD_MULT := {"HD": 1.06, "FI": 1.06, "PR": 1.12}
+const PR_SCALE := 0.7
+
 ## --- Eigene Orbit-Wertung (nicht Mania): Stufen, Wert, Acc, Grade ---
 ## Stufen-Index = Quality-Index (0 CORE .. 5 MISS), damit HP/Zaehler/HUD
 ## weiter funktionieren. Namen (uebersetzt ueber translations/orbit.csv):
@@ -138,6 +151,9 @@ var w50: float:
 	get: return _tally.w50
 var w_miss: float:
 	get: return _tally.w_miss
+## Winkel-Toleranz und CORE-Mitte dieses Laufs (PR: x PR_SCALE).
+var angle_tol := ANGLE_TOL_DEG
+var center_tol := CENTER_DEG
 
 
 ## p_notes: Ergebnis von OrbitConverter.convert (nach time_ms sortiert).
@@ -157,8 +173,17 @@ func setup(p_notes: Array[OrbitNote], od: float, scroll_scale: float = 1.0,
 	_tally._hp_miss_damage = 0.04 + 0.04 * (hp_drain / 10.0)
 	var m: Dictionary = p_mods if p_mods is Dictionary else ManiaCore.session_mods()
 	_tally.mods = m.duplicate()
-	_tally.mod_mult = ManiaCore.mod_multiplier(m)
+	_tally.mod_mult = mod_multiplier(m)
 	_tally.no_fail = bool(m.get("NF", false))
+	var k := window_scale(m)
+	_tally.w_max *= k
+	_tally.w300 *= k
+	_tally.w200 *= k
+	_tally.w100 *= k
+	_tally.w50 *= k
+	_tally.w_miss *= k
+	angle_tol = ANGLE_TOL_DEG * k
+	center_tol = CENTER_DEG * k
 	_tally._total_notes = notes.size()
 	preempt = ManiaCore.preempt_for(scroll_scale)
 	_ring_notes = []
@@ -195,6 +220,44 @@ func setup(p_notes: Array[OrbitNote], od: float, scroll_scale: float = 1.0,
 	_rec_a = -1
 	_rec_t = -INF
 	replay_log = []
+
+
+## Fenster-Faktor eines Mod-Dictionarys (PR: PR_SCALE, sonst 1).
+static func window_scale(p_mods: Dictionary) -> float:
+	return PR_SCALE if bool(p_mods.get("PR", false)) else 1.0
+
+
+## Score-Faktor im Orbit: ManiaCore (NF, SV) mal Orbit-Mods (HD, FI, PR).
+static func mod_multiplier(p_mods: Dictionary) -> float:
+	var m := ManiaCore.mod_multiplier(p_mods)
+	for k in ORBIT_MOD_MULT:
+		if bool(p_mods.get(k, false)):
+			m *= float(ORBIT_MOD_MULT[k])
+	return m
+
+
+## Aktive Mods als Liste in Anzeige-Reihenfolge, z.B. ["HD", "PR", "NF"].
+static func mod_list(p_mods: Dictionary) -> Array:
+	var out := []
+	for k in ORBIT_MOD_ORDER:
+		if bool(p_mods.get(k, false)):
+			out.append(k)
+	return out
+
+
+## Badge-Text, z.B. "HD PR NF" ("" ohne Mods).
+static func mods_text(p_mods: Dictionary) -> String:
+	return " ".join(mod_list(p_mods))
+
+
+## Mods eines gespeicherten Orbit-Replays (aeltere ohne Eintrag: keine Mods).
+static func replay_mods(data: Dictionary) -> Dictionary:
+	var meta = data.get("meta", {})
+	var m = meta.get("mods", {}) if meta is Dictionary else {}
+	var out := {}
+	for k in ORBIT_MOD_ORDER:
+		out[k] = bool(m.get(k, false)) if m is Dictionary else false
+	return out
 
 
 ## Replay-Modus einschalten (nach setup): record = Eingaben mitschreiben.
@@ -283,7 +346,7 @@ func _do_key_down(ring: int, t_ms: float, cursor_deg: float) -> void:
 		if d > w50:
 			continue
 		var e := OrbitNote.dist_deg(_cursor, n.angle_at(t_ms))
-		if e > ANGLE_TOL_DEG:
+		if e > angle_tol:
 			continue
 		idx = i
 		dt = d
@@ -298,7 +361,7 @@ func _do_key_down(ring: int, t_ms: float, cursor_deg: float) -> void:
 		ring_pressed.emit(ring, false)
 		return
 	var q: int = _tally._quality_for(absf(dt))
-	if q == Quality.MAX and err > CENTER_DEG:
+	if q == Quality.MAX and err > center_tol:
 		q = Quality.PERFECT  # Zeit perfekt, aber nicht mittig: SHARP statt CORE
 	_aim_sum += err
 	_aim_n += 1
@@ -362,9 +425,11 @@ func orbit_score() -> int:
 
 
 ## Wert eines Treffers: Zeitstufe x Zielfaktor (mittig 1,0, Rand 0,88).
-static func hit_value(q: int, angle_err: float) -> float:
+## tol/center: Fenster des Laufs (PR enger), Standard ohne Mods.
+static func hit_value(q: int, angle_err: float, tol: float = ANGLE_TOL_DEG,
+		center: float = CENTER_DEG) -> float:
 	var tv: float = TIER_VALUE[clampi(q, 0, 5)]
-	var k := clampf((angle_err - CENTER_DEG) / maxf(ANGLE_TOL_DEG - CENTER_DEG, 0.001), 0.0, 1.0)
+	var k := clampf((angle_err - center) / maxf(tol - center, 0.001), 0.0, 1.0)
 	return tv * lerpf(1.0, AIM_EDGE_FACTOR, k)
 
 
@@ -382,11 +447,12 @@ func stats() -> Dictionary:
 	s["grade"] = grade()
 	s["aim_err"] = mean_aim_err()
 	s["mode"] = "orbit"
+	s["mods"] = mod_list(_tally.mods)
 	return s
 
 
 func _count_value(q: int, err: float) -> void:
-	var v := hit_value(q, err) if q != Quality.MISS else 0.0
+	var v := hit_value(q, err, angle_tol, center_tol) if q != Quality.MISS else 0.0
 	_val_sum += v
 	_streak_sum += v * minf(float(_tally.combo) / float(STREAK_FULL), 1.0)
 	_n_done += 1
@@ -428,7 +494,7 @@ func _check_arcs(t_ms: float) -> void:
 			continue
 		var n := notes[h]
 		var tc := minf(t_ms, n.end_ms)
-		if OrbitNote.dist_deg(_cursor, n.angle_at(tc)) > ANGLE_TOL_DEG:
+		if OrbitNote.dist_deg(_cursor, n.angle_at(tc)) > angle_tol:
 			if _out_since[r] == INF:
 				_out_since[r] = _exit_time(n, r, tc)
 			if tc - _out_since[r] > ARC_OUT_MS:
@@ -446,12 +512,12 @@ func _check_arcs(t_ms: float) -> void:
 func _exit_time(n: OrbitNote, r: int, tc: float) -> float:
 	var t0 := clampf(_last_check[r], n.time_ms, tc)
 	var d0 := OrbitNote.delta_deg(_cursor, n.angle_at(t0))
-	if absf(d0) > ANGLE_TOL_DEG or n.duration_ms() <= 0.0:
+	if absf(d0) > angle_tol or n.duration_ms() <= 0.0:
 		return t0
 	var v := n.span_deg() / n.duration_ms()
 	if v == 0.0:
 		return tc
-	var edge := ANGLE_TOL_DEG if v > 0.0 else -ANGLE_TOL_DEG
+	var edge := angle_tol if v > 0.0 else -angle_tol
 	return clampf(t0 + (edge - d0) / v, t0, tc)
 
 

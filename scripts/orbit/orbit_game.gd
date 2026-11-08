@@ -141,7 +141,9 @@ func _ready() -> void:
 	_view.preempt = _preempt()
 	_view.show_guides = Settings.orbit_guides
 	_view.tol_deg = _tolerance()
-	_view.center_deg = OrbitCore.CENTER_DEG
+	_view.center_deg = core.center_tol
+	_view.mod_hidden = bool(core.mods.get("HD", false))
+	_view.mod_fade_in = bool(core.mods.get("FI", false))
 	_build_sound()
 	_build_hud()
 	_update_hud()  # Startwerte schon im Intro sichtbar
@@ -240,7 +242,7 @@ func _preempt() -> float:
 
 
 func _tolerance() -> float:
-	return OrbitCore.ANGLE_TOL_DEG
+	return core.angle_tol if core != null else OrbitCore.ANGLE_TOL_DEG
 
 
 func _time_ms() -> float:
@@ -372,7 +374,7 @@ func _build_hud() -> void:
 	_judge_disp._judges[0].add_theme_color_override("font_color", OrbitView.MAX_COL)
 
 	# Mods oben links unter dem ORBIT-Tag (wie Mania), nur wenn welche aktiv.
-	var mt := Lobby.mods_text(core.mods)
+	var mt := OrbitCore.mods_text(core.mods)
 	if mt != "":
 		_mods_label = Label.new()
 		_mods_label.text = mt
@@ -1004,6 +1006,8 @@ func _show_results(is_fail: bool) -> void:
 	s["unranked"] = false
 	s["pp"] = -1.0   # Orbit hat (noch) keine pp-Formel
 	s["mode"] = MODE
+	# Orbit-Sterne fuers Orbit-Rating im Profil (Gewichtung wie pp).
+	s["stars"] = OrbitConverter.stars(notes)
 	var new_best := false
 	if not _autoplay and not GameSession.is_replay and not GameSession.tutorial:
 		var save := ScoreStore.submit(GameSession.osz_path, _beatmap.version_name(), s, MODE)

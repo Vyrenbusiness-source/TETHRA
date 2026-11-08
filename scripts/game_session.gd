@@ -263,7 +263,13 @@ static func _replay_mods(data: Dictionary) -> Dictionary:
 	var m = meta.get("mods", {}) if meta is Dictionary else {}
 	if not (m is Dictionary):
 		return {}
-	return {"SV": bool(m.get("SV", false)), "NF": bool(m.get("NF", false))}
+	# Alle gespeicherten Mods uebernehmen (Mania SV/NF, Orbit HD/FI/PR, SV-Stufe),
+	# damit Replays und Clips exakt mit denselben Mods laufen.
+	var out := {"SV": bool(m.get("SV", false)), "NF": bool(m.get("NF", false))}
+	for k in m:
+		if not out.has(k):
+			out[k] = m[k]
+	return out
 
 
 ## Test-Watchdog: jeder Debug-/Screenshot-Lauf (--shot*, --autoplay) beendet sich
