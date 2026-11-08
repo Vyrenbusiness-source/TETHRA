@@ -62,6 +62,10 @@ var orbit_guides: bool = true
 var orbit_note_size: int = 100
 var orbit_preview: bool = true
 var orbit_path_alpha: int = 100
+## Musik-Reaktion des Orbit-Felds: 0 = aus, 1 = dezent, 2 = voll.
+var orbit_music: int = 1
+## Tasten-Beschriftung in der naechsten Note: 0 = auto (leichte Maps, Tutorial), 1 = an, 2 = aus.
+var orbit_key_hint: int = 0
 ## Orbit-Hintergrund: 0 = Welt (3D-Welt wie im 3D-Modus, Auswahl world_theme;
 ## ohne Welten-Paket automatisch Map-Bild), 1 = Map-Bild (abgedunkelt, bg_dim),
 ## 2 = Aus (schwarz). CLI: --orbit-bg=world|map|off.
@@ -468,6 +472,8 @@ func load_settings(path: String = PATH) -> void:
 	orbit_note_size = clampi(int(cfg.get_value("game", "orbit_note_size", 100)), 90, 120)
 	orbit_preview = bool(cfg.get_value("game", "orbit_preview", true))
 	orbit_path_alpha = clampi(int(cfg.get_value("game", "orbit_path_alpha", 100)), 30, 100)
+	orbit_music = clampi(int(cfg.get_value("game", "orbit_music", 1)), 0, 2)
+	orbit_key_hint = clampi(int(cfg.get_value("game", "orbit_key_hint", 0)), 0, 2)
 	orbit_background = clampi(int(cfg.get_value("game", "orbit_background", ORBIT_BG_WORLD)), ORBIT_BG_WORLD, ORBIT_BG_OFF)
 	_legacy_mania_scroll = float(cfg.get_value("game", "mania_scroll_legacy", -1.0))
 	if cfg.has_section_key("game", "scroll_speed"):
@@ -527,6 +533,8 @@ func save(path: String = PATH) -> void:
 	cfg.set_value("game", "orbit_note_size", orbit_note_size)
 	cfg.set_value("game", "orbit_preview", orbit_preview)
 	cfg.set_value("game", "orbit_path_alpha", orbit_path_alpha)
+	cfg.set_value("game", "orbit_music", orbit_music)
+	cfg.set_value("game", "orbit_key_hint", orbit_key_hint)
 	cfg.set_value("game", "orbit_background", orbit_background)
 	cfg.set_value("game", "scroll_speed", scroll_speed)
 	# Abgeleiteter Faktor fuer aeltere Versionen; Originalwert bleibt separat.

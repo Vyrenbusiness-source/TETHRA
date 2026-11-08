@@ -84,6 +84,16 @@ var beat_env := 0.0
 var kiai := 0.0
 ## Halte-Warnung je Spur: 0 = Cursor auf dem Kopf, 1 = Halte faellt gleich.
 var arc_warn: Array[float] = [0.0, 0.0]
+## Musik-Reaktion: Dichte 0..1 (ruhig = klein), Kombo (Treffer-Pop waechst je Meilenstein).
+## Tasten-Hinweis im Auto-Modus an (leichte Maps); das Tutorial zeigt ihn immer.
+var key_hint_auto := false
+var energy := 1.0
+var combo := 0
+var _bass := 0.0
+var _calm := 0.0
+var _kiai_s := 0.0
+var _tier := 0
+var _tier_beat := -1
 
 var _state := PackedInt32Array()
 var _state_t := PackedFloat64Array()
@@ -223,7 +233,44 @@ func _process(_d: float) -> void:
 	_last_frame_usec = now
 	for r in 2:
 		_ring_a[r] = lerpf(_ring_a[r], 1.0 if ring_held[r] else 0.0, 1.0 - exp(-dt / 0.04))
+	var m := _music()
+	var bass := 0.0
+	if m > 0.0:
+		bass = SyncClock.band_energy(30.0, 250.0)
+	_bass = lerpf(_bass, bass, 1.0 - exp(-dt / 0.08))
+	var quiet := clampf((0.25 - energy) / 0.25, 0.0, 1.0)
+	_calm = lerpf(_calm, quiet, 1.0 - exp(-dt / 0.35))
+	_kiai_s = lerpf(_kiai_s, clampf(kiai, 0.0, 1.0), 1.0 - exp(-dt / 0.3))
 	queue_redraw()
+
+
+## Staerke der Musik-Reaktion: aus 0, dezent 0.6, voll 1.
+func _music() -> float:
+	return [0.0, 0.6, 1.0][clampi(Settings.orbit_music, 0, 2)]
+
+
+## Takt-Puls an der Uhr: 1 genau auf dem Schlag, faellt schnell ab; Takt-Eins staerker.
+func _beat_pulse() -> float:
+	if track == null:
+		return 0.0
+	var bar := track.clock.bar_ms_at(t_ms)
+	var beats := maxi(track.clock.beats_at(t_ms), 1)
+	var beat_ms := bar / float(beats)
+	var pos := t_ms - track.clock.bar_start_at(t_ms)
+	var k := int(floorf(pos / beat_ms))
+	var since := pos - float(k) * beat_ms
+	return exp(-since / (beat_ms * 0.2)) * (1.0 if k == 0 else 0.45)
+
+
+## Pop-Groesse waechst je 50 Kombo (max. 4 Stufen), Stufe wechselt nur auf dem Schlag.
+func _pop_k() -> float:
+	if track != null:
+		var beat_ms := track.clock.bar_ms_at(t_ms) / float(maxi(track.clock.beats_at(t_ms), 1))
+		var b := int(floorf(t_ms / maxf(beat_ms, 1.0)))
+		if b != _tier_beat:
+			_tier_beat = b
+			_tier = mini(combo / 50, 4)
+	return 1.0 + 0.05 * float(_tier) * _music()
 
 
 # ---------------------------------------------------------------------------
@@ -231,7 +278,11 @@ func _process(_d: float) -> void:
 # ---------------------------------------------------------------------------
 
 func _ring_col(ring: int) -> Color:
-	return OUTER_COL if ring == 1 else INNER_COL
+	var c := OUTER_COL if ring == 1 else INNER_COL
+	var m := _music()
+	if m > 0.0 and _kiai_s > 0.01:
+		c.s = minf(c.s * (1.0 + 0.18 * _kiai_s * m), 1.0)
+	return c
 
 
 func _horizon_ms() -> float:
@@ -246,6 +297,8 @@ func _draw() -> void:
 		_draw_lines(u)
 		_draw_grid(u)
 	var last := _last_visible(horizon)
+	if track != null:
+		_draw_fuse(u)
 	# Spaeteste zuerst: die naechste Note liegt obenauf.
 	for i in range(last - 1, _first - 1, -1):
 		_draw_note(u, i, horizon)
@@ -276,8 +329,11 @@ func _draw_lines(u: float) -> void:
 	var f := clampf((t_ms - bs) / FADE_MS, 0.0, 1.0)
 	f = f * f * (3.0 - 2.0 * f)
 	var k := _path_alpha()
+	var m := _music()
+	# Takt-Puls kurz heller, Refrain heller und etwas dicker, ruhige Stellen gedimmt.
+	k *= (1.0 + 0.55 * m * _beat_pulse()) * (1.0 + 0.25 * m * _kiai_s) * (1.0 - 0.4 * m * _calm)
 	var main_a := 0.40 * k
-	var w := maxf(u * 0.002, 1.25)
+	var w := maxf(u * 0.002, 1.25) * (1.0 + 0.35 * m * _kiai_s)
 	var ph := track.clock.phase_at(t_ms)
 	if old != cur and f < 1.0:
 		_draw_path(old, main_a * (1.0 - f), w, 0.0)
@@ -380,7 +436,7 @@ func _draw_head(u: float) -> void:
 	var ok := aim_ok()
 	# Dezenter Zielring (Toleranz).
 	var rt := tol / 100.0 * path_scale()
-	draw_arc(hp, rt, 0.0, TAU, 56, Color(1, 1, 1, 0.55 if ok else 0.16), 1.0, true)
+	draw_arc(hp, rt, 0.0, TAU, 56, Color(1, 1, 1, 0.30 if ok else 0.08), 1.0, true)
 	# Spur-Marken links (A, Scheibe) und rechts (B, Quadrat) vom Kopf.
 	var nrm := OrbitPath.left(shape, ph)
 	var off := OrbitPath.LANE_OFF * path_scale()
@@ -394,7 +450,7 @@ func _draw_head(u: float) -> void:
 		else:
 			_square(p, s, Color(OUTER_COL, a), true)
 	draw_circle(hp, u * HEAD_K, Color(HEAD_COL, 1.0 if ok else 0.8), true, -1.0, true)
-	draw_arc(hp, u * HEAD_K * 1.75, 0.0, TAU, 32, Color(HEAD_COL, 0.5), 1.0, true)
+	draw_arc(hp, u * HEAD_K * 1.75 * (1.0 + 0.12 * _music() * _bass), 0.0, TAU, 32, Color(HEAD_COL, 0.5), 1.0, true)
 
 
 func _draw_cursor(u: float) -> void:
@@ -489,10 +545,11 @@ func _draw_note(u: float, i: int, horizon: float) -> void:
 		if age < POP_MS:
 			# Knackig: Form dehnt sich aus und blendet aus, in Spurfarbe.
 			var f := age / POP_MS
+			var pk := _pop_k()
 			var tt := float(n.end_ms) if st == ST_ARC_DONE else float(n.time_ms)
 			var at := _lane_px(tt, ring)
-			_shape(at, ring, base * (1.0 + 0.7 * f), Color(col, 0.55 * (1.0 - f)), true)
-			_shape(at, ring, base * (1.0 + 0.7 * f), Color(col.lerp(Color.WHITE, 0.4), 1.0 - f), false)
+			_shape(at, ring, base * pk * (1.0 + 0.7 * f), Color(col, 0.9 * (1.0 - f)), true)
+			_shape(at, ring, base * pk * (1.0 + 0.7 * f), Color(col.lerp(Color.WHITE, 0.4), 1.0 - f), false)
 		return
 	if st == ST_MISS or st == ST_DROP:
 		var age := t_ms - float(_state_t[i])
@@ -501,7 +558,7 @@ func _draw_note(u: float, i: int, horizon: float) -> void:
 			var tt := float(n.time_ms) if st == ST_MISS else clampf(float(_state_t[i]), float(n.time_ms), float(n.end_ms))
 			if st == ST_DROP:
 				# Losgelassene Halte: Band wird sofort grau und blendet aus.
-				_hold_band(n, tt, float(n.end_ms), Color(MISS_COL, 0.5 * a), maxf(u * 0.010, 3.0))
+				_hold_band(n, tt, float(n.end_ms), Color(MISS_COL, 0.5 * a), maxf(u * 0.007, 2.5))
 			var at := _lane_px(tt, ring)
 			var s := base * 0.55
 			draw_line(at + Vector2(-s, -s), at + Vector2(s, s), Color(MISS_X_COL, a), 2.0, true)
@@ -545,8 +602,47 @@ func _note_body(p: Vector2, ring: int, s: float, col: Color, alpha: float,
 		return
 	if primary:
 		_shape(p, ring, s, Color(1, 1, 1, 0.95), false)
+		if _show_keys():
+			_key_label(p, ring, s)
 	else:
 		_shape(p, ring, s, Color(col.lerp(Color.WHITE, 0.45), alpha), false)
+
+
+func _show_keys() -> bool:
+	match Settings.orbit_key_hint:
+		1:
+			return true
+		2:
+			return false
+	return key_hint_auto or GameSession.tutorial
+
+
+## Taste der Spur in der Note (dunkel auf der Spurfarbe).
+func _key_label(p: Vector2, ring: int, s: float) -> void:
+	var code: int = Settings.orbit_key_outer if ring == 1 else Settings.orbit_key_inner
+	var txt := OS.get_keycode_string(code)
+	if txt == "":
+		return
+	var fs := maxi(int(s * 1.25), 9)
+	var font := ThemeDB.fallback_font
+	var w := font.get_string_size(txt, HORIZONTAL_ALIGNMENT_CENTER, -1, fs).x
+	draw_string(font, p + Vector2(-w * 0.5, fs * 0.36), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(0.04, 0.05, 0.09, 0.95))
+
+
+## Zuendschnur: Bahn zwischen Laeufer und der naechsten Note der Spur, brennt ab.
+func _draw_fuse(u: float) -> void:
+	if track == null:
+		return
+	for r in 2:
+		var i := _next[r]
+		if i < 0:
+			continue
+		var n = notes[i]
+		var t1 := float(n.time_ms)
+		if _is_preview(n) or t1 <= t_ms:
+			continue
+		var col := _ring_col(r)
+		_hold_band(n, t_ms, t1, Color(col.lerp(Color.WHITE, 0.25), 0.7), maxf(u * 0.0032, 2.0))
 
 
 ## Band der Halte entlang der Spur zwischen den Zeiten t0 und t1.
@@ -565,7 +661,7 @@ func _draw_hold(u: float, i: int, n, col: Color, size_px: float, alpha: float,
 		prev: bool, primary: bool, held: bool) -> void:
 	var t0 := float(n.time_ms)
 	var t1 := float(n.end_ms)
-	var w := maxf(u * 0.010, 3.0)
+	var w := maxf(u * 0.007, 2.5)
 	var from_t := t0
 	if held:
 		from_t = clampf(t_ms, t0, t1)

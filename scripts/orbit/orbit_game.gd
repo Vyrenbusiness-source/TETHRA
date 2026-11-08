@@ -146,6 +146,7 @@ func _ready() -> void:
 	_view.track = _track
 	_view.preempt = _preempt()
 	_view.show_guides = Settings.orbit_guides
+	_view.key_hint_auto = GameSession.stars < 3.0
 	_view.tol = _tolerance()
 	_view.mod_hidden = bool(core.mods.get("HD", false))
 	_view.mod_fade_in = bool(core.mods.get("FI", false))
@@ -794,6 +795,8 @@ func _process(delta: float) -> void:
 	_beat.update(t, delta)
 	var env := _beat.beat_env * (0.35 + 0.65 * _intensity.value_at(t))
 	_view.beat_env = env
+	_view.energy = _intensity.value_at(t)
+	_view.combo = int(core.get("combo")) if "combo" in core else 0
 	_view.kiai = _beat.kiai_mix
 	_judge_disp.beat(env)
 	_bg.update_world(delta, _beat, _intensity.value_at(t))
