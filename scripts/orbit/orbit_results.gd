@@ -10,6 +10,9 @@ extends Control
 
 signal retry_pressed
 signal back_pressed
+## Replay ansehen (im Replay: selbst spielen) und Clip speichern (OrbitGame).
+signal replay_pressed
+signal clip_pressed
 
 const REVEAL_S := 0.9
 const BINS := 41
@@ -38,6 +41,11 @@ var _score: Label
 var _right: VBoxContainer
 var _tier_rows: Control
 var _hist_box: Control
+var _toast: PanelContainer
+var _toast_label: Label
+var _toast_btn: Button
+var _toast_folder := ""
+var _toast_tw: Tween
 var _quad := PackedVector2Array()
 
 
@@ -49,7 +57,7 @@ func _ready() -> void:
 
 ## data: s (OrbitCore.stats + failed), log ([Winkel, Ring, dt, Zielfehler,
 ## Stufe, Zeit] je Ziel), w50/w_max (ms), title, artist, version, is_fail,
-## new_best, allow_retry.
+## new_best, allow_retry, can_replay, is_replay, can_clip.
 func show_results(data: Dictionary) -> void:
 	_data = data
 	_log = data.get("log", [])
@@ -200,6 +208,28 @@ func _build(s: Dictionary) -> void:
 		UiTheme.style_button(retry, true)
 		retry.pressed.connect(func(): retry_pressed.emit())
 		btns.add_child(retry)
+	# Replay/Clip in eigener Zeile ueber Nochmal/Zurueck (alles bleibt im Bild).
+	var is_replay := bool(_data.get("is_replay", false))
+	var extra := HBoxContainer.new()
+	extra.add_theme_constant_override("separation", 12)
+	if bool(_data.get("can_replay", false)):
+		var rp := Button.new()
+		rp.name = "ReplayButton"
+		rp.text = tr("Selbst spielen") if is_replay else tr("▶  Replay ansehen")
+		rp.custom_minimum_size = Vector2(170, 40)
+		UiTheme.style_ghost_button(rp)
+		rp.pressed.connect(func(): replay_pressed.emit())
+		extra.add_child(rp)
+	if bool(_data.get("can_clip", false)):
+		var clip := Button.new()
+		clip.name = "ClipButton"
+		clip.text = tr("⤓  Clip speichern")
+		clip.custom_minimum_size = Vector2(170, 40)
+		UiTheme.style_ghost_button(clip)
+		clip.pressed.connect(func(): clip_pressed.emit())
+		extra.add_child(clip)
+	if extra.get_child_count() > 0:
+		_right.add_child(extra)
 	var back := Button.new()
 	back.text = tr("Zurück") + "  (Esc)"
 	back.custom_minimum_size = Vector2(170, 46)
@@ -207,6 +237,66 @@ func _build(s: Dictionary) -> void:
 	back.pressed.connect(func(): back_pressed.emit())
 	btns.add_child(back)
 	_right.add_child(btns)
+
+
+## Toast oben mittig (Clip-Export), flach im UiTheme-Stil. sticky = bleibt
+## stehen (Fortschritt), sonst nach 4 s (mit Ordner-Knopf 12 s) weg.
+func show_toast(text: String, sticky: bool, folder: String = "") -> void:
+	if _toast == null or not is_instance_valid(_toast):
+		_toast = PanelContainer.new()
+		_toast.anchor_left = 0.5
+		_toast.anchor_right = 0.5
+		_toast.grow_horizontal = Control.GROW_DIRECTION_BOTH
+		_toast.offset_top = 14
+		_toast.offset_bottom = 14
+		_toast.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var sb := UiTheme.glass_box(8, 0.92)
+		sb.set_content_margin_all(10)
+		_toast.add_theme_stylebox_override("panel", sb)
+		var hb := HBoxContainer.new()
+		hb.add_theme_constant_override("separation", 14)
+		hb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_toast.add_child(hb)
+		_toast_label = _label("", 15, UiTheme.TEXT)
+		_toast_label.custom_minimum_size.x = 420
+		_toast_label.autowrap_mode = TextServer.AUTOWRAP_ARBITRARY
+		hb.add_child(_toast_label)
+		_toast_btn = Button.new()
+		_toast_btn.text = tr("Ordner öffnen")
+		UiTheme.style_button(_toast_btn, false)
+		_toast_btn.pressed.connect(func() -> void:
+			if _toast_folder != "":
+				OS.shell_open(ProjectSettings.globalize_path(_toast_folder)))
+		hb.add_child(_toast_btn)
+		add_child(_toast)
+	_toast_label.text = text
+	_toast_folder = folder
+	_toast_btn.visible = folder != ""
+	_toast.modulate.a = 1.0
+	_toast.reset_size()
+	if _toast_tw != null and _toast_tw.is_valid():
+		_toast_tw.kill()
+	if not sticky:
+		_toast_tw = create_tween()
+		_toast_tw.tween_interval(12.0 if folder != "" else 4.0)
+		_toast_tw.tween_property(_toast, "modulate:a", 0.0, 0.5)
+
+
+## Wie ResultsScreen: Fortschritt mit Restzeit (ClipExporter.progress_info).
+func show_clip_progress(fraction: float, eta_s: float, phase: String = "render") -> void:
+	var pct := int(clampf(fraction, 0.0, 1.0) * 100.0)
+	var text := tr("Clip wird umgewandelt … %d %%") % pct if phase == "encode" \
+		else tr("Clip wird aufgenommen … %d %%") % pct
+	if eta_s >= 0.0:
+		text += "  " + tr("noch ca. %d s") % int(ceilf(eta_s))
+	show_toast(text, true)
+
+
+func show_clip_result(ok: bool, path: String, error: String = "") -> void:
+	if ok:
+		show_toast(tr("Clip gespeichert: %s") % path, false, path.get_base_dir())
+	else:
+		show_toast(tr("Clip-Export fehlgeschlagen: %s") % (error if error != "" else tr("unbekannt")), false)
 
 
 func _spacer(h: int) -> Control:

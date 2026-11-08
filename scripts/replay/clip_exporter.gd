@@ -21,6 +21,8 @@ extends Node
 ##       exporter.export_clip(("%s|%s" % [osz_path.get_file(), version]).md5_text())
 ##   )
 ## Die md5 ist der Replay-Schluessel (= Dateiname in user://replays ohne .json).
+## Orbit: export_clip(md5, out, "orbit") -> Kindprozess mit --clip <md5>
+## --clip-mode orbit, Replay aus user://replays/orbit (ReplayStore).
 
 ## Elapsed Sekunden seit Start.
 signal progress(elapsed_s: float)
@@ -81,8 +83,9 @@ static func find_ffmpeg() -> String:
 
 
 ## Letzter Tastendruck des Replays in s (0 = unbekannt).
-static func replay_length_s(md5: String) -> float:
-	var f := FileAccess.open("user://replays/%s.json" % md5, FileAccess.READ)
+## Mania-Events sind {t, ...}, Orbit-Events [t, code, ...].
+static func replay_length_s(md5: String, mode: String = "mania") -> float:
+	var f := FileAccess.open(ReplayStore.path_for_key(md5, mode), FileAccess.READ)
 	if f == null:
 		return 0.0
 	var data = JSON.parse_string(f.get_as_text())
@@ -90,7 +93,10 @@ static func replay_length_s(md5: String) -> float:
 		return 0.0
 	var last := 0.0
 	for e in data.get("events", []):
-		last = maxf(last, float(e.get("t", 0.0)))
+		if e is Dictionary:
+			last = maxf(last, float(e.get("t", 0.0)))
+		elif e is Array and not e.is_empty():
+			last = maxf(last, float(e[0]))
 	return last / 1000.0
 
 
@@ -104,14 +110,15 @@ static func eta_s(fraction: float, elapsed_s: float) -> float:
 ## Startet den Export. out_path leer = <clips_dir>/clip_<md5>.avi; bei MP4-
 ## Umkodierung heisst die Ergebnisdatei .mp4 (final_path).
 ## Gibt false zurueck, wenn der Prozess nicht startet oder schon einer laeuft.
-func export_clip(md5: String, p_out_path: String = "") -> bool:
+## mode: "mania" (Standard) oder "orbit".
+func export_clip(md5: String, p_out_path: String = "", mode: String = "mania") -> bool:
 	if is_running():
 		return false
 	last_error = ""
 	out_path = p_out_path if p_out_path != "" else clips_dir().path_join("clip_%s.avi" % md5)
 	out_path = ProjectSettings.globalize_path(out_path)
 	final_path = out_path
-	if not FileAccess.file_exists("user://replays/%s.json" % md5):
+	if not FileAccess.file_exists(ReplayStore.path_for_key(md5, mode)):
 		last_error = "Kein gespeichertes Replay"
 		finished.emit(false, out_path)
 		return false
@@ -130,8 +137,17 @@ func export_clip(md5: String, p_out_path: String = "") -> bool:
 		var pck := OS.get_executable_path().get_base_dir().path_join("TETHRA.pck")
 		if FileAccess.file_exists(pck):
 			args.append_array(["--main-pack", pck])
+	# Fensterposition: wie der Elternprozess, falls der eine bekam (Testlaeufe auf
+	# Monitor 2), sonst weit ausserhalb des Bildes.
+	var pos := "-10000,-10000"
+	var pa := OS.get_cmdline_args()
+	var pi := pa.find("--position")
+	if pi >= 0 and pi + 1 < pa.size():
+		pos = pa[pi + 1]
 	args.append_array(["--write-movie", _render_path, "--fixed-fps", str(fps),
-		"--resolution", resolution, "--position", "-10000,-10000", "--clip", md5])
+		"--resolution", resolution, "--position", pos, "--clip", md5])
+	if mode != "mania":
+		args.append_array(["--clip-mode", mode])
 	pid = OS.create_process(OS.get_executable_path(), args)
 	if pid <= 0:
 		pid = -1
@@ -139,7 +155,7 @@ func export_clip(md5: String, p_out_path: String = "") -> bool:
 		finished.emit(false, out_path)
 		return false
 	_t0_ms = Time.get_ticks_msec()
-	var len_s := replay_length_s(md5)
+	var len_s := replay_length_s(md5, mode)
 	_expected_bytes = (len_s + TAIL_S) * fps * BYTES_PER_FRAME if len_s > 0.0 else 0.0
 	_enc_expected_s = maxf(1.0, (len_s + TAIL_S) / 20.0)
 	set_process(true)

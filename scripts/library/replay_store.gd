@@ -4,32 +4,72 @@ extends RefCounted
 ## Replays: pro Map+Difficulty wird der letzte Lauf gespeichert — als reine
 ## Input-Liste [{t, lane, down}] mit exakten Judgement-Zeitstempeln. Die
 ## Wiedergabe speist dieselben Events zeitgenau wieder in den ManiaCore ein.
+##
+## Modus: "mania" (Standard, user://replays/<md5>.json, Format unveraendert),
+## "orbit" (bester Orbit-Lauf, user://replays/orbit/<md5>.json) oder
+## "orbit_last" (letzter Orbit-Lauf, user://replays/orbit/last/<md5>.json).
+## Orbit-Events sind kompakt [t, code, a] (OrbitCore.EV_*), meta.mode =
+## "orbit". Alles liegt getrennt: ein Orbit-Lauf ueberschreibt nie das
+## Mania-Replay derselben Diff.
 
 const DIR := "user://replays"
+const MODE_ORBIT_BEST := "orbit"
+const MODE_ORBIT_LAST := "orbit_last"
 
 
-static func _path(osz_path: String, version: String) -> String:
-	return "%s/%s.json" % [DIR, ("%s|%s" % [osz_path.get_file(), version]).md5_text()]
+## Replay-Schluessel (= Dateiname ohne .json, auch fuer --clip <md5>).
+static func key(osz_path: String, version: String) -> String:
+	return ("%s|%s" % [osz_path.get_file(), version]).md5_text()
 
 
-static func exists(osz_path: String, version: String) -> bool:
-	return FileAccess.file_exists(_path(osz_path, version))
+## Ordner je Modus (Mania bleibt im alten Ordner).
+static func dir_for(mode: String = "mania") -> String:
+	match mode:
+		MODE_ORBIT_BEST: return DIR + "/orbit"
+		MODE_ORBIT_LAST: return DIR + "/orbit/last"
+	return DIR
 
 
-static func save(osz_path: String, version: String, events: Array, meta: Dictionary) -> void:
+static func is_orbit(mode: String) -> bool:
+	return mode == MODE_ORBIT_BEST or mode == MODE_ORBIT_LAST
+
+
+static func path_for_key(md5: String, mode: String = "mania") -> String:
+	return "%s/%s.json" % [dir_for(mode), md5]
+
+
+static func _path(osz_path: String, version: String, mode: String = "mania") -> String:
+	return path_for_key(key(osz_path, version), mode)
+
+
+static func exists(osz_path: String, version: String, mode: String = "mania") -> bool:
+	return FileAccess.file_exists(_path(osz_path, version, mode))
+
+
+static func save(osz_path: String, version: String, events: Array, meta: Dictionary,
+		mode: String = "mania") -> void:
 	if events.is_empty():
 		return
-	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(DIR))
-	var f := FileAccess.open(_path(osz_path, version), FileAccess.WRITE)
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(dir_for(mode)))
+	var f := FileAccess.open(_path(osz_path, version, mode), FileAccess.WRITE)
 	if f == null:
 		return
-	f.store_string(JSON.stringify({ "meta": meta, "events": events }))
+	var m := meta
+	if is_orbit(mode):
+		m = meta.duplicate()
+		m["mode"] = "orbit"
+	f.store_string(JSON.stringify({ "meta": m, "events": events }))
 	f.close()
 
 
 ## Liefert { meta: Dictionary, events: Array } oder {}.
-static func load_replay(osz_path: String, version: String) -> Dictionary:
-	var path := _path(osz_path, version)
+static func load_replay(osz_path: String, version: String, mode: String = "mania") -> Dictionary:
+	return load_key(key(osz_path, version), mode)
+
+
+## Wie load_replay, aber ueber den Schluessel (Clip-Prozess).
+static func load_key(md5: String, mode: String = "mania") -> Dictionary:
+	var path := path_for_key(md5, mode)
 	if not FileAccess.file_exists(path):
 		return {}
 	var f := FileAccess.open(path, FileAccess.READ)
