@@ -127,7 +127,7 @@ static func sanitize(raw: Dictionary) -> Dictionary:
 		"score": int(_num(raw.get("score", 0), 0, 2000000000)),
 		"acc": _num(raw.get("acc", 0.0), 0.0, 1.0),
 		"combo": int(_num(raw.get("combo", 0), 0, MAX_COUNT)),
-		"failed": raw.get("failed", false) == true,
+		"failed": typeof(raw.get("failed", false)) == TYPE_BOOL and bool(raw.get("failed", false)),
 		"pp": _num(raw.get("pp", -1.0), -1.0, 100000.0, -1.0),
 	}
 	var g := str(raw.get("grade", "D")).left(2)
