@@ -100,6 +100,16 @@ var _nf_btn: Button
 ## SV-Mod: jede Map mit generierten Tempowechseln (SvMod), Score x1.10.
 var _sv_enabled := Settings.mod_sv
 var _sv_btn: Button
+var _sv_level_box: Control
+## Orbit-Mods (OrbitCore.ORBIT_MODS): nur im Orbit-Modus sichtbar und aktiv,
+## dort statt SV. HD und FI schliessen sich aus. Gespeichert im Browser-Zustand.
+var _orbit_mods := {"HD": false, "FI": false, "PR": false}
+var _orbit_mod_btns := {}
+const ORBIT_MOD_TIPS := {
+	"HD": "Hidden: Ziele verblassen kurz vor dem Ring (Score x1,06)",
+	"FI": "Fade-In: Ziele erscheinen erst spät (Score x1,06)",
+	"PR": "Präzision: Zeit- und Zielfenster 30 % enger (Score x1,12)",
+}
 ## SV-Stufe (SvMod.strength): kleine Auswahl Normal | Stark am SV-Chip.
 var _sv_level_btns: Array[Button] = []
 ## Ranglisten-Kopf: Titel + Modus-Tag (Mania 4K / Orbit).
@@ -218,7 +228,13 @@ func _ready() -> void:
 		_perf_flow.call_deferred()
 	elif OS.get_cmdline_args().has("--orbit") and OS.get_cmdline_args().has("--autoplay"):
 		# Debug/Shots: erste 4K-Diff im Orbit-Modus automatisch starten.
+		# --orbit-mods=HD,PR setzt Orbit-Mods nur fuer diesen Lauf (nie gespeichert).
 		_play_mode = "orbit"
+		for a in OS.get_cmdline_args():
+			if a.begins_with("--orbit-mods="):
+				_state_ready = false  # Debug-Mods nie in browser_state.cfg
+				for k in OrbitCore.ORBIT_MODS:
+					_orbit_mods[k] = k in a.trim_prefix("--orbit-mods=").to_upper().split(",")
 		var pk := _debug_pick()
 		if not pk.is_empty():
 			_select_set(pk[0], pk[1])
@@ -858,7 +874,13 @@ func _build_info_panel() -> void:
 	sv.toggled.connect(_on_sv_toggled)
 	mods_row.add_child(sv)
 	_sv_btn = sv
-	mods_row.add_child(_build_sv_level())
+	_sv_level_box = _build_sv_level()
+	mods_row.add_child(_sv_level_box)
+	for k in OrbitCore.ORBIT_MODS:
+		var ob := _make_orbit_mod_button(k)
+		mods_row.add_child(ob)
+		_orbit_mod_btns[k] = ob
+	_apply_mod_visibility()
 
 	var coll_btn := Button.new()
 	coll_btn.text = "+ Sammlung"
@@ -1263,6 +1285,10 @@ func _load_browser_state() -> bool:
 		var pm := str(cfg.get_value("browser", "play_mode", "mania"))
 		_play_mode = pm if PLAY_MODES.has(pm) else "mania"
 		SvMod.strength = SvMod.level_from_name(str(cfg.get_value("browser", "sv_level", "strong")))
+		var om = cfg.get_value("browser", "orbit_mods", {})
+		if om is Dictionary:
+			for k in OrbitCore.ORBIT_MODS:
+				_orbit_mods[k] = bool(om.get(k, false))
 	return true
 
 
@@ -1276,6 +1302,7 @@ func _save_browser_state() -> void:
 	cfg.set_value("browser", "collection_mode", _collection_mode)
 	cfg.set_value("browser", "play_mode", _play_mode)
 	cfg.set_value("browser", "sv_level", SvMod.level_name())
+	cfg.set_value("browser", "orbit_mods", _orbit_mods.duplicate())
 	cfg.save(BROWSER_STATE_PATH)
 
 
@@ -2082,6 +2109,7 @@ func _set_play_mode(mode: String) -> void:
 		return
 	_play_mode = mode
 	_restyle_mode_switch()
+	_apply_mod_visibility()
 	if mode == "orbit":
 		_show_orbit_hint()
 	# Sichtbare Maps haengen am Modus (osu!standard nur im Orbit-Modus).
@@ -2294,6 +2322,53 @@ func _on_play_pressed() -> void:
 		_change_to_game("res://scenes/gameplay_3d.tscn")
 
 
+## Orbit-Mod-Schalter im Stil der NF/SV-Schalter.
+func _make_orbit_mod_button(key: String) -> CheckButton:
+	var b := CheckButton.new()
+	b.text = key
+	b.tooltip_text = ORBIT_MOD_TIPS[key]
+	b.focus_mode = Control.FOCUS_NONE
+	b.button_pressed = bool(_orbit_mods.get(key, false))
+	b.custom_minimum_size = Vector2(0, 40)
+	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	b.add_theme_font_size_override("font_size", 14)
+	var box := _toggle_box(false, 10)
+	b.add_theme_stylebox_override("normal", box)
+	b.add_theme_stylebox_override("pressed", box)
+	b.add_theme_stylebox_override("hover", _toggle_box(false, 10, true))
+	b.add_theme_stylebox_override("hover_pressed", _toggle_box(false, 10, true))
+	b.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	for fc in ["font_color", "font_pressed_color", "font_hover_color", "font_hover_pressed_color"]:
+		b.add_theme_color_override(fc, COL_TEXT)
+	UiTheme._attach_sounds(b)
+	b.toggled.connect(func(on: bool): _on_orbit_mod_toggled(key, on))
+	return b
+
+
+func _on_orbit_mod_toggled(key: String, on: bool) -> void:
+	_orbit_mods[key] = on
+	# HD und FI zusammen liessen nur ein schmales Band sichtbar: einer von beiden.
+	var other := "FI" if key == "HD" else ("HD" if key == "FI" else "")
+	if on and other != "":
+		_orbit_mods[other] = false
+	for k in _orbit_mod_btns:
+		(_orbit_mod_btns[k] as CheckButton).set_pressed_no_signal(bool(_orbit_mods[k]))
+	if _state_ready:
+		_save_browser_state()
+
+
+## Mania zeigt SV (+ Stufe), Orbit stattdessen HD/FI/PR; No-Fail in beiden.
+func _apply_mod_visibility() -> void:
+	var orbit := _play_mode == "orbit"
+	if _sv_btn != null:
+		_sv_btn.visible = not orbit
+	if _sv_level_box != null:
+		_sv_level_box.visible = not orbit
+	for k in _orbit_mod_btns:
+		(_orbit_mod_btns[k] as CheckButton).visible = orbit
+		(_orbit_mod_btns[k] as CheckButton).set_pressed_no_signal(bool(_orbit_mods[k]))
+
+
 func _on_sv_toggled(pressed: bool) -> void:
 	_sv_enabled = pressed
 	Settings.mod_sv = pressed
@@ -2304,7 +2379,13 @@ func _on_sv_toggled(pressed: bool) -> void:
 
 
 ## Mods fuer den naechsten Start (Schnittstelle GameSession.mods).
+## Orbit: NF + Orbit-Mods (SV wirkt im Orbit nicht und zaehlt dort nicht).
 func _current_mods() -> Dictionary:
+	if _play_mode == "orbit":
+		var m := {"NF": _nf_enabled}
+		for k in OrbitCore.ORBIT_MODS:
+			m[k] = bool(_orbit_mods.get(k, false))
+		return m
 	return {"NF": _nf_enabled, "SV": _sv_enabled}
 
 
@@ -2341,7 +2422,8 @@ func _watch_replay() -> void:
 		_selected_set.version_name_at(_selected_diff), rmode)
 	if data.is_empty():
 		return
-	GameSession.mods = GameSession._replay_mods(data)
+	# Orbit-Replays tragen auch HD/FI/PR (sonst liefe die Wertung anders).
+	GameSession.mods = OrbitCore.replay_mods(data) if orbit else GameSession._replay_mods(data)
 	GameSession.set_selection(
 		_selected_set.osz_path, _selected_diff,
 		_selected_set.version_name_at(_selected_diff),

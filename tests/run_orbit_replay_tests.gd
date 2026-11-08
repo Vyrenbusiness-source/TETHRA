@@ -34,6 +34,7 @@ func _run() -> void:
 	_test_fail_freeze()
 	_test_compact()
 	_test_store()
+	_test_orbit_mods()
 	print("=== %d ok, %d fehlgeschlagen ===" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
 
@@ -300,3 +301,30 @@ func _test_store() -> void:
 	for mode in ["mania", "orbit"]:
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(ReplayStore.path_for_key(ReplayStore.key(osz, ver), mode)))
 	_check(not ReplayStore.exists(osz, ver) and not ReplayStore.exists(osz, ver, "orbit"), "aufgeraeumt")
+
+
+func _test_orbit_mods() -> void:
+	print("- Orbit-Mods: Replay identisch, Mods aus der Meta")
+	var ns := _chart()
+	var evs := _human(ns, 5)
+	var plain: OrbitCore = _live(ns, evs, 11)[0]
+	for mods in [{"PR": true}, {"HD": true, "PR": true}, {"FI": true, "NF": true}]:
+		var tag := OrbitCore.mods_text(mods)
+		var live := _live(ns, evs, 11, mods)
+		var lc: OrbitCore = live[0]
+		# Ueber die Meta (JSON) wie ReplayStore + Song-Browser: Mods kommen mit.
+		var meta = JSON.parse_string(JSON.stringify({"meta": {"mods": mods}}))
+		var back := OrbitCore.replay_mods(meta)
+		var log = JSON.parse_string(JSON.stringify(lc.replay_log))
+		var rp := _replay(ns, log, 1000.0 / 60.0, back)
+		_check(_same_stats(lc.stats(), (rp[0] as OrbitCore).stats()), "%s: Stats gleich" % tag)
+		_check(_same_judgements(live[1], rp[1]), "%s: Urteile gleich" % tag)
+		_check((rp[0] as OrbitCore).stats().mods == lc.stats().mods, "%s: Mods im Ergebnis" % tag)
+	# PR wertet strenger: gleiche Eingaben, weniger Bestnoten.
+	var pr: OrbitCore = _live(ns, evs, 11, {"PR": true})[0]
+	_check(pr.n_max + pr.n300 < plain.n_max + plain.n300 or pr.n_miss > plain.n_miss,
+		"PR: gleiche Eingaben werten strenger")
+	# Ohne Mods abgespielt weicht ein PR-Lauf ab (Mods sind noetig).
+	var wrong := _replay(ns, pr.replay_log, 1000.0 / 60.0, {})
+	_check(not _same_stats(pr.stats(), (wrong[0] as OrbitCore).stats()) or pr.n_miss == plain.n_miss,
+		"PR-Lauf ohne PR abgespielt ist anders")
