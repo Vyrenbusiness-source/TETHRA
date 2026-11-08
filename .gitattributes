@@ -5,3 +5,4 @@
 *.tscn text eol=lf
 *.tres text eol=lf
 project.godot text eol=lf
+*.sh text eol=lf
