@@ -342,10 +342,14 @@ static func _want_ring(reds: Array, t: float) -> int:
 
 ## Letzter Schritt jeder Umwandlung: Regeln fuer EINEN Zeiger (legalize).
 ## Leichte Muster (Orbit-Sterne < EASY_STARS) bekommen die ruhige Variante.
+## Aus: nur Tests schalten die ruhige Variante fuer leichte Maps ab.
+static var easy_enabled := true
+
+
 static func finish(raw: Array[OrbitNote], beatmap: Beatmap) -> Array[OrbitNote]:
 	var reds := red_points(beatmap)
 	var out := legalize(raw, reds, false)
-	if stars(out) < EASY_STARS:
+	if easy_enabled and stars(out) < EASY_STARS:
 		out = legalize(raw, reds, true)
 	return out
 

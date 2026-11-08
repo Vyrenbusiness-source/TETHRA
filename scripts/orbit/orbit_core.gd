@@ -422,6 +422,10 @@ func _do_key_down(key: int, t_ms: float, cursor_deg: float, rho: float) -> void:
 	_aim_sum += err
 	_aim_n += 1
 	if notes[idx].is_arc:
+		# Kopf eines neuen Bogens kurz vor dem Ende des alten: der alte ist geschafft.
+		var old: int = _active_arc[ring]
+		if old >= 0:
+			_finish_arc(ring, t_ms >= notes[old].end_ms - w50 * 1.5, "NEXT")
 		_active_arc[ring] = idx
 		_arc_quality[ring] = q
 		_out_since[ring] = INF

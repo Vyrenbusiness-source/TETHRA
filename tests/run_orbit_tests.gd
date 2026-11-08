@@ -20,6 +20,10 @@ func _initialize() -> void:
 	_test_tap_judge()
 	_test_orbit_mods()
 	_test_wrong_ring()
+	_test_pointing()
+	_test_keys()
+	_test_press_missed()
+	_test_arc_ring()
 	_test_arc_hold()
 	_test_arc_release()
 	_test_arc_out()
@@ -141,13 +145,15 @@ func _test_chords() -> void:
 	_add(bm, 2001.0, 2)
 	_add(bm, 2000.0, 3)
 	var ns := OrbitConverter.convert(bm)
-	_ok(ns.size() == 4, "2er- und 4er-Akkord ergeben je zwei Ziele (%d)" % ns.size())
-	if ns.size() != 4:
+	_ok(ns.size() == 2, "ein Zeiger = ein Ziel: jeder Akkord wird ein Ziel (%d)" % ns.size())
+	if ns.size() != 2:
 		return
-	_ok(ns[0].ring == 0 and ns[1].ring == 1, "beide Ringe belegt")
-	_ok(absf(ns[0].angle_deg - ns[1].angle_deg) < EPS and absf(ns[2].angle_deg - ns[3].angle_deg) < EPS,
-			"Akkord-Ziele am selben Winkel")
-	_ok(ns[0].source_index == 0 and ns[1].source_index == 1, "niedrigste Spalte innen, hoechste aussen")
+	_ok(ns[0].source_index == 0 and ns[1].source_index == 2, "niedrigste Spalte bleibt")
+	var bm2 := _bm()
+	_add(bm2, 1000.0, 0, 200.0)
+	_add(bm2, 1000.0, 3, 800.0)
+	var n2 := OrbitConverter.convert(bm2)
+	_ok(n2.size() == 1 and n2[0].is_arc and n2[0].source_index == 1, "Akkord mit Bogen: der laengste Bogen bleibt")
 
 
 func _test_density() -> void:
@@ -200,8 +206,13 @@ func _test_speed_limit() -> void:
 	var bm2 := _bm()
 	_add(bm2, 1000.0, 0)
 	_add(bm2, 2000.0, 2)
+	OrbitConverter.easy_enabled = false
 	var jump := OrbitConverter.convert(bm2)
+	OrbitConverter.easy_enabled = true
 	_ok(OrbitNote.dist_deg(jump[0].angle_deg, jump[1].angle_deg) > 90.0, "grosser Abstand darf weit springen")
+	var jump_easy := OrbitConverter.convert(bm2)
+	_ok(OrbitNote.dist_deg(jump_easy[0].angle_deg, jump_easy[1].angle_deg) <= OrbitConverter.EASY_FAR_JUMP_DEG + EPS,
+			"leichte Map: Sprung hoechstens %d Grad" % OrbitConverter.EASY_FAR_JUMP_DEG)
 
 
 func _test_arc_length() -> void:
@@ -210,39 +221,59 @@ func _test_arc_length() -> void:
 	_add(bm, 1000.0, 0, 1000.0)
 	_add(bm, 4000.0, 1, 5000.0)
 	_add(bm, 12000.0, 2, 50.0)
-	_add(bm, 15000.0, 0, 1000.0)
 	_add(bm, 15000.0, 3, 4000.0)
 	var ns := OrbitConverter.convert(bm)
-	_ok(ns.size() == 5, "5 Ziele (%d)" % ns.size())
-	if ns.size() != 5:
+	_ok(ns.size() == 4, "4 Ziele (%d)" % ns.size())
+	if ns.size() != 4:
 		return
 	_ok(ns[0].is_arc and absf(absf(ns[0].span_deg()) - 120.0) < EPS, "1000 ms -> 120 Grad (%.1f)" % ns[0].span_deg())
 	_ok(ns[1].is_arc and absf(absf(ns[1].span_deg()) - OrbitConverter.ARC_MAX_DEG) < EPS, "5000 ms gedeckelt auf %d Grad" % OrbitConverter.ARC_MAX_DEG)
 	_ok(not ns[2].is_arc and ns[2].end_ms == ns[2].time_ms, "LN 50 ms -> Tap")
-	var v3 := ns[3].span_deg() / ns[3].duration_ms()
-	var v4 := ns[4].span_deg() / ns[4].duration_ms()
-	_ok(ns[3].is_arc and ns[4].is_arc and absf(v3 - v4) < EPS, "LN-Akkord: beide Boegen gleich schnell")
-	_ok(absf(ns[4].angle_at(ns[4].end_ms) - OrbitNote.wrap_deg(ns[4].end_angle_deg)) < 1e-4, "angle_at(Ende) = Bogen-Ende")
+	_ok(ns[3].is_arc and absf(ns[3].angle_at(ns[3].end_ms) - OrbitNote.wrap_deg(ns[3].end_angle_deg)) < 1e-4, "angle_at(Ende) = Bogen-Ende")
 
 
 func _test_ring_flow() -> void:
-	print("- Ring-Wahl")
+	print("- Ring-Wahl (Zeiger steht auf einem Ring)")
 	var bm := _bm()
 	for i in 8:
 		_add(bm, 1000.0 + i * 100.0, 1)
-	_add(bm, 3000.0, 0)
-	_add(bm, 4000.0, 3)
 	var ns := OrbitConverter.convert(bm)
-	var alt := true
-	for i in range(1, 8):
-		alt = alt and ns[i].ring != ns[i - 1].ring
-	_ok(alt, "Jack/Stream wechselt den Ring")
-	_ok(ns[8].ring == 0 and ns[9].ring == 1, "ruhige Stellen: Spaltenhaelfte bestimmt Ring")
+	var same := true
+	for i in range(1, ns.size()):
+		same = same and ns[i].ring == ns[0].ring
+	_ok(ns.size() == 8 and same, "Stream bleibt auf einem Ring (Wechselschlag mit zwei Tasten)")
+	# Ringwechsel nur mit Zeit und Abstand zum letzten Wechsel.
+	var raw: Array[OrbitNote] = [
+		OrbitNote.make(1000.0, 10.0, 0, 0), OrbitNote.make(1100.0, 20.0, 1, 1),
+		OrbitNote.make(1700.0, 30.0, 1, 2), OrbitNote.make(2000.0, 40.0, 0, 3),
+		OrbitNote.make(3200.0, 50.0, 0, 4)]
+	var lg := OrbitConverter.legalize(raw, [], false)
+	_ok(lg[1].ring == 0, "Wechsel nach 100 ms nicht erlaubt")
+	_ok(lg[2].ring == 1, "Wechsel nach 700 ms erlaubt")
+	_ok(lg[3].ring == 1, "gleich wieder zurueck (300 ms) nicht erlaubt")
+	_ok(lg[4].ring == 0, "nach RING_HOLD_MS wieder frei")
+	var easy := OrbitConverter.legalize(raw, [], true)
+	var sw := 0
+	for i in range(1, easy.size()):
+		sw += 1 if easy[i].ring != easy[i - 1].ring else 0
+	_ok(sw <= 1, "leicht: hoechstens ein Wechsel (%d)" % sw)
+	# Bogen: Ziele im Bogen liegen auf dem Bogen-Ring.
 	var bm2 := _bm()
 	_add(bm2, 1000.0, 0, 500.0)
 	_add(bm2, 1550.0, 0)
 	var n2 := OrbitConverter.convert(bm2)
-	_ok(n2[1].ring != n2[0].ring, "direkt nach Bogen-Ende anderer Ring")
+	_ok(n2.size() == 2 and n2[1].ring == n2[0].ring, "Ziel nach Bogen-Ende ohne Ringwechsel")
+	# Ueber eine ganze Map: jeder Wechsel haelt die Regeln.
+	var mm := OrbitConverter.convert(_mixed_map())
+	var bad := 0
+	var last_sw := -INF
+	for i in range(1, mm.size()):
+		if mm[i].ring != mm[i - 1].ring:
+			if mm[i].time_ms - mm[i - 1].end_ms < OrbitConverter.RING_SWITCH_MIN_MS - EPS \
+					or mm[i].time_ms - last_sw < OrbitConverter.RING_HOLD_MS - EPS:
+				bad += 1
+			last_sw = mm[i].time_ms
+	_ok(bad == 0, "Ringwechsel halten Zeit + Abstand (%d Verstoesse)" % bad)
 
 
 # --- Wertung ---
@@ -263,11 +294,15 @@ func _test_tap_judge() -> void:
 	_ok(got.has(1) and got[1].quality == OrbitCore.Quality.PERFECT and got[1].late, "dt +40 bei OD8 = PERFECT, spaet")
 	c.key_down(0, 2940.0, 10.0, _rho(0))
 	_ok(got.has(2) and got[2].quality == OrbitCore.Quality.GOOD, "ueber 0 Grad hinweg (350 vs 10) = Treffer")
+	var why: Array = []
+	c.press_missed.connect(func(_d: float, _r: float, _ring: int, reason: String) -> void: why.append(reason))
 	c.key_down(0, 4000.0 - c.w50 - 10.0, 0.0, _rho(0))
-	_ok(got.has(3) and got[3].quality == OrbitCore.Quality.MISS, "zu frueh gezielt frisst das Ziel")
+	_ok(not got.has(3) and why == ["EARLY"], "zu frueher Druck frisst das Ziel nicht (Fehldruck EARLY)")
+	c.key_down(0, 4000.0, 0.0, _rho(0))
+	_ok(got.has(3) and got[3].quality == OrbitCore.Quality.MAX, "danach trifft der richtige Druck")
 	c.update(5000.0 + c.w50 + 1.0)
 	_ok(got.has(4) and got[4].quality == OrbitCore.Quality.MISS and got[4].miss_kind == "FULL", "verpasst = MISS")
-	_ok(c.combo == 0 and c.max_combo == 3, "Combo wie Mania")
+	_ok(c.combo == 0 and c.max_combo == 4, "Combo wie Mania")
 
 
 func _test_orbit_mods() -> void:
@@ -334,14 +369,62 @@ func _test_orbit_mods() -> void:
 
 
 func _test_wrong_ring() -> void:
-	print("- Falscher Ring")
+	print("- Falscher Ring (Zeigen waehlt den Ring)")
 	var ns: Array[OrbitNote] = [OrbitNote.make(1000.0, 180.0, 1, 0)]
 	var c := _core(ns)
 	var got := _results(c)
+	var why: Array = []
+	c.press_missed.connect(func(_d: float, _r: float, _ring: int, reason: String) -> void: why.append(reason))
 	c.key_down(0, 1000.0, 180.0, _rho(0))
-	_ok(not got.has(0), "Taste A auf aeusserem Ziel = kein Treffer")
-	c.key_down(1, 1000.0, 180.0, _rho(1))
-	_ok(got.has(0) and got[0].quality == OrbitCore.Quality.MAX and got[0].ring == 1, "Taste B trifft")
+	_ok(not got.has(0) and why == ["RING"], "Zeiger innen auf aeusserem Ziel = kein Treffer (RING)")
+	c.key_down(0, 1000.0, 180.0, _rho(1))
+	_ok(got.has(0) and got[0].quality == OrbitCore.Quality.MAX and got[0].ring == 1, "Zeiger aussen trifft, egal mit welcher Taste")
+
+
+func _test_pointing() -> void:
+	print("- Ring durch Zeigen (Grenze + Hysterese)")
+	var split := OrbitCore.RING_SPLIT_K
+	var h := OrbitCore.RING_HYST_K
+	_ok(OrbitCore.ring_for_rho(OrbitCore.R_INNER_K, 1) == 0, "Innenring-Abstand waehlt innen")
+	_ok(OrbitCore.ring_for_rho(OrbitCore.R_OUTER_K, 0) == 1, "Aussenring-Abstand waehlt aussen")
+	_ok(OrbitCore.ring_for_rho(split + h * 0.5, 0) == 0 and OrbitCore.ring_for_rho(split - h * 0.5, 1) == 1,
+			"in der Hysterese bleibt der alte Ring")
+	_ok(OrbitCore.ring_for_rho(split + h * 2.0, 0) == 1 and OrbitCore.ring_for_rho(split - h * 2.0, 1) == 0,
+			"ausserhalb der Hysterese wechselt der Ring")
+	_ok(absf(split - (OrbitCore.R_INNER_K + OrbitCore.R_OUTER_K) * 0.5) < EPS, "Grenze mittig zwischen den Ringen")
+	var c := _core([OrbitNote.make(1000.0, 0.0, 0, 0)])
+	c.cursor_moved(0.0, OrbitCore.R_OUTER_K, 0.0)
+	_ok(c.cursor_ring() == 1, "cursor_ring folgt dem Abstand")
+	c.cursor_moved(0.0, OrbitCore.R_INNER_K, 10.0)
+	_ok(c.cursor_ring() == 0, "und zurueck")
+
+
+func _test_keys() -> void:
+	print("- Beide Tasten treffen jedes Ziel")
+	var ns: Array[OrbitNote] = [OrbitNote.make(1000.0, 0.0, 0, 0), OrbitNote.make(1100.0, 0.0, 0, 1),
+			OrbitNote.make(1200.0, 90.0, 1, 2), OrbitNote.make(1300.0, 90.0, 1, 3)]
+	var c := _core(ns)
+	var got := _results(c)
+	c.key_down(0, 1000.0, 0.0, _rho(0))
+	c.key_up(0, 1030.0)
+	c.key_down(1, 1100.0, 0.0, _rho(0))
+	c.key_up(1, 1130.0)
+	c.key_down(1, 1200.0, 90.0, _rho(1))
+	c.key_up(1, 1230.0)
+	c.key_down(0, 1300.0, 90.0, _rho(1))
+	_ok(got.size() == 4, "Wechselschlag und gleiche Taste hintereinander: alle 4 getroffen (%d)" % got.size())
+	_ok(c.combo == 4, "Combo 4")
+
+
+func _test_press_missed() -> void:
+	print("- Fehldruck-Meldung")
+	var ns: Array[OrbitNote] = [OrbitNote.make(1000.0, 0.0, 0, 0)]
+	var c := _core(ns)
+	var why: Array = []
+	c.press_missed.connect(func(_d: float, _r: float, _ring: int, reason: String) -> void: why.append(reason))
+	c.key_down(0, 1000.0, 90.0, _rho(0))
+	c.key_down(0, 5000.0, 0.0, _rho(0))
+	_ok(why == ["ANGLE", "NONE"], "Winkel daneben = ANGLE, nichts in der Naehe = NONE (%s)" % str(why))
 
 
 func _arc_notes() -> Array[OrbitNote]:
@@ -419,19 +502,34 @@ func _test_arc_tap_inside() -> void:
 	_add(bm, 1000.0, 3, 1000.0)
 	_add(bm, 1500.0, 0)
 	var ns := OrbitConverter.convert(bm)
-	_ok(ns.size() == 2 and ns[1].ring != ns[0].ring and absf(ns[1].angle_deg - ns[0].angle_at(1500.0)) < 1e-4,
-			"Note im Bogen -> anderer Ring an der Bogen-Spitze")
+	_ok(ns.size() == 2 and ns[1].ring == ns[0].ring and absf(ns[1].angle_deg - ns[0].angle_at(1500.0)) < 1e-4,
+			"Note im Bogen -> gleicher Ring an der Bogen-Spitze")
 	if ns.size() != 2:
 		return
 	var c := _core(ns)
 	var got := _results(c)
-	c.key_down(ns[0].ring, 1000.0, ns[0].angle_deg, _rho(ns[0].ring))
+	c.key_down(0, 1000.0, ns[0].angle_deg, _rho(ns[0].ring))
 	_follow(c, ns[0], 1000.0, 1500.0)
-	c.key_down(ns[1].ring, 1500.0, ns[0].angle_at(1500.0), _rho(ns[1].ring))
+	c.key_down(1, 1500.0, ns[0].angle_at(1500.0), _rho(ns[1].ring))
+	c.key_up(1, 1520.0)
 	_follow(c, ns[0], 1500.0, 2000.0)
 	c.update(2001.0)
 	_ok(got.size() == 2 and got[0].quality == OrbitCore.Quality.MAX and got[1].quality == OrbitCore.Quality.MAX,
-			"beide getroffen")
+			"beide getroffen, Bogen haelt mit der anderen Taste weiter")
+
+
+func _test_arc_ring() -> void:
+	print("- Bogen: auf dem Ring bleiben")
+	var ns := _arc_notes()
+	var n: OrbitNote = ns[0]
+	var c := _core(ns)
+	var got := _results(c)
+	c.key_down(0, 1000.0, n.angle_deg, _rho(n.ring))
+	_follow(c, n, 1000.0, 1300.0)
+	for k in 12:
+		c.cursor_moved(n.angle_at(1300.0 + k * 20.0), _rho(1 - n.ring), 1300.0 + k * 20.0)
+		c.update(1300.0 + k * 20.0)
+	_ok(got.has(0) and got[0].quality == OrbitCore.Quality.MISS, "Ring verlassen bricht den Bogen")
 
 
 func _test_acc_like_mania() -> void:
@@ -599,13 +697,18 @@ func _bot_run(ns: Array[OrbitNote], od: float, hp: float, plan: Array, no_fail: 
 			var n: OrbitNote = ns[e[2]]
 			c.update(te)
 			if e[1] == 0:
-				if held[n.ring] >= 0:
-					c.key_up(n.ring, te)
-				held[n.ring] = e[2]
-				c.key_down(n.ring, te, n.angle_at(te) + float(plan[e[2]][1]), _rho(n.ring))
-			elif held[n.ring] == e[2]:
-				c.key_up(n.ring, te)
-				held[n.ring] = -1
+				# Zwei Tasten: die freie nehmen (Tap im Bogen = andere Taste),
+				# sonst die aelteste loslassen.
+				var key := 0 if held[0] < 0 else (1 if held[1] < 0 else 0)
+				if held[key] >= 0:
+					c.key_up(key, te)
+				held[key] = e[2]
+				c.key_down(key, te, n.angle_at(te) + float(plan[e[2]][1]), _rho(n.ring))
+			else:
+				for key in 2:
+					if held[key] == e[2]:
+						c.key_up(key, te)
+						held[key] = -1
 		for r in 2:
 			var h := c.active_arc(r)
 			if h >= 0:
@@ -840,6 +943,7 @@ func _std_fair(ns: Array[OrbitNote], bm: Beatmap, label: String) -> void:
 
 func _test_std_basic() -> void:
 	print("- osu!standard: Grundformen")
+	OrbitConverter.easy_enabled = false
 	var bm := _std_bm(120.0, 1000.0)
 	_circle(bm, 1000.0, 256.0, 40.0)       # oben
 	_circle(bm, 1500.0, 470.0, 192.0)      # rechts
@@ -864,10 +968,12 @@ func _test_std_basic() -> void:
 	_ok(_sig(OrbitConverter.convert(bm)) == _sig(OrbitConverter.convert_std(bm, OrbitConverter.std_style)),
 			"convert() nimmt fuer Mode 0 den Standard-Weg")
 	_ok(OrbitConverter.convert(_bm()).is_empty(), "leere Mania-Map bleibt leer")
+	OrbitConverter.easy_enabled = true
 
 
 func _test_std_streams() -> void:
 	print("- osu!standard: Streams, Stacks, Flow")
+	OrbitConverter.easy_enabled = false
 	# 1/4-Stream bei 180 BPM (83 ms): alle bleiben, Ringe wechseln ab.
 	var bm := _std_bm(180.0, 1000.0)
 	for i in 32:
@@ -875,10 +981,10 @@ func _test_std_streams() -> void:
 		_circle(bm, 1000.0 + i * 250.0 / 3.0, sp.x, sp.y)
 	var ns := OrbitConverter.convert(bm)
 	_ok(ns.size() == 32, "Stream 83 ms bleibt vollstaendig (%d)" % ns.size())
-	var alt := true
+	var same := true
 	for i in range(1, ns.size()):
-		alt = alt and ns[i].ring != ns[i - 1].ring
-	_ok(alt, "Stream wechselt die Ringe (Tasten abwechseln)")
+		same = same and ns[i].ring == ns[0].ring
+	_ok(same, "Stream bleibt auf einem Ring (Tasten wechseln ab)")
 	_std_fair(ns, bm, "Stream")
 	# 1/6 bei 200 BPM (50 ms): Dichte-Reduktion wie Mania.
 	var bm2 := _std_bm(200.0, 1000.0)
@@ -924,6 +1030,7 @@ func _test_std_streams() -> void:
 	var f4 := OrbitConverter.analyze(OrbitConverter.convert_std(bm4, OrbitConverter.StdStyle.FLOW), bm4)
 	var f5 := OrbitConverter.analyze(OrbitConverter.convert_std(bm5, OrbitConverter.StdStyle.FLOW), bm5)
 	_ok(float(f4.reversal) > 0.9 and float(f5.reversal) < 0.05, "FLOW: Pendel bzw. Drehung")
+	OrbitConverter.easy_enabled = true
 
 
 func _test_std_fair_mixed() -> void:
