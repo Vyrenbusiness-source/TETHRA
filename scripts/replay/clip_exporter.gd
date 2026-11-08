@@ -137,8 +137,15 @@ func export_clip(md5: String, p_out_path: String = "", mode: String = "mania") -
 		var pck := OS.get_executable_path().get_base_dir().path_join("TETHRA.pck")
 		if FileAccess.file_exists(pck):
 			args.append_array(["--main-pack", pck])
+	# Fensterposition: wie der Elternprozess, falls der eine bekam (Testlaeufe auf
+	# Monitor 2), sonst weit ausserhalb des Bildes.
+	var pos := "-10000,-10000"
+	var pa := OS.get_cmdline_args()
+	var pi := pa.find("--position")
+	if pi >= 0 and pi + 1 < pa.size():
+		pos = pa[pi + 1]
 	args.append_array(["--write-movie", _render_path, "--fixed-fps", str(fps),
-		"--resolution", resolution, "--position", "-10000,-10000", "--clip", md5])
+		"--resolution", resolution, "--position", pos, "--clip", md5])
 	if mode != "mania":
 		args.append_array(["--clip-mode", mode])
 	pid = OS.create_process(OS.get_executable_path(), args)
