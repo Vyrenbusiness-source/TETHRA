@@ -41,13 +41,13 @@ const MAX_STEP_SCALE := 2.5
 const DRIFT_GAP_MS := 300.0
 ## Jacks (gleiche Spalte, Abstand < DRIFT_GAP_MS): Winkelversatz im Zickzack
 ## 0, 1, 2, 1 Stufen, damit Ziele auf demselben Ring nicht uebereinander liegen.
-const STACK_STEP_DEG := 2.0
+const STACK_STEP_DEG := 4.0
 const STACK_PATTERN := [0, 1, 2, 1]
 ## Einzelziel nahe (< STACK_NEAR_DEG) am vorherigen Ziel desselben Rings und
 ## hoechstens STACK_WINDOW_MS danach: Versatz um STACK_PUSH_DEG weg davon.
-const STACK_NEAR_DEG := 3.0
+const STACK_NEAR_DEG := 6.0
 const STACK_WINDOW_MS := 320.0
-const STACK_PUSH_DEG := 4.0
+const STACK_PUSH_DEG := 7.0
 const STREAM_GAP_MS := 160.0
 const MIN_ARC_MS := 100.0
 const ARC_DEG_PER_MS := 0.12
@@ -274,6 +274,10 @@ static func convert(beatmap: Beatmap) -> Array[OrbitNote]:
 			if ring_last[tg[1]] > ring_last[us_r]:
 				us_r = int(tg[1])
 		angle = _unstack(angle, recent[us_r], t, dir, vc if vc != INF else last_angle, gap)
+		# Der virtuelle Zeiger folgt dem versetzten Ziel, sonst rechnet der naechste
+		# Schritt von einem Ort aus, an dem niemand ist.
+		if angle != float(reach[0]):
+			reach = _reach(vc, gap, angle)
 		var longest := 0.0
 		for tg in targets:
 			longest = maxf(longest, _arc_len(objs[tg[0]] as ManiaNote))
