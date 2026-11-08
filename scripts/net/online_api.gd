@@ -787,6 +787,11 @@ func _bf_got_meta(c: Dictionary, meta: Dictionary) -> void:
 	var m := meta.duplicate()
 	m["ranked"] = true
 	var body := build_body(res, m, "mania")
+	# Alte Bestwerte ohne gespeicherte Combo: nicht 0 behaupten (Server stuft das als
+	# verdaechtig ein), sondern als unbekannt melden.
+	if int(e.get("max_combo", 0)) <= 0:
+		body["max_combo"] = null
+		body["combo_unknown"] = true
 	# Replay nur, wenn das lokale Replay genau dieser Bestwert ist (Score + Datum).
 	if str(e.get("date", "")) != "":
 		var rc := replay_content_for(str(c.osz_path), str(c.version), "mania",
