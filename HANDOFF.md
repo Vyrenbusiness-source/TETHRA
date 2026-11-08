@@ -118,3 +118,10 @@ Offen:
 - Installer enthaelt Spiel v1.18.0 (Updater holt Neues) - bei naechster Welt-/exe-Aenderung neu bauen.
 - warmd-Luecken: fertige Tasks bleiben in .git/warmd-batch als Dateibesitzer (manuell Zeile loeschen), split vergibt nach batch-done belegte Worktrees, kein Befehl zum Verwerfen eines Tasks -> in warmd selbst beheben.
 Nutzer-Regeln neu: max. 4 Agents; kein KI-Look; keine leeren Testfenster; Orbit hat Vorrang; fertige Updates sofort veroeffentlichen.
+
+## Ende Nacht-Session 2026-11-08 04:30 (letztes Release v1.20.3)
+Nach 03:40 noch released: v1.19.2 (Orbit-Stapel-Versatz 5/7/8, Verdeckung < 15 %, Bot besser), v1.20.0 (Orbit-Mods HD/FI/PR mit Score-Faktor, Orbit im Hauptmenue, Orbit-Rating im Profil), v1.20.1 (Profil-Schliessen-Knopf, Orbit-Texte via tr()), v1.20.2 (Orbit-Klaenge je Ring, Bogen-Ton), v1.20.3 (Orbit-Sterne im Song-Browser fuer 4K-Diffs, Cache user://orbit_stars.cfg). Installer TETHRA_Setup.exe im Tag "worlds" = v1.20.0. README: neues Orbit-Video (Welt-Hintergrund, Klaenge).
+Offen fuer naechste Session:
+- Orbit-Sterne im Browser auch fuer osu!standard-Diffs (heute nur 4K).
+- warmd: "Godot ended without a result" beim Merge-Gate tritt sporadisch auf (Wiederholen hilft) -> in warmd selbst untersuchen; dazu die Batch-/Besitzer-Luecken (oben).
+- Social Preview hochladen (Nutzer).
