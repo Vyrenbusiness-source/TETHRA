@@ -2425,6 +2425,7 @@ func _online_row(e: Dictionary) -> Control:
 	grade.add_theme_color_override("font_color", GRADE_COLOR.get(g.left(1), COL_TEXT))
 	row.add_child(grade)
 	var who := str(e.get("player", "?"))
+	row.add_child(_online_avatar(who))
 	var name_btn := LinkButton.new()
 	name_btn.text = who
 	name_btn.underline = LinkButton.UNDERLINE_MODE_ON_HOVER
@@ -2449,6 +2450,49 @@ func _online_row(e: Dictionary) -> Control:
 		pp_lbl.add_theme_color_override("font_color", UiTheme.ACCENT2)
 		row.add_child(pp_lbl)
 	return row
+
+
+## Kleiner runder Avatar fuer die Online-Rangliste: Initiale, bis das Bild von der
+## Website da ist (OnlineApi.player_avatar, Speicher-Cache je Spieler).
+func _online_avatar(who: String) -> Control:
+	var slot := Control.new()
+	slot.custom_minimum_size = Vector2(20, 20)
+	slot.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var circle := ColorRect.new()
+	circle.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	circle.color = Color(0.16, 0.30, 0.42)
+	var m := ShaderMaterial.new()
+	m.shader = load("res://shaders/avatar_circle.gdshader")
+	circle.material = m
+	circle.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	slot.add_child(circle)
+	var initial := Label.new()
+	initial.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	initial.text = who.strip_edges().substr(0, 1).to_upper()
+	initial.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	initial.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	initial.add_theme_font_size_override("font_size", 11)
+	initial.add_theme_color_override("font_color", Color(0.85, 0.93, 1.0))
+	initial.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	slot.add_child(initial)
+	var api: OnlineApi = GameSession.online
+	if api == null:
+		return slot
+	api.player_avatar(who, func(tex: Texture2D):
+		if tex == null or not is_instance_valid(slot):
+			return
+		var rect := TextureRect.new()
+		rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+		rect.texture = tex
+		var m2 := ShaderMaterial.new()
+		m2.shader = m.shader
+		rect.material = m2
+		rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		slot.add_child(rect))
+	return slot
 
 
 ## Eine Leaderboard-Zeile: Rang, Grade, Score/Acc, pp, Datum.

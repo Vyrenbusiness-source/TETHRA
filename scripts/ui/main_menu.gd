@@ -884,6 +884,8 @@ func _build_profile_card() -> void:
 	vb.add_child(_plays_label)
 
 	_refresh_profile()
+	if GameSession.online != null:
+		GameSession.online.avatar_changed.connect(_refresh_profile)
 
 
 func _open_profile() -> void:
@@ -1085,10 +1087,10 @@ func _refresh_profile() -> void:
 	_name_label.text = Settings.profile_name
 	_pp_label.text = UiTheme.fmt_pp(ScoreStore.profile_pp())
 	_plays_label.text = tr("%s Spiele") % UiTheme.fmt_score(ScoreStore.total_plays())
-	# Avatar-Kreis: eigenes Bild oder Initial.
+	# Avatar-Kreis: Website-Avatar (angemeldet), eigenes Bild oder Initial.
 	for c in _card_avatar.get_children():
 		c.queue_free()
-	var tex := Settings.avatar_texture()
+	var tex := OnlineApi.display_avatar(GameSession.online, Settings.avatar_texture())
 	if tex != null:
 		var rect := TextureRect.new()
 		rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)

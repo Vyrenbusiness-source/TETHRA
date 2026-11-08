@@ -24,11 +24,23 @@ const BACKFILL_RATE_WAIT_S := 10.0
 ## Version der Upload-Merker in cfg_path [backfill]. Aeltere Merker (v1: "done",
 ## gemischt aus angenommen und uebersprungen) werden verworfen und erneut versucht.
 const BACKFILL_VERSION := 2
+## Obergrenze fuer replay_content (Base64-Text, damit auch fuer das gzip darin).
+const REPLAY_MAX_BYTES := 2 * 1024 * 1024
+## Alte-Scores-Upload: Replay-Datum darf so weit neben dem Bestwert-Datum liegen.
+const REPLAY_DATE_TOL_S := 5
+const AVATAR_CACHE := "user://avatar"
+const AVATAR_EXTS := ["png", "jpg", "webp"]
+## Avatare anderer Spieler (Rangliste) im Speicher, hoechstens so viele.
+const AVATAR_MEM_MAX := 50
+## Groessere Avatare werden beim Laden auf diese Kantenlaenge verkleinert.
+const AVATAR_MAX_PX := 256
 
 ## Zustandsaenderung (Anmeldung, Warteschlange, Update noetig).
 signal state_changed
 ## Fortschritt/Ende des Alte-Scores-Uploads.
 signal backfill_changed
+## Eigenes Avatar (avatar) geladen, geaendert oder entfernt.
+signal avatar_changed
 
 var api_key := API_KEY
 var base_url := BASE_URL
@@ -54,6 +66,15 @@ var last_code := ""
 ## true, sobald GET /auth/me die Anmeldung bestaetigt hat.
 var auth_checked := false
 
+## Test-Hook fuer Bilder: Callable(method, url, headers, done: Callable(code, bytes)).
+var raw_transport := Callable()
+## Test-Hook fuer Replays: Callable(osz_path, version, replay_mode) -> JSON-Text ("" = keins).
+var replay_provider := Callable()
+## Cache des eigenen Avatars: <avatar_cache>.png|jpg|webp
+var avatar_cache := _default_avatar_cache()
+## Eigenes Avatar von der Website (null = keins / nicht angemeldet).
+var avatar: Texture2D = null
+
 var _queue: Array = []
 var _busy := false
 var _retry_t := 0.0
@@ -68,6 +89,7 @@ var _bf := {"running": false, "total": 0, "done": 0, "sent": 0, "skipped": 0,
 
 func _ready() -> void:
 	load_auth()
+	load_cached_avatar()
 	load_queue()
 	set_process(true)
 	if enabled() and logged_in():
@@ -135,6 +157,10 @@ func logout() -> void:
 	user_id = ""
 	username = ""
 	_save_auth()
+	clear_avatar_cache()
+	if avatar != null:
+		avatar = null
+		avatar_changed.emit()
 	state_changed.emit()
 
 
@@ -164,6 +190,7 @@ func login(p_username: String, password: String, done: Callable = Callable()) ->
 			if r.ok:
 				_set_auth(r)
 				_pump()
+				refresh_avatar()
 			_call(done, r.ok, str(r.message)))
 
 
@@ -189,6 +216,7 @@ func check_auth(done: Callable = Callable()) -> void:
 					_save_auth()
 					state_changed.emit()
 			_pump()
+			refresh_avatar()
 		_call(done, true, ""))
 
 
@@ -263,6 +291,7 @@ static func meta_from_beatmap(bm: Beatmap, osz_path: String, osu_filename: Strin
 		"total_notes": bm.hit_objects.size(),
 		"stars": stars,
 		"ranked": true,
+		"osz_path": osz_path,
 	}
 
 
@@ -342,7 +371,8 @@ static func classify_submit(code: int, text: String) -> Dictionary:
 	var dd: Dictionary = d if d is Dictionary else {}
 	if code >= 200 and code < 300:
 		return {"kind": "ok", "message": "", "code": "",
-			"pp_source": str(dd.get("pp_source", "")), "duplicate": bool(dd.get("duplicate", false))}
+			"pp_source": str(dd.get("pp_source", "")), "duplicate": bool(dd.get("duplicate", false)),
+			"score_id": score_id_of(dd)}
 	if code == 426:
 		return {"kind": "update", "message": msg, "code": msg}
 	if code == 401:
@@ -359,10 +389,19 @@ static func classify_submit(code: int, text: String) -> Dictionary:
 func submit(result: Dictionary, meta: Dictionary, mode: String = "mania") -> bool:
 	if not enabled() or not logged_in() or str(meta.get("md5", "")) == "":
 		return false
+	var body := build_body(result, meta, mode)
+	var osz := str(meta.get("osz_path", ""))
+	var ver := str(meta.get("difficulty", ""))
+	var score := int(result.get("score", 0))
+	var rc := replay_content_for(osz, ver, mode, score)
+	if rc != "":
+		body["replay_content"] = rc
 	var entry := {
-		"body": build_body(result, meta, mode),
+		"body": body,
 		"reg": build_register_body(meta, mode),
 		"registered": false,
+		# Lokaler Eintrag, an den die Server-ID (online_id) kommt.
+		"local": {"osz_file": osz.get_file(), "version": ver, "mode": mode, "score": score},
 	}
 	_queue.append(entry)
 	while _queue.size() > QUEUE_MAX:
@@ -391,6 +430,7 @@ func _on_score_reply(entry: Dictionary, code: int, text: String) -> void:
 	var kind := str(r.kind)
 	last_code = str(r.code)
 	if kind == "ok":
+		_store_online_id(entry.get("local", {}), str(r.score_id))
 		var md5 := str(entry.reg.get("beatmap_md5", ""))
 		if str(entry.body.get("mode", "")) == "mania" and str(r.pp_source) == "client" 				and md5 != "" and not _registered_md5.has(md5):
 			_register_map(entry.reg, func(): _finish_entry("ok"))
@@ -747,6 +787,12 @@ func _bf_got_meta(c: Dictionary, meta: Dictionary) -> void:
 	var m := meta.duplicate()
 	m["ranked"] = true
 	var body := build_body(res, m, "mania")
+	# Replay nur, wenn das lokale Replay genau dieser Bestwert ist (Score + Datum).
+	if str(e.get("date", "")) != "":
+		var rc := replay_content_for(str(c.osz_path), str(c.version), "mania",
+			int(e.get("score", 0)), str(e.get("date", "")))
+		if rc != "":
+			body["replay_content"] = rc
 	var reg := build_register_body(m, "mania")
 	_bf_in_flight = true
 	_send("POST", "/score", body, func(code: int, text: String):
@@ -761,6 +807,8 @@ func _bf_on_reply(c: Dictionary, reg: Dictionary, code: int, text: String) -> vo
 		print("Backfill %s: HTTP %d %s" % [str(c.key), code, str(r.code)])
 	match str(r.kind):
 		"ok":
+			_store_online_id({"osz_file": str(c.osz_file), "version": str(c.version),
+				"mode": "mania", "score": int((c.entry as Dictionary).get("score", 0))}, str(r.score_id))
 			_bf_mark(str(c.key), "sent")
 			_bf["sent"] = int(_bf.sent) + 1
 			var md5 := str(reg.get("beatmap_md5", ""))
@@ -787,6 +835,263 @@ func _bf_on_reply(c: Dictionary, reg: Dictionary, code: int, text: String) -> vo
 			logout()
 		_:
 			_bf_end("error")
+
+
+# --- Replay-Upload und Server-ID -----------------------------------------------
+## Jeder neue Score schickt sein Replay mit: replay_content = base64(gzip(JSON-Text der
+## ReplayStore-Datei)). Mania: user://replays/<key>.json, Orbit: letzter Lauf
+## (MODE_ORBIT_LAST). Nur wenn die Datei zum Ergebnis passt, sonst ohne Replay.
+
+## base64(gzip(json_text)); "" bei leerem Text oder wenn das Ergebnis max_len uebersteigt.
+static func encode_replay(json_text: String, max_len: int = REPLAY_MAX_BYTES) -> String:
+	if json_text.strip_edges() == "":
+		return ""
+	var gz := json_text.to_utf8_buffer().compress(FileAccess.COMPRESSION_GZIP)
+	if gz.is_empty():
+		return ""
+	var b64 := Marshalls.raw_to_base64(gz)
+	return "" if b64.length() > max_len else b64
+
+
+## Umkehrung von encode_replay (Tests, Werkzeuge). "" bei kaputten Daten.
+static func decode_replay(b64: String) -> String:
+	if b64 == "":
+		return ""
+	var gz := Marshalls.base64_to_raw(b64)
+	if gz.is_empty():
+		return ""
+	return gz.decompress_dynamic(-1, FileAccess.COMPRESSION_GZIP).get_string_from_utf8()
+
+
+## Passt die Replay-Datei (JSON-Text) zum Lauf? Events vorhanden, gleicher Score und,
+## wenn date_local gesetzt ist, meta.date hoechstens REPLAY_DATE_TOL_S daneben
+## (beide lokale Zeit wie ScoreStore/ReplayStore).
+static func replay_matches(json_text: String, score: int, date_local: String = "") -> bool:
+	var d: Variant = JSON.parse_string(json_text)
+	if not (d is Dictionary) or not (d.get("events") is Array) or (d.events as Array).is_empty():
+		return false
+	var m: Variant = d.get("meta", {})
+	if not (m is Dictionary) or not m.has("score") or int(m.score) != score:
+		return false
+	if date_local == "":
+		return true
+	var a := Time.get_unix_time_from_datetime_string(str(m.get("date", "")))
+	var b := Time.get_unix_time_from_datetime_string(date_local)
+	return a > 0 and b > 0 and absi(a - b) <= REPLAY_DATE_TOL_S
+
+
+func _replay_text(osz_path: String, version: String, rmode: String) -> String:
+	if replay_provider.is_valid():
+		return str(replay_provider.call(osz_path, version, rmode))
+	var path := ReplayStore.path_for_key(ReplayStore.key(osz_path, version), rmode)
+	if not FileAccess.file_exists(path):
+		return ""
+	return FileAccess.get_file_as_string(path)
+
+
+## replay_content fuer einen Lauf (mode "mania" | "orbit") oder "" (kein passendes
+## Replay, zu gross).
+func replay_content_for(osz_path: String, version: String, mode: String, score: int,
+		date_local: String = "") -> String:
+	if osz_path == "":
+		return ""
+	var rmode := ReplayStore.MODE_ORBIT_LAST if mode == "orbit" else "mania"
+	var text := _replay_text(osz_path, version, rmode)
+	if text == "" or not replay_matches(text, score, date_local):
+		return ""
+	return encode_replay(text)
+
+
+## Score-ID aus der Antwort von POST /score ("score_id", "id" oder score.id), sonst "".
+static func score_id_of(d: Dictionary) -> String:
+	for k in ["score_id", "id"]:
+		var v: Variant = d.get(k)
+		if v is float and v == floorf(v):
+			return str(int(v))
+		if v is int or (v is String and v != ""):
+			return str(v)
+	var s: Variant = d.get("score")
+	if s is Dictionary:
+		return score_id_of(s)
+	return ""
+
+
+## Server-ID am lokalen Bestwert/Verlaufseintrag vermerken (ScoreStore.set_online_id).
+func _store_online_id(local: Variant, sid: String) -> void:
+	if sid == "" or not (local is Dictionary) or str(local.get("osz_file", "")) == "":
+		return
+	ScoreStore.set_online_id(str(local.osz_file), str(local.get("version", "")),
+		str(local.get("mode", "mania")), int(local.get("score", 0)), sid)
+
+
+# --- Avatar --------------------------------------------------------------------
+## GET /player/<name>/avatar liefert PNG/JPG/WebP, 404 = keins. Das eigene Avatar liegt
+## in avatar_cache.<ext> und wird bei jedem Start (check_auth) und Login erneuert.
+## Avatare anderer Spieler (Rangliste) bleiben nur im Speicher.
+
+var _avatar_mem := {}
+var _avatar_order: Array = []
+var _avatar_wait := {}
+
+
+## Testlaeufe (--script) nie den echten Cache: eigener Pfad je Prozess.
+static func _default_avatar_cache() -> String:
+	for x in OS.get_cmdline_args():
+		if x == "--script" or x == "-s":
+			DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path("user://test_tmp"))
+			return "user://test_tmp/avatar_%d" % OS.get_process_id()
+	return AVATAR_CACHE
+
+
+## true = avatar_cache zeigt auf den echten Cache (nicht im Testlauf).
+static func avatar_cache_is_real() -> bool:
+	return _default_avatar_cache() == AVATAR_CACHE
+
+
+static func avatar_path(player: String) -> String:
+	return "/player/%s/avatar" % player.uri_encode()
+
+
+## Bildformat an den ersten Bytes: "png" | "jpg" | "webp" | "".
+static func image_ext(bytes: PackedByteArray) -> String:
+	if bytes.size() >= 8 and bytes[0] == 0x89 and bytes[1] == 0x50 and bytes[2] == 0x4E and bytes[3] == 0x47:
+		return "png"
+	if bytes.size() >= 3 and bytes[0] == 0xFF and bytes[1] == 0xD8 and bytes[2] == 0xFF:
+		return "jpg"
+	if bytes.size() >= 12 and bytes.slice(0, 4).get_string_from_ascii() == "RIFF" \
+			and bytes.slice(8, 12).get_string_from_ascii() == "WEBP":
+		return "webp"
+	return ""
+
+
+## Textur aus Bildbytes oder null (unbekanntes Format, kaputt).
+static func texture_from_bytes(bytes: PackedByteArray) -> Texture2D:
+	var ext := image_ext(bytes)
+	if ext == "":
+		return null
+	var img := Image.new()
+	var err := ERR_FILE_UNRECOGNIZED
+	match ext:
+		"png": err = img.load_png_from_buffer(bytes)
+		"jpg": err = img.load_jpg_from_buffer(bytes)
+		"webp": err = img.load_webp_from_buffer(bytes)
+	if err != OK or img.is_empty():
+		return null
+	var big := maxi(img.get_width(), img.get_height())
+	if big > AVATAR_MAX_PX:
+		var f := float(AVATAR_MAX_PX) / big
+		img.resize(maxi(1, int(img.get_width() * f)), maxi(1, int(img.get_height() * f)),
+			Image.INTERPOLATE_LANCZOS)
+	return ImageTexture.create_from_image(img)
+
+
+## Avatar fuer Profilkarte/Profil: Website-Avatar (angemeldet), sonst local (das lokal
+## gewaehlte Bild, Settings.avatar_texture()), sonst null (Initiale zeigen).
+static func display_avatar(p_api: OnlineApi, local: Texture2D) -> Texture2D:
+	if p_api != null and p_api.logged_in() and p_api.avatar != null:
+		return p_api.avatar
+	return local
+
+
+## Eigenes Avatar aus dem Cache (beim Start, bevor der Server antwortet).
+func load_cached_avatar() -> void:
+	avatar = null
+	if not logged_in():
+		return
+	for ext in AVATAR_EXTS:
+		var p := "%s.%s" % [avatar_cache, ext]
+		if FileAccess.file_exists(p):
+			avatar = texture_from_bytes(FileAccess.get_file_as_bytes(p))
+			if avatar != null:
+				return
+
+
+func clear_avatar_cache() -> void:
+	for ext in AVATAR_EXTS:
+		var p := "%s.%s" % [avatar_cache, ext]
+		if FileAccess.file_exists(p):
+			DirAccess.remove_absolute(p)
+
+
+## Eigenes Avatar neu laden. 200 + Bild: Cache ersetzen; 404: Cache loeschen;
+## Netz-/Serverfehler: Cache bleibt. done: Callable(has_avatar: bool).
+func refresh_avatar(done: Callable = Callable()) -> void:
+	if not enabled() or not logged_in() or username == "":
+		if done.is_valid():
+			done.call(avatar != null)
+		return
+	var who := username
+	_send_raw("GET", avatar_path(who), func(code: int, bytes: PackedByteArray):
+		if who == username and logged_in():
+			_on_own_avatar(code, bytes)
+		if done.is_valid():
+			done.call(avatar != null))
+
+
+func _on_own_avatar(code: int, bytes: PackedByteArray) -> void:
+	if code == 404:
+		clear_avatar_cache()
+		_avatar_remember(username, null)
+		if avatar != null:
+			avatar = null
+			avatar_changed.emit()
+		return
+	if code < 200 or code >= 300:
+		return
+	var tex := texture_from_bytes(bytes)
+	if tex == null:
+		return
+	clear_avatar_cache()
+	var f := FileAccess.open("%s.%s" % [avatar_cache, image_ext(bytes)], FileAccess.WRITE)
+	if f != null:
+		f.store_buffer(bytes)
+		f.close()
+	avatar = tex
+	_avatar_remember(username, tex)
+	avatar_changed.emit()
+
+
+## Avatar eines Spielers (Rangliste). done: Callable(tex: Texture2D oder null).
+## Antworten (auch 404) bleiben im Speicher (max. AVATAR_MEM_MAX Spieler), gleichzeitige
+## Anfragen fuer denselben Namen gehen nur einmal raus.
+func player_avatar(player: String, done: Callable) -> void:
+	var who := player.strip_edges()
+	var k := who.to_lower()
+	if k == "" or not enabled():
+		done.call(null)
+		return
+	if _avatar_mem.has(k):
+		done.call(_avatar_mem[k])
+		return
+	if _avatar_wait.has(k):
+		(_avatar_wait[k] as Array).append(done)
+		return
+	_avatar_wait[k] = [done]
+	_send_raw("GET", avatar_path(who), func(code: int, bytes: PackedByteArray):
+		var tex: Texture2D = texture_from_bytes(bytes) if code >= 200 and code < 300 else null
+		if (code >= 200 and code < 300) or code == 404:
+			_avatar_remember(k, tex)
+		var list: Array = _avatar_wait.get(k, [])
+		_avatar_wait.erase(k)
+		for cb in list:
+			if (cb as Callable).is_valid():
+				(cb as Callable).call(tex))
+
+
+func _avatar_remember(player: String, tex: Texture2D) -> void:
+	var k := player.strip_edges().to_lower()
+	if k == "":
+		return
+	if _avatar_mem.has(k):
+		_avatar_order.erase(k)
+	_avatar_mem[k] = tex
+	_avatar_order.append(k)
+	while _avatar_order.size() > AVATAR_MEM_MAX:
+		_avatar_mem.erase(_avatar_order.pop_front())
+
+
+func avatar_mem_size() -> int:
+	return _avatar_mem.size()
 
 
 # --- Rangliste ---------------------------------------------------------------
@@ -862,3 +1167,26 @@ func _send(method: String, path: String, body: Variant, done: Callable) -> void:
 	if err != OK:
 		req.queue_free()
 		done.call(0, "")
+
+
+## Wie _send, liefert aber die rohen Bytes (Bilder). done: Callable(code, bytes).
+## Testlauf mit transport, aber ohne raw_transport: nie ins Netz (code 0).
+func _send_raw(method: String, path: String, done: Callable) -> void:
+	var url := base_url + path
+	if raw_transport.is_valid():
+		raw_transport.call(method, url, headers(), done)
+		return
+	if transport.is_valid() or not is_inside_tree():
+		done.call(0, PackedByteArray())
+		return
+	var req := HTTPRequest.new()
+	req.timeout = TIMEOUT_S
+	req.body_size_limit = 8 * 1024 * 1024
+	add_child(req)
+	req.request_completed.connect(func(_res: int, code: int, _h: PackedStringArray, data: PackedByteArray):
+		req.queue_free()
+		done.call(code, data))
+	var m := HTTPClient.METHOD_GET if method == "GET" else HTTPClient.METHOD_POST
+	if req.request(url, headers(), m) != OK:
+		req.queue_free()
+		done.call(0, PackedByteArray())

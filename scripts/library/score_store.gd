@@ -482,6 +482,52 @@ static func log_play(osz_file: String, version: String, map_label: String, resul
 	cfg.save(PATH)
 
 
+## Server-ID eines hochgeladenen Scores (POST /score -> score_id) als "online_id"
+## vermerken: am Bestwert, wenn der Score gleich ist, und am neuesten Verlaufs- und
+## Recent-Eintrag mit gleichem Score, der noch keine ID hat. false = kein Treffer.
+static func set_online_id(osz_file: String, version: String, mode: String, score: int,
+		online_id: String) -> bool:
+	if online_id == "":
+		return false
+	var key := _key(osz_file, version)
+	var cfg := ConfigFile.new()
+	if _load(cfg) != OK:
+		return false
+	var hit := false
+	var best_v = cfg.get_value(_sec("scores", mode), key, {})
+	if best_v is Dictionary and not (best_v as Dictionary).is_empty() \
+			and int(best_v.get("score", -1)) == score:
+		best_v["online_id"] = online_id
+		cfg.set_value(_sec("scores", mode), key, best_v)
+		hit = true
+	var hist = cfg.get_value(_sec("history", mode), key, [])
+	if hist is Array and _tag_newest(hist, score, online_id, func(_e): return true):
+		cfg.set_value(_sec("history", mode), key, hist)
+		hit = true
+	var recent = cfg.get_value(_sec("recent", mode), "plays", [])
+	var f := osz_file.get_file()
+	if recent is Array and _tag_newest(recent, score, online_id, func(e):
+			return str(e.get("osz_file", "")) == f and str(e.get("version", "")) == version):
+		cfg.set_value(_sec("recent", mode), "plays", recent)
+		hit = true
+	if hit:
+		cfg.save(PATH)
+	return hit
+
+
+## Neuesten Eintrag (von hinten) mit gleichem Score, ohne Fail und ohne online_id markieren.
+static func _tag_newest(list: Array, score: int, online_id: String, accept: Callable) -> bool:
+	for i in range(list.size() - 1, -1, -1):
+		var e = list[i]
+		if not (e is Dictionary) or int(e.get("score", -1)) != score:
+			continue
+		if bool(e.get("failed", false)) or str(e.get("online_id", "")) != "" or not accept.call(e):
+			continue
+		e["online_id"] = online_id
+		return true
+	return false
+
+
 ## Top-N Scores einer Map+Diff (beste zuerst, Fails ausgenommen).
 static func top_scores(osz_file: String, version: String, n: int = 5, mode: String = "") -> Array:
 	var cfg := ConfigFile.new()
