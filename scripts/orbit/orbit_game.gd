@@ -113,6 +113,7 @@ func _ready() -> void:
 	_view.center_deg = OrbitCore.CENTER_DEG
 	_build_sound()
 	_build_hud()
+	_update_hud()  # Startwerte schon im Intro sichtbar
 	if Lobby.active and Lobby.in_game:
 		Lobby.skip_now.connect(_do_skip)
 	if not _use_audio:
@@ -129,6 +130,12 @@ func _ready() -> void:
 		get_tree().paused = true
 		SyncClock.pause()
 		_resume_with_countdown(1.0)
+		if OS.get_cmdline_args().has("--shot-intro"):
+			# Shot: Intro/Countdown (Ziffer "3" steht, Spiel pausiert).
+			await get_tree().create_timer(0.45, true).timeout
+			await RenderingServer.frame_post_draw
+			_save_shot(_shot_path("orbit_intro.png"))
+			get_tree().quit(0)
 
 
 func _load_beatmap() -> bool:
