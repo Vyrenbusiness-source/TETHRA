@@ -396,6 +396,8 @@ func skip_step() -> void:
 
 func quit_tutorial() -> void:
 	mark_seen()
+	# Danach Karriere vorschlagen (Song-Browser zeigt die Auswahl einmalig).
+	OrbitCareer.offer()
 	if manual_clock:
 		return
 	get_tree().change_scene_to_file.call_deferred(BROWSER)

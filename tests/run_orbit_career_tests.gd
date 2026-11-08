@@ -119,7 +119,10 @@ func _test_empty() -> void:
 	var s := OrbitCareer.sync_runs(OrbitCareer.new_state(), [])
 	_check(_near(s.level, 1.5) and int(s.runs) == 0, "keine Laeufe: Startzustand")
 	var l := OrbitCareer.load_state("user://test_tmp/does_not_exist.cfg")
-	_check(_near(l.level, 1.5) and l.mode == "career", "fehlende Datei: Startzustand")
+	_check(_near(l.level, 1.5) and l.mode == "free", "fehlende Datei: Startzustand")
+	OrbitCareer.offer("user://test_tmp/offer.cfg")
+	_check(bool(OrbitCareer.load_state("user://test_tmp/offer.cfg").offer), "Angebot nach Tutorial gemerkt")
+	DirAccess.remove_absolute("user://test_tmp/offer.cfg")
 	_check(OrbitCareer.runs_to_next(s) == 3 and OrbitCareer.next_text(s) != "", "Anzeige bei leerem Zustand")
 
 

@@ -39,7 +39,7 @@ static func new_state() -> Dictionary:
 	return {
 		"level": START_LEVEL, "good": 0, "bad": 0, "great": 0,
 		"stamp": "", "event": "", "runs": 0,
-		"mode": MODE_CAREER, "intro_done": false,
+		"mode": MODE_FREE, "offer": false,
 	}
 
 
@@ -200,7 +200,33 @@ static func tr_(msg: String) -> String:
 # Speichern
 # ---------------------------------------------------------------------------
 
-static func load_state(path: String = PATH) -> Dictionary:
+## Speicherort: Tests/Shots schreiben nie in die echte Datei
+## (--career-path=<Datei> oder unter --script eine Test-Datei).
+static func default_path() -> String:
+	for a in OS.get_cmdline_args() + OS.get_cmdline_user_args():
+		if a.begins_with("--career-path="):
+			return a.trim_prefix("--career-path=")
+	for a in OS.get_cmdline_args():
+		if a == "--script" or a == "-s":
+			DirAccess.make_dir_recursive_absolute("user://test_tmp")
+			return "user://test_tmp/career_%d.cfg" % OS.get_process_id()
+	return PATH
+
+
+## Nach dem Orbit-Tutorial: Karriere beim naechsten Browser-Besuch vorschlagen
+## (nur, solange der Spieler sie nicht schon gewaehlt hat).
+static func offer(path: String = "") -> void:
+	var p := path if path != "" else default_path()
+	var s := load_state(p)
+	if s.mode == MODE_CAREER:
+		return
+	s["offer"] = true
+	save_state(s, p)
+
+
+static func load_state(path: String = "") -> Dictionary:
+	if path == "":
+		path = default_path()
 	var s := new_state()
 	var cfg := ConfigFile.new()
 	if cfg.load(path) != OK:
@@ -212,12 +238,14 @@ static func load_state(path: String = PATH) -> Dictionary:
 		elif typeof(s[k]) == TYPE_FLOAT and (typeof(v) == TYPE_INT):
 			s[k] = float(v)
 	s["level"] = clamp_level(float(s.level))
-	if s.mode != MODE_FREE:
-		s["mode"] = MODE_CAREER
+	if s.mode != MODE_CAREER:
+		s["mode"] = MODE_FREE
 	return s
 
 
-static func save_state(state: Dictionary, path: String = PATH) -> void:
+static func save_state(state: Dictionary, path: String = "") -> void:
+	if path == "":
+		path = default_path()
 	var cfg := ConfigFile.new()
 	cfg.load(path)
 	for k in state.keys():
