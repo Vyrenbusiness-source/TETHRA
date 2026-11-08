@@ -133,3 +133,10 @@ Offen (Nutzer-Wuensche, Rueckfrage gestellt):
 - Logo wirkt billig -> neues Logo (Richtung offen).
 - Song-Import einfach (Datei-Dialog / osu!-Songs-Ordner?), 4K nur fuer Mania.
 - Orbit verstaendlicher machen (Analyse an Nutzer: ein Ring Standard, Ring per Cursor-Abstand statt Taste, Toleranz-Keil sichtbar, Fehl-Feedback, ruhigerer Konverter). osu!tau ist sehr aehnlich.
+
+## Stand 2026-11-08 Nachmittag (v1.23.0 released, main weiter)
+- In main (nicht released): Mod-Zeile bricht um (Orbit-Panel lief unters Cover), Relay-Probe nur bei JSON-Raumliste.
+- Laeuft: orbit-taktkreis (Orbit neu: Kreis = Takt, Zeiger, 2 Ringe = 2 Tasten, Zielen Pflicht, Optik wie osu! lesbar), online-sync (API final, Backfill alter Mania-Bestwerte).
+- Pausiert: orbit-career, Branch warmd/orbit-career @0f968f8 (Logik + Tests fertig, UI/Browser/Hauptmenue offen; Tutorial ruft OrbitCareer.offer()). Erst nach neuem Orbit fortsetzen, project.godot: orbit_career.en.translation registrieren.
+- Tutorial muss nach Taktkreis neu (Agent listet Inhalte im Bericht).
+- Server (butzebot.com): Relay + API noch nicht live (Stand 13:55). Key per DM an Nutzer erwartet; min_version 1.23.1 setzen lassen. Infos fuer Kumpel: Artifact https://claude.ai/artifact/8iox8Vm6jXZtjyVyKPtAiW.
