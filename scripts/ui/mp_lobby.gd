@@ -2287,9 +2287,7 @@ func _open_tour_setup() -> void:
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	back.add_child(center)
 	var panel := PanelContainer.new()
-	var sb := UiTheme.glass_box(18, 0.95)
-	sb.set_content_margin_all(28)
-	panel.add_theme_stylebox_override("panel", sb)
+	panel.add_theme_stylebox_override("panel", _panel_box(28))
 	panel.custom_minimum_size = Vector2(900, 0)
 	center.add_child(panel)
 	var v := VBoxContainer.new()
@@ -2300,6 +2298,12 @@ func _open_tour_setup() -> void:
 		_tour_dialog = null
 	var head: Control = UiTheme.modal_header("Turnier erstellen", close_dialog)
 	head.add_theme_constant_override("margin_bottom", 4)
+	# Titel in Satzschreibung und Anzeigeschrift statt gesperrter Versalien.
+	var htitle := head.get_child(0).get_child(0) as Label
+	if htitle != null:
+		htitle.text = tr("Turnier erstellen")
+		htitle.add_theme_font_override("font", _f_display)
+		htitle.add_theme_font_size_override("font_size", FS_L + 2)
 	v.add_child(head)
 	var cols := HBoxContainer.new()
 	cols.add_theme_constant_override("separation", 36)
@@ -2336,7 +2340,7 @@ func _open_tour_setup() -> void:
 		summary.text = txt
 		est.text = tr("≈ %d Minuten Spielzeit") % (int(st.maps) * 3)
 	# --- Links: Maps, Sterne, Mods
-	left.add_child(TournamentPanel.overline("ANZAHL MAPS"))
+	left.add_child(_section(tr("Anzahl Maps")))
 	var chips := HBoxContainer.new()
 	chips.add_theme_constant_override("separation", 8)
 	left.add_child(chips)
@@ -2358,7 +2362,7 @@ func _open_tour_setup() -> void:
 	chips.add_child(TournamentPanel._gap(0))
 	chips.add_child(est)
 	left.add_child(TournamentPanel._gap(4))
-	left.add_child(TournamentPanel.overline("SCHWIERIGKEIT"))
+	left.add_child(_section(tr("Schwierigkeit")))
 	# Werte direkt eintippbar (z. B. "4,37"), -/+ fuer 0,1er-Schritte.
 	var val_lo := LineEdit.new()
 	var val_hi := LineEdit.new()
@@ -2436,7 +2440,7 @@ func _open_tour_setup() -> void:
 				rep.start())
 			btn.button_up.connect(func(): rep.stop())
 	left.add_child(TournamentPanel._gap(4))
-	left.add_child(TournamentPanel.overline("MODS"))
+	left.add_child(_section(tr("Mods")))
 	var mrow := HBoxContainer.new()
 	mrow.add_theme_constant_override("separation", 8)
 	left.add_child(mrow)
@@ -2452,7 +2456,7 @@ func _open_tour_setup() -> void:
 			upd_summary.call())
 		mrow.add_child(mb)
 	# --- Rechts: Filter der Auto-Auswahl
-	right.add_child(TournamentPanel.overline("AUTO-AUSWAHL"))
+	right.add_child(_section(tr("Auto-Auswahl")))
 	var rh := TournamentPanel.lbl("Gilt für »Rest automatisch füllen« — eigene Picks sind frei.", 12, COL_DIM)
 	rh.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	right.add_child(rh)
@@ -2521,14 +2525,14 @@ func _open_tour_setup() -> void:
 	ssb.bg_color = Color(1, 1, 1, 0.035)
 	ssb.border_color = Color(1, 1, 1, 0.08)
 	ssb.set_border_width_all(1)
-	ssb.set_corner_radius_all(12)
+	ssb.set_corner_radius_all(R)
 	ssb.set_content_margin_all(14)
 	sbox.add_theme_stylebox_override("panel", ssb)
 	v.add_child(sbox)
 	var sv := VBoxContainer.new()
 	sv.add_theme_constant_override("separation", 4)
 	sbox.add_child(sv)
-	sv.add_child(TournamentPanel.overline("ES ENTSTEHT", COL_ACCENT))
+	sv.add_child(_caption(tr("Es entsteht")))
 	sv.add_child(summary)
 	var bar := HBoxContainer.new()
 	bar.add_theme_constant_override("separation", 10)
@@ -2536,21 +2540,18 @@ func _open_tour_setup() -> void:
 	var sp := Control.new()
 	sp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	bar.add_child(sp)
-	var cancel := Button.new()
-	cancel.text = "Abbrechen"
+	var cancel := _btn("Abbrechen", false, 46)
 	cancel.custom_minimum_size = Vector2(130, 46)
-	UiTheme.style_ghost_button(cancel, 12)
 	cancel.pressed.connect(close_dialog)
 	bar.add_child(cancel)
-	var go := Button.new()
-	go.text = "Turnier erstellen"
+	var go := _btn("Turnier erstellen", true, 46)
 	go.custom_minimum_size = Vector2(220, 46)
-	UiTheme.style_button(go, true)
 	go.pressed.connect(func():
 		Lobby.tour_create(cfg_of.call())
 		close_dialog.call())
 	bar.add_child(go)
 	upd.call()
+	_flatten(panel)
 
 
 ## Passende Ansicht zum Turnier-Zustand zeigen (oder zurueck zum Raum).
