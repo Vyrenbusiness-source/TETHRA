@@ -832,6 +832,10 @@ func _build_buttons(group: Control) -> void:
 	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bar.add_child(spacer)
 	bar.add_child(_button("⤓  Clip speichern", false, clip_pressed.emit))
+	if not is_replay and not lobby:
+		bar.add_child(ScoreShare.make_button(GameSession.osz_path, GameSession.difficulty_version,
+			int(_stats.get("score", 0)), score_mode(), "",
+			func(b: Button): UiTheme.style_button(b, false)))
 	if bool(_data.get("can_replay", true)):
 		bar.add_child(_button("Selbst spielen" if is_replay else "▶  Replay ansehen", false,
 			replay_pressed.emit))

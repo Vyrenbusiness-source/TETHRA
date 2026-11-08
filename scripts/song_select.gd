@@ -182,6 +182,21 @@ const ORBIT_TUTORIAL_SCENE := "res://scenes/orbit_tutorial.tscn"
 const ORBIT_TUTORIAL_SCRIPT := "res://scripts/orbit/orbit_tutorial.gd"
 var _orbit_hint: PanelContainer
 var _orbit_hint_force := false  # Harness: auch wenn schon gesehen
+var _hint_kind := ""            # "teach" (Tutorial) | "offer" (Karriere)
+## Filter-Reihen als ein Stapel: die Listen-Oberkante folgt seiner echten Hoehe.
+var _filter_stack: VBoxContainer
+var _filter_row: HBoxContainer
+var _score_chips_row: HBoxContainer
+## Orbit-Karriere (scripts/orbit/orbit_career.gd): Umschalter Karriere | Frei,
+## Panel statt Liste, Empfehlungen im Frei-Modus.
+var _career_row: HBoxContainer
+var _career_btns: Array[Button] = []
+var _career_level_lbl: Label
+var _career_panel: OrbitCareerPanel
+var _career_state := {}
+var _career_items: Array = []        # aktuelle Vorschlaege (Reihenfolge wie im Panel)
+var _career_dirty := false           # Panel-Neuaufbau steht aus (entprellt)
+var _share_btn: Button
 var _saved_search := ""
 var _sv_chip: Button
 # Max-pp (SS) der ausgewaehlten Diff — rosu-pp im Hintergrund-Thread.
@@ -243,6 +258,11 @@ func _ready() -> void:
 				if kv.size() == 2:
 					d[kv[0]] = Array(kv[1].split("+")) if kv[0] == "grades" else int(kv[1])
 			_mode_filters[_play_mode] = sanitize_mode_filter(d)
+	_career_state = OrbitCareer.load_state()
+	if OS.get_cmdline_args().has("--career"):
+		_career_state["mode"] = OrbitCareer.MODE_CAREER  # Debug/Shots: nie gespeichert
+	elif OS.get_cmdline_args().has("--career-free"):
+		_career_state["mode"] = OrbitCareer.MODE_FREE
 	_build_ui()
 	GameSession.perf_since("Browser: UI aufbauen", t_ui)
 	t_ui = Time.get_ticks_usec()
@@ -250,8 +270,10 @@ func _ready() -> void:
 		_search.text = _saved_search
 		if _collection_mode:
 			_set_collection_mode(true)
+	_apply_career_layout()
 	_refresh_filter(_search.text)
 	_state_ready = restore
+	_career_start.call_deferred()
 	GameSession.perf_since("Browser: %d Karten bauen" % _filtered.size(), t_ui)
 	get_window().files_dropped.connect(_on_files_dropped)
 	t_ui = Time.get_ticks_usec()
@@ -508,7 +530,11 @@ func _shot_modes() -> void:
 
 func _capture_screenshot_and_quit() -> void:
 	# Orbit: Sterne werden asynchron berechnet, darum laenger warten.
-	await get_tree().create_timer(4.0 if _play_mode == "orbit" else 1.0).timeout
+	var wait := 4.0 if _play_mode == "orbit" else 1.0
+	for a in OS.get_cmdline_args():
+		if a.begins_with("--shot-wait="):
+			wait = float(a.trim_prefix("--shot-wait="))  # Orbit-Karriere: Sterne brauchen laenger
+	await get_tree().create_timer(wait).timeout
 	await RenderingServer.frame_post_draw
 	if not is_inside_tree():
 		return
@@ -546,6 +572,8 @@ func _build_ui() -> void:
 	_build_info_panel()
 	_build_stage()
 	_build_list()
+	_build_career_panel()
+	_update_list_top()
 
 
 func _build_header() -> void:
@@ -624,11 +652,21 @@ func _build_header() -> void:
 	_import_btn.pressed.connect(_open_import_panel)
 	top_right.add_child(_import_btn)
 
+	# Filter-Reihen stehen in einem Stapel: wird eine Reihe hoeher oder kommt eine
+	# dazu (Orbit: Karriere/Frei, Sammlungen), rutscht die Liste mit.
+	_filter_stack = VBoxContainer.new()
+	_place_right(_filter_stack, FILTER_Y, 0.0)
+	_filter_stack.add_theme_constant_override("separation", 8)
+	_filter_stack.minimum_size_changed.connect(_update_list_top)
+	add_child(_filter_stack)
+	_build_career_row()
+
 	# Filter-Reihe: Anzahl links, Sterne-Chips + Sortierung rechtsbuendig.
 	var filter_row := HBoxContainer.new()
-	_place_right(filter_row, FILTER_Y, FILTER_H)
+	filter_row.custom_minimum_size = Vector2(0, FILTER_H)
 	filter_row.add_theme_constant_override("separation", 6)
-	add_child(filter_row)
+	_filter_stack.add_child(filter_row)
+	_filter_row = filter_row
 
 	_count_label = Label.new()
 	_count_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
@@ -675,10 +713,11 @@ func _build_header() -> void:
 
 	# Zweite Reihe: Bestwert-Filter (Segment) + Noten-Chips, je Modus gemerkt.
 	var score_row := HBoxContainer.new()
-	_place_right(score_row, SCORE_Y, SCORE_H)
+	score_row.custom_minimum_size = Vector2(0, SCORE_H)
 	score_row.alignment = BoxContainer.ALIGNMENT_END
 	score_row.add_theme_constant_override("separation", 6)
-	add_child(score_row)
+	_filter_stack.add_child(score_row)
+	_score_chips_row = score_row
 	# Mit/Ohne Bestwert wie der SV-Chip: erneut klicken = wieder alle Maps.
 	for bi in [BEST_WITH, BEST_WITHOUT]:
 		var chip := _make_toggle(tr(BEST_NAMES[bi]), 13, 15)
@@ -722,11 +761,11 @@ func _build_header() -> void:
 
 	# Chip-Reihe fuer Sammlungen (nur im Collections-Modus sichtbar).
 	_chips_row = HBoxContainer.new()
-	_place_right(_chips_row, CHIPS_Y, CHIPS_H)
+	_chips_row.custom_minimum_size = Vector2(0, CHIPS_H)
 	_chips_row.alignment = BoxContainer.ALIGNMENT_END
 	_chips_row.add_theme_constant_override("separation", 6)
 	_chips_row.visible = false
-	add_child(_chips_row)
+	_filter_stack.add_child(_chips_row)
 
 	_search = LineEdit.new()
 	_search.placeholder_text = "Map suchen"
@@ -857,11 +896,18 @@ func _build_info_panel() -> void:
 
 	_title_label = _add_label(vb, "", 26, COL_TEXT)
 	_title_label.add_theme_font_override("font", UiTheme.heading_font(1))
+	_title_label.mouse_filter = Control.MOUSE_FILTER_PASS  # Tooltip mit dem vollen Titel
 	var by := VBoxContainer.new()
 	by.add_theme_constant_override("separation", 0)
 	vb.add_child(by)
 	_artist_label = _add_label(by, "", 15, COL_TEXT.darkened(0.12))
 	_mapper_label = _add_label(by, "", 13, COL_DIM)
+
+	# Lange Titel kuerzen statt das Panel zu weiten: es bleibt INFO_W breit.
+	for lbl in [_title_label, _artist_label, _mapper_label]:
+		lbl.autowrap_mode = TextServer.AUTOWRAP_OFF  # Umbruch und Kuerzen schliessen sich aus
+		lbl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	_artist_label.mouse_filter = Control.MOUSE_FILTER_PASS
 
 	var gap := Control.new()
 	gap.custom_minimum_size = Vector2(0, 2)
@@ -902,6 +948,9 @@ func _build_info_panel() -> void:
 
 	_stats_label = _add_label(vb, "", 14, COL_DIM)
 	_maxpp_label = _add_label(vb, "", 14, UiTheme.ACCENT2)
+	for lbl in [_stats_label, _maxpp_label]:
+		lbl.autowrap_mode = TextServer.AUTOWRAP_OFF  # Umbruch und Kuerzen schliessen sich aus
+		lbl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 
 	var play := Button.new()
 	play.text = "Spielen"
@@ -994,6 +1043,16 @@ func _build_info_panel() -> void:
 	UiTheme.style_ghost_button(coll_btn, 10)
 	coll_btn.pressed.connect(_open_collection_popup)
 	mods_row.add_child(coll_btn)
+
+	_share_btn = Button.new()
+	_share_btn.text = tr("An Freund schicken")
+	_share_btn.tooltip_text = tr("Schickt die Map als Link in den Chat")
+	_share_btn.custom_minimum_size = Vector2(0, 40)
+	_share_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_share_btn.add_theme_font_size_override("font_size", 14)
+	UiTheme.style_ghost_button(_share_btn, 10)
+	_share_btn.pressed.connect(_share_selected_map)
+	mods_row.add_child(_share_btn)
 
 	var sep := ColorRect.new()
 	sep.custom_minimum_size = Vector2(0, 1)
@@ -1247,7 +1306,7 @@ func _set_collection_mode(on: bool) -> void:
 		var names := CollectionStore.list_names()
 		_active_collection = names[0] if not names.is_empty() else ""
 	_chips_row.visible = on
-	_list_mask.offset_top = (CHIPS_Y + CHIPS_H) if on else LIST_TOP
+	_apply_career_layout()
 	_style_tabs()
 	_rebuild_chips()
 	_refresh_filter(_search.text)
@@ -1873,6 +1932,29 @@ func _rebuild_cards() -> void:
 	_scores_cfg = null
 	if _selected_set != null:
 		_apply_card_highlight()
+	_refresh_recommended()
+
+
+## "An Freund schicken": Map-Link ins Chat-Overlay (GameSession.chat).
+func _share_selected_map() -> void:
+	if _selected_set == null or GameSession.chat == null:
+		return
+	var file := _selected_set.osu_filename_at(_selected_diff)
+	var key := _selected_set.osz_path + "|" + file
+	if not _online_md5_cache.has(key):
+		_online_md5_cache[key] = OnlineApi._md5_bytes(OszImporter.read_file_bytes(_selected_set.osz_path, file))
+	var stars := _selected_set.stars_at(_selected_diff)
+	if _play_mode == "orbit":
+		var os_st := _orbit_stars_known(_selected_set, _selected_diff)
+		if os_st > 0.0:
+			stars = os_st
+	var sid := ScoreStore.set_id_of(_selected_set.osz_path.get_file())
+	GameSession.chat.call("share_map", {
+		"md5": _online_md5_cache[key], "set_id": sid, "beatmapset_id": sid,
+		"beatmap_id": int(_selected_set.meta_at(_selected_diff).get("beatmap_id", 0)),
+		"title": _selected_set.title, "artist": _selected_set.artist,
+		"version": _selected_set.version_name_at(_selected_diff), "stars": stars,
+	})
 
 
 ## Hover-Slide: Karte gleitet 8 px nach links (ausgewaehlte bleibt draussen).
@@ -2008,6 +2090,17 @@ func _make_card(ms: MapSet) -> Button:
 	if ms.has_sv():
 		hb.add_child(_sv_badge())
 
+	# Orbit/Frei: dezente Marke "Empfohlen", wenn die Map zur Karriere-Stufe passt.
+	var rec := Label.new()
+	rec.text = tr("Empfohlen")
+	rec.visible = false
+	rec.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	rec.add_theme_font_size_override("font_size", 11)
+	rec.add_theme_color_override("font_color", UiTheme.ACCENT2)
+	rec.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hb.add_child(rec)
+	card.set_meta("rec_lbl", rec)
+
 	# Grade-Badge des besten Scores im aktiven Modus: klein, fester Platz,
 	# Notenfarbe. Beim Moduswechsel per _refresh_card_grades() neu.
 	var g := Label.new()
@@ -2125,6 +2218,8 @@ func _cycle_difficulty(dir: int) -> void:
 func _update_info_panel() -> void:
 	if _selected_set == null:
 		return
+	if _career_panel != null:
+		_career_panel.set_selected(_selected_set, _selected_diff)
 	var m := _selected_set.meta_at(_selected_diff)
 	# Sofort das schnelle Thumbnail zeigen, das Full-Res-Cover einen Frame
 	# spaeter nachladen (Klicks fuehlen sich sofort an).
@@ -2134,7 +2229,9 @@ func _update_info_panel() -> void:
 	_prep_due = Time.get_ticks_msec() + PREPARE_DELAY_MS
 	_bg_wait_set = null
 	_title_label.text = _selected_set.title
+	_title_label.tooltip_text = _selected_set.title
 	_artist_label.text = _selected_set.artist
+	_artist_label.tooltip_text = _selected_set.artist
 	_mapper_label.text = tr("Map von %s") % _selected_set.creator
 	var is_mania := int(m.get("mode", 0)) == 3
 	var keys := int(round(float(m.get("cs", 4.0))))
@@ -2547,6 +2644,16 @@ func _score_row(rank: int, e: Dictionary) -> Control:
 	pp_lbl.add_theme_font_size_override("font_size", 13)
 	pp_lbl.add_theme_color_override("font_color", UiTheme.ACCENT2)
 	row.add_child(pp_lbl)
+	var oid := str(e.get("online_id", ""))
+	if oid != "" and is_self and GameSession.chat != null:
+		var sh := Button.new()
+		sh.text = "⇪"
+		sh.tooltip_text = tr("Score teilen")
+		sh.custom_minimum_size = Vector2(26, 22)
+		sh.add_theme_font_size_override("font_size", 12)
+		UiTheme.style_ghost_button(sh, 6)
+		sh.pressed.connect(func(): ScoreShare.share(oid))
+		row.add_child(sh)
 	var date := Label.new()
 	var d := str(e.get("date", "")).split("T")[0]
 	var parts := d.split("-")
@@ -2592,6 +2699,8 @@ func _set_play_mode(mode: String) -> void:
 	_apply_mod_visibility()
 	if mode == "orbit":
 		_show_orbit_hint()
+	_apply_career_layout()
+	_career_start()
 	# Sichtbare Maps haengen am Modus (osu!standard nur im Orbit-Modus).
 	var keep := _selected_set
 	_refresh_filter(_search.text)
@@ -2607,13 +2716,17 @@ func _set_play_mode(mode: String) -> void:
 		_save_browser_state()
 
 
-## Hinweis "Orbit lernen (1 Min.)" ueber dem Modus-Umschalter.
+## Hinweis ueber dem Modus-Umschalter: "Orbit lernen (1 Min.)", bis das Tutorial
+## gesehen ist; danach einmalig "Karriere starten" (Angebot nach dem Tutorial).
 func _show_orbit_hint() -> void:
 	if _orbit_hint != null or _mode_btns.is_empty():
 		return
 	var tut: GDScript = load(ORBIT_TUTORIAL_SCRIPT)
-	if not _orbit_hint_force and bool(tut.is_seen()):
+	var teach := _orbit_hint_force or not bool(tut.is_seen())
+	var offer := not teach and bool(_career_state.get("offer", false)) 			and str(_career_state.get("mode", "")) != OrbitCareer.MODE_CAREER
+	if not teach and not offer:
 		return
+	_hint_kind = "teach" if teach else "offer"
 	var p := PanelContainer.new()
 	var sb := UiTheme.glass_box(8, 0.96, 0.22)
 	sb.content_margin_left = 14
@@ -2629,18 +2742,18 @@ func _show_orbit_hint() -> void:
 	tick.custom_minimum_size = Vector2(3, 0)
 	row.add_child(tick)
 	var txt := Label.new()
-	txt.text = tr("Neu in Orbit?")
+	txt.text = tr("Neu in Orbit?") if teach else tr("Orbit in kleinen Schritten lernen?")
 	txt.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	txt.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	txt.add_theme_font_size_override("font_size", 13)
 	txt.add_theme_color_override("font_color", COL_TEXT)
 	row.add_child(txt)
 	var learn := Button.new()
-	learn.text = tr("Orbit lernen (1 Min.)")
-	learn.tooltip_text = tr("Eine kurze Einführung zeigt Zielen, Ringe und Bögen.")
+	learn.text = tr("Orbit lernen (1 Min.)") if teach else tr("Karriere starten")
+	learn.tooltip_text = tr("Eine kurze Einführung zeigt Zielen, Ringe und Bögen.") if teach 			else tr("Empfiehlt dir passende Maps und steigert die Schwierigkeit mit dir.")
 	learn.focus_mode = Control.FOCUS_NONE
 	UiTheme.style_button(learn, true, 8)
-	learn.pressed.connect(_start_orbit_tutorial)
+	learn.pressed.connect(_start_orbit_tutorial if teach else _accept_career_offer)
 	row.add_child(learn)
 	var later := Button.new()
 	later.text = tr("Später")
@@ -2672,7 +2785,11 @@ func _place_orbit_hint() -> void:
 
 
 func _dismiss_orbit_hint() -> void:
-	(load(ORBIT_TUTORIAL_SCRIPT) as GDScript).mark_seen()
+	if _hint_kind == "offer":
+		_career_state["offer"] = false  # Angebot nur einmal zeigen
+		OrbitCareer.save_state(_career_state)
+	else:
+		(load(ORBIT_TUTORIAL_SCRIPT) as GDScript).mark_seen()
 	if _orbit_hint == null:
 		return
 	var p := _orbit_hint
@@ -2971,6 +3088,10 @@ func _exit_tree() -> void:
 	if _os_thread != null:
 		_os_thread.wait_to_finish()
 		_os_thread = null
+	_bg_queue.clear()
+	if _bg_thread != null:
+		_bg_thread.wait_to_finish()
+		_bg_thread = null
 
 
 func _play_preview() -> void:
@@ -3076,7 +3197,11 @@ func _unhandled_input(event: InputEvent) -> void:
 			_on_play_pressed()
 			get_viewport().set_input_as_handled()
 		KEY_F2:
-			if not _filtered.is_empty():
+			if _career_on():
+				if not _career_items.is_empty():
+					var ci: Dictionary = _career_items[randi() % _career_items.size()]
+					_select_set(ci.ms, int(ci.diff))
+			elif not _filtered.is_empty():
 				var pick: MapSet = _filtered[randi() % _filtered.size()]
 				_select_set(pick, pick.difficulty_count() - 1)
 				_scroll_to_selected.call_deferred()
@@ -3084,12 +3209,27 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _move_selection(dir: int) -> void:
+	if _career_on():
+		_move_career_selection(dir)
+		return
 	if _filtered.is_empty():
 		return
 	var idx := _filtered.find(_selected_set)
 	idx = clampi(idx + dir, 0, _filtered.size() - 1) if idx >= 0 else 0
 	_select_set(_filtered[idx], _filtered[idx].difficulty_count() - 1)
 	_scroll_to_selected()
+
+
+## Karriere: Pfeil hoch/runter geht durch die Vorschlaege.
+func _move_career_selection(dir: int) -> void:
+	if _career_items.is_empty():
+		return
+	var at := -1
+	for i in _career_items.size():
+		if _career_items[i].ms == _selected_set:
+			at = i
+	var n := clampi(at + dir, 0, _career_items.size() - 1) if at >= 0 else 0
+	_select_set(_career_items[n].ms, int(_career_items[n].diff))
 
 
 ## Liste zur ausgewaehlten Karte scrollen (Auswahl bleibt immer sichtbar).
@@ -3530,6 +3670,9 @@ func _on_online_closed() -> void:
 func _on_online_downloaded(_set_id: int, osz_path: String, select: bool) -> void:
 	_library.scan()
 	_refresh_filter(_search.text)
+	if _career_on():
+		_career_refresh()
+	_career_start()
 	if not select:
 		return
 	for ms in _filtered:
@@ -3608,10 +3751,358 @@ func _star_color(stars: float) -> Color:
 	return stops[stops.size() - 1][1]
 
 
+# ---------------------------------------------------------------------------
+# Orbit-Karriere (Logik: scripts/orbit/orbit_career.gd, Panel: scripts/ui/orbit_career_panel.gd)
+# ---------------------------------------------------------------------------
+
+## Hintergrund-Nachrechnung fehlender Orbit-Sterne: ein Thread, eine Diff nach
+## der anderen mit Pause, hoechstens BG_BUDGET pro Besuch, niedrige Prioritaet.
+const BG_BUDGET := 90
+const BG_PAUSE := 0.4
+var _os_cache: Dictionary = {}
+var _os_cache_loaded := false
+var _okey_cache: Dictionary = {}
+var _bg_queue: Array = []        # {key, osz, ver}
+var _bg_queued: Dictionary = {}  # key -> true (steht in der Warteschlange)
+var _bg_failed: Dictionary = {}
+var _bg_thread: Thread
+var _bg_spent := 0
+
+
+func _career_on() -> bool:
+	return _play_mode == "orbit" and str(_career_state.get("mode", "")) == OrbitCareer.MODE_CAREER
+
+
+## Reihe unter der Kopfzeile: Umschalter Karriere | Frei, rechts der Hinweis.
+func _build_career_row() -> void:
+	_career_row = HBoxContainer.new()
+	_career_row.custom_minimum_size = Vector2(0, CHIPS_H)
+	_career_row.add_theme_constant_override("separation", 6)
+	_career_row.visible = false
+	_filter_stack.add_child(_career_row)
+	for m in [OrbitCareer.MODE_CAREER, OrbitCareer.MODE_FREE]:
+		var is_career: bool = m == OrbitCareer.MODE_CAREER
+		var b := _make_toggle(tr("Karriere") if is_career else tr("Frei"), 13, 15)
+		b.custom_minimum_size = Vector2(0, CHIPS_H)
+		b.tooltip_text = tr("Schlägt passende Maps vor und steigert die Schwierigkeit mit dir") if is_career \
+				else tr("Alle Maps, empfohlene sind markiert")
+		b.pressed.connect(_set_career_mode.bind(m))
+		_career_row.add_child(b)
+		_career_btns.append(b)
+	_career_level_lbl = Label.new()
+	_career_level_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_career_level_lbl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_career_level_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_career_level_lbl.add_theme_font_size_override("font_size", 13)
+	_career_level_lbl.add_theme_color_override("font_color", COL_DIM)
+	_career_row.add_child(_career_level_lbl)
+
+
+func _build_career_panel() -> void:
+	_career_panel = OrbitCareerPanel.new()
+	_career_panel.anchor_left = 1.0
+	_career_panel.anchor_right = 1.0
+	_career_panel.anchor_bottom = 1.0
+	_career_panel.offset_left = -M - RIGHT_W
+	_career_panel.offset_right = -M
+	_career_panel.offset_bottom = -M
+	_career_panel.visible = false
+	_career_panel.picked.connect(_on_career_picked)
+	_career_panel.online_requested.connect(_career_online)
+	add_child(_career_panel)
+
+
+## Listen-Oberkante = echte Unterkante der Filter-Reihen (auch wenn eine Reihe
+## hoeher wird oder eine dazukommt).
+func _update_list_top() -> void:
+	if _filter_stack == null or _list_mask == null:
+		return
+	var top := FILTER_Y + _filter_stack.get_combined_minimum_size().y
+	_list_mask.offset_top = top
+	if _career_panel != null:
+		_career_panel.offset_top = top + 12.0
+
+
+func _apply_career_layout() -> void:
+	if _career_row == null or _filter_row == null:
+		return
+	var orbit := _play_mode == "orbit"
+	var career := _career_on()
+	_career_row.visible = orbit
+	for i in _career_btns.size():
+		_apply_toggle(_career_btns[i], (i == 0) == (str(_career_state.get("mode", "")) == OrbitCareer.MODE_CAREER))
+	_career_level_lbl.visible = orbit and not career
+	_career_level_lbl.text = tr("Empfohlen: %s ★") % OrbitCareer.range_text(float(_career_state.get("level", OrbitCareer.START_LEVEL)))
+	_filter_row.visible = not career
+	_score_chips_row.visible = not career
+	_chips_row.visible = _collection_mode and not career
+	if _list_mask != null:
+		_list_mask.visible = not career
+	if _career_panel != null:
+		_career_panel.visible = career
+	_update_list_top()
+	if career:
+		_career_refresh()
+	else:
+		_career_items = []
+		_refresh_recommended()
+
+
+func _set_career_mode(m: String) -> void:
+	if str(_career_state.get("mode", "")) == m and bool(_career_state.get("chosen", false)):
+		return
+	_career_state["mode"] = m
+	_career_state["chosen"] = true
+	_career_state["offer"] = false
+	OrbitCareer.save_state(_career_state)
+	if _hint_kind == "offer" and _orbit_hint != null:
+		_orbit_hint.queue_free()
+		_orbit_hint = null
+	_apply_career_layout()
+	_career_start()
+
+
+func _accept_career_offer() -> void:
+	_set_career_mode(OrbitCareer.MODE_CAREER)
+
+
+## Nach Moduswechsel/Start: Angebot nach dem Tutorial zeigen, fehlende Sterne rechnen.
+func _career_start() -> void:
+	if _play_mode != "orbit" or DisplayServer.get_name() == "headless":
+		return
+	if bool(_career_state.get("offer", false)) and _orbit_hint == null:
+		_show_orbit_hint()
+	_bg_scan()
+	_bg_pump()
+
+
+func _on_career_picked(ms: MapSet, diff: int) -> void:
+	if _selected_set == ms and _selected_diff == diff:
+		_on_play_pressed()
+		return
+	_select_set(ms, diff)
+
+
+## Online-Suche mit dem Sterne-Filter, der die Stufe abdeckt.
+func _career_online() -> void:
+	_open_download_panel()
+	if _online != null:
+		_online.call("_set_star_filter", OrbitCareer.online_star_filter(float(_career_state.get("level", OrbitCareer.START_LEVEL))))
+
+
+func _os_cache_get() -> Dictionary:
+	if not _os_cache_loaded:
+		_os_cache = orbit_stars_cache_all()
+		_os_cache_loaded = true
+	return _os_cache
+
+
+func _orbit_key(ms: MapSet, ver: String) -> String:
+	var k := ms.osz_path + "|" + ver
+	if not _okey_cache.has(k):
+		_okey_cache[k] = orbit_stars_key(ms.osz_path, ver)
+	return _okey_cache[k]
+
+
+func _orbit_diff_ok(ms: MapSet, i: int) -> bool:
+	var m := ms.meta_at(i)
+	return int(m.get("mode", 0)) != 3 or int(round(float(m.get("cs", 4.0)))) == 4
+
+
+## Orbit-Sterne einer Diff aus dem Cache (-1 = noch nicht berechnet).
+func _orbit_stars_known(ms: MapSet, i: int) -> float:
+	return float(_os_cache_get().get(_orbit_key(ms, ms.version_name_at(i)), -1.0))
+
+
+## Lauf-Historie in den Karriere-Zustand ziehen. Beim allerersten Mal zaehlt die
+## alte Historie nicht (Start auf Stufe 1,5), nur Laeufe ab jetzt.
+func _career_sync() -> void:
+	var recent := ScoreStore.recent_plays(30, ScoreStore.MODE_ORBIT)
+	recent.reverse()  # aelteste zuerst
+	if recent.is_empty():
+		return
+	var s: Dictionary = _career_state
+	if str(s.get("stamp", "")) == "":
+		s["stamp"] = str((recent[recent.size() - 1] as Dictionary).get("date", ""))
+		OrbitCareer.save_state(s)
+		return
+	var by_file := {}
+	for ms in _library.mapsets:
+		by_file[ms.osz_path.get_file()] = ms
+	var runs: Array = []
+	for e in recent:
+		if str(e.get("date", "")) <= str(s.stamp):
+			continue
+		var st := 0.0  # Map fehlt in der Bibliothek: Lauf zaehlt nicht
+		var ms: MapSet = by_file.get(str(e.get("osz_file", "")))
+		if ms != null:
+			var key := _orbit_key(ms, str(e.get("version", "")))
+			st = float(_os_cache_get().get(key, -1.0))
+			if st < 0.0 and not _bg_failed.has(key):
+				_bg_enqueue({"key": key, "osz": ms.osz_path, "ver": str(e.get("version", ""))}, true)
+				break  # Reihenfolge wahren: erst weiter, wenn die Sterne da sind
+			st = maxf(st, 0.0)
+		runs.append({"date": str(e.get("date", "")), "stars": st,
+			"accuracy": float(e.get("accuracy", 0.0)), "grade": str(e.get("grade", "")),
+			"failed": bool(e.get("failed", false))})
+	if runs.is_empty():
+		return
+	var n: Dictionary = OrbitCareer.sync_runs(s, runs)
+	_career_state = n
+	OrbitCareer.save_state(n)
+
+
+func _career_refresh() -> void:
+	if _career_panel == null or not _career_on():
+		return
+	_career_dirty = false
+	_career_sync()
+	var level := float(_career_state.get("level", OrbitCareer.START_LEVEL))
+	var idx := _scores_for_mode()
+	var cands: Array = []
+	var missing: Array = []
+	var cache := _os_cache_get()
+	for ms in _library.mapsets:
+		var info: Dictionary = idx.get(ms.osz_path.get_file(), {})
+		for i in ms.visible_diffs("orbit"):
+			if not _orbit_diff_ok(ms, i):
+				continue
+			var ver := ms.version_name_at(i)
+			var key := _orbit_key(ms, ver)
+			var st := float(cache.get(key, -1.0))
+			if st < 0.0:
+				if not _bg_failed.has(key):
+					missing.append({"key": key, "osz": ms.osz_path, "ver": ver, "osu": ms.stars_at(i)})
+				continue
+			cands.append({"ms": ms, "diff": i, "stars": st,
+				"played": int(info.get(ver, {}).get("plays", 0)) > 0})
+	var items: Array = []
+	var seen := {}
+	for c in OrbitCareer.suggest(cands, level, cands.size()):
+		if seen.has(c.ms):
+			continue
+		seen[c.ms] = true
+		items.append(c)
+		if items.size() >= 5:
+			break
+	_career_items = items
+	_bg_enqueue_list(missing, level)
+	_career_panel.set_data({
+		"level": level, "next_text": OrbitCareer.next_text(_career_state),
+		"good": int(_career_state.get("good", 0)), "need": OrbitCareer.GOOD_NEED,
+		"event": str(_career_state.get("event", "")), "items": items,
+		"pending": _bg_queue.size() + (1 if _bg_thread != null else 0),
+		"range_text": OrbitCareer.range_text(level),
+	})
+	_career_panel.set_selected(_selected_set, _selected_diff)
+
+
+## Panel erst nach Ruhe neu bauen (viele Ergebnisse kurz nacheinander).
+func _career_refresh_later() -> void:
+	if _career_dirty:
+		return
+	_career_dirty = true
+	await get_tree().create_timer(0.6).timeout
+	if is_inside_tree() and _career_dirty:
+		if _career_on():
+			_career_refresh()
+		else:
+			_career_dirty = false
+			_refresh_recommended()
+
+
+## Empfohlen-Marke der Karten (nur Orbit + Frei): Orbit-Sterne einer sichtbaren
+## Diff liegen im Fenster der Stufe.
+func _refresh_recommended() -> void:
+	var on := _play_mode == "orbit" and not _career_on()
+	var level := float(_career_state.get("level", OrbitCareer.START_LEVEL))
+	for card in _card_buttons:
+		if not is_instance_valid(card) or not card.has_meta("rec_lbl"):
+			continue
+		var lbl: Label = card.get_meta("rec_lbl")
+		var rec := false
+		if on:
+			var ms: MapSet = card.get_meta("ms")
+			for i in ms.visible_diffs("orbit"):
+				if _orbit_diff_ok(ms, i) and OrbitCareer.recommended(_orbit_stars_known(ms, i), level):
+					rec = true
+					break
+		lbl.visible = rec
+
+
+## Fehlende Sterne fuer die Bibliothek vormerken (Frei und Karriere).
+func _bg_scan() -> void:
+	var level := float(_career_state.get("level", OrbitCareer.START_LEVEL))
+	var missing: Array = []
+	for ms in _library.mapsets:
+		for i in ms.visible_diffs("orbit"):
+			if not _orbit_diff_ok(ms, i):
+				continue
+			var ver := ms.version_name_at(i)
+			var key := _orbit_key(ms, ver)
+			if not _os_cache_get().has(key) and not _bg_failed.has(key):
+				missing.append({"key": key, "osz": ms.osz_path, "ver": ver, "osu": ms.stars_at(i)})
+	_bg_enqueue_list(missing, level)
+
+
+func _bg_enqueue_list(missing: Array, level: float) -> void:
+	missing.sort_custom(func(a, b):
+		return absf(float(a.osu) - level - 0.1) < absf(float(b.osu) - level - 0.1))
+	for m in missing:
+		_bg_enqueue(m, false)
+	_bg_pump()
+
+
+func _bg_enqueue(item: Dictionary, front: bool) -> void:
+	var key: String = item.key
+	if _bg_queued.has(key):
+		return
+	if not front and _bg_spent + _bg_queue.size() >= BG_BUDGET:
+		return
+	_bg_queued[key] = true
+	if front:
+		_bg_queue.push_front(item)
+	else:
+		_bg_queue.append(item)
+
+
+func _bg_pump() -> void:
+	if _bg_thread != null or _bg_queue.is_empty() or not is_inside_tree() \
+			or DisplayServer.get_name() == "headless":
+		return
+	var item: Dictionary = _bg_queue.pop_front()
+	_bg_spent += 1
+	_bg_thread = Thread.new()
+	_bg_thread.start(_bg_work.bind(item), Thread.PRIORITY_LOW)
+
+
+func _bg_work(item: Dictionary) -> void:
+	_bg_finished.call_deferred(item, orbit_stars_compute(item.osz, item.ver))
+
+
+func _bg_finished(item: Dictionary, st: float) -> void:
+	if _bg_thread != null:
+		_bg_thread.wait_to_finish()
+		_bg_thread = null
+	_bg_queued.erase(item.key)
+	if st >= 0.0:
+		_os_cache_get()[item.key] = st
+		orbit_stars_store(item.key, st)
+	else:
+		_bg_failed[item.key] = true
+	if _play_mode == "orbit":
+		_career_refresh_later()
+	await get_tree().create_timer(BG_PAUSE).timeout
+	if is_inside_tree():
+		_bg_pump()
+
+
 ## Orbit-Sterne: nur fuer die gewaehlte Diff, im Thread, Ergebnis je
 ## Datei+Aenderungszeit+Version im Cache user://orbit_stars.cfg.
 const ORBIT_STARS_PATH := "user://orbit_stars.cfg"
-const ORBIT_STARS_VER := 1
+## Version hochzaehlen, sobald sich die Orbit-Sterne-Formel aendert: alte
+## Werte fallen aus dem Schluessel und werden neu berechnet.
+const ORBIT_STARS_VER := 2
 const ORBIT_STARS_DELAY := 0.25
 var _os_thread: Thread
 var _os_key := ""        # Key der laufenden Berechnung
@@ -3636,6 +4127,17 @@ static func orbit_stars_store(key: String, stars: float, path: String = ORBIT_ST
 	cfg.load(path)
 	cfg.set_value("stars", key, stars)
 	cfg.save(path)
+
+
+## Alle Eintraege des Caches auf einmal (Schluessel -> Sterne), fuer Listen.
+static func orbit_stars_cache_all(path: String = ORBIT_STARS_PATH) -> Dictionary:
+	var cfg := ConfigFile.new()
+	var out := {}
+	if cfg.load(path) != OK or not cfg.has_section("stars"):
+		return out
+	for k in cfg.get_section_keys("stars"):
+		out[k] = float(cfg.get_value("stars", k, -1.0))
+	return out
 
 
 ## Orbit-Sterne einer 4K- oder osu!standard-Diff berechnen (teuer: Import + Konvertierung).
@@ -3686,6 +4188,7 @@ func _orbit_stars_done(key: String, st: float) -> void:
 		_os_thread = null
 	if st >= 0.0:
 		orbit_stars_store(key, st)
+		_os_cache_get()[key] = st
 	if key == _os_want:
 		if st >= 0.0 and _play_mode == "orbit":
 			_star_label.text = "Orbit " + _stars_text(st)

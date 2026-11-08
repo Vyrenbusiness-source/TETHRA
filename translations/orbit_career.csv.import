@@ -1,0 +1,19 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+uid="uid://06u7j5i1p3kp"
+
+[deps]
+
+files=["res://translations/orbit_career.de.translation", "res://translations/orbit_career.en.translation"]
+
+source_file="res://translations/orbit_career.csv"
+dest_files=["res://translations/orbit_career.de.translation", "res://translations/orbit_career.en.translation"]
+
+[params]
+
+compress=1
+delimiter=0
+unescape_keys=false
+unescape_translations=true
