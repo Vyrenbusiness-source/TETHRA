@@ -36,7 +36,7 @@ const PAGE_DEFS := {
 	"field3d": ["Spielfeld & Welt", "Gilt für Mania 3D", [MODE_3D], "world"],
 	"field2d": ["Spielfeld", "Gilt für Mania 2D", [MODE_2D], "2d"],
 	"look2d": ["Skin & Bild", "Gilt für Mania 2D", [MODE_2D], "2d"],
-	"orbit": ["Orbit", "Gilt für Orbit", [MODE_ORBIT], "world"],
+	"orbit": ["Orbit", "Gilt für Orbit", [MODE_ORBIT], "orbit"],
 	"notes": ["Notenfarben", "Gilt für Mania 3D und 2D", [MODE_3D, MODE_2D], ""],
 	"audio": ["Audio", "Gilt für alle Modi", [], ""],
 	"gfx": ["Grafik", "Gilt für alle Modi", [], ""],
@@ -68,6 +68,9 @@ var _pv_col: VBoxContainer
 var _pv_2d: Control
 var _pv_world: Control
 var _pv_world_holder: Control
+var _pv_orbit: Control
+var _pv_orbit_holder: Control
+var _orbit_preview: OrbitPreview
 
 var _nc: NoteColorPicker
 var _world_preview: WorldPreview
@@ -177,6 +180,8 @@ func _layout() -> void:
 		var s := 0.75 if vp.x < 1500.0 else 1.0
 		_world_preview.scale = Vector2(s, s)
 		_pv_world_holder.custom_minimum_size = WorldPreview.SIZE_PX * s
+		_orbit_preview.scale = Vector2(s, s)
+		_pv_orbit_holder.custom_minimum_size = OrbitPreview.SIZE_PX * s
 	if _preview_2d != null and _preview_2d.has_method("set_box"):
 		# Groesser als im Farb-Picker; Bildhoehe waechst mit, das Feld passt in die Breite.
 		# Hoehe fuellt die Vorschau-Spalte (kein Leerraum unter dem Bild).
@@ -956,6 +961,15 @@ func _build_previews() -> void:
 	_pv_world_holder.add_child(_world_preview)
 	_pv_world.add_child(_framed(_pv_world_holder))
 	_world_preview.show_world(Settings.world_theme_name())
+	# Orbit: echter OrbitView mit Demo-Schleife.
+	_pv_orbit = VBoxContainer.new()
+	_pv_col.add_child(_pv_orbit)
+	_orbit_preview = OrbitPreview.new()
+	_pv_orbit_holder = Control.new()
+	_pv_orbit_holder.custom_minimum_size = OrbitPreview.SIZE_PX
+	_pv_orbit_holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_pv_orbit_holder.add_child(_orbit_preview)
+	_pv_orbit.add_child(_framed(_pv_orbit_holder))
 
 
 func _pv_caption(t: String) -> Label:
@@ -1461,6 +1475,7 @@ func _show_page(id: String) -> void:
 	(_pv_col.get_meta("wrap") as Control).visible = pv != ""
 	_pv_2d.visible = pv == "2d"
 	_pv_world.visible = pv == "world"
+	_pv_orbit.visible = pv == "orbit"
 	_arrange(id)
 	_scroll.scroll_vertical = 0
 	_sync_page(id)
