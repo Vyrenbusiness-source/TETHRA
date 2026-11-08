@@ -85,6 +85,8 @@ var last_server_sorted := false
 ## Sortierender Mirror ausgefallen -> fuer diese Sitzung nur noch catboy.
 var _sorted_down := false
 var _search_on_sorted := false
+## Diese Suche laeuft nach einem catboy-Fehler ueber osu.direct.
+var _search_on_backup := false
 ## Test-Hook: ersetzt beide Such-URLs (Fehlerzustand im Screenshot-Harness).
 var search_url_override := ""
 ## SV-Filter: hängt "sv" an die Suche an und markiert Treffer (Feld "sv").
@@ -229,6 +231,7 @@ func search(query: String, offset: int = 0, sort: int = Sort.RELEVANCE,
 	_search_sort = clampi(sort, 0, SORT_SERVER.size() - 1)
 	_search_status = status
 	_search_on_sorted = not _sorted_down and str(SORT_SERVER[_search_sort]) != ""
+	_search_on_backup = false
 	_send_search()
 
 
@@ -238,8 +241,11 @@ func cancel_search() -> void:
 
 
 func _send_search() -> void:
+	var base := search_url_override
+	if base == "" and _search_on_backup:
+		base = SORTED_SEARCH_URL
 	var url := build_search_url(_search_query, _search_offset, _search_sort,
-		_search_status, _search_on_sorted, search_url_override, _search_mode)
+		_search_status, _search_on_sorted, base, _search_mode)
 	_search_req.cancel_request()
 	var err := _search_req.request(url, headers())
 	if err != OK:
@@ -255,6 +261,12 @@ func _on_search_completed(result: int, code: int, _headers: PackedStringArray, b
 		if _search_on_sorted and search_url_override == "":
 			_sorted_down = true
 			_search_on_sorted = false
+			_send_search()
+			return
+		# catboy lehnt ab (z. B. HTTP 403 nach vielen Downloads) -> einmal ueber
+		# osu.direct (gleiche Parameter, ohne Server-Sortierung) versuchen.
+		if not _search_on_sorted and not _search_on_backup and search_url_override == "":
+			_search_on_backup = true
 			_send_search()
 			return
 		if result != HTTPRequest.RESULT_SUCCESS:

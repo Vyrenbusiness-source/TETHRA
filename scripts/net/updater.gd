@@ -16,7 +16,7 @@ extends Node
 ## Release-Ablauf (Entwickler): CURRENT_VERSION hochzaehlen, beide PCKs bauen,
 ## `gh release create vX.Y.Z release/TETHRA.pck release/TETHRA_worlds.pck`.
 
-const CURRENT_VERSION := "1.20.4"
+const CURRENT_VERSION := "1.20.5"
 const REPO := "Vyrenbusiness-source/TETHRA"
 const API_LATEST := "https://api.github.com/repos/" + REPO + "/releases/latest"
 ## Welten-Paket liegt in einem festen Release (Tag "worlds"), damit normale
