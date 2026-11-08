@@ -646,6 +646,17 @@ func _page_orbit(pg: VBoxContainer) -> void:
 		func(s): return s.orbit_guides,
 		func(on): Settings.orbit_guides = on,
 		"Feine Striche für Viertel und Achtel an der Bahn")
+	_switch(g, "Vorschau", func(s): return s.orbit_preview,
+		func(on): Settings.orbit_preview = on,
+		"Blasse Noten des nächsten Takts")
+	_slider(g, "Notengröße", 90.0, 120.0, 5.0,
+		func(s): return s.orbit_note_size,
+		func(v): Settings.orbit_note_size = int(v),
+		func(v): return "%d %%" % int(v))
+	_slider(g, "Bahn-Deckkraft", 30.0, 100.0, 5.0,
+		func(s): return s.orbit_path_alpha,
+		func(v): Settings.orbit_path_alpha = int(v),
+		func(v): return "%d %%" % int(v))
 	var obg := OptionButton.new()
 	obg.add_item("Welt", Settings.ORBIT_BG_WORLD)
 	obg.add_item("Map-Bild", Settings.ORBIT_BG_MAP)
