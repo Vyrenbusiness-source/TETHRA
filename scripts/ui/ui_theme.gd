@@ -1,105 +1,132 @@
 class_name UiTheme
 extends RefCounted
 
-## Zentrale Design-Sprache: Farben + Style-Helfer fuer das clean glassy Design
-## (halbtransparente Flaechen, feine Raender, weiche Hover-Effekte).
+## Zentrale Design-Sprache von TETHRA: "Instrumententafel".
+## Warmer Graphit-Grund, ruhige deckende Flaechen mit Haarlinien, eine einzige
+## Signalfarbe (Bernstein) fuer das, was zaehlt, kleine Radien, keine Glows.
+##
+## Warum Bernstein: das Spiel ist eine Fahrt ueber Spuren durchs All - Bernstein
+## ist die Farbe von Cockpit-Anzeigen, Phosphor-Displays und Signallampen. Sie
+## setzt sich klar von den kalten, farbigen Welten des Spielfelds ab (die bleiben
+## die bunte Buehne), wirkt handwerklich statt "Neon" und erreicht auf Graphit
+## wie mit dunkler Schrift darauf jeweils > 9:1 Kontrast (WCAG AAA).
 
-const BG := Color(0.03, 0.03, 0.05)
-const ACCENT := Color(0.20, 0.85, 1.0)
-const ACCENT2 := Color(1.0, 0.45, 0.88)
-const TEXT := Color(0.95, 0.96, 1.0)
-const DIM := Color(0.62, 0.64, 0.72)
-const GOOD := Color(0.55, 1.0, 0.75)
+## Flaechen (dunkel -> hell). Leicht warm, nie reines Schwarz.
+const BG := Color(0.071, 0.067, 0.063)          # #121110 Grund
+const SURFACE := Color(0.106, 0.102, 0.094)     # #1B1A18 Panels
+const RAISED := Color(0.153, 0.145, 0.133)      # #272522 Buttons, Felder
+## Signalfarbe: Bernstein #F2A23A. Die EINE Akzentfarbe (Primaer, Auswahl, Fokus).
+const ACCENT := Color(0.949, 0.635, 0.227)
+## Zweitton fuer Kennzahlen (pp) und den Orbit-Modus: gedecktes Stahlblau #8EA6C6.
+## Bewusst kuehl und entsaettigt, damit er neben Bernstein nie konkurriert.
+const ACCENT2 := Color(0.557, 0.651, 0.776)
+## Schrift: warmes Elfenbein statt Reinweiss (15:1 auf BG), Neben-Text 6:1.
+const TEXT := Color(0.925, 0.902, 0.855)        # #ECE6DA
+const DIM := Color(0.616, 0.592, 0.553)         # #9D978D
+## Zustaende, gedeckt: gut = Salbei, schlecht = Ziegel.
+const GOOD := Color(0.553, 0.757, 0.549)        # #8DC18C
+const BAD := Color(0.871, 0.443, 0.384)         # #DE7162
+## Dunkle Schrift auf Akzentflaechen.
+const ON_ACCENT := Color(0.094, 0.071, 0.039)   # #18120A
+## Haarlinie (Trenner, Kanten).
+const LINE := Color(0.925, 0.902, 0.855, 0.12)
+
+## Radien: klein und handfest. Aufrufer geben noch die alten Werte (8..18)
+## mit; sie werden auf 2..6 px abgebildet.
+const R_SMALL := 2
+const R_MAX := 6
 
 
-## Halbtransparente, abgerundete Glas-Flaeche mit feinem Rand.
+static func _rad(radius: int) -> int:
+	return clampi(roundi(radius * 0.34), R_SMALL, R_MAX)
+
+
+## Ruhige, (fast) deckende Flaeche mit Haarlinie oben statt Rahmen-Karte.
+## API wie frueher (glass_box): alpha = Deckkraft-Wunsch, border_a = Kantenstaerke.
 static func glass_box(radius: int = 14, alpha: float = 0.42, border_a: float = 0.14) -> StyleBoxFlat:
 	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color(0.08, 0.09, 0.14, alpha)
-	sb.set_corner_radius_all(radius)
-	sb.set_border_width_all(1)
-	sb.border_color = Color(1, 1, 1, border_a)
-	# Weicher Drop-Shadow: hebt jedes Panel von der Szene ab (Tiefe).
-	sb.shadow_size = 12
-	sb.shadow_color = Color(0, 0, 0, 0.35)
-	sb.shadow_offset = Vector2(0, 4)
+	var a := lerpf(alpha, 1.0, 0.55)
+	sb.bg_color = Color(SURFACE.r, SURFACE.g, SURFACE.b, a)
+	sb.set_corner_radius_all(_rad(radius))
+	sb.border_width_top = 1
+	sb.border_color = Color(TEXT.r, TEXT.g, TEXT.b, clampf(border_a * 0.6, 0.04, 0.16))
 	return sb
 
 
-## Volltonige Flaeche (z.B. Primaer-Buttons).
+## Volltonige Flaeche (z.B. Primaer-Buttons). Kein Schatten, kein Glow.
 static func solid_box(col: Color, radius: int = 12) -> StyleBoxFlat:
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = col
-	sb.set_corner_radius_all(radius)
-	# Dezenter neutraler Schatten — kein Neon-Glow.
-	sb.shadow_size = 5
-	sb.shadow_color = Color(0, 0, 0, 0.30)
-	sb.shadow_offset = Vector2(0, 3)
+	sb.set_corner_radius_all(_rad(radius))
 	return sb
 
 
-## Button im Glas-Stil inkl. Hover-/Pressed-Zustaenden und weichem Scale-Hover.
+static func _pad(sb: StyleBox) -> void:
+	sb.content_margin_left = 16
+	sb.content_margin_right = 16
+	sb.content_margin_top = 6
+	sb.content_margin_bottom = 6
+
+
+## Button: primary = Bernstein-Flaeche mit dunkler Schrift (Satzschreibung),
+## sonst neutrale erhabene Flaeche. Hover/Pressed nur ueber Helligkeit, schnell.
 static func style_button(b: Button, primary: bool = false, radius: int = 12) -> void:
 	var normal: StyleBoxFlat
 	if primary:
 		normal = solid_box(primary_fill(), radius)
-		b.add_theme_color_override("font_color", Color(0.02, 0.05, 0.08))
-		# Schrift-Regel: Primaer = Versalien gesperrt, sonst Satzschreibung.
-		b.add_theme_font_override("font", heading_font(2))
-		b.text = b.text.to_upper()
+		b.add_theme_color_override("font_color", ON_ACCENT)
+		b.add_theme_color_override("font_hover_color", ON_ACCENT)
+		b.add_theme_color_override("font_pressed_color", ON_ACCENT)
+		b.add_theme_color_override("font_focus_color", ON_ACCENT)
+		b.add_theme_font_override("font", heading_font(0))
 	else:
-		normal = glass_box(radius, 0.5)
+		normal = solid_box(RAISED, radius)
+		normal.set_border_width_all(1)
+		normal.border_color = Color(TEXT.r, TEXT.g, TEXT.b, 0.08)
 		b.add_theme_color_override("font_color", TEXT)
-	# Innenabstand: Text/Symbole (★, ⤓ …) duerfen nie am Rand kleben.
-	normal.content_margin_left = 14
-	normal.content_margin_right = 14
-	normal.content_margin_top = 5
-	normal.content_margin_bottom = 5
+	_pad(normal)
 	var hover: StyleBoxFlat = normal.duplicate()
-	hover.bg_color = normal.bg_color.lightened(0.14)
-	hover.shadow_size = 9
-	hover.shadow_offset = Vector2(0, 6)
+	hover.bg_color = normal.bg_color.lightened(0.10)
 	if not primary:
-		hover.border_color = Color(1, 1, 1, 0.26)
+		hover.border_color = Color(TEXT.r, TEXT.g, TEXT.b, 0.22)
 	var pressed: StyleBoxFlat = normal.duplicate()
-	pressed.bg_color = normal.bg_color.darkened(0.10)
+	pressed.bg_color = normal.bg_color.darkened(0.14)
+	var disabled: StyleBoxFlat = normal.duplicate()
+	disabled.bg_color = Color(RAISED.r, RAISED.g, RAISED.b, 0.55)
+	disabled.border_color = Color(0, 0, 0, 0)
 	b.add_theme_stylebox_override("normal", normal)
 	b.add_theme_stylebox_override("hover", hover)
 	b.add_theme_stylebox_override("pressed", pressed)
+	b.add_theme_stylebox_override("disabled", disabled)
 	b.add_theme_stylebox_override("focus", _focus_box(radius))
-	attach_hover(b)
+	b.add_theme_color_override("font_disabled_color", Color(DIM.r, DIM.g, DIM.b, 0.7))
 	_attach_sounds(b)
 
 
-## Primary-Fill: 15% dunkler und weniger grell als ACCENT.
+## Primaer-Fuellung: Bernstein, minimal abgedunkelt fuer ruhige Flaechen.
 static func primary_fill() -> Color:
-	var c := ACCENT.darkened(0.15)
-	c.s *= 0.9
-	return c
+	return ACCENT.darkened(0.04)
 
 
-## Ghost-Button: transparent, feiner Rand, Hover-Fill. Fuer alle Nicht-Primaer-Aktionen.
+## Ghost-Button: nur Kontur (Haarlinie), Hover fuellt leicht. Fuer alle
+## Nicht-Primaer-Aktionen (Schliessen, Zurueck, Werkzeuge).
 static func style_ghost_button(b: Button, radius: int = 12) -> void:
 	var normal := StyleBoxFlat.new()
-	normal.bg_color = Color(1, 1, 1, 0)
-	normal.set_corner_radius_all(radius)
+	normal.bg_color = Color(TEXT.r, TEXT.g, TEXT.b, 0.0)
+	normal.set_corner_radius_all(_rad(radius))
 	normal.set_border_width_all(1)
-	normal.border_color = Color(1, 1, 1, 0.20)
-	normal.content_margin_left = 14
-	normal.content_margin_right = 14
-	normal.content_margin_top = 5
-	normal.content_margin_bottom = 5
+	normal.border_color = Color(TEXT.r, TEXT.g, TEXT.b, 0.20)
+	_pad(normal)
 	var hover: StyleBoxFlat = normal.duplicate()
-	hover.bg_color = Color(1, 1, 1, 0.08)
-	hover.border_color = Color(1, 1, 1, 0.34)
+	hover.bg_color = Color(TEXT.r, TEXT.g, TEXT.b, 0.07)
+	hover.border_color = Color(TEXT.r, TEXT.g, TEXT.b, 0.36)
 	var pressed: StyleBoxFlat = normal.duplicate()
-	pressed.bg_color = Color(1, 1, 1, 0.14)
+	pressed.bg_color = Color(TEXT.r, TEXT.g, TEXT.b, 0.12)
 	b.add_theme_color_override("font_color", TEXT)
 	b.add_theme_stylebox_override("normal", normal)
 	b.add_theme_stylebox_override("hover", hover)
 	b.add_theme_stylebox_override("pressed", pressed)
 	b.add_theme_stylebox_override("focus", _focus_box(radius))
-	attach_hover(b)
 	_attach_sounds(b)
 
 
@@ -194,37 +221,16 @@ static func key_short(keycode_or_name) -> String:
 	return n.to_upper() if n.length() == 1 else n
 
 
-const _BLUR_CODE := "shader_type canvas_item;
-uniform sampler2D scr : hint_screen_texture, filter_linear_mipmap;
-void fragment() {
-	vec4 c = textureLod(scr, SCREEN_UV, 3.0) * 0.4;
-	c += textureLod(scr, SCREEN_UV + vec2(0.004, 0.0), 3.0) * 0.15;
-	c += textureLod(scr, SCREEN_UV - vec2(0.004, 0.0), 3.0) * 0.15;
-	c += textureLod(scr, SCREEN_UV + vec2(0.0, 0.004), 3.0) * 0.15;
-	c += textureLod(scr, SCREEN_UV - vec2(0.0, 0.004), 3.0) * 0.15;
-	COLOR = vec4(c.rgb, 1.0);
-}
-"
-
-
-## Vollbild-Backdrop fuer Modals: Blur des Hintergrunds, Abdunklung 0.72,
-## absorbiert Klicks. Wird an parent gehaengt (falls gesetzt) und zurueckgegeben.
+## Vollbild-Backdrop fuer Modals: ruhige Abdunklung im Grundton (kein Blur,
+## kein Glas), absorbiert Klicks. Wird an parent gehaengt (falls gesetzt) und
+## zurueckgegeben.
 static func modal_backdrop(parent: Control) -> Control:
 	var root := Control.new()
 	root.name = "ModalBackdrop"
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	root.mouse_filter = Control.MOUSE_FILTER_STOP
-	var blur := ColorRect.new()
-	blur.set_anchors_preset(Control.PRESET_FULL_RECT)
-	blur.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var sh := Shader.new()
-	sh.code = _BLUR_CODE
-	var mat := ShaderMaterial.new()
-	mat.shader = sh
-	blur.material = mat
-	root.add_child(blur)
 	var dim := ColorRect.new()
-	dim.color = Color(0, 0, 0, 0.72)
+	dim.color = Color(BG.r * 0.5, BG.g * 0.5, BG.b * 0.5, 0.84)
 	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
 	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(dim)
@@ -233,19 +239,22 @@ static func modal_backdrop(parent: Control) -> Control:
 	return root
 
 
-## Einheitliche Modal-Titelzeile: Versalien gesperrt, 22px, Close rechts,
-## 24px Abstand zum Inhalt darunter.
+## Einheitliche Modal-Titelzeile: Ueberschrift in Satzschreibung (Heading-
+## Schnitt, 24px), Close rechts, darunter Haarlinie + 20px Abstand.
 static func modal_header(title: String, on_close: Callable) -> Control:
 	var wrap := MarginContainer.new()
-	wrap.add_theme_constant_override("margin_bottom", 24)
+	wrap.add_theme_constant_override("margin_bottom", 20)
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 12)
+	wrap.add_child(col)
 	var row := HBoxContainer.new()
-	wrap.add_child(row)
+	col.add_child(row)
 	var l := Label.new()
-	l.text = TranslationServer.translate(title).to_upper()
+	l.text = TranslationServer.translate(title)
 	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	l.add_theme_font_override("font", heading_font(3))
-	l.add_theme_font_size_override("font_size", 22)
+	l.add_theme_font_override("font", heading_font(0))
+	l.add_theme_font_size_override("font_size", 24)
 	l.add_theme_color_override("font_color", TEXT)
 	row.add_child(l)
 	var x := Button.new()
@@ -256,7 +265,17 @@ static func modal_header(title: String, on_close: Callable) -> Control:
 	if on_close.is_valid():
 		x.pressed.connect(on_close)
 	row.add_child(x)
+	col.add_child(hairline())
 	return wrap
+
+
+## Waagerechte Haarlinie (1px, LINE) als Trenner statt Rahmen.
+static func hairline() -> ColorRect:
+	var r := ColorRect.new()
+	r.color = LINE
+	r.custom_minimum_size = Vector2(0, 1)
+	r.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return r
 
 
 ## UI-Klang einmalig pro Button verbinden (Meta-Flag verhindert Duplikate).
@@ -271,20 +290,41 @@ static func _attach_sounds(b: BaseButton) -> void:
 	b.pressed.connect(func(): Sfx.ui_click())
 
 
-## Marken-Typo (Bahnschrift, fett, leicht gesperrt) fuer Titel/Headings.
+## Tag fuer OpenType-Features (tnum = tabellarische Ziffern).
+static func _tag(name: String) -> int:
+	return TextServerManager.get_primary_interface().name_to_tag(name)
+
+
+## Ueberschriften-Schnitt: Bahnschrift SemiBold, leicht schmal (DIN-Anmutung
+## wie Beschriftung auf Instrumenten), tabellarische Ziffern. spacing kommt
+## von alten Aufrufern (2..4 = "gesperrt"); gesperrt wird nur noch minimal.
 static func heading_font(spacing: int = 2) -> FontVariation:
 	var f := SystemFont.new()
-	f.font_names = PackedStringArray(["Bahnschrift", "Segoe UI Black", "Impact"])
-	f.font_weight = 700
+	f.font_names = PackedStringArray(["Bahnschrift", "Segoe UI Semibold", "Segoe UI"])
+	f.font_weight = 600
 	var fv := FontVariation.new()
 	fv.base_font = f
-	fv.spacing_glyph = spacing
+	fv.variation_opentype = {_tag("wdth"): 90.0, _tag("wght"): 600.0}
+	fv.opentype_features = {_tag("tnum"): 1}
+	fv.spacing_glyph = clampi(spacing - 2, 0, 1)
 	return fv
 
 
-## Weicher Scale-/Aufhell-Hover fuer beliebige Controls (Karten, Buttons).
+## Fliesstext-Schnitt (globaler Theme-Font): Segoe UI mit tabellarischen
+## Ziffern, damit Zahlenkolonnen (Scores, ms, %) sauber untereinander stehen.
+static func body_font() -> FontVariation:
+	var f := SystemFont.new()
+	f.font_names = PackedStringArray(["Segoe UI", "Noto Sans", "Arial"])
+	var fv := FontVariation.new()
+	fv.base_font = f
+	fv.opentype_features = {_tag("tnum"): 1}
+	return fv
+
+
+## Dezenter Hover fuer beliebige Controls (Karten): kaum Skalierung, schnell.
 static func attach_hover(c: Control, scale: float = 1.03) -> void:
-	c.mouse_entered.connect(func(): _hover_to(c, scale, 1.0))
+	var s := 1.0 + clampf(scale - 1.0, 0.0, 0.03) * 0.33
+	c.mouse_entered.connect(func(): _hover_to(c, s, 1.0))
 	c.mouse_exited.connect(func(): _hover_to(c, 1.0, 1.0))
 
 
@@ -294,7 +334,7 @@ static func _hover_to(c: Control, s: float, _dummy: float) -> void:
 	c.pivot_offset = c.size * 0.5
 	var tw := c.create_tween()
 	tw.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	tw.tween_property(c, "scale", Vector2(s, s), 0.12)
+	tw.tween_property(c, "scale", Vector2(s, s), 0.08)
 
 
 ## Echter weicher Blur ohne Blockartefakte: in Stufen stark runterskalieren,
@@ -336,45 +376,46 @@ static func blurred_texture(tex: Texture2D, divisor: int = 10) -> Texture2D:
 
 ## Globales TETHRA-Theme: ersetzt das graue Godot-Standard-Aussehen ALLER
 ## Controls (Slider, Dropdowns, Scrollbalken, Popups, Eingabefelder …) durch
-## die Glass-Optik. Wird einmalig beim Start auf das Root-Window gelegt —
-## Panels mit eigenen Overrides behalten ihre Speziallooks.
+## die Instrumententafel-Optik. Wird einmalig beim Start auf das Root-Window
+## gelegt — Panels mit eigenen Overrides behalten ihre Speziallooks.
 static func build_theme() -> Theme:
 	var th := Theme.new()
+	th.default_font = body_font()
 
 	# Buttons (Fallback fuer alles, was nicht per style_button lief).
-	var bn := glass_box(10, 0.5)
-	bn.shadow_size = 0
+	var bn := solid_box(RAISED, 9)
+	bn.set_border_width_all(1)
+	bn.border_color = Color(TEXT.r, TEXT.g, TEXT.b, 0.08)
 	bn.content_margin_left = 12
 	bn.content_margin_right = 12
 	bn.content_margin_top = 6
 	bn.content_margin_bottom = 6
 	var bh: StyleBoxFlat = bn.duplicate()
-	bh.bg_color = bn.bg_color.lightened(0.14)
-	bh.border_color = Color(1, 1, 1, 0.26)
-	bh.shadow_size = 8
-	bh.shadow_offset = Vector2(0, 5)
+	bh.bg_color = bn.bg_color.lightened(0.10)
+	bh.border_color = Color(TEXT.r, TEXT.g, TEXT.b, 0.22)
 	var bp: StyleBoxFlat = bn.duplicate()
-	bp.bg_color = bn.bg_color.darkened(0.10)
+	bp.bg_color = bn.bg_color.darkened(0.14)
 	var bd: StyleBoxFlat = bn.duplicate()
-	bd.bg_color = Color(0.08, 0.09, 0.14, 0.25)
+	bd.bg_color = Color(RAISED.r, RAISED.g, RAISED.b, 0.45)
+	bd.border_color = Color(0, 0, 0, 0)
 	for cls in ["Button", "OptionButton", "MenuButton"]:
 		th.set_stylebox("normal", cls, bn)
 		th.set_stylebox("hover", cls, bh)
 		th.set_stylebox("pressed", cls, bp)
-		th.set_stylebox("focus", cls, _focus_box(10))
+		th.set_stylebox("focus", cls, _focus_box(9))
 		th.set_stylebox("disabled", cls, bd)
 		th.set_color("font_color", cls, TEXT)
-		th.set_color("font_hover_color", cls, Color(1, 1, 1))
+		th.set_color("font_hover_color", cls, TEXT.lightened(0.3))
+		th.set_color("font_pressed_color", cls, TEXT)
 		th.set_color("font_disabled_color", cls, DIM)
-	# Switches: transparente Flaeche (kein Button-Kapsel-Fallback) + eigene,
-	# klar lesbare Pill-Icons — Aus ist sonst auf Glass kaum erkennbar.
+	# Switches: transparente Flaeche + eigene, klar lesbare Kipp-Schalter.
 	var empty := StyleBoxEmpty.new()
 	for cls2 in ["CheckBox", "CheckButton"]:
 		for st in ["normal", "hover", "pressed", "focus", "disabled",
 				"hover_pressed"]:
 			th.set_stylebox(st, cls2, empty)
 		th.set_color("font_color", cls2, TEXT)
-		th.set_color("font_hover_color", cls2, Color(1, 1, 1))
+		th.set_color("font_hover_color", cls2, TEXT.lightened(0.3))
 	var sw_on := _switch_icon(true)
 	var sw_off := _switch_icon(false)
 	th.set_icon("checked", "CheckButton", sw_on)
@@ -382,71 +423,68 @@ static func build_theme() -> Theme:
 	th.set_icon("checked_disabled", "CheckButton", sw_on)
 	th.set_icon("unchecked_disabled", "CheckButton", sw_off)
 
-	# Eingabefelder.
-	var le := glass_box(9, 0.5)
-	le.shadow_size = 0
-	le.content_margin_left = 14
-	le.content_margin_right = 14
+	# Eingabefelder: vertiefte Flaeche, Unterkante als Linie, Fokus = Bernstein.
+	var le := solid_box(Color(0, 0, 0, 0.28), 6)
+	le.border_width_bottom = 1
+	le.border_color = Color(TEXT.r, TEXT.g, TEXT.b, 0.24)
+	le.content_margin_left = 12
+	le.content_margin_right = 12
 	le.content_margin_top = 5
 	le.content_margin_bottom = 5
 	var lf: StyleBoxFlat = le.duplicate()
-	lf.border_color = Color(ACCENT.r, ACCENT.g, ACCENT.b, 0.55)
+	lf.border_width_bottom = 2
+	lf.border_color = ACCENT
 	th.set_stylebox("normal", "LineEdit", le)
 	th.set_stylebox("focus", "LineEdit", lf)
 	th.set_color("font_color", "LineEdit", TEXT)
-	th.set_color("font_placeholder_color", "LineEdit", Color(DIM.r, DIM.g, DIM.b, 0.7))
+	th.set_color("caret_color", "LineEdit", ACCENT)
+	th.set_color("selection_color", "LineEdit", Color(ACCENT.r, ACCENT.g, ACCENT.b, 0.30))
+	th.set_color("font_placeholder_color", "LineEdit", Color(DIM.r, DIM.g, DIM.b, 0.75))
 
-	# Dropdown-Menues + Kontextmenues.
-	var pm := StyleBoxFlat.new()
-	pm.bg_color = Color(0.08, 0.09, 0.14, 0.92)
-	pm.shadow_size = 14
-	pm.shadow_color = Color(0, 0, 0, 0.4)
-	pm.shadow_offset = Vector2(0, 5)
-	pm.set_corner_radius_all(12)
+	# Dropdown-Menues + Kontextmenues: deckend, Haarlinie, Hover = Bernstein-Hauch.
+	var pm := solid_box(RAISED, 9)
 	pm.set_border_width_all(1)
-	pm.border_color = Color(1, 1, 1, 0.12)
-	pm.set_content_margin_all(6)
+	pm.border_color = LINE
+	pm.set_content_margin_all(4)
 	th.set_stylebox("panel", "PopupMenu", pm)
-	var pmh := StyleBoxFlat.new()
-	pmh.bg_color = Color(ACCENT.r, ACCENT.g, ACCENT.b, 0.15)
-	pmh.set_corner_radius_all(8)
+	var pmh := solid_box(Color(ACCENT.r, ACCENT.g, ACCENT.b, 0.16), 6)
 	th.set_stylebox("hover", "PopupMenu", pmh)
 	th.set_color("font_color", "PopupMenu", TEXT)
-	th.set_color("font_hover_color", "PopupMenu", Color(1, 1, 1))
+	th.set_color("font_hover_color", "PopupMenu", TEXT.lightened(0.3))
+	th.set_color("font_accelerator_color", "PopupMenu", DIM)
 
-	# Slider: dicke runde Spur (6px), Akzent-Verlauf, Grabber mit weichem Glow.
+	# Slider: schmale Spur, flache Bernstein-Fuellung, Grabber = Fader-Kappe
+	# (wie am Mischpult) statt leuchtendem Punkt.
 	var track := StyleBoxFlat.new()
-	track.bg_color = Color(1, 1, 1, 0.11)
-	track.set_corner_radius_all(3)
-	track.border_color = Color(0, 0, 0, 0.25)
-	track.border_width_top = 1
-	track.content_margin_top = 3
-	track.content_margin_bottom = 3
+	track.bg_color = Color(TEXT.r, TEXT.g, TEXT.b, 0.12)
+	track.set_corner_radius_all(1)
+	track.content_margin_top = 2
+	track.content_margin_bottom = 2
 	var fill := _fill_box()
 	th.set_stylebox("slider", "HSlider", track)
 	th.set_stylebox("grabber_area", "HSlider", fill)
 	th.set_stylebox("grabber_area_highlight", "HSlider", fill)
-	th.set_icon("grabber", "HSlider", _glow_dot(28, 7.0, 0.5, Color(0.96, 0.98, 1.0)))
-	th.set_icon("grabber_highlight", "HSlider", _glow_dot(36, 9.0, 0.7, Color(1, 1, 1)))
-	th.set_icon("grabber_disabled", "HSlider", _glow_dot(28, 7.0, 0.0, Color(0.6, 0.62, 0.7)))
+	th.set_icon("grabber", "HSlider", _glow_dot(22, 0.0, 0.0, TEXT))
+	th.set_icon("grabber_highlight", "HSlider", _glow_dot(22, 0.0, 0.0, TEXT.lightened(0.4)))
+	th.set_icon("grabber_disabled", "HSlider", _glow_dot(22, 0.0, 0.0, DIM))
 
-	# Scrollbalken: schmal + dezent.
+	# Scrollbalken: schmal + dezent, eckig.
 	var sb_bg := StyleBoxFlat.new()
-	sb_bg.bg_color = Color(1, 1, 1, 0.04)
-	sb_bg.set_corner_radius_all(4)
+	sb_bg.bg_color = Color(TEXT.r, TEXT.g, TEXT.b, 0.04)
+	sb_bg.set_corner_radius_all(2)
 	sb_bg.content_margin_left = 3
 	sb_bg.content_margin_right = 3
 	sb_bg.content_margin_top = 3
 	sb_bg.content_margin_bottom = 3
 	var sb_grab := StyleBoxFlat.new()
-	sb_grab.bg_color = Color(1, 1, 1, 0.22)
-	sb_grab.set_corner_radius_all(4)
+	sb_grab.bg_color = Color(TEXT.r, TEXT.g, TEXT.b, 0.20)
+	sb_grab.set_corner_radius_all(2)
 	sb_grab.content_margin_left = 3
 	sb_grab.content_margin_right = 3
 	sb_grab.content_margin_top = 3
 	sb_grab.content_margin_bottom = 3
 	var sb_grab_h: StyleBoxFlat = sb_grab.duplicate()
-	sb_grab_h.bg_color = Color(1, 1, 1, 0.36)
+	sb_grab_h.bg_color = Color(TEXT.r, TEXT.g, TEXT.b, 0.34)
 	for cls3 in ["VScrollBar", "HScrollBar"]:
 		th.set_stylebox("scroll", cls3, sb_bg)
 		th.set_stylebox("grabber", cls3, sb_grab)
@@ -455,110 +493,95 @@ static func build_theme() -> Theme:
 
 	# Fortschrittsbalken + Tooltip.
 	var pb_bg := StyleBoxFlat.new()
-	pb_bg.bg_color = Color(1, 1, 1, 0.08)
-	pb_bg.set_corner_radius_all(5)
+	pb_bg.bg_color = Color(TEXT.r, TEXT.g, TEXT.b, 0.10)
+	pb_bg.set_corner_radius_all(1)
 	var pb_fill := StyleBoxFlat.new()
 	pb_fill.bg_color = ACCENT
-	pb_fill.set_corner_radius_all(5)
+	pb_fill.set_corner_radius_all(1)
 	th.set_stylebox("background", "ProgressBar", pb_bg)
 	th.set_stylebox("fill", "ProgressBar", pb_fill)
-	var tip := StyleBoxFlat.new()
-	tip.bg_color = Color(0.08, 0.09, 0.14, 0.97)
-	tip.set_corner_radius_all(8)
+	var tip := solid_box(RAISED, 6)
 	tip.set_border_width_all(1)
-	tip.border_color = Color(1, 1, 1, 0.14)
+	tip.border_color = LINE
 	tip.set_content_margin_all(8)
 	th.set_stylebox("panel", "TooltipPanel", tip)
 	th.set_color("font_color", "TooltipLabel", TEXT)
 	return th
 
 
-## Switch-Pill prozedural zeichnen: Aus = graue Pille/Knob links,
-## An = Akzent-Pille/Knob rechts.
+## Kipp-Schalter prozedural zeichnen (eckig, 3px Radius): Aus = graue Spur,
+## Knopf links in DIM; An = Bernstein-Spur, dunkler Knopf rechts.
 static func _switch_icon(on: bool) -> ImageTexture:
-	var w := 44
-	var h := 24
+	var w := 40
+	var h := 22
 	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
-	var r := 10.0
-	var pill := Color(ACCENT.r, ACCENT.g, ACCENT.b, 0.92) if on \
-			else Color(1, 1, 1, 0.17)
-	var pill2 := Color(0.45, 0.6, 1.0, 0.92) if on else pill
-	var a := Vector2(r + 2.0, h * 0.5)
-	var b := Vector2(w - r - 2.0, h * 0.5)
-	var knob := (b if on else a)
-	var kr := r - 3.0
+	var track := Color(ACCENT.r, ACCENT.g, ACCENT.b, 1.0) if on \
+			else Color(TEXT.r, TEXT.g, TEXT.b, 0.16)
+	var knob_col := ON_ACCENT if on else TEXT.darkened(0.15)
+	var kw := 16
+	var kx0 := (w - 3 - kw) if on else 3
+	var track_box := Rect2(1, 2, w - 2, h - 4)
+	var knob_box := Rect2(kx0, 5, kw, h - 10)
 	for y in h:
 		for x in w:
 			var p := Vector2(x + 0.5, y + 0.5)
-			var t := clampf((p - a).dot(b - a) / (b - a).length_squared(), 0.0, 1.0)
-			var d := (p - (a + (b - a) * t)).length()
-			var alpha := clampf(r - d + 0.5, 0.0, 1.0)
-			var pc := pill.lerp(pill2, p.x / float(w))
-			var col := Color(pc.r, pc.g, pc.b, pc.a * alpha)
-			# Weisser Knob drueber.
-			var kd := (p - knob).length()
-			var ka := clampf(kr - kd + 0.5, 0.0, 1.0)
-			col = col.lerp(Color(0.97, 0.98, 1.0, 1.0), ka)
-			col.a = maxf(col.a, ka)
+			var col := Color(0, 0, 0, 0)
+			var ta := _rrect_cov(p, track_box, 3.0)
+			if ta > 0.0:
+				col = Color(track.r, track.g, track.b, track.a * ta)
+			var ka := _rrect_cov(p, knob_box, 2.0)
+			if ka > 0.0:
+				col = col.lerp(Color(knob_col.r, knob_col.g, knob_col.b, 1.0), ka)
+				col.a = maxf(col.a, ka)
 			img.set_pixel(x, y, col)
 	return ImageTexture.create_from_image(img)
 
 
-## Fokus-Rahmen im Akzent (nur Kontur).
+## Anti-aliasierte Abdeckung eines Pixels durch ein abgerundetes Rechteck.
+static func _rrect_cov(p: Vector2, r: Rect2, rad: float) -> float:
+	var c := r.get_center()
+	var half := r.size * 0.5 - Vector2(rad, rad)
+	var q := (p - c).abs() - half
+	var outside := Vector2(maxf(q.x, 0.0), maxf(q.y, 0.0)).length()
+	var d := outside + minf(maxf(q.x, q.y), 0.0) - rad
+	return clampf(0.5 - d, 0.0, 1.0)
+
+
+## Fokus-Rahmen (Tastatur): 2px Bernstein-Kontur, 3px ausserhalb des Controls,
+## damit er auch auf Bernstein-Flaechen sichtbar bleibt.
 static func _focus_box(radius: int) -> StyleBoxFlat:
 	var sb := StyleBoxFlat.new()
 	sb.draw_center = false
-	sb.set_corner_radius_all(radius)
+	sb.set_corner_radius_all(_rad(radius) + 2)
 	sb.set_border_width_all(2)
-	sb.border_color = Color(ACCENT.r, ACCENT.g, ACCENT.b, 0.85)
+	sb.border_color = ACCENT
+	sb.set_expand_margin_all(3)
 	return sb
 
 
-## Gefuellter Slider-Teil: 6px Pille mit horizontalem ACCENT->Blau-Verlauf.
-static func _fill_box() -> StyleBoxTexture:
-	var w := 64
-	var h := 6
-	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
-	var c1 := ACCENT
-	var c2 := Color(0.45, 0.6, 1.0)
-	for y in h:
-		for x in w:
-			var col := c1.lerp(c2, float(x) / float(w - 1))
-			# Oben leicht heller -> gewoelbte Optik.
-			col = col.lightened(0.18 * (1.0 - float(y) / float(h - 1)))
-			var dx := maxf(maxf(3.0 - (x + 0.5), (x + 0.5) - (w - 3.0)), 0.0)
-			var a := 1.0
-			if dx > 0.0:
-				var cy := (y + 0.5) - h * 0.5
-				a = clampf(3.0 - sqrt(dx * dx + cy * cy) + 0.5, 0.0, 1.0)
-			img.set_pixel(x, y, Color(col.r, col.g, col.b, a))
-	var sb := StyleBoxTexture.new()
-	sb.texture = ImageTexture.create_from_image(img)
-	sb.texture_margin_left = 3
-	sb.texture_margin_right = 3
-	sb.texture_margin_top = 0
-	sb.texture_margin_bottom = 0
-	sb.content_margin_top = 3
-	sb.content_margin_bottom = 3
+## Gefuellter Slider-Teil: flache Bernstein-Linie (4px), kein Verlauf.
+static func _fill_box() -> StyleBoxFlat:
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = ACCENT
+	sb.set_corner_radius_all(1)
+	sb.content_margin_top = 2
+	sb.content_margin_bottom = 2
 	return sb
 
 
-## Runder Grabber mit weichem Akzent-Glow (glow = 0..1 Staerke).
-static func _glow_dot(size: int, core_r: float, glow: float, col: Color) -> ImageTexture:
+## Slider-Grabber als Fader-Kappe: schmales Rechteck mit Mittelstrich.
+## (Name/Signatur aus der alten Glow-Version; core_r/glow werden ignoriert.)
+static func _glow_dot(size: int, _core_r: float, _glow: float, col: Color) -> ImageTexture:
 	var img := Image.create(size, size, false, Image.FORMAT_RGBA8)
-	var c := (float(size) - 1.0) * 0.5
-	var outer := float(size) * 0.5
+	var cap := Rect2(size * 0.5 - 5.0, 2.0, 10.0, size - 4.0)
+	var groove := Rect2(size * 0.5 - 4.0, size * 0.5 - 1.0, 8.0, 2.0)
 	for y in size:
 		for x in size:
-			var d := Vector2(float(x) - c, float(y) - c).length()
-			var a := clampf(core_r - d + 0.5, 0.0, 1.0)
+			var p := Vector2(x + 0.5, y + 0.5)
+			var a := _rrect_cov(p, cap, 2.0)
 			var out := Color(col.r, col.g, col.b, a)
-			if glow > 0.0 and d > core_r - 1.0:
-				var t := clampf((d - core_r) / maxf(outer - core_r, 1.0), 0.0, 1.0)
-				var ga := glow * pow(1.0 - t, 2.0) * (1.0 - a)
-				out = Color(ACCENT.r, ACCENT.g, ACCENT.b, ga + a).lerp(
-						Color(col.r, col.g, col.b, a + ga), a)
-				out.a = clampf(a + ga, 0.0, 1.0)
+			if groove.has_point(p):
+				out = Color(BG.r, BG.g, BG.b, a)
 			img.set_pixel(x, y, out)
 	return ImageTexture.create_from_image(img)
 
@@ -575,10 +598,35 @@ static func _dot_icon(size: int, col: Color) -> ImageTexture:
 	return ImageTexture.create_from_image(img)
 
 
-## Sektions-Ueberschrift im Akzentton.
+## Sektions-Label: klein (12px), Versalien leicht gesperrt, gedimmt - die
+## einzige Stelle, an der Versalien erlaubt sind.
 static func section_label(text: String) -> Label:
 	var l := Label.new()
 	l.text = text
-	l.add_theme_font_size_override("font_size", 15)
-	l.add_theme_color_override("font_color", ACCENT)
+	l.uppercase = true
+	l.add_theme_font_override("font", heading_font(3))
+	l.add_theme_font_size_override("font_size", 12)
+	l.add_theme_color_override("font_color", DIM)
 	return l
+
+
+## Satzschreibung fuer Knopf-Texte aus Versal-Schluesseln: "NICHT BEREIT" ->
+## "Nicht bereit", "WEITER  (ENTER)" -> "Weiter (Enter)", "ÜBUNGS-MAP" ->
+## "Übungs-Map". Gemischte Texte und Kuerzel (<= 3 Zeichen) bleiben unveraendert.
+static func sentence(t: String) -> String:
+	if t.length() <= 3 or t != t.to_upper():
+		return t
+	var out := ""
+	var cap := true
+	for i in t.length():
+		var c := t[i]
+		if c.to_upper() != c.to_lower():
+			out += c.to_upper() if cap else c.to_lower()
+			cap = false
+		else:
+			out += c
+			if c == "(" or c == "-":
+				cap = true
+	while out.contains("  "):
+		out = out.replace("  ", " ")
+	return out

@@ -2116,15 +2116,15 @@ func _show_orbit_hint() -> void:
 	tick.custom_minimum_size = Vector2(3, 0)
 	row.add_child(tick)
 	var txt := Label.new()
-	txt.text = tr("Neu in Orbit? Eine kurze Einführung zeigt Zielen, Ringe und Bögen.")
-	txt.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	txt.custom_minimum_size = Vector2(230, 0)
+	txt.text = tr("Neu in Orbit?")
+	txt.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	txt.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	txt.add_theme_font_size_override("font_size", 13)
 	txt.add_theme_color_override("font_color", COL_TEXT)
 	row.add_child(txt)
 	var learn := Button.new()
 	learn.text = tr("Orbit lernen (1 Min.)")
+	learn.tooltip_text = tr("Eine kurze Einführung zeigt Zielen, Ringe und Bögen.")
 	learn.focus_mode = Control.FOCUS_NONE
 	UiTheme.style_button(learn, true, 8)
 	learn.pressed.connect(_start_orbit_tutorial)
@@ -2146,8 +2146,12 @@ func _show_orbit_hint() -> void:
 func _place_orbit_hint() -> void:
 	if _orbit_hint == null or _mode_btns.is_empty():
 		return
+	# So breit wie die Zeile Modus-Umschalter + Spielen.
 	var anchor := (_mode_btns[0].get_parent() as Control).get_global_rect()
+	if _play_btn != null:
+		anchor = anchor.merge(_play_btn.get_global_rect())
 	var sz := _orbit_hint.get_combined_minimum_size()
+	sz.x = maxf(sz.x, anchor.size.x)
 	_orbit_hint.size = sz
 	var vp := get_viewport_rect().size
 	var pos := Vector2(anchor.position.x, anchor.position.y - sz.y - 10.0)
