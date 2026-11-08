@@ -249,9 +249,9 @@ func _test_tap_judge() -> void:
 	var got := _results(c)
 	c.key_down(0, 1000.0, 120.0)
 	_ok(not got.has(0), "30 Grad daneben = kein Treffer")
-	c.key_down(0, 1005.0, 100.0)
-	_ok(got.has(0) and got[0].quality == OrbitCore.Quality.MAX and absf(got[0].angle_err - 10.0) < EPS,
-			"Zeit + Winkel stimmen = MAX, angle_err 10")
+	c.key_down(0, 1005.0, 97.0)
+	_ok(got.has(0) and got[0].quality == OrbitCore.Quality.MAX and absf(got[0].angle_err - 7.0) < EPS,
+			"Zeit + Winkel mittig = CORE, angle_err 7")
 	c.key_down(0, 2040.0, 90.0)
 	_ok(got.has(1) and got[1].quality == OrbitCore.Quality.PERFECT and got[1].late, "dt +40 bei OD8 = PERFECT, spaet")
 	c.key_down(0, 2940.0, 10.0)
@@ -365,8 +365,9 @@ func _test_arc_tap_inside() -> void:
 
 
 func _test_acc_like_mania() -> void:
-	print("- Acc/Score wie Mania")
+	print("- Orbit-Wertung (eigene Acc/Score, HP/Kombo wie Mania)")
 	var dts := [0.0, 10.0, -30.0, 45.0, -60.0, 80.0, 110.0, -120.0, 5.0, 999.0, 20.0, -15.0]
+	var aims := [0.0, 4.0, 12.0, 20.0, 0.0, 6.0, 15.0, 2.0, 9.5, 0.0, 21.0, 3.0]
 	var bm := _bm(7.0)
 	var ns: Array[OrbitNote] = []
 	for i in dts.size():
@@ -376,21 +377,31 @@ func _test_acc_like_mania() -> void:
 	m.setup(bm)
 	var o := OrbitCore.new()
 	o.setup(ns, bm.od(), 1.0, bm.hp(), m.mods)
+	var got := _results(o)
 	for i in dts.size():
 		var t: float = 1000.0 + i * 1000.0 + float(dts[i])
 		if dts[i] < 500.0:
 			m.key_down(0, t)
-			o.key_down(0, t, 45.0)
+			o.key_down(0, t, 45.0 + float(aims[i]))
 		m.update(t + 1.0)
 		o.update(t + 1.0)
 	m.update(20000.0)
 	o.update(20000.0)
-	_ok(absf(m.accuracy() - o.accuracy()) < EPS, "accuracy gleich (%.4f)" % o.accuracy())
-	_ok(m.score == o.score and m.grade() == o.grade(), "Score + Grade gleich (%d, %s)" % [o.score, o.grade()])
+	var want := 0.0
+	for i in dts.size():
+		var r: Dictionary = got[i]
+		if r.quality != OrbitCore.Quality.MISS:
+			want += OrbitCore.hit_value(r.quality, r.angle_err)
+	want /= float(dts.size())
+	_ok(absf(o.accuracy() - want) < EPS and o.n_miss == 1, "Acc = Mittel aus Zeitwert x Zielfaktor (%.4f)" % want)
+	_ok(got[1].quality == OrbitCore.Quality.MAX and got[8].quality != OrbitCore.Quality.MAX,
+			"CORE nur mittig (9.5 Grad = SHARP)")
+	_ok(OrbitCore.hit_value(0, 0.0) == 1.0 and absf(OrbitCore.hit_value(0, 22.0) - 0.88) < EPS
+			and OrbitCore.hit_value(1, 0.0) < 1.0, "Zielfaktor 1.0 mittig, 0.88 am Rand")
+	var s := o.stats()
+	_ok(s.score == o.orbit_score() and s.grade == o.grade() and s.mode == "orbit", "stats() nutzt Orbit-Score")
+	_ok(s.score < 1000000 and s.accuracy < m.accuracy() + 0.2, "Score unter Max (%d)" % s.score)
 	_ok(absf(m.hp - o.hp) < EPS and m.max_combo == o.max_combo, "HP + Combo gleich")
-	var want := float(300 * (o.n_max + o.n300) + 200 * o.n200 + 100 * o.n100 + 50 * o.n50) \
-			/ float(300 * dts.size())
-	_ok(absf(o.accuracy() - want) < EPS and o.n_miss == 1, "osu!mania-Acc-Formel")
 
 
 func _test_finished_stats() -> void:
