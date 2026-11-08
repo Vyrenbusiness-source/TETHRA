@@ -284,6 +284,7 @@ func _test_store() -> void:
 	var orbit_ev := [[100, OrbitCore.EV_CURSOR, 450], [120, OrbitCore.EV_DOWN, 455], [160, OrbitCore.EV_UP]]
 	ReplayStore.save(osz, ver, mania_ev, {"score": 1, "mods": {}})
 	ReplayStore.save(osz, ver, orbit_ev, {"score": 2, "mods": {"NF": true}}, "orbit")
+	_check(ReplayStore.dir_for("orbit_last") != ReplayStore.dir_for("orbit") and ReplayStore.dir_for("orbit") != ReplayStore.DIR, "eigene Ordner je Modus")
 	_check(ReplayStore.exists(osz, ver) and ReplayStore.exists(osz, ver, "orbit"), "beide gespeichert")
 	var m := ReplayStore.load_replay(osz, ver)
 	var o := ReplayStore.load_replay(osz, ver, "orbit")

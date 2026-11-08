@@ -1819,8 +1819,13 @@ func _update_info_panel() -> void:
 	for i in tops.size():
 		_lb_box.add_child(_score_row(i, tops[i]))
 	# Replay-Button nur zeigen, wenn fuer diese Diff ein Replay existiert.
+	# Orbit: Replay des besten Orbit-Laufs (ReplayStore-Modus "orbit").
 	if _replay_btn != null:
-		_replay_btn.visible = int(m.get("mode", 0)) == 3 and not orbit 			and ReplayStore.exists(_selected_set.osz_path, _selected_set.version_name_at(_selected_diff))
+		var ver := _selected_set.version_name_at(_selected_diff)
+		if orbit:
+			_replay_btn.visible = ReplayStore.exists(_selected_set.osz_path, ver, ReplayStore.MODE_ORBIT_BEST)
+		else:
+			_replay_btn.visible = int(m.get("mode", 0)) == 3 				and ReplayStore.exists(_selected_set.osz_path, ver)
 	_apply_card_highlight()
 
 
@@ -2269,6 +2274,7 @@ func _on_play_pressed() -> void:
 	GameSession.mods = _current_mods()
 	GameSession.is_replay = false
 	GameSession.replay_events = []
+	GameSession.replay_mode = "mania"
 	GameSession.set_selection(
 		_selected_set.osz_path, _selected_diff,
 		_selected_set.version_name_at(_selected_diff),
@@ -2329,7 +2335,10 @@ func _load_fullres_bg(target_set: MapSet) -> void:
 func _watch_replay() -> void:
 	if _selected_set == null:
 		return
-	var data := ReplayStore.load_replay(_selected_set.osz_path, _selected_set.version_name_at(_selected_diff))
+	var orbit := _play_mode == "orbit" 		and int(_selected_set.meta_at(_selected_diff).get("mode", 0)) in [0, 3]
+	var rmode := ReplayStore.MODE_ORBIT_BEST if orbit else "mania"
+	var data := ReplayStore.load_replay(_selected_set.osz_path,
+		_selected_set.version_name_at(_selected_diff), rmode)
 	if data.is_empty():
 		return
 	GameSession.mods = GameSession._replay_mods(data)
@@ -2340,8 +2349,10 @@ func _watch_replay() -> void:
 		_selected_set.stars_at(_selected_diff))
 	GameSession.is_replay = true
 	GameSession.replay_events = data.events
+	GameSession.replay_mode = rmode
+	GameSession.replay_end_ms = float(data.get("meta", {}).get("end_ms", -1.0))
 	_preview.stop()
-	_change_to_game("res://scenes/mania_3d.tscn")
+	_change_to_game("res://scenes/orbit.tscn" if orbit else "res://scenes/mania_3d.tscn")
 
 
 ## Max-pp (SS) der aktuellen Diff anzeigen; Berechnung laeuft im Thread,

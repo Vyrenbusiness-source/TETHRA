@@ -5,13 +5,16 @@ extends RefCounted
 ## Input-Liste [{t, lane, down}] mit exakten Judgement-Zeitstempeln. Die
 ## Wiedergabe speist dieselben Events zeitgenau wieder in den ManiaCore ein.
 ##
-## Modus: "mania" (Standard, user://replays/<md5>.json, Format unveraendert)
-## oder "orbit" (user://replays/orbit/<md5>.json, kompakte Events
-## [t, code, a] aus OrbitCore, meta.mode = "orbit"). Beide liegen getrennt,
-## ein Orbit-Lauf ueberschreibt nie das Mania-Replay derselben Diff.
+## Modus: "mania" (Standard, user://replays/<md5>.json, Format unveraendert),
+## "orbit" (bester Orbit-Lauf, user://replays/orbit/<md5>.json) oder
+## "orbit_last" (letzter Orbit-Lauf, user://replays/orbit/last/<md5>.json).
+## Orbit-Events sind kompakt [t, code, a] (OrbitCore.EV_*), meta.mode =
+## "orbit". Alles liegt getrennt: ein Orbit-Lauf ueberschreibt nie das
+## Mania-Replay derselben Diff.
 
 const DIR := "user://replays"
-const MODES := ["mania", "orbit"]
+const MODE_ORBIT_BEST := "orbit"
+const MODE_ORBIT_LAST := "orbit_last"
 
 
 ## Replay-Schluessel (= Dateiname ohne .json, auch fuer --clip <md5>).
@@ -21,7 +24,14 @@ static func key(osz_path: String, version: String) -> String:
 
 ## Ordner je Modus (Mania bleibt im alten Ordner).
 static func dir_for(mode: String = "mania") -> String:
-	return DIR if mode != "orbit" else DIR + "/orbit"
+	match mode:
+		MODE_ORBIT_BEST: return DIR + "/orbit"
+		MODE_ORBIT_LAST: return DIR + "/orbit/last"
+	return DIR
+
+
+static func is_orbit(mode: String) -> bool:
+	return mode == MODE_ORBIT_BEST or mode == MODE_ORBIT_LAST
 
 
 static func path_for_key(md5: String, mode: String = "mania") -> String:
@@ -45,7 +55,7 @@ static func save(osz_path: String, version: String, events: Array, meta: Diction
 	if f == null:
 		return
 	var m := meta
-	if mode == "orbit":
+	if is_orbit(mode):
 		m = meta.duplicate()
 		m["mode"] = "orbit"
 	f.store_string(JSON.stringify({ "meta": m, "events": events }))

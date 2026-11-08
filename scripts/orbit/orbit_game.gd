@@ -10,6 +10,12 @@ extends Control
 ## Settings.orbit_key_outer). Tablet = absolute Mausposition.
 ## CLI: --orbit --autoplay (Autoplay), --shot --shot-at=<ms> --shot-out=<png>,
 ## --auto-miss=<n> (Autoplay laesst jede n-te Note aus, fuer Fehltreffer-Shots).
+## Replays: OrbitCore laeuft immer deterministisch und schreibt die Eingaben
+## mit (core.replay_log). Am Ende: ReplayStore "orbit_last" (letzter Lauf) und
+## "orbit" (bester Lauf). GameSession.is_replay spielt die Events wieder ab
+## (Cursor + Ringe wie gespielt, gleiche Wertung). --shot-clip (mit
+## --shot-results): nach dem Endbild-Shot den Clip-Knopf ausloesen und auf das
+## Video warten (Harness).
 
 const MODE := "orbit"
 const AUTO_TAP_MS := 40.0
@@ -76,6 +82,14 @@ var _bot_plan: Array = []
 var _hit_log: Array = []
 var _mp_send_cd := 0.0
 var _mods_label: Label
+## Replay-Wiedergabe: Events (OrbitCore.EV_*), naechster Index, Endzeit des Laufs.
+var _replay := false
+var _replay_events: Array = []
+var _replay_idx := 0
+var _replay_end_ms := -1.0
+## Zeit des letzten core.update (Ende des Laufs fuer meta.end_ms).
+var _last_update_t := 0.0
+var _clip_exporter: ClipExporter
 
 
 func _ready() -> void:
@@ -84,7 +98,11 @@ func _ready() -> void:
 	if not _load_beatmap():
 		get_tree().change_scene_to_file.call_deferred("res://scenes/song_select.tscn")
 		return
-	_autoplay = OS.get_cmdline_args().has("--autoplay") and not Lobby.active
+	_replay = GameSession.is_replay and ReplayStore.is_orbit(GameSession.replay_mode)
+	if GameSession.is_replay and not _replay:
+		GameSession.is_replay = false   # Mania-Events passen nicht zu Orbit
+		GameSession.replay_events = []
+	_autoplay = OS.get_cmdline_args().has("--autoplay") and not Lobby.active and not _replay
 	var jitter := 0.0
 	var aim := 0.0
 	var seed := 1
@@ -98,6 +116,9 @@ func _ready() -> void:
 		elif a.begins_with("--auto-seed="):
 			seed = a.trim_prefix("--auto-seed=").to_int()
 	_build_core()
+	if _replay:
+		_replay_events = GameSession.replay_events
+		_replay_end_ms = GameSession.replay_end_ms
 	if _autoplay:
 		# Menschlicher Bot: --auto-jitter=<ms> --auto-aim=<Grad> --auto-seed=<n>.
 		_bot_plan = OrbitCore.bot_plan(notes, seed, jitter, aim, _auto_miss)
@@ -195,6 +216,8 @@ func _build_core() -> void:
 	core.note_judged.connect(_on_note_judged)
 	core.arc_started.connect(_on_arc_started)
 	core.finished.connect(func(_s): _show_results(false))
+	# Immer deterministisch (Wertung unabhaengig von der Bildrate); live mitschreiben.
+	core.set_replay_mode(not GameSession.is_replay)
 	_w300 = core.w300
 
 
@@ -556,7 +579,7 @@ func _set_cursor_from(pos: Vector2, t: float) -> void:
 
 
 func _input(event: InputEvent) -> void:
-	if _ended or _autoplay or core == null:
+	if _ended or _autoplay or _replay or core == null:
 		return
 	if event is InputEventMouseMotion:
 		_set_cursor_from(event.position, _time_ms())
@@ -697,7 +720,17 @@ func _process(delta: float) -> void:
 	var t := _time_ms()
 	if _autoplay:
 		_run_autoplay(t)
+	if _replay:
+		_feed_replay(t)
+	_last_update_t = t
 	core.update(t)
+	if _ended:
+		return
+	if _replay and _replay_end_ms >= 0.0 and t >= _replay_end_ms \
+			and _replay_idx >= _replay_events.size():
+		# Lauf endete hier (z. B. Abbruch im Shot): Endbild wie im Lauf.
+		_show_results(bool(core.failed))
+		return
 	_view.t_ms = t
 	for r in 2:
 		_view.arc_warn[r] = core.arc_out_ms(r, t) / OrbitCore.ARC_OUT_MS
@@ -724,6 +757,23 @@ func _process(delta: float) -> void:
 		_show_results(true)
 		return
 	_update_hud()
+
+
+## Replay: Events bis t in den Core (Originalzeiten), Cursor + Ringe anzeigen.
+func _feed_replay(t: float) -> void:
+	while _replay_idx < _replay_events.size() and float(_replay_events[_replay_idx][0]) <= t:
+		var ev: Array = _replay_events[_replay_idx]
+		_replay_idx += 1
+		core.apply_event(ev)
+		var code := int(ev[1])
+		if code < OrbitCore.EV_UP and ev.size() >= 3:
+			_cursor_deg = float(ev[2]) / 10.0
+			_view.cursor_deg = _cursor_deg
+			_view.cursor_pos = OrbitView.polar(_view_center(), _cursor_deg, _view.unit() * 0.28)
+		if code >= OrbitCore.EV_DOWN and code < OrbitCore.EV_UP:
+			_view.ring_held[code - OrbitCore.EV_DOWN] = true
+		elif code >= OrbitCore.EV_UP:
+			_view.ring_held[clampi(code - OrbitCore.EV_UP, 0, 1)] = false
 
 
 func _update_hud() -> void:
@@ -850,7 +900,7 @@ func _release_all() -> void:
 		var was: bool = _held[r][0] or _held[r][1]
 		_held[r] = [false, false]
 		_view.ring_held[r] = false
-		if was and not _autoplay:
+		if was and not _autoplay and not _replay:
 			core.key_up(r, t)
 
 
@@ -936,6 +986,7 @@ func _show_results(is_fail: bool) -> void:
 		new_best = bool(save.get("is_new_best", false))
 		ScoreStore.log_play(GameSession.osz_path, _beatmap.version_name(),
 			"%s - %s" % [_beatmap.artist(), _beatmap.title()], s, MODE)
+		_save_replay(s, new_best)
 	# Multiplayer: letzten Live-Stand + Finale an alle melden.
 	if Lobby.active and Lobby.in_game:
 		Lobby.send_score(int(s.score), int(core.combo), float(s.accuracy))
@@ -951,6 +1002,9 @@ func _show_results(is_fail: bool) -> void:
 	_results_screen = rs
 	rs.retry_pressed.connect(_restart)
 	rs.back_pressed.connect(_back_to_browser)
+	rs.replay_pressed.connect(_on_results_replay)
+	rs.clip_pressed.connect(_on_results_clip)
+	var has_log := not core.replay_log.is_empty()
 	rs.show_results({
 		"is_fail": is_fail,
 		"s": s,
@@ -962,6 +1016,9 @@ func _show_results(is_fail: bool) -> void:
 		"artist": _beatmap.artist(),
 		"version": _beatmap.version_name(),
 		"allow_retry": not Lobby.active,
+		"can_replay": not Lobby.active and (_replay or has_log),
+		"is_replay": _replay,
+		"can_clip": _replay or has_log,
 	})
 	var grade := "F" if is_fail else str(s.get("grade", "D"))
 	get_tree().create_timer(0.38, true).timeout.connect(func():
@@ -969,6 +1026,74 @@ func _show_results(is_fail: bool) -> void:
 			Sfx.rank_reveal(grade))
 	if OS.get_cmdline_args().has("--shot-results"):
 		_capture_results_shot()
+
+
+## Meta fuer ReplayStore (Mods: Wiedergabe mit denselben Mods; end_ms: Ende des Laufs).
+func _replay_meta(s: Dictionary) -> Dictionary:
+	return {
+		"score": int(s.score), "grade": str(s.grade), "accuracy": float(s.accuracy),
+		"date": Time.get_datetime_string_from_system(), "mods": GameSession.mods.duplicate(),
+		"end_ms": int(_last_update_t), "mode": MODE,
+	}
+
+
+## Letzten Lauf immer, besten Lauf bei neuem Bestwert (oder wenn noch keiner da ist).
+func _save_replay(s: Dictionary, new_best: bool) -> void:
+	if core.replay_log.is_empty():
+		return
+	var ver := _beatmap.version_name()
+	var meta := _replay_meta(s)
+	ReplayStore.save(GameSession.osz_path, ver, core.replay_log, meta, ReplayStore.MODE_ORBIT_LAST)
+	if new_best or not ReplayStore.exists(GameSession.osz_path, ver, ReplayStore.MODE_ORBIT_BEST):
+		ReplayStore.save(GameSession.osz_path, ver, core.replay_log, meta, ReplayStore.MODE_ORBIT_BEST)
+
+
+## Replay-Knopf: im Replay "Selbst spielen", sonst den eben gespielten Lauf ansehen.
+func _on_results_replay() -> void:
+	if _replay:
+		GameSession.is_replay = false
+		GameSession.replay_events = []
+		GameSession.replay_mode = "mania"
+	elif not core.replay_log.is_empty():
+		GameSession.is_replay = true
+		GameSession.replay_events = core.replay_log.duplicate()
+		GameSession.replay_mode = ReplayStore.MODE_ORBIT_LAST
+		GameSession.replay_end_ms = float(int(_last_update_t))
+	else:
+		return
+	_restart()
+
+
+## Clip-Knopf: diesen Lauf (bzw. das laufende Replay) als Video exportieren,
+## wie Mania (zweiter Prozess, ClipExporter) mit Fortschritt im Endbild.
+func _on_results_clip() -> void:
+	var ver := _beatmap.version_name()
+	var mode := GameSession.replay_mode if _replay else ReplayStore.MODE_ORBIT_LAST
+	if not _replay and not core.replay_log.is_empty() \
+			and (_autoplay or not ReplayStore.exists(GameSession.osz_path, ver, mode)):
+		# Autoplay/Shots speichern sonst nichts: den Lauf fuer den Clip ablegen.
+		ReplayStore.save(GameSession.osz_path, ver, core.replay_log, _replay_meta(core.stats()), mode)
+	if not ReplayStore.exists(GameSession.osz_path, ver, mode):
+		_results_screen.show_toast(tr("Kein gespeichertes Replay für diese Map"), false)
+		return
+	if _clip_exporter != null and _clip_exporter.is_running():
+		_results_screen.show_toast(tr("Clip wird bereits aufgenommen …"), true)
+		return
+	if _clip_exporter == null:
+		_clip_exporter = ClipExporter.new()
+		# An der Wurzel: das Umkodieren laeuft weiter, auch nach dem Endbild.
+		get_tree().root.add_child(_clip_exporter)
+		_clip_exporter.progress_info.connect(func(fraction: float, eta_s: float, phase: String):
+			if _results_screen != null and is_instance_valid(_results_screen):
+				_results_screen.show_clip_progress(fraction, eta_s, phase))
+		_clip_exporter.finished.connect(func(ok: bool, path: String):
+			print("CLIP %s %s" % ["OK" if ok else "FEHLER", path])
+			if _results_screen != null and is_instance_valid(_results_screen):
+				_results_screen.show_clip_result(ok, path, "" if ok else str(_clip_exporter.last_error)))
+	var md5 := ReplayStore.key(GameSession.osz_path, ver)
+	var out := ClipExporter.clips_dir().path_join("clip_orbit_%s.avi" % md5)
+	if _clip_exporter.export_clip(md5, out, mode):
+		_results_screen.show_toast(tr("Clip wird aufgenommen …"), true)
 
 
 # ---------------------------------------------------------------------------
@@ -1010,6 +1135,7 @@ func _capture_shot() -> void:
 		var t := _time_ms()
 		while t < t_end and not bool(core.failed):
 			_run_autoplay(t)
+			_last_update_t = t
 			core.update(t)
 			t += 16.0
 		_view.t_ms = t
@@ -1092,4 +1218,9 @@ func _capture_results_shot() -> void:
 	if not is_inside_tree():
 		return
 	_save_shot(_shot_path("orbit_results.png"))
+	if OS.get_cmdline_args().has("--shot-clip"):
+		# Harness: Clip-Knopf ausloesen, auf das fertige Video warten.
+		_on_results_clip()
+		if _clip_exporter != null and _clip_exporter.is_running():
+			await _clip_exporter.finished
 	get_tree().quit(0)
