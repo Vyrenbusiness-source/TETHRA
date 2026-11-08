@@ -11,7 +11,7 @@ extends Control
 ## (orbit_key_inner/outer), dazu immer Maus links/rechts wie im Spiel.
 ## "Gesehen" steht in seen_path (Hinweis im Song-Browser).
 ## Harness: --shot-tutorial [--shot-out=<ordner>] [--lang=en]: Bot spielt mit
-## simulierter Uhr, je Schritt ein Bild plus Wertung, dann quit.
+## simulierter Uhr, je Schritt ein Bild plus Wertung (ohne --lang de und en), dann quit.
 
 const BROWSER := "res://scenes/song_select.tscn"
 static var seen_path := "user://orbit_tutorial.cfg"
@@ -29,6 +29,8 @@ const AIM_HOLD_MS := 280.0
 const AIM_TOL := 14.0
 const AIM_ANGLES: Array[float] = [60.0, 200.0, 320.0]
 const BOT_TAP_MS := 40.0
+## Bot drueckt im Bild, das der Trefferzeit am naechsten liegt (halbes Bild vorher).
+const BOT_LEAD_MS := 8.0
 ## Anteil der Hoehe fuer den Text oben (das Spielfeld beginnt darunter).
 const TOP_K := 0.185
 const JUDGE_MS := 520.0
@@ -133,18 +135,40 @@ class Highlight extends Control:
 				if f > 0.0:
 					draw_arc(c, r + band * 0.45, a0, lerpf(a0, a1, f), 32, UiTheme.TEXT, w * 2.0, true)
 			OrbitTutorial.INNER, OrbitTutorial.ARC:
-				draw_arc(c, v.ring_radius(0), 0.0, TAU, 128, Color(acc, 0.30 + 0.35 * p), w, true)
+				_ring(c, v.ring_radius(0), p, w)
+				_keycap(OrbitView.polar(c, 270.0, v.ring_radius(0)), tut.key_label(0))
 			OrbitTutorial.OUTER:
-				draw_arc(c, v.ring_radius(1), 0.0, TAU, 160, Color(acc, 0.30 + 0.35 * p), w, true)
+				_ring(c, v.ring_radius(1), p, w)
+				_keycap(OrbitView.polar(c, 270.0, v.ring_radius(1)), tut.key_label(1))
 			OrbitTutorial.CHORD:
-				for r in 2:
-					draw_arc(c, v.ring_radius(r), 0.0, TAU, 160, Color(acc, 0.22 + 0.25 * p), w, true)
 				var nx := tut.next_note()
 				if nx != null:
 					var a := float(nx.angle_deg)
 					draw_line(OrbitView.polar(c, a, v.ring_radius(0)), OrbitView.polar(c, a, v.ring_radius(1)),
-						Color(acc, 0.35 + 0.4 * p), w, true)
+						Color(acc, 0.25 + 0.3 * p), v.unit() * 0.022, true)
+				for r in 2:
+					_ring(c, v.ring_radius(r), p, w)
+					_keycap(OrbitView.polar(c, 270.0, v.ring_radius(r)), tut.key_label(r))
 
+	## Hervorgehobener Ring: weiches Band plus feine Linie, pulst auf dem Takt.
+	func _ring(c: Vector2, r: float, p: float, w: float) -> void:
+		var acc := UiTheme.ACCENT
+		draw_arc(c, r, 0.0, TAU, 160, Color(acc, 0.07 + 0.07 * p), w * 6.0, true)
+		draw_arc(c, r, 0.0, TAU, 160, Color(acc, 0.45 + 0.4 * p), w, true)
+
+	## Tastenkappe auf dem Ring (flach, Bernstein-Kante), zeigt die Ring-Taste.
+	func _keycap(pos: Vector2, text: String) -> void:
+		var font := get_theme_default_font()
+		var fs := 15
+		var ts := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
+		var sz := Vector2(maxf(ts.x + 16.0, 30.0), ts.y + 6.0)
+		var rect := Rect2(pos - sz * 0.5, sz)
+		var box := UiTheme.solid_box(UiTheme.BG, 6)
+		box.set_border_width_all(1)
+		box.border_color = UiTheme.ACCENT
+		draw_style_box(box, rect)
+		var base := rect.position.y + (sz.y - ts.y) * 0.5 + font.get_ascent(fs)
+		draw_string(font, Vector2(rect.position.x, base), text, HORIZONTAL_ALIGNMENT_CENTER, sz.x, fs, UiTheme.TEXT)
 
 # ---------------------------------------------------------------------------
 # Gesehen-Merker (eigene Datei)
@@ -434,8 +458,8 @@ static func pattern(s: int, b0: int, rnd: int) -> Array[OrbitNote]:
 func _update_texts() -> void:
 	_step_lbl.text = tr("Schritt %d von %d") % [step + 1, STEP_COUNT]
 	_title_lbl.text = tr(TITLES[step])
-	var ki := UiTheme.key_short(Settings.orbit_key_inner)
-	var ko := UiTheme.key_short(Settings.orbit_key_outer)
+	var ki := key_label(0)
+	var ko := key_label(1)
 	match step:
 		AIM:
 			_body_lbl.text = tr("Beweg Maus oder Stift um die Mitte. Der helle Sektor folgt dir. Richte ihn auf die markierte Stelle und bleib kurz dort.")
@@ -560,6 +584,11 @@ func next_note() -> OrbitNote:
 		if not core.is_judged(i):
 			return notes[i]
 	return null
+
+
+## Kurzname der Ring-Taste aus den Settings (fuer Text und Tastenkappe).
+func key_label(ring: int) -> String:
+	return UiTheme.key_short(Settings.orbit_key_inner if ring == 0 else Settings.orbit_key_outer)
 
 
 func cursor_deg() -> float:
@@ -748,7 +777,7 @@ func _bot_tick(t: float) -> void:
 			_bot_key(r, false)
 			_bot_release[r] = -1.0
 			_bot_arc[r] = -1
-	while _bot_idx < notes.size() and notes[_bot_idx].time_ms <= t:
+	while _bot_idx < notes.size() and notes[_bot_idx].time_ms <= t + BOT_LEAD_MS:
 		var n := notes[_bot_idx]
 		var i := _bot_idx
 		_bot_idx += 1
@@ -789,7 +818,7 @@ func _show_result() -> void:
 	box.custom_minimum_size = Vector2(520, 0)
 	box.offset_left = -260
 	box.offset_right = 260
-	box.offset_top = -120
+	box.offset_top = -150
 	box.grow_horizontal = Control.GROW_DIRECTION_BOTH
 	box.add_theme_constant_override("separation", 14)
 	add_child(box)
@@ -812,7 +841,7 @@ func _show_result() -> void:
 	var acc := _label(30, UiTheme.TEXT)
 	acc.add_theme_font_override("font", UiTheme.heading_font(0))
 	acc.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-	acc.text = UiTheme.fmt_pct(trial_accuracy())
+	acc.text = UiTheme.fmt_pct(trial_accuracy() * 100.0)
 	acc_box.add_child(acc)
 	var line := ColorRect.new()
 	line.color = Color(UiTheme.TEXT, 0.12)
@@ -832,6 +861,9 @@ func _show_result() -> void:
 		n_l.text = str(tiers[q])
 		cell.add_child(n_l)
 		grid.add_child(cell)
+	var gap := Control.new()
+	gap.custom_minimum_size = Vector2(0, 8)
+	box.add_child(gap)
 	var row := HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.add_theme_constant_override("separation", 10)
@@ -896,7 +928,25 @@ func _shot_dir() -> String:
 func _run_shots() -> void:
 	var dir := _shot_dir()
 	DirAccess.make_dir_recursive_absolute(dir)
-	var lang := TranslationServer.get_locale().substr(0, 2)
+	# Ohne --lang beide Sprachen in einem Lauf.
+	var langs: Array = [TranslationServer.get_locale().substr(0, 2)]
+	if not Array(OS.get_cmdline_args()).any(func(a): return str(a).begins_with("--lang=")):
+		langs = ["de", "en"]
+	for lang in langs:
+		TranslationServer.set_locale(lang)
+		_skip_btn.text = tr("Schritt überspringen  (Tab)")
+		_quit_btn.text = tr("Beenden  (Esc)")
+		await _shots_one(dir, lang)
+	get_tree().quit(0)
+
+
+func _shots_one(dir: String, lang: String) -> void:
+	if _result != null:
+		_result.queue_free()
+		_result = null
+		finished = false
+		_view.visible = true
+		_bar.visible = true
 	for s in STEP_COUNT:
 		enter_step(s)
 		# Bis ein Treffer geschafft ist und das naechste Ziel kurz vor dem Ring steht.
@@ -920,7 +970,6 @@ func _run_shots() -> void:
 		g2 += 1
 		advance(1000.0 / 60.0)
 	await _save("orbit_tut_%s_result.png" % lang, dir)
-	get_tree().quit(0)
 
 
 func _save(file: String, dir: String) -> void:

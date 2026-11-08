@@ -2171,21 +2171,30 @@ func _start_orbit_tutorial() -> void:
 	SceneFader.go(ORBIT_TUTORIAL_SCENE)
 
 
-## Harness --shot-orbit-hint: Wechsel Mania -> Orbit, Hinweis fotografieren.
+## Harness --shot-orbit-hint [--shot-out=<ordner>]: Wechsel Mania -> Orbit,
+## Hinweis de und en fotografieren.
 ## Speichert den Browser-Zustand nicht (Modus des Nutzers bleibt).
 func _shot_orbit_hint() -> void:
 	_state_ready = false
 	_play_mode = "mania"
 	_orbit_hint_force = true
 	_set_play_mode("orbit")
-	await get_tree().create_timer(0.9).timeout
-	await RenderingServer.frame_post_draw
-	var out := OS.get_user_data_dir().path_join("orbit_hint.png")
+	var dir := OS.get_user_data_dir()
 	for a in OS.get_cmdline_args():
 		if a.begins_with("--shot-out="):
-			out = a.trim_prefix("--shot-out=")
-	get_viewport().get_texture().get_image().save_png(out)
-	print("SHOT gespeichert: " + out)
+			dir = a.trim_prefix("--shot-out=")
+	# Beide Sprachen in einem Lauf: Hinweis je Sprache neu bauen.
+	for lang in ["de", "en"]:
+		TranslationServer.set_locale(lang)
+		if _orbit_hint != null:
+			_orbit_hint.free()
+			_orbit_hint = null
+		_show_orbit_hint()
+		await get_tree().create_timer(0.9).timeout
+		await RenderingServer.frame_post_draw
+		var out := dir.path_join("orbit_hint_%s.png" % lang)
+		get_viewport().get_texture().get_image().save_png(out)
+		print("SHOT gespeichert: " + out)
 	get_tree().quit(0)
 
 
