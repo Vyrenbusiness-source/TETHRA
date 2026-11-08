@@ -35,6 +35,7 @@ func _run() -> void:
 	_test_compact()
 	_test_store()
 	_test_orbit_mods()
+	_test_rules_marker()
 	print("=== %d ok, %d fehlgeschlagen ===" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
 
@@ -47,16 +48,20 @@ func _chart() -> Array[OrbitNote]:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 77
 	var t := 1500.0
+	var clock := OrbitClock.fixed(2000.0)
 	for i in 90:
 		var ring := rng.randi_range(0, 1)
-		var ang := rng.randf_range(0.0, 360.0)
+		var ang := clock.angle_at(t)
+		var n: OrbitNote
 		if i % 9 == 4:
 			var dur := rng.randf_range(300.0, 900.0)
-			ns.append(OrbitNote.make_arc(t, t + dur, ang, rng.randf_range(-120.0, 120.0), ring))
+			n = OrbitNote.make_arc(t, t + dur, ang, 0.18 * dur, ring)
 			t += dur + rng.randf_range(120.0, 300.0)
 		else:
-			ns.append(OrbitNote.make(t, ang, ring))
+			n = OrbitNote.make(t, ang, ring)
 			t += rng.randf_range(90.0, 380.0)
+		n.speed = 0.18
+		ns.append(n)
 	ns.sort_custom(func(a, b): return a.time_ms < b.time_ms)
 	return ns
 
@@ -81,7 +86,7 @@ func _human(ns: Array[OrbitNote], seed: int) -> Array:
 		if i % 13 == 7:
 			continue   # Ziel auslassen
 		var dt := rng.randfn(0.0, 22.0)
-		var aim := n.angle_deg + rng.randfn(0.0, 7.0)
+		var aim := n.pointer_at(n.time_ms + dt) + rng.randfn(0.0, 7.0)
 		var td := n.time_ms + dt
 		aims.append([td - 25.0, aim])
 		aims.append([td, aim])
@@ -93,7 +98,7 @@ func _human(ns: Array[OrbitNote], seed: int) -> Array:
 			var steps := int((stop - td) / 30.0)
 			for k in steps:
 				var tk := td + 30.0 * (k + 1)
-				aims.append([tk, n.angle_at(tk) + rng.randfn(0.0, 5.0)])
+				aims.append([tk, n.pointer_at(tk) + rng.randfn(0.0, 5.0)])
 			keys.append([stop + rng.randf_range(0.0, 30.0), "u", n.ring, 0.0])
 		else:
 			keys.append([td + rng.randf_range(25.0, 70.0), "u", n.ring, 0.0])
@@ -336,3 +341,18 @@ func _test_orbit_mods() -> void:
 ## Cursor-Abstand, der den Ring r waehlt.
 func _rho(ring: int) -> float:
 	return OrbitCore.R_OUTER_K if ring == 1 else OrbitCore.R_INNER_K
+
+
+func _test_rules_marker() -> void:
+	print("- Regel-Marke: aeltere Replays erkennen")
+	var ns := _chart()
+	var lc: OrbitCore = _live(ns, _human(ns, 5), 11)[0]
+	_check(int(lc.replay_log[0][1]) == OrbitCore.EV_RULES and int(lc.replay_log[0][2]) == OrbitCore.REPLAY_RULES,
+		"Replay beginnt mit der Regel-Marke")
+	_check(OrbitCore.count_events(lc.replay_log).keys <= 2 * ns.size(), "Marke zaehlt nicht als Taste")
+	var game: GDScript = load("res://scripts/orbit/orbit_game.gd")
+	_check(not game.is_old_replay(lc.replay_log), "neues Replay ist nicht alt")
+	_check(game.is_old_replay([[100, OrbitCore.EV_CURSOR, 450, 300], [120, OrbitCore.EV_DOWN, 455, 300]]),
+		"Format 2 (ohne Marke) = aeltere Version")
+	_check(game.is_old_replay([[100, OrbitCore.EV_DOWN + 1], [160, OrbitCore.EV_UP]]), "Format 1 = aeltere Version")
+	_check(game.is_old_replay([[0, OrbitCore.EV_RULES, 2]]), "Marke mit Format 2 = alt")

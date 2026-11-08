@@ -69,7 +69,7 @@ func _test_settings() -> void:
 	var path := "user://test_tmp/orbit_play_settings_%d.cfg" % OS.get_process_id()
 	var a = SettingsScript.new()
 	_check(a.orbit_key_inner == KEY_Z and a.orbit_key_outer == KEY_X, "Standard Z/X")
-	_check(a.orbit_guides, "Hilfslinien standardmaessig an")
+	_check(a.orbit_guides, "Raster standardmaessig an")
 	_check(Array(a.key_lanes) == [KEY_D, KEY_F, KEY_J, KEY_K], "Mania-Tasten unveraendert")
 	a.orbit_key_inner = KEY_A
 	a.orbit_key_outer = KEY_S
@@ -90,18 +90,8 @@ func _test_settings() -> void:
 func _test_view_geometry() -> void:
 	var v := OrbitView.new()
 	v.size = Vector2(1280, 720)
-	v.preempt = 1435.0
 	var c := v.center()
 	_check(c.is_equal_approx(Vector2(640, 360)), "Mitte")
-	for ring in 2:
-		_check(absf(v.radius_at(ring, 0.0) - v.ring_radius(ring)) < 0.001, "Ankunft = Trefferzeit (Ring %d)" % ring)
-		_check(absf(v.radius_at(ring, v.preempt) - v.spawn_radius(ring)) < 0.001, "Spawn am Anflugbeginn")
-		var past := v.radius_at(ring, -50.0) - v.ring_radius(ring)
-		_check(past > 0.0 if ring == 0 else past < 0.0, "nach der Zeit weiter in Laufrichtung (Ring %d)" % ring)
-	_check(v.spawn_radius(0) < v.ring_radius(0) and v.spawn_radius(1) > v.ring_radius(1),
-		"kein Ziel startet auf einem Trefferring: innen von innen, aussen von aussen")
-	_check(v.spawn_radius(0) < v.ring_radius(0) and v.spawn_radius(1) > v.ring_radius(1)
-		and v.spawn_radius(0) < v.ring_radius(0), "Anflugwege getrennt")
 	_check(v.ring_radius(1) > v.ring_radius(0), "aussen > innen")
 	_check(v.ring_radius(1) * 2.0 < 720.0 * 0.8, "Feld passt in die Hoehe")
 	_check(absf(OrbitView.angle_of(c, c + Vector2(0, -10))) < 0.001, "0 Grad = oben")
@@ -112,6 +102,20 @@ func _test_view_geometry() -> void:
 		_check(absf(OrbitView.angle_of(c, p) - deg) < 0.01 and absf(p.distance_to(c) - 100.0) < 0.01,
 			"polar/angle_of %.1f" % deg)
 	_check(v.deadzone_radius() < 720.0 * OrbitView.R_INNER_K, "Totzone innerhalb des inneren Rings")
+	# Hand: dreht pro Takt einmal, 12 Uhr = Takt-Eins; Cursor auf der Hand = Zielen ok.
+	v.clock = OrbitClock.fixed(2000.0)
+	v.tol_deg = OrbitCore.ANGLE_TOL_DEG
+	v.t_ms = 0.0
+	_check(absf(v.hand_deg()) < 0.001, "Hand bei Takt-Eins oben")
+	v.t_ms = 500.0
+	_check(absf(v.hand_deg() - 90.0) < 0.001, "Hand nach einem Viertel rechts")
+	v.cursor_deg = 100.0
+	_check(v.aim_ok(), "Cursor 10 Grad neben der Hand zaehlt als auf der Hand")
+	v.cursor_deg = 140.0
+	_check(not v.aim_ok(), "Cursor 50 Grad daneben: nicht auf der Hand")
+	v.cursor_deg = 95.0
+	v.cursor_in_deadzone = true
+	_check(not v.aim_ok(), "Totzone: nicht auf der Hand")
 	v.free()
 
 
