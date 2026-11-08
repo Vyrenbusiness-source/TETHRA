@@ -4,7 +4,12 @@
   <img src="docs/media/play_3d_hero.webp" alt="TETHRA, an osu!mania 4K rhythm game (VSRG) with 3D and 2D playfields" width="100%">
 </p>
 
-<h1 align="center">TETHRA</h1>
+<h1 align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/media/logo_wordmark.png">
+    <img src="docs/media/logo.svg" alt="TETHRA" width="420">
+  </picture>
+</h1>
 
 <p align="center">
   <b>Free osu!mania 4K rhythm game for Windows. Play your own .osz beatmaps in 3D or classic 2D.</b>
