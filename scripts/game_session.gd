@@ -66,7 +66,14 @@ var _perf_last_frame_t := 0
 var _perf_frames: Array = []
 
 
+## Online-Scores / Website-Anbindung (scripts/net/online_api.gd).
+var online: OnlineApi
+
+
 func _ready() -> void:
+	online = OnlineApi.new()
+	online.name = "OnlineApi"
+	add_child(online)
 	set_process(false)
 	_arm_test_watchdog()
 	_arm_playtime()

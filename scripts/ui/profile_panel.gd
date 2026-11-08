@@ -51,6 +51,13 @@ var _mode_btns: Array[Button] = []
 var _rating_slot: VBoxContainer
 var _stat_col: VBoxContainer
 var _list: VBoxContainer
+## Online-Konto (OnlineApi): Bereich unter dem Kopf, wird je Zustand neu aufgebaut.
+var _acct: VBoxContainer
+var _acct_step := "login"   # login | register | verify
+var _acct_msg := ""
+var _acct_email := ""
+var _acct_user := ""
+var _acct_pass := ""
 
 
 func _ready() -> void:
@@ -141,6 +148,13 @@ func _ready() -> void:
 	name_edit.editable = Settings.can_set_name()
 	info.add_child(name_edit)
 	_name_edit = name_edit
+	# Angemeldet + Name fest: Klick auf den Namen oeffnet das Web-Profil.
+	if not name_edit.editable and GameSession.online != null:
+		name_edit.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		name_edit.focus_mode = Control.FOCUS_NONE
+		name_edit.gui_input.connect(func(e):
+			if e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_LEFT 					and GameSession.online.logged_in():
+				GameSession.online.open_profile(GameSession.online.username))
 	if name_edit.editable:
 		_name_hint = Label.new()
 		_name_hint.text = tr("Enter: Name festlegen · kann nur einmal geändert werden")
@@ -194,6 +208,16 @@ func _ready() -> void:
 	sep.add_theme_color_override("separator", Color(1, 1, 1, 0.08))
 	vb.add_child(sep)
 
+	_acct = VBoxContainer.new()
+	_acct.add_theme_constant_override("separation", 8)
+	vb.add_child(_acct)
+	_build_account()
+	if GameSession.online != null:
+		GameSession.online.state_changed.connect(_build_account)
+	var sep2 := HSeparator.new()
+	sep2.add_theme_color_override("separator", Color(1, 1, 1, 0.08))
+	vb.add_child(sep2)
+
 	# --------------------------- Scroll-Sektionen ---------------------------
 	var scroll_wrap := Control.new()
 	scroll_wrap.custom_minimum_size = Vector2(0, 520)
@@ -245,6 +269,146 @@ func _ready() -> void:
 			_remove_btn.visible = true
 			_rebuild_avatar())
 	add_child(_file_dialog)
+
+
+func _acct_label(text: String, dim: bool = true) -> Label:
+	var l := Label.new()
+	l.text = text
+	l.add_theme_font_size_override("font_size", 13)
+	l.add_theme_color_override("font_color", COL_DIM if dim else UiTheme.TEXT)
+	return l
+
+
+func _acct_edit(ph: String, text: String, secret: bool, width: float) -> LineEdit:
+	var le := LineEdit.new()
+	le.placeholder_text = ph
+	le.text = text
+	le.secret = secret
+	le.custom_minimum_size = Vector2(width, 32)
+	le.add_theme_font_size_override("font_size", 13)
+	return le
+
+
+func _acct_btn(text: String, primary: bool, cb: Callable) -> Button:
+	var b := Button.new()
+	b.text = text
+	b.custom_minimum_size = Vector2(0, 32)
+	b.add_theme_font_size_override("font_size", 13)
+	UiTheme.style_button(b, primary, 8)
+	b.pressed.connect(cb)
+	return b
+
+
+## Online-Konto: Anmelden / Registrieren (E-Mail-Code) / angemeldet + Abmelden.
+func _build_account() -> void:
+	if _acct == null or not is_instance_valid(_acct):
+		return
+	for c in _acct.get_children():
+		c.queue_free()
+	var api: OnlineApi = GameSession.online
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	_acct.add_child(row)
+	if api == null or not api.enabled():
+		row.add_child(_acct_label(tr("Online-Konto: noch nicht freigeschaltet.")))
+		return
+	if api.logged_in():
+		row.add_child(_acct_label(tr("Online angemeldet als")))
+		row.add_child(_acct_label(api.username, false))
+		var fill := Control.new()
+		fill.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(fill)
+		if api.queue_size() > 0:
+			row.add_child(_acct_label(tr("%d Score(s) warten auf Senden") % api.queue_size()))
+		if api.update_required:
+			row.add_child(_acct_label(tr("Update nötig, um Scores zu senden")))
+		row.add_child(_acct_btn(tr("Profil im Browser"), true,
+			func(): api.open_profile(api.username)))
+		row.add_child(_acct_btn(tr("Abmelden"), false, func(): api.logout()))
+		return
+	match _acct_step:
+		"verify":
+			row.add_child(_acct_label(tr("Code aus der E-Mail an %s:") % _acct_email))
+			var code := _acct_edit(tr("Code"), "", false, 120)
+			row.add_child(code)
+			row.add_child(_acct_btn(tr("Bestätigen"), true, func():
+				_acct_msg = tr("Prüfe Code …")
+				api.verify(_acct_email, code.text.strip_edges(), func(ok: bool, msg: String):
+					if ok:
+						_acct_step = "login"
+						_acct_msg = tr("E-Mail bestätigt.")
+						if _acct_user != "" and _acct_pass != "":
+							api.login(_acct_user, _acct_pass, _acct_done)
+							return
+					else:
+						_acct_msg = _acct_error(msg)
+					_build_account())))
+			row.add_child(_acct_btn(tr("Zurück"), false, func():
+				_acct_step = "login"
+				_acct_msg = ""
+				_build_account()))
+		"register":
+			var u := _acct_edit(tr("Benutzername"), _acct_user, false, 150)
+			var m := _acct_edit(tr("E-Mail"), _acct_email, false, 200)
+			var pw := _acct_edit(tr("Passwort"), "", true, 150)
+			row.add_child(u)
+			row.add_child(m)
+			row.add_child(pw)
+			row.add_child(_acct_btn(tr("Konto erstellen"), true, func():
+				_acct_user = u.text.strip_edges()
+				_acct_email = m.text.strip_edges()
+				_acct_pass = pw.text
+				_acct_msg = tr("Sende …")
+				api.register(_acct_user, _acct_email, _acct_pass, func(ok: bool, msg: String):
+					if ok:
+						_acct_step = "verify"
+						_acct_msg = tr("Wir haben dir einen Code per E-Mail geschickt.")
+					else:
+						_acct_msg = _acct_error(msg)
+					_build_account())))
+			row.add_child(_acct_btn(tr("Zurück"), false, func():
+				_acct_step = "login"
+				_acct_msg = ""
+				_build_account()))
+		_:
+			var u2 := _acct_edit(tr("Benutzername"), _acct_user, false, 170)
+			var pw2 := _acct_edit(tr("Passwort"), "", true, 170)
+			row.add_child(u2)
+			row.add_child(pw2)
+			var go := func():
+				_acct_user = u2.text.strip_edges()
+				_acct_pass = pw2.text
+				_acct_msg = tr("Melde an …")
+				_acct_msg_label_update()
+				api.login(_acct_user, _acct_pass, _acct_done)
+			pw2.text_submitted.connect(func(_t): go.call())
+			row.add_child(_acct_btn(tr("Anmelden"), true, go))
+			row.add_child(_acct_btn(tr("Registrieren"), false, func():
+				_acct_step = "register"
+				_acct_msg = ""
+				_build_account()))
+	if _acct_msg != "":
+		var ml := _acct_label(_acct_msg)
+		ml.name = "Msg"
+		_acct.add_child(ml)
+
+
+func _acct_done(ok: bool, msg: String) -> void:
+	_acct_pass = ""
+	_acct_msg = "" if ok else _acct_error(msg)
+	_build_account()
+
+
+func _acct_msg_label_update() -> void:
+	var l := _acct.get_node_or_null("Msg") as Label
+	if l != null:
+		l.text = _acct_msg
+
+
+static func _acct_error(msg: String) -> String:
+	if msg == "offline":
+		return TranslationServer.translate("Server nicht erreichbar.")
+	return msg
 
 
 ## Segment-Umschalter Mania 4K | Orbit (Optik wie im Song-Browser).

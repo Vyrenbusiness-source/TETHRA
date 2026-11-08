@@ -118,6 +118,11 @@ var _sv_level_btns: Array[Button] = []
 ## Ranglisten-Kopf: Titel + Modus-Tag (Mania 4K / Orbit).
 var _lb_title: Label
 var _lb_mode_tag: Label
+## Beste Scores: false = lokal, true = Online-Rangliste (OnlineApi).
+var _lb_online := false
+var _lb_src_btns: Array[Button] = []
+var _online_gen := 0
+var _online_md5_cache: Dictionary = {}
 
 # Lazy-Loading der Karten-Thumbnails (2 pro Frame).
 var _thumb_queue: Array = []
@@ -1016,6 +1021,14 @@ func _build_info_panel() -> void:
 	lb_fill.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	lb_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	lb_head.add_child(lb_fill)
+	_lb_src_btns.clear()
+	for src_i in 2:
+		var sb := _make_toggle(tr("Lokal") if src_i == 0 else tr("Online"), 12, 8)
+		sb.custom_minimum_size = Vector2(56, 26)
+		sb.pressed.connect(_set_lb_online.bind(src_i == 1))
+		lb_head.add_child(sb)
+		_lb_src_btns.append(sb)
+	_restyle_lb_src()
 	_replay_btn = Button.new()
 	_replay_btn.text = "Replay"
 	_replay_btn.custom_minimum_size = Vector2(0, 28)
@@ -2148,6 +2161,12 @@ func _update_info_panel() -> void:
 	var orbit := _play_mode == "orbit" and int(m.get("mode", 0)) in [0, 3]
 	var score_mode := ScoreStore.MODE_ORBIT if orbit else ""
 	_style_lb_mode_tag(score_mode)
+	_online_gen += 1
+	if _lb_online:
+		_replay_btn.visible = false
+		_show_online_scores(m, orbit)
+		_apply_card_highlight()
+		return
 	var tops := ScoreStore.top_scores_all(_selected_set.osz_path,
 		_selected_set.version_name_at(_selected_diff), 5, score_mode)
 	if tops.is_empty():
@@ -2327,6 +2346,106 @@ func _preview_ms() -> float:
 		return -1.0
 	return (_preview.get_playback_position() + AudioServer.get_time_since_last_mix() \
 		- AudioServer.get_output_latency()) * 1000.0
+
+
+func _restyle_lb_src() -> void:
+	for i in _lb_src_btns.size():
+		_apply_toggle(_lb_src_btns[i], (i == 1) == _lb_online)
+
+
+func _set_lb_online(on: bool) -> void:
+	if _lb_online == on:
+		return
+	_lb_online = on
+	_restyle_lb_src()
+	_update_info_panel()
+
+
+func _lb_hint(text: String) -> void:
+	var l := Label.new()
+	l.text = text
+	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	l.add_theme_font_size_override("font_size", 13)
+	l.add_theme_color_override("font_color", COL_DIM)
+	_lb_box.add_child(l)
+
+
+## Online-Rangliste der gewaehlten Diff (asynchron). Ohne Key/Login: klarer Hinweis.
+func _show_online_scores(m: Dictionary, orbit: bool) -> void:
+	var api: OnlineApi = GameSession.online
+	if api == null or not api.enabled():
+		_lb_hint(tr("Online-Ranglisten sind noch nicht freigeschaltet."))
+		return
+	if not api.logged_in():
+		_lb_hint(tr("Melde dich im Profil an, um Online-Ranglisten zu sehen."))
+		return
+	var file := _selected_set.osu_filename_at(_selected_diff)
+	var key := _selected_set.osz_path + "|" + file
+	if not _online_md5_cache.has(key):
+		_online_md5_cache[key] = OnlineApi._md5_bytes(OszImporter.read_file_bytes(_selected_set.osz_path, file))
+	var md5: String = _online_md5_cache[key]
+	if md5 == "":
+		_lb_hint(tr("Für diese Map gibt es keine Online-Rangliste."))
+		return
+	_lb_hint(tr("Lade Rangliste …"))
+	var gen := _online_gen
+	api.leaderboard("orbit" if orbit else "mania", md5, 0, func(ok: bool, entries: Array, msg: String):
+		if gen != _online_gen or not is_inside_tree():
+			return
+		for c in _lb_box.get_children():
+			c.queue_free()
+		if not ok:
+			_lb_hint(tr("Rangliste nicht erreichbar.") + (" (%s)" % msg if msg != "" else ""))
+		elif entries.is_empty():
+			_lb_hint(tr("Noch kein Online-Score auf dieser Map."))
+		for i in mini(entries.size(), 10):
+			_lb_box.add_child(_online_row(entries[i])))
+
+
+## Online-Zeile: Rang, Grade, Spielername (Klick = Web-Profil), Score, Acc, pp.
+func _online_row(e: Dictionary) -> Control:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 7)
+	var num := Label.new()
+	num.text = "#%d" % int(e.get("rank", 0))
+	num.custom_minimum_size = Vector2(30, 0)
+	num.add_theme_font_size_override("font_size", 12)
+	num.add_theme_color_override("font_color", COL_TEXT if int(e.get("rank", 0)) == 1 else COL_DIM)
+	row.add_child(num)
+	var g := str(e.get("grade", "?"))
+	var grade := Label.new()
+	grade.text = g
+	grade.custom_minimum_size = Vector2(28, 0)
+	grade.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	grade.add_theme_font_override("font", UiTheme.heading_font(0))
+	grade.add_theme_font_size_override("font_size", 15)
+	grade.add_theme_color_override("font_color", GRADE_COLOR.get(g.left(1), COL_TEXT))
+	row.add_child(grade)
+	var who := str(e.get("player", "?"))
+	var name_btn := LinkButton.new()
+	name_btn.text = who
+	name_btn.underline = LinkButton.UNDERLINE_MODE_ON_HOVER
+	name_btn.tooltip_text = tr("Profil im Browser öffnen")
+	name_btn.add_theme_font_size_override("font_size", 13)
+	name_btn.add_theme_color_override("font_color", COL_TEXT)
+	name_btn.pressed.connect(func(): GameSession.online.open_profile(who))
+	row.add_child(name_btn)
+	var main := Label.new()
+	main.text = "%s · %s" % [UiTheme.fmt_score(int(e.get("score", 0))),
+		UiTheme.fmt_pct(float(e.get("accuracy", 0.0)) * 100.0)]
+	main.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	main.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	main.add_theme_font_size_override("font_size", 13)
+	main.add_theme_color_override("font_color", Color(0.85, 0.88, 0.95))
+	row.add_child(main)
+	var pp_val := float(e.get("pp", 0.0))
+	if pp_val > 0.0:
+		var pp_lbl := Label.new()
+		pp_lbl.text = UiTheme.fmt_pp(pp_val)
+		pp_lbl.add_theme_font_size_override("font_size", 13)
+		pp_lbl.add_theme_color_override("font_color", UiTheme.ACCENT2)
+		row.add_child(pp_lbl)
+	return row
 
 
 ## Eine Leaderboard-Zeile: Rang, Grade, Score/Acc, pp, Datum.
