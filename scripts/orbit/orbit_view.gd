@@ -249,7 +249,7 @@ func _process(_d: float) -> void:
 
 ## Staerke der Musik-Reaktion: aus 0, dezent 0.6, voll 1.
 func _music() -> float:
-	return [0.0, 0.6, 1.0][clampi(Settings.orbit_music, 0, 2)]
+	return [0.0, 0.6, 1.0][clampi(_setting("orbit_music", 1), 0, 2)]
 
 
 ## Takt-Puls an der Uhr: 1 genau auf dem Schlag, faellt schnell ab; Takt-Eins staerker.
@@ -409,11 +409,11 @@ func _cross_skip(shape: int) -> PackedByteArray:
 
 
 func _path_alpha() -> float:
-	return clampf(float(Settings.orbit_path_alpha) / 100.0, 0.3, 1.0)
+	return clampf(float(_setting("orbit_path_alpha", 100)) / 100.0, 0.3, 1.0)
 
 
 func _note_k() -> float:
-	return clampf(float(Settings.orbit_note_size) / 100.0, 0.9, 1.2)
+	return clampf(float(_setting("orbit_note_size", 100)) / 100.0, 0.9, 1.2)
 
 
 ## Raster: Schlaege als feine Punkte auf der Bahn, Takt-Eins als kurzer Strich.
@@ -571,7 +571,7 @@ func _draw_note(u: float, i: int, horizon: float) -> void:
 	if st == ST_PENDING and dt < -120.0 and not n.is_arc:
 		return
 	var prev := _is_preview(n)
-	if prev and not Settings.orbit_preview:
+	if prev and not _setting("orbit_preview", true):
 		return
 	var primary := _next[ring] == i
 	var phase := clampf(1.0 - dt / maxf(horizon, 1.0), 0.0, 1.0)
@@ -612,17 +612,17 @@ func _note_body(p: Vector2, ring: int, s: float, col: Color, alpha: float,
 
 
 func _show_keys() -> bool:
-	match Settings.orbit_key_hint:
+	match _setting("orbit_key_hint", 0):
 		1:
 			return true
 		2:
 			return false
-	return key_hint_auto or GameSession.tutorial
+	return key_hint_auto or bool(_gs_value("tutorial", false))
 
 
 ## Taste der Spur in der Note (dunkel auf der Spurfarbe).
 func _key_label(p: Vector2, ring: int, s: float) -> void:
-	var code: int = Settings.orbit_key_outer if ring == 1 else Settings.orbit_key_inner
+	var code: int = _setting("orbit_key_outer", 0) if ring == 1 else _setting("orbit_key_inner", 0)
 	var txt := OS.get_keycode_string(code)
 	if txt == "":
 		return
@@ -708,3 +708,15 @@ func _square(p: Vector2, s: float, col: Color, filled: bool) -> void:
 		draw_rect(r, col, true)
 	else:
 		draw_rect(r, col, false, 2.0)
+
+
+
+## Autoloads per Pfad: die Ansicht laeuft auch in Testlaeufen ohne Autoloads (--script).
+func _setting(key: String, fallback: Variant) -> Variant:
+	var st := get_node_or_null("/root/Settings")
+	return st.get(key) if st != null and key in st else fallback
+
+
+func _gs_value(key: String, fallback: Variant) -> Variant:
+	var gs := get_node_or_null("/root/GameSession")
+	return gs.get(key) if gs != null and key in gs else fallback
