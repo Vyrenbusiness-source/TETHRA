@@ -86,6 +86,7 @@ func _ready() -> void:
 	_view.preempt = _preempt()
 	_view.show_guides = Settings.orbit_guides
 	_view.tol_deg = _tolerance()
+	_view.center_deg = OrbitCore.CENTER_DEG
 	_build_sound()
 	_build_hud()
 	if not _use_audio:
@@ -207,7 +208,8 @@ func _build_bg() -> void:
 	_bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	# Settings.bg_dim = Deckkraft des Map-Bilds (0 = aus).
-	_bg.modulate = Color(1, 1, 1, Settings.bg_dim)
+	# Orbit dimmt staerker als Mania: Ziele liegen ueber dem ganzen Bild.
+	_bg.modulate = Color(1, 1, 1, Settings.bg_dim * 0.6)
 	_bg.visible = Settings.bg_dim > 0.001
 	add_child(_bg)
 
@@ -630,6 +632,8 @@ func _process(delta: float) -> void:
 		_run_autoplay(t)
 	core.update(t)
 	_view.t_ms = t
+	for r in 2:
+		_view.arc_warn[r] = core.arc_out_ms(r, t) / OrbitCore.ARC_OUT_MS
 	_hp_flash_cd = maxf(_hp_flash_cd - delta, 0.0)
 	_update_break_overlay(t)
 	if _legend != null and _legend.visible and not notes.is_empty():
@@ -692,8 +696,8 @@ func _on_note_judged(index: int, result: Dictionary) -> void:
 	_acc_trace.append(core.accuracy())
 
 
-func _on_arc_started(index: int, _quality: int) -> void:
-	_view.on_arc_started(index)
+func _on_arc_started(index: int, quality: int) -> void:
+	_view.on_arc_started(index, quality, core.arc_head_dt(index))
 
 
 func _play_hit(pitch: float) -> void:
@@ -923,6 +927,19 @@ func _capture_shot() -> void:
 func _shot_target(v: String, def: float) -> float:
 	if v.is_valid_float():
 		return v.to_float()
+	if v == "dense":
+		# Dichteste Stelle: meiste Ziele in einem Anflug-Fenster.
+		var best := -1
+		var at := def
+		var j := 0
+		var win := _preempt()
+		for i in notes.size():
+			while notes[i].time_ms - notes[j].time_ms > win:
+				j += 1
+			if notes[j].time_ms >= 8000.0 and i - j > best:
+				best = i - j
+				at = notes[j].time_ms + 40.0
+		return at
 	for i in notes.size():
 		var n := notes[i]
 		if n.time_ms < 8000.0:
