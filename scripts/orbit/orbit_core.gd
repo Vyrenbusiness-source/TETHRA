@@ -27,6 +27,24 @@ const RINGS := 2
 const ANGLE_TOL_DEG := 22.0
 ## So lange darf der Cursor beim Bogen ausserhalb der Toleranz sein.
 const ARC_OUT_MS := 150.0
+## Zielmitte: nur so nah am Ziel (Grad) gibt es die beste Stufe CORE.
+const CENTER_DEG := 9.0
+
+## --- Eigene Orbit-Wertung (nicht Mania): Stufen, Wert, Acc, Grade ---
+## Stufen-Index = Quality-Index (0 CORE .. 5 MISS), damit HP/Zaehler/HUD
+## weiter funktionieren. Namen (uebersetzt ueber translations/orbit.csv):
+const TIER_NAMES: Array[String] = ["CORE", "SHARP", "GOOD", "FAIR", "EDGE", "MISS"]
+## Zeitwert je Stufe.
+const TIER_VALUE: Array[float] = [1.0, 0.94, 0.68, 0.40, 0.16, 0.0]
+## Zielfaktor: in der Mitte 1,0, am Rand der Toleranz AIM_EDGE_FACTOR.
+const AIM_EDGE_FACTOR := 0.88
+## Anteil der Kombo-Wertung am Score (Rest = Praezision).
+const STREAK_SHARE := 0.1
+## Kombo, ab der ein Treffer vollen Streak-Wert hat.
+const STREAK_FULL := 100
+## Grade-Schwellen (Orbit-Acc): SS braucht ausserdem keinen Miss.
+const GRADE_SS := 0.985
+const GRADE_STEPS := [[0.95, "S"], [0.90, "A"], [0.82, "B"], [0.72, "C"]]
 
 var notes: Array[OrbitNote] = []
 var preempt: float = ManiaCore.BASE_PREEMPT
@@ -46,6 +64,12 @@ var _judged: Dictionary = {}
 var _judged_count := 0
 var _finished_emitted := false
 var _cursor := 0.0
+## Orbit-Wertung: Summe der Trefferwerte, Streak-Summe, gewertete Ziele.
+var _val_sum := 0.0
+var _streak_sum := 0.0
+var _n_done := 0
+var _aim_sum := 0.0
+var _aim_n := 0
 
 # --- Zaehler und Fenster: alles liegt im ManiaCore-Zaehler ---
 var combo: int:
@@ -65,7 +89,7 @@ var n50: int:
 var n_miss: int:
 	get: return _tally.n_miss
 var score: int:
-	get: return _tally.score
+	get: return orbit_score()
 var hp: float:
 	get: return _tally.hp
 var failed: bool:
@@ -136,6 +160,11 @@ func setup(p_notes: Array[OrbitNote], od: float, scroll_scale: float = 1.0,
 	_next_spawn = 0
 	_finished_emitted = false
 	_cursor = 0.0
+	_val_sum = 0.0
+	_streak_sum = 0.0
+	_n_done = 0
+	_aim_sum = 0.0
+	_aim_n = 0
 
 
 ## Scroll-Faktor waehrend des Spiels aendern (nur Anflugzeit).
@@ -204,6 +233,10 @@ func key_down(ring: int, t_ms: float, cursor_deg: float) -> void:
 		ring_pressed.emit(ring, false)
 		return
 	var q: int = _tally._quality_for(absf(dt))
+	if q == Quality.MAX and err > CENTER_DEG:
+		q = Quality.PERFECT  # Zeit perfekt, aber nicht mittig: SHARP statt CORE
+	_aim_sum += err
+	_aim_n += 1
 	if notes[idx].is_arc:
 		_active_arc[ring] = idx
 		_arc_quality[ring] = q
@@ -232,18 +265,58 @@ func key_up(ring: int, t_ms: float) -> void:
 
 
 func accuracy() -> float:
-	return _tally.accuracy()
+	if _n_done == 0:
+		return 1.0
+	return _val_sum / float(_n_done)
 
 
 func grade() -> String:
-	return _tally.grade()
+	var acc := accuracy()
+	if acc >= GRADE_SS and _tally.n_miss == 0:
+		return "SS"
+	for g in GRADE_STEPS:
+		if acc >= float(g[0]):
+			return str(g[1])
+	return "D"
 
 
-## Wie ManiaCore.stats() (Results-Screen), plus "mode": "orbit".
+## Orbit-Score 0..1.000.000 (x Mod-Faktor): 90 % Praezision (Zeitwert x
+## Zielfaktor je Ziel), 10 % Streak (Trefferwert x Kombo-Anteil bis 100).
+func orbit_score() -> int:
+	var n := float(maxi(notes.size(), 1))
+	var raw := (1.0 - STREAK_SHARE) * _val_sum / n + STREAK_SHARE * _streak_sum / n
+	return int(round(1000000.0 * raw * _tally.mod_mult))
+
+
+## Wert eines Treffers: Zeitstufe x Zielfaktor (mittig 1,0, Rand 0,88).
+static func hit_value(q: int, angle_err: float) -> float:
+	var tv: float = TIER_VALUE[clampi(q, 0, 5)]
+	var k := clampf((angle_err - CENTER_DEG) / maxf(ANGLE_TOL_DEG - CENTER_DEG, 0.001), 0.0, 1.0)
+	return tv * lerpf(1.0, AIM_EDGE_FACTOR, k)
+
+
+## Mittlerer Zielfehler (Grad) aller Treffer.
+func mean_aim_err() -> float:
+	return _aim_sum / float(maxi(_aim_n, 1))
+
+
+## Wie ManiaCore.stats() (gleiche Felder fuer Results/Scores/Lobby), aber
+## Score, Acc und Grade nach Orbit-Regeln; "mode": "orbit".
 func stats() -> Dictionary:
 	var s: Dictionary = _tally.stats()
+	s["score"] = orbit_score()
+	s["accuracy"] = accuracy()
+	s["grade"] = grade()
+	s["aim_err"] = mean_aim_err()
 	s["mode"] = "orbit"
 	return s
+
+
+func _count_value(q: int, err: float) -> void:
+	var v := hit_value(q, err) if q != Quality.MISS else 0.0
+	_val_sum += v
+	_streak_sum += v * minf(float(_tally.combo) / float(STREAK_FULL), 1.0)
+	_n_done += 1
 
 
 func is_judged(index: int) -> bool:
@@ -344,6 +417,7 @@ func _finish_arc(r: int, held_to_end: bool, reason: String) -> void:
 	var q: int = _arc_quality[r]
 	_tally._count_quality(q)
 	_tally._add_score(q)
+	_count_value(q, err)
 	_heal(q)
 	_store(idx, {
 		"quality": q, "dt": dt, "angle_err": err, "ring": r,
@@ -356,6 +430,7 @@ func _apply_hit(idx: int, q: int, dt: float, err: float) -> void:
 	_tally.combo += 1
 	_tally.max_combo = maxi(_tally.max_combo, _tally.combo)
 	_tally._add_score(q)
+	_count_value(q, err)
 	_heal(q)
 	_store(idx, {
 		"quality": q, "dt": dt, "late": dt > 0.0, "angle_err": err,
@@ -372,6 +447,7 @@ func _miss(idx: int, dt: float, err: float) -> void:
 
 
 func _lose_hp_and_combo() -> void:
+	_count_value(Quality.MISS, 0.0)
 	_tally.n_miss += 1
 	_tally.combo = 0
 	_tally._add_score(Quality.MISS)

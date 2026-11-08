@@ -105,6 +105,7 @@ func _ready() -> void:
 
 
 func _load_beatmap() -> bool:
+	_cli_pick()
 	if not GameSession.has_selection():
 		return false
 	var imp := OszImporter.import(GameSession.osz_path)
@@ -130,6 +131,24 @@ func _load_beatmap() -> bool:
 		SyncClock.play(stream, lead)
 		_use_audio = true
 	return true
+
+
+## Debug/Shots: --orbit-map=<Teil des osz-Namens> [--orbit-diff=<Version>]
+## waehlt direkt eine Map aus maps/ (Szene orbit.tscn ohne Song-Browser).
+func _cli_pick() -> void:
+	var want := ""
+	for a in OS.get_cmdline_args():
+		if a.begins_with("--orbit-map="):
+			want = a.trim_prefix("--orbit-map=")
+		elif a.begins_with("--orbit-diff="):
+			GameSession.difficulty_version = a.trim_prefix("--orbit-diff=")
+	if want == "":
+		return
+	var dir := MapLibrary.default_maps_dir()
+	for f in DirAccess.get_files_at(dir):
+		if f.to_lower().ends_with(".osz") and f.findn(want) >= 0:
+			GameSession.osz_path = dir.path_join(f)
+			return
 
 
 ## Logik laden: OrbitConverter macht aus der Mania-Map die Ziele, OrbitCore
@@ -910,7 +929,8 @@ func _shot_target(v: String, def: float) -> float:
 			continue
 		if v == "arc" and n.is_arc and n.duration_ms() >= 400.0:
 			return n.time_ms + n.duration_ms() * 0.45
-		if v == "chord" and i + 1 < notes.size() 				and absf(notes[i + 1].time_ms - n.time_ms) <= OrbitView.CHORD_EPS_MS:
+		if v == "chord" and i + 1 < notes.size() \
+				and absf(notes[i + 1].time_ms - n.time_ms) <= OrbitView.CHORD_EPS_MS:
 			return n.time_ms - 160.0
 	return def
 
