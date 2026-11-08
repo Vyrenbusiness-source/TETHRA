@@ -49,6 +49,10 @@ var mapsets: Array[MapSet] = []
 ## Projektordner). Fallback: fester Dev-Pfad. KEIN has_feature("editor"):
 ## das ist beim Editor-Binary auch im PCK-Release true.
 static func default_maps_dir() -> String:
+	# Harness/Vergleiche: --maps-dir=<Ordner> (z. B. Testordner statt Bibliothek).
+	for a in OS.get_cmdline_args() + OS.get_cmdline_user_args():
+		if a.begins_with("--maps-dir="):
+			return a.trim_prefix("--maps-dir=")
 	var local := OS.get_executable_path().get_base_dir().path_join("maps")
 	if DirAccess.dir_exists_absolute(local):
 		return local
