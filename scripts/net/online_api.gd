@@ -330,27 +330,30 @@ func _pump() -> void:
 
 func _send_entry(entry: Dictionary) -> void:
 	_send("POST", "/score", entry.body, func(code: int, text: String):
-		var r := classify_submit(code, text)
-		match str(r.kind):
-			"ok":
-				_finish_entry("ok")
-			"unknown_map":
-				if bool(entry.get("registered", false)) or str(entry.reg.get("osu_b64", "")) == "":
-					_finish_entry("error", true)
-				else:
-					entry["registered"] = true
-					_send("POST", "/beatmap/register", entry.reg, func(c2: int, _t2: String):
-						if (c2 >= 200 and c2 < 300) or c2 == 409:
-							_send_entry(entry)
-						else:
-							_finish_entry("error", true))
-			"update":
-				update_required = true
-				_finish_entry("update", true)
-			"drop":
-				_finish_entry("error")
-			_:
+		_on_score_reply(entry, code, text))
+
+
+func _on_score_reply(entry: Dictionary, code: int, text: String) -> void:
+	var kind := str(classify_submit(code, text).kind)
+	if kind == "ok":
+		_finish_entry("ok")
+	elif kind == "unknown_map":
+		if bool(entry.get("registered", false)) or str(entry.reg.get("osu_b64", "")) == "":
+			_finish_entry("error", true)
+			return
+		entry["registered"] = true
+		_send("POST", "/beatmap/register", entry.reg, func(c2: int, _t2: String):
+			if (c2 >= 200 and c2 < 300) or c2 == 409:
+				_send_entry(entry)
+			else:
 				_finish_entry("error", true))
+	elif kind == "update":
+		update_required = true
+		_finish_entry("update", true)
+	elif kind == "drop":
+		_finish_entry("error")
+	else:
+		_finish_entry("error", true)
 
 
 ## keep=true: Eintrag bleibt fuer spaeter in der Warteschlange, der Lauf stoppt.
