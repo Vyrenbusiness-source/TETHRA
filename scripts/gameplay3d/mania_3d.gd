@@ -500,7 +500,14 @@ func _ready() -> void:
 		rng.seed = 7
 		for _i in 300:
 			_hit_offsets.append(rng.randfn(3.2, 17.0))
-		_show_results(false)
+		# Fake-Verlauf + Holds, damit Graph und Hold-Zeile im Shot gefuellt sind.
+		var acc := 1.0
+		for i in 120:
+			acc = clampf(acc - absf(rng.randfn(0.0, 0.004)) + 0.0025, 0.9, 1.0)
+			_acc_trace.append(acc)
+		_hold_ok = 41
+		_hold_drop = 2
+		_show_results(OS.get_cmdline_args().has("--shot-fail"))
 		_capture_results_shot()
 	elif OS.get_cmdline_args().has("--shot"):
 		_capture_after_first_note()
@@ -3963,7 +3970,16 @@ func _build_results(is_fail: bool, s: Dictionary, pp: float, unranked: bool, new
 		"can_replay": GameSession.is_replay or _recorded.size() > 0,
 		"is_replay": GameSession.is_replay,
 		"lobby": Lobby.active,
+		# Fuer Acc-Verlauf, Holds und Fail-Marker im Ergebnisbild.
+		"trace": _acc_trace,
+		"h_ok": _hold_ok,
+		"h_drop": _hold_drop,
+		"notes_total": _beatmap.hit_objects.size(),
 	}
+	if not _beatmap.hit_objects.is_empty():
+		data["length_ms"] = float(_beatmap.hit_objects.back().end_time())
+	if is_fail:
+		data["fail_ms"] = maxf(_time_ms(), 0.0)
 	if Lobby.active:
 		var me := multiplayer.get_unique_id()
 		data["my_id"] = me

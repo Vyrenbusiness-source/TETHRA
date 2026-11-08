@@ -525,7 +525,7 @@ func _build_left_panel(parent: Control) -> void:
 		var is_fail := bool(_data.get("is_fail", false))
 		var info := {}
 		if is_fail:
-			info["trace_caption"] = "Genauigkeit bis zum Fail"
+			info["trace_caption"] = tr("Genauigkeit bis zum Fail")
 		var gr: Control = card._graphs(st, {}, info)
 		gr.custom_minimum_size = Vector2(0, 118)
 		vb.add_child(gr)
@@ -593,7 +593,8 @@ func _add_fail_marker(graphs: Control) -> void:
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	trace_box.remove_child(target)
 	trace_box.add_child(row)
-	var played := clampf(f, 0.12, 0.96) if f >= 0.0 else 0.96
+	# Mindestens ein Drittel Breite, sonst ist der Verlauf bei fruehem Fail unlesbar.
+	var played := clampf(f, 0.35, 0.96) if f >= 0.0 else 0.96
 	target.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	target.size_flags_stretch_ratio = played
 	row.add_child(target)

@@ -15,3 +15,5 @@ SV-Stufe: klassische Muster,SV-Stufe: klassische Muster,SV level: classic patter
 SV-Stufe: Beat-Tanz mit Rücklauf und Sprüngen (Standard),SV-Stufe: Beat-Tanz mit Rücklauf und Sprüngen (Standard),SV level: beat dance with reverse and jumps (default)
 BESTLEISTUNG %s,BESTLEISTUNG %s,PERSONAL BEST %s
 erster Score in diesem Modus,erster Score in diesem Modus,first score in this mode
+Genauigkeit bis zum Fail,Genauigkeit bis zum Fail,Accuracy until fail
+Fail bei %s,Fail bei %s,Failed at %s
