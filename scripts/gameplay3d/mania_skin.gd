@@ -54,6 +54,15 @@ var combo_prefix := "score"         ## [Fonts] ComboPrefix
 var combo_overlap := 0.0
 var has_mania_block := false
 
+## Eingebaute Skins: Noten/Holds/Kappen sind neutrale Graustufen-Bilder, Playfield2D
+## toent sie mit der Notenfarbe. auto_colors = Palette des Generators je Spalte
+## ([TETHRA] AutoColors), also die Farben des Modus "auto".
+var tintable := false
+var auto_colors: Array = []
+## Nur der Fallback-Skin (Balken fuer importierte Skins ohne Notenbilder): Noten-
+## bilder werden mit der Palette eingefaerbt, weil der osu!-Pfad nicht toent.
+var bake_auto := false
+
 var _dir := ""
 var _names: Dictionary = {}         ## logischer Schluessel -> Dateiname aus skin.ini ("" = Standard)
 var _files: Dictionary = {}         ## lowercase relativer Pfad (ohne .png) -> echter relativer Pfad
@@ -307,6 +316,12 @@ func tex(key: String) -> Texture2D:
 			if t != null:
 				break
 			t = _load_image(String(alt), anim)
+	if t != null and bake_auto and tintable:
+		var kc := key_col(key)
+		if kc >= 0 and (key.begins_with("note_") or key.begins_with("head_") or key.begins_with("tail_")):
+			t = tint_texture(t, auto_color(kc))
+		elif kc >= 0 and key.begins_with("body_"):
+			t = tint_texture(t, NoteColors.hold_of(auto_color(kc)))
 	_at2x[key] = t != null and _at2x_pending
 	_src_h[key] = float(_src_h_pending) if t != null and _src_h_pending > 0 else (float(t.get_height()) if t != null else 0.0)
 	if t == null and _uses_fallback(key):
@@ -382,6 +397,8 @@ func _fb_key(key: String) -> String:
 static func _fallback_skin() -> ManiaSkin:
 	if _fb_skin == null:
 		_fb_skin = _load_builtin(BUILTIN_PREFIX + FALLBACK_SKIN)
+		if _fb_skin != null:
+			_fb_skin.bake_auto = true
 	return _fb_skin
 
 
@@ -664,7 +681,58 @@ static func _load_builtin(p_name: String) -> ManiaSkin:
 		if String(sec.get("_section", "")).to_lower() == "tethra":
 			for fn in String(sec.get("files", "")).split(",", false):
 				s._files[fn.strip_edges().to_lower() + "@2x"] = fn.strip_edges() + "@2x.png"
+			s.tintable = String(sec.get("tint", "0")).strip_edges() == "1"
+			for hx in String(sec.get("autocolors", "")).split(",", false):
+				s.auto_colors.append(Color.html(hx.strip_edges()))
 	return s
+
+
+## Farbe der Spalte im Modus "auto" (Palette des Generators); weiss ohne Palette.
+func auto_color(col: int) -> Color:
+	if auto_colors.is_empty():
+		return Color(1, 1, 1)
+	return auto_colors[clampi(col, 0, auto_colors.size() - 1)]
+
+
+## Toenung eines Eintrags: [Notenfarbe (Kopf, Kappe), Hold-Farbe (Koerper)].
+## Modus "auto": Palette des Skins, Hold = Notenfarbe etwas dunkler. Eigene Farben
+## (lanes/snap): die vom Spiel uebergebene Farbe c (bei Holds die Hold-Farbe).
+func tints(col: int, c: Color, is_hold: bool) -> Array:
+	if not NoteColors.is_custom(true):
+		var a := auto_color(col)
+		return [a, NoteColors.hold_of(a)]
+	c.a = 1.0
+	if not is_hold:
+		return [c, c]
+	var head := c
+	if NoteColors.mode(true) == "lanes":
+		head = NoteColors.lane_color(true, col)
+	else:
+		var k := 1.0 - NoteColors.HOLD_DARKEN
+		head = Color(minf(c.r / k, 1.0), minf(c.g / k, 1.0), minf(c.b / k, 1.0), 1.0)
+	return [head, c]
+
+
+## Spaltenindex eines Bild-Schluessels ("note_2" -> 2), -1 ohne Spalte.
+static func key_col(key: String) -> int:
+	var u := key.rfind("_")
+	return int(key.substr(u + 1)) if u >= 0 and key.substr(u + 1).is_valid_int() else -1
+
+
+## Graustufen-Bild mit der Spaltenfarbe multiplizieren (neue Textur, Original bleibt).
+static func tint_texture(t: Texture2D, c: Color) -> Texture2D:
+	var img := t.get_image()
+	if img == null:
+		return t
+	if img.is_compressed():
+		img.decompress()
+	img.convert(Image.FORMAT_RGBA8)
+	for y in img.get_height():
+		for x in img.get_width():
+			var p := img.get_pixel(x, y)
+			if p.a > 0.0:
+				img.set_pixel(x, y, Color(p.r * c.r, p.g * c.g, p.b * c.b, p.a))
+	return ImageTexture.create_from_image(img)
 
 
 static func load_skin(p_name: String, root: String = SKINS_DIR) -> ManiaSkin:

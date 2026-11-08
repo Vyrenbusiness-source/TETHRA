@@ -113,6 +113,8 @@ func _feed() -> void:
 		var z := ZF + (ZL - ZF) * f * SPAN
 		var zt := z - (ZL - ZF) * float(n[2])
 		var is_hold := float(n[2]) > 0.0
+		# Eigene Notenfarben (lanes/snap) gelten auch hier; eingebaute Skins toenen damit.
+		var nc: Color = NoteColors.color_for(col, is_hold, true, COLORS[col]) if NoteColors.is_custom(true) else COLORS[col]
 		var p: Variant = _prev[i]
 		_prev[i] = [z, zt]
 		if not fresh and p != null and float(p[0]) <= z:
@@ -122,15 +124,15 @@ func _feed() -> void:
 				_hit(col)
 		if not is_hold:
 			if z < ZL:
-				_pf.add_note(col, z, COLORS[col])
+				_pf.add_note(col, z, nc)
 			elif z < ZL + PRESS_Z:
 				held[col] = true
 		elif zt < ZL:
 			if z >= ZL:
 				held[col] = true
-				_pf.add_hold(col, z, zt, COLORS[col], Playfield2D.STATE_HELD)
+				_pf.add_hold(col, z, zt, nc, Playfield2D.STATE_HELD)
 			else:
-				_pf.add_hold(col, z, zt, COLORS[col])
+				_pf.add_hold(col, z, zt, nc)
 	_pf.set_combo(_combo)
 	_pf.set_lanes(held, [], [])
 
