@@ -278,6 +278,7 @@ func _init() -> void:
 	_nearest(L)
 	_packet()
 	_views(L)
+	_play(L)
 
 	L._reset()
 	print("FAILED: %d" % _failed)
@@ -478,3 +479,41 @@ func _views(L) -> void:
 	# Server-RPC ohne bekannten Absender aendert nichts.
 	L.srv_set_view("2D")
 	_check(L.view_of(1) == "3D", "RPC ohne Spieler ignoriert")
+
+
+## Raum-Spielmodus: Validierung, Standard, Sync, Darstellung im Orbit-Raum.
+func _play(L) -> void:
+	L._reset()
+	L.active = true
+	L.is_host = true
+	L.crown_id = 1
+	L.players = { 1: L._new_player("Host"), 2: L._new_player("Anna") }
+	_check(L.play_mode == "mania", "Standard-Spielmodus Mania")
+	_check(L.norm_play("orbit") == "orbit" and L.norm_play("mania") == "mania", "bekannte Spielmodi")
+	_check(L.norm_play("x") == "mania" and L.norm_play(null) == "mania" and L.norm_play(5) == "mania" and L.norm_play("") == "mania", "unbekannt/fehlend -> Mania")
+	L.players[2].ready = true
+	L.set_play_mode("orbit")
+	_check(L.play_mode == "orbit", "Krone stellt Orbit ein")
+	_check(not bool(L.players[2].ready), "Moduswechsel setzt Bereit zurueck")
+	_check(L.view_of(1) == "Orbit" and L.local_view() == "Orbit", "Orbit-Raum: Darstellung Orbit")
+	L.set_play_mode("quark")
+	_check(L.play_mode == "mania", "ungueltiger Wert -> Mania")
+	L.set_play_mode("orbit")
+	L.in_game = true
+	L.set_play_mode("mania")
+	_check(L.play_mode == "orbit", "mitten in der Runde kein Wechsel")
+	L.in_game = false
+	L.crown_id = 2
+	L.set_play_mode("mania")
+	_check(L.play_mode == "orbit", "Nicht-Krone (Host ohne Krone) aendert nichts")
+	L.crown_id = 1
+	# Alter Host: cl_state ohne Spielmodus -> Mania.
+	L.is_host = false
+	L.cl_state(L.players, 1, {}, "Raum")
+	_check(L.play_mode == "mania", "alter Host ohne Feld -> Mania")
+	L.cl_state(L.players, 1, {}, "Raum", [], {}, {}, "orbit")
+	_check(L.play_mode == "orbit", "cl_state uebernimmt Orbit")
+	L.cl_state(L.players, 1, {}, "Raum", [], {}, {}, "evil")
+	_check(L.play_mode == "mania", "cl_state validiert")
+	L._reset()
+	_check(L.play_mode == "mania", "Reset -> Mania")

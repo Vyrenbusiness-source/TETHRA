@@ -46,6 +46,8 @@ var _fetch_req: HTTPRequest
 ## peer_id -> {name, ready, score, combo, acc, final}
 var players: Dictionary = {}
 var crown_id := 1
+## Spielmodus des Raums: "mania" (4K, Standard/alte Clients) oder "orbit".
+var play_mode := "mania"
 ## {set_id, file, version, title, artist, stars}
 var sel_map: Dictionary = {}
 ## Raum-Mods (vom Kronentraeger gewaehlt, fuer alle gleich): {"SV": bool, "NF": bool}
@@ -126,8 +128,52 @@ static func norm_view(v) -> String:
 
 
 ## Darstellung dieses Clients (Orbit kommt, sobald ein Orbit-Schalter existiert).
-static func local_view() -> String:
+func local_view() -> String:
+	if play_mode == "orbit":
+		return "Orbit"
 	return "2D" if Settings.playfield_2d else "3D"
+
+
+## Nur "mania" / "orbit" gelten; fehlend oder unbekannt = Mania (alte Clients).
+static func norm_play(v) -> String:
+	return "orbit" if typeof(v) == TYPE_STRING and v == "orbit" else "mania"
+
+
+static func play_name(m: String) -> String:
+	return "Orbit" if m == "orbit" else "Mania 4K"
+
+
+## Krone: Raum-Spielmodus waehlen (nicht im Turnier, nicht mitten in der Runde).
+func set_play_mode(m: String) -> void:
+	if not active or in_game or tournament != null:
+		return
+	m = norm_play(m)
+	if is_host:
+		if crown_id == 1:
+			_play_apply(m)
+	elif crown_id == multiplayer.get_unique_id():
+		rpc_id(1, "srv_set_play", m)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func srv_set_play(m: String) -> void:
+	if not is_host or in_game or tournament != null:
+		return
+	if multiplayer.get_remote_sender_id() != crown_id:
+		return
+	_play_apply(norm_play(m))
+
+
+func _play_apply(m: String) -> void:
+	if m == play_mode:
+		return
+	play_mode = m
+	# Spielmodus-Wechsel = neue Lage: alle muessen erneut bereit sein.
+	for id in players:
+		if id != 1:
+			players[id].ready = false
+	players[1].view = local_view()
+	_sync()
 
 
 ## Darstellung eines Spielers; "" wenn unbekannt.
@@ -319,6 +365,7 @@ func _reset() -> void:
 	sel_map = {}
 	mods = { "SV": false, "NF": false }
 	played = []
+	play_mode = "mania"
 	crown_id = 1
 	_tour_peers = []
 	mm = MatchMode.new()
@@ -356,7 +403,7 @@ func _process(delta: float) -> void:
 			if _bcast_t <= 0.0:
 				_bcast_t = 1.0
 				var msg := JSON.stringify({ "tethra": 1, "name": room_name,
-					"players": players.size(), "code": room_code })
+					"players": players.size(), "code": room_code, "mode": play_mode })
 				_bcast.set_dest_address("255.255.255.255", DISCOVERY_PORT)
 				_bcast.put_packet(msg.to_utf8_buffer())
 		# Weltweit ansagen (alle 20s), sobald der Raum-Code steht.
@@ -375,6 +422,7 @@ func _process(delta: float) -> void:
 			if data is Dictionary and int(data.get("tethra", 0)) == 1:
 				lan_rooms[ip] = { "name": str(data.get("name", tr("Raum"))),
 					"players": int(data.get("players", 1)),
+					"mode": norm_play(data.get("mode", "mania")),
 					"t": Time.get_ticks_msec() }
 				changed = true
 		for ip in lan_rooms.keys():
@@ -409,7 +457,7 @@ func _announce_room() -> void:
 	add_child(req)
 	req.request_completed.connect(func(_r, _c, _h, _b): req.queue_free())
 	var body := JSON.stringify({ "c": room_code, "n": room_name,
-		"p": players.size() })
+		"p": players.size(), "m": play_mode })
 	if req.request(ROOMS_URL, [], HTTPClient.METHOD_POST, body) != OK:
 		req.queue_free()
 
@@ -443,7 +491,7 @@ func fetch_online_rooms() -> void:
 				if t >= float(newest.get(str(d.c), 0.0)):
 					newest[str(d.c)] = t
 					found[str(d.c)] = { "name": str(d.get("n", tr("Raum"))),
-						"players": int(d.get("p", 1)), "t": t }
+						"players": int(d.get("p", 1)), "mode": norm_play(d.get("m", "mania")), "t": t }
 		# Eigenen (gerade verlassenen) Raum nicht listen.
 		if room_code != "":
 			found.erase(room_code)
@@ -680,7 +728,7 @@ func start_game() -> void:
 func _sync() -> void:
 	if not is_host:
 		return
-	rpc("cl_state", players, crown_id, sel_map, room_name, played, mods, mm.to_dict())
+	rpc("cl_state", players, crown_id, sel_map, room_name, played, mods, mm.to_dict(), play_mode)
 	players_changed.emit()
 
 
@@ -689,7 +737,9 @@ func _sync() -> void:
 # ---------------------------------------------------------------------------
 
 @rpc("authority", "call_remote", "reliable")
-func cl_state(p: Dictionary, crown: int, m: Dictionary, rname: String, played_list: Array = [], mods_in: Dictionary = {}, mm_in: Dictionary = {}) -> void:
+func cl_state(p: Dictionary, crown: int, m: Dictionary, rname: String, played_list: Array = [], mods_in: Dictionary = {}, mm_in: Dictionary = {}, play_in: String = "mania") -> void:
+	var play_was := play_mode
+	play_mode = norm_play(play_in)
 	var map_was := sel_map.duplicate()
 	var new_peer := false
 	for id in p:
@@ -702,6 +752,8 @@ func cl_state(p: Dictionary, crown: int, m: Dictionary, rname: String, played_li
 	played = played_list
 	mods = _norm_mods(mods_in)
 	mm = MatchMode.from_dict(mm_in)
+	if play_was != play_mode:
+		send_view()
 	players_changed.emit()
 	if map_was != sel_map:
 		map_changed.emit()
@@ -742,7 +794,10 @@ func cl_start() -> void:
 		status.emit(tr("Map konnte nicht geladen werden."))
 		return
 	game_start.emit()
-	get_tree().change_scene_to_file("res://scenes/mania_3d.tscn")
+	if play_mode == "orbit":
+		get_tree().change_scene_to_file("res://scenes/orbit.tscn")
+	else:
+		get_tree().change_scene_to_file("res://scenes/mania_3d.tscn")
 
 
 ## Gewahlte Diff im lokalen Set finden (per Versionsname) und GameSession setzen.
