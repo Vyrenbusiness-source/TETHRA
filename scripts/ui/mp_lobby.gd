@@ -1760,6 +1760,9 @@ func _refresh_room() -> void:
 	_code_label.text = Lobby.room_code if has_code else tr("Nur im eigenen Netzwerk")
 	_code_label.add_theme_color_override("font_color", COL_TEXT if has_code else COL_DIM)
 	_copy_btn.visible = has_code
+	# Der Alleine-Hinweis bleibt erhalten: vor dem Leeren aushaengen.
+	if _alone_hint.get_parent() != null:
+		_alone_hint.get_parent().remove_child(_alone_hint)
 	for c in _players_box.get_children():
 		_players_box.remove_child(c)
 		c.queue_free()
@@ -1773,11 +1776,6 @@ func _refresh_room() -> void:
 		if bool(Lobby.players[id].get("ready", false)):
 			n_ready += 1
 	_ready_count.text = tr("%d / %d bereit") % [n_ready, Lobby.players.size()]
-	if _alone_hint.get_parent() != _players_box:
-		if _alone_hint.get_parent() != null:
-			_alone_hint.get_parent().remove_child(_alone_hint)
-	else:
-		_players_box.remove_child(_alone_hint)
 	var row_i := 0
 	for id in Lobby.players:
 		if Lobby.room_kind() != MatchMode.Kind.FREE:
@@ -1789,7 +1787,10 @@ func _refresh_room() -> void:
 			_fade_in(row, row_i)
 			row_i += 1
 	if Lobby.room_kind() == MatchMode.Kind.FREE and Lobby.players.size() == 1:
-		_alone_hint.text = tr("Noch niemand da. Teile den Code %s, oder der Raum erscheint in der Liste offener Räume.") % Lobby.room_code 			if Lobby.room_code != "" else tr("Noch niemand da. Mitspieler im selben Netzwerk sehen den Raum in ihrer Liste.")
+		if Lobby.room_code != "":
+			_alone_hint.text = tr("Noch niemand da. Teile den Code %s, oder der Raum erscheint in der Liste offener Räume.") % Lobby.room_code
+		else:
+			_alone_hint.text = tr("Noch niemand da. Mitspieler im selben Netzwerk sehen den Raum in ihrer Liste.")
 		_alone_hint.visible = true
 		_players_box.add_child(_alone_hint)
 	# Map-Karte.
