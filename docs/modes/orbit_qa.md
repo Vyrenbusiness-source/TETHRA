@@ -212,8 +212,8 @@ nachher. Ring-uebergreifende Ueberschneidungen gibt es praktisch nicht
 
 Rest-Problem: goreshit [fear] (14,4 Ziele/s, viele Ziele am selben Winkel
 hintereinander) bleibt bei 45 % verdeckt. Dort liegen Folgeziele
-absichtlich am gleichen Ort (Jacks); der Stapel-Hinweis macht sie zaehlbar,
-trennen laesst sich das ohne die Map zu aendern nicht.
+absichtlich am gleichen Ort (Jacks); der Stapel-Hinweis macht sie zaehlbar.
+Behoben durch den Stapel-Versatz im Converter (unten): fear 12,5 %.
 
 ### Shots
 
