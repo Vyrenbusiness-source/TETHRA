@@ -617,6 +617,14 @@ class _ColorPopup extends Control:
 		_hex.custom_minimum_size = Vector2(0, 30)
 		_hex.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		_hex.tooltip_text = tr("Hex-Farbe, z. B. 33D9FF. Enter übernimmt.")
+		var hb := UiTheme.glass_box(8, 0.6, 0.18)
+		hb.shadow_size = 0
+		hb.content_margin_left = 8
+		hb.content_margin_right = 8
+		var hf := hb.duplicate() as StyleBoxFlat
+		hf.border_color = UiTheme.ACCENT
+		_hex.add_theme_stylebox_override("normal", hb)
+		_hex.add_theme_stylebox_override("focus", hf)
 		_hex.text_submitted.connect(func(_t: String): _apply_hex())
 		_hex.focus_exited.connect(_apply_hex)
 		row.add_child(_hex)
@@ -987,9 +995,9 @@ class _Prev3D extends SubViewportContainer:
 		we.environment = env
 		_vp.add_child(we)
 		var cam := Camera3D.new()
-		cam.fov = 40.0
-		var eye := Vector3(0, 3.8, 6.4)
-		cam.transform = Transform3D(Basis.looking_at(Vector3(0, ROAD_Y, -0.6) - eye, Vector3.UP), eye)
+		cam.fov = 42.0
+		var eye := Vector3(0, 4.3, 7.6)
+		cam.transform = Transform3D(Basis.looking_at(Vector3(0, ROAD_Y, 0.2) - eye, Vector3.UP), eye)
 		cam.current = true
 		_vp.add_child(cam)
 		# Strasse + Spurlinien, ruhig und dunkel.
