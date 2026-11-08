@@ -2016,7 +2016,7 @@ func _refresh_room() -> void:
 	_room_title.text = Lobby.room_name if Lobby.room_name != "" else tr("Raum")
 	var has_code := Lobby.room_code != ""
 	_code_cap.visible = has_code
-	_code_label.text = Lobby.room_code if has_code else tr("Nur im eigenen Netzwerk")
+	_code_label.text = Lobby.room_code if has_code else (tr("Verbinde…") if Lobby.online else tr("Nur im eigenen Netzwerk"))
 	_code_label.add_theme_color_override("font_color", COL_TEXT if has_code else COL_DIM)
 	_copy_btn.visible = has_code
 	# Der Alleine-Hinweis bleibt erhalten: vor dem Leeren aushaengen.
