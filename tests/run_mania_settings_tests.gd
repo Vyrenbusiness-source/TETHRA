@@ -198,7 +198,7 @@ func _layout() -> void:
 	var left := pf.field_rect().position.x
 	S.stage_pos_2d = 2
 	var right := pf.field_rect().end.x
-	_ok(is_equal_approx(left, 136.0 * 1080.0 / 480.0), "Links = osu! ColumnStart 136")
+	_ok(is_equal_approx(left, 8.0), "Links: am Rand (Vorschau-Rand 8 px, im Spiel osu! ColumnStart 136)")
 	_ok(is_equal_approx(1920.0 - right, left), "Rechts gespiegelt")
 	S.stage_pos_2d = 1
 	S.skin_values_2d = true
