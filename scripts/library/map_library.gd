@@ -44,6 +44,10 @@ var _sv_cancel := false
 var maps_dir: String = ""
 var mapsets: Array[MapSet] = []
 
+## library.cfg wird auch aus Threads geschrieben (SongImport-Vorbau,
+## SV-Nachlauf): Laden-Aendern-Speichern nur unter dieser Sperre.
+static var _cache_mutex := Mutex.new()
+
 
 ## "maps"-Ordner neben der Exe (Release UND Dev — die Godot-Exe liegt im
 ## Projektordner). Fallback: fester Dev-Pfad. KEIN has_feature("editor"):
@@ -72,6 +76,7 @@ func scan() -> int:
 		push_warning("MapLibrary: maps-Ordner nicht gefunden: " + maps_dir)
 		return 0
 	var t0 := Time.get_ticks_usec()
+	_cache_mutex.lock()
 	var cfg := ConfigFile.new()
 	cfg.load(CACHE_PATH)
 	OszImporter._perf("Library: Cache laden", t0, CACHE_PATH)
@@ -121,6 +126,7 @@ func scan() -> int:
 		OszImporter._perf("Library: %d neue Dateien analysiert" % fresh.size(), t0, maps_dir)
 	if dirty:
 		cfg.save(CACHE_PATH)
+	_cache_mutex.unlock()
 	mapsets.sort_custom(func(a, b): return a.search_haystack() < b.search_haystack())
 	return mapsets.size()
 
@@ -370,6 +376,7 @@ func _sv_finish(results: Dictionary, on_done: Callable) -> void:
 		_sv_thread = null
 	if _sv_cancel:
 		return
+	_cache_mutex.lock()
 	var cfg := ConfigFile.new()
 	cfg.load(CACHE_PATH)
 	for ms in mapsets:
@@ -377,6 +384,7 @@ func _sv_finish(results: Dictionary, on_done: Callable) -> void:
 			ms.apply_sv(results[ms.osz_path])
 			cfg.set_value("sets", _cache_key(ms.osz_path), ms.to_dict())
 	cfg.save(CACHE_PATH)
+	_cache_mutex.unlock()
 	if on_done.is_valid():
 		on_done.call()
 
@@ -387,6 +395,34 @@ func shutdown() -> void:
 	if _sv_thread != null:
 		_sv_thread.wait_to_finish()
 		_sv_thread = null
+
+
+## Cache-Eintraege fuer frisch importierte .osz vorbauen (Parse, Sterne,
+## Cover) — laeuft im Import-Thread, damit scan() danach nur den Cache liest
+## und der Browser nicht ruckelt. is_cancelled() -> bool, on_step(i) nach
+## jedem Set. Eintraege wie in scan(): unbrauchbare Sets als skip.
+func prebuild(paths: Array[String], is_cancelled: Callable = Callable(), on_step: Callable = Callable()) -> void:
+	if paths.is_empty():
+		return
+	if paths.size() >= 2 and not (is_cancelled.is_valid() and is_cancelled.call()):
+		StarService.prefetch_dir(maps_dir)
+	var built := {}
+	var i := 0
+	for path in paths:
+		if is_cancelled.is_valid() and is_cancelled.call():
+			break
+		var ms := _build_mapset_full(path)
+		built[_cache_key(path)] = ms.to_dict() if ms != null else {"skip": SKIP_VERSION}
+		i += 1
+		if on_step.is_valid():
+			on_step.call(i)
+	_cache_mutex.lock()
+	var cfg := ConfigFile.new()
+	cfg.load(CACHE_PATH)
+	for k in built:
+		cfg.set_value("sets", k, built[k])
+	cfg.save(CACHE_PATH)
+	_cache_mutex.unlock()
 
 
 ## Eine externe .osz in den maps-Ordner importieren (Drag&Drop/Download).
