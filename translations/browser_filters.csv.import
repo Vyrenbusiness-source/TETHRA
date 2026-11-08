@@ -1,0 +1,19 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+uid="uid://u0iucjlwvoh"
+
+[deps]
+
+files=["res://translations/browser_filters.de.translation", "res://translations/browser_filters.en.translation"]
+
+source_file="res://translations/browser_filters.csv"
+dest_files=["res://translations/browser_filters.de.translation", "res://translations/browser_filters.en.translation"]
+
+[params]
+
+compress=1
+delimiter=0
+unescape_keys=false
+unescape_translations=true
