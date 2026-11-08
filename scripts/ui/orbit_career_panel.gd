@@ -210,7 +210,6 @@ func _make_row(it: Dictionary) -> Control:
 	var t := Label.new()
 	t.text = "%s - %s" % [ms.artist, ms.title]
 	t.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	t.clip_text = true
 	t.add_theme_font_size_override("font_size", 16)
 	t.add_theme_color_override("font_color", UiTheme.TEXT)
 	t.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -218,7 +217,6 @@ func _make_row(it: Dictionary) -> Control:
 	var v := Label.new()
 	v.text = ms.version_name_at(diff).strip_edges()
 	v.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	v.clip_text = true
 	v.add_theme_font_size_override("font_size", 13)
 	v.add_theme_color_override("font_color", UiTheme.DIM)
 	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
