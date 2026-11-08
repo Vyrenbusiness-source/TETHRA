@@ -268,7 +268,9 @@ func _arm_test_watchdog() -> void:
 	# Projekt): ebenfalls hart begrenzen, damit nie ein Fenster offen bleibt.
 	if limit <= 0.0 and FileAccess.file_exists("res://override.cfg"):
 		limit = 60.0
-	if limit <= 0.0 or all.has("--clip"):
+	# Movie-Aufnahmen (--write-movie) begrenzt Godot selbst per --quit-after;
+	# die Watchdog-Zeit laeuft dort in Echtzeit und wuerde lange Aufnahmen kappen.
+	if limit <= 0.0 or all.has("--clip") or Engine.get_write_movie_path() != "":
 		return
 	var t := Timer.new()
 	t.one_shot = true
