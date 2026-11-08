@@ -1006,6 +1006,8 @@ func _show_results(is_fail: bool) -> void:
 	s["unranked"] = false
 	s["pp"] = -1.0   # Orbit hat (noch) keine pp-Formel
 	s["mode"] = MODE
+	# Orbit-Sterne fuers Orbit-Rating im Profil (Gewichtung wie pp).
+	s["stars"] = OrbitConverter.stars(notes)
 	var new_best := false
 	if not _autoplay and not GameSession.is_replay and not GameSession.tutorial:
 		var save := ScoreStore.submit(GameSession.osz_path, _beatmap.version_name(), s, MODE)
