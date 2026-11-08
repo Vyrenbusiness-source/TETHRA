@@ -214,6 +214,7 @@ func _ready() -> void:
 	if GameSession.online != null:
 		GameSession.online.state_changed.connect(_build_account)
 		GameSession.online.backfill_changed.connect(_build_account)
+		GameSession.online.avatar_changed.connect(_rebuild_avatar)
 	var sep2 := HSeparator.new()
 	sep2.add_theme_color_override("separator", Color(1, 1, 1, 0.08))
 	vb.add_child(sep2)
@@ -916,7 +917,10 @@ func _apply_thumb(rect: TextureRect, img: Image) -> void:
 func _rebuild_avatar() -> void:
 	for c in _avatar_slot.get_children():
 		c.queue_free()
-	var tex := Settings.avatar_texture()
+	var tex := OnlineApi.display_avatar(GameSession.online, Settings.avatar_texture())
+	var web: bool = GameSession.online != null and tex != null and tex == GameSession.online.avatar
+	var tip := "Klicken: Profilbild ändern"
+	_avatar_slot.tooltip_text = tr("Profilbild von butzebot.com, dort änderbar") if web else tip
 	if tex != null:
 		var rect := TextureRect.new()
 		rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
