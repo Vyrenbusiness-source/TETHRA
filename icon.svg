@@ -1,11 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 64 64">
-  <title>TETHRA</title>
-  <rect x="0" y="0" width="64" height="64" rx="14" fill="#121110"/>
-  <path fill="#f2a23a" d="M20.95 9 L25.1 9 L17 43 L8 43 Z"/>
-  <path fill="#f2a23a" d="M26.48 9 L30.62 9 L30.21 17.5 L24.86 17.5 Z"/>
-  <path fill="#ece6da" d="M24.38 20 L30.1 20 L29.81 26 L23.24 26 Z"/>
-  <path fill="#f2a23a" d="M22.76 28.5 L29.69 28.5 L29 43 L20 43 Z"/>
-  <path fill="#f2a23a" d="M33.38 9 L37.52 9 L44 43 L35 43 Z"/>
-  <path fill="#f2a23a" d="M38.9 9 L43.05 9 L56 43 L47 43 Z"/>
-  <path fill="#f2a23a" d="M8 48 L56 48 L56 54 L8 54 Z"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="128" height="128">
+<rect width="256" height="256" rx="56" fill="#121110"/>
+<g transform="translate(17.6 13) scale(1.15)">
+<path d="M97.82 73.82L126.98 115.94A28 28 0 1 0 126.98 84.06L97.82 126.18A46 46 0 1 1 97.82 73.82Z" fill="none" stroke="#ECE6DA" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="115.95" cy="100" r="13" fill="#F2A23A"/>
+</g>
 </svg>

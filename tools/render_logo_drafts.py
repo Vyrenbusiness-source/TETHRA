@@ -304,8 +304,216 @@ def overview():
     out.save(os.path.join(ROOT, "overview.png"))
 
 
+# ======================= Endfassung: Entwurf 3 "Bahn" =======================
+# Aufruf: python tools/render_logo_drafts.py --final
+# Schreibt docs/brand/*, docs/media/*, icon.svg/png, Boot-Splash, tethra.ico und
+# die LOGO_SVG-Konstante in scripts/ui/main_menu.gd.
+REPO = os.path.normpath(os.path.join(ROOT, "..", "..", ".."))
+BRAND = os.path.join(REPO, "docs", "brand")
+MONO = "#121110"
+
+
+def belt(c1, r1, c2, r2, cy=100):
+    """Gekreuzter Riemen um zwei Scheiben. Rueckgabe: (Pfad, x des Kreuzungspunkts)."""
+    ph = math.acos((r1 + r2) / (c2 - c1))
+    co, si = math.cos(ph), math.sin(ph)
+    p1u = (c1 + r1 * co, cy - r1 * si); p1l = (c1 + r1 * co, cy + r1 * si)
+    p2u = (c2 - r2 * co, cy - r2 * si); p2l = (c2 - r2 * co, cy + r2 * si)
+    d = (f"M{f(p1u[0])} {f(p1u[1])}L{f(p2l[0])} {f(p2l[1])}A{r2} {r2} 0 1 0 {f(p2u[0])} {f(p2u[1])}"
+         f"L{f(p1l[0])} {f(p1l[1])}A{r1} {r1} 0 1 1 {f(p1u[0])} {f(p1u[1])}Z")
+    return d, c1 + r1 / (r1 + r2) * (c2 - c1)
+
+
+def pal(kind):
+    """(Tinte, Bernstein, Grund) je Fassung."""
+    return {"dunkel": (INK, AMB, BG), "hell": (INK_L, AMB_L, BG_L), "mono": (MONO, MONO, BG_L)}[kind]
+
+
+def mark_parts(ink, amb):
+    """Bildmarke, Box 8..184 x 48..152 (inkl. Strich)."""
+    d, xk = belt(60, 46, 150, 28)
+    return stroke(d, 12, ink, "round", "round") + f'\n<circle cx="{f(xk)}" cy="100" r="13" fill="{amb}"/>', (8, 48, 184, 152)
+
+
+def word_parts(ink, amb):
+    w, h, sw = 66, 118, 13
+    L, y0 = layout(w, h, sw, 40)
+    out = []
+    for c, x, y in L:
+        m, dd = glyph(c, x, y, w, h)
+        out.append(stroke(m + dd, sw, ink, "round", "round"))
+    xe = L[-1][1] + w + sw / 2 + 30
+    out.append(f'<circle cx="{f(xe)}" cy="{f(y0+h-8)}" r="10" fill="{amb}"/>')
+    return "\n".join(out), (L[0][1] - sw / 2, y0 - sw / 2, xe + 10, y0 + h + sw / 2)
+
+
+def tight(vb, body, pad=0):
+    x0, y0, x1, y1 = vb
+    x0 -= pad; y0 -= pad; x1 += pad; y1 += pad
+    w, h = x1 - x0, y1 - y0
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{f(x0)} {f(y0)} {f(w)} {f(h)}" '
+            f'width="{f(w)}" height="{f(h)}">\n<title>TETHRA</title>\n{body}\n</svg>\n'), w, h
+
+
+def lockup_parts(ink, amb):
+    """Marke links, Wortmarke rechts, Ursprung oben links. Rueckgabe (Koerper, Breite, Hoehe)."""
+    m, (mx0, my0, mx1, my1) = mark_parts(ink, amb)
+    w_, (wx0, wy0, wx1, wy1) = word_parts(ink, amb)
+    gap = 46
+    H = max(my1 - my0, wy1 - wy0)
+    mw = mx1 - mx0
+    body = (f'<g transform="translate({f(-mx0)} {f((H-(my1-my0))/2-my0)})">\n{m}\n</g>\n'
+            f'<g transform="translate({f(mw+gap-wx0)} {f((H-(wy1-wy0))/2-wy0)})">\n{w_}\n</g>')
+    return body, mw + gap + (wx1 - wx0), H
+
+
+def small_icon(kind="dunkel"):
+    """Vereinfachte Variante fuer 16-48 px: dickere Linie, grosser Punkt, der den Kreuzungsspalt deckt."""
+    ink, amb, bg = pal(kind)
+    d, xk = belt(22.5, 13, 46.5, 8, 32)
+    body = (f'<rect width="64" height="64" rx="12" fill="{bg}"/>\n'
+            + stroke(d, 9, ink, "round", "round")
+            + f'\n<circle cx="{f(xk)}" cy="32" r="9.5" fill="{amb}"/>')
+    return svg(64, 64, body)
+
+
+def big_icon(kind="dunkel"):
+    ink, amb, bg = pal(kind)
+    m, _ = mark_parts(ink, amb)
+    s = 1.15
+    # Marke (Mitte 96,100) mittig in Kachel 256
+    return svg(256, 256, f'<rect width="256" height="256" rx="56" fill="{bg}"/>\n'
+                         f'<g transform="translate({f(128-96*s)} {f(128-100*s)}) scale({s})">\n{m}\n</g>')
+
+
+def chrome_png(svg_path, out_png, w, h, bg="00000000"):
+    tmp = tempfile.mkdtemp()
+    page = os.path.join(tmp, "p.html")
+    with open(page, "w") as fh:
+        fh.write(f'<html><body style="margin:0;background:transparent"><img src="file:///{svg_path.replace(chr(92), "/")}" '
+                 f'style="position:absolute;left:0;top:0;width:{w}px;height:{h}px"></body></html>')
+    shot = os.path.join(tmp, "s.png")
+    subprocess.run([CHROME, "--headless=new", "--disable-gpu", "--hide-scrollbars", "--force-device-scale-factor=1",
+                    f"--default-background-color={bg}", "--allow-file-access-from-files",
+                    f"--window-size={w},{h+120}", f"--screenshot={shot}", "file:///" + page.replace("\\", "/")],
+                   check=True, timeout=120, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    Image.open(shot).convert("RGBA").crop((0, 0, w, h)).save(out_png)
+    shutil.rmtree(tmp, ignore_errors=True)
+
+
+def ld(p):
+    with Image.open(p) as im:
+        return im.convert("RGBA")
+
+
+def wr(path, txt):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(txt)
+
+
+def write_ico(path, pngs):
+    import io, struct
+    items = sorted(pngs.items())
+    blobs = []
+    for sz, im in items:
+        bio = io.BytesIO()
+        im.save(bio, "PNG")
+        blobs.append(bio.getvalue())
+    head = struct.pack("<HHH", 0, 1, len(items))
+    off = 6 + 16 * len(items)
+    ent = b""
+    for (sz, _), bl in zip(items, blobs):
+        ent += struct.pack("<BBBBHHII", sz % 256, sz % 256, 0, 0, 1, 32, len(bl), off)
+        off += len(bl)
+    with open(path, "wb") as fh:
+        fh.write(head + ent + b"".join(blobs))
+
+
+def final():
+    import re
+    if not CHROME:
+        sys.exit("kein Chrome/Edge gefunden")
+    sfx = {"dunkel": "", "hell": "_hell", "mono": "_mono"}
+    for kind, sf in sfx.items():
+        ink, amb, _ = pal(kind)
+        m, vb = mark_parts(ink, amb)
+        wr(os.path.join(BRAND, f"logo{sf}.svg"), tight(vb, m, 4)[0])
+        w_, vb = word_parts(ink, amb)
+        wr(os.path.join(BRAND, f"wordmark{sf}.svg"), tight(vb, w_, 4)[0])
+        body, lw, lh = lockup_parts(ink, amb)
+        wr(os.path.join(BRAND, f"lockup{sf}.svg"), tight((0, 0, lw, lh), body, 4)[0])
+        wr(os.path.join(BRAND, f"icon{sf}.svg"), big_icon(kind))
+        wr(os.path.join(BRAND, f"icon_klein{sf}.svg"), small_icon(kind))
+    body, lw, lh = lockup_parts(INK, AMB)
+    LW, LH = lw + 8, lh + 8
+    # README-Kopf: dunkle Tinte als SVG (heller Grund), helle Tinte als PNG (Dark Mode)
+    wr(os.path.join(REPO, "docs", "media", "logo.svg"), open(os.path.join(BRAND, "lockup_hell.svg"), encoding="utf-8").read())
+    chrome_png(os.path.join(BRAND, "lockup.svg"), os.path.join(REPO, "docs", "media", "logo_wordmark.png"),
+               int(LW * 1.5), int(LH * 1.5))
+    # Spiel-Icon
+    wr(os.path.join(REPO, "icon.svg"), big_icon("dunkel").replace('width="256" height="256"', 'width="128" height="128"', 1))
+    chrome_png(os.path.join(BRAND, "icon.svg"), os.path.join(REPO, "icon.png"), 256, 256)
+    # ICO: 16-48 vereinfachte Variante, ab 64 volle Marke
+    pngs, tmp = {}, os.path.join(BRAND, "_t.png")
+    for sz in (16, 24, 32, 48):
+        chrome_png(os.path.join(BRAND, "icon_klein.svg"), tmp, sz, sz)
+        pngs[sz] = ld(tmp)
+    for sz in (64, 128, 256):
+        chrome_png(os.path.join(BRAND, "icon.svg"), tmp, sz, sz)
+        pngs[sz] = ld(tmp)
+    os.remove(tmp)
+    write_ico(os.path.join(REPO, "tools", "installer", "tethra.ico"), pngs)
+    # Pruefblatt kleine Groessen (4x vergroessert, harte Pixel)
+    sheet = Image.new("RGB", (240, 80), BG)
+    x = 10
+    for sz in (16, 24, 32, 48):
+        sheet.paste(pngs[sz], (x, 10), pngs[sz])
+        x += sz + 12
+    sheet.resize((960, 320), Image.NEAREST).save(os.path.join(BRAND, "icon_klein_pruefblatt.png"))
+    # Boot-Splash
+    ui = os.path.join(REPO, "assets_game", "ui")
+    os.makedirs(ui, exist_ok=True)
+    chrome_png(os.path.join(BRAND, "lockup.svg"), tmp, 640, int(round(640 * LH / LW)))
+    lg = ld(tmp)
+    sp = Image.new("RGBA", (1280, 720), BG)
+    sp.alpha_composite(lg, ((1280 - lg.width) // 2, (720 - lg.height) // 2))
+    sp.convert("RGB").save(os.path.join(ui, "boot_splash.png"))
+    # Social Preview
+    chrome_png(os.path.join(BRAND, "lockup.svg"), tmp, 800, int(round(800 * LH / LW)))
+    lg = ld(tmp)
+    soc = Image.new("RGBA", (1280, 640), BG)
+    y0 = 200
+    soc.alpha_composite(lg, ((1280 - lg.width) // 2, y0))
+    d = ImageDraw.Draw(soc)
+    try:
+        ft = ImageFont.truetype(r"C:\Windows\Fonts\segoeui.ttf", 30)
+    except OSError:
+        ft = ImageFont.load_default()
+    txt = "Free rhythm game for Windows. osu!mania maps in 3D, 2D and Orbit."
+    d.text(((1280 - d.textlength(txt, font=ft)) / 2, y0 + lg.height + 50), txt, font=ft, fill=(157, 151, 141, 255))
+    soc.convert("RGB").save(os.path.join(REPO, "docs", "media", "social_preview.png"))
+    os.remove(tmp)
+    # Menue: LOGO_SVG
+    mm = os.path.join(REPO, "scripts", "ui", "main_menu.gd")
+    src = open(mm, encoding="utf-8").read()
+    k = 600 / LW
+    mw_, mh_ = int(round(LW * k)), int(round(LH * k))
+    ms = tight((0, 0, lw, lh), body, 4)[0].replace("<title>TETHRA</title>\n", "").strip()
+    ms = re.sub(r'width="[\d.]+" height="[\d.]+"', f'width="{mw_}" height="{mh_}"', ms, count=1)
+    a = src.index("const LOGO_SIZE")
+    b = src.index('</svg>"""', a) + len('</svg>"""')
+    new = f'const LOGO_SIZE := Vector2({mw_}, {mh_})\nconst LOGO_SVG := """{ms}"""'
+    with open(mm, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(src[:a] + new + src[b:])
+    print("final ok", LW, LH)
+
+
 if __name__ == "__main__":
-    write_svgs()
-    render_pngs()
-    overview()
-    print("ok")
+    if "--final" in sys.argv:
+        final()
+    else:
+        write_svgs()
+        render_pngs()
+        overview()
+        print("ok")
