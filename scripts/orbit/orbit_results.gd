@@ -2,8 +2,9 @@ class_name OrbitResults
 extends Control
 
 ## Eigener Endscreen fuer Orbit (nicht der Mania-ResultsScreen).
-## Links die "Orbit-Karte": jedes Ziel an seinem Winkel auf seinem Ring,
-## radial versetzt um seinen Zeitfehler (innen = frueh, aussen = spaet),
+## Links die "Takt-Karte": jedes Ziel an seiner Position im Takt (Winkel = Anteil
+## des Takts, egal welche Bahnform) auf dem Ring seiner Spur (innen Spur A, aussen
+## Spur B), radial versetzt um seinen Zeitfehler (innen = frueh, aussen = spaet),
 ## Farbe = Stufe. In der Mitte der Rang. Rechts Score, Acc, Serie,
 ## Zielfehler, Stufen-Tabelle und ein Timing-Histogramm.
 ## Alles in einem _draw; Texte als Labels. Ruhig, kein Leuchten.
@@ -55,7 +56,7 @@ func _ready() -> void:
 	_quad.resize(4)
 
 
-## data: s (OrbitCore.stats + failed), log ([Winkel, Ring, dt, Zielfehler,
+## data: s (OrbitCore.stats + failed), log ([Taktphase in Grad, Spur, dt, Zielfehler,
 ## Stufe, Zeit] je Ziel), w50/w_max (ms), title, artist, version, is_fail,
 ## new_best, allow_retry, can_replay, is_replay, can_clip.
 func show_results(data: Dictionary) -> void:
@@ -406,7 +407,7 @@ func _draw() -> void:
 			_quad[3] = p - ut
 			draw_colored_polygon(_quad, Color(col, 0.85))
 	# Lesehilfe unter der Karte.
-	var hint := tr("innen = früh  ·  außen = spät")
+	var hint := tr("Takt-Karte  ·  innen = früh, außen = spät  ·  Ringe: Spur A / Spur B")
 	var fs := 12
 	var tw := _font.get_string_size(hint, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
 	draw_string(_font, Vector2(c.x - tw * 0.5, c.y + R + band + 34.0), hint,
