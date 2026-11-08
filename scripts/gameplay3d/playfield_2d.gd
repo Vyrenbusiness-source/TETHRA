@@ -183,6 +183,8 @@ func units_to_y(u: float) -> float:
 func _vs() -> Vector2:
 	if preview_size.x > 0.0 and preview_size.y > 0.0:
 		return preview_size
+	if not is_inside_tree():   # setup() vor add_child: noch kein Viewport
+		return Vector2(1920, 1080)
 	var r := get_viewport_rect().size
 	return r if r.x > 0.0 else Vector2(1920, 1080)
 

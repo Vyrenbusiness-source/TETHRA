@@ -6,6 +6,8 @@ extends SceneTree
 ##   Godot..._console.exe --headless --audio-driver Dummy --path . --script res://tests/run_mania_settings_tests.gd
 
 const PATH := "user://mania_settings_test_tmp.cfg"
+## Anzahl _ok-Aufrufe: bricht ein Abschnitt per Skriptfehler ab, fehlen welche -> rot.
+const EXPECTED := 52
 
 var SettingsScript: GDScript
 var S: Node   ## Autoload (Playfield2D liest Settings direkt)
@@ -39,6 +41,9 @@ func _run() -> void:
 	for n in _saved:
 		S.set(n, _saved[n])
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(PATH))
+	if _passed + _failed != EXPECTED:
+		_failed += 1
+		print("  FAIL nur %d von %d Pruefungen gelaufen (Skriptfehler?)" % [_passed + _failed - 1, EXPECTED])
 	print("=== Ergebnis: %d bestanden, %d fehlgeschlagen ===" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
 
@@ -53,7 +58,7 @@ func _ok(c: bool, msg: String) -> void:
 
 
 func _limits() -> void:
-	var c := SettingsScript.clamp_2d_option
+	var c: Callable = SettingsScript.clamp_2d_option
 	_ok(c.call("hit_position_2d", 100) == 240, "HitPosition unten begrenzt (240 wie osu!)")
 	_ok(c.call("hit_position_2d", 999) == 480, "HitPosition oben begrenzt (480)")
 	_ok(c.call("hit_position_2d", "402.4") == 402, "HitPosition aus Text gerundet")
@@ -170,8 +175,8 @@ func _mods() -> void:
 	s.free()
 
 
-func _pf() -> Playfield2D:
-	var pf := Playfield2D.new()
+func _pf() -> Object:
+	var pf = load("res://scripts/gameplay3d/playfield_2d.gd").new()   # erst zur Laufzeit: Autoload Settings
 	pf.setup(4, 1.0, 3.0, -46.0, PackedStringArray(["D", "F", "J", "K"]), Color.WHITE)
 	pf.preview_size = Vector2(1920, 1080)
 	return pf
@@ -183,9 +188,9 @@ func _layout() -> void:
 	S.stage_scale_2d = 1.0
 	S.stage_pos_2d = 1
 	S.column_spacing_2d = 0
-	var pf := _pf()
+	var pf = _pf()
 	_ok(is_equal_approx(pf.line_y(), 1080.0 * 0.86), "Skin-Werte an: eingebaute Linie bei 86 %")
-	var w0 := pf.field_rect().size.x
+	var w0: float = pf.field_rect().size.x
 	S.skin_values_2d = false
 	S.hit_position_2d = 240
 	_ok(is_equal_approx(pf.line_y(), 540.0), "Eigene Trefferposition 240 = Bildmitte")
@@ -195,9 +200,9 @@ func _layout() -> void:
 	_ok(is_equal_approx(pf._bx(pf.field_rect(), 1) - pf._bx(pf.field_rect(), 0), pf.col_width() + gap),
 			"Spalte 2 beginnt nach Breite + Abstand")
 	S.stage_pos_2d = 0
-	var left := pf.field_rect().position.x
+	var left: float = pf.field_rect().position.x
 	S.stage_pos_2d = 2
-	var right := pf.field_rect().end.x
+	var right: float = pf.field_rect().end.x
 	_ok(is_equal_approx(left, 8.0), "Links: am Rand (Vorschau-Rand 8 px, im Spiel osu! ColumnStart 136)")
 	_ok(is_equal_approx(1920.0 - right, left), "Rechts gespiegelt")
 	S.stage_pos_2d = 1
@@ -206,7 +211,7 @@ func _layout() -> void:
 	_ok(is_equal_approx(pf.screen_line_y(), 1080.0 * 0.14), "Scroll nach oben: Linie oben gespiegelt")
 	S.scroll_up_2d = false
 	S.stage_scale_2d = 0.5
-	var fr := pf.screen_field_rect()
+	var fr: Rect2 = pf.screen_field_rect()
 	_ok(is_equal_approx(fr.end.y, 1080.0) and is_equal_approx(fr.size.y, 540.0), "Skalierung 50 %: um die Unterkante")
 	_ok(is_equal_approx(fr.get_center().x, pf.field_rect().get_center().x), "Skalierung haelt die Feldmitte")
 	S.stage_scale_2d = 1.0
@@ -223,7 +228,7 @@ func _layout() -> void:
 
 func _mask() -> void:
 	S.skin_values_2d = true
-	var pf := _pf()
+	var pf = _pf()
 	S.mod_vis_2d = 0
 	pf._update_mask()
 	_ok(pf.mask_alpha(10.0) == 1.0, "Ohne Mod keine Maske")
@@ -234,14 +239,14 @@ func _mask() -> void:
 	S.mod_vis_2d = 2   # Hidden: an der Linie verdeckt
 	pf._update_mask()
 	_ok(pf.mask_alpha(1.0) == 1.0 and pf.mask_alpha(pf.line_y() - 1.0) == 0.0, "Hidden: oben sichtbar, an der Linie weg")
-	var f0 := pf.cover_fraction()
+	var f0: float = pf.cover_fraction()
 	pf.set_combo(1000)
 	_ok(is_equal_approx(f0, 0.16) and is_equal_approx(pf.cover_fraction(), 0.40), "Hidden 16 % -> 40 % mit der Kombo")
 	S.mod_vis_2d = 3
 	S.cover_pct_2d = 50
 	S.cover_from_bottom_2d = false
 	pf._update_mask()
-	var ly := pf.line_y()
+	var ly: float = pf.line_y()
 	_ok(pf.mask_alpha(ly * 0.3) == 0.0 and pf.mask_alpha(ly * 0.6) == 1.0, "Cover 50 % von oben")
 	S.cover_from_bottom_2d = true
 	pf._update_mask()
@@ -249,7 +254,7 @@ func _mask() -> void:
 	var sl: Array = pf._mask_slices(0.0, ly)
 	var vis := 0.0
 	for s in sl:
-		vis += float(s[1]) - float(s[0])
+		vis += (float(s[1]) - float(s[0])) * float(s[2])   # nach Deckkraft gewichtet
 	_ok(sl.size() > 2 and vis < ly * 0.6, "Maske zerlegt Flaechen in weiche Streifen")
 	S.mod_vis_2d = 0
 	pf.free()
