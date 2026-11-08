@@ -949,7 +949,7 @@ func _store_final(id: int, stats: Dictionary) -> int:
 	var e := {
 		"score": stats.get("score", 0), "accuracy": stats.get("acc", 0.0),
 		"grade": stats.get("grade", "D"), "max_combo": stats.get("combo", 0),
-		"pp": -1.0, "mods": _mods_list(), "date": Time.get_datetime_string_from_system(),
+		"pp": float(stats.get("pp", -1.0)), "mods": _mods_list(), "date": Time.get_datetime_string_from_system(),
 	}
 	return ScoreStore.submit_others(_map_key(), pname, [e])
 

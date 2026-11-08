@@ -3912,11 +3912,6 @@ func _show_results(is_fail: bool) -> void:
 				if is_inside_tree():
 					_spawn_shooting_star(977 + shower_i * 37))
 	var s := core.stats()
-	# Multiplayer: letzten Live-Stand + Finale an alle melden.
-	if Lobby.active and Lobby.in_game:
-		Lobby.send_score(core.score, core.combo, core.accuracy())
-		Lobby.send_final(PlayerStatsCard.pack(s, _hit_offsets, _acc_trace,
-			_hold_ok, _hold_drop, is_fail))
 	var unranked := false  # Mania ist immer ranked (Scroll rein visuell)
 	s["unranked"] = unranked
 	var pp := -1.0
@@ -3938,6 +3933,11 @@ func _show_results(is_fail: bool) -> void:
 			if max_pp > 0.0:
 				pp = maxf(pp, max_pp * pow(acc, 6.0) * 0.8)
 	s["pp"] = pp
+	# Multiplayer: letzten Live-Stand + Finale (mit pp) an alle melden.
+	if Lobby.active and Lobby.in_game:
+		Lobby.send_score(core.score, core.combo, core.accuracy())
+		Lobby.send_final(PlayerStatsCard.pack(s, _hit_offsets, _acc_trace,
+			_hold_ok, _hold_drop, is_fail))
 	var new_best := false
 	if GameSession.is_replay or GameSession.tutorial or _autoplay:
 		# Replay-Ansicht/Tutorial/Autoplay: NICHTS werten oder speichern.

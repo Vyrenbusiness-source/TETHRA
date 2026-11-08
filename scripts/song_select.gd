@@ -2687,28 +2687,24 @@ var _import_pending_notes: Array[String] = []
 func _import_paths(paths: PackedStringArray) -> void:
 	var c := SongImport.classify(paths)
 	var notes: Array[String] = []
-	var audio_msg := ""
-	for a in c.audio:
-		var r := SongImport.import_audio(a)
-		if not bool(r.ok):
-			audio_msg = tr("Eigene Musik: %s") % tr(str(r.error))
-	if audio_msg != "":
-		notes.append(audio_msg)
+	if not c.audio.is_empty():
+		# Eigene Musik wird zur Orbit-Map (nur im Orbit-Modus spielbar).
+		notes.append(tr("Eigene Musik ist im Orbit-Modus spielbar"))
 	if not c.unsupported.is_empty():
 		if c.unsupported.size() == 1:
 			notes.append(tr("Nicht unterstützt: %s") % String(c.unsupported[0]).get_file())
 		else:
 			notes.append(tr("%d Dateien nicht unterstützt") % c.unsupported.size())
-	if c.osz.is_empty() and c.folders.is_empty():
+	if c.osz.is_empty() and c.folders.is_empty() and c.audio.is_empty():
 		if notes.is_empty():
 			notes.append(tr("Nicht unterstützt"))
 		_show_import_notice("  ·  ".join(notes), false)
 		return
-	if _start_import_job(c.folders, c.osz):
+	if _start_import_job(c.folders, c.osz, c.audio):
 		_import_pending_notes = notes
 
 
-func _start_import_job(folders: Array, osz_files: Array) -> bool:
+func _start_import_job(folders: Array, osz_files: Array, audio_files: Array = []) -> bool:
 	if _import_job != null and _import_job.is_running():
 		_show_import_notice(tr("Import läuft schon"), false)
 		return false
@@ -2716,9 +2712,9 @@ func _start_import_job(folders: Array, osz_files: Array) -> bool:
 	_import_job = SongImport.new()
 	_import_job.progress.connect(_on_import_progress)
 	_import_job.finished.connect(_on_import_finished)
-	_import_job.start(folders, osz_files, _library.maps_dir)
+	_import_job.start(folders, osz_files, _library.maps_dir, audio_files)
 	_set_import_busy(true)
-	_on_import_progress(0, folders.size() + osz_files.size(), SongImport.PHASE_COPY)
+	_on_import_progress(0, folders.size() + osz_files.size() + audio_files.size(), SongImport.PHASE_COPY)
 	return true
 
 

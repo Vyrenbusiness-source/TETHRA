@@ -132,9 +132,10 @@ func _initialize() -> void:
 	_ok(SongImport.is_lazer_dir(lazer), "lazer-Ordner erkannt")
 	_ok(SongImport.classify(PackedStringArray([lazer])).unsupported.size() == 1, "lazer-Ordner nicht unterstuetzt")
 
-	# --- Audio: Platzhalter bis audio-map ---
-	var a := SongImport.import_audio("C:/x/song.ogg")
-	_ok(not bool(a.ok) and str(a.error) == "kommt bald" and a.has("osz_path"), "import_audio: kommt bald")
+	# --- Audio: geht an AudioMapper (fehlende Datei -> sauberer Fehler, kein Absturz) ---
+	var a := SongImport.import_audio("C:/x/fehlt.ogg")
+	_ok(not bool(a.ok) and str(a.error) != "" and a.has("osz_path"), "import_audio: fehlende Datei -> Fehler")
+	_ok(not bool(SongImport.import_audio("C:/x/text.txt").ok), "import_audio: kein Audio -> Fehler")
 
 	# --- Bibliotheksregel: Mania nur 4K, std nur Orbit ---
 	_ok(MapSet.mode_shows({"mode": 3}, "mania") and MapSet.mode_shows({"mode": 3}, "orbit"), "4K in Mania und Orbit")

@@ -842,16 +842,24 @@ static func submit_others(map_key: String, player: String, entries: Array, mode:
 	_load(cfg)
 	var list: Array = cfg.get_value(_sec("others", mode), map_key, [])
 	var added := 0
+	var filled := false
 	for c in clean:
 		var dup := false
 		for o in list:
 			if o is Dictionary and str(o.get("player", "")) == c.player 					and int(o.get("score", -1)) == int(c.score):
 				dup = true
+				# Live-Endergebnis kam ohne pp (-1): pp aus dem spaeteren Score-Paket nachtragen.
+				if float(o.get("pp", -1.0)) < 0.0 and float(c.pp) >= 0.0:
+					o["pp"] = float(c.pp)
+					filled = true
 				break
 		if not dup:
 			list.append(c)
 			added += 1
 	if added == 0:
+		if filled:
+			cfg.set_value(_sec("others", mode), map_key, list)
+			cfg.save(PATH)
 		return 0
 	# pro Spieler auf die besten OTHERS_CAP kappen
 	list.sort_custom(func(a, b): return int(a.score) > int(b.score))

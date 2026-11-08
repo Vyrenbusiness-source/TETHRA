@@ -314,7 +314,12 @@ static func classify(paths: PackedStringArray) -> Dictionary:
 static func import_audio(path: String) -> Dictionary:
 	if not is_audio(path):
 		return {"ok": false, "osz_path": "", "error": "nicht unterstuetzt"}
-	return {"ok": false, "osz_path": "", "error": "kommt bald"}
+	# Eigene Musik -> erzeugte Orbit-Map (osu!standard, nur im Orbit-Modus). Blockierend.
+	return AudioMapper.generate(path, _maps_dir_default())
+
+
+static func _maps_dir_default() -> String:
+	return MapLibrary.default_maps_dir()
 
 
 # ---------------------------------------------------------------------------
@@ -324,9 +329,9 @@ static func import_audio(path: String) -> Dictionary:
 ## Map-Ordner und .osz-Dateien nach maps_dir uebernehmen. Blockierend.
 ## Ergebnis: { imported: [osz-Pfade], dup: int, skipped: int (Modus),
 ##             failed: int, total: int, cancelled: bool }
-func run(folders: Array, osz_files: Array, maps_dir: String) -> Dictionary:
-	var res := {"imported": [], "dup": 0, "skipped": 0, "failed": 0,
-		"total": folders.size() + osz_files.size(), "cancelled": false}
+func run(folders: Array, osz_files: Array, maps_dir: String, audio_files: Array = []) -> Dictionary:
+	var res := {"imported": [], "dup": 0, "skipped": 0, "failed": 0, "generated": 0,
+		"total": folders.size() + osz_files.size() + audio_files.size(), "cancelled": false}
 	total = int(res.total)
 	done = 0
 	phase = PHASE_COPY
@@ -368,6 +373,17 @@ func run(folders: Array, osz_files: Array, maps_dir: String) -> Dictionary:
 			else:
 				res.failed += 1
 		_step()
+	# Eigene Musik: Orbit-Map erzeugen (dekodieren + Takt-Analyse, dauert Sekunden je Song).
+	for f in audio_files:
+		if _cancel:
+			break
+		var r := AudioMapper.generate(String(f), maps_dir)
+		if bool(r.get("ok", false)):
+			res.imported.append(str(r.osz_path))
+			res.generated += 1
+		else:
+			res.failed += 1
+		_step()
 	res.cancelled = _cancel
 	if prebuild_library and not _cancel and not res.imported.is_empty():
 		phase = PHASE_ANALYSE
@@ -395,20 +411,20 @@ func _emit_progress() -> void:
 
 
 ## Job im Thread starten. finished(result) kommt im Hauptthread.
-func start(folders: Array, osz_files: Array, maps_dir: String) -> void:
+func start(folders: Array, osz_files: Array, maps_dir: String, audio_files: Array = []) -> void:
 	if _thread != null:
 		return
 	_cancel = false
 	_emitted = false
 	_result = {}
-	total = folders.size() + osz_files.size()
+	total = folders.size() + osz_files.size() + audio_files.size()
 	done = 0
 	_thread = Thread.new()
-	_thread.start(_worker.bind(folders.duplicate(), osz_files.duplicate(), maps_dir))
+	_thread.start(_worker.bind(folders.duplicate(), osz_files.duplicate(), maps_dir, audio_files.duplicate()))
 
 
-func _worker(folders: Array, osz_files: Array, maps_dir: String) -> void:
-	_result = run(folders, osz_files, maps_dir)
+func _worker(folders: Array, osz_files: Array, maps_dir: String, audio_files: Array) -> void:
+	_result = run(folders, osz_files, maps_dir, audio_files)
 	_finish.call_deferred()
 
 
