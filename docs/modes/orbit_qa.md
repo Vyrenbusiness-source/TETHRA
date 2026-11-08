@@ -212,8 +212,8 @@ nachher. Ring-uebergreifende Ueberschneidungen gibt es praktisch nicht
 
 Rest-Problem: goreshit [fear] (14,4 Ziele/s, viele Ziele am selben Winkel
 hintereinander) bleibt bei 45 % verdeckt. Dort liegen Folgeziele
-absichtlich am gleichen Ort (Jacks); der Stapel-Hinweis macht sie zaehlbar,
-trennen laesst sich das ohne die Map zu aendern nicht.
+absichtlich am gleichen Ort (Jacks); der Stapel-Hinweis macht sie zaehlbar.
+Behoben durch den Stapel-Versatz im Converter (unten): fear 12,5 %.
 
 ### Shots
 
@@ -244,6 +244,102 @@ dichteste Diff am Frame mit der staerksten Ueberdeckung:
 Sichtkontrolle: Streams erscheinen als Kette kleiner werdender Ziele hinter
 dem naechsten Ziel, die Reihenfolge ist an der Groesse ablesbar; gestapelte
 Ziele tragen den Randring.
+
+### Stapel-Versatz (Converter)
+
+Rest-Problem oben: Folgeziele am selben Winkel (Jacks, osu!standard-Stacks)
+lagen auf demselben Ring uebereinander. `orbit_converter.gd` trennt sie
+jetzt, die Zeiten bleiben exakt:
+
+- Jack-Zickzack (4K, gleiche Spalte, Abstand < `DRIFT_GAP_MS`): Versatz
+  0, 1, 2, 1 Stufen (`STACK_PATTERN`) zu je `STACK_STEP_DEG` = 5 Grad in
+  Fluss-Richtung, begrenzt durch das Sprung-Limit.
+- `_unstack` (alle Modi, auch Akkorde): liegt ein Ziel naeher als
+  `STACK_NEAR_DEG` = 7 Grad an einem der letzten 3 Ziele desselben Rings
+  (hoechstens `STACK_WINDOW_MS` = 320 ms davor), rutscht es auf
+  `STACK_PUSH_DEG` = 8 Grad neben einen Nachbarn. Kandidaten beidseits jedes
+  Nachbarn; nur freie und vom Zeiger erreichbare, der kuerzeste Weg gewinnt,
+  bei Gleichstand die Fluss-Richtung. Kein freier erreichbarer Platz: das
+  Ziel bleibt, der Stapel-Hinweis (Randring) markiert es.
+- Der virtuelle Zeiger von `_reach` folgt dem versetzten Ziel. Ohne das
+  rechnete der naechste Schritt vom alten Winkel aus; das kostete den
+  Maus-Bot 0,3-0,7 Prozentpunkte (3,1-4,8 % statt 2,8 %).
+
+Ring-Wechsel als Stapel-Mittel ist nicht eingebaut: der Ring folgt weiter
+der Spalte bzw. der Ring-Regel (`SAME_RING_MIN_MS`, `RELEASE_GAP_MS`); der
+Winkelversatz allein reicht fuer < 15 % auf jeder Map.
+
+Messung (dichteste 5 s, mit Groessen-Anpassung), Versatz-Sweep
+STEP/NEAR/PUSH in Grad:
+
+| Versatz | schlechteste 4K-Map | Maus | Tablet |
+| --- | ---: | ---: | ---: |
+| ohne (Stand vorher) | 45,5 % (fear) | 2,76 % | 0,67 % |
+| 0/4/5, ohne Zeiger-Nachfuehrung | 28,4 % | 3,21 % | 0,76 % |
+| 3/4/5, ohne Zeiger-Nachfuehrung | 29,5 % | 3,17 % | 0,74 % |
+| 4/6/7, ohne Zeiger-Nachfuehrung | 14,8 % | 3,43 % | - |
+| 9/14/16, ohne Zeiger-Nachfuehrung | < 15 % | 4,80 % | 1,14 % |
+| 4/6/7, mit Zeiger-Nachfuehrung | 15,2 % (Yuno's Hard) | 2,52 % | 0,64 % |
+| **5/7/8, mit Zeiger-Nachfuehrung** | **13,6 %** (Yuno's Hard) | **2,52 %** | **0,64 %** |
+
+Gewaehlt 5/7/8. Verdeckt nachher je Map (vorher = Stand ohne Versatz aus
+der Tabelle oben):
+
+| Map | verdeckt vorher | verdeckt nachher |
+| --- | ---: | ---: |
+| std Zekk [Collab Extra] | 6,1 % | 6,1 % |
+| std Zekk [Heilia's Hard] | 4,3 % | 4,3 % |
+| std Zekk [Last Stand] | 13,0 % | 13,0 % |
+| std Zekk [Mordred's Normal] | 5,3 % | 5,3 % |
+| std Zekk [hypercyte's Insane] | 0,0 % | 0,0 % |
+| std Lime [Expert] | 13,0 % | 13,0 % |
+| std Lime [Hard] | 14,8 % | 14,8 % |
+| std Lime [Insane] | 8,6 % | 8,6 % |
+| std Lime [Normal] | 6,3 % | 6,3 % |
+| std goreshit [extra] | 0,0 % | 0,0 % |
+| std goreshit [insane] | 0,0 % | 0,0 % |
+| std Billain [Fulminant Allusion] | 6,1 % | 6,1 % |
+| 4K Billain [Advanced] | 15,2 % | 8,7 % |
+| 4K Billain [GoldenJumper's Insane] | 12,7 % | 12,7 % |
+| 4K Billain [Humanoid] | 19,1 % | 8,8 % |
+| 4K Billain [Pairo's Normal] | 8,6 % | 8,6 % |
+| 4K Billain [Yuno's Hard] | 16,7 % | 13,6 % |
+| 4K Zekk [Drago's Oscillation] | 19,4 % | 9,0 % |
+| 4K Zekk [Hyper] | 25,4 % | 11,9 % |
+| 4K Zekk [Insane] | 31,9 % | 10,1 % |
+| 4K Zekk [Normal] | 2,0 % | 2,0 % |
+| 4K Zekk [Revv's Hard] | 17,5 % | 12,3 % |
+| 4K goreshit [fear] | 45,5 % | 12,5 % |
+| **Mittel** | **12,7 %** | **8,2 %** |
+
+Bot nachher (fair, 2 Seeds): Tablet 0,64 % (vorher 0,67 %), Maus 2,52 %
+(vorher 2,76 %), frei 0,69 %; Ursachen Maus: dichte 785, bogen_ausstieg
+229, streuung 129, bogen_einstieg 104, sprung 21. fear: Maus 1,4 %, Tablet
+0,7 %. Kein Zielkonflikt zwischen Lesbarkeit und Spielbarkeit: der
+Versatz folgt dem Zeigerweg und macht die Wege nicht laenger.
+
+Neue Pruefung: "auf jeder Map unter 15 % verdeckt" (bestanden).
+`ORBIT_QA_ONLY=density` misst nur die Dichte (ohne Bot), fuer schnelle
+Sweeps.
+
+Shots (`stack0_*` = Converter aus v1.19.0, `stack1_*` = mit Versatz, beide
+mit Groessen-Anpassung; `ORBIT_QA_TAG=stack0` bzw. `stack1`, sonst wie
+oben):
+
+| Map | vorher (stack0) | verdeckt | nachher (stack1) | verdeckt |
+| --- | --- | ---: | --- | ---: |
+| 4K goreshit [fear] | 5:00.664 | 45 % | 4:59.264 | 13 % |
+| 4K Zekk [Drago's Oscillation] (Jacks) | 1:27.632 | 19 % | 1:27.532 | 9 % |
+| 4K Billain [GoldenJumper's Insane] | 1:29.547 | 13 % | 1:30.197 | 13 % |
+| std (alle 4 Quellen) | gleich | gleich | gleich | gleich |
+
+Sichtkontrolle: fear vorher ein Knaeuel aus 5-6 Quadraten und Kreisen auf
+einem Fleck (nur ueber Groesse und Randring zaehlbar), nachher eine Kette
+nebeneinander liegender Ziele, die Reihenfolge laeuft entlang der Kette.
+Drago vorher Jack-Quadrate ineinander, nachher eine Treppe aus 4 getrennten
+Quadraten auf dem aeusseren Ring. Kein Flackern: der Versatz ist Teil der
+Map, nicht der Darstellung. osu!standard-Shots unveraendert (dort greift
+der Versatz an den dichtesten Stellen nicht).
 
 ## 4. Sterne
 

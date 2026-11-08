@@ -47,6 +47,11 @@ func _initialize() -> void:
 	if shots:
 		_shots(maps)
 		return
+	if OS.get_environment("ORBIT_QA_ONLY") == "density":
+		_test_density(maps)
+		print("=== Ergebnis: %d bestanden, %d fehlgeschlagen ===" % [_passed, _failed])
+		quit(1 if _failed > 0 else 0)
+		return
 	_test_view_synthetic()
 	_test_timing(maps)
 	_test_view_frames(maps)
@@ -570,8 +575,21 @@ func _test_density(maps: Array) -> void:
 	_out["density"] = {"before": old, "after": now}
 	_ok(maps.is_empty() or now.covered_mean <= old.covered_mean * 0.8,
 		"dichte Stellen: verdeckte Ziele mindestens 20 %% weniger (%.1f%% -> %.1f%%)" % [old.covered_mean * 100.0, now.covered_mean * 100.0])
+	var worst := _worst_covered(now)
+	_ok(maps.is_empty() or worst[0] < 0.15,
+		"dichte Stellen: auf jeder Map unter 15 %% verdeckt (schlechteste: %s %.1f%%)" % [worst[1], worst[0] * 100.0])
 	_ok(maps.is_empty() or now.hidden_mean <= old.hidden_mean * 0.2,
 		"dichte Stellen: ganz verdeckte Ziele ohne Hinweis mindestens 80 %% weniger (%.2f -> %.2f je Frame)" % [old.hidden_mean, now.hidden_mean])
+
+
+func _worst_covered(pass_res: Dictionary) -> Array:
+	var w := 0.0
+	var lbl := ""
+	for r in pass_res.rows:
+		if r.covered_share > w:
+			w = r.covered_share
+			lbl = r.map
+	return [w, lbl]
 
 
 func _density_pass(maps: Array, fit: bool) -> Dictionary:

@@ -39,6 +39,15 @@ const REF_GAP_MS := 150.0
 const MAX_STEP_SCALE := 2.5
 ## Jacks mit mindestens diesem Abstand wandern um einen Schritt weiter.
 const DRIFT_GAP_MS := 300.0
+## Jacks (gleiche Spalte, Abstand < DRIFT_GAP_MS): Winkelversatz im Zickzack
+## 0, 1, 2, 1 Stufen, damit Ziele auf demselben Ring nicht uebereinander liegen.
+const STACK_STEP_DEG := 5.0
+const STACK_PATTERN := [0, 1, 2, 1]
+## Einzelziel nahe (< STACK_NEAR_DEG) am vorherigen Ziel desselben Rings und
+## hoechstens STACK_WINDOW_MS danach: Versatz um STACK_PUSH_DEG weg davon.
+const STACK_NEAR_DEG := 7.0
+const STACK_WINDOW_MS := 320.0
+const STACK_PUSH_DEG := 8.0
 const STREAM_GAP_MS := 160.0
 const MIN_ARC_MS := 100.0
 const ARC_DEG_PER_MS := 0.12
@@ -143,6 +152,9 @@ static func convert(beatmap: Beatmap) -> Array[OrbitNote]:
 	var arc_end_at := [-INF, -INF]
 	var ring_last := [-INF, -INF]
 	var vc := INF  # virtueller Zeiger (HUMAN_DEG_PER_MS), INF = noch keiner
+	var recent: Array = [[], []]  # je Ring: [Zeit, Winkel] der letzten Ziele
+	var stack_run := 0  # Position im Jack-Zickzack
+	var stack_off := 0.0  # aktueller Versatz gegen den Stapel-Anfang (Grad)
 	for g in groups:
 		var head := objs[g[0]] as ManiaNote
 		var t := head.time
@@ -198,8 +210,17 @@ static func convert(beatmap: Beatmap) -> Array[OrbitNote]:
 			if d == 0:
 				if gap >= DRIFT_GAP_MS:
 					delta = dir * minf(COL_STEP_DEG, lim)
+					stack_run = 0
+					stack_off = 0.0
+				else:
+					stack_run += 1
+					var want_off: float = float(STACK_PATTERN[stack_run % STACK_PATTERN.size()]) * STACK_STEP_DEG
+					delta = clampf(dir * (want_off - stack_off), -lim, lim)
+					stack_off += dir * delta
 			else:
 				delta = clampf(df * unit, -lim, lim)
+				stack_run = 0
+				stack_off = 0.0
 			# Grosse Spruenge nur auf Schlaegen; dazwischen bleibt der Fluss ruhig.
 			if absf(delta) >= JUMP_DEG and beat_strength(reds, t) < STRONG_BEAT:
 				delta = signf(delta) * WEAK_JUMP_DEG
@@ -247,6 +268,16 @@ static func convert(beatmap: Beatmap) -> Array[OrbitNote]:
 			continue
 		targets = spaced
 
+		# Akkorde teilen einen Winkel: der juengste Ring der Ziele zaehlt.
+		var us_r := int(targets[0][1])
+		for tg in targets:
+			if ring_last[tg[1]] > ring_last[us_r]:
+				us_r = int(tg[1])
+		angle = _unstack(angle, recent[us_r], t, dir, vc if vc != INF else last_angle, gap)
+		# Der virtuelle Zeiger folgt dem versetzten Ziel, sonst rechnet der naechste
+		# Schritt von einem Ort aus, an dem niemand ist.
+		if angle != float(reach[0]):
+			reach = _reach(vc, gap, angle)
 		var longest := 0.0
 		for tg in targets:
 			longest = maxf(longest, _arc_len(objs[tg[0]] as ManiaNote))
@@ -264,6 +295,10 @@ static func convert(beatmap: Beatmap) -> Array[OrbitNote]:
 				on = OrbitNote.make(t, angle, tg[1], tg[0])
 			out.append(on)
 			ring_last[tg[1]] = t
+			var rc: Array = recent[tg[1]]
+			rc.append([t, angle])
+			while rc.size() > 3:
+				rc.remove_at(0)
 		last_time = t
 		last_angle = angle
 		last_head = t
@@ -275,6 +310,41 @@ static func convert(beatmap: Beatmap) -> Array[OrbitNote]:
 			return a.time_ms < b.time_ms
 		return a.ring < b.ring)
 	return out
+
+
+## Stapel-Versatz: liegt das neue Ziel kurz nach dem letzten Ziel desselben
+## Rings fast auf dessen Winkel, rutscht es um STACK_PUSH_DEG davon weg
+## (Seite des bisherigen Versatzes, sonst Fluss-Richtung dir).
+static func _unstack(angle: float, recent: Array, t: float, dir: float, from: float, gap: float) -> float:
+	var near: Array = []
+	for r in recent:
+		var dt := t - float(r[0])
+		if dt > 0.0 and dt <= STACK_WINDOW_MS:
+			near.append(float(r[1]))
+	if near.is_empty() or _clear(angle, near):
+		return angle
+	# Kandidaten: beidseits jedes Nachbarn; frei, erreichbar, kleinster Weg gewinnt.
+	var reachable := HUMAN_DEG_PER_MS * minf(gap, 1000.0) + HUMAN_REACH_DEG if human_reach else 360.0
+	var best := angle
+	var best_cost := INF
+	for na in near:
+		for sgn in [-1.0, 1.0]:
+			var c := OrbitNote.wrap_deg(na + sgn * STACK_PUSH_DEG)
+			if not _clear(c, near):
+				continue
+			var mv := absf(OrbitNote.delta_deg(from, c))
+			var cost := mv + (1000.0 if mv > reachable else 0.0) + (0.0 if sgn == dir else 1.0)
+			if cost < best_cost:
+				best_cost = cost
+				best = c
+	return best if best_cost < 1000.0 else angle
+
+
+static func _clear(a: float, near: Array) -> bool:
+	for na in near:
+		if absf(OrbitNote.delta_deg(float(na), a)) < STACK_NEAR_DEG:
+			return false
+	return true
 
 
 ## Menschliche Erreichbarkeit: der virtuelle Zeiger vc faehrt in gap ms mit
