@@ -49,7 +49,7 @@ var _cursor_deg := 0.0
 var _held := [[false, false], [false, false]]
 var _w300 := 49.5
 
-var _bg: TextureRect
+var _bg: OrbitBackdrop
 var _view: OrbitView
 var _hud: CanvasLayer
 var _judge_disp: JudgeDisplay
@@ -250,26 +250,15 @@ func apply_scroll_speed(_speed: int) -> void:
 # ---------------------------------------------------------------------------
 
 func _build_bg() -> void:
-	var black := ColorRect.new()
-	black.color = Color(0.008, 0.01, 0.018)
-	black.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	black.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(black)
-	var tex := OszImporter.load_background_texture(GameSession.osz_path, _beatmap)
-	if tex == null:
-		return
-	_bg = TextureRect.new()
-	_bg.texture = tex
-	_bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	_bg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-	_bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	# Settings.bg_dim = Deckkraft des Map-Bilds (0 = aus).
-	# Orbit dimmt staerker als Mania: Ziele liegen ueber dem ganzen Bild.
-	_bg.modulate = Color(1, 1, 1, Settings.bg_dim * 0.6)
-	_bg.visible = Settings.bg_dim > 0.001
+	# Welt / Map-Bild / Aus (Settings.orbit_background, CLI --orbit-bg=...).
+	var forced := Settings.world_theme_name()
+	for a in OS.get_cmdline_args():
+		if a.begins_with("--theme="):
+			forced = a.substr(8)
+	_bg = OrbitBackdrop.new()
 	add_child(_bg)
-
+	_bg.setup(_beatmap, Settings.orbit_background_mode(), forced, GameSession.stars,
+			OszImporter.load_background_texture(GameSession.osz_path, _beatmap), Settings.bg_dim)
 
 func _build_sound() -> void:
 	_hit_player = AudioStreamPlayer.new()
@@ -740,6 +729,7 @@ func _process(delta: float) -> void:
 	_view.beat_env = env
 	_view.kiai = _beat.kiai_mix
 	_judge_disp.beat(env)
+	_bg.update_world(delta, _beat, _intensity.value_at(t))
 	# Multiplayer: Live-Stand 4x pro Sekunde.
 	if Lobby.active and Lobby.in_game:
 		_mp_send_cd -= delta
@@ -1158,7 +1148,45 @@ func _capture_shot() -> void:
 		return
 	await RenderingServer.frame_post_draw
 	_save_shot(_shot_path("orbit.png"))
+	if OS.get_cmdline_args().has("--shot-bg"):
+		# Kontrast-Messung: dasselbe Bild nur mit Hintergrund (Ringe/HUD aus).
+		_view.visible = false
+		_hud.visible = false
+		await RenderingServer.frame_post_draw
+		await RenderingServer.frame_post_draw
+		_save_shot(_shot_path("orbit.png").get_basename() + "_bg.png")
+		_view.visible = true
+		_hud.visible = true
+	for a in OS.get_cmdline_args():
+		if a.begins_with("--fps-sec="):
+			await _measure_fps(maxf(1.0, a.trim_prefix("--fps-sec=").to_float()))
 	get_tree().quit(0)
+
+
+## --fps-sec=<s> (nach dem Shot, Autoplay laeuft weiter): Frame-Zeiten messen.
+func _measure_fps(sec: float) -> void:
+	var times := PackedFloat32Array()
+	var last := Time.get_ticks_usec()
+	var t0 := last
+	while Time.get_ticks_usec() - t0 < int(sec * 1000000.0):
+		await RenderingServer.frame_post_draw
+		if not is_inside_tree():
+			return
+		var now := Time.get_ticks_usec()
+		times.append((now - last) / 1000.0)
+		last = now
+	if times.size() < 2:
+		return
+	times.remove_at(0)
+	var total := 0.0
+	for f in times:
+		total += f
+	var sorted := times.duplicate()
+	sorted.sort()
+	var mean := total / times.size()
+	print("ORBIT-FPS bg=%s theme=%s frames=%d mean=%.2fms fps=%.1f p95=%.2fms worst=%.2fms" % [
+		["world", "map", "off"][clampi(_bg.mode, 0, 2)], _bg.world, times.size(), mean,
+		1000.0 / maxf(mean, 0.001), sorted[int(sorted.size() * 0.95)], sorted[-1]])
 
 
 ## Zeitpunkt fuer --shot-at: Zahl (ms), "arc" (Bogen mitten im Halten)

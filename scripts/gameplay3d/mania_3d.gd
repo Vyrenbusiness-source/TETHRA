@@ -699,27 +699,10 @@ func _time_ms() -> float:
 func _extract_theme_color() -> void:
 	var tex := OszImporter.load_background_texture(GameSession.osz_path, _beatmap)
 	_bg_tex = tex
-	if tex == null:
-		return
-	var img := tex.get_image()
-	if img == null:
-		return
-	img.resize(32, 24, Image.INTERPOLATE_BILINEAR)
-	var acc := Vector2.ZERO
-	var total_w := 0.0
-	for y in 24:
-		for x in 32:
-			var c := img.get_pixel(x, y)
-			var w := c.s * c.v
-			acc += Vector2(cos(c.h * TAU), sin(c.h * TAU)) * w
-			total_w += w
-	if total_w < 4.0 or acc.length() < 1.0:
-		return
-	var hue := fposmod(atan2(acc.y, acc.x) / TAU, 1.0)
-	# Satt in der Farbe, aber gedrosselt in der Helligkeit — Entsaettigung
-	# wuerde alles nur weisser (= greller) machen.
-	_theme_col = Color.from_hsv(hue, 0.72, 0.84)
-	_theme_kiai = Color.from_hsv(fposmod(hue + 0.5, 1.0), 0.78, 0.86)
+	var cc := WorldBackdrop.cover_colors(tex)
+	if cc.size() == 2:
+		_theme_col = cc[0]
+		_theme_kiai = cc[1]
 
 
 ## Map-Hintergrund: Bild einmal klein rechnen (= starker Blur), abdunkeln,
@@ -4775,20 +4758,7 @@ func _choose_world_theme() -> void:
 
 ## Bilddateien des Themas: Stamm -> res-Pfad ({} = Shader oder Panorama fehlt).
 func _theme_files(t: String) -> Dictionary:
-	var sp := WorldTheme.shader_path(t)
-	if sp == "" or not ResourceLoader.exists(sp):
-		return {}
-	var dir := WorldTheme.asset_dir(t)
-	var out := {}
-	if not DirAccess.dir_exists_absolute(dir):
-		return {}
-	for fname in ResourceLoader.list_directory(dir):
-		var ext := fname.get_extension().to_lower()
-		if ext in ["webp", "png", "jpg", "exr", "hdr"]:
-			var path := dir.path_join(fname)
-			if ResourceLoader.exists(path):
-				out[fname.get_basename()] = path
-	return out
+	return WorldBackdrop.theme_files(t)
 
 
 ## Themen-Himmel: Shader-Uniforms per Konvention mit Texturen fuellen.
@@ -4796,59 +4766,11 @@ func _theme_files(t: String) -> Dictionary:
 ## Ebene *_<key> (stars, embers, aurora, ...). Slot b = Slot a (palette_mix
 ## wird bei Themen nicht genutzt).
 func _build_theme_sky(env: Environment) -> bool:
-	var files := _theme_files(_world_theme)
-	if files.is_empty():
+	var mat := WorldBackdrop.theme_sky_material(_world_theme)
+	if mat == null:
 		return false
-	var sh: Shader = load(WorldTheme.shader_path(_world_theme))
-	if sh == null:
-		return false
-	var samplers: Array[String] = []
-	for u in sh.get_shader_uniform_list():
-		if int(u.type) == TYPE_OBJECT:
-			samplers.append(str(u.name))
-	var keys := {}
-	for sn in samplers:
-		var base := sn
-		if base.ends_with("_a") or base.ends_with("_b"):
-			base = base.substr(0, base.length() - 2)
-		keys[sn] = base
-	# Ebenen-Dateien (Suffix passt zu einem Sampler) vs. Panorama.
-	var layer_of := {}
-	var pano := ""
-	var stems: Array = files.keys()
-	stems.sort()
-	for stem in stems:
-		var hit := ""
-		for sn in keys:
-			var b: String = keys[sn]
-			if b != "tex" and (stem == b or stem.ends_with("_" + b)):
-				hit = b
-		if hit != "":
-			layer_of[hit] = files[stem]
-		elif pano == "" or stem.length() < pano.get_file().get_basename().length():
-			pano = files[stem]
-	if pano == "":
-		return false
-	_sky_mat = ShaderMaterial.new()
-	_sky_mat.shader = sh
-	for sn in keys:
-		var b: String = keys[sn]
-		var path: String = pano if b == "tex" else str(layer_of.get(b, ""))
-		if path != "":
-			_sky_mat.set_shader_parameter(sn, WorldTheme.get_cached(path))
-	_sky_mat.set_shader_parameter("readability", 0.7)
-	_sky_mat.set_shader_parameter("star_speed", 0.0)
-	_sky_mat.set_shader_parameter("palette_mix", 0.0)
-	var sky := Sky.new()
-	sky.sky_material = _sky_mat
-	sky.radiance_size = Sky.RADIANCE_SIZE_32
-	sky.process_mode = Sky.PROCESS_MODE_INCREMENTAL
-	env.background_mode = Environment.BG_SKY
-	env.sky = sky
-	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(0, 0, 0)
-	env.reflected_light_source = Environment.REFLECTION_SOURCE_DISABLED
-	print("[world] sky %s: pano=%s layers=%s" % [_world_theme, pano.get_file(), str(layer_of.keys())])
+	_sky_mat = mat
+	WorldBackdrop.attach_sky(env, _sky_mat)
 	return true
 
 
