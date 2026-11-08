@@ -152,7 +152,8 @@ func _load_beatmap() -> bool:
 			break
 	if _beatmap == null and not imp.difficulties.is_empty():
 		_beatmap = imp.difficulties[0].beatmap
-	if _beatmap == null or _beatmap.hit_objects.is_empty() or not _beatmap.is_mania():
+	if _beatmap == null or _beatmap.hit_objects.is_empty() \
+			or not (_beatmap.is_mania() or _beatmap.mode() == 0):
 		return false
 	var stream := OszImporter.load_audio_stream(GameSession.osz_path, _beatmap)
 	if stream != null:
@@ -185,7 +186,7 @@ func _cli_pick() -> void:
 			return
 
 
-## Logik laden: OrbitConverter macht aus der Mania-Map die Ziele, OrbitCore
+## Logik laden: OrbitConverter macht aus der Mania- oder osu!standard-Map die Ziele, OrbitCore
 ## wertet (NF liest OrbitCore selbst aus GameSession.mods).
 func _build_core() -> void:
 	notes = OrbitConverter.convert(_beatmap)
