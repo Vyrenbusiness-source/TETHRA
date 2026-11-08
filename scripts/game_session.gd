@@ -98,7 +98,7 @@ func _ready() -> void:
 
 
 ## Chat-Overlay (Taste F) auf eigener CanvasLayer, in allen Menues gleich.
-var chat: ChatOverlay
+var chat: Control
 
 
 func _make_chat() -> void:
@@ -108,7 +108,7 @@ func _make_chat() -> void:
 	layer.name = "ChatLayer"
 	layer.layer = 90
 	add_child(layer)
-	chat = ChatOverlay.new()
+	chat = load("res://scripts/ui/chat_overlay.gd").new()
 	layer.add_child(chat)
 
 

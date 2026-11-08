@@ -23,7 +23,7 @@ var _thread_user := ""          # Empfaenger ohne bestehende Unterhaltung
 var _thread_name := ""
 var _reply: Dictionary = {}
 var _pending_text := ""
-var _input: LineEdit
+var _edit: LineEdit
 var _scroll: ScrollContainer
 var _msgs: VBoxContainer
 var _search_results: VBoxContainer
@@ -45,7 +45,7 @@ func _ready() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	visible = true
-	var online := get_node_or_null("/root/GameSession")
+	var online := _gs()
 	api = ChatApi.new()
 	api.name = "ChatApi"
 	api.online = online.online if online != null and "online" in online else null
@@ -73,6 +73,16 @@ func _ready() -> void:
 			_run_shot.call_deferred(a.trim_prefix("--shot-chat="))
 
 
+## Autoload ueber den Pfad (kein Klassenbezug: GameSession erzeugt dieses Overlay).
+func _gs() -> Node:
+	return get_node_or_null("/root/GameSession")
+
+
+## true = Szenenpfad gehoert zum Gameplay (Spiel laeuft).
+static func _gameplay_scene(scene_path: String) -> bool:
+	return scene_path.ends_with("orbit.tscn") or scene_path.ends_with("mania_3d.tscn") 		or scene_path.ends_with("gameplay_3d.tscn")
+
+
 func _mirror() -> BeatmapMirror:
 	return get_node_or_null("/root/Mirror") as BeatmapMirror
 
@@ -81,7 +91,7 @@ func _mirror() -> BeatmapMirror:
 
 ## Reine Entscheidung fuer Tests: darf F den Chat jetzt oeffnen/schliessen?
 static func key_allowed(scene_path: String, focus: Control) -> bool:
-	if GameSession.playtime_mode_of(scene_path) != null:
+	if _gameplay_scene(scene_path):
 		return false
 	if scene_path.ends_with("tutorial.tscn"):
 		return false
@@ -92,7 +102,7 @@ static func key_allowed(scene_path: String, focus: Control) -> bool:
 
 func _in_gameplay() -> bool:
 	var sc := get_tree().current_scene
-	return sc != null and GameSession.playtime_mode_of(sc.scene_file_path) != null
+	return sc != null and _gameplay_scene(sc.scene_file_path)
 
 
 func _input(event: InputEvent) -> void:
@@ -247,7 +257,7 @@ func _clear_body() -> void:
 	for c in _body.get_children():
 		_body.remove_child(c)
 		c.queue_free()
-	_input = null
+	_edit = null
 	_scroll = null
 	_msgs = null
 	_search_results = null
@@ -551,9 +561,9 @@ func _start_with_user(username: String) -> void:
 
 
 func _prefill() -> void:
-	if _pending_text != "" and _input != null:
-		_input.text = _pending_text
-		_input.caret_column = _input.text.length()
+	if _pending_text != "" and _edit != null:
+		_edit.text = _pending_text
+		_edit.caret_column = _edit.text.length()
 		_pending_text = ""
 
 
@@ -573,13 +583,13 @@ func _render_thread() -> void:
 		_body.add_child(_reply_bar())
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 6)
-	_input = LineEdit.new()
-	_input.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_input.custom_minimum_size = Vector2(0, 36)
-	_input.max_length = ChatApi.MAX_LEN
-	_input.placeholder_text = tr("Nachricht schreiben")
-	_input.text_submitted.connect(func(_t): _send())
-	row.add_child(_input)
+	_edit = LineEdit.new()
+	_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_edit.custom_minimum_size = Vector2(0, 36)
+	_edit.max_length = ChatApi.MAX_LEN
+	_edit.placeholder_text = tr("Nachricht schreiben")
+	_edit.text_submitted.connect(func(_t): _send())
+	row.add_child(_edit)
 	var send := _small_button(tr("Senden"), true)
 	send.custom_minimum_size = Vector2(0, 36)
 	send.pressed.connect(_send)
@@ -589,7 +599,7 @@ func _render_thread() -> void:
 	_body.add_child(_status_line)
 	if _pending_text != "":
 		_prefill()
-	_input.call_deferred("grab_focus")
+	_edit.call_deferred("grab_focus")
 
 
 func _reply_bar() -> Control:
@@ -676,10 +686,10 @@ func _bubble(m: Dictionary, mine: bool) -> Control:
 	var who := _thread_title() if not mine else tr("Du")
 	rb.pressed.connect(func():
 		_reply = {"id": m.id, "name": who, "content": m.content}
-		var keep := _input.text if _input != null else ""
+		var keep := _edit.text if _edit != null else ""
 		_render()
-		if _input != null:
-			_input.text = keep)
+		if _edit != null:
+			_edit.text = keep)
 	foot.add_child(rb)
 	if mine:
 		var db := _small_button("✕")
@@ -756,9 +766,9 @@ func _time_text(iso: String) -> String:
 # --- Senden ---------------------------------------------------------------------
 
 func _send() -> void:
-	if _input == null:
+	if _edit == null:
 		return
-	var text := ChatApi.clean(_input.text)
+	var text := ChatApi.clean(_edit.text)
 	if text == "":
 		return
 	var reply_id := str(_reply.get("id", ""))
@@ -775,7 +785,7 @@ func _send() -> void:
 		_stick_bottom = true
 		if is_open() and _view == "thread":
 			_render()
-	_input.text = ""
+	_edit.text = ""
 	if _thread_user != "":
 		api.send_to_user(_thread_user, text, reply_id, done)
 	elif api.open_id != "":
@@ -887,10 +897,11 @@ func play_map(info: Dictionary) -> void:
 	var sel := _select_local(info)
 	if sel.is_empty():
 		return
-	GameSession.mods = {}
-	GameSession.is_replay = false
-	GameSession.replay_events = []
-	GameSession.replay_mode = "mania"
+	var gs := _gs()
+	gs.mods = {}
+	gs.is_replay = false
+	gs.replay_events = []
+	gs.replay_mode = "mania"
 	stop_preview()
 	close()
 	var mode := int(sel.ms.meta_at(sel.diff).get("mode", 0))
@@ -901,7 +912,8 @@ func play_map(info: Dictionary) -> void:
 ## Lokales Set + Diff suchen und GameSession.set_selection setzen.
 func _select_local(info: Dictionary) -> Dictionary:
 	var path := find_local_osz(int(info.get("set_id", 0)))
-	if path == "":
+	var gs := _gs()
+	if path == "" or gs == null:
 		return {}
 	var lib := MapLibrary.new()
 	lib.scan()
@@ -914,7 +926,7 @@ func _select_local(info: Dictionary) -> Dictionary:
 			if want != "" and ms.version_name_at(d) == want:
 				diff = d
 				break
-		GameSession.set_selection(ms.osz_path, diff, ms.version_name_at(diff),
+		gs.set_selection(ms.osz_path, diff, ms.version_name_at(diff),
 			ms.osu_filename_at(diff), ms.stars_at(diff))
 		return {"ms": ms, "diff": diff}
 	return {}
@@ -940,13 +952,14 @@ func start_replay(info: Dictionary, data: Dictionary) -> bool:
 	var sel := _select_local(info)
 	if sel.is_empty():
 		return false
+	var gs := _gs()
 	var orbit := str(info.get("mode", "")).begins_with("orbit")
 	var rmode := ReplayStore.MODE_ORBIT_BEST if orbit else "mania"
-	GameSession.mods = OrbitCore.replay_mods(data) if orbit else GameSession._replay_mods(data)
-	GameSession.is_replay = true
-	GameSession.replay_events = data.events
-	GameSession.replay_mode = rmode
-	GameSession.replay_end_ms = float(data.get("meta", {}).get("end_ms", -1.0))
+	gs.mods = OrbitCore.replay_mods(data) if orbit else gs.call("_replay_mods", data)
+	gs.is_replay = true
+	gs.replay_events = data.events
+	gs.replay_mode = rmode
+	gs.replay_end_ms = float(data.get("meta", {}).get("end_ms", -1.0))
 	stop_preview()
 	close()
 	get_tree().change_scene_to_file("res://scenes/orbit.tscn" if orbit else "res://scenes/mania_3d.tscn")
