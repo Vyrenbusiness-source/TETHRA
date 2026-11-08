@@ -529,12 +529,55 @@ func _cover_rect(m: Dictionary, parent: Control) -> TextureRect:
 	return tr
 
 
+## Scharfes Bild fuer grosse Karten: Thumbnail bleibt Platzhalter, bis das volle
+## Hintergrundbild (lokal, im Thread) bzw. cover@2x (online) geladen ist.
+func _load_hires(m: Dictionary, rect: TextureRect) -> void:
+	if harness:
+		return
+	rect.set_meta("hires", true)
+	var ms := local_set(m)
+	if ms != null:
+		if ms.background_file == "":
+			return
+		var osz: String = ms.osz_path
+		var bg: String = ms.background_file
+		WorkerThreadPool.add_task(_hires_job.bind(osz, bg, weakref(rect)))
+		return
+	var sid := int(m.get("set_id", 0))
+	if _mirror == null or sid <= 0:
+		return
+	var key := -sid
+	var cached: Texture2D = _mirror.cached_cover(key)
+	if cached != null:
+		rect.texture = cached
+		return
+	if not _cover_wait.has(key):
+		_cover_wait[key] = []
+	_cover_wait[key].append(rect)
+	_mirror.fetch_cover(key, "https://assets.ppy.sh/beatmaps/%d/covers/cover@2x.jpg" % sid)
+
+
+func _hires_job(osz: String, bg: String, ref: WeakRef) -> void:
+	var img: Texture2D = OszImporter.load_image_texture(osz, bg)
+	if img != null:
+		_apply_hires.call_deferred(ref, img)
+
+
+func _apply_hires(ref: WeakRef, tex: Texture2D) -> void:
+	var n: TextureRect = ref.get_ref() as TextureRect
+	if n != null and is_instance_valid(n) and tex != null:
+		n.texture = tex
+		n.set_meta("hires_set", true)
+
+
 func _on_cover_ready(sid: int, tex: Texture2D) -> void:
 	if not _cover_wait.has(sid):
 		return
 	for n in _cover_wait[sid]:
-		if is_instance_valid(n):
+		if is_instance_valid(n) and not (sid > 0 and n.has_meta("hires_set")):
 			(n as TextureRect).texture = tex
+			if sid < 0:
+				n.set_meta("hires_set", true)
 	_cover_wait.erase(sid)
 
 
@@ -1636,7 +1679,8 @@ func _hero(m: Dictionary, rnd: int, total: int) -> Control:
 	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	holder.add_child(bg)
-	_cover_rect(m, holder)
+	var hero_cover := _cover_rect(m, holder)
+	_load_hires(m, hero_cover)
 	holder.add_child(_shade_rect(0.0, 0.95))
 	var box := MarginContainer.new()
 	box.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -2095,7 +2139,7 @@ func _autofill() -> void:
 	for m in t.pool:
 		_fill_used[int(m.get("set_id", 0))] = true
 	var cands := local_candidates(library, r.x, r.y, f, func(d: Dictionary):
-		return int(d.set_id) > 0 and _in_pool_key(int(d.set_id), str(d.version)))
+		return int(d.set_id) > 0 and (_in_pool_key(int(d.set_id), str(d.version)) or t.is_removed(d)))
 	cands.shuffle()
 	for c in cands:
 		if int(c[0]) == 0:
@@ -2113,7 +2157,7 @@ func _autofill() -> void:
 
 
 func _fill_add(d: Dictionary) -> bool:
-	if _fill_need <= 0:
+	if _fill_need <= 0 or t.is_removed(d):
 		return false
 	var sid := int(d.get("set_id", 0))
 	if sid > 0 and _fill_used.has(sid):
@@ -2169,7 +2213,7 @@ func _on_fill_page(result: int, code: int, _h: PackedStringArray, body: PackedBy
 		if _fill_used.has(sid) or _index.has("s:%d" % sid):
 			continue
 		var pick := Tournament.online_pick(item, r.x, r.y, f)
-		if pick.is_empty():
+		if pick.is_empty() or t.is_removed(pick):
 			continue
 		var rank := int(pick.rank)
 		pick.erase("rank")

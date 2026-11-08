@@ -63,8 +63,12 @@ func _init() -> void:
 	_check(t.picks_of(1) == 4 and t.add_map(_map(5), 1) != "", "5. Pick von Spieler 1 abgewiesen")
 	_check(t.add_map(_map(5), 2) == "", "Spieler 2 darf noch")
 	_check(not t.remove_map(0, 2), "fremden Pick nicht entfernen")
+	var gone: Dictionary = t.pool[0].duplicate()
 	_check(t.remove_map(0, 1) and t.pool.size() == 4, "eigenen Pick entfernen")
 	_check(t.remove_map(t.pool.size() - 1, 1), "Host darf fremden Pick entfernen")
+	# Entfernte Maps merken (Auto-Fill nimmt sie nicht wieder)
+	_check(t.is_removed(gone) and not t.is_removed(_map(77)), "entfernte Map gemerkt")
+	_check(Tournament.from_dict(t.to_dict()).is_removed(gone), "entfernte Map ueberlebt Sync")
 	# Pool nicht ueber maps
 	var t5 := _tour(5, [1])
 	_fill(t5, [1])

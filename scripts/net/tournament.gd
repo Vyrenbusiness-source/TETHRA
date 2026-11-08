@@ -44,6 +44,8 @@ var host_id := 1
 ## Host hat die Auto-Fuellung freigegeben: Host darf freie Plaetze ueber sein Limit fuellen,
 ## und die Ban-Phase darf auch mit unvollem Pool starten.
 var autofill_done := false
+## Entfernte Maps (Schluessel siehe _key): Auto-Fill nimmt sie nicht wieder auf.
+var removed: Array = []
 ## Nur Client-Sicht: Bans anderer sind noch verdeckt; voted = wer schon gewaehlt hat.
 var hidden := false
 var voted: Array = []
@@ -259,8 +261,16 @@ func remove_map(i: int, by: int) -> bool:
 		return false
 	if int(pool[i].by) != by and by != host_id:
 		return false
+	var k := _key(pool[i])
+	if not removed.has(k):
+		removed.append(k)
 	pool.remove_at(i)
 	return true
+
+
+## Wurde diese Map in diesem Turnier schon aus dem Pool entfernt?
+func is_removed(m: Dictionary) -> bool:
+	return removed.has(_key(m))
 
 
 func is_pool_full() -> bool:
@@ -462,7 +472,8 @@ func to_dict() -> Dictionary:
 	return { "phase": phase, "config": config.duplicate(true), "pool": pool.duplicate(true),
 		"bans": bans.duplicate(), "order": order.duplicate(), "current_round": current_round,
 		"rounds": rounds.duplicate(true), "player_names": player_names.duplicate(),
-		"player_ids": player_ids.duplicate(), "host_id": host_id, "autofill_done": autofill_done }
+		"player_ids": player_ids.duplicate(), "host_id": host_id, "autofill_done": autofill_done,
+		"removed": removed.duplicate() }
 
 
 ## Sicht fuer einen Spieler: solange nicht alle gebannt haben, kennt er nur
@@ -498,6 +509,9 @@ static func from_dict(d: Dictionary) -> Tournament:
 	t.player_ids = (d.get("player_ids", []) as Array).duplicate()
 	t.host_id = int(d.get("host_id", 1))
 	t.autofill_done = bool(d.get("autofill_done", false))
+	for k in (d.get("removed", []) as Array):
+		if k is String and t.removed.size() < 500:
+			t.removed.append(k)
 	t.hidden = bool(d.get("hidden", false))
 	t.voted = (d.get("voted", []) as Array).duplicate()
 	return t
