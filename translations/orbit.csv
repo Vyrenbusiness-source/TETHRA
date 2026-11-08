@@ -88,3 +88,27 @@ Innen: Taste %s,Innen: Taste %s,Inner: key %s
 neben dem Zeiger,neben dem Zeiger,off the hand
 zu nah an der Mitte,zu nah an der Mitte,too close to the centre
 andere Taste,andere Taste,other key
+EINS,EINS,ONE
+NÄCHSTER TAKT,NÄCHSTER TAKT,NEXT BAR
+Probe,Probe,Trial
+"Der Kreis ist ein Takt. Der Zeiger dreht im Tempo des Songs, oben beginnt der Takt. Drück eine Taste, wenn er oben steht.","Der Kreis ist ein Takt. Der Zeiger dreht im Tempo des Songs, oben beginnt der Takt. Drück eine Taste, wenn er oben steht.","The circle is one bar. The hand turns at the song's tempo, the bar starts at the top. Press a key when it is at the top."
+"Zielen ist Pflicht. Leg Maus oder Stift auf den Zeiger und führ ihn mit, ohne abzusetzen.","Zielen ist Pflicht. Leg Maus oder Stift auf den Zeiger und führ ihn mit, ohne abzusetzen.",Aiming is required. Put the mouse or pen on the hand and move along with it without lifting.
+"Taste A (%s) spielt den inneren Ring, Taste B (%s) den äußeren. Maus links und rechts gehen auch. Drück, wenn der Zeiger die Note erreicht.","Taste A (%s) spielt den inneren Ring, Taste B (%s) den äußeren. Maus links und rechts gehen auch. Drück, wenn der Zeiger die Note erreicht.","Key A (%s) plays the inner ring, key B (%s) the outer ring. Left and right mouse work too. Press when the hand reaches the note."
+Zwei Noten an einer Stelle sind ein Akzent. Drück beide Tasten (%s und %s) zugleich.,Zwei Noten an einer Stelle sind ein Akzent. Drück beide Tasten (%s und %s) zugleich.,Two notes in one spot are an accent. Press both keys (%s and %s) together.
+"Ein Bogen ist eine Halte. Halt die Taste und führ den Cursor mit dem Zeiger, bis der Bogen endet.","Ein Bogen ist eine Halte. Halt die Taste und führ den Cursor mit dem Zeiger, bis der Bogen endet.",An arc is a hold. Hold the key and move the cursor with the hand until the arc ends.
+"Blasse Noten gehören zum nächsten Takt. Lies sie voraus, bevor der Zeiger sie erreicht.","Blasse Noten gehören zum nächsten Takt. Lies sie voraus, bevor der Zeiger sie erreicht.",Faded notes belong to the next bar. Read them ahead before the hand gets there.
+Neben dem Zeiger: bleib auf ihm.,Neben dem Zeiger: bleib auf ihm.,Off the hand: stay on it.
+Akzent: beide Tasten zugleich.,Akzent: beide Tasten zugleich.,Accent: both keys together.
+Halte verloren: bleib mit dem Cursor auf dem Zeiger und halt die Taste bis zum Ende.,Halte verloren: bleib mit dem Cursor auf dem Zeiger und halt die Taste bis zum Ende.,Hold lost: keep the cursor on the hand and hold the key to the end.
+"Zu spät: drück, wenn der Zeiger die Note erreicht.","Zu spät: drück, wenn der Zeiger die Note erreicht.",Too late: press when the hand reaches the note.
+Anderer Ring: die Note liegt auf der anderen Taste.,Anderer Ring: die Note liegt auf der anderen Taste.,Other ring: the note belongs to the other key.
+"Zu früh: warte, bis der Zeiger die Note erreicht.","Zu früh: warte, bis der Zeiger die Note erreicht.",Too early: wait until the hand reaches the note.
+Neben dem Zeiger: leg den Cursor auf den Zeiger.,Neben dem Zeiger: leg den Cursor auf den Zeiger.,Off the hand: put the cursor on the hand.
+Zu nah an der Mitte: zeig auf den Zeiger.,Zu nah an der Mitte: zeig auf den Zeiger.,Too close to the centre: point at the hand.
+Eins,Eins,One
+"Zu früh: warte, bis der Zeiger oben steht.","Zu früh: warte, bis der Zeiger oben steht.",Too early: wait until the hand is at the top.
+Zu spät: der Zeiger war schon oben vorbei.,Zu spät: der Zeiger war schon oben vorbei.,Too late: the hand has already passed the top.
+Der Takt,Der Takt,The bar
+Zwei Ringe,Zwei Ringe,Two rings
+Akzent,Akzent,Accent
+Halte,Halte,Hold
