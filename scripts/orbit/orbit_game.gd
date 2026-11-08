@@ -61,7 +61,7 @@ var _grade_label: Label
 var _time_label: Label
 var _top_fill: ColorRect
 var _pause_menu: PauseMenu
-var _results_screen: ResultsScreen
+var _results_screen: OrbitResults
 var _hit_player: AudioStreamPlayer
 var _miss_player: AudioStreamPlayer
 var _hit_offsets := PackedFloat32Array()
@@ -928,34 +928,28 @@ func _show_results(is_fail: bool) -> void:
 		new_best = bool(save.get("is_new_best", false))
 		ScoreStore.log_play(GameSession.osz_path, _beatmap.version_name(),
 			"%s - %s" % [_beatmap.artist(), _beatmap.title()], s, MODE)
-	var rs := ResultsScreen.new()
+	# Multiplayer: letzten Live-Stand + Finale an alle melden.
+	if Lobby.active and Lobby.in_game:
+		Lobby.send_score(int(s.score), int(core.combo), float(s.accuracy))
+		Lobby.send_final(PlayerStatsCard.pack(s, _hit_offsets, _acc_trace, 0, 0, s.failed))
+	# Eigener Orbit-Endscreen (Karte der Treffer, Stufen, Timing).
+	var rs := OrbitResults.new()
 	_hud.add_child(rs)
 	_results_screen = rs
 	rs.retry_pressed.connect(_restart)
 	rs.back_pressed.connect(_back_to_browser)
-	rs.clip_pressed.connect(func(): rs.show_toast(tr("Clips gibt es nur in Mania 4K"), false))
-	var data := {
+	rs.show_results({
 		"is_fail": is_fail,
 		"s": s,
-		"pp": -1.0,
-		"unranked": false,
+		"log": _hit_log,
+		"w50": float(core.w50),
+		"w_max": float(core.w_max),
 		"new_best": new_best,
 		"title": _beatmap.title(),
 		"artist": _beatmap.artist(),
-		"version": "%s  ·  %s" % [_beatmap.version_name(), tr("Orbit")],
-		"cover_path": "",
-		"offsets": _hit_offsets,
-		"player": Settings.profile_name,
-		"date": Time.get_datetime_string_from_system(),
-		"allow_retry": true,
-		"can_replay": false,
-		"is_replay": false,
-		"lobby": false,
-	}
-	var cover := OszImporter.load_background_texture(GameSession.osz_path, _beatmap)
-	if cover != null:
-		data["cover"] = cover
-	rs.show_results(data)
+		"version": _beatmap.version_name(),
+		"allow_retry": not Lobby.active,
+	})
 	var grade := "F" if is_fail else str(s.get("grade", "D"))
 	get_tree().create_timer(0.38, true).timeout.connect(func():
 		if is_inside_tree() and _use_audio:
