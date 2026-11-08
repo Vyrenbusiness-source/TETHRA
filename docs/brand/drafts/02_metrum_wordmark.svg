@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 250" width="1000" height="250">
+<path d="M125 65H195M160 65V185" fill="none" stroke="#ECE6DA" stroke-width="10" stroke-linecap="butt" stroke-linejoin="miter"/>
+<path d="M331 65H261V185H331" fill="none" stroke="#ECE6DA" stroke-width="10" stroke-linecap="butt" stroke-linejoin="miter"/>
+<path d="M261 125H320.5" fill="none" stroke="#ECE6DA" stroke-width="10" stroke-linecap="butt" stroke-linejoin="miter"/>
+<path d="M397 65H467M432 65V185" fill="none" stroke="#ECE6DA" stroke-width="10" stroke-linecap="butt" stroke-linejoin="miter"/>
+<path d="M533 65V185M603 65V185" fill="none" stroke="#ECE6DA" stroke-width="10" stroke-linecap="butt" stroke-linejoin="miter"/>
+<path d="M533 125H603" fill="none" stroke="#ECE6DA" stroke-width="10" stroke-linecap="butt" stroke-linejoin="miter"/>
+<path d="M669 185V65H707.8A31.2 31.2 0 0 1 707.8 127.4H669M698.4 127.4L739 185" fill="none" stroke="#ECE6DA" stroke-width="10" stroke-linecap="butt" stroke-linejoin="miter"/>
+<path d="M805 185L840 65L875 185" fill="none" stroke="#ECE6DA" stroke-width="10" stroke-linecap="butt" stroke-linejoin="miter"/>
+<path d="M819 141.8H861" fill="none" stroke="#F2A23A" stroke-width="10" stroke-linecap="butt" stroke-linejoin="miter"/>
+</svg>
