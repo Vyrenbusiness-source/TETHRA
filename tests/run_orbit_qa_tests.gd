@@ -554,9 +554,6 @@ func _overlap(v: OrbitView, ns: Array[OrbitNote], t0: float) -> Dictionary:
 					pair_any += 1
 					cross += 1 if ns[ia].ring != ns[ib].ring else 0
 					covered[ib] = true
-					if OS.get_environment("ORBIT_QA_DEBUG") != "" and not seen.has(-ia * 100000 - ib):
-						seen[-ia * 100000 - ib] = true
-						print("    PAIR a=%.0f/%.1f/r%d b=%.0f/%.1f/r%d dist %.0f rad %.0f %.0f t=%.0f" % [ns[ia].time_ms, ns[ia].angle_deg, ns[ia].ring, ns[ib].time_ms, ns[ib].angle_deg, ns[ib].ring, dist, rad[a], rad[b], t])
 					if dist < maxf(rad[a], rad[b]):
 						pair_heavy += 1
 						if v.halo_of(ib) <= 0.0:
