@@ -380,8 +380,6 @@ func key_down(key: int, t_ms: float, cursor_deg: float, rho: float) -> void:
 
 func _do_key_down(key: int, t_ms: float, cursor_deg: float, rho: float) -> void:
 	_do_cursor(cursor_deg, rho, t_ms)
-	if _held[key]:
-		return
 	_held[key] = true
 	var ring := _sel_ring
 	for r in RINGS:
