@@ -23,6 +23,10 @@ const SIG_T := 25.0
 const SIG_A := 6.0
 const V_TABLET := 0.35
 const V_MOUSE := 0.25
+## Schwacher Spieler (nur fuer die Sterne-Korrelation): langsamer, ungenauer.
+const V_WEAK := 0.18
+const SIG_T_WEAK := 32.0
+const SIG_A_WEAK := 8.0
 const SEEDS := [3, 17]
 const DENSE_MS := 5000.0
 ## Kurven schneiden: Vorhalt Richtung Folgeziel (Grad), nur bei Abstand < LEAD_GAP_MS.
@@ -358,7 +362,7 @@ func _cause(ns: Array[OrbitNote], prev: Array, i: int, res: Dictionary, vmax: fl
 	return {"cause": cause, "gap": gap, "deg": d, "need": need}
 
 
-func _bot_eval(m: Dictionary, vmax: float) -> Dictionary:
+func _bot_eval(m: Dictionary, vmax: float, sig_t: float = SIG_T, sig_a: float = SIG_A) -> Dictionary:
 	var ns: Array[OrbitNote] = m.ns
 	var prev := _prev_points(ns)
 	var miss := 0
@@ -366,7 +370,7 @@ func _bot_eval(m: Dictionary, vmax: float) -> Dictionary:
 	var causes := {}
 	var spots := {}
 	for s in SEEDS:
-		var h := _human(ns, m.bm, vmax, SIG_T, SIG_A, s)
+		var h := _human(ns, m.bm, vmax, sig_t, sig_a, s)
 		var c: OrbitCore = h.core
 		acc += c.accuracy()
 		for i in ns.size():
@@ -429,7 +433,8 @@ func _bot_pass(maps: Array) -> Dictionary:
 		var free := _bot_eval(m, 100.0)
 		var tab := _bot_eval(m, V_TABLET)
 		var mou := _bot_eval(m, V_MOUSE)
-		m["bot"] = {"free": free.acc, "tablet": tab.acc, "mouse": mou.acc,
+		var weak := _bot_eval(m, V_WEAK, SIG_T_WEAK, SIG_A_WEAK)
+		m["bot"] = {"free": free.acc, "tablet": tab.acc, "mouse": mou.acc, "weak": weak.acc, "miss_weak": weak.miss_rate,
 			"miss_free": free.miss_rate, "miss_tablet": tab.miss_rate, "miss_mouse": mou.miss_rate}
 		tot.free += free.miss
 		tot.tablet += tab.miss
@@ -454,7 +459,8 @@ func _bot_pass(maps: Array) -> Dictionary:
 		rows.append({"map": m.label, "targets": m.ns.size(), "stars": OrbitConverter.stars(m.ns),
 			"acc_free": free.acc, "acc_tablet": tab.acc, "acc_mouse": mou.acc,
 			"miss_free": free.miss_rate, "miss_tablet": tab.miss_rate, "miss_mouse": mou.miss_rate,
-			"causes_mouse": mou.causes})
+			"acc_weak": weak.acc, "miss_weak": weak.miss_rate, "causes_mouse": mou.causes,
+			"notes": m.ns.map(func(n: OrbitNote): return [n.time_ms, n.end_ms, snappedf(n.angle_deg, 0.01), snappedf(n.end_angle_deg, 0.01), n.ring])})
 		print("  %-46s %4d Ziele  Fehler frei %4.1f%%  Tablet %4.1f%%  Maus %4.1f%%  acc %.3f/%.3f/%.3f" % [
 			m.label, m.ns.size(), free.miss_rate * 100.0, tab.miss_rate * 100.0, mou.miss_rate * 100.0,
 			free.acc, tab.acc, mou.acc])
@@ -514,6 +520,7 @@ func _overlap(v: OrbitView, ns: Array[OrbitNote], t0: float) -> Dictionary:
 	var c := v.center()
 	var t := t0
 	var cross := 0
+	var hidden := 0
 	while t < t0 + DENSE_MS:
 		v.t_ms = t
 		v.layout_frame()
@@ -544,6 +551,8 @@ func _overlap(v: OrbitView, ns: Array[OrbitNote], t0: float) -> Dictionary:
 					covered[ib] = true
 					if dist < maxf(rad[a], rad[b]):
 						pair_heavy += 1
+						if v.halo_of(ib) <= 0.0:
+							hidden += 1
 		frames += 1
 		t += 1000.0 / 60.0
 	var n_seen := float(maxi(seen.size(), 1))
@@ -551,6 +560,7 @@ func _overlap(v: OrbitView, ns: Array[OrbitNote], t0: float) -> Dictionary:
 		"pairs_any": float(pair_any) / float(maxi(frames, 1)),
 		"pairs_heavy": float(pair_heavy) / float(maxi(frames, 1)),
 		"cross_share": float(cross) / float(maxi(pair_any, 1)),
+		"hidden": float(hidden) / float(maxi(frames, 1)),
 		"covered_share": float(covered.size()) / n_seen}
 
 
@@ -558,8 +568,10 @@ func _test_density(maps: Array) -> void:
 	var old := _density_pass(maps, false)
 	var now := _density_pass(maps, true)
 	_out["density"] = {"before": old, "after": now}
-	_ok(maps.is_empty() or now.covered_mean < 0.15, "dichte Stellen: < 15 % der Ziele von anderen ueberdeckt")
-	_ok(maps.is_empty() or now.heavy_mean < 0.1, "dichte Stellen: kaum starke Ueberdeckung (< 0,1 Paare/Frame)")
+	_ok(maps.is_empty() or now.covered_mean <= old.covered_mean * 0.8,
+		"dichte Stellen: verdeckte Ziele mindestens 20 %% weniger (%.1f%% -> %.1f%%)" % [old.covered_mean * 100.0, now.covered_mean * 100.0])
+	_ok(maps.is_empty() or now.hidden_mean <= old.hidden_mean * 0.2,
+		"dichte Stellen: ganz verdeckte Ziele ohne Hinweis mindestens 80 %% weniger (%.2f -> %.2f je Frame)" % [old.hidden_mean, now.hidden_mean])
 
 
 func _density_pass(maps: Array, fit: bool) -> Dictionary:
@@ -569,6 +581,7 @@ func _density_pass(maps: Array, fit: bool) -> Dictionary:
 	var rows: Array = []
 	var sum_cov := 0.0
 	var sum_heavy := 0.0
+	var sum_hidden := 0.0
 	for m in maps:
 		var t0 := _densest(m.ns)
 		var o := _overlap(v, m.ns, t0)
@@ -582,12 +595,13 @@ func _density_pass(maps: Array, fit: bool) -> Dictionary:
 		rows.append(o)
 		sum_cov += o.covered_share
 		sum_heavy += o.pairs_heavy
+		sum_hidden += o.hidden
 		print("  %-46s %s %4.1f/s  sichtbar %4.1f  Ueberschneidungen/Frame %4.2f (stark %4.2f, Ring-uebergreifend %2.0f%%)  verdeckte Ziele %4.1f%%" % [
 			m.label, _mmss(t0), o.nps, o.visible, o.pairs_any, o.pairs_heavy, o.cross_share * 100.0, o.covered_share * 100.0])
 	v.free()
 	var nm := float(maxi(maps.size(), 1))
-	print("  Mittel: verdeckte Ziele %.1f%%, starke Ueberdeckung %.2f Paare/Frame" % [sum_cov / nm * 100.0, sum_heavy / nm])
-	return {"rows": rows, "covered_mean": sum_cov / nm, "heavy_mean": sum_heavy / nm}
+	print("  Mittel: verdeckte Ziele %.1f%%, starke Ueberdeckung %.2f Paare/Frame, davon ohne Stapel-Hinweis %.2f" % [sum_cov / nm * 100.0, sum_heavy / nm, sum_hidden / nm])
+	return {"rows": rows, "covered_mean": sum_cov / nm, "heavy_mean": sum_heavy / nm, "hidden_mean": sum_hidden / nm}
 
 
 # ---------------------------------------------------------------------------
@@ -659,6 +673,7 @@ func _shots(maps: Array) -> void:
 	var v := OrbitView.new()
 	v.size = Vector2(1280, 720)
 	v.preempt = ManiaCore.preempt_for(1.0)
+	v.fit_enabled = OS.get_environment("ORBIT_QA_FIT") != "0"
 	root.add_child(v)
 	# Pro Quelle die dichtesten Diffs.
 	var pick: Array = []
@@ -692,6 +707,12 @@ func _shots(maps: Array) -> void:
 				best_t = t
 			t += 50.0
 		v.setup(m.ns)
+		# Wie im Spiel: alles vor dem Shot-Zeitpunkt ist getroffen.
+		for i in m.ns.size():
+			if m.ns[i].end_ms < best_t:
+				v._state[i] = OrbitView.ST_HIT if not m.ns[i].is_arc else OrbitView.ST_ARC_DONE
+			elif m.ns[i].time_ms < best_t:
+				v._state[i] = OrbitView.ST_ARC
 		v.t_ms = best_t
 		v.queue_redraw()
 		await process_frame

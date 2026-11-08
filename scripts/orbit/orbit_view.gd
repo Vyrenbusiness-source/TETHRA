@@ -34,7 +34,7 @@ const FAR_ALPHA := 0.38
 ## Dichte Stellen: ein spaeteres Ziel schrumpft, statt ein frueheres zu
 ## ueberdecken (hoechstens auf FIT_MIN), mit FIT_GAP_K * unit() Luft dazwischen.
 ## Das naechste Ziel je Ring bleibt immer voll gross. Messung: docs/modes/orbit_qa.md.
-const FIT_MIN := 0.5
+const FIT_MIN := 0.3
 const FIT_GAP_K := 0.004
 const ARC_W_K := 0.026
 ## Winkel-Toleranz fuer die Cursor-Anzeige (Fallback, Core liefert den echten Wert).
@@ -119,6 +119,10 @@ var _chev := PackedVector2Array()
 var _ring_glow: Array[float] = [0.0, 0.0]
 ## Groessenfaktor (FIT_MIN..1) je sichtbarem Ziel in diesem Frame (layout_frame).
 var _fit := {}
+## Stapel-Hinweis: Radius (px) des Rahmens eines Ziels, dessen Mitte unter einem
+## frueheren Ziel liegt (gleicher Winkel kurz danach). Der Rahmen ragt ueber das
+## verdeckende Ziel hinaus: ein Ring je verdecktem Ziel.
+var _halo := {}
 ## Aus = alte Darstellung (alle Ziele volle Groesse), nur fuer Messungen.
 var fit_enabled := true
 var _plate_tex: GradientTexture2D
@@ -406,6 +410,7 @@ func layout_frame() -> int:
 ## frueheres anfliegendes Ziel ueberdecken; Akkord-Partner zaehlen nicht.
 func _fit_sizes(last: int) -> void:
 	_fit.clear()
+	_halo.clear()
 	var c := center()
 	var gap := unit() * FIT_GAP_K
 	var pos := PackedVector2Array()
@@ -421,15 +426,32 @@ func _fit_sizes(last: int) -> void:
 		var k := 1.0
 		if fit_enabled and dt > 0.0 and _next[n.ring] != i and full > 0.0:
 			var r := full
+			var halo := 0.0
 			for j in pos.size():
 				if absf(tim[j] - float(n.time_ms)) <= CHORD_EPS_MS:
 					continue
-				r = minf(r, p.distance_to(pos[j]) - rad[j] - gap)
+				var d := p.distance_to(pos[j])
+				r = minf(r, d - rad[j] - gap)
+				if d < rad[j]:
+					halo = maxf(halo, d + rad[j] + gap * 1.5)
 			k = clampf(r / full, FIT_MIN, 1.0)
+			if halo > 0.0:
+				_halo[i] = halo
 		_fit[i] = k
 		pos.append(p)
 		rad.append(full * k)
 		tim.append(float(n.time_ms))
+
+
+## Stapel-Hinweis-Radius (px) von Ziel i in diesem Frame, 0 = keiner.
+func halo_of(i: int) -> float:
+	return float(_halo.get(i, 0.0))
+
+
+## Rahmen um ein verdecktes Ziel (Radius rp in px, wie draw_radius).
+func _draw_halo(p: Vector2, deg: float, ring: int, rp: float, col: Color, alpha: float) -> void:
+	var s := rp if ring == 0 else rp / (DIAMOND_K * 0.85)
+	_outline(p, deg, ring, s, col, 0.85 * alpha, 1.5)
 
 
 ## Groessenfaktor von Ziel i in diesem Frame (1 = volle Anfluggroesse).
@@ -667,6 +689,8 @@ func _draw_tap(c: Vector2, u: float, i: int, n) -> void:
 	var p := polar(c, float(n.angle_deg), radius_at(n.ring, dt))
 	var s := _note_size(u, n.ring) * _approach_scale(dt) * (fit_of(i) if st == ST_PENDING else 1.0)
 	_shape(p, float(n.angle_deg), n.ring, s, col, alpha)
+	if st == ST_PENDING and halo_of(i) > 0.0:
+		_draw_halo(p, float(n.angle_deg), n.ring, halo_of(i), col, maxf(alpha, 0.5))
 	if nxt and dt > 0.0:
 		# Das naechste Ziel: feiner heller Rahmen.
 		_outline(p, float(n.angle_deg), n.ring, s * 1.28, Color.WHITE, 0.4 * alpha, 1.5)
@@ -784,6 +808,8 @@ func _draw_arc_note(c: Vector2, u: float, i: int, n) -> void:
 		var s := _note_size(u, n.ring) * (_approach_scale(dt) * fit_of(i) if dt > 0.0 else 1.0)
 		var hd := tip if dropped else a0
 		_shape(polar(c, hd, rad), hd, n.ring, s, col, alpha)
+		if st == ST_PENDING and halo_of(i) > 0.0:
+			_draw_halo(polar(c, hd, rad), hd, n.ring, halo_of(i), col, maxf(alpha, 0.5))
 		if st == ST_PENDING:
 			_chevron(c, rad, a0, signf(a1 - a0), w, Color(1, 1, 1, 0.5 * alpha))
 			if nxt and dt > 0.0:
