@@ -74,6 +74,7 @@ func _ready() -> void:
 	online = OnlineApi.new()
 	online.name = "OnlineApi"
 	add_child(online)
+	_make_chat()
 	set_process(false)
 	_arm_test_watchdog()
 	_arm_playtime()
@@ -94,6 +95,21 @@ func _ready() -> void:
 		if j >= 0 and j + 1 < args.size():
 			clip_mode = args[j + 1]
 		_start_clip.call_deferred()
+
+
+## Chat-Overlay (Taste F) auf eigener CanvasLayer, in allen Menues gleich.
+var chat: ChatOverlay
+
+
+func _make_chat() -> void:
+	if DisplayServer.get_name() == "headless" and not OS.get_cmdline_args().has("--chat-headless"):
+		return
+	var layer := CanvasLayer.new()
+	layer.name = "ChatLayer"
+	layer.layer = 90
+	add_child(layer)
+	chat = ChatOverlay.new()
+	layer.add_child(chat)
 
 
 ## Replay zur md5 in der Bibliothek suchen (md5 = "<osz-Dateiname>|<version>"),
