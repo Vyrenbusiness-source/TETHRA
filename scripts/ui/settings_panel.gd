@@ -73,6 +73,7 @@ var _nc: NoteColorPicker
 var _world_preview: WorldPreview
 var _preview_2d: Control
 var _preview_bg: TextureRect
+var _preview_stack: Control
 var _preview_bg_label: Label
 var _name_rows: VBoxContainer
 var _skinvals_btn: CheckButton
@@ -176,7 +177,62 @@ func _layout() -> void:
 		var s := 0.75 if vp.x < 1500.0 else 1.0
 		_world_preview.scale = Vector2(s, s)
 		_pv_world_holder.custom_minimum_size = WorldPreview.SIZE_PX * s
+	if _preview_2d != null and _preview_2d.has_method("set_box"):
+		# Hochformat wie ein echtes Mania-Feld, so hoch wie die Seite erlaubt.
+		var b := Vector2(280.0 if vp.x < 1500.0 else 320.0, clampf(sz.y - 210.0, 300.0, 560.0))
+		_preview_2d.call("set_box", b)
+		_preview_stack.custom_minimum_size = b
+	if _cur != "":
+		_arrange(_cur)
 	_update_fades.call_deferred()
+
+
+## Breite Seiten ohne Vorschau: Gruppen in zwei Spalten (keine langen Leerstrecken
+## zwischen Beschriftung und Bedienung), sonst eine Spalte.
+func _arrange(id: String) -> void:
+	var pg: Dictionary = _pages[id]
+	var cards: Array = pg.cards
+	var free_w := _panel.size.x - SIDE_W - 2.0 * PAD
+	var n := 2 if PAGE_DEFS[id][3] == "" and cards.size() >= 2 and free_w >= 1060.0 else 1
+	if pg.get("cols", 1) == n and pg.has("cols"):
+		return
+	pg["cols"] = n
+	var vb: VBoxContainer = pg.vb
+	for c in cards:
+		if c.get_parent() != null:
+			c.get_parent().remove_child(c)
+	for c in vb.get_children():
+		if c is HBoxContainer and c.name == "Cols":
+			vb.remove_child(c)
+			c.queue_free()
+	if n == 1:
+		for c in cards:
+			vb.add_child(c)
+		return
+	var cols := HBoxContainer.new()
+	cols.name = "Cols"
+	cols.add_theme_constant_override("separation", 14)
+	vb.add_child(cols)
+	var a := VBoxContainer.new()
+	var b := VBoxContainer.new()
+	for col in [a, b]:
+		col.add_theme_constant_override("separation", 14)
+		col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		cols.add_child(col)
+	var total := 0
+	for c in cards:
+		total += _card_weight(c)
+	var acc := 0
+	for c in cards:
+		if acc < total / 2.0 and (acc == 0 or acc + _card_weight(c) * 0.5 <= total / 2.0 + 1):
+			a.add_child(c)
+		else:
+			b.add_child(c)
+		acc += _card_weight(c)
+
+
+func _card_weight(card: Control) -> int:
+	return 1 + int(card.get_meta("rows").get_child_count())
 
 
 func _build_sidebar(parent: Control) -> void:
@@ -210,6 +266,8 @@ func _build_sidebar(parent: Control) -> void:
 	_search.custom_minimum_size = Vector2(0, 32)
 	_search.add_theme_font_size_override("font_size", 14)
 	_search.tooltip_text = "Strg+F"
+	_search.add_theme_color_override("clear_button_color", UiTheme.DIM)
+	_search.add_theme_color_override("clear_button_color_pressed", UiTheme.TEXT)
 	_search.text_changed.connect(_on_search)
 	_search.text_submitted.connect(func(_t: String): _search_pick(0))
 	col.add_child(_search)
@@ -312,7 +370,17 @@ func _build_content(parent: Control) -> void:
 	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	_scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	var vsb := _scroll.get_v_scroll_bar()
-	vsb.custom_minimum_size = Vector2(8, 0)
+	vsb.custom_minimum_size = Vector2(6, 0)
+	var track := StyleBoxEmpty.new()
+	vsb.add_theme_stylebox_override("scroll", track)
+	vsb.add_theme_stylebox_override("scroll_focus", track)
+	for st in ["grabber", "grabber_highlight", "grabber_pressed"]:
+		var g := StyleBoxFlat.new()
+		g.bg_color = Color(UiTheme.TEXT, 0.16 if st == "grabber" else 0.30)
+		g.set_corner_radius_all(2)
+		g.content_margin_left = 3
+		g.content_margin_right = 3
+		vsb.add_theme_stylebox_override(st, g)
 	vsb.value_changed.connect(func(_v): _update_fades())
 	vsb.changed.connect(_update_fades)
 	wrap.add_child(_scroll)
@@ -394,7 +462,7 @@ func _new_page(id: String) -> VBoxContainer:
 	vb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	vb.visible = false
 	_scroll.get_node("Stack").add_child(vb)
-	_pages[id] = {"vb": vb, "rows": []}
+	_pages[id] = {"vb": vb, "rows": [], "cards": []}
 	_build_pg = id
 	return vb
 
@@ -828,6 +896,7 @@ func _build_previews() -> void:
 		_preview_2d = load("res://scripts/ui/playfield_preview.gd").new()
 		var stack := Control.new()
 		stack.custom_minimum_size = _preview_2d.custom_minimum_size
+		_preview_stack = stack
 		stack.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		var black := ColorRect.new()
 		black.color = Color.BLACK
@@ -921,6 +990,8 @@ func _group(pg: VBoxContainer, title: String, resettable: bool = true) -> VBoxCo
 	cb.content_margin_bottom = 4
 	card.add_theme_stylebox_override("panel", cb)
 	pg.add_child(card)
+	if _build_pg != "":
+		_pages[_build_pg].cards.append(card)
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 0)
 	card.add_child(col)
@@ -937,12 +1008,13 @@ func _group(pg: VBoxContainer, title: String, resettable: bool = true) -> VBoxCo
 	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	l.add_theme_font_override("font", UiTheme.heading_font(0))
 	l.add_theme_font_size_override("font_size", 14)
-	l.add_theme_color_override("font_color", UiTheme.ACCENT)
+	l.add_theme_color_override("font_color", UiTheme.TEXT)
 	head.add_child(l)
 	var rows := VBoxContainer.new()
 	rows.add_theme_constant_override("separation", 0)
 	rows.set_meta("title", title)
 	col.add_child(rows)
+	card.set_meta("rows", rows)
 	if resettable:
 		var rb := Button.new()
 		rb.text = "Zurücksetzen"
@@ -1122,6 +1194,7 @@ func _choice_ob(rows: VBoxContainer, cap: String, ob: OptionButton, getf: Callab
 		tip: String = "") -> PanelContainer:
 	ob.custom_minimum_size = Vector2(0, CTRL_H)
 	ob.clip_text = true
+	ob.add_theme_font_size_override("font_size", 14)
 	ob.select(int(getf.call(Settings)))
 	ob.item_selected.connect(func(i):
 		setf.call(i)
@@ -1183,6 +1256,7 @@ func _embed_skin(rows: VBoxContainer, skin: Control) -> void:
 	skin.remove_child(opt)
 	opt.custom_minimum_size = Vector2(0, CTRL_H)
 	opt.clip_text = true
+	opt.add_theme_font_size_override("font_size", 14)
 	_row(rows, "Skin", opt, "Eigene Bilder für Noten und Tasten")
 	var m := MarginContainer.new()
 	m.add_theme_constant_override("margin_left", 14)
@@ -1301,7 +1375,7 @@ func _nav_button(id: String) -> Button:
 	UiTheme._attach_sounds(b)
 	# Rechts die Zahl der Einstellungen (tabellarische Ziffern, gedimmt).
 	var n := Label.new()
-	n.text = str(_pages[id].rows.size())
+	n.text = str(_pages[id].rows.size()) if id != "notes" else ""
 	n.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
 	n.add_theme_font_override("font", UiTheme.heading_font(0))
 	n.add_theme_font_size_override("font_size", 12)
@@ -1356,6 +1430,7 @@ func _show_page(id: String) -> void:
 	(_pv_col.get_meta("wrap") as Control).visible = pv != ""
 	_pv_2d.visible = pv == "2d"
 	_pv_world.visible = pv == "world"
+	_arrange(id)
 	_scroll.scroll_vertical = 0
 	_sync_page(id)
 	_refresh_labels()
@@ -1431,6 +1506,8 @@ func _where(page: String) -> String:
 	var d: Array = PAGE_DEFS[page]
 	var modes: Array = d[2]
 	if modes.size() == 1:
+		if tr(d[0]) == MODE_NAMES[modes[0]]:
+			return MODE_NAMES[modes[0]]
 		return MODE_NAMES[modes[0]] + " · " + tr(d[0])
 	return tr(d[0])
 

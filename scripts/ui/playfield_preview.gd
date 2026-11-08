@@ -22,6 +22,10 @@ const COLORS := [Color(0.20, 0.85, 1.0), Color(1.0, 0.45, 0.88), Color(0.55, 1.0
 const NOTES := [[0, 0.00, 0.0], [2, 0.18, 0.0], [1, 0.40, 0.0], [3, 0.55, 0.30], [0, 0.78, 0.0]]
 
 var _pf: Playfield2D
+## Groesse dieser Vorschau (Standard BOX; das Einstellungsfenster nutzt eine hoehere).
+var box := BOX
+## Virtuelle Bildhoehe dieser Vorschau (Standard VH, waechst mit box.y).
+var vh := VH
 var _t := 0.0
 var _prev: Array = []   ## je Note: Kopf-Z und Ende-Z des letzten Frames (Treffer-Erkennung)
 var _combo := 0
@@ -61,6 +65,15 @@ static func bg_alpha() -> float:
 	return clampf(Settings.bg_dim, 0.0, 1.0)
 
 
+## Andere Groesse (vor oder nach _ready): Bildhoehe waechst im selben Verhaeltnis.
+func set_box(b: Vector2) -> void:
+	box = b
+	vh = VH * b.y / BOX.y
+	custom_minimum_size = b
+	size = b
+	refresh()
+
+
 func refresh() -> void:
 	queue_redraw()
 	if _pf == null:
@@ -72,22 +85,22 @@ func refresh() -> void:
 			Settings.note_style_2d, Settings.note_size_2d)
 	_pf.skin = ManiaSkin.load_skin(Settings.skin_2d) if Settings.skin_2d != "" else null
 	_pf.set_anchors_preset(Control.PRESET_TOP_LEFT)
-	var h := view_height(_pf)
-	_pf.preview_size = Vector2(BOX.x, h)
-	_pf.size = Vector2(BOX.x, h)
-	_pf.base_pos = Vector2(0, BOX.y - h)   # Playfield2D setzt position selbst (Richtung/Skalierung)
+	var h := view_height(_pf, box, vh)
+	_pf.preview_size = Vector2(box.x, h)
+	_pf.size = Vector2(box.x, h)
+	_pf.base_pos = Vector2(0, box.y - h)   # Playfield2D setzt position selbst (Richtung/Skalierung)
 	_prev.clear()
 	_feed()
 
 
 ## Virtuelle Bildhoehe der Vorschau: VH, kleiner falls das Feld sonst breiter als die Box waere.
-static func view_height(pf: Playfield2D) -> float:
-	pf.preview_size = Vector2(BOX.x, VH)
+static func view_height(pf: Playfield2D, b: Vector2 = BOX, v: float = VH) -> float:
+	pf.preview_size = Vector2(b.x, v)
 	var fw := pf.field_rect().size.x
-	var room := BOX.x - 12.0
+	var room := b.x - 12.0
 	if fw <= room:
-		return VH
-	return maxf(BOX.y, VH * room / fw)
+		return v
+	return maxf(b.y, v * room / fw)
 
 
 func _process(delta: float) -> void:
