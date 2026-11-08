@@ -125,3 +125,11 @@ Offen fuer naechste Session:
 - Orbit-Sterne im Browser auch fuer osu!standard-Diffs (heute nur 4K).
 - warmd: "Godot ended without a result" beim Merge-Gate tritt sporadisch auf (Wiederholen hilft) -> in warmd selbst untersuchen; dazu die Batch-/Besitzer-Luecken (oben).
 - Social Preview hochladen (Nutzer).
+
+## Stand 2026-11-08 Vormittag (v1.20.5)
+Released: v1.20.4 (ScoreStore Schema 3: alte Mania-Arcade-Scores vor v1.1.5 einmalig auf ScoreV1 umgerechnet, Bestwert/pp neu bestimmt, Fremd-Scores > Maximum beim Empfang umgerechnet; Orbit-Sterne im Browser auch fuer osu!standard), v1.20.5 (Online-Suche: catboy HTTP 403 -> Ausweich auf osu.direct).
+Offen (Nutzer-Wuensche, Rueckfrage gestellt):
+- Endbild "besser/genauer" (was genau fehlt, offen).
+- Logo wirkt billig -> neues Logo (Richtung offen).
+- Song-Import einfach (Datei-Dialog / osu!-Songs-Ordner?), 4K nur fuer Mania.
+- Orbit verstaendlicher machen (Analyse an Nutzer: ein Ring Standard, Ring per Cursor-Abstand statt Taste, Toleranz-Keil sichtbar, Fehl-Feedback, ruhigerer Konverter). osu!tau ist sehr aehnlich.
