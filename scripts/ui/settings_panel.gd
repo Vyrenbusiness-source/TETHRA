@@ -1,54 +1,95 @@
 class_name SettingsPanel
 extends Control
 
-## Einstellungen — ruhiges Glas-Panel mit Kategorie-Leiste links:
-## Gameplay, 2D-Spielfeld (nur im 2D-Modus), Welt (nur 3D), Grafik, Audio.
-## Profilname/-bild wohnen in der Profil-Ansicht.
+## Einstellungen im Stil von Song-Browser und Lobby (UiTheme: Graphit + Bernstein).
+## Links eine Seitenleiste: Suche, aktiver Modus (Mania 3D / Mania 2D / Orbit,
+## umschaltbar), darunter nur die Kategorien dieses Modus und die allgemeinen
+## Kategorien (Audio, Grafik, Steuerung, Profil & Sprache). Rechts die Seite:
+## ruhige Gruppen-Karten mit gleich hohen Zeilen (Beschriftung links, Bedienung
+## in einer festen rechten Spalte), Vorschau fest daneben statt mitzuscrollen.
+## Jede Zeile kennt ihren Wert (sync) und ihren Standard (reset): Seitenwechsel
+## zieht Werte nach, "Zuruecksetzen" je Gruppe nutzt dieselbe Logik.
 
 signal closed
 
-const COL_DIM := UiTheme.DIM
-const VALUE_W := 88.0
-const CAP_W := 170.0
-const ROW_H := 38.0
-const CTRL_H := 34.0
+const MODE_3D := 0
+const MODE_2D := 1
+const MODE_ORBIT := 2
+const MODE_NAMES := ["Mania 3D", "Mania 2D", "Orbit"]
 
-const BLUR_SHADER := """shader_type canvas_item;
-uniform sampler2D screen_tex : hint_screen_texture, filter_linear_mipmap;
-void fragment() {
-	vec3 c = textureLod(screen_tex, SCREEN_UV, 2.0).rgb;
-	vec2 d = SCREEN_UV - vec2(0.5);
-	float vig = 1.0 - dot(d, d) * 0.9;
-	COLOR = vec4(c * 0.55 * vig, 1.0);
+const SIDE_W := 236.0
+const ROW_H := 42.0
+const CTRL_H := 30.0
+const CTRL_W := 290.0
+const VALUE_W := 84.0
+const PAD := 24
+const FADE_H := 26.0
+
+## Flaechen: Seitenleiste dunkler als die Seite, Karten eine Stufe heller.
+const COL_SIDE := Color(0.084, 0.080, 0.075)
+const COL_CARD := Color(0.131, 0.126, 0.117)
+const COL_ROW_HOVER := Color(0.925, 0.902, 0.855, 0.035)
+const COL_SEP := Color(0.925, 0.902, 0.855, 0.07)
+
+## Seiten: id -> [Titel, Untertitel, Modi (leer = allgemein), Vorschau ("", "2d", "world")]
+const PAGE_DEFS := {
+	"field3d": ["Spielfeld & Welt", "Gilt für Mania 3D", [MODE_3D], "world"],
+	"field2d": ["Spielfeld", "Gilt für Mania 2D", [MODE_2D], "2d"],
+	"look2d": ["Skin & Bild", "Gilt für Mania 2D", [MODE_2D], "2d"],
+	"orbit": ["Orbit", "Gilt für Orbit", [MODE_ORBIT], "world"],
+	"notes": ["Notenfarben", "Gilt für Mania 3D und 2D", [MODE_3D, MODE_2D], ""],
+	"audio": ["Audio", "Gilt für alle Modi", [], ""],
+	"gfx": ["Grafik", "Gilt für alle Modi", [], ""],
+	"keys": ["Steuerung", "Gilt für alle Modi", [], ""],
+	"profile": ["Profil & Sprache", "Gilt für alle Modi", [], ""],
 }
-"""
+const PAGE_ORDER := ["field3d", "field2d", "look2d", "orbit", "notes", "audio", "gfx", "keys", "profile"]
+const CAP_ORBIT := 20
 
-var _note_colors: NoteColorPicker
-var _world_preview: WorldPreview
-var _panel: Control
+var _mode := MODE_3D
+var _cur := ""
+var _defaults: Node            ## frische Settings-Instanz: Standardwerte fuer "Zuruecksetzen"
+var _pages := {}               ## id -> {vb, rows: Array[Control]}
+var _entries: Array = []       ## Suche: {cap, page, row}
+var _build_pg := ""
+
+var _panel: PanelContainer
 var _scroll: ScrollContainer
-var _pages: Array[Control] = []
-var _tabs: Array[Button] = []
-var _tab_cur := 0
-var _accent := UiTheme.ACCENT
+var _fade_top: TextureRect
+var _fade_bot: TextureRect
+var _title: Label
+var _subtitle: Label
+var _nav: VBoxContainer
+var _nav_btns := {}            ## id -> Button
+var _mode_btns: Array[Button] = []
+var _search: LineEdit
+var _results: VBoxContainer
+var _pv_col: VBoxContainer
+var _pv_2d: Control
+var _pv_world: Control
+var _pv_world_holder: Control
+
+var _nc: NoteColorPicker
+var _world_preview: WorldPreview
 var _preview_2d: Control
 var _preview_bg: TextureRect
 var _preview_bg_label: Label
-var _name_box: VBoxContainer
-var _mode_2d_btn: CheckButton
-var _hint_2d: Control
-var _rows_3d: Array[Control] = []
-var _cover_row: Control
+var _name_rows: VBoxContainer
 var _skinvals_btn: CheckButton
-var _adv_2d: Control
+var _cover_rows: Array[Control] = []
+var _safe_hint: Label
 
-var _capturing := 0   # 0 = keine Aufnahme, 3..6 = Lane 1-4, 20/21 = Orbit innen/aussen
+var _capturing := 0   # 0 = keine Aufnahme, 3..6 = Spur 1-4, 20/21 = Orbit innen/aussen
 var _lane_btns: Array[Button] = []
-const CAP_ORBIT := 20
-var _orbit_btns: Array[Button] = []
-var _offset_value: Label
-var _offset_slider: HSlider
-var _vol_value: Label
+var _orbit_btns: Array[Button] = []   ## je zwei (innen, aussen) pro Ort, in dieser Reihenfolge
+
+## Test-Harnesses (z.B. note_color_click_harness) lesen _panel.get("_note_colors") und
+## scrollen danach zum Picker: der Zugriff von aussen zeigt die Seite Notenfarben.
+var _note_colors: NoteColorPicker:
+	get:
+		if _nc != null and _cur != "notes" and _pages.has("notes"):
+			_show_page("notes")
+		return _nc
 
 
 func _ready() -> void:
@@ -56,409 +97,352 @@ func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	mouse_filter = Control.MOUSE_FILTER_STOP
+	_defaults = Settings.get_script().new()
+	_mode = _initial_mode()
+	_build()
+	get_viewport().size_changed.connect(_layout)
+	if OS.get_cmdline_args().has("--shot-settings"):
+		_shot_pages.call_deferred()
 
+
+func _exit_tree() -> void:
+	if _defaults != null:
+		_defaults.free()
+		_defaults = null
+
+
+## Aktiver Modus: Orbit, wenn der Song-Browser (oder die Szene) auf Orbit steht,
+## sonst Mania 2D/3D nach Settings.playfield_2d.
+func _initial_mode() -> int:
+	var host := get_parent()
+	if host != null and "_play_mode" in host and String(host.get("_play_mode")) == "orbit":
+		return MODE_ORBIT
+	var scene := get_tree().current_scene if is_inside_tree() else null
+	if scene != null and scene.scene_file_path.contains("orbit"):
+		return MODE_ORBIT
+	if OS.get_cmdline_args().has("--orbit"):
+		return MODE_ORBIT
+	return MODE_2D if Settings.playfield_2d else MODE_3D
+
+
+# ================================================================== Aufbau
+
+func _build() -> void:
 	var dim := ColorRect.new()
 	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	dim.color = Color.WHITE
-	var sh := Shader.new()
-	sh.code = BLUR_SHADER
-	var mat := ShaderMaterial.new()
-	mat.shader = sh
-	dim.material = mat
+	dim.color = Color(UiTheme.BG.r * 0.5, UiTheme.BG.g * 0.5, UiTheme.BG.b * 0.5, 0.86)
 	dim.gui_input.connect(func(e):
-		if e is InputEventMouseButton and e.pressed:
+		if e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_LEFT:
 			_close())
 	add_child(dim)
 
-	var center := CenterContainer.new()
-	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(center)
+	_panel = PanelContainer.new()
+	var psb := UiTheme.solid_box(UiTheme.SURFACE, 14)
+	psb.set_border_width_all(1)
+	psb.border_color = UiTheme.LINE
+	_panel.add_theme_stylebox_override("panel", psb)
+	_panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	add_child(_panel)
+	var split := HBoxContainer.new()
+	split.add_theme_constant_override("separation", 0)
+	_panel.add_child(split)
+	_build_sidebar(split)
+	var line := ColorRect.new()
+	line.color = UiTheme.LINE
+	line.custom_minimum_size = Vector2(1, 0)
+	split.add_child(line)
+	_build_content(split)
 
-	var panel := PanelContainer.new()
-	var sb := UiTheme.glass_box(18, 0.82)
-	sb.content_margin_left = 26
-	sb.content_margin_right = 26
-	sb.content_margin_top = 20
-	sb.content_margin_bottom = 22
-	sb.shadow_size = 24
-	sb.shadow_color = Color(0, 0, 0, 0.45)
-	panel.add_theme_stylebox_override("panel", sb)
-	# Feste Panelgroesse ueber alle Reiter; Inhalt scrollt bei Bedarf.
+	_build_pages()
+	_update_mode_buttons()
+	_rebuild_nav()
+	_show_page(_mode_pages()[0])
+	_refresh_labels()
+	_layout()
+	_panel.modulate.a = 0.0
+	create_tween().tween_property(_panel, "modulate:a", 1.0, 0.15)
+
+
+## Panel: Fenster minus Rand, nach oben begrenzt (1280x720 bis 2560x1440).
+func _layout() -> void:
+	if _panel == null:
+		return
 	var vp := get_viewport().get_visible_rect().size
-	panel.custom_minimum_size = Vector2(clampf(vp.x - 80.0, 600.0, 980.0), clampf(vp.y - 70.0, 380.0, 760.0))
-	panel.mouse_filter = Control.MOUSE_FILTER_STOP
-	center.add_child(panel)
-	_panel = panel
+	var sz := Vector2(minf(vp.x - 48.0, 1480.0), minf(vp.y - 40.0, 940.0))
+	_panel.position = ((vp - sz) * 0.5).floor()
+	_panel.size = sz
+	if _pv_world_holder != null:
+		var s := 0.75 if vp.x < 1500.0 else 1.0
+		_world_preview.scale = Vector2(s, s)
+		_pv_world_holder.custom_minimum_size = WorldPreview.SIZE_PX * s
+	_update_fades.call_deferred()
 
-	var vb := VBoxContainer.new()
-	vb.add_theme_constant_override("separation", 14)
-	panel.add_child(vb)
 
-	# Kopfzeile: Akzent-Streifen, Titel, Schliessen-Knopf.
-	var head := HBoxContainer.new()
-	head.add_theme_constant_override("separation", 10)
-	vb.add_child(head)
-	var bar := ColorRect.new()
-	bar.color = _accent
-	bar.custom_minimum_size = Vector2(3, 18)
-	bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	head.add_child(bar)
+func _build_sidebar(parent: Control) -> void:
+	var side := PanelContainer.new()
+	var ssb := StyleBoxFlat.new()
+	ssb.bg_color = COL_SIDE
+	ssb.corner_radius_top_left = UiTheme.R_MAX
+	ssb.corner_radius_bottom_left = UiTheme.R_MAX
+	ssb.content_margin_left = 16
+	ssb.content_margin_right = 16
+	ssb.content_margin_top = 18
+	ssb.content_margin_bottom = 14
+	side.add_theme_stylebox_override("panel", ssb)
+	side.custom_minimum_size = Vector2(SIDE_W, 0)
+	parent.add_child(side)
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 0)
+	side.add_child(col)
+
 	var title := Label.new()
 	title.text = "Einstellungen"
-	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title.add_theme_font_override("font", UiTheme.heading_font(0))
-	title.add_theme_font_size_override("font_size", 22)
-	head.add_child(title)
-	var close_x := Button.new()
-	close_x.text = "✕"
-	close_x.custom_minimum_size = Vector2(34, 34)
-	UiTheme.style_button(close_x)
-	close_x.pressed.connect(_close)
-	head.add_child(close_x)
+	title.add_theme_font_size_override("font_size", 20)
+	title.add_theme_color_override("font_color", UiTheme.TEXT)
+	col.add_child(title)
+	col.add_child(_vgap(12))
 
-	# Reiter-Chips wie im Song-Browser, darunter die Seiten.
-	var side := HBoxContainer.new()
-	side.add_theme_constant_override("separation", 8)
-	vb.add_child(side)
+	_search = LineEdit.new()
+	_search.placeholder_text = "Einstellung suchen…"
+	_search.clear_button_enabled = true
+	_search.custom_minimum_size = Vector2(0, 32)
+	_search.add_theme_font_size_override("font_size", 14)
+	_search.tooltip_text = "Strg+F"
+	_search.text_changed.connect(_on_search)
+	_search.text_submitted.connect(func(_t: String): _search_pick(0))
+	col.add_child(_search)
+	col.add_child(_vgap(18))
+
+	col.add_child(_side_label("Modus"))
+	col.add_child(_vgap(6))
+	var seg := HBoxContainer.new()
+	seg.add_theme_constant_override("separation", 2)
+	col.add_child(seg)
+	for m in 3:
+		var b := Button.new()
+		b.text = MODE_NAMES[m]
+		b.toggle_mode = true
+		b.focus_mode = Control.FOCUS_NONE
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		b.custom_minimum_size = Vector2(0, 30)
+		b.clip_text = true
+		b.add_theme_font_size_override("font_size", 13)
+		b.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+		b.tooltip_text = ["Mania mit 3D-Welt", "Klassische senkrechte Spuren", "Zwei Ringe statt Spuren"][m]
+		b.pressed.connect(_set_mode.bind(m))
+		UiTheme._attach_sounds(b)
+		seg.add_child(b)
+		_mode_btns.append(b)
+	col.add_child(_vgap(16))
+
+	_nav = VBoxContainer.new()
+	_nav.add_theme_constant_override("separation", 2)
+	col.add_child(_nav)
+	_results = VBoxContainer.new()
+	_results.add_theme_constant_override("separation", 2)
+	_results.visible = false
+	col.add_child(_results)
+
+	var sp := Control.new()
+	sp.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	col.add_child(sp)
+	var foot := Label.new()
+	foot.text = "Wird beim Schließen gespeichert · Esc"
+	foot.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	foot.add_theme_font_size_override("font_size", 12)
+	foot.add_theme_color_override("font_color", Color(UiTheme.DIM, 0.8))
+	col.add_child(foot)
+
+
+func _build_content(parent: Control) -> void:
+	var m := MarginContainer.new()
+	m.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	m.add_theme_constant_override("margin_left", PAD)
+	m.add_theme_constant_override("margin_right", PAD)
+	m.add_theme_constant_override("margin_top", 16)
+	m.add_theme_constant_override("margin_bottom", 0)
+	parent.add_child(m)
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 0)
+	m.add_child(col)
+
+	var head := HBoxContainer.new()
+	head.add_theme_constant_override("separation", 12)
+	col.add_child(head)
+	var tcol := VBoxContainer.new()
+	tcol.add_theme_constant_override("separation", 0)
+	tcol.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	head.add_child(tcol)
+	_title = Label.new()
+	_title.add_theme_font_override("font", UiTheme.heading_font(0))
+	_title.add_theme_font_size_override("font_size", 22)
+	_title.add_theme_color_override("font_color", UiTheme.TEXT)
+	tcol.add_child(_title)
+	_subtitle = Label.new()
+	_subtitle.add_theme_font_size_override("font_size", 13)
+	_subtitle.add_theme_color_override("font_color", UiTheme.DIM)
+	tcol.add_child(_subtitle)
+	var x := Button.new()
+	x.text = "✕"
+	x.focus_mode = Control.FOCUS_NONE
+	x.custom_minimum_size = Vector2(36, 36)
+	x.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	x.tooltip_text = "Schließen (Esc)"
+	UiTheme.style_ghost_button(x, 10)
+	x.pressed.connect(_close)
+	head.add_child(x)
+	col.add_child(_vgap(12))
+	col.add_child(UiTheme.hairline())
+
+	var body := HBoxContainer.new()
+	body.add_theme_constant_override("separation", 20)
+	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	col.add_child(body)
+
+	# Inhalt scrollt, mit weichen Kanten oben/unten (nur wenn dort Inhalt ist).
+	var wrap := Control.new()
+	wrap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	wrap.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	wrap.clip_contents = true
+	body.add_child(wrap)
 	_scroll = ScrollContainer.new()
 	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_style_scrollbar(_scroll.get_v_scroll_bar())
-	vb.add_child(_scroll)
-	var stack := VBoxContainer.new()
+	_scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	var vsb := _scroll.get_v_scroll_bar()
+	vsb.custom_minimum_size = Vector2(8, 0)
+	vsb.value_changed.connect(func(_v): _update_fades())
+	vsb.changed.connect(_update_fades)
+	wrap.add_child(_scroll)
+	var stack := MarginContainer.new()
 	stack.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	var stack_m := MarginContainer.new()
-	stack_m.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	stack_m.add_theme_constant_override("margin_right", 12)
-	stack_m.add_child(stack)
-	_scroll.add_child(stack_m)
+	stack.add_theme_constant_override("margin_top", 16)
+	stack.add_theme_constant_override("margin_bottom", 20)
+	stack.add_theme_constant_override("margin_right", 14)
+	stack.name = "Stack"
+	_scroll.add_child(stack)
+	_fade_top = _fade(true)
+	_fade_top.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
+	_fade_top.offset_bottom = FADE_H
+	_fade_top.offset_right = -10
+	wrap.add_child(_fade_top)
+	_fade_bot = _fade(false)
+	_fade_bot.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
+	_fade_bot.offset_top = -FADE_H
+	_fade_bot.offset_right = -10
+	wrap.add_child(_fade_bot)
 
-	var pg_game := _page(side, stack, "Gameplay")
-	var pg_2d_root := _page(side, stack, "2D-Spielfeld")
-	# 2D-Seite: Regler links, Vorschau rechts (spart Hoehe).
-	# Im 3D-Modus bleibt der Reiter sichtbar (Skins, Notenform, Hintergrund immer
-	# erreichbar); oben ein ruhiger Hinweis mit Knopf zum Einschalten.
-	_hint_2d = PanelContainer.new()
-	_hint_2d.add_theme_stylebox_override("panel", _chip_box(Color(1, 1, 1, 0.05), Color(_accent, 0.35), 10))
-	var hint_row := HBoxContainer.new()
-	hint_row.add_theme_constant_override("separation", 12)
-	_hint_2d.add_child(hint_row)
-	var hint_l := Label.new()
-	hint_l.text = "Gilt für den 2D-Modus"
-	hint_l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	hint_l.add_theme_font_size_override("font_size", 14)
-	hint_l.add_theme_color_override("font_color", UiTheme.TEXT)
-	hint_row.add_child(hint_l)
-	var on_btn := Button.new()
-	on_btn.text = "2D-Modus einschalten"
-	on_btn.custom_minimum_size = Vector2(0, 30)
-	UiTheme.style_button(on_btn, true)
-	on_btn.pressed.connect(func():
-		if _mode_2d_btn != null:
-			_mode_2d_btn.button_pressed = true)
-	hint_row.add_child(on_btn)
-	var hint_m := MarginContainer.new()
-	hint_m.add_theme_constant_override("margin_bottom", 6)
-	hint_m.add_child(_hint_2d)
-	pg_2d_root.add_child(hint_m)
-	_hint_2d = hint_m
-	var h2d := HBoxContainer.new()
-	h2d.add_theme_constant_override("separation", 18)
-	pg_2d_root.add_child(h2d)
-	var pg_2d := VBoxContainer.new()
-	pg_2d.add_theme_constant_override("separation", 2)
-	pg_2d.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	h2d.add_child(pg_2d)
-	var pv_col := VBoxContainer.new()
-	pv_col.custom_minimum_size = Vector2(250, 0)
-	pv_col.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
-	h2d.add_child(pv_col)
-	var pg_world := _page(side, stack, "Welt")
-	var pg_gfx := _page(side, stack, "Grafik")
-	var pg_audio := _page(side, stack, "Audio")
+	# Vorschau-Spalte: steht fest neben dem Inhalt.
+	_pv_col = VBoxContainer.new()
+	_pv_col.add_theme_constant_override("separation", 8)
+	var pvm := MarginContainer.new()
+	pvm.add_theme_constant_override("margin_top", 16)
+	pvm.add_theme_constant_override("margin_bottom", 20)
+	pvm.add_child(_pv_col)
+	body.add_child(pvm)
+	_pv_col.set_meta("wrap", pvm)
 
-	# ------------------------------- GAMEPLAY -------------------------------
-	# Spielername ganz oben: "Player" darf EINMAL einen eigenen Namen festlegen.
-	_group(pg_game, "Spielername")
-	_name_box = VBoxContainer.new()
-	_name_box.add_theme_constant_override("separation", 2)
-	pg_game.add_child(_name_box)
-	_build_name_rows()
 
-	_group(pg_game, "Spielfeld")
-	var mode_2d := CheckButton.new()
-	mode_2d.button_pressed = Settings.playfield_2d
-	mode_2d.tooltip_text = "Klassische senkrechte Spuren ohne 3D-Welt; Hintergrund = Map-Bild"
-	mode_2d.toggled.connect(func(on):
-		Settings.playfield_2d = on
-		_update_2d_rows()
-		if _note_colors != null:
-			_note_colors.show_mode(on))
-	_row(pg_game, "2D-Modus", mode_2d, null)
-	_mode_2d_btn = mode_2d
+func _fade(top: bool) -> TextureRect:
+	var g := Gradient.new()
+	var c := UiTheme.SURFACE
+	g.set_color(0, Color(c, 1.0) if top else Color(c, 0.0))
+	g.set_color(1, Color(c, 0.0) if top else Color(c, 1.0))
+	var t := GradientTexture2D.new()
+	t.gradient = g
+	t.fill_from = Vector2(0, 0)
+	t.fill_to = Vector2(0, 1)
+	t.width = 4
+	t.height = 32
+	var r := TextureRect.new()
+	r.texture = t
+	r.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	r.stretch_mode = TextureRect.STRETCH_SCALE
+	r.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return r
 
-	# Scroll Speed wie osu!lazer: 1..40, Anzeige "25 (459 ms)" = Zeit bis zur Linie.
-	# Pfeiltasten (Regler fokussiert) und Mausrad (ueber dem Regler): +-1.
-	var sp_val := Label.new()
-	sp_val.custom_minimum_size = Vector2(96, 0)
-	_slider_row(pg_game, "Scroll Speed", Settings.SCROLL_SPEED_MIN, Settings.SCROLL_SPEED_MAX, 1.0,
-		Settings.scroll_speed,
-		func(v): return Settings.scroll_value_text(int(v)),
+
+func _update_fades() -> void:
+	if _scroll == null or _fade_top == null:
+		return
+	var sb := _scroll.get_v_scroll_bar()
+	var room := sb.max_value - sb.page
+	_fade_top.visible = sb.value > 1.0
+	_fade_bot.visible = room > 1.0 and sb.value < room - 1.0
+
+
+func _vgap(h: float) -> Control:
+	var c := Control.new()
+	c.custom_minimum_size = Vector2(0, h)
+	c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return c
+
+
+func _side_label(t: String) -> Label:
+	var l := UiTheme.section_label(t)
+	l.add_theme_font_size_override("font_size", 11)
+	return l
+
+
+# ================================================================== Seiten
+
+func _new_page(id: String) -> VBoxContainer:
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", 14)
+	vb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vb.visible = false
+	_scroll.get_node("Stack").add_child(vb)
+	_pages[id] = {"vb": vb, "rows": []}
+	_build_pg = id
+	return vb
+
+
+func _build_pages() -> void:
+	_build_previews()
+	_page_field3d(_new_page("field3d"))
+	_page_field2d(_new_page("field2d"))
+	_page_look2d(_new_page("look2d"))
+	_page_orbit(_new_page("orbit"))
+	_page_notes(_new_page("notes"))
+	_page_audio(_new_page("audio"))
+	_page_gfx(_new_page("gfx"))
+	_page_keys(_new_page("keys"))
+	_page_profile(_new_page("profile"))
+	_build_pg = ""
+
+
+func _page_field3d(pg: VBoxContainer) -> void:
+	var g := _group(pg, "Spielfeld")
+	_scroll_speed(g)
+	_slider(g, "Spurbreite", Settings.LANE_SPACING_MIN * 100.0, Settings.LANE_SPACING_MAX * 100.0,
+		Settings.LANE_SPACING_STEP * 100.0,
+		func(s): return s.lane_spacing * 100.0,
+		func(v): Settings.lane_spacing = Settings.clamp_lane_spacing(v / 100.0),
+		func(v): return _fmt_pct0(Settings.clamp_lane_spacing(v / 100.0)),
+		"Abstand der Spuren. Unter 85 % werden Noten kleiner")
+	g = _group(pg, "Welt")
+	_world_row(g)
+	_choice(g, "Kamera", ["Komfort", "Dynamisch"],
+		func(s): return s.camera_mode,
+		func(i): Settings.camera_mode = i,
+		"Komfort: ruhig, gegen Übelkeit · Dynamisch: volle Flugbewegung")
+	_choice(g, "Effekte", ["Aus", "Dezent", "Voll"],
+		func(s): return s.tunnel_intensity,
+		func(i): Settings.tunnel_intensity = i,
+		"Tunnel- und Welt-Effekte")
+
+
+func _scroll_speed(g: VBoxContainer) -> Control:
+	return _slider(g, "Scroll Speed", Settings.SCROLL_SPEED_MIN, Settings.SCROLL_SPEED_MAX, 1.0,
+		func(s): return s.scroll_speed,
 		func(v):
 			Settings.scroll_speed = Settings.clamp_scroll_speed(v)
 			Settings.scroll_speed_changed.emit(Settings.scroll_speed),
-		"Wie osu!lazer: Zeit von oben bis zur Trefferlinie = 11485 ms / Speed. Pfeiltasten/Mausrad: ±1, im Spiel F3/F4",
-		sp_val)
+		func(v): return Settings.scroll_value_text(int(v)),
+		"Zeit bis zur Trefferlinie (wie osu!lazer). Im Spiel F3/F4")
 
-	var spacing_row := _slider_row(pg_game, "Spurbreite", Settings.LANE_SPACING_MIN * 100.0,
-		Settings.LANE_SPACING_MAX * 100.0, Settings.LANE_SPACING_STEP * 100.0,
-		Settings.lane_spacing * 100.0,
-		func(v): return _fmt_pct0(Settings.clamp_lane_spacing(v / 100.0)),
-		func(v): Settings.lane_spacing = Settings.clamp_lane_spacing(v / 100.0),
-		"Abstand der Spuren in der 3D-Welt. Unter 85 % werden die Noten leicht kleiner.")
-	_rows_3d.append(spacing_row)
 
-	# Notenfarben auf der Gameplay-Seite: gilt fuer 3D und 2D (die 2D-Seite ist im 3D-Modus ausgeblendet).
-	_group(pg_game, "Notenfarben")
-	_note_colors = NoteColorPicker.new()
-	_note_colors.show_mode(Settings.playfield_2d)
-	_note_colors.changed.connect(_refresh_2d_preview)
-	pg_game.add_child(_note_colors)
-
-	_group(pg_game, "Steuerung")
-	var lane_row := HBoxContainer.new()
-	lane_row.add_theme_constant_override("separation", 8)
-	for i in 4:
-		var b := Button.new()
-		b.custom_minimum_size = Vector2(0, CTRL_H)
-		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		UiTheme.style_button(b)
-		var lane := i
-		b.pressed.connect(func(): _start_capture(3 + lane))
-		lane_row.add_child(b)
-		_lane_btns.append(b)
-	_row(pg_game, "Tasten 1–4", lane_row, null).tooltip_text = "Knopf anklicken, dann Taste drücken (Esc bricht ab)"
-
-	# Orbit (zusaetzlicher Modus): Ring-Tasten + Winkel-Hilfslinien.
-	_group(pg_game, "Orbit")
-	var orbit_row := HBoxContainer.new()
-	orbit_row.add_theme_constant_override("separation", 8)
-	for r in 2:
-		var ob := Button.new()
-		ob.custom_minimum_size = Vector2(0, CTRL_H)
-		ob.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		UiTheme.style_button(ob)
-		var ring := r
-		ob.pressed.connect(func(): _start_capture(CAP_ORBIT + ring))
-		orbit_row.add_child(ob)
-		_orbit_btns.append(ob)
-	_row(pg_game, "Ring innen | außen", orbit_row, null).tooltip_text = 		"Zusätzlich immer: Maus links = innen, Maus rechts = außen. Knopf anklicken, dann Taste drücken (Esc bricht ab)"
-	var guides := CheckButton.new()
-	guides.button_pressed = Settings.orbit_guides
-	guides.toggled.connect(func(on): Settings.orbit_guides = on)
-	_row(pg_game, "Winkel-Hilfslinien", guides, null).tooltip_text = "Feine Linien alle 45° als Orientierung"
-	var obg := OptionButton.new()
-	obg.add_item("Welt", Settings.ORBIT_BG_WORLD)
-	obg.add_item("Map-Bild", Settings.ORBIT_BG_MAP)
-	obg.add_item("Aus", Settings.ORBIT_BG_OFF)
-	if not WorldBackdrop.has_world_pack():
-		# Ohne Welten-Paket zeigt "Welt" das Map-Bild.
-		obg.set_item_text(0, tr("Welt") + " (" + tr("Map-Bild") + ")")
-	obg.select(Settings.orbit_background)
-	obg.custom_minimum_size = Vector2(0, CTRL_H)
-	obg.item_selected.connect(func(i): Settings.orbit_background = i)
-	_row(pg_game, "Hintergrund", obg, null).tooltip_text = 			"Welt: dieselbe 3D-Welt wie im 3D-Modus (Seite Welt), ruhig und abgedunkelt hinter den Ringen"
-
-	# Sprache: wirkt sofort (Settings.set_language baut die Szene neu auf).
-	# Die Eintraege stehen immer in ihrer eigenen Sprache (nie uebersetzt).
-	_group(pg_game, "Sprache")
-	var lang := OptionButton.new()
-	lang.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
-	lang.add_item("English", 0)
-	lang.add_item("Deutsch", 1)
-	lang.select(1 if Settings.active_language() == "de" else 0)
-	lang.custom_minimum_size = Vector2(0, CTRL_H)
-	lang.item_selected.connect(func(i):
-		Settings.set_language("de" if i == 1 else "en"))
-	_row(pg_game, "Spielsprache", lang, null)
-
-	# ------------------------------ 2D-SPIELFELD ----------------------------
-	_group(pg_2d, "Noten")
-	var note_style := OptionButton.new()
-	note_style.add_item("Balken", Settings.NOTE_STYLE_BAR)
-	note_style.add_item("Kreis", Settings.NOTE_STYLE_CIRCLE)
-	note_style.select(Settings.note_style_2d)
-	note_style.custom_minimum_size = Vector2(0, CTRL_H)
-	note_style.item_selected.connect(func(i):
-		Settings.note_style_2d = i
-		_refresh_2d_preview())
-	_row(pg_2d, "Notenform", note_style, null)
-
-	_slider_row(pg_2d, "Spurbreite", Settings.SIZE_2D_MIN * 100.0, Settings.SIZE_2D_MAX * 100.0,
-		Settings.SIZE_2D_STEP * 100.0, Settings.lane_width_2d * 100.0,
-		func(v): return _fmt_pct0(Settings.clamp_2d_size(v / 100.0)),
-		func(v):
-			Settings.lane_width_2d = Settings.clamp_2d_size(v / 100.0)
-			_refresh_2d_preview(),
-		"Breite der 2D-Spalten (auch im Pausenmenü einstellbar)")
-
-	_slider_row(pg_2d, "Notengröße", Settings.SIZE_2D_MIN * 100.0, Settings.SIZE_2D_MAX * 100.0,
-		Settings.SIZE_2D_STEP * 100.0, Settings.note_size_2d * 100.0,
-		func(v): return _fmt_pct0(Settings.clamp_2d_size(v / 100.0)),
-		func(v):
-			Settings.note_size_2d = Settings.clamp_2d_size(v / 100.0)
-			_refresh_2d_preview(),
-		"Höhe der Balken bzw. Größe der Kreise (auch im Pausenmenü einstellbar)")
-
-	var hl := CheckButton.new()
-	hl.button_pressed = Settings.hit_lighting_2d
-	hl.toggled.connect(func(on):
-		Settings.hit_lighting_2d = on
-		_refresh_2d_preview())
-	_row(pg_2d, "Hit-Lighting", hl, null).tooltip_text = tr("Tasten und Skin-Lighting leuchten beim Treffer auf")
-
-	# Spielfeld wie osu!mania: Richtung/Groesse immer, Layout-Werte ueberschreiben die
-	# Skin-Werte (Aendern schaltet "Skin-Werte nutzen" automatisch aus).
-	_group(pg_2d, "Spielfeld")
-	_option_row(pg_2d, "Scroll-Richtung", ["Nach unten", "Nach oben"],
-		1 if Settings.scroll_up_2d else 0,
-		func(i): Settings.scroll_up_2d = i == 1,
-		"Noten laufen zur Linie unten (Standard) oder oben (osu! UpsideDown)")
-	_option_row(pg_2d, "Position", ["Links", "Mitte", "Rechts"], Settings.stage_pos_2d,
-		func(i): _set_own_2d("stage_pos_2d", i),
-		"Spielfeld links, mittig oder rechts (überschreibt den Skin)")
-	_slider_row(pg_2d, "Skalierung", Settings.STAGE_SCALE_MIN * 100.0, Settings.STAGE_SCALE_MAX * 100.0,
-		5.0, Settings.stage_scale_2d * 100.0,
-		func(v): return _fmt_pct0(Settings.clamp_2d_option("stage_scale_2d", v / 100.0)),
-		func(v):
-			Settings.set_2d_option("stage_scale_2d", v / 100.0)
-			_refresh_2d_preview(),
-		"Größe des ganzen Spielfelds")
-	_slider_row(pg_2d, "Trefferposition", Settings.HIT_POS_MIN, Settings.HIT_POS_MAX, 1.0,
-		Settings.hit_position_2d, func(v): return str(int(v)),
-		func(v): _set_own_2d("hit_position_2d", v),
-		"Höhe der Trefferlinie (osu! HitPosition, 480 = Bildrand)")
-	_slider_row(pg_2d, "Spaltenabstand", 0.0, Settings.COL_SPACING_MAX, 1.0,
-		Settings.column_spacing_2d, func(v): return str(int(v)),
-		func(v): _set_own_2d("column_spacing_2d", v),
-		"Lücke zwischen den Spalten (osu! ColumnSpacing)")
-
-	_group(pg_2d, "Mods")
-	_option_row(pg_2d, "Sicht", ["Aus", "FadeIn", "Hidden", "Cover"], Settings.mod_vis_2d,
-		func(i):
-			Settings.mod_vis_2d = i
-			if _cover_row != null:
-				_cover_row.visible = i == Settings.VIS_COVER,
-		"FadeIn: Noten tauchen spät auf · Hidden: verschwinden vor der Linie · Cover: feste Abdeckung")
-	var cov_box := HBoxContainer.new()
-	cov_box.add_theme_constant_override("separation", 10)
-	var cov_dir := OptionButton.new()
-	cov_dir.add_item("Von oben")
-	cov_dir.add_item("Von unten")
-	cov_dir.select(1 if Settings.cover_from_bottom_2d else 0)
-	cov_dir.custom_minimum_size = Vector2(0, CTRL_H)
-	cov_dir.item_selected.connect(func(i):
-		Settings.cover_from_bottom_2d = i == 1
-		_refresh_2d_preview())
-	cov_box.add_child(cov_dir)
-	var cov_sl := HSlider.new()
-	cov_sl.min_value = Settings.COVER_MIN
-	cov_sl.max_value = Settings.COVER_MAX
-	cov_sl.step = 5.0
-	cov_sl.value = Settings.cover_pct_2d
-	cov_sl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	cov_sl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	cov_box.add_child(cov_sl)
-	var cov_val := Label.new()
-	cov_val.text = _fmt_pct0(Settings.cover_pct_2d / 100.0)
-	cov_sl.value_changed.connect(func(v):
-		Settings.set_2d_option("cover_pct_2d", v)
-		cov_val.text = _fmt_pct0(Settings.cover_pct_2d / 100.0)
-		_refresh_2d_preview())
-	_cover_row = _row(pg_2d, "Abdeckung", cov_box, cov_val)
-	_cover_row.tooltip_text = tr("Cover: Anteil der Strecke, der verdeckt ist")
-	_cover_row.visible = Settings.mod_vis_2d == Settings.VIS_COVER
-	var cs := CheckButton.new()
-	cs.button_pressed = Settings.mod_constant
-	cs.toggled.connect(func(on): Settings.mod_constant = on)
-	_row(pg_2d, "Konstante Geschwindigkeit", cs, null).tooltip_text = \
-		tr("SV- und BPM-Wechsel der Map ignorieren (lazer Constant Speed)")
-
-	# Selten gebraucht: eingeklappt.
-	var adv := VBoxContainer.new()
-	adv.add_theme_constant_override("separation", 2)
-	var adv_btn := Button.new()
-	adv_btn.flat = true
-	adv_btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
-	adv_btn.add_theme_font_size_override("font_size", 13)
-	adv_btn.add_theme_color_override("font_color", COL_DIM)
-	var adv_txt := func(open: bool) -> String:
-		return ("▾  " if open else "▸  ") + tr("Erweitert")
-	adv_btn.text = adv_txt.call(false)
-	adv_btn.pressed.connect(func():
-		adv.visible = not adv.visible
-		adv_btn.text = adv_txt.call(adv.visible))
-	pg_2d.add_child(adv_btn)
-	pg_2d.add_child(adv)
-	adv.visible = false
-	_adv_2d = adv
-	_skinvals_btn = CheckButton.new()
-	_skinvals_btn.button_pressed = Settings.skin_values_2d
-	_skinvals_btn.toggled.connect(func(on):
-		Settings.skin_values_2d = on
-		_refresh_2d_preview())
-	_row(adv, "Skin-Werte nutzen", _skinvals_btn, null).tooltip_text = \
-		tr("An: Layout aus skin.ini · Aus: eigene Werte (Position, Trefferlinie, Abstand …)")
-	_slider_row(adv, "Judgement-Position", 0.0, 480.0, 1.0, Settings.judge_pos_2d,
-		func(v): return str(int(v)),
-		func(v): _set_own_2d("judge_pos_2d", v),
-		"Höhe der Judgements (osu! ScorePosition, 0 = oben)")
-	_slider_row(adv, "Kombo-Position", 0.0, 480.0, 1.0, Settings.combo_pos_2d,
-		func(v): return str(int(v)),
-		func(v): _set_own_2d("combo_pos_2d", v),
-		"Höhe der Kombo (osu! ComboPosition, 0 = oben)")
-	var kun := CheckButton.new()
-	kun.button_pressed = Settings.keys_under_notes_2d
-	kun.toggled.connect(func(on): _set_own_2d("keys_under_notes_2d", on))
-	_row(adv, "Tasten unter den Noten", kun, null).tooltip_text = tr("osu! KeysUnderNotes")
-	var hline := CheckButton.new()
-	hline.button_pressed = Settings.hit_line_2d
-	hline.toggled.connect(func(on): _set_own_2d("hit_line_2d", on))
-	_row(adv, "Trefferlinie", hline, null).tooltip_text = tr("Linie bzw. Skin-Markierung an der Trefferposition")
-
-	_group(pg_2d, "Map-Bild")
-	_slider_row(pg_2d, "Hintergrund", 0.0, 100.0, 5.0, Settings.bg_dim * 100.0,
-		func(v): return _fmt_bg(Settings.clamp_bg_dim(v / 100.0)),
-		func(v):
-			Settings.bg_dim = Settings.clamp_bg_dim(v / 100.0)
-			_refresh_bg_preview(),
-		"Deckkraft des Map-Bilds; 0 % = Hintergrund ganz aus (schwarz)")
-	_slider_row(pg_2d, "Spielfeld", 0.0, 100.0, 5.0, Settings.field_dim_2d * 100.0,
-		func(v): return _fmt_pct0(Settings.clamp_bg_dim(v / 100.0)),
-		func(v):
-			Settings.field_dim_2d = Settings.clamp_bg_dim(v / 100.0)
-			_refresh_2d_preview(),
-		"Deckkraft des Spielfelds; 100 % = schwarz, Map-Bild nur links und rechts")
-
-	var blur_btn := CheckButton.new()
-	blur_btn.button_pressed = Settings.bg_blur
-	blur_btn.toggled.connect(func(on): Settings.bg_blur = on)
-	_row(pg_2d, "Hintergrund-Unschärfe", blur_btn, null).tooltip_text = "Map-Bild unscharf zeichnen"
-
-	if ResourceLoader.exists("res://scripts/ui/skin_picker.gd"):
-		_group(pg_2d, "Skin")
-		var skin = load("res://scripts/ui/skin_picker.gd").new()
-		if skin is Control:
-			if skin.has_signal("changed"):
-				skin.connect("changed", _refresh_2d_preview)
-			_embed_skin(pg_2d, skin)
-
-	_add_2d_preview(pv_col)
-
-	# --------------------------------- WELT ---------------------------------
-	_group(pg_world, "Umgebung")
+func _world_row(g: VBoxContainer) -> Control:
 	var wt := OptionButton.new()
 	wt.add_item("Automatisch", 0)
 	for wi in Settings.WORLD_ORDER.size():
@@ -466,494 +450,438 @@ func _ready() -> void:
 		wt.add_item(str(WorldTheme.LABELS.get(wname, wname)), wi + 1)
 		if wname != "galaxy" and not WorldTheme.is_available(wname):
 			wt.set_item_disabled(wt.get_item_count() - 1, true)
-	wt.select(Settings.world_theme)
-	wt.custom_minimum_size = Vector2(0, CTRL_H)
-	wt.tooltip_text = "Automatisch: düstere Welt passend zum Song\n(intensiv = Bosskampf, ruhig = Frost, sonst Eklipse, Abgrund, Fraktal, Obsidian …)"
-	wt.item_selected.connect(func(i):
-		Settings.world_theme = i
-		_world_preview.show_world("" if i == 0 else Settings.WORLD_ORDER[i - 1]))
-	_row(pg_world, "Welt", wt, null)
+	return _choice_ob(g, "Welt", wt,
+		func(s): return s.world_theme,
+		func(i):
+			Settings.world_theme = i
+			if _world_preview != null:
+				_world_preview.show_world("" if i == 0 else Settings.WORLD_ORDER[i - 1]),
+		"Automatisch: Welt passend zum Song")
 
-	_world_preview = WorldPreview.new()
-	var wp_center := CenterContainer.new()
-	wp_center.custom_minimum_size = Vector2(0, WorldPreview.SIZE_PX.y + 8)
-	pg_world.add_child(_framed(wp_center))
-	wp_center.add_child(_world_preview)
-	_world_preview.show_world(Settings.world_theme_name())
 
-	_group(pg_world, "Kamera & Effekte")
-	var cam := OptionButton.new()
-	cam.add_item("Komfort", 0)
-	cam.add_item("Dynamisch", 1)
-	cam.select(Settings.camera_mode)
-	cam.custom_minimum_size = Vector2(0, CTRL_H)
-	cam.item_selected.connect(func(i): Settings.camera_mode = i)
-	_row(pg_world, "Kamera", cam, null).tooltip_text = "Komfort: ruhige Kamera, gegen Übelkeit\nDynamisch: volle Flug-Bewegung"
+func _page_field2d(pg: VBoxContainer) -> void:
+	var g := _group(pg, "Noten")
+	_scroll_speed(g)
+	_choice(g, "Notenform", ["Balken", "Kreis"],
+		func(s): return s.note_style_2d,
+		func(i): Settings.note_style_2d = i)
+	_slider(g, "Spurbreite", Settings.SIZE_2D_MIN * 100.0, Settings.SIZE_2D_MAX * 100.0,
+		Settings.SIZE_2D_STEP * 100.0,
+		func(s): return s.lane_width_2d * 100.0,
+		func(v): Settings.lane_width_2d = Settings.clamp_2d_size(v / 100.0),
+		func(v): return _fmt_pct0(Settings.clamp_2d_size(v / 100.0)),
+		"Breite der Spalten (auch im Pausenmenü)")
+	_slider(g, "Notengröße", Settings.SIZE_2D_MIN * 100.0, Settings.SIZE_2D_MAX * 100.0,
+		Settings.SIZE_2D_STEP * 100.0,
+		func(s): return s.note_size_2d * 100.0,
+		func(v): Settings.note_size_2d = Settings.clamp_2d_size(v / 100.0),
+		func(v): return _fmt_pct0(Settings.clamp_2d_size(v / 100.0)),
+		"Höhe der Balken bzw. Größe der Kreise")
+	_switch(g, "Hit-Lighting",
+		func(s): return s.hit_lighting_2d,
+		func(on): Settings.hit_lighting_2d = on,
+		"Tasten und Skin-Lighting leuchten beim Treffer")
 
-	var fx := OptionButton.new()
-	fx.add_item("Aus", 0)
-	fx.add_item("Dezent", 1)
-	fx.add_item("Voll", 2)
-	fx.select(Settings.tunnel_intensity)
-	fx.custom_minimum_size = Vector2(0, CTRL_H)
-	fx.item_selected.connect(func(i): Settings.tunnel_intensity = i)
-	_row(pg_world, "Effekte", fx, null)
+	g = _group(pg, "Layout")
+	_choice(g, "Scroll-Richtung", ["Nach unten", "Nach oben"],
+		func(s): return 1 if s.scroll_up_2d else 0,
+		func(i): Settings.scroll_up_2d = i == 1,
+		"Nach oben = osu! UpsideDown")
+	_own_choice(g, "Position", ["Links", "Mitte", "Rechts"], "stage_pos_2d",
+		"Überschreibt den Skin")
+	_slider(g, "Skalierung", Settings.STAGE_SCALE_MIN * 100.0, Settings.STAGE_SCALE_MAX * 100.0, 5.0,
+		func(s): return s.stage_scale_2d * 100.0,
+		func(v): Settings.set_2d_option("stage_scale_2d", v / 100.0),
+		func(v): return _fmt_pct0(Settings.clamp_2d_option("stage_scale_2d", v / 100.0)),
+		"Größe des ganzen Spielfelds")
+	_own_slider(g, "Trefferposition", Settings.HIT_POS_MIN, Settings.HIT_POS_MAX, "hit_position_2d",
+		"osu! HitPosition, 480 = Bildrand")
+	_own_slider(g, "Spaltenabstand", 0.0, Settings.COL_SPACING_MAX, "column_spacing_2d",
+		"osu! ColumnSpacing")
 
-	# -------------------------------- GRAFIK --------------------------------
-	_group(pg_gfx, "Darstellung")
-	var gfx := OptionButton.new()
-	gfx.add_item("Niedrig", 0)
-	gfx.add_item("Mittel (2x AA)", 1)
-	gfx.add_item("Hoch (4x AA)", 2)
-	gfx.add_item("Ultra (8x AA)", 3)
-	gfx.add_item("Extrem (8x AA + SSAA)", 4)
-	gfx.select(Settings.graphics_quality)
-	gfx.custom_minimum_size = Vector2(0, CTRL_H)
-	gfx.item_selected.connect(func(i):
-		Settings.graphics_quality = i
-		Settings.apply())
-	_row(pg_gfx, "Qualität", gfx, null)
+	g = _group(pg, "Mods")
+	_choice(g, "Sicht", ["Aus", "FadeIn", "Hidden", "Cover"],
+		func(s): return s.mod_vis_2d,
+		func(i):
+			Settings.mod_vis_2d = i
+			for r in _cover_rows:
+				r.visible = i == Settings.VIS_COVER,
+		"FadeIn: spät sichtbar · Hidden: verschwinden vor der Linie · Cover: feste Abdeckung")
+	_cover_rows.append(_choice(g, "Abdeckung von", ["Oben", "Unten"],
+		func(s): return 1 if s.cover_from_bottom_2d else 0,
+		func(i): Settings.cover_from_bottom_2d = i == 1))
+	_cover_rows.append(_slider(g, "Abdeckung", Settings.COVER_MIN, Settings.COVER_MAX, 5.0,
+		func(s): return s.cover_pct_2d,
+		func(v): Settings.set_2d_option("cover_pct_2d", v),
+		func(v): return _fmt_pct0(v / 100.0),
+		"Verdeckter Anteil der Strecke"))
+	for r in _cover_rows:
+		r.visible = Settings.mod_vis_2d == Settings.VIS_COVER
+	_switch(g, "Konstante Geschwindigkeit",
+		func(s): return s.mod_constant,
+		func(on): Settings.mod_constant = on,
+		"SV- und BPM-Wechsel ignorieren")
 
-	var fps := OptionButton.new()
-	fps.add_item("VSync", 0)
-	fps.add_item("Unbegrenzt", 1)
-	fps.add_item("240 FPS", 2)
-	fps.add_item("360 FPS", 3)
-	fps.add_item("480 FPS", 4)
-	fps.select(Settings.fps_mode)
-	fps.custom_minimum_size = Vector2(0, CTRL_H)
-	fps.item_selected.connect(func(i):
-		Settings.fps_mode = i
-		Settings.apply())
-	_row(pg_gfx, "FPS-Limit", fps, null)
 
-	_group(pg_gfx, "Optionen")
-	var safe_cb := CheckButton.new()
-	safe_cb.button_pressed = GpuGuard.safe_mode
-	var safe_hint := Label.new()
-	safe_hint.add_theme_font_size_override("font_size", 13)
-	safe_hint.add_theme_color_override("font_color", Color(0.55, 0.9, 1.0))
-	safe_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	safe_cb.toggled.connect(func(on):
-		GpuGuard.set_safe_mode(on)
-		Settings.apply()
-		safe_hint.text = tr("Neustart des Spiels nötig, damit der Renderer wechselt."))
-	_row(pg_gfx, "Sicherer Grafikmodus", safe_cb, null).tooltip_text = tr("Weniger GPU-Last: OpenGL-Renderer, niedrigere Qualität, 240 FPS mit VSync. Hilft bei Abstürzen oder Treiber-Problemen.")
-	pg_gfx.add_child(safe_hint)
+func _page_look2d(pg: VBoxContainer) -> void:
+	if ResourceLoader.exists("res://scripts/ui/skin_picker.gd"):
+		var g := _group(pg, "Skin", false)
+		var skin = load("res://scripts/ui/skin_picker.gd").new()
+		if skin is Control:
+			if skin.has_signal("changed"):
+				skin.connect("changed", _refresh_2d_preview)
+			_embed_skin(g, skin)
 
-	var lg := CheckButton.new()
-	lg.button_pressed = Settings.lane_glow
-	lg.toggled.connect(func(on): Settings.lane_glow = on)
-	_row(pg_gfx, "Spur-Leuchten", lg, null).tooltip_text = "Spur leuchtet auf, wenn die Taste gedrückt wird"
+	var g2 := _group(pg, "Map-Bild")
+	_slider(g2, "Hintergrund", 0.0, 100.0, 5.0,
+		func(s): return s.bg_dim * 100.0,
+		func(v):
+			Settings.bg_dim = Settings.clamp_bg_dim(v / 100.0)
+			_refresh_bg_preview(),
+		func(v): return _fmt_bg(Settings.clamp_bg_dim(v / 100.0)),
+		"Deckkraft des Map-Bilds, 0 % = aus")
+	_slider(g2, "Spielfeld abdunkeln", 0.0, 100.0, 5.0,
+		func(s): return s.field_dim_2d * 100.0,
+		func(v): Settings.field_dim_2d = Settings.clamp_bg_dim(v / 100.0),
+		func(v): return _fmt_pct0(Settings.clamp_bg_dim(v / 100.0)),
+		"100 % = schwarz, Map-Bild nur seitlich")
+	_switch(g2, "Hintergrund-Unschärfe",
+		func(s): return s.bg_blur,
+		func(on): Settings.bg_blur = on,
+		"Map-Bild unscharf zeichnen")
 
-	var fs := CheckButton.new()
-	fs.button_pressed = Settings.fullscreen
-	fs.toggled.connect(func(on): Settings.fullscreen = on; Settings.apply())
-	_row(pg_gfx, "Vollbild", fs, null).tooltip_text = "Vollbild (F11)"
+	var g3 := _group(pg, "Erweitert")
+	_skinvals_btn = _switch(g3, "Skin-Werte nutzen",
+		func(s): return s.skin_values_2d,
+		func(on): Settings.skin_values_2d = on,
+		"An: Layout aus skin.ini · Aus: eigene Werte").get_meta("ctrl")
+	_own_slider(g3, "Judgement-Position", 0.0, 480.0, "judge_pos_2d", "osu! ScorePosition, 0 = oben")
+	_own_slider(g3, "Kombo-Position", 0.0, 480.0, "combo_pos_2d", "osu! ComboPosition, 0 = oben")
+	_own_switch(g3, "Tasten unter den Noten", "keys_under_notes_2d", "osu! KeysUnderNotes")
+	_own_switch(g3, "Trefferlinie", "hit_line_2d", "Linie an der Trefferposition")
 
-	# --------------------------------- AUDIO --------------------------------
-	_group(pg_audio, "Lautstärke & Klang")
-	_vol_value = Label.new()
-	_slider_row(pg_audio, "Lautstärke", -30.0, 0.0, 1.0, Settings.volume_db,
-		func(v): return tr("Stumm") if v <= Settings.VOLUME_MIN_DB + 0.01 else "%d dB" % int(v),
+
+func _page_orbit(pg: VBoxContainer) -> void:
+	var g := _group(pg, "Tasten")
+	_orbit_key_row(g)
+	g = _group(pg, "Darstellung")
+	_scroll_speed(g)
+	_switch(g, "Winkel-Hilfslinien",
+		func(s): return s.orbit_guides,
+		func(on): Settings.orbit_guides = on,
+		"Feine Linien alle 45°")
+	var obg := OptionButton.new()
+	obg.add_item("Welt", Settings.ORBIT_BG_WORLD)
+	obg.add_item("Map-Bild", Settings.ORBIT_BG_MAP)
+	obg.add_item("Aus", Settings.ORBIT_BG_OFF)
+	if not WorldBackdrop.has_world_pack():
+		# Ohne Welten-Paket zeigt "Welt" das Map-Bild.
+		obg.set_item_text(0, tr("Welt") + " (" + tr("Map-Bild") + ")")
+	_choice_ob(g, "Hintergrund", obg,
+		func(s): return s.orbit_background,
+		func(i): Settings.orbit_background = i,
+		"Welt: die 3D-Welt, ruhig und abgedunkelt")
+	_world_row(g)
+
+
+func _page_notes(pg: VBoxContainer) -> void:
+	var g := _group(pg, "Notenfarben", false)
+	_nc = NoteColorPicker.new()
+	_nc.show_mode(Settings.playfield_2d)
+	_nc.changed.connect(_refresh_2d_preview)
+	var m := MarginContainer.new()
+	for side in ["margin_left", "margin_right"]:
+		m.add_theme_constant_override(side, 14)
+	m.add_theme_constant_override("margin_top", 4)
+	m.add_theme_constant_override("margin_bottom", 14)
+	m.add_child(_nc)
+	g.add_child(m)
+	_register("Notenfarben", g)
+	_register("Farbquelle", g)
+
+
+func _page_audio(pg: VBoxContainer) -> void:
+	var g := _group(pg, "Lautstärke & Klang")
+	_slider(g, "Lautstärke", -30.0, 0.0, 1.0,
+		func(s): return s.volume_db,
 		func(v):
 			Settings.volume_db = v
-			Settings.apply(), "", _vol_value)
-
-	var enh := CheckButton.new()
-	enh.button_pressed = Settings.audio_enhance
-	enh.toggled.connect(func(on):
-		Settings.audio_enhance = on
-		Settings.apply())
-	_row(pg_audio, "Klarheit", enh, null).tooltip_text = "Hellere Höhen für mehr Klarheit"
-
+			Settings.apply(),
+		func(v): return tr("Stumm") if v <= Settings.VOLUME_MIN_DB + 0.01 else "%d dB" % int(v),
+		"Alt+Mausrad im Spiel")
+	_switch(g, "Klarheit",
+		func(s): return s.audio_enhance,
+		func(on):
+			Settings.audio_enhance = on
+			Settings.apply(),
+		"Hellere Höhen")
+	var bass := _slider(g, "Bass", 0.0, 100.0, 5.0,
+		func(s): return s.bass_boost * 100.0,
+		func(v):
+			Settings.bass_boost = v / 100.0
+			Settings.apply(),
+		func(v): return _fmt_pct0(v / 100.0))
+	var bs: HSlider = bass.get_meta("ctrl")
 	var no_fill := StyleBoxEmpty.new()
-	var bass_ref: Array = [null]
-	var set_bass_fill := func(v: float):
-		var bs: HSlider = bass_ref[0]
-		if bs == null:
-			return
+	var set_fill := func(v: float):
+		# Bei 0 keine Fuellung: sieht sonst aus wie "ein bisschen Bass".
 		if v <= 0.001:
 			bs.add_theme_stylebox_override("grabber_area", no_fill)
 			bs.add_theme_stylebox_override("grabber_area_highlight", no_fill)
 		else:
 			bs.remove_theme_stylebox_override("grabber_area")
 			bs.remove_theme_stylebox_override("grabber_area_highlight")
-	var bass_row := _slider_row(pg_audio, "Bass", 0.0, 1.0, 0.05, Settings.bass_boost,
-		func(v): return _fmt_pct0(v),
-		func(v):
-			set_bass_fill.call(v)
-			Settings.bass_boost = v
-			Settings.apply())
-	bass_ref[0] = bass_row.get_meta("slider")
-	set_bass_fill.call(Settings.bass_boost)
+	bs.value_changed.connect(set_fill)
+	set_fill.call(bs.value)
 
-	_group(pg_audio, "Treffer")
-	var hs := CheckButton.new()
-	hs.button_pressed = Settings.hitsounds
-	hs.toggled.connect(func(on): Settings.hitsounds = on)
-	_row(pg_audio, "Treffer-Sounds", hs, null)
+	g = _group(pg, "Treffer")
+	_switch(g, "Treffer-Sounds",
+		func(s): return s.hitsounds,
+		func(on): Settings.hitsounds = on)
+	_choice(g, "Hitsound", ["Soft", "Clap", "Kick"],
+		func(s): return s.hitsound_set,
+		func(i):
+			Settings.hitsound_set = i
+			Sfx.preview_hit(i))
+	_slider(g, "Treffer-Lautstärke", 0.0, 100.0, 5.0,
+		func(s): return s.hitsound_volume * 100.0,
+		func(v): Settings.hitsound_volume = v / 100.0,
+		func(v): return _fmt_pct0(v / 100.0))
 
-	var hset := OptionButton.new()
-	hset.add_item("Soft", 0)
-	hset.add_item("Clap", 1)
-	hset.add_item("Kick", 2)
-	hset.select(Settings.hitsound_set)
-	hset.custom_minimum_size = Vector2(0, CTRL_H)
-	hset.item_selected.connect(func(i):
-		Settings.hitsound_set = i
-		Sfx.preview_hit(i))
-	_row(pg_audio, "Hitsound", hset, null)
-
-	_slider_row(pg_audio, "Treffer-Lautstärke", 0.0, 1.0, 0.05, Settings.hitsound_volume,
-		func(v): return _fmt_pct0(v),
-		func(v): Settings.hitsound_volume = v)
-
-	_group(pg_audio, "Timing")
-	_offset_value = Label.new()
-	var off_row := _slider_row(pg_audio, "Audio-Offset", -200.0, 200.0, 1.0, Settings.offset_ms,
-		func(v): return "%+d ms" % int(v),
+	g = _group(pg, "Timing")
+	_slider(g, "Audio-Offset", -200.0, 200.0, 1.0,
+		func(s): return s.offset_ms,
 		func(v):
 			Settings.offset_ms = v
-			Settings.apply(), "Verschiebt die Noten gegenüber dem Ton", _offset_value)
-	_offset_slider = off_row.get_meta("slider")
-	var calib_btn := Button.new()
-	calib_btn.text = "Kalibrieren"
-	calib_btn.custom_minimum_size = Vector2(0, CTRL_H)
-	UiTheme.style_button(calib_btn)
-	calib_btn.pressed.connect(_open_wizard)
-	_row(pg_audio, "Kalibrierung", calib_btn, null)
-
-	# Fusszeile: Aenderungen gelten sofort, gespeichert wird beim Schliessen.
-	var foot := Label.new()
-	foot.text = "Änderungen werden beim Schließen gespeichert  ·  Esc"
-	foot.add_theme_font_size_override("font_size", 12)
-	foot.add_theme_color_override("font_color", Color(COL_DIM, 0.7))
-	foot.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	vb.add_child(foot)
-
-	_update_2d_rows()
-	_show_page(0)
-	_refresh_labels()
-
-	# Sanftes Einblenden: Scale 0.96 -> 1 + Fade, 0.18 s.
-	panel.modulate.a = 0.0
-	panel.scale = Vector2(0.96, 0.96)
-	_intro.call_deferred(panel)
-
-	if OS.get_cmdline_args().has("--shot-settings"):
-		_shot_pages.call_deferred()
+			Settings.apply(),
+		func(v): return "%+d ms" % int(v),
+		"Verschiebt die Noten gegenüber dem Ton")
+	var calib := Button.new()
+	calib.text = "Assistent starten"
+	calib.custom_minimum_size = Vector2(0, CTRL_H)
+	calib.size_flags_horizontal = Control.SIZE_SHRINK_END
+	UiTheme.style_button(calib)
+	calib.pressed.connect(_open_wizard)
+	_row(g, "Offset-Assistent", calib, "Offset per Mitklopfen messen")
 
 
-func _intro(panel: Control) -> void:
-	panel.pivot_offset = panel.size * 0.5
-	var tw := create_tween().set_parallel(true).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-	tw.tween_property(panel, "modulate:a", 1.0, 0.18)
-	tw.tween_property(panel, "scale", Vector2.ONE, 0.18)
+func _page_gfx(pg: VBoxContainer) -> void:
+	var g := _group(pg, "Darstellung")
+	_choice(g, "Qualität", ["Niedrig", "Mittel (2x AA)", "Hoch (4x AA)", "Ultra (8x AA)", "Extrem (8x AA + SSAA)"],
+		func(s): return s.graphics_quality,
+		func(i):
+			Settings.graphics_quality = i
+			Settings.apply())
+	_choice(g, "FPS-Limit", ["VSync", "Unbegrenzt", "240 FPS", "360 FPS", "480 FPS"],
+		func(s): return s.fps_mode,
+		func(i):
+			Settings.fps_mode = i
+			Settings.apply())
+	_switch(g, "Vollbild",
+		func(s): return s.fullscreen,
+		func(on):
+			Settings.fullscreen = on
+			Settings.apply(),
+		"Auch mit F11")
+	_switch(g, "Spur-Leuchten",
+		func(s): return s.lane_glow,
+		func(on): Settings.lane_glow = on,
+		"Spur leuchtet beim Tastendruck")
+
+	g = _group(pg, "Stabilität", false)
+	var safe := _switch(g, "Sicherer Grafikmodus",
+		func(_s): return GpuGuard.safe_mode,
+		func(on):
+			GpuGuard.set_safe_mode(on)
+			Settings.apply()
+			_safe_hint.visible = true,
+		"OpenGL, niedrigere Qualität, 240 FPS. Hilft bei Abstürzen")
+	safe.set_meta("reset", Callable())
+	_safe_hint = _hint_label(g, "Neustart des Spiels nötig, damit der Renderer wechselt.")
+	_safe_hint.add_theme_color_override("font_color", UiTheme.ACCENT)
+	_safe_hint.visible = false
 
 
-## Harness (--shot-settings): jede Kategorie als PNG, danach 2D-Modus-Wechsel.
-func _shot_pages() -> void:
-	var dir := OS.get_environment("SETTINGS_SHOT_DIR")
-	if dir == "":
-		dir = OS.get_user_data_dir()
-	await get_tree().create_timer(1.5).timeout
-	if OS.get_cmdline_args().has("--shot-orbit") and not _orbit_btns.is_empty():
-		# Nur die Orbit-Gruppe (Gameplay-Seite), nichts wird gespeichert.
-		for i in _pages.size():
-			if _orbit_btns[0].is_ancestor_of(_pages[i]) or _pages[i].is_ancestor_of(_orbit_btns[0]):
-				_show_page(i)
-		await get_tree().process_frame
-		_scroll.ensure_control_visible(_orbit_btns[0])
-		await get_tree().create_timer(0.8).timeout
-		await RenderingServer.frame_post_draw
-		_shot_save(dir, "settings_orbit.png")
-		get_tree().quit(0)
-		return
-	for mode_2d in [false, true]:
-		Settings.playfield_2d = mode_2d
-		_update_2d_rows()
-		for i in _pages.size():
-			if not _tabs[i].visible:
-				continue
-			_show_page(i)
-			await get_tree().create_timer(1.2).timeout
-			await RenderingServer.frame_post_draw
-			var path := dir.path_join("settings_%s_%d.png" % ["2d" if mode_2d else "3d", i])
-			get_viewport().get_texture().get_image().save_png(path)
-			print("SHOT ", path)
-	# 2D-Seite unten (Skin-Import-Knoepfe) mit Hintergrund "Aus" in der Vorschau.
-	_show_page(1)
-	var old_bg := Settings.bg_dim
-	Settings.bg_dim = 0.0
-	_refresh_bg_preview()
-	await get_tree().process_frame
-	_scroll.scroll_vertical = int(_scroll.get_v_scroll_bar().max_value)
-	await get_tree().create_timer(0.8).timeout
-	await RenderingServer.frame_post_draw
-	_shot_save(dir, "settings_2d_bottom_bg0.png")
-	Settings.bg_dim = old_bg
-	_refresh_bg_preview()
-	# 2D-Seite mit aufgeklapptem "Erweitert" (Spielfeld, Mods, Erweitert im Bild).
-	if _adv_2d != null:
-		_adv_2d.visible = true
-		await get_tree().process_frame
-		_scroll.ensure_control_visible(_adv_2d)
-		await get_tree().create_timer(0.8).timeout
-		await RenderingServer.frame_post_draw
-		_shot_save(dir, "settings_2d_advanced.png")
-	# Name einmalig festlegen (nur wenn noch "Player"), dann gesperrte Ansicht.
-	_show_page(0)
-	var edit := _name_box.find_child("NameEdit", true, false) as LineEdit
-	if edit != null:
-		edit.text = "x"
-		(_name_box.find_child("NameSave", true, false) as Button).pressed.emit()
-		await get_tree().create_timer(0.5).timeout
-		await RenderingServer.frame_post_draw
-		_shot_save(dir, "settings_name_invalid.png")
-		edit.text = "Gexanx"
-		(_name_box.find_child("NameSave", true, false) as Button).pressed.emit()
-		await get_tree().create_timer(0.8).timeout
-		await RenderingServer.frame_post_draw
-		_shot_save(dir, "settings_name_set.png")
-	get_tree().quit(0)
+func _page_keys(pg: VBoxContainer) -> void:
+	var g := _group(pg, "Mania")
+	var lane_row := HBoxContainer.new()
+	lane_row.add_theme_constant_override("separation", 6)
+	for i in 4:
+		var b := _key_button(3 + i)
+		lane_row.add_child(b)
+		_lane_btns.append(b)
+	var r := _row(g, "Tasten 1–4", lane_row, "Anklicken, dann Taste drücken (Esc bricht ab)")
+	r.set_meta("reset", func():
+		Settings.key_lanes = _defaults.key_lanes.duplicate()
+		_refresh_labels())
+	g = _group(pg, "Orbit")
+	_orbit_key_row(g)
+	_hint_label(g, "Maus links = innen und Maus rechts = außen gelten immer zusätzlich.")
 
 
-func _shot_save(dir: String, file: String) -> void:
-	var path := dir.path_join(file)
-	get_viewport().get_texture().get_image().save_png(path)
-	print("SHOT ", path)
+func _orbit_key_row(g: VBoxContainer) -> void:
+	var box := HBoxContainer.new()
+	box.add_theme_constant_override("separation", 6)
+	for ring in 2:
+		var b := _key_button(CAP_ORBIT + ring)
+		box.add_child(b)
+		_orbit_btns.append(b)
+	var r := _row(g, "Ring innen | außen", box, "Anklicken, dann Taste drücken (Esc bricht ab)")
+	r.set_meta("reset", func():
+		Settings.orbit_key_inner = _defaults.orbit_key_inner
+		Settings.orbit_key_outer = _defaults.orbit_key_outer
+		_refresh_labels())
 
 
-## Kategorie: Chip in der Reiter-Leiste + Seite (VBox) im Stapel.
-func _page(side: HBoxContainer, stack: Control, caption: String) -> VBoxContainer:
-	var idx := _pages.size()
-	var pg := VBoxContainer.new()
-	pg.add_theme_constant_override("separation", 2)
-	pg.visible = false
-	stack.add_child(pg)
-	_pages.append(pg)
+func _key_button(which: int) -> Button:
 	var b := Button.new()
-	b.text = caption
-	b.custom_minimum_size = Vector2(0, 34)
-	b.focus_mode = Control.FOCUS_NONE
+	b.custom_minimum_size = Vector2(0, CTRL_H)
+	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	b.clip_text = true
+	b.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	b.add_theme_font_override("font", UiTheme.heading_font(0))
 	b.add_theme_font_size_override("font_size", 14)
-	b.add_theme_color_override("font_hover_color", UiTheme.TEXT)
-	b.add_theme_stylebox_override("hover", _chip_box(Color(1, 1, 1, 0.09), Color(1, 1, 1, 0.22)))
-	b.add_theme_stylebox_override("pressed", _chip_box(Color(1, 1, 1, 0.09), Color(1, 1, 1, 0.22)))
-	b.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
-	b.pressed.connect(func():
-		Sfx.ui_click()
-		_show_page(idx))
-	side.add_child(b)
-	_tabs.append(b)
-	return pg
+	UiTheme.style_button(b)
+	b.pressed.connect(_start_capture.bind(which))
+	return b
 
 
-static func _chip_box(bg: Color, border: Color, radius: int = 12) -> StyleBoxFlat:
-	var c := StyleBoxFlat.new()
-	c.bg_color = bg
-	c.border_color = border
-	c.set_border_width_all(1)
-	c.set_corner_radius_all(radius)
-	c.content_margin_left = 16
-	c.content_margin_right = 16
-	c.content_margin_top = 4
-	c.content_margin_bottom = 4
-	return c
+func _page_profile(pg: VBoxContainer) -> void:
+	var g := _group(pg, "Spielername", false)
+	_name_rows = g
+	_build_name_rows()
+	g = _group(pg, "Sprache", false)
+	# Sprache wirkt sofort (Settings.set_language baut die Szene neu auf).
+	# Die Eintraege stehen immer in ihrer eigenen Sprache (nie uebersetzt).
+	var lang := OptionButton.new()
+	lang.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	lang.add_item("English", 0)
+	lang.add_item("Deutsch", 1)
+	_choice_ob(g, "Spielsprache", lang,
+		func(_s): return 1 if Settings.active_language() == "de" else 0,
+		func(i): Settings.set_language("de" if i == 1 else "en"),
+		"Wirkt sofort").set_meta("reset", Callable())
 
 
-func _show_page(i: int) -> void:
-	_tab_cur = i
-	if _scroll != null:
-		_scroll.scroll_vertical = 0
-	for k in _pages.size():
-		_pages[k].visible = k == i
-		var b := _tabs[k]
-		if k == i:
-			b.add_theme_stylebox_override("normal",
-				_chip_box(Color(_accent, 0.14), Color(_accent, 0.55)))
-			b.add_theme_color_override("font_color", _accent)
-		else:
-			b.add_theme_stylebox_override("normal",
-				_chip_box(Color(UiTheme.SURFACE, 0.55), Color(1, 1, 1, 0.10)))
-			b.add_theme_color_override("font_color", UiTheme.DIM)
-
-
-## Skin-Bereich: Dropdown volle Breite, Knoepfe darunter, Status umbrechend.
-## Die Kinder des SkinPickers wandern nach Typ in dieses Layout; der Picker
-## selbst bleibt unsichtbar im Baum (Besitzer von Dialog und Logik).
-func _embed_skin(pg: VBoxContainer, skin: Control) -> void:
-	var m := MarginContainer.new()
-	m.add_theme_constant_override("margin_left", 10)
-	m.add_theme_constant_override("margin_right", 10)
-	m.add_theme_constant_override("margin_top", 4)
-	pg.add_child(m)
-	var col := VBoxContainer.new()
-	col.add_theme_constant_override("separation", 8)
-	m.add_child(col)
-	skin.visible = false
-	col.add_child(skin)
-	var btns := HFlowContainer.new()
-	btns.add_theme_constant_override("h_separation", 8)
-	btns.add_theme_constant_override("v_separation", 8)
-	var opt: Control = null
-	var status: Label = null
-	for c in skin.get_children():
-		if c is OptionButton:
-			opt = c
-		elif c is Label:
-			status = c
-	if opt == null:
-		skin.visible = true
+## Spielername: festgelegt -> nur der Name; sonst Eingabefeld + "Speichern"
+## (einmalig, 2-16 Zeichen, nicht "Player").
+func _build_name_rows() -> void:
+	for c in _name_rows.get_children():
+		_name_rows.remove_child(c)
+		c.queue_free()
+	var keep := _build_pg
+	_build_pg = "profile"
+	if not Settings.can_set_name():
+		var shown := Label.new()
+		shown.text = Settings.profile_name
+		shown.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+		shown.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		shown.add_theme_font_override("font", UiTheme.heading_font(0))
+		shown.add_theme_font_size_override("font_size", 16)
+		shown.add_theme_color_override("font_color", UiTheme.TEXT)
+		_row(_name_rows, "Name", shown, "Der Name ist festgelegt")
+		_hint_label(_name_rows, "Der Name ist festgelegt und kann nicht mehr geändert werden.")
+		_build_pg = keep
 		return
-	for c in skin.get_children():
-		if c != opt and (c is Button or c is MenuButton):
-			# Klarere Beschriftung der Import-Knoepfe (Logik bleibt im Skin-Picker).
-			if c is MenuButton:
-				# MenuButton ist standardmaessig flach (sieht aus wie Text):
-				# echter Knopf im selben Stil wie "Skin-Datei importieren…".
-				var mb := c as MenuButton
-				mb.flat = false
-				mb.theme_type_variation = &"Button"
-				mb.focus_mode = Control.FOCUS_ALL
-				if String(mb.text) == "Aus osu!":
-					mb.text = "Von osu! übernehmen"
-			elif String(c.text) == "Importieren…":
-				c.text = "Skin-Datei importieren…"
-			skin.remove_child(c)
-			c.custom_minimum_size.y = CTRL_H
-			btns.add_child(c)
-	skin.remove_child(opt)
-	opt.custom_minimum_size = Vector2(0, CTRL_H)
-	opt.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	col.add_child(opt)
-	col.add_child(btns)
-	if status != null:
-		skin.remove_child(status)
-		status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		status.custom_minimum_size.x = 100
-		status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		col.add_child(status)
+	var line := HBoxContainer.new()
+	line.add_theme_constant_override("separation", 6)
+	var edit := LineEdit.new()
+	edit.name = "NameEdit"
+	edit.max_length = Settings.NAME_MAX_LEN
+	edit.placeholder_text = tr("2–16 Zeichen")
+	edit.custom_minimum_size = Vector2(0, CTRL_H)
+	edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	line.add_child(edit)
+	var save_btn := Button.new()
+	save_btn.name = "NameSave"
+	save_btn.text = "Speichern"
+	save_btn.custom_minimum_size = Vector2(0, CTRL_H)
+	UiTheme.style_button(save_btn, true)
+	line.add_child(save_btn)
+	_row(_name_rows, "Name", line, "Kann nur einmal festgelegt werden")
+	var hint := _hint_label(_name_rows, "Kann nur einmal geändert werden")
+	hint.name = "NameHint"
+	var submit := func():
+		var err := Settings.set_name_once(edit.text)
+		if err != "":
+			hint.text = tr(err)
+			hint.add_theme_color_override("font_color", UiTheme.BAD)
+			return
+		Sfx.ui_open()
+		_build_name_rows()
+	save_btn.pressed.connect(submit)
+	edit.text_submitted.connect(func(_t: String): submit.call())
+	_build_pg = keep
 
 
-## Scrollbalken im Spiel-Look: schmal, abgerundet, Akzent beim Anfassen.
-func _style_scrollbar(sb: VScrollBar) -> void:
-	var track := StyleBoxFlat.new()
-	track.bg_color = Color(1, 1, 1, 0.04)
-	track.set_corner_radius_all(4)
-	sb.add_theme_stylebox_override("scroll", track)
-	var mk := func(c: Color) -> StyleBoxFlat:
-		var g := StyleBoxFlat.new()
-		g.bg_color = c
-		g.set_corner_radius_all(4)
-		g.content_margin_left = 4
-		g.content_margin_right = 4
-		return g
-	sb.add_theme_stylebox_override("grabber", mk.call(Color(1, 1, 1, 0.22)))
-	sb.add_theme_stylebox_override("grabber_highlight", mk.call(Color(_accent, 0.6)))
-	sb.add_theme_stylebox_override("grabber_pressed", mk.call(Color(_accent, 0.9)))
+# ================================================================== Vorschau
+
+func _build_previews() -> void:
+	_pv_col.add_child(_pv_caption("Vorschau"))
+	# 2D: Mini-Spielfeld vor einem Beispiel-"Map-Bild" mit der Hintergrund-Deckkraft.
+	_pv_2d = VBoxContainer.new()
+	_pv_2d.add_theme_constant_override("separation", 8)
+	_pv_col.add_child(_pv_2d)
+	if ResourceLoader.exists("res://scripts/ui/playfield_preview.gd"):
+		_preview_2d = load("res://scripts/ui/playfield_preview.gd").new()
+		var stack := Control.new()
+		stack.custom_minimum_size = _preview_2d.custom_minimum_size
+		stack.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var black := ColorRect.new()
+		black.color = Color.BLACK
+		black.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		black.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		stack.add_child(black)
+		_preview_bg = TextureRect.new()
+		_preview_bg.texture = _sample_bg_texture()
+		_preview_bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		_preview_bg.stretch_mode = TextureRect.STRETCH_SCALE
+		_preview_bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		_preview_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		stack.add_child(_preview_bg)
+		stack.add_child(_preview_2d)
+		_pv_2d.add_child(_framed(stack))
+		_preview_bg_label = _pv_caption("")
+		_pv_2d.add_child(_preview_bg_label)
+		_refresh_bg_preview()
+	# Welt: eine Vorschau fuer Mania 3D und Orbit.
+	_pv_world = VBoxContainer.new()
+	_pv_world.add_theme_constant_override("separation", 8)
+	_pv_col.add_child(_pv_world)
+	_world_preview = WorldPreview.new()
+	_pv_world_holder = Control.new()
+	_pv_world_holder.custom_minimum_size = WorldPreview.SIZE_PX
+	_pv_world_holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_pv_world_holder.add_child(_world_preview)
+	_pv_world.add_child(_framed(_pv_world_holder))
+	_world_preview.show_world(Settings.world_theme_name())
 
 
-## Gruppen-Ueberschrift: kleine gesperrte Versalien in DIM, feine Linie darunter.
-func _group(pg: VBoxContainer, text: String) -> void:
-	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 5)
+func _pv_caption(t: String) -> Label:
 	var l := Label.new()
-	l.text = tr(text).to_upper()
-	l.add_theme_font_override("font", UiTheme.heading_font(2))
-	l.add_theme_font_size_override("font_size", 11)
-	l.add_theme_color_override("font_color", COL_DIM)
-	box.add_child(l)
-	var line := ColorRect.new()
-	line.color = Color(1, 1, 1, 0.08)
-	line.custom_minimum_size = Vector2(0, 1)
-	box.add_child(line)
-	var m := MarginContainer.new()
-	m.add_theme_constant_override("margin_top", 6 if pg.get_child_count() == 0 else 12)
-	m.add_theme_constant_override("margin_bottom", 3)
-	m.add_child(box)
-	pg.add_child(m)
+	l.text = t
+	l.add_theme_font_size_override("font_size", 12)
+	l.add_theme_color_override("font_color", UiTheme.DIM)
+	return l
 
 
-## Regler-Zeile: fmt(v) -> Text, on_change(v). Optional eigenes Wert-Label.
-## Der HSlider liegt zusaetzlich als Meta "slider" an der Zeile.
-func _slider_row(pg: VBoxContainer, caption: String, mn: float, mx: float, step: float,
-		val: float, fmt: Callable, on_change: Callable, tip: String = "", value: Label = null) -> Control:
-	var sl := HSlider.new()
-	sl.min_value = mn
-	sl.max_value = mx
-	sl.step = step
-	sl.value = val
-	if value == null:
-		value = Label.new()
-	value.text = str(fmt.call(val))
-	sl.value_changed.connect(func(v):
-		on_change.call(v)
-		value.text = str(fmt.call(v)))
-	var r := _row(pg, caption, sl, value)
-	r.tooltip_text = tip
-	r.set_meta("slider", sl)
-	return r
-
-
-## Vorschau-Rahmen: dunkle Glasflaeche mit feinem Rand, gleiche Sprache wie die Karten.
 func _framed(inner: Control) -> Control:
 	var pc := PanelContainer.new()
-	var fb := _chip_box(Color(0.03, 0.04, 0.07, 0.55), Color(1, 1, 1, 0.10), 12)
-	fb.content_margin_left = 8
-	fb.content_margin_right = 8
-	fb.content_margin_top = 8
-	fb.content_margin_bottom = 8
+	var fb := UiTheme.solid_box(UiTheme.BG, 12)
+	fb.set_border_width_all(1)
+	fb.border_color = UiTheme.LINE
+	fb.set_content_margin_all(1)
 	pc.add_theme_stylebox_override("panel", fb)
-	pc.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	pc.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	pc.add_child(inner)
 	return pc
 
 
-## 2D-Vorschau-Haken (Task playfield-preview): nur wenn das Skript existiert.
-func _add_2d_preview(parent: Control) -> void:
-	if not (ClassDB.class_exists("PlayfieldPreview") or ResourceLoader.exists("res://scripts/ui/playfield_preview.gd")):
-		return
-	var scr = load("res://scripts/ui/playfield_preview.gd")
-	if scr == null:
-		return
-	_preview_2d = scr.new()
-	var cc := CenterContainer.new()
-	parent.add_child(_framed(cc))
-	# Hinter der Vorschau: Beispiel-"Map-Bild" mit der Hintergrund-Deckkraft
-	# (0 = ganz schwarz), damit "Aus" live sichtbar ist.
-	var stack := Control.new()
-	stack.custom_minimum_size = _preview_2d.custom_minimum_size
-	stack.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	cc.add_child(stack)
-	var black := ColorRect.new()
-	black.color = Color.BLACK
-	black.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	black.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	stack.add_child(black)
-	_preview_bg = TextureRect.new()
-	_preview_bg.texture = _sample_bg_texture()
-	_preview_bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	_preview_bg.stretch_mode = TextureRect.STRETCH_SCALE
-	_preview_bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_preview_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	stack.add_child(_preview_bg)
-	stack.add_child(_preview_2d)
-	_preview_bg_label = Label.new()
-	_preview_bg_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_preview_bg_label.add_theme_font_size_override("font_size", 12)
-	_preview_bg_label.add_theme_color_override("font_color", Color(COL_DIM, 0.85))
-	parent.add_child(_preview_bg_label)
-	_refresh_bg_preview()
-
-
-## Beispiel-Hintergrund fuer die Vorschau (bunter Verlauf statt echtem Map-Bild).
+## Beispiel-Hintergrund fuer die Vorschau (ruhiger Verlauf statt echtem Map-Bild).
 static func _sample_bg_texture() -> Texture2D:
 	var g := Gradient.new()
-	g.set_color(0, Color(0.95, 0.45, 0.25))
-	g.set_color(1, Color(0.25, 0.35, 0.95))
-	g.add_point(0.5, Color(0.85, 0.30, 0.75))
+	g.set_color(0, Color(0.62, 0.40, 0.24))
+	g.set_color(1, Color(0.20, 0.27, 0.40))
 	var t := GradientTexture2D.new()
 	t.gradient = g
 	t.fill_from = Vector2(0, 0)
@@ -978,79 +906,255 @@ func _refresh_2d_preview() -> void:
 		_preview_2d.call("refresh")
 
 
-## Einheitliche Zeile: Beschriftung links (feste Breite), Control mittig,
-## Wert rechts (feste Breite; ohne Wert bleibt der Platz frei).
-func _row(vb: VBoxContainer, caption: String, control: Control, value: Label) -> PanelContainer:
-	var hov := PanelContainer.new()
-	hov.mouse_filter = Control.MOUSE_FILTER_PASS
-	var hn := StyleBoxFlat.new()
-	hn.bg_color = Color(1, 1, 1, 0.0)
-	hn.set_corner_radius_all(8)
-	hn.content_margin_left = 10
-	hn.content_margin_right = 10
-	hn.content_margin_top = 2
-	hn.content_margin_bottom = 2
-	hov.add_theme_stylebox_override("panel", hn)
-	hov.custom_minimum_size = Vector2(0, ROW_H)
-	hov.mouse_entered.connect(func(): hn.bg_color = Color(1, 1, 1, 0.05))
-	hov.mouse_exited.connect(func(): hn.bg_color = Color(1, 1, 1, 0.0))
-	vb.add_child(hov)
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 14)
-	hov.add_child(row)
-	var cap := Label.new()
-	cap.text = caption
-	cap.custom_minimum_size = Vector2(CAP_W, 0)
-	cap.add_theme_font_size_override("font_size", 15)
-	cap.add_theme_color_override("font_color", UiTheme.TEXT)
-	row.add_child(cap)
-	control.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	if control is CheckButton:
-		# Schalter ganz rechts.
-		var sp := Control.new()
-		sp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		row.add_child(sp)
-		control.size_flags_horizontal = Control.SIZE_SHRINK_END
-		row.add_child(control)
-		return hov
-	control.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_child(control)
-	if value == null:
-		return hov
-	value.add_theme_font_size_override("font_size", 13)
-	value.add_theme_color_override("font_color", UiTheme.TEXT)
-	value.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	var chip := PanelContainer.new()
-	var cb := _chip_box(Color(1, 1, 1, 0.06), Color(1, 1, 1, 0.10), 9)
-	cb.content_margin_left = 8
-	cb.content_margin_right = 8
-	cb.content_margin_top = 2
-	cb.content_margin_bottom = 2
-	chip.add_theme_stylebox_override("panel", cb)
-	chip.custom_minimum_size = Vector2(VALUE_W, 0)
-	chip.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	chip.add_child(value)
-	row.add_child(chip)
-	return hov
+# ================================================================== Gruppen + Zeilen
+
+## Gruppe = ruhige Karte: Titel (Satzschreibung) + "Zuruecksetzen", darunter Zeilen
+## mit Haarlinien. Gibt die Zeilen-Box zurueck.
+func _group(pg: VBoxContainer, title: String, resettable: bool = true) -> VBoxContainer:
+	var card := PanelContainer.new()
+	var cb := UiTheme.solid_box(COL_CARD, 12)
+	cb.set_border_width_all(1)
+	cb.border_color = Color(UiTheme.TEXT, 0.07)
+	cb.content_margin_top = 4
+	cb.content_margin_bottom = 4
+	card.add_theme_stylebox_override("panel", cb)
+	pg.add_child(card)
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 0)
+	card.add_child(col)
+	var head := HBoxContainer.new()
+	head.custom_minimum_size = Vector2(0, 34)
+	var hm := MarginContainer.new()
+	hm.add_theme_constant_override("margin_left", 14)
+	hm.add_theme_constant_override("margin_right", 8)
+	hm.add_child(head)
+	col.add_child(hm)
+	var l := Label.new()
+	l.text = title
+	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	l.add_theme_font_override("font", UiTheme.heading_font(0))
+	l.add_theme_font_size_override("font_size", 14)
+	l.add_theme_color_override("font_color", UiTheme.ACCENT)
+	head.add_child(l)
+	var rows := VBoxContainer.new()
+	rows.add_theme_constant_override("separation", 0)
+	rows.set_meta("title", title)
+	col.add_child(rows)
+	if resettable:
+		var rb := Button.new()
+		rb.text = "Zurücksetzen"
+		rb.flat = true
+		rb.focus_mode = Control.FOCUS_NONE
+		rb.tooltip_text = "Diese Gruppe auf Standard"
+		rb.add_theme_font_size_override("font_size", 12)
+		rb.add_theme_color_override("font_color", UiTheme.DIM)
+		rb.add_theme_color_override("font_hover_color", UiTheme.TEXT)
+		rb.add_theme_color_override("font_pressed_color", UiTheme.ACCENT)
+		var e := StyleBoxEmpty.new()
+		e.content_margin_left = 6
+		e.content_margin_right = 6
+		for st in ["normal", "hover", "pressed", "focus"]:
+			rb.add_theme_stylebox_override(st, e)
+		UiTheme._attach_sounds(rb)
+		rb.pressed.connect(_reset_group.bind(rows))
+		head.add_child(rb)
+		rows.set_meta("reset_btn", rb)
+	return rows
 
 
-## Auswahl-Zeile (OptionButton); on_change(index), danach Vorschau neu.
-func _option_row(pg: VBoxContainer, caption: String, items: Array, sel: int, on_change: Callable,
-		tip: String = "") -> Control:
-	var ob := OptionButton.new()
-	for it in items:
-		ob.add_item(it)
-	ob.select(sel)
-	ob.custom_minimum_size = Vector2(0, CTRL_H)
-	ob.item_selected.connect(func(i):
-		on_change.call(i)
+func _reset_group(rows: VBoxContainer) -> void:
+	for r in rows.get_children():
+		if r.has_meta("reset"):
+			var f: Callable = r.get_meta("reset")
+			if f.is_valid():
+				f.call()
+	_sync_page(_cur)
+	_refresh_2d_preview()
+	_refresh_bg_preview()
+
+
+## Einheitliche Zeile (ROW_H): Beschriftung links, Bedienung in der rechten Spalte
+## (CTRL_W). Schalter und Knoepfe sitzen rechtsbuendig, Regler/Auswahl fuellen sie.
+func _row(rows: VBoxContainer, cap: String, ctrl: Control, tip: String = "",
+		sync: Callable = Callable(), reset: Callable = Callable()) -> PanelContainer:
+	var first := rows.get_child_count() == 0
+	var row := PanelContainer.new()
+	row.mouse_filter = Control.MOUSE_FILTER_PASS
+	row.custom_minimum_size = Vector2(0, ROW_H)
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0, 0, 0, 0)
+	sb.content_margin_left = 14
+	sb.content_margin_right = 14
+	if not first:
+		sb.border_width_top = 1
+		sb.border_color = COL_SEP
+	row.add_theme_stylebox_override("panel", sb)
+	row.mouse_entered.connect(func(): sb.bg_color = COL_ROW_HOVER)
+	row.mouse_exited.connect(func(): sb.bg_color = Color(0, 0, 0, 0))
+	rows.add_child(row)
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 16)
+	row.add_child(h)
+	var l := Label.new()
+	l.text = cap
+	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	l.custom_minimum_size = Vector2(120, 0)
+	l.add_theme_font_size_override("font_size", 14)
+	l.add_theme_color_override("font_color", UiTheme.TEXT)
+	l.mouse_filter = Control.MOUSE_FILTER_PASS
+	h.add_child(l)
+	var slot := HBoxContainer.new()
+	slot.custom_minimum_size = Vector2(CTRL_W, 0)
+	slot.alignment = BoxContainer.ALIGNMENT_END
+	h.add_child(slot)
+	ctrl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	if ctrl is CheckButton or (ctrl is Button and not ctrl is OptionButton):
+		if ctrl.size_flags_horizontal != Control.SIZE_EXPAND_FILL:
+			ctrl.size_flags_horizontal = Control.SIZE_SHRINK_END
+	else:
+		ctrl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	slot.add_child(ctrl)
+	row.tooltip_text = tip
+	row.set_meta("ctrl", ctrl)
+	row.set_meta("cap", cap)
+	if sync.is_valid():
+		row.set_meta("sync", sync)
+	if reset.is_valid():
+		row.set_meta("reset", reset)
+	_register(cap, row)
+	return row
+
+
+func _register(cap: String, row: Control) -> void:
+	if _build_pg == "":
+		return
+	for e in _entries:
+		if e.cap == cap and e.page == _build_pg:
+			return
+	_entries.append({"cap": cap, "page": _build_pg, "row": row})
+	_pages[_build_pg].rows.append(row)
+
+
+func _hint_label(rows: VBoxContainer, t: String) -> Label:
+	var l := Label.new()
+	l.text = t
+	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	l.add_theme_font_size_override("font_size", 12)
+	l.add_theme_color_override("font_color", UiTheme.DIM)
+	var m := MarginContainer.new()
+	m.add_theme_constant_override("margin_left", 14)
+	m.add_theme_constant_override("margin_right", 14)
+	m.add_theme_constant_override("margin_bottom", 10)
+	m.add_child(l)
+	rows.add_child(m)
+	return l
+
+
+## Regler: getf(obj) liest den Wert aus Settings oder den Standardwerten, setf(v)
+## setzt ihn (mit Nebenwirkungen), fmt(v) -> Text rechts.
+func _slider(rows: VBoxContainer, cap: String, mn: float, mx: float, step: float,
+		getf: Callable, setf: Callable, fmt: Callable, tip: String = "") -> PanelContainer:
+	var box := HBoxContainer.new()
+	box.add_theme_constant_override("separation", 12)
+	var sl := HSlider.new()
+	sl.min_value = mn
+	sl.max_value = mx
+	sl.step = step
+	sl.value = getf.call(Settings)
+	sl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	sl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	box.add_child(sl)
+	var val := Label.new()
+	val.custom_minimum_size = Vector2(VALUE_W, 0)
+	val.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	val.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	val.add_theme_font_override("font", UiTheme.heading_font(0))
+	val.add_theme_font_size_override("font_size", 14)
+	val.add_theme_color_override("font_color", UiTheme.TEXT)
+	val.text = str(fmt.call(sl.value))
+	box.add_child(val)
+	sl.value_changed.connect(func(v):
+		setf.call(v)
+		val.text = str(fmt.call(v))
 		_refresh_2d_preview())
-	var r := _row(pg, caption, ob, null)
-	r.tooltip_text = tip
+	var sync := func():
+		sl.set_value_no_signal(getf.call(Settings))
+		val.text = str(fmt.call(sl.value))
+	var reset := func():
+		setf.call(getf.call(_defaults))
+		sync.call()
+	var r := _row(rows, cap, box, tip, sync, reset)
+	r.set_meta("ctrl", sl)
+	r.set_meta("value", val)
 	return r
 
 
-## Eigener Layout-Wert (2D): setzen und "Skin-Werte nutzen" ausschalten, damit er wirkt.
+func _switch(rows: VBoxContainer, cap: String, getf: Callable, setf: Callable,
+		tip: String = "") -> PanelContainer:
+	var cb := CheckButton.new()
+	cb.button_pressed = getf.call(Settings)
+	cb.focus_mode = Control.FOCUS_ALL
+	cb.toggled.connect(func(on):
+		setf.call(on)
+		_refresh_2d_preview())
+	var sync := func(): cb.set_pressed_no_signal(getf.call(Settings))
+	var reset := func():
+		setf.call(getf.call(_defaults))
+		sync.call()
+	return _row(rows, cap, cb, tip, sync, reset)
+
+
+func _choice(rows: VBoxContainer, cap: String, items: Array, getf: Callable, setf: Callable,
+		tip: String = "") -> PanelContainer:
+	var ob := OptionButton.new()
+	for it in items:
+		ob.add_item(it)
+	return _choice_ob(rows, cap, ob, getf, setf, tip)
+
+
+## Auswahl mit fertigem OptionButton; Wert = Index (bzw. Item-ID bei IDs = Index).
+func _choice_ob(rows: VBoxContainer, cap: String, ob: OptionButton, getf: Callable, setf: Callable,
+		tip: String = "") -> PanelContainer:
+	ob.custom_minimum_size = Vector2(0, CTRL_H)
+	ob.clip_text = true
+	ob.select(int(getf.call(Settings)))
+	ob.item_selected.connect(func(i):
+		setf.call(i)
+		_refresh_2d_preview())
+	var sync := func(): ob.select(int(getf.call(Settings)))
+	var reset := func():
+		setf.call(int(getf.call(_defaults)))
+		sync.call()
+	return _row(rows, cap, ob, tip, sync, reset)
+
+
+## Eigene 2D-Layout-Werte: Aendern schaltet "Skin-Werte nutzen" aus, damit sie wirken;
+## Zuruecksetzen setzt nur den Wert (ohne den Schalter anzufassen).
+func _own_slider(rows: VBoxContainer, cap: String, mn: float, mx: float, n: String, tip: String) -> void:
+	var r := _slider(rows, cap, mn, mx, 1.0,
+		func(s): return float(s.get(n)),
+		func(v): _set_own_2d(n, v),
+		func(v): return str(int(v)), tip)
+	r.set_meta("reset", func(): Settings.set_2d_option(n, Settings.default_2d_option(n)))
+
+
+func _own_choice(rows: VBoxContainer, cap: String, items: Array, n: String, tip: String) -> void:
+	var r := _choice(rows, cap, items,
+		func(s): return int(s.get(n)),
+		func(i): _set_own_2d(n, i), tip)
+	r.set_meta("reset", func(): Settings.set_2d_option(n, Settings.default_2d_option(n)))
+
+
+func _own_switch(rows: VBoxContainer, cap: String, n: String, tip: String) -> void:
+	var r := _switch(rows, cap,
+		func(s): return bool(s.get(n)),
+		func(on): _set_own_2d(n, on), tip)
+	r.set_meta("reset", func(): Settings.set_2d_option(n, Settings.default_2d_option(n)))
+
+
 func _set_own_2d(n: String, v: Variant) -> void:
 	Settings.set_2d_option(n, v)
 	if Settings.skin_values_2d:
@@ -1060,102 +1164,346 @@ func _set_own_2d(n: String, v: Variant) -> void:
 	_refresh_2d_preview()
 
 
-## Hintergrund-Deckkraft: 0 -> "Aus", sonst "30 %".
-static func _fmt_bg(v: float) -> String:
-	return "Aus" if v <= 0.001 else _fmt_pct0(v)
-
-
-## 0.85 -> "85 %".
-static func _fmt_pct0(v: float) -> String:
-	return UiTheme.fmt_num(v * 100.0, 0) + (" %" if UiTheme.is_german() else "%")
-
-
-## Modus-abhaengig: im 2D-Modus 3D-Spurbreite und Reiter "Welt" ausblenden.
-## Der Reiter "2D-Spielfeld" bleibt immer sichtbar; im 3D-Modus mit Hinweis oben.
-func _update_2d_rows() -> void:
-	var on := Settings.playfield_2d
-	for r in _rows_3d:
-		r.visible = not on
-	if _hint_2d != null:
-		_hint_2d.visible = not on
-	if _tabs.size() >= 3:
-		_tabs[1].visible = true
-		_tabs[2].visible = not on
-	if _tab_cur < _tabs.size() and not _tabs[_tab_cur].visible:
-		_show_page(0)
-
-
-## Spielername: festgelegt -> nur der Name; sonst Eingabefeld + "Name speichern"
-## (einmalig, 2-16 Zeichen, nicht "Player").
-func _build_name_rows() -> void:
-	for c in _name_box.get_children():
-		c.queue_free()
-	if not Settings.can_set_name():
-		var shown := Label.new()
-		shown.text = Settings.profile_name
-		shown.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
-		shown.add_theme_font_override("font", UiTheme.heading_font(2))
-		shown.add_theme_font_size_override("font_size", 18)
-		shown.add_theme_color_override("font_color", UiTheme.TEXT)
-		_row(_name_box, "Name", shown, null).tooltip_text = tr("Der Name ist festgelegt")
+## Skin-Bereich: Auswahl volle Breite, Knoepfe darunter, Status umbrechend.
+## Die Kinder des SkinPickers wandern in dieses Layout; der Picker bleibt
+## unsichtbar im Baum (Besitzer von Dialog und Logik).
+func _embed_skin(rows: VBoxContainer, skin: Control) -> void:
+	var opt: OptionButton = null
+	var status: Label = null
+	for c in skin.get_children():
+		if c is OptionButton:
+			opt = c
+		elif c is Label:
+			status = c
+	if opt == null:
+		rows.add_child(skin)
 		return
-	var line := HBoxContainer.new()
-	line.add_theme_constant_override("separation", 8)
-	var edit := LineEdit.new()
-	edit.name = "NameEdit"
-	edit.max_length = Settings.NAME_MAX_LEN
-	edit.placeholder_text = tr("Dein Name (2–16 Zeichen)")
-	edit.custom_minimum_size = Vector2(0, CTRL_H)
-	edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	line.add_child(edit)
-	var save_btn := Button.new()
-	save_btn.name = "NameSave"
-	save_btn.text = "Name speichern"
-	save_btn.custom_minimum_size = Vector2(0, CTRL_H)
-	UiTheme.style_button(save_btn, true)
-	line.add_child(save_btn)
-	_row(_name_box, "Name", line, null)
-	var hint := Label.new()
-	hint.name = "NameHint"
-	hint.text = tr("Kann nur einmal geändert werden")
-	hint.add_theme_font_size_override("font_size", 12)
-	hint.add_theme_color_override("font_color", Color(COL_DIM, 0.85))
-	var hm := MarginContainer.new()
-	hm.add_theme_constant_override("margin_left", int(CAP_W) + 24)
-	hm.add_child(hint)
-	_name_box.add_child(hm)
-	var submit := func():
-		var err := Settings.set_name_once(edit.text)
-		if err != "":
-			hint.text = tr(err)
-			hint.add_theme_color_override("font_color", Color(1.0, 0.72, 0.45, 0.95))
-			return
-		Sfx.ui_open()
-		_build_name_rows()
-	save_btn.pressed.connect(submit)
-	edit.text_submitted.connect(func(_t: String): submit.call())
+	skin.remove_child(opt)
+	opt.custom_minimum_size = Vector2(0, CTRL_H)
+	opt.clip_text = true
+	_row(rows, "Skin", opt, "Eigene Bilder für Noten und Tasten")
+	var m := MarginContainer.new()
+	m.add_theme_constant_override("margin_left", 14)
+	m.add_theme_constant_override("margin_right", 14)
+	m.add_theme_constant_override("margin_top", 2)
+	m.add_theme_constant_override("margin_bottom", 12)
+	rows.add_child(m)
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 8)
+	m.add_child(col)
+	skin.visible = false
+	col.add_child(skin)
+	var btns := HBoxContainer.new()
+	btns.add_theme_constant_override("separation", 6)
+	btns.alignment = BoxContainer.ALIGNMENT_END
+	for c in skin.get_children():
+		if c is Button or c is MenuButton:
+			if c is MenuButton:
+				# MenuButton ist standardmaessig flach: echter Knopf im selben Stil.
+				var mb := c as MenuButton
+				mb.flat = false
+				mb.theme_type_variation = &"Button"
+				mb.focus_mode = Control.FOCUS_ALL
+				if String(mb.text) == "Aus osu!":
+					mb.text = "Von osu! übernehmen"
+			elif String(c.text) == "Importieren…":
+				c.text = "Datei importieren…"
+			skin.remove_child(c)
+			c.custom_minimum_size.y = CTRL_H
+			btns.add_child(c)
+	col.add_child(btns)
+	if status != null:
+		skin.remove_child(status)
+		status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		status.add_theme_color_override("font_color", UiTheme.DIM)
+		status.add_theme_font_size_override("font_size", 12)
+		col.add_child(status)
 
 
-static func _fmt_x(v: float) -> String:
-	return UiTheme.fmt_num(v, 1) + "×"
+# ================================================================== Navigation
 
+func _mode_pages() -> Array:
+	var out := []
+	for id in PAGE_ORDER:
+		var modes: Array = PAGE_DEFS[id][2]
+		if modes.has(_mode):
+			out.append(id)
+	return out
+
+
+func _general_pages() -> Array:
+	var out := []
+	for id in PAGE_ORDER:
+		if (PAGE_DEFS[id][2] as Array).is_empty():
+			out.append(id)
+	return out
+
+
+func _set_mode(m: int) -> void:
+	if m == MODE_3D or m == MODE_2D:
+		Settings.playfield_2d = m == MODE_2D
+		if _nc != null:
+			_nc.show_mode(m == MODE_2D)
+	var was_general := (PAGE_DEFS.get(_cur, ["", "", [MODE_3D]])[2] as Array).is_empty()
+	_mode = m
+	_update_mode_buttons()
+	_rebuild_nav()
+	if not was_general:
+		_show_page(_mode_pages()[0])
+	else:
+		_highlight_nav()
+
+
+func _update_mode_buttons() -> void:
+	for i in _mode_btns.size():
+		var b := _mode_btns[i]
+		var on := i == _mode
+		b.set_pressed_no_signal(on)
+		var sb := UiTheme.solid_box(UiTheme.ACCENT if on else UiTheme.RAISED, 6)
+		sb.content_margin_left = 4
+		sb.content_margin_right = 4
+		var hv: StyleBoxFlat = sb.duplicate()
+		hv.bg_color = sb.bg_color.lightened(0.08)
+		for st in ["normal", "pressed", "hover_pressed"]:
+			b.add_theme_stylebox_override(st, sb)
+		b.add_theme_stylebox_override("hover", hv)
+		var fc := UiTheme.ON_ACCENT if on else UiTheme.DIM
+		for c in ["font_color", "font_pressed_color", "font_hover_pressed_color"]:
+			b.add_theme_color_override(c, fc)
+		b.add_theme_color_override("font_hover_color", UiTheme.ON_ACCENT if on else UiTheme.TEXT)
+
+
+func _rebuild_nav() -> void:
+	for c in _nav.get_children():
+		_nav.remove_child(c)
+		c.queue_free()
+	_nav_btns.clear()
+	for id in _mode_pages():
+		_nav.add_child(_nav_button(id))
+	_nav.add_child(_vgap(14))
+	_nav.add_child(_side_label("Allgemein"))
+	_nav.add_child(_vgap(6))
+	for id in _general_pages():
+		_nav.add_child(_nav_button(id))
+	_highlight_nav()
+
+
+func _nav_button(id: String) -> Button:
+	var b := Button.new()
+	b.text = PAGE_DEFS[id][0]
+	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	b.focus_mode = Control.FOCUS_NONE
+	b.custom_minimum_size = Vector2(0, 34)
+	b.add_theme_font_size_override("font_size", 14)
+	b.pressed.connect(_show_page.bind(id))
+	UiTheme._attach_sounds(b)
+	# Rechts die Zahl der Einstellungen (tabellarische Ziffern, gedimmt).
+	var n := Label.new()
+	n.text = str(_pages[id].rows.size())
+	n.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	n.add_theme_font_override("font", UiTheme.heading_font(0))
+	n.add_theme_font_size_override("font_size", 12)
+	n.add_theme_color_override("font_color", Color(UiTheme.DIM, 0.7))
+	n.set_anchors_and_offsets_preset(Control.PRESET_RIGHT_WIDE)
+	n.offset_left = -30
+	n.offset_right = -10
+	n.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	n.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	n.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	b.add_child(n)
+	_nav_btns[id] = b
+	return b
+
+
+func _highlight_nav() -> void:
+	for id in _nav_btns:
+		var b: Button = _nav_btns[id]
+		var on: bool = id == _cur
+		var sb := StyleBoxFlat.new()
+		sb.bg_color = UiTheme.RAISED if on else Color(0, 0, 0, 0)
+		sb.set_corner_radius_all(UiTheme.R_SMALL + 1)
+		sb.content_margin_left = 12
+		sb.content_margin_right = 34
+		if on:
+			sb.border_width_left = 2
+			sb.border_color = UiTheme.ACCENT
+		var hv: StyleBoxFlat = sb.duplicate()
+		if not on:
+			hv.bg_color = Color(UiTheme.TEXT, 0.05)
+		for st in ["normal", "pressed", "focus"]:
+			b.add_theme_stylebox_override(st, sb)
+		b.add_theme_stylebox_override("hover", hv)
+		b.add_theme_color_override("font_color", UiTheme.TEXT if on else UiTheme.DIM)
+		b.add_theme_color_override("font_hover_color", UiTheme.TEXT)
+		b.add_theme_color_override("font_pressed_color", UiTheme.TEXT)
+
+
+func _show_page(id: String) -> void:
+	if not _pages.has(id):
+		return
+	_cur = id
+	for k in _pages:
+		_pages[k].vb.visible = k == id
+	var d: Array = PAGE_DEFS[id]
+	_title.text = d[0]
+	var sub := tr(d[1])
+	if not (d[2] as Array).is_empty() and (d[2] as Array).size() == 1:
+		sub = tr("Gilt für %s") % MODE_NAMES[d[2][0]]
+	_subtitle.text = sub
+	var pv: String = d[3]
+	(_pv_col.get_meta("wrap") as Control).visible = pv != ""
+	_pv_2d.visible = pv == "2d"
+	_pv_world.visible = pv == "world"
+	_scroll.scroll_vertical = 0
+	_sync_page(id)
+	_refresh_labels()
+	_highlight_nav()
+	_update_fades.call_deferred()
+
+
+## Werte der Seite neu aus Settings lesen (dieselbe Einstellung steht evtl. auf mehreren Seiten).
+func _sync_page(id: String) -> void:
+	if not _pages.has(id):
+		return
+	for r in _pages[id].rows:
+		if is_instance_valid(r) and r.has_meta("sync"):
+			(r.get_meta("sync") as Callable).call()
+
+
+# ================================================================== Suche
+
+func _on_search(q: String) -> void:
+	for c in _results.get_children():
+		_results.remove_child(c)
+		c.queue_free()
+	q = q.strip_edges().to_lower()
+	_nav.visible = q == ""
+	_results.visible = q != ""
+	if q == "":
+		return
+	var hits := _search_hits(q)
+	if hits.is_empty():
+		var none := Label.new()
+		none.text = "Keine Treffer"
+		none.add_theme_font_size_override("font_size", 13)
+		none.add_theme_color_override("font_color", UiTheme.DIM)
+		_results.add_child(none)
+		return
+	for i in mini(hits.size(), 12):
+		var e: Dictionary = hits[i]
+		var b := Button.new()
+		b.text = tr(e.cap)
+		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		b.focus_mode = Control.FOCUS_NONE
+		b.custom_minimum_size = Vector2(0, 40)
+		b.clip_text = true
+		b.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+		b.add_theme_font_size_override("font_size", 14)
+		b.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+		var sb := StyleBoxFlat.new()
+		sb.bg_color = UiTheme.RAISED if i == 0 else Color(0, 0, 0, 0)
+		sb.set_corner_radius_all(UiTheme.R_SMALL + 1)
+		sb.content_margin_left = 12
+		sb.content_margin_top = 3
+		var hv: StyleBoxFlat = sb.duplicate()
+		hv.bg_color = UiTheme.RAISED
+		b.add_theme_stylebox_override("normal", sb)
+		b.add_theme_stylebox_override("hover", hv)
+		b.add_theme_stylebox_override("pressed", hv)
+		b.add_theme_color_override("font_color", UiTheme.TEXT)
+		var where := Label.new()
+		where.text = _where(e.page)
+		where.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+		where.add_theme_font_size_override("font_size", 11)
+		where.add_theme_color_override("font_color", UiTheme.DIM)
+		where.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
+		where.offset_left = 12
+		where.offset_top = -18
+		where.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		b.add_child(where)
+		b.pressed.connect(_jump.bind(e))
+		UiTheme._attach_sounds(b)
+		_results.add_child(b)
+
+
+func _where(page: String) -> String:
+	var d: Array = PAGE_DEFS[page]
+	var modes: Array = d[2]
+	if modes.size() == 1:
+		return MODE_NAMES[modes[0]] + " · " + tr(d[0])
+	return tr(d[0])
+
+
+## Treffer: Beschriftung oder Gruppe enthaelt die Suche; aktueller Modus zuerst.
+func _search_hits(q: String) -> Array:
+	var hits := []
+	var later := []
+	for e in _entries:
+		var cap := tr(e.cap).to_lower()
+		var grp := ""
+		var p = e.row.get_parent()
+		if p != null and p.has_meta("title"):
+			grp = tr(String(p.get_meta("title"))).to_lower()
+		if not (cap.contains(q) or grp.contains(q) or String(e.cap).to_lower().contains(q)):
+			continue
+		var modes: Array = PAGE_DEFS[e.page][2]
+		if modes.is_empty() or modes.has(_mode):
+			hits.append(e)
+		else:
+			later.append(e)
+	return hits + later
+
+
+func _search_pick(i: int) -> void:
+	var hits := _search_hits(_search.text.strip_edges().to_lower())
+	if i < hits.size():
+		_jump(hits[i])
+
+
+## Zur Einstellung springen: Modus wechseln falls noetig, Seite zeigen, hinscrollen, kurz markieren.
+func _jump(e: Dictionary) -> void:
+	var modes: Array = PAGE_DEFS[e.page][2]
+	if not modes.is_empty() and not modes.has(_mode):
+		_set_mode(modes[0])
+	_search.text = ""
+	_on_search("")
+	_show_page(e.page)
+	var row: Control = e.row
+	await get_tree().process_frame
+	await get_tree().process_frame
+	if not is_instance_valid(row):
+		return
+	var y := row.get_global_rect().position.y - _scroll.get_global_rect().position.y + _scroll.scroll_vertical
+	_scroll.scroll_vertical = maxi(0, int(y - _scroll.size.y * 0.3))
+	var sb := row.get_theme_stylebox("panel") as StyleBoxFlat
+	if sb != null:
+		sb.bg_color = Color(UiTheme.ACCENT, 0.16)
+		var tw := create_tween()
+		tw.tween_interval(0.5)
+		tw.tween_property(sb, "bg_color", Color(UiTheme.ACCENT, 0.0), 0.6)
+	var c: Control = row.get_meta("ctrl", null)
+	if c != null and c.focus_mode != Control.FOCUS_NONE:
+		c.grab_focus()
+
+
+# ================================================================== Tasten
 
 func _refresh_labels() -> void:
 	for i in _lane_btns.size():
 		_lane_btns[i].text = UiTheme.key_short(Settings.key_lanes[i])
-	if _capturing >= 3 and _capturing - 3 < _lane_btns.size():
-		_lane_btns[_capturing - 3].text = "…"
-	for r in _orbit_btns.size():
+		if _capturing == 3 + i:
+			_lane_btns[i].text = "…"
+	for k in _orbit_btns.size():
+		var r := k % 2
 		var code := Settings.orbit_key_outer if r == 1 else Settings.orbit_key_inner
-		_orbit_btns[r].text = "…" if _capturing == CAP_ORBIT + r else 			"%s · %s" % [UiTheme.key_short(code), tr("Maus rechts") if r == 1 else tr("Maus links")]
-	_offset_value.text = "%+d ms" % int(Settings.offset_ms)
-	_vol_value.text = tr("Stumm") if Settings.is_muted() else "%d dB" % int(Settings.volume_db)
+		_orbit_btns[k].text = "…" if _capturing == CAP_ORBIT + r else UiTheme.key_short(code)
+		_orbit_btns[k].tooltip_text = tr("Maus rechts") if r == 1 else tr("Maus links")
 
 
 func _open_wizard() -> void:
 	var w := OffsetWizard.new()
 	w.finished.connect(func(_applied: bool):
-		_offset_slider.set_value_no_signal(Settings.offset_ms)
+		_sync_page(_cur)
 		_refresh_labels())
 	add_child(w)
 
@@ -1166,26 +1514,36 @@ func _start_capture(which: int) -> void:
 
 
 func _input(event: InputEvent) -> void:
-	if event is InputEventKey and event.pressed and not event.echo:
-		if _capturing >= CAP_ORBIT:
-			if event.keycode != KEY_ESCAPE:
-				if _capturing == CAP_ORBIT:
-					Settings.orbit_key_inner = event.keycode
-				else:
-					Settings.orbit_key_outer = event.keycode
-			_capturing = 0
-			_refresh_labels()
-			get_viewport().set_input_as_handled()
-		elif _capturing >= 3:
-			if event.keycode != KEY_ESCAPE:
-				Settings.key_lanes[_capturing - 3] = event.keycode
-			_capturing = 0
-			_refresh_labels()
-			get_viewport().set_input_as_handled()
-		elif event.keycode == KEY_ESCAPE:
+	if not (event is InputEventKey and event.pressed and not event.echo):
+		return
+	if _capturing >= CAP_ORBIT:
+		if event.keycode != KEY_ESCAPE:
+			if _capturing == CAP_ORBIT:
+				Settings.orbit_key_inner = event.keycode
+			else:
+				Settings.orbit_key_outer = event.keycode
+		_capturing = 0
+		_refresh_labels()
+		get_viewport().set_input_as_handled()
+	elif _capturing >= 3:
+		if event.keycode != KEY_ESCAPE:
+			Settings.key_lanes[_capturing - 3] = event.keycode
+		_capturing = 0
+		_refresh_labels()
+		_refresh_2d_preview()
+		get_viewport().set_input_as_handled()
+	elif event.keycode == KEY_F and event.ctrl_pressed:
+		_search.grab_focus()
+		_search.select_all()
+		get_viewport().set_input_as_handled()
+	elif event.keycode == KEY_ESCAPE:
+		if _search.has_focus() and _search.text != "":
+			_search.text = ""
+			_on_search("")
+		else:
 			Sfx.ui_back()
 			_close(false)
-			get_viewport().set_input_as_handled()
+		get_viewport().set_input_as_handled()
 
 
 func _close(with_sound: bool = true) -> void:
@@ -1197,3 +1555,110 @@ func _close(with_sound: bool = true) -> void:
 		_world_preview.release()
 	closed.emit()
 	queue_free()
+
+
+# ================================================================== Format
+
+## Hintergrund-Deckkraft: 0 -> "Aus", sonst "30 %".
+static func _fmt_bg(v: float) -> String:
+	return TranslationServer.translate("Aus") if v <= 0.001 else _fmt_pct0(v)
+
+
+## 0.85 -> "85 %".
+static func _fmt_pct0(v: float) -> String:
+	return UiTheme.fmt_num(v * 100.0, 0) + (" %" if UiTheme.is_german() else "%")
+
+
+# ================================================================== Harness
+
+## --shot-settings (SETTINGS_SHOT_DIR): jede Seite je Modus, oben und unten gescrollt,
+## de und en, 1280x720 und 1920x1080. Speichert nichts. --shot-orbit: nur Orbit-Seite.
+func _shot_pages() -> void:
+	var dir := OS.get_environment("SETTINGS_SHOT_DIR")
+	if dir == "":
+		dir = OS.get_user_data_dir()
+	DirAccess.make_dir_recursive_absolute(dir)
+	_shot_translations()
+	await get_tree().create_timer(1.2).timeout
+	if OS.get_cmdline_args().has("--shot-orbit"):
+		_set_mode(MODE_ORBIT)
+		await get_tree().create_timer(0.6).timeout
+		await _shot_save(dir, "settings_orbit.png")
+		get_tree().quit(0)
+		return
+	var sizes := [Vector2i(1280, 720), Vector2i(1920, 1080)]
+	for sz in sizes:
+		get_window().size = sz
+		await get_tree().create_timer(0.3).timeout
+		var real := Vector2i(get_viewport().get_visible_rect().size)
+		for lang in ["de", "en"]:
+			TranslationServer.set_locale(lang)
+			_rebuild()
+			await get_tree().create_timer(0.5).timeout
+			var tag := "%dx%d_%s" % [real.x, real.y, lang]
+			for m in 3:
+				_set_mode(m)
+				for id in _mode_pages():
+					await _shot_page(dir, tag, MODE_NAMES[m].replace(" ", "").to_lower(), id)
+			for id in _general_pages():
+				await _shot_page(dir, tag, "all", id)
+			# Suche mit Treffern.
+			_search.text = "hinter" if lang == "de" else "back"
+			_on_search(_search.text)
+			await get_tree().create_timer(0.3).timeout
+			await _shot_save(dir, "settings_%s_search.png" % tag)
+			_search.text = ""
+			_on_search("")
+	get_tree().quit(0)
+
+
+func _shot_page(dir: String, tag: String, mode: String, id: String) -> void:
+	_show_page(id)
+	await get_tree().create_timer(0.45 if id == "field3d" or id == "orbit" else 0.25).timeout
+	await _shot_save(dir, "settings_%s_%s_%s_top.png" % [tag, mode, id])
+	var sb := _scroll.get_v_scroll_bar()
+	if sb.max_value - sb.page > 4.0:
+		_scroll.scroll_vertical = int(sb.max_value)
+		await get_tree().create_timer(0.15).timeout
+		await _shot_save(dir, "settings_%s_%s_%s_bottom.png" % [tag, mode, id])
+
+
+func _shot_save(dir: String, file: String) -> void:
+	await RenderingServer.frame_post_draw
+	var path := dir.path_join(file)
+	get_viewport().get_texture().get_image().save_png(path)
+	print("SHOT ", path)
+
+
+## Harness: neue Texte aus translations/settings2.csv laden (die Registrierung im
+## Projekt fehlt evtl. noch), damit die en-Bilder echt sind.
+func _shot_translations() -> void:
+	var f := FileAccess.open("res://translations/settings2.csv", FileAccess.READ)
+	if f == null:
+		return
+	var t := Translation.new()
+	t.locale = "en"
+	f.get_csv_line()
+	while not f.eof_reached():
+		var l := f.get_csv_line()
+		if l.size() >= 3 and l[0] != "":
+			t.add_message(l[0], l[2])
+	TranslationServer.add_translation(t)
+
+
+## Alles neu aufbauen (Harness: Sprachwechsel ohne Szenenwechsel).
+func _rebuild() -> void:
+	if _world_preview != null:
+		_world_preview.release()
+	for c in get_children():
+		remove_child(c)
+		c.queue_free()
+	_pages.clear()
+	_entries.clear()
+	_nav_btns.clear()
+	_mode_btns.clear()
+	_lane_btns.clear()
+	_orbit_btns.clear()
+	_cover_rows.clear()
+	_cur = ""
+	_build()
