@@ -64,11 +64,35 @@ const STAR_HOP_MS := 1000.0
 const STAR_DENS_K := 0.32
 const STAR_PATH_K := 0.29
 
+# --- osu!standard (Mode 0), Details in docs/modes/orbit_sources.md ---
+## FLOW: osu-Wege werden Ring-Wege (Abstand -> Winkel, Drehsinn des Musters
+## -> Drehrichtung). POLAR: Winkel = Richtung der Position zur Mitte.
+enum StdStyle { FLOW, POLAR }
+## Umschaltbar fuer Messungen/Bericht; das Spiel nutzt den Standard.
+static var std_style: int = StdStyle.FLOW
+const STD_CENTER := Vector2(256.0, 192.0)
+## FLOW: Grad Ringweg pro osu-Pixel Weg.
+const STD_DEG_PER_PX := 0.45
+## Kleinere Wege (Stacks, Doppel) bleiben auf der Stelle.
+const STD_STACK_PX := 12.0
+## Wende: Bewegung kehrt um (Winkel zwischen zwei Wegen > ~130 Grad).
+const STD_REVERSE_DOT := -0.64
+## Drehsinn nur bei deutlicher Kurve uebernehmen (|sin| zwischen zwei Wegen).
+const STD_TURN_SIN := 0.35
+## POLAR: Positionen so nah an der Mitte haben keine verlaessliche Richtung.
+const STD_DEAD_PX := 48.0
+## Ring aus dem Abstand zur Mitte: innen unter SPLIT - HYST, aussen ueber
+## SPLIT + HYST, dazwischen bleibt der Ring.
+const STD_RING_SPLIT_PX := 150.0
+const STD_RING_HYST_PX := 25.0
+
 
 static func convert(beatmap: Beatmap) -> Array[OrbitNote]:
 	var out: Array[OrbitNote] = []
 	if beatmap == null:
 		return out
+	if beatmap.mode() == 0:
+		return convert_std(beatmap, std_style)
 	var objs := beatmap.hit_objects
 	var k := maxi(beatmap.column_count(), 1)
 	var src: Array[int] = []
@@ -235,6 +259,184 @@ static func _ring_free(ring_last: Array, arc_end_at: Array, r: int, t: float) ->
 	return t - float(ring_last[r]) >= SAME_RING_MIN_MS and t - float(arc_end_at[r]) >= RELEASE_GAP_MS
 
 
+## osu!standard -> Orbit. Gleiche Grenzen wie bei Mania: Zeit = Originalzeit,
+## MIN_GAP_MS, MAX_DEG_PER_MS/MAX_JUMP_DEG, Spruenge nur auf Schlaegen, ein
+## Finger pro Ring (SAME_RING_MIN_MS, RELEASE_GAP_MS), Boegen <= ARC_DEG_PER_MS
+## und ARC_MAX_DEG. Kreis -> Tap, Slider -> Bogen (Winkelweg aus dem Pfad),
+## Spinner -> Bogen in Flussrichtung.
+static func convert_std(beatmap: Beatmap, style: int = StdStyle.FLOW) -> Array[OrbitNote]:
+	var out: Array[OrbitNote] = []
+	if beatmap == null:
+		return out
+	var objs := beatmap.hit_objects
+	var src: Array[int] = []
+	for i in objs.size():
+		if not (objs[i] is ManiaNote):
+			src.append(i)
+	src.sort_custom(func(a: int, b: int) -> bool:
+		if objs[a].time != objs[b].time:
+			return objs[a].time < objs[b].time
+		return a < b)
+	var reds := red_points(beatmap)
+	var last_time := -INF
+	var last_angle := 0.0
+	var last_head := -INF
+	var dir := 1.0
+	var last_ring := -1
+	var rad_ring := -1
+	var arc: OrbitNote = null
+	var arc_end_at := [-INF, -INF]
+	var ring_last := [-INF, -INF]
+	var prev_pos := Vector2.INF
+	var prev_vec := Vector2.ZERO
+	for i in src:
+		var o: HitObject = objs[i]
+		var t := o.time
+		if arc != null and t > arc.end_ms + CHORD_EPS_MS:
+			arc_end_at[arc.ring] = arc.end_ms
+			last_time = arc.end_ms
+			last_angle = OrbitNote.wrap_deg(arc.end_angle_deg)
+			arc = null
+		if t - last_head < MIN_GAP_MS:
+			continue
+		var pos := STD_CENTER if o.kind == HitObject.Kind.SPINNER else o.position()
+		if arc != null:
+			# Ueberlappung (selten): Tap auf dem freien Ring an der Bogen-Spitze.
+			var fr := 1 - arc.ring
+			if _ring_free(ring_last, arc_end_at, fr, t):
+				out.append(OrbitNote.make(t, arc.angle_at(t), fr, i))
+				ring_last[fr] = t
+				last_head = t
+			continue
+		var gap := t - last_time
+		var dir_before := dir
+		var vec_before := prev_vec
+		var want := 0.0
+		var first := prev_pos == Vector2.INF
+		if first:
+			last_angle = _polar_deg(pos) if pos.distance_to(STD_CENTER) >= STD_DEAD_PX else 0.0
+		elif style == StdStyle.POLAR:
+			if pos.distance_to(STD_CENTER) >= STD_DEAD_PX:
+				want = OrbitNote.delta_deg(last_angle, _polar_deg(pos))
+		elif o.kind != HitObject.Kind.SPINNER:
+			var v := pos - prev_pos
+			if v.length() >= STD_STACK_PX:
+				dir = _flow_dir(prev_vec, v, dir)
+				want = dir * v.length() * STD_DEG_PER_PX
+				prev_vec = v
+			elif gap >= DRIFT_GAP_MS:
+				want = dir * COL_STEP_DEG
+		if not first:
+			var lim := minf(MAX_JUMP_DEG, MAX_DEG_PER_MS * gap)
+			var delta := clampf(want, -lim, lim)
+			if absf(delta) >= JUMP_DEG and beat_strength(reds, t) < STRONG_BEAT:
+				delta = signf(delta) * WEAK_JUMP_DEG
+			if style == StdStyle.POLAR and delta != 0.0:
+				dir = signf(delta)
+			want = delta
+		var angle := OrbitNote.wrap_deg(last_angle + want)
+
+		# Ring: Abstand zur Mitte (mit Hysterese), Streams wechseln ab.
+		var rd := pos.distance_to(STD_CENTER)
+		var rad_before := rad_ring
+		if rad_ring < 0:
+			rad_ring = 0 if rd < STD_RING_SPLIT_PX else 1
+		elif rd < STD_RING_SPLIT_PX - STD_RING_HYST_PX:
+			rad_ring = 0
+		elif rd > STD_RING_SPLIT_PX + STD_RING_HYST_PX:
+			rad_ring = 1
+		var ring := rad_ring
+		if gap < STREAM_GAP_MS and last_ring >= 0:
+			ring = 1 - last_ring
+		if not _ring_free(ring_last, arc_end_at, ring, t):
+			ring = 1 - ring
+			if not _ring_free(ring_last, arc_end_at, ring, t):
+				dir = dir_before
+				prev_vec = vec_before
+				rad_ring = rad_before
+				continue
+
+		var dur := o.end_time() - t
+		var on: OrbitNote
+		var end_pos := pos
+		if o.kind == HitObject.Kind.SLIDER and dur >= MIN_ARC_MS:
+			var sl := o as HitSlider
+			var pts := sl.path_points()
+			var fwd := sl.curve_end() if pts.size() >= 2 else pos
+			end_pos = fwd if sl.slides % 2 == 1 else pos
+			var span := 0.0
+			if style == StdStyle.POLAR:
+				span = _path_polar_span(pts) * float(sl.slides)
+			else:
+				var mv := fwd - pos
+				if mv.length() >= STD_STACK_PX:
+					dir = _flow_dir(prev_vec, mv, dir)
+					prev_vec = mv if sl.slides % 2 == 1 else -mv
+				span = dir * _path_len(pts) * float(sl.slides) * STD_DEG_PER_PX
+			var cap := minf(ARC_MAX_DEG, ARC_DEG_PER_MS * dur)
+			span = clampf(span, -cap, cap)
+			on = OrbitNote.make_arc(t, o.end_time(), angle, span, ring, i)
+		elif o.kind == HitObject.Kind.SPINNER and dur >= MIN_ARC_MS:
+			on = OrbitNote.make_arc(t, o.end_time(), angle,
+					dir * minf(ARC_MAX_DEG, ARC_DEG_PER_MS * dur), ring, i)
+			prev_vec = Vector2.ZERO
+		else:
+			on = OrbitNote.make(t, angle, ring, i)
+		out.append(on)
+		ring_last[ring] = t
+		if on.is_arc:
+			arc = on
+		last_time = t
+		last_angle = angle
+		last_head = t
+		last_ring = ring
+		prev_pos = end_pos
+	out.sort_custom(func(a: OrbitNote, b: OrbitNote) -> bool:
+		if a.time_ms != b.time_ms:
+			return a.time_ms < b.time_ms
+		return a.ring < b.ring)
+	return out
+
+
+## Orbit-Winkel einer osu-Position (0 = oben, im Uhrzeigersinn).
+static func _polar_deg(p: Vector2) -> float:
+	var d := p - STD_CENTER
+	return OrbitNote.wrap_deg(rad_to_deg(atan2(d.x, -d.y)))
+
+
+## Drehrichtung fuer den Weg v nach dem Weg prev: Umkehr (spitzer Winkel)
+## kehrt um, deutliche Kurve uebernimmt den Drehsinn des Musters (osu-y zeigt
+## nach unten, Kreuzprodukt > 0 = im Uhrzeigersinn), sonst bleibt sie.
+static func _flow_dir(prev: Vector2, v: Vector2, dir: float) -> float:
+	if prev.length() < 0.001 or v.length() < 0.001:
+		return dir
+	var a := prev.normalized()
+	var b := v.normalized()
+	if a.dot(b) <= STD_REVERSE_DOT:
+		return -dir
+	var cr := a.cross(b)
+	if absf(cr) >= STD_TURN_SIN:
+		return signf(cr)
+	return dir
+
+
+static func _path_len(pts: PackedVector2Array) -> float:
+	var s := 0.0
+	for k in range(1, pts.size()):
+		s += pts[k].distance_to(pts[k - 1])
+	return s
+
+
+## Vorzeichenbehafteter Winkelweg eines Slider-Pfads um die Mitte (ein Durchlauf).
+static func _path_polar_span(pts: PackedVector2Array) -> float:
+	var s := 0.0
+	for k in range(1, pts.size()):
+		if pts[k].distance_to(STD_CENTER) < STD_DEAD_PX or pts[k - 1].distance_to(STD_CENTER) < STD_DEAD_PX:
+			continue
+		s += OrbitNote.delta_deg(_polar_deg(pts[k - 1]), _polar_deg(pts[k]))
+	return s
+
+
 ## Bogen-Dauer einer Mania-Note (0 = wird Tap).
 static func _arc_len(n: ManiaNote) -> float:
 	if not n.is_hold:
@@ -317,6 +519,8 @@ static func violations(ns: Array[OrbitNote], beatmap: Beatmap) -> Dictionary:
 		if n.source_index >= 0 and n.source_index < beatmap.hit_objects.size():
 			if absf(float(beatmap.hit_objects[n.source_index].time) - n.time_ms) > CHORD_EPS_MS + 0.001:
 				v.timing += 1
+			elif n.is_arc and absf(float(beatmap.hit_objects[n.source_index].end_time()) - n.end_ms) > CHORD_EPS_MS + 0.001:
+				v.timing += 1
 	var pts := cursor_points(ns)
 	for i in range(1, pts.size()):
 		var dt: float = pts[i][0] - pts[i - 1][0]
@@ -350,9 +554,18 @@ static func violations(ns: Array[OrbitNote], beatmap: Beatmap) -> Dictionary:
 static func analyze(ns: Array[OrbitNote], beatmap: Beatmap = null) -> Dictionary:
 	var reds := red_points(beatmap)
 	var a := {"arcs": 0, "chords": 0, "nps": 0.0, "jumps": 0, "weak_jumps": 0,
-		"reversal": 0.0, "mean_speed": 0.0, "p95_speed": 0.0}
+		"reversal": 0.0, "mean_speed": 0.0, "p95_speed": 0.0, "on_beat": 0.0, "on_half": 0.0}
 	if ns.is_empty():
 		return a
+	# Takt-Passung: Anteil der Ziele auf Schlaegen (>= 0,6) bzw. Halbschlaegen.
+	var on_b := 0
+	var on_h := 0
+	for n in ns:
+		var bs := beat_strength(reds, n.time_ms)
+		on_b += 1 if bs >= 0.6 else 0
+		on_h += 1 if bs >= 0.35 else 0
+	a.on_beat = float(on_b) / float(ns.size())
+	a.on_half = float(on_h) / float(ns.size())
 	for i in ns.size():
 		if ns[i].is_arc:
 			a.arcs += 1

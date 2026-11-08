@@ -29,6 +29,10 @@ func _initialize() -> void:
 	_test_bot_synthetic()
 	_test_library_maps()
 	_test_reachability_all()
+	_test_std_basic()
+	_test_std_streams()
+	_test_std_fair_mixed()
+	_test_sources_compare()
 	print("=== Ergebnis: %d bestanden, %d fehlgeschlagen ===" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
 
@@ -667,3 +671,300 @@ func _test_reachability_all() -> void:
 	_ok(int(tot.flick) == 0, "Flicks <= 150 Grad/250 ms, <= 90 Grad unter 150 ms")
 	_ok(int(tot.ring) == 0, "Ein Finger pro Ring (>= 90 ms, nach Bogen >= 150 ms)")
 	_ok(int(tot.chord) == 0, "Akkorde nur am selben Winkel")
+
+
+# --- osu!standard (Mode 0) ---
+
+func _std_bm(bpm: float = 180.0, offset: float = 1000.0) -> Beatmap:
+	var bm := Beatmap.new()
+	bm.general = {"Mode": "0"}
+	bm.difficulty = {"CircleSize": "4", "OverallDifficulty": "8", "HPDrainRate": "5", "ApproachRate": "9"}
+	var tp := TimingPoint.new()
+	tp.time = offset
+	tp.beat_length = 60000.0 / bpm
+	tp.meter = 4
+	tp.uninherited = true
+	bm.timing_points.append(tp)
+	return bm
+
+
+func _circle(bm: Beatmap, t: float, x: float, y: float) -> void:
+	var c := HitCircle.new()
+	c.time = t
+	c.x = x
+	c.y = y
+	bm.hit_objects.append(c)
+
+
+## Gerader Slider von (x, y) nach (x2, y2), dur ms je Durchlauf.
+func _slider(bm: Beatmap, t: float, x: float, y: float, x2: float, y2: float,
+		dur: float, slides: int = 1) -> void:
+	var s := HitSlider.new()
+	s.time = t
+	s.x = x
+	s.y = y
+	s.curve_type = "L"
+	s.curve_points = PackedVector2Array([Vector2(x, y), Vector2(x2, y2)])
+	s.length = Vector2(x, y).distance_to(Vector2(x2, y2))
+	s.slides = slides
+	s.single_duration_ms = dur
+	bm.hit_objects.append(s)
+
+
+func _spinner(bm: Beatmap, t: float, end: float) -> void:
+	var s := Spinner.new()
+	s.time = t
+	s.x = 256.0
+	s.y = 192.0
+	s.spin_end_time = end
+	bm.hit_objects.append(s)
+
+
+## Deterministisch "zufaellige" osu!standard-Map (LCG): Spruenge, Streams,
+## Stacks, Slider (auch Repeats), Spinner, Abstaende von 1/8 bis 2 Takte.
+func _std_mixed_map() -> Beatmap:
+	var bm := _std_bm(180.0, 500.0)
+	var s := 4242
+	var t := 500.0
+	var p := Vector2(256, 192)
+	var beat := 60000.0 / 180.0
+	var gaps := [beat / 4.0, beat / 4.0, beat / 4.0, beat / 2.0, beat / 2.0, beat, beat * 2.0, beat / 8.0, beat * 1.5]
+	for i in 1200:
+		s = (s * 1103515245 + 12345) % 2147483648
+		var kind := (s >> 8) % 20
+		s = (s * 1103515245 + 12345) % 2147483648
+		var step := float((s >> 8) % 260)
+		s = (s * 1103515245 + 12345) % 2147483648
+		var ang := float((s >> 8) % 360)
+		var q := p + Vector2(step, 0).rotated(deg_to_rad(ang))
+		q = Vector2(clampf(q.x, 0, 512), clampf(q.y, 0, 384))
+		if kind < 3:
+			q = p  # Stack
+		if kind == 19:
+			_spinner(bm, t, t + beat * 6.0)
+			t += beat * 8.0
+			continue
+		if kind >= 15:
+			var e := q + Vector2(120, 0).rotated(deg_to_rad(ang + 70.0))
+			e = Vector2(clampf(e.x, 0, 512), clampf(e.y, 0, 384))
+			var slides := 1 + (kind % 3)
+			_slider(bm, t, q.x, q.y, e.x, e.y, beat * (0.5 if kind % 2 == 0 else 1.0), slides)
+			t += float(bm.hit_objects[-1].end_time() - t) + beat / 2.0
+			p = e if slides % 2 == 1 else q
+			continue
+		_circle(bm, t, q.x, q.y)
+		p = q
+		s = (s * 1103515245 + 12345) % 2147483648
+		t += float(gaps[(s >> 8) % gaps.size()])
+	return bm
+
+
+## Pruefung "fair": alle Zaehler von violations() = 0, Bogen-Enden exakt.
+func _std_fair(ns: Array[OrbitNote], bm: Beatmap, label: String) -> void:
+	var v := OrbitConverter.violations(ns, bm)
+	var bad := int(v.timing) + int(v.speed) + int(v.flick) + int(v.ring) + int(v.chord)
+	_ok(bad == 0, label + ": keine Verstoesse %s" % str(v))
+	var exact := true
+	for n in ns:
+		var o: HitObject = bm.hit_objects[n.source_index]
+		exact = exact and n.time_ms == o.time
+		if n.is_arc:
+			exact = exact and n.end_ms == o.end_time()
+	_ok(exact, label + ": Zeiten und Bogen-Enden = Original exakt")
+
+
+func _test_std_basic() -> void:
+	print("- osu!standard: Grundformen")
+	var bm := _std_bm(120.0, 1000.0)
+	_circle(bm, 1000.0, 256.0, 40.0)       # oben
+	_circle(bm, 1500.0, 470.0, 192.0)      # rechts
+	_slider(bm, 2000.0, 470.0, 192.0, 470.0, 340.0, 500.0)
+	_spinner(bm, 3500.0, 5500.0)
+	_circle(bm, 6000.0, 100.0, 192.0)
+	for style in [OrbitConverter.StdStyle.FLOW, OrbitConverter.StdStyle.POLAR]:
+		var ns := OrbitConverter.convert_std(bm, style)
+		var name := "FLOW" if style == OrbitConverter.StdStyle.FLOW else "POLAR"
+		_ok(ns.size() == 5, name + ": jedes Objekt ein Ziel (%d)" % ns.size())
+		if ns.size() != 5:
+			continue
+		_ok(not ns[0].is_arc and ns[2].is_arc and ns[3].is_arc and not ns[4].is_arc,
+				name + ": Kreis = Tap, Slider/Spinner = Bogen")
+		_ok(absf(ns[0].angle_deg) < EPS, name + ": erstes Ziel = Richtung der Position (oben = 0)")
+		_ok(absf(ns[3].span_deg()) >= 200.0, name + ": Spinner = langer Bogen (%.0f Grad)" % ns[3].span_deg())
+		_std_fair(ns, bm, name)
+	var polar := OrbitConverter.convert_std(bm, OrbitConverter.StdStyle.POLAR)
+	_ok(absf(polar[1].angle_deg - 90.0) < EPS, "POLAR: rechts = 90 Grad")
+	_ok(polar[2].span_deg() > 20.0, "POLAR: Slider nach unten rechts dreht im Uhrzeigersinn (%.0f)" % polar[2].span_deg())
+	# convert() waehlt nach Mode.
+	_ok(_sig(OrbitConverter.convert(bm)) == _sig(OrbitConverter.convert_std(bm, OrbitConverter.std_style)),
+			"convert() nimmt fuer Mode 0 den Standard-Weg")
+	_ok(OrbitConverter.convert(_bm()).is_empty(), "leere Mania-Map bleibt leer")
+
+
+func _test_std_streams() -> void:
+	print("- osu!standard: Streams, Stacks, Flow")
+	# 1/4-Stream bei 180 BPM (83 ms): alle bleiben, Ringe wechseln ab.
+	var bm := _std_bm(180.0, 1000.0)
+	for i in 32:
+		_circle(bm, 1000.0 + i * 250.0 / 3.0, 100.0 + i * 10.0, 192.0 + (i % 2) * 8.0)
+	var ns := OrbitConverter.convert_std(bm)
+	_ok(ns.size() == 32, "Stream 83 ms bleibt vollstaendig (%d)" % ns.size())
+	var alt := true
+	for i in range(1, ns.size()):
+		alt = alt and ns[i].ring != ns[i - 1].ring
+	_ok(alt, "Stream wechselt die Ringe (Tasten abwechseln)")
+	_std_fair(ns, bm, "Stream")
+	# 1/6 bei 200 BPM (50 ms): Dichte-Reduktion wie Mania.
+	var bm2 := _std_bm(200.0, 1000.0)
+	for i in 40:
+		_circle(bm2, 1000.0 + i * 50.0, 200.0 + i * 4.0, 192.0)
+	var ns2 := OrbitConverter.convert_std(bm2)
+	var min_gap := INF
+	for i in range(1, ns2.size()):
+		min_gap = minf(min_gap, ns2[i].time_ms - ns2[i - 1].time_ms)
+	_ok(min_gap >= OrbitConverter.MIN_GAP_MS - EPS, "Burst 50 ms -> Abstand >= 75 ms (%.0f)" % min_gap)
+	_std_fair(ns2, bm2, "Burst")
+	# Stack: gleiche Position = gleicher Winkel.
+	var bm3 := _std_bm(180.0, 1000.0)
+	_circle(bm3, 1000.0, 300.0, 100.0)
+	_circle(bm3, 1000.0 + 250.0 / 3.0, 300.0, 100.0)
+	_circle(bm3, 1000.0 + 500.0 / 3.0, 300.0, 100.0)
+	var ns3 := OrbitConverter.convert_std(bm3)
+	_ok(ns3.size() == 3 and absf(ns3[0].angle_deg - ns3[2].angle_deg) < EPS, "Stack bleibt am selben Winkel")
+	# Hin-und-her-Spruenge = Pendel, Kreismuster = Drehung.
+	var bm4 := _std_bm(150.0, 1000.0)
+	for i in 16:
+		_circle(bm4, 1000.0 + i * 400.0, 100.0 if i % 2 == 0 else 400.0, 192.0)
+	var a4 := OrbitConverter.analyze(OrbitConverter.convert_std(bm4), bm4)
+	_ok(float(a4.reversal) > 0.9, "Hin-und-her = Pendel (Wenden %.0f%%)" % (float(a4.reversal) * 100.0))
+	var bm5 := _std_bm(150.0, 1000.0)
+	for i in 24:
+		var p := Vector2(256, 192) + Vector2(0, -140).rotated(deg_to_rad(i * 45.0))
+		_circle(bm5, 1000.0 + i * 200.0, p.x, p.y)
+	var ns5 := OrbitConverter.convert_std(bm5)
+	var a5 := OrbitConverter.analyze(ns5, bm5)
+	var turn := 0.0
+	for i in range(1, ns5.size()):
+		turn += OrbitNote.delta_deg(ns5[i - 1].angle_deg, ns5[i].angle_deg)
+	_ok(float(a5.reversal) < 0.05 and turn > 300.0, "Kreismuster im Uhrzeigersinn = Drehung (%.0f Grad)" % turn)
+
+
+func _test_std_fair_mixed() -> void:
+	print("- osu!standard: Fairness (gemischte Map)")
+	var bm := _std_mixed_map()
+	for style in [OrbitConverter.StdStyle.FLOW, OrbitConverter.StdStyle.POLAR]:
+		var name := "FLOW" if style == OrbitConverter.StdStyle.FLOW else "POLAR"
+		var ns := OrbitConverter.convert_std(bm, style)
+		_ok(ns.size() > 600 and _sig(ns) == _sig(OrbitConverter.convert_std(bm, style)),
+				name + ": deterministisch (%d Ziele)" % ns.size())
+		_ok(_max_speed(ns) <= OrbitConverter.MAX_DEG_PER_MS + EPS, name + ": Tempo <= 0,6 Grad/ms")
+		_std_fair(ns, bm, name)
+		var a := OrbitConverter.analyze(ns, bm)
+		_ok(int(a.weak_jumps) == 0, name + ": grosse Spruenge nur auf starken Beats")
+		var pf := _bot_run(ns, 8.0, 5.0, OrbitCore.bot_plan(ns, 3, 0.0, 0.0))
+		_ok(pf.n_miss == 0 and pf.accuracy() >= 1.0 - EPS, name + ": perfekter Bot = SS")
+
+
+# --- Quellen-Vergleich (osu!standard vs. Mania, docs/modes/orbit_sources.md) ---
+
+const SOURCES_DIR := "user://orbit_sources"
+## Mania-Gegenstuecke (gleiche Songs) aus der Bibliothek.
+const SOURCES_MANIA := ["Lime - Aurora", "Zekk - Fluctuation", "goreshit - burn this moment"]
+
+
+## Laeuft nur, wenn user://orbit_sources/ .osz enthaelt (Testordner, nicht
+## die Bibliothek). Prueft Fairness + Bot und schreibt Kennzahlen und
+## Zielzeiten nach user://orbit_sources/out/ (Bericht, Audio-Analyse).
+func _test_sources_compare() -> void:
+	var da := DirAccess.open(SOURCES_DIR)
+	if da == null:
+		return
+	print("- Quellen-Vergleich (osu!standard vs. Mania)")
+	DirAccess.make_dir_recursive_absolute(SOURCES_DIR + "/out")
+	var rows: Array = []
+	var files := Array(da.get_files())
+	files.sort()
+	for f in files:
+		if not str(f).to_lower().ends_with(".osz"):
+			continue
+		var imp := OszImporter.import(SOURCES_DIR.path_join(f))
+		for d in imp.difficulties:
+			var bm: Beatmap = d.beatmap
+			if bm.mode() != 0:
+				continue
+			for style in [OrbitConverter.StdStyle.FLOW, OrbitConverter.StdStyle.POLAR]:
+				var tag := "std-flow" if style == OrbitConverter.StdStyle.FLOW else "std-polar"
+				rows.append(_source_row(tag, SOURCES_DIR.path_join(f), bm, OrbitConverter.convert_std(bm, style)))
+	var mdir := MapLibrary.default_maps_dir()
+	var mda := DirAccess.open(mdir)
+	if mda != null:
+		for f in mda.get_files():
+			var hit := false
+			for want in SOURCES_MANIA:
+				hit = hit or str(f).find(want) >= 0
+			if not hit or not str(f).to_lower().ends_with(".osz"):
+				continue
+			var imp := OszImporter.import(mdir.path_join(f))
+			for d in imp.difficulties:
+				var bm: Beatmap = d.beatmap
+				if bm.is_mania() and bm.column_count() == 4:
+					rows.append(_source_row("mania", mdir.path_join(f), bm, OrbitConverter.convert(bm)))
+	var fa := FileAccess.open(SOURCES_DIR + "/out/rows.json", FileAccess.WRITE)
+	fa.store_string(JSON.stringify(rows, " "))
+	fa.close()
+	print("  %d Zeilen -> %s" % [rows.size(), ProjectSettings.globalize_path(SOURCES_DIR + "/out/rows.json")])
+
+
+func _source_row(tag: String, path: String, bm: Beatmap, ns: Array[OrbitNote]) -> Dictionary:
+	var file := path.get_file()
+	var a := OrbitConverter.analyze(ns, bm)
+	var v := OrbitConverter.violations(ns, bm)
+	var bad := int(v.timing) + int(v.speed) + int(v.flick) + int(v.ring) + int(v.chord)
+	var label := "%s %s [%s]" % [tag, file.left(30), bm.version_name()]
+	_ok(bad == 0, label + ": fair %s" % str(v))
+	var pf := _bot_run(ns, bm.od(), bm.hp(), OrbitCore.bot_plan(ns, 11, 0.0, 0.0))
+	_ok(pf.n_miss == 0, label + ": perfekter Bot ohne Miss")
+	var b1 := _bot_run(ns, bm.od(), bm.hp(), OrbitCore.bot_plan(ns, 11, 14.0, 6.0))
+	var b2 := _bot_run(ns, bm.od(), bm.hp(), OrbitCore.bot_plan(ns, 11, 28.0, 11.0))
+	var reds := OrbitConverter.red_points(bm)
+	var times: Array = []
+	var arcs_ms := 0.0
+	var big_turns := 0
+	for n in ns:
+		times.append(n.time_ms)
+		if n.is_arc:
+			arcs_ms += n.duration_ms()
+	var span := maxf(1.0, (ns[-1].end_ms - ns[0].time_ms)) if not ns.is_empty() else 1.0
+	# Gleichmaessigkeit der Wende-Abstaende (in Schlaegen): Anteil Wenden auf
+	# Taktanfang/Halbtakt.
+	var pts := OrbitConverter.cursor_points(ns)
+	var last_sign := 0.0
+	var flips_strong := 0
+	var flips := 0
+	for i in range(1, pts.size()):
+		var d := OrbitNote.delta_deg(pts[i - 1][1], pts[i][1])
+		if absf(d) < 3.0 or pts[i][2] or pts[i - 1][2]:
+			continue
+		if absf(d) >= 90.0:
+			big_turns += 1
+		if last_sign != 0.0 and signf(d) != last_sign:
+			flips += 1
+			if OrbitConverter.beat_strength(reds, float(pts[i - 1][0])) >= 0.6:
+				flips_strong += 1
+		last_sign = signf(d)
+	var row := {"tag": tag, "file": file, "version": bm.version_name(), "objects": bm.hit_objects.size(),
+		"targets": ns.size(), "kept": float(ns.size()) / float(maxi(bm.hit_objects.size(), 1)),
+		"nps": a.nps, "arcs": a.arcs, "arc_share": arcs_ms / span, "chords": a.chords,
+		"jumps": a.jumps, "big_turns": big_turns, "reversal": a.reversal,
+		"flip_on_beat": float(flips_strong) / float(maxi(flips, 1)),
+		"mean_speed": a.mean_speed, "p95_speed": a.p95_speed, "on_beat": a.on_beat, "on_half": a.on_half,
+		"stars": OrbitConverter.stars(ns), "violations": bad,
+		"bot_good_acc": b1.accuracy(), "bot_good_miss": b1.n_miss, "bot_good_fail": b1.failed,
+		"bot_wobbly_acc": b2.accuracy(), "bot_wobbly_miss": b2.n_miss, "bot_wobbly_fail": b2.failed,
+		"audio": bm.audio_filename(), "osz": ProjectSettings.globalize_path(path),
+		"times": times}
+	print("  %s: %d->%d Ziele, %.1f/s, Boegen %d, Wenden %.0f%% (auf Schlag %.0f%%), Tempo %.3f/%.3f, Schlag %.0f%%, Sterne %.2f, Bot %.1f%%/%.1f%%" % [
+		label, bm.hit_objects.size(), ns.size(), float(a.nps), int(a.arcs), float(a.reversal) * 100.0,
+		float(row.flip_on_beat) * 100.0, float(a.mean_speed), float(a.p95_speed), float(a.on_beat) * 100.0,
+		float(row.stars), b1.accuracy() * 100.0, b2.accuracy() * 100.0])
+	return row
