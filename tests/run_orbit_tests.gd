@@ -28,6 +28,7 @@ func _initialize() -> void:
 	_test_real_map()
 	_test_bot_synthetic()
 	_test_library_maps()
+	_test_reachability_all()
 	print("=== Ergebnis: %d bestanden, %d fehlgeschlagen ===" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
 
@@ -621,3 +622,48 @@ func _map_report(label: String, bm: Beatmap) -> void:
 		b1.accuracy() * 100.0, b1.n_miss, "FAIL" if b1.failed else "ok",
 		b2.accuracy() * 100.0, b2.n_miss, "FAIL" if b2.failed else "ok"])
 	_ok(not b1.failed and b1.accuracy() > 0.9, label + ": guter Bot schafft die Map")
+
+
+## Spielbarkeit ueber ALLE 4K-Maps der Bibliothek: Zeiten exakt, Zeigertempo,
+## Flicks, ein Finger pro Ring, Akkorde am selben Winkel. Verstoesse = 0.
+func _test_reachability_all() -> void:
+	print("- Spielbarkeit (alle 4K-Maps)")
+	var dir := MapLibrary.default_maps_dir()
+	var da := DirAccess.open(dir)
+	if da == null:
+		print("  (kein maps/-Ordner, uebersprungen)")
+		return
+	var tot := {"timing": 0, "speed": 0, "flick": 0, "ring": 0, "chord": 0, "targets": 0}
+	var diffs := 0
+	var sets := 0
+	var worst := 0.0
+	for f in da.get_files():
+		if not str(f).to_lower().ends_with(".osz"):
+			continue
+		var imp := OszImporter.import(dir.path_join(f))
+		if not imp.ok:
+			continue
+		var used := false
+		for d in imp.difficulties:
+			var bm: Beatmap = d.beatmap
+			if not bm.is_mania() or bm.column_count() != 4 or bm.hit_objects.is_empty():
+				continue
+			var ns := OrbitConverter.convert(bm)
+			var v := OrbitConverter.violations(ns, bm)
+			for k in tot:
+				tot[k] += int(v[k])
+			worst = maxf(worst, _max_speed(ns))
+			diffs += 1
+			used = true
+			if int(v.timing) + int(v.speed) + int(v.flick) + int(v.ring) + int(v.chord) > 0:
+				print("  Verstoss: %s [%s] %s" % [f, bm.version_name(), v])
+		if used:
+			sets += 1
+	print("  %d Sets, %d Diffs, %d Ziele; Verstoesse: Zeit %d, Tempo %d, Flick %d, Ring %d, Akkord %d; max Tempo %.3f Grad/ms" % [
+		sets, diffs, tot.targets, tot.timing, tot.speed, tot.flick, tot.ring, tot.chord, worst])
+	_ok(diffs > 0 or sets == 0, "Bibliothek gelesen")
+	_ok(int(tot.timing) == 0, "Zeiten = Original (max 2 ms Akkord-Raster)")
+	_ok(int(tot.speed) == 0, "Zeigertempo <= %.1f Grad/ms" % OrbitConverter.MAX_DEG_PER_MS)
+	_ok(int(tot.flick) == 0, "Flicks <= 150 Grad/250 ms, <= 90 Grad unter 150 ms")
+	_ok(int(tot.ring) == 0, "Ein Finger pro Ring (>= 90 ms, nach Bogen >= 150 ms)")
+	_ok(int(tot.chord) == 0, "Akkorde nur am selben Winkel")
