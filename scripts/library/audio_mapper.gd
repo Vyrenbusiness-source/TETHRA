@@ -360,8 +360,8 @@ static func pick_notes(an: Dictionary, difficulty: String) -> Array:
 			bar_phase = i
 	var items: Array = []
 	for s in cand:
-		var on_beat := s % 4 == 0
-		var mult := 1.0
+		var on_beat: bool = s % 4 == 0
+		var mult: float = 1.0
 		if on_beat:
 			mult = 1.5
 			if posmod(s / 4 - bar_phase, 4) == 0:
