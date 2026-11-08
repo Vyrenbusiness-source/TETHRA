@@ -315,7 +315,7 @@ static func replay_result(code: int, text: String) -> Dictionary:
 	if code < 200 or code >= 300:
 		return {"status": "error", "data": {}}
 	var content := text
-	var d: Variant = JSON.parse_string(text)
+	var d: Variant = JSON.parse_string(text) if text.strip_edges().begins_with("{") else null
 	if d is Dictionary:
 		content = str(d.get("replay_content", d.get("replay", "")))
 	var data := decode_replay(content)
