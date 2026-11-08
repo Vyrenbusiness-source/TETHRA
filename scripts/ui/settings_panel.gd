@@ -294,7 +294,7 @@ func _build_sidebar(parent: Control) -> void:
 		b.clip_text = true
 		b.add_theme_font_size_override("font_size", 13)
 		b.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
-		b.tooltip_text = ["Mania mit 3D-Welt", "Klassische senkrechte Spuren", "Zwei Ringe statt Spuren"][m]
+		b.tooltip_text = ["Mania mit 3D-Welt", "Klassische senkrechte Spuren", "Zwei Spuren auf wechselnden Bahnen"][m]
 		b.pressed.connect(_set_mode.bind(m))
 		UiTheme._attach_sounds(b)
 		seg.add_child(b)
@@ -645,7 +645,7 @@ func _page_orbit(pg: VBoxContainer) -> void:
 	_switch(g, "Takt-Raster",
 		func(s): return s.orbit_guides,
 		func(on): Settings.orbit_guides = on,
-		"Feine Striche für Viertel und Achtel am Kreis")
+		"Feine Striche für Viertel und Achtel an der Bahn")
 	var obg := OptionButton.new()
 	obg.add_item("Welt", Settings.ORBIT_BG_WORLD)
 	obg.add_item("Map-Bild", Settings.ORBIT_BG_MAP)
@@ -794,7 +794,7 @@ func _page_keys(pg: VBoxContainer) -> void:
 	_hint_label(g, "Anklicken, dann Taste drücken (Esc bricht ab)")
 	g = _group(pg, "Orbit")
 	_orbit_key_row(g)
-	_hint_label(g, "Maus links = innen und Maus rechts = außen gelten immer zusätzlich.")
+	_hint_label(g, "Maus links = Spur A und Maus rechts = Spur B gelten immer zusätzlich.")
 	# Feste Kuerzel zum Nachschlagen (nicht belegbar).
 	g = _group(pg, "Tastenkürzel", false)
 	for k in [["Scroll Speed ändern", "F3 / F4"], ["Vollbild umschalten", "F11"],
@@ -831,7 +831,7 @@ func _orbit_key_row(g: VBoxContainer) -> void:
 		var b := _key_button(CAP_ORBIT + ring)
 		box.add_child(b)
 		_orbit_btns.append(b)
-	var r := _row(g, "Orbit-Tasten: innen | außen", box, "Links: innerer Ring, rechts: äußerer Ring. Anklicken, dann Taste drücken (Esc bricht ab)")
+	var r := _row(g, "Orbit-Tasten: Spur A | B", box, "Links: Spur A (links vom Punkt), rechts: Spur B. Anklicken, dann Taste drücken (Esc bricht ab)")
 	r.set_meta("reset", func():
 		Settings.orbit_key_inner = _defaults.orbit_key_inner
 		Settings.orbit_key_outer = _defaults.orbit_key_outer

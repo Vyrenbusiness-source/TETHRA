@@ -112,3 +112,29 @@ Der Takt,Der Takt,The bar
 Zwei Ringe,Zwei Ringe,Two rings
 Akzent,Akzent,Accent
 Halte,Halte,Hold
+Orbit-Tasten: Spur A | B,Orbit-Tasten: Spur A | B,Orbit keys: lane A | B
+"Links: Spur A (links vom Punkt), rechts: Spur B. Anklicken, dann Taste drücken (Esc bricht ab)","Links: Spur A (links vom Punkt), rechts: Spur B. Anklicken, dann Taste drücken (Esc bricht ab)","Left: lane A (left of the dot), right: lane B. Click, then press a key (Esc cancels)"
+Maus links = Spur A und Maus rechts = Spur B gelten immer zusätzlich.,Maus links = Spur A und Maus rechts = Spur B gelten immer zusätzlich.,Left mouse = lane A and right mouse = lane B always work as well.
+Feine Striche für Viertel und Achtel an der Bahn,Feine Striche für Viertel und Achtel an der Bahn,Fine ticks for quarters and eighths on the path
+Spur A (links): Taste %s,Spur A (links): Taste %s,Lane A (left): key %s
+Spur B (rechts): Taste %s,Spur B (rechts): Taste %s,Lane B (right): key %s
+"Folg dem weißen Punkt, drück im Takt (auch Maus links/rechts)","Folg dem weißen Punkt, drück im Takt (auch Maus links/rechts)","Follow the white dot, press in time (left/right mouse work too)"
+neben dem Kopf,neben dem Kopf,off the dot
+"Takt-Karte  ·  innen = früh, außen = spät  ·  Ringe: Spur A / Spur B","Takt-Karte  ·  innen = früh, außen = spät  ·  Ringe: Spur A / Spur B","Bar map  ·  inside = early, outside = late  ·  rings: lane A / lane B"
+"Die Linie ist ein Takt. Der weiße Punkt läuft sie im Songtempo ab, links beginnt Eins. Drück eine Taste, wenn er links startet.","Die Linie ist ein Takt. Der weiße Punkt läuft sie im Songtempo ab, links beginnt Eins. Drück eine Taste, wenn er links startet.","The line is one bar. The white dot runs along it at the song tempo, beat one starts on the left. Press a key when it starts on the left."
+"Zielen ist Pflicht. Leg Maus oder Stift auf den weißen Punkt und führ ihn mit, ohne abzusetzen. Die Form der Linie wechselt.","Zielen ist Pflicht. Leg Maus oder Stift auf den weißen Punkt und führ ihn mit, ohne abzusetzen. Die Form der Linie wechselt.",Aiming is required. Put the mouse or pen on the white dot and move along with it without lifting. The shape of the line changes.
+"Taste A (%s) spielt die Spur links vom Punkt, Taste B (%s) die rechts. Maus links und rechts gehen auch. Drück, wenn der Punkt die Note erreicht.","Taste A (%s) spielt die Spur links vom Punkt, Taste B (%s) die rechts. Maus links und rechts gehen auch. Drück, wenn der Punkt die Note erreicht.","Key A (%s) plays the lane left of the dot, key B (%s) the lane on the right. Left and right mouse work too. Press when the dot reaches the note."
+"Ein Band ist eine Halte. Halt die Taste und führ den Cursor mit dem Punkt, bis das Band endet.","Ein Band ist eine Halte. Halt die Taste und führ den Cursor mit dem Punkt, bis das Band endet.",A band is a hold. Hold the key and move the cursor with the dot until the band ends.
+"Dunkle Noten gehören zum nächsten Takt, eine dünne Linie zeigt die nächste Form. Lies voraus, bevor der Punkt ankommt.","Dunkle Noten gehören zum nächsten Takt, eine dünne Linie zeigt die nächste Form. Lies voraus, bevor der Punkt ankommt.","Dark notes belong to the next bar, a thin line shows the next shape. Read ahead before the dot arrives."
+Neben dem Punkt: bleib auf ihm.,Neben dem Punkt: bleib auf ihm.,Off the dot: stay on it.
+RECHTS,RECHTS,RIGHT
+LINKS,LINKS,LEFT
+Halte verloren: bleib mit dem Cursor auf dem Punkt und halt die Taste bis zum Ende.,Halte verloren: bleib mit dem Cursor auf dem Punkt und halt die Taste bis zum Ende.,Hold lost: keep the cursor on the dot and hold the key to the end.
+"Zu spät: drück, wenn der Punkt die Note erreicht.","Zu spät: drück, wenn der Punkt die Note erreicht.",Too late: press when the dot reaches the note.
+Andere Spur: die Note liegt auf der anderen Taste.,Andere Spur: die Note liegt auf der anderen Taste.,Other lane: the note belongs to the other key.
+"Zu früh: warte, bis der Punkt die Note erreicht.","Zu früh: warte, bis der Punkt die Note erreicht.",Too early: wait until the dot reaches the note.
+Neben dem Punkt: leg den Cursor auf den Punkt.,Neben dem Punkt: leg den Cursor auf den Punkt.,Off the dot: put the cursor on the dot.
+"Zu früh: warte, bis der Punkt links startet.","Zu früh: warte, bis der Punkt links startet.",Too early: wait until the dot starts on the left.
+Zu spät: der Punkt war schon an der Eins vorbei.,Zu spät: der Punkt war schon an der Eins vorbei.,Too late: the dot has already passed beat one.
+Zwei Spuren,Zwei Spuren,Two lanes
+Zwei Spuren auf wechselnden Bahnen,Zwei Spuren auf wechselnden Bahnen,Two lanes on changing paths
