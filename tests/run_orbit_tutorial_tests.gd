@@ -105,9 +105,11 @@ func _test_patterns(S: GDScript) -> void:
 	var outer: Array = S.pattern(2, 10, 0)
 	_check(inner.all(func(n): return n.ring == 0), "Innerer Ring: nur Ring 0")
 	_check(outer.all(func(n): return n.ring == 1), "Aeusserer Ring: nur Ring 1")
-	var chord: Array = S.pattern(3, 10, 0)
-	_check(chord[0].time_ms == chord[1].time_ms and chord[0].angle_deg == chord[1].angle_deg
-		and chord[0].ring != chord[1].ring, "Akkord: gleiche Zeit, gleicher Winkel, beide Ringe")
+	var sw: Array = S.pattern(3, 10, 0)
+	var alt := true
+	for i in range(1, sw.size()):
+		alt = alt and sw[i].ring != sw[i - 1].ring and sw[i].time_ms > sw[i - 1].time_ms
+	_check(alt, "Ringwechsel: nacheinander, jedes Ziel auf dem anderen Ring")
 	var arcs: Array = S.pattern(4, 10, 0)
 	_check(arcs.all(func(n): return n.is_arc and n.duration_ms() > 0.0), "Bogen-Schritt: nur Boegen")
 	var trial: Array = S.pattern(5, 10, 0)
@@ -126,9 +128,11 @@ func _key(tut: Control, code: int, down: bool) -> void:
 	tut.handle_input(ev)
 
 
-func _aim(tut: Control, deg: float) -> void:
+## Zeigt auf Winkel deg im Abstand des Rings (Ring durch Zeigen).
+func _aim(tut: Control, deg: float, ring: int = 0) -> void:
 	var ev := InputEventMouseMotion.new()
-	ev.position = OrbitView.polar(tut.view_center_global(), deg, 200.0)
+	var k: float = OrbitCore.R_OUTER_K if ring == 1 else OrbitCore.R_INNER_K
+	ev.position = OrbitView.polar(tut.view_center_global(), deg, tut._view.unit() * k)
 	tut.handle_input(ev)
 
 
@@ -141,7 +145,7 @@ func _test_keys_from_settings(tut: Control) -> void:
 	_check(str(tut._body_lbl.text).contains("Q"), "Text nennt die Taste aus den Settings")
 	var n = tut.notes[0]
 	_run_until(tut, func(): return tut.t_ms >= n.time_ms - FRAME * 0.5)
-	_aim(tut, n.angle_deg)
+	_aim(tut, n.angle_deg, n.ring)
 	_key(tut, KEY_Z, true)
 	_key(tut, KEY_Z, false)
 	_check(int(tut.success) == 0, "alte Taste Z zaehlt nicht mehr")
@@ -151,22 +155,27 @@ func _test_keys_from_settings(tut: Control) -> void:
 	# Daneben gezielt: naechstes Ziel, Zeiger 90 Grad weg.
 	var n2 = tut.notes[1]
 	_run_until(tut, func(): return tut.t_ms >= n2.time_ms - FRAME * 0.5)
-	_aim(tut, n2.angle_deg + 90.0)
+	_aim(tut, n2.angle_deg + 90.0, n2.ring)
 	_key(tut, KEY_Q, true)
 	_key(tut, KEY_Q, false)
 	_check(int(tut.success) == 1, "daneben gezielt zaehlt nicht")
-	# Maus links = innen, immer.
+	# Falscher Ring (weit draussen gezeigt, Ziel innen) zaehlt nicht.
+	_aim(tut, n2.angle_deg, 1 - n2.ring)
+	_key(tut, KEY_Q, true)
+	_key(tut, KEY_Q, false)
+	_check(int(tut.success) == 1, "falscher Ring zaehlt nicht")
+	# Beide Maustasten treffen jedes Ziel, der Abstand waehlt den Ring.
 	var n3 = tut.notes[2]
 	_run_until(tut, func(): return tut.t_ms >= n3.time_ms - FRAME * 0.5)
 	var mb := InputEventMouseButton.new()
-	mb.button_index = MOUSE_BUTTON_LEFT
-	mb.position = OrbitView.polar(tut.view_center_global(), n3.angle_deg, 200.0)
+	mb.button_index = MOUSE_BUTTON_RIGHT
+	mb.position = OrbitView.polar(tut.view_center_global(), n3.angle_deg, tut._view.unit() * OrbitCore.R_INNER_K)
 	mb.pressed = true
 	tut.handle_input(mb)
 	var mb_up: InputEventMouseButton = mb.duplicate()
 	mb_up.pressed = false
 	tut.handle_input(mb_up)
-	_check(int(tut.success) == 2, "Maus links trifft den inneren Ring")
+	_check(int(tut.success) == 2, "Maus rechts trifft das Ziel auf dem gezeigten Ring")
 	st.orbit_key_inner = old_in
 
 
@@ -174,7 +183,7 @@ func _test_arc_needs_hold(tut: Control) -> void:
 	tut.enter_step(4)
 	var n = tut.notes[0]
 	_run_until(tut, func(): return tut.t_ms >= n.time_ms - FRAME * 0.5)
-	_aim(tut, n.angle_deg)
+	_aim(tut, n.angle_deg, n.ring)
 	var k: int = root.get_node("/root/Settings").orbit_key_inner
 	_key(tut, k, true)
 	tut.advance(FRAME * 3.0)

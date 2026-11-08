@@ -173,7 +173,9 @@ func _view_check(v: OrbitView, ns: Array) -> Dictionary:
 		var n: OrbitNote = ns[i]
 		var r1 := v.ring_radius(n.ring)
 		var r0 := v.spawn_radius(n.ring)
-		var speed := (r1 - r0) / v.preempt  # px/ms
+		# Innen-Ziele fliegen nach aussen, Aussen-Ziele von aussen nach innen.
+		var sgn := 1.0 if r1 >= r0 else -1.0
+		var speed := absf(r1 - r0) / v.preempt  # px/ms
 		# Radius genau zur Trefferzeit -> Zeitfehler des Durchgangs.
 		var e := absf(v.radius_at(n.ring, 0.0) - r1) / speed
 		res.cross_err_ms = maxf(res.cross_err_ms, e)
@@ -184,11 +186,11 @@ func _view_check(v: OrbitView, ns: Array) -> Dictionary:
 		var first := INF
 		for k in range(-40, 3):
 			var tf := n.time_ms + phase + float(k) * FRAME_MS
-			var r := v.radius_at(n.ring, n.time_ms - tf)
+			var r := v.radius_at(n.ring, n.time_ms - tf) * sgn
 			if r < prev:
 				res.monotonic = false
 			prev = r
-			if r >= r1 - 1e-6 and first == INF:
+			if r >= r1 * sgn - 1e-6 and first == INF:
 				first = tf
 		res.first_frame_err_ms = maxf(res.first_frame_err_ms, first - n.time_ms)
 		# Gezeichneter Winkel am Ring = Zielwinkel der Wertung.
@@ -320,11 +322,11 @@ func _human(ns: Array[OrbitNote], bm: Beatmap, vmax: float, sig_t: float, sig_a:
 				held[n.ring] = i
 				pressed[i] = 1
 				press_err[i] = OrbitNote.dist_deg(cur, n.angle_at(te))
-				c.key_down(n.ring, te, cur)
+				c.key_down(n.ring, te, cur, _rho(n.ring))
 			elif held[n.ring] == i:
 				c.key_up(n.ring, te)
 				held[n.ring] = -1
-		c.cursor_moved(cur, t1)
+		c.cursor_moved(cur, _rho(ns[mini(nxt, n_ns - 1)].ring), t1)
 		c.update(t1)
 		t = t1
 	c.update(end_t + 5000.0)
@@ -362,7 +364,7 @@ func _cause(ns: Array[OrbitNote], prev: Array, i: int, res: Dictionary, vmax: fl
 		cause = "sprung"
 	elif n.is_arc:
 		cause = "bogen_einstieg"
-	elif gap < OrbitConverter.STREAM_GAP_MS:
+	elif gap < OrbitConverter.SHORT_GAP_MS:
 		cause = "dichte"
 	return {"cause": cause, "gap": gap, "deg": d, "need": need}
 
@@ -553,7 +555,11 @@ func _overlap(v: OrbitView, ns: Array[OrbitNote], t0: float) -> Dictionary:
 				if dist < rad[a] + rad[b]:
 					pair_any += 1
 					cross += 1 if ns[ia].ring != ns[ib].ring else 0
-					covered[ib] = true
+					# Gewollter Stapel (gleicher Ring + Winkel, mit Stapel-Hinweis) gilt
+					# nicht als verdeckt: der Spieler sieht, dass dort mehrfach zu druecken ist.
+					var stack: bool = ns[ia].ring == ns[ib].ring and v.fit_enabled 							and OrbitNote.dist_deg(ns[ia].angle_deg, ns[ib].angle_deg) < 0.5 and v.halo_of(ib) > 0.0
+					if not stack:
+						covered[ib] = true
 					if dist < maxf(rad[a], rad[b]):
 						pair_heavy += 1
 						if v.halo_of(ib) <= 0.0:
@@ -575,17 +581,30 @@ func _test_density(maps: Array) -> void:
 	_out["density"] = {"before": old, "after": now}
 	_ok(maps.is_empty() or now.covered_mean <= old.covered_mean * 0.8,
 		"dichte Stellen: verdeckte Ziele mindestens 20 %% weniger (%.1f%% -> %.1f%%)" % [old.covered_mean * 100.0, now.covered_mean * 100.0])
-	var worst := _worst_covered(now)
+	# Seit der Ring per Zeigen gewaehlt wird, bleiben Streams auf einem Ring. Unter
+	# DENSE_NPS Zielen/s bleibt die Grenze 15 %; darueber (8-13 Ziele/s auf einem
+	# Ring bei Scroll 1,0) sind Beruehrungen im Anflug ohne Spiralen nicht zu
+	# vermeiden, die die Erreichbarkeit verschlechtern (Messung docs/modes/orbit_v2.md):
+	# dort 25 %. Ganz verdeckte Ziele ohne Stapel-Hinweis bleiben bei 0 (Pruefung unten).
+	var worst := _worst_covered(now, 0.0, DENSE_NPS)
 	_ok(maps.is_empty() or worst[0] < 0.15,
-		"dichte Stellen: auf jeder Map unter 15 %% verdeckt (schlechteste: %s %.1f%%)" % [worst[1], worst[0] * 100.0])
+		"dichte Stellen: Maps unter %d Zielen/s unter 15 %% verdeckt (schlechteste: %s %.1f%%)" % [int(DENSE_NPS), worst[1], worst[0] * 100.0])
+	var worst_d := _worst_covered(now, DENSE_NPS, INF)
+	_ok(maps.is_empty() or worst_d[0] < 0.25,
+		"dichte Stellen: Maps ab %d Zielen/s unter 25 %% verdeckt (schlechteste: %s %.1f%%)" % [int(DENSE_NPS), worst_d[1], worst_d[0] * 100.0])
 	_ok(maps.is_empty() or now.hidden_mean <= old.hidden_mean * 0.2,
 		"dichte Stellen: ganz verdeckte Ziele ohne Hinweis mindestens 80 %% weniger (%.2f -> %.2f je Frame)" % [old.hidden_mean, now.hidden_mean])
 
 
-func _worst_covered(pass_res: Dictionary) -> Array:
+const DENSE_NPS := 8.0
+
+
+func _worst_covered(pass_res: Dictionary, nps_lo: float = 0.0, nps_hi: float = INF) -> Array:
 	var w := 0.0
 	var lbl := ""
 	for r in pass_res.rows:
+		if float(r.nps) < nps_lo or float(r.nps) >= nps_hi:
+			continue
 		if r.covered_share > w:
 			w = r.covered_share
 			lbl = r.map
@@ -762,3 +781,8 @@ func _overlap_at(v: OrbitView, ns: Array[OrbitNote], t: float) -> float:
 			if pa.distance_to(pb) < v.draw_radius(idx[a], t) + v.draw_radius(idx[b], t):
 				s += 1.0
 	return s
+
+
+## Cursor-Abstand, der den Ring r waehlt.
+func _rho(ring: int) -> float:
+	return OrbitCore.R_OUTER_K if ring == 1 else OrbitCore.R_INNER_K

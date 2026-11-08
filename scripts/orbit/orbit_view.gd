@@ -8,17 +8,18 @@ extends Control
 ## Winkel: Grad, 0 = oben, im Uhrzeigersinn (wie OrbitNote).
 ## Innen = Ring 0: VOLLE Scheibe, kuehles Blau, kleiner.
 ## Aussen = Ring 1: HOHLE Raute mit dickem Rand, warmes Bernstein, groesser.
-## Getrennte Bahnen: Innen-Ziele fliegen von der Mitte zum Innenring,
-## Aussen-Ziele vom Innenring zum Aussenring. Beide mit gleicher, konstanter
-## Geschwindigkeit (Anflugzeit = Scroll Speed) und genau zur Trefferzeit auf
-## ihrem Ring, wo ihr Umriss schon wartet.
+## Getrennte Bahnen, nie ueber einen Trefferring: Innen-Ziele fliegen vom Kern
+## nach aussen zum Innenring, Aussen-Ziele von aussen nach innen zum Aussenring.
+## Konstante Geschwindigkeit (Anflugzeit = Scroll Speed), genau zur Trefferzeit
+## auf dem Ring, wo ihr Umriss schon wartet. Der Ring wird durch Zeigen
+## gewaehlt: der Cursor zeigt nur auf dem gewaehlten Ring sein Toleranzfenster.
 
 ## Ringradien und Spawn-Radien relativ zur Bildschirmhoehe.
-const R_INNER_K := 0.215
-const R_OUTER_K := 0.37
+const R_INNER_K := OrbitCore.R_INNER_K
+const R_OUTER_K := OrbitCore.R_OUTER_K
 const R_SPAWN_K := 0.085
-## Aussen-Ziele entstehen knapp ausserhalb des Innenrings (eigene Bahn).
-const R_OUTER_SPAWN_K := 0.238
+## Aussen-Ziele entstehen aussen (am Rand des Feldes) und fliegen nach innen.
+const R_OUTER_SPAWN_K := 0.455
 ## Dunkler Kern (Kombo + Judge); Innen-Ziele entstehen an seinem Rand.
 const CORE_K := 0.078
 ## Totzone um die Mitte (Cursor dort = Winkel bleibt stehen).
@@ -93,6 +94,8 @@ var show_guides := true
 var mod_hidden := false
 var mod_fade_in := false
 var ring_held: Array[bool] = [false, false]
+## Vom Cursor gewaehlter Ring (-1 = unbekannt, dann zeigen beide Ringe ihr Fenster).
+var sel_ring := -1
 ## Takt-Puls 0..1 (BeatClock.beat_env, nach Intensitaet gewichtet) und Kiai 0..1.
 var beat_env := 0.0
 var kiai := 0.0
@@ -115,6 +118,15 @@ var _l_t0 := PackedFloat64Array()
 var _l_q := PackedInt32Array()
 var _l_side := PackedFloat32Array()  # -1 frueh, +1 spaet, 0 ohne Marke
 var _l_next := 0
+# Fehldruck-Marken (Ringpuffer): Ort, Winkel, Ring, Grund, Start.
+const MAX_PRESS := 6
+const PRESS_MS := 480.0
+var _p_pos := PackedVector2Array()
+var _p_deg := PackedFloat32Array()
+var _p_ring := PackedInt32Array()
+var _p_why := PackedStringArray()
+var _p_t0 := PackedFloat64Array()
+var _p_next := 0
 # Fehltreffer-Marken (Ringpuffer).
 var _m_pos := PackedVector2Array()
 var _m_deg := PackedFloat32Array()
@@ -170,6 +182,13 @@ func _reset_fx() -> void:
 	_m_t0.fill(-1.0e12)
 	_m_next = 0
 	_wave_t0 = -INF
+	_p_pos.resize(MAX_PRESS)
+	_p_deg.resize(MAX_PRESS)
+	_p_ring.resize(MAX_PRESS)
+	_p_why.resize(MAX_PRESS)
+	_p_t0.resize(MAX_PRESS)
+	_p_t0.fill(-1.0e12)
+	_p_next = 0
 
 
 static func _radial_tex(offsets: Array, cols: Array) -> GradientTexture2D:
@@ -212,7 +231,7 @@ func ring_radius(ring: int) -> float:
 	return unit() * (R_OUTER_K if ring == 1 else R_INNER_K)
 
 
-## Startradius der Bahn eines Rings (innen: Kernrand, aussen: knapp hinter dem Innenring).
+## Startradius der Bahn eines Rings (innen: Kernrand, aussen: Feldrand).
 func spawn_radius(ring: int) -> float:
 	return unit() * (R_OUTER_SPAWN_K if ring == 1 else R_SPAWN_K)
 
@@ -318,6 +337,18 @@ func _mark(pos: Vector2, deg: float) -> void:
 	_m_t0[i] = t_ms
 
 
+## Fehldruck am Cursor (rho in Bildhoehen). reason: ANGLE / RING / EARLY / NONE
+## (OrbitCore.press_missed). Die Marke steht dort, wo gedrueckt wurde.
+func on_press_missed(deg: float, rho: float, ring: int, reason: String) -> void:
+	var i := _p_next
+	_p_next = (_p_next + 1) % MAX_PRESS
+	_p_pos[i] = polar(center(), deg, rho * unit())
+	_p_deg[i] = deg
+	_p_ring[i] = ring
+	_p_why[i] = reason
+	_p_t0[i] = t_ms
+
+
 ## Kombo-Meilenstein: eine ruhige Welle (strong = 100er-Stufen, etwas heller).
 func start_wave(strong: bool) -> void:
 	_wave_t0 = t_ms
@@ -367,12 +398,6 @@ func _draw() -> void:
 	# Landeumriss + Bogen-Vorschau + Akkord-Verbindungen unter den Noten.
 	for i in range(_first, last):
 		_draw_landing(c, u, i)
-	for i in range(_first, last - 1):
-		var a = notes[i]
-		var b = notes[i + 1]
-		if absf(float(b.time_ms) - float(a.time_ms)) <= CHORD_EPS_MS \
-				and _state[i] == ST_PENDING and _state[i + 1] == ST_PENDING:
-			_draw_chord(c, a, b)
 	# Spaetere zuerst: die naechste Note liegt immer obenauf.
 	for i in range(last - 1, _first - 1, -1):
 		var n = notes[i]
@@ -382,6 +407,7 @@ func _draw() -> void:
 			_draw_tap(c, u, i, n)
 	_draw_marks(u)
 	_draw_lights(c, u)
+	_draw_presses(u)
 	_draw_cursor_dot(u)
 
 
@@ -489,8 +515,6 @@ func _draw_guides(c: Vector2, u: float, r_out: float) -> void:
 		var b := a + u * (0.016 if long else 0.008)
 		draw_line(polar(c, deg, a), polar(c, deg, b),
 			Color(1, 1, 1, ((0.18 if long else 0.09) + 0.08 * beat_env * kiai) * lift), 1.0, true)
-	# Bahngrenze: ab hier fliegen nur Aussen-Ziele (sehr leise).
-	draw_arc(c, u * R_OUTER_SPAWN_K, 0.0, TAU, 128, Color(OUTER_COL, 0.06), 1.0, true)
 
 
 func _draw_rings(c: Vector2, u: float, r_in: float, r_out: float) -> void:
@@ -501,9 +525,10 @@ func _draw_rings(c: Vector2, u: float, r_in: float, r_out: float) -> void:
 		var rad := r_out if r == 1 else r_in
 		var col := _ring_col(r)
 		var g := _ring_glow[r]
-		# Trefferzone: breites, leises Band.
+		# Trefferzone: breites, leises Band; der gewaehlte Ring etwas deutlicher.
+		var chosen := 0.05 if r == sel_ring else 0.0
 		draw_arc(c, rad, 0.0, TAU, 128,
-			Color(col, 0.05 + 0.06 * g + 0.04 * pulse + 0.02 * kiai), band, true)
+			Color(col, 0.05 + chosen + 0.06 * g + 0.04 * pulse + 0.02 * kiai), band, true)
 		# Ringlinie: aussen doppelt, innen einfach -> auch ohne Farbe unterscheidbar.
 		var la := 0.42 + 0.3 * g + 0.2 * pulse
 		if r == 1:
@@ -535,34 +560,34 @@ func _target_deg(r: int) -> float:
 func _draw_cursor(c: Vector2, u: float, r_in: float, r_out: float) -> void:
 	var dim := 0.55 if cursor_in_deadzone else 1.0
 	# Ausrichtung: steht der Zeiger auf dem naechsten Ziel des Rings?
-	var any := 0
 	for r in 2:
 		_aim[r] = 0
 		var i := _next[r]
-		if i < 0 or cursor_in_deadzone:
+		if i < 0 or cursor_in_deadzone or (sel_ring >= 0 and r != sel_ring):
 			continue
 		if _state[i] != ST_ARC and float(notes[i].time_ms) - t_ms > AIM_LOOKAHEAD_MS:
 			continue
 		var e := OrbitNote.dist_deg(cursor_deg, _target_deg(r))
 		if e <= tol_deg:
 			_aim[r] = 2 if e <= center_deg else 1
-		any = maxi(any, _aim[r])
-	# Zeiger von der Mitte bis aussen: deutlicher, sobald er auf einem Ziel steht.
-	var pa := 0.10 + 0.10 * float(any)
-	draw_line(polar(c, cursor_deg, u * CORE_K), polar(c, cursor_deg, r_out + u * 0.03),
-		Color(1, 1, 1, pa * dim), 1.5 + 0.5 * float(any), true)
+	# Ringgrenze: leise Linie nahe am Cursor, dort wechselt der Ring (mit Hysterese).
+	var split := u * OrbitCore.RING_SPLIT_K
+	draw_arc(c, split, _ga(cursor_deg - 28.0), _ga(cursor_deg + 28.0), 16,
+		Color(1, 1, 1, 0.10 * dim), 1.0, true)
 	var a0 := _ga(cursor_deg - tol_deg)
 	var a1 := _ga(cursor_deg + tol_deg)
 	var ac := _ga(cursor_deg - center_deg)
 	var bc := _ga(cursor_deg + center_deg)
 	for r in 2:
+		if sel_ring >= 0 and r != sel_ring:
+			continue
 		var rad := r_out if r == 1 else r_in
 		var col := _ring_col(r)
 		var g := _ring_glow[r]
 		var w := u * 0.05
 		var on := _aim[r]
-		# Toleranzfenster: leise; steht der Zeiger auf dem Ziel, in Ringfarbe.
-		var fa := (0.07 + 0.10 * g + (0.16 if on > 0 else 0.0)) * dim
+		# Toleranzfenster: Winkel (Bogenlaenge) UND Ring (Bandbreite) in einer Form.
+		var fa := (0.10 + 0.10 * g + (0.16 if on > 0 else 0.0)) * dim
 		draw_arc(c, rad, a0, a1, 24, Color(col.lerp(Color.WHITE, 0.3), fa), w, true)
 		# Mitte (CORE-Zone) etwas dichter: zentriert zielen lohnt.
 		draw_arc(c, rad, ac, bc, 12, Color(col.lerp(Color.WHITE, 0.3), (0.05 + 0.06 * g) * dim), w, true)
@@ -570,7 +595,7 @@ func _draw_cursor(c: Vector2, u: float, r_in: float, r_out: float) -> void:
 		for side in 2:
 			var ed := cursor_deg + (tol_deg if side == 1 else -tol_deg)
 			draw_line(polar(c, ed, rad - w * 0.5), polar(c, ed, rad + w * 0.5),
-				Color(col, (0.24 + 0.2 * g + 0.25 * float(on)) * dim), 1.0 + float(on), true)
+				Color(col, (0.30 + 0.2 * g + 0.25 * float(on)) * dim), 1.0 + float(on), true)
 		# Mittelmarke: radialer Strich; mittig auf dem Ziel = laenger, Creme, Klammern.
 		var mc := MAX_COL if on == 2 else Color.WHITE
 		var ml := w * (0.62 if on == 0 else 0.85)
@@ -581,6 +606,11 @@ func _draw_cursor(c: Vector2, u: float, r_in: float, r_out: float) -> void:
 				var ed := cursor_deg + (center_deg if side == 1 else -center_deg)
 				draw_line(polar(c, ed, rad - w * 0.7), polar(c, ed, rad + w * 0.7),
 					Color(MAX_COL, 0.7 * dim), 2.0, true)
+		# Faden vom Cursorpunkt zum Ring: so sieht man, wohin der Druck zaehlt.
+		if cursor_pos.x >= 0.0:
+			var on_ring := polar(c, cursor_deg, rad)
+			if cursor_pos.distance_to(on_ring) > u * 0.012:
+				draw_line(cursor_pos, on_ring, Color(col, 0.35 * dim), 1.0, true)
 
 
 func _draw_cursor_dot(u: float) -> void:
@@ -620,14 +650,6 @@ func _draw_landing(c: Vector2, u: float, i: int) -> void:
 		draw_arc(c, rad + w * 0.5, _ga(lo), _ga(hi), seg, Color(col, 0.22 * k), 1.0, true)
 	var s := _note_size(u, n.ring)
 	_outline(polar(c, a, rad), a, n.ring, s, col, (0.75 if nxt else 0.3) * k * k, 2.0 if nxt else 1.0)
-
-
-func _draw_chord(c: Vector2, a, b) -> void:
-	var dt := float(a.time_ms) - t_ms
-	var pa := polar(c, float(a.angle_deg), radius_at(a.ring, dt))
-	var pb := polar(c, float(b.angle_deg), radius_at(b.ring, dt))
-	var k := _approach_alpha(dt) * _depth(dt, false)
-	draw_line(pa, pb, Color(1, 1, 1, 0.3 * k), 2.0, true)
 
 
 ## Bogen-Spitze zur Zeit t (wie OrbitNote.angle_at; raw = entfaltet, a1 - a0 = Bogen).
@@ -744,9 +766,6 @@ func _shape(p: Vector2, deg: float, ring: int, s: float, col: Color, alpha: floa
 		_diamond(p, deg, s)
 		draw_colored_polygon(_quad, Color(PLATE_COL.lerp(col, 0.12), 0.94 * alpha))
 		_rim_loop(Color(col, alpha), maxf(3.0, s * 0.26))
-		for j in 4:
-			_quad_in[j] = p + (_quad[j] - p) * 0.3
-		draw_colored_polygon(_quad_in, Color(col.lightened(0.4), alpha))
 
 
 ## Nur der Umriss der Notenform (Landeumriss, Rahmen des naechsten Ziels).
@@ -875,6 +894,43 @@ func _draw_marks(u: float) -> void:
 		var col := Color(MISS_X_COL, 0.8 * e)
 		draw_line(p - d1, p + d1, col, 2.5, true)
 		draw_line(p - d2, p + d2, col, 2.5, true)
+
+
+## Fehldruck-Marken am Ort des Drucks. Form nennt den Grund, ohne Text:
+## ANGLE Kreuz (Winkel daneben), RING Pfeil zum richtigen Ring, EARLY offener
+## Kreis (zu frueh, frisst nichts), NONE kleiner Punkt.
+func _draw_presses(u: float) -> void:
+	var c := center()
+	for i in MAX_PRESS:
+		var f := (t_ms - _p_t0[i]) / PRESS_MS
+		if f < 0.0 or f >= 1.0:
+			continue
+		var e := 1.0 - f
+		var p := _p_pos[i]
+		var h := u * 0.016
+		var why := _p_why[i]
+		if why == "ANGLE":
+			var d1 := Vector2(1, 1).normalized() * h
+			var d2 := Vector2(1, -1).normalized() * h
+			var col := Color(MISS_X_COL, 0.85 * e)
+			draw_line(p - d1, p + d1, col, 2.5, true)
+			draw_line(p - d2, p + d2, col, 2.5, true)
+		elif why == "RING":
+			# Pfeil in Richtung des anderen Rings (radial), in dessen Farbe.
+			var other := 1 - _p_ring[i]
+			var dir := (p - c).normalized()
+			if other == 0:
+				dir = -dir
+			var tip := p + dir * h * 2.2
+			var side := Vector2(-dir.y, dir.x) * h * 0.7
+			var col := Color(_ring_col(other), 0.9 * e)
+			draw_line(p, tip, col, 2.5, true)
+			draw_line(tip, tip - dir * h * 0.9 + side, col, 2.5, true)
+			draw_line(tip, tip - dir * h * 0.9 - side, col, 2.5, true)
+		elif why == "EARLY":
+			draw_arc(p, h * (0.7 + 0.5 * f), 0.0, TAU, 20, Color(MISS_COL.lightened(0.2), 0.7 * e), 2.0, true)
+		else:
+			draw_circle(p, h * 0.35, Color(MISS_COL, 0.5 * e), true, -1.0, true)
 
 
 ## Treffer: harte Linien statt Leuchten. Abdruck der Notenform, ein sich
