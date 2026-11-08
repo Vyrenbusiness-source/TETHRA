@@ -3581,6 +3581,13 @@ func _place_hud_to_line() -> void:
 			_err_bar.size = _err_bar.custom_minimum_size
 		var ey := fr.position.y + 4.0 if Settings.scroll_up_2d 				else minf(fr.end.y, vs.y) - _err_bar.size.y - 4.0
 		_err_bar.position = Vector2(fr.position.x + (fr.size.x - w) * 0.5, maxf(ey, 0.0))
+		# Scroll nach oben: Linie oben -> HP-Leiste nach unten, sonst liegt sie auf der Linie.
+		if _hp_bar != null:
+			var a := 1.0 if Settings.scroll_up_2d else 0.0
+			_hp_bar.anchor_top = a
+			_hp_bar.anchor_bottom = a
+			_hp_bar.offset_top = -30.0 if a > 0.0 else 6.0
+			_hp_bar.offset_bottom = -6.0 if a > 0.0 else 30.0
 		return
 	_err_bar.position = Vector2((vs.x - _err_bar.size.x) * 0.5,
 		minf(line_y + 34.0, vs.y - _err_bar.size.y - 8.0))
