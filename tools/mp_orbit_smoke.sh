@@ -4,6 +4,8 @@
 #   Raum -> Modus Orbit -> Map -> beide bereit -> Runde (Bots, Client mit
 #   Fehlern) -> Live-Scores + Endergebnisse -> zurueck im Raum -> Orbit-Turnier
 #   (4 Maps, je 1 Ban, 2 Runden) -> Endstand.
+# Client bleibt 10 s im Endscreen (laenger als der Turnier-Autoablauf bis zur
+# naechsten Map): prueft das Bereit-Melden bei der Rueckkehr in den Raum.
 # Jeder Prozess hat ein eigenes APPDATA (user://), Scores/Settings des Nutzers
 # bleiben unberuehrt. Maps: die N kleinsten .osz aus MAPS_SRC in einen Testordner.
 #
@@ -35,7 +37,7 @@ APPDATA=$(cygpath -w "$WORK/host" 2>/dev/null || echo "$WORK/host") \
 HP=$!
 sleep 2
 APPDATA=$(cygpath -w "$WORK/client" 2>/dev/null || echo "$WORK/client") \
-	timeout "$LIMIT" "$G" "${COMMON[@]}" --mp-orbit-client --auto-seed=7 --auto-miss=6 \
+	timeout "$LIMIT" "$G" "${COMMON[@]}" --mp-orbit-client --auto-seed=7 --auto-miss=6 --mp-back=10 \
 	> "$WORK/client.log" 2>&1 &
 CP=$!
 wait $HP; HRC=$?
@@ -56,8 +58,9 @@ for side in host client; do
 	check $side "MPORBIT [A-Z]+ s0 all ready, views Orbit/Orbit" "Raum Orbit + bereit"
 	check $side "MPORBIT [A-Z]+ s1 room finals \[[0-9]+:[^]]* score=[1-9][0-9]*[^]]*, [0-9]+:[^]]* score=[1-9]" "Endergebnisse beider im Raum"
 	check $side "MPORBIT [A-Z]+ s1 back in room: in_game=false play_mode=orbit" "Rueckkehr in den Raum"
-	check $side "MPORBIT [A-Z]+ s2 tour round 1 start" "Turnierrunde 1"
-	check $side "MPORBIT [A-Z]+ s3 tour round 2 start" "Turnierrunde 2"
+	check $side "MPORBIT [A-Z]+ s2 tour rounds=1 " "Turnierrunde 1 gewertet"
+	n=$(grep -c "^MPORBIT start:" "$WORK/$side.log")
+	[ "$n" -eq 3 ] || { echo "FAIL $side: $n statt 3 Orbit-Runden gestartet"; fail=1; }
 	check $side "MPORBIT [A-Z]+ s3 tour rounds=2 " "2 Turnierrunden gewertet"
 	check $side "MPORBIT [A-Z]+ s3 DONE" "Ende"
 	# Live-Score des anderen kam waehrend der Runde an (> 0, vor dessen Finale).

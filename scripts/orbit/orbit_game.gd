@@ -1053,8 +1053,12 @@ func _show_results(is_fail: bool) -> void:
 	if _mp_bot:
 		print("MPORBIT final score=%d acc=%.4f combo=%d failed=%s live_seen=%s" % [
 			int(s.score), float(s.accuracy), int(s.get("max_combo", 0)), str(s.failed), str(_mp_live_seen)])
-		# Wie der Klick auf "Zurueck": nach kurzem Blick auf den Endscreen in den Raum.
-		await get_tree().create_timer(1.5, true).timeout
+		# Wie der Klick auf "Zurueck": nach dem Endscreen (--mp-back=<s>, Standard 1,5) in den Raum.
+		var back_s := 1.5
+		for a in OS.get_cmdline_args():
+			if a.begins_with("--mp-back="):
+				back_s = clampf(a.trim_prefix("--mp-back=").to_float(), 0.0, 60.0)
+		await get_tree().create_timer(back_s, true).timeout
 		if is_inside_tree():
 			_back_to_browser()
 

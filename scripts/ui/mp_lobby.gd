@@ -227,6 +227,11 @@ func _ready() -> void:
 		# Rueckkehr aus einer Runde: gewaehlte Map weiter vorhoeren.
 		if not Lobby.sel_map.is_empty():
 			_update_preview()
+			# Map wurde gewechselt, waehrend ich noch im Endscreen war (Turnier:
+			# naechste Runde nach 8 s): map_changed kam ohne Raum an -> jetzt bereit.
+			var mine: Dictionary = Lobby.players.get(multiplayer.get_unique_id(), {})
+			if not mine.is_empty() and not bool(mine.get("ready", false)) 					and Lobby.resolve_local_path() != "":
+				Lobby.set_ready(true)
 	else:
 		Lobby.start_discovery()
 		Lobby.fetch_online_rooms()
@@ -477,7 +482,6 @@ func _mp_orbit(host: bool) -> void:
 			if not await wait_for.call(func(): return Lobby.in_game, 20.0):
 				fail.call("start")
 				return
-			step.call("game start")
 		1:
 			if host:
 				Lobby.tour_create({ "maps": 5, "stars_lo": 0.0, "stars_hi": Tournament.MAX_STARS })
@@ -525,7 +529,6 @@ func _mp_orbit(host: bool) -> void:
 			if not await wait_for.call(func(): return Lobby.in_game, 40.0):
 				fail.call("round 1 start (phase=%d ready=%s)" % [Lobby.tournament.phase, Lobby.all_ready()])
 				return
-			step.call("tour round 1 start: '%s' remaining=%d" % [str(Lobby.sel_map.get("title", "")), Lobby.tournament.remaining()])
 		2, 3:
 			var want := Tournament.Phase.BETWEEN if _mpo_stage == 2 else Tournament.Phase.END
 			if not await wait_for.call(func(): return Lobby.tournament != null and Lobby.tournament.phase == want, 30.0):
@@ -546,7 +549,6 @@ func _mp_orbit(host: bool) -> void:
 			if not await wait_for.call(func(): return Lobby.in_game, 40.0):
 				fail.call("round 2 start (phase=%d ready=%s)" % [Lobby.tournament.phase, Lobby.all_ready()])
 				return
-			step.call("tour round 2 start: '%s'" % str(Lobby.sel_map.get("title", "")))
 
 
 ## Zwei-Instanzen-Test (Host + Client auf 127.0.0.1), Ablauf siehe Log.

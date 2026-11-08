@@ -120,8 +120,19 @@ Ablauf (`mp_lobby.gd _mp_orbit`, Zeilen `MPORBIT <Rolle> s<Stufe> ...`):
    je 1 Ban, 2 Runden mit Host-Autoablauf (Zwischenstand, dann Start), Endstand.
 
 Flags in `orbit_game.gd`: `--mp-bot` (nur mit aktiver Lobby-Runde: Bot spielt,
-headless kein Sofort-Ende, nach dem Endscreen nach 1,5 s zurueck in den Raum),
-`--mp-cut=<s>`.
+headless kein Sofort-Ende, nach dem Endscreen nach `--mp-back=<s>` (1,5 s)
+zurueck in den Raum), `--mp-cut=<s>`. Der Client bleibt 10 s im Endscreen,
+laenger als der Turnier-Autoablauf bis zur naechsten Map.
+
+Gefunden + behoben:
+
+- Freie Runde vor dem Turnier liess `Lobby._tour_peers` stehen, der
+  Turnier-Autostart wartete dann ewig (nur der Start-Knopf half).
+- Wer beim Kartenwechsel noch im Endscreen war, kam unbereit in den Raum
+  zurueck (Turnier hing bis zum Bereit-Klick); `mp_lobby` meldet jetzt bei der
+  Rueckkehr bereit, wenn die Map lokal vorliegt.
+- `--autoplay` armiert den 45-s-Test-Watchdog (game_session.gd); der Bot im
+  Raum laeuft daher ueber `--mp-bot` allein.
 
 ## Screenshot-Harness
 
