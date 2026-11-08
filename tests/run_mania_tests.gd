@@ -97,15 +97,20 @@ func _test_expiry_miss() -> void:
 
 
 func _test_hold_complete() -> void:
-	print("- Hold bis zum Ende -> Head-Qualitaet")
-	var core := _make_core()
+	print("- Hold (osu!mania stable): Kopf + Ende ergeben EINE Wertung")
+	var exact := _make_core()
 	var results: Array = []
-	core.note_judged.connect(func(_i, r): results.append(r))
-	core.key_down(3, 1400.0)  # Head exakt -> MAX, halten
-	core.update(1850.0)       # Ende 1800 erreicht, Taste unten
-	_ok(core.n_max == 1, "gehalten -> MAX")
+	exact.note_judged.connect(func(_i, r): results.append(r))
+	exact.key_down(3, 1400.0)  # Kopf exakt
+	exact.key_up(3, 1800.0)    # Ende exakt
+	_ok(exact.n_max == 1, "Kopf + Ende exakt -> MAX")
 	var hold_results := results.filter(func(r): return r.get("hold_end", false))
 	_ok(hold_results.size() == 1 and bool(hold_results[0].held), "held=true")
+	var past := _make_core("448,192,1400,128,0,1800:0:0:0:0:
+")
+	past.key_down(3, 1400.0)
+	past.update(1800.0 + past.w100 + 1.0)  # ueber das spaete OK-Fenster gehalten
+	_ok(past.n200 == 1 and past.n_miss == 0, "ueber das Ende gehalten -> wie Loslassen am OK-Rand (GOOD)")
 
 
 func _test_hold_head_dt() -> void:
@@ -120,16 +125,25 @@ func _test_hold_head_dt() -> void:
 
 
 func _test_hold_drop() -> void:
-	print("- Hold frueh loslassen -> Miss (DROP)")
-	var core := _make_core()
+	print("- Hold im Koerper losgelassen: ohne erneuten Druck Miss, mit erneutem Druck hoechstens MEH")
+	var core := _make_core("448,192,1400,128,0,1800:0:0:0:0:
+")
 	var results: Array = []
 	core.note_judged.connect(func(_i, r): results.append(r))
 	core.key_down(3, 1400.0)
 	core.key_up(3, 1500.0)  # weit vor 1800
-	_ok(core.n_miss == 1 and core.n50 == 0 and core.n_max == 0, "losgelassen -> Miss (DROP)")
+	_ok(core.n_miss == 0, "noch offen nach dem Loslassen")
+	core.update(1800.0 + core.w100 + 1.0)
+	_ok(core.n_miss == 1 and core.n50 == 0 and core.n_max == 0, "nicht wieder gedrueckt -> Miss (DROP)")
 	_ok(core.combo == 0, "DROP bricht die Combo")
 	var hold_results := results.filter(func(r): return r.get("hold_end", false))
 	_ok(hold_results.size() == 1 and not bool(hold_results[0].held), "held=false")
+	var again := _make_core()
+	again.key_down(3, 1400.0)
+	again.key_up(3, 1500.0)
+	again.key_down(3, 1600.0)  # erneut gedrueckt
+	again.key_up(3, 1800.0)    # Ende exakt
+	_ok(again.n50 == 1 and again.n_max == 0 and again.n_miss == 0, "erneut gedrueckt -> MEH (hoechstens)")
 
 
 func _test_accuracy_weights() -> void:
@@ -151,19 +165,27 @@ func _test_accuracy_weights() -> void:
 
 
 func _test_hold_release_window() -> void:
-	print("- Hold-Ende: Loslassen im Release-Fenster zaehlt als gehalten")
+	print("- Hold-Ende: Kopf-Fehler + End-Fehler (osu!mania stable)")
+	var c := _make_core()
+	_ok(c.hold_quality(0.0, 0.0) == ManiaCore.Quality.MAX, "0 + 0 -> MAX")
+	_ok(c.hold_quality(c.w_max * 1.2, c.w_max * 1.2) == ManiaCore.Quality.MAX, "Kopf MAX x 1,2, Summe MAX x 2,4 -> MAX")
+	_ok(c.hold_quality(c.w_max * 1.3, 0.0) == ManiaCore.Quality.PERFECT, "Kopf ueber MAX x 1,2 -> 300")
+	_ok(c.hold_quality(0.0, c.w300 * 2.3) == ManiaCore.Quality.GOOD, "Summe ueber 300 x 2,2 -> 200")
+	_ok(c.hold_quality(c.w100 + 1.0, 0.0) == ManiaCore.Quality.MEH, "Kopf ueber 100er -> MEH")
 	var inside := _make_core()
 	inside.key_down(3, 1400.0)
-	inside.key_up(3, 1800.0 - 200.0)  # 200 ms vor Ende, Fenster 1.5 x 136.5 = 204.75
-	_ok(inside.n_miss == 0 and inside.n_max == 1 and inside.combo >= 1, "200 ms vor Ende -> gehalten (MAX)")
+	inside.key_up(3, 1800.0 - 100.0)  # im fruehen MEH-Fenster des Endes (136,5)
+	_ok(inside.n_miss == 0 and inside.n300 == 1, "100 ms vor Ende -> 300 (Summe 100 <= 300 x 2,2)")
 	var late := _make_core()
 	late.key_down(3, 1400.0)
 	late.key_up(3, 1800.0 + 80.0)
-	_ok(late.n_miss == 0 and late.n_max == 1, "nach dem Ende losgelassen -> gehalten")
-	var early := _make_core()
+	_ok(late.n_miss == 0 and late.n300 == 1, "80 ms nach dem Ende -> 300")
+	var early := _make_core("448,192,1400,128,0,1800:0:0:0:0:
+")
 	early.key_down(3, 1400.0)
-	early.key_up(3, 1800.0 - 210.0)
-	_ok(early.n_miss == 1 and early.n_max == 0, "210 ms vor Ende -> DROP")
+	early.key_up(3, 1800.0 - 210.0)  # vor dem fruehen MEH-Fenster: im Koerper
+	early.update(1800.0 + early.w100 + 1.0)
+	_ok(early.n_miss == 1 and early.n_max == 0, "210 ms vor Ende, nicht wieder gedrueckt -> Miss")
 
 
 func _test_chord_holds() -> void:
@@ -174,10 +196,12 @@ func _test_chord_holds() -> void:
 	core.key_down(0, 1000.0)
 	core.key_down(1, 1004.0)
 	_ok(core.active_hold(0) >= 0 and core.active_hold(1) >= 0, "beide Holds aktiv")
-	core.key_up(0, 1300.0)  # zu frueh -> DROP nur Spalte 0
-	_ok(core.n_miss == 1 and core.active_hold(1) >= 0, "Spalte 0 DROP, Spalte 1 laeuft weiter")
-	core.key_up(1, 1500.0)  # 100 ms vor Ende -> gehalten
-	_ok(core.n_miss == 1 and core.n_max == 1, "Spalte 1 im Fenster gehalten -> MAX")
+	core.key_up(0, 1300.0)  # im Koerper -> Spalte 0 wartet auf erneuten Druck
+	_ok(core.active_hold(0) < 0 and core.active_hold(1) >= 0, "Spalte 0 losgelassen, Spalte 1 laeuft weiter")
+	core.key_up(1, 1600.0)  # Ende exakt, Kopf +4 ms
+	_ok(core.n_max == 1, "Spalte 1 Kopf +4 / Ende 0 -> MAX")
+	core.update(1600.0 + core.w100 + 1.0)
+	_ok(core.n_miss == 1, "Spalte 0 ohne erneuten Druck -> Miss")
 
 
 func _test_hp_start_and_break() -> void:

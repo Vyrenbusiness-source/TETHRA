@@ -39,6 +39,12 @@ var _judged: Dictionary = {}
 ## Aktive Holds pro Spalte: index oder -1.
 var _active_hold: Array[int] = []
 var _hold_quality: Array[int] = []
+## osu!mania-stable-Holds: Kopf-Fehler (ms) je Spalte, im Koerper losgelassener Hold
+## (wartet auf erneuten Druck, hoechstens MEH) und ob der laufende Hold schon einmal
+## losgelassen wurde.
+var _hold_head_err: Array[float] = []
+var _broken_hold: Array[int] = []
+var _hold_broken: Array[bool] = []
 
 var combo := 0
 var max_combo := 0
@@ -122,11 +128,17 @@ func setup(p_beatmap: Beatmap, _ar_override: float = -1.0, scroll_scale: float =
 	_lane_head.clear()
 	_active_hold.clear()
 	_hold_quality.clear()
+	_hold_head_err.clear()
+	_broken_hold.clear()
+	_hold_broken.clear()
 	for c in columns:
 		_lane_notes.append([])
 		_lane_head.append(0)
 		_active_hold.append(-1)
 		_hold_quality.append(Quality.PERFECT)
+		_hold_head_err.append(0.0)
+		_broken_hold.append(-1)
+		_hold_broken.append(false)
 	for i in beatmap.hit_objects.size():
 		var obj := beatmap.hit_objects[i]
 		if obj is ManiaNote:
@@ -259,10 +271,17 @@ func update(t_ms: float) -> void:
 	# Verpasste Heads pro Spalte.
 	for c in columns:
 		_expire_lane(c, t_ms)
-		# Hold-Ende erreicht, Taste noch unten -> Head-Qualitaet einloesen.
+		# Hold ueber das spaete OK-Fenster des Endes gehalten: wie Loslassen am
+		# Fensterrand werten (osu!mania stable: Kopf- + End-Fehler).
 		var h: int = _active_hold[c]
-		if h >= 0 and t_ms >= objs[h].end_time():
-			_finish_hold(c, true)
+		if h >= 0 and t_ms >= objs[h].end_time() + w100:
+			_finish_hold(c, hold_quality(_hold_head_err[c], w100))
+		# Im Koerper losgelassen und bis zum Ende des OK-Fensters nicht wieder gedrueckt: Miss.
+		var bh: int = _broken_hold[c]
+		if bh >= 0 and t_ms > objs[bh].end_time() + w100:
+			_active_hold[c] = bh
+			_broken_hold[c] = -1
+			_finish_hold(c, Quality.MISS)
 	if _judged_count >= objs.size() and _next_spawn >= objs.size() and not _finished_emitted:
 		_finished_emitted = true
 		finished.emit(stats())
@@ -292,6 +311,14 @@ func key_down(c: int, t_ms: float) -> void:
 		return
 	var objs := beatmap.hit_objects
 	_now = maxf(_now, t_ms)
+	# Erneuter Druck auf einen im Koerper losgelassenen Hold (zaehlt hoechstens MEH).
+	var bh: int = _broken_hold[c]
+	if bh >= 0 and t_ms <= objs[bh].end_time() + w100:
+		_active_hold[c] = bh
+		_broken_hold[c] = -1
+		_hold_broken[c] = true
+		lane_pressed.emit(c, true)
+		return
 	_expire_lane(c, t_ms)
 	if _lane_head[c] >= _lane_notes[c].size():
 		lane_pressed.emit(c, false)
@@ -314,6 +341,8 @@ func key_down(c: int, t_ms: float) -> void:
 	if obj.is_hold:
 		_active_hold[c] = idx
 		_hold_quality[c] = q
+		_hold_head_err[c] = absf(dt)
+		_hold_broken[c] = false
 		combo += 1
 		max_combo = maxi(max_combo, combo)
 		_judged[idx] = { "pending": true, "dt": dt }
@@ -332,17 +361,42 @@ func key_up(c: int, t_ms: float) -> void:
 		return
 	_now = maxf(_now, t_ms)
 	var end := beatmap.hit_objects[h].end_time()
-	# Kurz vor dem Ende loslassen ist ok (1.5x 50er-Fenster), sonst DROP.
-	_finish_hold(c, t_ms >= end - w50 * 1.5)
+	if t_ms < end - w50:
+		# Im Koerper losgelassen (vor dem fruehen MEH-Fenster des Endes): der Hold bleibt
+		# offen, erneuter Druck rettet hoechstens ein MEH, sonst Miss (osu!mania stable).
+		_active_hold[c] = -1
+		_broken_hold[c] = h
+		_hold_broken[c] = true
+		lane_pressed.emit(c, false)
+		return
+	_finish_hold(c, hold_quality(_hold_head_err[c], absf(t_ms - end)))
 
 
-func _finish_hold(c: int, held_to_end: bool) -> void:
+## osu!mania stable (ScoreV1): EINE Wertung je Hold aus Kopf-Fehler und Kopf- +
+## End-Fehler (beide positiv). PERFECT: Kopf <= MAX x 1,2 und Summe <= MAX x 2,4;
+## GREAT: x 1,1 / x 2,2; GOOD: x 1 / x 2; OK: x 1 / x 2; sonst MEH.
+func hold_quality(head_err: float, tail_err: float) -> int:
+	var sum := head_err + tail_err
+	if head_err <= w_max * 1.2 and sum <= w_max * 2.4:
+		return Quality.MAX
+	if head_err <= w300 * 1.1 and sum <= w300 * 2.2:
+		return Quality.PERFECT
+	if head_err <= w200 and sum <= w200 * 2.0:
+		return Quality.GOOD
+	if head_err <= w100 and sum <= w100 * 2.0:
+		return Quality.OK
+	return Quality.MEH
+
+
+func _finish_hold(c: int, q_in: int) -> void:
 	var idx: int = _active_hold[c]
 	_active_hold[c] = -1
 	if idx < 0:
 		return
 	var obj := beatmap.hit_objects[idx]
-	if not held_to_end:
+	var broken: bool = _hold_broken[c]
+	_hold_broken[c] = false
+	if q_in == Quality.MISS:
 		# Mitten im Hold losgelassen: Miss (Combo-Bruch + HP-Abzug wie eine verpasste Note).
 		n_miss += 1
 		combo = 0
@@ -360,7 +414,8 @@ func _finish_hold(c: int, held_to_end: bool) -> void:
 		_diag_note("DROP", (obj as ManiaNote).column)
 		note_judged.emit(idx, dropped)
 		return
-	var q: int = _hold_quality[c]
+	# Einmal im Koerper losgelassen: hoechstens MEH.
+	var q: int = maxi(q_in, Quality.MEH) if broken else q_in
 	_count_quality(q)
 	_add_score(q)
 	hp = minf(hp + _hp_heal[q], 1.0)
@@ -368,7 +423,7 @@ func _finish_hold(c: int, held_to_end: bool) -> void:
 	_diag_note(QUALITY_TAG[q], (obj as ManiaNote).column)
 	var result := {
 		"quality": q, "column": (obj as ManiaNote).column,
-		"hold_end": true, "held": held_to_end, "miss_kind": "",
+		"hold_end": true, "held": not broken, "miss_kind": "",
 	}
 	_judged[idx] = result
 	_judged_count += 1
