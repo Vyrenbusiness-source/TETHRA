@@ -44,6 +44,11 @@ const HAND_REF_DEG_PER_MS := 0.18
 const STAR_FOLLOW_CAP := 2.5
 const STAR_FOLLOW_K := 0.9
 const STAR_MAX := 15.0
+## Streckung oben: Bibliothek liegt roh bei Median 3,7 / p99 5,4 / Max 6,4;
+## ab STAR_KNEE wird mit STAR_STRETCH gedehnt, damit 0..15 genutzt wird
+## (Median ~3,7, p90 ~8, p99 ~10, Max ~14).
+const STAR_KNEE := 3.5
+const STAR_STRETCH := 3.5
 
 
 static func convert(beatmap: Beatmap) -> Array[OrbitNote]:
@@ -320,4 +325,7 @@ static func stars(ns: Array[OrbitNote]) -> float:
 		wt *= STAR_DECAY
 		if wt < 0.001:
 			break
-	return clampf(num / maxf(den, 1e-6), 0.0, STAR_MAX)
+	var raw := num / maxf(den, 1e-6)
+	if raw > STAR_KNEE:
+		raw = STAR_KNEE + (raw - STAR_KNEE) * STAR_STRETCH
+	return clampf(raw, 0.0, STAR_MAX)

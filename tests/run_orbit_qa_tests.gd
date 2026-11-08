@@ -80,8 +80,8 @@ func _test_hand_speed() -> void:
 func _test_follow_limits() -> void:
 	print("- Folgen: erlaubter Nachlauf je Tempo")
 	for bar in [2400.0, 2000.0, 1500.0, 1200.0]:
-		var v := 360.0 / bar
-		var tau_max := (OrbitCore.ANGLE_TOL_DEG - 2.0 * 6.0) / v
+		var v: float = 360.0 / float(bar)
+		var tau_max: float = (OrbitCore.ANGLE_TOL_DEG - 2.0 * 6.0) / v
 		print("  Takt %.0f ms: %.3f Grad/ms, Nachlauf bis %.0f ms ok" % [bar, v, tau_max])
 		_ok(tau_max >= BOTS["maus"][0] if bar >= 1200.0 else true, "Takt %.0f ms: Maus-Nachlauf (60 ms) passt" % bar)
 
