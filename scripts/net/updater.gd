@@ -645,7 +645,10 @@ static func backoff_for(attempt: int) -> float:
 ## `move` statt `copy`: gleiche Platte = Umbenennen, bei 1+ GB sofort.
 static func build_bat(exe_path: String, exe_dir: String, assets: Array, pid: int = 0,
 		args: PackedStringArray = PackedStringArray()) -> String:
-	var L: PackedStringArray = ["@echo off"]
+	# Keine ausgeschriebenen Pfade: cmd liest .bat in der OEM-Codepage, die Datei ist
+	# UTF-8 -> Umlaute/Sonderzeichen im Benutzernamen ergaben "Das System kann den
+	# angegebenen Pfad nicht finden". Das Skript liegt neben der Exe und arbeitet ueber %~dp0.
+	var L: PackedStringArray = ["@echo off", "cd /d \"%~dp0\""]
 	if pid > 0:
 		L.append_array(["set n=0", ":wait",
 			"tasklist /fi \"PID eq %d\" 2>nul | find \"%d\" >nul" % [pid, pid],
@@ -654,7 +657,7 @@ static func build_bat(exe_path: String, exe_dir: String, assets: Array, pid: int
 	L.append("ping -n 2 127.0.0.1 >nul")
 	var i := 0
 	for a in assets:
-		var fin: String = exe_dir.path_join(str(a)).replace("/", "\\")
+		var fin: String = str(a).get_file()
 		L.append_array(["set t=0", ":retry%d" % i,
 			"move /y \"%s.new\" \"%s\" >nul 2>&1" % [fin, fin],
 			"if not exist \"%s.new\" goto done%d" % [fin, i],
@@ -667,8 +670,7 @@ static func build_bat(exe_path: String, exe_dir: String, assets: Array, pid: int
 		if x.contains("\"") or x.contains("&") or x.contains("|") or x.contains("%"):
 			continue
 		arg_s += " \"%s\"" % x
-	L.append("start \"\" /d \"%s\" \"%s\"%s" % [exe_dir.replace("/", "\\"),
-			exe_path.replace("/", "\\"), arg_s])
+	L.append("start \"\" /d \"%%~dp0.\" \"%%~dp0%s\"%s" % [exe_path.get_file(), arg_s])
 	L.append("del \"%~f0\"")
 	return "\r\n".join(L)
 

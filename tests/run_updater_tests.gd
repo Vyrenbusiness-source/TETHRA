@@ -77,7 +77,11 @@ func _init() -> void:
 			PackedStringArray(["--rendering-driver", "opengl3", "x&y"]))
 	_check(bat2.contains("PID eq 4242") and bat2.find("PID eq 4242") < bat2.find("move /y"),
 			"Batch wartet auf das Ende des Spielprozesses vor dem Tausch")
-	_check(bat2.contains("if not exist \"C:\\g\\TETHRA.pck.new\" goto done0"), "Erfolg per if exist")
+	_check(bat2.contains("if not exist \"TETHRA.pck.new\" goto done0"), "Erfolg per if exist")
+	var bat3: String = U.build_bat("C:/Users/Jörg Müller/AppData/Local/Programs/TETHRA/TETHRA.exe",
+			"C:/Users/Jörg Müller/AppData/Local/Programs/TETHRA", ["TETHRA.pck"])
+	_check(not bat3.contains("Jörg") and bat3.contains("cd /d \"%~dp0\"") and bat3.contains("\"%~dp0TETHRA.exe\""),
+			"Batch ohne ausgeschriebene Pfade (Umlaute im Benutzernamen)")
 	_check(not bat2.contains("timeout /t"), "keine timeout-Pause (ohne Konsole kaputt)")
 	_check(bat2.contains("\"--rendering-driver\" \"opengl3\"") and not bat2.contains("x&y"),
 			"Startargumente weitergegeben, gefaehrliche verworfen")
