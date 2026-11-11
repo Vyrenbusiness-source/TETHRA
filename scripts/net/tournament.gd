@@ -71,7 +71,8 @@ static func clean_config(cfg: Dictionary) -> Dictionary:
 			mods[k] = true
 	var f = cfg.get("filters", {})
 	return { "maps": n, "stars_lo": lo, "stars_hi": hi, "mods": mods,
-		"seed": int(cfg.get("seed", 1)), "filters": clean_filters(f if f is Dictionary else {}) }
+		"seed": int(cfg.get("seed", 1)), "play_mode": ScoreStore.normalize_mode(str(cfg.get("play_mode", "mania"))),
+		"filters": clean_filters(f if f is Dictionary else {}) }
 
 
 static func _int_in(v, lo: int, hi: int, fallback: int) -> int:

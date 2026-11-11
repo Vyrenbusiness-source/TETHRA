@@ -1,0 +1,19 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+uid="uid://b02nuccghl8va"
+
+[deps]
+
+files=["res://translations/modes.de.translation", "res://translations/modes.en.translation"]
+
+source_file="res://translations/modes.csv"
+dest_files=["res://translations/modes.de.translation", "res://translations/modes.en.translation"]
+
+[params]
+
+compress=1
+delimiter=0
+unescape_keys=false
+unescape_translations=true

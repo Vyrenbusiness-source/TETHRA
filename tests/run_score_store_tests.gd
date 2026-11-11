@@ -86,6 +86,7 @@ func _init() -> void:
 	_check(ScoreStore.submit_others(mk, "Dee", [fe.merged({ "score": -1 }, true)]) == 0, "ungueltig abgewiesen")
 
 	_test_modes()
+	_test_four_modes()
 	_test_sv_level()
 	_test_migration()
 	_test_legacy_rescore()
@@ -99,6 +100,42 @@ func _init() -> void:
 		f.close()
 	print("FAILED: %d" % _failed if _failed > 0 else "ALL OK")
 	quit(1 if _failed > 0 else 0)
+
+
+## Rally/Dirigent: eigene Sektionen, Wertung wie Orbit, Modi mischen sich nie.
+func _test_four_modes() -> void:
+	_check(ScoreStore.MODES == ["mania", "orbit", "rally", "dirigent"], "4 Modi in Reihenfolge")
+	_check(ScoreStore.mode_label("rally") == "Rally" and ScoreStore.mode_label("dirigent") == "Dirigent"
+		and ScoreStore.mode_label("") == "Mania 4K" and ScoreStore.mode_label("orbit") == "Orbit", "mode_label je Modus")
+	_check(ScoreStore.uses_points("rally") and ScoreStore.uses_points("dirigent") and ScoreStore.uses_points("orbit")
+		and not ScoreStore.uses_points("") and not ScoreStore.uses_points("mania"), "uses_points")
+	_check(ScoreStore.normalize_mode("quatsch") == "mania" and ScoreStore.normalize_mode("rally") == "rally", "normalize_mode")
+	_check(ScoreStore.mode_scene("rally") == "res://scenes/rally.tscn" and ScoreStore.mode_scene("dirigent") == "res://scenes/dirigent.tscn"
+		and ScoreStore.mode_scene("") == "res://scenes/mania_3d.tscn", "mode_scene")
+	var pp0 := ScoreStore.profile_pp()
+	var R := ScoreStore.MODE_RALLY
+	var D := ScoreStore.MODE_DIRIGENT
+	ScoreStore.submit("77 Four.osz", "Hard", { "score": 700000, "grade": "A", "accuracy": 0.9, "stars": 6.0, "mode": "rally" }, R)
+	ScoreStore.submit("77 Four.osz", "Hard", { "score": 800000, "grade": "S", "accuracy": 0.95, "stars": 8.0, "mode": "dirigent" }, D)
+	ScoreStore.log_play("77 Four.osz", "Hard", "Four", { "score": 700000, "grade": "A", "accuracy": 0.9, "mode": "rally" }, R)
+	ScoreStore.log_play("77 Four.osz", "Hard", "Four", { "score": 800000, "grade": "S", "accuracy": 0.95, "mode": "dirigent" }, D)
+	_check(int(ScoreStore.best("77 Four.osz", "Hard", R).score) == 700000, "Rally-Bestwert eigen")
+	_check(int(ScoreStore.best("77 Four.osz", "Hard", D).score) == 800000, "Dirigent-Bestwert eigen")
+	_check(ScoreStore.best("77 Four.osz", "Hard", ScoreStore.MODE_ORBIT).is_empty()
+		and ScoreStore.best("77 Four.osz", "Hard").is_empty(), "Rally/Dirigent nie in Orbit/Mania")
+	_check(is_equal_approx(ScoreStore.profile_pp(), pp0), "Mania-pp nie durch Rally/Dirigent veraendert")
+	_check(float(ScoreStore.best("77 Four.osz", "Hard", R).stars) == 6.0, "Sterne im Rally-Bestwert")
+	var rr := ScoreStore.mode_stats(R)
+	_check(int(rr.plays) == 1 and int(rr.maps) == 1 and int(rr.best_score) == 700000, "Rally-Kennzahlen")
+	_check(is_equal_approx(float(rr.rating), 4.0 * 36.0 * pow(0.9, 4.0)), "Rally-Wertung 4 x Sterne^2 x Acc^4")
+	_check(is_equal_approx(ScoreStore.mode_rating(D), 4.0 * 64.0 * pow(0.95, 4.0)), "Dirigent-Wertung")
+	_check(is_equal_approx(ScoreStore.orbit_rating_of([100.0, 50.0]), 100.0 + 50.0 * 0.95), "Gewichtung 0,95^Platz")
+	_check(ScoreStore.top_scores("77 Four.osz", "Hard", 9, D).size() == 1 and ScoreStore.top_scores("77 Four.osz", "Hard", 9, R).size() == 1, "Verlauf je Modus")
+	ScoreStore.submit_others(ScoreStore.map_id_for_set(77, "Hard"), "Rob", [{ "score": 500000, "accuracy": 0.8, "grade": "B", "max_combo": 3, "pp": 0.0, "mods": [], "date": "d" }], R)
+	var tr_r := ScoreStore.top_scores_all("77 Four.osz", "Hard", 9, R)
+	var tr_d := ScoreStore.top_scores_all("77 Four.osz", "Hard", 9, D)
+	_check(tr_r.any(func(e): return e.player == "Rob") and not tr_d.any(func(e): return e.player == "Rob"), "Fremd-Scores je Modus getrennt")
+	_check(tr_r.all(func(e): return e.mode == "rally") and tr_d.all(func(e): return e.mode == "dirigent"), "Rangliste traegt Modus")
 
 
 ## Mania und Orbit getrennt: Bestwerte, Plays, Verlauf, Profil, Rangliste.

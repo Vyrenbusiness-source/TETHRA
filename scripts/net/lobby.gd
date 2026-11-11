@@ -61,7 +61,7 @@ var _fetch_req: HTTPRequest
 ## peer_id -> {name, ready, score, combo, acc, final}
 var players: Dictionary = {}
 var crown_id := 1
-## Spielmodus des Raums: "mania" (4K, Standard/alte Clients) oder "orbit".
+## Spielmodus des Raums: "mania" (4K, Standard/alte Clients) "orbit", "rally" oder "dirigent".
 var play_mode := "mania"
 ## {set_id, file, version, title, artist, stars}
 var sel_map: Dictionary = {}
@@ -136,7 +136,7 @@ func _unique_name(base: String, id: int) -> String:
 
 
 ## Bekannte Darstellungen je Spieler. "" = unbekannt (aelterer Client).
-const VIEWS := ["3D", "2D", "Orbit"]
+const VIEWS := ["3D", "2D", "Orbit", "Rally", "Dirigent"]
 
 
 func _new_player(pname: String) -> Dictionary:
@@ -153,18 +153,28 @@ static func norm_view(v) -> String:
 
 ## Darstellung dieses Clients (Orbit kommt, sobald ein Orbit-Schalter existiert).
 func local_view() -> String:
-	if play_mode == "orbit":
-		return "Orbit"
+	if play_mode != "mania":
+		return play_name(play_mode)
 	return "2D" if Settings.playfield_2d else "3D"
 
 
-## Nur "mania" / "orbit" gelten; fehlend oder unbekannt = Mania (alte Clients).
+## Raum-Modi (Reihenfolge der Auswahl in der Lobby).
+const PLAY_MODES := ["mania", "orbit", "rally", "dirigent"]
+
+
+## Nur bekannte Modi gelten; fehlend oder unbekannt = Mania (alte Clients).
 static func norm_play(v) -> String:
-	return "orbit" if typeof(v) == TYPE_STRING and v == "orbit" else "mania"
+	return v if typeof(v) == TYPE_STRING and PLAY_MODES.has(v) else "mania"
 
 
 static func play_name(m: String) -> String:
-	return "Orbit" if m == "orbit" else "Mania 4K"
+	return ScoreStore.mode_label(norm_play(m))
+
+
+## Szene, die alle Spieler im Raum-Modus starten (fehlt sie: Mania, nie Absturz).
+static func play_scene(m: String) -> String:
+	m = norm_play(m)
+	return ScoreStore.mode_scene(m) if ScoreStore.mode_ready(m) else ScoreStore.mode_scene("mania")
 
 
 ## Krone: Raum-Spielmodus waehlen (nicht im Turnier, nicht mitten in der Runde).
@@ -995,10 +1005,7 @@ func cl_start() -> void:
 		status.emit(tr("Map konnte nicht geladen werden."))
 		return
 	game_start.emit()
-	if play_mode == "orbit":
-		get_tree().change_scene_to_file("res://scenes/orbit.tscn")
-	else:
-		get_tree().change_scene_to_file("res://scenes/mania_3d.tscn")
+	get_tree().change_scene_to_file(play_scene(play_mode))
 
 
 ## Gewahlte Diff im lokalen Set finden (per Versionsname) und GameSession setzen.
@@ -1388,6 +1395,7 @@ func tour_create(cfg: Dictionary) -> void:
 		_mode_apply(MatchMode.Kind.FREE)
 	var c := cfg.duplicate()
 	c["seed"] = randi()
+	c["play_mode"] = play_mode  # Modus ist fest je Turnier
 	tournament = Tournament.create(c)
 	tournament.host_id = 1
 	_tour_peers = []

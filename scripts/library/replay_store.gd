@@ -15,6 +15,11 @@ extends RefCounted
 const DIR := "user://replays"
 const MODE_ORBIT_BEST := "orbit"
 const MODE_ORBIT_LAST := "orbit_last"
+## Rally/Dirigent wie Orbit: je Modus bester ("rally") und letzter Lauf ("rally_last").
+const MODE_RALLY_BEST := "rally"
+const MODE_RALLY_LAST := "rally_last"
+const MODE_DIRIGENT_BEST := "dirigent"
+const MODE_DIRIGENT_LAST := "dirigent_last"
 
 
 ## Replay-Schluessel (= Dateiname ohne .json, auch fuer --clip <md5>).
@@ -27,11 +32,29 @@ static func dir_for(mode: String = "mania") -> String:
 	match mode:
 		MODE_ORBIT_BEST: return DIR + "/orbit"
 		MODE_ORBIT_LAST: return DIR + "/orbit/last"
+		MODE_RALLY_BEST: return DIR + "/rally"
+		MODE_RALLY_LAST: return DIR + "/rally/last"
+		MODE_DIRIGENT_BEST: return DIR + "/dirigent"
+		MODE_DIRIGENT_LAST: return DIR + "/dirigent/last"
 	return DIR
 
 
 static func is_orbit(mode: String) -> bool:
 	return mode == MODE_ORBIT_BEST or mode == MODE_ORBIT_LAST
+
+
+## Spielmodus hinter einem Replay-Modus: "mania", "orbit", "rally" oder "dirigent".
+static func base_mode(mode: String) -> String:
+	return mode.trim_suffix("_last") if mode != "mania" else "mania"
+
+
+## Replay-Modus fuer den besten bzw. letzten Lauf eines Spielmodus.
+static func best_mode_of(game_mode: String) -> String:
+	return game_mode if game_mode in ["orbit", "rally", "dirigent"] else "mania"
+
+
+static func last_mode_of(game_mode: String) -> String:
+	return game_mode + "_last" if game_mode in ["orbit", "rally", "dirigent"] else "mania"
 
 
 static func path_for_key(md5: String, mode: String = "mania") -> String:
@@ -55,9 +78,9 @@ static func save(osz_path: String, version: String, events: Array, meta: Diction
 	if f == null:
 		return
 	var m := meta
-	if is_orbit(mode):
+	if base_mode(mode) != "mania":
 		m = meta.duplicate()
-		m["mode"] = "orbit"
+		m["mode"] = base_mode(mode)
 	f.store_string(JSON.stringify({ "meta": m, "events": events }))
 	f.close()
 

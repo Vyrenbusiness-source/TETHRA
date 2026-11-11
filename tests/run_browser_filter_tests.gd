@@ -44,6 +44,7 @@ func _run() -> void:
 	_test_best_filter()
 	_test_sort()
 	_test_mode_filter()
+	_test_four_modes()
 	_test_mtime()
 	print("=== %d ok, %d fehlgeschlagen ===" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
@@ -162,6 +163,43 @@ func _test_mode_filter() -> void:
 	_ok(m["sort"] == SS.SORT_RECENT and m["best"] == SS.BEST_WITHOUT, "Mania-Filter nach Neustart")
 	_ok(o["sort"] == SS.SORT_MOST_PLAYED and o["grades"] == ["SS"], "Orbit-Filter nach Neustart")
 	DirAccess.remove_absolute(path)
+
+
+## 4 Modi: Index je Modus getrennt, Filter je Modus, Sterne-Cache je Modus.
+func _test_four_modes() -> void:
+	var cfg := _fake_cfg()
+	cfg.set_value("rally_scores", "2 B.osz|Normal", {"grade": "A", "date": "2026-09-02T10:00:00"})
+	cfg.set_value("rally_plays", "2 B.osz|Normal", 4)
+	cfg.set_value("dirigent_scores", "1 A.osz|Hard", {"grade": "B", "date": "2026-09-03T10:00:00"})
+	cfg.set_value("dirigent_plays", "1 A.osz|Hard", 2)
+	var rally: Dictionary = SS.build_score_index(cfg, "rally")
+	var dirigent: Dictionary = SS.build_score_index(cfg, "dirigent")
+	_ok(rally.size() == 1 and rally.has("2 B.osz") and SS.set_best_grade(rally["2 B.osz"], ["Normal"]) == "A", "Rally-Index aus rally_scores")
+	_ok(SS.set_plays(rally["2 B.osz"], ["Normal"]) == 4, "Rally-Plays getrennt")
+	_ok(dirigent.size() == 1 and dirigent.has("1 A.osz") and SS.set_best_grade(dirigent["1 A.osz"], ["Hard"]) == "B", "Dirigent-Index aus dirigent_scores")
+	_ok(SS.build_score_index(cfg, "orbit").size() == 1 and SS.build_score_index(cfg, "").size() == 3, "Orbit/Mania-Index unberuehrt")
+	_ok(SS.PLAY_MODES == ["mania", "orbit", "rally", "dirigent"], "Browser kennt 4 Modi")
+	_ok(SS.orbit_stars_key("a.osz", "H") == SS.orbit_stars_key("a.osz", "H", "orbit"), "Orbit-Sternschluessel unveraendert")
+	_ok(SS.orbit_stars_key("a.osz", "H", "rally") != SS.orbit_stars_key("a.osz", "H")
+		and SS.orbit_stars_key("a.osz", "H", "rally") != SS.orbit_stars_key("a.osz", "H", "dirigent"), "Sterne-Cache je Modus getrennt")
+	var path := "user://test_tmp/browser_stars_modes.cfg"
+	DirAccess.remove_absolute(path)
+	SS.orbit_stars_store(SS.orbit_stars_key("a.osz", "H", "rally"), 4.5, path)
+	_ok(is_equal_approx(SS.orbit_stars_cached(SS.orbit_stars_key("a.osz", "H", "rally"), path), 4.5)
+		and SS.orbit_stars_cached(SS.orbit_stars_key("a.osz", "H", "dirigent"), path) < 0.0, "Rally-Sterne gecacht, Dirigent leer")
+	DirAccess.remove_absolute(path)
+	var bm := Beatmap.new()
+	for i in 200:
+		var h := HitObject.new()
+		h.time = i * 250.0
+		bm.hit_objects.append(h)
+	var st: float = SS.mode_stars_fallback(bm)
+	_ok(st > 0.0 and st <= 15.0, "Fallback-Sterne 0..15 (%.2f)" % st)
+	# Filter je Modus (4 Stueck) bleiben getrennt.
+	var mf := {}
+	for m in SS.PLAY_MODES:
+		mf[m] = SS.sanitize_mode_filter({"sort": SS.SORT_RECENT if m == "rally" else SS.SORT_MOST_PLAYED, "grades": ["S"] if m == "dirigent" else []})
+	_ok(mf["rally"]["sort"] == SS.SORT_RECENT and mf["dirigent"]["grades"] == ["S"] and mf["orbit"]["grades"] == [], "4 Modus-Filter getrennt")
 
 
 ## "Zuletzt heruntergeladen" nutzt die Aenderungszeit der Datei.
