@@ -34,6 +34,8 @@ const PLATE_COL := Color(0.012, 0.016, 0.028)
 const EARLY_COL := Color(0.55, 0.75, 0.95)
 const LATE_COL := Color(0.97, 0.66, 0.50)
 const MAX_COL := Color(0.98, 0.93, 0.75)
+## Freies Band oben/unten in der Zeitleiste (px).
+const BAND := 30.0
 const KEY_NAMES := ["A", "B", "SMASH"]
 
 var _data: Dictionary = {}
@@ -351,8 +353,9 @@ func _process(delta: float) -> void:
 	var k := clampf(_t / REVEAL_S, 0.0, 1.0)
 	var e := 1.0 - pow(1.0 - k, 3.0)
 	_score.text = UiTheme.fmt_score(int(float(_data.get("s", {}).get("score", 0)) * e))
-	_grade.position = _grade_center() - Vector2(110, 75)
-	_grade.size = Vector2(220, 150)
+	_grade.add_theme_font_size_override("font_size", int(size.y * 0.2))
+	_grade.size = Vector2(size.y * 0.34, size.y * 0.26)
+	_grade.position = _grade_center() - _grade.size * 0.5
 	_cap_plot.position = _plot_rect().position - Vector2(0, 22)
 	if k < 1.0 or _t < REVEAL_S + 0.1:
 		queue_redraw()
@@ -367,12 +370,12 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _grade_center() -> Vector2:
-	return Vector2(size.x * 0.135, size.y * 0.2)
+	return Vector2(size.x * 0.135, size.y * 0.17)
 
 
 ## Plotflaeche der Zeitleiste.
 func _plot_rect() -> Rect2:
-	return Rect2(size.x * 0.04, size.y * 0.42, size.x * 0.43, size.y * 0.40)
+	return Rect2(size.x * 0.04, size.y * 0.36, size.x * 0.43, size.y * 0.46)
 
 
 func _draw() -> void:
@@ -396,7 +399,7 @@ func _draw_timeline() -> void:
 	draw_line(Vector2(r.position.x, r.end.y), r.end, Color(1, 1, 1, 0.08), 1.0)
 	draw_string(_font, r.position + Vector2(6, 16), tr("EARLY"), HORIZONTAL_ALIGNMENT_LEFT, -1, fs,
 		Color(EARLY_COL, 0.8))
-	draw_string(_font, Vector2(r.position.x + 6, r.end.y - 8), tr("LATE"), HORIZONTAL_ALIGNMENT_LEFT, -1, fs,
+	draw_string(_font, Vector2(r.position.x + 6, r.end.y - 16), tr("LATE"), HORIZONTAL_ALIGNMENT_LEFT, -1, fs,
 		Color(LATE_COL, 0.8))
 	var ms := "±%d ms" % int(round(_w50))
 	var mw := _tab.get_string_size(ms, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
@@ -421,7 +424,8 @@ func _draw_timeline() -> void:
 				draw_line(p - Vector2(h, h), p + Vector2(h, h), Color(TIER_COLS[5], 0.9), 1.5, true)
 				draw_line(p - Vector2(h, -h), p + Vector2(h, -h), Color(TIER_COLS[5], 0.9), 1.5, true)
 				continue
-			var y := mid + clampf(float(e.dt) / _w50, -1.0, 1.0) * (half - 6.0)
+			# Oben/unten bleibt ein Band frei fuer FRUEH/SPAET und die Miss-Kreuze.
+			var y := mid + clampf(float(e.dt) / _w50, -1.0, 1.0) * (half - BAND)
 			_shape(self, Vector2(x, y), int(e.key), 2.3, Color(TIER_COLS[q], 0.85))
 	# Legende: Formen statt Text allein.
 	var lx := r.position.x
