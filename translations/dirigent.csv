@@ -1,0 +1,30 @@
+keys,de,en
+DIRIGENT,DIRIGENT,CONDUCTOR
+Pause,Pause,Rest
+Schlag verfehlt,Schlag verfehlt,Beat missed
+Taktwechsel: %s,Taktwechsel: %s,Time change: %s
+ab dem nächsten Takt,ab dem nächsten Takt,from the next bar
+GENAUIGKEIT,GENAUIGKEIT,ACCURACY
+RANG,RANG,RANK
+PUNKTE,PUNKTE,SCORE
+TAKT,TAKT,BEATS
+EINSÄTZE,EINSÄTZE,CUES
+KOMBO,KOMBO,COMBO
+ZIELFEHLER,ZIELFEHLER,AIM ERROR
+STERNE,STERNE,STARS
+TAKT  ·  40 %,TAKT  ·  40 %,BEATS  ·  40 %
+EINSÄTZE  ·  60 %,EINSÄTZE  ·  60 %,CUES  ·  60 %
+EINSATZ-STUFEN,EINSATZ-STUFEN,CUE GRADES
+SCHLÄGE  ·  Abstand zum Punkt,SCHLÄGE  ·  Abstand zum Punkt,BEATS  ·  distance to the point
+EINSÄTZE  ·  Zeitfehler,EINSÄTZE  ·  Zeitfehler,CUES  ·  timing error
+genau,genau,exact
+Rand,Rand,edge
+früh,früh,early
+spät,spät,late
+"Kreis = Taste A, Raute = Taste B, Quadrat = beide","Kreis = Taste A, Raute = Taste B, Quadrat = beide","Circle = key A, diamond = key B, square = both"
+Neue Bestleistung,Neue Bestleistung,New best
+Nochmal,Nochmal,Retry
+Selbst spielen,Selbst spielen,Play it yourself
+Replay ansehen,Replay ansehen,Watch replay
+Zurück,Zurück,Back
+"Führe die Hand von Punkt zu Punkt, genau auf den Schlag. Einsätze mit den Tasten %s und %s.","Führe die Hand von Punkt zu Punkt, genau auf den Schlag. Einsätze mit den Tasten %s und %s.","Guide your hand from point to point, exactly on the beat. Cues with keys %s and %s."

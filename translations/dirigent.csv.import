@@ -1,0 +1,19 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+uid="uid://ctsqul8nkkqvb"
+
+[deps]
+
+files=["res://translations/dirigent.de.translation", "res://translations/dirigent.en.translation"]
+
+source_file="res://translations/dirigent.csv"
+dest_files=["res://translations/dirigent.de.translation", "res://translations/dirigent.en.translation"]
+
+[params]
+
+compress=1
+delimiter=0
+unescape_keys=false
+unescape_translations=true
