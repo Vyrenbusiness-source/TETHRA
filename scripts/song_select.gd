@@ -3084,6 +3084,10 @@ func _watch_replay() -> void:
 func _update_max_pp(m: Dictionary) -> void:
 	if _selected_set == null:
 		return
+	# pp gibt es nur in Mania; Orbit/Rally/Dirigent werten ohne pp.
+	if _play_mode != "mania":
+		_maxpp_label.text = ""
+		return
 	var inner := _selected_set.osu_filename_at(_selected_diff)
 	var cached := StarService.max_pp_cached(_selected_set.osz_path, inner)
 	if cached >= 0.0:
@@ -3109,7 +3113,9 @@ func _on_maxpp_done(osz: String, inner: String, v: float) -> void:
 		_maxpp_thread = null
 	if _selected_set == null:
 		return
-	if _selected_set.osz_path == osz and _selected_set.osu_filename_at(_selected_diff) == inner:
+	if _play_mode != "mania":
+		_maxpp_label.text = ""
+	elif _selected_set.osz_path == osz and _selected_set.osu_filename_at(_selected_diff) == inner:
 		_maxpp_label.text = (tr("Max. %s bei SS") % UiTheme.fmt_pp(v)) if v >= 0.0 else ""
 	else:
 		# Auswahl hat gewechselt — fuer die neue Diff nachziehen.
