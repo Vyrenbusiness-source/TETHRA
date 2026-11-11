@@ -58,6 +58,24 @@ static func uses_points(mode: String) -> bool:
 	return m == MODE_ORBIT or m == MODE_RALLY or m == MODE_DIRIGENT
 
 
+## Spielszene je Modus (Wurzelskript wie orbit_game: setzt Lobby/Score selbst).
+const MODE_SCENES := {
+	"mania": "res://scenes/mania_3d.tscn",
+	"orbit": "res://scenes/orbit.tscn",
+	"rally": "res://scenes/rally.tscn",
+	"dirigent": "res://scenes/dirigent.tscn",
+}
+
+
+static func mode_scene(mode: String) -> String:
+	return str(MODE_SCENES.get(normalize_mode(mode), MODE_SCENES.mania))
+
+
+## false, solange die Szene des Modus noch nicht gebaut ist ("kommt bald").
+static func mode_ready(mode: String) -> bool:
+	return ResourceLoader.exists(mode_scene(mode))
+
+
 ## Gueltige Modus-ID (unbekannt -> Mania).
 static func normalize_mode(mode: String) -> String:
 	return mode if MODES.has(mode) else MODE_MANIA

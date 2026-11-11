@@ -173,7 +173,7 @@ const BROWSER_STATE_PATH := "user://browser_state.cfg"
 var _state_ready := false
 ## Spielmodus fuer 4K-Diffs: "mania" (Standard, unveraendert) oder "orbit"
 ## (zusaetzlicher Modus). Wird mit dem Browser-Zustand gemerkt.
-const PLAY_MODES := ["mania", "orbit"]
+const PLAY_MODES := ["mania", "orbit", "rally", "dirigent"]
 var _play_mode := "mania"
 var _mode_btns: Array[Button] = []
 ## Orbit-Einfuehrung: dezenter Hinweis beim ersten Wechsel auf Orbit, bis
@@ -249,6 +249,9 @@ func _ready() -> void:
 	var restore := _load_browser_state()
 	if OS.get_cmdline_args().has("--orbit"):
 		_play_mode = "orbit"  # Debug/Shots: Orbit vorwaehlen (nie gespeichert)
+	for a in OS.get_cmdline_args():
+		if a.begins_with("--mode=") and PLAY_MODES.has(a.trim_prefix("--mode=")):
+			_play_mode = a.trim_prefix("--mode=")  # Debug/Shots: Modus vorwaehlen (nie gespeichert)
 	for a in OS.get_cmdline_args():
 		# Debug/Shots: --filter=sort=3,best=1,grades=S+A fuer den aktiven Modus (nie gespeichert).
 		if a.begins_with("--filter="):
@@ -353,7 +356,7 @@ func _debug_pick() -> Array:
 			diff_q = a.trim_prefix("--diff=").to_lower()
 	for ms in _library.mapsets if map_q != "" else _filtered:
 		for i in ms.difficulty_count():
-			if not MapSet.mode_shows(ms.meta_at(i), _play_mode):
+			if not MapSet.mode_shows(ms.meta_at(i), _vm()):
 				continue
 			var ver := ms.version_name_at(i)
 			var full := ("%s - %s [%s]" % [ms.artist, ms.title, ver]).to_lower()
@@ -530,7 +533,7 @@ func _shot_modes() -> void:
 
 func _capture_screenshot_and_quit() -> void:
 	# Orbit: Sterne werden asynchron berechnet, darum laenger warten.
-	var wait := 4.0 if _play_mode == "orbit" else 1.0
+	var wait := 1.0 if _play_mode == "mania" else 4.0
 	for a in OS.get_cmdline_args():
 		if a.begins_with("--shot-wait="):
 			wait = float(a.trim_prefix("--shot-wait="))  # Orbit-Karriere: Sterne brauchen laenger
@@ -1033,6 +1036,7 @@ func _build_info_panel() -> void:
 		mods_row.add_child(ob)
 		_orbit_mod_btns[k] = ob
 	_apply_mod_visibility()
+	_apply_play_state()
 
 	var coll_btn := Button.new()
 	coll_btn.text = "+ Sammlung"
@@ -1533,7 +1537,7 @@ func _refresh_filter(query: String) -> void:
 		if _sv_filter and not ms.has_sv():
 			continue
 		# Modus-Filter: osu!standard-Diffs nur im Orbit-Modus (MapSet.mode_shows).
-		var vis := ms.visible_diffs(_play_mode)
+		var vis := ms.visible_diffs(_vm())
 		if vis.is_empty():
 			continue
 		# Sterne-Filter: Set passt, wenn IRGENDEINE sichtbare Diff im Bereich liegt.
@@ -1587,7 +1591,7 @@ func _refresh_filter(query: String) -> void:
 func _scores_for_mode() -> Dictionary:
 	if not _score_index.has(_play_mode):
 		var cfg := ConfigFile.new()
-		var mode := ScoreStore.MODE_ORBIT if _play_mode == "orbit" else ""
+		var mode := _pm()
 		_score_index[_play_mode] = build_score_index(cfg, mode) 			if cfg.load(ScoreStore.PATH) == OK else {}
 	return _score_index[_play_mode]
 
@@ -1944,7 +1948,7 @@ func _share_selected_map() -> void:
 	if not _online_md5_cache.has(key):
 		_online_md5_cache[key] = OnlineApi._md5_bytes(OszImporter.read_file_bytes(_selected_set.osz_path, file))
 	var stars := _selected_set.stars_at(_selected_diff)
-	if _play_mode == "orbit":
+	if _play_mode != "mania":
 		var os_st := _orbit_stars_known(_selected_set, _selected_diff)
 		if os_st > 0.0:
 			stars = os_st
@@ -2130,12 +2134,12 @@ func _make_card(ms: MapSet) -> Button:
 func _best_grade_badge(ms: MapSet) -> String:
 	if _scores_cfg == null:
 		return ""
-	var orbit := _play_mode == "orbit"
-	var sec := ScoreStore._sec("scores", ScoreStore.MODE_ORBIT if orbit else "")
+	var orbit := _play_mode != "mania"
+	var sec := ScoreStore._sec("scores", _pm())
 	var best_g := ""
 	var best_rank := 999
 	for i in range(ms.difficulty_count() - 1, -1, -1):
-		if not ms.diff_visible(i, _play_mode) or (not orbit and int(ms.meta_at(i).get("mode", 0)) != 3):
+		if not ms.diff_visible(i, _vm()) or (not orbit and int(ms.meta_at(i).get("mode", 0)) != 3):
 			continue
 		# Gleiche Abfrage wie ScoreStore.best(), aber ohne scores.cfg pro Aufruf neu zu lesen.
 		var best = _scores_cfg.get_value(sec, ScoreStore._key(ms.osz_path, ms.version_name_at(i)), {})
@@ -2156,8 +2160,7 @@ func _set_card_grade(g: Label, grade: String) -> void:
 	g.text = grade
 	g.visible = grade != ""
 	g.add_theme_color_override("font_color", GRADE_COLOR.get(grade.left(1), COL_TEXT))
-	g.tooltip_text = (tr("Bester Rang (%s)") % ScoreStore.mode_label(
-		ScoreStore.MODE_ORBIT if _play_mode == "orbit" else "")) if grade != "" else ""
+	g.tooltip_text = (tr("Bester Rang (%s)") % ScoreStore.mode_label(_pm())) if grade != "" else ""
 
 
 ## Rang-Badges aller Karten fuer den aktiven Modus neu setzen (ohne Neuaufbau).
@@ -2198,7 +2201,7 @@ func _select_set(ms: MapSet, diff_index: int) -> void:
 	_perf_select_t = Time.get_ticks_usec()
 	_selected_set = ms
 	_selected_diff = clampi(diff_index, 0, ms.difficulty_count() - 1)
-	_selected_diff = maxi(ms.nearest_visible(_selected_diff, _play_mode), 0)
+	_selected_diff = maxi(ms.nearest_visible(_selected_diff, _vm()), 0)
 	_update_info_panel()
 	Sfx.select_chime()
 	_play_preview()
@@ -2207,7 +2210,7 @@ func _select_set(ms: MapSet, diff_index: int) -> void:
 func _cycle_difficulty(dir: int) -> void:
 	if _selected_set == null:
 		return
-	var vis := _selected_set.visible_diffs(_play_mode)
+	var vis := _selected_set.visible_diffs(_vm())
 	if vis.is_empty():
 		return
 	var at := vis.find(_selected_diff)
@@ -2237,7 +2240,7 @@ func _update_info_panel() -> void:
 	var keys := int(round(float(m.get("cs", 4.0))))
 	_diff_label.text = _selected_set.version_name_at(_selected_diff).strip_edges() 		+ (("  ·  %dK" % keys) if is_mania else "  ·  osu!standard")
 	_star_label.text = _stars_text(_selected_set.stars_at(_selected_diff))
-	if _play_mode == "orbit" and (not is_mania or keys == 4):
+	if _play_mode != "mania" and (not is_mania or keys == 4):
 		_orbit_stars_request(_selected_set.osz_path, _selected_set.version_name_at(_selected_diff))
 	var notes := tr("%d Noten") % int(m.get("notes", 0))
 	var od := "OD " + UiTheme.fmt_num(float(m.get("od", 0.0)))
@@ -2258,13 +2261,13 @@ func _update_info_panel() -> void:
 		c.queue_free()
 	# Eigene + Scores von Mitspielern (Multiplayer-Sync), beste zuerst.
 	# Orbit-Modus (nur 4K-Diffs): nur Orbit-Scores, getrennt von Mania.
-	var orbit := _play_mode == "orbit" and int(m.get("mode", 0)) in [0, 3]
-	var score_mode := ScoreStore.MODE_ORBIT if orbit else ""
+	var orbit := _play_mode != "mania" and int(m.get("mode", 0)) in [0, 3]
+	var score_mode := _pm() if orbit else ""
 	_style_lb_mode_tag(score_mode)
 	_online_gen += 1
 	if _lb_online:
 		_replay_btn.visible = false
-		_show_online_scores(m, orbit)
+		_show_online_scores(m, score_mode)
 		_apply_card_highlight()
 		return
 	var tops := ScoreStore.top_scores_all(_selected_set.osz_path,
@@ -2282,7 +2285,8 @@ func _update_info_panel() -> void:
 	if _replay_btn != null:
 		var ver := _selected_set.version_name_at(_selected_diff)
 		if orbit:
-			_replay_btn.visible = ReplayStore.exists(_selected_set.osz_path, ver, ReplayStore.MODE_ORBIT_BEST)
+			# Replays gibt es nur fuer Orbit; Rally/Dirigent folgen mit ihren Szenen.
+			_replay_btn.visible = score_mode == ScoreStore.MODE_ORBIT 				and ReplayStore.exists(_selected_set.osz_path, ver, ReplayStore.MODE_ORBIT_BEST)
 		else:
 			_replay_btn.visible = int(m.get("mode", 0)) == 3 				and ReplayStore.exists(_selected_set.osz_path, ver)
 	_apply_card_highlight()
@@ -2370,7 +2374,7 @@ func _frame_box(col: Color, w: int) -> StyleBoxFlat:
 func _rebuild_diff_bar() -> void:
 	for c in _diff_bar.get_children():
 		c.queue_free()
-	for i in _selected_set.visible_diffs(_play_mode):
+	for i in _selected_set.visible_diffs(_vm()):
 		var seg := ColorRect.new()
 		seg.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		seg.size_flags_vertical = Control.SIZE_SHRINK_CENTER
@@ -2471,7 +2475,7 @@ func _lb_hint(text: String) -> void:
 
 
 ## Online-Rangliste der gewaehlten Diff (asynchron). Ohne Key/Login: klarer Hinweis.
-func _show_online_scores(m: Dictionary, orbit: bool) -> void:
+func _show_online_scores(m: Dictionary, score_mode: String) -> void:
 	var api: OnlineApi = GameSession.online
 	if api == null or not api.enabled():
 		_lb_hint(tr("Online-Ranglisten sind noch nicht freigeschaltet."))
@@ -2489,7 +2493,7 @@ func _show_online_scores(m: Dictionary, orbit: bool) -> void:
 		return
 	_lb_hint(tr("Lade Rangliste …"))
 	var gen := _online_gen
-	api.leaderboard("orbit" if orbit else "mania", md5, 0, func(ok: bool, entries: Array, msg: String):
+	api.leaderboard(ScoreStore.mode_name(score_mode), md5, 0, func(ok: bool, entries: Array, msg: String):
 		if gen != _online_gen or not is_inside_tree():
 			return
 		for c in _lb_box.get_children():
@@ -2671,23 +2675,55 @@ func _score_row(rank: int, e: Dictionary) -> Control:
 	return row
 
 
-## Segment-Umschalter Mania 4K | Orbit (gleiche Toggle-Optik wie die Filter-Chips).
+## Modus-Umschalter Mania 4K | Orbit | Rally | Dirigent als kompakte 2x2-Gruppe
+## (gleiche Toggle-Optik wie die Filter-Chips, Hoehe wie der SPIELEN-Knopf).
+const MODE_TIPS := {
+	"mania": "Klassisch: vier Spuren",
+	"orbit": "Zielen mit Maus/Tablet, Ring per Taste (osu!standard- und 4K-Maps)",
+	"rally": "Tischtennis im Takt: Schlaege auf die Noten, zwei Tasten",
+	"dirigent": "Taktfigur mit der Maus fuehren, Einsaetze per Taste",
+}
+
+
 func _build_mode_switch() -> Control:
-	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 4)
-	box.custom_minimum_size = Vector2(104, 54)
+	var grid := GridContainer.new()
+	grid.columns = 2
+	grid.add_theme_constant_override("h_separation", 4)
+	grid.add_theme_constant_override("v_separation", 4)
+	grid.custom_minimum_size = Vector2(156, 54)
 	_mode_btns.clear()
 	for m in PLAY_MODES:
-		var b := _make_toggle("Mania 4K" if m == "mania" else "Orbit", 13, 8)
-		b.custom_minimum_size = Vector2(104, 25)
+		var b := _make_toggle(ScoreStore.mode_label("" if m == "mania" else m), 12, 6)
+		b.custom_minimum_size = Vector2(76, 25)
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		b.size_flags_vertical = Control.SIZE_EXPAND_FILL
-		b.tooltip_text = "Klassisch: vier Spuren" if m == "mania" 				else "Zielen mit Maus/Tablet, Ring per Taste (osu!standard- und 4K-Maps)"
+		b.tooltip_text = tr(MODE_TIPS[m])
 		var mode: String = m
 		b.pressed.connect(func(): _set_play_mode(mode))
-		box.add_child(b)
+		grid.add_child(b)
 		_mode_btns.append(b)
 	_restyle_mode_switch()
-	return box
+	return grid
+
+
+## Sichtbarkeits-Modus fuer MapSet: Orbit/Rally/Dirigent zeigen 4K und osu!standard.
+func _vm() -> String:
+	return "mania" if _play_mode == "mania" else "orbit"
+
+
+## ScoreStore-Modus des aktiven Browser-Modus ("" = Mania).
+func _pm() -> String:
+	return "" if _play_mode == "mania" else _play_mode
+
+
+## Play-Knopf: ohne Szene des Modus "Kommt bald" statt Absturz.
+func _apply_play_state() -> void:
+	if _play_btn == null:
+		return
+	var ready := ScoreStore.mode_ready(_play_mode)
+	_play_btn.disabled = not ready
+	_play_btn.text = tr("Spielen") if ready else tr("Kommt bald")
+	_play_btn.tooltip_text = "" if ready else tr("Dieser Modus wird gerade gebaut.")
 
 
 func _set_play_mode(mode: String) -> void:
@@ -2695,6 +2731,7 @@ func _set_play_mode(mode: String) -> void:
 		return
 	_play_mode = mode
 	_restyle_mode_switch()
+	_apply_play_state()
 	_restyle_score_chips()  # Sortierung/Bestwert-Filter sind je Modus gemerkt
 	_apply_mod_visibility()
 	if mode == "orbit":
@@ -2710,7 +2747,7 @@ func _set_play_mode(mode: String) -> void:
 		if not _filtered.is_empty():
 			_select_set(_filtered[0], _filtered[0].difficulty_count() - 1)
 	elif _selected_set != null:
-		_selected_diff = maxi(_selected_set.nearest_visible(_selected_diff, _play_mode), 0)
+		_selected_diff = maxi(_selected_set.nearest_visible(_selected_diff, _vm()), 0)
 		_update_info_panel()
 	if _state_ready:
 		_save_browser_state()
@@ -2910,9 +2947,12 @@ func _on_play_pressed() -> void:
 	_preview.stop()
 	# Auto-Erkennung: Mania-Diffs (Mode 3) starten die 4K-Szene.
 	var mode := int(_selected_set.meta_at(_selected_diff).get("mode", 0))
-	if (mode == 3 or mode == 0) and _play_mode == "orbit":
-		# Orbit spielt 4K-Mania und osu!standard (OrbitConverter).
-		_change_to_game("res://scenes/orbit.tscn")
+	if (mode == 3 or mode == 0) and _play_mode != "mania":
+		# Orbit/Rally/Dirigent spielen 4K-Mania und osu!standard (eigene Szene je Modus).
+		if not ScoreStore.mode_ready(_play_mode):
+			_apply_play_state()
+			return
+		_change_to_game(ScoreStore.mode_scene(_play_mode))
 	elif mode == 3:
 		_change_to_game("res://scenes/mania_3d.tscn")
 	else:
@@ -2958,9 +2998,9 @@ func _on_orbit_mod_toggled(key: String, on: bool) -> void:
 func _apply_mod_visibility() -> void:
 	var orbit := _play_mode == "orbit"
 	if _sv_btn != null:
-		_sv_btn.visible = not orbit
+		_sv_btn.visible = _play_mode == "mania"
 	if _sv_level_box != null:
-		_sv_level_box.visible = not orbit
+		_sv_level_box.visible = _play_mode == "mania"
 	for k in _orbit_mod_btns:
 		(_orbit_mod_btns[k] as CheckButton).visible = orbit
 		(_orbit_mod_btns[k] as CheckButton).set_pressed_no_signal(bool(_orbit_mods[k]))
@@ -2978,6 +3018,8 @@ func _on_sv_toggled(pressed: bool) -> void:
 ## Mods fuer den naechsten Start (Schnittstelle GameSession.mods).
 ## Orbit: NF + Orbit-Mods (SV wirkt im Orbit nicht und zaehlt dort nicht).
 func _current_mods() -> Dictionary:
+	if _play_mode in ["rally", "dirigent"]:
+		return {"NF": _nf_enabled}
 	if _play_mode == "orbit":
 		var m := {"NF": _nf_enabled}
 		for k in OrbitCore.ORBIT_MODS:
@@ -3014,6 +3056,8 @@ func _watch_replay() -> void:
 	if _selected_set == null:
 		return
 	var orbit := _play_mode == "orbit" 		and int(_selected_set.meta_at(_selected_diff).get("mode", 0)) in [0, 3]
+	if _play_mode in ["rally", "dirigent"]:
+		return
 	var rmode := ReplayStore.MODE_ORBIT_BEST if orbit else "mania"
 	var data := ReplayStore.load_replay(_selected_set.osz_path,
 		_selected_set.version_name_at(_selected_diff), rmode)
@@ -3897,10 +3941,15 @@ func _os_cache_get() -> Dictionary:
 	return _os_cache
 
 
+## Modus, dessen Sterne gerade gezeigt werden (Mania zeigt Orbit-Sterne nur intern).
+func _stars_mode() -> String:
+	return "orbit" if _play_mode == "mania" else _play_mode
+
+
 func _orbit_key(ms: MapSet, ver: String) -> String:
-	var k := ms.osz_path + "|" + ver
+	var k := _stars_mode() + "|" + ms.osz_path + "|" + ver
 	if not _okey_cache.has(k):
-		_okey_cache[k] = orbit_stars_key(ms.osz_path, ver)
+		_okey_cache[k] = orbit_stars_key(ms.osz_path, ver, _stars_mode())
 	return _okey_cache[k]
 
 
@@ -4111,8 +4160,10 @@ var _os_want_args := []
 var _os_token := 0
 
 
-static func orbit_stars_key(osz: String, version: String) -> String:
-	return "v%d|%s|%d|%s" % [ORBIT_STARS_VER, osz.get_file(), FileAccess.get_modified_time(osz), version]
+## mode "orbit": bisheriger Schluessel; Rally/Dirigent haengen die Modus-ID vorn an.
+static func orbit_stars_key(osz: String, version: String, mode: String = "orbit") -> String:
+	var base := "v%d|%s|%d|%s" % [ORBIT_STARS_VER, osz.get_file(), FileAccess.get_modified_time(osz), version]
+	return base if mode == "orbit" else "%s|%s" % [mode, base]
 
 
 static func orbit_stars_cached(key: String, path: String = ORBIT_STARS_PATH) -> float:
@@ -4141,26 +4192,54 @@ static func orbit_stars_cache_all(path: String = ORBIT_STARS_PATH) -> Dictionary
 
 
 ## Orbit-Sterne einer 4K- oder osu!standard-Diff berechnen (teuer: Import + Konvertierung).
-static func orbit_stars_compute(osz: String, version: String) -> float:
+## mode "rally"/"dirigent": Sterne 0..15 aus dem Modus-Chart, wenn dessen Skript
+## static stars_of_beatmap(bm) kennt, sonst Dichte-Schaetzung (mode_stars_fallback).
+static func orbit_stars_compute(osz: String, version: String, mode: String = "orbit") -> float:
 	var imp := OszImporter.import(osz)
 	if not imp.ok:
 		return -1.0
 	for d in imp.difficulties:
 		var bm: Beatmap = d.beatmap
 		if (bm.is_mania() or bm.mode() == 0) and bm.version_name() == version:
-			return OrbitConverter.stars(OrbitConverter.convert(bm))
+			if mode == "orbit":
+				return OrbitConverter.stars(OrbitConverter.convert(bm))
+			var path := "res://scripts/%s/%s_chart.gd" % [mode, mode]
+			if ResourceLoader.exists(path):
+				var sc: GDScript = load(path)
+				if sc != null and sc.has_method("stars_of_beatmap"):
+					return float(sc.call("stars_of_beatmap", bm))
+			return mode_stars_fallback(bm)
 	return -1.0
 
 
+## Platzhalter-Sterne ohne Modus-Chart: Spitzen-Notendichte (5-s-Fenster) und
+## Durchschnitt, 0..15. Gilt nur, bis scripts/<modus>/<modus>_chart.gd echte liefert.
+static func mode_stars_fallback(bm: Beatmap) -> float:
+	var ts: Array[float] = []
+	for h in bm.hit_objects:
+		ts.append(h.time)
+	if ts.size() < 2:
+		return 0.0
+	ts.sort()
+	var peak := 0.0
+	var j := 0
+	for i in ts.size():
+		while ts[i] - ts[j] > 5000.0:
+			j += 1
+		peak = maxf(peak, float(i - j + 1) / 5.0)
+	var avg := float(ts.size()) / maxf((ts[-1] - ts[0]) / 1000.0, 1.0)
+	return clampf(0.55 * peak + 0.45 * avg * 1.4, 0.0, 15.0) * 0.8
+
+
 func _orbit_stars_request(osz: String, version: String) -> void:
-	var key := orbit_stars_key(osz, version)
+	var key := orbit_stars_key(osz, version, _stars_mode())
 	_os_want = key
-	_os_want_args = [osz, version]
+	_os_want_args = [osz, version, _stars_mode()]
 	var hit := orbit_stars_cached(key)
 	if hit >= 0.0:
-		_star_label.text = "Orbit " + _stars_text(hit)
+		_star_label.text = ScoreStore.mode_label(_stars_mode()) + " " + _stars_text(hit)
 		return
-	_star_label.text = "Orbit ★ …"
+	_star_label.text = ScoreStore.mode_label(_stars_mode()) + " ★ …"
 	_os_token += 1
 	var tok := _os_token
 	await get_tree().create_timer(ORBIT_STARS_DELAY).timeout  # Scrollen: erst nach Ruhe rechnen
@@ -4174,11 +4253,11 @@ func _orbit_stars_start() -> void:
 		return
 	_os_key = _os_want
 	_os_thread = Thread.new()
-	_os_thread.start(_orbit_stars_work.bind(_os_key, _os_want_args[0], _os_want_args[1]))
+	_os_thread.start(_orbit_stars_work.bind(_os_key, _os_want_args[0], _os_want_args[1], _os_want_args[2]))
 
 
-func _orbit_stars_work(key: String, osz: String, version: String) -> void:
-	var st := orbit_stars_compute(osz, version)
+func _orbit_stars_work(key: String, osz: String, version: String, mode: String) -> void:
+	var st := orbit_stars_compute(osz, version, mode)
 	_orbit_stars_done.call_deferred(key, st)
 
 
@@ -4190,8 +4269,8 @@ func _orbit_stars_done(key: String, st: float) -> void:
 		orbit_stars_store(key, st)
 		_os_cache_get()[key] = st
 	if key == _os_want:
-		if st >= 0.0 and _play_mode == "orbit":
-			_star_label.text = "Orbit " + _stars_text(st)
+		if st >= 0.0 and _play_mode != "mania":
+			_star_label.text = ScoreStore.mode_label(_stars_mode()) + " " + _stars_text(st)
 	elif _os_want != "":
 		_orbit_stars_start()
 
