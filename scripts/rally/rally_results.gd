@@ -63,17 +63,6 @@ var _cap_plot: Label
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_STOP
-	_ensure_translations()
-
-
-## Uebersetzungen aus translations/rally.csv (auch ohne Eintrag in project.godot).
-static func _ensure_translations() -> void:
-	for loc in ["de", "en"]:
-		var path := "res://translations/rally.%s.translation" % loc
-		if ResourceLoader.exists(path):
-			var tr_res := load(path) as Translation
-			if tr_res != null:
-				TranslationServer.add_translation(tr_res)
 
 
 ## Ein Log-Eintrag je gewertetem Schlag (RallyGame._result_log): t (Notenzeit),
