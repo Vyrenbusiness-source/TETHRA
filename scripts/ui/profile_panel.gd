@@ -404,25 +404,31 @@ func _acct_msg_label_update() -> void:
 		l.text = _acct_msg
 
 
-## Segment-Umschalter Mania 4K | Orbit (Optik wie im Song-Browser).
+## Modi in Reiter-Reihenfolge ("" = Mania 4K).
+const PROFILE_MODES := ["", ScoreStore.MODE_ORBIT, ScoreStore.MODE_RALLY, ScoreStore.MODE_DIRIGENT]
+
+
+## Segment-Umschalter Mania 4K | Orbit | Rally | Dirigent (Optik wie im Song-Browser).
 func _build_mode_switch() -> Control:
 	if not Settings.is_test_run():
 		var bs := ConfigFile.new()
 		if bs.load("user://browser_state.cfg") == OK \
-				and str(bs.get_value("browser", "play_mode", "")) == ScoreStore.MODE_ORBIT:
-			_mode = ScoreStore.MODE_ORBIT
+				and ScoreStore.uses_points(str(bs.get_value("browser", "play_mode", ""))):
+			_mode = str(bs.get_value("browser", "play_mode", ""))
 	for a in OS.get_cmdline_args():
 		if a == "--orbit":
 			_mode = ScoreStore.MODE_ORBIT
+		elif a.begins_with("--mode=") and ScoreStore.MODES.has(a.trim_prefix("--mode=")):
+			_mode = a.trim_prefix("--mode=") if a != "--mode=mania" else ""
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 6)
 	_mode_btns.clear()
-	for m in ["", ScoreStore.MODE_ORBIT]:
+	for m in PROFILE_MODES:
 		var b := Button.new()
 		b.text = ScoreStore.mode_label(m)
 		b.toggle_mode = true
 		b.focus_mode = Control.FOCUS_NONE
-		b.custom_minimum_size = Vector2(96, 28)
+		b.custom_minimum_size = Vector2(80, 28)
 		b.add_theme_font_size_override("font_size", 13)
 		b.tooltip_text = tr("Profilwerte für %s") % ScoreStore.mode_label(m)
 		UiTheme._attach_sounds(b)
@@ -435,7 +441,7 @@ func _build_mode_switch() -> Control:
 
 
 func _restyle_mode_btns() -> void:
-	var modes := ["", ScoreStore.MODE_ORBIT]
+	var modes := PROFILE_MODES
 	for i in _mode_btns.size():
 		var on: bool = modes[i] == _mode
 		var b := _mode_btns[i]
@@ -465,7 +471,7 @@ func _set_mode(mode: String) -> void:
 
 ## Wertung, Rang-Chips, Statistik-Spalte und Listen fuer _mode (neu) aufbauen.
 func _fill_mode() -> void:
-	var orbit := _mode == ScoreStore.MODE_ORBIT
+	var orbit := ScoreStore.uses_points(_mode)
 	var stats := ScoreStore.mode_stats(_mode)
 	for c in _rating_slot.get_children():
 		c.queue_free()
@@ -487,9 +493,9 @@ func _fill_mode() -> void:
 	var pp_cap := Label.new()
 	# Orbit-Rating: eigene Kennzahl (Formel: ScoreStore.orbit_points,
 	# docs/modes/orbit.md); Mania-pp bleibt unveraendert.
-	pp_cap.text = "Orbit-Rating" if orbit else "pp"
-	var orbit_tip := tr("Beste Orbit-Läufe: 4 × Orbit-Sterne² × Genauigkeit⁴,
-absteigend gewichtet mit 0,95ⁿ (wie pp)")
+	pp_cap.text = ("%s-Rating" % ScoreStore.mode_label(_mode)) if orbit else "pp"
+	var orbit_tip := tr("Beste %s-Läufe: 4 × Sterne² × Genauigkeit⁴,
+absteigend gewichtet mit 0,95ⁿ (wie pp)") 			% ScoreStore.mode_label(_mode)
 	pp_cap.tooltip_text = orbit_tip if orbit else ""
 	pp_cap.mouse_filter = Control.MOUSE_FILTER_PASS
 	pp_cap.size_flags_vertical = Control.SIZE_SHRINK_END
@@ -775,8 +781,8 @@ func _play_row(e: Dictionary, mode: String) -> Control:
 	var ppv := float(e.get("pp", -1.0))
 	pp_label.text = (_fmt_int(roundi(ppv)) + " pp") if ppv >= 0.0 else "—"
 	var pp_size := 24
-	if _mode == ScoreStore.MODE_ORBIT:
-		# Orbit hat keine pp: Score statt pp.
+	if ScoreStore.uses_points(_mode):
+		# Orbit/Rally/Dirigent haben keine pp: Score statt pp.
 		pp_label.text = _fmt_int(int(e.get("score", 0))) if int(e.get("score", 0)) > 0 else "—"
 		pp_size = 18
 	pp_label.custom_minimum_size = Vector2(88, 0)
@@ -862,13 +868,16 @@ func _start_map(osz_file: String, version: String) -> void:
 			idx = i
 			break
 	# Gleiche Mods wie im Song-Browser (bleiben an, bis man sie ausschaltet).
-	GameSession.mods = {"NF": Settings.mod_nf, "SV": Settings.mod_sv}
+	GameSession.mods = {"NF": Settings.mod_nf} if _mode in ["rally", "dirigent"] 			else {"NF": Settings.mod_nf, "SV": Settings.mod_sv}
 	GameSession.is_replay = false
 	GameSession.set_selection(ms.osz_path, idx, ms.version_name_at(idx),
 			ms.osu_filename_at(idx), ms.stars_at(idx))
 	# Orbit-Profil startet Orbit (nur 4K-Diffs), sonst wie bisher Mania.
-	if _mode == ScoreStore.MODE_ORBIT and int(ms.meta_at(idx).get("mode", 0)) == 3:
-		get_tree().change_scene_to_file("res://scenes/orbit.tscn")
+	if ScoreStore.uses_points(_mode) and int(ms.meta_at(idx).get("mode", 0)) in [0, 3]:
+		if ScoreStore.mode_ready(_mode):
+			get_tree().change_scene_to_file(ScoreStore.mode_scene(_mode))
+		return
+	if ScoreStore.uses_points(_mode):
 		return
 	get_tree().change_scene_to_file("res://scenes/mania_3d.tscn")
 
