@@ -100,7 +100,7 @@ func _human(ns: Array[OrbitNote], seed: int) -> Array:
 		if i % 13 == 7:
 			continue   # Ziel auslassen
 		var dt := rng.randfn(0.0, 22.0)
-		var aim := n.pos + _noise(rng, 0.035)
+		var aim := n.pos + _noise(rng, 0.018)
 		var td := n.time_ms + dt
 		aims.append([td - 25.0, aim])
 		aims.append([td, aim])
@@ -228,7 +228,7 @@ func _test_determinism() -> void:
 		if str(live[1][i].get("miss_kind", "")) == "DROP":
 			drops += 1
 	_check(drops > 0, "Lauf hat abgebrochene Halten (DROP)")
-	_check((live[1] as Dictionary).size() == ns.size(), "alle Ziele gewertet")
+	_check(not lc.failed and (live[1] as Dictionary).size() == ns.size(), "alle Ziele gewertet (%d/%d)" % [(live[1] as Dictionary).size(), ns.size()])
 	# Wiedergabe mit 60, 144 und 30 FPS.
 	for fm in [1000.0 / 60.0, 1000.0 / 144.0, 1000.0 / 30.0]:
 		var rp := _replay(ns, lc.replay_log, fm)
