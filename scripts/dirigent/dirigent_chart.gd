@@ -15,7 +15,7 @@ extends RefCounted
 ## Stellen x QUIET_SCALE; Figur und Groesse stehen je Takt fest.
 ## Beats ausserhalb der Spielfenster (Pausen > BREAK_MS) fallen weg.
 ##
-## Einsaetze (cues): Noten der Map, gruppiert wie OrbitConverter; Tasten A
+## Einsaetze (cues): Noten der Map, gruppiert (std_events/mania_events); Tasten A
 ## (osu! ohne Whistle/Clap, Mania Spalten links) / B (Whistle/Clap, rechts),
 ## Finish bzw. Akkord ueber beide Seiten = beide (mask 3). Naeher als MERGE_MS
 ## beisammen = ein Einsatz (Tasten vereinigt).
@@ -113,8 +113,7 @@ static func build(beatmap: Beatmap) -> DirigentChart:
 
 func _build_cues(beatmap: Beatmap) -> void:
 	cues.clear()
-	var evs: Array = OrbitConverter.convert_std_events(beatmap) if beatmap.mode() == 0 \
-			else OrbitConverter.convert_mania_events(beatmap)
+	var evs: Array = std_events(beatmap) if beatmap.mode() == 0 else mania_events(beatmap)
 	var first_t := -INF
 	for g in evs:
 		var t := float(g[0])
@@ -357,3 +356,65 @@ func stars() -> float:
 	# Potenz-Kalibrierung an der Bibliothek: Median 3.7, p90 ~7, p99 ~10
 	raw = STAR_A * pow(raw, STAR_POW)
 	return clampf(raw, 0.0, STAR_MAX)
+
+
+# --- Ereignisse aus der Beatmap (eigenstaendig, unabhaengig vom Orbit-Konverter) ---
+## Gruppen [t, [ [taste, end_ms (0 = Tap), src], ... ]] nach Zeit; je Taste ein Eintrag.
+const EV_CHORD_EPS_MS := 2.0
+const EV_MIN_HOLD_MS := 100.0
+
+
+static func mania_events(beatmap: Beatmap) -> Array:
+	var objs := beatmap.hit_objects
+	var k := maxi(beatmap.column_count(), 1)
+	var list: Array = []
+	for i in objs.size():
+		var n = objs[i]
+		if n is ManiaNote:
+			var end := 0.0
+			if n.is_hold and n.end_time() - n.time >= EV_MIN_HOLD_MS:
+				end = n.end_time()
+			list.append([n.time, 0 if n.column * 2 < k else 1, end, i])
+	return _group_events(list)
+
+
+static func std_events(beatmap: Beatmap) -> Array:
+	var objs := beatmap.hit_objects
+	var list: Array = []
+	for i in objs.size():
+		var o = objs[i]
+		if o is ManiaNote:
+			continue
+		var hs: int = o.hit_sound
+		var end := 0.0
+		if o.kind != HitObject.Kind.CIRCLE and o.end_time() - o.time >= EV_MIN_HOLD_MS:
+			end = o.end_time()
+		if (hs & 4) != 0 and end == 0.0:
+			list.append([o.time, 0, 0.0, i])
+			list.append([o.time, 1, 0.0, i])
+		else:
+			list.append([o.time, 1 if (hs & 10) != 0 else 0, end, i])
+	return _group_events(list)
+
+
+static func _group_events(list: Array) -> Array:
+	list.sort_custom(func(a, b):
+		if a[0] != b[0]:
+			return a[0] < b[0]
+		if a[1] != b[1]:
+			return a[1] < b[1]
+		return a[3] < b[3])
+	var groups: Array = []
+	for e in list:
+		if groups.is_empty() or float(e[0]) - float(groups[-1][0]) > EV_CHORD_EPS_MS:
+			groups.append([e[0], []])
+		var items: Array = groups[-1][1]
+		var same := -1
+		for j in items.size():
+			if items[j][0] == e[1]:
+				same = j
+		if same < 0:
+			items.append([e[1], e[2], e[3]])
+		elif float(e[2]) > float(items[same][1]):
+			items[same] = [e[1], e[2], e[3]]
+	return groups
