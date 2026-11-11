@@ -1,0 +1,19 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+uid="uid://byqwdstc7xxl0"
+
+[deps]
+
+files=["res://translations/rally.de.translation", "res://translations/rally.en.translation"]
+
+source_file="res://translations/rally.csv"
+dest_files=["res://translations/rally.de.translation", "res://translations/rally.en.translation"]
+
+[params]
+
+compress=1
+delimiter=0
+unescape_keys=false
+unescape_translations=true
