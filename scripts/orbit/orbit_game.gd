@@ -355,7 +355,7 @@ func _build_bg() -> void:
 		cover = blurred(cover)
 	# OrbitBackdrop zeigt das Bild mit bg_dim x 0,6 Deckkraft.
 	_bg.setup(_beatmap, bg_mode, forced, GameSession.stars, cover,
-			clampf(Settings.bg_dim * BG_OPACITY_PER_DIM, 0.0, 0.3) / 0.6)
+			clampf(Settings.bg_dim * BG_OPACITY_PER_DIM, 0.0, 0.2) / 0.6)
 
 
 ## Weichgezeichnetes Map-Bild (einmal beim Laden): klein rechnen, weich zurueck.
@@ -370,9 +370,10 @@ static func blurred(tex: Texture2D) -> Texture2D:
 		img.decompress()
 	var w := img.get_width()
 	var h := img.get_height()
-	img.resize(maxi(8, w / 24), maxi(6, h / 24), Image.INTERPOLATE_BILINEAR)
-	img.resize(maxi(16, w / 6), maxi(12, h / 6), Image.INTERPOLATE_CUBIC)
-	img.resize(maxi(16, w / 2), maxi(12, h / 2), Image.INTERPOLATE_CUBIC)
+	# Mehrstufig hoch, damit keine Bloecke/Pixel sichtbar werden (weich wie osu!).
+	img.resize(maxi(8, w / 64), maxi(6, h / 64), Image.INTERPOLATE_BILINEAR)
+	for f in [32, 16, 8, 4, 2]:
+		img.resize(maxi(16, w / f), maxi(12, h / f), Image.INTERPOLATE_CUBIC)
 	return ImageTexture.create_from_image(img)
 
 func _build_sound() -> void:

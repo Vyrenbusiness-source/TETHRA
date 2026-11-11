@@ -77,6 +77,7 @@ func _build_map(cover: Texture2D, bg_dim: float) -> void:
 		return
 	_map = TextureRect.new()
 	_map.texture = cover
+	_map.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 	_map.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_map.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 	_map.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)

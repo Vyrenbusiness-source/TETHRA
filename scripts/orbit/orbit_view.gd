@@ -25,13 +25,18 @@ extends Control
 const FIELD_H_K := 0.8
 const ASPECT := 4.0 / 3.0
 ## Orbit-Ring relativ zum Zielradius.
-const ORBIT_K := 1.6
+const ORBIT_K := 1.3
 ## Folgekreis beim Halten relativ zum Zielradius (OrbitCore.FOLLOW_RADIUS).
 const FOLLOW_K := 2.0
 ## Quadrat-Halbseite und Eckenradius relativ zum Zielradius.
 const SQUARE_K := 0.86
 const CORNER_K := 0.34
 const LATER_ALPHA := 0.45
+## Lesbarkeit: Ring + Satellit nur fuer die naechsten RING_RANKS Zeitpunkte, danach nur die
+## Form (blasser); mehr als MAX_RANKS kommende Zeitpunkte werden nicht gezeigt.
+const RING_RANKS := 2
+const MAX_RANKS := 4
+const FAR_ALPHA := 0.3
 const POP_IN_MS := 90.0
 const HIT_MS := 130.0
 const MISS_MARK_MS := 420.0
@@ -313,14 +318,31 @@ func _draw() -> void:
 				break
 		if follow >= 0:
 			_draw_link(notes[nxt], notes[follow], R, t)
-	# 3. Ziele (spaete zuerst, das naechste oben).
+	# 3. Ziele (spaete zuerst, das naechste oben). Rang = Zahl frueherer offener Zeitpunkte.
+	var ranks := {}
+	var rank := -1
+	var last_t := -INF
+	for i in vis:
+		if _state[i] != ST_PENDING:
+			continue
+		var tt := float(notes[i].time_ms)
+		if tt - last_t > CHORD_EPS_MS:
+			rank += 1
+			last_t = tt
+		ranks[i] = rank
 	for j in range(vis.size() - 1, -1, -1):
 		var i := vis[j]
 		if _state[i] != ST_PENDING:
 			continue
+		var rk: int = ranks.get(i, 0)
+		if rk >= MAX_RANKS:
+			continue
 		var n: OrbitNote = notes[i]
 		var is_next := absf(float(n.time_ms) - nxt_t) <= CHORD_EPS_MS
-		_draw_target(i, n, R, _alpha_of(i, n, nxt_t, t), is_next, pulse, t)
+		var a := _alpha_of(i, n, nxt_t, t)
+		if rk >= RING_RANKS:
+			a = minf(a, FAR_ALPHA * clampf((t - float(n.spawn_ms)) / POP_IN_MS, 0.0, 1.0))
+		_draw_target(i, n, R, a, is_next, pulse, t, rk < RING_RANKS)
 	# 4. Laufende Halten: Kugel + Folgekreis.
 	for i in range(_first, notes.size()):
 		if float(notes[i].spawn_ms) > t:
@@ -368,8 +390,11 @@ func _sat_alpha(n: OrbitNote, t: float) -> float:
 
 
 func _draw_target(i: int, n: OrbitNote, R: float, alpha: float, is_next: bool,
-		pulse: float, t: float) -> void:
+		pulse: float, t: float, with_ring: bool = true) -> void:
 	if alpha <= 0.0:
+		return
+	if not with_ring:
+		_draw_body(field_to_screen(n.pos), R * _pop_scale(n, t), n.key, alpha, false)
 		return
 	var c := field_to_screen(n.pos)
 	if i == _lock_idx and t - _lock_t < LOCK_MS:
