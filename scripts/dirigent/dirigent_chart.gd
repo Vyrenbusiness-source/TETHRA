@@ -268,8 +268,8 @@ const STAR_CUE_K := 0.34
 const STAR_SPEED_K := 0.55
 const STAR_SPEED_REF := 2.6      # Einheiten/s der Hand, ab der es spuerbar wird
 const STAR_BOTH_W := 0.5         # beide Tasten gleichzeitig zaehlt zusaetzlich
-const STAR_KNEE := 3.5
-const STAR_STRETCH := 3.5
+const STAR_A := 0.382
+const STAR_POW := 2.5
 const STAR_MAX := 15.0
 
 
@@ -327,6 +327,6 @@ func stars() -> float:
 		if wt < 0.001:
 			break
 	var raw := num / maxf(den, 1e-6)
-	if raw > STAR_KNEE:
-		raw = STAR_KNEE + (raw - STAR_KNEE) * STAR_STRETCH
+	# Potenz-Kalibrierung an der Bibliothek: Median 3.7, p90 ~7, p99 ~10
+	raw = STAR_A * pow(raw, STAR_POW)
 	return clampf(raw, 0.0, STAR_MAX)
