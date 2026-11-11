@@ -1,7 +1,7 @@
 extends SceneTree
 
-## Headless-Tests fuer den Dirigent-Modus: Figuren je Taktart, halbe Takte bei
-## schnellen Schlaegen, Kiai-Groesse, Schlag-Wertung (Zielfaktor), Einsatz-Wertung,
+## Headless-Tests fuer den Dirigent-Modus: Figuren je Taktart, volle Figur mit
+## groesserem Zeitfenster bei schnellen Schlaegen (Handtempo begrenzt), Kiai-Groesse, Schlag-Wertung (Zielfaktor), Einsatz-Wertung,
 ## Gewichtung 40/60, Replay deterministisch, Autoplay = SS, Sterne. Ausfuehren:
 ##   Godot..._console.exe --headless --audio-driver Dummy --path . --script res://tests/run_dirigent_tests.gd
 
@@ -116,15 +116,49 @@ func _test_figures() -> void:
 
 
 func _test_half_bars() -> void:
-	print("-- Halbe Takte bei schnellen Schlaegen")
+	print("-- Schnelle Songs: volle Figur, groesseres Zeitfenster")
 	var fast := DirigentChart.build(_map(240.0, 4, 32))  # 250 ms
-	_ok(fast.bars.size() >= 3 and int(fast.bars[1].count) == 2, "250 ms: 2 gewertete Schlaege je 4/4-Takt")
-	_ok(fast.bars[1].kind == "24", "250 ms: Figur ist 2/4")
-	_ok(is_equal_approx(float(fast.beats[1].t) - float(fast.beats[0].t), 500.0), "nur betonte Schlaege (500 ms Abstand)")
+	_ok(fast.bars.size() >= 2 and int(fast.bars[1].count) == 4, "250 ms: volle 4-Punkt-Figur")
+	_ok(fast.bars[1].kind == "44" and int(fast.bars[1].step) == 2, "250 ms: 4/4, 2 Beats je Punkt")
+	_ok(is_equal_approx(float(fast.beats[1].t) - float(fast.beats[0].t), 500.0), "Punktabstand 500 ms")
 	var slow := DirigentChart.build(_map(120.0, 4, 32))
-	_ok(int(slow.bars[1].count) == 4, "500 ms: alle 4 Schlaege")
+	_ok(int(slow.bars[1].count) == 4 and int(slow.bars[1].step) == 1, "500 ms: alle 4 Schlaege, 1 Beat je Punkt")
 	var fast3 := DirigentChart.build(_map(240.0, 3, 24))
-	_ok(int(fast3.bars[1].n) == 2, "schnell 3/4: halbe Figur (2 Punkte)")
+	_ok(int(fast3.bars[1].n) == 3 and fast3.bars[1].kind == "34", "schnell 3/4: volles Dreieck")
+	# Nie hektisch: Punktabstand und mittleres Handtempo ueber viele BPM / Taktarten.
+	var worst := 0.0
+	var min_dt := INF
+	for bl in [120.0, 160.0, 200.0, 250.0, 300.0, 333.0, 400.0, 600.0]:
+		for meter in [2, 3, 4, 5, 7]:
+			var c := DirigentChart.build(_map(bl, meter, meter * 12))
+			for i in range(0, c.beats.size() - 1):
+				if c.is_gap(i):
+					continue
+				var dt := float(c.beats[i + 1].t) - float(c.beats[i].t)
+				min_dt = minf(min_dt, dt)
+				worst = maxf(worst, (c.beats[i + 1].pos - c.beats[i].pos).length() / (dt / 1000.0))
+	_ok(min_dt >= DirigentChart.FAST_BEAT_MS - 1.0, "Punktabstand >= ~Beat-Grenze: %.0f ms" % min_dt)
+	_ok(worst <= DirigentChart.MAX_SPEED, "Sprung-Tempo <= %.1f E/s (gemessen %.2f)" % [DirigentChart.MAX_SPEED, worst])
+	# Bot-Messung: Spitzentempo der Ideal-Hand (Ease: bis 1,5 x Mittel) in schneller Kiai-Map.
+	var fk := _map(150.0, 4, 64)  # 400 ms
+	fk.kiai_intervals = [{"start": 0.0, "end": 100000.0}]
+	var fc := DirigentChart.build(fk)
+	var peak := 0.0
+	var tt := float(fc.beats[0].t)
+	var last := fc.ideal_at(tt)
+	while tt < float(fc.beats[-1].t):
+		tt += 10.0
+		var np := fc.ideal_at(tt)
+		peak = maxf(peak, (np - last).length() / 0.010)
+		last = np
+	_ok(peak <= DirigentChart.MAX_SPEED * 1.7, "Bot: Spitzentempo %.2f E/s <= %.1f" % [peak, DirigentChart.MAX_SPEED * 1.7])
+	# Kiai: erweiterte Figur, weiteres Ausholen, nie schneller als MAX_SPEED.
+	var plain := DirigentChart.figure_points("44", 4)
+	var ext := DirigentChart.figure_points("44", 4, true)
+	_ok(ext[1].x < plain[1].x and ext[2].x > plain[2].x, "erweiterte Figur holt weiter aus")
+	_ok(ext[0] == plain[0] and ext[3] == plain[3], "erweiterte Figur: Unten/Oben gleich")
+	var spd := (ext[2] - ext[1]).length() * DirigentChart.KIAI_SCALE / (DirigentChart.FAST_BEAT_MS / 1000.0)
+	_ok(spd <= DirigentChart.MAX_SPEED, "Kiai-Figur auch im schnellsten Fenster <= MAX_SPEED (%.2f)" % spd)
 
 
 func _test_meter_change() -> void:
@@ -148,7 +182,7 @@ func _test_meter_change() -> void:
 func _test_kiai_scale() -> void:
 	print("-- Kiai-Groesse")
 	var bm := _map(120.0, 4, 32)
-	bm.kiai_intervals = [{"start": 9000.0, "end": 14000.0}]
+	bm.kiai_intervals = [{"start": 10000.0, "end": 16000.0}]
 	var c := DirigentChart.build(bm)
 	var in_kiai := -1
 	var out_kiai := -1
@@ -160,7 +194,9 @@ func _test_kiai_scale() -> void:
 	_ok(in_kiai >= 0, "Kiai-Schlaege vorhanden")
 	if in_kiai >= 0:
 		var ratio: float = (c.beats[in_kiai].pos as Vector2).length() / (c.beats[in_kiai].unit as Vector2).length()
-		_ok(absf(ratio - 1.3) < 0.001, "Kiai: Figur 30 %% groesser (%.3f)" % ratio)
+		_ok(absf(ratio - DirigentChart.KIAI_SCALE) < 0.001, "Kiai: Figur groesser (%.3f)" % ratio)
+		_ok(bool(c.bars[int(c.beats[in_kiai].bar)].ext), "Kiai: erweiterte Figur im Takt")
+		_ok(not bool(c.bars[int(c.beats[maxi(out_kiai, 0)].bar)].ext) if out_kiai >= 0 else true, "ohne Kiai: klassische Figur")
 	if out_kiai >= 0:
 		_ok(float(c.beats[out_kiai].scale) <= 1.0, "ohne Kiai nicht groesser")
 
