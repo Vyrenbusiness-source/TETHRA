@@ -117,3 +117,20 @@ func bar_end_at(t_ms: float) -> float:
 ## Phase des Takts (0..1) zur Zeit t_ms.
 func phase_at(t_ms: float) -> float:
 	return angle_at(t_ms) / 360.0
+
+
+# --- Orbit "Satelliten" (docs/modes/orbit_satellit.md) -----------------------
+
+## Dauer eines Schlags (ms) zur Zeit t_ms.
+func beat_ms_at(t_ms: float) -> float:
+	return bar_ms_at(t_ms) / float(maxi(beats_at(t_ms), 1))
+
+
+## Letzter Beat-Tick <= t_ms (Raster des roten Timing-Points, in dem t_ms liegt).
+func beat_tick_at_or_before(t_ms: float) -> float:
+	var i := _idx(t_ms)
+	var start := float(segs[i][0])
+	var beat := beat_ms_at(t_ms)
+	if beat <= 0.0:
+		return t_ms
+	return start + floor((t_ms - start) / beat + 1e-6) * beat

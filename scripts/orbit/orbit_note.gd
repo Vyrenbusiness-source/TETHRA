@@ -28,6 +28,90 @@ var speed: float = 0.0
 ## Index der Quell-Note in beatmap.hit_objects (-1 = keine Quelle).
 var source_index: int = -1
 
+# --- Orbit "Satelliten" (docs/modes/orbit_satellit.md) -----------------------
+# Die Felder oben (angle_deg, ring, shape, is_arc, speed) gehoeren zum alten
+# Bahnen-Modell und fallen weg, sobald Core/Konverter/Ansicht umgestellt sind.
+
+## Taste: 0 = A (kuehl, Scheibe), 1 = B (warm, Quadrat), 2 = Akzent (beide).
+const KEY_A := 0
+const KEY_B := 1
+const KEY_ACCENT := 2
+## Position im Feld (0..1 x 0..1, 4:3 wie osu! 512x384 normiert).
+var pos: Vector2 = Vector2(0.5, 0.5)
+var key: int = KEY_A
+var is_hold: bool = false
+## Halten: Feldpunkte, path[0] == pos; die Kugel laeuft mit konstanter Geschwindigkeit.
+var path: PackedVector2Array = PackedVector2Array()
+## Erscheint auf diesem Beat-Tick (ms).
+var spawn_ms: float = 0.0
+## Dauer einer Satelliten-Runde (ms), meist ein Beat.
+var lap_ms: float = 500.0
+## Runden ab spawn_ms bis zum Treffer (Pips beim Erscheinen).
+var laps: int = 2
+var _path_len: PackedFloat32Array = PackedFloat32Array()
+
+
+static func make_target(p_time: float, p_pos: Vector2, p_key: int, p_source: int = -1) -> OrbitNote:
+	var n := OrbitNote.new()
+	n.time_ms = p_time
+	n.end_ms = p_time
+	n.pos = p_pos
+	n.key = p_key
+	n.ring = 1 if p_key == KEY_B else 0
+	n.source_index = p_source
+	return n
+
+
+static func make_hold(p_time: float, p_end: float, p_path: PackedVector2Array, p_key: int,
+		p_source: int = -1) -> OrbitNote:
+	var start := p_path[0] if p_path.size() > 0 else Vector2(0.5, 0.5)
+	var n := make_target(p_time, start, p_key, p_source)
+	n.end_ms = maxf(p_end, p_time)
+	n.path = p_path
+	n.is_hold = p_path.size() >= 2 and n.end_ms > n.time_ms
+	n.is_arc = n.is_hold
+	n._build_lengths()
+	return n
+
+
+func _build_lengths() -> void:
+	_path_len = PackedFloat32Array()
+	var acc := 0.0
+	_path_len.append(0.0)
+	for i in range(1, path.size()):
+		acc += path[i - 1].distance_to(path[i])
+		_path_len.append(acc)
+
+
+## Halten: Kugelposition zur Zeit t_ms (konstante Geschwindigkeit); sonst pos.
+func pos_at(t_ms: float) -> Vector2:
+	if not is_hold or path.size() < 2:
+		return pos
+	if _path_len.size() != path.size():
+		_build_lengths()
+	var total := _path_len[_path_len.size() - 1]
+	if total <= 0.0:
+		return pos
+	var f := clampf((t_ms - time_ms) / maxf(end_ms - time_ms, 1.0), 0.0, 1.0)
+	var want := total * f
+	for i in range(1, path.size()):
+		if _path_len[i] >= want:
+			var seg := _path_len[i] - _path_len[i - 1]
+			var k := 0.0 if seg <= 0.0 else (want - _path_len[i - 1]) / seg
+			return path[i - 1].lerp(path[i], k)
+	return path[path.size() - 1]
+
+
+## Satellit: 0 = oben, im Uhrzeigersinn; genau oben bei t = time_ms.
+func satellite_deg(t_ms: float) -> float:
+	var lap := maxf(lap_ms, 1.0)
+	return wrap_deg(360.0 - 360.0 * fposmod((time_ms - t_ms) / lap, 1.0))
+
+
+## Verbleibende ganze Runden bis zum Treffer (0 in der letzten Runde).
+func laps_left(t_ms: float) -> int:
+	return maxi(int(floor((time_ms - t_ms) / maxf(lap_ms, 1.0))), 0)
+
 
 static func make(p_time: float, p_angle: float, p_ring: int, p_source: int = -1) -> OrbitNote:
 	var n := OrbitNote.new()
