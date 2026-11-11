@@ -24,7 +24,7 @@ var _profile_card: PanelContainer
 var _btn_play: Button
 var _btn_mp: Button
 var _btn_orbit: Button
-var _orbit_sub: Label
+var _mode_subs := {}  # Modus -> Unterzeile (Sprachwechsel)
 var _btn_settings: Button
 var _tour_step := -1
 var _tour_steps: Array = []
@@ -718,9 +718,17 @@ func _build_buttons() -> void:
 
 	# Eigener Modus gleichwertig neben "Spielen": oeffnet den Browser direkt
 	# im Orbit-Modus (Uebergabe ueber browser_state.cfg play_mode).
-	_btn_orbit = _orbit_button()
-	_btn_orbit.pressed.connect(_play_orbit)
-	_add_wrapped(vb, _btn_orbit, 64.0)
+	# Weitere Modi ruhig als eine Zeile gleich grosser Kacheln unter SPIELEN.
+	var modes := HBoxContainer.new()
+	modes.custom_minimum_size = Vector2(360, 64)
+	modes.add_theme_constant_override("separation", 8)
+	vb.add_child(modes)
+	for m in ["orbit", "rally", "dirigent"]:
+		var tile := _mode_tile(m)
+		if m == "orbit":
+			_btn_orbit = tile
+		tile.pressed.connect(_play_mode_entry.bind(m))
+		modes.add_child(tile)
 
 	_btn_mp = _menu_button("MULTIPLAYER", false)
 	_btn_mp.pressed.connect(func(): _fade_music_out(); SceneFader.go("res://scenes/mp_lobby.tscn"))
@@ -803,8 +811,9 @@ func _notification(what: int) -> void:
 		for b in _btns:
 			if is_instance_valid(b) and b.has_meta("key"):
 				b.text = _sentence(tr(b.get_meta("key")))
-		if is_instance_valid(_orbit_sub):
-			_orbit_sub.text = _orbit_sub_text()
+		for m in _mode_subs:
+			if is_instance_valid(_mode_subs[m]):
+				(_mode_subs[m] as Label).text = _mode_sub_text(m)
 
 
 func _menu_button(text: String, primary: bool) -> Button:
@@ -1187,38 +1196,45 @@ func _play() -> void:
 const BROWSER_STATE := "user://browser_state.cfg"
 
 
-## Orbit-Einstieg: Modus in browser_state.cfg vormerken (song_select liest
+## Modus-Einstieg: Modus in browser_state.cfg vormerken (song_select liest
 ## "browser"/"play_mode" beim Start), restliche Browser-Werte bleiben.
-func _play_orbit() -> void:
+func _play_mode_entry(mode: String) -> void:
 	var cfg := ConfigFile.new()
 	cfg.load(BROWSER_STATE)
-	cfg.set_value("browser", "play_mode", "orbit")
+	cfg.set_value("browser", "play_mode", mode)
 	cfg.save(BROWSER_STATE)
-	# Bis der Spieler gewaehlt hat, fuehrt der Orbit-Eintrag in die Karriere.
-	var career := OrbitCareer.load_state()
-	if not bool(career.get("chosen", false)):
-		career["mode"] = OrbitCareer.MODE_CAREER
-		OrbitCareer.save_state(career)
+	if mode == "orbit":
+		# Bis der Spieler gewaehlt hat, fuehrt der Orbit-Eintrag in die Karriere.
+		var career := OrbitCareer.load_state()
+		if not bool(career.get("chosen", false)):
+			career["mode"] = OrbitCareer.MODE_CAREER
+			OrbitCareer.save_state(career)
 	_play()
 
 
-func _orbit_sub_text() -> String:
-	return tr("Zielen + Tippen auf osu!-Maps")
+func _mode_sub_text(mode: String) -> String:
+	match mode:
+		"rally": return tr("Tischtennis im Takt")
+		"dirigent": return tr("Takt führen, Einsätze setzen")
+	return tr("Zielen + Tippen")
 
 
-## Orbit-Button: flach, Bernstein-Kontur, Titel + ruhige Unterzeile.
-func _orbit_button() -> Button:
+## Modus-Kachel: flach, Bernstein-Kontur, Titel + ruhige Unterzeile.
+func _mode_tile(mode: String) -> Button:
 	var b := Button.new()
 	b.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
 	b.text = ""
 	b.tooltip_text = ""
-	b.custom_minimum_size = Vector2(360, 64)
+	b.custom_minimum_size = Vector2(0, 64)
+	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	UiTheme.style_ghost_button(b)
 	var a := COL_ACCENT
 	for st in ["normal", "hover", "pressed"]:
 		var sb: StyleBoxFlat = b.get_theme_stylebox(st).duplicate()
 		sb.border_color = Color(a.r, a.g, a.b, 0.85 if st != "normal" else 0.6)
 		sb.bg_color = Color(a.r, a.g, a.b, {"normal": 0.06, "hover": 0.13, "pressed": 0.18}[st])
+		sb.content_margin_left = 6
+		sb.content_margin_right = 6
 		b.add_theme_stylebox_override(st, sb)
 	var col := VBoxContainer.new()
 	col.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -1227,21 +1243,24 @@ func _orbit_button() -> Button:
 	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	b.add_child(col)
 	var title := Label.new()
-	title.text = "Orbit"
+	title.text = ScoreStore.mode_label(mode)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_font_override("font", UiTheme.heading_font(0))
-	title.add_theme_font_size_override("font_size", 21)
+	title.add_theme_font_size_override("font_size", 19)
 	title.add_theme_color_override("font_color", COL_ACCENT)
 	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	col.add_child(title)
-	_orbit_sub = Label.new()
-	_orbit_sub.text = _orbit_sub_text()
-	_orbit_sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_orbit_sub.add_theme_font_override("font", UiTheme.body_font())
-	_orbit_sub.add_theme_font_size_override("font_size", 13)
-	_orbit_sub.add_theme_color_override("font_color", COL_DIM)
-	_orbit_sub.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	col.add_child(_orbit_sub)
+	var sub := Label.new()
+	sub.text = _mode_sub_text(mode)
+	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	sub.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	sub.custom_minimum_size = Vector2(90, 0)
+	sub.add_theme_font_override("font", UiTheme.body_font())
+	sub.add_theme_font_size_override("font_size", 11)
+	sub.add_theme_color_override("font_color", COL_DIM)
+	sub.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	col.add_child(sub)
+	_mode_subs[mode] = sub
 	return b
 
 
