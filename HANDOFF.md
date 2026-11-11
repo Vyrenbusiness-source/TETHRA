@@ -148,3 +148,9 @@ Offen (Nutzer-Wuensche, Rueckfrage gestellt):
 Released heute: v1.21-v1.25.2: Endbild-Details, Import + eigene Musik (Orbit), Server-Anbindung butzebot.com (Login beim Start, Online-Scores + Replays, Backfill alter Mania-Bestwerte mit combo_unknown, Online-Bestenliste, Profilbild, Chat F mit Map/Score-Karten), Relay-Multiplayer, Orbit neu (Bahnen: Kreis/Ellipse/Acht/Bluete, Spur A/B, Zielen Pflicht, Zuendschnur, 1 Takt sichtbar, Musik-Reaktion, Karriere), Fail-Analyse, Logo "Bahn", Mania-Holds wie osu! stable, Updater-Ausweichquelle (Branch dist, tools/publish_dist.sh nach jedem Release), Setup bei jedem Release neu.
 Server: Infoseite fuer Kumpel https://claude.ai/artifact/8iox8Vm6jXZtjyVyKPtAiW, API-Doku vom Kumpel (TETHRA_API.md), min_version 1.24.1.
 Offen: menschlicher Spieltest (Orbit-Spass, Chat/Replay/Avatar live, Fail-Bild, Karriere), README-Bild Online-Bestenliste, Social Preview in GitHub-Settings hochladen (Nutzer).
+
+## Stand 2026-11-11 Abend (v1.26.0: Orbit Satelliten, Rally, Dirigent)
+- Orbit komplett neu ("Satelliten", Spezifikation docs/modes/orbit_satellit.md, QA docs/modes/orbit_satellit_qa.md): Ziele auf dem Beat, Satellit eine Runde pro Beat, Pips = Runden, Taste A/B/Akzent + Zielen. Replay-Regeln 3, alte Orbit-Scores < 1.26.0 zaehlen online nicht (Server min_version 1.26.0).
+- Neue Modi Rally (docs/modes/rally.md, scripts/rally/) und Dirigent (docs/modes/dirigent.md, scripts/dirigent/; Score 40 % Schlaege + 60 % Einsaetze, total_notes = Einsaetze, beats_hit/beats_total extra). Multiplayer, Replays, Online-Bestenlisten, Profil-Reiter je Modus.
+- Demo-Videos aller 4 Modi: `bash tools/record_demo.sh <modus> <map-teil> <start_ms>` -> docs/media/<modus>.mp4 + _anim.webp. README mit Modus-Uebersicht.
+- Offen/Ideen: Rally-Ansicht kennt die Beat-Laenge nicht (Uebernaechster Ring fest 500 ms); Mania hat keinen MP-Bot (Smoke SKIP); Audio-Sync der Demo-Videos nicht gemessen.
