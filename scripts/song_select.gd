@@ -2285,8 +2285,8 @@ func _update_info_panel() -> void:
 	if _replay_btn != null:
 		var ver := _selected_set.version_name_at(_selected_diff)
 		if orbit:
-			# Replays gibt es nur fuer Orbit; Rally/Dirigent folgen mit ihren Szenen.
-			_replay_btn.visible = score_mode == ScoreStore.MODE_ORBIT 				and ReplayStore.exists(_selected_set.osz_path, ver, ReplayStore.MODE_ORBIT_BEST)
+			# Replay des besten Laufs; Rally/Dirigent nur, sobald ihre Szene da ist.
+			_replay_btn.visible = ScoreStore.mode_ready(score_mode) 					and ReplayStore.exists(_selected_set.osz_path, ver, ReplayStore.best_mode_of(score_mode))
 		else:
 			_replay_btn.visible = int(m.get("mode", 0)) == 3 				and ReplayStore.exists(_selected_set.osz_path, ver)
 	_apply_card_highlight()
@@ -3056,15 +3056,16 @@ func _watch_replay() -> void:
 	if _selected_set == null:
 		return
 	var orbit := _play_mode == "orbit" 		and int(_selected_set.meta_at(_selected_diff).get("mode", 0)) in [0, 3]
-	if _play_mode in ["rally", "dirigent"]:
+	var rg := _play_mode != "mania" and _play_mode != "orbit" 			and int(_selected_set.meta_at(_selected_diff).get("mode", 0)) in [0, 3]
+	if rg and not ScoreStore.mode_ready(_play_mode):
 		return
-	var rmode := ReplayStore.MODE_ORBIT_BEST if orbit else "mania"
+	var rmode := ReplayStore.best_mode_of(_play_mode) if (orbit or rg) else "mania"
 	var data := ReplayStore.load_replay(_selected_set.osz_path,
 		_selected_set.version_name_at(_selected_diff), rmode)
 	if data.is_empty():
 		return
 	# Orbit-Replays tragen auch HD/FI/PR (sonst liefe die Wertung anders).
-	GameSession.mods = OrbitCore.replay_mods(data) if orbit else GameSession._replay_mods(data)
+	GameSession.mods = OrbitCore.replay_mods(data) if (orbit or rg) else GameSession._replay_mods(data)
 	GameSession.set_selection(
 		_selected_set.osz_path, _selected_diff,
 		_selected_set.version_name_at(_selected_diff),
@@ -3075,7 +3076,7 @@ func _watch_replay() -> void:
 	GameSession.replay_mode = rmode
 	GameSession.replay_end_ms = float(data.get("meta", {}).get("end_ms", -1.0))
 	_preview.stop()
-	_change_to_game("res://scenes/orbit.tscn" if orbit else "res://scenes/mania_3d.tscn")
+	_change_to_game(ScoreStore.mode_scene(_play_mode) if (orbit or rg) else "res://scenes/mania_3d.tscn")
 
 
 ## Max-pp (SS) der aktuellen Diff anzeigen; Berechnung laeuft im Thread,

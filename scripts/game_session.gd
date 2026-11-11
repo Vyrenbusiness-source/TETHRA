@@ -357,6 +357,10 @@ func _arm_playtime() -> void:
 static func playtime_mode_of(scene_path: String) -> Variant:
 	if scene_path.ends_with("orbit.tscn"):
 		return "orbit"
+	if scene_path.ends_with("rally.tscn"):
+		return "rally"
+	if scene_path.ends_with("dirigent.tscn"):
+		return "dirigent"
 	if scene_path.ends_with("mania_3d.tscn") or scene_path.ends_with("gameplay_3d.tscn"):
 		return ""
 	return null
