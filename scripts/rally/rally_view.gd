@@ -23,6 +23,8 @@ const TRAIL_MS := 120.0
 const TRAIL_N := 30
 const FX_MS := 190.0
 const MISS_FLY_MS := 420.0
+## Zweiter Ring (uebernaechster Ball) erscheint erst ab diesem Vorlauf.
+var beat_ms := 500.0
 ## Tischplatte in Perspektive: hinten schmaler, vorn breiter (Anteile von Bildhoehe/-breite).
 const TOP_FAR := -0.030
 const TOP_NEAR := 0.052
@@ -180,12 +182,27 @@ func _draw_room() -> void:
 	draw_polyline(PackedVector2Array([b0, b1, b2, b3, b0]), Color(1, 1, 1, 0.10), 1.0, true)
 	# Mittellinie quer ueber die Platte.
 	draw_line(Vector2(mf, yf), Vector2(mn, yn), Color(1, 1, 1, 0.10), 1.0, true)
-	# Netz: Bandkante oben, feine Flaeche, kleiner Fuss.
-	var nh := 0.062 * h
-	var nx := mid
-	draw_rect(Rect2(nx - 1.5, ty - nh, 3.0, nh + 3.0), Color(0.78, 0.82, 0.86, 0.50))
-	draw_rect(Rect2(nx - 2.5, ty - nh - 1.0, 5.0, 3.0), Color(0.93, 0.92, 0.89, 0.95))
-	draw_rect(Rect2(nx - 4.0, ty - 1.0, 8.0, 4.0), Color(0.60, 0.64, 0.68, 0.9))
+	# Netz: niedrig, ueber die ganze Tischtiefe (hinten bis vorn), Pfosten + feine Kante.
+	var nh := 0.040 * h
+	var nb0 := Vector2(mf, yf)
+	var nb1 := Vector2(mn, yn)
+	var nt0 := nb0 + Vector2(0, -nh * 0.88)
+	var nt1 := nb1 + Vector2(0, -nh)
+	draw_colored_polygon(PackedVector2Array([nb0, nt0, nt1, nb1]), Color(0.80, 0.84, 0.88, 0.07))
+	for i in range(1, 14):
+		var f := float(i) / 14.0
+		var bp := nb0.lerp(nb1, f)
+		var tp := nt0.lerp(nt1, f)
+		draw_line(bp, tp, Color(0.85, 0.88, 0.92, 0.07), 1.0)
+	for i in range(1, 4):
+		var g := float(i) / 4.0
+		draw_line(nb0.lerp(nt0, g), nb1.lerp(nt1, g), Color(0.85, 0.88, 0.92, 0.06), 1.0)
+	draw_line(nt0, nt1, Color(0.95, 0.94, 0.91, 0.82), 1.8, true)
+	draw_line(nt0 + Vector2(0, 1.5), nt1 + Vector2(0, 1.5), Color(0.95, 0.94, 0.91, 0.18), 1.0, true)
+	for pr in [[nb0, nt0], [nb1, nt1]]:
+		var pw := maxf(0.0035 * w, 2.5)
+		draw_line(pr[0], pr[1] + Vector2(0, -2.0), Color(0.62, 0.66, 0.71, 0.9), pw, true)
+		draw_circle(pr[1] + Vector2(0, -2.0), pw * 0.6, Color(0.93, 0.92, 0.89, 0.95))
 
 
 ## Fein gestrichelte Vorschau der Flugbahn zum naechsten Schlag.
@@ -199,15 +216,20 @@ func _draw_preview() -> void:
 	var t0 := maxf(s.m, t_ms)
 	if t0 >= s.t - 40.0:
 		return
-	var n := 36
+	var n := 120
 	var col := key_col(s.key)
 	var prev := _p(RallyChart.pos_in(shots, k, t0))
+	var dist := 0.0
+	var dash := size.y * 0.016
+	var period := dash * 1.9
 	for i in range(1, n + 1):
 		var tt := lerpf(t0, s.t, float(i) / float(n))
 		var cur := _p(RallyChart.pos_in(shots, k, tt))
-		if i % 3 != 0:
+		var seg := prev.distance_to(cur)
+		if fmod(dist + seg * 0.5, period) < dash:
 			var f := float(i) / float(n)
 			draw_line(prev, cur, Color(col, 0.10 + 0.38 * f), 1.6, true)
+		dist += seg
 		prev = cur
 
 
@@ -235,6 +257,9 @@ func _draw_targets() -> void:
 		var s := shots[k2]
 		var lead := s.t - t_ms
 		if lead > APPROACH_MS:
+			break
+		# Uebernaechster Ball: nur wenn er innerhalb eines Beats kommt.
+		if k2 > first and lead > beat_ms:
 			break
 		if not _judged_done(k2):
 			_draw_reticle(s, k2, lead, k2 == first)
@@ -284,52 +309,79 @@ func _draw_reticle(s: RallyChart.Shot, k: int, lead: float, is_next: bool) -> vo
 # Schlaeger (nur stilisierte Paddel, flach, ohne Koerper)
 # ---------------------------------------------------------------------------
 
-func _blade(c: Vector2, rx: float, ry: float, ang: float, col: Color, rubber: Color) -> void:
-	var n := 40
-	var pts := PackedVector2Array()
-	var pts2 := PackedVector2Array()
+func _rot(v: Vector2, ang: float) -> Vector2:
 	var ca := cos(ang)
 	var sa := sin(ang)
+	return Vector2(v.x * ca - v.y * sa, v.x * sa + v.y * ca)
+
+
+func _blade(c: Vector2, rx: float, ry: float, ang: float, wood: Color, rubber: Color) -> void:
+	var n := 44
+	var pts := PackedVector2Array()
+	var pts2 := PackedVector2Array()
 	for i in n:
 		var a := TAU * float(i) / float(n)
 		var v := Vector2(cos(a) * rx, sin(a) * ry)
-		pts.append(c + Vector2(v.x * ca - v.y * sa, v.x * sa + v.y * ca))
-		var v2 := v * 0.82
-		pts2.append(c + Vector2(v2.x * ca - v2.y * sa, v2.x * sa + v2.y * ca))
-	draw_colored_polygon(pts, col)
+		pts.append(c + _rot(v, ang))
+		pts2.append(c + _rot(v * 0.88, ang))
+	draw_colored_polygon(pts, wood)
 	draw_colored_polygon(pts2, rubber)
-	var closed := pts.duplicate()
-	closed.append(pts[0])
-	draw_polyline(closed, Color(1, 1, 1, 0.22), 1.0, true)
+	# Glanz oben links, feine Kante.
+	var hl := PackedVector2Array()
+	for i in 14:
+		var a := PI * 1.05 + PI * 0.55 * float(i) / 13.0
+		hl.append(c + _rot(Vector2(cos(a) * rx * 0.70, sin(a) * ry * 0.70), ang))
+	draw_polyline(hl, Color(1, 1, 1, 0.20), 1.4, true)
+	var closed := pts2.duplicate()
+	closed.append(pts2[0])
+	draw_polyline(closed, Color(0, 0, 0, 0.28), 1.0, true)
 
 
-func _paddle(c: Vector2, ang: float, col: Color, rubber: Color) -> void:
-	# ang: Neigung der Klingenachse (0 = senkrecht).
+## Tischtennis-Schlaeger: runder Belag (Tastenfarbe), Holzrand, ausgestellter Griff.
+func _paddle(c: Vector2, ang: float, rubber: Color) -> void:
 	var h := size.y
-	var ry := 0.054 * h
-	var rx := 0.029 * h
-	var up := Vector2(sin(ang), -cos(ang))
-	var grip_a := c - up * ry * 0.92
-	var grip_b := grip_a - up * 0.052 * h
-	var wood := UiTheme.ACCENT.darkened(0.25)
-	draw_line(grip_a, grip_b, wood, 0.014 * h, true)
-	draw_circle(grip_b, 0.007 * h, wood)
-	_blade(c, rx, ry, ang, col, rubber)
+	var ry := 0.052 * h
+	var rx := 0.030 * h
+	var wood := Color(0.80, 0.64, 0.44)
+	var gw := 0.0085 * h
+	var top := Vector2(0, ry * 0.86)
+	var bot := Vector2(0, ry * 0.86 + 0.052 * h)
+	var grip := PackedVector2Array([
+		c + _rot(top + Vector2(-gw * 1.0, 0), ang), c + _rot(top + Vector2(gw * 1.0, 0), ang),
+		c + _rot(bot + Vector2(gw * 0.75, 0), ang), c + _rot(bot + Vector2(gw * 1.05, 0.006 * h), ang),
+		c + _rot(bot + Vector2(-gw * 1.05, 0.006 * h), ang), c + _rot(bot + Vector2(-gw * 0.75, 0), ang)])
+	draw_colored_polygon(grip, wood.darkened(0.25))
+	draw_line(c + _rot(top + Vector2(-gw * 0.35, 0.008 * h), ang), c + _rot(bot + Vector2(-gw * 0.35, 0), ang),
+			Color(1, 1, 1, 0.14), 1.0, true)
+	_blade(c, rx, ry, ang, wood, rubber)
+
+
+## Welche Taste der Spieler gerade bedient (naechster Schlag, sonst der letzte).
+func _player_key() -> int:
+	var j := RallyChart.first_at_or_after(shots, t_ms - 80.0)
+	return shots[mini(j, shots.size() - 1)].key
 
 
 func _draw_players() -> void:
 	var h := size.y
 	var py := _paddle_y()
 	var swing := clampf((t_ms - _swing_t) / 140.0, 0.0, 1.0)
-	var fwd := sin(PI * swing) * 0.016 if swing < 1.0 else 0.0
+	var fwd := sin(PI * swing) * 0.018 if swing < 1.0 else 0.0
+	# Ausholen: in den letzten ~240 ms vor dem Schlag zurueck und nach hinten kippen.
+	var jn := RallyChart.first_at_or_after(shots, t_ms - 80.0)
+	var wind := 0.0
+	if jn < shots.size():
+		var lead := shots[jn].t - t_ms
+		if lead > 0.0 and lead < 260.0 and swing >= 1.0:
+			wind = sin(PI * 0.5 * (1.0 - lead / 260.0))
 	var pull := 0.0
 	if core != null and core.charging >= 0:
 		var cs := shots[core.charging]
 		pull = -0.02 * clampf((t_ms - cs.t) / maxf(cs.end - cs.t, 1.0), 0.0, 1.0)
 	var gap := BALL_R * h * 1.38 * 1.9 / size.x
-	var pp := _p(Vector2(RallyChart.X_PLAYER - gap + fwd + pull, py))
-	var tilt := 0.12 + (0.0 if swing >= 1.0 else 0.35 * sin(PI * swing))
-	_paddle(pp, tilt, COL_ME, Color(0.20, 0.15, 0.10).lerp(UiTheme.ACCENT, 0.32))
+	var pp := _p(Vector2(RallyChart.X_PLAYER - gap + fwd + pull - 0.016 * wind, py + 0.010 * wind))
+	var tilt := 0.12 - 0.34 * wind + (0.0 if swing >= 1.0 else 0.45 * sin(PI * swing))
+	_paddle(pp, tilt, key_col(_player_key()).darkened(0.12))
 	# Gegner: schlaegt zur Mitte der Flugzeit zurueck.
 	var ofwd := 0.0
 	var j := RallyChart.first_at_or_after(shots, t_ms - 120.0)
@@ -338,7 +390,7 @@ func _draw_players() -> void:
 		if u >= 0.0 and u <= 1.0:
 			ofwd = -sin(PI * u) * 0.030
 	var op := _p(Vector2(RallyChart.X_OPP + gap + ofwd, RallyChart.Y_OPP))
-	_paddle(op, -0.12 - (0.0 if ofwd > -0.002 else 0.3), COL_OPP, Color(0.12, 0.14, 0.17))
+	_paddle(op, -0.12 - (0.0 if ofwd > -0.002 else 0.3), COL_OPP.darkened(0.35))
 
 
 ## Schlaeger-Hoehe: gleitet vor dem Treffer auf die Hoehe des naechsten Balls.
@@ -425,17 +477,18 @@ func _draw_ball(fn: Callable, t_from: float, t_now: float, key: int, smash: bool
 		col = col.lerp(Color(0.55, 0.55, 0.58), 0.55)
 	var r := BALL_R * size.y
 	var pos: Vector2 = _p(fn.call(t_now))
-	# Weicher Schatten auf der Tischmitte, kleiner und dunkler je naeher am Tisch.
+	# Schatten auf der Tischflaeche: Ellipse, beim Hochfliegen kleiner und blasser.
 	var tx0 := RallyChart.X_TABLE_L * size.x
 	var tx1 := RallyChart.X_TABLE_R * size.x
 	var ty := RallyChart.Y_TABLE * size.y
-	var hgt := clampf((ty - pos.y) / (size.y * 0.45), 0.0, 1.0)
+	var hgt := clampf((ty - pos.y) / (size.y * 0.40), 0.0, 1.0)
 	if pos.x > tx0 and pos.x < tx1 and pos.y < ty + 2.0:
+		var sy := ty + 0.014 * size.y
 		for i in 3:
 			var f := float(i) / 2.0
-			draw_set_transform(Vector2(pos.x, ty + 2.0), 0.0, Vector2(1.0, 0.24))
-			draw_circle(Vector2.ZERO, r * (1.7 - 0.45 * f) * (1.0 + 0.5 * hgt),
-					Color(0, 0, 0, (0.10 + 0.05 * f) * alpha * (1.0 - 0.55 * hgt)))
+			draw_set_transform(Vector2(pos.x, sy), 0.0, Vector2(1.0, 0.26))
+			draw_circle(Vector2.ZERO, r * (1.9 - 0.55 * f) * (1.0 - 0.55 * hgt),
+					Color(0, 0, 0, (0.15 + 0.07 * f) * alpha * (1.0 - 0.75 * hgt)))
 			draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	# Schmier: nur die letzten ~120 ms, weich auslaufend entlang der echten Bahn.
 	var t0 := maxf(t_from, t_now - TRAIL_MS)
@@ -458,7 +511,7 @@ func _draw_ball(fn: Callable, t_from: float, t_now: float, key: int, smash: bool
 # ---------------------------------------------------------------------------
 
 func _draw_bounces() -> void:
-	var j := RallyChart.first_at_or_after(shots, t_ms - 200.0)
+	var j := RallyChart.first_at_or_after(shots, t_ms - 450.0)
 	for k in range(maxi(j - 2, 0), mini(j + 2, shots.size())):
 		var tb := RallyChart.bounce_me_time(shots, k)
 		_bounce_ring(tb, RallyChart.pos_in(shots, k, tb).x)
@@ -468,13 +521,37 @@ func _draw_bounces() -> void:
 
 
 func _bounce_ring(tb: float, x: float) -> void:
-	var u := (t_ms - tb) / 160.0
+	var u := (t_ms - tb) / 420.0
 	if u < 0.0 or u > 1.0:
 		return
 	var ty := RallyChart.Y_TABLE * size.y
-	draw_set_transform(Vector2(x * size.x, ty + 2.0), 0.0, Vector2(1.0, 0.22))
-	draw_arc(Vector2.ZERO, size.y * (0.014 + 0.036 * u), 0.0, TAU, 32, Color(1, 1, 1, 0.50 * (1.0 - u)), 1.6, true)
+	var sy := ty + 0.014 * size.y
+	var ur := minf(u * 420.0 / 160.0, 1.0)
+	# Aufprall-Punkt: kleiner Fleck bleibt kurz, Ring weitet sich.
+	draw_set_transform(Vector2(x * size.x, sy), 0.0, Vector2(1.0, 0.26))
+	if ur < 1.0:
+		draw_arc(Vector2.ZERO, size.y * (0.014 + 0.036 * ur), 0.0, TAU, 32, Color(1, 1, 1, 0.50 * (1.0 - ur)), 1.6, true)
+	draw_circle(Vector2.ZERO, size.y * 0.011, Color(1, 1, 1, 0.34 * (1.0 - u) * (1.0 - u)))
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	_edge_glint(x, u)
+
+
+## Dezente Spiegelung auf der Tischkante: heller Schein am Aufprall-x, klingt ab.
+func _edge_glint(x: float, u: float) -> void:
+	if u > 0.6:
+		return
+	var e := 1.0 - u / 0.6
+	var yn := (RallyChart.Y_TABLE + TOP_NEAR) * size.y
+	var half := size.x * 0.07
+	var cx := x * size.x
+	var n := 10
+	for i in n:
+		var f0 := float(i) / float(n)
+		var f1 := float(i + 1) / float(n)
+		var a := 0.30 * e * (1.0 - f0) * (1.0 - f0)
+		for sgn in [-1.0, 1.0]:
+			draw_line(Vector2(cx + sgn * half * f0, yn), Vector2(cx + sgn * half * f1, yn), Color(1, 1, 1, a), 1.8)
+			draw_line(Vector2(cx + sgn * half * f0, yn + size.y * 0.007), Vector2(cx + sgn * half * f1, yn + size.y * 0.007), Color(1, 1, 1, a * 0.4), 1.4)
 
 
 func _draw_fx() -> void:
