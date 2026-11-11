@@ -1,35 +1,32 @@
 extends SceneTree
 
-## Headless-Tests fuer den Orbit-Modus (Bahnen): OrbitClock, OrbitPath,
-## OrbitTrack, OrbitConverter, OrbitCore. Ausfuehren:
+## Headless-Tests fuer den Orbit-Konverter (Satelliten): OrbitConverter,
+## Taiko-Tastenregel, Halten, Beat-Spawn, Sichtbarkeit, Sterne, ganze Bibliothek.
 ##   Godot..._console.exe --headless --audio-driver Dummy --path . --script res://tests/run_orbit_tests.gd
 
 var _passed := 0
 var _failed := 0
-const EPS := 1e-6
-## Phasen-Tempo in Grad/ms bei 2000 ms pro Takt (Taktphase der Noten).
-const V := 0.18
-## Bahn der Tests: Kreis, 2000 ms pro Takt.
-var _tr := OrbitTrack.fixed(OrbitClock.fixed(2000.0), OrbitPath.CIRCLE)
 
 
 func _initialize() -> void:
-	print("=== TETHRA Orbit-Tests (Bahnen) ===")
-	_test_clock()
-	_test_paths()
-	_test_shape_plan()
-	_test_easy_shapes()
-	_test_mania_rings()
-	_test_std_rings()
-	_test_density()
+	print("=== TETHRA Orbit-Tests (Satelliten-Konverter) ===")
+	_test_std_basic()
+	_test_skill()
+	_test_taiko_keys()
+	_test_slider_hold()
+	_test_spinner()
+	_test_mania_keys()
+	_test_mania_pattern()
+	_test_mania_flow()
+	_test_mania_hold()
+	_test_spawn_on_beat()
+	_test_lap_ms()
+	_test_visible_limit()
+	_test_min_gap()
+	_test_easy()
 	_test_determinism()
-	_test_tap_aim()
-	_test_keys_are_rings()
-	_test_accent()
-	_test_hold()
-	_test_hold_release_and_out()
-	_test_scoring_values()
 	_test_stars()
+	_test_analyze()
 	_test_library()
 	print("=== Ergebnis: %d bestanden, %d fehlgeschlagen ===" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
@@ -55,11 +52,11 @@ func _tp(bm: Beatmap, t: float, bpm: float, meter: int = 4) -> void:
 	bm.timing_points.append(tp)
 
 
-func _bm(od: float = 8.0) -> Beatmap:
+func _mania_bm(bpm: float = 120.0) -> Beatmap:
 	var bm := Beatmap.new()
 	bm.general = {"Mode": "3"}
-	bm.difficulty = {"CircleSize": "4", "OverallDifficulty": str(od), "HPDrainRate": "5"}
-	_tp(bm, 0.0, 120.0)
+	bm.difficulty = {"CircleSize": "4", "OverallDifficulty": "8", "HPDrainRate": "5"}
+	_tp(bm, 0.0, bpm)
 	return bm
 
 
@@ -73,19 +70,19 @@ func _add(bm: Beatmap, t: float, col: int, hold_ms: float = 0.0) -> void:
 	bm.hit_objects.append(n)
 
 
-func _std_bm(bpm: float = 120.0, meter: int = 4) -> Beatmap:
+func _std_bm(bpm: float = 120.0) -> Beatmap:
 	var bm := Beatmap.new()
 	bm.general = {"Mode": "0"}
 	bm.difficulty = {"CircleSize": "4", "OverallDifficulty": "8", "HPDrainRate": "5", "ApproachRate": "9"}
-	_tp(bm, 0.0, bpm, meter)
+	_tp(bm, 0.0, bpm)
 	return bm
 
 
-func _circle(bm: Beatmap, t: float, hs: int = 0) -> void:
+func _circle(bm: Beatmap, t: float, x: float = 100.0, y: float = 100.0, hs: int = 0) -> void:
 	var c := HitCircle.new()
 	c.time = t
-	c.x = 100.0
-	c.y = 100.0
+	c.x = x
+	c.y = y
 	c.hit_sound = hs
 	bm.hit_objects.append(c)
 
@@ -99,459 +96,443 @@ func _spinner(bm: Beatmap, t: float, end: float) -> void:
 	bm.hit_objects.append(s)
 
 
-## Bahnen-Ziel bei 2000 ms/Takt (Kreis).
-func _note(t: float, ring: int, hold_ms: float = 0.0) -> OrbitNote:
-	var clock := OrbitClock.fixed(2000.0)
-	var n: OrbitNote
-	if hold_ms > 0.0:
-		n = OrbitNote.make_arc(t, t + hold_ms, clock.angle_at(t), V * hold_ms, ring)
-	else:
-		n = OrbitNote.make(t, clock.angle_at(t), ring)
-	n.speed = _tr.speed_at(t)
-	return n
+func _slider(bm: Beatmap, t: float, dur: float, hs: int = 0) -> HitSlider:
+	var s := HitSlider.new()
+	s.time = t
+	s.x = 100.0
+	s.y = 100.0
+	s.curve_type = "B"
+	s.curve_points = PackedVector2Array([Vector2(100, 100), Vector2(160, 40), Vector2(220, 100)])
+	s.slides = 1
+	s.length = 150.0
+	s.single_duration_ms = dur
+	s.hit_sound = hs
+	bm.hit_objects.append(s)
+	return s
 
 
-func _head(t: float) -> Vector2:
-	return _tr.head(t)
+## Gleichmaessige Kreise im Abstand gap_ms, Positionen laufen ueber das Feld.
+func _stream(bm: Beatmap, n: int, gap_ms: float, t0: float = 1000.0) -> void:
+	for i in n:
+		_circle(bm, t0 + gap_ms * float(i), 60.0 + float((i * 97) % 380), 50.0 + float((i * 53) % 280))
 
 
-func _core(ns: Array[OrbitNote], od: float = 8.0) -> OrbitCore:
-	var c := OrbitCore.new()
-	c.setup(ns, od, 1.0, 5.0, {})
-	c.set_track(_tr)
-	return c
+func _in_field(p: Vector2) -> bool:
+	return p.x >= 0.0 and p.x <= 1.0 and p.y >= 0.0 and p.y <= 1.0
 
 
-func _res(c: OrbitCore) -> Dictionary:
-	var got := {}
-	c.note_judged.connect(func(i: int, r: Dictionary) -> void: got[i] = r)
-	return got
+# --- Tests ---
 
-
-func _list(a: Array) -> Array[OrbitNote]:
-	var ns: Array[OrbitNote] = []
-	ns.assign(a)
-	return ns
-
-
-func _sig(ns: Array[OrbitNote]) -> String:
-	var parts: PackedStringArray = []
-	for n in ns:
-		parts.append("%.3f/%.3f/%.4f/%.4f/%d/%s/%d" % [n.time_ms, n.end_ms, n.angle_deg,
-				n.end_angle_deg, n.ring, n.is_arc, n.source_index])
-	return ";".join(parts)
-
-
-# --- Uhr ---
-
-func _test_clock() -> void:
-	print("- Takt-Uhr")
-	var bm := _bm()
-	var c := OrbitClock.from_beatmap(bm)
-	_ok(absf(c.bar_ms_at(0.0) - 2000.0) < EPS, "120 BPM 4/4: Takt 2000 ms")
-	_ok(absf(c.angle_at(0.0)) < EPS and absf(c.angle_at(500.0) - 90.0) < EPS, "Takt-Eins = Phase 0, Viertel = 90 Grad")
-	_ok(absf(c.angle_at(2000.0)) < EPS, "naechster Takt wieder oben")
-	_ok(absf(c.speed_at(0.0) - V) < EPS, "Tempo 0,18 Grad/ms")
-	_ok(absf(c.bar_start_at(2500.0) - 2000.0) < EPS and absf(c.bar_end_at(2500.0) - 4000.0) < EPS, "Takt-Beginn/-Ende")
-	_ok(c.bar_at(1999.0) != c.bar_at(2001.0), "Takt-Nummer wechselt")
-	var b3 := _bm()
-	b3.timing_points.clear()
-	_tp(b3, 1000.0, 120.0, 3)
-	var c3 := OrbitClock.from_beatmap(b3)
-	_ok(absf(c3.bar_ms_at(1500.0) - 1500.0) < EPS and absf(c3.angle_at(1750.0) - 180.0) < EPS, "3/4: Takt 1500 ms")
-	# Tempowechsel: neuer roter Punkt beginnt einen neuen Takt.
-	var bt := _bm()
-	_tp(bt, 4000.0, 60.0)
-	var ct := OrbitClock.from_beatmap(bt)
-	_ok(absf(ct.angle_at(4000.0)) < EPS and absf(ct.bar_ms_at(4500.0) - 4000.0) < EPS, "Tempowechsel: neuer Takt, langsamere Hand")
-	# Sehr schnelle Takte: eine Umdrehung pro zwei Takte.
-	var bf := _bm()
-	bf.timing_points.clear()
-	_tp(bf, 0.0, 240.0)
-	var cf := OrbitClock.from_beatmap(bf)
-	_ok(cf.bar_ms_at(0.0) >= OrbitClock.MIN_BAR_MS, "240 BPM: Umdrehung >= 1,2 s (%.0f ms)" % cf.bar_ms_at(0.0))
-	var bn := Beatmap.new()
-	_ok(absf(OrbitClock.from_beatmap(bn).bar_ms_at(0.0) - 2000.0) < EPS, "ohne Timing-Point: 120 BPM")
-
-
-# --- Converter ---
-
-func _test_mania_rings() -> void:
-	print("- 4K-Mania -> Spuren")
-	var bm := _bm()
-	_add(bm, 1000.0, 0)
-	_add(bm, 1500.0, 1)
-	_add(bm, 2000.0, 2)
-	_add(bm, 2500.0, 3)
-	_add(bm, 3000.0, 1)      # Akkord ueber beide Seiten
-	_add(bm, 3000.0, 2)
-	_add(bm, 4000.0, 0, 600.0)
-	var ns := OrbitConverter.convert_mania(bm)
-	_ok(ns.size() == 7, "7 Ziele (Akzent = 2)")
-	_ok([ns[0].ring, ns[1].ring, ns[2].ring, ns[3].ring] == [0, 0, 1, 1], "Spalten 1-2 innen, 3-4 aussen")
-	_ok(ns[4].time_ms == 3000.0 and ns[5].time_ms == 3000.0 and ns[4].ring == 0 and ns[5].ring == 1
-		and absf(ns[4].angle_deg - ns[5].angle_deg) < EPS, "Akkord ueber beide Seiten = Akzent am selben Winkel")
-	_ok(ns[6].is_arc and absf(ns[6].end_ms - 4600.0) < EPS, "LN = Halte")
-	_ok(absf(ns[0].angle_deg - 180.0) < EPS and absf(ns[1].angle_deg - 270.0) < EPS, "Phase = Taktposition (1000 ms = 180 Grad)")
-	_ok(absf(ns[6].end_angle_deg - ns[6].angle_deg - V * 600.0) < 0.001, "Halte laeuft mit dem Takt")
-	var v := OrbitConverter.violations(ns, bm)
-	_ok(int(v.timing) + int(v.ring) + int(v.angle) + int(v.chord) == 0, "keine Verstoesse %s" % v)
-
-
-func _test_std_rings() -> void:
-	print("- osu!standard -> Spuren (Taiko-Regel)")
+func _test_std_basic() -> void:
+	print("- osu!standard: Position und Zeit")
 	var bm := _std_bm()
-	_circle(bm, 1000.0, 0)    # normal -> innen
-	_circle(bm, 1500.0, 2)    # whistle -> aussen
-	_circle(bm, 2000.0, 8)    # clap -> aussen
-	_circle(bm, 2500.0, 4)    # finish -> Akzent
-	_circle(bm, 3000.0, 1)    # normal
-	_spinner(bm, 4000.0, 5500.0)
-	var ns := OrbitConverter.convert_std(bm)
-	_ok(ns.size() == 7, "7 Ziele (Finish = 2)")
-	_ok([ns[0].ring, ns[1].ring, ns[2].ring] == [0, 1, 1], "Whistle/Clap aussen, sonst innen")
-	_ok(ns[3].ring == 0 and ns[4].ring == 1 and ns[3].time_ms == ns[4].time_ms, "Finish = beide Spuren")
-	_ok(ns[6].is_arc and ns[6].ring == 0, "Spinner = Halte")
-	var bm2 := _std_bm()
-	_circle(bm2, 1000.0, 6)
-	_ok(OrbitConverter.convert_std(bm2).size() == 2, "Whistle+Finish = Akzent")
+	_circle(bm, 1000.0, 256.0, 192.0)
+	_circle(bm, 1500.0, 128.0, 96.0)
+	var ns := OrbitConverter.convert(bm)
+	_ok(ns.size() == 2, "2 Ziele")
+	_ok(ns[0].pos.distance_to(Vector2(0.5, 0.5)) < 1e-6, "Mitte = (0,5 | 0,5)")
+	_ok(absf(ns[0].time_ms - 1000.0) < 1e-6 and not ns[0].is_hold, "Zeit, kein Halten")
+	var j := ns[1].pos.distance_to(ns[0].pos)
+	_ok(j > 0.1 and j < 0.36, "Sprung folgt der Map, hoechstens gekappt (%.2f)" % j)
+	_ok(_in_field(ns[1].pos), "im Feld")
+	_ok(OrbitConverter.convert(bm, 2)[0].laps == 2, "laps = 2 explizit")
+	_ok(OrbitConverter.convert(bm, 3)[0].laps == 3 and OrbitConverter.convert(bm, 1)[0].laps == 1,
+			"laps-Parameter")
+	_ok(OrbitConverter.convert(null).is_empty(), "null -> leer")
 
 
-func _test_density() -> void:
-	print("- Dichte-Regeln")
-	var bm := _bm()
-	_add(bm, 1000.0, 0)
-	_add(bm, 1060.0, 0)      # < 90 ms auf demselben Ring: weg
-	_add(bm, 1060.0, 3)      # anderer Ring: bleibt
-	_add(bm, 1150.0, 0)      # >= 90 ms: bleibt
-	_add(bm, 3000.0, 0, 800.0)
-	_add(bm, 3400.0, 3)      # anderer Ring im Halte: bleibt
-	_add(bm, 3500.0, 0)      # im Halte des eigenen Rings: weg
-	_add(bm, 3900.0, 0)      # 100 ms nach Halte-Ende: < 150, weg
-	_add(bm, 4000.0, 0)      # 200 ms nach Halte-Ende: bleibt
-	var ns := OrbitConverter.convert_mania(bm)
-	var times := []
+func _test_skill() -> void:
+	print("- Skill: AR -> Runden, CS -> Radius, treue Positionen")
+	var bm := _std_bm()
+	_circle(bm, 1000.0, 256.0, 192.0)
+	var want := {"3": 3, "5": 3, "6": 2, "8": 2, "9": 1, "10": 1}
+	var ok := true
+	for ar in want:
+		bm.difficulty["ApproachRate"] = ar
+		ok = ok and OrbitConverter.convert(bm)[0].laps == int(want[ar])
+	_ok(ok, "AR <= 5: 3, 6-8: 2, >= 9: 1 Runden (ohne Einstellung)")
+	_ok(OrbitConverter.convert(bm, 3)[0].laps == 3, "Spieler-Einstellung schlaegt AR")
+	_ok(absf(OrbitConverter.target_radius(bm) - 0.045) < 0.001, "CS 4 -> Radius 0,045 (%.4f)" % OrbitConverter.target_radius(bm))
+	bm.difficulty["CircleSize"] = "6"
+	var r6 := OrbitConverter.target_radius(bm)
+	bm.difficulty["CircleSize"] = "2"
+	_ok(r6 < 0.045 and OrbitConverter.target_radius(bm) > 0.045, "hoeheres CS = kleiner")
+	_ok(absf(OrbitConverter.target_radius(_mania_bm()) - OrbitConverter.MANIA_RADIUS) < 1e-6, "Mania: fester Radius")
+	# dichte osu!-Map: Sprung 0.5 in 150 ms bleibt, Slider-Kurve ungekuerzt
+	var d := _std_bm()
+	var xs := [40.0, 440.0, 60.0, 450.0, 80.0, 420.0, 100.0, 400.0]
+	for i in xs.size():
+		_circle(d, 1000.0 + 150.0 * i + (0.0 if i < 8 else 0.0), xs[i], 50.0 + 30.0 * float(i))
+	for i in 20:
+		_circle(d, 3000.0 + 160.0 * i, 200.0 + 10.0 * (i % 5), 100.0)
+	var ns := OrbitConverter.convert(d)
+	var exact := true
+	for i in xs.size():
+		exact = exact and ns[i].pos.distance_to(Vector2(xs[i] / 512.0, (50.0 + 30.0 * float(i)) / 384.0)) < 1e-5
+	_ok(exact, "dichte Map: Positionen exakt wie gemappt (Spruenge nicht gekappt)")
+	var sd := _std_bm()
+	_circle(sd, 500.0, 100.0, 100.0)
+	for i in 30:
+		_circle(sd, 800.0 + 180.0 * i, 100.0 + 8.0 * i, 100.0)
+	var sl := _slider(sd, 7000.0, 1400.0, 0)
+	sl.length = 300.0
+	var sn := OrbitConverter.convert(sd)
+	var hold: OrbitNote = null
+	for n in sn:
+		if n.is_hold:
+			hold = n
+	var plen := 0.0
+	if hold != null:
+		for i in range(1, hold.path.size()):
+			plen += hold.path[i - 1].distance_to(hold.path[i])
+	_ok(hold != null and absf(hold.end_ms - 8400.0) < 1.0 and plen > 0.5 * 300.0 / 512.0,
+			"dichte Map: Slider ganz (Dauer + Laenge, %.2f)" % plen)
+
+
+func _test_taiko_keys() -> void:
+	print("- Taiko-Tastenregel")
+	var bm := _std_bm()
+	_stream(bm, 8, 400.0)
+	bm.hit_objects[0].hit_sound = 0
+	bm.hit_objects[1].hit_sound = 2
+	bm.hit_objects[2].hit_sound = 8
+	bm.hit_objects[3].hit_sound = 4
+	bm.hit_objects[4].hit_sound = 4 | 2
+	bm.hit_objects[5].hit_sound = 1
+	var ns := OrbitConverter.convert(bm)
+	_ok(ns[0].key == OrbitNote.KEY_A, "ohne Sound = A")
+	_ok(ns[1].key == OrbitNote.KEY_B, "Whistle = B")
+	_ok(ns[2].key == OrbitNote.KEY_B, "Clap = B")
+	_ok(ns[3].key == OrbitNote.KEY_ACCENT, "Finish = Akzent")
+	_ok(ns[4].key == OrbitNote.KEY_ACCENT, "Finish + Whistle = Akzent")
+	_ok(ns[5].key == OrbitNote.KEY_A, "Normal = A")
+
+
+func _test_slider_hold() -> void:
+	print("- Slider = Halten")
+	var bm := _std_bm()
+	_circle(bm, 500.0, 100.0, 100.0)
+	var s := _slider(bm, 2000.0, 700.0, 2)
+	var sl := _slider(bm, 6000.0, 1000.0, 0)
+	sl.slides = 2
+	sl.length = 150.0
+	_circle(bm, 8500.0, 300.0, 200.0)
+	var ns := OrbitConverter.convert(bm)
+	_ok(ns.size() == 4, "4 Ziele (%d)" % ns.size())
+	var h := ns[1]
+	_ok(h.is_hold and absf(h.end_ms - 2700.0) < 1e-6, "Halten 2000..2700")
+	_ok(h.path.size() >= 3 and h.path[0] == h.pos, "Pfad aus der Kurve, path[0] == pos")
+	var inside := true
+	for p in h.path:
+		inside = inside and _in_field(p)
+	_ok(inside, "Pfad im Feld")
+	var bent := false
+	for p in h.path:
+		if absf(p.y - h.pos.y) > 0.02:
+			bent = true
+	_ok(bent, "echte Kurve (nicht gerade)")
+	_ok(h.key == OrbitNote.KEY_B, "Slider-Kopf Whistle = B")
+	var h2 := ns[2]
+	var path_len := 0.0
+	for i in range(1, h2.path.size()):
+		path_len += h2.path[i - 1].distance_to(h2.path[i])
+	_ok(h2.is_hold and path_len > 0.0 and path_len / 1.0 <= OrbitConverter.HOLD_V_MAX + 0.01,
+			"Halten-Tempo <= %.1f/s (%.2f)" % [OrbitConverter.HOLD_V_MAX, path_len])
+	_ok(h2.pos_at(h2.time_ms).distance_to(h2.pos) < 1e-4 and h2.pos_at(h2.end_ms).distance_to(h2.path[-1]) < 1e-4,
+			"Kugel laeuft von Kopf zu Pfadende")
+	s.hit_sound = 4
+	var ns2 := OrbitConverter.convert(bm)
+	_ok(ns2[1].key != OrbitNote.KEY_ACCENT and ns2[1].is_hold, "Halten wird nie Akzent")
+
+
+func _test_spinner() -> void:
+	print("- Spinner = Akzent Mitte")
+	var bm := _std_bm()
+	_stream(bm, 12, 250.0, 100.0)
+	_circle(bm, 3500.0, 300.0, 300.0)
+	_spinner(bm, 4000.0, 6000.0)
+	_stream(bm, 12, 250.0, 6500.0)
+	var ns := OrbitConverter.convert(bm)
+	var sp: OrbitNote = null
 	for n in ns:
-		times.append(n.time_ms)
-	_ok(times == [1000.0, 1060.0, 1150.0, 3000.0, 3400.0, 4000.0], "Spur-Abstaende %s" % [times])
-	var v := OrbitConverter.violations(ns, bm)
-	_ok(int(v.ring) == 0, "violations: Spuren ok")
-	# Leichte Diffs: groebere Grenzen.
-	var easy := _bm()
-	for i in 12:
-		_add(easy, 1000.0 + 120.0 * i, i % 4)
-	var en := OrbitConverter.convert(easy)
-	_ok(en.size() < 12 and OrbitConverter.stars(en) < OrbitConverter.EASY_STARS + 1.0, "leichte Diff wird ausgeduennt (%d Ziele)" % en.size())
+		if absf(n.time_ms - 4000.0) < 0.5:
+			sp = n
+	_ok(sp != null and sp.key == OrbitNote.KEY_ACCENT, "Akzent")
+	_ok(sp != null and sp.pos.distance_to(Vector2(0.5, 0.5)) < 0.2, "in der Mitte (Sprungregel darf kuerzen)")
+
+
+func _test_mania_keys() -> void:
+	print("- Mania 4K: Tasten")
+	var bm := _mania_bm()
+	var cols := [[0], [1], [2], [3], [0, 3], [1, 2], [0, 1]]
+	for i in cols.size():
+		for c in cols[i]:
+			_add(bm, 1000.0 + 250.0 * i, c)
+	var ns := OrbitConverter.convert(bm)
+	_ok(ns.size() == 7, "7 Ziele, Akkorde zusammengefasst (%d)" % ns.size())
+	var want := [0, 0, 1, 1, 2, 2, 0]
+	var keys: Array = []
+	for n in ns:
+		keys.append(n.key)
+	_ok(keys == want, "Spalten 1-2 = A, 3-4 = B, Akkord ueber beide = Akzent %s" % str(keys))
+
+
+func _test_mania_pattern() -> void:
+	print("- Mania 4K: musikalisches A/B-Muster")
+	var bm := _mania_bm()
+	# Strom 120 ms: Spalten 0,1,2,3 -> Wechselschlag
+	for i in 4:
+		_add(bm, 1000.0 + 120.0 * i, i)
+	# wiederholter Klang (gleiche Spalte) im Strom: gleiche Taste
+	for i in 4:
+		_add(bm, 3000.0 + 120.0 * i, 3)
+	var ns := OrbitConverter.convert(bm)
+	_ok(ns.size() == 8, "8 Ziele (%d)" % ns.size())
+	var alt := ns[1].key != ns[0].key and ns[2].key != ns[1].key and ns[3].key != ns[2].key
+	_ok(alt, "Strom wechselt A/B")
+	_ok(ns[5].key == ns[4].key and ns[6].key == ns[5].key and ns[7].key == ns[6].key, "gleiche Spalte = gleiche Taste")
+
+
+func _test_mania_flow() -> void:
+	print("- Mania 4K: Positionsfluss")
+	var bm := _mania_bm()
+	for i in 80:
+		_add(bm, 1000.0 + 300.0 * i, (i * 7 + i / 3) % 4)
+	var ns := OrbitConverter.convert(bm)
+	var ok_field := true
+	var max_jump := 0.0
+	var min_sep := 9.0
+	for i in ns.size():
+		ok_field = ok_field and _in_field(ns[i].pos)
+		if i > 0:
+			max_jump = maxf(max_jump, ns[i].pos.distance_to(ns[i - 1].pos))
+		for j in range(maxi(i - 8, 0), i):
+			if ns[j].time_ms > ns[i].spawn_ms:
+				min_sep = minf(min_sep, ns[i].pos.distance_to(ns[j].pos))
+	_ok(ok_field, "alle im Feld")
+	_ok(max_jump <= OrbitConverter.MANIA_MAX + 0.3, "Abstand gekappt (%.2f)" % max_jump)
+	_ok(min_sep >= OrbitConverter.SEP * 0.99, "keine Ueberlappung sichtbarer Ziele (%.3f)" % min_sep)
+	var moved := false
+	for i in range(1, ns.size()):
+		if ns[i].pos.distance_to(ns[i - 1].pos) > 0.05:
+			moved = true
+	_ok(moved, "Fluss bewegt sich")
+	_ok(OrbitConverter.violations(ns, bm).overlap == 0, "violations: overlap 0")
+
+
+func _test_mania_hold() -> void:
+	print("- Mania 4K: Holds")
+	var bm := _mania_bm()
+	_add(bm, 1000.0, 3, 800.0)
+	_add(bm, 3000.0, 0, 50.0)
+	_add(bm, 4000.0, 1, 1500.0)
+	var ns := OrbitConverter.convert(bm)
+	_ok(ns.size() == 3, "3 Ziele")
+	_ok(ns[0].is_hold and ns[0].key == OrbitNote.KEY_B and absf(ns[0].end_ms - 1800.0) < 1e-6, "Hold Spalte 4 = B")
+	_ok(not ns[1].is_hold, "sehr kurzer Hold = Tap")
+	_ok(ns[2].is_hold and ns[2].path.size() >= 2 and ns[2].path[0] == ns[2].pos, "Hold-Pfad ab pos")
+	var d := ns[0].path[-1] - ns[0].path[0]
+	_ok(d.length() > 0.04 and _in_field(ns[0].path[-1]), "Pfad kurz, im Feld (%.2f)" % d.length())
+	_ok(OrbitConverter.violations(ns, bm).hold == 0, "violations: hold 0")
+
+
+func _test_spawn_on_beat() -> void:
+	print("- Erscheinen exakt auf dem Beat")
+	var bm := _std_bm(137.0)
+	_tp(bm, 20123.0, 93.0)
+	for i in 60:
+		_circle(bm, 700.0 + 421.0 * float(i), 60.0 + float((i * 71) % 400), 40.0 + float((i * 37) % 300))
+	var clock := OrbitClock.from_beatmap(bm)
+	var ns := OrbitConverter.convert(bm)
+	var worst := 0.0
+	var early := true
+	for n in ns:
+		worst = maxf(worst, absf(n.spawn_ms - clock.beat_tick_at_or_before(n.spawn_ms)))
+		early = early and n.spawn_ms <= n.time_ms - float(n.laps) * n.lap_ms + 1e-6
+	_ok(ns.size() > 40, "genug Ziele (%d)" % ns.size())
+	_ok(worst < 1.0, "Spawn-Fehler < 1 ms (%.4f)" % worst)
+	_ok(early, "Vorlauf >= laps x lap_ms")
+	_ok(OrbitConverter.analyze(ns, bm).spawn_err_ms < 1.0, "analyze: spawn_err_ms < 1")
+	var near := 0.0
+	for n in ns:
+		near = maxf(near, (n.time_ms - n.spawn_ms) - float(n.laps + 1) * n.lap_ms)
+	_ok(near < 1e-6, "hoechstens eine Runde Rundungsabstand")
+
+
+func _test_lap_ms() -> void:
+	print("- lap_ms: Beat, unter 330 ms zwei Beats")
+	var bm := _std_bm(120.0)
+	_stream(bm, 6, 500.0)
+	_ok(absf(OrbitConverter.convert(bm)[0].lap_ms - 500.0) < 1e-6, "120 BPM: 500 ms")
+	var bm2 := _std_bm(240.0)
+	_stream(bm2, 6, 500.0)
+	_ok(absf(OrbitConverter.convert(bm2)[0].lap_ms - 500.0) < 1e-6, "240 BPM: 2 Beats = 500 ms")
+	var bm3 := _std_bm(180.0)
+	_stream(bm3, 6, 500.0)
+	_ok(absf(OrbitConverter.convert(bm3)[0].lap_ms - 333.3333) < 0.01, "180 BPM (333 ms): 1 Beat")
+
+
+func _test_visible_limit() -> void:
+	print("- hoechstens 6 sichtbar")
+	var bm := _std_bm(150.0)
+	_stream(bm, 200, 120.0)
+	for laps in [1, 2, 4]:
+		var ns := OrbitConverter.convert(bm, laps)
+		var a := OrbitConverter.analyze(ns, bm)
+		_ok(a.max_visible <= 6, "laps %d: max sichtbar %d <= 6 (%d Ziele)" % [laps, a.max_visible, ns.size()])
+	var ns4 := OrbitConverter.convert(bm, 4)
+	var min_laps := 9
+	var all_ge1 := true
+	for n in ns4:
+		min_laps = mini(min_laps, n.laps)
+		all_ge1 = all_ge1 and n.laps >= 1
+	_ok(all_ge1 and min_laps < 4, "dichte Stellen verringern die Runden (min %d, nie < 1)" % min_laps)
+	var bm2 := _std_bm(120.0)
+	_stream(bm2, 8, 1000.0)
+	var sparse := OrbitConverter.convert(bm2, 4)
+	_ok(sparse[3].laps == 4, "lockere Stellen behalten alle Runden")
+	_ok(OrbitConverter.violations(OrbitConverter.convert(bm, 2), bm).visible == 0, "violations: visible 0")
+
+
+func _test_min_gap() -> void:
+	print("- Mindestabstand 75 ms")
+	var bm := _std_bm()
+	_circle(bm, 1000.0)
+	_circle(bm, 1040.0, 300.0, 300.0)
+	_circle(bm, 1080.0, 200.0, 200.0)
+	_circle(bm, 1150.0, 220.0, 150.0)
+	_circle(bm, 1500.0, 150.0, 250.0)
+	var ns := OrbitConverter.convert(bm)
+	var gaps_ok := true
+	for i in range(1, ns.size()):
+		gaps_ok = gaps_ok and ns[i].time_ms - ns[i - 1].time_ms >= 75.0 - 1e-6
+	_ok(gaps_ok and ns.size() == 3, "zu dichte Ziele entfallen (%d)" % ns.size())
+	var bm2 := _std_bm()
+	_slider(bm2, 1000.0, 500.0)
+	_circle(bm2, 1520.0, 300.0, 300.0)
+	_circle(bm2, 1700.0, 300.0, 200.0)
+	var ns2 := OrbitConverter.convert(bm2)
+	_ok(ns2.size() == 2 and ns2[1].time_ms >= 1500.0 + 75.0, "kein Ziel unmittelbar nach dem Halten")
+
+
+func _test_easy() -> void:
+	print("- leichte Maps: kleine Spruenge, keine Akzente")
+	var bm := _std_bm(100.0)
+	for i in 30:
+		_circle(bm, 1000.0 + 600.0 * float(i), 40.0 + float((i * 211) % 440), 40.0 + float((i * 131) % 300), 4 if i % 3 == 0 else 0)
+	var ns := OrbitConverter.convert(bm)
+	var a := OrbitConverter.analyze(ns, bm)
+	_ok(a.nps < 2.5, "leicht: %.2f Ziele/s" % a.nps)
+	_ok(a.accent_share == 0.0, "keine Akzente")
+	var maxj := 0.0
+	for i in range(1, ns.size()):
+		maxj = maxf(maxj, ns[i].pos.distance_to(ns[i - 1].pos))
+	_ok(maxj <= OrbitConverter.EASY_JUMP_MAX + 1e-4 or maxj <= 0.3 + 1e-4, "kleine Spruenge (%.2f)" % maxj)
+	var hard := _std_bm(150.0)
+	for i in 80:
+		_circle(hard, 1000.0 + 200.0 * float(i), 40.0 + float((i * 211) % 440), 40.0 + float((i * 131) % 300), 4 if i % 4 == 0 else 0)
+	_ok(OrbitConverter.analyze(OrbitConverter.convert(hard), hard).accent_share > 0.1, "dichte Maps behalten Akzente")
+	var hb := _std_bm(60.0)
+	_slider(hb, 1000.0, 3000.0)
+	_circle(hb, 6000.0, 300.0, 100.0)
+	_circle(hb, 9000.0, 300.0, 100.0)
+	var hn := OrbitConverter.convert(hb)
+	_ok(hn[0].is_hold and hn[0].end_ms - hn[0].time_ms <= 2.0 * 1000.0 + 1e-6, "leichte Maps: Halten <= 2 Beats")
 
 
 func _test_determinism() -> void:
 	print("- Determinismus")
-	var bm := _bm()
-	var s := 12345
-	var t := 500.0
-	for i in 400:
-		s = (s * 1103515245 + 12345) % 2147483648
-		_add(bm, t, (s >> 8) % 4, 400.0 if (s >> 12) % 9 == 0 else 0.0)
-		t += float([40, 90, 120, 250, 500][(s >> 16) % 5])
-	_ok(_sig(OrbitConverter.convert(bm)) == _sig(OrbitConverter.convert(bm)), "gleiche Map = gleiches Ergebnis")
-	var v := OrbitConverter.violations(OrbitConverter.convert(bm), bm)
-	_ok(int(v.timing) + int(v.ring) + int(v.angle) + int(v.chord) == 0, "Zufallsmap ohne Verstoesse %s" % v)
-
-
-# --- Bahnen ---
-
-func _test_paths() -> void:
-	print("- Bahnformen (Geometrie)")
-	var starts_ok := true
-	var closed_ok := true
-	var const_ok := true
-	var inside_ok := true
-	for sh in OrbitPath.COUNT:
-		var p0 := OrbitPath.pos(sh, 0.0)
-		starts_ok = starts_ok and absf(p0.y) < 0.01 and p0.x < -0.7
-		closed_ok = closed_ok and OrbitPath.pos(sh, 0.9999).distance_to(p0) < 0.01
-		# Konstante Bahngeschwindigkeit: gleiche Phasenschritte = gleiche Strecke.
-		var lo := INF
-		var hi := 0.0
-		for k in 200:
-			var d := OrbitPath.pos(sh, float(k) / 200.0).distance_to(OrbitPath.pos(sh, float(k + 1) / 200.0))
-			lo = minf(lo, d)
-			hi = maxf(hi, d)
-			var q := OrbitPath.pos(sh, float(k) / 200.0)
-			inside_ok = inside_ok and absf(q.x) <= 1.001 and absf(q.y) <= 0.93
-		const_ok = const_ok and hi < lo * 1.15 + 0.002
-		print("    %s: Laenge %.2f" % [OrbitPath.NAMES[sh], OrbitPath.length(sh)])
-	_ok(starts_ok, "alle Formen starten links (Takt-Eins)")
-	_ok(closed_ok, "alle Bahnen sind geschlossen")
-	_ok(const_ok, "konstante Bahngeschwindigkeit (Bogenlaenge)")
-	_ok(inside_ok, "Formen liegen im Feld (|x| <= 1, |y| <= 0,93)")
-	_ok(OrbitPath.length(OrbitPath.ROSE4) > OrbitPath.length(OrbitPath.CIRCLE) * 1.4, "Rose4 deutlich laenger als Kreis")
-	# Spuren: A links der Laufrichtung = beim Kreis innen.
-	var a := OrbitPath.lane_pos(OrbitPath.CIRCLE, 0.25, 0)
-	var b := OrbitPath.lane_pos(OrbitPath.CIRCLE, 0.25, 1)
-	_ok(a.length() < b.length() and absf(a.distance_to(b) - 2.0 * OrbitPath.LANE_OFF) < 0.01, "Spur A innen, Spur B aussen (Abstand %.3f)" % a.distance_to(b))
-	# Der Kopf wechselt beim Formwechsel nicht den Ort (gleicher Startpunkt).
-	var tr := OrbitTrack.fixed(OrbitClock.fixed(2000.0), OrbitPath.ELLIPSE)
-	tr.plan.append([4000.0, OrbitPath.EIGHT])
-	_ok(tr.head(3999.9).distance_to(tr.head(4000.0)) < 0.05, "Formwechsel springt nicht")
-	_ok(tr.shape_at(3999.0) == OrbitPath.ELLIPSE and tr.shape_at(4000.0) == OrbitPath.EIGHT, "Form gilt ab Takt-Eins")
-	_ok(tr.changes_next(2500.0) and tr.next_shape_at(2500.0) == OrbitPath.EIGHT and not tr.changes_next(500.0), "Vorschau: naechster Takt hat andere Form")
-
-
-func _dense_bm(bpm: float, nps_by_bar: Array) -> Beatmap:
-	# Mania-Map: je Takt nps Noten gleichmaessig, Spalten wechselnd.
-	var bm := _bm()
-	bm.timing_points.clear()
-	_tp(bm, 0.0, bpm)
-	var bar := 60000.0 / bpm * 4.0
-	var col := 0
-	for k in nps_by_bar.size():
-		var n := int(round(float(nps_by_bar[k]) * bar / 1000.0))
-		for j in n:
-			_add(bm, float(k) * bar + 100.0 + float(j) * (bar - 200.0) / float(maxi(n, 1)), col % 4)
-			col += 1
-	return bm
-
-
-func _test_shape_plan() -> void:
-	print("- Bahnform-Plan (Konverter)")
-	var levels: Array = []
-	for k in 8:
-		levels.append(1.0)
-	for k in 12:
-		levels.append(9.0)
-	for k in 8:
-		levels.append(1.0)
-	var bm := _dense_bm(120.0, levels)
-	var ns := OrbitConverter.convert(bm)
-	var tr := OrbitConverter.track_for(bm, ns)
-	var calm := tr.shape_at(2000.0 * 3.5)
-	var busy := tr.shape_at(2000.0 * 14.5)
-	_ok(calm == OrbitPath.CIRCLE or calm == OrbitPath.ELLIPSE, "ruhiger Teil: Kreis/Ellipse (%s)" % OrbitPath.NAMES[calm])
-	_ok(busy >= OrbitPath.EIGHT, "dichter Teil: Acht/Rose (%s)" % OrbitPath.NAMES[busy])
-	_ok(tr.shape_at(2000.0 * 27.5) <= OrbitPath.ELLIPSE, "danach wieder ruhig")
-	# Wechsel nur auf Takt-Eins.
-	var on_bar := true
-	for e in tr.plan:
-		if float(e[0]) > -1.0e9:
-			on_bar = on_bar and absf(fposmod(float(e[0]), 2000.0)) < 0.01
-	_ok(on_bar and tr.plan.size() >= 3, "Formwechsel nur auf Takt-Eins (%d Eintraege)" % tr.plan.size())
-	# Mindesthaltedauer.
-	var hold_ok := true
-	for k in range(2, tr.plan.size()):
-		hold_ok = hold_ok and float(tr.plan[k][0]) - float(tr.plan[k - 1][0]) >= 2000.0 * OrbitConverter.SHAPE_MIN_HOLD - 0.01
-	_ok(hold_ok, "Form haelt mindestens %d Takte" % OrbitConverter.SHAPE_MIN_HOLD)
-	# Kopfgeschwindigkeit nie ueber dem Deckel.
-	var sp_ok := true
-	for n in ns:
-		sp_ok = sp_ok and n.speed <= OrbitTrack.MAX_SPEED + 1e-7
-	_ok(sp_ok, "Kopf nie schneller als %.4f/ms" % OrbitTrack.MAX_SPEED)
-	# Schneller Takt (1,2 s): lange Formen werden durch einfachere ersetzt.
-	var fast := _dense_bm(200.0, [10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0])
-	var fns := OrbitConverter.convert(fast)
-	var ftr := OrbitConverter.track_for(fast, fns)
-	var fast_ok := not fns.is_empty()
-	for n in fns:
-		fast_ok = fast_ok and OrbitPath.length(n.shape) / ftr.clock.bar_ms_at(n.time_ms) <= OrbitTrack.MAX_SPEED + 1e-7
-	_ok(fast_ok, "schneller Takt: Deckel haelt")
-	# Leichte Maps bleiben ruhig (nur Kreis/Ellipse).
-	var easy := _bm()
-	for i in 20:
-		_add(easy, 1000.0 + 700.0 * i, i % 4)
-	var en := OrbitConverter.convert(easy)
-	var calm_only := true
-	for n in en:
-		calm_only = calm_only and n.shape <= OrbitPath.ELLIPSE
-	_ok(calm_only, "leichte Map: Kreis/Ellipse")
-	# Deterministisch.
-	var tr2 := OrbitConverter.track_for(bm, ns)
-	_ok(str(tr.plan) == str(tr2.plan), "Plan ist deterministisch")
-
-
-# --- Core ---
-
-func _test_tap_aim() -> void:
-	print("- Zielen auf den Kopf ist Pflicht")
-	var ns := _list([_note(1000.0, 0), _note(2000.0, 0), _note(3000.0, 0), _note(4000.0, 0)])
-	var c := _core(ns)
-	var got := _res(c)
-	# 1: Cursor genau auf dem Kopf zur Druckzeit (Kopf ist 10 ms weiter als die Note).
-	c.key_down(0, 1010.0, _head(1010.0))
-	c.update(1011.0)
-	_ok(int(got[0].quality) <= 1 and float(got[0].angle_err) < 0.01, "auf dem Kopf: Treffer, Fehler 0")
-	# 2: Cursor steht auf der NOTE (Ort der Note), Druck 60 ms zu spaet -> Kopf ist weiter
-	c.key_down(0, 2060.0, _head(2000.0))
-	c.update(2061.0)
-	var want := _head(2000.0).distance_to(_head(2060.0)) * 100.0
-	_ok(got.has(1) and absf(float(got[1].angle_err) - want) < 0.5, "Zielfehler = Abstand zum KOPF (%.1f)" % float(got[1].angle_err))
-	# 3: Cursor 60 Punkte neben dem Kopf: kein Treffer, Ziel laeuft ab
-	var missed := []
-	c.press_missed.connect(func(_p, _ring, why): missed.append(why))
-	c.key_down(0, 3000.0, _head(3000.0) + Vector2(0.6, 0.0))
-	_ok(missed == ["AIM"], "daneben: Grund AIM")
-	c.update(3200.0)
-	_ok(int(got[2].quality) == OrbitCore.Quality.MISS, "kein Treffer neben dem Kopf -> MISS")
-	# 4: Toleranzrand
-	c.key_down(0, 4000.0, _head(4000.0) + Vector2(OrbitCore.AIM_TOL - 1.0, 0.0) / 100.0)
-	_ok(got.has(3) and int(got[3].quality) <= 4, "am Rand der Toleranz noch Treffer")
-	var t_edge := OrbitCore.hit_value(0, OrbitCore.AIM_TOL - 0.5)
-	_ok(t_edge < 0.9 and t_edge > 0.87, "Rand: Zielfaktor ~0,88")
-	_ok(OrbitCore.hit_value(0, OrbitCore.AIM_CENTER) == 1.0 and OrbitCore.hit_value(0, 0.0) == 1.0, "bis zur Mitte Faktor 1,0")
-
-
-func _test_keys_are_rings() -> void:
-	print("- Taste = Spur")
-	var ns := _list([_note(1000.0, 1), _note(2000.0, 0)])
-	var c := _core(ns)
-	var got := _res(c)
-	var missed := []
-	c.press_missed.connect(func(_p, _ring, why): missed.append(why))
-	c.key_down(0, 1000.0, _head(1000.0))
-	_ok(not got.has(0) and missed == ["RING"], "Taste A trifft kein Ziel auf Spur B (Grund RING)")
-	c.key_up(0, 1030.0)
-	c.key_down(1, 1000.0, _head(1000.0))
-	_ok(got.has(0) and int(got[0].ring) == 1, "Taste B trifft Spur B")
-	c.key_down(0, 2000.0, _head(2000.0))
-	_ok(got.has(1) and int(got[1].quality) <= 1, "Taste A trifft Spur A")
-
-
-func _test_accent() -> void:
-	print("- Akzent: beide Spuren")
-	var ns := _list([_note(1000.0, 0), _note(1000.0, 1)])
-	var c := _core(ns)
-	var got := _res(c)
-	var a := _head(1000.0)
-	c.key_down(0, 1000.0, a)
-	c.key_down(1, 1002.0, a)
-	_ok(got.has(0) and got.has(1), "beide Tasten treffen beide Ziele")
-	var c2 := _core(_list([_note(1000.0, 0), _note(1000.0, 1)]))
-	var g2 := _res(c2)
-	c2.key_down(1, 1000.0, a)
-	c2.update(1100.0)
-	_ok(g2.has(1) and not g2.has(0) or int(g2[0].quality) == 5, "nur eine Taste = nur ein Treffer")
-
-
-func _test_hold() -> void:
-	print("- Halte folgt dem Kopf")
-	var ns := _list([_note(1000.0, 1, 1000.0)])
-	var c := _core(ns)
-	var got := _res(c)
-	c.key_down(1, 1000.0, _head(1000.0))
-	var t := 1000.0
-	while t < 2000.0:
-		t += 8.0
-		c.cursor_moved(_head(t) + Vector2(0.04, 0.0), t)
-		c.update(t)
-	c.key_up(1, 2000.0)
-	c.update(2100.0)
-	_ok(got.has(0) and bool(got[0].get("held", false)) and int(got[0].quality) <= 1, "Halte gehalten bis zum Ende: Treffer")
-
-
-func _test_hold_release_and_out() -> void:
-	print("- Halte: loslassen / neben dem Kopf")
-	var ns := _list([_note(1000.0, 0, 1000.0)])
-	var c := _core(ns)
-	var got := _res(c)
-	c.key_down(0, 1000.0, _head(1000.0))
-	var tt := 1000.0
-	while tt < 1400.0:
-		tt += 8.0
-		c.cursor_moved(_head(tt), tt)
-		c.update(tt)
-	c.key_up(0, 1400.0)
-	_ok(got.has(0) and str(got[0].get("drop_reason", "")) == "RELEASE" and int(got[0].quality) == 5, "zu frueh loslassen = DROP/RELEASE")
-	# Cursor bleibt stehen, der Kopf laeuft davon.
-	var c2 := _core(_list([_note(1000.0, 0, 1000.0)]))
-	var g2 := _res(c2)
-	c2.key_down(0, 1000.0, _head(1000.0))
-	var t := 1000.0
-	while t < 2000.0 and not g2.has(0):
-		t += 8.0
-		c2.update(t)
-	_ok(g2.has(0) and str(g2[0].get("drop_reason", "")) == "OUT", "Cursor steht, Kopf laeuft weg = DROP/OUT")
-	var dt: float = t - 1000.0
-	var exp_dt: float = OrbitCore.AIM_TOL / 100.0 / ns[0].speed + OrbitCore.ARC_OUT_MS
-	_ok(absf(dt - exp_dt) < 60.0, "Austritt nach Toleranz/Tempo + ARC_OUT_MS (%.0f ms, erwartet %.0f)" % [dt, exp_dt])
-	# Andere Taste halten genuegt nicht: Taste der Spur loslassen beendet.
-	var c3 := _core(_list([_note(1000.0, 0, 1000.0)]))
-	var g3 := _res(c3)
-	c3.key_down(0, 1000.0, _head(1000.0))
-	c3.key_down(1, 1100.0, _head(1100.0))
-	c3.key_up(0, 1300.0)
-	_ok(g3.has(0) and int(g3[0].quality) == 5, "Loslassen der Spur-Taste beendet die Halte")
-
-
-func _test_scoring_values() -> void:
-	print("- Wertung unveraendert")
-	_ok(Array(OrbitCore.TIER_VALUE) == [1.0, 0.94, 0.68, 0.40, 0.16, 0.0], "Stufenwerte")
-	_ok(Array(OrbitCore.TIER_NAMES) == ["CORE", "SHARP", "GOOD", "FAIR", "EDGE", "MISS"], "Stufennamen")
-	_ok(OrbitCore.AIM_TOL == 40.0 and OrbitCore.AIM_CENTER == 12.0 and OrbitCore.AIM_EDGE_FACTOR == 0.88, "Toleranz 40, Mitte 12, Rand 0,88")
-	var ns: Array[OrbitNote] = []
-	for i in 150:
-		ns.append(_note(1000.0 + i * 400.0, i % 2))
-	var c := _core(ns)
-	for n in ns:
-		c.key_down(n.ring, n.time_ms, _head(n.time_ms))
-		c.key_up(n.ring, n.time_ms + 30.0)
-	c.update(100000.0)
-	_ok(c.accuracy() >= 0.999 and c.grade() == "SS" and c.n_miss == 0 and c.score > 960000, "perfekt = SS, Wertung > 960000 (%d)" % c.score)
+	var bm := _std_bm()
+	_stream(bm, 150, 230.0)
+	var a := OrbitConverter.convert(bm)
+	var b := OrbitConverter.convert(bm)
+	var same := a.size() == b.size()
+	if same:
+		for i in a.size():
+			same = same and a[i].time_ms == b[i].time_ms and a[i].pos == b[i].pos and a[i].key == b[i].key \
+					and a[i].spawn_ms == b[i].spawn_ms and a[i].laps == b[i].laps and a[i].path == b[i].path
+	_ok(same, "std: zweimal gleich")
+	var m := _mania_bm()
+	for i in 120:
+		_add(m, 1000.0 + 180.0 * i, (i * 5) % 4, 400.0 if i % 9 == 0 else 0.0)
+	var c := OrbitConverter.convert(m)
+	var d := OrbitConverter.convert(m)
+	same = c.size() == d.size()
+	if same:
+		for i in c.size():
+			same = same and c[i].pos == d[i].pos and c[i].key == d[i].key and c[i].path == d[i].path \
+					and c[i].spawn_ms == d[i].spawn_ms
+	_ok(same, "4K: zweimal gleich")
 
 
 func _test_stars() -> void:
-	print("- Orbit-Sterne")
-	var sparse: Array[OrbitNote] = []
-	for i in 40:
-		sparse.append(_note(1000.0 + i * 1000.0, 0))
-	var dense: Array[OrbitNote] = []
-	var sw: Array[OrbitNote] = []
-	for i in 400:
-		dense.append(_note(1000.0 + i * 120.0, 0))
-		sw.append(_note(1000.0 + i * 120.0, i % 2))
-	var s1 := OrbitConverter.stars(sparse)
-	var s2 := OrbitConverter.stars(dense)
-	var s3 := OrbitConverter.stars(sw)
-	_ok(s1 < s2, "dichter = mehr Sterne (%.2f < %.2f)" % [s1, s2])
-	_ok(s2 < s3, "Spurwechsel = mehr Sterne (%.2f < %.2f)" % [s2, s3])
-	var fast: Array[OrbitNote] = []
-	for n in dense:
-		var m := OrbitNote.make(n.time_ms, n.angle_deg, 0)
-		m.speed = n.speed * 2.0
-		fast.append(m)
-	_ok(OrbitConverter.stars(fast) > s2, "schnellerer Kopf = mehr Sterne")
-	# Kurvige Form = mehr Folge-Anspruch bei gleichem Tempo.
-	var curvy: Array[OrbitNote] = []
-	var flat: Array[OrbitNote] = []
-	for n in dense:
-		var m := OrbitNote.make(n.time_ms, n.angle_deg, 0)
-		m.speed = n.speed * 1.5
-		m.shape = OrbitPath.ROSE3
-		curvy.append(m)
-		var f := OrbitNote.make(n.time_ms, n.angle_deg, 0)
-		f.speed = n.speed * 1.5
-		flat.append(f)
-	_ok(OrbitConverter.stars(curvy) > OrbitConverter.stars(flat), "kurvigere Bahn = mehr Sterne")
-	_ok(s1 >= 0.0 and OrbitConverter.stars(sw) <= OrbitConverter.STAR_MAX, "Skala 0..15")
-	_ok(OrbitConverter.stars(_list([])) == 0.0, "leer = 0")
+	print("- Sterne-Skala")
+	var easy := _std_bm(100.0)
+	_stream(easy, 40, 700.0)
+	var mid := _std_bm(150.0)
+	_stream(mid, 200, 250.0)
+	var hard := _std_bm(200.0)
+	_stream(hard, 500, 110.0)
+	var se := OrbitConverter.stars(OrbitConverter.convert(easy))
+	var sm := OrbitConverter.stars(OrbitConverter.convert(mid))
+	var sh := OrbitConverter.stars(OrbitConverter.convert(hard))
+	print("  leicht %.2f, mittel %.2f, schwer %.2f" % [se, sm, sh])
+	_ok(se < 2.5, "leicht < 2,5")
+	_ok(se < sm and sm < sh, "monoton: leicht < mittel < schwer")
+	_ok(sh <= 15.0 and se >= 0.0, "Bereich 0..15")
+	_ok(OrbitConverter.stars([] as Array[OrbitNote]) == 0.0, "leer = 0")
+	var a: Array[OrbitNote] = []
+	var b: Array[OrbitNote] = []
+	for i in 60:
+		a.append(OrbitNote.make_target(1000.0 + 300.0 * i, Vector2(0.5, 0.5), 0))
+		b.append(OrbitNote.make_target(1000.0 + 300.0 * i, Vector2(0.1 if i % 2 == 0 else 0.9, 0.5), 0))
+	_ok(OrbitConverter.stars(b) > OrbitConverter.stars(a), "grosse Spruenge > Stillstand")
+	var c: Array[OrbitNote] = []
+	for i in 60:
+		c.append(OrbitNote.make_target(1000.0 + 300.0 * i, Vector2(0.5, 0.5), i % 2))
+	_ok(OrbitConverter.stars(c) > OrbitConverter.stars(a), "Tastenwechsel > gleiche Taste")
+	var d: Array[OrbitNote] = []
+	for i in 60:
+		if i % 3 == 0:
+			d.append(OrbitNote.make_hold(1000.0 + 300.0 * i, 1000.0 + 300.0 * i + 250.0,
+					PackedVector2Array([Vector2(0.5, 0.5), Vector2(0.55, 0.5)]), 0))
+		else:
+			d.append(OrbitNote.make_target(1000.0 + 300.0 * i, Vector2(0.5, 0.5), 0))
+	_ok(OrbitConverter.stars(d) > OrbitConverter.stars(a), "Halten > nur Taps")
 
 
-# --- Bibliothek ---
+func _test_analyze() -> void:
+	print("- analyze")
+	var bm := _std_bm()
+	_stream(bm, 40, 300.0)
+	bm.hit_objects[5].hit_sound = 4
+	_slider(bm, 13500.0, 600.0)
+	var ns := OrbitConverter.convert(bm)
+	var a := OrbitConverter.analyze(ns, bm)
+	_ok(a.count == ns.size() and a.nps > 2.5 and a.nps < 4.5, "count/nps (%.2f)" % a.nps)
+	_ok(a.accent_share > 0.0 and a.hold_share > 0.0, "Akzent-/Halte-Anteil")
+	_ok(a.mean_jump > 0.0 and a.mean_jump_speed > 0.0, "mittlerer Sprung")
+	_ok(a.max_visible >= 1 and a.max_visible <= 6, "max sichtbar")
+	_ok(OrbitConverter.analyze([] as Array[OrbitNote]).count == 0, "leer")
+
 
 func _test_library() -> void:
-	print("- Bibliothek (Spielbarkeit, Sterne)")
+	print("- ganze Bibliothek")
 	var dir := MapLibrary.default_maps_dir()
 	var da := DirAccess.open(dir)
 	if da == null:
 		print("  (kein maps/-Ordner, uebersprungen)")
 		return
-	var tot := {"timing": 0, "ring": 0, "angle": 0, "chord": 0, "targets": 0}
-	var diffs := 0
-	var perfect_miss := 0
-	var star_min := INF
-	var star_all: Array[float] = []
-	var star_max := 0.0
-	var max_speed := 0.0
-	var shape_n := [0, 0, 0, 0, 0]
-	for f in da.get_files():
+	var files := Array(da.get_files())
+	files.sort()
+	var maps := 0
+	var bad_maps := 0
+	var tot := {}
+	var worst_vis := 0
+	var stars_list: Array[float] = []
+	var easy_stars: Array[float] = []
+	var errs := 0
+	for f in files:
 		if not str(f).to_lower().ends_with(".osz"):
 			continue
 		var imp := OszImporter.import(dir.path_join(f))
@@ -559,61 +540,38 @@ func _test_library() -> void:
 			continue
 		for d in imp.difficulties:
 			var bm: Beatmap = d.beatmap
-			if bm.hit_objects.is_empty() or (bm.is_mania() and bm.column_count() != 4):
+			if bm.hit_objects.size() < 2 or (bm.is_mania() and bm.column_count() != 4):
 				continue
-			var ns := OrbitConverter.convert(bm)
-			var tr := OrbitConverter.track_for(bm, ns)
-			var v := OrbitConverter.violations(ns, bm)
-			for k in tot:
-				tot[k] += int(v[k])
-			if int(v.timing) + int(v.ring) + int(v.angle) + int(v.chord) > 0:
-				print("  Verstoss: %s [%s] %s" % [f, bm.version_name(), v])
-			var st := OrbitConverter.stars(ns)
-			star_min = minf(star_min, st)
-			star_max = maxf(star_max, st)
-			star_all.append(st)
-			for n in ns:
-				max_speed = maxf(max_speed, n.speed)
-				shape_n[clampi(n.shape, 0, OrbitPath.COUNT - 1)] += 1
-			diffs += 1
-			if diffs % 40 == 1 and not ns.is_empty():
-				var c := _core(ns, bm.od())
-				c.set_track(tr)
-				for n in ns:
-					c.key_down(n.ring, n.time_ms, tr.head(n.time_ms))
-					c.key_up(n.ring, n.end_ms + 20.0)
-					if n.is_arc:
-						pass
-				c.update(ns[-1].end_ms + 500.0)
-				perfect_miss += c.n_miss if not ns.any(func(n): return n.is_arc) else 0
-	print("  %d Diffs, %d Ziele; Verstoesse: Zeit %d, Ring %d, Winkel %d, Akkord %d; Sterne %.2f..%.2f; max Kopftempo %.4f/ms; Formen %s" % [
-		diffs, tot.targets, tot.timing, tot.ring, tot.angle, tot.chord, star_min, star_max, max_speed, shape_n])
-	star_all.sort()
-	if not star_all.is_empty():
-		var q := func(f: float) -> float: return star_all[int(f * (star_all.size() - 1))]
-		print("  Sterne-Verteilung: p10 %.2f p25 %.2f Median %.2f p75 %.2f p90 %.2f p99 %.2f" % [q.call(0.1), q.call(0.25), q.call(0.5), q.call(0.75), q.call(0.9), q.call(0.99)])
-	_ok(diffs > 0 or da.get_files().is_empty(), "Bibliothek gelesen")
-	_ok(int(tot.timing) == 0, "Zeiten = Original")
-	_ok(int(tot.ring) == 0, "Ein Finger pro Spur")
-	_ok(int(tot.angle) == 0, "Phase = Taktposition")
-	_ok(int(tot.chord) == 0, "Akzente am selben Winkel")
-	_ok(star_max <= OrbitConverter.STAR_MAX, "Sterne <= 15")
-	_ok(max_speed <= OrbitTrack.MAX_SPEED + 1e-7, "Kopf nie schneller als %.4f/ms" % OrbitTrack.MAX_SPEED)
-	_ok(perfect_miss == 0, "perfekter Spieler ohne Miss (Stichprobe)")
-
-
-## Leichte Maps: nur Kreis/Ellipse; mittlere hoechstens Acht.
-func _test_easy_shapes() -> void:
-	print("- Ruhiger Einstieg: Bahnformen nach Map-Dichte")
-	var easy: Array[OrbitNote] = []
-	for i in 40:
-		easy.append(OrbitNote.make(1000.0 + i * 600.0, 0.0, 0, i))
-	_ok(OrbitConverter.max_shape_for(easy) == OrbitPath.ELLIPSE, "1,7 Ziele/s -> hoechstens Ellipse")
-	var mid: Array[OrbitNote] = []
-	for i in 100:
-		mid.append(OrbitNote.make(1000.0 + i * 300.0, 0.0, 0, i))
-	_ok(OrbitConverter.max_shape_for(mid) == OrbitPath.EIGHT, "3,3 Ziele/s -> hoechstens Acht")
-	var hard: Array[OrbitNote] = []
-	for i in 200:
-		hard.append(OrbitNote.make(1000.0 + i * 120.0, 0.0, 0, i))
-	_ok(OrbitConverter.max_shape_for(hard) == OrbitPath.ROSE4, "8 Ziele/s -> alle Formen")
+			maps += 1
+			for laps in [1, 2, 3]:
+				var ns := OrbitConverter.convert(bm, laps)
+				var v := OrbitConverter.violations(ns, bm)
+				var bad := 0
+				for k in v:
+					if k != "targets":
+						bad += int(v[k])
+						tot[k] = int(tot.get(k, 0)) + int(v[k])
+				if bad > 0:
+					bad_maps += 1
+					if errs < 5:
+						errs += 1
+						print("  Verstoss %s [%s] laps %d: %s" % [str(f).left(30), bm.version_name(), laps, str(v)])
+				if laps == 2:
+					worst_vis = maxi(worst_vis, OrbitConverter.analyze(ns).max_visible)
+					if ns.size() >= 20:
+						var s := OrbitConverter.stars(ns)
+						stars_list.append(s)
+						if OrbitConverter.analyze(ns).nps < 2.5:
+							easy_stars.append(s)
+	print("  %d Diffs, Verstoesse %s" % [maps, str(tot)])
+	_ok(maps > 0 and bad_maps == 0, "ganze Bibliothek ohne Verstoss (%d Diffs x 3 Vorlaeufe)" % maps)
+	_ok(worst_vis <= 6, "nie mehr als 6 sichtbar (%d)" % worst_vis)
+	if stars_list.size() > 20:
+		stars_list.sort()
+		var med := stars_list[stars_list.size() / 2]
+		_ok(med >= 3.5 and med <= 4.5, "Sterne-Median ~4 (%.2f)" % med)
+		_ok(stars_list[-1] <= 15.0 and stars_list[0] >= 0.0, "Sterne in 0..15 (%.2f .. %.2f)" % [stars_list[0], stars_list[-1]])
+		if easy_stars.size() >= 10:
+			easy_stars.sort()
+			var q90 := easy_stars[int(easy_stars.size() * 0.9)]
+			_ok(q90 < 2.5, "leichte Diffs (< 2,5 Ziele/s): 90 %% unter 2,5 Sterne (%.2f, %d Diffs)" % [q90, easy_stars.size()])
