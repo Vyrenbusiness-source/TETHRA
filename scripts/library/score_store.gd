@@ -46,6 +46,21 @@ const GRADES := ["SS", "S", "A", "B", "C", "D", "F"]
 ## und fliessen nicht in Mania-Bestwerte, Profil-pp oder Statistiken.
 const MODE_MANIA := "mania"
 const MODE_ORBIT := "orbit"
+const MODE_RALLY := "rally"
+const MODE_DIRIGENT := "dirigent"
+## Alle Modi in Anzeige-Reihenfolge (Browser, Profil, Lobby).
+const MODES: Array[String] = ["mania", "orbit", "rally", "dirigent"]
+
+
+## true fuer Modi ohne pp (Orbit, Rally, Dirigent): Wertung ueber orbit_points.
+static func uses_points(mode: String) -> bool:
+	var m := MODE_MANIA if mode == "" else mode
+	return m == MODE_ORBIT or m == MODE_RALLY or m == MODE_DIRIGENT
+
+
+## Gueltige Modus-ID (unbekannt -> Mania).
+static func normalize_mode(mode: String) -> String:
+	return mode if MODES.has(mode) else MODE_MANIA
 
 
 static func _sec(base: String, mode: String) -> String:
@@ -61,7 +76,11 @@ static func mode_name(mode: String) -> String:
 
 ## Anzeige-Name eines Modus ("Mania 4K" / "Orbit").
 static func mode_label(mode: String) -> String:
-	return "Orbit" if mode == MODE_ORBIT else "Mania 4K"
+	match mode:
+		MODE_ORBIT: return "Orbit"
+		MODE_RALLY: return "Rally"
+		MODE_DIRIGENT: return "Dirigent"
+	return "Mania 4K"
 
 
 ## SV-Stufe eines Scores (nur mit Mod "SV"): Feld "sv_level".
@@ -409,7 +428,7 @@ static func submit(osz_file: String, version: String, result: Dictionary, mode: 
 			"date": Time.get_datetime_string_from_system(),
 		}
 		# Orbit: Orbit-Sterne des Laufs fuers Orbit-Rating (fehlt: Standard).
-		if mode_name(mode) == MODE_ORBIT and float(result.get("stars", -1.0)) >= 0.0:
+		if uses_points(mode) and float(result.get("stars", -1.0)) >= 0.0:
 			entry["stars"] = float(result.stars)
 		cfg.set_value(_sec("scores", mode), key, _tag(entry, result, mode))
 	var plays := int(cfg.get_value(_sec("plays", mode), key, 0)) + 1
@@ -565,8 +584,8 @@ static func best_plays(n: int = 5, mode: String = "") -> Array:
 		e["version"] = parts[1] if parts.size() > 1 else ""
 		e["osz_file"] = parts[0]
 		entries.append(e)
-	if mode == MODE_ORBIT:
-		# Orbit hat keine pp: nach Orbit-Wertung, dann Score.
+	if uses_points(mode):
+		# Orbit/Rally/Dirigent haben keine pp: nach Orbit-Wertung, dann Score.
 		entries.sort_custom(func(a, b):
 			var ra := orbit_points(a)
 			var rb := orbit_points(b)
@@ -718,6 +737,11 @@ static func orbit_rating_of(points: Array) -> float:
 	return total
 
 
+## Rating eines Modus (Rally/Dirigent wie Orbit: 4 x Sterne^2 x Acc^4, 0,95^Platz).
+static func mode_rating(mode: String) -> float:
+	return float(mode_stats(mode).rating)
+
+
 ## Orbit-Rating des Profils (Bestwerte aus Sektion "orbit_scores").
 static func orbit_rating() -> float:
 	return float(mode_stats(MODE_ORBIT).rating)
@@ -753,7 +777,7 @@ static func mode_stats(mode: String = "") -> Dictionary:
 					acc_sum += float(h.get("accuracy", 0.0))
 					acc_n += 1
 	out.avg_acc = acc_sum / float(acc_n) if acc_n > 0 else 0.0
-	if mode == "" or mode == MODE_MANIA:
+	if not uses_points(mode):
 		out.rating = profile_pp()
 	else:
 		out.rating = orbit_rating_of(pts)
@@ -935,7 +959,7 @@ static func submit_others(map_key: String, player: String, entries: Array, mode:
 ## Eigene + fremde Scores einer Map gemischt (beste zuerst, max. n).
 ## Jeder Eintrag hat "player", "is_self" und "mode". Eigene und fremde
 ## Scores kommen nur aus den Sektionen des Modus (Mania "others", Orbit
-## "orbit_others"): Modi mischen sich nie.
+## "<modus>_others"): Modi mischen sich nie.
 static func top_scores_all(osz_file: String, version: String, n: int = 5, mode: String = "") -> Array:
 	var cfg := ConfigFile.new()
 	var loaded := _load(cfg) == OK
