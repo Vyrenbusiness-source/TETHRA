@@ -69,9 +69,7 @@ var _mp_live_seen: Dictionary = {}
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	print("RALLY ready osz=", GameSession.osz_path)
 	if not _load_beatmap():
-		print("RALLY load failed osz=", GameSession.osz_path)
 		get_tree().change_scene_to_file.call_deferred("res://scenes/song_select.tscn")
 		return
 	_replay = GameSession.is_replay and GameSession.replay_mode == MODE \
@@ -171,7 +169,6 @@ func _load_beatmap() -> bool:
 
 ## Debug/Shots: --rally-map=<Teil des osz-Namens> [--rally-diff=<Version>].
 func _cli_pick() -> void:
-	print("RALLY args ", OS.get_cmdline_args())
 	var want := ""
 	for a in OS.get_cmdline_args():
 		if a.begins_with("--rally-map="):
