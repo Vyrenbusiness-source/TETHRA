@@ -171,6 +171,7 @@ func _load_beatmap() -> bool:
 
 ## Debug/Shots: --rally-map=<Teil des osz-Namens> [--rally-diff=<Version>].
 func _cli_pick() -> void:
+	print("RALLY args ", OS.get_cmdline_args())
 	var want := ""
 	for a in OS.get_cmdline_args():
 		if a.begins_with("--rally-map="):
