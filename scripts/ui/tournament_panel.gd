@@ -724,9 +724,9 @@ func _header(title: String, step: int) -> void:
 	var meta := HBoxContainer.new()
 	meta.add_theme_constant_override("separation", 6)
 	col.add_child(meta)
-	if Lobby.play_mode == "orbit":
-		var oc := meta_chip("Orbit", ACCENT, 12)
-		oc.tooltip_text = tr("Alle im Raum spielen %s.") % Lobby.play_name("orbit")
+	if Lobby.play_mode != "mania":
+		var oc := meta_chip(Lobby.play_name(Lobby.play_mode), ACCENT, 12)
+		oc.tooltip_text = tr("Alle im Raum spielen %s.") % Lobby.play_name(Lobby.play_mode)
 		oc.mouse_filter = Control.MOUSE_FILTER_PASS
 		meta.add_child(oc)
 	meta.add_child(meta_chip(tr("%d Maps") % int(t.config.get("maps", 10)), DIM, 12))

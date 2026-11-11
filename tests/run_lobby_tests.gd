@@ -279,6 +279,7 @@ func _init() -> void:
 	_packet()
 	_views(L)
 	_play(L)
+	_play_four(L)
 
 	L._reset()
 	print("FAILED: %d" % _failed)
@@ -479,6 +480,41 @@ func _views(L) -> void:
 	# Server-RPC ohne bekannten Absender aendert nichts.
 	L.srv_set_view("2D")
 	_check(L.view_of(1) == "3D", "RPC ohne Spieler ignoriert")
+
+
+## Raum-Modus fuer alle 4 Modi: Wahl, Sync, Darstellung, Szene, Turnier fest.
+func _play_four(L) -> void:
+	L._reset()
+	L.active = true
+	L.is_host = true
+	L.crown_id = 1
+	L.players = { 1: L._new_player("Host"), 2: L._new_player("Anna") }
+	_check(L.PLAY_MODES == ["mania", "orbit", "rally", "dirigent"], "Raum kennt 4 Modi")
+	for m in ["mania", "orbit", "rally", "dirigent"]:
+		_check(L.norm_play(m) == m, "norm_play %s" % m)
+		L.set_play_mode(m)
+		_check(L.play_mode == m, "Krone stellt %s ein" % m)
+		L.is_host = false
+		L.cl_state(L.players, 1, {}, "Raum", [], {}, {}, m)
+		L.is_host = true
+		_check(L.play_mode == m, "cl_state uebernimmt %s" % m)
+	_check(L.play_name("rally") == "Rally" and L.play_name("dirigent") == "Dirigent" and L.play_name("x") == "Mania 4K", "play_name")
+	L.set_play_mode("rally")
+	_check(L.view_of(1) == "Rally" and L.local_view() == "Rally", "Rally-Raum: Darstellung Rally")
+	L.set_play_mode("dirigent")
+	_check(L.view_of(1) == "Dirigent", "Dirigent-Raum: Darstellung Dirigent")
+	_check(L.norm_view("Rally") == "Rally" and L.norm_view("Dirigent") == "Dirigent" and L.norm_view("Tetris") == "", "norm_view 4 Modi")
+	_check(L.play_scene("mania") == "res://scenes/mania_3d.tscn" and L.play_scene("orbit") == "res://scenes/orbit.tscn", "Szene Mania/Orbit")
+	for m in ["rally", "dirigent"]:
+		var sc: String = L.play_scene(m)
+		_check(sc == ScoreStore.mode_scene(m) if ScoreStore.mode_ready(m) else sc == "res://scenes/mania_3d.tscn", "Szene %s (fehlt sie: Mania statt Absturz)" % m)
+	L.set_play_mode("rally")
+	L.tour_create({ "maps": 5, "stars_lo": 0.0, "stars_hi": 30.0, "mods": {} })
+	_check(L.tournament != null and L.tournament.config.play_mode == "rally", "Turnier merkt Modus")
+	L.set_play_mode("dirigent")
+	_check(L.play_mode == "rally", "Turnier: Modus fest (Rally)")
+	L._reset()
+	_check(L.play_mode == "mania", "Reset -> Mania")
 
 
 ## Raum-Spielmodus: Validierung, Standard, Sync, Darstellung im Orbit-Raum.
