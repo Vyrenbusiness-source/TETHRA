@@ -38,6 +38,7 @@ var _err_bar: HitErrorBar
 var _hp_bar: HpBar
 var _acc_label: Label
 var _score_label: Label
+var _miss_label: Label
 var _grade_label: Label
 var _time_label: Label
 var _top_fill: ColorRect
@@ -118,7 +119,7 @@ func _ready() -> void:
 		_debug_start_usec = Time.get_ticks_usec()
 		_debug_running = true
 	if _mp_bot:
-		print("MPRALLY start: %d Schlaege, autoplay=%s" % [shots.size(), _autoplay])
+		print("MPORBIT start: %d Schlaege, autoplay=%s" % [shots.size(), _autoplay])
 	if DisplayServer.get_name() == "headless" and not _mp_bot:
 		print("=== Rally Smoke: %d Schlaege ===" % shots.size())
 		get_tree().quit(0)
@@ -213,15 +214,45 @@ func _build_bg() -> void:
 	base.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(base)
 	var tex := OszImporter.load_background_texture(GameSession.osz_path, _beatmap)
-	if tex != null:
-		_bg_tex = TextureRect.new()
-		_bg_tex.texture = tex
-		_bg_tex.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		_bg_tex.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-		_bg_tex.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		_bg_tex.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		_bg_tex.modulate = Color(1, 1, 1, 0.18)
-		add_child(_bg_tex)
+	var img: Image = tex.get_image() if tex != null else null
+	if img != null and not img.is_empty():
+		# Ruhiger Grund: Karten-Bild stark geblurrt und auf ~15 % Helligkeit.
+		img = img.duplicate() as Image
+		if img.is_compressed():
+			img.decompress()
+		img.convert(Image.FORMAT_RGBA8)
+		if img.get_width() > 960:
+			img.resize(960, int(960.0 * img.get_height() / img.get_width()), Image.INTERPOLATE_BILINEAR)
+		img.generate_mipmaps()
+		var rect := ColorRect.new()
+		rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var mat := ShaderMaterial.new()
+		mat.shader = load("res://shaders/bg_blur.gdshader")
+		mat.set_shader_parameter("bg_tex", ImageTexture.create_from_image(img))
+		mat.set_shader_parameter("tex_size", Vector2(img.get_width(), img.get_height()))
+		mat.set_shader_parameter("opacity", 0.15)
+		mat.set_shader_parameter("blur_lod", 5.6)
+		rect.material = mat
+		add_child(rect)
+	# Weiche Vignette: Mitte offen, Raender dunkel (Platz fuer die HUD-Werte).
+	var grad := Gradient.new()
+	grad.colors = PackedColorArray([Color(UiTheme.BG, 0.0), Color(UiTheme.BG, 0.0), Color(UiTheme.BG, 0.78)])
+	grad.offsets = PackedFloat32Array([0.0, 0.45, 1.0])
+	var gt := GradientTexture2D.new()
+	gt.gradient = grad
+	gt.fill = GradientTexture2D.FILL_RADIAL
+	gt.fill_from = Vector2(0.5, 0.52)
+	gt.fill_to = Vector2(1.0, 0.52)
+	gt.width = 256
+	gt.height = 256
+	var vig := TextureRect.new()
+	vig.texture = gt
+	vig.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	vig.stretch_mode = TextureRect.STRETCH_SCALE
+	vig.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	vig.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(vig)
 
 
 func _shadow(l: Label) -> void:
@@ -247,6 +278,45 @@ func _corner_label(text: String, size_px: int, col: Color, tabular: bool = false
 	_shadow(l)
 	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return l
+
+
+func _stat_column(anchor_pos: Vector2) -> VBoxContainer:
+	var v := VBoxContainer.new()
+	v.anchor_left = anchor_pos.x
+	v.anchor_right = anchor_pos.x
+	v.anchor_top = anchor_pos.y
+	v.anchor_bottom = anchor_pos.y
+	v.offset_left = -120
+	v.offset_right = 120
+	v.grow_vertical = Control.GROW_DIRECTION_BOTH
+	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	v.add_theme_constant_override("separation", 22)
+	_hud.add_child(v)
+	return v
+
+
+func _stat_block(column: VBoxContainer, caption: String, size_px: int) -> Label:
+	var block := VBoxContainer.new()
+	block.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	block.add_theme_constant_override("separation", -2)
+	column.add_child(block)
+	var cap := Label.new()
+	cap.text = caption
+	cap.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	cap.add_theme_font_size_override("font_size", 13)
+	cap.add_theme_color_override("font_color", Color(0.58, 0.61, 0.70))
+	cap.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.6))
+	cap.add_theme_constant_override("shadow_outline_size", 5)
+	block.add_child(cap)
+	var val := Label.new()
+	val.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	val.add_theme_font_size_override("font_size", size_px)
+	val.add_theme_color_override("font_color", Color(0.97, 0.98, 1.0))
+	val.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.6))
+	val.add_theme_constant_override("shadow_outline_size", 6)
+	val.add_theme_font_override("font", _tabular_font(val))
+	block.add_child(val)
+	return val
 
 
 func _build_hud() -> void:
@@ -287,21 +357,13 @@ func _build_hud() -> void:
 	_top_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_hud.add_child(_top_fill)
 
-	# Werte oben in den Ecken unter der Leiste: ruhig, nie im Spielfeld.
-	_acc_label = _corner_label("", 30, Color(0.97, 0.98, 1.0), true)
-	_acc_label.position = Vector2(24, 62)
-	_hud.add_child(_acc_label)
-	_grade_label = _corner_label("-", 22, Color(1, 1, 1, 0.35), true)
-	_grade_label.position = Vector2(24, 104)
-	_hud.add_child(_grade_label)
-	_score_label = _corner_label("", 30, Color(0.97, 0.98, 1.0), true)
-	_score_label.anchor_left = 1.0
-	_score_label.anchor_right = 1.0
-	_score_label.offset_left = -300
-	_score_label.offset_right = -20
-	_score_label.offset_top = 40
-	_score_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	_hud.add_child(_score_label)
+	# Wie Mania: links Rang + Genauigkeit, rechts Punkte + Fehler, mittig unten Kombo.
+	var left := _stat_column(Vector2(0.085, 0.42))
+	_grade_label = _stat_block(left, "RANG", 26)
+	_acc_label = _stat_block(left, "GENAUIGKEIT", 28)
+	var right := _stat_column(Vector2(0.915, 0.42))
+	_score_label = _stat_block(right, "PUNKTE", 30)
+	_miss_label = _stat_block(right, "FEHLER", 24)
 
 	_hp_bar = HpBar.new()
 	_hp_bar.label_text = "HP"
@@ -582,6 +644,7 @@ func _update_hud() -> void:
 		_grade_label.add_theme_color_override("font_color", GRADE_COLOR.get(g, Color.WHITE))
 		_acc_label.text = UiTheme.fmt_pct(core.accuracy() * 100.0)
 	_score_label.text = PauseMenu.fmt_int(int(s.score))
+	_miss_label.text = str(int(s.n_miss))
 	var t := clampf(_time_ms(), 0.0, _song_len_ms)
 	_time_label.text = "%s / %s" % [_fmt_time(t), _fmt_time(_song_len_ms)]
 	_top_fill.anchor_right = clampf(t / _song_len_ms, 0.0, 1.0)
@@ -792,7 +855,7 @@ func _show_results(is_fail: bool) -> void:
 	if OS.get_cmdline_args().has("--shot-results"):
 		_capture_results_shot()
 	if _mp_bot:
-		print("MPRALLY final score=%d acc=%.4f combo=%d failed=%s live_seen=%s" % [
+		print("MPORBIT final score=%d acc=%.4f combo=%d failed=%s live_seen=%s" % [
 			int(s.score), float(s.accuracy), int(s.get("max_combo", 0)), str(s.failed), str(_mp_live_seen)])
 		var back_s := 1.5
 		for a in OS.get_cmdline_args():
