@@ -842,11 +842,8 @@ func _show_results(is_fail: bool) -> void:
 	rs.retry_pressed.connect(_restart)
 	rs.back_pressed.connect(_back_to_browser)
 	rs.replay_pressed.connect(_on_results_replay)
-	var offs := []
-	for o in _hit_offsets:
-		offs.append(o)
 	rs.show_results({
-		"is_fail": is_fail, "s": s, "offsets": offs, "w50": core.w50,
+		"is_fail": is_fail, "s": s, "log": _result_log(), "w50": core.w50, "w_max": core.w_max,
 		"new_best": new_best, "title": _beatmap.title(), "artist": _beatmap.artist(),
 		"version": _beatmap.version_name(), "allow_retry": not Lobby.active,
 		"can_replay": not Lobby.active and (_replay or core.replay_log.size() > 1),
@@ -864,6 +861,17 @@ func _show_results(is_fail: bool) -> void:
 		await get_tree().create_timer(back_s, true).timeout
 		if is_inside_tree():
 			_back_to_browser()
+
+
+## Ein Eintrag je gewertetem Schlag fuer das Endbild (RallyResults.entry).
+func _result_log() -> Array:
+	var out := []
+	for i in shots.size():
+		if not core.is_judged(i):
+			continue
+		var sh := shots[i]
+		out.append(RallyResults.entry(sh.t, sh.key, sh.smash, sh.is_charge(), core.result_of(i)))
+	return out
 
 
 func _save_replay(s: Dictionary) -> void:
