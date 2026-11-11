@@ -116,8 +116,8 @@ func _draw() -> void:
 	draw_set_transform(off, 0.0, Vector2.ONE)
 	_draw_room()
 	_draw_preview()
-	_draw_targets()
 	_draw_players()
+	_draw_targets()
 	_draw_bounces()
 	_draw_balls()
 	_draw_fx()
@@ -321,7 +321,7 @@ func _draw_players() -> void:
 	var h := size.y
 	var py := _paddle_y()
 	var swing := clampf((t_ms - _swing_t) / 140.0, 0.0, 1.0)
-	var fwd := sin(PI * swing) * 0.030 if swing < 1.0 else 0.0
+	var fwd := sin(PI * swing) * 0.016 if swing < 1.0 else 0.0
 	var pull := 0.0
 	if core != null and core.charging >= 0:
 		var cs := shots[core.charging]

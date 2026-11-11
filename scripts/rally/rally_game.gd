@@ -119,7 +119,7 @@ func _ready() -> void:
 		_debug_start_usec = Time.get_ticks_usec()
 		_debug_running = true
 	if _mp_bot:
-		print("MPRALLY start: %d Schlaege, autoplay=%s" % [shots.size(), _autoplay])
+		print("MPORBIT start: %d Schlaege, autoplay=%s" % [shots.size(), _autoplay])
 	if DisplayServer.get_name() == "headless" and not _mp_bot:
 		print("=== Rally Smoke: %d Schlaege ===" % shots.size())
 		get_tree().quit(0)
@@ -855,7 +855,7 @@ func _show_results(is_fail: bool) -> void:
 	if OS.get_cmdline_args().has("--shot-results"):
 		_capture_results_shot()
 	if _mp_bot:
-		print("MPRALLY final score=%d acc=%.4f combo=%d failed=%s live_seen=%s" % [
+		print("MPORBIT final score=%d acc=%.4f combo=%d failed=%s live_seen=%s" % [
 			int(s.score), float(s.accuracy), int(s.get("max_combo", 0)), str(s.failed), str(_mp_live_seen)])
 		var back_s := 1.5
 		for a in OS.get_cmdline_args():
