@@ -147,3 +147,33 @@ Tasten in Noten zeigen,Tasten in Noten zeigen,Show keys in notes
 Auto: bei Maps unter 3 Sternen und im Tutorial,Auto: bei Maps unter 3 Sternen und im Tutorial,Auto: maps under 3 stars and tutorial
 Auto,Auto,Auto
 An,An,On
+A,A,A
+B,B,B
+AKZENT,AKZENT,ACCENT
+TASTE,TASTE,KEY
+TREFFER,TREFFER,HITS
+Falsche Taste,Falsche Taste,Wrong key
+Daneben,Daneben,Off target
+Reihenfolge,Reihenfolge,Out of order
+ZIELSTREUUNG,ZIELSTREUUNG,AIM SPREAD
+TREFFER-ZEITLEISTE,TREFFER-ZEITLEISTE,HIT TIMELINE
+keine Zieldaten,keine Zieldaten,no aim data
+Ø %d %% vom Zielradius,Ø %d %% vom Zielradius,Ø %d %% of target radius
+× = Miss  ·  Farbe = Stufe,× = Miss  ·  Farbe = Stufe,× = miss  ·  colour = tier
+Lesen,Lesen,Reading
+Vorlauf,Vorlauf,Approach
+Auto (aus AR),Auto (aus AR),Auto (from AR)
+1 Runde,1 Runde,1 lap
+2 Runden,2 Runden,2 laps
+3 Runden,3 Runden,3 laps
+4 Runden,4 Runden,4 laps
+"Runden des Satelliten bis zum Treffer. Auto: AR bis 5 drei, bis 8 zwei, ab 9 eine","Runden des Satelliten bis zum Treffer. Auto: AR bis 5 drei, bis 8 zwei, ab 9 eine","Satellite laps before the hit. Auto: AR up to 5 three, up to 8 two, 9 and up one"
+Tasten in Zielen,Tasten in Zielen,Keys in targets
+Taste im nächsten Ziel. Auto: bei leichten Maps und im Tutorial,Taste im nächsten Ziel. Auto: bei leichten Maps und im Tutorial,Key shown in the next target. Auto: on easy maps and in the tutorial
+Zielgröße,Zielgröße,Target size
+Nur die Anzeige: der Trefferradius folgt der Map (CS),Nur die Anzeige: der Trefferradius folgt der Map (CS),Display only: the hit radius follows the map (CS)
+Cursor-Größe,Cursor-Größe,Cursor size
+"Orbit-Ringe pulsieren auf dem Beat, im Refrain etwas heller","Orbit-Ringe pulsieren auf dem Beat, im Refrain etwas heller","Orbit rings pulse on the beat, a little brighter in the chorus"
+"Akzent = beide Tasten zugleich. Maus links = A, Maus rechts = B gelten immer zusätzlich.","Akzent = beide Tasten zugleich. Maus links = A, Maus rechts = B gelten immer zusätzlich.","Accent = both keys at once. Left mouse = A, right mouse = B always work as well."
+Orbit-Tasten: A | B,Orbit-Tasten: A | B,Orbit keys: A | B
+"Links: Taste A (kühle Scheibe), rechts: Taste B (warmes Quadrat). Anklicken, dann Taste drücken (Esc bricht ab)","Links: Taste A (kühle Scheibe), rechts: Taste B (warmes Quadrat). Anklicken, dann Taste drücken (Esc bricht ab)","Left: key A (cool disc), right: key B (warm square). Click, then press a key (Esc cancels)"

@@ -16,14 +16,17 @@ const EXPECTED := {
 		"Konstante Geschwindigkeit"],
 	"look2d": ["Aktiver Skin", "Hintergrund", "Spielfeld abdunkeln", "Hintergrund-Unschärfe", "Skin-Werte nutzen",
 		"Judgement-Position", "Kombo-Position", "Tasten unter den Noten", "Trefferlinie"],
-	"orbit": ["Orbit-Tasten: Spur A | B", "Scroll Speed", "Takt-Raster", "Hintergrund", "Welt"],
+	"orbit": ["Orbit-Tasten: A | B", "Vorlauf", "Tasten in Zielen", "Zielgröße", "Cursor-Größe", "Musik-Reaktion",
+		"Hintergrund", "Welt"],
 	"notes": ["Notenfarben"],
 	"audio": ["Lautstärke", "Klarheit", "Bass", "Treffer-Sounds", "Hitsound", "Treffer-Lautstärke",
 		"Audio-Offset", "Offset-Assistent"],
 	"gfx": ["Qualität", "FPS-Limit", "Vollbild", "Spur-Leuchten", "Sicherer Grafikmodus"],
-	"keys": ["Tasten 1–4", "Orbit-Tasten: Spur A | B"],
+	"keys": ["Tasten 1–4", "Orbit-Tasten: A | B"],
 	"profile": ["Name", "Spielsprache"],
 }
+## Optionen der alten Bahnen-Orbit-Seite, die es nicht mehr geben darf.
+const ORBIT_GONE := ["Scroll Speed", "Takt-Raster", "Vorschau", "Notengröße", "Bahn-Deckkraft"]
 
 var _panel: Control
 var _failed := 0
@@ -147,6 +150,9 @@ func _run() -> void:
 		for cap in EXPECTED[page]:
 			_check(_row(page, cap) != null, "Zeile '%s' auf Seite %s" % [cap, page])
 
+	for cap in ORBIT_GONE:
+		_check(_row("orbit", cap) == null, "Alte Bahnen-Option '%s' ist weg" % cap)
+
 	# --- Modus -------------------------------------------------------------------
 	var modes: Array = _panel.get("_mode_btns")
 	_check(_panel.get("_cur") == "field3d", "Start: Mania 3D, Seite Spielfeld & Welt")
@@ -157,6 +163,41 @@ func _run() -> void:
 	_check(S.playfield_2d and _panel.get("_cur") == "orbit", "Orbit: eigene Seite, 2D-Schalter bleibt")
 	await _click(modes[0])
 	_check(not S.playfield_2d and _nav("field3d") != null and _nav("field2d") == null, "Mania 3D: 2D aus")
+
+	# --- Orbit-Seite ----------------------------------------------------------------
+	await _click(modes[2])
+	var laps: OptionButton = _ctrl("orbit", "Vorlauf")
+	laps.select(3)
+	laps.item_selected.emit(3)
+	await _frames(2)
+	_check(S.orbit_laps == 3 and S.orbit_laps_for_ar(9.5) == 3, "Vorlauf 3 Runden gilt fest")
+	laps.select(0)
+	laps.item_selected.emit(0)
+	await _frames(2)
+	_check(S.orbit_laps == 0 and S.orbit_laps_for_ar(4.0) == 3 and S.orbit_laps_for_ar(7.0) == 2
+		and S.orbit_laps_for_ar(9.0) == 1, "Vorlauf Auto folgt AR (3/2/1)")
+	var ts: HSlider = _ctrl("orbit", "Zielgröße")
+	_check(ts != null and is_equal_approx(ts.min_value, 90.0) and is_equal_approx(ts.max_value, 120.0),
+		"Zielgröße 90-120 %")
+	ts.value = 115.0
+	await _frames(2)
+	_check(S.orbit_target_size == 115, "Zielgröße wirkt (%d)" % S.orbit_target_size)
+	var cs: HSlider = _ctrl("orbit", "Cursor-Größe")
+	cs.value = 70.0
+	await _frames(2)
+	_check(S.orbit_cursor_size == 70, "Cursor-Größe wirkt (%d)" % S.orbit_cursor_size)
+	var pv: Control = _panel.get("_orbit_preview")
+	_check(pv != null and pv.is_visible_in_tree() and pv.get_global_rect().size.x > 100.0,
+		"Orbit-Vorschau sichtbar (%s)" % ("Standbild" if pv == null or pv.get_script() == null or pv.get_script().resource_path == "" else pv.get_script().resource_path))
+	if OS.get_cmdline_args().has("--shot") or OS.get_cmdline_user_args().has("--shot"):
+		await _frames(20)
+		var img := root.get_texture().get_image()
+		img.save_png("user://settings_orbit.png")
+		print("SHOT ", ProjectSettings.globalize_path("user://settings_orbit.png"))
+	var og: VBoxContainer = _row("orbit", "Zielgröße").get_parent()
+	await _click(og.get_meta("reset_btn"))
+	_check(S.orbit_target_size == 100 and S.orbit_cursor_size == 100, "Gruppe Darstellung zurueckgesetzt")
+	await _click(modes[0])
 
 	# --- Kategorie ----------------------------------------------------------------
 	await _click(_nav("audio"))
