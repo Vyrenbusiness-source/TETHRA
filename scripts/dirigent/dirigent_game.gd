@@ -142,10 +142,42 @@ func _ready() -> void:
 		_debug_running = true
 	if _shot:
 		_capture_shot()
+	elif _movie_from() >= 0.0:
+		_movie_run()
 	else:
 		get_tree().paused = true
 		SyncClock.pause()
 		_resume_with_countdown(1.0)
+
+
+func _movie_from() -> float:
+	for a in _args():
+		if a.begins_with("--movie-from="):
+			return a.trim_prefix("--movie-from=").to_float()
+	return -1.0
+
+
+## Debug (Demo-Videos): --movie-from=<ms> --movie-len=<s> mit --autoplay --write-movie.
+## Spult Wertung + Ton auf <ms>-2,5 s vor, druckt MOVIE_START frame=<n>, endet nach <s> s.
+func _movie_run() -> void:
+	var from := _movie_from()
+	var len_s := 22.0
+	for a in _args():
+		if a.begins_with("--movie-len="):
+			len_s = a.trim_prefix("--movie-len=").to_float()
+	var cut := from - 2500.0
+	var t := float(chart.beats[0].t) - 1200.0
+	while t < cut and not core.is_finished():
+		t += 16.0
+		if _autoplay:
+			core.bot_step(_bot_plan, t)
+		core.update(t)
+	_last_update_t = t
+	if _use_audio:
+		SyncClock.seek_ms(cut)
+	print("MOVIE_START frame=%d" % Engine.get_process_frames())
+	await get_tree().create_timer(len_s, true).timeout
+	get_tree().quit(0)
 
 
 ## Uebersetzungen aus translations/dirigent.csv (auch ohne Eintrag in project.godot).
