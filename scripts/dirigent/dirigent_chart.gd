@@ -8,8 +8,11 @@ extends RefCounted
 ## der Takt faengt am roten Punkt an. Die Figur haengt von der Taktart ab:
 ##   4/4 Schlagfigur (unten, links, rechts, oben), 3/4 Dreieck, 2/4 unten/oben,
 ##   6/8 = 2 Hauptschlaege (Beat 1 und 4), sonst Kreis mit n Punkten.
-## Schlaege < FAST_BEAT_MS: halbe Takte, nur die betonten Beats (0, 2, 4 ...).
-## Dynamik: Kiai = Figur x KIAI_SCALE, sehr leise Stellen x QUIET_SCALE.
+## Schnelle Songs (Beat < FAST_BEAT_MS): die volle Figur bleibt, jeder Punkt bekommt
+## ein groesseres Zeitfenster (STEP Beats pro Punkt, Abstand >= FAST_BEAT_MS), die
+## Figur dauert dann mehrere Takte. So bleibt die Hand nie hektisch (MAX_SPEED).
+## Dynamik: Kiai = erweiterte Figur (weiteres Ausholen) x KIAI_SCALE, sehr leise
+## Stellen x QUIET_SCALE; Figur und Groesse stehen je Takt fest.
 ## Beats ausserhalb der Spielfenster (Pausen > BREAK_MS) fallen weg.
 ##
 ## Einsaetze (cues): Noten der Map, gruppiert wie OrbitConverter; Tasten A
@@ -17,19 +20,25 @@ extends RefCounted
 ## Finish bzw. Akkord ueber beide Seiten = beide (mask 3). Naeher als MERGE_MS
 ## beisammen = ein Einsatz (Tasten vereinigt).
 
-const FAST_BEAT_MS := 300.0
+const FAST_BEAT_MS := 340.0
+## Hoechstes Handtempo (Einheiten/s) ueber alle Punkte-Spruenge (Test, Bot-Messung).
+const MAX_SPEED := 5.0
 const MERGE_MS := 90.0
 const BREAK_MS := 4000.0
-const KIAI_SCALE := 1.3
+const KIAI_SCALE := 1.15
 const QUIET_SCALE := 0.8
+## Kiai: erweiterte 4/4-Figur (weiter aussen), Skala sonst wie normale Figur.
+const EXT_W := 1.1
 const QUIET_LEVEL := 0.10
 ## Figur-Radius in Figur-Einheiten (1.0 = Bezugsgroesse der Ansicht).
 const FIG := 0.62
 
 ## Je Schlag: t (ms), pt (Punkt in der Figur), n (Punkte), bar (Takt-Index),
-## unit (Punkt ohne Skala), pos (mit Skala), scale, kiai (bool), label (Taktart).
+## unit (Punkt ohne Skala), pos (mit Skala), scale, kiai (bool), label (Taktart),
+## step (Beats je Punkt, 1 = normal).
 var beats: Array[Dictionary] = []
-## Je Takt: t, n, label, scale, i0 (erster Schlag), count.
+## Je Takt (= ein Figurdurchlauf): t, n, label, scale, i0 (erster Schlag), count, kind,
+## ext (erweiterte Kiai-Figur), step.
 var bars: Array[Dictionary] = []
 ## Je Einsatz: t, mask (1 = A, 2 = B, 3 = beide).
 var cues: Array[Dictionary] = []
@@ -41,11 +50,11 @@ var duration_ms := 0.0
 # ---------------------------------------------------------------------------
 
 ## Anzahl Punkte und Figur-Art fuer eine Taktart. kind: "44", "34", "24", "68", "circle".
-static func figure_kind(meter: int, fast: bool) -> Dictionary:
+static func figure_kind(meter: int) -> Dictionary:
 	var m := meter if meter >= 2 else 4
 	if m == 6:
 		return {"kind": "68", "n": 2}
-	var eff := (m + 1) / 2 if fast else m
+	var eff := m
 	match eff:
 		2: return {"kind": "24", "n": 2}
 		3: return {"kind": "34", "n": 3}
@@ -54,8 +63,11 @@ static func figure_kind(meter: int, fast: bool) -> Dictionary:
 
 
 ## Punkte der Figur (Einheiten, y nach unten), Reihenfolge = Schlagreihenfolge.
-static func figure_points(kind: String, n: int) -> PackedVector2Array:
+static func figure_points(kind: String, n: int, ext := false) -> PackedVector2Array:
 	var f := FIG
+	if ext and kind == "44":
+		var w := EXT_W
+		return PackedVector2Array([Vector2(0, f), Vector2(-w * f, 0.45 * f), Vector2(w * f, -0.05 * f), Vector2(0, -f)])
 	match kind:
 		"44":
 			return PackedVector2Array([Vector2(0, f), Vector2(-f, 0.2 * f), Vector2(f, 0.2 * f), Vector2(0, -f)])
@@ -68,6 +80,14 @@ static func figure_points(kind: String, n: int) -> PackedVector2Array:
 		var a := TAU * float(i) / float(n)
 		out.append(Vector2(sin(a), cos(a)) * f)
 	return out
+
+
+## Beats je Punkt: 1, ausser der Beat ist kuerzer als FAST_BEAT_MS (dann so viele, dass
+## der Punktabstand >= FAST_BEAT_MS wird). 6/8 zaehlt eigene Hauptschlaege.
+static func step_for(bl: float, meter: int) -> int:
+	if meter == 6 or bl >= FAST_BEAT_MS or bl <= 0.0:
+		return 1
+	return maxi(1, int(ceil(FAST_BEAT_MS / bl)))
 
 
 static func meter_label(meter: int) -> String:
@@ -150,45 +170,52 @@ func _build_beats(beatmap: Beatmap) -> void:
 		var bl: float = reds[k][1]
 		var meter: int = reds[k][2]
 		var t_end: float = reds[k + 1][0] if k + 1 < reds.size() else INF
-		var fast := bl < FAST_BEAT_MS and meter != 6 and meter >= 2
-		var fk := figure_kind(meter, fast)
-		var pts := figure_points(fk.kind, fk.n)
-		var bar_len := bl * float(maxi(meter, 1))
+		var fk := figure_kind(meter)
+		var step := step_for(bl, meter)
+		# Figurdurchlauf: n Punkte, je step Beats (6/8: 2 Hauptschlaege im Abstand von 3 Beats).
+		var cyc_beats := 6 if meter == 6 else int(fk.n) * step
+		var bar_len := bl * float(cyc_beats)
 		var j := 0
 		# Ein Takt vor dem ersten Fenster anfangen (Takt-Eins gehoert zum roten Punkt).
 		var j0 := 0
 		if t0 < t_first - bar_len * 2.0:
-			j0 = int(floor((t_first - bar_len * 2.0 - t0) / bl / float(meter))) * meter
+			j0 = int(floor((t_first - bar_len * 2.0 - t0) / bl / float(cyc_beats))) * cyc_beats
 		j = j0
 		var bar_idx := -1
 		while true:
 			var t := t0 + float(j) * bl
 			if t >= t_end - 0.5 or t > windows[-1][1] + bl:
 				break
-			var idx_in_bar := j % maxi(meter, 1)
+			var idx_in_bar := j % cyc_beats
 			var judged := true
 			if meter == 6:
 				judged = idx_in_bar % 3 == 0
-			elif fast:
-				judged = idx_in_bar % 2 == 0
+			else:
+				judged = idx_in_bar % step == 0
 			if judged and _in_windows(windows, t, bar_len):
-				var pt := idx_in_bar / 3 if meter == 6 else (idx_in_bar / 2 if fast else idx_in_bar)
+				var pt := idx_in_bar / 3 if meter == 6 else idx_in_bar / step
 				pt = clampi(pt, 0, fk.n - 1)
 				var kiai := beatmap.is_kiai(t)
-				var sc := 1.0
-				if kiai:
-					sc = KIAI_SCALE
-				elif inten.value_at(t) < QUIET_LEVEL:
-					sc = QUIET_SCALE
-				var this_bar := j / maxi(meter, 1)
-				if bars.is_empty() or int(bars[-1].key) != k * 100000 + this_bar:
+				var this_bar := j / cyc_beats
+				var bar_key := k * 100000 + this_bar
+				if bars.is_empty() or int(bars[-1].key) != bar_key:
+					# Figur und Groesse stehen mit dem ersten gewerteten Schlag des Takts fest.
+					var ext: bool = kiai and fk.kind == "44"
+					var sc := 1.0
+					if kiai:
+						sc = KIAI_SCALE
+					elif inten.value_at(t) < QUIET_LEVEL:
+						sc = QUIET_SCALE
 					bars.append({"t": t, "n": fk.n, "label": meter_label(meter), "scale": sc,
-						"i0": beats.size(), "count": 0, "key": k * 100000 + this_bar, "kind": fk.kind})
+						"i0": beats.size(), "count": 0, "key": bar_key, "kind": fk.kind,
+						"ext": ext, "step": step})
 				bars[-1].count = int(bars[-1].count) + 1
+				var pts := figure_points(fk.kind, fk.n, bool(bars[-1].ext))
 				var u: Vector2 = pts[pt]
+				var sc2: float = bars[-1].scale
 				beats.append({"t": t, "pt": pt, "n": fk.n, "bar": bars.size() - 1, "unit": u,
-					"pos": u * sc, "scale": sc, "kiai": kiai, "label": meter_label(meter),
-					"kind": fk.kind})
+					"pos": u * sc2, "scale": sc2, "kiai": kiai, "label": meter_label(meter),
+					"kind": fk.kind, "step": step})
 			j += 1
 	# Takt-Schluessel ist Hilfsfeld
 	for b in bars:

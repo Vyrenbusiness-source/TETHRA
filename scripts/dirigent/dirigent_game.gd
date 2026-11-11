@@ -291,13 +291,14 @@ func _build_hud() -> void:
 	_top_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_hud.add_child(_top_fill)
 
-	var left := _stat_column(0.095)
-	_acc_label = _stat_block(left, tr("GENAUIGKEIT"), 38)
-	_grade_label = _stat_block(left, tr("RANG"), 24)
-	var right := _stat_column(0.905)
+	# Wie Mania: Rang bei der Genauigkeit links, rechts eine kompakte Zaehler-Gruppe.
+	var left := _stat_column(Vector2(0.085, 0.42))
+	_grade_label = _stat_block(left, tr("RANG"), 26)
+	_acc_label = _stat_block(left, tr("GENAUIGKEIT"), 28)
+	var right := _stat_column(Vector2(0.915, 0.42))
 	_score_label = _stat_block(right, tr("PUNKTE"), 30)
-	_beat_label = _stat_block(right, tr("TAKT"), 20)
-	_cue_label = _stat_block(right, tr("EINSÄTZE"), 20)
+	_beat_label = _stat_block(right, tr("TAKT"), 24)
+	_cue_label = _stat_block(right, tr("EINSÄTZE"), 24)
 
 	_err_bar = HitErrorBar.new()
 	_hud.add_child(_err_bar)
@@ -322,17 +323,17 @@ func _build_hud() -> void:
 	get_viewport().size_changed.connect(_place_hud)
 
 
-func _stat_column(ax: float) -> VBoxContainer:
+func _stat_column(anchor_pos: Vector2) -> VBoxContainer:
 	var v := VBoxContainer.new()
-	v.anchor_left = ax
-	v.anchor_right = ax
-	v.anchor_top = 0.5
-	v.anchor_bottom = 0.5
-	v.offset_left = -110
-	v.offset_right = 110
+	v.anchor_left = anchor_pos.x
+	v.anchor_right = anchor_pos.x
+	v.anchor_top = anchor_pos.y
+	v.anchor_bottom = anchor_pos.y
+	v.offset_left = -120
+	v.offset_right = 120
 	v.grow_vertical = Control.GROW_DIRECTION_BOTH
 	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	v.add_theme_constant_override("separation", 18)
+	v.add_theme_constant_override("separation", 22)
 	_hud.add_child(v)
 	return v
 
