@@ -36,7 +36,7 @@ const LAPS: Array[int] = [2, 3, 3, 3, 2, 2, 2]
 const SKILL_MIN_HITS := 7
 const OD := 4.0
 ## Zielradius (Feld-Einheiten), etwas groesser als im Spiel.
-const RADIUS := 0.055
+const RADIUS := 0.085  # etwas kleiner als osu! CS 4 (0,095): Tutorial bleibt luftig, Spiel nutzt target_radius(beatmap)
 const AIM_DWELL_MS := 650.0
 const DONE_PAUSE_MS := 1200.0
 const SAY_MS := 2600.0
