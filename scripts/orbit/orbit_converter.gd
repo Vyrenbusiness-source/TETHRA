@@ -42,6 +42,12 @@ const PATH_STEP := 0.035
 const MANIA_HOLD_V := 0.7
 const MANIA_HOLD_MAX := 0.24
 
+## Mania-Strom: Abstand darunter = Wechselschlag der Tasten.
+const STREAM_MS := 250.0
+## Zielradius wie osu! (Kreisradius aus CS), Feld-Einheiten je osu!-Pixel.
+const RADIUS_PER_OSU_PX := 0.045 / 36.48
+const MANIA_RADIUS := 0.045
+
 # Sterne
 const STAR_HOP_MS := 1000.0
 const STAR_KD := 0.55
@@ -49,15 +55,40 @@ const STAR_KJ := 0.5
 const STAR_KS := 0.35
 const STAR_KH := 0.3
 const STAR_KA := 0.25
+const STAR_KT := 0.08
+const STAR_KR := 0.1
 const STAR_DECAY := 0.95
 const STAR_JUMP_CAP := 4.0
 const STAR_SWITCH_GAP_MS := 400.0
 const STAR_MAX := 15.0
-const STAR_SCALE := 0.51
-const STAR_POW := 1.3
+const STAR_SCALE := 0.59
+const STAR_POW := 1.1
 
 
-static func convert(beatmap: Beatmap, laps: int = 2) -> Array[OrbitNote]:
+## Runden aus AR (ohne Spieler-Einstellung): AR <= 5 -> 3, 6..8 -> 2, >= 9 -> 1.
+static func laps_from_ar(ar: float) -> int:
+	if ar <= 5.5:
+		return 3
+	if ar < 8.5:
+		return 2
+	return 1
+
+
+## Zielradius (Feld-Einheiten) wie osu!: CS 4 ~ 0.045. Mania: fest.
+static func target_radius(beatmap: Beatmap) -> float:
+	if beatmap == null or beatmap.is_mania():
+		return MANIA_RADIUS
+	return (54.4 - 4.48 * clampf(beatmap.cs(), 0.0, 10.0)) * RADIUS_PER_OSU_PX
+
+
+## laps <= 0: aus AR der Map (Mania: 2).
+static func _laps_for(beatmap: Beatmap, laps: int) -> int:
+	if laps > 0:
+		return laps
+	return 2 if beatmap.is_mania() else laps_from_ar(beatmap.ar())
+
+
+static func convert(beatmap: Beatmap, laps: int = 0) -> Array[OrbitNote]:
 	if beatmap == null:
 		return [] as Array[OrbitNote]
 	if beatmap.is_mania():
@@ -65,16 +96,16 @@ static func convert(beatmap: Beatmap, laps: int = 2) -> Array[OrbitNote]:
 	return convert_std(beatmap, laps)
 
 
-static func convert_std(beatmap: Beatmap, laps: int = 2) -> Array[OrbitNote]:
+static func convert_std(beatmap: Beatmap, laps: int = 0) -> Array[OrbitNote]:
 	if beatmap == null:
 		return [] as Array[OrbitNote]
-	return _build(_events_std(beatmap, OrbitClock.from_beatmap(beatmap)), beatmap, laps, false)
+	return _build(_events_std(beatmap, OrbitClock.from_beatmap(beatmap)), beatmap, _laps_for(beatmap, laps), false)
 
 
-static func convert_mania(beatmap: Beatmap, laps: int = 2) -> Array[OrbitNote]:
+static func convert_mania(beatmap: Beatmap, laps: int = 0) -> Array[OrbitNote]:
 	if beatmap == null:
 		return [] as Array[OrbitNote]
-	return _build(_events_mania(beatmap), beatmap, laps, true)
+	return _build(_events_mania(beatmap), beatmap, _laps_for(beatmap, laps), true)
 
 
 # ---------------------------------------------------------------------------
@@ -92,7 +123,7 @@ static func _events_std(bm: Beatmap, _clock: OrbitClock) -> Array:
 		var hs: int = o.hit_sound
 		var key := OrbitNote.KEY_B if (hs & 10) != 0 else OrbitNote.KEY_A
 		var e := {"t": float(o.time), "end": float(o.time), "key": key, "col": 0,
-			"pos": _norm(Vector2(o.x, o.y)), "path": PackedVector2Array(), "src": i,
+			"pos": _norm_std(Vector2(o.x, o.y)), "path": PackedVector2Array(), "src": i,
 			"spin": false, "finish": (hs & 4) != 0}
 		if o.kind == HitObject.Kind.SPINNER:
 			e["pos"] = Vector2(0.5, 0.5)
@@ -126,6 +157,11 @@ static func _events_mania(bm: Beatmap) -> Array:
 		return a[1] < b[1])
 	var out: Array = []
 	var j := 0
+	# Musikalisches A/B-Muster: Strom (kurzer Abstand) = Wechselschlag, gleiche Spalte
+	# (wiederholter Klang) = gleiche Taste, sonst Seite (Spalte 1-2 = A, 3-4 = B).
+	var pkey := -1
+	var pcol := -1
+	var pt := -INF
 	while j < notes.size():
 		var g: Array = [notes[j]]
 		var t0: float = notes[j][0]
@@ -155,9 +191,24 @@ static func _events_mania(bm: Beatmap) -> Array:
 		elif left and right:
 			e["finish"] = true
 		else:
-			e["key"] = OrbitNote.KEY_A if left else OrbitNote.KEY_B
+			var side := OrbitNote.KEY_A if left else OrbitNote.KEY_B
+			var c: int = int(first[1])
+			var key := side
+			if pkey >= 0 and t0 - pt < STREAM_MS:
+				key = pkey if c == pcol else 1 - pkey
+			elif pkey >= 0 and c == pcol:
+				key = pkey
+			e["key"] = key
+		if int(e["key"]) <= 1:
+			pkey = int(e["key"])
+		pcol = int(e["col"])
+		pt = maxf(float(e["end"]), t0)
 		out.append(e)
 	return out
+
+
+static func _norm_std(p: Vector2) -> Vector2:
+	return Vector2(clampf(p.x / 512.0, 0.0, 1.0), clampf(p.y / 384.0, 0.0, 1.0))
 
 
 static func _norm(p: Vector2) -> Vector2:
@@ -256,9 +307,7 @@ static func _build(events: Array, bm: Beatmap, laps_req: int, mania: bool) -> Ar
 	var span := maxf((float(kept[-1].t) - float(kept[0].t)) / 1000.0, 1.0)
 	var nps := float(kept.size()) / span
 	var easy := nps < EASY_NPS
-	var jump_v := clampf(JUMP_V_MIN + JUMP_V_PER_NPS * nps, JUMP_V_MIN, JUMP_V_MAX)
-	if easy:
-		jump_v = EASY_JUMP_V
+	var jump_v := EASY_JUMP_V
 
 	var placed: Array = []   # [pos, spawn_req, end]
 	var prev_pos := Vector2(0.5, 0.5)
@@ -295,17 +344,15 @@ static func _build(events: Array, bm: Beatmap, laps_req: int, mania: bool) -> Ar
 			else:
 				want = _reflect(prev_pos + d * dist)
 		else:
-			want = _clamp_field(e.pos)
-			if prev_t != -INF:
+			want = e.pos
+			if easy and prev_t != -INF:
 				var maxd := JUMP_BASE + jump_v * dt
-				if easy:
-					maxd = minf(maxd, EASY_JUMP_MAX)
+				maxd = minf(maxd, EASY_JUMP_MAX)
 				var delta := want - prev_pos
 				if delta.length() > maxd:
 					want = prev_pos + delta.normalized() * maxd
-				want = _clamp_field(want)
 		var spawn_req := clock.beat_tick_at_or_before(t - float(laps_req) * lap)
-		var pos := _free_pos(want, prev_pos, placed, spawn_req, idx, prev_t != -INF)
+		var pos := _free_pos(want, prev_pos, placed, spawn_req, idx, prev_t != -INF) if mania else want
 		# Ziel bauen
 		var n: OrbitNote
 		if is_hold:
@@ -313,7 +360,7 @@ static func _build(events: Array, bm: Beatmap, laps_req: int, mania: bool) -> Ar
 			if mania:
 				path = _mania_path(pos, flow, end - t, idx)
 			else:
-				path = _std_hold_path(e.path, pos, e.pos, t, end, e.end)
+				path = _std_hold_path(e.path, pos, e.pos, t, end, e.end, easy)
 			n = OrbitNote.make_hold(t, end, path, key if key != OrbitNote.KEY_ACCENT else OrbitNote.KEY_A, e.src)
 			prev_pos = path[path.size() - 1]
 			prev_t = end
@@ -419,7 +466,7 @@ static func _mania_path(pos: Vector2, flow: Vector2, dur_ms: float, idx: int) ->
 
 ## Slider-Pfad auf die endgueltige Kopfposition schieben, auf Zeit/Tempo kuerzen.
 static func _std_hold_path(raw: PackedVector2Array, pos: Vector2, src_pos: Vector2,
-		t: float, end: float, src_end: float) -> PackedVector2Array:
+		t: float, end: float, src_end: float, easy: bool) -> PackedVector2Array:
 	var path := raw
 	if path.size() < 2:
 		path = PackedVector2Array([pos, pos + Vector2(0.001, 0.0)])
@@ -428,13 +475,14 @@ static func _std_hold_path(raw: PackedVector2Array, pos: Vector2, src_pos: Vecto
 	var len := total
 	if src_end > t and end < src_end:
 		len = total * (end - t) / (src_end - t)
-	len = minf(len, HOLD_V_MAX * dur_s)
+	if easy:
+		len = minf(len, HOLD_V_MAX * dur_s)
 	if len < total:
 		path = _prefix(path, len)
-	var off := pos - _clamp_field(src_pos)
+	var off := pos - src_pos
 	var out := PackedVector2Array()
 	for p in path:
-		out.append(_clamp_field(p + off))
+		out.append(Vector2(clampf(p.x + off.x, 0.0, 1.0), clampf(p.y + off.y, 0.0, 1.0)))
 	if out.size() < 2:
 		out.append(out[0])
 	out[0] = pos
@@ -513,6 +561,7 @@ static func violations(ns: Array[OrbitNote], beatmap: Beatmap) -> Dictionary:
 	var v := {"gap": 0, "field": 0, "spawn": 0, "visible": 0, "overlap": 0, "order": 0,
 		"hold": 0, "targets": ns.size()}
 	var clock := OrbitClock.from_beatmap(beatmap)
+	var mania_map := beatmap != null and beatmap.is_mania()
 	var prev_end := -INF
 	var prev_t := -INF
 	for i in ns.size():
@@ -540,7 +589,7 @@ static func violations(ns: Array[OrbitNote], beatmap: Beatmap) -> Dictionary:
 			var m := ns[j]
 			if m.spawn_ms <= n.spawn_ms and n.spawn_ms < maxf(m.end_ms, m.time_ms):
 				c += 1
-				if j != i and m.pos.distance_to(n.pos) < SEP * 0.5:
+				if mania_map and j != i and m.pos.distance_to(n.pos) < SEP * 0.5:
 					v.overlap += 1
 		if c > MAX_VISIBLE:
 			v.visible += 1
@@ -601,7 +650,9 @@ static func stars_raw(ns: Array[OrbitNote]) -> float:
 	var swt := PackedFloat32Array()
 	var hld := PackedFloat32Array()
 	var acc := PackedFloat32Array()
-	for arr in [cnt, jmp, swt, hld, acc]:
+	var trn := PackedFloat32Array()
+	var rdg := PackedFloat32Array()
+	for arr in [cnt, jmp, swt, hld, acc, trn, rdg]:
 		arr.resize(n_win)
 		arr.fill(0.0)
 	for i in ns.size():
@@ -612,10 +663,26 @@ static func stars_raw(ns: Array[OrbitNote]) -> float:
 			hld[w] += 1.0 + (n.end_ms - n.time_ms) / 1000.0
 		if n.key == OrbitNote.KEY_ACCENT:
 			acc[w] += 1.0
+		# Lesen: wenige Runden und Ueberdeckung (Ziele nahe an noch sichtbaren)
+		var lap_pen := maxf(3.0 - float(n.laps), 0.0) * 0.5
+		var olap := 0.0
+		for j in range(maxi(i - 6, 0), i):
+			var m := ns[j]
+			if maxf(m.end_ms, m.time_ms) > n.spawn_ms and m.pos.distance_to(n.pos) < 0.15:
+				olap += 0.5
+		rdg[w] += lap_pen + minf(olap, 1.5)
 		if i > 0:
 			var p := ns[i - 1]
 			var gap := maxf(n.time_ms - maxf(p.end_ms, p.time_ms), 40.0)
-			jmp[w] += minf(end_pos(p).distance_to(n.pos) / (gap / 1000.0), STAR_JUMP_CAP)
+			var dist := end_pos(p).distance_to(n.pos)
+			jmp[w] += minf(dist / (gap / 1000.0), STAR_JUMP_CAP)
+			if i > 1:
+				var q := ns[i - 2]
+				var v1 := end_pos(p) - end_pos(q)
+				var v2 := n.pos - end_pos(p)
+				if v1.length() > 0.02 and v2.length() > 0.02:
+					# Richtungswechsel (0 gerade .. PI Umkehr), gewichtet mit dem Sprung
+					trn[w] += absf(v1.angle_to(v2)) / PI 							* minf(dist / (gap / 1000.0), STAR_JUMP_CAP)
 			if n.key != p.key and n.time_ms - p.time_ms < STAR_SWITCH_GAP_MS:
 				swt[w] += 1.0
 	var vals: Array[float] = []
@@ -628,8 +695,11 @@ static func stars_raw(ns: Array[OrbitNote]) -> float:
 		var sw := (swt[w] + (swt[pw] if w > 0 else 0.0)) / secs
 		var hl := (hld[w] + (hld[pw] if w > 0 else 0.0)) / secs
 		var ac := (acc[w] + (acc[pw] if w > 0 else 0.0)) / secs
+		var tn := (trn[w] + (trn[pw] if w > 0 else 0.0)) / maxf(c, 1.0)
+		var rd := (rdg[w] + (rdg[pw] if w > 0 else 0.0)) / secs
 		vals.append(STAR_KD * pow(dens, 0.8) + STAR_KJ * jm * minf(dens / 2.5, 1.0)
-				+ STAR_KS * sw + STAR_KH * hl + STAR_KA * ac)
+				+ STAR_KS * sw + STAR_KH * hl + STAR_KA * ac
+				+ STAR_KT * tn * minf(dens / 2.5, 1.0) + STAR_KR * rd)
 	vals.sort()
 	vals.reverse()
 	var num := 0.0
