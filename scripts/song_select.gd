@@ -2680,8 +2680,8 @@ func _score_row(rank: int, e: Dictionary) -> Control:
 const MODE_TIPS := {
 	"mania": "Klassisch: vier Spuren",
 	"orbit": "Zielen mit Maus/Tablet, Ring per Taste (osu!standard- und 4K-Maps)",
-	"rally": "Tischtennis im Takt: Schlaege auf die Noten, zwei Tasten",
-	"dirigent": "Taktfigur mit der Maus fuehren, Einsaetze per Taste",
+	"rally": "Tischtennis im Takt: Schläge auf die Noten, zwei Tasten",
+	"dirigent": "Taktfigur mit der Maus führen, Einsätze per Taste",
 }
 
 

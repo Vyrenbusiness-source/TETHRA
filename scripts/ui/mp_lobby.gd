@@ -478,6 +478,9 @@ static var _mpo_stage := 0
 ## (4 Maps, je 1 Ban). 2/3: Turnierrunden. Jede Zeile beginnt mit "MPORBIT".
 func _mp_orbit(host: bool) -> void:
 	var tag := "HOST" if host else "CLIENT"
+	# --mp-mode=<orbit|rally|dirigent> (Standard orbit): Raum-Modus der Smoke-Runde.
+	var pmode := Lobby.norm_play(_arg_value("--mp-mode=")) if _arg_value("--mp-mode=") != "" else "orbit"
+	var pview := Lobby.play_name(pmode)
 	var step := func(msg: String): print("MPORBIT %s s%d %s" % [tag, _mpo_stage, msg])
 	var fail := func(msg: String):
 		print("MPORBIT %s s%d FAIL %s" % [tag, _mpo_stage, msg])
@@ -525,13 +528,13 @@ func _mp_orbit(host: bool) -> void:
 		0:
 			step.call("players synced: %d crown=%d me=%d" % [Lobby.players.size(), Lobby.crown_id, me])
 			if host:
-				Lobby.set_play_mode("orbit")
+				Lobby.set_play_mode(pmode)
 				_pick(sets[0], 0)
 				step.call("picked '%s' mode=%s" % [str(Lobby.sel_map.get("title", "")), Lobby.play_mode])
-			elif not await wait_for.call(func(): return Lobby.play_mode == "orbit" and not Lobby.sel_map.is_empty(), 20.0):
+			elif not await wait_for.call(func(): return Lobby.play_mode == pmode and not Lobby.sel_map.is_empty(), 20.0):
 				fail.call("mode/map sync")
 				return
-			if not await wait_for.call(func(): return Lobby.all_ready() and Lobby.view_of(other) == "Orbit", 20.0):
+			if not await wait_for.call(func(): return Lobby.all_ready() and Lobby.view_of(other) == pview, 20.0):
 				fail.call("all_ready/view (ready=%s view=%s)" % [Lobby.all_ready(), Lobby.view_of(other)])
 				return
 			step.call("all ready, views %s/%s" % [Lobby.view_of(me), Lobby.view_of(other)])
@@ -1537,7 +1540,7 @@ func _build_room() -> void:
 	_copy_btn.pressed.connect(_copy_code)
 	code_row.add_child(_copy_btn)
 
-	# Spielmodus (Mania 4K / Orbit) und Format (Frei / Teams / Battle Royale)
+	# Spielmodus (Mania 4K / Orbit / Rally / Dirigent) und Format (Frei / Teams / Battle Royale)
 	# als Reiter: waehlt die Krone, alle sehen den aktiven Unterstrich.
 	var sv := VBoxContainer.new()
 	sv.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
@@ -1549,7 +1552,7 @@ func _build_room() -> void:
 	sv.add_child(srow)
 	srow.add_child(_caption("Spielmodus"))
 	srow.add_child(_hgap(6))
-	for pm in ["mania", "orbit"]:
+	for pm in Lobby.PLAY_MODES:
 		var pb := _chip_toggle(Lobby.play_name(pm))
 		pb.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
 		var pmode: String = pm
@@ -2090,9 +2093,10 @@ func _refresh_room() -> void:
 		var pon: bool = Lobby.play_mode == pm
 		pb.set_pressed_no_signal(pon)
 		_paint_chip(pb, pon)
-		pb.disabled = not is_crown or in_tour or Lobby.in_game
+		var built := ScoreStore.mode_ready(pm)
+		pb.disabled = not is_crown or in_tour or Lobby.in_game or (not built and not pon)
 		pb.tooltip_text = tr("Alle im Raum spielen %s.") % Lobby.play_name(Lobby.play_mode) if pon \
-			else tr("Nur der Kronenträger wählt den Spielmodus.") if not is_crown else ""
+			else tr("Kommt bald") if not built else tr("Nur der Kronenträger wählt den Spielmodus.") if not is_crown else ""
 	for k in _mode_btns.size():
 		var kb: Button = _mode_btns[k]
 		var on: bool = Lobby.room_kind() == k and not in_tour
