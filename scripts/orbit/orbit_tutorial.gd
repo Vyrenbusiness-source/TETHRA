@@ -31,7 +31,7 @@ const BPMS: Array[float] = [60.0, 60.0, 66.0, 72.0, 76.0, 84.0, 92.0]
 ## Erfolge bis zum naechsten Schritt (SKILL: eine gute Runde, TRIAL: eine Runde).
 const NEED: Array[int] = [3, 3, 4, 3, 2, 1, 1]
 ## Vorlauf-Runden je Schritt (Pips beim Erscheinen).
-const LAPS: Array[int] = [2, 3, 2, 2, 2, 2, 2]
+const LAPS: Array[int] = [2, 3, 3, 3, 2, 2, 2]
 ## Skill-Runde: so viele Treffer von allen Zielen der Runde.
 const SKILL_MIN_HITS := 7
 const OD := 4.0
@@ -43,6 +43,8 @@ const SAY_MS := 2600.0
 const FX_MS := 900.0
 const BOT_LEAD_MS := 6.0
 const BOT_TAP_MS := 40.0
+## Bot zielt leicht neben die Mitte (innerhalb des vollen Zielfaktors).
+const BOT_AIM_OFFSET := Vector2(0.014, 0.022)
 ## Kopfzeile (Anteil der Hoehe) und Rand unten fuer das Feld.
 const TOP_K := 0.22
 const BOTTOM_K := 0.06
@@ -141,6 +143,10 @@ class Field extends Control:
 		var r := field_rect()
 		return (px - r.position) / r.size
 
+	## Grundfarbe des Felds (fuer vorgemischte Flaechen).
+	func base_col() -> Color:
+		return UiTheme.BG.darkened(0.25).lerp(Color.WHITE, 0.025)
+
 	## Pixel je Feld-Einheit (Hoehe); Radien werden damit gezeichnet.
 	func unit() -> float:
 		return field_rect().size.y
@@ -207,8 +213,11 @@ class Field extends Control:
 			var pts := PackedVector2Array()
 			for q in n.path:
 				pts.append(field_to_screen(q))
-			draw_polyline(pts, Color(col, 0.22 * a), rad * 1.8, true)
-			draw_circle(pts[pts.size() - 1], rad * 0.9, Color(col, 0.22 * a), true, -1.0, true)
+			# Band deckend vorgemischt (keine Naehte durch ueberlappende Deckkraft).
+			var band := Color(base_col().lerp(col, 0.24), a)
+			draw_polyline(pts, band, rad * 1.8, true)
+			draw_circle(pts[0], rad * 0.9, band, true, -1.0, true)
+			draw_circle(pts[pts.size() - 1], rad * 0.9, band, true, -1.0, true)
 			draw_arc(pts[pts.size() - 1], rad * 0.9, 0.0, TAU, 40, Color(col, 0.6 * a), 1.5, true)
 			if tut.hold_active(i):
 				var bp := field_to_screen(n.pos_at(t))
@@ -225,7 +234,8 @@ class Field extends Control:
 		var orad := rad * OrbitTutorial.ORBIT_K
 		var beat := fposmod((t - tut._t0) / tut._beat_ms, 1.0)
 		var pulse := 0.10 * clampf(1.0 - beat * 4.0, 0.0, 1.0)
-		draw_arc(p, orad, 0.0, TAU, 64, Color(1, 1, 1, (0.18 + pulse) * a), 1.5, true)
+		var ring_a := (0.18 + pulse) if is_next else 0.10
+		draw_arc(p, orad, 0.0, TAU, 64, Color(1, 1, 1, ring_a * a), 1.5, true)
 		draw_line(p + Vector2(0, -orad - 6.0), p + Vector2(0, -orad + 6.0), Color(1, 1, 1, 0.9 * a), 2.0, true)
 		if t <= n.time_ms + 60.0:
 			var deg := deg_to_rad(n.satellite_deg(t))
@@ -413,13 +423,12 @@ func _build_ui() -> void:
 
 	_bar = HBoxContainer.new()
 	_bar.add_theme_constant_override("separation", 8)
-	_bar.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
+	_bar.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
 	_bar.offset_left = -420
-	_bar.offset_top = -52
-	_bar.offset_right = -18
-	_bar.offset_bottom = -14
+	_bar.offset_top = 14
+	_bar.offset_right = -14
+	_bar.offset_bottom = 46
 	_bar.grow_horizontal = Control.GROW_DIRECTION_BEGIN
-	_bar.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	_bar.alignment = BoxContainer.ALIGNMENT_END
 	add_child(_bar)
 	_skip_btn = Button.new()
@@ -713,7 +722,7 @@ static func pattern(s: int, t0: float, bm: float, rnd: int) -> Array[OrbitNote]:
 			out.append(_tap(t0, bm, L, 2.0, Vector2(0.16, 0.7), OrbitNote.KEY_A))
 			out.append(_tap(t0, bm, L, 3.0, Vector2(0.84, 0.3), OrbitNote.KEY_B))
 			for j in 4:
-				out.append(_tap(t0, bm, L, 4.0 + 0.5 * j, Vector2(0.36 + 0.09 * j, 0.54 - 0.06 * (j % 2)),
+				out.append(_tap(t0, bm, L, 4.0 + 0.5 * j, Vector2(0.34 + 0.105 * j, 0.55 - 0.08 * (j % 2)),
 						OrbitNote.KEY_A if j % 2 == 0 else OrbitNote.KEY_B))
 			out.append(_tap(t0, bm, L, 6.0, Vector2(0.5, 0.26), OrbitNote.KEY_ACCENT))
 		TRIAL:
@@ -892,7 +901,7 @@ func _on_judged(index: int, res: Dictionary) -> void:
 		_play_hit()
 		var col: Color = TIER_COLS[clampi(q, 0, 5)]
 		fx.append({"k": "hit", "p": p, "t": t_ms, "col": key_color(n.key).lightened(0.3), "s": ""})
-		fx.append({"k": "text", "p": p, "t": t_ms, "col": col, "s": tr(OrbitCore.TIER_NAMES[q])})
+		_add_text(p, col, tr(OrbitCore.TIER_NAMES[q]))
 		match step:
 			SAT, KEYS:
 				_add_success()
@@ -929,8 +938,14 @@ func _fail(code: String, p: Vector2, key: int) -> void:
 	fb_count += 1
 	if code == "miss" or code == "lost" or code == "release" or code == "both":
 		fx.append({"k": "miss", "p": p, "t": t_ms, "col": TIER_COLS[5], "s": ""})
-	fx.append({"k": "text", "p": p, "t": t_ms, "col": Color(UiTheme.BAD.lightened(0.15)), "s": reason_short(code)})
+	_add_text(p, UiTheme.BAD.lightened(0.15), reason_short(code))
 	_say(reason_hint(code, key), UiTheme.BAD.lightened(0.2))
+
+
+## Text am Ort; ein neuer Text an derselben Stelle ersetzt den alten.
+func _add_text(p: Vector2, col: Color, text: String) -> void:
+	fx = fx.filter(func(e): return str(e.k) != "text" or Vector2(e.p).distance_to(p) > RADIUS)
+	fx.append({"k": "text", "p": p, "t": t_ms, "col": col, "s": text})
 
 
 func _play_hit() -> void:
@@ -1020,7 +1035,7 @@ func _release_all() -> void:
 
 func _bot_move(p: Vector2) -> void:
 	var ev := InputEventMouseMotion.new()
-	ev.position = field_to_global(p)
+	ev.position = field_to_global(p + BOT_AIM_OFFSET)
 	handle_input(ev)
 
 
@@ -1223,6 +1238,13 @@ func _shots_one(dir: String, lang: String) -> void:
 			TRIAL:
 				_step_until(func(): return _judged_n >= 3 and next_open() != null \
 						and next_open().time_ms - t_ms < _beat_ms * 0.5)
+			KEYS:
+				_step_until(func(): return success >= 2 and visible_notes().size() >= 2 \
+						and next_open().time_ms - t_ms < next_open().lap_ms * 0.6)
+			ACCENT:
+				_step_until(func(): return success >= 1 and next_open() != null \
+						and next_open().key == OrbitNote.KEY_ACCENT and visible_notes().size() == 1 \
+						and next_open().time_ms - t_ms < next_open().lap_ms * 1.4)
 			_:
 				_step_until(func(): return success >= 1 and next_open() != null \
 						and next_open().time_ms - t_ms < next_open().lap_ms * 1.4 \
@@ -1233,10 +1255,10 @@ func _shots_one(dir: String, lang: String) -> void:
 	enter_step(KEYS)
 	var n := notes[0]
 	_bot_move(n.pos)
-	_step_until(func(): return t_ms >= n.time_ms)
+	_step_until(func(): return t_ms >= n.time_ms - 40.0)
 	_bot_key(1 - n.key, true)
 	_bot_key(1 - n.key, false)
-	advance(150.0)
+	advance(90.0)
 	await _save("orbit_tut_%s_fehler.png" % lang, dir)
 	bot = true
 	enter_step(TRIAL)
