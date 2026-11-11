@@ -70,7 +70,9 @@ var _pv_world: Control
 var _pv_world_holder: Control
 var _pv_orbit: Control
 var _pv_orbit_holder: Control
-var _orbit_preview: OrbitPreview
+## Neue Vorschau (scripts/orbit/orbit_preview.gd) falls vorhanden, sonst Standbild.
+var _orbit_preview: Control
+var _orbit_pv_size := OrbitStill.SIZE_PX
 
 var _nc: NoteColorPicker
 var _world_preview: WorldPreview
@@ -181,7 +183,7 @@ func _layout() -> void:
 		_world_preview.scale = Vector2(s, s)
 		_pv_world_holder.custom_minimum_size = WorldPreview.SIZE_PX * s
 		_orbit_preview.scale = Vector2(s, s)
-		_pv_orbit_holder.custom_minimum_size = OrbitPreview.SIZE_PX * s
+		_pv_orbit_holder.custom_minimum_size = _orbit_pv_size * s
 	if _preview_2d != null and _preview_2d.has_method("set_box"):
 		# Groesser als im Farb-Picker; Bildhoehe waechst mit, das Feld passt in die Breite.
 		# Hoehe fuellt die Vorschau-Spalte (kein Leerraum unter dem Bild).
@@ -640,12 +642,36 @@ func _page_look2d(pg: VBoxContainer) -> void:
 func _page_orbit(pg: VBoxContainer) -> void:
 	var g := _group(pg, "Tasten")
 	_orbit_key_row(g)
+	_hint_label(g, "Akzent = beide Tasten zugleich. Maus links = A, Maus rechts = B gelten immer zusätzlich.")
+	g = _group(pg, "Lesen")
+	var laps := OptionButton.new()
+	laps.add_item("Auto (aus AR)", 0)
+	laps.add_item("1 Runde", 1)
+	laps.add_item("2 Runden", 2)
+	laps.add_item("3 Runden", 3)
+	laps.add_item("4 Runden", 4)
+	_choice_ob(g, "Vorlauf", laps,
+		func(s): return s.orbit_laps,
+		func(i): Settings.orbit_laps = i,
+		"Runden des Satelliten bis zum Treffer. Auto: AR bis 5 drei, bis 8 zwei, ab 9 eine")
+	var kh := OptionButton.new()
+	kh.add_item("Auto", 0)
+	kh.add_item("An", 1)
+	kh.add_item("Aus", 2)
+	_choice_ob(g, "Tasten in Zielen", kh,
+		func(s): return s.orbit_key_hint,
+		func(i): Settings.orbit_key_hint = i,
+		"Taste im nächsten Ziel. Auto: bei leichten Maps und im Tutorial")
 	g = _group(pg, "Darstellung")
-	_scroll_speed(g)
-	_switch(g, "Takt-Raster",
-		func(s): return s.orbit_guides,
-		func(on): Settings.orbit_guides = on,
-		"Feine Striche für Viertel und Achtel an der Bahn")
+	_slider(g, "Zielgröße", 90.0, 120.0, 5.0,
+		func(s): return s.orbit_target_size,
+		func(v): Settings.orbit_target_size = int(v),
+		func(v): return "%d %%" % int(v),
+		"Nur die Anzeige: der Trefferradius folgt der Map (CS)")
+	_slider(g, "Cursor-Größe", 50.0, 150.0, 10.0,
+		func(s): return s.orbit_cursor_size,
+		func(v): Settings.orbit_cursor_size = int(v),
+		func(v): return "%d %%" % int(v))
 	var om := OptionButton.new()
 	om.add_item("Aus", 0)
 	om.add_item("Dezent", 1)
@@ -653,26 +679,7 @@ func _page_orbit(pg: VBoxContainer) -> void:
 	_choice_ob(g, "Musik-Reaktion", om,
 		func(s): return s.orbit_music,
 		func(i): Settings.orbit_music = i,
-		"Bahn pulsiert mit dem Takt, Bass und Refrain")
-	var kh := OptionButton.new()
-	kh.add_item("Auto", 0)
-	kh.add_item("An", 1)
-	kh.add_item("Aus", 2)
-	_choice_ob(g, "Tasten in Noten zeigen", kh,
-		func(s): return s.orbit_key_hint,
-		func(i): Settings.orbit_key_hint = i,
-		"Auto: bei Maps unter 3 Sternen und im Tutorial")
-	_switch(g, "Vorschau", func(s): return s.orbit_preview,
-		func(on): Settings.orbit_preview = on,
-		"Blasse Noten des nächsten Takts")
-	_slider(g, "Notengröße", 90.0, 120.0, 5.0,
-		func(s): return s.orbit_note_size,
-		func(v): Settings.orbit_note_size = int(v),
-		func(v): return "%d %%" % int(v))
-	_slider(g, "Bahn-Deckkraft", 30.0, 100.0, 5.0,
-		func(s): return s.orbit_path_alpha,
-		func(v): Settings.orbit_path_alpha = int(v),
-		func(v): return "%d %%" % int(v))
+		"Orbit-Ringe pulsieren auf dem Beat, im Refrain etwas heller")
 	var obg := OptionButton.new()
 	obg.add_item("Welt", Settings.ORBIT_BG_WORLD)
 	obg.add_item("Map-Bild", Settings.ORBIT_BG_MAP)
@@ -821,7 +828,7 @@ func _page_keys(pg: VBoxContainer) -> void:
 	_hint_label(g, "Anklicken, dann Taste drücken (Esc bricht ab)")
 	g = _group(pg, "Orbit")
 	_orbit_key_row(g)
-	_hint_label(g, "Maus links = Spur A und Maus rechts = Spur B gelten immer zusätzlich.")
+	_hint_label(g, "Akzent = beide Tasten zugleich. Maus links = A, Maus rechts = B gelten immer zusätzlich.")
 	# Feste Kuerzel zum Nachschlagen (nicht belegbar).
 	g = _group(pg, "Tastenkürzel", false)
 	for k in [["Scroll Speed ändern", "F3 / F4"], ["Vollbild umschalten", "F11"],
@@ -858,7 +865,7 @@ func _orbit_key_row(g: VBoxContainer) -> void:
 		var b := _key_button(CAP_ORBIT + ring)
 		box.add_child(b)
 		_orbit_btns.append(b)
-	var r := _row(g, "Orbit-Tasten: Spur A | B", box, "Links: Spur A (links vom Punkt), rechts: Spur B. Anklicken, dann Taste drücken (Esc bricht ab)")
+	var r := _row(g, "Orbit-Tasten: A | B", box, "Links: Taste A (kühle Scheibe), rechts: Taste B (warmes Quadrat). Anklicken, dann Taste drücken (Esc bricht ab)")
 	r.set_meta("reset", func():
 		Settings.orbit_key_inner = _defaults.orbit_key_inner
 		Settings.orbit_key_outer = _defaults.orbit_key_outer
@@ -988,15 +995,40 @@ func _build_previews() -> void:
 	_pv_world_holder.add_child(_world_preview)
 	_pv_world.add_child(_framed(_pv_world_holder))
 	_world_preview.show_world(Settings.world_theme_name())
-	# Orbit: echter OrbitView mit Demo-Schleife.
+	# Orbit: echte Satelliten-Vorschau (Teil 3), ohne sie ein Standbild aus den Einstellungen.
 	_pv_orbit = VBoxContainer.new()
 	_pv_col.add_child(_pv_orbit)
-	_orbit_preview = OrbitPreview.new()
+	_orbit_preview = _make_orbit_preview()
+	_orbit_pv_size = _orbit_preview.custom_minimum_size
+	if _orbit_pv_size.x < 1.0:
+		_orbit_pv_size = OrbitStill.SIZE_PX
 	_pv_orbit_holder = Control.new()
-	_pv_orbit_holder.custom_minimum_size = OrbitPreview.SIZE_PX
+	_pv_orbit_holder.custom_minimum_size = _orbit_pv_size
 	_pv_orbit_holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_pv_orbit_holder.add_child(_orbit_preview)
 	_pv_orbit.add_child(_framed(_pv_orbit_holder))
+
+
+const ORBIT_PREVIEW_PATH := "res://scripts/orbit/orbit_preview.gd"
+
+
+## Per Pfad geladen: die Vorschau entsteht in einer anderen Teil-Aufgabe, das
+## Panel darf ohne sie nicht brechen.
+func _make_orbit_preview() -> Control:
+	if ResourceLoader.exists(ORBIT_PREVIEW_PATH):
+		var sc := load(ORBIT_PREVIEW_PATH) as Script
+		if sc != null and sc.can_instantiate():
+			var pv = sc.new()
+			if pv is Control:
+				var c := pv as Control
+				if c.custom_minimum_size.x < 1.0:
+					var consts := sc.get_script_constant_map()
+					if consts.get("SIZE_PX") is Vector2:
+						c.custom_minimum_size = consts["SIZE_PX"]
+				return c
+			if pv is Node:
+				(pv as Node).free()
+	return OrbitStill.new()
 
 
 func _pv_caption(t: String) -> Label:
@@ -1830,3 +1862,90 @@ func _rebuild() -> void:
 	_cover_rows.clear()
 	_cur = ""
 	_build()
+
+
+## Standbild der Orbit-Einstellungen (wenn es keine Live-Vorschau gibt): drei
+## Ziele (A, B, Akzent) mit Satellit, Pips, Verbindungslinie und Cursor. Folgt
+## Zielgroesse, Cursor-Groesse, Tasten in Zielen und Vorlauf (Pips).
+class OrbitStill extends Control:
+	const SIZE_PX := Vector2(384, 216)
+	# Farben wie OrbitView (A_COL, B_COL, PLATE_COL); eigene Kopie, damit das Panel
+	# nicht am Spielfeld-Skript haengt.
+	const A_COL := Color(0.38, 0.74, 1.0)
+	const B_COL := Color(1.0, 0.60, 0.30)
+	const PLATE_COL := Color(0.012, 0.016, 0.028)
+	var _sig := ""
+
+	func _ready() -> void:
+		custom_minimum_size = SIZE_PX
+		size = SIZE_PX
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	func _process(_d: float) -> void:
+		if not is_visible_in_tree():
+			return
+		var sig := "%d|%d|%d|%d|%d|%d" % [Settings.orbit_target_size, Settings.orbit_cursor_size,
+			Settings.orbit_key_hint, Settings.orbit_laps, Settings.orbit_key_inner, Settings.orbit_key_outer]
+		if sig != _sig:
+			_sig = sig
+			queue_redraw()
+
+	func _draw() -> void:
+		var sz := SIZE_PX
+		draw_rect(Rect2(Vector2.ZERO, sz), PLATE_COL)
+		var fh := sz.y * 0.8
+		var field := Rect2((sz.x - fh * 4.0 / 3.0) * 0.5, sz.y * 0.1, fh * 4.0 / 3.0, fh)
+		draw_rect(field, Color(1, 1, 1, 0.025))
+		var r := fh * 0.065 * float(Settings.orbit_target_size) / 100.0
+		var p_next := field.position + field.size * Vector2(0.28, 0.58)
+		var p_b := field.position + field.size * Vector2(0.60, 0.32)
+		var p_acc := field.position + field.size * Vector2(0.82, 0.68)
+		draw_line(p_next, p_b, Color(1, 1, 1, 0.14), 1.0, true)
+		draw_line(p_b, p_acc, Color(1, 1, 1, 0.07), 1.0, true)
+		var laps := Settings.orbit_laps if Settings.orbit_laps >= 1 else 2
+		# Spaeter kommende Ziele blass (55 %), das naechste voll.
+		_target(p_acc, r, 2, 0.55, laps, 0.70, false)
+		_target(p_b, r, 1, 0.55, laps, 0.35, false)
+		_target(p_next, r, 0, 1.0, 1, 0.08, Settings.orbit_key_hint != 2)
+		var c := p_next + Vector2(r * 0.35, r * 0.25)
+		var cr := 5.0 * float(Settings.orbit_cursor_size) / 100.0
+		draw_circle(c, cr + 1.5, Color(0, 0, 0, 0.6), true, -1.0, true)
+		draw_circle(c, cr, Color(1, 1, 1, 0.95), true, -1.0, true)
+
+	func _target(p: Vector2, r: float, key: int, a: float, pips: int, frac: float, label: bool) -> void:
+		var ca := A_COL
+		var cb := B_COL
+		var orbit := r * 1.6
+		draw_arc(p, orbit, 0.0, TAU, 48, Color(1, 1, 1, 0.16 * a), 1.0, true)
+		draw_line(p + Vector2(0, -orbit - 4.0), p + Vector2(0, -orbit + 4.0), Color(1, 1, 1, 0.7 * a), 1.5)
+		if key == 1:
+			var sb := StyleBoxFlat.new()
+			sb.bg_color = Color(cb, a)
+			sb.set_corner_radius_all(int(r * 0.34 * 1.72))
+			sb.border_color = Color(cb.lightened(0.45), a)
+			sb.set_border_width_all(2)
+			sb.anti_aliasing = true
+			draw_style_box(sb, Rect2(p - Vector2(r, r) * 0.86, Vector2(r, r) * 1.72))
+		elif key == 2:
+			draw_circle(p, r, Color(ca, a), true, -1.0, true)
+			var half := PackedVector2Array()
+			for i in 25:
+				half.append(p + Vector2.from_angle(-PI * 0.5 + PI * float(i) / 24.0) * r)
+			draw_colored_polygon(half, Color(cb, a))
+			draw_arc(p, r, 0.0, TAU, 48, Color(1, 1, 1, a), 2.5, true)
+		else:
+			draw_circle(p, r, Color(ca, a), true, -1.0, true)
+			draw_arc(p, r, 0.0, TAU, 48, Color(ca.lightened(0.45), a), 2.0, true)
+		# Satellit: 0 = oben, laeuft im Uhrzeigersinn auf die Marke zu.
+		var ang := -PI * 0.5 + TAU * (1.0 - frac)
+		draw_circle(p + Vector2.from_angle(ang) * orbit, 3.0, Color(1, 1, 1, a), true, -1.0, true)
+		for i in pips:
+			var x := (float(i) - float(pips - 1) * 0.5) * 7.0
+			draw_circle(p + Vector2(x, orbit + 7.0), 2.0, Color(1, 1, 1, 0.75 * a), true, -1.0, true)
+		if label:
+			var f := UiTheme.heading_font(0)
+			var t := UiTheme.key_short(Settings.orbit_key_outer if key == 1 else Settings.orbit_key_inner)
+			var fs := maxi(int(r * 0.8), 8)
+			var w := f.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+			draw_string(f, p + Vector2(-w * 0.5, float(fs) * 0.36), t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs,
+				Color(0.04, 0.05, 0.08, 0.9))

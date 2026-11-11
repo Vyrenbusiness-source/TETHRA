@@ -5,10 +5,10 @@ extends Control
 ## Darstellung: OrbitView (ein _draw). Logik: OrbitCore/OrbitConverter
 ## (Task orbit-core). Mania 4K bleibt davon voellig unberuehrt.
 ##
-## Steuerung (Bahnen): die TASTE waehlt die Spur (Taste A = links/innen, Taste B =
-## rechts/aussen; Maus links/rechts, Settings.orbit_key_inner/outer), der Cursor
-## muss beim Druck auf dem KOPF liegen (Abstand in Bahn-Einheiten). Tablet =
-## absolute Mausposition, Maus geht genauso.
+## Steuerung (Satelliten, docs/modes/orbit_satellit.md): Cursor (Maus/Tablet,
+## absolute Position) wird in Feld-Koordinaten umgerechnet (OrbitView
+## screen_to_field); Taste A / B = Settings.orbit_key_inner / orbit_key_outer
+## oder Maus links / rechts, Akzent = beide.
 ## CLI: --orbit --autoplay (Autoplay), --shot --shot-at=<ms> --shot-out=<png>,
 ## --auto-miss=<n> (Autoplay laesst jede n-te Note aus, fuer Fehltreffer-Shots).
 ## Replays: OrbitCore laeuft immer deterministisch und schreibt die Eingaben
@@ -20,6 +20,8 @@ extends Control
 
 const MODE := "orbit"
 const AUTO_TAP_MS := 40.0
+## Bot: groesster Zeitschritt fuer Cursor-Updates (ms).
+const BOT_STEP_MS := 8.0
 ## Groesse von Judge + Kombo relativ zu Mania (bei 720 px Hoehe).
 const JUDGE_SCALE := 0.5
 const GRADE_COLOR := {
@@ -36,14 +38,20 @@ var _debug_running := false
 var _ended := false
 var _autoplay := false
 var _auto_miss := 0
-var _auto_idx := 0
-var _auto_release: Array[float] = [-1.0, -1.0]
-var _auto_arc: Array[int] = [-1, -1]
-var _auto_off := Vector2.ZERO
+## Bot: Tasten-Ereignisse [t, down, k] (zeitlich sortiert), naechstes Ereignis,
+## Wegpunkte [Ankunft, Abgang, Index, Versatz] fuer den Cursor, zuletzt
+## gerechnete Zeit.
+var _bot_keys: Array = []
+var _bot_key_idx := 0
+var _bot_way: Array = []
+var _bot_t := -INF
+var _bot_down: Array[bool] = [false, false]
 var _countdown_running := false
 var _song_len_ms := 1.0
-## Cursor in Bahn-Einheiten.
-var _cursor_p := Vector2.ZERO
+## Cursor in Feld-Koordinaten, Zielradius (Feld) dieser Map, Orbit-Sterne.
+var _cursor_p := Vector2(0.5, 0.5)
+var _radius := OrbitCore.DEFAULT_TARGET_RADIUS
+var _stars := 0.0
 ## Haltequellen pro Taste (A/B): [Maus, Taste].
 var _held := [[false, false], [false, false]]
 var _w300 := 49.5
@@ -76,8 +84,18 @@ var _intensity := IntensityMap.new()
 var _last_milestone := 0
 ## Bot-Plan (OrbitCore.bot_plan): je Ziel [Zeitversatz, Zielfehler, auslassen].
 var _bot_plan: Array = []
-## Je gewertetem Ziel [Winkel, Ring, dt, Zielfehler, Stufe, Zeit] fuer OrbitResults.
+## Je gewertetem Ziel ein Eintrag fuer OrbitResults: OrbitResults.entry(note, result,
+## Cursor beim Druck) (neuer Endscreen), sonst [Feld-Pos, Taste, dt, Zielfehler
+## (Feld x 100), Stufe, Zeit] (alter Endscreen).
 var _hit_log: Array = []
+## Map-Bild-Deckkraft je Settings.bg_dim (0,3 -> 0,12 wie osu! mit hohem Dim).
+const BG_OPACITY_PER_DIM := 0.4
+## Fehldrucke je Grund (aim/key/early/lock) fuer die Tasten-Statistik.
+var _presses := {"aim": 0, "key": 0, "early": 0, "lock": 0}
+## Halten: Cursor beim Kopf-Druck (Index -> Feld-Pos).
+var _hold_cursor := {}
+## OrbitResults.entry vorhanden (neuer Endscreen)? null = noch nicht geprueft.
+static var _has_entry = null
 var _mp_send_cd := 0.0
 var _mods_label: Label
 ## Replay-Wiedergabe: Events (OrbitCore.EV_*), naechster Index, Endzeit des Laufs.
@@ -86,11 +104,8 @@ var _replay_events: Array = []
 var _replay_idx := 0
 var _replay_end_ms := -1.0
 var _replay_down: Array[bool] = [false, false]
-## Replay aus der Zeit vor "Ring durch Zeigen" (Format 1): nicht abspielbar.
+## Replay aus einer aelteren Orbit-Version (meta orbit_rules < 3): nicht abspielbar.
 var _replay_old := false
-var _track: OrbitTrack
-var _hint: Label
-var _hint_tween: Tween
 ## Zeit des letzten core.update (Ende des Laufs fuer meta.end_ms).
 var _last_update_t := 0.0
 var _clip_exporter: ClipExporter
@@ -135,21 +150,25 @@ func _ready() -> void:
 		_replay_end_ms = GameSession.replay_end_ms
 		_replay_old = is_old_replay(_replay_events)
 	if _autoplay:
-		# Menschlicher Bot: --auto-jitter=<ms> --auto-aim=<Grad> --auto-seed=<n>.
+		# Menschlicher Bot: --auto-jitter=<ms> --auto-aim=<Feld x 100> --auto-seed=<n>.
 		_bot_plan = OrbitCore.bot_plan(notes, seed, jitter, aim, _auto_miss)
+		_bot_build()
 	_beat.setup(_beatmap.timing_points)
 	_intensity.build(_beatmap)
 	_build_bg()
 	_view = OrbitView.new()
 	add_child(_view)
 	_view.setup(notes)
-	_view.track = _track
-	_view.preempt = _preempt()
-	_view.show_guides = Settings.orbit_guides
-	_view.key_hint_auto = GameSession.stars < 3.0
-	_view.tol = _tolerance()
+	_view.clock = OrbitClock.from_beatmap(_beatmap)
+	_view.target_radius = core.target_radius
+	_view.key_hint = key_hint_on(Settings.orbit_key_hint, _stars, GameSession.tutorial)
+	_view.key_labels = [UiTheme.key_short(Settings.orbit_key_inner), UiTheme.key_short(Settings.orbit_key_outer)]
+	_view.music = Settings.orbit_music
+	_view.size_k = clampf(float(setting("orbit_target_size", 100)) / 100.0, 0.9, 1.2)
+	_view.cursor_k = clampf(float(setting("orbit_cursor_size", 100)) / 100.0, 0.5, 1.5)
 	_view.mod_hidden = bool(core.mods.get("HD", false))
 	_view.mod_fade_in = bool(core.mods.get("FI", false))
+	_view.show_cursor = true
 	_build_sound()
 	_build_hud()
 	_update_hud()  # Startwerte schon im Intro sichtbar
@@ -231,7 +250,7 @@ func _load_beatmap() -> bool:
 		# Erste Note bekommt immer ihre volle Anflugzeit + Reaktionspuffer.
 		var lead := _beatmap.audio_lead_in()
 		var first_t: float = _beatmap.hit_objects[0].time
-		var need := _preempt() + 900.0
+		var need := _first_lead() + 900.0
 		if first_t + lead < need:
 			lead = need - first_t
 		SyncClock.play(stream, lead)
@@ -260,13 +279,14 @@ func _cli_pick() -> void:
 ## Logik laden: OrbitConverter macht aus der Mania- oder osu!standard-Map die Ziele, OrbitCore
 ## wertet (NF liest OrbitCore selbst aus GameSession.mods).
 func _build_core() -> void:
-	notes = OrbitConverter.convert(_beatmap)
-	_track = OrbitConverter.track_for(_beatmap, notes)
+	if notes.is_empty():
+		notes = OrbitConverter.convert(_beatmap, int(setting("orbit_laps", 0)))
+	_radius = OrbitConverter.target_radius(_beatmap)
+	_stars = OrbitConverter.stars(notes)
 	core = OrbitCore.new()
-	core.setup(notes, _beatmap.od(), Settings.mania_scroll, _beatmap.hp())
-	core.set_track(_track)
+	core.setup(notes, _beatmap.od(), null, _radius, _beatmap.hp())
 	core.note_judged.connect(_on_note_judged)
-	core.arc_started.connect(_on_arc_started)
+	core.hold_started.connect(_on_hold_started)
 	core.press_missed.connect(_on_press_missed)
 	core.finished.connect(func(_s): _show_results(false))
 	# Immer deterministisch (Wertung unabhaengig von der Bildrate); live mitschreiben.
@@ -274,12 +294,30 @@ func _build_core() -> void:
 	_w300 = core.w300
 
 
-func _preempt() -> float:
-	return ManiaCore.preempt_for(Settings.mania_scroll)
+## Vorlauf der ersten Note (Erscheinen bis Treffer) in ms.
+func _first_lead() -> float:
+	if notes.is_empty():
+		notes = OrbitConverter.convert(_beatmap, int(setting("orbit_laps", 0)))
+	if notes.is_empty():
+		return 2000.0
+	return float(notes[0].time_ms) - float(notes[0].spawn_ms)
 
 
-func _tolerance() -> float:
-	return core.angle_tol if core != null else OrbitCore.AIM_TOL
+## Einstellung mit Rueckfall (neue Namen kommen mit dem Settings-Umbau).
+static func setting(name: String, def):
+	var v = Settings.get(name)
+	return def if v == null else v
+
+
+## Taste im naechsten Ziel: Settings.orbit_key_hint 0 = auto (Maps < 6 Sterne,
+## Tutorial), 1 = an, 2 = aus.
+static func key_hint_on(mode: int, stars: float, tutorial: bool) -> bool:
+	match mode:
+		1:
+			return true
+		2:
+			return false
+	return tutorial or stars < 6.0
 
 
 func _time_ms() -> float:
@@ -290,12 +328,9 @@ func _time_ms() -> float:
 	return float(Time.get_ticks_usec() - _debug_start_usec) / 1000.0 - 1000.0
 
 
-## Scroll Speed live (F3/F4, Pausenmenue): nur die Anflugzeit aendert sich.
+## Scroll Speed (F3/F4, Pausenmenue): Orbit hat keine Anflugzeit (Runden aus AR).
 func apply_scroll_speed(_speed: int) -> void:
-	if _view != null:
-		_view.preempt = _preempt()
-	if core != null:
-		core.set_scroll_scale(Settings.mania_scroll)
+	pass
 
 
 # ---------------------------------------------------------------------------
@@ -310,12 +345,36 @@ func _build_bg() -> void:
 			forced = a.substr(8)
 	_bg = OrbitBackdrop.new()
 	add_child(_bg)
-	# Kein Welt-Himmel hinter den Bahnen (keine Planeten/Deko): "Welt" = dunkler Grund.
+	# Kein Welt-Himmel hinter dem Feld (keine Planeten/Deko): "Welt" = Map-Bild wie
+	# osu!, unscharf und stark abgedunkelt (Standard bg_dim 0,3 -> 12 % Deckkraft).
 	var bg_mode := Settings.orbit_background_mode()
 	if bg_mode == OrbitBackdrop.BG_WORLD:
-		bg_mode = OrbitBackdrop.BG_OFF
-	_bg.setup(_beatmap, bg_mode, forced, GameSession.stars,
-			OszImporter.load_background_texture(GameSession.osz_path, _beatmap), Settings.bg_dim)
+		bg_mode = OrbitBackdrop.BG_MAP
+	var cover := OszImporter.load_background_texture(GameSession.osz_path, _beatmap)
+	if bg_mode == OrbitBackdrop.BG_MAP:
+		cover = blurred(cover)
+	# OrbitBackdrop zeigt das Bild mit bg_dim x 0,6 Deckkraft.
+	_bg.setup(_beatmap, bg_mode, forced, GameSession.stars, cover,
+			clampf(Settings.bg_dim * BG_OPACITY_PER_DIM, 0.0, 0.2) / 0.6)
+
+
+## Weichgezeichnetes Map-Bild (einmal beim Laden): klein rechnen, weich zurueck.
+static func blurred(tex: Texture2D) -> Texture2D:
+	if tex == null:
+		return null
+	var img := tex.get_image()
+	if img == null or img.is_empty():
+		return tex
+	img = img.duplicate()
+	if img.is_compressed():
+		img.decompress()
+	var w := img.get_width()
+	var h := img.get_height()
+	# Mehrstufig hoch, damit keine Bloecke/Pixel sichtbar werden (weich wie osu!).
+	img.resize(maxi(8, w / 64), maxi(6, h / 64), Image.INTERPOLATE_BILINEAR)
+	for f in [32, 16, 8, 4, 2]:
+		img.resize(maxi(16, w / f), maxi(12, h / f), Image.INTERPOLATE_CUBIC)
+	return ImageTexture.create_from_image(img)
 
 func _build_sound() -> void:
 	_sound = OrbitSound.new()
@@ -420,7 +479,6 @@ func _build_hud() -> void:
 		_hud.add_child(_mods_label)
 
 	_build_legend()
-	_build_hint()
 
 	_break_ov = BreakOverlay.new()
 	_hud.add_child(_break_ov)
@@ -429,68 +487,58 @@ func _build_hud() -> void:
 	get_viewport().size_changed.connect(_place_hud)
 
 
-## Spur-Legende unter dem Feld (nur bis kurz vor der ersten Note).
-func _build_hint() -> void:
-	_hint = Label.new()
-	_hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_hint.add_theme_font_size_override("font_size", 15)
-	_hint.add_theme_color_override("font_color", OrbitView.MISS_X_COL)
-	_shadow(_hint)
-	_hint.modulate.a = 0.0
-	_hud.add_child(_hint)
-
-
-## Kurzer Hinweis (0,7 s) bei einem Druck, der nicht zaehlte.
-func _flash_hint(text: String) -> void:
-	if _hint == null:
-		return
-	_hint.text = text
-	_hint.modulate.a = 1.0
-	if _hint_tween != null:
-		_hint_tween.kill()
-	_hint_tween = create_tween()
-	_hint_tween.tween_interval(0.35)
-	_hint_tween.tween_property(_hint, "modulate:a", 0.0, 0.35)
-
-
+## Tasten-Legende unter dem Feld (nur bis kurz vor der ersten Note).
 func _build_legend() -> void:
 	var box := HBoxContainer.new()
 	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	box.add_theme_constant_override("separation", 34)
+	box.add_theme_constant_override("separation", 30)
 	box.alignment = BoxContainer.ALIGNMENT_CENTER
 	_legend = box
 	_hud.add_child(box)
-	for r in 2:
+	var ka := UiTheme.key_short(Settings.orbit_key_inner)
+	var kb := UiTheme.key_short(Settings.orbit_key_outer)
+	var items := [
+		[OrbitNote.KEY_A, tr("Taste %s") % ka],
+		[OrbitNote.KEY_B, tr("Taste %s") % kb],
+		[OrbitNote.KEY_ACCENT, tr("beide")],
+	]
+	for it in items:
 		var item := HBoxContainer.new()
 		item.add_theme_constant_override("separation", 8)
 		item.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		box.add_child(item)
-		var col: Color = OrbitView.OUTER_COL if r == 1 else OrbitView.INNER_COL
+		var key: int = it[0]
 		var icon := Control.new()
 		icon.custom_minimum_size = Vector2(18, 18)
 		icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		var lane := r
-		icon.draw.connect(func():
-			var p := icon.size * 0.5
-			if lane == 0:
-				icon.draw_circle(p, 7.0, col, true, -1.0, true)
-			else:
-				icon.draw_rect(Rect2(p - Vector2(6.5, 6.5), Vector2(13, 13)), col))
+		icon.draw.connect(_legend_icon.bind(icon, key))
 		item.add_child(icon)
 		var l := Label.new()
-		l.text = (tr("Spur B (rechts): Taste %s") % UiTheme.key_short(Settings.orbit_key_outer)) if r == 1 else (tr("Spur A (links): Taste %s") % UiTheme.key_short(Settings.orbit_key_inner))
+		l.text = it[1]
 		l.add_theme_font_size_override("font_size", 15)
+		var col: Color = Color.WHITE if key == OrbitNote.KEY_ACCENT else OrbitView.key_col(key)
 		l.add_theme_color_override("font_color", col.lerp(Color.WHITE, 0.35))
 		_shadow(l)
 		item.add_child(l)
 	var keys := Label.new()
-	keys.text = tr("Folg dem weißen Punkt, drück im Takt (auch Maus links/rechts)")
+	keys.text = tr("Zielen und drücken, wenn der Satellit oben ankommt (auch Maus links/rechts)")
 	keys.add_theme_font_size_override("font_size", 15)
 	keys.add_theme_color_override("font_color", Color(0.78, 0.82, 0.92))
 	_shadow(keys)
 	box.add_child(keys)
+
+
+func _legend_icon(icon: Control, key: int) -> void:
+	var p := icon.size * 0.5
+	if key == OrbitNote.KEY_B:
+		icon.draw_rect(Rect2(p - Vector2(6.5, 6.5), Vector2(13, 13)), OrbitView.B_COL)
+	elif key == OrbitNote.KEY_ACCENT:
+		icon.draw_circle(p, 7.5, Color.WHITE, true, -1.0, true)
+		icon.draw_circle(p, 6.0, OrbitView.A_COL, true, -1.0, true)
+		icon.draw_rect(Rect2(p.x, p.y - 6.0, 6.0, 12.0), OrbitView.B_COL)
+	else:
+		icon.draw_circle(p, 7.0, OrbitView.A_COL, true, -1.0, true)
 
 
 func _shadow(l: Label) -> void:
@@ -515,9 +563,7 @@ func _place_hud() -> void:
 	_judge_disp.place(cy + (vs.y * 0.915 - cy) / k)
 	_err_bar.position = Vector2((vs.x - _err_bar.size.x) * 0.5, vs.y - _err_bar.size.y - 10.0)
 	_legend.size = Vector2(vs.x, 24)
-	_legend.position = Vector2(0, vs.y * 0.915)
-	_hint.size = Vector2(vs.x, 24)
-	_hint.position = Vector2(0, vs.y * 0.075)
+	_legend.position = Vector2(0, vs.y * 0.925)
 
 
 func _stat_column(ax: float) -> VBoxContainer:
@@ -626,15 +672,15 @@ func _do_skip() -> void:
 # Eingabe
 # ---------------------------------------------------------------------------
 
-func _view_center() -> Vector2:
-	return get_viewport().get_visible_rect().size * 0.5
+## Bildschirm (Viewport-Pixel) -> Feld.
+func _px_to_field(px: Vector2) -> Vector2:
+	return _view.screen_to_field(_view.get_global_transform_with_canvas().affine_inverse() * px)
 
 
-func _set_cursor_from(pos: Vector2, t: float) -> void:
-	_view.cursor_pos = pos
-	_cursor_p = _view.to_path(pos)
+func _set_cursor_from(px: Vector2, t: float) -> void:
+	_cursor_p = _px_to_field(px)
+	_view.cursor = _cursor_p
 	core.cursor_moved(_cursor_p, t)
-	_sync_held_view()
 
 
 func _input(event: InputEvent) -> void:
@@ -669,16 +715,16 @@ func _press(key: int, source: int, down: bool) -> void:
 		return
 	var t := _time_ms()
 	if now:
-		core.key_down(key, t, _cursor_p)
+		core.key_down(key, t)
 	else:
 		core.key_up(key, t)
 	_sync_held_view()
 
 
-## Spur-Marken am Kopf leuchten, solange ihre Taste unten ist.
+## Cursor-Punkt zeigt gedrueckte Tasten.
 func _sync_held_view() -> void:
 	for k in 2:
-		_view.ring_held[k] = _held[k][0] or _held[k][1] or _auto_release[k] >= 0.0
+		_view.held[k] = _held[k][0] or _held[k][1] or _bot_down[k] or _replay_down[k]
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -701,45 +747,120 @@ func _unhandled_input(event: InputEvent) -> void:
 			_do_skip()
 
 
-## Autoplay: Taste der Spur exakt zur Trefferzeit, Cursor auf dem Kopf (plus
-## Zielfehler des Bot-Plans). Halten bis end_ms; der Cursor folgt dem Kopf
-## immer, auch zwischen den Noten (wie ein Spieler, der mitkreist).
-func _run_autoplay(t: float) -> void:
-	for k in 2:
-		if _auto_release[k] >= 0.0 and _auto_release[k] <= t:
-			var rel := _auto_release[k]
-			if _auto_arc[k] >= 0:
-				_auto_cursor(_track.head(rel) + OrbitCore.bot_offset(_auto_arc[k], _bot_aim(_auto_arc[k])), rel)
-			core.key_up(k, rel)
-			_auto_release[k] = -1.0
-			_auto_arc[k] = -1
-	while _auto_idx < notes.size() and float(notes[_auto_idx].time_ms) + _bot_dt(_auto_idx) <= t:
-		var i := _auto_idx
-		var n = notes[i]
-		_auto_idx += 1
-		var nt := float(n.time_ms) + _bot_dt(i)
+## Bot-Plan aufbauen: Wegpunkte fuer den Cursor und Tasten-Ereignisse. Der
+## Cursor gleitet (smoothstep) vom letzten Ziel zum naechsten und kommt kurz
+## vor der Trefferzeit an; beim Halten folgt er der Kugel. Taps 40 ms gedrueckt,
+## Akzente beide Tasten zugleich, Halten bis zum Ende. Rein aus notes und
+## _bot_plan berechnet (gleiche Eingaben bei jeder Bildrate).
+func _bot_build() -> void:
+	_bot_way = []
+	_bot_keys = []
+	_bot_key_idx = 0
+	_bot_t = -INF
+	_bot_down = [false, false]
+	var per_key: Array = [[], []]
+	for i in notes.size():
 		if _bot_skip(i):
 			continue
-		var k: int = n.ring
-		if _auto_release[k] >= 0.0:
-			core.key_up(k, minf(_auto_release[k], nt))
-			_auto_release[k] = -1.0
-			_auto_arc[k] = -1
+		var n := notes[i]
+		var nt := float(n.time_ms) + _bot_dt(i)
 		var off := OrbitCore.bot_offset(i, _bot_aim(i))
-		var aim := _track.head(nt) + off
-		_auto_cursor(aim, nt)
-		core.key_down(k, nt, aim)
-		_auto_off = off
-		if n.is_arc:
-			_auto_arc[k] = i
-			_auto_release[k] = float(n.end_ms) + _bot_dt(i) * 0.5
+		var leave := nt
+		var up := nt + AUTO_TAP_MS
+		if n.is_hold:
+			leave = float(n.end_ms) + _bot_dt(i) * 0.5
+			up = leave + 5.0
+		_bot_way.append([nt, leave, i, off])
+		var ks := [0, 1] if n.key == OrbitNote.KEY_ACCENT else [clampi(n.key, 0, 1)]
+		for k in ks:
+			per_key[k].append([nt, up])
+	_bot_way.sort_custom(func(a, b): return a[0] < b[0])
+	for k in 2:
+		var lst: Array = per_key[k]
+		lst.sort_custom(func(a, b): return a[0] < b[0])
+		for j in lst.size():
+			var dn: float = lst[j][0]
+			var up: float = lst[j][1]
+			if j + 1 < lst.size():
+				up = minf(up, float(lst[j + 1][0]) - 1.0)
+			up = maxf(up, dn + 1.0)
+			_bot_keys.append([dn, true, k])
+			_bot_keys.append([up, false, k])
+	# Loslassen vor Druecken bei gleicher Zeit.
+	_bot_keys.sort_custom(func(a, b):
+		if a[0] != b[0]:
+			return a[0] < b[0]
+		return (not a[1]) and b[1])
+
+
+## Bot-Cursor (Feld) zur Zeit t.
+func bot_cursor(t: float) -> Vector2:
+	if _bot_way.is_empty():
+		return Vector2(0.5, 0.5)
+	# Letzter Wegpunkt mit Ankunft <= t (binaere Suche).
+	var lo := 0
+	var hi := _bot_way.size() - 1
+	var k := -1
+	while lo <= hi:
+		var mid := (lo + hi) >> 1
+		if float(_bot_way[mid][0]) <= t:
+			k = mid
+			lo = mid + 1
 		else:
-			_auto_release[k] = nt + AUTO_TAP_MS
-	# Cursor folgt dem Kopf (exakt, mit dem Zielfehler des naechsten Ziels).
-	var off_f := _auto_off
-	if _auto_idx < notes.size():
-		off_f = OrbitCore.bot_offset(_auto_idx, _bot_aim(_auto_idx))
-	_auto_cursor(_track.head(t) + off_f, t)
+			hi = mid - 1
+	var from_t := -INF
+	var from_p := Vector2(0.5, 0.5)
+	if k >= 0:
+		var w: Array = _bot_way[k]
+		var n := notes[int(w[2])]
+		if t <= float(w[1]):
+			return n.pos_at(t - (float(w[0]) - float(n.time_ms))) + w[3]
+		from_t = float(w[1])
+		from_p = OrbitConverter.end_pos(n) + w[3]
+	if k + 1 >= _bot_way.size():
+		return from_p
+	var nw: Array = _bot_way[k + 1]
+	var to_p: Vector2 = notes[int(nw[2])].pos + nw[3]
+	var arrive := float(nw[0])
+	if from_t == -INF:
+		from_t = arrive - 900.0
+	var gap := arrive - from_t
+	arrive -= clampf(gap * 0.22, 0.0, 70.0)
+	var start := from_t + clampf(gap * 0.05, 0.0, 25.0)
+	if t >= arrive:
+		return to_p
+	if t <= start:
+		return from_p
+	var u := (t - start) / maxf(arrive - start, 1.0)
+	return from_p.lerp(to_p, u * u * (3.0 - 2.0 * u))
+
+
+## Autoplay bis t: in Schritten <= BOT_STEP_MS (Cursor folgt Kugeln auch bei
+## langsamen Frames), Tasten-Ereignisse exakt zu ihrer Zeit.
+func _run_autoplay(t: float) -> void:
+	if _bot_t == -INF:
+		_bot_t = t
+	var s := _bot_t
+	while true:
+		var step_to := minf(s + BOT_STEP_MS, t)
+		while _bot_key_idx < _bot_keys.size() and float(_bot_keys[_bot_key_idx][0]) <= step_to:
+			var ev: Array = _bot_keys[_bot_key_idx]
+			_bot_key_idx += 1
+			var te := float(ev[0])
+			var k := int(ev[2])
+			core.cursor_moved(bot_cursor(te), te)
+			if bool(ev[1]):
+				core.key_down(k, te)
+			else:
+				core.key_up(k, te)
+			_bot_down[k] = bool(ev[1])
+		core.cursor_moved(bot_cursor(step_to), step_to)
+		s = step_to
+		if s >= t:
+			break
+	_bot_t = t
+	_cursor_p = bot_cursor(t)
+	_view.cursor = _cursor_p
 	_sync_held_view()
 
 
@@ -755,12 +876,6 @@ func _bot_skip(i: int) -> bool:
 	if i < _bot_plan.size():
 		return bool(_bot_plan[i][2])
 	return _auto_miss > 0 and i % _auto_miss == _auto_miss - 1
-
-
-func _auto_cursor(p: Vector2, t: float) -> void:
-	_cursor_p = p
-	_view.cursor_pos = _view.to_px(p)
-	core.cursor_moved(p, t)
 
 
 # ---------------------------------------------------------------------------
@@ -789,14 +904,15 @@ func _process(delta: float) -> void:
 		_show_results(bool(core.failed))
 		return
 	_view.t_ms = t
-	for r in 2:
-		_view.arc_warn[r] = core.arc_out_ms(r, t) / OrbitCore.ARC_OUT_MS
-	# Takt-Puls: nur Helligkeit, in ruhigen Stellen schwaecher.
+	var warn := {}
+	for i in core.active_holds():
+		warn[i] = core.hold_out_ms(i, t) / OrbitCore.HOLD_OUT_MS
+	_view.hold_warn = warn
+	# Takt-Puls der Orbit-Ringe: in ruhigen Stellen schwaecher, Takt-Eins staerker.
 	_beat.update(t, delta)
 	var env := _beat.beat_env * (0.35 + 0.65 * _intensity.value_at(t))
 	_view.beat_env = env
-	_view.energy = _intensity.value_at(t)
-	_view.combo = int(core.get("combo")) if "combo" in core else 0
+	_view.downbeat = _beat.bar_phase < 0.125
 	_view.kiai = _beat.kiai_mix
 	_judge_disp.beat(env)
 	_bg.update_world(delta, _beat, _intensity.value_at(t))
@@ -842,15 +958,14 @@ func _feed_replay(t: float) -> void:
 		_replay_idx += 1
 		core.apply_event(ev)
 		var code := int(ev[1])
-		if code < OrbitCore.EV_UP and ev.size() >= 4:
+		if code == OrbitCore.EV_CURSOR and ev.size() >= 4:
 			_cursor_p = Vector2(float(ev[2]), float(ev[3])) / 1000.0
-			_view.cursor_pos = _view.to_px(_cursor_p)
-		if code >= OrbitCore.EV_DOWN and code < OrbitCore.EV_UP:
+			_view.cursor = _cursor_p
+		elif code >= OrbitCore.EV_DOWN and code < OrbitCore.EV_DOWN + OrbitCore.KEYS:
 			_replay_down[code - OrbitCore.EV_DOWN] = true
-		elif code >= OrbitCore.EV_UP:
-			_replay_down[clampi(code - OrbitCore.EV_UP, 0, 1)] = false
-	_view.ring_held[0] = _replay_down[0]
-	_view.ring_held[1] = _replay_down[1]
+		elif code >= OrbitCore.EV_UP and code < OrbitCore.EV_UP + OrbitCore.KEYS:
+			_replay_down[code - OrbitCore.EV_UP] = false
+	_sync_held_view()
 
 
 func _update_hud() -> void:
@@ -885,12 +1000,13 @@ func _on_note_judged(index: int, result: Dictionary) -> void:
 	_view.on_judged(index, result)
 	if index >= 0 and index < notes.size():
 		var n := notes[index]
-		_hit_log.append([n.angle_deg, n.ring, float(result.get("dt", 0.0)),
-			float(result.get("angle_err", 0.0)), q, n.time_ms])
+		var cur: Vector2 = _hold_cursor.get(index, core.cursor_pos())
+		_hold_cursor.erase(index)
+		_hit_log.append(log_entry(n, result, cur))
 	_check_milestone(q)
 	var hold_end := bool(result.get("hold_end", false))
-	var snd_ring := int(result.get("ring", notes[index].ring if index >= 0 and index < notes.size() else 0))
-	_sound.on_judged(snd_ring, q, hold_end)
+	var snd_key := notes[index].key if index >= 0 and index < notes.size() else 0
+	_sound.on_judged(snd_key, q, hold_end)
 	var off: float = 0.0 if hold_end else float(result.get("dt", 0.0))
 	_judge_disp.show_judge(q, off)
 	if q == 5:
@@ -905,23 +1021,37 @@ func _on_note_judged(index: int, result: Dictionary) -> void:
 	_acc_trace.append(core.accuracy())
 
 
-## Fehldruck: kurze Marke am Cursor (Grund steht in der Form, siehe OrbitView).
-func _on_press_missed(pos: Vector2, ring: int, reason: String) -> void:
-	_view.on_press_missed(pos, ring, reason)
-	match reason:
-		"AIM":
-			_flash_hint(tr("neben dem Kopf"))
-		"RING":
-			_flash_hint(tr("andere Taste"))
+## Fehldruck: kurzes Wort am Cursor ("daneben", "andere Taste"), Notelock wackelt.
+func _on_press_missed(pos: Vector2, key: int, reason: String) -> void:
+	if _presses.has(reason):
+		_presses[reason] = int(_presses[reason]) + 1
+	_view.on_press_missed(pos, key, reason)
 
 
-func _on_arc_started(index: int, quality: int) -> void:
-	_view.on_arc_started(index, quality, core.arc_head_dt(index))
+## Log-Eintrag: OrbitResults.entry, wenn der neue Endscreen da ist, sonst altes Format.
+static func log_entry(n: OrbitNote, result: Dictionary, cursor: Vector2):
+	if _has_entry == null:
+		_has_entry = false
+		var sc: Script = OrbitResults
+		for m in sc.get_script_method_list():
+			if str(m.get("name", "")) == "entry":
+				_has_entry = true
+				break
+	if _has_entry:
+		var sc: Script = OrbitResults
+		return sc.call("entry", n, result, cursor)
+	return [n.pos, n.key, float(result.get("dt", 0.0)),
+		float(result.get("aim_err", 0.0)) * 100.0, int(result.get("quality", 5)), n.time_ms]
+
+
+func _on_hold_started(index: int, quality: int) -> void:
+	_hold_cursor[index] = core.cursor_pos()
+	_view.on_hold_started(index, quality)
 	if index >= 0 and index < notes.size():
-		_sound.on_arc_started(notes[index].ring, quality)
+		_sound.on_arc_started(notes[index].key, quality)
 
 
-## Kombo-Meilensteine (50, 100, 200 ...): ruhige Welle + Klang, nie grell.
+## Kombo-Meilensteine (50, 100, 200 ...): nur Klang, nie grell.
 func _check_milestone(q: int) -> void:
 	if q == 5:
 		_last_milestone = 0
@@ -929,7 +1059,6 @@ func _check_milestone(q: int) -> void:
 	var c := int(core.combo)
 	if (c == 50 or (c >= 100 and c % 100 == 0)) and c != _last_milestone:
 		_last_milestone = c
-		_view.start_wave(c >= 100)
 		if _use_audio:
 			Sfx.milestone(c)
 
@@ -1085,6 +1214,9 @@ func _show_results(is_fail: bool) -> void:
 		"is_fail": is_fail,
 		"s": s,
 		"log": _hit_log,
+		"radius": float(core.target_radius),
+		"presses": _presses.duplicate(),
+		"key_names": _view.key_labels.duplicate(),
 		"w50": float(core.w50),
 		"w_max": float(core.w_max),
 		"new_best": new_best,
@@ -1235,10 +1367,13 @@ func _capture_shot() -> void:
 		var rest: Array[OrbitNote] = []
 		rest.assign(notes.slice(cut))
 		notes = rest
-		core.setup(notes, _beatmap.od(), Settings.mania_scroll, _beatmap.hp())
+		core.setup(notes, _beatmap.od(), null, _radius, _beatmap.hp())
+		core.set_replay_mode(true)
 		core._tally.no_fail = true
 		_view.setup(notes)
-		_auto_idx = 0
+		if _autoplay:
+			_bot_plan = _bot_plan.slice(cut)
+			_bot_build()
 		SyncClock.seek_ms(target - 2500.0)
 	await _wait_until(target)
 	if not is_inside_tree():
@@ -1291,32 +1426,61 @@ func _measure_fps(sec: float) -> void:
 		1000.0 / maxf(mean, 0.001), sorted[int(sorted.size() * 0.95)], sorted[-1]])
 
 
-## Zeitpunkt fuer --shot-at: Zahl (ms), "arc" (Bogen mitten im Halten)
-## oder "chord" (Akkord kurz vor der Ankunft).
+## Zeitpunkt fuer --shot-at: Zahl (ms) oder eine Stelle der Map (ab 8 s):
+## "hold"/"arc" (mitten im Halten), "hold-in" (kurz vor einem Halten-Kopf),
+## "accent"/"chord" (kurz vor einem Akzent), "stream" (Anfang der ersten
+## Folge von 6 Zielen mit <= 200 ms Abstand), "jump" (groesster Sprung je
+## Zeit), "dense" (meiste sichtbare Ziele).
 func _shot_target(v: String, def: float) -> float:
 	if v.is_valid_float():
 		return v.to_float()
-	if v == "dense":
-		# Dichteste Stelle: meiste Ziele in einem Anflug-Fenster.
-		var best := -1
-		var at := def
-		var j := 0
-		var win := _preempt()
-		for i in notes.size():
-			while notes[i].time_ms - notes[j].time_ms > win:
-				j += 1
-			if notes[j].time_ms >= 8000.0 and i - j > best:
-				best = i - j
-				at = notes[j].time_ms + 40.0
-		return at
+	var from := 8000.0
+	match v:
+		"dense":
+			var best := -1
+			var at := def
+			for i in notes.size():
+				if notes[i].time_ms < from:
+					continue
+				var t := float(notes[i].time_ms) - 60.0
+				var c := 0
+				for n in notes:
+					if n.spawn_ms <= t and n.end_ms >= t:
+						c += 1
+				if c > best:
+					best = c
+					at = t
+			return at
+		"stream":
+			for i in notes.size():
+				if notes[i].time_ms < from or i + 6 >= notes.size():
+					continue
+				var ok := true
+				for k in range(i, i + 5):
+					ok = ok and notes[k + 1].time_ms - notes[k].time_ms <= 200.0
+				if ok:
+					return notes[i].time_ms - 90.0
+			return def
+		"jump":
+			var best := 0.0
+			var at := def
+			for i in range(1, notes.size()):
+				var n := notes[i]
+				var dt := maxf(float(n.time_ms) - float(notes[i - 1].end_ms), 60.0)
+				var d := OrbitConverter.end_pos(notes[i - 1]).distance_to(n.pos)
+				if n.time_ms >= from and d / dt > best:
+					best = d / dt
+					at = float(n.time_ms) - 120.0
+			return at
 	for i in notes.size():
 		var n := notes[i]
-		if n.time_ms < 8000.0:
+		if n.time_ms < from:
 			continue
-		if v == "arc" and n.is_arc and n.duration_ms() >= 400.0:
-			return n.time_ms + n.duration_ms() * 0.45
-		if v == "chord" and i + 1 < notes.size() \
-				and absf(notes[i + 1].time_ms - n.time_ms) <= OrbitView.CHORD_EPS_MS:
+		if v in ["arc", "hold"] and n.is_hold and n.end_ms - n.time_ms >= 400.0:
+			return n.time_ms + (n.end_ms - n.time_ms) * 0.45
+		if v == "hold-in" and n.is_hold and n.end_ms - n.time_ms >= 400.0:
+			return n.time_ms - 0.4 * n.lap_ms
+		if v in ["accent", "chord"] and n.key == OrbitNote.KEY_ACCENT:
 			return n.time_ms - 160.0
 	return def
 

@@ -63,7 +63,6 @@ Später,Später,Later
 Zielen + Tippen auf osu!-Maps,Zielen + Tippen auf osu!-Maps,Aim + tap on osu! maps
 "Beste Orbit-Läufe: 4 × Orbit-Sterne² × Genauigkeit⁴,
 absteigend gewichtet mit 0,95ⁿ (wie pp)","Beste Orbit-Läufe: 4 × Orbit-Sterne² × Genauigkeit⁴,
-absteigend gewichtet mit 0,95ⁿ (wie pp)","Best Orbit runs: 4 × Orbit stars² × accuracy⁴,
 weighted 0.95ⁿ in descending order (like pp)"
 Orbit-Rating,Orbit-Rating,Orbit rating
 AUSSEN,AUSSEN,OUTER
@@ -147,3 +146,65 @@ Tasten in Noten zeigen,Tasten in Noten zeigen,Show keys in notes
 Auto: bei Maps unter 3 Sternen und im Tutorial,Auto: bei Maps unter 3 Sternen und im Tutorial,Auto: maps under 3 stars and tutorial
 Auto,Auto,Auto
 An,An,On
+A,A,A
+B,B,B
+AKZENT,AKZENT,ACCENT
+TASTE,TASTE,KEY
+TREFFER,TREFFER,HITS
+Falsche Taste,Falsche Taste,Wrong key
+Daneben,Daneben,Off target
+Reihenfolge,Reihenfolge,Out of order
+ZIELSTREUUNG,ZIELSTREUUNG,AIM SPREAD
+TREFFER-ZEITLEISTE,TREFFER-ZEITLEISTE,HIT TIMELINE
+keine Zieldaten,keine Zieldaten,no aim data
+Ø %d %% vom Zielradius,Ø %d %% vom Zielradius,Ø %d %% of target radius
+× = Miss  ·  Farbe = Stufe,× = Miss  ·  Farbe = Stufe,× = miss  ·  colour = tier
+Lesen,Lesen,Reading
+Vorlauf,Vorlauf,Approach
+Auto (aus AR),Auto (aus AR),Auto (from AR)
+1 Runde,1 Runde,1 lap
+2 Runden,2 Runden,2 laps
+3 Runden,3 Runden,3 laps
+4 Runden,4 Runden,4 laps
+"Runden des Satelliten bis zum Treffer. Auto: AR bis 5 drei, bis 8 zwei, ab 9 eine","Runden des Satelliten bis zum Treffer. Auto: AR bis 5 drei, bis 8 zwei, ab 9 eine","Satellite laps before the hit. Auto: AR up to 5 three, up to 8 two, 9 and up one"
+Tasten in Zielen,Tasten in Zielen,Keys in targets
+Taste im nächsten Ziel. Auto: bei leichten Maps und im Tutorial,Taste im nächsten Ziel. Auto: bei leichten Maps und im Tutorial,Key shown in the next target. Auto: on easy maps and in the tutorial
+Zielgröße,Zielgröße,Target size
+Nur die Anzeige: der Trefferradius folgt der Map (CS),Nur die Anzeige: der Trefferradius folgt der Map (CS),Display only: the hit radius follows the map (CS)
+Cursor-Größe,Cursor-Größe,Cursor size
+"Orbit-Ringe pulsieren auf dem Beat, im Refrain etwas heller","Orbit-Ringe pulsieren auf dem Beat, im Refrain etwas heller","Orbit rings pulse on the beat, a little brighter in the chorus"
+"Akzent = beide Tasten zugleich. Maus links = A, Maus rechts = B gelten immer zusätzlich.","Akzent = beide Tasten zugleich. Maus links = A, Maus rechts = B gelten immer zusätzlich.","Accent = both keys at once. Left mouse = A, right mouse = B always work as well."
+Orbit-Tasten: A | B,Orbit-Tasten: A | B,Orbit keys: A | B
+"Links: Taste A (kühle Scheibe), rechts: Taste B (warmes Quadrat). Anklicken, dann Taste drücken (Esc bricht ab)","Links: Taste A (kühle Scheibe), rechts: Taste B (warmes Quadrat). Anklicken, dann Taste drücken (Esc bricht ab)","Left: key A (cool disc), right: key B (warm square). Click, then press a key (Esc cancels)"
+hierhin,hierhin,here
+Der Satellit,Der Satellit,The satellite
+Zwei Tasten,Zwei Tasten,Two keys
+Halten,Halten,Hold
+Sprung und Stream,Sprung und Stream,Jumps and stream
+Leg den Cursor auf das Ziel und bleib kurz drauf.,Leg den Cursor auf das Ziel und bleib kurz drauf.,Put the cursor on the target and stay there for a moment.
+"Der Satellit kreist einmal pro Schlag, die Punkte zählen die Runden. Steht er oben: %s drücken.","Der Satellit kreist einmal pro Schlag, die Punkte zählen die Runden. Steht er oben: %s drücken.","The satellite circles once per beat, the dots count the laps. When it is at the top: press %s."
+Kühle Scheibe: %s.  Warmes Quadrat: %s.,Kühle Scheibe: %s.  Warmes Quadrat: %s.,Cool disc: %s.  Warm square: %s.
+Scheibe mit weißem Ring: %s und %s zugleich.,Scheibe mit weißem Ring: %s und %s zugleich.,Disc with a white ring: %s and %s together.
+"Drücken, halten und mit dem Cursor der Kugel folgen. Erst am Ende loslassen.","Drücken, halten und mit dem Cursor der Kugel folgen. Erst am Ende loslassen.","Press, hold and follow the ball with the cursor. Let go only at the end."
+"Weite Sprünge, dann ein kurzer Stream: Tasten abwechseln.","Weite Sprünge, dann ein kurzer Stream: Tasten abwechseln.","Wide jumps, then a short stream: alternate the keys."
+"Alles zusammen, mit Wertung.","Alles zusammen, mit Wertung.","Everything together, with a score."
+3 Ziele,3 Ziele,3 targets
+%d Treffer,%d Treffer,%d hits
+3 Akzente,3 Akzente,3 accents
+2 Halten bis zum Ende,2 Halten bis zum Ende,2 holds to the end
+%d von %d treffen,%d von %d treffen,hit %d of %d
+daneben,daneben,off target
+zu früh,zu früh,too early
+erst das vordere,erst das vordere,front one first
+beide Tasten,beide Tasten,both keys
+losgelassen,losgelassen,let go
+Kugel verloren,Kugel verloren,ball lost
+verpasst,verpasst,missed
+Daneben: erst den Cursor auf das Ziel legen.,Daneben: erst den Cursor auf das Ziel legen.,Off target: put the cursor on the target first.
+Andere Taste: dieses Ziel braucht %s.,Andere Taste: dieses Ziel braucht %s.,Other key: this target needs %s.
+"Zu früh: warte, bis der Satellit oben ist.","Zu früh: warte, bis der Satellit oben ist.",Too early: wait until the satellite is at the top.
+Erst das vordere Ziel (das hellste).,Erst das vordere Ziel (das hellste).,Front target first (the brightest).
+Zu früh losgelassen: halte bis zum Ende.,Zu früh losgelassen: halte bis zum Ende.,Let go too early: hold until the end.
+Kugel verloren: bleib mit dem Cursor auf ihr.,Kugel verloren: bleib mit dem Cursor auf ihr.,Ball lost: keep the cursor on it.
+"Verpasst: drück, wenn der Satellit oben ist.","Verpasst: drück, wenn der Satellit oben ist.",Missed: press when the satellite is at the top.
+%d von %d getroffen. Noch einmal.,%d von %d getroffen. Noch einmal.,%d of %d hit. Once more.
