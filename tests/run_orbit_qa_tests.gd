@@ -185,6 +185,25 @@ func _write_report(rows: Array) -> void:
 			f.store_line("| %.1f - %.1f | %d | %.1f %% / %.1f %% | %.1f %% / %.1f %% | %.2f |" % [
 				b[0], minf(b[1], 15.0), cnt, 100.0 * tmin, 100.0 * tsum / cnt, 100.0 * mmin, 100.0 * msum / cnt, nps / cnt])
 	f.store_line("")
+	var st: Array[float] = []
+	var easy: Array[float] = []
+	var hard := 0
+	for r in rows:
+		st.append(r.stars)
+		if r.nps < 2.5:
+			easy.append(r.stars)
+		if r.stars >= 8.0:
+			hard += 1
+	st.sort()
+	easy.sort()
+	f.store_line("## Sterne-Kalibrierung (Skill: Zielen, Tempo, Lesen)")
+	f.store_line("")
+	f.store_line("- Median %.2f Sterne, %d Maps >= 8 Sterne (%.1f %%)." % [st[st.size() / 2], hard, 100.0 * float(hard) / float(st.size())])
+	if easy.size() > 0:
+		f.store_line("- Leichte Maps (< 2,5 Ziele/s, %d): Median %.2f, 90 %%-Quantil %.2f Sterne." % [easy.size(), easy[easy.size() / 2], easy[int(easy.size() * 0.9)]])
+	f.store_line("- Zielen: Sprung/Zeit, Richtungswechsel, schwere Spruenge (> 1,6 Feld/s zaehlen zusaetzlich). Tempo: Dichte, Tastenwechsel, Akzente, Halten. Lesen: wenige Runden, Ueberdeckung.")
+	f.store_line("- osu!standard-Maps bleiben treu (keine gekappten Spruenge, ganze Slider-Kurven); nur leichte Maps werden verkleinert. Schwere Sprung-Maps haben dafuer hohe Sterne (Maps unter 5 Sternen: Tablet und Maus erreichen die Ziele).")
+	f.store_line("")
 	f.store_line("## Je Map (nach Sternen)")
 	f.store_line("")
 	f.store_line("| Map | Typ | Sterne | Ziele | Ziele/s | max sichtbar | Sprung/s | Tablet | Maus |")

@@ -57,11 +57,15 @@ const STAR_KH := 0.3
 const STAR_KA := 0.25
 const STAR_KT := 0.08
 const STAR_KR := 0.1
+## Schwere Spruenge: Geschwindigkeit (Feld/s) ueber STAR_JX_FROM zaehlt zusaetzlich.
+const STAR_KX := 1.3
+const STAR_JX_FROM := 1.6
+const STAR_JX_CAP := 6.0
 const STAR_DECAY := 0.95
 const STAR_JUMP_CAP := 4.0
 const STAR_SWITCH_GAP_MS := 400.0
 const STAR_MAX := 15.0
-const STAR_SCALE := 0.59
+const STAR_SCALE := 0.55
 const STAR_POW := 1.1
 
 
@@ -651,8 +655,9 @@ static func stars_raw(ns: Array[OrbitNote]) -> float:
 	var hld := PackedFloat32Array()
 	var acc := PackedFloat32Array()
 	var trn := PackedFloat32Array()
+	var jxs := PackedFloat32Array()
 	var rdg := PackedFloat32Array()
-	for arr in [cnt, jmp, swt, hld, acc, trn, rdg]:
+	for arr in [cnt, jmp, swt, hld, acc, trn, rdg, jxs]:
 		arr.resize(n_win)
 		arr.fill(0.0)
 	for i in ns.size():
@@ -676,6 +681,7 @@ static func stars_raw(ns: Array[OrbitNote]) -> float:
 			var gap := maxf(n.time_ms - maxf(p.end_ms, p.time_ms), 40.0)
 			var dist := end_pos(p).distance_to(n.pos)
 			jmp[w] += minf(dist / (gap / 1000.0), STAR_JUMP_CAP)
+			jxs[w] += maxf(minf(dist / (gap / 1000.0), STAR_JX_CAP) - STAR_JX_FROM, 0.0)
 			if i > 1:
 				var q := ns[i - 2]
 				var v1 := end_pos(p) - end_pos(q)
@@ -696,10 +702,11 @@ static func stars_raw(ns: Array[OrbitNote]) -> float:
 		var hl := (hld[w] + (hld[pw] if w > 0 else 0.0)) / secs
 		var ac := (acc[w] + (acc[pw] if w > 0 else 0.0)) / secs
 		var tn := (trn[w] + (trn[pw] if w > 0 else 0.0)) / maxf(c, 1.0)
+		var jx := (jxs[w] + (jxs[pw] if w > 0 else 0.0)) / secs
 		var rd := (rdg[w] + (rdg[pw] if w > 0 else 0.0)) / secs
 		vals.append(STAR_KD * pow(dens, 0.8) + STAR_KJ * jm * minf(dens / 2.5, 1.0)
 				+ STAR_KS * sw + STAR_KH * hl + STAR_KA * ac
-				+ STAR_KT * tn * minf(dens / 2.5, 1.0) + STAR_KR * rd)
+				+ STAR_KT * tn * minf(dens / 2.5, 1.0) + STAR_KR * rd + STAR_KX * jx)
 	vals.sort()
 	vals.reverse()
 	var num := 0.0
