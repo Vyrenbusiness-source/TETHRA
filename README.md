@@ -118,7 +118,7 @@ Switch on **SV** in the song browser. The mod writes scroll changes from the map
 
 <table>
   <tr>
-    <td width="50%"><a href="docs/media/ui_browser.webp"><img src="docs/media/ui_browser.webp" alt="Song browser"></a><br><sub>Song browser per mode with star rating (Orbit has its own), pp, collections, star ranges, SV, played / unplayed and rank filters, and sorting.</sub></td>
+    <td width="50%"><a href="docs/media/ui_browser.webp"><img src="docs/media/ui_browser.webp" alt="Song browser"></a><br><sub>Song browser per mode (Mania, Orbit, Rally, Dirigent), each with its own star rating; pp for Mania, collections, star ranges, SV, played / unplayed and rank filters, and sorting.</sub></td>
     <td width="50%"><a href="docs/media/ui_online.webp"><img src="docs/media/ui_online.webp" alt="Online map browser"></a><br><sub>Search and download ranked maps in the game, for Mania and for Orbit.</sub></td>
   </tr>
   <tr>
@@ -126,7 +126,7 @@ Switch on **SV** in the song browser. The mod writes scroll changes from the map
     <td width="50%"><a href="docs/media/ui_orbit_fail.webp"><img src="docs/media/ui_orbit_fail.webp" alt="Failed Orbit run"></a><br><sub>A failed run still shows every hit and miss on the timeline. In Mania the fail screen also names the likely cause (a lag spike, early releases, a burst of misses).</sub></td>
   </tr>
   <tr>
-    <td width="50%"><a href="docs/media/ui_lobby.webp"><img src="docs/media/ui_lobby.webp" alt="Multiplayer room"></a><br><sub>Multiplayer by room code: free, teams, battle royale, Mania or Orbit.</sub></td>
+    <td width="50%"><a href="docs/media/ui_lobby.webp"><img src="docs/media/ui_lobby.webp" alt="Multiplayer room"></a><br><sub>Multiplayer by room code: free, teams, battle royale, in all four modes.</sub></td>
     <td width="50%"><a href="docs/media/ui_tournament_pick.webp"><img src="docs/media/ui_tournament_pick.webp" alt="Tournament picks and bans"></a><br><sub>Tournaments with picks, bans and auto-pick filters.</sub></td>
   </tr>
   <tr>
