@@ -53,8 +53,8 @@ var key_hook1: int = KEY_Z
 var key_hook2: int = KEY_X
 ## Mania-4K: eine Taste pro Spalte.
 var key_lanes: Array[int] = [KEY_D, KEY_F, KEY_J, KEY_K]
-## Orbit-Modus: Taste fuer den inneren / aeusseren Ring (zusaetzlich immer
-## Maus links = innen, Maus rechts = aussen) und Winkel-Hilfslinien.
+## Orbit-Modus: Taste A / Taste B (Namen aus der Bahnen-Zeit: inner = A,
+## outer = B; zusaetzlich immer Maus links = A, Maus rechts = B).
 var orbit_key_inner: int = KEY_Z
 var orbit_key_outer: int = KEY_X
 var orbit_guides: bool = true
@@ -62,6 +62,12 @@ var orbit_guides: bool = true
 var orbit_note_size: int = 100
 var orbit_preview: bool = true
 var orbit_path_alpha: int = 100
+## Orbit-Vorlauf: Satelliten-Runden bis zum Treffer. 0 = Auto aus AR
+## (orbit_laps_for_ar), sonst 1-4 Runden fuer jede Map.
+var orbit_laps: int = 0
+## Orbit-Zielgroesse in Prozent (90-120) und Cursor-Groesse in Prozent (50-150).
+var orbit_target_size: int = 100
+var orbit_cursor_size: int = 100
 ## Musik-Reaktion des Orbit-Felds: 0 = aus, 1 = dezent, 2 = voll.
 var orbit_music: int = 1
 ## Tasten-Beschriftung in der naechsten Note: 0 = auto (leichte Maps, Tutorial), 1 = an, 2 = aus.
@@ -473,6 +479,9 @@ func load_settings(path: String = PATH) -> void:
 	orbit_preview = bool(cfg.get_value("game", "orbit_preview", true))
 	orbit_path_alpha = clampi(int(cfg.get_value("game", "orbit_path_alpha", 100)), 30, 100)
 	orbit_music = clampi(int(cfg.get_value("game", "orbit_music", 1)), 0, 2)
+	orbit_laps = clampi(int(cfg.get_value("game", "orbit_laps", 0)), 0, 4)
+	orbit_target_size = clampi(int(cfg.get_value("game", "orbit_target_size", 100)), 90, 120)
+	orbit_cursor_size = clampi(int(cfg.get_value("game", "orbit_cursor_size", 100)), 50, 150)
 	orbit_key_hint = clampi(int(cfg.get_value("game", "orbit_key_hint", 0)), 0, 2)
 	orbit_background = clampi(int(cfg.get_value("game", "orbit_background", ORBIT_BG_WORLD)), ORBIT_BG_WORLD, ORBIT_BG_OFF)
 	_legacy_mania_scroll = float(cfg.get_value("game", "mania_scroll_legacy", -1.0))
@@ -534,6 +543,9 @@ func save(path: String = PATH) -> void:
 	cfg.set_value("game", "orbit_preview", orbit_preview)
 	cfg.set_value("game", "orbit_path_alpha", orbit_path_alpha)
 	cfg.set_value("game", "orbit_music", orbit_music)
+	cfg.set_value("game", "orbit_laps", orbit_laps)
+	cfg.set_value("game", "orbit_target_size", orbit_target_size)
+	cfg.set_value("game", "orbit_cursor_size", orbit_cursor_size)
 	cfg.set_value("game", "orbit_key_hint", orbit_key_hint)
 	cfg.set_value("game", "orbit_background", orbit_background)
 	cfg.set_value("game", "scroll_speed", scroll_speed)
@@ -1093,6 +1105,18 @@ static func lane_note_scale(spacing: float) -> float:
 
 func is_hook_key(keycode: int) -> bool:
 	return keycode == key_hook1 or keycode == key_hook2
+
+
+## Orbit-Vorlauf in Runden fuer eine Map: Einstellung 1-4 gilt fest, Auto (0)
+## nach AR wie docs/modes/orbit_satellit.md (AR <= 5: 3, 6-8: 2, >= 9: 1).
+func orbit_laps_for_ar(ar: float) -> int:
+	if orbit_laps >= 1:
+		return clampi(orbit_laps, 1, 4)
+	if ar <= 5.0:
+		return 3
+	if ar < 9.0:
+		return 2
+	return 1
 
 
 ## Spalte (0-3) fuer eine Mania-Taste, -1 wenn keine.
