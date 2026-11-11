@@ -1869,6 +1869,11 @@ func _rebuild() -> void:
 ## Zielgroesse, Cursor-Groesse, Tasten in Zielen und Vorlauf (Pips).
 class OrbitStill extends Control:
 	const SIZE_PX := Vector2(384, 216)
+	# Farben wie OrbitView (A_COL, B_COL, PLATE_COL); eigene Kopie, damit das Panel
+	# nicht am Spielfeld-Skript haengt.
+	const A_COL := Color(0.38, 0.74, 1.0)
+	const B_COL := Color(1.0, 0.60, 0.30)
+	const PLATE_COL := Color(0.012, 0.016, 0.028)
 	var _sig := ""
 
 	func _ready() -> void:
@@ -1887,7 +1892,7 @@ class OrbitStill extends Control:
 
 	func _draw() -> void:
 		var sz := SIZE_PX
-		draw_rect(Rect2(Vector2.ZERO, sz), Color(OrbitView.PLATE_COL, 1.0))
+		draw_rect(Rect2(Vector2.ZERO, sz), PLATE_COL)
 		var fh := sz.y * 0.8
 		var field := Rect2((sz.x - fh * 4.0 / 3.0) * 0.5, sz.y * 0.1, fh * 4.0 / 3.0, fh)
 		draw_rect(field, Color(1, 1, 1, 0.025))
@@ -1908,8 +1913,8 @@ class OrbitStill extends Control:
 		draw_circle(c, cr, Color(1, 1, 1, 0.95), true, -1.0, true)
 
 	func _target(p: Vector2, r: float, key: int, a: float, pips: int, frac: float, label: bool) -> void:
-		var ca := OrbitView.INNER_COL
-		var cb := OrbitView.OUTER_COL
+		var ca := A_COL
+		var cb := B_COL
 		var orbit := r * 1.6
 		draw_arc(p, orbit, 0.0, TAU, 48, Color(1, 1, 1, 0.16 * a), 1.0, true)
 		draw_line(p + Vector2(0, -orbit - 4.0), p + Vector2(0, -orbit + 4.0), Color(1, 1, 1, 0.7 * a), 1.5)
