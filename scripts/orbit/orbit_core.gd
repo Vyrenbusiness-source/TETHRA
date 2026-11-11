@@ -1,142 +1,114 @@
 class_name OrbitCore
 extends RefCounted
 
-## Orbit-Wertung (Bahnen): ein Spielkopf laeuft pro Takt einmal die Bahn ab
-## (Form wechselt im Song, siehe OrbitTrack), Ziele sitzen auf zwei Spuren
-## links/rechts der Bahn an ihrer Taktposition. Die TASTE waehlt die Spur
-## (0 = A = links/innen, 1 = B = rechts/aussen), der Cursor muss beim Druck
-## auf dem KOPF liegen (Abstand in Bahn-Einheiten, Toleranz AIM_TOL).
-## Ein Treffer zaehlt nur, wenn Zeitfenster UND Zielen stimmen.
-## Bogen (Halte): Kopf wie ein Tap, danach Taste halten und den Kopf mit dem
-## Cursor verfolgen. Zu frueh loslassen oder laenger als ARC_OUT_MS neben dem
-## Kopf = Miss (DROP), wie Mania-Holds.
+## Orbit-Wertung (Satelliten, docs/modes/orbit_satellit.md): Ziele liegen im Feld
+## (0..1 x 0..1) an OrbitNote.pos. Ein Treffer zaehlt nur, wenn Zeitfenster
+## (OD wie Mania) UND Cursor im Trefferradius (AIM_RADIUS x Zielradius) UND die
+## richtige Taste stimmen. Taste 0 = A, 1 = B; Akzent (key 2) = beide Tasten
+## innerhalb ACCENT_MS, gewertet beim zweiten Druck.
+## Nur das fruehste offene Ziel ist trefferbar (Notelock), ausser es liegt im
+## selben Zeitpunkt (Akzent). Ein Druck ohne Treffer sendet press_missed mit
+## Grund "aim" | "key" | "early" | "lock" und frisst kein Ziel.
+## Halten (is_hold): Kopf wie ein Tap, danach Taste halten und der Kugel
+## (OrbitNote.pos_at) im Folgeradius (FOLLOW_RADIUS x Zielradius) folgen. Mehr
+## als HOLD_OUT_MS draussen oder vor Ende - 50er-Fenster losgelassen = MISS
+## (miss_kind "DROP"), sonst zaehlt die Kopf-Qualitaet.
 ##
-## Zielfehler (Feld "angle_err", aim_err) = Abstand Cursor-Kopf in "Aim-Punkten":
-## 1 Punkt = 0,01 Bahn-Einheiten.
+## Alle Ereignisse werden in Zeitreihenfolge exakt verarbeitet: ablaufende Ziele,
+## Halte-Austritte (analytisch aus Pfad und Cursor gerechnet) und Eingaben. Das
+## Ergebnis haengt nicht von der Bildrate ab. Einheiten: Feld (0..1); aim_err in
+## stats() = Feld-Einheiten x 100.
 ##
-## Zeitfenster, Qualitaeten, Score, Acc, Grade, HP und stats() kommen aus
-## ManiaCore: ein internes ManiaCore-Objekt (_tally) zaehlt alles, damit die
-## Formeln nur an einer Stelle stehen. Keine Szenen/Autoloads noetig (Mods
-## kommen optional aus GameSession, falls vorhanden).
+## Zeitfenster, Qualitaeten, HP und Zaehler kommen aus einem internen
+## ManiaCore-Objekt (_tally); Score, Acc, Grade nach Orbit-Regeln. Keine Szenen/
+## Autoloads noetig (Mods optional aus GameSession).
 
 signal note_spawned(index: int)
 signal note_judged(index: int, result: Dictionary)
-signal arc_started(index: int, quality: int)
-signal ring_pressed(ring: int, hit: bool)
-## Druck ohne Treffer: Cursor-Ort (Bahn-Einheiten), Spur der Taste und Grund:
-## "AIM" (Ziel im Fenster, Cursor neben dem Kopf), "RING" (Ziel im Fenster,
-## aber auf der anderen Spur = andere Taste), "EARLY" (Ziel noch zu weit weg,
-## frisst nichts), "NONE".
-signal press_missed(pos: Vector2, ring: int, reason: String)
+signal hold_started(index: int, quality: int)
+signal key_pressed(key: int, hit: bool)
+## Druck ohne Treffer: Cursor-Ort (Feld), Taste und Grund "aim" | "key" |
+## "early" | "lock".
+signal press_missed(pos: Vector2, key: int, reason: String)
 signal hp_changed(hp: float)
 signal finished(stats: Dictionary)
 
-## Gleiche Staffel wie ManiaCore (MAX, PERFECT, GOOD, OK, MEH, MISS).
 const Quality := ManiaCore.Quality
-const RINGS := 2
-## Zieltoleranz in Aim-Punkten (1/100 Bahn-Einheit) fuer Taps, Bogen-Koepfe
-## und das Folgen eines Bogens.
-const AIM_TOL := 40.0
-## So lange darf der Cursor beim Bogen ausserhalb der Toleranz sein.
-const ARC_OUT_MS := 150.0
-## Zielmitte: nur so nah am Kopf (Aim-Punkte) gibt es die beste Stufe CORE.
-const AIM_CENTER := 12.0
+const KEYS := 2
+## Standard-Zielradius (Feld-Einheiten) und Faktoren.
+const DEFAULT_TARGET_RADIUS := 0.045
+const AIM_RADIUS := 1.15
+const FOLLOW_RADIUS := 2.0
+## Beide Tasten des Akzents innerhalb dieser Zeit.
+const ACCENT_MS := 40.0
+## So lange darf die Kugel beim Halten ausserhalb des Folgeradius sein.
+const HOLD_OUT_MS := 150.0
 
-## --- Orbit-Mods (Schluessel im Mod-Dictionary, neben NF/SV aus ManiaCore) ---
-## HD Hidden: Ziele verblassen auf den letzten ~40 % des Anflugs (OrbitView).
-## FI Fade-In: Ziele erscheinen erst nach gut der Haelfte des Anflugs.
-## PR Praezision: Zeit- und Winkelfenster x PR_SCALE.
 const ORBIT_MODS := ["HD", "FI", "PR"]
-## Anzeige-Reihenfolge aller Mods im Orbit (Badge oben links, Score-Eintrag).
 const ORBIT_MOD_ORDER := ["HD", "FI", "PR", "NF", "SV"]
-## Faktoren: HD und FI nehmen je eine Haelfte der Lesezeit weg (wie osu! HD
-## 1,06); PR verengt beide Fenster um 30 %, also Zeit UND Ziel, darum doppelt
-## (1,12). NF 0,5 und SV 1,1 kommen aus ManiaCore.MOD_MULT.
+## HD/FI 1,06, PR (Fenster und Radius 30 % enger) 1,12; NF/SV aus ManiaCore.
 const ORBIT_MOD_MULT := {"HD": 1.06, "FI": 1.06, "PR": 1.12}
 const PR_SCALE := 0.7
 
-## --- Eigene Orbit-Wertung (nicht Mania): Stufen, Wert, Acc, Grade ---
-## Stufen-Index = Quality-Index (0 CORE .. 5 MISS), damit HP/Zaehler/HUD
-## weiter funktionieren. Namen (uebersetzt ueber translations/orbit.csv):
 const TIER_NAMES: Array[String] = ["CORE", "SHARP", "GOOD", "FAIR", "EDGE", "MISS"]
-## Zeitwert je Stufe.
 const TIER_VALUE: Array[float] = [1.0, 0.94, 0.68, 0.40, 0.16, 0.0]
-## Zielfaktor: in der Mitte 1,0, am Rand der Toleranz AIM_EDGE_FACTOR.
+## Zielfaktor: bis AIM_FULL_FRAC des Trefferradius 1,0, linear bis AIM_EDGE_FACTOR am Rand.
+const AIM_FULL_FRAC := 0.5
 const AIM_EDGE_FACTOR := 0.88
-## Anteil der Kombo-Wertung am Score (Rest = Praezision).
 const STREAK_SHARE := 0.1
-## Kombo, ab der ein Treffer vollen Streak-Wert hat.
 const STREAK_FULL := 100
-## Grade-Schwellen (Orbit-Acc): SS braucht ausserdem keinen Miss.
 const GRADE_SS := 0.985
 const GRADE_STEPS := [[0.95, "S"], [0.90, "A"], [0.82, "B"], [0.72, "C"]]
 
-## Replays (Aufnahme + Wiedergabe) brauchen exakt dieselbe Wertung. Im
-## deterministischen Modus laeuft die Zeit-Logik (Ablauf, Bogen-Pruefung) auf
-## einem festen 1-ms-Raster statt auf Bild-Zeiten, Eingaben werden auf ganze ms
-## und 0.1 Grad gerundet und nie vor den letzten Raster-Schritt gelegt. Damit
-## haengt die Wertung nur von der Eingabe-Liste ab, nicht von der Bildrate.
-const TICK_MS := 1.0
-## Cursor-Aufnahme: neuer Ort nur bei Aenderung > REC_MIN_Q (Tausendstel
-## Bahn-Einheit je Achse) und fruehestens REC_GAP_MS nach dem letzten Eintrag
-## (hoechstens 125/s). Der Core sieht beim Aufnehmen nur die aufgezeichneten
-## Orte; Tasten-Events tragen den exakten Ort selbst.
+## Replays (deterministischer Modus): Eingaben auf ganze ms und Tausendstel Feld
+## gerundet, nie vor die aktuelle Zeit gelegt. Cursor-Aufnahme nur bei Aenderung
+## > REC_MIN_Q (Tausendstel je Achse) und fruehestens REC_GAP_MS nach dem letzten
+## Eintrag; vor jedem Tastenereignis wird der aktuelle Cursor nachgetragen.
 const REC_MIN_Q := 3
 const REC_GAP_MS := 8.0
-## Wertebereich der Ortsachsen im Replay (Tausendstel Bahn-Einheit).
 const Q_LIMIT := 4000
-## Replay-Format: 4 = Bahnen (Taste = Spur, Zielen auf den Kopf in Bahn-
-## Einheiten). Kleineres meta.orbit_rules (1-3) = "aeltere Version".
-const REPLAY_RULES := 4
-## Replay-Event-Codes: [t_ms, EV_CURSOR, x, y] / [t_ms, EV_DOWN + taste, x, y] /
-## [t_ms, EV_UP + taste]; t in ganzen ms, x/y = Cursor in Tausendstel
-## Bahn-Einheit.
+## Replay-Format 3 (Satelliten). Kleineres meta.orbit_rules = "aeltere Version".
+const REPLAY_RULES := 3
+## [t, EV_CURSOR, x, y] / [t, EV_DOWN + k] / [t, EV_UP + k]; x/y Tausendstel Feld.
 const EV_CURSOR := 0
 const EV_DOWN := 1
 const EV_UP := 3
-## Regel-Marke am Anfang jedes Replays: [0, EV_RULES, REPLAY_RULES]. Fehlt sie,
-## stammt das Replay aus einer aelteren Orbit-Version.
+## Regel-Marke [0, EV_RULES, REPLAY_RULES] am Anfang jedes Replays.
 const EV_RULES := 9
 
 var notes: Array[OrbitNote] = []
-var preempt: float = ManiaCore.BASE_PREEMPT
+## Zielradius, Trefferradius, Folgeradius dieses Laufs (Feld-Einheiten, PR enger).
+var target_radius := DEFAULT_TARGET_RADIUS
+var aim_radius := DEFAULT_TARGET_RADIUS * AIM_RADIUS
+var follow_radius := DEFAULT_TARGET_RADIUS * FOLLOW_RADIUS
 
 var _tally := ManiaCore.new()
 var _spawn_order: Array[int] = []
 var _next_spawn := 0
-var _ring_notes: Array = []
-var _ring_head: Array[int] = []
-var _active_arc: Array[int] = [-1, -1]
-var _arc_quality: Array[int] = [0, 0]
-## Seit wann der Cursor ausserhalb der Bogen-Toleranz ist (INF = innerhalb).
-var _out_since: Array[float] = [INF, INF]
-## Zeit der letzten Bogen-Pruefung je Ring (Cursor stand seitdem still).
-var _last_check: Array[float] = [0.0, 0.0]
+var _order: Array[int] = []
+var _head := 0
+var _holds: Dictionary = {}
+var _hold_times: Dictionary = {}
 var _judged: Dictionary = {}
 var _judged_count := 0
 var _finished_emitted := false
 var _cursor := Vector2.ZERO
-## Bahn (Uhr + Formplan); ohne Aufruf von set_track ein Kreis bei 2 s/Takt.
-var track: OrbitTrack = OrbitTrack.fixed(OrbitClock.fixed(2000.0), OrbitPath.CIRCLE)
-## Welche der zwei Tasten gerade unten sind.
-var _held: Array[bool] = [false, false]
-## Orbit-Wertung: Summe der Trefferwerte, Streak-Summe, gewertete Ziele.
+var _time := -INF
+var _down_t: Array[float] = [-INF, -INF]
 var _val_sum := 0.0
 var _streak_sum := 0.0
 var _n_done := 0
 var _aim_sum := 0.0
 var _aim_n := 0
-## Deterministischer Modus (Replays), siehe TICK_MS. recording = Eingaben in
-## replay_log mitschreiben (kompakt, siehe EV_*).
 var deterministic := false
 var recording := false
 var replay_log: Array = []
-var _tick := -INF
-var _rec_x := -99999
-var _rec_y := -99999
+var _cur_q := Vector2i(-99999, -99999)
+var _pend_q := Vector2i(-99999, -99999)
+var _pend_t := 0.0
+var _has_pend := false
 var _rec_t := -INF
 
-# --- Zaehler und Fenster: alles liegt im ManiaCore-Zaehler ---
 var combo: int:
 	get: return _tally.combo
 var max_combo: int:
@@ -177,17 +149,13 @@ var w50: float:
 	get: return _tally.w50
 var w_miss: float:
 	get: return _tally.w_miss
-## Zieltoleranz und CORE-Mitte dieses Laufs (PR: x PR_SCALE), Aim-Punkte.
-var angle_tol := AIM_TOL
-var center_tol := AIM_CENTER
 
 
-## p_notes: Ergebnis von OrbitConverter.convert (nach time_ms sortiert).
-## od: OverallDifficulty der Map (gleiche Fenster wie Mania).
-## scroll_scale: wie ManiaCore (teilt nur die Anflugzeit, rein visuell).
-## hp_drain: HPDrainRate der Map. p_mods: Mod-Dictionary, null = GameSession.
-func setup(p_notes: Array[OrbitNote], od: float, scroll_scale: float = 1.0,
-		hp_drain: float = 5.0, p_mods = null) -> void:
+## p_notes: Ergebnis von OrbitConverter.convert. od: OverallDifficulty (Fenster wie
+## Mania). p_mods: Mod-Dictionary, null = GameSession. p_target_radius: Zielradius
+## in Feld-Einheiten. hp_drain: HPDrainRate der Map.
+func setup(p_notes: Array[OrbitNote], od: float, p_mods = null,
+		p_target_radius: float = DEFAULT_TARGET_RADIUS, hp_drain: float = 5.0) -> void:
 	notes = p_notes
 	_tally = ManiaCore.new()
 	_tally.w_max = DifficultyCalc.mania_window_max(od)
@@ -208,54 +176,68 @@ func setup(p_notes: Array[OrbitNote], od: float, scroll_scale: float = 1.0,
 	_tally.w100 *= k
 	_tally.w50 *= k
 	_tally.w_miss *= k
-	angle_tol = AIM_TOL * k
-	center_tol = AIM_CENTER * k
+	target_radius = p_target_radius * k
+	aim_radius = target_radius * AIM_RADIUS
+	follow_radius = target_radius * FOLLOW_RADIUS
 	_tally._total_notes = notes.size()
-	preempt = ManiaCore.preempt_for(scroll_scale)
-	_ring_notes = []
-	_ring_head = []
-	for r in RINGS:
-		_ring_notes.append([])
-		_ring_head.append(0)
 	_spawn_order = []
+	_order = []
+	_hold_times = {}
 	for i in notes.size():
 		_spawn_order.append(i)
-		_ring_notes[clampi(notes[i].ring, 0, RINGS - 1)].append(i)
+		_order.append(i)
+		if notes[i].is_hold:
+			_hold_times[i] = _vertex_times(notes[i])
+	var by_spawn := func(a: int, b: int) -> bool:
+		if notes[a].spawn_ms != notes[b].spawn_ms:
+			return notes[a].spawn_ms < notes[b].spawn_ms
+		return a < b
 	var by_time := func(a: int, b: int) -> bool:
 		if notes[a].time_ms != notes[b].time_ms:
 			return notes[a].time_ms < notes[b].time_ms
 		return a < b
-	_spawn_order.sort_custom(by_time)
-	for r in RINGS:
-		(_ring_notes[r] as Array).sort_custom(by_time)
-	_active_arc = [-1, -1]
-	_arc_quality = [0, 0]
-	_out_since = [INF, INF]
-	_last_check = [0.0, 0.0]
+	_spawn_order.sort_custom(by_spawn)
+	_order.sort_custom(by_time)
+	_head = 0
+	_holds = {}
 	_judged = {}
 	_judged_count = 0
 	_next_spawn = 0
 	_finished_emitted = false
 	_cursor = Vector2.ZERO
-	_held = [false, false]
+	_time = -INF
+	_down_t = [-INF, -INF]
 	_val_sum = 0.0
 	_streak_sum = 0.0
 	_n_done = 0
 	_aim_sum = 0.0
 	_aim_n = 0
-	_tick = -INF
-	_rec_x = -99999
-	_rec_y = -99999
+	_cur_q = Vector2i(-99999, -99999)
+	_pend_q = _cur_q
+	_has_pend = false
 	_rec_t = -INF
 	replay_log = []
 
 
-## Fenster-Faktor eines Mod-Dictionarys (PR: PR_SCALE, sonst 1).
+## Zeitpunkte der Pfad-Ecken (konstante Geschwindigkeit wie OrbitNote.pos_at).
+static func _vertex_times(n: OrbitNote) -> PackedFloat64Array:
+	var out := PackedFloat64Array()
+	var acc := PackedFloat64Array()
+	var total := 0.0
+	acc.append(0.0)
+	for i in range(1, n.path.size()):
+		total += n.path[i - 1].distance_to(n.path[i])
+		acc.append(total)
+	var dur := n.end_ms - n.time_ms
+	for i in acc.size():
+		out.append(n.time_ms + (dur * acc[i] / total if total > 0.0 else 0.0))
+	return out
+
+
 static func window_scale(p_mods: Dictionary) -> float:
 	return PR_SCALE if bool(p_mods.get("PR", false)) else 1.0
 
 
-## Score-Faktor im Orbit: ManiaCore (NF, SV) mal Orbit-Mods (HD, FI, PR).
 static func mod_multiplier(p_mods: Dictionary) -> float:
 	var m := ManiaCore.mod_multiplier(p_mods)
 	for k in ORBIT_MOD_MULT:
@@ -264,7 +246,6 @@ static func mod_multiplier(p_mods: Dictionary) -> float:
 	return m
 
 
-## Aktive Mods als Liste in Anzeige-Reihenfolge, z.B. ["HD", "PR", "NF"].
 static func mod_list(p_mods: Dictionary) -> Array:
 	var out := []
 	for k in ORBIT_MOD_ORDER:
@@ -273,12 +254,10 @@ static func mod_list(p_mods: Dictionary) -> Array:
 	return out
 
 
-## Badge-Text, z.B. "HD PR NF" ("" ohne Mods).
 static func mods_text(p_mods: Dictionary) -> String:
 	return " ".join(mod_list(p_mods))
 
 
-## Mods eines gespeicherten Orbit-Replays (aeltere ohne Eintrag: keine Mods).
 static func replay_mods(data: Dictionary) -> Dictionary:
 	var meta = data.get("meta", {})
 	var m = meta.get("mods", {}) if meta is Dictionary else {}
@@ -296,174 +275,185 @@ func set_replay_mode(record: bool) -> void:
 		replay_log = [[0, EV_RULES, REPLAY_RULES]]
 
 
-## Scroll-Faktor waehrend des Spiels aendern (nur Anflugzeit).
-func set_scroll_scale(scroll_scale: float) -> void:
-	preempt = ManiaCore.preempt_for(scroll_scale)
-
-
 func update(t_ms: float) -> void:
 	while _next_spawn < _spawn_order.size() \
-			and notes[_spawn_order[_next_spawn]].time_ms - preempt <= t_ms:
+			and notes[_spawn_order[_next_spawn]].spawn_ms <= t_ms:
 		note_spawned.emit(_spawn_order[_next_spawn])
 		_next_spawn += 1
-	if deterministic:
-		_advance(floorf(t_ms))
-	else:
-		_check_arcs(t_ms)
-		for r in RINGS:
-			_expire_ring(r, t_ms)
-	if _judged_count >= notes.size() and _next_spawn >= _spawn_order.size() \
-			and not _finished_emitted:
+	_advance(floorf(t_ms) if deterministic else t_ms)
+	if _judged_count >= notes.size() and not _finished_emitted:
 		_finished_emitted = true
 		finished.emit(stats())
 
 
-## Bahn setzen (nach setup): Uhr + Formplan aus OrbitConverter.track_for.
-func set_track(p_track: OrbitTrack) -> void:
-	if p_track != null:
-		track = p_track
-
-
-## Cursor zur Event-Zeit t_ms in Bahn-Einheiten. Bis t_ms stand der Cursor noch
-## am alten Ort.
+## Cursor zur Event-Zeit t_ms (Feld-Koordinaten). Bis t_ms stand er am alten Ort.
 func cursor_moved(pos: Vector2, t_ms: float) -> void:
 	if not deterministic:
-		_do_cursor(pos, t_ms)
+		_do_cursor(pos, maxf(t_ms, _time))
 		return
 	if _tally.failed or notes.is_empty():
 		return
-	var qx := _q_axis(pos.x)
-	var qy := _q_axis(pos.y)
+	var q := Vector2i(_q_axis(pos.x), _q_axis(pos.y))
 	var te := _q_time(t_ms)
-	if qx == _rec_x and qy == _rec_y:
+	_pend_q = q
+	_pend_t = te
+	if q == _cur_q:
+		_has_pend = false
 		return
-	if recording and _rec_x > -99999:
-		if absi(qx - _rec_x) <= REC_MIN_Q and absi(qy - _rec_y) <= REC_MIN_Q:
+	if recording and _cur_q.x > -99999:
+		if (absi(q.x - _cur_q.x) <= REC_MIN_Q and absi(q.y - _cur_q.y) <= REC_MIN_Q) \
+				or te - _rec_t < REC_GAP_MS:
+			_has_pend = true
 			return
-		if te - _rec_t < REC_GAP_MS:
-			return
-	apply_event([int(te), EV_CURSOR, qx, qy])
+	_has_pend = false
+	apply_event([int(te), EV_CURSOR, q.x, q.y])
 
 
-func _do_cursor(pos: Vector2, t_ms: float) -> void:
-	_check_arcs(t_ms)
+## Taste gedrueckt (0 = A, 1 = B). Der Cursor ist der zuletzt gemeldete Ort.
+func key_down(k: int, t_ms: float) -> void:
+	if k < 0 or k >= KEYS or notes.is_empty():
+		return
+	if not deterministic:
+		_do_down(k, maxf(t_ms, _time))
+		return
+	if _tally.failed:
+		return
+	var te := _q_time(t_ms)
+	_flush_pending()
+	apply_event([int(te), EV_DOWN + k])
+
+
+func key_up(k: int, t_ms: float) -> void:
+	if k < 0 or k >= KEYS or notes.is_empty():
+		return
+	if not deterministic:
+		_do_up(k, maxf(t_ms, _time))
+		return
+	if not _tally.failed:
+		var te := _q_time(t_ms)
+		_flush_pending()
+		apply_event([int(te), EV_UP + k])
+
+
+func _flush_pending() -> void:
+	if _has_pend and _pend_q != _cur_q:
+		apply_event([int(_pend_t), EV_CURSOR, _pend_q.x, _pend_q.y])
+	_has_pend = false
+
+
+func _do_cursor(pos: Vector2, t: float) -> void:
+	_advance(t)
 	_cursor = pos
-	_check_arcs(t_ms)
+	for idx in _holds:
+		var h: Dictionary = _holds[idx]
+		var ins := _hold_inside(idx, t)
+		if ins != h.inside:
+			h.inside = ins
+			h.out_since = INF if ins else t
+		h.checked = t
 
 
-## Aim-Punkte: Abstand des Cursors zum Kopf zur Zeit t_ms.
-func aim_dist(pos: Vector2, t_ms: float) -> float:
-	return pos.distance_to(track.head(t_ms)) * 100.0
+func _hold_inside(idx: int, t: float) -> bool:
+	return _cursor.distance_to(notes[idx].pos_at(t)) <= follow_radius
 
 
-## Taste gedrueckt (0 = Spur A, 1 = Spur B); Cursor bei pos (Bahn-Einheiten).
-## Getroffen wird ein Ziel auf der Spur der Taste, wenn der Cursor auf dem Kopf liegt.
-func key_down(key: int, t_ms: float, pos: Vector2) -> void:
-	if key < 0 or key >= RINGS or notes.is_empty():
+func _do_down(k: int, t: float) -> void:
+	_advance(t)
+	if _tally.failed:
 		return
-	if deterministic:
-		if not _tally.failed:
-			apply_event([int(_q_time(t_ms)), EV_DOWN + key, _q_axis(pos.x), _q_axis(pos.y)])
+	var other := 1 - k
+	var ready := _down_t[other] > -INF and t - _down_t[other] <= ACCENT_MS
+	var first := _first_open()
+	if first < 0:
 		return
-	_do_key_down(key, t_ms, pos)
-
-
-func _do_key_down(key: int, t_ms: float, pos: Vector2) -> void:
-	_do_cursor(pos, t_ms)
-	_held[key] = true
-	var ring := key
-	for r in RINGS:
-		_expire_ring(r, t_ms)
-	var lane: Array = _ring_notes[ring]
-	var idx := -1
-	var dt := 0.0
-	var err := 0.0
-	var reason := "NONE"
-	for j in range(_ring_head[ring], lane.size()):
-		var i: int = lane[j]
+	var t0 := notes[first].time_ms
+	var rs: Array = []
+	var hit := -1
+	var hit_err := 0.0
+	var pending := false
+	var later := -1
+	for j in range(_head, _order.size()):
+		var i := _order[j]
 		if _judged.has(i):
 			continue
 		var n := notes[i]
-		var d := t_ms - n.time_ms
-		if d < -w50:
-			# Zu frueh: frisst das Ziel NICHT, der Druck zaehlt nur als Fehldruck.
-			if d >= -w_miss and reason == "NONE":
-				reason = "EARLY"
+		var d := t - n.time_ms
+		if d < -_tally.w50:
+			if n.time_ms == t0:
+				rs.append("early" if d >= -_tally.w_miss else "far")
 			break
-		if d > w50:
+		if d > _tally.w50:
 			continue
-		var e := aim_dist(_cursor, t_ms)
-		if e > angle_tol:
-			reason = "AIM"
-			continue
-		idx = i
-		dt = d
-		err = e
-		break
-	if idx < 0:
-		if reason == "NONE" and _target_waiting(1 - ring, t_ms):
-			reason = "RING"
-		ring_pressed.emit(ring, false)
-		press_missed.emit(_cursor, ring, reason)
+		var e := _cursor.distance_to(n.pos)
+		var aim_ok := e <= aim_radius
+		var is_accent := n.key == OrbitNote.KEY_ACCENT
+		if n.time_ms == t0:
+			if hit >= 0:
+				continue
+			if not aim_ok:
+				rs.append("aim")
+			elif is_accent:
+				if ready:
+					hit = i
+					hit_err = e
+				else:
+					pending = true
+			elif n.key == k:
+				hit = i
+				hit_err = e
+			else:
+				rs.append("key")
+		elif later < 0 and aim_ok and (n.key == k or (is_accent and ready)):
+			later = i
+	if hit < 0:
+		_down_t[k] = t
+		if pending:
+			return
+		var reason := ""
+		if later >= 0:
+			reason = "lock"
+		elif rs.has("key"):
+			reason = "key"
+		elif rs.has("aim"):
+			reason = "aim"
+		elif rs.has("early"):
+			reason = "early"
+		key_pressed.emit(k, false)
+		if reason != "":
+			press_missed.emit(_cursor, k, reason)
 		return
+	var hn := notes[hit]
+	var dt := t - hn.time_ms
 	var q: int = _tally._quality_for(absf(dt))
-	if q == Quality.MAX and err > center_tol:
-		q = Quality.PERFECT  # Zeit perfekt, aber nicht mittig: SHARP statt CORE
-	_aim_sum += err
+	_down_t[k] = -INF
+	if hn.key == OrbitNote.KEY_ACCENT:
+		_down_t[other] = -INF
+	_aim_sum += hit_err
 	_aim_n += 1
-	if notes[idx].is_arc:
-		# Kopf eines neuen Bogens kurz vor dem Ende des alten: der alte ist geschafft.
-		var old: int = _active_arc[ring]
-		if old >= 0:
-			_finish_arc(ring, t_ms >= notes[old].end_ms - w50 * 1.5, "NEXT")
-		_active_arc[ring] = idx
-		_arc_quality[ring] = q
-		_out_since[ring] = INF
-		_last_check[ring] = t_ms
+	if hn.is_hold:
+		_judged[hit] = {"pending": true, "dt": dt, "aim_err": hit_err}
 		_tally.combo += 1
 		_tally.max_combo = maxi(_tally.max_combo, _tally.combo)
-		_judged[idx] = {"pending": true, "dt": dt, "angle_err": err}
-		arc_started.emit(idx, q)
+		var ins := _hold_inside(hit, t)
+		_holds[hit] = {
+			"q": q, "dt": dt, "err": hit_err, "inside": ins,
+			"out_since": INF if ins else t, "checked": t,
+		}
+		hold_started.emit(hit, q)
 	else:
-		_apply_hit(idx, q, dt, err)
-	ring_pressed.emit(ring, true)
+		_apply_hit(hit, q, dt, hit_err)
+	key_pressed.emit(k, true)
 
 
-## Wartet auf ring ein offenes Ziel im Trefferfenster (Zeit, egal welcher Winkel)?
-func _target_waiting(ring: int, t_ms: float) -> bool:
-	var lane: Array = _ring_notes[ring]
-	for j in range(_ring_head[ring], lane.size()):
-		var i: int = lane[j]
-		if _judged.has(i):
+func _do_up(k: int, t: float) -> void:
+	_advance(t)
+	_down_t[k] = -INF
+	for idx in _holds.keys():
+		var n := notes[idx]
+		if n.key != k and n.key != OrbitNote.KEY_ACCENT:
 			continue
-		var d := t_ms - notes[i].time_ms
-		if d < -w_miss:
-			break
-		if d <= w50:
-			return true
-	return false
-
-
-## Taste losgelassen. Ein Bogen auf dem Ring der Taste endet damit.
-func key_up(key: int, t_ms: float) -> void:
-	if key < 0 or key >= RINGS or notes.is_empty():
-		return
-	if deterministic:
-		if not _tally.failed:
-			apply_event([int(_q_time(t_ms)), EV_UP + key])
-		return
-	_do_key_up(key, t_ms)
-
-
-func _do_key_up(key: int, t_ms: float) -> void:
-	_check_arcs(t_ms)
-	_held[key] = false
-	var h: int = _active_arc[key]
-	if h < 0:
-		return
-	# Kurz vor dem Ende loslassen ist ok (1.5x 50er-Fenster, wie Mania).
-	var ok := t_ms >= notes[h].end_ms - w50 * 1.5
-	_finish_arc(key, ok, "" if ok else "RELEASE")
+		var ok := t >= n.end_ms - _tally.w50
+		_finish_hold(idx, ok, "" if ok else "release")
 
 
 func accuracy() -> float:
@@ -482,30 +472,31 @@ func grade() -> String:
 	return "D"
 
 
-## Orbit-Score 0..1.000.000 (x Mod-Faktor): 90 % Praezision (Zeitwert x
-## Zielfaktor je Ziel), 10 % Streak (Trefferwert x Kombo-Anteil bis 100).
+## Orbit-Score 0..1.000.000 (x Mod-Faktor): 90 % Praezision, 10 % Streak.
 func orbit_score() -> int:
 	var n := float(maxi(notes.size(), 1))
 	var raw := (1.0 - STREAK_SHARE) * _val_sum / n + STREAK_SHARE * _streak_sum / n
 	return int(round(1000000.0 * raw * _tally.mod_mult))
 
 
-## Wert eines Treffers: Zeitstufe x Zielfaktor (mittig 1,0, Rand 0,88).
-## tol/center: Fenster des Laufs (PR enger), Standard ohne Mods.
-static func hit_value(q: int, angle_err: float, tol: float = AIM_TOL,
-		center: float = AIM_CENTER) -> float:
-	var tv: float = TIER_VALUE[clampi(q, 0, 5)]
-	var k := clampf((angle_err - center) / maxf(tol - center, 0.001), 0.0, 1.0)
-	return tv * lerpf(1.0, AIM_EDGE_FACTOR, k)
+## Zielfaktor: Abstand err (Feld) zum Treffer-Radius radius: bis AIM_FULL_FRAC 1,0,
+## linear bis AIM_EDGE_FACTOR am Rand.
+static func aim_factor(err: float, radius: float) -> float:
+	var f := clampf((err / maxf(radius, 1e-9) - AIM_FULL_FRAC) / (1.0 - AIM_FULL_FRAC), 0.0, 1.0)
+	return lerpf(1.0, AIM_EDGE_FACTOR, f)
 
 
-## Mittlerer Zielfehler (Aim-Punkte) aller Treffer.
+## Wert eines Treffers: Zeitstufe x Zielfaktor.
+static func hit_value(q: int, err: float,
+		radius: float = DEFAULT_TARGET_RADIUS * AIM_RADIUS) -> float:
+	return TIER_VALUE[clampi(q, 0, 5)] * aim_factor(err, radius)
+
+
+## Mittlerer Zielfehler (Feld-Einheiten x 100) aller Treffer.
 func mean_aim_err() -> float:
-	return _aim_sum / float(maxi(_aim_n, 1))
+	return _aim_sum / float(maxi(_aim_n, 1)) * 100.0
 
 
-## Wie ManiaCore.stats() (gleiche Felder fuer Results/Scores/Lobby), aber
-## Score, Acc und Grade nach Orbit-Regeln; "mode": "orbit".
 func stats() -> Dictionary:
 	var s: Dictionary = _tally.stats()
 	s["score"] = orbit_score()
@@ -518,7 +509,7 @@ func stats() -> Dictionary:
 
 
 func _count_value(q: int, err: float) -> void:
-	var v := hit_value(q, err, angle_tol, center_tol) if q != Quality.MISS else 0.0
+	var v := hit_value(q, err, aim_radius) if q != Quality.MISS else 0.0
 	_val_sum += v
 	_streak_sum += v * minf(float(_tally.combo) / float(STREAK_FULL), 1.0)
 	_n_done += 1
@@ -528,108 +519,153 @@ func is_judged(index: int) -> bool:
 	return _judged.has(index)
 
 
-## Index des laufenden Bogens auf ring, sonst -1.
-func active_arc(ring: int) -> int:
-	return _active_arc[ring]
+## Indizes der laufenden Halten-Ziele.
+func active_holds() -> Array:
+	return _holds.keys()
 
 
-## Letzter bekannter Cursor-Ort (Bahn-Einheiten).
 func cursor_pos() -> Vector2:
 	return _cursor
 
 
-## Wie lange der Cursor beim Bogen auf ring schon ausserhalb ist (0 = innen).
-func arc_out_ms(ring: int, t_ms: float) -> float:
-	if _active_arc[ring] < 0 or _out_since[ring] == INF:
+## Wie lange die Kugel des Halten-Ziels index schon ausserhalb des Folgeradius
+## ist (ms, 0 = innen oder nicht aktiv).
+func hold_out_ms(index: int, t_ms: float) -> float:
+	if not _holds.has(index) or _holds[index].out_since == INF:
 		return 0.0
-	return maxf(t_ms - _out_since[ring], 0.0)
+	return maxf(t_ms - float(_holds[index].out_since), 0.0)
 
 
-## Zeitfehler des Bogen-Kopfs (ms, + = spaet), solange er laeuft; sonst 0.
-func arc_head_dt(index: int) -> float:
+## Zeitfehler des Kopfs (ms, + = spaet) eines laufenden Halten-Ziels.
+func hold_head_dt(index: int) -> float:
 	var j: Dictionary = _judged.get(index, {})
 	return float(j.get("dt", 0.0))
 
 
-## Laufende Boegen pruefen: Cursor ausserhalb > ARC_OUT_MS = DROP, Ende
-## erreicht = Kopf-Qualitaet einloesen.
-func _check_arcs(t_ms: float) -> void:
-	for r in RINGS:
-		var h: int = _active_arc[r]
-		if h < 0:
+## Erstes offenes Ziel in Zeitordnung (-1 = keins).
+func _first_open() -> int:
+	while _head < _order.size() and _judged.has(_order[_head]):
+		_head += 1
+	return _order[_head] if _head < _order.size() else -1
+
+
+## Halten durchrechnen von a bis b bei festem Cursor. Rueckgabe
+## {drop: Zeit oder -1, ins, os}. Austritte exakt aus den Pfad-Segmenten
+## (|Kugel - Cursor| = Folgeradius ist je Segment eine quadratische Gleichung).
+func _scan(idx: int, ins: bool, os: float, a: float, b: float) -> Dictionary:
+	var n := notes[idx]
+	var vt: PackedFloat64Array = _hold_times[idx]
+	var trans: Array = []
+	var r2 := follow_radius * follow_radius
+	for j in range(1, n.path.size()):
+		var ta := vt[j - 1]
+		var tb := vt[j]
+		if ta >= b:
+			break
+		if tb <= a or tb <= ta:
 			continue
-		var n := notes[h]
-		var tc := minf(t_ms, n.end_ms)
-		# Draussen: Cursor neben dem Kopf.
-		if aim_dist(_cursor, tc) > angle_tol:
-			if _out_since[r] == INF:
-				_out_since[r] = _exit_time(n, r, tc)
-			if tc - _out_since[r] > ARC_OUT_MS:
-				_finish_arc(r, false, "OUT")
-				continue
-		else:
-			_out_since[r] = INF
-		_last_check[r] = tc
-		if t_ms >= n.end_ms:
-			_finish_arc(r, true, "")
-
-
-## Genauer Zeitpunkt, an dem der Kopf den still stehenden Cursor verlassen
-## hat (zwischen letzter Pruefung und tc): Halbierung, deterministisch.
-func _exit_time(n: OrbitNote, r: int, tc: float) -> float:
-	var t0 := clampf(_last_check[r], n.time_ms, tc)
-	if aim_dist(_cursor, t0) > angle_tol or tc <= t0:
-		return t0
-	var lo := t0
-	var hi := tc
-	for _k in 14:
-		var mid := (lo + hi) * 0.5
-		if aim_dist(_cursor, mid) > angle_tol:
-			hi = mid
-		else:
-			lo = mid
-	return hi
-
-
-func _expire_ring(r: int, t_ms: float) -> void:
-	var lane: Array = _ring_notes[r]
-	while _ring_head[r] < lane.size():
-		var idx: int = lane[_ring_head[r]]
-		if _judged.has(idx):
-			_ring_head[r] += 1
+		var p0 := n.path[j - 1]
+		var v := (n.path[j] - p0) / float(tb - ta)
+		var rel := p0 - _cursor
+		var qa := v.dot(v)
+		if qa < 1e-18:
 			continue
-		if t_ms > notes[idx].time_ms + w50 and _active_arc[r] != idx:
-			_miss(idx, t_ms - notes[idx].time_ms, aim_dist(_cursor, notes[idx].time_ms))
+		var qb := 2.0 * rel.dot(v)
+		var disc := qb * qb - 4.0 * qa * (rel.dot(rel) - r2)
+		if disc < 0.0:
 			continue
-		break
+		var sq := sqrt(disc)
+		var t1 := ta + (-qb - sq) / (2.0 * qa)
+		var t2 := ta + (-qb + sq) / (2.0 * qa)
+		if t1 > a and t1 <= b and t1 >= ta and t1 <= tb:
+			trans.append([t1, true])
+		if t2 > a and t2 <= b and t2 >= ta and t2 <= tb:
+			trans.append([t2, false])
+	for tr in trans:
+		if tr[1]:
+			if not ins:
+				if os + HOLD_OUT_MS < tr[0]:
+					return {"drop": os + HOLD_OUT_MS, "ins": ins, "os": os}
+				ins = true
+				os = INF
+		elif ins:
+			ins = false
+			os = tr[0]
+	if os < INF and os + HOLD_OUT_MS < b:
+		return {"drop": os + HOLD_OUT_MS, "ins": ins, "os": os}
+	return {"drop": -1.0, "ins": ins, "os": os}
 
 
-func _finish_arc(r: int, held_to_end: bool, reason: String) -> void:
-	var idx: int = _active_arc[r]
-	_active_arc[r] = -1
-	_out_since[r] = INF
-	if idx < 0:
+## Alle Ereignisse bis t in Zeitreihenfolge: Ablauf offener Ziele (t > time + w50),
+## Halten-Ende (end_ms) und Halten-Austritt (> HOLD_OUT_MS).
+func _advance(t: float) -> void:
+	if t <= _time:
 		return
-	var head: Dictionary = _judged.get(idx, {})
-	var dt := float(head.get("dt", 0.0))
-	var err := float(head.get("angle_err", 0.0))
+	while not _tally.failed:
+		var best := INF
+		var kind := ""
+		var which := -1
+		for idx in _holds:
+			var h: Dictionary = _holds[idx]
+			var n := notes[idx]
+			var res := _scan(idx, h.inside, h.out_since, h.checked, n.end_ms)
+			var drop: float = res.drop
+			if drop >= 0.0:
+				if drop < t and drop < best:
+					best = drop
+					kind = "drop"
+					which = idx
+			elif n.end_ms <= t and n.end_ms < best:
+				best = n.end_ms
+				kind = "end"
+				which = idx
+		var f := _first_open()
+		if f >= 0:
+			var e := notes[f].time_ms + _tally.w50
+			if e < t and e < best:
+				best = e
+				kind = "miss"
+				which = f
+		if which < 0:
+			break
+		if kind == "drop":
+			_finish_hold(which, false, "out")
+		elif kind == "end":
+			_finish_hold(which, true, "")
+		else:
+			_miss(which, _tally.w50, _cursor.distance_to(notes[which].pos))
+	for idx in _holds:
+		var h: Dictionary = _holds[idx]
+		var to := minf(t, notes[idx].end_ms)
+		var res := _scan(idx, h.inside, h.out_since, h.checked, to)
+		h.inside = res.ins
+		h.out_since = res.os
+		h.checked = maxf(h.checked, to)
+	_time = t
+
+
+func _finish_hold(idx: int, held_to_end: bool, reason: String) -> void:
+	if not _holds.has(idx):
+		return
+	var h: Dictionary = _holds[idx]
+	_holds.erase(idx)
+	var n := notes[idx]
 	if not held_to_end:
 		_lose_hp_and_combo()
-		var dropped := {
-			"quality": Quality.MISS, "dt": dt, "angle_err": err, "ring": r,
+		_store(idx, {
+			"quality": Quality.MISS, "dt": h.dt, "aim_err": h.err, "key": n.key,
 			"hold_end": true, "held": false, "miss_kind": "DROP",
 			"drop_reason": reason, "late": false,
-		}
-		_store(idx, dropped)
+		})
 		return
-	var q: int = _arc_quality[r]
+	var q: int = h.q
 	_tally._count_quality(q)
 	_tally._add_score(q)
-	_count_value(q, err)
+	_count_value(q, h.err)
 	_heal(q)
 	_store(idx, {
-		"quality": q, "dt": dt, "angle_err": err, "ring": r,
-		"hold_end": true, "held": true, "miss_kind": "", "late": dt > 0.0,
+		"quality": q, "dt": h.dt, "aim_err": h.err, "key": n.key,
+		"hold_end": true, "held": true, "miss_kind": "", "late": h.dt > 0.0,
 	})
 
 
@@ -641,16 +677,16 @@ func _apply_hit(idx: int, q: int, dt: float, err: float) -> void:
 	_count_value(q, err)
 	_heal(q)
 	_store(idx, {
-		"quality": q, "dt": dt, "late": dt > 0.0, "angle_err": err,
-		"ring": notes[idx].ring, "miss_kind": "",
+		"quality": q, "dt": dt, "late": dt > 0.0, "aim_err": err,
+		"key": notes[idx].key, "miss_kind": "",
 	})
 
 
 func _miss(idx: int, dt: float, err: float) -> void:
 	_lose_hp_and_combo()
 	_store(idx, {
-		"quality": Quality.MISS, "dt": dt, "angle_err": err,
-		"ring": notes[idx].ring, "miss_kind": "FULL", "late": false,
+		"quality": Quality.MISS, "dt": dt, "aim_err": err,
+		"key": notes[idx].key, "miss_kind": "FULL", "late": false,
 	})
 
 
@@ -681,74 +717,37 @@ func _store(idx: int, result: Dictionary) -> void:
 # ---------------------------------------------------------------------------
 
 ## Ein Replay-Event einspeisen (Wiedergabe) bzw. eine gerundete Live-Eingabe
-## ausfuehren und mitschreiben. Vorher laeuft das Raster bis t (einschliesslich).
-func apply_event(ev: Array) -> void:
-	if ev.size() < 2 or notes.is_empty() or _tally.failed:
+## ausfuehren und mitschreiben.
+func apply_event(ev_in: Array) -> void:
+	if ev_in.size() < 2 or notes.is_empty() or _tally.failed:
 		return
-	var te := float(ev[0])
+	var ev := ev_in.duplicate()
 	var code := int(ev[1])
+	var te := maxf(float(ev[0]), _time)
+	ev[0] = int(te)
 	_advance(te)
 	if _tally.failed:
 		return
-	if recording:
-		replay_log.append(ev.duplicate())
+	if recording and code != EV_RULES:
+		replay_log.append(ev)
 	if code == EV_CURSOR and ev.size() >= 4:
-		_rec_x = int(ev[2])
-		_rec_y = int(ev[3])
+		_cur_q = Vector2i(int(ev[2]), int(ev[3]))
 		_rec_t = te
-		_do_cursor(Vector2(float(_rec_x), float(_rec_y)) / 1000.0, te)
-	elif code >= EV_DOWN and code < EV_DOWN + RINGS and ev.size() >= 4:
-		_rec_x = int(ev[2])
-		_rec_y = int(ev[3])
-		_rec_t = te
-		_do_key_down(code - EV_DOWN, te, Vector2(float(_rec_x), float(_rec_y)) / 1000.0)
-	elif code >= EV_UP and code < EV_UP + RINGS:
-		_do_key_up(code - EV_UP, te)
+		_do_cursor(Vector2(float(_cur_q.x), float(_cur_q.y)) / 1000.0, te)
+	elif code >= EV_DOWN and code < EV_DOWN + KEYS:
+		_do_down(code - EV_DOWN, te)
+	elif code >= EV_UP and code < EV_UP + KEYS:
+		_do_up(code - EV_UP, te)
 
 
-## Ganze ms, nie vor dem letzten Raster-Schritt (sonst haengt die Reihenfolge
-## an der Bildrate).
 func _q_time(t_ms: float) -> float:
-	return maxf(roundf(t_ms), _tick)
+	return maxf(roundf(t_ms), _time)
 
 
 static func _q_axis(v: float) -> int:
 	return clampi(int(roundf(v * 1000.0)), -Q_LIMIT, Q_LIMIT)
 
 
-## Raster-Schritte bis einschliesslich target. Ohne laufenden Bogen springt es
-## direkt zum naechsten Ablauf-Zeitpunkt (dazwischen passiert nichts). Nach
-## einem Fail steht alles (Wiedergabe endet am selben Stand).
-func _advance(target: float) -> void:
-	while _tick < target and not _tally.failed:
-		if _active_arc[0] < 0 and _active_arc[1] < 0:
-			var due := _next_due_tick()
-			if due > target:
-				_tick = target
-				return
-			_tick = maxf(due, _tick + TICK_MS)
-		else:
-			_tick += TICK_MS
-		_check_arcs(_tick)
-		for r in RINGS:
-			_expire_ring(r, _tick)
-
-
-## Erster Raster-Schritt, an dem ein offenes Ziel ablaeuft (t > time + w50).
-func _next_due_tick() -> float:
-	var best := INF
-	for r in RINGS:
-		var lane: Array = _ring_notes[r]
-		for j in range(_ring_head[r], lane.size()):
-			var i: int = lane[j]
-			if _judged.has(i):
-				continue
-			best = minf(best, floorf(float(notes[i].time_ms) + w50) + TICK_MS)
-			break
-	return best
-
-
-## Kompakter Replay-Inhalt: Anzahl Cursor- und Tasten-Events.
 static func count_events(events: Array) -> Dictionary:
 	var c := 0
 	var k := 0
@@ -766,9 +765,8 @@ static func count_events(events: Array) -> Dictionary:
 # ---------------------------------------------------------------------------
 
 ## Plan fuer einen "menschlichen" Bot: je Ziel [Zeitversatz ms (+ = spaet),
-## Zielfehler Aim-Punkte, auslassen]; bot_offset macht daraus einen Ortsversatz. Deterministisch ueber seed. sigma_t/sigma_a =
-## Streuung (Normalverteilung, auf 3 sigma gedeckelt); miss_every > 0 laesst
-## jedes n-te Ziel aus. sigma 0 = perfekt.
+## Zielfehler (Feld x 100), auslassen]. Deterministisch ueber seed; sigma 0 =
+## perfekt; miss_every > 0 laesst jedes n-te Ziel aus.
 static func bot_plan(p_notes: Array, seed: int, sigma_t: float, sigma_a: float,
 		miss_every: int = 0) -> Array:
 	var rng := RandomNumberGenerator.new()
@@ -786,7 +784,7 @@ static func bot_plan(p_notes: Array, seed: int, sigma_t: float, sigma_a: float,
 	return out
 
 
-## Ortsversatz (Bahn-Einheiten) fuer den Zielfehler err (Aim-Punkte) des Ziels i:
-## feste, gleichmaessig verteilte Richtung je Ziel (goldener Winkel).
+## Ortsversatz (Feld) fuer den Zielfehler err (Feld x 100) des Ziels i: feste,
+## gleichmaessig verteilte Richtung je Ziel (goldener Winkel).
 static func bot_offset(i: int, err: float) -> Vector2:
 	return Vector2.from_angle(float(i) * 2.399963) * (err / 100.0)
