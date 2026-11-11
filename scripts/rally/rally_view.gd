@@ -161,7 +161,7 @@ func _draw_room() -> void:
 	var near_c := COL_TABLE.lightened(0.10)
 	var mid := w * 0.5
 	# Leichter Schraegblick: hinten ein Hauch links der Mitte, vorn rechts (zeigt die Netzflaeche).
-	var skew := 0.0045 * w
+	var skew := 0.0075 * w
 	var mf := lerpf(xl + inset, xr - inset, 0.5) - skew
 	var mn := mid + skew
 	draw_polygon(PackedVector2Array([Vector2(xl + inset, yf), Vector2(mf, yf), Vector2(mn, yn), Vector2(xl, yn)]),
@@ -190,15 +190,15 @@ func _draw_room() -> void:
 	var nb1 := Vector2(mn, yn)
 	var nt0 := nb0 + Vector2(0, -nh * 0.88)
 	var nt1 := nb1 + Vector2(0, -nh)
-	draw_colored_polygon(PackedVector2Array([nb0, nt0, nt1, nb1]), Color(0.80, 0.84, 0.88, 0.10))
+	draw_colored_polygon(PackedVector2Array([nb0, nt0, nt1, nb1]), Color(0.80, 0.84, 0.88, 0.17))
 	for i in range(1, 14):
 		var f := float(i) / 14.0
 		var bp := nb0.lerp(nb1, f)
 		var tp := nt0.lerp(nt1, f)
-		draw_line(bp, tp, Color(0.85, 0.88, 0.92, 0.11), 1.0)
+		draw_line(bp, tp, Color(0.85, 0.88, 0.92, 0.24), 1.0)
 	for i in range(1, 4):
 		var g := float(i) / 4.0
-		draw_line(nb0.lerp(nt0, g), nb1.lerp(nt1, g), Color(0.85, 0.88, 0.92, 0.06), 1.0)
+		draw_line(nb0.lerp(nt0, g), nb1.lerp(nt1, g), Color(0.85, 0.88, 0.92, 0.14), 1.0)
 	draw_line(nt0, nt1, Color(0.95, 0.94, 0.91, 0.82), 1.8, true)
 	draw_line(nt0 + Vector2(0, 1.5), nt1 + Vector2(0, 1.5), Color(0.95, 0.94, 0.91, 0.18), 1.0, true)
 	for pr in [[nb0, nt0], [nb1, nt1]]:
