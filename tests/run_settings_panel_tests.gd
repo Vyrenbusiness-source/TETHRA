@@ -188,8 +188,8 @@ func _run() -> void:
 	_check(S.orbit_cursor_size == 70, "Cursor-Größe wirkt (%d)" % S.orbit_cursor_size)
 	var pv: Control = _panel.get("_orbit_preview")
 	_check(pv != null and pv.is_visible_in_tree() and pv.get_global_rect().size.x > 100.0,
-		"Orbit-Vorschau sichtbar (%s)" % (pv.get_script().resource_path if pv != null and pv.get_script() != null else "Standbild"))
-	if OS.get_cmdline_args().has("--shot"):
+		"Orbit-Vorschau sichtbar (%s)" % ("Standbild" if pv == null or pv.get_script() == null or pv.get_script().resource_path == "" else pv.get_script().resource_path))
+	if OS.get_cmdline_args().has("--shot") or OS.get_cmdline_user_args().has("--shot"):
 		await _frames(20)
 		var img := root.get_texture().get_image()
 		img.save_png("user://settings_orbit.png")

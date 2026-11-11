@@ -65,6 +65,8 @@ var _right: VBoxContainer
 var _tier_rows: Control
 var _hist_box: Control
 var _keys_box: Control
+var _cap_scatter: Label
+var _cap_plot: Label
 var _toast: PanelContainer
 var _toast_label: Label
 var _toast_btn: Button
@@ -214,6 +216,11 @@ func _build(s: Dictionary) -> void:
 	_grade.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_grade.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	add_child(_grade)
+	# Ueberschriften als Labels: die Ueberschriftschrift zeichnet in _draw nicht sauber.
+	_cap_scatter = _tag(tr("ZIELSTREUUNG"), UiTheme.DIM)
+	add_child(_cap_scatter)
+	_cap_plot = _tag(tr("TREFFER-ZEITLEISTE"), UiTheme.DIM)
+	add_child(_cap_plot)
 
 	_right = VBoxContainer.new()
 	_right.anchor_left = 0.52
@@ -495,6 +502,9 @@ func _process(delta: float) -> void:
 	_score.text = UiTheme.fmt_score(sc)
 	_grade.position = _grade_center() - Vector2(110, 75)
 	_grade.size = Vector2(220, 150)
+	var disc := _scatter_disc()
+	_cap_scatter.position = disc[0] - Vector2(disc[1], disc[1] + 22.0)
+	_cap_plot.position = _plot_rect().position - Vector2(0, 22)
 	if k < 1.0 or _t < REVEAL_S + 0.1:
 		queue_redraw()
 		_hist_box.queue_redraw()
@@ -549,9 +559,6 @@ func _draw_scatter() -> void:
 	var rp: float = disc[1]
 	var k := rp / SCATTER_EXTENT   # px je Zielradius
 	var fs := 12
-	var hf := UiTheme.heading_font(4)
-	draw_string(hf, Vector2(c.x - rp, c.y - rp - 8.0), tr("ZIELSTREUUNG"), HORIZONTAL_ALIGNMENT_LEFT, -1, fs,
-		UiTheme.DIM)
 	draw_circle(c, rp, Color(1, 1, 1, 0.025), true, -1.0, true)
 	# Volle Zielwertung (bis 50 % Radius), Zielrand, Trefferradius.
 	draw_circle(c, k * OrbitCore.AIM_FULL_FRAC, Color(MAX_COL, 0.05), true, -1.0, true)
@@ -589,8 +596,6 @@ func _draw_timeline() -> void:
 	var mid := r.position.y + r.size.y * 0.5
 	var half := r.size.y * 0.5
 	var fs := 12
-	draw_string(UiTheme.heading_font(4), Vector2(r.position.x, r.position.y - 10.0), tr("TREFFER-ZEITLEISTE"),
-		HORIZONTAL_ALIGNMENT_LEFT, -1, fs, UiTheme.DIM)
 	draw_rect(r, Color(1, 1, 1, 0.025))
 	# CORE-Fenster, 50er-Fenster (Rand) und Nulllinie.
 	var cw := clampf(_w_max / _w50, 0.02, 1.0) * half
