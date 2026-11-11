@@ -1,17 +1,17 @@
 extends SceneTree
 
-## Headless-Tests fuer Orbit-Replays (Task orbit-replay): Aufnahme im
-## deterministischen OrbitCore, Wiedergabe mit anderer Bildrate (und nach
-## JSON-Rundreise) muss exakt dieselbe Wertung liefern; Kompaktheit der
-## Cursor-Spur; ReplayStore haelt Orbit und Mania getrennt.
+## Headless-Tests fuer Orbit-Replays "Satelliten" (Task orbit-sat-game):
+## Aufnahme im deterministischen OrbitCore (Feld-Cursor, Tasten A/B), Wiedergabe
+## mit anderer Bildrate (und nach JSON-Rundreise) = exakt dieselbe Wertung;
+## Wiedergabe ueber OrbitGame._feed_replay; Kompaktheit der Cursor-Spur;
+## ReplayStore haelt Orbit und Mania getrennt; Regel-Marke 3, aeltere = alt.
 ## Ausfuehren:
 ##   Godot..._console.exe --headless --audio-driver Dummy --path . --script res://tests/run_orbit_replay_tests.gd
 
 var _passed := 0
 var _failed := 0
 var _done := false
-## Bahn der Testkarte: Form wechselt alle zwei Takte (Takt 2000 ms).
-var _tr: OrbitTrack
+const RADIUS := 0.05
 
 
 func _process(_delta: float) -> bool:
@@ -31,42 +31,50 @@ func _check(cond: bool, label: String) -> void:
 
 
 func _run() -> void:
-	print("=== TETHRA Orbit-Replay-Tests (Bahnen) ===")
-	_tr = OrbitTrack.fixed(OrbitClock.fixed(2000.0), OrbitPath.CIRCLE)
-	for k in range(1, 40):
-		_tr.plan.append([4000.0 * k, [OrbitPath.ELLIPSE, OrbitPath.EIGHT, OrbitPath.ROSE3, OrbitPath.CIRCLE][k % 4]])
+	print("=== TETHRA Orbit-Replay-Tests (Satelliten) ===")
 	_test_determinism()
 	_test_fail_freeze()
 	_test_compact()
 	_test_store()
 	_test_orbit_mods()
 	_test_rules_marker()
+	_test_game_replay()
 	print("=== %d ok, %d fehlgeschlagen ===" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
 
 
 # --- Testkarte und simulierter Spieler ---
 
-## Taps auf beiden Spuren, dichte Stellen, Boegen in beide Richtungen.
+## Taps A/B, Akzente, dichte Stellen, Halten mit gebogenen Pfaden (Feld).
 func _chart() -> Array[OrbitNote]:
 	var ns: Array[OrbitNote] = []
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 77
 	var t := 1500.0
-	var clock := OrbitClock.fixed(2000.0)
+	var p := Vector2(0.5, 0.5)
 	for i in 90:
-		var ring := rng.randi_range(0, 1)
-		var ang := clock.angle_at(t)
+		var key := rng.randi_range(0, 1)
+		if i % 11 == 6:
+			key = OrbitNote.KEY_ACCENT
+		p = (p + Vector2(rng.randf_range(-0.25, 0.25), rng.randf_range(-0.25, 0.25))).clamp(
+				Vector2(0.08, 0.08), Vector2(0.92, 0.92))
 		var n: OrbitNote
 		if i % 9 == 4:
 			var dur := rng.randf_range(300.0, 900.0)
-			n = OrbitNote.make_arc(t, t + dur, ang, 360.0 * dur / 2000.0, ring)
+			var path := PackedVector2Array()
+			var d := Vector2.from_angle(rng.randf() * TAU) * 0.2
+			for k in 8:
+				var u := float(k) / 7.0
+				path.append((p + d * u + d.orthogonal() * sin(u * PI) * 0.3).clamp(Vector2.ZERO, Vector2.ONE))
+			n = OrbitNote.make_hold(t, t + dur, path, key)
+			p = path[path.size() - 1]
 			t += dur + rng.randf_range(120.0, 300.0)
 		else:
-			n = OrbitNote.make(t, ang, ring)
+			n = OrbitNote.make_target(t, p, key)
 			t += rng.randf_range(90.0, 380.0)
-		n.shape = _tr.shape_at(t)
-		n.speed = _tr.speed_at(t)
+		n.lap_ms = 500.0
+		n.laps = 2
+		n.spawn_ms = n.time_ms - 1000.0
 		ns.append(n)
 	ns.sort_custom(func(a, b): return a.time_ms < b.time_ms)
 	return ns
@@ -74,44 +82,45 @@ func _chart() -> Array[OrbitNote]:
 
 func _core(ns: Array[OrbitNote], mods: Dictionary = {}) -> OrbitCore:
 	var c := OrbitCore.new()
-	c.setup(ns, 8.0, 1.0, 5.0, mods)
-	c.set_track(_tr)
+	c.setup(ns, 8.0, mods, RADIUS, 5.0)
 	return c
 
 
 ## Rohe Eingabe eines "Menschen": Mausbewegung ~1 kHz mit Zittern, Tasten mit
-## Zeitstreuung, ausgelassene Ziele, zu frueh losgelassene Boegen.
-## Event: [t (float ms), "m"|"d"|"u", Spur, Ort (Bahn-Einheiten)].
+## Zeitstreuung, ausgelassene Ziele, zu frueh losgelassene Halten.
+## Event: [t (float ms), "m"|"d"|"u", Taste, Ort (Feld)].
 func _human(ns: Array[OrbitNote], seed: int) -> Array:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed
 	var keys: Array = []
 	var aims: Array = []   # [t, Ort] Stuetzpunkte der Cursor-Bahn
-	aims.append([0.0, _tr.head(0.0)])
+	aims.append([0.0, Vector2(0.5, 0.5)])
 	for i in ns.size():
 		var n := ns[i]
 		if i % 13 == 7:
 			continue   # Ziel auslassen
 		var dt := rng.randfn(0.0, 22.0)
-		var aim := _tr.head(n.time_ms + dt) + _noise(rng, 0.07)
+		var aim := n.pos + _noise(rng, 0.035)
 		var td := n.time_ms + dt
 		aims.append([td - 25.0, aim])
 		aims.append([td, aim])
-		keys.append([td, "d", n.ring, aim])
-		if n.is_arc:
-			var stop := n.end_ms
+		var ks := [0, 1] if n.key == OrbitNote.KEY_ACCENT else [n.key]
+		for k in ks:
+			keys.append([td + (8.0 if k == 1 and ks.size() == 2 else 0.0), "d", k, aim])
+		var stop := td + rng.randf_range(25.0, 70.0)
+		if n.is_hold:
+			stop = n.end_ms
 			if i % 4 == 0:
 				stop = lerpf(n.time_ms, n.end_ms, 0.5)   # zu frueh los
 			var steps := int((stop - td) / 30.0)
 			for k in steps:
 				var tk := td + 30.0 * (k + 1)
-				aims.append([tk, _tr.head(tk) + _noise(rng, 0.05)])
-			keys.append([stop + rng.randf_range(0.0, 30.0), "u", n.ring, Vector2.ZERO])
-		else:
-			keys.append([td + rng.randf_range(25.0, 70.0), "u", n.ring, Vector2.ZERO])
+				aims.append([tk, n.pos_at(tk) + _noise(rng, 0.02)])
+			stop += rng.randf_range(0.0, 30.0)
+		for k in ks:
+			keys.append([stop, "u", k, Vector2.ZERO])
 	aims.sort_custom(func(a, b): return a[0] < b[0])
 	var evs: Array = []
-	# Mausbewegung: zwischen den Stuetzpunkten interpolieren, ~1 kHz, Zittern.
 	var t := 0.0
 	var end_t: float = aims.back()[0] + 400.0
 	var j := 0
@@ -155,7 +164,7 @@ func _live(ns: Array[OrbitNote], evs: Array, seed: int, mods: Dictionary = {}) -
 				"m":
 					c.cursor_moved(e[3], float(e[0]))
 				"d":
-					c.key_down(int(e[2]), float(e[0]), e[3])
+					c.key_down(int(e[2]), float(e[0]))
 				"u":
 					c.key_up(int(e[2]), float(e[0]))
 		c.update(frame_t)
@@ -188,7 +197,7 @@ func _same_judgements(a: Dictionary, b: Dictionary) -> bool:
 			return false
 		var x: Dictionary = a[i]
 		var y: Dictionary = b[i]
-		for key in ["quality", "dt", "angle_err", "miss_kind", "held", "drop_reason"]:
+		for key in ["quality", "dt", "aim_err", "miss_kind", "held", "drop_reason"]:
 			if x.get(key) != y.get(key):
 				print("    Ziel %d %s: %s != %s" % [i, key, x.get(key), y.get(key)])
 				return false
@@ -218,7 +227,7 @@ func _test_determinism() -> void:
 	for i in live[1]:
 		if str(live[1][i].get("miss_kind", "")) == "DROP":
 			drops += 1
-	_check(drops > 0, "Lauf hat abgebrochene Boegen (DROP)")
+	_check(drops > 0, "Lauf hat abgebrochene Halten (DROP)")
 	_check((live[1] as Dictionary).size() == ns.size(), "alle Ziele gewertet")
 	# Wiedergabe mit 60, 144 und 30 FPS.
 	for fm in [1000.0 / 60.0, 1000.0 / 144.0, 1000.0 / 30.0]:
@@ -295,7 +304,7 @@ func _test_store() -> void:
 	var osz := "__orbit_replay_test_%d__.osz" % OS.get_process_id()
 	var ver := "Test"
 	var mania_ev := [{"t": 100.0, "lane": 0, "down": true}, {"t": 180.0, "lane": 0, "down": false}]
-	var orbit_ev := [[100, OrbitCore.EV_CURSOR, 450], [120, OrbitCore.EV_DOWN, 455], [160, OrbitCore.EV_UP]]
+	var orbit_ev := [[100, OrbitCore.EV_CURSOR, 450, 300], [120, OrbitCore.EV_DOWN], [160, OrbitCore.EV_UP]]
 	ReplayStore.save(osz, ver, mania_ev, {"score": 1, "mods": {}})
 	ReplayStore.save(osz, ver, orbit_ev, {"score": 2, "mods": {"NF": true}}, "orbit")
 	_check(ReplayStore.dir_for("orbit_last") != ReplayStore.dir_for("orbit") and ReplayStore.dir_for("orbit") != ReplayStore.DIR, "eigene Ordner je Modus")
@@ -352,8 +361,42 @@ func _test_rules_marker() -> void:
 	_check(OrbitCore.count_events(lc.replay_log).keys <= 2 * ns.size(), "Marke zaehlt nicht als Taste")
 	var game: GDScript = load("res://scripts/orbit/orbit_game.gd")
 	_check(not game.is_old_replay(lc.replay_log), "neues Replay ist nicht alt")
-	_check(game.is_old_replay([[100, OrbitCore.EV_CURSOR, 450, 300], [120, OrbitCore.EV_DOWN, 455, 300]]),
-		"Format 2 (ohne Marke) = aeltere Version")
-	_check(game.is_old_replay([[100, OrbitCore.EV_DOWN + 1], [160, OrbitCore.EV_UP]]), "Format 1 = aeltere Version")
-	_check(game.is_old_replay([[0, OrbitCore.EV_RULES, 3]]), "Marke mit Format 3 (Taktkreis) = alt")
-	_check(game.is_old_replay([[0, OrbitCore.EV_RULES, 2]]), "Marke mit Format 2 = alt")
+	_check(game.is_old_replay([[100, OrbitCore.EV_CURSOR, 450, 300], [120, OrbitCore.EV_DOWN]]),
+		"ohne Marke = aeltere Version")
+	_check(game.is_old_replay([[0, OrbitCore.EV_RULES, 2]]), "Marke 2 (Bahnen) = aeltere Version")
+	_check(not game.is_old_replay([[0, OrbitCore.EV_RULES, 3]]), "Marke 3 (Satelliten) = aktuell")
+
+
+## Wiedergabe ueber das Spiel (OrbitGame._feed_replay): gleiche Wertung, Cursor
+## und Tasten wie aufgenommen.
+func _test_game_replay() -> void:
+	print("- Spiel-Wiedergabe (_feed_replay) = Aufnahme")
+	var ns := _chart()
+	var live := _live(ns, _human(ns, 5), 11)
+	var lc: OrbitCore = live[0]
+	var game_script: GDScript = load("res://scripts/orbit/orbit_game.gd")
+	var g: Control = game_script.new()
+	g.notes = ns
+	g.core = _core(ns)
+	g.core.set_replay_mode(false)
+	g._view = OrbitView.new()
+	g._view.setup(ns)
+	g._replay = true
+	g._replay_events = JSON.parse_string(JSON.stringify(lc.replay_log))
+	var max_down := 0
+	var t := -500.0
+	var end_t: float = ns.back().end_ms + 1500.0
+	while t < end_t:
+		t += 1000.0 / 60.0
+		g._feed_replay(t)
+		g.core.update(t)
+		max_down = maxi(max_down, int(g._view.held[0]) + int(g._view.held[1]))
+	_check(_same_stats(lc.stats(), g.core.stats()), "Stats gleich")
+	_check(max_down == 2, "Akzent: beide Tasten sichtbar gedrueckt")
+	var last := Vector2.ZERO
+	for e in lc.replay_log:
+		if int(e[1]) == OrbitCore.EV_CURSOR:
+			last = Vector2(float(e[2]), float(e[3])) / 1000.0
+	_check((g._view.cursor as Vector2).is_equal_approx(last), "Cursor wie aufgenommen")
+	g._view.free()
+	g.free()
