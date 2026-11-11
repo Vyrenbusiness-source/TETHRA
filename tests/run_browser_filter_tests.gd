@@ -193,7 +193,7 @@ func _test_four_modes() -> void:
 		var h := HitObject.new()
 		h.time = i * 250.0
 		bm.hit_objects.append(h)
-	var st := SS.mode_stars_fallback(bm)
+	var st: float = SS.mode_stars_fallback(bm)
 	_ok(st > 0.0 and st <= 15.0, "Fallback-Sterne 0..15 (%.2f)" % st)
 	# Filter je Modus (4 Stueck) bleiben getrennt.
 	var mf := {}

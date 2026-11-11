@@ -118,6 +118,7 @@ func _test_four_modes() -> void:
 	ScoreStore.submit("77 Four.osz", "Hard", { "score": 700000, "grade": "A", "accuracy": 0.9, "stars": 6.0, "mode": "rally" }, R)
 	ScoreStore.submit("77 Four.osz", "Hard", { "score": 800000, "grade": "S", "accuracy": 0.95, "stars": 8.0, "mode": "dirigent" }, D)
 	ScoreStore.log_play("77 Four.osz", "Hard", "Four", { "score": 700000, "grade": "A", "accuracy": 0.9, "mode": "rally" }, R)
+	ScoreStore.log_play("77 Four.osz", "Hard", "Four", { "score": 800000, "grade": "S", "accuracy": 0.95, "mode": "dirigent" }, D)
 	_check(int(ScoreStore.best("77 Four.osz", "Hard", R).score) == 700000, "Rally-Bestwert eigen")
 	_check(int(ScoreStore.best("77 Four.osz", "Hard", D).score) == 800000, "Dirigent-Bestwert eigen")
 	_check(ScoreStore.best("77 Four.osz", "Hard", ScoreStore.MODE_ORBIT).is_empty()
