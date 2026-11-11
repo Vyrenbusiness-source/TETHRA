@@ -1214,8 +1214,8 @@ func _play_mode_entry(mode: String) -> void:
 
 func _mode_sub_text(mode: String) -> String:
 	match mode:
-		"rally": return tr("Tischtennis im Takt")
-		"dirigent": return tr("Takt führen, Einsätze setzen")
+		"rally": return tr("Tischtennis")
+		"dirigent": return tr("Takt führen")
 	return tr("Zielen + Tippen")
 
 
