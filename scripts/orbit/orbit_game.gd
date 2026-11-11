@@ -84,9 +84,16 @@ var _intensity := IntensityMap.new()
 var _last_milestone := 0
 ## Bot-Plan (OrbitCore.bot_plan): je Ziel [Zeitversatz, Zielfehler, auslassen].
 var _bot_plan: Array = []
-## Je gewertetem Ziel [Feld-Pos, Taste, dt, Zielfehler (Feld x 100), Stufe, Zeit]
-## fuer OrbitResults.
+## Je gewertetem Ziel ein Eintrag fuer OrbitResults: OrbitResults.entry(note, result,
+## Cursor beim Druck) (neuer Endscreen), sonst [Feld-Pos, Taste, dt, Zielfehler
+## (Feld x 100), Stufe, Zeit] (alter Endscreen).
 var _hit_log: Array = []
+## Fehldrucke je Grund (aim/key/early/lock) fuer die Tasten-Statistik.
+var _presses := {"aim": 0, "key": 0, "early": 0, "lock": 0}
+## Halten: Cursor beim Kopf-Druck (Index -> Feld-Pos).
+var _hold_cursor := {}
+## OrbitResults.entry vorhanden (neuer Endscreen)? null = noch nicht geprueft.
+static var _has_entry = null
 var _mp_send_cd := 0.0
 var _mods_label: Label
 ## Replay-Wiedergabe: Events (OrbitCore.EV_*), naechster Index, Endzeit des Laufs.
@@ -155,6 +162,8 @@ func _ready() -> void:
 	_view.key_hint = key_hint_on(Settings.orbit_key_hint, _stars, GameSession.tutorial)
 	_view.key_labels = [UiTheme.key_short(Settings.orbit_key_inner), UiTheme.key_short(Settings.orbit_key_outer)]
 	_view.music = Settings.orbit_music
+	_view.size_k = clampf(float(setting("orbit_target_size", 100)) / 100.0, 0.9, 1.2)
+	_view.cursor_k = clampf(float(setting("orbit_cursor_size", 100)) / 100.0, 0.5, 1.5)
 	_view.mod_hidden = bool(core.mods.get("HD", false))
 	_view.mod_fade_in = bool(core.mods.get("FI", false))
 	_view.show_cursor = true
@@ -269,7 +278,7 @@ func _cli_pick() -> void:
 ## wertet (NF liest OrbitCore selbst aus GameSession.mods).
 func _build_core() -> void:
 	if notes.is_empty():
-		notes = OrbitConverter.convert(_beatmap)
+		notes = OrbitConverter.convert(_beatmap, int(setting("orbit_laps", 0)))
 	_radius = OrbitConverter.target_radius(_beatmap)
 	_stars = OrbitConverter.stars(notes)
 	core = OrbitCore.new()
@@ -286,10 +295,16 @@ func _build_core() -> void:
 ## Vorlauf der ersten Note (Erscheinen bis Treffer) in ms.
 func _first_lead() -> float:
 	if notes.is_empty():
-		notes = OrbitConverter.convert(_beatmap)
+		notes = OrbitConverter.convert(_beatmap, int(setting("orbit_laps", 0)))
 	if notes.is_empty():
 		return 2000.0
 	return float(notes[0].time_ms) - float(notes[0].spawn_ms)
+
+
+## Einstellung mit Rueckfall (neue Namen kommen mit dem Settings-Umbau).
+static func setting(name: String, def):
+	var v = Settings.get(name)
+	return def if v == null else v
 
 
 ## Taste im naechsten Ziel: Settings.orbit_key_hint 0 = auto (leichte Maps < 3
@@ -959,8 +974,9 @@ func _on_note_judged(index: int, result: Dictionary) -> void:
 	_view.on_judged(index, result)
 	if index >= 0 and index < notes.size():
 		var n := notes[index]
-		_hit_log.append([n.pos, n.key, float(result.get("dt", 0.0)),
-			float(result.get("aim_err", 0.0)) * 100.0, q, n.time_ms])
+		var cur: Vector2 = _hold_cursor.get(index, core.cursor_pos())
+		_hold_cursor.erase(index)
+		_hit_log.append(log_entry(n, result, cur))
 	_check_milestone(q)
 	var hold_end := bool(result.get("hold_end", false))
 	var snd_key := notes[index].key if index >= 0 and index < notes.size() else 0
@@ -981,10 +997,29 @@ func _on_note_judged(index: int, result: Dictionary) -> void:
 
 ## Fehldruck: kurzes Wort am Cursor ("daneben", "andere Taste"), Notelock wackelt.
 func _on_press_missed(pos: Vector2, key: int, reason: String) -> void:
+	if _presses.has(reason):
+		_presses[reason] = int(_presses[reason]) + 1
 	_view.on_press_missed(pos, key, reason)
 
 
+## Log-Eintrag: OrbitResults.entry, wenn der neue Endscreen da ist, sonst altes Format.
+static func log_entry(n: OrbitNote, result: Dictionary, cursor: Vector2):
+	if _has_entry == null:
+		_has_entry = false
+		var sc: Script = OrbitResults
+		for m in sc.get_script_method_list():
+			if str(m.get("name", "")) == "entry":
+				_has_entry = true
+				break
+	if _has_entry:
+		var sc: Script = OrbitResults
+		return sc.call("entry", n, result, cursor)
+	return [n.pos, n.key, float(result.get("dt", 0.0)),
+		float(result.get("aim_err", 0.0)) * 100.0, int(result.get("quality", 5)), n.time_ms]
+
+
 func _on_hold_started(index: int, quality: int) -> void:
+	_hold_cursor[index] = core.cursor_pos()
 	_view.on_hold_started(index, quality)
 	if index >= 0 and index < notes.size():
 		_sound.on_arc_started(notes[index].key, quality)
@@ -1153,6 +1188,9 @@ func _show_results(is_fail: bool) -> void:
 		"is_fail": is_fail,
 		"s": s,
 		"log": _hit_log,
+		"radius": float(core.target_radius),
+		"presses": _presses.duplicate(),
+		"key_names": _view.key_labels.duplicate(),
 		"w50": float(core.w50),
 		"w_max": float(core.w_max),
 		"new_best": new_best,

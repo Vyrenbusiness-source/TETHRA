@@ -21,10 +21,12 @@ const MIN_HOLD_MS := 100.0
 const MAX_HOLD_MS := 6000.0
 const EASY_HOLD_BEATS := 2.0
 
-const FIELD_MIN := Vector2(0.06, 0.08)
-const FIELD_MAX := Vector2(0.94, 0.92)
-## Mindestabstand der Mitten zweier gleichzeitig sichtbarer Ziele.
-const SEP := 0.12
+## Erzeugte Positionen (Mania): ganzes 4:3-Feld, Rand ~ Zielradius.
+const FIELD_MIN := Vector2(0.08, 0.11)
+const FIELD_MAX := Vector2(0.92, 0.89)
+## Mindestabstand der Mitten zweier gleichzeitig sichtbarer Ziele (2 x Zielradius:
+## die Scheiben beruehren sich hoechstens).
+const SEP := 0.14
 ## Sprungweite (Feld-Einheiten) <= JUMP_BASE + JUMP_V * Sekunden.
 const JUMP_BASE := 0.06
 const JUMP_V_MIN := 1.0
@@ -32,21 +34,27 @@ const JUMP_V_MAX := 2.2
 const JUMP_V_PER_NPS := 0.22
 const EASY_JUMP_V := 0.9
 const EASY_JUMP_MAX := 0.3
-## Mania: erzeugter Schritt.
-const MANIA_BASE := 0.07
-const MANIA_V := 0.6
-const MANIA_MAX := 0.26
+## Mania: erzeugter Schritt in Feldhoehen (x mit 4:3 gerechnet, wie man es sieht).
+const MANIA_BASE := 0.08
+const MANIA_V := 0.55
+const MANIA_MAX := 0.36
+## Mania-Fluss: Drehung der Laufrichtung je Spalte (Grad); Zug zur Mitte ab
+## MANIA_PULL_FROM (0 = Mitte, 1 = Rand) bis MANIA_PULL am Rand.
+const MANIA_TURN := [-62.0, -24.0, 24.0, 62.0]
+const MANIA_PULL_FROM := 0.25
+const MANIA_PULL := 0.8
 ## Halten: Kugelgeschwindigkeit (Feld/s) hoechstens, Pfad-Aufloesung.
 const HOLD_V_MAX := 1.4
 const PATH_STEP := 0.035
-const MANIA_HOLD_V := 0.7
-const MANIA_HOLD_MAX := 0.24
+const MANIA_HOLD_V := 1.0
+const MANIA_HOLD_MAX := 0.4
 
 ## Mania-Strom: Abstand darunter = Wechselschlag der Tasten.
 const STREAM_MS := 250.0
-## Zielradius wie osu! (Kreisradius aus CS), Feld-Einheiten je osu!-Pixel.
-const RADIUS_PER_OSU_PX := 0.045 / 36.48
-const MANIA_RADIUS := 0.045
+## Zielradius wie osu!: 54,4 - 4,48 x CS osu!-Pixel bei 384 px Feldhoehe
+## (Feld-Einheiten = Feldhoehe; CS 4 -> 36,5 / 384 = 0,095).
+const RADIUS_PER_OSU_PX := 1.0 / 384.0
+const MANIA_RADIUS := 36.48 / 384.0
 
 # Sterne
 const STAR_HOP_MS := 1000.0
@@ -78,7 +86,7 @@ static func laps_from_ar(ar: float) -> int:
 	return 1
 
 
-## Zielradius (Feld-Einheiten) wie osu!: CS 4 ~ 0.045. Mania: fest.
+## Zielradius (Feld-Einheiten, Feldhoehe) wie osu!: CS 4 ~ 0.095. Mania: fest (CS 4).
 static func target_radius(beatmap: Beatmap) -> float:
 	if beatmap == null or beatmap.is_mania():
 		return MANIA_RADIUS
@@ -316,7 +324,8 @@ static func _build(events: Array, bm: Beatmap, laps_req: int, mania: bool) -> Ar
 	var placed: Array = []   # [pos, spawn_req, end]
 	var prev_pos := Vector2(0.5, 0.5)
 	var prev_t := -INF
-	var flow := Vector2(1.0, 1.0)
+	var flow := Vector2(1.0, 0.0)
+	var heading := 0.0
 	var built: Array[OrbitNote] = []
 	for idx in kept.size():
 		var e: Dictionary = kept[idx]
@@ -339,14 +348,13 @@ static func _build(events: Array, bm: Beatmap, laps_req: int, mania: bool) -> Ar
 		# Position
 		var want: Vector2
 		if mania:
-			var c: int = e.col
-			var d := Vector2(-1.0, 0.0) if c == 0 else (Vector2(0.0, -1.0) if c == 1 else (Vector2(0.0, 1.0) if c == 2 else Vector2(1.0, 0.0)))
-			flow = d
-			var dist := minf(MANIA_BASE + MANIA_V * dt, MANIA_MAX)
 			if prev_t == -INF:
 				want = Vector2(0.5, 0.5)
 			else:
-				want = _reflect(prev_pos + d * dist)
+				var step := _mania_step(prev_pos, heading, int(e.col), dt)
+				want = step[0]
+				heading = step[1]
+			flow = Vector2(cos(heading) * 0.75, sin(heading)).normalized()
 		else:
 			want = e.pos
 			if easy and prev_t != -INF:
@@ -379,18 +387,31 @@ static func _build(events: Array, bm: Beatmap, laps_req: int, mania: bool) -> Ar
 	return _assign_laps(built, clock, laps_req)
 
 
-## Spiegelt Koordinaten am Feldrand zurueck (deterministisch), dann klemmen.
-static func _reflect(p: Vector2) -> Vector2:
-	var q := p
-	if q.x < FIELD_MIN.x:
-		q.x = 2.0 * FIELD_MIN.x - q.x
-	elif q.x > FIELD_MAX.x:
-		q.x = 2.0 * FIELD_MAX.x - q.x
-	if q.y < FIELD_MIN.y:
-		q.y = 2.0 * FIELD_MIN.y - q.y
-	elif q.y > FIELD_MAX.y:
-		q.y = 2.0 * FIELD_MAX.y - q.y
-	return _clamp_field(q)
+## Mania-Fluss: Laufrichtung dreht je Spalte, zieht zur Mitte (je weiter draussen,
+## desto staerker), prallt am Rand ab. Gerechnet in Feldhoehen (x x 4/3), damit
+## Schritte und Kurven auf dem 4:3-Feld gleich aussehen. -> [Feld-Position, Richtung]
+static func _mania_step(prev: Vector2, heading: float, col: int, dt: float) -> Array:
+	var v := Vector2(prev.x * 4.0 / 3.0, prev.y)
+	var lo := Vector2(FIELD_MIN.x * 4.0 / 3.0, FIELD_MIN.y)
+	var hi := Vector2(FIELD_MAX.x * 4.0 / 3.0, FIELD_MAX.y)
+	var mid := (lo + hi) * 0.5
+	var half := (hi - lo) * 0.5
+	var off := v - mid
+	var k := maxf(absf(off.x) / half.x, absf(off.y) / half.y)
+	var a := heading + deg_to_rad(float(MANIA_TURN[clampi(col, 0, 3)]))
+	if off.length() > 1e-4:
+		var w := MANIA_PULL * smoothstep(MANIA_PULL_FROM, 1.0, k)
+		a = lerp_angle(a, (-off).angle(), w)
+	var dist := minf(MANIA_BASE + MANIA_V * dt, MANIA_MAX)
+	var d := Vector2(cos(a), sin(a))
+	var q := v + d * dist
+	if q.x < lo.x or q.x > hi.x:
+		d.x = -d.x
+	if q.y < lo.y or q.y > hi.y:
+		d.y = -d.y
+	q = v + d * dist
+	q = Vector2(clampf(q.x, lo.x, hi.x), clampf(q.y, lo.y, hi.y))
+	return [Vector2(q.x * 0.75, q.y), d.angle()]
 
 
 static func _conflicts(p: Vector2, placed: Array, spawn: float) -> bool:

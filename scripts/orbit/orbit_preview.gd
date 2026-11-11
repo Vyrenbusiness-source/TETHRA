@@ -11,7 +11,7 @@ const SIZE_PX := Vector2(384, 216)
 const TAIL_MS := 700.0
 const LAP_MS := 500.0
 const LAPS := 2
-const RADIUS := 0.06
+const RADIUS := OrbitConverter.MANIA_RADIUS
 
 var _view: OrbitView
 var _bg: TextureRect

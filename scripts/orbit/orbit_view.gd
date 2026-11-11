@@ -11,11 +11,13 @@ extends Control
 ## Lesbarkeit wie osu!: Ziel A = kuehle Scheibe, Ziel B = warmes abgerundetes
 ## Quadrat, Akzent = Scheibe halb/halb mit weissem Ring. Um jedes Ziel ein
 ## duenner Orbit-Ring (ORBIT_K x Radius) mit Marke oben; der Satellit (weisser
-## Punkt) kreist eine Runde pro lap_ms und steht zur Trefferzeit genau an der
-## Marke. Pips unter dem Ziel = verbleibende ganze Runden. In der letzten Runde
-## ist der Rest des Rings bis zur Marke heller (wann). Das naechste Ziel ist
-## voll deckend und traegt die Taste, spaetere LATER_ALPHA. Duenne Linie vom
-## naechsten zum folgenden Ziel. Halten: Band entlang des Pfads, Kugel und
+## Punkt mit kurzer Spur auf dem Ring) kreist eine Runde pro lap_ms und steht
+## zur Trefferzeit genau an der Marke. Pips (eine Reihe direkt unter dem Ziel,
+## innerhalb des Rings) = verbleibende ganze Runden. In der letzten Runde ist der
+## Rest des Rings bis zur Marke heller (wann). Das naechste Ziel ist voll deckend
+## mit weissem Rand und traegt die Taste, spaetere LATER_ALPHA. Folgepunkte
+## (kurze Striche wie osu!) vom naechsten zum folgenden Ziel; Ecken des Felds
+## dezent markiert. Halten: Band entlang des Pfads, Kugel und
 ## Folgekreis. Treffer: knapper Pop in Zielfarbe, Miss: kleines X, Fehldruck:
 ## kurzes Wort am Cursor. Kein Glow, keine Partikel, keine Deko.
 
@@ -29,7 +31,7 @@ const FOLLOW_K := 2.0
 ## Quadrat-Halbseite und Eckenradius relativ zum Zielradius.
 const SQUARE_K := 0.86
 const CORNER_K := 0.34
-const LATER_ALPHA := 0.55
+const LATER_ALPHA := 0.45
 const POP_IN_MS := 90.0
 const HIT_MS := 130.0
 const MISS_MARK_MS := 420.0
@@ -86,6 +88,9 @@ var kiai := 0.0
 var music := 1
 ## Halten: Index -> Warnstufe 0..1 (Kugel ausserhalb des Folgekreises).
 var hold_warn: Dictionary = {}
+## Zielgroesse (Settings.orbit_target_size / 100, nur Anzeige) und Cursorgroesse.
+var size_k := 1.0
+var cursor_k := 1.0
 
 var _state := PackedInt32Array()
 var _state_t := PackedFloat64Array()
@@ -289,8 +294,9 @@ func _draw() -> void:
 		vis.append(i)
 	var nxt := next_index()
 	var nxt_t := float(notes[nxt].time_ms) if nxt >= 0 else INF
-	var R := radius_px()
+	var R := radius_px() * size_k
 	var pulse := _pulse()
+	_draw_marks()
 	# 1. Halten-Baender (spaete zuerst).
 	for j in range(vis.size() - 1, -1, -1):
 		var i := vis[j]
@@ -371,47 +377,61 @@ func _draw_target(i: int, n: OrbitNote, R: float, alpha: float, is_next: bool,
 		c.x += sin(k * TAU * 3.0) * R * 0.12 * (1.0 - k)
 	var r := R * _pop_scale(n, t)
 	var ring_r := r * ORBIT_K
-	var lw := maxf(1.4, R * 0.055)
+	var lw := maxf(1.5, R * 0.05)
 	# Orbit-Ring (Puls nur Helligkeit/Breite, dezent).
-	var ring_a := (0.22 + 0.10 * kiai + 0.22 * pulse) * alpha
-	draw_arc(c, ring_r, 0.0, TAU, 72, Color(1, 1, 1, ring_a), lw * (1.0 + 0.4 * pulse), true)
-	# Letzte Runde: Rest bis zur Marke heller (zaehlt "jetzt" herunter).
+	var ring_a := ((0.30 if is_next else 0.22) + 0.08 * kiai + 0.2 * pulse) * alpha
+	draw_arc(c, ring_r, 0.0, TAU, 80, Color(1, 1, 1, ring_a), lw * (1.0 + 0.4 * pulse), true)
 	var sa := _sat_alpha(n, t) * alpha
 	var deg := n.satellite_deg(t)
+	# Letzte Runde: Rest bis zur Marke heller (zaehlt "jetzt" herunter).
 	if n.laps_left(t) == 0 and sa > 0.0 and t < float(n.time_ms):
 		var a0 := deg_to_rad(deg) - PI * 0.5
 		var a1 := TAU - PI * 0.5
 		if a1 > a0 + 0.02:
-			draw_arc(c, ring_r, a0, a1, maxi(6, int(48.0 * (a1 - a0) / TAU)),
-					Color(1, 1, 1, 0.55 * sa), lw * 1.3, true)
-	# Marke oben.
-	var mark := Color(1, 1, 1, (0.85 if is_next else 0.6) * alpha)
-	draw_line(c + Vector2(0, -ring_r + lw * 3.2), c + Vector2(0, -ring_r - lw * 3.2), mark, lw * 1.4, true)
+			draw_arc(c, ring_r, a0, a1, maxi(6, int(64.0 * (a1 - a0) / TAU)),
+					Color(1, 1, 1, 0.5 * sa), lw * 1.35, true)
+	# Marke oben: kurzer kraeftiger Querstrich durch den Ring.
+	var mk := Color(1, 1, 1, (1.0 if is_next else 0.75) * alpha)
+	var mh := R * 0.2
+	draw_line(c + Vector2(0, -ring_r + mh), c + Vector2(0, -ring_r - mh), mk, lw * 2.2, true)
 	# Ziel.
 	_draw_body(c, r, n.key, alpha, is_next)
 	if is_next and key_hint:
 		_draw_key_label(c, r, n.key, alpha)
-	# Satellit.
-	if sa > 0.0:
-		var ar := deg_to_rad(deg)
-		var sp := c + Vector2(sin(ar), -cos(ar)) * ring_r
-		var sr := maxf(3.0, R * 0.17)
-		draw_circle(sp, sr + 1.5, Color(0, 0, 0, 0.55 * sa), true, -1.0, true)
-		draw_circle(sp, sr, Color(1, 1, 1, sa), true, -1.0, true)
-		# Pips: verbleibende Runden unter dem Ring.
-		var left := n.laps_left(t)
-		if left > 0:
-			var pr := maxf(2.0, R * 0.085)
-			var gap := pr * 3.2
-			var y := c.y + ring_r + pr * 3.0
-			var x0 := c.x - gap * float(left - 1) * 0.5
-			for k in left:
-				draw_circle(Vector2(x0 + gap * k, y), pr, Color(1, 1, 1, 0.9 * sa), true, -1.0, true)
+	if sa <= 0.0:
+		return
+	# Pips: verbleibende Runden, eine Reihe direkt unter dem Ziel (im Ring).
+	var left := n.laps_left(t)
+	if left > 0:
+		var pr := maxf(2.5, R * 0.1)
+		var gap := pr * 3.0
+		var y := c.y + r + (ring_r - r) * 0.42
+		var x0 := c.x - gap * float(left - 1) * 0.5
+		for k in left:
+			var pp := Vector2(x0 + gap * k, y)
+			draw_circle(pp, pr + 1.0, Color(0, 0, 0, 0.5 * sa), true, -1.0, true)
+			draw_circle(pp, pr, Color(0.78, 0.8, 0.86, 0.9 * sa), true, -1.0, true)
+	# Satellit: heller Punkt mit kurzer Spur entlang des Rings.
+	var ar := deg_to_rad(deg)
+	var trail := deg_to_rad(42.0)
+	var segs := 8
+	for k in segs:
+		var u0 := float(k) / float(segs)
+		var u1 := float(k + 1) / float(segs)
+		var b0 := ar - trail * (1.0 - u0) - PI * 0.5
+		var b1 := ar - trail * (1.0 - u1) - PI * 0.5
+		draw_arc(c, ring_r, b0, b1, 4, Color(1, 1, 1, 0.75 * sa * u1 * u1), lw * (1.0 + 1.6 * u1), true)
+	var sp := c + Vector2(sin(ar), -cos(ar)) * ring_r
+	var sr := maxf(3.5, R * 0.19)
+	draw_circle(sp, sr + maxf(1.5, R * 0.05), Color(0, 0, 0, 0.6 * sa), true, -1.0, true)
+	draw_circle(sp, sr, Color(1, 1, 1, sa), true, -1.0, true)
 
 
 func _draw_body(c: Vector2, r: float, key: int, alpha: float, strong: bool) -> void:
-	var rim_w := maxf(2.0, r * 0.13)
-	var dark := 0.30 if strong else 0.42
+	var rim_w := maxf(2.0, r * (0.12 if strong else 0.09))
+	var dark := 0.32 if strong else 0.48
+	var rim_a := Color(1, 1, 1, alpha) if strong else Color(A_COL.lightened(0.45), alpha)
+	var rim_b := Color(1, 1, 1, alpha) if strong else Color(B_COL.lightened(0.45), alpha)
 	match key:
 		OrbitNote.KEY_B:
 			var pts := PackedVector2Array()
@@ -419,8 +439,12 @@ func _draw_body(c: Vector2, r: float, key: int, alpha: float, strong: bool) -> v
 			for p in _square:
 				pts.append(c + p * h)
 			draw_colored_polygon(pts, Color(B_COL.darkened(dark), alpha))
-			pts.append(pts[0])
-			draw_polyline(pts, Color(B_COL.lightened(0.5), alpha), rim_w, true)
+			var inner := PackedVector2Array()
+			var hi := h - rim_w * 0.5
+			for p in _square:
+				inner.append(c + p * hi)
+			inner.append(inner[0])
+			draw_polyline(inner, rim_b, rim_w, true)
 		OrbitNote.KEY_ACCENT:
 			var pa := PackedVector2Array()
 			var pb := PackedVector2Array()
@@ -430,10 +454,10 @@ func _draw_body(c: Vector2, r: float, key: int, alpha: float, strong: bool) -> v
 				pb.append(c + p * r)
 			draw_colored_polygon(pa, Color(A_COL.darkened(dark), alpha))
 			draw_colored_polygon(pb, Color(B_COL.darkened(dark), alpha))
-			draw_arc(c, r - rim_w * 0.5, 0.0, TAU, 64, Color(1, 1, 1, alpha), rim_w * 1.15, true)
+			draw_arc(c, r - rim_w * 0.6, 0.0, TAU, 64, Color(1, 1, 1, alpha), rim_w * 1.2, true)
 		_:
 			draw_circle(c, r, Color(A_COL.darkened(dark), alpha), true, -1.0, true)
-			draw_arc(c, r - rim_w * 0.5, 0.0, TAU, 64, Color(A_COL.lightened(0.5), alpha), rim_w, true)
+			draw_arc(c, r - rim_w * 0.5, 0.0, TAU, 64, rim_a, rim_w, true)
 
 
 func _draw_key_label(c: Vector2, r: float, key: int, alpha: float) -> void:
@@ -442,10 +466,27 @@ func _draw_key_label(c: Vector2, r: float, key: int, alpha: float) -> void:
 		return
 	var text := key_labels[0] + key_labels[1] if key == OrbitNote.KEY_ACCENT \
 			else key_labels[clampi(key, 0, 1)]
-	var fs := maxi(8, int(r * (0.72 if text.length() <= 1 else 0.5)))
+	var fs := maxi(10, int(r * (0.78 if text.length() <= 1 else 0.52)))
 	var sz := f.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
-	var p := c + Vector2(-sz.x * 0.5, f.get_ascent(fs) * 0.5 - f.get_descent(fs) * 0.35)
-	draw_string(f, p, text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(1, 1, 1, 0.95 * alpha))
+	var p := c + Vector2(-sz.x * 0.5, (f.get_ascent(fs) - f.get_descent(fs)) * 0.5)
+	draw_string_outline(f, p, text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, maxi(2, int(fs * 0.14)),
+			Color(0, 0, 0, 0.45 * alpha))
+	draw_string(f, p, text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(1, 1, 1, alpha))
+
+
+## Ecken des 4:3-Felds: kurze, dezente Winkel.
+func _draw_marks() -> void:
+	var fr := field_rect()
+	var l := fr.size.y * 0.035
+	var col := Color(1, 1, 1, 0.14)
+	var w := maxf(1.0, fr.size.y * 0.0022)
+	var cs := [fr.position, Vector2(fr.end.x, fr.position.y), fr.end, Vector2(fr.position.x, fr.end.y)]
+	var dx := [1.0, -1.0, -1.0, 1.0]
+	var dy := [1.0, 1.0, -1.0, -1.0]
+	for k in 4:
+		var p: Vector2 = cs[k]
+		draw_line(p, p + Vector2(l * dx[k], 0.0), col, w, true)
+		draw_line(p, p + Vector2(0.0, l * dy[k]), col, w, true)
 
 
 func _band_points(n: OrbitNote) -> PackedVector2Array:
@@ -472,18 +513,31 @@ func _draw_band(n: OrbitNote, R: float, alpha: float) -> void:
 			maxf(1.5, R * 0.08), true)
 
 
+## Folgepunkte wie osu!: kurze Striche vom naechsten zum folgenden Ziel, sie
+## erscheinen mit dem folgenden Ziel nacheinander von vorn nach hinten.
 func _draw_link(a: OrbitNote, b: OrbitNote, R: float, t: float) -> void:
 	var pa := field_to_screen(OrbitConverter.end_pos(a))
 	var pb := field_to_screen(b.pos)
 	var d := pa.distance_to(pb)
-	var gap := R * ORBIT_K + 4.0
-	if d <= gap * 2.0:
+	var g0 := R * ORBIT_K + R * 0.25
+	var g1 := R * 1.25
+	var len := d - g0 - g1
+	if len < R * 0.6:
 		return
 	var dir := (pb - pa) / d
-	var al := clampf((t - float(b.spawn_ms)) / POP_IN_MS, 0.0, 1.0) * 0.26
-	var s := pa + dir * gap
-	var e := pb - dir * gap
-	draw_line(s, e, Color(LINE_COL, al), maxf(1.2, R * 0.05), true)
+	var step := maxf(R * 0.62, 10.0)
+	var dash := minf(R * 0.26, step * 0.5)
+	var cnt := maxi(1, int(len / step))
+	var off := (len - float(cnt - 1) * step) * 0.5
+	var w := maxf(1.6, R * 0.06)
+	var age := t - float(b.spawn_ms)
+	for k in cnt:
+		var u := float(k) / maxf(float(cnt - 1), 1.0)
+		var al := clampf((age - u * 160.0) / 120.0, 0.0, 1.0) * 0.5
+		if al <= 0.0:
+			continue
+		var m := pa + dir * (g0 + off + step * float(k))
+		draw_line(m - dir * dash * 0.5, m + dir * dash * 0.5, Color(LINE_COL, al), w, true)
 
 
 func _draw_ball(i: int, n: OrbitNote, R: float, t: float) -> void:
@@ -546,7 +600,7 @@ func _draw_press(t: float, R: float) -> void:
 
 func _draw_cursor(R: float) -> void:
 	var p := field_to_screen(cursor)
-	var r := clampf(R * 0.2, 4.0, 7.0)
+	var r := clampf(R * 0.13, 4.0, 8.0) * cursor_k
 	var down := held[0] or held[1]
 	draw_circle(p, r + 2.0, Color(0, 0, 0, 0.6), true, -1.0, true)
 	draw_circle(p, r, Color(1, 1, 1, 1.0), true, -1.0, true)

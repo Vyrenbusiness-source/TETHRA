@@ -152,11 +152,11 @@ func _test_skill() -> void:
 		ok = ok and OrbitConverter.convert(bm)[0].laps == int(want[ar])
 	_ok(ok, "AR <= 5: 3, 6-8: 2, >= 9: 1 Runden (ohne Einstellung)")
 	_ok(OrbitConverter.convert(bm, 3)[0].laps == 3, "Spieler-Einstellung schlaegt AR")
-	_ok(absf(OrbitConverter.target_radius(bm) - 0.045) < 0.001, "CS 4 -> Radius 0,045 (%.4f)" % OrbitConverter.target_radius(bm))
+	_ok(absf(OrbitConverter.target_radius(bm) - 0.095) < 0.001, "CS 4 -> Radius 0,095 = 36,5/384 wie osu! (%.4f)" % OrbitConverter.target_radius(bm))
 	bm.difficulty["CircleSize"] = "6"
 	var r6 := OrbitConverter.target_radius(bm)
 	bm.difficulty["CircleSize"] = "2"
-	_ok(r6 < 0.045 and OrbitConverter.target_radius(bm) > 0.045, "hoeheres CS = kleiner")
+	_ok(r6 < 0.095 and OrbitConverter.target_radius(bm) > 0.095, "hoeheres CS = kleiner")
 	_ok(absf(OrbitConverter.target_radius(_mania_bm()) - OrbitConverter.MANIA_RADIUS) < 1e-6, "Mania: fester Radius")
 	# dichte osu!-Map: Sprung 0.5 in 150 ms bleibt, Slider-Kurve ungekuerzt
 	var d := _std_bm()
