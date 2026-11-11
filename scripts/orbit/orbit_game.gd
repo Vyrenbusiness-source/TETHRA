@@ -1375,6 +1375,8 @@ func _capture_shot() -> void:
 			_bot_plan = _bot_plan.slice(cut)
 			_bot_build()
 		SyncClock.seek_ms(target - 2500.0)
+	if await _movie_hold(target):
+		return
 	await _wait_until(target)
 	if not is_inside_tree():
 		return
@@ -1393,6 +1395,18 @@ func _capture_shot() -> void:
 		if a.begins_with("--fps-sec="):
 			await _measure_fps(maxf(1.0, a.trim_prefix("--fps-sec=").to_float()))
 	get_tree().quit(0)
+
+
+## Debug (Demo-Videos): --movie-len=<s> mit --shot --shot-at=<ms> --write-movie:
+## druckt MOVIE_START frame=<n> (Filmbeginn) und beendet nach <s> Film-Sekunden.
+func _movie_hold(_target: float) -> bool:
+	for a in OS.get_cmdline_args():
+		if a.begins_with("--movie-len="):
+			print("MOVIE_START frame=%d" % Engine.get_process_frames())
+			await get_tree().create_timer(a.trim_prefix("--movie-len=").to_float(), true).timeout
+			get_tree().quit(0)
+			return true
+	return false
 
 
 ## --fps-sec=<s> (nach dem Shot, Autoplay laeuft weiter): Frame-Zeiten messen.

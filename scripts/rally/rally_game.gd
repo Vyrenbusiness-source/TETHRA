@@ -994,6 +994,13 @@ func _capture_shot() -> void:
 		core.update(cut)
 		SyncClock.seek_ms(cut)
 		_snd_t = -INF
+	for a in OS.get_cmdline_args():
+		if a.begins_with("--movie-len="):
+			# Debug (Demo-Videos): Filmbeginn markieren, nach <s> Film-Sekunden beenden.
+			print("MOVIE_START frame=%d" % Engine.get_process_frames())
+			await get_tree().create_timer(a.trim_prefix("--movie-len=").to_float(), true).timeout
+			get_tree().quit(0)
+			return
 	await _wait_until(target)
 	if not is_inside_tree():
 		return

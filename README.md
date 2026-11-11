@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <b>A free rhythm game for Windows. Play osu!mania 4K maps in 3D or 2D, turn any map into an SV map, or follow a runner along looping tracks in Orbit, a mode of its own.</b>
+  <b>A free rhythm game for Windows. Play osu!mania 4K maps in 3D or 2D, turn any map into an SV map, or play Orbit, Rally and Dirigent, three rhythm modes of their own.</b>
 </p>
 
 <p align="center">
@@ -27,33 +27,69 @@
   <img src="docs/media/play_3d_hero.webp" alt="TETHRA in 3D: four lanes flying through a world that pulses with the beat" width="100%">
 </p>
 
-## Orbit: follow the runner, tap the lanes
-
-A white runner circles once per bar along a closed track. The track changes shape with the song: circle, ellipse, a figure eight, or a flower with three or four petals. A change shows up one bar ahead as a thin line, and only on the first beat of a bar. Notes sit on the track at their place in the bar, on lane A (left of the runner, discs) or lane B (right, squares).
-
-- **Aim.** Put the mouse or pen on the runner and move along with it. A tap only counts when the cursor is close to the runner.
-- **Lanes.** Left key (mouse left or `Z`) hits lane A, right key (mouse right or `X`) hits lane B. Both together hit an accent.
-- **Holds.** A band is a hold: keep the key down and follow the runner until the band ends. A fuse burns down the track from the runner to the next note of the lane.
-- **Read ahead.** One bar is visible. Notes of the next bar are dimmed and get brighter as the runner nears them. The track pulses with the music.
-- **Maps.** Orbit plays regular osu! maps (osu!standard and 4K). Timing is the map's own, to the millisecond, and the converter keeps every note reachable.
-
-Mods: Hidden, Fade-In and Precision (tighter windows). Your best Orbit runs add up to an Orbit rating in your profile.
-
-<p align="center">
-  <a href="docs/media/orbit.mp4"><img src="docs/media/orbit_anim.webp" alt="Orbit gameplay: the runner on a flower track and a figure eight, notes on two lanes" width="420"></a><br>
-  <sub><a href="docs/media/orbit.mp4"><b>▶ Watch with sound</b></a> · New to Orbit? The game offers a one-minute tutorial the first time you switch to it.</sub>
-</p>
+## Four modes
 
 <table>
   <tr>
-    <td width="50%"><a href="docs/media/play_orbit.webp"><img src="docs/media/play_orbit.webp" alt="Orbit on a figure-eight track"></a><br><sub>Figure eight. Lane A: discs. Lane B: squares. Bands are holds.</sub></td>
-    <td width="50%"><a href="docs/media/play_orbit_flower.webp"><img src="docs/media/play_orbit_flower.webp" alt="Orbit on a four-petal flower track"></a><br><sub>Flower track. The thin circle around the runner shows how close the cursor must be.</sub></td>
+    <td width="50%" align="center"><a href="docs/media/mania.mp4"><img src="docs/media/mania_anim.webp" alt="Mania gameplay" width="100%"></a><br><b>Mania</b><br><sub>osu!mania 4K in 3D worlds or the classic 2D field.<br><a href="docs/media/mania.mp4">▶ Watch with sound</a></sub></td>
+    <td width="50%" align="center"><a href="docs/media/orbit.mp4"><img src="docs/media/orbit_anim.webp" alt="Orbit gameplay" width="100%"></a><br><b>Orbit</b><br><sub>Aim at targets, count the satellite laps, hit on the beat.<br><a href="docs/media/orbit.mp4">▶ Watch with sound</a></sub></td>
   </tr>
   <tr>
-    <td width="50%"><a href="docs/media/ui_orbit_tutorial.webp"><img src="docs/media/ui_orbit_tutorial.webp" alt="Orbit tutorial, hold step"></a><br><sub>The tutorial teaches aiming, lanes, accents, holds and the preview in six steps.</sub></td>
-    <td width="50%"><a href="docs/media/ui_orbit_results.webp"><img src="docs/media/ui_orbit_results.webp" alt="Orbit result screen"></a><br><sub>Result: every hit on the timeline by lane and timing. Grades CORE to MISS.</sub></td>
+    <td width="50%" align="center"><a href="docs/media/rally.mp4"><img src="docs/media/rally_anim.webp" alt="Rally gameplay" width="100%"></a><br><b>Rally</b><br><sub>Table tennis in the rhythm of the map.<br><a href="docs/media/rally.mp4">▶ Watch with sound</a></sub></td>
+    <td width="50%" align="center"><a href="docs/media/dirigent.mp4"><img src="docs/media/dirigent_anim.webp" alt="Dirigent gameplay" width="100%"></a><br><b>Dirigent</b><br><sub>Conduct the beat with the cursor, play the cues with two keys.<br><a href="docs/media/dirigent.mp4">▶ Watch with sound</a></sub></td>
   </tr>
 </table>
+
+Every mode plays regular osu! maps and has its own star rating, scores, leaderboards, replays and multiplayer.
+
+## Orbit: aim at the target, count the laps
+
+Targets appear on a beat at a place in the field. A satellite circles each target, exactly one lap per beat. Small pips under the target count the laps left, one disappears per beat. When the satellite crosses the mark at 12 o'clock in the last lap, it is time: put the cursor on the target and press the right key.
+
+- **Beat.** Count it: "three, two, one, now". The target shows up on a beat, so the rhythm is visible before it is audible.
+- **Keys.** Key A (mouse left or `Z`) hits cool discs. Key B (mouse right or `X`) hits warm rounded squares. A disc with a white ring is an accent: press both keys together.
+- **Aim.** A press only counts when the cursor is on the target. The wrong key or a miss of the target gives no hit.
+- **Holds.** Hit the head, keep the key down and follow the ball along the band to the end.
+- **Maps.** Orbit plays regular osu! maps (osu!standard and 4K). Timing is the map's own, to the millisecond, and the converter keeps every target reachable.
+
+Mods: Hidden, Fade-In and Precision (tighter windows). Your best Orbit runs add up to an Orbit rating in your profile. Settings: laps ahead, target size and cursor size.
+
+<p align="center">
+  <a href="docs/media/orbit.mp4"><img src="docs/media/orbit_anim.webp" alt="Orbit gameplay: targets with circling satellites and lap pips" width="420"></a><br>
+  <sub><a href="docs/media/orbit.mp4"><b>▶ Watch with sound</b></a> · New to Orbit? The game offers a short tutorial the first time you switch to it.</sub>
+</p>
+
+<p align="center">
+  <a href="docs/media/ui_orbit_results.webp"><img src="docs/media/ui_orbit_results.webp" alt="Orbit result screen" width="420"></a><br>
+  <sub>Result: every hit on the timeline with timing. Grades CORE to MISS.</sub>
+</p>
+
+## Rally: table tennis to the beat
+
+Side view: you on the left, the opponent on the right, one ball. Every note of the map is your stroke, at exactly the note time. The ball flies to the opponent, bounces, comes back and reaches your racket on the next note. Long gaps give a slow high lob, streams give fast flat exchanges.
+
+- **Keys.** A low ball is key A, a high ball is key B. A smash (finish or chord) needs both keys together. A long note is a charge: hold the key and release at the end.
+- **Timing.** A ring on the bounce mark on your side shrinks to the note time, its colour shows the key.
+- **Miss.** The ball flies past and the opponent serves again for the next note.
+
+<p align="center">
+  <a href="docs/media/rally.mp4"><img src="docs/media/rally_anim.webp" alt="Rally gameplay: table, racket and a ball with the landing ring" width="420"></a><br>
+  <sub><a href="docs/media/rally.mp4"><b>▶ Watch with sound</b></a></sub>
+</p>
+
+## Dirigent: conduct the beat, play the cues
+
+You do two things at once. With the mouse or pen you lead a conducting pattern: on every beat the cursor must be at the current point (4/4 goes down, left, right, up). With two keys you play the cues of the map: cues run along a strip under the pattern towards a hit line. Circles are key A, diamonds are key B, both together for a finish.
+
+- **Pattern.** It follows the time signature of the map. Fast songs get a slower, longer pattern. Kiai sections swing wider.
+- **Score.** 40 % beat (aim at each point), 60 % cues. One combo counts both.
+- **Read.** The big point is the current beat with a ring that shrinks to the beat. The next point is small and numbered.
+
+<p align="center">
+  <a href="docs/media/dirigent.mp4"><img src="docs/media/dirigent_anim.webp" alt="Dirigent gameplay: conducting pattern and the cue strip" width="420"></a><br>
+  <sub><a href="docs/media/dirigent.mp4"><b>▶ Watch with sound</b></a></sub>
+</p>
+
 
 ## Any map becomes an SV map
 
@@ -136,9 +172,9 @@ The `TETHRA.pck` files on the [release pages](https://github.com/Vyrenbusiness-s
 
 **Do I need osu!?** No. TETHRA plays `.osz` files on its own and downloads maps in the game.
 
-**Which maps?** osu!mania 4K for Mania (3D and 2D), osu!standard and 4K for Orbit.
+**Which maps?** osu!mania 4K for Mania (3D and 2D), osu!standard and 4K for Orbit, Rally and Dirigent.
 
-**Keys?** Mania lanes default to `D` `F` `J` `K`, Orbit uses the left/right mouse button or `Z` / `X` for lane A / B. `F` opens the chat. Everything can be rebound in Settings.
+**Keys?** Mania lanes default to `D` `F` `J` `K`, Orbit, Rally and Dirigent use the left/right mouse button or `Z` / `X` for key A / B. `F` opens the chat. Everything can be rebound in Settings.
 
 **Mac or Linux?** Windows only for now. You can build from source with Godot 4.7.
 
@@ -157,4 +193,4 @@ The `TETHRA.pck` files on the [release pages](https://github.com/Vyrenbusiness-s
 
 ## Deutsch
 
-TETHRA ist ein kostenloses Rhythmusspiel für Windows: osu!mania-4K-Maps in 3D oder 2D, jede Map per SV-Mod als SV-Map (Noten tanzen auf dem Beat) und Orbit, ein eigener Modus: Ein Läufer kreist pro Takt über Bahnen (Kreis, Acht, Blüte), du folgst ihm mit Maus oder Tablet und triffst mit zwei Tasten – mit normalen osu!-Maps. Dazu Online-Konto mit Bestenlisten, Web-Profilen und Chat, Replays, Multiplayer über den Server, eigene Musik als Orbit-Map, Online-Map-Browser, osu!-Skins, Clips und Turniere. Installation: **[TETHRA_Setup.exe](https://github.com/Vyrenbusiness-source/TETHRA/releases/download/worlds/TETHRA_Setup.exe)** herunterladen, ausführen, spielen. Meldet Windows „Der Computer wurde durch Windows geschützt“: **Weitere Informationen** → **Trotzdem ausführen**. Updates kommen automatisch. Maps gehören ihren Mappern, osu! ist eine Marke von ppy.
+TETHRA ist ein kostenloses Rhythmusspiel für Windows: osu!mania-4K-Maps in 3D oder 2D, jede Map per SV-Mod als SV-Map (Noten tanzen auf dem Beat) und drei eigene Modi mit normalen osu!-Maps: Orbit (Ziele erscheinen auf dem Beat, ein Satellit kreist eine Runde pro Beat, Punkte zählen die Runden herunter; im letzten Umlauf zielst du auf das Ziel und drückst Taste A, B oder beide beim Akzent), Rally (Tischtennis im Takt der Map) und Dirigent (Taktfigur mit der Maus führen, Einsätze mit zwei Tasten spielen). Zu jedem Modus gibt es oben ein Video mit Ton. Dazu Online-Konto mit Bestenlisten, Web-Profilen und Chat, Replays, Multiplayer über den Server, eigene Musik als Orbit-Map, Online-Map-Browser, osu!-Skins, Clips und Turniere. Installation: **[TETHRA_Setup.exe](https://github.com/Vyrenbusiness-source/TETHRA/releases/download/worlds/TETHRA_Setup.exe)** herunterladen, ausführen, spielen. Meldet Windows „Der Computer wurde durch Windows geschützt“: **Weitere Informationen** → **Trotzdem ausführen**. Updates kommen automatisch. Maps gehören ihren Mappern, osu! ist eine Marke von ppy.
