@@ -113,3 +113,13 @@ func laps_left(t_ms) -> int
 - Jedes Ziel erscheint exakt auf einem Beat-Tick (Fehler < 1 ms).
 - Screenshots (leicht, mittel, schwer, Halten, Akzent) muessen auf einen Blick zeigen:
   welches Ziel als Naechstes, wann (Satellit/Pips), welche Taste.
+
+## Skill (einfach zu verstehen, schwer zu meistern - wie osu!)
+- **Zielen**: osu!standard-Maps bleiben originalgetreu (Abstaende, Spruenge, Streams,
+  Slider-Kurven) - der Skill steckt im Mapping. Nur leichte Maps werden verkleinert.
+- **Tempo/Tasten**: A/B-Muster wie Taiko (aus Hitsounds); Streams verlangen Wechselschlag,
+  Akzente beide Tasten + Zielen.
+- **Lesen**: Vorlauf-Runden aus AR (AR <= 5: 3, 6-8: 2, >= 9: 1), Zielgroesse aus CS wie osu!;
+  Mods HD/FI (Satellit/Pips ausblenden), PR (Fenster/Radius enger).
+- **Sterne** spiegeln Zielen (Sprung/Zeit, Richtungswechsel), Tempo (Dichte, Wechsel) und
+  Lesen (Runden, Ueberlappung) wider: 1 Stern leicht, 8+ schwer.
