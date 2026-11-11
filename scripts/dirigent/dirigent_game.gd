@@ -43,6 +43,10 @@ var _replay := false
 var _replay_events: Array = []
 var _replay_idx := 0
 var _mp_send_cd := 0.0
+var _mp_bot := false
+var _mp_cut_ms := -1.0
+var _mp_live_seen: Dictionary = {}
+var _mp_skip_voted := false
 var _hit_offsets := PackedFloat32Array()
 var _acc_trace := PackedFloat32Array()
 var _hit_log: Array = []
@@ -79,7 +83,9 @@ func _ready() -> void:
 	if GameSession.is_replay and not _replay:
 		GameSession.is_replay = false   # fremde Replay-Events passen nicht
 		GameSession.replay_events = []
-	_autoplay = args.has("--autoplay") and not Lobby.active and not _replay
+	_mp_bot = Lobby.active and Lobby.in_game and args.has("--mp-bot")
+	# --mp-bot spielt selbst (ohne --autoplay: dessen Watchdog wuerde den Smoke kappen).
+	_autoplay = ((args.has("--autoplay") and not Lobby.active) or _mp_bot) and not _replay
 	var jitter := 4.0
 	var aim := 0.7
 	var seed_v := 1
@@ -92,6 +98,8 @@ func _ready() -> void:
 			aim = maxf(0.0, a.trim_prefix("--auto-aim=").to_float())
 		elif a.begins_with("--auto-seed="):
 			seed_v = a.trim_prefix("--auto-seed=").to_int()
+		elif a.begins_with("--mp-cut="):
+			_mp_cut_ms = maxf(0.0, a.trim_prefix("--mp-cut=").to_float()) * 1000.0
 	_build_core()
 	if _replay:
 		_replay_events = GameSession.replay_events
@@ -116,7 +124,12 @@ func _ready() -> void:
 		add_child(p)
 		_snd[k] = p
 	_update_hud()
-	if DisplayServer.get_name() == "headless":
+	if _mp_bot:
+		if _mp_cut_ms >= 0.0:
+			_mp_cut_ms += float(chart.beats[0].t)
+		print("MPORBIT start: %d Schlaege, %d Einsaetze, autoplay=%s, cut=%d ms" % [
+			chart.beats.size(), chart.cues.size(), _autoplay, int(_mp_cut_ms)])
+	if DisplayServer.get_name() == "headless" and not _mp_bot:
 		print("=== Dirigent Smoke: %d Schlaege, %d Einsaetze, %.2f Sterne ===" % [
 			chart.beats.size(), chart.cues.size(), chart.stars()])
 		get_tree().quit(0)
@@ -491,6 +504,10 @@ func _process(delta: float) -> void:
 	core.update(t)
 	if _ended:
 		return
+	if _mp_bot:
+		_mp_bot_tick(t)
+		if _ended:
+			return
 	for k in 2:
 		_flash[k] = maxf(float(_flash[k]) - delta, 0.0)
 		if _autoplay or _replay:
@@ -511,6 +528,22 @@ func _process(delta: float) -> void:
 		if _hint.modulate.a <= 0.0 and t > 0.0:
 			_hint.visible = false
 	_update_hud()
+
+
+## MP-Smoke: Intro-Skip stimmen, Live-Scores der anderen mitschreiben, Abbruch per --mp-cut.
+func _mp_bot_tick(t: float) -> void:
+	if not _mp_skip_voted and _can_skip_intro():
+		_mp_skip_voted = true
+		Lobby.vote_skip()
+	var me := multiplayer.get_unique_id()
+	for id in Lobby.players:
+		var p: Dictionary = Lobby.players[id]
+		if int(id) == me or not (p.get("final", {}) as Dictionary).is_empty():
+			continue
+		_mp_live_seen[int(id)] = maxi(int(_mp_live_seen.get(int(id), 0)), int(p.get("score", 0)))
+	if _mp_cut_ms >= 0.0 and t >= _mp_cut_ms:
+		print("MPORBIT cut at %d ms" % int(t))
+		_show_results()
 
 
 func _step_bot(t: float) -> void:
@@ -692,6 +725,17 @@ func _show_results() -> void:
 	})
 	if _args().has("--shot-results"):
 		_capture_results_shot()
+	if _mp_bot:
+		print("MPORBIT final score=%d acc=%.4f combo=%d failed=false live_seen=%s" % [
+			int(s.score), float(s.accuracy), int(s.get("max_combo", 0)), str(_mp_live_seen)])
+		# Wie der Klick auf "Zurueck": nach dem Endscreen (--mp-back=<s>, Standard 1,5) in den Raum.
+		var back_s := 1.5
+		for a in _args():
+			if a.begins_with("--mp-back="):
+				back_s = clampf(a.trim_prefix("--mp-back=").to_float(), 0.0, 60.0)
+		await get_tree().create_timer(back_s, true).timeout
+		if is_inside_tree():
+			_back_to_browser()
 
 
 func _replay_meta(s: Dictionary) -> Dictionary:
