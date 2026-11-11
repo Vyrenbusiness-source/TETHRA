@@ -105,8 +105,8 @@ func _apply_settings() -> void:
 	_view.key_hint = Settings.orbit_key_hint != 2
 	_view.key_labels = [UiTheme.key_short(Settings.orbit_key_inner), UiTheme.key_short(Settings.orbit_key_outer)]
 	_view.music = Settings.orbit_music
-	_view.size_k = clampf(float(OrbitGame.setting("orbit_target_size", 100)) / 100.0, 0.9, 1.2)
-	_view.cursor_k = clampf(float(OrbitGame.setting("orbit_cursor_size", 100)) / 100.0, 0.5, 1.5)
+	_view.size_k = clampf(float(_setting("orbit_target_size", 100)) / 100.0, 0.9, 1.2)
+	_view.cursor_k = clampf(float(_setting("orbit_cursor_size", 100)) / 100.0, 0.5, 1.5)
 	if Settings.orbit_background != _bg_mode:
 		_bg_mode = Settings.orbit_background
 		match _bg_mode:
@@ -194,3 +194,13 @@ static func demo_cursor(ns: Array, t: float) -> Vector2:
 		prev_p = OrbitConverter.end_pos(n)
 		prev_t = float(n.end_ms)
 	return prev_p
+
+
+
+## Einstellung mit Rueckfall (Settings-Autoload per Pfad, auch in Testlaeufen).
+func _setting(name: String, def):
+	var st := get_node_or_null("/root/Settings")
+	if st == null:
+		return def
+	var v = st.get(name)
+	return def if v == null else v
