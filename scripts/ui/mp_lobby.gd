@@ -593,7 +593,15 @@ func _mp_orbit(host: bool) -> void:
 				return
 		2, 3:
 			var want := Tournament.Phase.BETWEEN if _mpo_stage == 2 else Tournament.Phase.END
-			if not await wait_for.call(func(): return Lobby.tournament != null and Lobby.tournament.phase == want, 30.0):
+			# Der Client bleibt im Endscreen laenger als der Host-Autoablauf (BETWEEN, 8 s):
+			# er sieht BETWEEN u. U. nie. Gewertete Runden zaehlen, nicht die Phase.
+			var reached := func() -> bool:
+				if Lobby.tournament == null:
+					return false
+				if _mpo_stage == 3:
+					return Lobby.tournament.phase == want
+				return Lobby.tournament.phase == want or Lobby.tournament.rounds.size() >= 1
+			if not await wait_for.call(reached, 30.0):
 				fail.call("phase %d (want %d)" % [Lobby.tournament.phase if Lobby.tournament != null else -1, want])
 				return
 			var st: Array = Lobby.tournament.standings()
@@ -603,6 +611,9 @@ func _mp_orbit(host: bool) -> void:
 			step.call("tour rounds=%d standings [%s]" % [Lobby.tournament.rounds.size(), ", ".join(rows)])
 			if _mpo_stage == 3:
 				step.call("DONE")
+				if host:
+					# Raum nicht vor dem Client schliessen: warten, bis er gegangen ist.
+					await wait_for.call(func(): return Lobby.players.size() < 2, 40.0)
 				await get_tree().create_timer(1.5).timeout
 				get_tree().quit(0)
 				return
