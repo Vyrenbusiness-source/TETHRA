@@ -26,10 +26,10 @@ const SERVE_LEAD_MS := 1800.0
 const EXIT_MS := 800.0
 
 ## Layout (normiert).
-const X_PLAYER := 0.14
-const X_OPP := 0.86
-const X_TABLE_L := 0.20
-const X_TABLE_R := 0.80
+const X_PLAYER := 0.20
+const X_OPP := 0.80
+const X_TABLE_L := 0.15
+const X_TABLE_R := 0.85
 const Y_TABLE := 0.66
 const Y_LOW := 0.585     ## Trefferhoehe Taste A (tiefer Ball)
 const Y_HIGH := 0.36     ## Trefferhoehe Taste B (hoher Ball)
