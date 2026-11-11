@@ -235,8 +235,8 @@ func _test_field_mapping() -> void:
 
 func _test_key_hint() -> void:
 	_check(OrbitGameScript.key_hint_on(0, 2.0, false), "auto: leichte Map zeigt Taste")
-	_check(not OrbitGameScript.key_hint_on(0, 5.0, false), "auto: schwere Map ohne Taste")
-	_check(OrbitGameScript.key_hint_on(0, 5.0, true), "auto: Tutorial zeigt Taste")
+	_check(not OrbitGameScript.key_hint_on(0, 7.0, false), "auto: sehr schwere Map ohne Taste")
+	_check(OrbitGameScript.key_hint_on(0, 7.0, true), "auto: Tutorial zeigt Taste")
 	_check(OrbitGameScript.key_hint_on(1, 9.0, false), "an")
 	_check(not OrbitGameScript.key_hint_on(2, 1.0, true), "aus")
 

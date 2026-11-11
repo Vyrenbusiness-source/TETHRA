@@ -88,6 +88,8 @@ var _bot_plan: Array = []
 ## Cursor beim Druck) (neuer Endscreen), sonst [Feld-Pos, Taste, dt, Zielfehler
 ## (Feld x 100), Stufe, Zeit] (alter Endscreen).
 var _hit_log: Array = []
+## Map-Bild-Deckkraft je Settings.bg_dim (0,3 -> 0,12 wie osu! mit hohem Dim).
+const BG_OPACITY_PER_DIM := 0.4
 ## Fehldrucke je Grund (aim/key/early/lock) fuer die Tasten-Statistik.
 var _presses := {"aim": 0, "key": 0, "early": 0, "lock": 0}
 ## Halten: Cursor beim Kopf-Druck (Index -> Feld-Pos).
@@ -307,15 +309,15 @@ static func setting(name: String, def):
 	return def if v == null else v
 
 
-## Taste im naechsten Ziel: Settings.orbit_key_hint 0 = auto (leichte Maps < 3
-## Sterne, Tutorial), 1 = an, 2 = aus.
+## Taste im naechsten Ziel: Settings.orbit_key_hint 0 = auto (Maps < 6 Sterne,
+## Tutorial), 1 = an, 2 = aus.
 static func key_hint_on(mode: int, stars: float, tutorial: bool) -> bool:
 	match mode:
 		1:
 			return true
 		2:
 			return false
-	return tutorial or stars < 3.0
+	return tutorial or stars < 6.0
 
 
 func _time_ms() -> float:
@@ -343,12 +345,35 @@ func _build_bg() -> void:
 			forced = a.substr(8)
 	_bg = OrbitBackdrop.new()
 	add_child(_bg)
-	# Kein Welt-Himmel hinter den Bahnen (keine Planeten/Deko): "Welt" = dunkler Grund.
+	# Kein Welt-Himmel hinter dem Feld (keine Planeten/Deko): "Welt" = Map-Bild wie
+	# osu!, unscharf und stark abgedunkelt (Standard bg_dim 0,3 -> 12 % Deckkraft).
 	var bg_mode := Settings.orbit_background_mode()
 	if bg_mode == OrbitBackdrop.BG_WORLD:
-		bg_mode = OrbitBackdrop.BG_OFF
-	_bg.setup(_beatmap, bg_mode, forced, GameSession.stars,
-			OszImporter.load_background_texture(GameSession.osz_path, _beatmap), Settings.bg_dim)
+		bg_mode = OrbitBackdrop.BG_MAP
+	var cover := OszImporter.load_background_texture(GameSession.osz_path, _beatmap)
+	if bg_mode == OrbitBackdrop.BG_MAP:
+		cover = blurred(cover)
+	# OrbitBackdrop zeigt das Bild mit bg_dim x 0,6 Deckkraft.
+	_bg.setup(_beatmap, bg_mode, forced, GameSession.stars, cover,
+			clampf(Settings.bg_dim * BG_OPACITY_PER_DIM, 0.0, 0.3) / 0.6)
+
+
+## Weichgezeichnetes Map-Bild (einmal beim Laden): klein rechnen, weich zurueck.
+static func blurred(tex: Texture2D) -> Texture2D:
+	if tex == null:
+		return null
+	var img := tex.get_image()
+	if img == null or img.is_empty():
+		return tex
+	img = img.duplicate()
+	if img.is_compressed():
+		img.decompress()
+	var w := img.get_width()
+	var h := img.get_height()
+	img.resize(maxi(8, w / 24), maxi(6, h / 24), Image.INTERPOLATE_BILINEAR)
+	img.resize(maxi(16, w / 6), maxi(12, h / 6), Image.INTERPOLATE_CUBIC)
+	img.resize(maxi(16, w / 2), maxi(12, h / 2), Image.INTERPOLATE_CUBIC)
+	return ImageTexture.create_from_image(img)
 
 func _build_sound() -> void:
 	_sound = OrbitSound.new()

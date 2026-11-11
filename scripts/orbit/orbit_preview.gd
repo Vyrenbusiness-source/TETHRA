@@ -105,6 +105,8 @@ func _apply_settings() -> void:
 	_view.key_hint = Settings.orbit_key_hint != 2
 	_view.key_labels = [UiTheme.key_short(Settings.orbit_key_inner), UiTheme.key_short(Settings.orbit_key_outer)]
 	_view.music = Settings.orbit_music
+	_view.size_k = clampf(float(OrbitGame.setting("orbit_target_size", 100)) / 100.0, 0.9, 1.2)
+	_view.cursor_k = clampf(float(OrbitGame.setting("orbit_cursor_size", 100)) / 100.0, 0.5, 1.5)
 	if Settings.orbit_background != _bg_mode:
 		_bg_mode = Settings.orbit_background
 		match _bg_mode:
