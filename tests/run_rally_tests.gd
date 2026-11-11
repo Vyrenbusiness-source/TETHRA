@@ -116,10 +116,10 @@ func _test_merge() -> void:
 	print("- Zusammenfassen")
 	var bm := _beatmap(0,
 		"100,100,1000,1,0,0:0:0:0:\n100,100,1050,1,0,0:0:0:0:\n100,100,1100,1,0,0:0:0:0:\n" +
-		"100,100,1500,1,0,0:0:0:0:\n")
+		"100,100,1500,1,0,0:0:0:0:\n100,100,4000,1,0,0:0:0:0:\n100,100,7000,1,0,0:0:0:0:\n")
 	var shots := RallyChart.build(bm)
 	# Leichte Map (< 2,5 Schlaege/s): Mindestabstand 1/4 Beat (500 ms -> 124 ms).
-	_ok(shots.size() == 2, "Streichung unter 1/4 Beat bei leichter Map, war %d" % shots.size())
+	_ok(shots.size() == 4, "Streichung unter 1/4 Beat bei leichter Map, war %d" % shots.size())
 	# Dichte Map: nur Abstaende unter 90 ms fallen weg.
 	var dense := ""
 	for i in 40:

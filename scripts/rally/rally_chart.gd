@@ -258,14 +258,14 @@ static func first_at_or_after(shots: Array[Shot], time: float) -> int:
 # ---------------------------------------------------------------------------
 
 const STAR_HOP_MS := 1000.0
-const STAR_DENS_K := 0.62
+const STAR_DENS_K := 0.15
 const STAR_DECAY := 0.95
 const STAR_SWITCH_W := 0.45
 const STAR_SWITCH_GAP_MS := 450.0
 const STAR_SMASH_W := 0.7
 const STAR_CHARGE_W := 0.45
 const STAR_MAX := 15.0
-const STAR_KNEE := 9.0
+const STAR_KNEE := 11.0
 const STAR_STRETCH := 0.7
 
 
@@ -298,7 +298,7 @@ static func stars(shots: Array[Shot]) -> float:
 	for w in n_win:
 		var lw := load_w[w] + (load_w[w - 1] if w > 0 else 0.0)
 		var per_s := lw / (2.0 * STAR_HOP_MS / 1000.0)
-		vals.append(STAR_DENS_K * pow(per_s, 1.15))
+		vals.append(STAR_DENS_K * pow(per_s, 1.55))
 	vals.sort()
 	vals.reverse()
 	var num := 0.0
