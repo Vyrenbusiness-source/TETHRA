@@ -47,6 +47,7 @@ var _judged: Dictionary = {}
 var _judged_count := 0
 var _next := 0
 var _clock := -1
+var _log_t := 0
 var _down := [false, false]
 var _active := -1
 var _active_q := 0
@@ -168,21 +169,39 @@ func update(t_ms: float) -> void:
 func _advance(t: int) -> void:
 	if t <= _clock:
 		return
-	_clock = t
 	var tf := float(t)
-	if _pend_idx >= 0 and tf >= _pend_t + SMASH_MS:
-		_resolve_smash_single()
-	if _active >= 0 and tf >= shots[_active].end + w100:
-		_finish_charge(_active_q_for(w100))
-	while _next < shots.size():
-		if _judged.has(_next) or _next == _active or _next == _pend_idx:
-			_next += 1
-			continue
-		if tf > shots[_next].t + w50:
-			_miss(_next)
-			_next += 1
-			continue
-		break
+	# Faelliges in exakter Zeitreihenfolge abarbeiten (unabhaengig von der Bildrate):
+	# ausstehender Schmetterball, Aufladen ohne Loslassen, verpasster Schlag.
+	while true:
+		_skip_judged()
+		var due := INF
+		var kind := 0
+		if _pend_idx >= 0:
+			due = _pend_t + SMASH_MS
+			kind = 1
+		if _active >= 0:
+			var d := shots[_active].end + w100
+			if d < due:
+				due = d
+				kind = 2
+		if _next < shots.size() and _next != _pend_idx:
+			var d2 := shots[_next].t + w50
+			if d2 < due:
+				due = d2
+				kind = 3
+		if kind == 0 or tf <= due:
+			break
+		_log_t = int(due)
+		match kind:
+			1:
+				_resolve_smash_single()
+			2:
+				_finish_charge(_active_q_for(w100))
+			_:
+				_miss(_next)
+				_next += 1
+	_clock = t
+	_log_t = t
 
 
 func _active_q_for(tail_err: float) -> int:
@@ -282,14 +301,14 @@ func _apply_hit(idx: int, q: int, dt: float) -> void:
 	_tally.max_combo = maxi(_tally.max_combo, _tally.combo)
 	_tally._add_score(q)
 	_heal(q)
-	event_log.append([_clock, "hit", idx, q])
+	event_log.append([_log_t, "hit", idx, q])
 	_store(idx, {"quality": q, "dt": dt, "late": dt > 0.0, "key": shots[idx].key,
 			"smash": shots[idx].smash, "miss_kind": ""})
 
 
 func _miss(idx: int) -> void:
 	_lose()
-	event_log.append([_clock, "miss", idx, Quality.MISS])
+	event_log.append([_log_t, "miss", idx, Quality.MISS])
 	_store(idx, {"quality": Quality.MISS, "key": shots[idx].key, "smash": shots[idx].smash,
 			"miss_kind": "FULL", "late": false})
 
@@ -303,14 +322,14 @@ func _finish_charge(q: int) -> void:
 	var dt := float(head.get("dt", 0.0))
 	if q == Quality.MISS:
 		_lose()
-		event_log.append([_clock, "drop", idx, Quality.MISS])
+		event_log.append([_log_t, "drop", idx, Quality.MISS])
 		_store(idx, {"quality": Quality.MISS, "dt": dt, "key": shots[idx].key, "smash": false,
 				"hold_end": true, "held": false, "miss_kind": "DROP", "late": false})
 		return
 	_tally._count_quality(q)
 	_tally._add_score(q)
 	_heal(q)
-	event_log.append([_clock, "hit", idx, q])
+	event_log.append([_log_t, "hit", idx, q])
 	_store(idx, {"quality": q, "dt": dt, "key": shots[idx].key, "smash": false,
 			"hold_end": true, "held": true, "miss_kind": "", "late": dt > 0.0})
 

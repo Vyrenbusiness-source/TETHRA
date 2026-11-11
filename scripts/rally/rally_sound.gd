@@ -140,9 +140,9 @@ static func _tock(kind: int) -> AudioStreamWAV:
 	var key := "tock%d" % kind
 	if _cache.has(key):
 		return _cache[key]
-	var f := [980.0, 620.0, 520.0, 1200.0][kind]
+	var f: float = [980.0, 620.0, 520.0, 1200.0][kind]
 	var dur := 0.09
-	var amp := [0.62, 0.66, 0.4, 0.45][kind]
+	var amp: float = [0.62, 0.66, 0.4, 0.45][kind]
 	var n := int(RATE * dur)
 	var out := PackedFloat32Array()
 	out.resize(n)
