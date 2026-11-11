@@ -160,8 +160,10 @@ func _draw_room() -> void:
 	var far_c := COL_TABLE.darkened(0.18)
 	var near_c := COL_TABLE.lightened(0.10)
 	var mid := w * 0.5
-	var mf := lerpf(xl + inset, xr - inset, 0.5)
-	var mn := mid
+	# Leichter Schraegblick: hinten ein Hauch links der Mitte, vorn rechts (zeigt die Netzflaeche).
+	var skew := 0.0045 * w
+	var mf := lerpf(xl + inset, xr - inset, 0.5) - skew
+	var mn := mid + skew
 	draw_polygon(PackedVector2Array([Vector2(xl + inset, yf), Vector2(mf, yf), Vector2(mn, yn), Vector2(xl, yn)]),
 			PackedColorArray([far_c.lightened(0.04), far_c.lightened(0.04), near_c.lightened(0.04), near_c.lightened(0.04)]))
 	draw_polygon(PackedVector2Array([Vector2(mf, yf), Vector2(xr - inset, yf), Vector2(xr, yn), Vector2(mn, yn)]),
@@ -183,17 +185,17 @@ func _draw_room() -> void:
 	# Mittellinie quer ueber die Platte.
 	draw_line(Vector2(mf, yf), Vector2(mn, yn), Color(1, 1, 1, 0.10), 1.0, true)
 	# Netz: niedrig, ueber die ganze Tischtiefe (hinten bis vorn), Pfosten + feine Kante.
-	var nh := 0.040 * h
+	var nh := 0.038 * h
 	var nb0 := Vector2(mf, yf)
 	var nb1 := Vector2(mn, yn)
 	var nt0 := nb0 + Vector2(0, -nh * 0.88)
 	var nt1 := nb1 + Vector2(0, -nh)
-	draw_colored_polygon(PackedVector2Array([nb0, nt0, nt1, nb1]), Color(0.80, 0.84, 0.88, 0.07))
+	draw_colored_polygon(PackedVector2Array([nb0, nt0, nt1, nb1]), Color(0.80, 0.84, 0.88, 0.10))
 	for i in range(1, 14):
 		var f := float(i) / 14.0
 		var bp := nb0.lerp(nb1, f)
 		var tp := nt0.lerp(nt1, f)
-		draw_line(bp, tp, Color(0.85, 0.88, 0.92, 0.07), 1.0)
+		draw_line(bp, tp, Color(0.85, 0.88, 0.92, 0.11), 1.0)
 	for i in range(1, 4):
 		var g := float(i) / 4.0
 		draw_line(nb0.lerp(nt0, g), nb1.lerp(nt1, g), Color(0.85, 0.88, 0.92, 0.06), 1.0)
@@ -331,7 +333,7 @@ func _blade(c: Vector2, rx: float, ry: float, ang: float, wood: Color, rubber: C
 	for i in 14:
 		var a := PI * 1.05 + PI * 0.55 * float(i) / 13.0
 		hl.append(c + _rot(Vector2(cos(a) * rx * 0.70, sin(a) * ry * 0.70), ang))
-	draw_polyline(hl, Color(1, 1, 1, 0.20), 1.4, true)
+	draw_polyline(hl, Color(1, 1, 1, 0.05 + 0.22 * rubber.v), 1.4, true)
 	var closed := pts2.duplicate()
 	closed.append(pts2[0])
 	draw_polyline(closed, Color(0, 0, 0, 0.28), 1.0, true)
@@ -340,8 +342,8 @@ func _blade(c: Vector2, rx: float, ry: float, ang: float, wood: Color, rubber: C
 ## Tischtennis-Schlaeger: runder Belag (Tastenfarbe), Holzrand, ausgestellter Griff.
 func _paddle(c: Vector2, ang: float, rubber: Color) -> void:
 	var h := size.y
-	var ry := 0.052 * h
-	var rx := 0.030 * h
+	var ry := 0.050 * h
+	var rx := 0.037 * h
 	var wood := Color(0.80, 0.64, 0.44)
 	var gw := 0.0085 * h
 	var top := Vector2(0, ry * 0.86)
@@ -366,7 +368,7 @@ func _draw_players() -> void:
 	var h := size.y
 	var py := _paddle_y()
 	var swing := clampf((t_ms - _swing_t) / 140.0, 0.0, 1.0)
-	var fwd := sin(PI * swing) * 0.018 if swing < 1.0 else 0.0
+	var fwd := sin(PI * swing) * 0.012 if swing < 1.0 else 0.0
 	# Ausholen: in den letzten ~240 ms vor dem Schlag zurueck und nach hinten kippen.
 	var jn := RallyChart.first_at_or_after(shots, t_ms - 80.0)
 	var wind := 0.0
@@ -380,7 +382,7 @@ func _draw_players() -> void:
 		pull = -0.02 * clampf((t_ms - cs.t) / maxf(cs.end - cs.t, 1.0), 0.0, 1.0)
 	var gap := BALL_R * h * 1.38 * 1.9 / size.x
 	var pp := _p(Vector2(RallyChart.X_PLAYER - gap + fwd + pull - 0.016 * wind, py + 0.010 * wind))
-	var tilt := 0.12 - 0.34 * wind + (0.0 if swing >= 1.0 else 0.45 * sin(PI * swing))
+	var tilt := 0.12 - 0.34 * wind + (0.0 if swing >= 1.0 else 0.32 * sin(PI * swing))
 	_paddle(pp, tilt, key_col(_player_key()).darkened(0.12))
 	# Gegner: schlaegt zur Mitte der Flugzeit zurueck.
 	var ofwd := 0.0
@@ -390,7 +392,7 @@ func _draw_players() -> void:
 		if u >= 0.0 and u <= 1.0:
 			ofwd = -sin(PI * u) * 0.030
 	var op := _p(Vector2(RallyChart.X_OPP + gap + ofwd, RallyChart.Y_OPP))
-	_paddle(op, -0.12 - (0.0 if ofwd > -0.002 else 0.3), COL_OPP.darkened(0.35))
+	_paddle(op, -0.12 - (0.0 if ofwd > -0.002 else 0.3), COL_OPP.darkened(0.55))
 
 
 ## Schlaeger-Hoehe: gleitet vor dem Treffer auf die Hoehe des naechsten Balls.
