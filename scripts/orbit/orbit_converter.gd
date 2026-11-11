@@ -53,8 +53,8 @@ const STAR_DECAY := 0.95
 const STAR_JUMP_CAP := 4.0
 const STAR_SWITCH_GAP_MS := 400.0
 const STAR_MAX := 15.0
-const STAR_SCALE := 1.0
-const STAR_POW := 1.0
+const STAR_SCALE := 0.51
+const STAR_POW := 1.3
 
 
 static func convert(beatmap: Beatmap, laps: int = 2) -> Array[OrbitNote]:

@@ -1,39 +1,34 @@
 extends SceneTree
 
-## Orbit-QA (Bahnen): Messungen statt Bauchgefuehl.
-##  1. Kopf-Tempo bei echten BPM/Taktarten und je Bahnform (Einheiten/s).
-##  2. Erreichbarkeit: ein Bot, der dem Kopf wie ein Spieler folgt (Cursor
-##     zieht dem Kopf mit Verzoegerung tau nach, Zeit- und Zielstreuung):
-##     Tablet, Maus und ein schwacher Spieler, je Bahnform am Tempolimit und
-##     auf Maps quer durch die Sterne.
-##  3. Muster-Regelmaessigkeit: Anteil der Ziele auf dem Raster (Viertel/Achtel/
-##     Sechzehntel) und wie oft ein Takt den Rhythmus eines der letzten 4 Takte
-##     wiederholt.
-##  4. Sterne gegen Bot-Erfolg (Rangkorrelation); erste Maps muessen leicht sein.
+## Orbit-QA (Satelliten): Erreichbarkeit rein rechnerisch (ohne Core/Frames).
+## Bot: drueckt jedes Ziel mit Zeitstreuung, bewegt den Cursor mit konstanter
+## Geschwindigkeit (Feld-Einheiten/s) vom Ende des vorigen Ziels zum naechsten und
+## drueckt, sobald er im Trefferradius ist (AIM_R), Treffer nur im EDGE-Fenster; Halten: Kugel folgen =
+## Pfadlaenge/Dauer <= Bot-Tempo. Akzent: zweite Taste ~8 ms hinter der ersten.
+## Ziel (docs/modes/orbit_satellit.md): Tablet (3,5/s, 25 ms) >= 97 % und Maus
+## (2,5/s) >= 94 % auf Maps < 5 Sterne. Schreibt docs/modes/orbit_satellit_qa.md.
 ## Headless:
 ##   Godot..._console.exe --headless --audio-driver Dummy --path . --script res://tests/run_orbit_qa_tests.gd
 
-const STEP_MS := 4.0
-## Bots: Nachlauf tau (ms), Zeitstreuung (ms), Zielstreuung (Aim-Punkte, 100 = eine Bahn-Einheit).
+## [Tempo Feld-Einheiten/s, Zeitstreuung ms, Mindest-Trefferquote]
 const BOTS := {
-	"tablet": [35.0, 20.0, 4.0],
-	"maus": [60.0, 25.0, 6.0],
-	"schwach": [90.0, 32.0, 8.0],
+	"tablet": [3.5, 25.0, 0.97],
+	"maus": [2.5, 25.0, 0.94],
 }
-const PICK := 9
+const AIM_R := 0.05
+const STAR_LIMIT := 5.0
+const REPORT := "res://docs/modes/orbit_satellit_qa.md"
 
 var _passed := 0
 var _failed := 0
 
 
 func _initialize() -> void:
-	print("=== TETHRA Orbit-QA (Bahnen) ===")
-	_test_hand_speed()
-	_test_follow_limits()
-	_test_shapes()
-	var picks := _pick_maps()
-	_test_regularity(picks)
-	_test_bots(picks)
+	print("=== TETHRA Orbit-QA (Satelliten) ===")
+	_test_bot_model()
+	var rows := _measure_library()
+	_test_library(rows)
+	_write_report(rows)
 	print("=== Ergebnis: %d bestanden, %d fehlgeschlagen ===" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
 
@@ -47,304 +42,155 @@ func _ok(cond: bool, label: String) -> void:
 		print("  [FAIL] " + label)
 
 
-func _tp(bm: Beatmap, t: float, bpm: float, meter: int) -> void:
-	var tp := TimingPoint.new()
-	tp.time = t
-	tp.beat_length = 60000.0 / bpm
-	tp.meter = meter
-	tp.uninherited = true
-	bm.timing_points.append(tp)
+## Trefferquote 0..1 eines Bots auf ns. od: Overall Difficulty (Trefferfenster).
+static func bot_rate(ns: Array[OrbitNote], speed: float, sigma: float, od: float, seed: int) -> float:
+	if ns.is_empty():
+		return 1.0
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed
+	var w := 127.0 - 3.0 * od
+	var hits := 0
+	var free_t := -INF
+	var free_p := Vector2(0.5, 0.5)
+	for n in ns:
+		var e := clampf(rng.randfn(0.0, sigma), -2.5 * sigma, 2.5 * sigma)
+		var press := n.time_ms + e
+		var dist := maxf(free_p.distance_to(n.pos) - AIM_R, 0.0)
+		var arrive := free_t + dist / speed * 1000.0
+		# Zu spaet am Ziel: der Bot drueckt, sobald der Cursor da ist (Treffer, wenn noch im Fenster).
+		press = maxf(press, arrive)
+		var ok := absf(press - n.time_ms) <= w
+		if n.key == OrbitNote.KEY_ACCENT:
+			rng.randfn(0.0, 8.0)
+		var rel := press
+		if n.is_hold:
+			var dur_s := (n.end_ms - n.time_ms) / 1000.0
+			var len := 0.0
+			for i in range(1, n.path.size()):
+				len += n.path[i - 1].distance_to(n.path[i])
+			if len / maxf(dur_s, 0.001) > speed:
+				ok = false
+			rel = n.end_ms + clampf(rng.randfn(0.0, sigma), -2.5 * sigma, 2.5 * sigma)
+		if ok:
+			hits += 1
+		free_t = maxf(rel, press)
+		free_p = OrbitConverter.end_pos(n)
+	return float(hits) / float(ns.size())
 
 
-# --- 1. Hand-Tempo ---
-
-func _test_hand_speed() -> void:
-	print("- Hand-Tempo bei echten BPM")
-	var worst := 0.0
-	for meter in [3, 4, 6, 7]:
-		var line := "  %d/4:" % meter
-		for bpm in [80, 120, 140, 170, 200, 240, 280]:
-			var bm := Beatmap.new()
-			_tp(bm, 0.0, bpm, meter)
-			var c := OrbitClock.from_beatmap(bm)
-			var dps := c.speed_at(0.0) * 1000.0
-			worst = maxf(worst, dps)
-			line += " %d BPM %.0f Grad/s (%.0f U/min)," % [bpm, dps, dps / 6.0]
-		print(line.trim_suffix(","))
-	_ok(worst <= 360.0 / OrbitClock.MIN_BAR_MS * 1000.0 + 0.01, "nie schneller als %.0f Grad/s (%.1f Umdrehungen/s)" % [worst, worst / 360.0])
-	var bm4 := Beatmap.new()
-	_tp(bm4, 0.0, 240.0, 4)
-	_ok(OrbitClock.from_beatmap(bm4).speed_at(0.0) * 1000.0 <= 180.0 + 0.01, "240 BPM 4/4: eine Umdrehung pro zwei Takte")
+func _test_bot_model() -> void:
+	print("- Bot-Modell")
+	var ns: Array[OrbitNote] = []
+	for i in 40:
+		ns.append(OrbitNote.make_target(1000.0 + 500.0 * i, Vector2(0.2 if i % 2 == 0 else 0.8, 0.5), i % 2))
+	_ok(bot_rate(ns, 3.5, 25.0, 8.0, 1) >= 0.99, "lockere Spruenge (0,6 in 500 ms): Tablet trifft fast alles")
+	var fast: Array[OrbitNote] = []
+	for i in 40:
+		fast.append(OrbitNote.make_target(1000.0 + 100.0 * i, Vector2(0.1 if i % 2 == 0 else 0.9, 0.5), 0))
+	_ok(bot_rate(fast, 3.5, 25.0, 8.0, 1) < 0.2, "0,8 in 100 ms (8/s): unerreichbar")
 
 
-## Wie viel Nachlauf darf ein Spieler haben? Bei Tempo v (Einheiten/ms) steht der
-## Cursor dauerhaft v * tau hinter dem Kopf; Zielstreuung 2 sigma kommt dazu.
-func _test_follow_limits() -> void:
-	print("- Folgen: erlaubter Nachlauf je Tempo (Tempolimit der Bahn)")
-	var tol := OrbitCore.AIM_TOL / 100.0
-	for v in [OrbitTrack.MAX_SPEED, OrbitTrack.MAX_SPEED_EASY]:
-		var tau_max: float = (tol - 2.0 * float(BOTS["maus"][2]) / 100.0) / float(v)
-		print("  Kopf %.4f E/ms: Nachlauf bis %.0f ms ok" % [v, tau_max])
-		_ok(tau_max >= float(BOTS["maus"][0]), "Kopf %.4f E/ms: Maus-Nachlauf (60 ms) passt" % v)
-
-
-## Jede Bahnform am Tempolimit (kuerzester erlaubter Takt): Noten auf jedem
-## Achtel, wechselnde Spuren. Maus-Bot muss >= 90 % treffen.
-func _test_shapes() -> void:
-	print("- Erreichbarkeit je Bahnform (Takt am Tempolimit)")
-	for shape in OrbitPath.COUNT:
-		var bar := maxf(OrbitPath.length(shape) / OrbitTrack.MAX_SPEED, OrbitClock.MIN_BAR_MS)
-		var clock := OrbitClock.fixed(bar, 4, 0.0)
-		var tr := OrbitTrack.fixed(clock, shape)
-		var ns: Array[OrbitNote] = []
-		var step := bar / 8.0
-		for i in 8 * 12:
-			var t := 2000.0 + float(i) * step
-			var n := OrbitNote.make(t, clock.angle_at(t), i % 2)
-			n.shape = shape
-			n.speed = tr.speed_at(t)
-			ns.append(n)
-		var line := "  %s (Takt %.0f ms, Kopf %.4f E/ms):" % [OrbitPath.NAMES[shape], bar, tr.speed_at(0.0)]
-		for name in ["tablet", "maus"]:
-			var r := _run_track(ns, tr, BOTS[name], 11, 5.0, 5.0)
-			line += "  %s Acc %.1f%% Miss %d;" % [name, float(r[0]) * 100.0, r[1]]
-			var hit := 1.0 - float(r[1]) / float(ns.size())
-			_ok(hit >= 0.9 and not r[2], "%s: %s trifft >= 90 %% (%.1f%%)" % [OrbitPath.NAMES[shape], name, hit * 100.0])
-		print(line)
-	_ok(OrbitTrack.fixed(OrbitClock.fixed(1200.0), OrbitPath.CIRCLE).speed_at(0.0) <= OrbitTrack.MAX_SPEED + 1e-6,
-		"Kreis bei kuerzestem Takt unter dem Tempolimit")
-
-
-# --- Map-Auswahl ---
-
-func _pick_maps() -> Array:
+func _measure_library() -> Array:
+	print("- Bibliothek messen")
 	var dir := MapLibrary.default_maps_dir()
 	var da := DirAccess.open(dir)
-	var found: Array = []
+	var rows: Array = []
 	if da == null:
 		print("  (kein maps/-Ordner)")
-		return found
+		return rows
 	var files := Array(da.get_files())
 	files.sort()
-	var step := maxi(1, files.size() / 40)
-	var i := 0
-	while i < files.size():
-		var f: String = files[i]
-		i += step
-		if not f.to_lower().ends_with(".osz"):
+	var seed := 1
+	for f in files:
+		if not str(f).to_lower().ends_with(".osz"):
 			continue
 		var imp := OszImporter.import(dir.path_join(f))
 		if not imp.ok:
 			continue
 		for d in imp.difficulties:
 			var bm: Beatmap = d.beatmap
-			if bm.hit_objects.size() < 80 or (bm.is_mania() and bm.column_count() != 4):
+			if bm.hit_objects.size() < 30 or (bm.is_mania() and bm.column_count() != 4):
 				continue
 			var ns := OrbitConverter.convert(bm)
-			found.append({"label": "%s [%s]" % [f.get_basename().left(26), bm.version_name()],
-				"bm": bm, "ns": ns, "stars": OrbitConverter.stars(ns)})
-	found.sort_custom(func(a, b): return a.stars < b.stars)
-	var out: Array = []
-	if found.size() <= PICK:
-		return found
-	for k in PICK:
-		out.append(found[int(float(k) * float(found.size() - 1) / float(PICK - 1))])
-	print("  %d Diffs in der Auswahl-Menge, Sterne %.2f .. %.2f" % [found.size(), found[0].stars, found[-1].stars])
-	return out
+			if ns.size() < 20:
+				continue
+			seed += 1
+			var a := OrbitConverter.analyze(ns, bm)
+			var r := {"label": "%s [%s]" % [str(f).get_basename().left(28), bm.version_name().left(24)],
+				"mania": bm.is_mania(), "stars": OrbitConverter.stars(ns), "n": ns.size(),
+				"nps": a.nps, "vis": a.max_visible, "jump": a.mean_jump_speed}
+			for name in BOTS:
+				var b: Array = BOTS[name]
+				r[name] = bot_rate(ns, b[0], b[1], bm.od(), seed)
+			rows.append(r)
+	rows.sort_custom(func(x, y): return x.stars < y.stars)
+	return rows
 
 
-# --- 3. Regelmaessigkeit ---
-
-func _test_regularity(picks: Array) -> void:
-	print("- Muster-Regelmaessigkeit (Raster, Wiederholung)")
-	var sum_grid := 0.0
-	var sum_rep := 0.0
-	var n_maps := 0
-	for p in picks:
-		var bm: Beatmap = p.bm
-		var ns: Array[OrbitNote] = p.ns
-		var reds := OrbitConverter.red_points(bm)
-		if ns.size() < 50 or reds.is_empty():
-			continue
-		var on_grid := 0
-		var sigs: Dictionary = {}   # Takt -> Signatur
-		var clock := OrbitClock.from_beatmap(bm)
-		for n in ns:
-			var s: Array = clock.segs[clock._idx(n.time_ms)]
-			var beat := float(s[1]) / float(s[2])
-			var ph := (n.time_ms - float(s[0])) / (beat / 4.0)
-			if absf(ph - roundf(ph)) * beat / 4.0 <= 12.0:
-				on_grid += 1
-			var bar := clock.bar_at(n.time_ms)
-			var key := "%d:%d" % [int(roundf(n.angle_deg / 22.5)) % 16, n.ring]
-			sigs[bar] = str(sigs.get(bar, "")) + key + ","
-		var bars := sigs.keys()
-		bars.sort()
-		var rep := 0
-		for k in range(1, bars.size()):
-			for j in range(maxi(0, k - 4), k):
-				if sigs[bars[j]] == sigs[bars[k]]:
-					rep += 1
-					break
-		var grid := float(on_grid) / float(ns.size())
-		var repf := float(rep) / float(maxi(bars.size() - 1, 1))
-		print("  %s: %d Ziele, auf Sechzehntel-Raster %.0f%%, Takt wiederholt einen der letzten 4: %.0f%%, Sterne %.2f" % [
-			p.label, ns.size(), grid * 100.0, repf * 100.0, p.stars])
-		sum_grid += grid
-		sum_rep += repf
-		n_maps += 1
-	if n_maps > 0:
-		_ok(sum_grid / n_maps >= 0.6, "Mehrheit der Ziele auf dem Raster (%.0f%%)" % (100.0 * sum_grid / n_maps))
-		print("  Wiederholung im Mittel %.0f%%" % (100.0 * sum_rep / n_maps))
-
-
-# --- 2. Erreichbarkeit mit Folge-Bot ---
-
-func _core(ns: Array[OrbitNote], bm: Beatmap) -> OrbitCore:
-	var c := OrbitCore.new()
-	c.setup(ns, bm.od(), 1.0, bm.hp(), {})
-	c.set_replay_mode(false)
-	return c
-
-
-func _run_bot(ns: Array[OrbitNote], bm: Beatmap, bot: Array, seed: int) -> Array:
-	return _run_track(ns, OrbitConverter.track_for(bm, ns), bot, seed, bm.od(), bm.hp())
-
-
-## Spielt ns mit einem Folge-Bot. Rueckgabe: [Acc, Misses, gescheitert, Zielfehler-Mittel, Note].
-func _run_track(ns: Array[OrbitNote], tr: OrbitTrack, bot: Array, seed: int, od: float, hp: float) -> Array:
-	var tau: float = bot[0]
-	var st: float = bot[1]
-	var sa: float = bot[2]
-	var rng := RandomNumberGenerator.new()
-	rng.seed = seed
-	var c := OrbitCore.new()
-	c.setup(ns, od, 1.0, hp, {})
-	c.set_track(tr)
-	c.set_replay_mode(false)
-	# Tasten-Events mit Zeitstreuung vorbereiten: [Zeit, Index, Zielversatz].
-	var downs: Array = []
-	for i in ns.size():
-		var n := ns[i]
-		var td := n.time_ms + clampf(rng.randfn(0.0, st), -2.5 * st, 2.5 * st)
-		var oa := clampf(rng.randfn(0.0, sa), -2.5 * sa, 2.5 * sa)
-		downs.append([td, i, Vector2.from_angle(float(i) * 2.399963) * (oa / 100.0)])
-	downs.sort_custom(func(a, b): return a[0] < b[0])
-	var ups: Array = []   # [t, ring]
-	var t := ns[0].time_ms - 800.0
-	var cur := tr.head(t)
-	var di := 0
-	var end_t: float = ns[-1].end_ms + 400.0
-	var held := [-1, -1]
-	var off := Vector2.ZERO
-	while t < end_t and not c.failed:
-		t += STEP_MS
-		# Cursor zieht dem Kopf nach (Tiefpass), Zielversatz wandert langsam.
-		var a := 1.0 - exp(-STEP_MS / tau)
-		cur = cur.lerp(tr.head(t) + off, a)
-		c.cursor_moved(cur, t)
-		while di < downs.size() and float(downs[di][0]) <= t:
-			var i: int = downs[di][1]
-			off = downs[di][2]
-			var n := ns[i]
-			var td: float = downs[di][0]
-			di += 1
-			if held[n.ring] >= 0:
-				c.key_up(n.ring, td)
-				held[n.ring] = -1
-			c.key_down(n.ring, td, cur)
-			if n.is_arc:
-				held[n.ring] = i
-				ups.append([n.end_ms + rng.randf_range(-10.0, 25.0), n.ring])
-			else:
-				ups.append([td + 40.0, n.ring])
-		ups.sort_custom(func(x, y): return x[0] < y[0])
-		while not ups.is_empty() and float(ups[0][0]) <= t:
-			var u: Array = ups.pop_front()
-			c.key_up(u[1], float(u[0]))
-			held[u[1]] = -1
-		c.update(t)
-	c.update(end_t + 600.0)
-	return [c.accuracy(), c.n_miss, c.failed, c.mean_aim_err(), c.grade()]
-
-
-func _test_bots(picks: Array) -> void:
-	print("- Erreichbarkeit (Folge-Bot: Nachlauf tau, Zeit- und Zielstreuung)")
-	if picks.is_empty():
+func _test_library(rows: Array) -> void:
+	print("- Erreichbarkeit (%d Diffs)" % rows.size())
+	if rows.is_empty():
 		return
-	var weak_miss: Array = []
-	var stars: Array = []
-	var speeds: Array = []
-	var easy_ok := true
-	for p in picks:
-		var ns: Array[OrbitNote] = p.ns
-		if ns.size() < 20:
+	var n_low := 0
+	var worst := {}
+	for name in BOTS:
+		worst[name] = 2.0
+	for r in rows:
+		if r.stars >= STAR_LIMIT:
 			continue
-		var sps: Array = []
-		for n in ns:
-			sps.append(n.speed)
-		sps.sort()
-		var line := "  %s * %.2f (%d Ziele, Kopf %.4f E/ms):" % [p.label, p.stars, ns.size(), float(sps[sps.size() / 2])]
+		n_low += 1
 		for name in BOTS:
-			var r := _run_bot(ns, p.bm, BOTS[name], 7)
-			line += "  %s Acc %.1f%% Miss %d %s %s;" % [name, float(r[0]) * 100.0, r[1], "FAIL" if r[2] else "ok", r[4]]
-			if name == "tablet" or name == "maus":
-				if p.stars < 5.0:
-					_ok(not r[2] and float(r[0]) > 0.85, "%s: %s schafft %s (Acc %.1f%%)" % [name, p.label, "die Map", float(r[0]) * 100.0])
-			if name == "schwach":
-				weak_miss.append(float(r[1]) / float(ns.size()))
-				stars.append(p.stars)
-				var sp: Array = []
-				for n in ns:
-					sp.append(n.speed)
-				sp.sort()
-				speeds.append(float(sp[sp.size() / 2]))
-				# Erste Maps (< 2 Sterne) > 80 %; bis 3 Sterne ohne Fail und > 70 %.
-				if p.stars < 3.0:
-					easy_ok = easy_ok and not r[2] and float(r[0]) > (0.8 if p.stars < 2.0 else 0.7)
-		print(line)
-	_ok(easy_ok, "erste Maps (< 2 Sterne > 80 %, < 3 Sterne > 70 %): auch der schwache Bot kommt durch")
-	if stars.size() >= 4:
-		# Der schwache Bot scheitert am Folgen: auf Maps mit langsamem Kopf
-		# (<= 0,0030 E/ms) macht er deutlich weniger Fehler als bei schneller.
-		var slow := 0.0
-		var fast := 0.0
-		var ns_slow := 0
-		var ns_fast := 0
-		for i in speeds.size():
-			if speeds[i] <= 0.0030:
-				slow += weak_miss[i]
-				ns_slow += 1
-			else:
-				fast += weak_miss[i]
-				ns_fast += 1
-		var rho_s := _spearman(stars, weak_miss)
-		print("  Schwacher Bot: Fehlerquote langsamer Kopf %.1f%% (%d Maps), schneller Kopf %.1f%% (%d Maps); Spearman Sterne %.2f" % [
-			100.0 * slow / maxi(ns_slow, 1), ns_slow, 100.0 * fast / maxi(ns_fast, 1), ns_fast, rho_s])
-		if ns_slow > 0 and ns_fast > 0:
-			_ok(slow / ns_slow < fast / ns_fast, "langsamer Kopf = weniger Fehler beim schwachen Bot")
+			worst[name] = minf(worst[name], r[name])
+	for name in BOTS:
+		var need: float = BOTS[name][2]
+		_ok(worst[name] >= need, "%s: schlechteste Map < %.0f Sterne %.1f %% (>= %.0f %%, %d Maps)" % [
+			name, STAR_LIMIT, 100.0 * worst[name], 100.0 * need, n_low])
+	var med: float = rows[rows.size() / 2].stars
+	_ok(med >= 3.0 and med <= 5.0, "Sterne-Median %.2f im Bereich 3..5" % med)
 
 
-static func _ranks(v: Array) -> Array:
-	var idx := range(v.size())
-	idx.sort_custom(func(a, b): return v[a] < v[b])
-	var r: Array = []
-	r.resize(v.size())
-	for k in idx.size():
-		r[idx[k]] = float(k)
-	return r
-
-
-static func _spearman(a: Array, b: Array) -> float:
-	var ra := _ranks(a)
-	var rb := _ranks(b)
-	var n := float(a.size())
-	var ma := (n - 1.0) * 0.5
-	var num := 0.0
-	var da := 0.0
-	var db := 0.0
-	for i in a.size():
-		num += (ra[i] - ma) * (rb[i] - ma)
-		da += (ra[i] - ma) * (ra[i] - ma)
-		db += (rb[i] - ma) * (rb[i] - ma)
-	return num / maxf(sqrt(da * db), 1e-9)
+func _write_report(rows: Array) -> void:
+	if rows.is_empty():
+		return
+	var f := FileAccess.open(REPORT, FileAccess.WRITE)
+	if f == null:
+		print("  (Bericht nicht schreibbar)")
+		return
+	f.store_line("# Orbit Satelliten: QA-Messung")
+	f.store_line("")
+	f.store_line("Erzeugt von `tests/run_orbit_qa_tests.gd` (rein rechnerischer Bot, siehe dort). Bibliothek: %d Diffs (osu!standard + Mania 4K)." % rows.size())
+	f.store_line("Bots: Tablet 3,5 Feld-Einheiten/s, Maus 2,5/s, je 25 ms Zeitstreuung, Trefferradius %.2f. Ziele: Tablet >= 97 %%, Maus >= 94 %% auf Maps unter %.0f Sternen." % [AIM_R, STAR_LIMIT])
+	f.store_line("")
+	var buckets := [[0.0, 2.5], [2.5, 4.0], [4.0, 5.0], [5.0, 6.0], [6.0, 8.0], [8.0, 99.0]]
+	f.store_line("## Je Sterne-Gruppe")
+	f.store_line("")
+	f.store_line("| Sterne | Maps | Tablet min / Mittel | Maus min / Mittel | Ziele/s Mittel |")
+	f.store_line("|---|---|---|---|---|")
+	for b in buckets:
+		var cnt := 0
+		var tmin := 2.0
+		var tsum := 0.0
+		var mmin := 2.0
+		var msum := 0.0
+		var nps := 0.0
+		for r in rows:
+			if r.stars >= b[0] and r.stars < b[1]:
+				cnt += 1
+				tmin = minf(tmin, r.tablet)
+				tsum += r.tablet
+				mmin = minf(mmin, r.maus)
+				msum += r.maus
+				nps += r.nps
+		if cnt > 0:
+			f.store_line("| %.1f - %.1f | %d | %.1f %% / %.1f %% | %.1f %% / %.1f %% | %.2f |" % [
+				b[0], minf(b[1], 15.0), cnt, 100.0 * tmin, 100.0 * tsum / cnt, 100.0 * mmin, 100.0 * msum / cnt, nps / cnt])
+	f.store_line("")
+	f.store_line("## Je Map (nach Sternen)")
+	f.store_line("")
+	f.store_line("| Map | Typ | Sterne | Ziele | Ziele/s | max sichtbar | Sprung/s | Tablet | Maus |")
+	f.store_line("|---|---|---|---|---|---|---|---|---|")
+	for r in rows:
+		f.store_line("| %s | %s | %.2f | %d | %.2f | %d | %.2f | %.1f %% | %.1f %% |" % [
+			str(r.label).replace("|", "/"), "4K" if r.mania else "std", r.stars, r.n, r.nps, r.vis,
+			r.jump, 100.0 * r.tablet, 100.0 * r.maus])
+	f.close()
