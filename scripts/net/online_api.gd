@@ -340,6 +340,10 @@ static func build_body(result: Dictionary, meta: Dictionary, mode: String = "man
 		body["stars"] = float(result.get("stars", meta.get("stars", 0.0)))
 	else:
 		body["pp"] = maxf(float(result.get("pp", 0.0)), 0.0)
+	# Dirigent: Takt-Anteil zusaetzlich (Counts zaehlen nur die Einsaetze).
+	if mode == "dirigent":
+		body["beats_hit"] = int(result.get("beats_hit", 0))
+		body["beats_total"] = int(result.get("beats_total", 0))
 	return body
 
 

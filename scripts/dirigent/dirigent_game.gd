@@ -774,7 +774,7 @@ func _submit_online(s: Dictionary) -> void:
 		return
 	var meta := OnlineApi.meta_from_beatmap(_beatmap, GameSession.osz_path,
 		GameSession.osu_filename, float(s.get("stars", -1.0)))
-	meta["total_notes"] = chart.cues.size() + chart.beats.size()
+	meta["total_notes"] = chart.cues.size()  # Counts n_max..n_miss zaehlen nur Einsaetze (Server: Summe = total_notes)
 	var res := s.duplicate()
 	res["date"] = Time.get_datetime_string_from_system(true)
 	api.submit(res, meta, MODE)
