@@ -35,6 +35,8 @@ var _viz: AudioVisualizer
 var _beat_clock: BeatClock
 # Bass-Reaktivitaet: Logo, Shader-Hintergrund, Overlay.
 var _logo: Control
+var _logo_sub: Label
+var _menu_vb: VBoxContainer
 var _bg_mat: ShaderMaterial
 var _dim_overlay: ColorRect
 var _bass_avg: float = 0.0
@@ -115,6 +117,8 @@ func _ready() -> void:
 	_build_calm()
 	_build_logo()
 	_build_buttons()
+	_layout_menu()
+	resized.connect(_layout_menu)
 	_build_profile_card()
 	_build_visualizer_slot()
 	if DisplayServer.get_name() != "headless":
@@ -502,13 +506,7 @@ func _build_logo() -> void:
 	logo.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	logo.anchor_left = 0.5
 	logo.anchor_right = 0.5
-	logo.anchor_top = 0.16
-	logo.anchor_bottom = 0.16
-	logo.offset_left = -LOGO_SIZE.x * 0.5
-	logo.offset_right = LOGO_SIZE.x * 0.5
-	logo.offset_top = 4
-	logo.offset_bottom = 4 + LOGO_SIZE.y
-	add_child(logo)
+	add_child(logo)  # Lage: _layout_menu()
 	_logo = logo
 
 	# Untertitel auf Japanisch (Katakana) — Systemfont, da der Godot-Default
@@ -517,11 +515,8 @@ func _build_logo() -> void:
 	sub.text = "テトラ・リズムの彼方へ"
 	sub.anchor_left = 0.5
 	sub.anchor_right = 0.5
-	sub.anchor_top = 0.16
-	sub.anchor_bottom = 0.16
 	sub.offset_left = -300
 	sub.offset_right = 300
-	sub.offset_top = 138
 	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	var jp_font := SystemFont.new()
 	jp_font.font_names = PackedStringArray(["Yu Gothic UI", "Meiryo", "MS Gothic", "Noto Sans CJK JP"])
@@ -533,6 +528,47 @@ func _build_logo() -> void:
 	sub.add_theme_constant_override("shadow_offset_y", 2)
 	sub.add_theme_constant_override("shadow_outline_size", 6)
 	add_child(sub)
+	_logo_sub = sub
+
+
+## Logo, Untertitel und Knopf-Block als ein Stapel senkrecht mittig: gleicher
+## Abstand oben und unten (720p: "Beenden" nicht mehr am Rand). Bei kleinen
+## Fenstern wird das Logo kleiner, damit es neben "Now playing" frei bleibt.
+func _layout_menu() -> void:
+	if _logo == null or _logo_sub == null or _menu_vb == null:
+		return
+	var h := size.y if size.y > 0.0 else get_viewport_rect().size.y
+	var r := menu_stack(h, _menu_vb.get_combined_minimum_size().y)
+	var sc: float = r.logo_scale
+	for c: Control in [_logo, _logo_sub, _menu_vb]:
+		c.anchor_top = 0.0
+		c.anchor_bottom = 0.0
+	_logo.offset_left = -LOGO_SIZE.x * sc * 0.5
+	_logo.offset_right = LOGO_SIZE.x * sc * 0.5
+	_logo.offset_top = r.logo_y
+	_logo.offset_bottom = r.logo_y + LOGO_SIZE.y * sc
+	_logo_sub.offset_top = r.sub_y
+	_logo_sub.offset_bottom = r.sub_y + MENU_SUB_H
+	_menu_vb.offset_top = r.buttons_y
+	_menu_vb.offset_bottom = r.buttons_y + r.buttons_h
+
+
+const MENU_SUB_H := 28.0     # Untertitel-Zeile
+const MENU_SUB_GAP := 22.0   # Logo -> Untertitel
+const MENU_BTN_GAP := 22.0   # Untertitel -> Knoepfe
+
+
+## Senkrechte Lage des Stapels (statisch, getestet): {logo_scale, logo_y, sub_y,
+## buttons_y, buttons_h, top, bottom}. Unter 900 px Hoehe Logo 85 %.
+static func menu_stack(view_h: float, buttons_h: float) -> Dictionary:
+	var sc := 0.85 if view_h < 900.0 else 1.0
+	var total := LOGO_SIZE.y * sc + MENU_SUB_GAP + MENU_SUB_H + MENU_BTN_GAP + buttons_h
+	var top := maxf(roundf((view_h - total) * 0.5), 0.0)
+	var logo_y := top
+	var sub_y := logo_y + LOGO_SIZE.y * sc + MENU_SUB_GAP
+	var btn_y := sub_y + MENU_SUB_H + MENU_BTN_GAP
+	return {"logo_scale": sc, "logo_y": logo_y, "sub_y": sub_y, "buttons_y": btn_y,
+		"buttons_h": buttons_h, "top": top, "bottom": view_h - (btn_y + buttons_h)}
 
 
 ## Platzhalter: hier haengt spaeter der AudioVisualizer ein.
@@ -703,14 +739,12 @@ func _build_buttons() -> void:
 	var vb := VBoxContainer.new()
 	vb.anchor_left = 0.5
 	vb.anchor_right = 0.5
-	# Mit Orbit-Einstieg ein Button mehr: etwas hoeher, engere Abstaende,
-	# damit "Beenden" auch bei 720p ganz sichtbar bleibt.
-	vb.anchor_top = 0.415
-	vb.anchor_bottom = 0.415
+	# Senkrechte Lage setzt _layout_menu() (Stapel mit Logo mittig).
 	vb.offset_left = -180
 	vb.offset_right = 180
 	vb.add_theme_constant_override("separation", 8)
 	add_child(vb)
+	_menu_vb = vb
 
 	_btn_play = _menu_button("SPIELEN", true)
 	_btn_play.pressed.connect(_play)
