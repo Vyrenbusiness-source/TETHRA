@@ -55,7 +55,7 @@ func _run() -> void:
 	tut.manual_clock = true
 	root.add_child(tut)
 	_check(S.is_seen(), "Start merkt gesehen")
-	_check(tut.view.size.y > 1.0, "Ansicht hat eine Groesse")
+	_check(tut.view != null and tut.view.offset_top > 0.0, "Ansicht unter dem Textkopf")
 	for n in [4, 3]:
 		_settings().rally_zones = n
 		_test_bot_run(tut, n)
