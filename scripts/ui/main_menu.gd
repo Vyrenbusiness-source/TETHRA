@@ -766,6 +766,8 @@ func _build_buttons() -> void:
 		tile.pressed.connect(_play_mode_entry.bind(m))
 		modes.add_child(tile)
 
+	_build_daily_row(vb)
+
 	_btn_mp = _menu_button("MULTIPLAYER", false)
 	_btn_mp.pressed.connect(func(): _fade_music_out(); SceneFader.go("res://scenes/mp_lobby.tscn"))
 	_add_menu_button(vb, _btn_mp)
@@ -781,6 +783,192 @@ func _build_buttons() -> void:
 	var quit := _menu_button("BEENDEN", false)
 	quit.pressed.connect(func(): _fade_music_out(); get_tree().quit())
 	_add_menu_button(vb, quit)
+
+
+## --- Daily Trace: eine Map pro Tag fuer alle, Serie, Tages-Bild (TraceDaily) ---
+var _btn_daily: Button
+var _daily_pic: TextureRect
+var _daily_busy := false
+const DAILY_TIMEOUT_S := 8.0
+
+
+func _build_daily_row(vb: VBoxContainer) -> void:
+	if not ScoreStore.mode_ready("trace"):
+		return
+	var state := TraceDaily.load_state()
+	_daily_adopt_result(state)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	row.custom_minimum_size = Vector2(360, 40)
+	vb.add_child(row)
+	_btn_daily = _menu_button("", false)
+	_btn_daily.custom_minimum_size = Vector2(0, 40)
+	_btn_daily.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_btn_daily.pressed.connect(_daily_start)
+	row.add_child(_btn_daily)
+	_daily_pic = TextureRect.new()
+	_daily_pic.custom_minimum_size = Vector2(40, 40)
+	_daily_pic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_daily_pic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_daily_pic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(_daily_pic)
+	_refresh_daily(state)
+
+
+func _refresh_daily(state: Dictionary = {}) -> void:
+	if _btn_daily == null:
+		return
+	if state.is_empty():
+		state = TraceDaily.load_state()
+	var today := TraceDaily.today_key()
+	var n := TraceDaily.streak(state, today)
+	var done := TraceDaily.has_attempt(state, today)
+	var head := tr("DAILY TRACE")
+	if done:
+		var sc := int((state.days[today] as Dictionary).get("score", -1))
+		_btn_daily.text = "%s · %s" % [head, (tr("Wertung %s") % UiTheme.fmt_score(sc)) if sc >= 0 else tr("heute gespielt")]
+	else:
+		_btn_daily.text = head
+	_btn_daily.tooltip_text = tr("Serie: %d Tage") % n if n > 0 else tr("Jeden Tag dieselbe Map. Ein Versuch zaehlt.")
+	if n > 0:
+		_btn_daily.text += "  ·  %s" % (tr("Serie %d") % n)
+	if done:
+		_daily_pic.texture = ImageTexture.create_from_image(TraceDaily.picture(today, n))
+	_daily_pic.visible = done
+
+
+## Ergebnis des letzten Trace-Laufs der Tages-Map uebernehmen (ScoreStore.last_submit).
+func _daily_adopt_result(state: Dictionary) -> void:
+	var today := TraceDaily.today_key()
+	if not TraceDaily.has_attempt(state, today):
+		return
+	var e: Dictionary = state.days[today]
+	var ls := ScoreStore.last_submit
+	if ls.is_empty() or str(ls.get("mode", "")) != ScoreStore.mode_name("trace") or str(e.get("osz", "")) == "":
+		return
+	if str(ls.get("key", "")) == ScoreStore._key(str(e.osz), str(e.get("version", ""))):
+		if TraceDaily.set_score(state, today, int(ls.get("score", 0))):
+			TraceDaily.save_state(state)
+
+
+func _daily_start() -> void:
+	if _daily_busy:
+		return
+	_daily_busy = true
+	_btn_daily.disabled = true
+	_btn_daily.text = tr("Suche Tagesmap …")
+	var state := TraceDaily.load_state()
+	var today := TraceDaily.today_key()
+	# Schon gespielt: dieselbe Map nochmal (zaehlt nicht), ohne neue Suche.
+	if TraceDaily.has_attempt(state, today):
+		var e: Dictionary = state.days[today]
+		if FileAccess.file_exists(str(e.get("osz", ""))):
+			_daily_launch(str(e.osz), -1, str(e.get("version", "")), state, today, "")
+			return
+	var lib := MapLibrary.new()
+	lib.scan()
+	var mirror := get_node_or_null("/root/Mirror") as BeatmapMirror
+	var items: Array = []
+	if mirror != null:
+		items = await _daily_online_items(mirror)
+	var pick := {}
+	if not items.is_empty():
+		pick = TraceDaily.pick(today, TraceDaily.online_pool(items))
+	var ms: MapSet = null
+	if not pick.is_empty():
+		ms = _daily_find_set(lib, int(pick.set_id))
+		if ms == null and mirror != null:
+			ms = await _daily_download(mirror, int(pick.set_id))
+	if ms == null:
+		# Offline (oder Download fehlgeschlagen): nur lokale Maps.
+		var lp := TraceDaily.pick(today, TraceDaily.local_pool(lib.mapsets))
+		for cand in lib.mapsets:
+			if not lp.is_empty() and cand.osz_path == lp.osz_path:
+				ms = cand
+	var idx := TraceDaily.pick_diff(ms) if ms != null else -1
+	if ms == null or idx < 0:
+		_daily_busy = false
+		_btn_daily.disabled = false
+		_btn_daily.text = tr("Keine 4K-Map gefunden")
+		return
+	_daily_launch(ms.osz_path, idx, ms.version_name_at(idx), state, today, ms.osu_filename_at(idx), ms.stars_at(idx))
+
+
+func _daily_launch(osz: String, idx: int, version: String, state: Dictionary, today: String,
+		osu_file: String, stars: float = -1.0) -> void:
+	if idx < 0:
+		# Wiederholung: Index ueber die Bibliothek aufloesen.
+		var lib := MapLibrary.new()
+		lib.scan()
+		for ms in lib.mapsets:
+			if ms.osz_path == osz:
+				for i in ms.difficulty_count():
+					if ms.version_name_at(i) == version:
+						idx = i
+						osu_file = ms.osu_filename_at(i)
+						stars = ms.stars_at(i)
+	if idx < 0:
+		_daily_busy = false
+		_btn_daily.disabled = false
+		return
+	if TraceDaily.start_attempt(state, today, osz.get_file()):
+		var e: Dictionary = state.days[today]
+		e["osz"] = osz
+		e["version"] = version
+		TraceDaily.save_state(state)
+	GameSession.mods = {}
+	GameSession.is_replay = false
+	GameSession.replay_events = []
+	GameSession.replay_mode = "mania"
+	GameSession.set_selection(osz, idx, version, osu_file, stars)
+	_fade_music_out()
+	SceneFader.go(ScoreStore.mode_scene("trace"))
+
+
+func _daily_find_set(lib: MapLibrary, set_id: int) -> MapSet:
+	var pre := "%012d" % set_id
+	for ms in lib.mapsets:
+		if TraceDaily._set_key(str(ms.osz_path).get_file()).begins_with(pre) and TraceDaily.pick_diff(ms) >= 0:
+			return ms
+	return null
+
+
+## Erste Seite Ranked-4K (beliebteste) vom Map-Browser-Mirror; [] bei Fehler/Zeitueberschreitung.
+func _daily_online_items(mirror: BeatmapMirror) -> Array:
+	var box := { "items": [], "done": false }
+	var ok := func(results: Array, _raw: int, _off: int): box.items = results; box.done = true
+	var bad := func(_msg: String): box.done = true
+	mirror.search_done.connect(ok, CONNECT_ONE_SHOT)
+	mirror.search_failed.connect(bad, CONNECT_ONE_SHOT)
+	mirror.search("", 0, BeatmapMirror.Sort.PLAYS, BeatmapMirror.STATUS_RANKED, BeatmapMirror.MODE_MANIA)
+	var t0 := Time.get_ticks_msec()
+	while not box.done and Time.get_ticks_msec() - t0 < int(DAILY_TIMEOUT_S * 1000.0):
+		await get_tree().process_frame
+	if mirror.search_done.is_connected(ok):
+		mirror.search_done.disconnect(ok)
+	if mirror.search_failed.is_connected(bad):
+		mirror.search_failed.disconnect(bad)
+	return box.items
+
+
+## Set ueber den vorhandenen Mirror-Download holen; null bei Fehler.
+func _daily_download(mirror: BeatmapMirror, set_id: int) -> MapSet:
+	var box := { "path": "", "done": false }
+	var ok := func(id: int, path: String): if id == set_id: box.path = path; box.done = true
+	var bad := func(id: int, _m: String): if id == set_id: box.done = true
+	mirror.download_done.connect(ok)
+	mirror.download_failed.connect(bad)
+	mirror.download(set_id, MapLibrary.default_maps_dir())
+	var t0 := Time.get_ticks_msec()
+	while not box.done and Time.get_ticks_msec() - t0 < 120000:
+		await get_tree().process_frame
+	mirror.download_done.disconnect(ok)
+	mirror.download_failed.disconnect(bad)
+	if str(box.path) == "":
+		return null
+	var lib := MapLibrary.new()
+	lib.scan()
+	return _daily_find_set(lib, set_id)
 
 
 ## Modus-Kacheln des Hauptmenues (Reihenfolge = ScoreStore.MODES).
