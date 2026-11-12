@@ -472,6 +472,8 @@ func _shot_modes() -> void:
 		[{ "score": 951880, "grade": "S", "accuracy": 0.9821, "max_combo": 640, "mode": "orbit" }, ScoreStore.MODE_ORBIT],
 		[{ "score": 702115, "grade": "B", "accuracy": 0.8874, "max_combo": 210, "mode": "orbit",
 			"mods": ["SV"], "sv_level": "strong" }, ScoreStore.MODE_ORBIT],
+		[{ "score": 883400, "grade": "A", "accuracy": 0.9520, "max_combo": 498, "mode": "trace" }, ScoreStore.MODE_TRACE],
+		[{ "score": 905120, "grade": "S", "accuracy": 0.9655, "max_combo": 530, "mode": "rebound" }, ScoreStore.MODE_REBOUND],
 	]
 	for d in demo:
 		ScoreStore.submit(osz, ver, d[0], d[1])
@@ -503,8 +505,8 @@ func _shot_modes() -> void:
 		var s := { "score": 958210 if orbit else 931400, "grade": "S", "accuracy": 0.9764,
 			"max_combo": 655, "combo": 0, "n_max": 700, "n300": 640, "n200": 41, "n100": 9,
 			"n50": 2, "n_miss": 8, "pp": -1.0 if orbit else 190.6, "sv_level": "normal" if orbit else "strong" }
-		if orbit:
-			s["mode"] = ScoreStore.MODE_ORBIT
+		if mode != "mania":
+			s["mode"] = mode
 		var rs := ResultsScreen.new()
 		add_child(rs)
 		rs.show_results({
@@ -513,7 +515,7 @@ func _shot_modes() -> void:
 			"version": ver, "cover_path": "", "offsets": offs, "player": Settings.profile_name,
 			"date": Time.get_datetime_string_from_system(), "allow_retry": true, "can_replay": false,
 			"mods": { "SV": true, "NF": false },
-			"previous_best": ScoreStore.best(osz, ver, ScoreStore.MODE_ORBIT if orbit else ""),
+			"previous_best": ScoreStore.best(osz, ver, "" if mode == "mania" else mode),
 		})
 		await get_tree().create_timer(2.5).timeout
 		await RenderingServer.frame_post_draw

@@ -1227,6 +1227,9 @@ func _play_mode_entry(mode: String) -> void:
 
 
 func _mode_sub_text(mode: String) -> String:
+	# Modus ohne Spielszene: Kachel zeigt "Kommt bald" (Browser blendet ihn genauso aus).
+	if not ScoreStore.mode_ready(mode):
+		return tr("Kommt bald")
 	match mode:
 		"mania": return tr("Vier Spuren")
 		"rally": return tr("Tischtennis")
@@ -1289,6 +1292,8 @@ func _mode_tile(mode: String) -> Button:
 	sub.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	col.add_child(sub)
 	_mode_subs[mode] = sub
+	if not ScoreStore.mode_ready(mode):
+		col.modulate.a = 0.55
 	if ScoreStore.mode_tutorial(mode) != "":
 		b.add_child(_tutorial_dot(mode))
 	return b
