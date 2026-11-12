@@ -283,6 +283,7 @@ func _ready() -> void:
 	get_window().files_dropped.connect(_on_files_dropped)
 	t_ui = Time.get_ticks_usec()
 	_select_initial()
+	_recs_refresh.call_deferred()
 	GameSession.perf_since("Browser: Startauswahl (Info, Cover, Vorschau)", t_ui)
 	GameSession.perf_since("Browser: _ready gesamt", _perf_ready_t)
 	get_tree().create_timer(GAME_PRELOAD_DELAY).timeout.connect(_begin_game_preload)
@@ -725,6 +726,16 @@ func _build_header() -> void:
 	score_row.add_theme_constant_override("separation", 6)
 	_filter_stack.add_child(score_row)
 	_score_chips_row = score_row
+	# "For you" an/aus (Vorschlaege oberhalb der Liste), links in der Reihe.
+	_rec_chip = _make_toggle(tr("For you"), 13, 15)
+	_rec_chip.custom_minimum_size = Vector2(0, SCORE_H)
+	_rec_chip.tooltip_text = tr("Show or hide suggestions")
+	_rec_chip.pressed.connect(func(): _set_recs_hidden(not bool(_rec.hidden)))
+	score_row.add_child(_rec_chip)
+	var rec_gap := Control.new()
+	rec_gap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	rec_gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	score_row.add_child(rec_gap)
 	# Mit/Ohne Bestwert wie der SV-Chip: erneut klicken = wieder alle Maps.
 	for bi in [BEST_WITH, BEST_WITHOUT]:
 		var chip := _make_toggle(tr(BEST_NAMES[bi]), 13, 15)
@@ -773,6 +784,7 @@ func _build_header() -> void:
 	_chips_row.add_theme_constant_override("separation", 6)
 	_chips_row.visible = false
 	_filter_stack.add_child(_chips_row)
+	_build_recs()
 
 	_search = LineEdit.new()
 	_search.placeholder_text = "Map suchen"
@@ -1500,6 +1512,7 @@ func _load_browser_state() -> bool:
 		var pm := str(cfg.get_value("browser", "play_mode", "mania"))
 		_play_mode = pm if PLAY_MODES.has(pm) else "mania"
 		SvMod.strength = SvMod.level_from_name(str(cfg.get_value("browser", "sv_level", "strong")))
+		_rec = rec_sanitize(cfg.get_value("browser", "recs", {}))
 		var om = cfg.get_value("browser", "orbit_mods", {})
 		if om is Dictionary:
 			for k in OrbitCore.ORBIT_MODS:
@@ -1522,6 +1535,7 @@ func _save_browser_state() -> void:
 	cfg.set_value("browser", "play_mode", _play_mode)
 	cfg.set_value("browser", "sv_level", SvMod.level_name())
 	cfg.set_value("browser", "orbit_mods", _orbit_mods.duplicate())
+	cfg.set_value("browser", "recs", rec_sanitize(_rec))
 	cfg.save(BROWSER_STATE_PATH)
 
 
@@ -2235,6 +2249,7 @@ func _update_info_panel() -> void:
 		return
 	if _career_panel != null:
 		_career_panel.set_selected(_selected_set, _selected_diff)
+	_recs_mark_selected()
 	var m := _selected_set.meta_at(_selected_diff)
 	# Sofort das schnelle Thumbnail zeigen, das Full-Res-Cover einen Frame
 	# spaeter nachladen (Klicks fuehlen sich sofort an).
@@ -2784,6 +2799,7 @@ func _set_play_mode(mode: String) -> void:
 		_show_orbit_hint()
 	_apply_career_layout()
 	_career_start()
+	_recs_refresh()
 	# Sichtbare Maps haengen am Modus (osu!standard nur im Orbit-Modus).
 	var keep := _selected_set
 	_refresh_filter(_search.text)
@@ -3188,6 +3204,9 @@ func _exit_tree() -> void:
 	if _os_thread != null:
 		_os_thread.wait_to_finish()
 		_os_thread = null
+	if _rec_thread != null:
+		_rec_thread.wait_to_finish()
+		_rec_thread = null
 	_bg_queue.clear()
 	if _bg_thread != null:
 		_bg_thread.wait_to_finish()
@@ -3773,6 +3792,7 @@ func _on_online_downloaded(_set_id: int, osz_path: String, select: bool) -> void
 	if _career_on():
 		_career_refresh()
 	_career_start()
+	_recs_refresh()
 	if not select:
 		return
 	for ms in _filtered:
@@ -3940,6 +3960,7 @@ func _apply_career_layout() -> void:
 		_list_mask.visible = not career
 	if _career_panel != null:
 		_career_panel.visible = career
+	_apply_recs_visibility()
 	_update_list_top()
 	if career:
 		_career_refresh()
@@ -3960,6 +3981,7 @@ func _set_career_mode(m: String) -> void:
 		_orbit_hint = null
 	_apply_career_layout()
 	_career_start()
+	_recs_refresh()
 
 
 func _accept_career_offer() -> void:
@@ -4146,7 +4168,8 @@ func _bg_scan() -> void:
 			var ver := ms.version_name_at(i)
 			var key := _orbit_key(ms, ver)
 			if not _os_cache_get().has(key) and not _bg_failed.has(key):
-				missing.append({"key": key, "osz": ms.osz_path, "ver": ver, "osu": ms.stars_at(i)})
+				missing.append({"key": key, "osz": ms.osz_path, "ver": ver, "osu": ms.stars_at(i),
+					"mode": _stars_mode()})
 	_bg_enqueue_list(missing, level)
 
 
@@ -4182,7 +4205,7 @@ func _bg_pump() -> void:
 
 
 func _bg_work(item: Dictionary) -> void:
-	_bg_finished.call_deferred(item, orbit_stars_compute(item.osz, item.ver))
+	_bg_finished.call_deferred(item, orbit_stars_compute(item.osz, item.ver, str(item.get("mode", "orbit"))))
 
 
 func _bg_finished(item: Dictionary, st: float) -> void:
@@ -4197,6 +4220,8 @@ func _bg_finished(item: Dictionary, st: float) -> void:
 		_bg_failed[item.key] = true
 	if _play_mode == "orbit":
 		_career_refresh_later()
+	if str(item.get("mode", "orbit")) == _stars_mode():
+		_recs_refresh_later()
 	await get_tree().create_timer(BG_PAUSE).timeout
 	if is_inside_tree():
 		_bg_pump()
@@ -4363,3 +4388,509 @@ func _headless_report() -> void:
 			_fmt_stars(_selected_set.stars_at(_selected_diff))])
 	print("=== Report OK ===")
 	get_tree().quit(0)
+
+
+# ---------------------------------------------------------------------------
+# "For you": Vorschlaege je Modus (Recommender, docs/recommend.md)
+# ---------------------------------------------------------------------------
+# Ruhiger Block ueber der Liste: Kopf "For you" + Stufe Easy/Challenge/Push,
+# darunter 3 Kacheln (720p) bzw. 5 Zeilen (ab 900 px Hoehe). Klick waehlt die
+# Map. Stufe je Modus, Ein-/Ausklappen und Ausblenden in browser_state.cfg.
+# Rechnen im Thread (Laeufe aus ScoreStore, Max-pp-Cache, Recommender).
+
+const REC_MIN_RUNS := 5          # darunter: Start-Vorschlaege nach leichten Sternen
+const REC_STARTER_MIN := 1.0     # Start-Vorschlaege: leichteste Maps ab 1 Stern
+const REC_TALL_H := 900.0        # ab dieser Fensterhoehe 5 Zeilen statt 3 Kacheln
+const REC_TILE_H := 62.0
+const REC_ROW_H := 54.0
+const REC_COVER := 44.0
+const REC_MAXPP_CAP := 400       # hoechstens so viele Max-pp-Abfragen je Rechnung
+
+var _rec := {"levels": {}, "collapsed": false, "hidden": false}
+var _rec_box: VBoxContainer
+var _rec_sub: Label
+var _rec_level_btns: Array[Button] = []
+var _rec_fold_btn: Button
+var _rec_hide_btn: Button
+var _rec_body: Control
+var _rec_chip: Button
+var _rec_thread: Thread
+var _rec_token := 0
+var _rec_again := false
+var _rec_dirty := false
+var _rec_res := {}               # {mode, starter, items, comfort}
+var _rec_lookup := {}            # "datei|version" -> [MapSet, diff]
+var _rec_rows: Array = []        # {btn, ms, diff}
+var _rec_cover_mat: ShaderMaterial
+static var _rec_tr_loaded := false
+
+
+## Zustand bereinigen: Stufe je Modus (unbekannt -> Challenge), zwei Schalter.
+static func rec_sanitize(d) -> Dictionary:
+	var src: Dictionary = d if d is Dictionary else {}
+	var raw = src.get("levels", {})
+	var lv := {}
+	for m in PLAY_MODES:
+		lv[m] = Recommender.normalize_level(str(raw.get(m, ""))) if raw is Dictionary \
+				else Recommender.LEVEL_DEFAULT
+	return {"levels": lv, "collapsed": bool(src.get("collapsed", false)),
+		"hidden": bool(src.get("hidden", false))}
+
+
+static func rec_level(state: Dictionary, mode: String) -> String:
+	var lv = state.get("levels", {})
+	return Recommender.normalize_level(str(lv.get(mode, ""))) if lv is Dictionary \
+			else Recommender.LEVEL_DEFAULT
+
+
+## 3 Kacheln nebeneinander, ab REC_TALL_H Fensterhoehe 5 Zeilen.
+static func rec_count(view_h: float) -> int:
+	return 5 if view_h >= REC_TALL_H else 3
+
+
+## Wenig Daten: leichteste spielbare Maps (ab REC_STARTER_MIN), eine je Set, ohne SS.
+static func rec_starters(mode: String, cands: Array, n: int) -> Array:
+	var pool: Array = []
+	for c in cands:
+		if not (c is Dictionary):
+			continue
+		var st := float(c.get("stars", -1.0))
+		if st <= 0.0 or str(c.get("best_grade", "")) == "SS" \
+				or not Recommender.playable(mode, int(c.get("osu_mode", 3))):
+			continue
+		pool.append(c)
+	pool.sort_custom(func(a, b):
+		var la := float(a.stars) < REC_STARTER_MIN
+		var lb := float(b.stars) < REC_STARTER_MIN
+		if la != lb:
+			return lb  # zu leichte Maps (< 1 Stern) nur zum Auffuellen
+		if not is_equal_approx(float(a.stars), float(b.stars)):
+			return float(a.stars) < float(b.stars)
+		if str(a.set) != str(b.set):
+			return str(a.set) < str(b.set)
+		return str(a.diff) < str(b.diff))
+	var out: Array = []
+	var seen := {}
+	for c in pool:
+		if out.size() >= n:
+			break
+		if seen.has(str(c.set)):
+			continue
+		seen[str(c.set)] = true
+		out.append({"set": c.set, "diff": c.diff, "stars": float(c.stars),
+			"reason": TranslationServer.translate("Easy start")})
+	return out
+
+
+## Vorschlaege oder (unter REC_MIN_RUNS Laeufen) Start-Vorschlaege.
+static func rec_compute(mode: String, level: String, cands: Array, runs: Array,
+		n: int, now: int = 0) -> Dictionary:
+	var sk := Recommender.skill(mode, runs)
+	if runs.size() < REC_MIN_RUNS:
+		return {"starter": true, "items": rec_starters(mode, cands, n), "comfort": float(sk.comfort)}
+	return {"starter": false, "items": Recommender.suggest(mode, level, cands, n, runs, now),
+		"comfort": float(sk.comfort)}
+
+
+## Mania + Push: Max-pp (SS) aus dem StarService-Cache an Kandidaten im
+## Push-Fenster haengen; ohne Cache-Eintrag schaetzt der Recommender.
+static func rec_fill_max_pp(cands: Array, runs: Array) -> void:
+	var rng := Recommender.star_range(Recommender.skill("mania", runs), Recommender.LEVEL_PUSH)
+	var asked := 0
+	for c in cands:
+		var st := float(c.get("stars", -1.0))
+		if st < rng.x or st > rng.y or str(c.get("osz", "")) == "":
+			continue
+		asked += 1
+		if asked > REC_MAXPP_CAP:
+			return
+		var v := StarService.max_pp_cached(str(c.osz), str(c.get("inner", "")))
+		if v >= 0.0:
+			c["max_pp"] = v
+
+
+## modes.csv (Quelle Englisch) auch auf Deutsch, ohne Eintrag in project.godot.
+static func _rec_translations() -> void:
+	if _rec_tr_loaded:
+		return
+	_rec_tr_loaded = true
+	var path := "res://translations/modes.de.translation"
+	if ResourceLoader.exists(path):
+		var t := load(path) as Translation
+		if t != null:
+			TranslationServer.add_translation(t)
+
+
+func _build_recs() -> void:
+	_rec_translations()
+	_rec_box = VBoxContainer.new()
+	_rec_box.add_theme_constant_override("separation", 8)
+	_filter_stack.add_child(_rec_box)
+	var head := HBoxContainer.new()
+	head.custom_minimum_size = Vector2(0, 28)
+	head.add_theme_constant_override("separation", 6)
+	_rec_box.add_child(head)
+	_rec_fold_btn = Button.new()
+	_rec_fold_btn.flat = true
+	_rec_fold_btn.focus_mode = Control.FOCUS_NONE
+	_rec_fold_btn.text = tr("For you")
+	_rec_fold_btn.add_theme_font_override("font", UiTheme.heading_font(1))
+	_rec_fold_btn.add_theme_font_size_override("font_size", 15)
+	for k in ["font_color", "font_pressed_color", "font_focus_color"]:
+		_rec_fold_btn.add_theme_color_override(k, COL_TEXT)
+	_rec_fold_btn.add_theme_color_override("font_hover_color", COL_ACCENT)
+	_rec_fold_btn.add_theme_color_override("icon_normal_color", COL_DIM)
+	_rec_fold_btn.add_theme_color_override("icon_hover_color", COL_ACCENT)
+	_rec_fold_btn.add_theme_constant_override("h_separation", 6)
+	_rec_fold_btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	_rec_fold_btn.icon_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_rec_fold_btn.tooltip_text = tr("Collapse or expand suggestions")
+	_rec_fold_btn.pressed.connect(func():
+		_rec["collapsed"] = not bool(_rec.collapsed)
+		_apply_recs_visibility()
+		if _state_ready:
+			_save_browser_state())
+	head.add_child(_rec_fold_btn)
+	_rec_sub = Label.new()
+	_rec_sub.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_rec_sub.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_rec_sub.clip_text = true
+	_rec_sub.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	_rec_sub.add_theme_font_size_override("font_size", 12)
+	_rec_sub.add_theme_color_override("font_color", COL_DIM)
+	head.add_child(_rec_sub)
+	_rec_level_btns.clear()
+	for lv in Recommender.LEVELS:
+		var b := _make_toggle(Recommender.level_label(lv), 12, 13)
+		b.custom_minimum_size = Vector2(0, 26)
+		b.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		b.tooltip_text = tr(_rec_level_tip(lv))
+		var level: String = lv
+		b.pressed.connect(func(): _set_rec_level(level))
+		head.add_child(b)
+		_rec_level_btns.append(b)
+	_rec_hide_btn = Button.new()
+	_rec_hide_btn.text = tr("Hide")
+	_rec_hide_btn.tooltip_text = tr("Hide suggestions")
+	_rec_hide_btn.flat = true
+	_rec_hide_btn.focus_mode = Control.FOCUS_NONE
+	_rec_hide_btn.add_theme_font_size_override("font_size", 12)
+	_rec_hide_btn.add_theme_color_override("font_color", COL_DIM)
+	_rec_hide_btn.add_theme_color_override("font_hover_color", COL_TEXT)
+	_rec_hide_btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	_rec_hide_btn.pressed.connect(func(): _set_recs_hidden(true))
+	head.add_child(_rec_hide_btn)
+	var sh := Shader.new()
+	sh.code = OrbitCareerPanel._COVER_SHADER
+	_rec_cover_mat = ShaderMaterial.new()
+	_rec_cover_mat.shader = sh
+	_rec_cover_mat.set_shader_parameter("rect_size", Vector2(REC_COVER, REC_COVER))
+	_rec_cover_mat.set_shader_parameter("radius", 8.0)
+	get_viewport().size_changed.connect(func():
+		if is_inside_tree() and not _rec_res.is_empty():
+			_recs_render())
+	_restyle_rec_levels()
+
+
+static func _rec_level_tip(lv: String) -> String:
+	match lv:
+		Recommender.LEVEL_EASY: return "Below your comfort level: relaxed maps"
+		Recommender.LEVEL_PUSH: return "At your limit: maps that can set a new top score"
+	return "From your comfort level up to your limit"
+
+
+func _restyle_rec_levels() -> void:
+	var cur := rec_level(_rec, _play_mode)
+	for i in _rec_level_btns.size():
+		_apply_toggle(_rec_level_btns[i], Recommender.LEVELS[i] == cur)
+
+
+func _set_rec_level(lv: String) -> void:
+	_rec.levels[_play_mode] = Recommender.normalize_level(lv)
+	_restyle_rec_levels()
+	if _state_ready:
+		_save_browser_state()
+	_recs_refresh()
+
+
+func _set_recs_hidden(on: bool) -> void:
+	_rec["hidden"] = on
+	if not on:
+		_rec["collapsed"] = false
+	_apply_recs_visibility()
+	if _state_ready:
+		_save_browser_state()
+	if not on:
+		_recs_refresh()
+
+
+## Sichtbarkeit: aus (Hide), eingeklappt (nur Kopf), offen. Nie im Karriere-Modus.
+func _apply_recs_visibility() -> void:
+	if _rec_box == null:
+		return
+	var hidden := bool(_rec.hidden)
+	var career := _career_on()
+	_rec_box.visible = not hidden and not career
+	if _rec_chip != null:
+		_apply_toggle(_rec_chip, not hidden)
+		_rec_chip.visible = not career
+	var open := not bool(_rec.collapsed)
+	if _rec_body != null:
+		_rec_body.visible = open
+	_rec_fold_btn.icon = _rec_fold_icon(open)
+	var starter := bool(_rec_res.get("starter", false))
+	for b in _rec_level_btns:
+		b.visible = open and not starter
+	_rec_hide_btn.visible = open
+	_restyle_rec_levels()
+	_update_list_top()
+
+
+## Chevron unten (offen) / rechts (zu).
+func _rec_fold_icon(open: bool) -> ImageTexture:
+	if open:
+		return _line_icon(16, [[Vector2(4, 6.5), Vector2(8, 10.5)], [Vector2(8, 10.5), Vector2(12, 6.5)]])
+	return _chevron_icon(1)
+
+
+## Neu rechnen (nach Start, Lauf, Moduswechsel, Stufe, neuen Sternen).
+func _recs_refresh() -> void:
+	if _rec_box == null or DisplayServer.get_name() == "headless":
+		return
+	_apply_recs_visibility()
+	if bool(_rec.hidden) or _career_on():
+		return
+	if _rec_thread != null:
+		_rec_again = true
+		return
+	if _play_mode != "orbit" and not _mania_like():
+		_bg_scan()  # Rally/Dirigent: fehlende Modus-Sterne im Hintergrund
+		_bg_pump()
+	var job := _recs_job()
+	_rec_token += 1
+	_rec_thread = Thread.new()
+	_rec_thread.start(_recs_work.bind(job, _rec_token), Thread.PRIORITY_LOW)
+
+
+## Entprellt: viele neue Sterne kurz nacheinander -> eine Rechnung.
+func _recs_refresh_later() -> void:
+	if _rec_dirty:
+		return
+	_rec_dirty = true
+	await get_tree().create_timer(0.8).timeout
+	_rec_dirty = false
+	if is_inside_tree():
+		_recs_refresh()
+
+
+## Kandidaten (nur lokale Maps des Modus) und Sterne fuer die Laeufe, im
+## Hauptthread aus Bibliothek und Caches (keine Berechnung).
+func _recs_job() -> Dictionary:
+	var mode := _play_mode
+	var mania_like := _mania_like()
+	var idx := _scores_for_mode()
+	var cache := {} if mania_like else _os_cache_get()
+	var cands: Array = []
+	var stars := {}
+	_rec_lookup = {}
+	for ms in _library.mapsets:
+		var file := ms.osz_path.get_file()
+		var info: Dictionary = idx.get(file, {})
+		for i in ms.visible_diffs(_vm()):
+			var osu_mode := int(ms.meta_at(i).get("mode", 0))
+			if not Recommender.playable(mode, osu_mode) or not _orbit_diff_ok(ms, i):
+				continue
+			var ver := ms.version_name_at(i)
+			var st := ms.stars_at(i) if mania_like else float(cache.get(_orbit_key(ms, ver), -1.0))
+			var k := "%s|%s" % [file, ver]
+			stars[k] = st
+			if st <= 0.0:
+				continue
+			_rec_lookup[k] = [ms, i]
+			var vi: Dictionary = info.get(ver, {})
+			cands.append({"set": file, "diff": ver, "stars": st, "osu_mode": osu_mode,
+				"last_played": str(vi.get("last", "")), "best_grade": str(vi.get("grade", "")),
+				"osz": ms.osz_path, "inner": ms.osu_filename_at(i)})
+	return {"mode": mode, "level": rec_level(_rec, mode), "n": 5, "cands": cands,
+		"stars": stars}
+
+
+func _recs_work(job: Dictionary, tok: int) -> void:
+	var sm: Dictionary = job.stars
+	var runs := Recommender.runs_from_store(str(job.mode), func(e: Dictionary) -> float:
+		return float(sm.get("%s|%s" % [e.get("osz_file", ""), e.get("version", "")],
+			float(e.get("stars", -1.0)))))
+	if job.mode == "mania" and job.level == Recommender.LEVEL_PUSH and runs.size() >= REC_MIN_RUNS:
+		rec_fill_max_pp(job.cands, runs)
+	var res := rec_compute(str(job.mode), str(job.level), job.cands, runs, int(job.n))
+	res["mode"] = job.mode
+	_recs_done.call_deferred(res, tok)
+
+
+func _recs_done(res: Dictionary, tok: int) -> void:
+	if _rec_thread != null:
+		_rec_thread.wait_to_finish()
+		_rec_thread = null
+	if not is_inside_tree():
+		return
+	if _rec_again:
+		_rec_again = false
+		_recs_refresh()
+		return
+	if tok != _rec_token or str(res.get("mode", "")) != _play_mode:
+		return
+	_rec_res = res
+	_recs_render()
+
+
+func _recs_render() -> void:
+	if _rec_box == null:
+		return
+	if _rec_body != null:
+		_rec_body.queue_free()
+		_rec_body = null
+	_rec_rows.clear()
+	var n := rec_count(get_viewport_rect().size.y)
+	var tall := n > 3
+	var starter := bool(_rec_res.get("starter", false))
+	var comfort := float(_rec_res.get("comfort", -1.0))
+	if starter:
+		_rec_sub.text = tr("Play a few maps to get suggestions")
+	elif comfort > 0.0:
+		_rec_sub.text = tr("Comfortable around %s") % _stars_text(comfort)
+	else:
+		_rec_sub.text = ""
+	var items: Array = []
+	for it in _rec_res.get("items", []):
+		var hit = _rec_lookup.get("%s|%s" % [it.set, it.diff])
+		if hit == null:
+			continue
+		items.append({"ms": hit[0], "diff": hit[1], "stars": float(it.stars),
+			"reason": str(it.get("reason", "")), "acc": float(it.get("expected_acc", -1.0))})
+		if items.size() >= n:
+			break
+	if items.is_empty():
+		var empty := Label.new()
+		empty.custom_minimum_size = Vector2(0, 30)
+		empty.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		empty.add_theme_font_size_override("font_size", 13)
+		empty.add_theme_color_override("font_color", COL_DIM)
+		var pending := not _mania_like() and (_bg_thread != null or not _bg_queue.is_empty())
+		empty.text = tr("Calculating stars …") if pending \
+				else tr("No fitting map in your library. Try another level or get maps online.")
+		_rec_body = empty
+	elif tall:
+		var vb := VBoxContainer.new()
+		vb.add_theme_constant_override("separation", 6)
+		for it in items:
+			vb.add_child(_rec_card(it, true))
+		_rec_body = vb
+	else:
+		var hb := HBoxContainer.new()
+		hb.add_theme_constant_override("separation", 8)
+		for it in items:
+			hb.add_child(_rec_card(it, false))
+		_rec_body = hb
+	_rec_box.add_child(_rec_body)
+	_apply_recs_visibility()
+	_recs_mark_selected()
+
+
+## Karte wie die Orbit-Karriere "Up next": Cover, Titel, Diff, Sterne, Grund.
+## wide = volle Zeile (hohe Fenster), sonst Kachel (drei nebeneinander).
+func _rec_card(it: Dictionary, wide: bool) -> Control:
+	var ms: MapSet = it.ms
+	var diff := int(it.diff)
+	var btn := Button.new()
+	btn.custom_minimum_size = Vector2(0, REC_ROW_H if wide else REC_TILE_H)
+	btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	btn.size_flags_stretch_ratio = 1.0
+	btn.focus_mode = Control.FOCUS_NONE
+	btn.clip_contents = true
+	btn.tooltip_text = "%s - %s [%s]" % [ms.artist, ms.title, ms.version_name_at(diff).strip_edges()]
+	UiTheme._attach_sounds(btn)
+	OrbitCareerPanel._style_row(btn, false)
+	btn.pressed.connect(_on_rec_picked.bind(ms, diff))
+	var hb := HBoxContainer.new()
+	hb.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	hb.offset_left = 9
+	hb.offset_right = -12
+	hb.add_theme_constant_override("separation", 10)
+	hb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	btn.add_child(hb)
+	var cover := TextureRect.new()
+	cover.texture = ms.thumb_texture()
+	cover.custom_minimum_size = Vector2(REC_COVER, REC_COVER)
+	cover.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	cover.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	cover.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	cover.material = _rec_cover_mat
+	cover.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hb.add_child(cover)
+	var tb := VBoxContainer.new()
+	tb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	tb.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	tb.add_theme_constant_override("separation", 1 if wide else 0)
+	tb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hb.add_child(tb)
+	var reason := _rec_reason(it)
+	var push := rec_level(_rec, _play_mode) == Recommender.LEVEL_PUSH \
+			and not bool(_rec_res.get("starter", false))
+	var reason_col := COL_ACCENT if push else UiTheme.ACCENT2
+	var stars_txt := _stars_text(float(it.stars))
+	var ver := ms.version_name_at(diff).strip_edges()
+	if wide:
+		_rec_label(tb, "%s - %s" % [ms.artist, ms.title], 15, COL_TEXT)
+		_rec_label(tb, ver, 12, COL_DIM)
+		var right := VBoxContainer.new()
+		right.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		right.add_theme_constant_override("separation", 1)
+		right.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		hb.add_child(right)
+		var st := _rec_label(right, stars_txt, 15, COL_TEXT)
+		st.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		var rs := _rec_label(right, reason, 11, reason_col)
+		rs.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	else:
+		_rec_label(tb, ms.title, 13, COL_TEXT)
+		_rec_label(tb, "%s  ·  %s" % [stars_txt, ver], 11, Color(0.78, 0.80, 0.88))
+		_rec_label(tb, reason, 11, reason_col)
+	_rec_rows.append({"btn": btn, "ms": ms, "diff": diff})
+	return btn
+
+
+func _rec_label(parent: Node, text: String, size: int, col: Color) -> Label:
+	var l := Label.new()
+	l.text = text
+	l.clip_text = true
+	l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	l.add_theme_font_size_override("font_size", size)
+	l.add_theme_color_override("font_color", col)
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	parent.add_child(l)
+	return l
+
+
+## Grund kurz: Push behaelt den Recommender-Text ("+14 pp, would be top 3"),
+## Easy/Challenge zeigen nur die erwartete Genauigkeit.
+func _rec_reason(it: Dictionary) -> String:
+	if bool(_rec_res.get("starter", false)) or float(it.acc) < 0.0 \
+			or rec_level(_rec, _play_mode) == Recommender.LEVEL_PUSH:
+		return str(it.reason)
+	return tr("expected %d %%") % roundi(float(it.acc) * 100.0)
+
+
+func _on_rec_picked(ms: MapSet, diff: int) -> void:
+	if _selected_set == ms and _selected_diff == diff:
+		_on_play_pressed()
+		return
+	_select_set(ms, diff)
+	if _filtered.has(ms):
+		_scroll_to_selected()
+
+
+func _recs_mark_selected() -> void:
+	for r in _rec_rows:
+		if is_instance_valid(r.btn):
+			OrbitCareerPanel._style_row(r.btn as Button,
+				r.ms == _selected_set and int(r.diff) == _selected_diff)
