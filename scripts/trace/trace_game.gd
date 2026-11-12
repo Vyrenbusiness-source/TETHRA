@@ -1023,6 +1023,13 @@ func _capture_shot() -> void:
 		_sim_to(cut)
 		if _use_audio:
 			SyncClock.seek_ms(cut)
+	for a in _args():
+		if a.begins_with("--movie-len=") and not zoomed:
+			# Debug (Demo-Videos): Film ab hier, endet nach <s> Film-Sekunden.
+			print("MOVIE_START frame=%d" % Engine.get_process_frames())
+			await get_tree().create_timer(a.trim_prefix("--movie-len=").to_float(), true).timeout
+			get_tree().quit(0)
+			return
 	if zoomed:
 		# Ende: alles gewertet, Kamera ganz heraus (Endbild).
 		_sim_to(target)
