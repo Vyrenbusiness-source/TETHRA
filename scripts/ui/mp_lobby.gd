@@ -716,6 +716,15 @@ func _mp_auto(host: bool) -> void:
 
 
 func _capture_shot() -> void:
+	# --shot-rooms: Beispiel-Raeume (je Modus einer) statt leerer Liste, nur im Speicher.
+	if OS.get_cmdline_args().has("--shot-rooms"):
+		var kinds := ["free", "teams", "royale", "free", "teams", "royale"]
+		var i := 0
+		for m in ScoreStore.MODES:
+			Lobby.lan_rooms["10.0.0.%d" % (i + 2)] = { "name": "Demo %s" % ScoreStore.mode_label(m),
+				"players": 1 + i % 4, "code": "DEMO%d" % i, "mode": m, "kind": kinds[i], "t": Time.get_ticks_msec() + 600000 }
+			i += 1
+		_refresh_rooms()
 	await get_tree().create_timer(1.4).timeout
 	await RenderingServer.frame_post_draw
 	if not is_inside_tree():
