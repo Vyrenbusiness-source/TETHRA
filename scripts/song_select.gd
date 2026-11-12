@@ -3058,7 +3058,7 @@ func _on_play_pressed() -> void:
 func _make_orbit_mod_button(key: String) -> CheckButton:
 	var b := CheckButton.new()
 	b.text = key
-	b.tooltip_text = ORBIT_MOD_TIPS[key]
+	b.tooltip_text = str(ORBIT_MOD_TIPS.get(key, ""))  # Trace-Mods (MR/SS) setzen ihren Tipp selbst
 	b.focus_mode = Control.FOCUS_NONE
 	b.button_pressed = bool(_orbit_mods.get(key, false))
 	b.custom_minimum_size = Vector2(0, 40)
