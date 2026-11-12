@@ -20,6 +20,17 @@ const CHORD_MS := 2.0           ## Noten innerhalb dieser Zeit = Akkord
 const LOOK_S := 1.2             ## Vorlauf in Sekunden (gezeichneter Weg voraus)
 const ARROW_R := 18.0           ## Pfeil-Halbmesser (Einzelnote) fuer die Ueberdeckungspruefung
 const CHORD_R := 36.0           ## Halbmesser eines Akkord-Knotens (Pfeile sitzen 19 px daneben)
+## Leichte Zusatzkurven (rad) gegen Ueberdeckung, in dieser Reihenfolge probiert (deterministisch).
+const EVADE := [0.0, 0.3, -0.3, 0.6, -0.6, 0.9, -0.9, 1.2, -1.2, 1.57, -1.57, 2.0, -2.0, 2.4, -2.4, 2.8, -2.8, 3.14]
+const HARD := 1000             ## ab diesen Kosten bleibt eine Ueberdeckung (Sackgasse)
+const SAMPLE := 12.0            ## Stuetzpunktabstand des Fadens fuer die Ueberdeckungspruefung
+const CELL := 16.0              ## Rasterzelle der Stuetzpunkte
+const NEAR_KNOT := 6.0          ## Mindestluft zwischen zwei Pfeilen (px)
+const NEAR_ARROW := 14.0        ## Pfeil-Mitte zu fremdem Faden (px)
+const NEAR_THREAD := 8.0        ## Faden zu fremdem Faden (px)
+const FOREIGN := 70.0           ## naeher als das (Bogenlaenge) gehoert Faden zum selben Stueck
+const LOOKAHEAD := 96.0         ## so weit hinter dem Bogen wird der neue Faden mitgeprueft
+const TRAIL_PX := 820.0         ## sichtbare Fadenspur hinter dem Kopf (wie TraceView)
 const COL_ANGLE := [PI, PI * 0.5, -PI * 0.5, 0.0]  ## links, runter, hoch, rechts
 
 enum Kind { SINGLE, DIAG, CROSS, STAR }
@@ -61,6 +72,14 @@ var _end_y := 0.0
 var _end_a := 0.0
 var _end_s := 0.0
 var _bounds := Rect2()
+# Nur waehrend des Aufbaus: Zustand am Fadenende, Stuetzpunkte (+ Raster), Knotenmitten.
+var _cx := 0.0
+var _cy := 0.0
+var _ca := 0.0
+var _h_pts := PackedVector2Array()
+var _h_s := PackedFloat64Array()
+var _h_grid := {}
+var _k_pos := PackedVector2Array()
 
 
 static func angle_of_col(c: int) -> float:
@@ -127,42 +146,6 @@ func _build(times: PackedFloat64Array, cols: PackedInt32Array, ends: PackedFloat
 		knots[j].s = s
 		_kt.append(knots[j].t)
 		_ks.append(s)
-	# Richtungen.
-	var ang := angle_of_col(knots[0].cols[0]) if knots[0].cols.size() == 1 else 0.0
-	var first_ang := ang
-	var hair_sign := 1.0
-	for j in knots.size():
-		var kn := knots[j]
-		var target := ang
-		var keep := false
-		var cs := kn.cols.duplicate()
-		cs.sort()
-		var m := cs.size()
-		if m == 1:
-			target = angle_of_col(cs[0])
-		elif m == 2:
-			var v := dir_of_col(cs[0]) + dir_of_col(cs[1])
-			if v.length() < 0.01:
-				kn.kind = Kind.CROSS
-				keep = true
-			else:
-				kn.kind = Kind.DIAG
-				target = atan2(v.y, v.x)
-		else:
-			kn.kind = Kind.STAR
-			keep = true
-		var d := 0.0
-		if not keep:
-			d = wrapf(target - ang, -PI, PI)
-			if absf(d) >= HAIRPIN_MIN:
-				kn.hairpin = true
-				d = PI * hair_sign
-				hair_sign = -hair_sign
-			elif absf(d) < 0.0001:
-				d = 0.0
-		kn.turn = d
-		ang += d
-		kn.angle = ang
 	# Bogenfenster so, dass sich Nachbarn nie ueberlappen.
 	for j in knots.size():
 		var w := WIN_MAX
@@ -171,7 +154,7 @@ func _build(times: PackedFloat64Array, cols: PackedInt32Array, ends: PackedFloat
 		if j < knots.size() - 1:
 			w = minf(w, 0.5 * (knots[j + 1].s - knots[j].s))
 		knots[j].win = w
-	_build_pieces(first_ang)
+	_lay_out()
 	for kn in knots:
 		kn.pos = pos_at(kn.s)
 	# Holds.
@@ -185,35 +168,265 @@ func _build(times: PackedFloat64Array, cols: PackedInt32Array, ends: PackedFloat
 	_calc_bounds()
 
 
-func _build_pieces(a0: float) -> void:
-	var cs := 0.0
-	var cx := 0.0
-	var cy := 0.0
-	var ca := a0
-	var started := false
-	for kn in knots:
-		if kn.is_straight():
-			continue
+## Richtungen und Faden, Knoten fuer Knoten. Die Notenrichtung gibt die Wunschdrehung vor;
+## ueberdeckt der Pfeil danach einen frueheren (oder liegt er auf fremdem Faden), weicht
+## eine leichte Zusatzkurve (EVADE) aus. Sackgasse = Ruecksprung zum Vorgaenger mit der
+## naechsten Kurve (begrenztes Backtracking). Nur die Form aendert sich, s(t) bleibt exakt.
+func _lay_out() -> void:
+	var n := knots.size()
+	var ang := angle_of_col(knots[0].cols[0]) if knots[0].cols.size() == 1 else 0.0
+	var hair_sign := 1.0
+	_cx = 0.0
+	_cy = 0.0
+	_ca = ang
+	var cs: float = knots[0].s - knots[0].win
+	_h_pts = PackedVector2Array()
+	_h_s = PackedFloat64Array()
+	_h_grid = {}
+	_k_pos = PackedVector2Array()
+	_h_add(Vector2.ZERO, cs)
+	var offset := Vector2.ZERO
+	var have_offset := false
+	var kfirst := 0
+	# Zustand vor jedem Knoten (fuer den Ruecksprung) und naechster Kurven-Versuch.
+	var snap_f := PackedFloat64Array()
+	var snap_i := PackedInt32Array()
+	snap_f.resize(n * 8)
+	snap_i.resize(n * 4)
+	var next_try := PackedInt32Array()
+	next_try.resize(n)
+	var snapped := PackedByteArray()
+	snapped.resize(n)
+	var budget := n * 10 + 400
+	var j := 0
+	while j < n:
+		var kn := knots[j]
+		if snapped[j] == 0:
+			snapped[j] = 1
+			snap_f[j * 8] = _cx
+			snap_f[j * 8 + 1] = _cy
+			snap_f[j * 8 + 2] = _ca
+			snap_f[j * 8 + 3] = cs
+			snap_f[j * 8 + 4] = ang
+			snap_f[j * 8 + 5] = hair_sign
+			snap_f[j * 8 + 6] = offset.x
+			snap_f[j * 8 + 7] = offset.y
+			snap_i[j * 4] = _p_s0.size()
+			snap_i[j * 4 + 1] = _h_pts.size()
+			snap_i[j * 4 + 2] = _k_pos.size()
+			snap_i[j * 4 + 3] = 1 if have_offset else 0
+		var target := ang
+		var keep := false
+		var cs_cols := kn.cols.duplicate()
+		cs_cols.sort()
+		var m := cs_cols.size()
+		kn.hairpin = false
+		if m == 1:
+			target = angle_of_col(cs_cols[0])
+		elif m == 2:
+			var v := dir_of_col(cs_cols[0]) + dir_of_col(cs_cols[1])
+			if v.length() < 0.01:
+				kn.kind = Kind.CROSS
+				keep = true
+			else:
+				kn.kind = Kind.DIAG
+				target = atan2(v.y, v.x)
+		else:
+			kn.kind = Kind.STAR
+			keep = true
+		var d := 0.0
+		var hs_after := hair_sign
+		if not keep:
+			d = wrapf(target - ang, -PI, PI)
+			if absf(d) >= HAIRPIN_MIN:
+				kn.hairpin = true
+				d = PI * hair_sign
+				hs_after = -hair_sign
+			elif absf(d) < 0.0001:
+				d = 0.0
 		var s_in := kn.s - kn.win
 		var s_out := kn.s + kn.win
-		if started and s_in > cs + 0.0001:
-			var r := _add_piece(cs, s_in, cx, cy, ca, 0.0)
-			cx = r.x
-			cy = r.y
-		elif not started:
-			cs = s_in
-		cs = s_in
-		started = true
-		var kk := kn.turn / (2.0 * kn.win)
-		var r2 := _add_piece(cs, s_out, cx, cy, ca, kk)
-		cx = r2.x
-		cy = r2.y
-		ca += kn.turn
+		_commit(cs, s_in, 0.0)
+		while kfirst > 0 and knots[kfirst - 1].t >= kn.t - LOOK_S * 1000.0:
+			kfirst -= 1
+		while knots[kfirst].t < kn.t - LOOK_S * 1000.0:
+			kfirst += 1
+		var lo_s: float = knots[kfirst].s - TRAIL_PX
+		var best := d
+		var chosen := -1
+		if j > 0:
+			var bc := 1 << 30
+			for ci in range(next_try[j], EVADE.size()):
+				var c := _cost(j, s_in, kn.win, d + EVADE[ci], kfirst, lo_s, bc)
+				if c < bc:
+					bc = c
+					best = d + EVADE[ci]
+					chosen = ci
+				if c == 0:
+					break
+			if bc >= HARD:
+				chosen = -1
+				if budget > 0:
+					# Sackgasse: zum Vorgaenger zurueck, naechste Kurve dort.
+					budget -= 1
+					next_try[j] = 0
+					snapped[j] = 0
+					j -= 1
+					_restore(j, snap_f, snap_i)
+					ang = snap_f[j * 8 + 4]
+					hair_sign = snap_f[j * 8 + 5]
+					cs = snap_f[j * 8 + 3]
+					offset = Vector2(snap_f[j * 8 + 6], snap_f[j * 8 + 7])
+					have_offset = snap_i[j * 4 + 3] == 1
+					continue
+		else:
+			chosen = 0
+		next_try[j] = chosen + 1 if chosen >= 0 else EVADE.size()
+		hair_sign = hs_after
+		if absf(best) < 0.0001:
+			best = 0.0
+		kn.turn = best
+		ang += best
+		kn.angle = ang
+		var k := best / (2.0 * kn.win) if kn.win > 0.0 else 0.0
+		if best != 0.0 and not have_offset:
+			have_offset = true
+			offset = Vector2(_cx, _cy)
+		var pm := _adv(_cx, _cy, _ca, kn.win, k)
+		_k_pos.append(Vector2(pm.x, pm.y))
+		_commit(s_in, s_out, k)
 		cs = s_out
-	_end_x = cx
-	_end_y = cy
-	_end_a = ca
+		j += 1
+	_end_x = _cx - offset.x
+	_end_y = _cy - offset.y
+	_end_a = _ca
 	_end_s = cs
+	for i in _p_x.size():
+		_p_x[i] -= offset.x
+		_p_y[i] -= offset.y
+	_h_pts = PackedVector2Array()
+	_h_s = PackedFloat64Array()
+	_h_grid = {}
+	_k_pos = PackedVector2Array()
+
+
+## Stellt den Fadenzustand vor Knoten j wieder her (Stuecke, Stuetzpunkte, Knotenmitten).
+func _restore(j: int, snap_f: PackedFloat64Array, snap_i: PackedInt32Array) -> void:
+	_cx = snap_f[j * 8]
+	_cy = snap_f[j * 8 + 1]
+	_ca = snap_f[j * 8 + 2]
+	var np := snap_i[j * 4]
+	_p_s0.resize(np)
+	_p_s1.resize(np)
+	_p_x.resize(np)
+	_p_y.resize(np)
+	_p_a.resize(np)
+	_p_k.resize(np)
+	var nh := snap_i[j * 4 + 1]
+	for i in range(_h_pts.size() - 1, nh - 1, -1):
+		var p := _h_pts[i]
+		var c := Vector2i(int(floorf(p.x / CELL)), int(floorf(p.y / CELL)))
+		var cell: PackedInt32Array = _h_grid[c]
+		cell.resize(cell.size() - 1)
+		_h_grid[c] = cell
+	_h_pts.resize(nh)
+	_h_s.resize(nh)
+	_k_pos.resize(snap_i[j * 4 + 2])
+
+
+## Zustand (x, y, Winkel) nach Laenge l auf einem Stueck mit Kruemmung k.
+static func _adv(x: float, y: float, a: float, l: float, k: float) -> Vector3:
+	if absf(k) < 1e-9:
+		return Vector3(x + l * cos(a), y + l * sin(a), a)
+	return Vector3(x + (sin(a + k * l) - sin(a)) / k, y - (cos(a + k * l) - cos(a)) / k, a + k * l)
+
+
+## Haengt das Stueck [s0, s1] an den Faden (Stuecke + Stuetzpunkte fuer die Pruefung).
+func _commit(s0: float, s1: float, k: float) -> void:
+	var l := s1 - s0
+	if l <= 0.0001:
+		return
+	var m := maxi(1, int(ceil(l / SAMPLE)))
+	for i in range(1, m + 1):
+		var q := _adv(_cx, _cy, _ca, l * float(i) / float(m), k)
+		_h_add(Vector2(q.x, q.y), s0 + l * float(i) / float(m))
+	var r := _add_piece(s0, s1, _cx, _cy, _ca, k)
+	_ca += k * l
+	_cx = r.x
+	_cy = r.y
+
+
+func _h_add(p: Vector2, s: float) -> void:
+	var c := Vector2i(int(floorf(p.x / CELL)), int(floorf(p.y / CELL)))
+	if not _h_grid.has(c):
+		_h_grid[c] = PackedInt32Array()
+	_h_grid[c].append(_h_pts.size())
+	_h_pts.append(p)
+	_h_s.append(s)
+
+
+## 1, wenn ein Stuetzpunkt mit s in [lo, hi] naeher als r an p liegt.
+func _near(p: Vector2, r: float, lo: float, hi: float) -> int:
+	var c0 := Vector2i(int(floorf((p.x - r) / CELL)), int(floorf((p.y - r) / CELL)))
+	var c1 := Vector2i(int(floorf((p.x + r) / CELL)), int(floorf((p.y + r) / CELL)))
+	var r2 := r * r
+	for cx in range(c0.x, c1.x + 1):
+		for cy in range(c0.y, c1.y + 1):
+			var cell = _h_grid.get(Vector2i(cx, cy))
+			if cell == null:
+				continue
+			for i in cell:
+				var s := _h_s[i]
+				if s >= lo and s <= hi and _h_pts[i].distance_squared_to(p) < r2:
+					return 1
+	return 0
+
+
+## Kosten einer Drehung am Knoten j (0 = keine Ueberdeckung): Pfeil auf frueherem Pfeil,
+## Pfeil auf fremdem Faden, neuer Faden auf fremdem Faden.
+func _cost(j: int, s_in: float, w: float, turn: float, kfirst: int, lo_s: float, limit: int) -> int:
+	var k := turn / (2.0 * w)
+	var rj := knot_radius(j)
+	var pm := _adv(_cx, _cy, _ca, w, k)
+	var pk := Vector2(pm.x, pm.y)
+	var c := 0
+	for q in range(kfirst, j):
+		var rr := rj + knot_radius(q) + NEAR_KNOT
+		if _k_pos[q].distance_squared_to(pk) < rr * rr:
+			c += 1000
+	if c >= limit:
+		return c
+	var s_far := s_in + w - FOREIGN
+	c += 1000 * _near(pk, NEAR_ARROW + rj - ARROW_R, lo_s, s_far)
+	var e := _adv(_cx, _cy, _ca, 2.0 * w, k)
+	# Ein Knoten Vorschau: der naechste Knoten (gerade weiter) soll frei liegen.
+	if j + 1 < knots.size():
+		var gap: float = knots[j + 1].s - (s_in + 2.0 * w)
+		var pn := Vector2(e.x + gap * cos(e.z), e.y + gap * sin(e.z))
+		var rn := knot_radius(j + 1)
+		var bad := 0
+		for q in range(kfirst, j):
+			var rr := rn + knot_radius(q) + NEAR_KNOT
+			if _k_pos[q].distance_squared_to(pn) < rr * rr:
+				bad += 1
+		var rr2 := rn + rj + NEAR_KNOT
+		if pk.distance_squared_to(pn) < rr2 * rr2:
+			bad += 1
+		c += 1000 * bad
+		c += 8 * _near(pn, NEAR_ARROW + rn - ARROW_R, lo_s, s_in + 2.0 * w + gap - FOREIGN)
+	var span := 2.0 * w + LOOKAHEAD
+	var n := int(ceil(span / SAMPLE))
+	for i in range(1, n + 1):
+		var l := minf(float(i) * SAMPLE, span)
+		var q: Vector3
+		if l <= 2.0 * w:
+			q = _adv(_cx, _cy, _ca, l, k)
+		else:
+			q = _adv(e.x, e.y, e.z, l - 2.0 * w, 0.0)
+		c += _near(Vector2(q.x, q.y), NEAR_THREAD, lo_s, s_in + l - FOREIGN)
+		if c >= limit:
+			break
+	return c
 
 
 ## Haengt ein Stueck an und liefert die Endposition (x, y).
