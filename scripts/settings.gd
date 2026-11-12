@@ -58,6 +58,8 @@ var key_lanes: Array[int] = [KEY_D, KEY_F, KEY_J, KEY_K]
 var orbit_key_inner: int = KEY_Z
 var orbit_key_outer: int = KEY_X
 var orbit_guides: bool = true
+## Trace: Fadentempo (Welt-px je Sekunde, nur Optik); Standard ~1,2 s Vorlauf auf 720p.
+var trace_speed: int = 520
 ## Orbit-Aussehen: Notengroesse in Prozent (90-120), Vorschau des naechsten Takts, Bahn-Deckkraft in Prozent (30-100).
 var orbit_note_size: int = 100
 var orbit_preview: bool = true
@@ -480,6 +482,7 @@ func load_settings(path: String = PATH) -> void:
 	orbit_key_inner = int(cfg.get_value("keys", "orbit_inner", KEY_Z))
 	orbit_key_outer = int(cfg.get_value("keys", "orbit_outer", KEY_X))
 	orbit_guides = bool(cfg.get_value("game", "orbit_guides", true))
+	trace_speed = clampi(int(cfg.get_value("game", "trace_speed", 520)), 300, 900)
 	orbit_note_size = clampi(int(cfg.get_value("game", "orbit_note_size", 100)), 90, 120)
 	orbit_preview = bool(cfg.get_value("game", "orbit_preview", true))
 	orbit_path_alpha = clampi(int(cfg.get_value("game", "orbit_path_alpha", 100)), 30, 100)
@@ -546,6 +549,7 @@ func save(path: String = PATH) -> void:
 	cfg.set_value("keys", "orbit_inner", orbit_key_inner)
 	cfg.set_value("keys", "orbit_outer", orbit_key_outer)
 	cfg.set_value("game", "orbit_guides", orbit_guides)
+	cfg.set_value("game", "trace_speed", trace_speed)
 	cfg.set_value("game", "orbit_note_size", orbit_note_size)
 	cfg.set_value("game", "orbit_preview", orbit_preview)
 	cfg.set_value("game", "orbit_path_alpha", orbit_path_alpha)
