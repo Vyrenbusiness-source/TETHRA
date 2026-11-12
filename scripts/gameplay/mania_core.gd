@@ -552,6 +552,30 @@ func active_hold(c: int) -> int:
 	return _active_hold[c]
 
 
+## Spalte c hat einen laufenden oder im Koerper losgelassenen Hold (Trace-Regel: Druck geht an key_down).
+func lane_busy(c: int) -> bool:
+	return _active_hold[c] >= 0 or _broken_hold[c] >= 0
+
+
+## Erste ungewertete Note der Spalte c zur Zeit t_ms (Abgelaufene werden als Miss gewertet,
+## wie in key_down), sonst -1.
+func pending_head(c: int, t_ms: float) -> int:
+	if c < 0 or c >= columns or beatmap == null:
+		return -1
+	_now = maxf(_now, t_ms)
+	_expire_lane(c, t_ms)
+	if _lane_head[c] >= _lane_notes[c].size():
+		return -1
+	return _lane_notes[c][_lane_head[c]]
+
+
+## Note idx von aussen als Miss werten (Trace: falscher Knick). Mania ruft das nie auf.
+func miss_note(idx: int, kind: String = "FULL") -> void:
+	if beatmap == null or idx < 0 or idx >= beatmap.hit_objects.size() or _judged.has(idx):
+		return
+	_miss(idx, kind)
+
+
 # ---------------------------------------------------------------------------
 # Fail-Diagnose
 # ---------------------------------------------------------------------------
