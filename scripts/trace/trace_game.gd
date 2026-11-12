@@ -1121,6 +1121,8 @@ func _capture_shot() -> void:
 			SyncClock.seek_ms(cut)
 	for a in _args():
 		if a.begins_with("--movie-len=") and not zoomed:
+			if OS.get_cmdline_args().has("--nohud"):
+				_hud.visible = false
 			# Debug (Demo-Videos): Film ab hier, endet nach <s> Film-Sekunden.
 			print("MOVIE_START frame=%d" % Engine.get_process_frames())
 			await get_tree().create_timer(a.trim_prefix("--movie-len=").to_float(), true).timeout
