@@ -299,6 +299,12 @@ const STAR_POW := 2.5
 const STAR_MAX := 15.0
 
 
+## Sterne fuer den Song-Browser.
+static func stars_of_beatmap(beatmap: Beatmap) -> float:
+	var ch := build(beatmap)
+	return ch.stars() if ch != null else -1.0
+
+
 ## Sterne: Fenster von 2 s mit Handtempo (Strecke/s der Figur, bei Kiai grosse
 ## Figur) und Einsatz-Last (Einsaetze/s, beide Tasten zaehlen mehr). Die
 ## haertesten Fenster zaehlen am meisten.

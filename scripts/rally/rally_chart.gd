@@ -338,6 +338,18 @@ static func zone_center(s: Shot) -> float:
 	return sum / float(s.zones.size())
 
 
+## Sterne fuer den Song-Browser: Chart bauen und bewerten. Zonenzahl aus den
+## Einstellungen (Standard 3), ohne Autoload (Tests) 3 Zonen.
+static func stars_of_beatmap(beatmap: Beatmap) -> float:
+	var z := 3
+	var ml := Engine.get_main_loop()
+	if ml is SceneTree:
+		var st: Node = (ml as SceneTree).root.get_node_or_null("Settings")
+		if st != null and st.get("rally_zones") != null:
+			z = 4 if int(st.get("rally_zones")) == 4 else 3
+	return stars(build(beatmap, -1.0, z), z)
+
+
 ## Sterne: je 2-s-Fenster Last (Baelle/s; Zonenspruenge, Streams, Schmetterbaelle und
 ## Aufladen zaehlen extra), die haertesten Fenster zaehlen am meisten.
 static func stars(shots: Array[Shot], zones: int = -1) -> float:

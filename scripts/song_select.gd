@@ -4534,6 +4534,9 @@ var _os_token := 0
 ## mode "orbit": bisheriger Schluessel; Rally/Dirigent haengen die Modus-ID vorn an.
 static func orbit_stars_key(osz: String, version: String, mode: String = "orbit") -> String:
 	var base := "v%d|%s|%d|%s" % [ORBIT_STARS_VER, osz.get_file(), FileAccess.get_modified_time(osz), version]
+	# Rally/Dirigent v2: echte Chart-Sterne statt Dichte-Schaetzung (alte Werte neu rechnen).
+	if mode == "rally" or mode == "dirigent":
+		return "%s2|%s" % [mode, base]
 	return base if mode == "orbit" else "%s|%s" % [mode, base]
 
 
