@@ -388,6 +388,10 @@ func _test_key_conflicts(S: Node) -> void:
 		root.get_texture().get_image().save_png("user://settings_keys.png")
 		print("SHOT ", ProjectSettings.globalize_path("user://settings_keys.png"))
 		await _key(KEY_ESCAPE)
+		(_panel.get("_scroll") as ScrollContainer).ensure_control_visible(_row("keys", "Rebound drop time"))
+		await _frames(20)
+		root.get_texture().get_image().save_png("user://settings_keys2.png")
+		print("SHOT ", ProjectSettings.globalize_path("user://settings_keys2.png"))
 
 
 ## Neue Felder: Speichern/Laden; alte Configs ohne Eintrag uebernehmen die bisherigen Tasten.

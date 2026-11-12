@@ -99,3 +99,9 @@ right,rechts,right
 zone %d,Zone %d,zone %d
 key %d,Taste %d,key %d
 %s is already used for %s. Press another key (Esc cancels).,%s ist schon für %s belegt. Drück eine andere Taste (Esc bricht ab).,%s is already used for %s. Press another key (Esc cancels).
+Rally: Zonen,Rally: Zonen,Rally: zones
+3 Zonen,3 Zonen,3 zones
+4 Zonen,4 Zonen,4 zones
+Rally-Tasten (3 Zonen),Rally-Tasten (3 Zonen),Rally keys (3 zones)
+Rally: Flugzeit,Rally: Flugzeit,Rally: flight time
+Rally: Zeit vom Gegnerschlag bis zur Schlägerlinie. Länger = mehr Bälle gleichzeitig lesbar,Rally: Zeit vom Gegnerschlag bis zur Schlägerlinie. Länger = mehr Bälle gleichzeitig lesbar,Rally: time from the opponent's hit to the paddle line. Longer = more balls readable at once
