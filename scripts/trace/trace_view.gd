@@ -37,7 +37,7 @@ var note_colors: Array[Color] = []
 var t_ms := 0.0
 var end_zoom := 0.0
 var key_labels := PackedStringArray()   ## je Spalte der Tastenbuchstabe (Spiel setzt sie, sonst Settings)
-var mods = null                         ## Mods fuer TraceMods.path_alpha (Hidden/Short Sight), optional
+var mods := {}                          ## TraceMods.from_session(): HD/SS duennen den Vorlauf, MR spiegelt
 
 var _hit_t := PackedFloat64Array()   ## je Note: Zeit des Kopf-Urteils (Sicht-ms), -1 = offen
 var _hit_q := PackedInt32Array()
@@ -46,7 +46,7 @@ var _live := {}                      ## Hold-Note -> true solange gehalten
 var _gray: Array = []                ## [s0, s1]: graue (verpasste) Abschnitte
 var _frays: Array = []               ## { s, seed }
 var _wrongs: Array = []              ## { t, s, seed }: falsche Abbiegung (Sicht-ms)
-var _mods_script: Script = null
+var _mirror := false
 var _holds: Array = []               ## { note, col, s0, s1, t0, t1, k }
 var _cam := Vector2.ZERO
 var _sz := 1.0                       ## Welt -> Schirm
@@ -64,8 +64,8 @@ func setup(p: TracePath, c: ManiaCore, colors: Array[Color]) -> void:
 	_hit_q.fill(-1)
 	_done.resize(n)
 	_done.fill(0)
-	if ResourceLoader.exists("res://scripts/trace/trace_mods.gd"):
-		_mods_script = load("res://scripts/trace/trace_mods.gd")
+	mods = TraceMods.from_session()
+	_mirror = TraceMods.has(mods, "MR")
 	if key_labels.is_empty():
 		for i in 4:
 			key_labels.append(UiTheme.key_short(Settings.key_lanes[i]).to_upper())
@@ -131,7 +131,16 @@ func on_wrong_turn(idx: int) -> void:
 
 
 func _w2s(p: Vector2) -> Vector2:
-	return _ctr + (p - _cam) * _sz
+	var v := (p - _cam) * _sz
+	if _mirror:
+		v.x = -v.x
+	return _ctr + v
+
+
+## Pfeilrichtung (Welt) -> Schirm, bei Mirror gespiegelt.
+func _dir(col: int) -> Vector2:
+	var d := TracePath.dir_of_col(col)
+	return Vector2(-d.x, d.y) if _mirror else d
 
 
 static func _hash(a: int, b: int) -> float:
@@ -252,8 +261,7 @@ func _draw_upcoming(cur_s: float, s_b: float, wf: float) -> void:
 	while s < s_b:
 		var f := (s - cur_s) / span
 		var a := 0.62 * pow(1.0 - f, 0.9) * clampf((s - cur_s) / 50.0, 0.0, 1.0)
-		if _mods_script != null and mods != null:
-			a *= float(_mods_script.call("path_alpha", look * f, mods))
+		a *= TraceMods.path_alpha(look * f, mods)
 		for h in cover:
 			if s >= float(h.s0) and s <= float(h.s1):
 				a = 0.0
@@ -508,7 +516,7 @@ func _draw_knot(kn: TracePath.Knot, is_next: bool, wf: float) -> void:
 			if _hit_t[n] >= 0.0:
 				continue
 			var grow := 1.0 + 0.2 * (1.0 - frac) if is_next or dt < APPROACH_MS else 1.0
-			_arrow(p, TracePath.dir_of_col(kn.cols[i]), chord, _col(n), fade_in, grow, kn.cols[i])
+			_arrow(p, _dir(kn.cols[i]), chord, _col(n), fade_in, grow, kn.cols[i])
 	# Treffer-Leuchten und ausblendender Pfeil.
 	for i in kn.notes.size():
 		var n: int = kn.notes[i]
@@ -519,7 +527,7 @@ func _draw_knot(kn: TracePath.Knot, is_next: bool, wf: float) -> void:
 		var col := _col(n)
 		if age < ARROW_FADE_MS:
 			var fa := 1.0 - age / ARROW_FADE_MS
-			_arrow(p, TracePath.dir_of_col(kn.cols[i]), kn.notes.size() > 1, col, fa, 1.0 + 0.3 * (1.0 - fa), kn.cols[i])
+			_arrow(p, _dir(kn.cols[i]), kn.notes.size() > 1, col, fa, 1.0 + 0.3 * (1.0 - fa), kn.cols[i])
 		if age < FLASH_MS:
 			var u := age / FLASH_MS
 			var inv := 1.0 - u
@@ -549,7 +557,7 @@ func _arrow(p: Vector2, d: Vector2, chord: bool, col: Color, alpha: float, grow:
 	if lane >= 0 and lane < key_labels.size() and u > 0.5:
 		var font := ThemeDB.fallback_font
 		var fsz := int(round(15.0 * u))
-		var txt := key_labels[lane]
+		var txt := key_labels[TraceMods.map_column(lane, mods)]
 		var tw := font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fsz).x
 		var tc := c + d * 1.5 * u
 		for ox in [0.0, 0.7]:
