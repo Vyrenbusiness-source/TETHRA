@@ -1,4 +1,5 @@
 extends SceneTree
+# warmd: timeout=300  (Audio laeuft in Echtzeit; unter Last langsamer)
 
 ## Headless-Tests fuer die Mastering-Kette (Settings) und den Music-Bus.
 ##   Godot..._console.exe --headless --audio-driver Dummy --path . --script res://tests/run_mastering_tests.gd
