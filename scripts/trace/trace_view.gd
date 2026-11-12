@@ -201,11 +201,11 @@ func _draw() -> void:
 		_draw_upcoming(cur_s, s_b, wf)
 	_draw_played(cur_s, s_a, floor_a, wf, step)
 	_draw_frays(s_a, s_b, wf)
-	_draw_wrong(wf)
 	if zoom > 0.5:
 		_draw_knots(s_a, s_b, zoom, wf)
 	else:
 		_draw_dots(s_a, s_b, wf)
+	_draw_wrong(wf)
 	_draw_head(head_p, wf, fin, redraw)
 
 
@@ -245,11 +245,18 @@ func _draw_upcoming(cur_s: float, s_b: float, wf: float) -> void:
 	var look := TracePath.LOOK_S * 1000.0
 	var s := ceilf(cur_s / DOT_GAP) * DOT_GAP
 	var r := 1.5 * wf + 0.3
+	var cover: Array = []
+	for h in _holds:
+		if float(h.s1) >= cur_s and float(h.s0) <= s_b:
+			cover.append(h)
 	while s < s_b:
 		var f := (s - cur_s) / span
 		var a := 0.62 * pow(1.0 - f, 0.9) * clampf((s - cur_s) / 50.0, 0.0, 1.0)
 		if _mods_script != null and mods != null:
 			a *= float(_mods_script.call("path_alpha", look * f, mods))
+		for h in cover:
+			if s >= float(h.s0) and s <= float(h.s1):
+				a = 0.0
 		if a > 0.02:
 			draw_circle(_w2s(path.pos_at(s)), r, Color(THREAD, a))
 		s += DOT_GAP
@@ -427,7 +434,7 @@ func _draw_wrong(wf: float) -> void:
 		var grow := minf(1.0, age / 120.0)
 		for i in 11:
 			var ang := a + (_hash(sd, i) - 0.5) * 2.9
-			var ln := (8.0 + 20.0 * _hash(sd, i + 20)) * wf * grow * (1.0 - 0.4 * k)
+			var ln := (10.0 + 26.0 * _hash(sd, i + 20)) * wf * grow * (1.0 - 0.4 * k)
 			var p0 := base + nrm * (_hash(sd, i + 40) - 0.5) * 9.0 * wf
 			var p1 := p0 + Vector2(cos(ang), sin(ang)) * ln
 			draw_line(p0, p1, Color(WRONG_COL, 0.8 * fade), 1.3 * wf, true)
