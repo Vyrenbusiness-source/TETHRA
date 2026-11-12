@@ -97,8 +97,8 @@ func _test_turns() -> void:
 	_ok(not p.knots[1].is_straight(), "Knick am Knoten 1")
 	_near(absf(p.knots[1].turn), PI * 0.5, "90 Grad", 0.001)
 	_ok(not p.knots[1].hairpin, "kein Haarnadel")
-	var after := p.knots[2].pos - p.knots[1].pos
-	_ok(after.x < 1.0 and after.y > 200.0, "danach nach unten")
+	var after := p.knots[2].pos - p.pos_at(p.knots[1].s + p.knots[1].win)
+	_ok(absf(after.x) < 0.01 and after.y > 200.0, "danach nach unten")
 	_near(p.angle_at(p.knots[2].s), PI * 0.5, "Richtung unten", 0.001)
 
 
