@@ -249,6 +249,9 @@ static func parse_score_link(content: String) -> Dictionary:
 
 
 ## Antwort von GET /score/<id> (evtl. in {score:{...}} verpackt) -> flaches Dictionary, {} bei Fehler.
+## Der Server liefert die Map-Felder flach (artist, title, difficulty_name, beatmapset_id,
+## beatmap_md5), aeltere Antworten in "map"; beides wird gelesen.
+## accuracy immer in Prozent (Server: 0..1). pp nur Mania, points = Wertung der anderen Modi.
 static func parse_score(text: String) -> Dictionary:
 	var d: Variant = JSON.parse_string(text)
 	if not (d is Dictionary):
@@ -268,25 +271,59 @@ static func parse_score(text: String) -> Dictionary:
 			mod_list.append(str(x))
 	elif mods is String and mods != "":
 		mod_list = Array(mods.split(",", false))
-	if str(pl) == "" and mp.is_empty():
+	var title := _field(d, mp, ["title"])
+	if str(pl) == "" and mp.is_empty() and title == "":
 		return {}
+	var mode := str(d.get("mode", "mania")) if d.get("mode") != null else "mania"
+	var pp := _num(d.get("pp"))
+	var points := _num(d.get("points", d.get("orbit_points", d.get("rating"))))
+	var diff := _field(d, mp, ["difficulty_name", "difficulty", "version"])
 	return {
 		"player": str(pl),
-		"md5": str(mp.get("beatmap_md5", "")),
-		"set_id": int(mp.get("beatmapset_id", 0)),
-		"beatmap_id": int(mp.get("beatmap_id", 0)),
-		"title": str(mp.get("title", "")),
-		"artist": str(mp.get("artist", "")),
-		"difficulty": str(mp.get("difficulty", "")),
-		"score": int(d.get("score", 0)),
-		"accuracy": float(d.get("accuracy", 0.0)),
-		"grade": str(d.get("grade", "")),
-		"max_combo": int(d.get("max_combo", 0)),
-		"pp": float(d.get("pp", d.get("orbit_points", 0.0))),
+		"md5": _field(d, mp, ["beatmap_md5", "md5"]),
+		"set_id": int(_field(d, mp, ["beatmapset_id", "set_id"], "0")),
+		"beatmap_id": int(_field(d, mp, ["beatmap_id"], "0")),
+		"title": title,
+		"artist": _field(d, mp, ["artist"]),
+		"difficulty": diff,
+		"score": int(_num(d.get("score"))),
+		"accuracy": acc_percent(_num(d.get("accuracy"))),
+		"grade": str(d.get("grade", "")) if d.get("grade") != null else "",
+		"max_combo": int(_num(d.get("max_combo"))),
+		"pp": pp if pp > 0.0 else points,
+		"points": points,
+		"stars": _num(d.get("stars")),
 		"mods": mod_list,
-		"mode": str(d.get("mode", "mania")),
-		"has_replay": bool(d.get("has_replay", false)),
+		"mode": mode if mode != "" else "mania",
+		"has_replay": bool(d.get("has_replay", false)) if d.get("has_replay") != null else false,
 	}
+
+
+## Genauigkeit in Prozent: Werte bis 1,0 gelten als Anteil (0,99 -> 99 %).
+static func acc_percent(v: float) -> float:
+	return v * 100.0 if v <= 1.0 else v
+
+
+## Erstes nicht leere Feld aus d oder der verschachtelten map, sonst fallback.
+static func _field(d: Dictionary, mp: Dictionary, keys: Array, fallback: String = "") -> String:
+	for src in [d, mp]:
+		for k in keys:
+			var v: Variant = src.get(k)
+			if v == null or v is Dictionary or v is Array:
+				continue
+			var s := str(int(v)) if v is float and float(int(v)) == v else str(v)
+			if s != "" and s != "0":
+				return s
+	return fallback
+
+
+## null/Text -> Zahl (null = 0).
+static func _num(v: Variant) -> float:
+	if v == null:
+		return 0.0
+	if v is String:
+		return v.to_float()
+	return float(v)
 
 
 ## replay_content (base64 von gzip-JSON) -> {meta, events} oder {} bei Fehler.

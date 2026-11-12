@@ -35,6 +35,10 @@ var _downloading: Dictionary = {}
 var _preview_req: HTTPRequest
 var _player: AudioStreamPlayer
 var _score_cache: Dictionary = {}
+## Karten-Info-Schluessel -> lokales MapSet (oder null); _lib = einmal gescannte Bibliothek.
+var _local_cache: Dictionary = {}
+var _local_at := -100000
+var _lib: MapLibrary = null
 ## Map-Link -> lokaler Bildpfad. Die Chat-API kennt nur Text: Bilder gehen nicht
 ## ueber den Server. Der Empfaenger sieht die Map-Karte mit Hinweis "Trace picture",
 ## der Sender zusaetzlich die lokale Vorschau.
@@ -775,7 +779,8 @@ func _content_widget(content: String, compact: bool) -> Control:
 		rest = str(scorelink.text)
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 6)
-	box.custom_minimum_size = Vector2(PANEL_W - 150.0 if not compact else PANEL_W - 40.0, 0)
+	var card_w := PANEL_W - 90.0 if not (maplink.is_empty() and scorelink.is_empty()) else PANEL_W - 150.0
+	box.custom_minimum_size = Vector2(card_w if not compact else PANEL_W - 40.0, 0)
 	if rest != "":
 		var l := Label.new()
 		l.text = rest
@@ -902,11 +907,13 @@ func download_set(set_id: int) -> void:
 
 func _on_download_done(_set_id: int, _path: String) -> void:
 	_owned_at = -100000
+	_forget_local()
 	state_changed.emit()
 
 
 func _on_download_failed(_set_id: int, _msg: String) -> void:
 	_owned_at = -100000
+	_forget_local()
 	state_changed.emit()
 
 
@@ -957,7 +964,51 @@ func _on_preview_bytes(result: int, code: int, _h: PackedStringArray, body: Pack
 	_player.play()
 
 
-## Map lokal spielen (Mania-Szene), Diff nach Name, sonst erste.
+func _forget_local() -> void:
+	_local_cache.clear()
+	_lib = null
+
+
+## Lokales Mapset zu einer Karte: ueber die Set-ID (Dateiname), sonst ueber den md5 der
+## .osu (nur Sets mit gleichem Titel werden gehasht). null = Map fehlt lokal.
+## Treffer bleiben gemerkt, Fehlanzeigen 10 s (danach neu suchen).
+func local_set(info: Dictionary) -> MapSet:
+	var key := "%d|%s|%s" % [int(info.get("set_id", 0)), str(info.get("md5", "")), str(info.get("title", ""))]
+	var now := Time.get_ticks_msec()
+	if now - _local_at > 10000:
+		for k in _local_cache.keys():
+			if _local_cache[k] == null:
+				_local_cache.erase(k)
+		_local_at = now
+	if not _local_cache.has(key):
+		_local_cache[key] = _find_local_set(info)
+	return _local_cache[key]
+
+
+func _find_local_set(info: Dictionary) -> MapSet:
+	var path := find_local_osz(int(info.get("set_id", 0)))
+	var md5 := str(info.get("md5", ""))
+	var title := str(info.get("title", "")).strip_edges().to_lower()
+	if path == "" and (md5 == "" or title == ""):
+		return null
+	if _lib == null:
+		_lib = MapLibrary.new()
+		_lib.scan()
+	for ms: MapSet in _lib.mapsets:
+		if path != "":
+			if ms.osz_path == path:
+				return ms
+			continue
+		if ms.title.strip_edges().to_lower() != title:
+			continue
+		for d in ms.difficulty_count():
+			var bytes := OszImporter.read_file_bytes(ms.osz_path, ms.osu_filename_at(d))
+			if OnlineApi._md5_bytes(bytes) == md5:
+				return ms
+	return null
+
+
+## Map lokal spielen, Diff nach Name, sonst erste. Score-Karten starten den Modus des Scores.
 func play_map(info: Dictionary) -> void:
 	var sel := _select_local(info)
 	if sel.is_empty():
@@ -970,31 +1021,29 @@ func play_map(info: Dictionary) -> void:
 	stop_preview()
 	close()
 	var mode := int(sel.ms.meta_at(sel.diff).get("mode", 0))
+	var play_mode := str(info.get("mode", ""))
+	if play_mode != "" and play_mode != "mania" and ScoreStore.mode_ready(play_mode):
+		get_tree().change_scene_to_file(ScoreStore.mode_scene(play_mode))
+		return
 	get_tree().change_scene_to_file("res://scenes/mania_3d.tscn" if mode == 3
 		else "res://scenes/gameplay_3d.tscn")
 
 
 ## Lokales Set + Diff suchen und GameSession.set_selection setzen.
 func _select_local(info: Dictionary) -> Dictionary:
-	var path := find_local_osz(int(info.get("set_id", 0)))
+	var local := local_set(info)
 	var gs := _gs()
-	if path == "" or gs == null:
+	if local == null or gs == null:
 		return {}
-	var lib := MapLibrary.new()
-	lib.scan()
-	for ms in lib.mapsets:
-		if ms.osz_path != path:
-			continue
-		var diff := 0
-		var want := str(info.get("version", info.get("difficulty", "")))
-		for d in ms.difficulty_count():
-			if want != "" and ms.version_name_at(d) == want:
-				diff = d
-				break
-		gs.set_selection(ms.osz_path, diff, ms.version_name_at(diff),
-			ms.osu_filename_at(diff), ms.stars_at(diff))
-		return {"ms": ms, "diff": diff}
-	return {}
+	var diff := 0
+	var want := str(info.get("version", info.get("difficulty", ""))).to_lower()
+	for d in local.difficulty_count():
+		if want != "" and local.version_name_at(d).to_lower() == want:
+			diff = d
+			break
+	gs.set_selection(local.osz_path, diff, local.version_name_at(diff),
+		local.osu_filename_at(diff), local.stars_at(diff))
+	return {"ms": local, "diff": diff}
 
 
 ## Replay eines Chat-Scores laden und wie "Replay ansehen" im Song-Browser starten.
@@ -1051,6 +1100,17 @@ func _run_shot(dir: String) -> void:
 		"score": 1234567, "accuracy": 97.42, "grade": "S", "max_combo": 512, "pp": 188.4,
 		"mods": ["NF"], "mode": "mania", "has_replay": true}
 	_score_cache["77"] = sc
+	# Server-Antworten wie GET /score/:id (flach, accuracy 0..1, pp null ausser Mania).
+	_score_cache["78"] = ChatApi.parse_score(JSON.stringify({"score_id": 78, "mode": "trace",
+		"beatmap_md5": "595c5fc1d6d431fd9977a70760062541", "beatmapset_id": 0, "player": "Gexanx",
+		"artist": "d0tc0mmie", "title": "I Can't Wait feat. GUMI", "difficulty_name": "Beginner",
+		"score": 582612, "accuracy": 0.8582, "grade": "B", "max_combo": 77, "pp": null,
+		"points": 2.062, "has_replay": false}))
+	_score_cache["79"] = ChatApi.parse_score(JSON.stringify({"score_id": 79, "mode": "mania",
+		"beatmapset_id": 1060425, "player": "Gexanx", "artist": "Nanatsu no Taizai",
+		"title": "Ending Theme (a very long title that has to end with an ellipsis)", "difficulty_name": "4K Insane",
+		"score": 973268, "accuracy": 0.9912, "grade": "S", "max_combo": 420, "pp": 1234.6,
+		"mods": ["HD", "NF"], "has_replay": true}))
 	api.online.token = "shot"
 	api.online.user_id = "1"
 	api.messages["c1"] = [
@@ -1059,6 +1119,8 @@ func _run_shot(dir: String) -> void:
 		{"id": "m3", "sender_id": "1", "content": "Nein, lade ich gleich.", "created_at": "2026-11-08T14:05:00Z",
 			"reply_to": {"id": "m1", "sender_name": "Mira", "content": "Hast du die schon gespielt?"}},
 		{"id": "m4", "sender_id": "2", "content": "Mein Lauf dazu: " + ChatApi.score_link("77"), "created_at": "2026-11-08T14:06:00Z", "reply_to": {}},
+		{"id": "m5", "sender_id": "1", "content": ChatApi.score_link("78"), "created_at": "2026-11-08T14:07:00Z", "reply_to": {}},
+		{"id": "m6", "sender_id": "2", "content": ChatApi.score_link("79"), "created_at": "2026-11-08T14:08:00Z", "reply_to": {}},
 	]
 	api.unread = 2
 	_panel.visible = true
