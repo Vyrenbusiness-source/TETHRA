@@ -119,6 +119,7 @@ var _shot_players := 0
 ## Bereits gezeigte Spieler (nur neue Zeilen blenden ein, kein Flackern bei Scores).
 var _seen_rows: Dictionary = {}
 var _bpm_cache: Dictionary = {}
+var _versus_src := {}   # Schluessel file|version -> { path: TracePath, colors: Array }
 var _icons: Dictionary = {}
 var _f_display: Font
 var _f_num: Font
@@ -509,6 +510,13 @@ func _mp_orbit(host: bool) -> void:
 	for id in Lobby.players:
 		if int(id) != me:
 			other = int(id)
+	if _mpo_stage == 0:
+		# Host startet, sobald er alle bereit sieht; der Client wartet dann evtl. noch und der
+		# Szenenwechsel beendet seine Schleife: Stufe beim Start weiterschalten (sonst s0 erneut).
+		Lobby.game_start.connect(func():
+			if _mpo_stage == 0:
+				step.call("all ready, views %s/%s" % [Lobby.view_of(me), Lobby.view_of(other)])
+				_mpo_stage = 1, CONNECT_ONE_SHOT)
 	var finals_in := func() -> bool:
 		for id in Lobby.players:
 			if (Lobby.players[id].get("final", {}) as Dictionary).is_empty():
@@ -518,8 +526,12 @@ func _mp_orbit(host: bool) -> void:
 		var parts: Array = []
 		for id in Lobby.players:
 			var f: Dictionary = Lobby.players[id].get("final", {})
-			parts.append("%d:%s score=%d acc=%.4f" % [int(id), str(Lobby.players[id].name),
-				int(f.get("score", -1)), float(f.get("acc", -1.0))])
+			var extra := ""
+			if f.has("miss_bits"):
+				extra = " miss=%d bits=%d/%d" % [int(f.get("n_miss", 0)),
+					Lobby.unpack_miss_bits(f.miss_bits).size(), int(f.get("notes", 0))]
+			parts.append("%d:%s score=%d acc=%.4f%s" % [int(id), str(Lobby.players[id].name),
+				int(f.get("score", -1)), float(f.get("acc", -1.0)), extra])
 		step.call("%s [%s]" % [what, ", ".join(parts)])
 	var sets := _library.mapsets
 	if sets.size() < 2:
@@ -532,6 +544,9 @@ func _mp_orbit(host: bool) -> void:
 			fail.call("finals")
 			return
 		dump.call("room finals")
+		if pmode == "trace":
+			_refresh_room()
+			step.call("versus pictures n=%d" % _versus_count())
 		step.call("back in room: in_game=%s play_mode=%s" % [Lobby.in_game, Lobby.play_mode])
 	match _mpo_stage:
 		0:
@@ -2103,6 +2118,7 @@ func _refresh_room() -> void:
 			_seen_rows[id] = true
 			_fade_in(row, row_i)
 			row_i += 1
+	_add_versus()
 	if Lobby.room_kind() == MatchMode.Kind.FREE and Lobby.players.size() == 1:
 		if Lobby.room_code != "":
 			_alone_hint.text = tr("Noch niemand da. Teile den Code %s, oder der Raum erscheint in der Liste offener Räume.") % Lobby.room_code
@@ -2182,6 +2198,69 @@ func _refresh_room() -> void:
 		_tour_btn.visible = in_tour or Lobby.is_host
 		_tour_btn.text = "Zum Turnier" if in_tour else "Turnier"
 	_refresh_dl_ui()
+
+
+## Trace: Versus-Bilder der letzten Runde unter der Spielerliste (lokal aus Map + Miss-Bitfeld).
+func _add_versus() -> void:
+	if Lobby.in_game or Lobby.round_mode != "trace" or Lobby.players.size() < 2:
+		return
+	var entries: Array = []
+	for id in Lobby.players:
+		var f: Dictionary = Lobby.players[id].get("final", {})
+		if f.has("miss_bits"):
+			entries.append({ "name": str(Lobby.players[id].get("name", "?")), "final": f })
+	if entries.size() < 2:
+		return
+	var src := _versus_path(Lobby.round_map)
+	if src.is_empty():
+		return
+	var wrap := VBoxContainer.new()
+	wrap.name = "VersusWrap"
+	wrap.add_theme_constant_override("separation", 8)
+	var gap := Control.new()
+	gap.custom_minimum_size.y = 10
+	wrap.add_child(gap)
+	# "Versus" ist in DE und EN gleich: kein tr()-Schluessel noetig.
+	wrap.add_child(UiTheme.section_label("Versus"))
+	var sc := ScrollContainer.new()
+	sc.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	sc.custom_minimum_size.y = 236
+	wrap.add_child(sc)
+	sc.add_child(PlayerStatsCard.versus_pictures(src.path, src.colors, entries))
+	_players_box.add_child(wrap)
+
+
+## Anzahl der gezeigten Versus-Bilder (0 = keine; fuer den MP-Smoke).
+func _versus_count() -> int:
+	var w := _players_box.get_node_or_null("VersusWrap") if _players_box != null else null
+	if w == null:
+		return 0
+	var row := w.find_child("VersusPictures", true, false)
+	return row.get_child_count() if row != null else 0
+
+
+## TracePath + Farben der Runden-Map (gecacht; leer, wenn die Map lokal fehlt).
+func _versus_path(m: Dictionary) -> Dictionary:
+	var key := "%s|%s" % [str(m.get("file", "")), str(m.get("version", ""))]
+	if _versus_src.has(key):
+		return _versus_src[key]
+	var out := {}
+	var osz := Lobby.resolve_local_path(m)
+	var imp: Dictionary = OszImporter.import(osz) if osz != "" else {}
+	if bool(imp.get("ok", false)):
+		var bm: Beatmap = null
+		for d in imp.difficulties:
+			var b: Beatmap = d.beatmap
+			if not b.is_mania() or b.column_count() != 4 or b.hit_objects.is_empty():
+				continue
+			if bm == null or b.version_name() == str(m.get("version", "")):
+				bm = b
+			if b.version_name() == str(m.get("version", "")):
+				break
+		if bm != null:
+			out = { "path": TracePath.from_beatmap(bm), "colors": PlayerStatsCard.trace_colors(bm) }
+	_versus_src[key] = out
+	return out
 
 
 ## Diff, Tasten, BPM, Laenge, Noten der Raum-Map (Tasten..Noten nur lokal bekannt).

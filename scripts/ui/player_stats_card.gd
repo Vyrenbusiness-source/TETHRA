@@ -18,6 +18,8 @@ const BINS := 21
 const TRACE := 40
 const RANGE_MS := 105.0
 const MAX_COUNT := 1000000
+const MAX_NOTES := 65536  ## Miss-Bitfeld hoechstens 8 KB
+const PIC_GRAY := Color(0.42, 0.41, 0.39)
 
 const TAGS := ["MAX", "300", "200", "100", "50", "MISS"]
 const KEYS := ["n_max", "n300", "n200", "n100", "n50", "n_miss"]
@@ -141,6 +143,12 @@ static func sanitize(raw: Dictionary) -> Dictionary:
 			if mods.size() < 6 and (m is String or m is StringName):
 				mods.append(str(m).left(8))
 	d["mods"] = mods
+	# Trace: Miss-Bitfeld (Bit i = Note i verfehlt) fuer die Versus-Bilder, je Note 1 Bit.
+	var mb: Variant = raw.get("miss_bits", null)
+	if mb is PackedByteArray:
+		var nn := int(_num(raw.get("notes", 0), 0, MAX_NOTES))
+		d["notes"] = nn
+		d["miss_bits"] = (mb as PackedByteArray).slice(0, mini((mb as PackedByteArray).size(), (nn + 7) >> 3))
 	if not raw.has("ur"):
 		return d
 	d["ur"] = _num(raw.get("ur", 0.0), 0.0, 2000.0)
@@ -1095,3 +1103,186 @@ class _Trace extends Control:
 		else:
 			draw_string(f, Vector2(r.position.x, size.y - 2), TranslationServer.translate("Start"), HORIZONTAL_ALIGNMENT_LEFT, -1, fs, lc)
 			draw_string(f, Vector2(r.end.x - 100, size.y - 2), TranslationServer.translate("Ende"), HORIZONTAL_ALIGNMENT_RIGHT, 100, fs, lc)
+
+
+# ---------------------------------------------------------------------------
+# Versus-Bilder (Trace)
+# ---------------------------------------------------------------------------
+
+## Note-Indizes -> Bitfeld (n Noten, ceil(n/8) Bytes). Ungueltige Indizes fallen weg.
+static func pack_miss_bits(idx: PackedInt32Array, n: int) -> PackedByteArray:
+	var out := PackedByteArray()
+	out.resize((maxi(n, 0) + 7) >> 3)
+	out.fill(0)
+	for i in idx:
+		if i >= 0 and i < n:
+			out[i >> 3] |= 1 << (i & 7)
+	return out
+
+
+static func unpack_miss_bits(bits: PackedByteArray) -> PackedInt32Array:
+	var out := PackedInt32Array()
+	for b in bits.size():
+		var v := bits[b]
+		if v == 0:
+			continue
+		for k in 8:
+			if v & (1 << k):
+				out.append(b * 8 + k)
+	return out
+
+
+## Index des Siegers in entries ([{ name, final }]): hoechster Score ohne Fail,
+## Gleichstand = weniger Misses; alle gefailt = hoechster Score. -1 = keine Endergebnisse.
+static func versus_winner(entries: Array) -> int:
+	var best := -1
+	for pass_i in 2:
+		for i in entries.size():
+			var f: Dictionary = (entries[i] as Dictionary).get("final", {})
+			if f.is_empty() or (pass_i == 0 and bool(f.get("failed", false))):
+				continue
+			if best < 0:
+				best = i
+				continue
+			var b: Dictionary = (entries[best] as Dictionary).get("final", {})
+			var sf := int(f.get("score", 0))
+			var sb := int(b.get("score", 0))
+			if sf > sb or (sf == sb and int(f.get("n_miss", 0)) < int(b.get("n_miss", 0))):
+				best = i
+		if best >= 0:
+			return best
+	return best
+
+
+## Spaltenfarben je Note (Trace-Standardfarben, ohne Snap-Toenung).
+static func trace_colors(bm: Beatmap) -> Array:
+	var base := NoteColors.preset_colors("standard")
+	var out: Array = []
+	for o in bm.hit_objects:
+		out.append(base[clampi((o as ManiaNote).column, 0, 3)])
+	return out
+
+
+## Bilder aller Spieler nebeneinander, lokal aus TracePath + Miss-Bitfeld gezeichnet.
+## entries: [{ name, final (sanitize-Paket mit miss_bits) }]. Sieger: Akzent-Rahmen + "Sieger".
+static func versus_pictures(path: TracePath, colors: Array, entries: Array, tile: float = 168.0) -> Control:
+	var row := HBoxContainer.new()
+	row.name = "VersusPictures"
+	row.add_theme_constant_override("separation", 10)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var win := versus_winner(entries)
+	for i in entries.size():
+		var e: Dictionary = entries[i]
+		var f: Dictionary = e.get("final", {})
+		var is_win := i == win
+		var panel := PanelContainer.new()
+		var sb := StyleBoxFlat.new()
+		sb.bg_color = UiTheme.BG
+		sb.set_corner_radius_all(4)
+		sb.set_border_width_all(2 if is_win else 1)
+		sb.border_color = Color(UiTheme.ACCENT, 0.9) if is_win else UiTheme.LINE
+		sb.content_margin_left = 6
+		sb.content_margin_right = 6
+		sb.content_margin_top = 6
+		sb.content_margin_bottom = 6
+		panel.add_theme_stylebox_override("panel", sb)
+		panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		row.add_child(panel)
+		var vb := VBoxContainer.new()
+		vb.add_theme_constant_override("separation", 4)
+		panel.add_child(vb)
+		var pic := TracePic.new()
+		pic.custom_minimum_size = Vector2(tile, tile)
+		var missed := {}
+		var bits: Variant = f.get("miss_bits", PackedByteArray())
+		if bits is PackedByteArray:
+			for k in unpack_miss_bits(bits):
+				missed[k] = true
+		pic.setup(path, colors, missed)
+		vb.add_child(pic)
+		var top := HBoxContainer.new()
+		top.add_theme_constant_override("separation", 6)
+		top.custom_minimum_size.x = tile
+		vb.add_child(top)
+		var nm := _dlbl(str(e.get("name", "?")), 13, UiTheme.TEXT, false, HORIZONTAL_ALIGNMENT_LEFT)
+		nm.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		nm.custom_minimum_size.x = 40
+		top.add_child(nm)
+		var acc_t := "—" if f.is_empty() else UiTheme.fmt_num(float(f.get("acc", 0.0)) * 100.0, 2) + " %"
+		top.add_child(_dlbl(acc_t, 13, UiTheme.ACCENT if is_win else UiTheme.DIM, true, HORIZONTAL_ALIGNMENT_RIGHT))
+		var sub := HBoxContainer.new()
+		vb.add_child(sub)
+		var miss_n := int(f.get("n_miss", 0))
+		var ml := _dlbl("%d  %s" % [miss_n, TranslationServer.translate("FEHLKNICKE")], 11,
+				UiTheme.BAD if miss_n > 0 else UiTheme.DIM, false, HORIZONTAL_ALIGNMENT_LEFT)
+		ml.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		ml.custom_minimum_size.x = 40
+		sub.add_child(ml)
+		if is_win:
+			sub.add_child(_dlbl(TranslationServer.translate("Sieger"), 11, UiTheme.ACCENT, true, HORIZONTAL_ALIGNMENT_RIGHT))
+		elif bool(f.get("failed", false)):
+			sub.add_child(_dlbl("F", 11, UiTheme.BAD, true, HORIZONTAL_ALIGNMENT_RIGHT))
+	return row
+
+
+## Ganzes Bild der Map: gespielte Strecke in Spaltenfarbe, Misses grau und duenn
+## mit kleiner Franse am Knick, Holds dicker. Linien einmal abgetastet, nur skaliert.
+class TracePic:
+	extends Control
+	var segs: Array = []   ## [PackedVector2Array, Color, Breite]
+	var frays: PackedVector2Array = PackedVector2Array()
+	var bounds := Rect2()
+
+	func _init() -> void:
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	func setup(path: TracePath, colors: Array, missed: Dictionary) -> void:
+		segs.clear()
+		frays.clear()
+		if path == null or path.knots.is_empty():
+			queue_redraw()
+			return
+		bounds = path.bounds()
+		var step := maxf(maxf(bounds.size.x, bounds.size.y) / 320.0, 3.0)
+		var ks := path.knots
+		segs.append([path.sample(ks[0].s - 80.0, ks[0].s, step), Color(PlayerStatsCard.PIC_GRAY, 0.6), 1.2])
+		for k in ks.size():
+			var kn: TracePath.Knot = ks[k]
+			var s1 := ks[k + 1].s if k + 1 < ks.size() else kn.s + 80.0
+			var miss := false
+			for n in kn.notes:
+				miss = miss or missed.has(n)
+			var note := kn.notes[0] if not kn.notes.is_empty() else -1
+			var col: Color = colors[note] if note >= 0 and note < colors.size() else Color.WHITE
+			if miss:
+				frays.append(kn.pos)
+			segs.append([path.sample(kn.s, s1, step), PlayerStatsCard.PIC_GRAY if miss else col, 1.1 if miss else 1.7])
+			for h in kn.holds:
+				var hn := int(h.get("note", -1))
+				var hc: Color = colors[hn] if hn >= 0 and hn < colors.size() else col
+				var hmiss := missed.has(hn)
+				segs.append([path.sample(kn.s, float(h.get("s_end", kn.s)), step),
+						PlayerStatsCard.PIC_GRAY if hmiss else hc.lightened(0.15), 1.4 if hmiss else 3.4])
+		queue_redraw()
+
+	func _draw() -> void:
+		draw_rect(Rect2(Vector2.ZERO, size), Color(0.035, 0.035, 0.04))
+		if segs.is_empty() or bounds.size.x <= 0.0 and bounds.size.y <= 0.0:
+			return
+		var pad := 8.0
+		var avail := size - Vector2(pad, pad) * 2.0
+		var sc := minf(avail.x / maxf(bounds.size.x, 1.0), avail.y / maxf(bounds.size.y, 1.0))
+		var off := size * 0.5 - bounds.get_center() * sc
+		for sg in segs:
+			var src: PackedVector2Array = sg[0]
+			if src.size() < 2:
+				continue
+			var pts := PackedVector2Array()
+			pts.resize(src.size())
+			for i in src.size():
+				pts[i] = src[i] * sc + off
+			draw_polyline(pts, sg[1], sg[2], true)
+		for p in frays:
+			var c := p * sc + off
+			draw_line(c + Vector2(-2.5, -2.5), c + Vector2(2.5, 2.5), PlayerStatsCard.PIC_GRAY, 1.0, true)
+			draw_line(c + Vector2(-2.5, 2.5), c + Vector2(2.5, -2.5), PlayerStatsCard.PIC_GRAY, 1.0, true)
