@@ -116,13 +116,13 @@ func _layout() -> Lay:
 	var l := Lay.new()
 	var w := size.x
 	var h := size.y
-	l.rx = minf(w * 0.092, h * 0.118)
+	l.rx = minf(w * 0.10, h * 0.14)
 	l.ry = l.rx * 0.30
 	l.pitch = l.rx * 2.32
 	var cols := flight.columns if flight != null else 4
 	l.x0 = (w - l.pitch * float(cols - 1)) * 0.5
 	l.y = h * 0.775
-	l.ball_r = l.rx * 0.34
+	l.ball_r = l.rx * 0.37
 	l.a = l.rx * 0.9
 	l.depth = l.rx * 0.20
 	l.hpx = l.y - l.ball_r * 2.0 - h * 0.15
@@ -259,19 +259,20 @@ func _draw_chords(l: Lay, balls: Array) -> void:
 	for c in cols:
 		var k := flight.first_landing_at_or_after(c, t_ms)
 		targets.append(flight.segs[c][k] if k >= 0 else null)
-	for c in cols - 1:
+	# Spalten mit gleicher Landezeit der Reihe nach verbinden.
+	var prev := -1
+	for c in cols:
 		var a = targets[c]
-		var b = targets[c + 1]
-		if a == null or b == null or absf(a.t1 - b.t1) > 1.5:
+		if a == null or (balls[c] as Dictionary).kind == ReboundFlight.Kind.HIDDEN:
 			continue
-		var ba: Dictionary = balls[c]
-		var bb: Dictionary = balls[c + 1]
-		if ba.kind == ReboundFlight.Kind.HIDDEN or bb.kind == ReboundFlight.Kind.HIDDEN:
-			continue
-		var pa := _ball_pos(l, c, ba, 1.0)
-		var pb := _ball_pos(l, c + 1, bb, 1.0)
-		var q := clampf(1.0 - maxf(a.t1 - t_ms, 0.0) / 700.0, 0.2, 1.0)
-		draw_line(pa, pb, Color(1, 1, 1, 0.20 * q), 2.0, true)
+		if prev >= 0:
+			var p = targets[prev]
+			if absf(a.t1 - p.t1) <= 1.5:
+				var pa := _ball_pos(l, prev, balls[prev], 1.0)
+				var pb := _ball_pos(l, c, balls[c], 1.0)
+				var q := clampf(1.0 - maxf(a.t1 - t_ms, 0.0) / 700.0, 0.2, 1.0)
+				draw_line(pa, pb, Color(1, 1, 1, 0.22 * q), 2.0, true)
+		prev = c
 
 
 func _squash(b: Dictionary) -> Vector2:
@@ -322,15 +323,17 @@ func _draw_ball_full(l: Lay, c: int, b: Dictionary) -> void:
 	_ell(Vector2(sx, l.y), 0.3)
 	draw_circle(Vector2.ZERO, R * (0.62 + 0.62 * hh), Color(0, 0, 0, (0.60 - 0.42 * hh) * float(b.alpha)))
 	_flat()
-	# Spur.
+	# Spur: schmaler, auslaufender Streifen hinter dem Ball.
 	if b.kind != ReboundFlight.Kind.REST:
+		var prev := pos
 		for i in range(1, TRAIL_N + 1):
 			var tb := flight.ball(c, t_ms - TRAIL_STEP_MS * float(i))
 			if tb.kind == ReboundFlight.Kind.HIDDEN:
 				break
 			var tp := _ball_pos(l, c, tb, 1.0)
 			var f := 1.0 - float(i) / float(TRAIL_N + 1)
-			draw_circle(tp, R * (0.35 + 0.5 * f), Color(col, 0.13 * f * alpha))
+			draw_line(prev, tp, Color(col.lightened(0.2), 0.20 * f * alpha), R * 1.1 * f, true)
+			prev = tp
 	_draw_ball(pos, R * sq.x, R * sq.y, col, alpha)
 	# Hold: Ring fuellt sich.
 	if b.kind == ReboundFlight.Kind.REST:

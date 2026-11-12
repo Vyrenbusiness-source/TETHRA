@@ -727,7 +727,7 @@ func _show_results(is_fail: bool) -> void:
 		if Lobby.players.has(me):
 			data["final"] = Lobby.players[me].get("final", {})
 	rs.show_results(data)
-	rs.set_mode_text(tr("REBOUND"), UiTheme.ACCENT)
+	_relabel_badge(rs)
 	if OS.get_cmdline_args().has("--shot-results"):
 		_capture_results_shot()
 	if _mp_bot:
@@ -740,6 +740,16 @@ func _show_results(is_fail: bool) -> void:
 		await get_tree().create_timer(back_s, true).timeout
 		if is_inside_tree():
 			_back_to_browser()
+
+
+## Modus-Abzeichen im Kopf des Endbilds: ResultsScreen kennt nur Mania/Orbit und
+## schreibt "MANIA 4K"; hier auf "REBOUND" umbenennen (bis ScoreStore.mode_label es kann).
+func _relabel_badge(n: Node) -> void:
+	for ch in n.get_children():
+		if ch is Label and (ch as Label).text == ScoreStore.mode_label("").to_upper():
+			(ch as Label).text = tr("REBOUND")
+		else:
+			_relabel_badge(ch)
 
 
 func _on_results_replay() -> void:
