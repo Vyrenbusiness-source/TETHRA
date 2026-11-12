@@ -91,6 +91,10 @@ Trace speed,Trace-Tempo,Trace speed
 Rebound drop time,Rebound-Fallzeit,Rebound drop time
 Rebound: time a ball falls to the paddle line. Longer = easier to read,"Rebound: Zeit, bis ein Ball die Schlägerlinie erreicht. Länger = leichter lesbar",Rebound: time a ball falls to the paddle line. Longer = easier to read
 Keys: the Mania keys 1–4 above.,Tasten: die Mania-Tasten 1–4 oben.,Keys: the Mania keys 1–4 above.
+Rebound keys: the Mania keys 1–4 above.,Rebound-Tasten: die Mania-Tasten 1–4 oben.,Rebound keys: the Mania keys 1–4 above.
+Trace keys,Trace-Tasten,Trace keys
+"Left, down, up, right. Click, then press a key (Esc cancels).","Links, runter, hoch, rechts. Anklicken, dann Taste drücken (Esc bricht ab).","Left, down, up, right. Click, then press a key (Esc cancels)."
+Rebound uses these keys too. Trace has its own keys below.,Rebound nutzt diese Tasten auch. Trace hat unten eigene Tasten.,Rebound uses these keys too. Trace has its own keys below.
 key A,Taste A,key A
 key B,Taste B,key B
 left,links,left
