@@ -310,7 +310,7 @@ func _test_replay_io() -> void:
 	_ok(ReplayStore.path_for_key("x") != ReboundReplay.path_for("x", "V"), "getrennt von Mania-Replays")
 
 
-const RG := ReboundAntiMash
+const RG := preload("res://scripts/rebound/rebound_anti_mash.gd")
 
 
 ## Wie das Spiel: Anti-Mash-Schicht vor ManiaCore (rules=false: roh wie vor v2).

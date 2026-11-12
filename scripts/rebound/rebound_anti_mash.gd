@@ -1,4 +1,3 @@
-class_name ReboundAntiMash
 extends RefCounted
 
 ## Rebound Anti-Mash: duenne Schicht vor ManiaCore (ManiaCore bleibt unveraendert).

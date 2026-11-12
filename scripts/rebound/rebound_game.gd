@@ -16,7 +16,8 @@ const MODE := "rebound"
 const JUDGE_SCALE := 0.5
 const LEAD_MS := 1800.0
 ## Replay-Regelversion: 2 = Anti-Mash (falsche Taste macht eine Note im 50er-Fenster zum Miss).
-const REPLAY_RULES := ReboundAntiMash.REPLAY_RULES
+const AntiMash := preload("res://scripts/rebound/rebound_anti_mash.gd")
+const REPLAY_RULES := 2
 const GRADE_COLOR := {
 	"SS": Color(1.0, 0.92, 0.55), "S": Color(1.0, 0.85, 0.40), "A": Color(0.55, 0.85, 0.55),
 	"B": Color(0.50, 0.70, 0.95), "C": Color(0.75, 0.58, 0.95), "D": Color(0.90, 0.50, 0.45),
@@ -93,7 +94,7 @@ func _ready() -> void:
 		elif a.begins_with("--mp-cut="):
 			_mp_cut_ms = maxf(0.0, a.trim_prefix("--mp-cut=").to_float()) * 1000.0
 	if not _replay:
-		_recorded = [ReboundAntiMash.marker()]
+		_recorded = [AntiMash.marker()]
 	core = ManiaCore.new()
 	core.setup(_beatmap)
 	core.note_judged.connect(_on_note_judged)
@@ -407,7 +408,7 @@ func _press(lane: int, down: bool) -> void:
 
 ## Druck ueber die Anti-Mash-Schicht an ManiaCore geben (live, Replay und Bot gleich).
 func _down(lane: int, t: float) -> void:
-	if ReboundAntiMash.wrong_key_check(core, lane, t) >= 0:
+	if AntiMash.wrong_key_check(core, lane, t) >= 0:
 		if _view.has_method("on_wrong_key"):
 			_view.on_wrong_key(lane)
 	core.key_down(lane, t)
@@ -415,7 +416,7 @@ func _down(lane: int, t: float) -> void:
 
 ## Replays ohne Regel-Marke oder mit anderer Version passen nicht zu den Regeln.
 static func replay_current(events: Array) -> bool:
-	return ReboundAntiMash.replay_current(events)
+	return AntiMash.replay_current(events)
 
 
 func _show_old_replay() -> void:
