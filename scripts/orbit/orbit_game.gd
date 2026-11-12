@@ -88,8 +88,6 @@ var _bot_plan: Array = []
 ## Cursor beim Druck) (neuer Endscreen), sonst [Feld-Pos, Taste, dt, Zielfehler
 ## (Feld x 100), Stufe, Zeit] (alter Endscreen).
 var _hit_log: Array = []
-## Map-Bild-Deckkraft je Settings.bg_dim (0,3 -> 0,12 wie osu! mit hohem Dim).
-const BG_OPACITY_PER_DIM := 0.4
 ## Fehldrucke je Grund (aim/key/early/lock) fuer die Tasten-Statistik.
 var _presses := {"aim": 0, "key": 0, "early": 0, "lock": 0}
 ## Halten: Cursor beim Kopf-Druck (Index -> Feld-Pos).
@@ -346,35 +344,14 @@ func _build_bg() -> void:
 	_bg = OrbitBackdrop.new()
 	add_child(_bg)
 	# Kein Welt-Himmel hinter dem Feld (keine Planeten/Deko): "Welt" = Map-Bild wie
-	# osu!, unscharf und stark abgedunkelt (Standard bg_dim 0,3 -> 12 % Deckkraft).
+	# osu!, unscharf und stark abgedunkelt (Einstellungen der Modi-Hintergruende).
 	var bg_mode := Settings.orbit_background_mode()
 	if bg_mode == OrbitBackdrop.BG_WORLD:
 		bg_mode = OrbitBackdrop.BG_MAP
 	var cover := OszImporter.load_background_texture(GameSession.osz_path, _beatmap)
-	if bg_mode == OrbitBackdrop.BG_MAP:
-		cover = blurred(cover)
-	# OrbitBackdrop zeigt das Bild mit bg_dim x 0,6 Deckkraft.
-	_bg.setup(_beatmap, bg_mode, forced, GameSession.stars, cover,
-			clampf(Settings.bg_dim * BG_OPACITY_PER_DIM, 0.0, 0.2) / 0.6)
+	# Map-Bild: MapBackdrop (Unschaerfe Settings.modes_bg_blur, Deckkraft modes_bg_dim).
+	_bg.setup(_beatmap, bg_mode, forced, GameSession.stars, cover, float(Settings.modes_bg_dim))
 
-
-## Weichgezeichnetes Map-Bild (einmal beim Laden): klein rechnen, weich zurueck.
-static func blurred(tex: Texture2D) -> Texture2D:
-	if tex == null:
-		return null
-	var img := tex.get_image()
-	if img == null or img.is_empty():
-		return tex
-	img = img.duplicate()
-	if img.is_compressed():
-		img.decompress()
-	var w := img.get_width()
-	var h := img.get_height()
-	# Mehrstufig hoch, damit keine Bloecke/Pixel sichtbar werden (weich wie osu!).
-	img.resize(maxi(8, w / 64), maxi(6, h / 64), Image.INTERPOLATE_BILINEAR)
-	for f in [32, 16, 8, 4, 2]:
-		img.resize(maxi(16, w / f), maxi(12, h / f), Image.INTERPOLATE_CUBIC)
-	return ImageTexture.create_from_image(img)
 
 func _build_sound() -> void:
 	_sound = OrbitSound.new()
@@ -1444,7 +1421,7 @@ func _measure_fps(sec: float) -> void:
 ## "hold"/"arc" (mitten im Halten), "hold-in" (kurz vor einem Halten-Kopf),
 ## "accent"/"chord" (kurz vor einem Akzent), "stream" (Anfang der ersten
 ## Folge von 6 Zielen mit <= 200 ms Abstand), "jump" (groesster Sprung je
-## Zeit), "dense" (meiste sichtbare Ziele).
+## Zeit), "dense" (meiste sichtbare Ziele), "kiai" (1,5 s im ersten Kiai).
 func _shot_target(v: String, def: float) -> float:
 	if v.is_valid_float():
 		return v.to_float()
@@ -1486,6 +1463,11 @@ func _shot_target(v: String, def: float) -> float:
 					best = d / dt
 					at = float(n.time_ms) - 120.0
 			return at
+	if v == "kiai":
+		for tp in _beatmap.timing_points:
+			if (tp.kiai or (tp.effects & 1) != 0) and tp.time >= from:
+				return tp.time + 1500.0
+		return def
 	for i in notes.size():
 		var n := notes[i]
 		if n.time_ms < from:
