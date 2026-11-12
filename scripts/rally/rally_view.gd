@@ -241,7 +241,8 @@ func _ground_ring(cx: float, cz: float, r: float, col: Color, width: float, fill
 func _draw_room() -> void:
 	var w := size.x
 	var h := size.y
-	draw_rect(Rect2(0, 0, w, h), COL_ROOM)
+	# Halbtransparent: das Map-Bild (MapBackdrop des Game-Knotens) scheint durch.
+	draw_rect(Rect2(0, 0, w, h), Color(COL_ROOM, 0.74))
 	var boost := 1.0 + 0.10 * _lvl
 	# Raumlicht: weicher Kegel ueber der Tischmitte (konzentrische Ellipsen, sehr leise).
 	var lc := _pp(_w(0.0, 0.0, 0.55))
