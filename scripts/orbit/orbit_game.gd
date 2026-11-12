@@ -88,10 +88,6 @@ var _bot_plan: Array = []
 ## Cursor beim Druck) (neuer Endscreen), sonst [Feld-Pos, Taste, dt, Zielfehler
 ## (Feld x 100), Stufe, Zeit] (alter Endscreen).
 var _hit_log: Array = []
-## Map-Bild-Deckkraft je Settings.bg_dim (0,3 -> 0,12 wie osu! mit hohem Dim).
-const BG_OPACITY_PER_DIM := 0.4
-## Breite des Map-Bilds fuer den Blur-Shader (Pixel; weich, also klein).
-const BLUR_TEX_W := 384
 ## Fehldrucke je Grund (aim/key/early/lock) fuer die Tasten-Statistik.
 var _presses := {"aim": 0, "key": 0, "early": 0, "lock": 0}
 ## Halten: Cursor beim Kopf-Druck (Index -> Feld-Pos).
@@ -348,38 +344,13 @@ func _build_bg() -> void:
 	_bg = OrbitBackdrop.new()
 	add_child(_bg)
 	# Kein Welt-Himmel hinter dem Feld (keine Planeten/Deko): "Welt" = Map-Bild wie
-	# osu!, unscharf und stark abgedunkelt (Standard bg_dim 0,3 -> 12 % Deckkraft).
+	# osu!, unscharf und stark abgedunkelt (Einstellungen der Modi-Hintergruende).
 	var bg_mode := Settings.orbit_background_mode()
 	if bg_mode == OrbitBackdrop.BG_WORLD:
 		bg_mode = OrbitBackdrop.BG_MAP
 	var cover := OszImporter.load_background_texture(GameSession.osz_path, _beatmap)
-	if bg_mode == OrbitBackdrop.BG_MAP:
-		cover = blurred(cover)
-	# OrbitBackdrop zeigt das Bild mit bg_dim x 0,6 Deckkraft.
-	_bg.setup(_beatmap, bg_mode, forced, GameSession.stars, cover,
-			clampf(Settings.bg_dim * BG_OPACITY_PER_DIM, 0.0, 0.2) / 0.6)
-
-
-## Map-Bild fuer den Blur-Shader (einmal beim Laden): in Halbierungs-Schritten
-## (2x2-Mittel, kein Aliasing) auf hoechstens BLUR_TEX_W Pixel Breite, dazu
-## Mipmaps. Den eigentlichen weichen Gauss-Blur macht shaders/orbit_blur.
-static func blurred(tex: Texture2D) -> Texture2D:
-	if tex == null:
-		return null
-	var img := tex.get_image()
-	if img == null or img.is_empty():
-		return tex
-	img = img.duplicate()
-	if img.is_compressed():
-		img.decompress()
-	img.convert(Image.FORMAT_RGBA8)
-	while img.get_width() > BLUR_TEX_W * 2:
-		img.resize(maxi(1, img.get_width() / 2), maxi(1, img.get_height() / 2), Image.INTERPOLATE_BILINEAR)
-	if img.get_width() > BLUR_TEX_W:
-		var h := maxi(1, roundi(float(img.get_height()) * BLUR_TEX_W / img.get_width()))
-		img.resize(BLUR_TEX_W, h, Image.INTERPOLATE_CUBIC)
-	img.generate_mipmaps()
-	return ImageTexture.create_from_image(img)
+	# Map-Bild: MapBackdrop (Unschaerfe Settings.modes_bg_blur, Deckkraft modes_bg_dim).
+	_bg.setup(_beatmap, bg_mode, forced, GameSession.stars, cover, float(Settings.modes_bg_dim))
 
 
 func _build_sound() -> void:
