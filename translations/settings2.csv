@@ -78,3 +78,30 @@ Strg + F,Strg + F,Ctrl + F
 Aktiver Skin,Aktiver Skin,Active skin
 "Map-Bild in Orbit, Rally, Dirigent","Map-Bild in Orbit, Rally, Dirigent","Map image in Orbit, Rally, Dirigent"
 "Wie weich das Map-Bild ist, 0 % = scharf","Wie weich das Map-Bild ist, 0 % = scharf","How soft the map image is, 0% = sharp"
+"Trace and Rebound use these keys too. Trace: 1 = left, 2 = down, 3 = up, 4 = right.","Trace und Rebound nutzen diese Tasten auch. Trace: 1 = links, 2 = runter, 3 = hoch, 4 = rechts.","Trace and Rebound use these keys too. Trace: 1 = left, 2 = down, 3 = up, 4 = right."
+"3 zones: left, middle, right. 4 zones: zone 1–4. Each zone count has its own keys.","3 Zonen: links, Mitte, rechts. 4 Zonen: Zone 1–4. Jede Zonenzahl hat eigene Tasten.","3 zones: left, middle, right. 4 zones: zone 1–4. Each zone count has its own keys."
+"Left, middle, right. Click, then press a key (Esc cancels).","Links, Mitte, rechts. Anklicken, dann Taste drücken (Esc bricht ab).","Left, middle, right. Click, then press a key (Esc cancels)."
+Rally keys (4 zones),Rally-Tasten (4 Zonen),Rally keys (4 zones)
+"Zone 1–4 from left to right. Click, then press a key (Esc cancels).","Zone 1–4 von links nach rechts. Anklicken, dann Taste drücken (Esc bricht ab).","Zone 1–4 from left to right. Click, then press a key (Esc cancels)."
+Dirigent keys: A | B,Dirigent-Tasten: A | B,Dirigent keys: A | B
+"Left: key A (circle), right: key B (diamond). Click, then press a key (Esc cancels).","Links: Taste A (Kreis), rechts: Taste B (Raute). Anklicken, dann Taste drücken (Esc bricht ab).","Left: key A (circle), right: key B (diamond). Click, then press a key (Esc cancels)."
+"Both parts = both keys together. Left click = A, right click = B always work too.","Zwei Teile = beide Tasten zugleich. Linksklick = A, Rechtsklick = B gelten immer zusätzlich.","Both parts = both keys together. Left click = A, right click = B always work too."
+Trace speed,Trace-Tempo,Trace speed
+"How fast the thread moves (looks only, timing stays the same)","Wie schnell der Faden läuft (nur Optik, Timing bleibt gleich)","How fast the thread moves (looks only, timing stays the same)"
+Rebound drop time,Rebound-Fallzeit,Rebound drop time
+Rebound: time a ball falls to the paddle line. Longer = easier to read,"Rebound: Zeit, bis ein Ball die Schlägerlinie erreicht. Länger = leichter lesbar",Rebound: time a ball falls to the paddle line. Longer = easier to read
+Keys: the Mania keys 1–4 above.,Tasten: die Mania-Tasten 1–4 oben.,Keys: the Mania keys 1–4 above.
+key A,Taste A,key A
+key B,Taste B,key B
+left,links,left
+middle,Mitte,middle
+right,rechts,right
+zone %d,Zone %d,zone %d
+key %d,Taste %d,key %d
+%s is already used for %s. Press another key (Esc cancels).,%s ist schon für %s belegt. Drück eine andere Taste (Esc bricht ab).,%s is already used for %s. Press another key (Esc cancels).
+Rally: Zonen,Rally: Zonen,Rally: zones
+3 Zonen,3 Zonen,3 zones
+4 Zonen,4 Zonen,4 zones
+Rally-Tasten (3 Zonen),Rally-Tasten (3 Zonen),Rally keys (3 zones)
+Rally: Flugzeit,Rally: Flugzeit,Rally: flight time
+Rally: Zeit vom Gegnerschlag bis zur Schlägerlinie. Länger = mehr Bälle gleichzeitig lesbar,Rally: Zeit vom Gegnerschlag bis zur Schlägerlinie. Länger = mehr Bälle gleichzeitig lesbar,Rally: time from the opponent's hit to the paddle line. Longer = more balls readable at once

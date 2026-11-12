@@ -89,7 +89,7 @@ func _move(tut: Control, u: Vector2) -> void:
 
 func _key(tut: Control, k: int, down: bool) -> void:
 	var ev := InputEventKey.new()
-	ev.keycode = _settings().orbit_key_inner if k == 0 else _settings().orbit_key_outer
+	ev.keycode = _settings().dirigent_key_a if k == 0 else _settings().dirigent_key_b
 	ev.pressed = down
 	tut.handle_input(ev)
 
@@ -308,10 +308,10 @@ func _test_mouse_buttons(tut: Control) -> void:
 
 func _test_keys_from_settings(tut: Control) -> void:
 	var st := _settings()
-	var old_a: int = st.orbit_key_inner
-	var old_b: int = st.orbit_key_outer
-	st.orbit_key_inner = KEY_K
-	st.orbit_key_outer = KEY_L
+	var old_a: int = st.dirigent_key_a
+	var old_b: int = st.dirigent_key_b
+	st.dirigent_key_a = KEY_K
+	st.dirigent_key_b = KEY_L
 	_check(str(tut.key_label(0)) == "K" and str(tut.key_label(1)) == "L", "Tasten-Namen aus den Settings")
 	tut.bot = false
 	tut.enter_step(2)
@@ -319,8 +319,8 @@ func _test_keys_from_settings(tut: Control) -> void:
 	_run_to(tut, float(c.t) - 8.0)
 	_tap(tut, 0)
 	_check(int(tut.success) == 1, "Taste A aus den Settings spielt")
-	st.orbit_key_inner = old_a
-	st.orbit_key_outer = old_b
+	st.dirigent_key_a = old_a
+	st.dirigent_key_b = old_b
 
 
 func _test_skip(tut: Control) -> void:

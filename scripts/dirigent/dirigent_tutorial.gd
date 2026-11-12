@@ -13,7 +13,7 @@ extends Control
 ## Fehler nennen den Grund am Ort (zu frueh / zu spaet / falscher Punkt / falsche
 ## Taste / beide Tasten) und oben als Hinweis.
 ## Tab = Schritt ueberspringen, Esc = beenden. Tasten aus den Settings
-## (orbit_key_inner/outer = A/B), dazu immer Maus links/rechts.
+## (Settings.dirigent_key_a/b = A/B), dazu immer Maus links/rechts.
 ## Harness: --shot-tutorial [--shot-out=<ordner>] [--lang=en]: Bot spielt mit simulierter
 ## Uhr, je Schritt ein Bild, Fehlerbilder und die Wertung, dann quit.
 
@@ -177,7 +177,7 @@ func _ready() -> void:
 	view = DirigentView.new()
 	add_child(view)
 	view.offset_top = TOP_PAD
-	view.key_names = [UiTheme.key_short(Settings.orbit_key_inner), UiTheme.key_short(Settings.orbit_key_outer)]
+	view.key_names = [UiTheme.key_short(Settings.dirigent_key_a), UiTheme.key_short(Settings.dirigent_key_b)]
 	_overlay = Overlay.new()
 	(_overlay as Overlay).tut = self
 	view.add_child(_overlay)
@@ -302,7 +302,7 @@ static func _tick_stream() -> AudioStreamWAV:
 # ---------------------------------------------------------------------------
 
 func key_label(key: int) -> String:
-	return UiTheme.key_short(Settings.orbit_key_inner if key == 0 else Settings.orbit_key_outer)
+	return UiTheme.key_short(Settings.dirigent_key_a if key == 0 else Settings.dirigent_key_b)
 
 
 func title_for(s: int) -> String:
@@ -662,7 +662,7 @@ func handle_input(event: InputEvent) -> void:
 		_aim_at(event.position)
 		_press(key, 0, event.pressed)
 	elif event is InputEventKey and not event.echo:
-		var key := Settings.orbit_ring_for_key(event.keycode)
+		var key := Settings.dirigent_key_for(event.keycode)
 		if key >= 0:
 			_press(key, 1, event.pressed)
 			get_viewport().set_input_as_handled()
@@ -706,7 +706,7 @@ func _bot_move(u: Vector2) -> void:
 
 func _bot_key(key: int, down: bool) -> void:
 	var ev := InputEventKey.new()
-	ev.keycode = Settings.orbit_key_inner if key == 0 else Settings.orbit_key_outer
+	ev.keycode = Settings.dirigent_key_a if key == 0 else Settings.dirigent_key_b
 	ev.pressed = down
 	handle_input(ev)
 
@@ -753,7 +753,7 @@ func _show_result(completed: bool) -> void:
 	_bar.visible = false
 	_step_lbl.text = tr("Mini song")
 	_title_lbl.text = tr("Mini song done") if completed else tr("Mini song")
-	_body_lbl.text = tr("That was Dirigent. Change the keys in the settings under Orbit.")
+	_body_lbl.text = tr("That was Dirigent. Change the keys in the settings under Controls.")
 	_pip_row.visible = false
 	_feedback.text = ""
 	var box := VBoxContainer.new()
