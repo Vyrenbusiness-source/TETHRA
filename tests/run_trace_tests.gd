@@ -71,6 +71,8 @@ func _run() -> void:
 	_test_scoring_bot()
 	_test_replay()
 	_test_view_state()
+	_test_anti_mash()
+	_test_trace_keys()
 
 
 func _test_straight() -> void:
@@ -332,3 +334,63 @@ func _test_view_state() -> void:
 	_ok(v._gray.size() == 2 and v._frays.size() == 2, "Miss/Drop grau und ausgefranst")
 	_ok(not v._live.has(2), "Hold-Ende beendet Leuchten")
 	v.free()
+
+
+## Spielt Druecke [t, lane] durch die Trace-Regel; gibt {core, wrong} zurueck.
+func _play_rule(bm: Beatmap, presses: Array) -> Dictionary:
+	var core := ManiaCore.new()
+	core.setup(bm, -1.0, 1.0)
+	var wrong := []
+	for p in presses:
+		core.update(float(p[0]))
+		wrong.append_array(TraceRules.press(core, int(p[1]), float(p[0])))
+	core.update(20000.0)
+	return {"core": core, "wrong": wrong}
+
+
+func _test_anti_mash() -> void:
+	var bm := _beatmap(_obj(1000, 2) + _obj(2000, 0) + _obj(2000, 1) + _obj(3000, 3) + _obj(4000, 1))
+	# Mash aller 4 (Spalte 0 zuerst): Note 0 ist Miss, Kombo gebrochen.
+	var r := _play_rule(bm, [[1000, 0], [1000, 1], [1000, 2], [1000, 3]])
+	var c: ManiaCore = r.core
+	_ok(c.is_judged(0) and int(c.stats().n_miss) >= 1 and r.wrong.has(0), "Mash aller 4 = Miss (falscher Knick)")
+	# Richtig + gleichzeitig falsch: erst falsch, dann richtig = Miss.
+	r = _play_rule(bm, [[1000, 3], [1005, 2]])
+	_ok(r.wrong == [0] and (r.core as ManiaCore).max_combo == 0, "falsch vor richtig = Miss")
+	# Richtig allein = Treffer.
+	r = _play_rule(bm, [[1000, 2]])
+	_ok(r.wrong.is_empty() and (r.core as ManiaCore).max_combo == 1, "richtig = Treffer")
+	# Akkord richtig = Treffer.
+	r = _play_rule(bm, [[1000, 2], [2000, 0], [2001, 1]])
+	_ok(r.wrong.is_empty() and (r.core as ManiaCore).max_combo == 3, "Akkord richtig = Treffer")
+	# Akkord + Extra (Spalte 3) zuerst: beide Akkordnoten Miss.
+	r = _play_rule(bm, [[1000, 2], [2000, 3], [2002, 0], [2003, 1]])
+	_ok(r.wrong.size() == 2 and (r.core as ManiaCore).is_judged(1) and (r.core as ManiaCore).is_judged(2),
+			"Akkord + Extra = Miss")
+	_ok((r.core as ManiaCore).max_combo == 1, "Akkord + Extra: Kombo gebrochen")
+	# Akkord: erst eine Taste, dann Extra: restliche Akkordnote Miss.
+	r = _play_rule(bm, [[2000, 0], [2004, 3]])
+	_ok(r.wrong == [2], "Akkord: Extra nach halbem Akkord macht Rest zum Miss")
+	# Leer-Druck: nichts, auch kein Fenster (weit weg von jeder Note).
+	r = _play_rule(bm, [[500, 3], [1500, 0], [3500, 2]])
+	_ok(r.wrong.is_empty() and int((r.core as ManiaCore).stats().n_miss) == 5 - 0 and (r.core as ManiaCore).combo == 0,
+			"Leer-Druck veraendert nichts (nur ausbleibende Noten sind Miss)")
+	r = _play_rule(bm, [[500, 3], [1500, 0], [1000, 2]])
+	_ok(r.wrong.is_empty() and (r.core as ManiaCore).is_judged(0), "Leer-Druck: Note danach trotzdem treffbar")
+	# Bot spielt weiter SS.
+	var s := _play(bm, _bot_events(bm))
+	_ok(str(s.grade) == "SS", "Bot weiter SS")
+	# Deterministisch: gleiche Druecke, gleiche Wertung.
+	var a := _play_rule(bm, [[1000, 0], [1000, 2], [2001, 1], [2001, 3]])
+	var b := _play_rule(bm, [[1000, 0], [1000, 2], [2001, 1], [2001, 3]])
+	_ok(int((a.core as ManiaCore).score) == int((b.core as ManiaCore).score) and a.wrong == b.wrong, "Anti-Mash deterministisch")
+
+
+func _test_trace_keys() -> void:
+	var st: Node = load("res://scripts/settings.gd").new()
+	_ok(st.trace_keys == [KEY_LEFT, KEY_DOWN, KEY_UP, KEY_RIGHT], "Trace-Standard: Pfeiltasten")
+	_ok(st.trace_lane_for_key(KEY_UP) == 2 and st.trace_lane_for_key(KEY_D) == -1, "Trace-Tasten aus Settings.trace_keys")
+	st.trace_keys = [KEY_Q, KEY_W, KEY_E, KEY_R] as Array[int]
+	_ok(st.trace_lane_for_key(KEY_E) == 2 and st.trace_lane_for_key(KEY_UP) == -1, "geaenderte Trace-Tasten")
+	_ok(st.lane_for_key(KEY_D) == 0, "Mania-Tasten unberuehrt")
+	st.free()

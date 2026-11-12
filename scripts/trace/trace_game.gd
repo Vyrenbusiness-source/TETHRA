@@ -6,14 +6,13 @@ extends Control
 ## Szene: res://scenes/trace.tscn mit GameSession.osz_path/difficulty_version (nur 4K-Maps).
 ##
 ## Tasten: Settings.trace_keys (Standard Pfeile), Spalte 0-3 = links / runter / hoch / rechts.
-## Anti-Mash (Regeln 2): siehe trace_press(), Replay meta rules = 2.
+## Anti-Mash (Regeln 2): siehe TraceRules.press(), Replay meta rules = 2.
 ## CLI: --autoplay, --trace-map=<Teil des osz-Namens> [--trace-diff=<Version>]
 ## [--trace-dir=<Ordner>], --shot --shot-at=<ms|stream|hold|chord|hairpin|calm|end>
 ## --shot-out=<png>, --shot-results, --shot-pause, --mp-bot, --mp-cut=<s>, --mp-back=<s>.
 
 const MODE := "trace"
 const RULES := 2              ## Replay meta rules: 2 = mit Anti-Mash (falscher Knick)
-const CHORD_EPS := 2.0        ## ms: Noten so nah beieinander sind ein Akkord
 const MODS_PATH := "res://scripts/trace/trace_mods.gd"
 const SOUND_PATH := "res://scripts/trace/trace_sound.gd"
 const PICTURE_PATH := "res://scripts/trace/trace_picture.gd"
@@ -626,44 +625,8 @@ func _process(delta: float) -> void:
 
 ## Druck durch die Trace-Regel (Anti-Mash), dann ggf. ManiaCore.
 func _press(lane: int, t: float) -> void:
-	for idx in trace_press(core, lane, t):
+	for idx in TraceRules.press(core, lane, t):
 		_on_wrong_turn(int(idx))
-
-
-## Trace-Regel vor ManiaCore (deterministisch, replay-faehig). Druck in Spalte `lane` ohne
-## ungewertete Note im Miss-Fenster, waehrend eine andere Spalte eine ungewertete Note im
-## 50er-Fenster hat = falscher Knick: diese Note (Akkord: alle Akkordnoten) sofort Miss.
-## Druck ohne Note in irgendeinem Fenster = nichts. Gibt die verfehlten Noten-Indizes zurueck.
-static func trace_press(c: ManiaCore, lane: int, t: float) -> Array:
-	if lane < 0 or lane >= c.columns:
-		return []
-	if c.lane_busy(lane):
-		c.key_down(lane, t)
-		return []
-	var objs := c.beatmap.hit_objects
-	var own := c.pending_head(lane, t)
-	if own >= 0 and t - float(objs[own].time) >= -c.w_miss:
-		c.key_down(lane, t)
-		return []
-	var targets: Array = []
-	for col in c.columns:
-		if col == lane:
-			continue
-		var idx := c.pending_head(col, t)
-		if idx >= 0 and absf(t - float(objs[idx].time)) <= c.w50:
-			targets.append(idx)
-	if targets.is_empty():
-		c.key_down(lane, t)
-		return []
-	var t0 := 1.0e18
-	for idx in targets:
-		t0 = minf(t0, float(objs[idx].time))
-	var missed: Array = []
-	for idx in targets:
-		if float(objs[idx].time) <= t0 + CHORD_EPS:
-			c.miss_note(int(idx), "WRONG")
-			missed.append(idx)
-	return missed
 
 
 ## Falscher Knick: Ansicht ausfransen lassen, Text "WRONG TURN".

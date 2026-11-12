@@ -5,8 +5,23 @@ Nur osu!mania-4K-Maps (Notenfolge, Zeiten und Holds unveraendert, exakt im Takt)
 
 ## Regeln (verbindlich)
 - **Wertung = Mania 4K:** `ManiaCore` unveraendert (OD-Fenster, MAX/300/200/100/50/Miss,
-  ScoreV1, Holds wie osu!mania stable, Mods wie Mania). Spalte 0-3 = Mania-Tasten 1-4
-  (Settings, Standard D F J K). Sterne = Mania-Sterne der Map, keine pp.
+  ScoreV1, Holds wie osu!mania stable, Mods wie Mania). Spalte 0-3 = **eigene Trace-Tasten**
+  (`Settings.trace_keys`, Standard Pfeiltasten LINKS RUNTER HOCH RECHTS, Tasten-Seite der
+  Einstellungen, gleiche Konflikt-Pruefung wie andere Modi). Rebound nutzt weiter die
+  Mania-Tasten. Sterne = Mania-Sterne der Map, keine pp.
+- **Anti-Mash (Regeln 2, `scripts/trace/trace_rules.gd`):** duenne Schicht vor ManiaCore,
+  deterministisch und replay-faehig. Druck in einer Spalte ohne ungewertete Note im
+  Miss-Fenster, waehrend eine andere Spalte eine ungewertete Note im 50er-Fenster hat =
+  **falscher Knick**: diese Note (Akkord: alle Akkordnoten, Abstand <= 2 ms) sofort Miss,
+  Kombo bricht, Ansicht franst aus (`on_wrong_turn(idx)`), Text "WRONG TURN". Bei Akkorden
+  zaehlen nur Akkord-Spalten, jede weitere Spalte macht den (Rest-)Akkord zum Miss. Druck
+  ohne Note in irgendeinem Fenster = nichts. ManiaCore bekommt nur `miss_note`,
+  `pending_head`, `lane_busy` (Mania-Verhalten unveraendert). Replay meta `rules` = 2;
+  Replays mit rules 1 werden mit Hinweis abgelehnt.
+- **Hooks (nur wenn die Datei existiert):** `trace_mods.gd` (`map_column`, `from_session`,
+  Spalten der Noten vor Pfad und Wertung umbilden), `trace_sound.gd` (Node: `on_turn(col,
+  quality)`, `on_wrong()`, `on_hold(col, on)`), `trace_picture.gd` (`render(path, judgements,
+  size)`; Ergebnisdaten `trace_picture` = {path: TracePath, judgements: Array}).
 - **Faden:** Der Kopf bewegt sich mit konstantem Tempo `v` (Einstellung "Fadentempo", wie
   Scroll-Speed; nur Optik). Jede Note ist ein **Knick** an der Stelle, an der der Kopf zur
   Notenzeit ist. Neue Richtung absolut: Spalte 0 = links, 1 = runter, 2 = hoch, 3 = rechts
@@ -29,5 +44,6 @@ Nur osu!mania-4K-Maps (Notenfolge, Zeiten und Holds unveraendert, exakt im Takt)
   Mania, Online-Submit mode "trace" (Counts wie Mania), ScoreStore-Modus "trace".
 
 ## Code
-scripts/trace/ (trace_path.gd = Geometrie aus Notenliste, trace_view.gd, trace_game.gd),
+scripts/trace/ (trace_path.gd = Geometrie aus Notenliste, trace_view.gd, trace_game.gd,
+trace_rules.gd = Anti-Mash),
 scenes/trace.tscn, tests/run_trace_tests.gd.
