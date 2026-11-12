@@ -5,8 +5,8 @@ extends Control
 ## Logik: RallyChart/RallyCore, Darstellung: RallyView. Szene: res://scenes/rally.tscn
 ## mit GameSession.osz_path/difficulty_version.
 ##
-## Tasten: Taste A (tiefer Ball) / Taste B (hoher Ball) = Settings.orbit_key_inner/outer
-## (Z/X) oder Maus links/rechts. Beide zusammen = Schmetterball, halten = Aufladen.
+## Tasten: 4 Zonen = Mania-4K-Tasten (Settings.key_lanes, Standard D F J K). Zwei
+## Zonentasten zugleich = Schmetterball, halten = Aufladen. Regeln: docs/modes/rally.md.
 ## CLI: --autoplay, --auto-miss=<n>, --auto-jitter=<ms>, --auto-seed=<n>,
 ## --rally-map=<Teil des osz-Namens> [--rally-diff=<Version>], --shot
 ## --shot-at=<ms|lob|stream|smash|charge|hold> --shot-out=<png>, --shot-results
@@ -14,6 +14,9 @@ extends Control
 
 const MODE := "rally"
 const JUDGE_SCALE := 0.5
+const ZONE_COLS := [Color(0.52, 0.74, 0.92), Color(0.55, 0.85, 0.62), Color(0.95, 0.80, 0.35),
+	Color(0.95, 0.52, 0.30)]
+const SMASH_COL := Color(0.93, 0.90, 0.85)
 const GRADE_COLOR := {
 	"SS": Color(1.0, 0.92, 0.55), "S": Color(1.0, 0.85, 0.40), "A": Color(0.55, 0.85, 0.55),
 	"B": Color(0.50, 0.70, 0.95), "C": Color(0.75, 0.58, 0.95), "D": Color(0.90, 0.50, 0.45),
@@ -29,7 +32,8 @@ var _ended := false
 var _autoplay := false
 var _countdown_running := false
 var _song_len_ms := 1.0
-var _held := [[false, false], [false, false]]
+var _held := [[false, false], [false, false], [false, false], [false, false]]
+var _zones := 3
 var _view: RallyView
 var _hud: CanvasLayer
 var _bg_tex: TextureRect
@@ -75,6 +79,7 @@ func _ready() -> void:
 		return
 	_replay = GameSession.is_replay and GameSession.replay_mode == MODE \
 			and RallyCore.replay_ok(GameSession.replay_events)
+	var old_replay := GameSession.is_replay and not _replay
 	if GameSession.is_replay and not _replay:
 		GameSession.is_replay = false
 		GameSession.replay_events = []
@@ -108,11 +113,13 @@ func _ready() -> void:
 	_view = RallyView.new()
 	add_child(_view)
 	_view.setup(shots, core)
-	_view.key_labels = [UiTheme.key_short(Settings.orbit_key_inner), UiTheme.key_short(Settings.orbit_key_outer)]
+	_view.key_labels = _zone_labels()
 	_sound = RallySound.new()
 	add_child(_sound)
 	_build_hud()
 	_update_hud()
+	if old_replay:
+		_flash_hint(tr("Altes Replay (Rally v1) passt nicht zu den neuen Regeln"))
 	if Lobby.active and Lobby.in_game:
 		Lobby.skip_now.connect(_do_skip)
 	if not _use_audio:
@@ -154,13 +161,14 @@ func _load_beatmap() -> bool:
 	if _beatmap == null or _beatmap.hit_objects.is_empty() \
 			or not (_beatmap.is_mania() or _beatmap.mode() == 0):
 		return false
-	shots = RallyChart.build(_beatmap)
+	_zones = RallyCore.replay_zones(GameSession.replay_events) if (GameSession.is_replay and GameSession.replay_mode == MODE and RallyCore.replay_ok(GameSession.replay_events)) else Settings.rally_zones
+	shots = RallyChart.build(_beatmap, float(Settings.rally_flight_ms), _zones)
 	if shots.is_empty():
 		return false
 	var stream := OszImporter.load_audio_stream(GameSession.osz_path, _beatmap)
 	if stream != null:
 		var lead := _beatmap.audio_lead_in()
-		var need := RallyChart.SERVE_LEAD_MS + 900.0
+		var need := float(Settings.rally_flight_ms) + 900.0
 		if shots[0].t + lead < need:
 			lead = need - shots[0].t
 		SyncClock.play(stream, lead)
@@ -214,27 +222,8 @@ func _build_bg() -> void:
 	base.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(base)
 	var tex := OszImporter.load_background_texture(GameSession.osz_path, _beatmap)
-	var img: Image = tex.get_image() if tex != null else null
-	if img != null and not img.is_empty():
-		# Ruhiger Grund: Karten-Bild stark geblurrt und auf ~15 % Helligkeit.
-		img = img.duplicate() as Image
-		if img.is_compressed():
-			img.decompress()
-		img.convert(Image.FORMAT_RGBA8)
-		if img.get_width() > 960:
-			img.resize(960, int(960.0 * img.get_height() / img.get_width()), Image.INTERPOLATE_BILINEAR)
-		img.generate_mipmaps()
-		var rect := ColorRect.new()
-		rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		var mat := ShaderMaterial.new()
-		mat.shader = load("res://shaders/bg_blur.gdshader")
-		mat.set_shader_parameter("bg_tex", ImageTexture.create_from_image(img))
-		mat.set_shader_parameter("tex_size", Vector2(img.get_width(), img.get_height()))
-		mat.set_shader_parameter("opacity", 0.15)
-		mat.set_shader_parameter("blur_lod", 5.6)
-		rect.material = mat
-		add_child(rect)
+	if tex != null:
+		add_child(MapBackdrop.create(tex))
 	# Weiche Vignette: Mitte offen, Raender dunkel (Platz fuer die HUD-Werte).
 	var grad := Gradient.new()
 	grad.colors = PackedColorArray([Color(UiTheme.BG, 0.0), Color(UiTheme.BG, 0.0), Color(UiTheme.BG, 0.78)])
@@ -399,6 +388,15 @@ func _build_hud() -> void:
 	get_viewport().size_changed.connect(_place_hud)
 
 
+## Tastenbeschriftung der 4 Zonen (Mania-4K-Belegung).
+func _zone_labels() -> Array:
+	var out := []
+	var keys := Settings.rally_keys(_zones)
+	for k in _zones:
+		out.append(UiTheme.key_short(keys[k]))
+	return out
+
+
 func _build_legend() -> void:
 	var box := HBoxContainer.new()
 	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -406,10 +404,10 @@ func _build_legend() -> void:
 	box.alignment = BoxContainer.ALIGNMENT_CENTER
 	_legend = box
 	_hud.add_child(box)
+	var labels := _zone_labels()
 	var items := [
-		[RallyView.COL_A, tr("Tiefer Ball: Taste %s") % UiTheme.key_short(Settings.orbit_key_inner)],
-		[RallyView.COL_B, tr("Hoher Ball: Taste %s") % UiTheme.key_short(Settings.orbit_key_outer)],
-		[RallyView.COL_SMASH, tr("Weiß umrandet: beide Tasten")],
+		[ZONE_COLS[0], tr("Zone 1-4: Tasten %s") % " ".join(labels)],
+		[SMASH_COL, tr("Weiß umrandet: beide Zonentasten")],
 		[Color(0.78, 0.82, 0.92), tr("Gestrichelter Ring: halten, dann loslassen")],
 	]
 	for it in items:
@@ -465,21 +463,13 @@ func _flash_hint(text: String) -> void:
 func _input(event: InputEvent) -> void:
 	if _ended or _autoplay or _replay or core == null:
 		return
-	if event is InputEventMouseButton:
-		var key := -1
-		if event.button_index == MOUSE_BUTTON_LEFT:
-			key = 0
-		elif event.button_index == MOUSE_BUTTON_RIGHT:
-			key = 1
-		if key >= 0:
-			_press(key, 0, event.pressed)
-	elif event is InputEventKey and not event.echo:
-		var key := Settings.orbit_ring_for_key(event.keycode)
-		if key >= 0:
-			_press(key, 1, event.pressed)
+	if event is InputEventKey and not event.echo:
+		var zone := Settings.rally_zone_for_key(event.keycode, _zones)
+		if zone >= 0:
+			_press(zone, 1, event.pressed)
 
 
-## Taste A/B ueber eine Quelle (0 Maus, 1 Tastatur): der Core sieht nur den
+## Zonentaste ueber eine Quelle (0 Maus, 1 Tastatur): der Core sieht nur den
 ## Uebergang "keine Quelle" <-> "mindestens eine".
 func _press(key: int, source: int, down: bool) -> void:
 	if get_tree().paused or _countdown_running:
@@ -498,8 +488,9 @@ func _press(key: int, source: int, down: bool) -> void:
 
 
 func _sync_held_view() -> void:
-	for k in 2:
-		_view.held[k] = _held[k][0] or _held[k][1]
+	for k in RallyCore.ZONES:
+		if k < _view.held.size():
+			_view.held[k] = _held[k][0] or _held[k][1]
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -511,10 +502,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif not _countdown_running:
 			_toggle_pause(true)
 		return
-	if event.keycode == KEY_R and Settings.orbit_ring_for_key(KEY_R) == -1 and not Lobby.active:
+	if event.keycode == KEY_R and Settings.rally_zone_for_key(KEY_R, _zones) == -1 and not Lobby.active:
 		_restart()
 		return
-	if event.keycode == KEY_SPACE and not _ended and Settings.orbit_ring_for_key(KEY_SPACE) == -1 \
+	if event.keycode == KEY_SPACE and not _ended and Settings.rally_zone_for_key(KEY_SPACE, _zones) == -1 \
 			and _can_skip_intro():
 		if Lobby.active and Lobby.in_game:
 			Lobby.vote_skip()
@@ -523,12 +514,12 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _can_skip_intro() -> bool:
-	return not shots.is_empty() and shots[0].m - _time_ms() > 4000.0 and _use_audio
+	return not shots.is_empty() and shots[0].launch - _time_ms() > 4000.0 and _use_audio
 
 
 func _do_skip() -> void:
 	if _can_skip_intro():
-		SyncClock.seek_ms(shots[0].m - 2500.0)
+		SyncClock.seek_ms(shots[0].launch - 2500.0)
 
 
 # ---------------------------------------------------------------------------
@@ -560,7 +551,7 @@ func _process(delta: float) -> void:
 			_mp_send_cd = 0.25
 			Lobby.send_score(core.score, core.combo, core.accuracy())
 	if _legend != null and _legend.visible:
-		var lead := shots[0].m - t
+		var lead := shots[0].launch - t
 		_legend.modulate.a = clampf((lead + 1200.0) / 900.0, 0.0, 1.0) if t < shots[0].t else 0.0
 		if t > shots[0].t + 300.0:
 			_legend.visible = false
@@ -579,10 +570,11 @@ func _feed_plan(t: float) -> void:
 
 
 func _set_held_view(code: int) -> void:
-	if code >= RallyCore.EV_UP:
-		_view.held[clampi(code - RallyCore.EV_UP, 0, 1)] = false
-	elif code >= RallyCore.EV_DOWN:
-		_view.held[clampi(code - RallyCore.EV_DOWN, 0, 1)] = true
+	if code < RallyCore.EV_DOWN or code >= RallyCore.EV_RULES:
+		return
+	var z := (code - RallyCore.EV_UP) if code >= RallyCore.EV_UP else (code - RallyCore.EV_DOWN)
+	if z >= 0 and z < _view.held.size():
+		_view.held[z] = code < RallyCore.EV_UP
 
 
 func _feed_replay(t: float) -> void:
@@ -600,17 +592,16 @@ func _play_flight_sounds(t: float) -> void:
 	if _snd_t == -INF or t - _snd_t > 300.0 or t < _snd_t:
 		_snd_t = t
 		return
-	var j := RallyChart.first_at_or_after(shots, t - 600.0)
+	var j := RallyChart.first_at_or_after(shots, t - 600.0 - float(Settings.rally_flight_ms))
 	for k in range(maxi(j - 1, 0), mini(j + 4, shots.size())):
 		var s := shots[k]
 		var hit: bool = core.is_judged(k) and int(core.result_of(k).get("quality", 5)) != 5
-		if s.m > _snd_t and s.m <= t:
+		if s.launch > _snd_t and s.launch <= t:
 			_sound.play_opp()
-		var tb := RallyChart.bounce_me_time(shots, k)
+		var tb := s.launch + (s.t - s.launch) * 0.72
 		if tb > _snd_t and tb <= t:
 			_sound.play_bounce()
-		var to := RallyChart.bounce_opp_time(shots, k)
-		if hit and to > _snd_t and to <= t:
+		if hit and s.t + 300.0 > _snd_t and s.t + 300.0 <= t:
 			_sound.play_bounce()
 	_snd_t = t
 
@@ -676,7 +667,7 @@ func _on_shot_judged(index: int, result: Dictionary) -> void:
 		_sound.play_smash()
 		_smashes += 1
 	else:
-		_sound.play_hit(s.key, q)
+		_sound.play_hit(int(s.zones[0]), q)
 	var off: float = 0.0 if hold_end else float(result.get("dt", 0.0))
 	_judge_disp.show_judge(q, off)
 	if q != 5 and result.has("dt") and not hold_end:
@@ -690,7 +681,7 @@ func _on_shot_judged(index: int, result: Dictionary) -> void:
 
 func _on_charge_started(index: int, quality: int) -> void:
 	_view.on_charge(index)
-	_sound.play_hit(shots[index].key, quality)
+	_sound.play_hit(int(shots[index].zones[0]), quality)
 	_sound.start_charge()
 	var dt := float(core.result_of(index).get("dt", 0.0))
 	_judge_disp.show_judge(quality, dt)
@@ -700,7 +691,7 @@ func _on_charge_started(index: int, quality: int) -> void:
 
 func _on_press_ignored(_key: int, reason: String) -> void:
 	if reason == "KEY":
-		_flash_hint(tr("andere Taste"))
+		_flash_hint(tr("andere Zone"))
 
 
 # ---------------------------------------------------------------------------
@@ -736,7 +727,7 @@ func _toggle_pause(paused: bool) -> void:
 ## Beim Pausieren gehaltene Tasten sauber loslassen (kein haengendes Aufladen).
 func _release_all() -> void:
 	var t := _time_ms()
-	for k in 2:
+	for k in RallyCore.ZONES:
 		var was: bool = _held[k][0] or _held[k][1]
 		_held[k] = [false, false]
 		if was and not _autoplay and not _replay:
@@ -819,7 +810,7 @@ func _show_results(is_fail: bool) -> void:
 	s["unranked"] = false
 	s["pp"] = -1.0
 	s["mode"] = MODE
-	s["stars"] = RallyChart.stars(shots)
+	s["stars"] = RallyChart.stars(shots, _zones)
 	var new_best := false
 	if not _autoplay and not GameSession.is_replay and not GameSession.tutorial:
 		var save := ScoreStore.submit(GameSession.osz_path, _beatmap.version_name(), s, MODE)
@@ -870,7 +861,7 @@ func _result_log() -> Array:
 		if not core.is_judged(i):
 			continue
 		var sh := shots[i]
-		out.append(RallyResults.entry(sh.t, sh.key, sh.smash, sh.is_charge(), core.result_of(i)))
+		out.append(RallyResults.entry(sh.t, int(sh.zones[0]), sh.smash, sh.is_charge(), core.result_of(i)))
 	return out
 
 
@@ -880,7 +871,7 @@ func _save_replay(s: Dictionary) -> void:
 	RallyCore.save_replay(GameSession.osz_path, _beatmap.version_name(), core.replay_log, {
 		"score": int(s.score), "grade": str(s.grade), "accuracy": float(s.accuracy),
 		"date": Time.get_datetime_string_from_system(), "mods": GameSession.mods.duplicate(),
-		"end_ms": int(_last_update_t),
+		"end_ms": int(_last_update_t), "zones": _zones,
 	})
 
 
@@ -939,7 +930,7 @@ func _shot_target(v: String, def: float) -> float:
 			var gap := shots[j].t - shots[j - 1].end
 			if shots[j].t > 8000.0 and gap < RallyChart.BREAK_MS and gap > best:
 				best = gap
-				at = shots[j].m + (shots[j].t - shots[j].m) * 0.40
+				at = shots[j].launch + (shots[j].t - shots[j].launch) * 0.40
 		return at
 	if v == "stream":
 		var j0 := 0

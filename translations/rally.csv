@@ -24,3 +24,13 @@ SMASH,SCHMETTERBALL,SMASH
 Retry,Nochmal,Retry
 Watch replay,Replay ansehen,Watch replay
 Back,Zurück,Back
+ZONE,ZONE,ZONE
+ZONE 1,ZONE 1,ZONE 1
+ZONE 2,ZONE 2,ZONE 2
+ZONE 3,ZONE 3,ZONE 3
+ZONE 4,ZONE 4,ZONE 4
+CHARGE,AUFLADEN,CHARGE
+Zone 1-4: Tasten %s,Zone 1-4: Tasten %s,Zones 1-4: keys %s
+Weiß umrandet: beide Zonentasten,Weiß umrandet: beide Zonentasten,White ring: both zone keys
+andere Zone,andere Zone,other zone
+Altes Replay (Rally v1) passt nicht zu den neuen Regeln,Altes Replay (Rally v1) passt nicht zu den neuen Regeln,Old Rally v1 replay does not match the new rules
