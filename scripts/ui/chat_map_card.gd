@@ -6,12 +6,14 @@ extends PanelContainer
 ## Alle Aktionen laufen ueber das ChatOverlay (eine Vorschau gleichzeitig,
 ## ein Download-Weg); die Karte zeigt nur den Zustand und ruft zurueck.
 ##
-## Aufbau Map/Score (gleich hoch): Cover links (lokal aus der Map, sonst ueber die
-## Set-ID vom Mirror), Textspalte, bei Scores rechts Rang gross + Modus-Symbol.
+## Aufbau Map/Score (gleich hoch): oben Cover links (lokal aus der Map, sonst ueber die
+## Set-ID vom Mirror), Textspalte, bei Scores rechts Rang gross + Modus-Symbol;
+## darunter ueber die ganze Breite die Knopfzeile mit Hinweis.
 ## Nur Titelzeilen duerfen mit "…" gekuerzt werden; Werte stehen immer ganz da.
 
-const COVER := 84.0
-const CARD_H := 96.0
+const COVER := 74.0
+## Mindesthoehe Map- und Score-Karte (Cover + Knopfzeile + Raender), beide gleich hoch.
+const CARD_H := 120.0
 
 var kind := "map"
 var info: Dictionary = {}
@@ -149,10 +151,14 @@ func _build() -> void:
 	sb.content_margin_bottom = 6
 	sb.content_margin_right = 10
 	add_theme_stylebox_override("panel", sb)
-	custom_minimum_size = Vector2(0, CARD_H)
+	custom_minimum_size = Vector2(0, CARD_H if kind != "picture" else 0.0)
+	var outer := VBoxContainer.new()
+	outer.add_theme_constant_override("separation", 6)
+	add_child(outer)
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 10)
-	add_child(row)
+	row.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	outer.add_child(row)
 	var frame := PanelContainer.new()
 	frame.add_theme_stylebox_override("panel", UiTheme.solid_box(UiTheme.SURFACE, 6))
 	frame.custom_minimum_size = Vector2(COVER, COVER) if kind != "picture" else Vector2(156, 82)
@@ -181,7 +187,7 @@ func _build() -> void:
 	var col := VBoxContainer.new()
 	col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	col.alignment = BoxContainer.ALIGNMENT_CENTER
-	col.add_theme_constant_override("separation", 1)
+	col.add_theme_constant_override("separation", 0)
 	row.add_child(col)
 	_title = _label(14, UiTheme.TEXT)
 	_title.add_theme_font_override("font", UiTheme.heading_font(0))
@@ -201,12 +207,9 @@ func _build() -> void:
 	col.add_child(_who)
 	_extra = _label(12, UiTheme.ACCENT)
 	col.add_child(_extra)
-	var gap := Control.new()
-	gap.custom_minimum_size = Vector2(0, 3)
-	col.add_child(gap)
 	var btns := HBoxContainer.new()
 	btns.add_theme_constant_override("separation", 6)
-	col.add_child(btns)
+	outer.add_child(btns)
 	_btn_a = _button()
 	_btn_a.pressed.connect(_on_a)
 	btns.add_child(_btn_a)
@@ -224,7 +227,7 @@ func _build() -> void:
 	_bar.custom_minimum_size = Vector2(0, 3)
 	_bar.max_value = 1.0
 	_bar.visible = false
-	col.add_child(_bar)
+	outer.add_child(_bar)
 	# Score: Rang gross rechts, Modus-Symbol darunter.
 	_side = VBoxContainer.new()
 	_side.alignment = BoxContainer.ALIGNMENT_CENTER

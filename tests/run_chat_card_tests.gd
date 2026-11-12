@@ -153,6 +153,7 @@ func _make(kind: String, inf: Dictionary, ov: StubOverlay, sid: String = "") -> 
 
 
 func _layout() -> void:
+	TranslationServer.set_locale("en")
 	var ov := StubOverlay.new()
 	root.add_child(ov)
 	var map_card := _make("map", {"set_id": 1060425, "title": "Ending Theme", "artist": "Nanatsu no Taizai",
@@ -185,13 +186,18 @@ func _layout() -> void:
 		var col_r: float = c._extra.get_global_rect().end.x
 		_ok(col_r <= c._side.get_global_rect().position.x + 0.5, "%s: Werte ueberlappen den Rang nicht" % tag)
 		_ok(c._grade.text != "" and c._side.visible and c._badge_slot.get_child_count() == 1, "%s: Rang + Modus-Symbol" % tag)
-		_ok(c._btn_a.visible and c._btn_a.text == tr("Replay ansehen"), "%s: Replay-Knopf" % tag)
+		var rep := bool(c.info.get("has_replay", false))
+		_ok(c._btn_a.visible == rep and c._btn_a.text == c.tr("Replay ansehen"),
+			"%s: Replay-Knopf nur mit Replay (%s '%s')" % [tag, c._btn_a.visible, c._btn_a.text])
 		_ok(c._btn_a.disabled == not owned, "%s: Replay nur mit Map aktiv" % tag)
 		if owned:
-			_ok(c._btn_b.visible and c._btn_b.text == tr("Spielen"), "%s: Spielen" % tag)
+			_ok(c._btn_b.visible and c._btn_b.text == c.tr("Spielen"),
+				"%s: Spielen (%s '%s')" % [tag, c._btn_b.visible, c._btn_b.text])
 		else:
 			_ok(c._btn_b.visible and c._btn_b.text == ChatMapCard.tr2("Map herunterladen", "Download map"),
-				"%s: Map herunterladen" % tag)
+				"%s: Map herunterladen (%s '%s')" % [tag, c._btn_b.visible, c._btn_b.text])
+		var btn_r: float = c._btn_b.get_global_rect().end.x if c._btn_b.visible else c._btn_a.get_global_rect().end.x
+		_ok(btn_r <= c.get_global_rect().end.x - 6.0, "%s: Knoepfe in der Karte" % tag)
 		_ok(c._btn_b.text != tr("Herunterladen"), "%s: kein blosses Download" % tag)
 		_ok(c._cover_icon.texture != null, "%s: Cover-Platzhalter mit Modus-Symbol" % tag)
 	# Knopf-Aktionen
