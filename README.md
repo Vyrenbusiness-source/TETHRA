@@ -24,6 +24,11 @@
 </p>
 
 <p align="center">
+  <a href="docs/media/trailer.mp4"><img src="docs/media/trailer_thumb.webp" alt="TETHRA trailer: six modes, one game" width="100%"></a><br>
+  <sub><a href="docs/media/trailer.mp4"><b>▶ Watch the trailer</b></a> (79 s, all six modes)</sub>
+</p>
+
+<p align="center">
   <img src="docs/media/play_3d_hero.webp" alt="TETHRA in 3D: four lanes flying through a world that pulses with the beat" width="100%">
 </p>
 
