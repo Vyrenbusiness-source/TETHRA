@@ -20,9 +20,10 @@ extends Control
 ## (feine Pfeile wie osu!) zwischen aufeinanderfolgenden Zielen: blenden
 ## nacheinander ein und verschwinden von vorn, waehrend die Zeit vom einen zum
 ## naechsten Ziel laeuft. Ecken des Felds dezent markiert, im Kiai pulst ein
-## feiner Rahmen sehr leise im Beat. Halten: Band entlang des Pfads, Kugel und
+## feiner Rahmen sehr leise im Beat. Halten: schmales, transparentes Band entlang des Pfads, Kugel und
 ## Folgekreis. Treffer: Ring dehnt sich aus und blendet (HIT_MS) in Tastenfarbe,
-## aussen ein feiner Ring in Stufenfarbe; Miss: X blendet aus; Fehldruck: kurzes
+## aussen ein feiner Ring in Stufenfarbe; Miss: kleines X blendet kurz aus (nie
+## ueber dem naechsten Ziel); Fehldruck: kurzes
 ## Wort am Cursor. Cursor mit weicher kurzer Spur. Kein Glow, keine Partikel.
 
 ## Feld: Hoehe relativ zur Control-Hoehe, Seitenverhaeltnis 4:3.
@@ -32,6 +33,8 @@ const ASPECT := 4.0 / 3.0
 const ORBIT_K := 1.3
 ## Folgekreis beim Halten relativ zum Zielradius (OrbitCore.FOLLOW_RADIUS).
 const FOLLOW_K := 2.0
+## Halten-Band: Breite relativ zum Zielradius (schmaler als das Ziel, osu! 2,0).
+const BAND_K := 1.4
 ## Quadrat-Halbseite und Eckenradius relativ zum Zielradius.
 const SQUARE_K := 0.86
 const CORNER_K := 0.34
@@ -44,7 +47,7 @@ const FAR_ALPHA := 0.3
 const POP_IN_MS := 90.0
 const HIT_MS := 220.0
 const HIT_FLASH_MS := 70.0
-const MISS_MARK_MS := 420.0
+const MISS_MARK_MS := 260.0
 ## Cursor-Spur (Songzeit-ms) und ihre Deckkraft an der Spitze.
 const TRAIL_MS := 90.0
 const TRAIL_ALPHA := 0.26
@@ -330,13 +333,7 @@ func _draw() -> void:
 	var R := radius_px() * size_k
 	var pulse := _pulse()
 	_draw_marks()
-	# 1. Halten-Baender (spaete zuerst).
-	for j in range(vis.size() - 1, -1, -1):
-		var i := vis[j]
-		var n: OrbitNote = notes[i]
-		if n.is_hold and _state[i] in [ST_PENDING, ST_HOLD]:
-			_draw_band(n, R, _alpha_of(i, n, nxt_t, t))
-	# 2. Rang = Zahl frueherer offener Zeitpunkte.
+	# 1. Rang = Zahl frueherer offener Zeitpunkte.
 	var ranks := {}
 	var rank := -1
 	var last_t := -INF
@@ -348,21 +345,28 @@ func _draw() -> void:
 			rank += 1
 			last_t = tt
 		ranks[i] = rank
-	# 3. Folgepunkte zwischen aufeinanderfolgenden Zeitpunkten.
+	# 2. Folgepunkte zwischen aufeinanderfolgenden Zeitpunkten (unter allem).
 	_draw_follow(t, R, ranks)
-	# 4. Ziele (spaete zuerst, das naechste oben).
+	# 3. Objekte wie osu!: spaete zuerst, je Objekt Halten-Band und dann Ziel,
+	# so liegen spaetere Objekte (auch ihre Baender) unter frueheren und das
+	# naechste Ziel oben und frei. Laufende Halten: nur das Band.
 	for j in range(vis.size() - 1, -1, -1):
 		var i := vis[j]
+		var n: OrbitNote = notes[i]
+		if _state[i] == ST_HOLD:
+			_draw_band(n, R, 1.0)
+			continue
 		if _state[i] != ST_PENDING:
 			continue
 		var rk: int = ranks.get(i, 0)
 		if rk >= MAX_RANKS:
 			continue
-		var n: OrbitNote = notes[i]
 		var is_next := absf(float(n.time_ms) - nxt_t) <= CHORD_EPS_MS
 		var a := _alpha_of(i, n, nxt_t, t)
 		if rk >= RING_RANKS:
 			a = minf(a, FAR_ALPHA * clampf((t - float(n.spawn_ms)) / POP_IN_MS, 0.0, 1.0))
+		if n.is_hold:
+			_draw_band(n, R, a)
 		_draw_target(i, n, R, a, is_next, pulse, t, rk < RING_RANKS)
 	# 5. Laufende Halten: Kugel + Folgekreis.
 	for i in range(_first, notes.size()):
@@ -377,7 +381,7 @@ func _draw() -> void:
 			if float(notes[i].spawn_ms) > t:
 				break
 			continue
-		_draw_fx(i, notes[i], R, t)
+		_draw_fx(i, notes[i], R, t, nxt)
 	_draw_press(t, R)
 	# 7. Cursor.
 	if show_cursor:
@@ -590,16 +594,17 @@ func _draw_band(n: OrbitNote, R: float, alpha: float) -> void:
 		return
 	var pts := _band_points(n)
 	var col := key_col(n.key)
-	var w := R * 1.84
-	var edge := Color(col.lightened(0.25), 0.55 * alpha)
-	var body := Color(col.darkened(0.72), 0.85 * alpha)
+	var w := R * BAND_K
+	var rim := maxf(1.5, R * 0.05)
+	var edge := Color(col.lightened(0.3), 0.40 * alpha)
+	var body := Color(col.darkened(0.6), 0.42 * alpha)
 	draw_polyline(pts, edge, w, true)
 	draw_circle(pts[pts.size() - 1], w * 0.5, edge, true, -1.0, true)
-	draw_polyline(pts, body, w - maxf(3.0, R * 0.16), true)
-	draw_circle(pts[pts.size() - 1], (w - maxf(3.0, R * 0.16)) * 0.5, body, true, -1.0, true)
+	draw_polyline(pts, body, w - rim * 2.0, true)
+	draw_circle(pts[pts.size() - 1], w * 0.5 - rim, body, true, -1.0, true)
 	# Ende: kleiner Ring.
-	draw_arc(pts[pts.size() - 1], R * 0.5, 0.0, TAU, 40, Color(col.lightened(0.5), 0.8 * alpha),
-			maxf(1.5, R * 0.08), true)
+	draw_arc(pts[pts.size() - 1], R * 0.36, 0.0, TAU, 40, Color(col.lightened(0.5), 0.7 * alpha),
+			maxf(1.5, R * 0.06), true)
 
 
 ## Folgepunkte wie osu!: feine Pfeile zwischen aufeinanderfolgenden
@@ -677,11 +682,11 @@ func _draw_ball(i: int, n: OrbitNote, R: float, t: float) -> void:
 	var fr := R * FOLLOW_K
 	var fcol := Color(1, 1, 1, 0.55).lerp(Color(WARN_COL, 0.9), warn)
 	draw_arc(bp, fr, 0.0, TAU, 72, fcol, maxf(1.6, R * 0.07), true)
-	draw_circle(bp, R * 0.7, Color(col.darkened(0.15), 1.0), true, -1.0, true)
-	draw_arc(bp, R * 0.7, 0.0, TAU, 48, Color(1, 1, 1, 0.95), maxf(2.0, R * 0.11), true)
+	draw_circle(bp, R * 0.6, Color(col.darkened(0.15), 1.0), true, -1.0, true)
+	draw_arc(bp, R * 0.6, 0.0, TAU, 48, Color(1, 1, 1, 0.95), maxf(2.0, R * 0.11), true)
 
 
-func _draw_fx(i: int, n: OrbitNote, R: float, t: float) -> void:
+func _draw_fx(i: int, n: OrbitNote, R: float, t: float, nxt: int = -1) -> void:
 	var st := _state[i]
 	var dt := t - _state_t[i]
 	if dt < 0.0:
@@ -715,10 +720,13 @@ func _draw_fx(i: int, n: OrbitNote, R: float, t: float) -> void:
 			if dt >= MISS_MARK_MS:
 				return
 			var p := field_to_screen(n.pos_at(_state_t[i]) if st == ST_DROP else n.pos)
-			var a := clampf(dt / 40.0, 0.0, 1.0) * (1.0 - smoothstep(MISS_MARK_MS * 0.35, MISS_MARK_MS, dt))
-			var h := R * 0.4
-			var col := Color(MISS_X_COL, 0.9 * a)
-			var w := maxf(2.0, R * 0.11)
+			# Nie ueber dem naechsten Ziel (samt Orbit-Ring).
+			if nxt >= 0 and p.distance_to(field_to_screen(notes[nxt].pos)) < R * (ORBIT_K + 0.3):
+				return
+			var a := clampf(dt / 30.0, 0.0, 1.0) * (1.0 - smoothstep(MISS_MARK_MS * 0.3, MISS_MARK_MS, dt))
+			var h := R * 0.22
+			var col := Color(MISS_X_COL, 0.85 * a)
+			var w := maxf(1.8, R * 0.07)
 			draw_line(p - Vector2(h, h), p + Vector2(h, h), col, w, true)
 			draw_line(p - Vector2(h, -h), p + Vector2(h, -h), col, w, true)
 
