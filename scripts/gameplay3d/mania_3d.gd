@@ -4720,6 +4720,17 @@ func _capture_after_first_note() -> void:
 		target = _beat_ceil(shot_at) - lead
 		if target - _time_ms() > 4000.0:
 			SyncClock.seek_ms(target - 3000.0)
+		# Trailer-Aufnahme (--movie-len=<s>, nur Debug): Film ab Sprungpunkt
+		# (Songzeit exakt = shot_at - 2500), kein Spielverhalten.
+		for ma in OS.get_cmdline_args():
+			if ma.begins_with("--movie-len="):
+				SyncClock.seek_ms(shot_at - 2500.0)
+				if OS.get_cmdline_args().has("--nohud"):
+					_hud.visible = false
+				print("MOVIE_START frame=%d t=%.2f" % [Engine.get_process_frames(), _time_ms()])
+				await get_tree().create_timer(ma.trim_prefix("--movie-len=").to_float(), true).timeout
+				get_tree().quit(0)
+				return
 	if rev_t >= 0.0:
 		core.no_fail = true
 		target = rev_t - lead
