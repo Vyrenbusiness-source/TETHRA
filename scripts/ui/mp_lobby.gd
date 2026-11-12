@@ -476,6 +476,15 @@ static var _mpo_stage := 0
 ## Orbit-Raum + Orbit-Turnier mit zwei Prozessen (tools/mp_orbit_smoke.sh).
 ## Stufe 0: Raum, Modus Orbit, Map, bereit, Start. 1: Ergebnisse, Turnier
 ## (4 Maps, je 1 Ban). 2/3: Turnierrunden. Jede Zeile beginnt mit "MPORBIT".
+## Smoke: erste [Set, Schwierigkeit] ab Set from, deren Map-Modus zum Spielmodus passt; [] = keine.
+func _mpo_fit(sets: Array, pmode: String, from: int) -> Array:
+	for k in range(from, sets.size()):
+		for d in sets[k].difficulty_count():
+			if Tournament.map_mode_ok(pmode, int(sets[k].meta_at(d).get("mode", 0))):
+				return [k, d]
+	return []
+
+
 func _mp_orbit(host: bool) -> void:
 	var tag := "HOST" if host else "CLIENT"
 	# --mp-mode=<orbit|rally|dirigent|trace|rebound> (Standard orbit): Raum-Modus der Smoke-Runde.
@@ -529,7 +538,12 @@ func _mp_orbit(host: bool) -> void:
 			step.call("players synced: %d crown=%d me=%d" % [Lobby.players.size(), Lobby.crown_id, me])
 			if host:
 				Lobby.set_play_mode(pmode)
-				_pick(sets[0], 0)
+				# Erste Schwierigkeit, die zum Raum-Modus passt (trace/rebound: nur Mania 4K).
+				var pk := _mpo_fit(sets, pmode, 0)
+				if pk.is_empty():
+					fail.call("keine Map fuer Modus %s" % pmode)
+					return
+				_pick(sets[pk[0]], pk[1])
 				step.call("picked '%s' mode=%s" % [str(Lobby.sel_map.get("title", "")), Lobby.play_mode])
 			elif not await wait_for.call(func(): return Lobby.play_mode == pmode and not Lobby.sel_map.is_empty(), 20.0):
 				fail.call("mode/map sync")
@@ -561,6 +575,8 @@ func _mp_orbit(host: bool) -> void:
 					if added >= 2:
 						break
 					var data := Tournament.local_data(sets[k], d)
+					if not Tournament.map_mode_ok(Lobby.play_mode, int(data.get("map_mode", 0))):
+						continue
 					if Lobby.tournament.pool.any(func(m): return Tournament._key(m) == Tournament._key(data)):
 						continue
 					var n_before := Lobby.tournament.pool.size()

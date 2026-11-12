@@ -838,7 +838,9 @@ func _build_buttons(group: Control) -> void:
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bar.add_child(spacer)
-	bar.add_child(_button("⤓  Clip speichern", false, clip_pressed.emit))
+	# Clip-Export gibt es nur fuer Mania (mania_3d) und Orbit; andere Modi ohne Knopf.
+	if score_mode() in ["", ScoreStore.MODE_ORBIT]:
+		bar.add_child(_button("⤓  Clip speichern", false, clip_pressed.emit))
 	if not is_replay and not lobby:
 		bar.add_child(ScoreShare.make_button(GameSession.osz_path, GameSession.difficulty_version,
 			int(_stats.get("score", 0)), score_mode(), "",
