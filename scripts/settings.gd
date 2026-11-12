@@ -77,6 +77,11 @@ const RALLY_FLIGHT_MIN := 450
 const RALLY_FLIGHT_MAX := 1400
 const RALLY_FLIGHT_DEFAULT := 800
 var rally_flight_ms: int = RALLY_FLIGHT_DEFAULT
+## Rally: 3 oder 4 Zonen (Standard 3). 4 Zonen nutzen die Mania-4K-Tasten (key_lanes),
+## 3 Zonen eigene Tasten (links / Mitte / rechts).
+const RALLY_ZONES_DEFAULT := 3
+var rally_zones: int = RALLY_ZONES_DEFAULT
+var rally_keys_3: Array[int] = [KEY_F, KEY_J, KEY_K]
 ## Orbit-Hintergrund: 0 = Welt (3D-Welt wie im 3D-Modus, Auswahl world_theme;
 ## ohne Welten-Paket automatisch Map-Bild), 1 = Map-Bild (abgedunkelt, bg_dim),
 ## 2 = Aus (schwarz). CLI: --orbit-bg=world|map|off.
@@ -482,6 +487,10 @@ func load_settings(path: String = PATH) -> void:
 	key_hook2 = int(cfg.get_value("keys", "hook2", KEY_X))
 	for i in 4:
 		key_lanes[i] = int(cfg.get_value("keys", "lane%d" % i, key_lanes[i]))
+	var rk3 := [KEY_F, KEY_J, KEY_K]
+	for i in 3:
+		rally_keys_3[i] = int(cfg.get_value("keys", "rally3_%d" % i, rk3[i]))
+	rally_zones = 4 if int(cfg.get_value("game", "rally_zones", RALLY_ZONES_DEFAULT)) == 4 else 3
 	orbit_key_inner = int(cfg.get_value("keys", "orbit_inner", KEY_Z))
 	orbit_key_outer = int(cfg.get_value("keys", "orbit_outer", KEY_X))
 	orbit_guides = bool(cfg.get_value("game", "orbit_guides", true))
@@ -550,6 +559,9 @@ func save(path: String = PATH) -> void:
 	cfg.set_value("keys", "hook2", key_hook2)
 	for i in 4:
 		cfg.set_value("keys", "lane%d" % i, key_lanes[i])
+	for i in 3:
+		cfg.set_value("keys", "rally3_%d" % i, rally_keys_3[i])
+	cfg.set_value("game", "rally_zones", rally_zones)
 	cfg.set_value("keys", "orbit_inner", orbit_key_inner)
 	cfg.set_value("keys", "orbit_outer", orbit_key_outer)
 	cfg.set_value("game", "orbit_guides", orbit_guides)
@@ -1148,6 +1160,24 @@ func orbit_ring_for_key(keycode: int) -> int:
 		return 0
 	if keycode == orbit_key_outer:
 		return 1
+	return -1
+
+
+## Rally: Tasten der Zonen (n = 3 oder 4, -1 = Einstellung).
+func rally_keys(n: int = -1) -> Array[int]:
+	if n < 0:
+		n = rally_zones
+	if n == 4:
+		return key_lanes
+	return rally_keys_3
+
+
+## Rally: Zone (0..n-1) fuer eine Taste, -1 wenn keine.
+func rally_zone_for_key(keycode: int, n: int = -1) -> int:
+	var keys := rally_keys(n)
+	for i in keys.size():
+		if keys[i] == keycode:
+			return i
 	return -1
 
 

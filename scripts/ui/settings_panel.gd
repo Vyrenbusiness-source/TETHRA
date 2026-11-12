@@ -45,6 +45,7 @@ const PAGE_DEFS := {
 }
 const PAGE_ORDER := ["field3d", "field2d", "look2d", "orbit", "notes", "audio", "gfx", "keys", "profile"]
 const CAP_ORBIT := 20
+const CAP_RALLY := 30   ## 30..32 = Rally-Tasten (3 Zonen)
 
 var _mode := MODE_3D
 var _cur := ""
@@ -87,6 +88,7 @@ var _safe_hint: Label
 
 var _capturing := 0   # 0 = keine Aufnahme, 3..6 = Spur 1-4, 20/21 = Orbit innen/aussen
 var _lane_btns: Array[Button] = []
+var _rally_btns: Array[Button] = []
 var _orbit_btns: Array[Button] = []   ## je zwei (innen, aussen) pro Ort, in dieser Reihenfolge
 
 ## Test-Harnesses (z.B. note_color_click_harness) lesen _panel.get("_note_colors") und
@@ -840,6 +842,20 @@ func _page_keys(pg: VBoxContainer) -> void:
 		_refresh_labels())
 	_hint_label(g, "Anklicken, dann Taste drücken (Esc bricht ab)")
 	g = _group(pg, "Rally")
+	_choice(g, "Rally: Zonen", ["3 Zonen", "4 Zonen"],
+		func(s): return 1 if s.rally_zones == 4 else 0,
+		func(i): Settings.rally_zones = 4 if i == 1 else 3,
+		"3 Zonen: links, Mitte, rechts (eigene Tasten). 4 Zonen: die Mania-4K-Tasten")
+	var rally_row := HBoxContainer.new()
+	rally_row.add_theme_constant_override("separation", 6)
+	for i in 3:
+		var rb := _key_button(CAP_RALLY + i)
+		rally_row.add_child(rb)
+		_rally_btns.append(rb)
+	var rr := _row(g, "Rally-Tasten (3 Zonen)", rally_row, "Links, Mitte, rechts. Bei 4 Zonen gelten die Mania-Tasten 1–4. Anklicken, dann Taste drücken (Esc bricht ab)")
+	rr.set_meta("reset", func():
+		Settings.rally_keys_3 = _defaults.rally_keys_3.duplicate()
+		_refresh_labels())
 	_slider(g, "Rally: Flugzeit", Settings.RALLY_FLIGHT_MIN, Settings.RALLY_FLIGHT_MAX, 50.0,
 		func(s): return s.rally_flight_ms,
 		func(v): Settings.rally_flight_ms = clampi(int(v), Settings.RALLY_FLIGHT_MIN, Settings.RALLY_FLIGHT_MAX),
@@ -1695,6 +1711,8 @@ func _refresh_labels() -> void:
 		_lane_btns[i].text = UiTheme.key_short(Settings.key_lanes[i])
 		if _capturing == 3 + i:
 			_lane_btns[i].text = "…"
+	for i in _rally_btns.size():
+		_rally_btns[i].text = "…" if _capturing == CAP_RALLY + i else UiTheme.key_short(Settings.rally_keys_3[i])
 	for k in _orbit_btns.size():
 		var r := k % 2
 		var code := Settings.orbit_key_outer if r == 1 else Settings.orbit_key_inner
@@ -1718,7 +1736,13 @@ func _start_capture(which: int) -> void:
 func _input(event: InputEvent) -> void:
 	if not (event is InputEventKey and event.pressed and not event.echo):
 		return
-	if _capturing >= CAP_ORBIT:
+	if _capturing >= CAP_RALLY:
+		if event.keycode != KEY_ESCAPE:
+			Settings.rally_keys_3[clampi(_capturing - CAP_RALLY, 0, 2)] = event.keycode
+		_capturing = 0
+		_refresh_labels()
+		get_viewport().set_input_as_handled()
+	elif _capturing >= CAP_ORBIT:
 		if event.keycode != KEY_ESCAPE:
 			if _capturing == CAP_ORBIT:
 				Settings.orbit_key_inner = event.keycode
@@ -1877,6 +1901,7 @@ func _rebuild() -> void:
 	_nav_btns.clear()
 	_mode_btns.clear()
 	_lane_btns.clear()
+	_rally_btns.clear()
 	_orbit_btns.clear()
 	_cover_rows.clear()
 	_cur = ""

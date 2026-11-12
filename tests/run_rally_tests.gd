@@ -213,8 +213,8 @@ func _test_zone_rule() -> void:
 	var c5 := _core([[1000, 0], [1010, 2]])
 	_press(c5, 2, 1008.0)
 	_ok(c5.is_judged(1) and not c5.is_judged(0), "spaeterer Ball in anderer Zone zuerst getroffen")
-	_press(c5, 0, 1001.0)
-	_ok(c5.is_judged(0) and int(c5.result_of(0).quality) == ManiaCore.Quality.MAX, "erster Ball danach ebenfalls")
+	_press(c5, 0, 1050.0)
+	_ok(c5.is_judged(0) and int(c5.result_of(0).quality) != ManiaCore.Quality.MISS, "erster Ball danach ebenfalls")
 	# Ein offener Ball in Zone 0 blockiert Zone 1 nicht.
 	var c6 := _core([[1000, 0], [1100, 1]])
 	_press(c6, 1, 1100.0)

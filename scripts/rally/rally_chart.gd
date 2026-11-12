@@ -68,7 +68,16 @@ static func hit_y(key: int) -> float:
 # Aufbau aus der Map
 # ---------------------------------------------------------------------------
 
-static func build(beatmap: Beatmap, flight_ms: float = -1.0) -> Array[Shot]:
+## Zonenzahl des zuletzt gebauten Charts (3 oder 4); die Ansicht liest sie hier.
+static var _zones := 4
+
+
+static func zone_count() -> int:
+	return _zones
+
+
+static func build(beatmap: Beatmap, flight_ms: float = -1.0, zones: int = 4) -> Array[Shot]:
+	_zones = 3 if zones == 3 else 4
 	var out: Array[Shot] = []
 	if beatmap == null or beatmap.hit_objects.is_empty():
 		return out
@@ -106,16 +115,23 @@ static func finalize_flight(shots: Array[Shot], flight_ms: float) -> void:
 		s.launch = s.t - flight_ms
 
 
-## Zone (0..3) aus Mania-Spalte (4K: direkt, sonst auf 4 gestreckt).
-static func zone_of_column(column: int, columns: int) -> int:
+## Zone aus Mania-Spalte. 4 Zonen: 4K direkt, sonst gestreckt. 3 Zonen: bei 4K
+## Spalte 0 links, 1+2 Mitte, 3 rechts; sonst gestreckt.
+static func zone_of_column(column: int, columns: int, n: int = -1) -> int:
+	if n < 0:
+		n = _zones
 	if columns <= 1:
 		return 0
-	return clampi(int(floor(float(column) * 4.0 / float(columns))), 0, 3)
+	if n == 3 and columns == 4:
+		return [0, 1, 1, 2][clampi(column, 0, 3)]
+	return clampi(int(floor(float(column) * float(n) / float(columns))), 0, n - 1)
 
 
-## Zone (0..3) aus osu!standard-Feld-x (0..512): 4 Streifen.
-static func zone_of_x(x: float) -> int:
-	return clampi(int(floor(x / 128.0)), 0, 3)
+## Zone aus osu!standard-Feld-x (0..512): 4 Streifen (128) bzw. 3 Streifen (171 / 341).
+static func zone_of_x(x: float, n: int = -1) -> int:
+	if n < 0:
+		n = _zones
+	return clampi(int(floor(x * float(n) / 512.0)), 0, n - 1)
 
 
 ## Rohliste [t, end, zone, unused, src] aus Mania- oder Standard-Objekten.
@@ -324,9 +340,11 @@ static func zone_center(s: Shot) -> float:
 
 ## Sterne: je 2-s-Fenster Last (Baelle/s; Zonenspruenge, Streams, Schmetterbaelle und
 ## Aufladen zaehlen extra), die haertesten Fenster zaehlen am meisten.
-static func stars(shots: Array[Shot]) -> float:
+static func stars(shots: Array[Shot], zones: int = -1) -> float:
 	if shots.size() < 2:
 		return 0.0
+	# Zonenabstand auf 4 Zonen normieren (3 Zonen haben kuerzere Spruenge).
+	var jump_k := 3.0 / float(maxi((zones if zones > 0 else _zones) - 1, 1))
 	var t0 := shots[0].t
 	var t_end := shots[-1].end
 	var n_win := maxi(1, int(ceil((t_end - t0) / STAR_HOP_MS)))
@@ -341,7 +359,7 @@ static func stars(shots: Array[Shot]) -> float:
 		var c := zone_center(s)
 		var gap := s.t - last_t
 		if last_c >= 0.0 and gap < STAR_JUMP_GAP_MS:
-			x += STAR_JUMP_W * absf(c - last_c)
+			x += STAR_JUMP_W * jump_k * absf(c - last_c)
 		if last_c >= 0.0 and gap < STAR_STREAM_GAP_MS:
 			x += STAR_STREAM_W
 		if s.smash:
