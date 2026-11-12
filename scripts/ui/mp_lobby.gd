@@ -2245,8 +2245,8 @@ func _versus_path(m: Dictionary) -> Dictionary:
 		return _versus_src[key]
 	var out := {}
 	var osz := Lobby.resolve_local_path(m)
-	var imp := OszImporter.import(osz) if osz != "" else null
-	if imp != null and imp.ok:
+	var imp: Dictionary = OszImporter.import(osz) if osz != "" else {}
+	if bool(imp.get("ok", false)):
 		var bm: Beatmap = null
 		for d in imp.difficulties:
 			var b: Beatmap = d.beatmap
