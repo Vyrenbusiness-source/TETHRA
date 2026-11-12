@@ -72,6 +72,11 @@ var orbit_cursor_size: int = 100
 var orbit_music: int = 1
 ## Tasten-Beschriftung in der naechsten Note: 0 = auto (leichte Maps, Tutorial), 1 = an, 2 = aus.
 var orbit_key_hint: int = 0
+## Rally: Flugzeit eines Balls vom Gegnerschlag bis zur Schlaegerlinie (ms, 450-1400).
+const RALLY_FLIGHT_MIN := 450
+const RALLY_FLIGHT_MAX := 1400
+const RALLY_FLIGHT_DEFAULT := 800
+var rally_flight_ms: int = RALLY_FLIGHT_DEFAULT
 ## Orbit-Hintergrund: 0 = Welt (3D-Welt wie im 3D-Modus, Auswahl world_theme;
 ## ohne Welten-Paket automatisch Map-Bild), 1 = Map-Bild (abgedunkelt, bg_dim),
 ## 2 = Aus (schwarz). CLI: --orbit-bg=world|map|off.
@@ -483,6 +488,8 @@ func load_settings(path: String = PATH) -> void:
 	orbit_target_size = clampi(int(cfg.get_value("game", "orbit_target_size", 100)), 90, 120)
 	orbit_cursor_size = clampi(int(cfg.get_value("game", "orbit_cursor_size", 100)), 50, 150)
 	orbit_key_hint = clampi(int(cfg.get_value("game", "orbit_key_hint", 0)), 0, 2)
+	rally_flight_ms = clampi(int(cfg.get_value("game", "rally_flight_ms", RALLY_FLIGHT_DEFAULT)),
+			RALLY_FLIGHT_MIN, RALLY_FLIGHT_MAX)
 	orbit_background = clampi(int(cfg.get_value("game", "orbit_background", ORBIT_BG_WORLD)), ORBIT_BG_WORLD, ORBIT_BG_OFF)
 	_legacy_mania_scroll = float(cfg.get_value("game", "mania_scroll_legacy", -1.0))
 	if cfg.has_section_key("game", "scroll_speed"):
@@ -547,6 +554,7 @@ func save(path: String = PATH) -> void:
 	cfg.set_value("game", "orbit_target_size", orbit_target_size)
 	cfg.set_value("game", "orbit_cursor_size", orbit_cursor_size)
 	cfg.set_value("game", "orbit_key_hint", orbit_key_hint)
+	cfg.set_value("game", "rally_flight_ms", rally_flight_ms)
 	cfg.set_value("game", "orbit_background", orbit_background)
 	cfg.set_value("game", "scroll_speed", scroll_speed)
 	# Abgeleiteter Faktor fuer aeltere Versionen; Originalwert bleibt separat.

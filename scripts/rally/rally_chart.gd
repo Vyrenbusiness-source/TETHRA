@@ -42,7 +42,7 @@ const F_BOUNCE_ME := 0.72
 class Shot extends RefCounted:
 	var t := 0.0            ## Notenzeit (Schlag / Druck)
 	var end := 0.0          ## Loslassen (== t bei normalem Schlag)
-	var key := 0            ## 0 = A (tief), 1 = B (hoch)
+	var key := 0            ## nur Altlast (alte Flugbahn): 0 = linke, 1 = rechte Haelfte
 	var smash := false      ## Schmetterball: beide Tasten
 	var serve := false      ## Ball erscheint beim Gegner neu (Start/Pause)
 	var m := 0.0            ## Zeit des Gegnerschlags vor diesem Schlag
@@ -66,7 +66,7 @@ static func hit_y(key: int) -> float:
 # Aufbau aus der Map
 # ---------------------------------------------------------------------------
 
-static func build(beatmap: Beatmap) -> Array[Shot]:
+static func build(beatmap: Beatmap, flight_ms: float = -1.0) -> Array[Shot]:
 	var out: Array[Shot] = []
 	if beatmap == null or beatmap.hit_objects.is_empty():
 		return out
@@ -85,10 +85,38 @@ static func build(beatmap: Beatmap) -> Array[Shot]:
 			continue
 		out.append(s)
 	finalize(out)
+	if flight_ms <= 0.0:
+		flight_ms = float(Settings.rally_flight_ms)
+	finalize_flight(out, flight_ms)
 	return out
 
 
-## Rohliste [t, end, key, finish, src] aus Mania- oder Standard-Objekten.
+## Flug-Geometrie (launch/arc/curve) macht RallyFlight (Ansicht-Agent); fehlt die
+## Klasse, gilt nur launch = t - flight_ms.
+static func finalize_flight(shots: Array[Shot], flight_ms: float) -> void:
+	var path := "res://scripts/rally/rally_flight.gd"
+	if ResourceLoader.exists(path):
+		var scr = load(path)
+		if scr != null and scr.has_method("finalize"):
+			scr.call("finalize", shots, flight_ms)
+			return
+	for s in shots:
+		s.launch = s.t - flight_ms
+
+
+## Zone (0..3) aus Mania-Spalte (4K: direkt, sonst auf 4 gestreckt).
+static func zone_of_column(column: int, columns: int) -> int:
+	if columns <= 1:
+		return 0
+	return clampi(int(floor(float(column) * 4.0 / float(columns))), 0, 3)
+
+
+## Zone (0..3) aus osu!standard-Feld-x (0..512): 4 Streifen.
+static func zone_of_x(x: float) -> int:
+	return clampi(int(floor(x / 128.0)), 0, 3)
+
+
+## Rohliste [t, end, zone, unused, src] aus Mania- oder Standard-Objekten.
 static func _raw_events(beatmap: Beatmap) -> Array:
 	var list: Array = []
 	var k := maxi(beatmap.column_count(), 1)
@@ -98,13 +126,12 @@ static func _raw_events(beatmap: Beatmap) -> Array:
 			var end := 0.0
 			if o.is_hold and o.end_time() - o.time >= MIN_CHARGE_MS:
 				end = minf(o.end_time(), o.time + MAX_CHARGE_MS)
-			list.append([o.time, end, 0 if o.column * 2 < k else 1, false, i])
+			list.append([o.time, end, zone_of_column(o.column, k), false, i])
 		else:
-			var hs: int = o.hit_sound
 			var end := 0.0
 			if o.kind != HitObject.Kind.CIRCLE and o.end_time() - o.time >= MIN_CHARGE_MS:
 				end = minf(o.end_time(), o.time + MAX_CHARGE_MS)
-			list.append([o.time, end, 1 if (hs & 10) != 0 else 0, (hs & 4) != 0, i])
+			list.append([o.time, end, zone_of_x(o.x), false, i])
 	list.sort_custom(func(a, b):
 		if a[0] != b[0]:
 			return a[0] < b[0]
@@ -122,27 +149,32 @@ static func _group(list: Array) -> Array:
 	return groups
 
 
+## Gruppe -> Schlag: lange Note = Aufladen (Zone der laengsten), sonst >= 2 Zonen =
+## Schmetterball (aeusserste 2), sonst normaler Ball.
 static func _shot_of(g: Array) -> Shot:
 	var s := Shot.new()
 	s.t = float(g[0])
 	s.end = s.t
-	var keys := [false, false]
-	var finish := false
+	var zmin := 3
+	var zmax := 0
 	var best_end := 0.0
-	var charge_key := 0
+	var charge_zone := 0
 	s.src = int(g[1][0][4])
 	for e in g[1]:
-		keys[int(e[2])] = true
-		finish = finish or bool(e[3])
+		zmin = mini(zmin, int(e[2]))
+		zmax = maxi(zmax, int(e[2]))
 		if float(e[1]) > best_end:
 			best_end = float(e[1])
-			charge_key = int(e[2])
+			charge_zone = int(e[2])
 	if best_end > s.t:
 		s.end = best_end
-		s.key = charge_key
+		s.zones = PackedInt32Array([charge_zone])
+	elif zmax > zmin:
+		s.smash = true
+		s.zones = PackedInt32Array([zmin, zmax])
 	else:
-		s.key = 0 if keys[0] else 1
-		s.smash = (keys[0] and keys[1]) or finish
+		s.zones = PackedInt32Array([zmin])
+	s.key = 0 if s.zones[0] < 2 else 1   # Altlast: alte Flugbahn-Funktionen
 	return s
 
 

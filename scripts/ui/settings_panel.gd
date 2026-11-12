@@ -826,6 +826,12 @@ func _page_keys(pg: VBoxContainer) -> void:
 		Settings.key_lanes = _defaults.key_lanes.duplicate()
 		_refresh_labels())
 	_hint_label(g, "Anklicken, dann Taste drücken (Esc bricht ab)")
+	g = _group(pg, "Rally")
+	_slider(g, "Rally: Flugzeit", Settings.RALLY_FLIGHT_MIN, Settings.RALLY_FLIGHT_MAX, 50.0,
+		func(s): return s.rally_flight_ms,
+		func(v): Settings.rally_flight_ms = clampi(int(v), Settings.RALLY_FLIGHT_MIN, Settings.RALLY_FLIGHT_MAX),
+		func(v): return "%d ms" % int(v),
+		"Rally: Zeit vom Gegnerschlag bis zur Schlägerlinie. Länger = mehr Bälle gleichzeitig lesbar")
 	g = _group(pg, "Orbit")
 	_orbit_key_row(g)
 	_hint_label(g, "Akzent = beide Tasten zugleich. Maus links = A, Maus rechts = B gelten immer zusätzlich.")
