@@ -67,6 +67,21 @@ const PRESS_MS := 560.0
 const LOCK_MS := 170.0
 const MAX_PRESS := 6
 const CHORD_EPS_MS := 2.0
+## Klarheit (docs/modes/orbit_clarity.md):
+## Stapel = spaeteres offenes Ziel naeher als STACK_K x Radius am selben Ort; es
+## wird als versetzte "Karte" (STACK_OFF x Radius je Lage) hinter dem vorderen
+## gezeigt, das vordere traegt die Zahl.
+const STACK_K := 0.9
+const STACK_OFF := 0.16
+## Neustart: erstes Ziel nach einer Luecke >= BREAK_MS (oder nach der Pause:
+## Songzeit stand RESUME_REAL_MS Echtzeit still) bekommt einen Countdown-Ring.
+const BREAK_MS := 2500.0
+const RESUME_REAL_MS := 350
+## Halten: "folgen" in den ersten FOLLOW_TIP_MS des Haltens (und bei Warnung).
+const FOLLOW_TIP_MS := 900.0
+## Erst-Hinweis (Akzent/Halten/Stapel, einmal je Sitzung): Hoechstdauer.
+const HINT_MS := 2600.0
+const HINT_COL := Color(0.92, 0.94, 1.0)
 
 ## Farben (auch von OrbitResults/OrbitTutorial genutzt: INNER = A, OUTER = B).
 const A_COL := Color(0.38, 0.74, 1.0)
@@ -119,6 +134,18 @@ var hold_warn: Dictionary = {}
 ## Zielgroesse (Settings.orbit_target_size / 100, nur Anzeige) und Cursorgroesse.
 var size_k := 1.0
 var cursor_k := 1.0
+## Settings.orbit_key_hint (0 auto, 1 an, 2 aus; -1 = ohne Settings, dann gilt
+## key_hint). Nicht "aus": das naechste Ziel traegt immer seinen Buchstaben und
+## Erst-Hinweise erscheinen.
+var hint_mode := -1
+
+## Erst-Hinweise je Sitzung (Prozess): Art -> schon gezeigt.
+static var _seen_hints: Dictionary = {}
+var _hint: Array = []  # [Text, Note-Index, t0]
+var _last_t := -INF
+var _last_t_real := 0
+var _resume_t := -INF
+var _resume_idx := -1
 
 var _state := PackedInt32Array()
 var _state_t := PackedFloat64Array()
@@ -142,6 +169,19 @@ func _ready() -> void:
 	if get_parent() is Control:
 		set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_build_shapes()
+	var s := get_node_or_null("/root/Settings")
+	if s != null and hint_mode < 0:
+		hint_mode = int(s.get("orbit_key_hint"))
+
+
+## Buchstabe im naechsten Ziel (immer, ausser Einstellung "aus").
+func letters_on() -> bool:
+	return key_hint if hint_mode < 0 else hint_mode != 2
+
+
+## Erst-Hinweise (gleiche Einstellung; ohne Settings wie key_hint).
+func hints_on() -> bool:
+	return letters_on()
 
 
 func setup(p_notes: Array) -> void:
@@ -161,6 +201,10 @@ func setup(p_notes: Array) -> void:
 	_lock_t = -INF
 	_lock_idx = -1
 	hold_warn = {}
+	_hint = []
+	_last_t = -INF
+	_resume_t = -INF
+	_resume_idx = -1
 	queue_redraw()
 
 
@@ -347,6 +391,27 @@ func _draw() -> void:
 			rank += 1
 			last_t = tt
 		ranks[i] = rank
+	# Stapel: spaetere offene Ziele am Ort eines frueheren (anderer Zeitpunkt).
+	var cover := {}    # verdecktes Ziel -> Lage (1, 2, ...)
+	var stack_n := {}  # vorderes Ziel -> Zahl der Ziele dort (inkl. sich)
+	for a_i in vis.size():
+		var i := vis[a_i]
+		if not ranks.has(i) or int(ranks[i]) >= MAX_RANKS:
+			continue
+		var pi := field_to_screen(notes[i].pos)
+		for b_i in a_i:
+			var j := vis[b_i]
+			if not ranks.has(j) or cover.has(j):
+				continue
+			if float(notes[i].time_ms) - float(notes[j].time_ms) <= CHORD_EPS_MS:
+				continue
+			if pi.distance_to(field_to_screen(notes[j].pos)) < R * STACK_K:
+				var cnt: int = stack_n.get(j, 1) + 1
+				stack_n[j] = cnt
+				cover[i] = cnt - 1
+				break
+	_track_resume(t, nxt)
+	_update_hint(t, vis, ranks, stack_n)
 	# 2. Folgepunkte zwischen aufeinanderfolgenden Zeitpunkten (unter allem).
 	_draw_follow(t, R, ranks)
 	# 3. Objekte wie osu!: spaete zuerst, je Objekt Halten-Band und dann Ziel,
@@ -368,8 +433,18 @@ func _draw() -> void:
 		if rk >= RING_RANKS:
 			a = minf(a, FAR_ALPHA * clampf((t - float(n.spawn_ms)) / POP_IN_MS, 0.0, 1.0))
 		if n.is_hold:
-			_draw_band(n, R, a)
+			_draw_band(n, R, a, rk < RING_RANKS)
+		if cover.has(i):
+			# Verdeckt im Stapel: versetzte Karte ohne eigenen Ring/Satelliten.
+			var off := Vector2(1.0, 1.0) * R * STACK_OFF * float(cover[i])
+			_draw_body(field_to_screen(n.pos) + off, R * _pop_scale(n, t), n.key,
+					maxf(a, 0.5 * clampf((t - float(n.spawn_ms)) / POP_IN_MS, 0.0, 1.0)), false)
+			continue
 		_draw_target(i, n, R, a, is_next, pulse, t, rk < RING_RANKS)
+		if rk < RING_RANKS and int(stack_n.get(i, 1)) >= 2:
+			_draw_stack_count(field_to_screen(n.pos), R, int(stack_n[i]), a)
+		if is_next and i == nxt and _is_restart(nxt):
+			_draw_countdown(nxt, n, R, t)
 	# 5. Laufende Halten: Kugel + Folgekreis.
 	for i in range(_first, notes.size()):
 		if float(notes[i].spawn_ms) > t:
@@ -385,6 +460,7 @@ func _draw() -> void:
 			continue
 		_draw_fx(i, notes[i], R, t, nxt)
 	_draw_press(t, R)
+	_draw_hint(t, R, vis, ranks)
 	# 7. Cursor.
 	if show_cursor:
 		_draw_cursor(R)
@@ -448,21 +524,22 @@ func _draw_target(i: int, n: OrbitNote, R: float, alpha: float, is_next: bool,
 	draw_line(c + Vector2(0, -ring_r + mh), c + Vector2(0, -ring_r - mh), mk, lw * 2.2, true)
 	# Ziel.
 	_draw_body(c, r, n.key, alpha, is_next)
-	if is_next and key_hint:
+	if is_next and letters_on():
 		_draw_key_label(c, r, n.key, alpha)
 	if sa <= 0.0:
 		return
-	# Pips: verbleibende Runden, eine Reihe direkt unter dem Ziel (im Ring).
+	# Pips: verbleibende Runden ("noch 2 Runden"), gut sichtbar zwischen Ziel
+	# und Ring, hell mit dunklem Rand.
 	var left := n.laps_left(t)
 	if left > 0:
-		var pr := maxf(2.5, R * 0.1)
-		var gap := pr * 3.0
-		var y := c.y + r + (ring_r - r) * 0.42
+		var pr := maxf(3.2, R * 0.12)
+		var gap := pr * 2.7
+		var y := c.y + (r + ring_r) * 0.5 + pr * 0.15
 		var x0 := c.x - gap * float(left - 1) * 0.5
 		for k in left:
 			var pp := Vector2(x0 + gap * k, y)
-			draw_circle(pp, pr + 1.0, Color(0, 0, 0, 0.5 * sa), true, -1.0, true)
-			draw_circle(pp, pr, Color(0.78, 0.8, 0.86, 0.9 * sa), true, -1.0, true)
+			draw_circle(pp, pr + maxf(1.2, R * 0.035), Color(0, 0, 0, 0.6 * sa), true, -1.0, true)
+			draw_circle(pp, pr, Color(0.96, 0.97, 1.0, (0.95 if is_next else 0.8) * sa), true, -1.0, true)
 	# Satellit: heller Punkt mit kurzer Spur entlang des Rings.
 	var ar := deg_to_rad(deg)
 	var trail := deg_to_rad(42.0)
@@ -514,6 +591,11 @@ func _draw_body(c: Vector2, r: float, key: int, alpha: float, strong: bool) -> v
 			_fill_grad(c + Vector2(r * 0.4, 0.0), r, pb, B_COL.darkened(dark), alpha)
 			draw_arc(c, r + 0.75, 0.0, TAU, 64, edge, 1.5, true)
 			draw_arc(c, r - rim_w * 0.6, 0.0, TAU, 64, Color(1, 1, 1, alpha), rim_w * 1.2, true)
+			# Doppelrand: zweiter feiner Ring aussen = "beide Tasten".
+			var r2 := r + rim_w * 1.5
+			draw_arc(c, r2 + 1.0, 0.0, TAU, 64, edge, maxf(1.2, rim_w * 0.6) + 2.0, true)
+			draw_arc(c, r2, 0.0, TAU, 64, Color(1, 1, 1, (0.95 if strong else 0.7) * alpha),
+					maxf(1.2, rim_w * 0.6), true)
 		_:
 			var pts := PackedVector2Array()
 			for p in _disk:
@@ -553,14 +635,163 @@ func _draw_key_label(c: Vector2, r: float, key: int, alpha: float) -> void:
 	var f := get_theme_default_font()
 	if f == null:
 		return
-	var text := key_labels[0] + key_labels[1] if key == OrbitNote.KEY_ACCENT \
-			else key_labels[clampi(key, 0, 1)]
+	if key == OrbitNote.KEY_ACCENT:
+		# Beide Buchstaben getrennt, je einer auf seiner Farbhaelfte.
+		var fs2 := maxi(10, int(r * (0.56 if maxi(key_labels[0].length(), key_labels[1].length()) <= 1 else 0.36)))
+		for k in 2:
+			var tx: String = key_labels[k]
+			var sz2 := f.get_string_size(tx, HORIZONTAL_ALIGNMENT_LEFT, -1, fs2)
+			var cx := c.x + r * (0.42 if k == 1 else -0.42)
+			var p2 := Vector2(cx - sz2.x * 0.5, c.y + (f.get_ascent(fs2) - f.get_descent(fs2)) * 0.5)
+			draw_string_outline(f, p2, tx, HORIZONTAL_ALIGNMENT_LEFT, -1, fs2, maxi(2, int(fs2 * 0.14)),
+					Color(0, 0, 0, 0.45 * alpha))
+			draw_string(f, p2, tx, HORIZONTAL_ALIGNMENT_LEFT, -1, fs2, Color(1, 1, 1, alpha))
+		return
+	var text := key_labels[clampi(key, 0, 1)]
 	var fs := maxi(10, int(r * (0.78 if text.length() <= 1 else 0.52)))
 	var sz := f.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
 	var p := c + Vector2(-sz.x * 0.5, (f.get_ascent(fs) - f.get_descent(fs)) * 0.5)
 	draw_string_outline(f, p, text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, maxi(2, int(fs * 0.14)),
 			Color(0, 0, 0, 0.45 * alpha))
 	draw_string(f, p, text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(1, 1, 1, alpha))
+
+
+## Stapel: kleine Zahl unten rechts ausserhalb des Orbit-Rings ("x2" = hier
+## kommen 2 Treffer nacheinander).
+func _draw_stack_count(c: Vector2, R: float, cnt: int, alpha: float) -> void:
+	var f := get_theme_default_font()
+	if f == null or alpha <= 0.0:
+		return
+	var fs := maxi(11, int(R * 0.42))
+	var text := "×%d" % cnt
+	var sz := f.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
+	var at := c + Vector2(1.0, 1.0).normalized() * R * (ORBIT_K + 0.5)
+	var p := at + Vector2(-sz.x * 0.5, (f.get_ascent(fs) - f.get_descent(fs)) * 0.5)
+	var a := minf(1.0, alpha * 1.4)
+	draw_string_outline(f, p, text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, maxi(3, int(fs * 0.3)), Color(0, 0, 0, 0.6 * a))
+	draw_string(f, p, text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(1, 1, 1, 0.92 * a))
+
+
+## Pause erkennen: Songzeit stand laenger still (Pausenmenue/Intro) und laeuft
+## wieder -> das dann naechste Ziel ist ein Neustart.
+func _track_resume(t: float, nxt: int) -> void:
+	var now := Time.get_ticks_msec()
+	if t == _last_t:
+		return
+	if _last_t > -INF and t > _last_t and now - _last_t_real > RESUME_REAL_MS:
+		_resume_t = t
+		_resume_idx = nxt
+	_last_t = t
+	_last_t_real = now
+
+
+## Erstes Ziel nach Songanfang, Luecke >= BREAK_MS oder Pause.
+func _is_restart(i: int) -> bool:
+	if i < 0 or i >= notes.size():
+		return false
+	if i == _resume_idx and _resume_t > -INF:
+		return true
+	if i == 0:
+		return true
+	return float(notes[i].time_ms) - float(notes[i - 1].end_ms) >= BREAK_MS
+
+
+## Countdown-Ring: aeusserer Bogen, leert sich von oben bis zum Treffer.
+func _draw_countdown(i: int, n: OrbitNote, R: float, t: float) -> void:
+	var start := float(n.spawn_ms)
+	if i == _resume_idx and _resume_t > start:
+		start = _resume_t
+	var total := maxf(float(n.time_ms) - start, 1.0)
+	var rest := clampf((float(n.time_ms) - t) / total, 0.0, 1.0)
+	if rest <= 0.0 or t < start:
+		return
+	var c := field_to_screen(n.pos)
+	var rr := R * _pop_scale(n, t) * ORBIT_K + R * 0.3
+	var w := maxf(2.0, R * 0.08)
+	draw_arc(c, rr, 0.0, TAU, 80, Color(1, 1, 1, 0.1), w, true)
+	draw_arc(c, rr, -PI * 0.5, -PI * 0.5 + TAU * rest, maxi(8, int(80.0 * rest)), Color(1, 1, 1, 0.7), w, true)
+
+
+## Erst-Begegnung: erstes Akzent-/Halten-/Stapel-Ziel der Sitzung (sichtbar mit
+## Ring) bekommt einmal einen kleinen Text daneben.
+func _update_hint(t: float, vis: Array[int], ranks: Dictionary, stack_n: Dictionary) -> void:
+	if not _hint.is_empty() or not hints_on():
+		return
+	for i in vis:
+		if not ranks.has(i) or int(ranks[i]) >= RING_RANKS:
+			continue
+		var n: OrbitNote = notes[i]
+		var kind := ""
+		var text := ""
+		if n.key == OrbitNote.KEY_ACCENT and not _seen_hints.has("accent"):
+			kind = "accent"
+			text = tr("beide Tasten: %s + %s") % [key_labels[0], key_labels[1]]
+		elif n.is_hold and not _seen_hints.has("hold"):
+			kind = "hold"
+			text = tr("halten und der Kugel folgen")
+		elif int(stack_n.get(i, 1)) >= 2 and not _seen_hints.has("stack"):
+			kind = "stack"
+			text = tr("%d Treffer hier nacheinander") % int(stack_n[i])
+		if kind != "":
+			_seen_hints[kind] = true
+			_hint = [text, i, t]
+			return
+
+
+func _draw_hint(t: float, R: float, vis: Array[int], ranks: Dictionary) -> void:
+	if _hint.is_empty():
+		return
+	var i: int = _hint[1]
+	var t0: float = _hint[2]
+	if i >= notes.size() or t < t0:
+		_hint = []
+		return
+	var st := _state[i]
+	var end := t0 + HINT_MS
+	if st != ST_PENDING and st != ST_HOLD:
+		end = minf(end, _state_t[i] + 250.0)
+	if t >= end:
+		_hint = []
+		return
+	var f := get_theme_default_font()
+	if f == null:
+		return
+	var a := clampf((t - t0) / 150.0, 0.0, 1.0) * (1.0 - smoothstep(end - 300.0, end, t))
+	var n: OrbitNote = notes[i]
+	var c := field_to_screen(n.pos_at(t) if st == ST_HOLD else n.pos)
+	var text: String = _hint[0]
+	var fs := maxi(12, int(R * 0.36))
+	var sz := f.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
+	var asc := f.get_ascent(fs)
+	var gap := R * ((FOLLOW_K + 0.3) if st == ST_HOLD else (ORBIT_K + 0.45))
+	# Freie Seite suchen: unten, oben, rechts, links (Rechteck = Textbox).
+	var cands := [
+		Rect2(c + Vector2(-sz.x * 0.5, gap), sz),
+		Rect2(c + Vector2(-sz.x * 0.5, -gap - sz.y), sz),
+		Rect2(c + Vector2(gap, -sz.y * 0.5), sz),
+		Rect2(c + Vector2(-gap - sz.x, -sz.y * 0.5), sz),
+	]
+	var view := Rect2(Vector2.ZERO, size).grow(-4.0)
+	for rc: Rect2 in cands:
+		if not view.encloses(rc):
+			continue
+		var free := true
+		for j in vis:
+			if j == i or not ranks.has(j) or int(ranks[j]) >= MAX_RANKS:
+				continue
+			var pj := field_to_screen(notes[j].pos)
+			var rr := R * (ORBIT_K + 0.1 if int(ranks[j]) < RING_RANKS else 1.05)
+			var q := Vector2(clampf(pj.x, rc.position.x, rc.end.x), clampf(pj.y, rc.position.y, rc.end.y))
+			if q.distance_to(pj) < rr:
+				free = false
+				break
+		if not free:
+			continue
+		var p := rc.position + Vector2(0.0, asc)
+		draw_string_outline(f, p, text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, maxi(3, int(fs * 0.32)),
+				Color(0, 0, 0, 0.6 * a))
+		draw_string(f, p, text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(HINT_COL, 0.92 * a))
+		return
 
 
 ## Ecken des 4:3-Felds: kurze, dezente Winkel.
@@ -591,9 +822,77 @@ func _band_points(n: OrbitNote) -> PackedVector2Array:
 	return pts
 
 
-func _draw_band(n: OrbitNote, R: float, alpha: float) -> void:
+## Punkt und Richtung bei Bogenlaenge s (Pixel) entlang pts.
+static func _along(pts: PackedVector2Array, s: float) -> Array:
+	var acc := 0.0
+	for k in range(1, pts.size()):
+		var seg := pts[k - 1].distance_to(pts[k])
+		if seg <= 0.0:
+			continue
+		var dir := (pts[k] - pts[k - 1]) / seg
+		if acc + seg >= s or k == pts.size() - 1:
+			return [pts[k - 1] + dir * clampf(s - acc, 0.0, seg), dir]
+		acc += seg
+	return [pts[0], Vector2.RIGHT]
+
+
+static func _path_len(pts: PackedVector2Array) -> float:
+	var l := 0.0
+	for k in range(1, pts.size()):
+		l += pts[k - 1].distance_to(pts[k])
+	return l
+
+
+func _draw_band(n: OrbitNote, R: float, alpha: float, detail: bool = false) -> void:
 	if alpha <= 0.0 or n.path.size() < 2:
 		return
+	_draw_band_body(n, R, alpha)
+	if detail:
+		_draw_band_detail(n, R, alpha)
+
+
+## Halten schon beim Erscheinen erkennbar: feine Pfeile in Laufrichtung auf dem
+## Band und ein kleines "HOLD" (auf dem Band, bei kurzen Baendern hinter dem Ende).
+func _draw_band_detail(n: OrbitNote, R: float, alpha: float) -> void:
+	var pts := _band_points(n)
+	var total := _path_len(pts)
+	var a := minf(1.0, alpha * 1.6)
+	var col := key_col(n.key).lightened(0.7)
+	var head := R * (ORBIT_K + 0.25)
+	var tail := R * 0.45
+	var free := total - head - tail
+	var long := free > R * 2.4
+	var w := maxf(1.4, R * 0.05)
+	var s := maxf(R * 0.2, 5.0)
+	var fr: Array = [0.22, 0.82] if long else [0.5]
+	if free > R * 0.6:
+		for u in fr:
+			var q: Array = _along(pts, head + free * float(u))
+			var m: Vector2 = q[0]
+			var dir: Vector2 = q[1]
+			var nrm := Vector2(-dir.y, dir.x)
+			var tip := m + dir * s * 0.5
+			draw_polyline(PackedVector2Array([tip - dir * s + nrm * s * 0.7, tip, tip - dir * s - nrm * s * 0.7]),
+					Color(col, 0.75 * a), w, true)
+	var f := get_theme_default_font()
+	if f == null:
+		return
+	var fs := maxi(10, int(R * 0.3))
+	var text := "HOLD"
+	var sz := f.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
+	var at: Vector2
+	if long:
+		at = _along(pts, head + free * 0.52)[0]
+	else:
+		var q2: Array = _along(pts, total)
+		at = (q2[0] as Vector2) + (q2[1] as Vector2) * (R * BAND_K * 0.5 + sz.x * 0.5 + R * 0.2)
+	var p := at + Vector2(-sz.x * 0.5, (f.get_ascent(fs) - f.get_descent(fs)) * 0.5)
+	draw_string_outline(f, p, text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, maxi(3, int(fs * 0.3)),
+			Color(0, 0, 0, 0.55 * a))
+	draw_string(f, p, text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(col, 0.9 * a))
+
+
+func _draw_band_body(n: OrbitNote, R: float, alpha: float) -> void:
 	var pts := _band_points(n)
 	var col := key_col(n.key)
 	var w := R * BAND_K
@@ -684,8 +983,31 @@ func _draw_ball(i: int, n: OrbitNote, R: float, t: float) -> void:
 	var fr := R * FOLLOW_K
 	var fcol := Color(1, 1, 1, 0.55).lerp(Color(WARN_COL, 0.9), warn)
 	draw_arc(bp, fr, 0.0, TAU, 72, fcol, maxf(1.6, R * 0.07), true)
+	# Restzeit: heller Bogen auf dem Folgekreis, leert sich bis zum Ende.
+	var dur := maxf(float(n.end_ms) - float(n.time_ms), 1.0)
+	var rest := clampf((float(n.end_ms) - t) / dur, 0.0, 1.0)
+	if rest > 0.01:
+		draw_arc(bp, fr, -PI * 0.5, -PI * 0.5 + TAU * rest, maxi(8, int(72.0 * rest)),
+				Color(1, 1, 1, 0.9).lerp(Color(WARN_COL, 0.95), warn), maxf(2.4, R * 0.12), true)
 	draw_circle(bp, R * 0.6, Color(col.darkened(0.15), 1.0), true, -1.0, true)
 	draw_arc(bp, R * 0.6, 0.0, TAU, 48, Color(1, 1, 1, 0.95), maxf(2.0, R * 0.11), true)
+	# "folgen": kurz zu Beginn des Haltens und wenn die Kugel wegzulaufen droht.
+	var since := t - _state_t[i]
+	var ta := maxf(1.0 - smoothstep(FOLLOW_TIP_MS * 0.6, FOLLOW_TIP_MS, since), warn)
+	# Erst-Hinweis an diesem Ball sagt schon "folgen": nicht doppelt beschriften.
+	if not _hint.is_empty() and int(_hint[1]) == i and warn < 0.02:
+		ta = 0.0
+	if ta > 0.02:
+		var f := get_theme_default_font()
+		if f != null:
+			var fs := maxi(10, int(R * 0.36))
+			var text := tr("folgen")
+			var sz := f.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
+			var p := bp + Vector2(-sz.x * 0.5, -fr - R * 0.22)
+			draw_string_outline(f, p, text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, maxi(3, int(fs * 0.3)),
+					Color(0, 0, 0, 0.6 * ta))
+			draw_string(f, p, text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs,
+					Color(1, 1, 1, 0.9 * ta).lerp(Color(WARN_COL.lightened(0.3), ta), warn))
 
 
 func _draw_fx(i: int, n: OrbitNote, R: float, t: float, nxt: int = -1) -> void:
