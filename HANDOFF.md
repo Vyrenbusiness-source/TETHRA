@@ -173,3 +173,9 @@ Offen, in dieser Reihenfolge nach dem Neustart:
 4. warmd-Fix offen (Repo Desktop/warmd, Branch fix/runner-fail-reason, ungeprueft): FAIL-runner-Zeile mit Exit-Code/Timeout-Grund, Runner-Timeout unter Last; Anlass: tests/run_mastering_tests.gd faellt im Gate nach "ALL OK" zufaellig durch.
 5. Daily-Trace-Texte noch deutsch als Quelle (sollten englisch sein), FEHLKNICKE in Live-Leiste uebersetzen.
 6. Dann Release v1.28.0 (Server: trace/rebound Regeln, Orbit v4, Daily-Text docs/server_daily.md, Relay neu).
+
+## Stand 2026-11-12 nachts (v1.28.0 released, PC danach heruntergefahren)
+Released: Trace ausgebaut (eigene Pfeiltasten, Wrong turn, Bild der Runde, Mods MR/HD/SS, TraceStars, QA, Clips, Versus, Daily Trace), Anti-Mash in Rebound/Rally/Orbit/Dirigent, Orbit Regeln v4 (osu!std-Fenster, langsamerer Satellit, laps_eff) + Klarheit (HOLD, Stapel x2/x3, Countdown, Kombo blendet aus), Rebound Hold-Baelle gold, Browser mit Modus-Sternen, Chat-Score-Karte neu, Trailer (docs/media/trailer.mp4, tools/make_trailer.sh, Release-Asset TETHRA_Trailer.mp4).
+Server: min_version 1.28.0, Orbit/Trace-Scores < 1.28.0 raus, Relay neu, Daily-Vorschlag (docs/server_daily.md).
+Offen/Ideen: Orbit-Pips-Aenderung durch laps_eff (weniger Runden) vom Nutzer bestaetigen lassen; Orbit-Accent-Screenshot nie mit Zielen erwischt; Rally/Orbit/Dirigent-HUD ohne --nohud im Trailer; Lizenzdatei fuers Repo fehlt (nicht "open source" schreiben).
+warmd v0.4.48 (~/.local/bin; in alten Shells `export PATH="$HOME/.local/bin:$PATH"`).
