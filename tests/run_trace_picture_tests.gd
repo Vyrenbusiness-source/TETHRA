@@ -68,6 +68,14 @@ func _initialize() -> void:
 	_ok(p != "" and FileAccess.file_exists(p), "PNG gespeichert")
 	_ok(TracePicture.recent(12, dir).has(p), "Galerie listet das Bild")
 	_ok(TracePicture.recent(0, dir).is_empty(), "Galerie n=0 leer")
+	# Chat-Karte "picture": lokale Vorschau, Hinweis, ohne Overlay kein Absturz.
+	var card := ChatMapCard.new()
+	root.add_child(card)
+	card.setup("picture", {"set_id": 1, "title": "T", "artist": "A", "version": "Hard", "stars": 3.2,
+		"md5": "abc"}, null, p)
+	_ok(card.kind == "picture" and card._cover.texture != null, "Bildkarte zeigt lokale Vorschau")
+	_ok(card._status.text != "" and card._btn_a.visible, "Bildkarte: Hinweis und Vergroessern-Knopf")
+	card.queue_free()
 	DirAccess.remove_absolute(p)
 	DirAccess.remove_absolute(dir)
 	print("=== Ergebnis: %d bestanden, %d fehlgeschlagen ===" % [_passed, _failed])

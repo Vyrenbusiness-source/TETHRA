@@ -136,9 +136,9 @@ static func _draw_path(buf: PackedByteArray, w: int, h: int, path: TracePath,
 			var col: Color = colors[clampi(int(sg[2]), 0, colors.size() - 1)]
 			var pts := _pts(path, sg[0], sg[1], sc, off, 1.6 * unit)
 			if pass_i == 0:
-				_stroke(buf, w, h, pts, col, 7.0 * unit, 0.10)
+				_stroke(buf, w, h, pts, col, 11.0 * unit, 0.16)
 			else:
-				_stroke(buf, w, h, pts, col, 2.4 * unit, 0.95)
+				_stroke(buf, w, h, pts, col, 3.2 * unit, 0.95)
 				_stroke(buf, w, h, pts, col.lerp(Color.WHITE, 0.55), 1.0 * unit, 0.8)
 	for sg in segs:
 		if int(sg[3]) == MISS_Q:
@@ -234,10 +234,10 @@ static func _fray(buf: PackedByteArray, w: int, h: int, pts: PackedVector2Array,
 		var n2 := _noise(gy + 7, gx + 13)
 		if n1 > -0.35:
 			_dot(buf, w, h, p.x + nrm.x * n2 * 3.0 * unit, p.y + nrm.y * n2 * 3.0 * unit,
-				0.8 * unit, GRAY, 0.55)
+				1.0 * unit, GRAY, 0.75)
 		if n2 > 0.55:
 			var s := n1 * 7.0 * unit
-			_dot(buf, w, h, p.x + nrm.x * s, p.y + nrm.y * s, 0.7 * unit, GRAY, 0.35)
+			_dot(buf, w, h, p.x + nrm.x * s, p.y + nrm.y * s, 0.9 * unit, GRAY, 0.5)
 
 
 # ---------------------------------------------------------------------------

@@ -1,7 +1,8 @@
 class_name ChatMapCard
 extends PanelContainer
 
-## Karte in einer Chat-Nachricht: Map ("map") oder Score ("score").
+## Karte in einer Chat-Nachricht: Map ("map"), Score ("score") oder Trace-Bild ("picture":
+## Map-Karte mit lokaler Bildvorschau, Klick = gross; score_id traegt den Bildpfad).
 ## Alle Aktionen laufen ueber das ChatOverlay (eine Vorschau gleichzeitig,
 ## ein Download-Weg); die Karte zeigt nur den Zustand und ruft zurueck.
 
@@ -30,11 +31,15 @@ func setup(p_kind: String, p_info: Dictionary, p_overlay: Node, p_score_id: Stri
 	overlay = p_overlay
 	score_id = p_score_id
 	_build()
+	if kind == "picture":
+		var img := Image.load_from_file(score_id)
+		if img != null and not img.is_empty():
+			_cover.texture = ImageTexture.create_from_image(img)
 	refresh()
 	if overlay != null and overlay.has_signal("state_changed"):
 		overlay.state_changed.connect(refresh)
 	var m := (Engine.get_main_loop() as SceneTree).root.get_node_or_null("Mirror") as BeatmapMirror
-	if m != null and int(info.get("set_id", 0)) > 0:
+	if m != null and int(info.get("set_id", 0)) > 0 and kind != "picture":
 		m.cover_ready.connect(_on_cover)
 		var sid := int(info.set_id)
 		var cached := m.cached_cover(sid)
@@ -47,7 +52,7 @@ func setup(p_kind: String, p_info: Dictionary, p_overlay: Node, p_score_id: Stri
 func set_info(p_info: Dictionary) -> void:
 	info = p_info
 	var m := (Engine.get_main_loop() as SceneTree).root.get_node_or_null("Mirror") as BeatmapMirror
-	if m != null and int(info.get("set_id", 0)) > 0:
+	if m != null and int(info.get("set_id", 0)) > 0 and kind != "picture":
 		var sid := int(info.set_id)
 		if not m.cover_ready.is_connected(_on_cover):
 			m.cover_ready.connect(_on_cover)
@@ -71,11 +76,17 @@ func _build() -> void:
 	row.add_theme_constant_override("separation", 10)
 	add_child(row)
 	_cover = TextureRect.new()
-	_cover.custom_minimum_size = Vector2(88, 60)
+	_cover.custom_minimum_size = Vector2(88, 60) if kind != "picture" else Vector2(156, 82)
 	_cover.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_cover.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 	_cover.clip_contents = true
 	_cover.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	if kind == "picture":
+		_cover.mouse_filter = Control.MOUSE_FILTER_STOP
+		_cover.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		_cover.gui_input.connect(func(e: InputEvent) -> void:
+			if e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_LEFT:
+				_on_a())
 	row.add_child(_cover)
 	var col := VBoxContainer.new()
 	col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -191,7 +202,10 @@ func refresh() -> void:
 			bits.append("%s ★" % UiTheme.fmt_num(float(info.stars), 2))
 		_extra.text = "  ·  ".join(bits)
 		_btn_a.visible = true
-		_btn_a.text = tr("Vorhören") if overlay == null or overlay.preview_set != sid else tr("Stopp")
+		if kind == "picture":
+			_btn_a.text = tr("Vergrößern")
+		else:
+			_btn_a.text = tr("Vorhören") if overlay == null or overlay.preview_set != sid else tr("Stopp")
 		if owned:
 			_btn_b.visible = true
 			_btn_b.text = tr("Spielen")
@@ -205,6 +219,8 @@ func refresh() -> void:
 	var st := ""
 	if owned and kind == "map":
 		st = tr("Schon vorhanden")
+	elif kind == "picture":
+		st = tr("Trace picture")
 	if overlay != null and kind == "score" and str(overlay.card_notes.get(score_id, "")) != "":
 		st = str(overlay.card_notes[score_id])
 	_status.text = st
@@ -215,6 +231,8 @@ func _on_a() -> void:
 		return
 	if kind == "map":
 		overlay.toggle_preview(int(info.get("set_id", 0)))
+	elif kind == "picture":
+		overlay.show_picture(score_id)
 	else:
 		overlay.watch_score_replay(score_id, info)
 
