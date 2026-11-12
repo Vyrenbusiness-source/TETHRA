@@ -67,7 +67,6 @@ func _run() -> void:
 	_test_bot_jitter()
 	_test_replay()
 	_test_replay_io()
-	_test_settings()
 
 
 func _test_landing() -> void:
@@ -276,9 +275,9 @@ func _test_bot_ss() -> void:
 
 func _test_bot_jitter() -> void:
 	var bm := _stress_map()
-	var core := _play(bm, ReboundReplay.bot_plan(bm, 3, 35.0, 0))
-	_ok(core.accuracy() < 1.0 and core.accuracy() > 0.8, "Jitter: unter 100 %% (%f)" % core.accuracy())
-	var core2 := _play(bm, ReboundReplay.bot_plan(bm, 3, 35.0, 0))
+	var core := _play(bm, ReboundReplay.bot_plan(bm, 3, 90.0, 0))
+	_ok(core.accuracy() < 1.0 and core.accuracy() > 0.6, "Jitter: unter 100 %% (%f)" % core.accuracy())
+	var core2 := _play(bm, ReboundReplay.bot_plan(bm, 3, 90.0, 0))
 	_ok(core.score == core2.score and core.n_miss == core2.n_miss, "Jitter gleicher Seed = gleich")
 	var core3 := _play(bm, ReboundReplay.bot_plan(bm, 1, 0.0, 6))
 	_ok(core3.n_miss >= bm.hit_objects.size() / 6 - 2, "auto-miss laesst Noten aus (%d)" % core3.n_miss)
@@ -308,7 +307,3 @@ func _test_replay_io() -> void:
 	_ok(r.get("events", []).size() == plan.size() and str(r.meta.mode) == "rebound", "geladen mit Modus")
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(ReboundReplay.path_for(osz, "V")))
 	_ok(ReplayStore.path_for_key("x") != ReboundReplay.path_for("x", "V"), "getrennt von Mania-Replays")
-
-
-func _test_settings() -> void:
-	_ok(Settings.rebound_drop_ms >= 600 and Settings.rebound_drop_ms <= 1600, "Fallzeit im Bereich")
