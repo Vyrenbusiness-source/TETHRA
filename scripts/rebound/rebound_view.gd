@@ -12,9 +12,14 @@ const JUDGE_COL := [
 	Color(0.80, 0.93, 1.0), Color(1.0, 0.86, 0.45), Color(0.55, 0.85, 0.55),
 	Color(0.50, 0.70, 0.95), Color(0.78, 0.60, 0.95), Color(0.55, 0.555, 0.57),
 ]
+## Spaltenfarben kuehl (Blau / helles Stahlblau): Gold bleibt allein den Hold-Baellen.
 const DEFAULT_LANES := [
-	Color(0.56, 0.68, 0.88), Color(0.95, 0.64, 0.23), Color(0.95, 0.64, 0.23), Color(0.56, 0.68, 0.88),
+	Color(0.38, 0.62, 0.98), Color(0.66, 0.80, 0.95), Color(0.66, 0.80, 0.95), Color(0.38, 0.62, 0.98),
 ]
+## Hold-Ball: warmes Gold, in keiner Spaltenfarbe, auch bei Rot-Gruen-Schwaeche klar.
+const COL_HOLD := Color(1.0, 0.80, 0.22)
+const COL_WRONG := Color(1.0, 0.50, 0.42)
+const WRONG_MS := 800.0
 const RING_MS := 900.0
 const GHOST_MS := 1300.0
 const CONTACT_MS := 95.0
@@ -33,6 +38,8 @@ var key_labels: Array = ["D", "F", "J", "K"]
 var judged: Dictionary = {}
 
 var _fx: Array = []
+var _wrong: Array = []
+var _rest := [false, false, false, false]
 var _glow := [0.0, 0.0, 0.0, 0.0]
 var _seg_of := {}
 var _font: Font
@@ -83,6 +90,13 @@ func on_judged(index: int, result: Dictionary) -> void:
 func on_hold_start(index: int, quality: int) -> void:
 	var s = _seg_of.get(index)
 	_add_fx(index, (s as ReboundFlight.Seg).col if s != null else 0, quality)
+
+
+## Falsche Taste (Anti-Mash): kurzer, dezenter Hinweis ueber der Spalte.
+func on_wrong_key(col: int) -> void:
+	_wrong.append({"col": col, "t0": Time.get_ticks_msec()})
+	if _wrong.size() > 8:
+		_wrong.pop_front()
 
 
 func _add_fx(index: int, col: int, q: int) -> void:
@@ -150,11 +164,13 @@ func _draw() -> void:
 	var l := _layout()
 	_last_hpx = l.hpx
 	_draw_floor(l)
-	for c in flight.columns:
-		_draw_drum(l, c)
 	var balls: Array = []
 	for c in flight.columns:
-		balls.append(flight.ball(c, t_ms))
+		var bb := flight.ball(c, t_ms)
+		balls.append(bb)
+		_rest[c] = bb.kind == ReboundFlight.Kind.REST
+	for c in flight.columns:
+		_draw_drum(l, c)
 	for c in flight.columns:
 		_draw_target(l, c, balls[c])
 	_draw_fx(l)
@@ -163,13 +179,14 @@ func _draw() -> void:
 		_draw_ball_full(l, c, balls[c])
 	for c in flight.columns:
 		_draw_keycap(l, c)
+	_draw_wrong(l)
 
 
 func _draw_floor(l: Lay) -> void:
 	var y0 := l.y - l.ry * 3.0
 	var pts := PackedVector2Array([Vector2(0, y0), Vector2(size.x, y0), Vector2(size.x, size.y), Vector2(0, size.y)])
-	var top := Color(0.04, 0.038, 0.036, 0.0)
-	var bot := Color(0.04, 0.038, 0.036, 0.62)
+	var top := Color(0.03, 0.03, 0.035, 0.0)
+	var bot := Color(0.03, 0.03, 0.035, 0.70)
 	draw_polygon(pts, PackedColorArray([top, top, bot, bot]))
 
 
@@ -181,68 +198,77 @@ func _flat() -> void:
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 
+## Ziel dieser Flugphase ein Hold? (Ball im Anflug oder liegend; nicht beim Auslauf.)
+func _is_hold(c: int, b: Dictionary) -> bool:
+	if int(b.seg) < 0:
+		return false
+	if b.kind != ReboundFlight.Kind.AIR and b.kind != ReboundFlight.Kind.FALL and b.kind != ReboundFlight.Kind.REST:
+		return false
+	return (flight.segs[c][int(b.seg)] as ReboundFlight.Seg).hold
+
+
+## Fell: flache Flaeche mit klarer Kante. Hold: Kante und Flaeche in Gold.
 func _draw_drum(l: Lay, c: int) -> void:
 	var col := lane_color(c)
 	var g: float = _glow[c]
 	var cx := l.cx(c)
-	var body := COL_BODY.lerp(col, 0.07)
-	# Korper: untere Ellipse + Band.
+	var rest: bool = _rest[c]
+	var edge := COL_HOLD if rest else col
+	var body := COL_BODY.lerp(edge, 0.10 + (0.22 if rest else 0.0) + 0.18 * g)
+	# Seitenband: nur eine ruhige dunkle Kante.
 	_ell(Vector2(cx, l.y + l.depth), 0.3)
-	draw_circle(Vector2.ZERO, l.rx, body.darkened(0.25))
+	draw_circle(Vector2.ZERO, l.rx, COL_BODY.darkened(0.4))
 	_flat()
-	draw_rect(Rect2(cx - l.rx, l.y, l.rx * 2.0, l.depth), body.darkened(0.25))
-	draw_rect(Rect2(cx - l.rx, l.y, l.rx * 2.0, l.depth), Color(col, 0.04))
-	_ell(Vector2(cx, l.y + l.depth), 0.3)
-	draw_arc(Vector2.ZERO, l.rx, 0.0, PI, 40, Color(col, 0.20 + 0.25 * g), 1.4, true)
-	_flat()
+	draw_rect(Rect2(cx - l.rx, l.y, l.rx * 2.0, l.depth), COL_BODY.darkened(0.4))
 	# Fell.
 	_ell(Vector2(cx, l.y), 0.3)
-	draw_circle(Vector2.ZERO, l.rx, body.lerp(col, 0.16 + 0.22 * g))
-	draw_circle(Vector2.ZERO, l.rx * 0.84, Color(col, 0.05 + 0.10 * g))
-	draw_arc(Vector2.ZERO, l.rx, 0.0, TAU, 56, Color(col, 0.55 + 0.40 * g), 3.2, true)
-	draw_arc(Vector2.ZERO, l.rx * 0.84, 0.0, TAU, 48, Color(col, 0.10), 1.0, true)
+	draw_circle(Vector2.ZERO, l.rx, body)
+	draw_arc(Vector2.ZERO, l.rx, 0.0, TAU, 64, Color(edge, 0.75 + 0.25 * maxf(g, 1.0 if rest else 0.0)), 3.4, true)
 	_flat()
 
 
+## Tastenbuchstabe gross unter dem Fell, Balken in Spaltenfarbe.
 func _draw_keycap(l: Lay, c: int) -> void:
 	var col := lane_color(c)
 	var g: float = _glow[c]
-	var w := l.rx * 0.62
-	var h := w * 0.82
-	var r := Rect2(l.cx(c) - w * 0.5, l.y + l.depth + l.ry + h * 0.35, w, h)
-	_cap_style.bg_color = Color(col, 0.08 + 0.30 * g)
-	_cap_style.border_color = Color(col, 0.35 + 0.55 * g)
-	draw_style_box(_cap_style, r)
+	var fs := int(l.rx * 0.58)
 	var txt := str(key_labels[c]) if c < key_labels.size() else ""
-	var fs := int(h * 0.50)
 	var ts := _font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
-	draw_string(_font, Vector2(r.position.x + (w - ts.x) * 0.5, r.position.y + h * 0.5 + ts.y * 0.30),
-			txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(1, 1, 1, 0.55 + 0.45 * g))
+	var cx := l.cx(c)
+	var y := l.y + l.depth + l.ry + fs * 1.05
+	draw_string(_font, Vector2(cx - ts.x * 0.5, y), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs,
+			Color(1, 1, 1, 0.62 + 0.38 * g).lerp(col.lightened(0.3), 0.25 * (1.0 - g)))
+	var bw := l.rx * (0.55 + 0.45 * g)
+	draw_rect(Rect2(cx - bw * 0.5, y + fs * 0.22, bw, 3.0), Color(COL_HOLD if _rest[c] else col, 0.45 + 0.55 * g))
 
 
-## Landering + Geister-Bogen des Zielflugs.
+## Landering + Geister-Bogen des Zielflugs. Hold: doppelter Ring in Gold.
 func _draw_target(l: Lay, c: int, b: Dictionary) -> void:
 	var arr: Array = flight.segs[c]
 	var k := flight.first_landing_at_or_after(c, t_ms)
 	if k < 0:
 		return
 	var s := arr[k] as ReboundFlight.Seg
-	var col := lane_color(c)
+	var col := COL_HOLD if s.hold else lane_color(c)
 	var until := s.t1 - t_ms
 	var win := minf(RING_MS, maxf(s.dur(), 120.0))
 	if until <= win and until >= -10.0 and b.kind != ReboundFlight.Kind.REST:
 		var q := clampf(1.0 - until / win, 0.0, 1.0)
 		var ease_q := q * q * (3.0 - 2.0 * q)
 		var rr := lerpf(l.rx * 0.96, l.ball_r * 1.18, ease_q)
+		var lw := 1.8 + 2.2 * q
 		_ell(Vector2(l.cx(c) + s.x1 * l.a, l.y), 0.3)
-		draw_arc(Vector2.ZERO, rr, 0.0, TAU, 48, Color(col.lerp(Color.WHITE, 0.25 * q), 0.22 + 0.62 * q), 1.6 + 1.6 * q, true)
+		draw_arc(Vector2.ZERO, rr, 0.0, TAU, 48, Color(col.lerp(Color.WHITE, 0.2 * q), 0.30 + 0.70 * q), lw, true)
+		if s.hold:
+			draw_arc(Vector2.ZERO, rr * 0.80, 0.0, TAU, 40, Color(col, 0.30 + 0.70 * q), lw * 0.8, true)
 		if q > 0.82:
-			draw_circle(Vector2.ZERO, l.ball_r * 1.18, Color(col, 0.10 * (q - 0.82) / 0.18))
+			draw_circle(Vector2.ZERO, l.ball_r * 1.18, Color(col, 0.14 * (q - 0.82) / 0.18))
 		_flat()
-	# Geister-Bogen: der Huepfer nach dieser Landung.
+	# Geister-Bogen: der Huepfer nach dieser Landung (uebernaechste Note, gedimmt).
 	if until < GHOST_MS and k + 1 < arr.size():
 		var n := arr[k + 1] as ReboundFlight.Seg
 		if not n.fall and n.peak > 0.07 and absf(n.t0 - s.free) < 1.0:
+			var gc := COL_HOLD if n.hold else lane_color(c).lerp(Color.WHITE, 0.3)
 			var fade := clampf((GHOST_MS - until) / 500.0, 0.0, 1.0)
 			var dots := clampi(int(n.dur() / 28.0), 8, 28)
 			for i in range(1, dots):
@@ -250,7 +276,10 @@ func _draw_target(l: Lay, c: int, b: Dictionary) -> void:
 				var hh := 4.0 * n.peak * p * (1.0 - p)
 				var xx := lerpf(n.x0, n.x1, p)
 				var pos := Vector2(l.cx(c) + xx * l.a, l.y - l.ball_r - hh * l.hpx)
-				draw_circle(pos, 1.7, Color(col.lerp(Color.WHITE, 0.3), 0.30 * fade))
+				if n.hold:
+					draw_arc(pos, 2.6, 0.0, TAU, 10, Color(gc, 0.34 * fade), 1.4, true)
+				else:
+					draw_circle(pos, 1.6, Color(gc, 0.22 * fade))
 
 
 func _draw_chords(l: Lay, balls: Array) -> void:
@@ -299,7 +328,7 @@ func _squash(b: Dictionary) -> Vector2:
 
 
 func _ball_color(c: int, b: Dictionary) -> Color:
-	var col := lane_color(c)
+	var col := COL_HOLD if _is_hold(c, b) else lane_color(c)
 	var pi := flight.last_landing_before(c, t_ms)
 	if pi >= 0:
 		var seg := flight.segs[c][pi] as ReboundFlight.Seg
@@ -312,6 +341,7 @@ func _draw_ball_full(l: Lay, c: int, b: Dictionary) -> void:
 	if b.kind == ReboundFlight.Kind.HIDDEN or float(b.alpha) <= 0.01:
 		return
 	var sq := _squash(b)
+	var hold := _is_hold(c, b)
 	var col := _ball_color(c, b)
 	var alpha: float = float(b.alpha) * col.a
 	col.a = 1.0
@@ -323,7 +353,7 @@ func _draw_ball_full(l: Lay, c: int, b: Dictionary) -> void:
 	_ell(Vector2(sx, l.y), 0.3)
 	draw_circle(Vector2.ZERO, R * (0.62 + 0.62 * hh), Color(0, 0, 0, (0.60 - 0.42 * hh) * float(b.alpha)))
 	_flat()
-	# Spur: schmaler, auslaufender Streifen hinter dem Ball.
+	# Spur: Normal ein schmaler Streifen, Hold ein duenner, goldener Faden.
 	if b.kind != ReboundFlight.Kind.REST:
 		var prev := pos
 		for i in range(1, TRAIL_N + 1):
@@ -332,25 +362,77 @@ func _draw_ball_full(l: Lay, c: int, b: Dictionary) -> void:
 				break
 			var tp := _ball_pos(l, c, tb, 1.0)
 			var f := 1.0 - float(i) / float(TRAIL_N + 1)
-			draw_line(prev, tp, Color(col.lightened(0.2), 0.20 * f * alpha), R * 1.1 * f, true)
+			if hold:
+				draw_line(prev, tp, Color(col, 0.38 * f * alpha), 2.4 * f + 0.8, true)
+			else:
+				draw_line(prev, tp, Color(col, 0.16 * f * alpha), R * 0.9 * f, true)
 			prev = tp
-	_draw_ball(pos, R * sq.x, R * sq.y, col, alpha)
-	# Hold: Ring fuellt sich.
+	if hold:
+		_draw_hold_thread(l, c, b, pos, R * sq.y, col, alpha)
+		_draw_ball_hold(pos, R * sq.x, R * sq.y, col, alpha)
+		if b.kind == ReboundFlight.Kind.REST:
+			var rr := R * 1.55
+			draw_arc(pos, rr, 0.0, TAU, 40, Color(col, 0.25), 3.0, true)
+			draw_arc(pos, rr, -PI * 0.5, -PI * 0.5 + TAU * float(b.p), 48, Color(col.lightened(0.25), 1.0), 4.4, true)
+	else:
+		_draw_ball(pos, R * sq.x, R * sq.y, col, alpha)
+
+
+## Faden ueber dem Hold-Ball: Laenge = Hold-Dauer, beim Halten schmilzt er ab.
+func _draw_hold_thread(l: Lay, c: int, b: Dictionary, pos: Vector2, ry: float, col: Color, alpha: float) -> void:
+	var s := flight.segs[c][int(b.seg)] as ReboundFlight.Seg
+	var len := l.ball_r * (0.9 + 2.4 * clampf((s.free - s.t1) / 1600.0, 0.0, 1.0))
 	if b.kind == ReboundFlight.Kind.REST:
-		var rr := R * 1.45
-		var cc := pos
-		draw_arc(cc, rr, 0.0, TAU, 40, Color(col, 0.22), 2.0, true)
-		draw_arc(cc, rr, -PI * 0.5, -PI * 0.5 + TAU * float(b.p), 48, Color(col.lerp(Color.WHITE, 0.3), 0.95), 3.2, true)
+		len *= 1.0 - float(b.p)
+	if len < 2.0:
+		return
+	var a := pos + Vector2(0, -ry * 1.05)
+	var e := a + Vector2(0, -len)
+	draw_line(a, e, Color(col, 0.85 * alpha), 3.0, true)
+	draw_line(e + Vector2(-5, 0), e + Vector2(5, 0), Color(col, alpha), 3.0, true)
 
 
+## Normaler Ball: flache Scheibe in Spaltenfarbe mit dunklem Rand.
 func _draw_ball(pos: Vector2, rx: float, ry: float, col: Color, alpha: float) -> void:
 	var ratio := ry / maxf(rx, 0.001)
 	draw_set_transform(pos, 0.0, Vector2(1.0, ratio))
-	draw_circle(Vector2.ZERO, rx, Color(col.darkened(0.32), alpha))
-	draw_circle(Vector2(-rx * 0.06, -rx * 0.08), rx * 0.90, Color(col, alpha))
-	draw_circle(Vector2(-rx * 0.20, -rx * 0.26), rx * 0.55, Color(col.lightened(0.16), alpha))
-	draw_circle(Vector2(-rx * 0.34, -rx * 0.40), rx * 0.20, Color(1, 1, 1, 0.55 * alpha))
+	draw_circle(Vector2.ZERO, rx, Color(col.darkened(0.45), alpha))
+	draw_circle(Vector2.ZERO, rx * 0.88, Color(col, alpha))
+	draw_circle(Vector2(-rx * 0.22, -rx * 0.26), rx * 0.30, Color(col.lightened(0.35), 0.8 * alpha))
 	_flat()
+
+
+## Hold-Ball: dunkler Kern in dickem Goldring, Punkt in der Mitte, zweiter Ring aussen.
+func _draw_ball_hold(pos: Vector2, rx: float, ry: float, col: Color, alpha: float) -> void:
+	var ratio := ry / maxf(rx, 0.001)
+	draw_set_transform(pos, 0.0, Vector2(1.0, ratio))
+	draw_circle(Vector2.ZERO, rx * 1.0, Color(col, alpha))
+	draw_circle(Vector2.ZERO, rx * 0.62, Color(COL_BODY, alpha))
+	draw_circle(Vector2.ZERO, rx * 0.26, Color(col, alpha))
+	draw_arc(Vector2.ZERO, rx * 1.22, 0.0, TAU, 40, Color(col, 0.55 * alpha), 2.0, true)
+	_flat()
+
+
+func _draw_wrong(l: Lay) -> void:
+	var now := Time.get_ticks_msec()
+	var keep: Array = []
+	for w in _wrong:
+		var age := float(now - int(w.t0))
+		if age < 0.0 or age > WRONG_MS:
+			continue
+		keep.append(w)
+		var q := age / WRONG_MS
+		var a := (1.0 - q * q) * minf(age / 80.0, 1.0)
+		var fs := int(maxf(l.rx * 0.20, 12.0))
+		var txt := "WRONG KEY"
+		var ts := _font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
+		var cx := l.cx(int(w.col))
+		var y := l.y - l.ball_r * 3.0 - 10.0 * q
+		var r := Rect2(cx - ts.x * 0.5 - 8.0, y - fs - 2.0, ts.x + 16.0, fs + 10.0)
+		draw_rect(r, Color(0.05, 0.04, 0.04, 0.70 * a))
+		draw_rect(Rect2(r.position.x, r.end.y - 2.0, r.size.x, 2.0), Color(COL_WRONG, 0.85 * a))
+		draw_string(_font, Vector2(cx - ts.x * 0.5, y), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(COL_WRONG, a))
+	_wrong = keep
 
 
 func _draw_fx(l: Lay) -> void:
