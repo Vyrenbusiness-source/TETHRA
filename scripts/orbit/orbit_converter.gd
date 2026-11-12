@@ -15,10 +15,16 @@ const MIN_GAP_MS := 75.0
 const MAX_VISIBLE := 6
 ## Leichte Maps: weniger Ziele je Sekunde.
 const EASY_NPS := 2.5
-## Beats kuerzer als das: eine Runde = 2 Beats.
+## Regeln 4: Beat kuerzer als SLOW_BEAT_MS = eine Runde 2 Beats, kuerzer als
+## FAST_BEAT_MS = 4 Beats (Satellit bleibt lesbar). Vorher (legacy): unter
+## MIN_BEAT_MS 2 Beats.
+const SLOW_BEAT_MS := 450.0
+const FAST_BEAT_MS := 225.0
 const MIN_BEAT_MS := 330.0
 const MIN_HOLD_MS := 100.0
 const MAX_HOLD_MS := 6000.0
+## Nur Messungen (QA vorher/nachher): Runden nach der Regel vor Regeln 4.
+static var legacy_laps := false
 const EASY_HOLD_BEATS := 2.0
 
 ## Erzeugte Positionen (Mania): ganzes 4:3-Feld, Rand ~ Zielradius.
@@ -333,7 +339,7 @@ static func _build(events: Array, bm: Beatmap, laps_req: int, mania: bool) -> Ar
 		var end: float = e.end
 		var is_hold := end - t >= MIN_HOLD_MS
 		var beat := clock.beat_ms_at(t)
-		var lap := beat if beat >= MIN_BEAT_MS else 2.0 * beat
+		var lap := lap_ms_for(beat, legacy_laps)
 		var dt := 0.5 if prev_t == -INF else maxf((t - prev_t) / 1000.0, 0.0)
 		# Halte-Dauer leichter Maps
 		if is_hold and easy and not mania:
@@ -514,7 +520,21 @@ static func _std_hold_path(raw: PackedVector2Array, pos: Vector2, src_pos: Vecto
 	return out
 
 
-## Erscheinen auf einem Beat-Tick; Runden an dichten Stellen verringern.
+## Dauer einer Satelliten-Runde (ms) zum Beat. legacy: Regel vor Regeln 4 (Messung).
+static func lap_ms_for(beat_ms: float, legacy: bool = false) -> float:
+	if legacy:
+		return beat_ms if beat_ms >= MIN_BEAT_MS else 2.0 * beat_ms
+	if beat_ms < FAST_BEAT_MS:
+		return 4.0 * beat_ms
+	if beat_ms < SLOW_BEAT_MS:
+		return 2.0 * beat_ms
+	return beat_ms
+
+
+## Erscheinen auf einem Beat-Tick; Runden an dichten Stellen verringern. Passt
+## selbst eine Runde nicht (lange Runden bei schnellen Songs), erscheint das Ziel
+## auf einem spaeteren Beat mit einer Teilrunde (laps 0, keine Pips), Vorlauf aber
+## mindestens eine halbe Runde und ein Beat.
 static func _assign_laps(ns: Array[OrbitNote], clock: OrbitClock, laps_req: int) -> Array[OrbitNote]:
 	var out: Array[OrbitNote] = []
 	var vis: Array = []   # [spawn, end]
@@ -530,6 +550,16 @@ static func _assign_laps(ns: Array[OrbitNote], clock: OrbitClock, laps_req: int)
 				ok = true
 				break
 			l -= 1
+		if not ok and not legacy_laps:
+			var beat := clock.beat_ms_at(n.time_ms)
+			var last := clock.beat_tick_at_or_before(n.time_ms - maxf(0.5 * n.lap_ms, beat) + 0.5)
+			var sp := clock.beat_tick_at_or_before(n.time_ms - n.lap_ms)
+			while not ok and sp < last - 0.5:
+				sp = clock.beat_tick_at_or_before(sp + clock.beat_ms_at(sp) + 0.5)
+				if _fits(vis, sp, end):
+					n.spawn_ms = sp
+					n.laps = 0
+					ok = true
 		if ok:
 			vis.append([n.spawn_ms, end])
 			out.append(n)
@@ -604,7 +634,8 @@ static func violations(ns: Array[OrbitNote], beatmap: Beatmap) -> Dictionary:
 				v.field += 1
 				break
 		if absf(n.spawn_ms - clock.beat_tick_at_or_before(n.spawn_ms)) > 1.0 \
-				or n.spawn_ms > n.time_ms - float(n.laps) * n.lap_ms + 1.0 or n.laps < 1:
+				or n.spawn_ms > n.time_ms - float(n.laps) * n.lap_ms + 1.0 or n.laps < 0 \
+				or n.spawn_ms > n.time_ms - 0.5 * n.lap_ms + 1.0:
 			v.spawn += 1
 		if n.is_hold and (n.path.size() < 2 or n.path[0] != n.pos):
 			v.hold += 1
