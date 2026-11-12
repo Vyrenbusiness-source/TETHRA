@@ -61,7 +61,8 @@ var _fetch_req: HTTPRequest
 ## peer_id -> {name, ready, score, combo, acc, final}
 var players: Dictionary = {}
 var crown_id := 1
-## Spielmodus des Raums: "mania" (4K, Standard/alte Clients) "orbit", "rally" oder "dirigent".
+## Spielmodus des Raums: "mania" (4K, Standard/alte Clients), "orbit", "rally", "dirigent",
+## "trace" oder "rebound" (Trace/Rebound: Mania-4K-Wertung auf Mania-Maps).
 var play_mode := "mania"
 ## {set_id, file, version, title, artist, stars}
 var sel_map: Dictionary = {}
@@ -136,7 +137,7 @@ func _unique_name(base: String, id: int) -> String:
 
 
 ## Bekannte Darstellungen je Spieler. "" = unbekannt (aelterer Client).
-const VIEWS := ["3D", "2D", "Orbit", "Rally", "Dirigent"]
+const VIEWS := ["3D", "2D", "Orbit", "Rally", "Dirigent", "Trace", "Rebound"]
 
 
 func _new_player(pname: String) -> Dictionary:
@@ -159,7 +160,7 @@ func local_view() -> String:
 
 
 ## Raum-Modi (Reihenfolge der Auswahl in der Lobby).
-const PLAY_MODES := ["mania", "orbit", "rally", "dirigent"]
+const PLAY_MODES := ["mania", "orbit", "rally", "dirigent", "trace", "rebound"]
 
 
 ## Nur bekannte Modi gelten; fehlend oder unbekannt = Mania (alte Clients).
