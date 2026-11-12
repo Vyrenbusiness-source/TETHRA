@@ -377,7 +377,8 @@ func _place_hud() -> void:
 	_judge_disp.combo_gap = vs.y * 0.045 / k
 	# Wertung und Kombo mittig ueber den Fellen, unter dem hoechsten Gipfel.
 	_judge_disp.place(cy + (vs.y * 0.50 - cy) / k)
-	_err_bar.position = Vector2((vs.x - _err_bar.size.x) * 0.5, vs.y - _err_bar.size.y - 10.0)
+	# Oben unter der HP-Leiste: unten liegen die Tastenschilder, in der Mitte fliegen die Baelle.
+	_err_bar.position = Vector2((vs.x - _err_bar.size.x) * 0.5, vs.y * 0.075)
 
 
 # ---------------------------------------------------------------------------
