@@ -2513,7 +2513,10 @@ func _show_online_scores(m: Dictionary, score_mode: String) -> void:
 		elif entries.is_empty():
 			_lb_hint(tr("Noch kein Online-Score auf dieser Map."))
 		for i in mini(entries.size(), 10):
-			_lb_box.add_child(_online_row(entries[i])))
+			var oe: Dictionary = entries[i] if entries[i] is Dictionary else {}
+			if str(oe.get("mode", "")) == "":
+				oe["mode"] = ScoreStore.mode_name(score_mode)
+			_lb_box.add_child(_online_row(oe)))
 
 
 ## Online-Zeile: Rang, Grade, Spielername (Klick = Web-Profil), Score, Acc, pp.
@@ -2535,6 +2538,7 @@ func _online_row(e: Dictionary) -> Control:
 	grade.add_theme_font_size_override("font_size", 15)
 	grade.add_theme_color_override("font_color", GRADE_COLOR.get(g.left(1), COL_TEXT))
 	row.add_child(grade)
+	row.add_child(ModeBadge.make(str(e.get("mode", "mania")), 14))
 	var who := str(e.get("player", "?"))
 	row.add_child(_online_avatar(who))
 	var name_btn := LinkButton.new()
@@ -2625,6 +2629,8 @@ func _score_row(rank: int, e: Dictionary) -> Control:
 	grade.add_theme_font_size_override("font_size", 15)
 	grade.add_theme_color_override("font_color", GRADE_COLOR.get(g.left(1), COL_TEXT))
 	row.add_child(grade)
+	# Modus-Symbol: jeder Score zeigt, in welchem Modus er gespielt wurde.
+	row.add_child(ModeBadge.make(str(e.get("mode", "mania")), 14))
 	var main := Label.new()
 	var is_self := bool(e.get("is_self", true))
 	main.text = "%s · %s · %dx" % [

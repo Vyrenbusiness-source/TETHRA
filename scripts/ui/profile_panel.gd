@@ -749,6 +749,8 @@ func _play_row(e: Dictionary, mode: String) -> Control:
 	sub.add_theme_color_override("font_color", COL_DIM)
 	mid.add_child(sub)
 
+	# Modus-Symbol vor dem Rang: jeder Score zeigt seinen Modus.
+	hb.add_child(ModeBadge.make(str(e.get("mode", "")) if str(e.get("mode", "")) != "" else _mode, 16))
 	# Grade-Badge (Fail rot).
 	var g := str(e.get("grade", ""))
 	if mode == "recent" and bool(e.get("failed", false)):
