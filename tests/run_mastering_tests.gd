@@ -220,6 +220,16 @@ func _finish() -> void:
 	_check(absf(r1.post - r0.post) < 1.5, "Bass 100%% vs 0%%: %+.1f dB (K-gewichtet, max 1.5 dB)" % (r1.post - r0.post))
 	for r in _results:
 		_check(r.peak <= 0.0, "kein Clipping bei bass %.2f (peak %.2f dBFS)" % [r.bass, r.peak])
+	# Generator-Wiedergabe sauber beenden, bevor Godot herunterfaehrt: unter Last
+	# stuerzte der Audio-Thread sonst gelegentlich beim Beenden ab (Exit != 0
+	# nach "ALL OK").
+	# _process gibt danach true zurueck (Ende der Hauptschleife), darum ohne await.
+	_gen = null
+	if _player != null:
+		_player.stop()
+		_player.get_parent().remove_child(_player)
+		_player.free()
+		_player = null
 	if _failed > 0:
 		print("FAILED: ", _failed)
 		quit(1)
