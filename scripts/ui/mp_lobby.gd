@@ -32,7 +32,7 @@ const PROW_H := 40
 const SIDE_W := 344
 # Spalten der Raumliste (Kopf und Zeilen teilen sie, damit die Kanten fluchten).
 const RC_ICON := 20
-const RC_MODE := 96
+const RC_MODE := 132
 const RC_WHERE := 148
 const RC_PLAYERS := 72
 const RC_JOIN := 104
@@ -478,7 +478,7 @@ static var _mpo_stage := 0
 ## (4 Maps, je 1 Ban). 2/3: Turnierrunden. Jede Zeile beginnt mit "MPORBIT".
 func _mp_orbit(host: bool) -> void:
 	var tag := "HOST" if host else "CLIENT"
-	# --mp-mode=<orbit|rally|dirigent> (Standard orbit): Raum-Modus der Smoke-Runde.
+	# --mp-mode=<orbit|rally|dirigent|trace|rebound> (Standard orbit): Raum-Modus der Smoke-Runde.
 	var pmode := Lobby.norm_play(_arg_value("--mp-mode=")) if _arg_value("--mp-mode=") != "" else "orbit"
 	var pview := Lobby.play_name(pmode)
 	var step := func(msg: String): print("MPORBIT %s s%d %s" % [tag, _mpo_stage, msg])
@@ -1381,7 +1381,7 @@ func _avatar(pname: String, sz: int = 28) -> Control:
 ## Tabellenzeile der Raumliste; die ganze Zeile ist der Knopf.
 ## Die Raum-Ansage kennt nur Name, Spielerzahl, Code und Spielmodus.
 func _room_card(lan: bool, rname: String, players_n: int, where: String, mode: String,
-		on_join: Callable) -> Control:
+		kind: String, on_join: Callable) -> Control:
 	var card := Button.new()
 	card.custom_minimum_size = Vector2(0, 52)
 	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1415,11 +1415,29 @@ func _room_card(lan: bool, rname: String, players_n: int, where: String, mode: S
 	nl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	nl.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
 	hb.add_child(nl)
-	var ml := _lbl(Lobby.play_name(Lobby.norm_play(mode)), FS_S + 1, COL_TEXT)
+	# Modus (Symbol + Name) und darunter die Raum-Art, beides vor dem Beitreten sichtbar.
+	var pm := Lobby.norm_play(mode)
+	var mcol := VBoxContainer.new()
+	mcol.custom_minimum_size.x = RC_MODE
+	mcol.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	mcol.add_theme_constant_override("separation", 0)
+	mcol.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hb.add_child(mcol)
+	var mrow := HBoxContainer.new()
+	mrow.add_theme_constant_override("separation", 6)
+	mrow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	mcol.add_child(mrow)
+	mrow.add_child(ModeBadge.make(pm, 14))
+	var ml := _lbl(Lobby.play_name(pm), FS_S + 1, COL_TEXT)
 	ml.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
-	ml.custom_minimum_size.x = RC_MODE
 	ml.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	hb.add_child(ml)
+	mrow.add_child(ml)
+	var kname := Lobby.type_name(Lobby.norm_type(kind))
+	if kname != "":
+		var kl := _lbl(kname, FS_S - 1, COL_DIM)
+		kl.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+		kl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		mcol.add_child(kl)
 	var wl := _lbl(where, FS_S + 1, COL_DIM) if lan else _num(where, FS_S + 1, COL_DIM)
 	wl.custom_minimum_size.x = RC_WHERE
 	wl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
@@ -1466,7 +1484,7 @@ func _refresh_rooms() -> void:
 		lan_codes[str(r.get("code", ""))] = true
 		var target_ip := str(ip)
 		_rooms_list.add_child(_room_card(true, str(r.name), int(r.players), tr("Dein Netzwerk"),
-			str(r.get("mode", "mania")), func():
+			str(r.get("mode", "mania")), str(r.get("kind", "")), func():
 				if Lobby.join_lan(target_ip):
 					_show_room()))
 		count += 1
@@ -1486,7 +1504,7 @@ func _refresh_rooms() -> void:
 				where = tr("Passwort")
 			var rcode := str(o.get("code", ""))
 			_rooms_list.add_child(_room_card(false, str(o.name), int(o.players), where,
-				str(o.get("mode", "mania")), func():
+				str(o.get("mode", "mania")), str(o.get("kind", "")), func():
 					if wrong:
 						_status_label.text = Lobby.relay_error_text("version", "", { "host_v": ver })
 					elif locked or rcode == "":
@@ -1496,7 +1514,7 @@ func _refresh_rooms() -> void:
 						_show_room()))
 		else:
 			_rooms_list.add_child(_room_card(false, str(o.name), int(o.players), jcode,
-				str(o.get("mode", "mania")), func():
+				str(o.get("mode", "mania")), str(o.get("kind", "")), func():
 					if Lobby.join_code(jcode):
 						_show_room()))
 		count += 1
@@ -1551,7 +1569,7 @@ func _build_room() -> void:
 	_copy_btn.pressed.connect(_copy_code)
 	code_row.add_child(_copy_btn)
 
-	# Spielmodus (Mania 4K / Orbit / Rally / Dirigent) und Format (Frei / Teams / Battle Royale)
+	# Spielmodus (Mania 4K / Orbit / Rally / Dirigent / Trace / Rebound) und Format (Frei / Teams / Battle Royale)
 	# als Reiter: waehlt die Krone, alle sehen den aktiven Unterstrich.
 	var sv := VBoxContainer.new()
 	sv.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
@@ -2362,6 +2380,8 @@ func _pick(ms: MapSet, diff: int) -> void:
 		"version": ms.version_name_at(diff),
 		"title": ms.title, "artist": ms.artist,
 		"stars": ms.stars_at(diff),
+		# osu-Modus der Diff (3 = Mania, 0 = standard): Turniere pruefen ihn je Spielmodus.
+		"map_mode": int(ms.meta_at(diff).get("mode", 0)),
 	})
 
 

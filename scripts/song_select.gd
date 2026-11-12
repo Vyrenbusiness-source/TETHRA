@@ -3109,8 +3109,10 @@ func _watch_replay() -> void:
 		_selected_set.version_name_at(_selected_diff), rmode)
 	if data.is_empty():
 		return
-	# Orbit-Replays tragen auch HD/FI/PR (sonst liefe die Wertung anders).
-	GameSession.mods = OrbitCore.replay_mods(data) if (orbit or rg) else GameSession._replay_mods(data)
+	# Orbit-Replays tragen auch HD/FI/PR (sonst liefe die Wertung anders);
+	# Trace/Rebound speichern Mania-Mods (SV/NF ...) wie Mania.
+	var orbit_mods := (orbit or rg) and not _mania_like()
+	GameSession.mods = OrbitCore.replay_mods(data) if orbit_mods else GameSession._replay_mods(data)
 	GameSession.set_selection(
 		_selected_set.osz_path, _selected_diff,
 		_selected_set.version_name_at(_selected_diff),

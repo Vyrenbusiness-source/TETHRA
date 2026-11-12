@@ -295,9 +295,10 @@ func active_mods() -> Array:
 	return out
 
 
-## Spielmodus des Ergebnisses: "orbit" oder "" (Mania 4K).
+## Spielmodus des Ergebnisses aus s.mode: "orbit", "trace", "rebound" ... oder "" (Mania 4K).
 func score_mode() -> String:
-	return ScoreStore.MODE_ORBIT if str(_stats.get("mode", "")) == ScoreStore.MODE_ORBIT else ""
+	var m := ScoreStore.normalize_mode(str(_stats.get("mode", "")))
+	return "" if m == ScoreStore.MODE_MANIA else m
 
 
 ## Mod-Abzeichen-Texte, SV mit Stufe ("SV Stark"): Stufe aus s.sv_level,
@@ -310,10 +311,9 @@ func mod_badge_texts() -> Array:
 	return out
 
 
-## Modus-Abzeichen (Mania 4K = ACCENT, Orbit = ACCENT2), kraeftiger als Mods.
+## Modus-Abzeichen: Modus-Symbol + Name in der Modusfarbe (ModeBadge), kraeftiger als Mods.
 func _mode_badge() -> Control:
-	var orbit := score_mode() == ScoreStore.MODE_ORBIT
-	var col: Color = UiTheme.ACCENT2 if orbit else UiTheme.ACCENT
+	var col: Color = ModeBadge.color(score_mode())
 	var p := PanelContainer.new()
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = Color(col, 0.32)
@@ -323,12 +323,19 @@ func _mode_badge() -> Control:
 	sb.content_margin_left = 9
 	sb.content_margin_right = 9
 	p.add_theme_stylebox_override("panel", sb)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 5)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var icon := ModeBadge.make(score_mode(), 13)
+	(icon.get_child(0) as CanvasItem).modulate = col.lerp(Color.WHITE, 0.55)
+	row.add_child(icon)
 	var l := Label.new()
 	l.text = ScoreStore.mode_label(score_mode()).to_upper()
 	l.add_theme_font_override("font", UiTheme.heading_font(2))
 	l.add_theme_font_size_override("font_size", 13)
 	l.add_theme_color_override("font_color", col.lerp(Color.WHITE, 0.55))
-	p.add_child(l)
+	row.add_child(l)
+	p.add_child(row)
 	return p
 
 

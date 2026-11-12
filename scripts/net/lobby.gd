@@ -364,7 +364,7 @@ func _relay_info() -> Dictionary:
 	if not sel_map.is_empty():
 		mname = "%s [%s]" % [str(sel_map.get("title", sel_map.get("file", ""))), str(sel_map.get("version", ""))]
 	return { "name": room_name, "v": UpdaterS.CURRENT_VERSION, "map": mname,
-		"mode": play_mode, "locked": password != "" }
+		"mode": play_mode, "kind": room_type(), "locked": password != "" }
 
 
 ## Eigener Relay-Server (headless, --mp-relay [--port N]).
@@ -559,7 +559,8 @@ func _process(delta: float) -> void:
 			if _bcast_t <= 0.0:
 				_bcast_t = 1.0
 				var msg := JSON.stringify({ "tethra": 1, "name": room_name,
-					"players": players.size(), "code": room_code, "mode": play_mode })
+					"players": players.size(), "code": room_code, "mode": play_mode,
+					"kind": room_type() })
 				_bcast.set_dest_address("255.255.255.255", discovery_port)
 				_bcast.put_packet(msg.to_utf8_buffer())
 		# Weltweit ansagen (alle 20s), sobald der Raum-Code steht.
@@ -579,6 +580,7 @@ func _process(delta: float) -> void:
 				lan_rooms[ip] = { "name": str(data.get("name", tr("Raum"))),
 					"players": int(data.get("players", 1)),
 					"mode": norm_play(data.get("mode", "mania")),
+					"kind": norm_type(data.get("kind", "")),
 					"t": Time.get_ticks_msec() }
 				changed = true
 		for ip in lan_rooms.keys():
@@ -613,7 +615,7 @@ func _announce_room() -> void:
 	add_child(req)
 	req.request_completed.connect(func(_r, _c, _h, _b): req.queue_free())
 	var body := JSON.stringify({ "c": room_code, "n": room_name,
-		"p": players.size(), "m": play_mode })
+		"p": players.size(), "m": play_mode, "k": room_type() })
 	if req.request(ROOMS_URL, [], HTTPClient.METHOD_POST, body) != OK:
 		req.queue_free()
 
@@ -650,7 +652,8 @@ func fetch_online_rooms() -> void:
 				if t >= float(newest.get(str(d.c), 0.0)):
 					newest[str(d.c)] = t
 					found[str(d.c)] = { "name": str(d.get("n", tr("Raum"))),
-						"players": int(d.get("p", 1)), "mode": norm_play(d.get("m", "mania")), "t": t }
+						"players": int(d.get("p", 1)), "mode": norm_play(d.get("m", "mania")),
+						"kind": norm_type(d.get("k", "")), "t": t }
 		# Eigenen (gerade verlassenen) Raum nicht listen.
 		if room_code != "":
 			found.erase(room_code)
@@ -697,8 +700,8 @@ static func parse_relay_rooms(txt: String) -> Dictionary:
 		var code := str(r.get("code", ""))
 		out[code if code != "" else "locked#%d" % n] = { "name": str(r.get("name", "")),
 			"players": int(r.get("players", 1)), "max": int(r.get("max", 16)),
-			"mode": norm_play(r.get("mode", "mania")), "map": str(r.get("map", "")),
-			"version": str(r.get("version", "")), "locked": bool(r.get("locked", false)),
+			"mode": norm_play(r.get("mode", "mania")), "kind": norm_type(r.get("kind", "")),
+			"map": str(r.get("map", "")), "version": str(r.get("version", "")), "locked": bool(r.get("locked", false)),
 			"relay": true, "code": code, "t": 0.0 }
 	return out
 
@@ -1606,6 +1609,30 @@ func room_kind() -> int:
 
 static func mode_name(kind: int) -> String:
 	return TranslationServer.translate(["Frei", "Teams", "Battle Royale"][clampi(kind, 0, 2)])
+
+
+## Raum-Art fuer die Raumliste (vor dem Beitreten sichtbar): "free", "teams",
+## "royale" oder "tour" (Turnier laeuft). "" = unbekannt (aelterer Host/Relay).
+const ROOM_TYPES := ["free", "teams", "royale", "tour"]
+
+
+func room_type() -> String:
+	if tournament != null:
+		return "tour"
+	return ROOM_TYPES[clampi(mm.kind, 0, 2)]
+
+
+static func norm_type(v) -> String:
+	return v if typeof(v) == TYPE_STRING and ROOM_TYPES.has(v) else ""
+
+
+static func type_name(t: String) -> String:
+	match t:
+		"free": return mode_name(0)
+		"teams": return mode_name(1)
+		"royale": return mode_name(2)
+		"tour": return TranslationServer.translate("Turnier")
+	return ""
 
 
 ## Warum gerade nicht gestartet werden kann ("" = alles in Ordnung).
