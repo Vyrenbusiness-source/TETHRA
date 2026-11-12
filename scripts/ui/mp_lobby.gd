@@ -2220,7 +2220,8 @@ func _add_versus() -> void:
 	var gap := Control.new()
 	gap.custom_minimum_size.y = 10
 	wrap.add_child(gap)
-	wrap.add_child(UiTheme.section_label(tr("Versus-Bilder")))
+	# "Versus" ist in DE und EN gleich: kein tr()-Schluessel noetig.
+	wrap.add_child(UiTheme.section_label("Versus"))
 	var sc := ScrollContainer.new()
 	sc.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	sc.custom_minimum_size.y = 236
