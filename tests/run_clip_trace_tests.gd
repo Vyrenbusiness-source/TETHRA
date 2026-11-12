@@ -32,6 +32,8 @@ func _initialize() -> void:
 	_ok(joined.contains("atrim=start=28.000:duration=8.000"), "Musikausschnitt 8 s ab 28 s")
 	_ok(a.has("-t") and a[a.find("-t") + 1] == "8.000", "Ausgabe auf 8 s begrenzt")
 	_ok(a[a.size() - 1] == "out.mp4" and a[a.find("-i") + 1] == "in.avi", "Ein-/Ausgabe")
+	_ok(is_equal_approx(ClipExporter.parse_duration_s("  Duration: 00:01:34.42, start: 0"), 94.42), "ffmpeg-Dauer parsen")
+	_ok(ClipExporter.parse_duration_s("nix") == 0.0, "ffmpeg-Dauer fehlt = 0")
 	var ex := ClipExporter.new()
 	_ok(not ex.export_clip("gibt_es_nicht", "", "trace"), "trace ohne Replay: kein Export")
 	_ok(ex.last_error != "", "Fehlertext gesetzt")

@@ -137,15 +137,22 @@ static func timelapse_args(src: String, dst: String, movie_len_s: float,
 		"-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", dst])
 
 
-## Filmdauer in s per ffprobe neben ffmpeg bzw. im PATH (0 = unbekannt).
+## Filmdauer in s aus der ffmpeg-Ausgabe (ffprobe liegt nicht bei; 0 = unbekannt).
 static func probe_duration_s(path: String, ffmpeg: String) -> float:
-	var probe := "ffprobe"
-	if ffmpeg != "" and ffmpeg != "ffmpeg":
-		probe = ffmpeg.get_base_dir().path_join("ffprobe.exe" if OS.get_name() == "Windows" else "ffprobe")
 	var out := []
-	if OS.execute(probe, ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", path], out, true) != 0 or out.is_empty():
+	OS.execute(ffmpeg if ffmpeg != "" else "ffmpeg", ["-hide_banner", "-i", path], out, true)
+	return parse_duration_s(String(out[0]) if not out.is_empty() else "")
+
+
+## "Duration: 00:01:34.42," aus ffmpeg-Text -> Sekunden (0 = nicht gefunden).
+static func parse_duration_s(text: String) -> float:
+	var i := text.find("Duration: ")
+	if i < 0:
 		return 0.0
-	return String(out[0]).strip_edges().to_float()
+	var parts := text.substr(i + 10, 11).split(":")
+	if parts.size() < 3:
+		return 0.0
+	return parts[0].to_float() * 3600.0 + parts[1].to_float() * 60.0 + parts[2].to_float()
 
 
 ## Zeitraffer exportieren (Quadrat, 8 s). Braucht ffmpeg (sonst Fehler).
