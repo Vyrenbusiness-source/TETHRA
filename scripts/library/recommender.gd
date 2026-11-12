@@ -138,7 +138,7 @@ static func skill(mode: String, runs: Array) -> Dictionary:
 		var acc: float = clampf(float(r.get("accuracy", 0.0)), 0.0, 1.0)
 		if bool(r.get("failed", false)) or str(r.get("grade", "")) == "F":
 			acc = minf(acc, FAIL_ACC) - 0.05
-		var c: float = st + (COMFORT_ACC - acc) / slope
+		var c: float = st + (acc - COMFORT_ACC) / slope
 		implied.append(clampf(c, st - 4.0, st + 3.0))
 	var n := implied.size()
 	var comfort := c0

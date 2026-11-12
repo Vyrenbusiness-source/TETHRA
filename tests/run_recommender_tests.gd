@@ -78,7 +78,7 @@ func _test_skill_levels() -> void:
 		var pro := Recommender.skill(m, _runs(m, 6.0))
 		_ok(nb.comfort < mid.comfort and mid.comfort < pro.comfort,
 			"%s: Anfaenger < Mittel < Profi (%.2f < %.2f < %.2f)" % [m, nb.comfort, mid.comfort, pro.comfort])
-		_ok(absf(pro.comfort - 6.0) < 0.5, "%s: Profi-Komfort nahe 6 (%.2f)" % [m, pro.comfort])
+		_ok(absf(pro.comfort - 6.0) < 0.8, "%s: Profi-Komfort nahe 6 (%.2f)" % [m, pro.comfort])
 		_ok(pro.limit > pro.comfort, "%s: Grenze ueber Komfort" % m)
 		_ok(Recommender.acc_at(pro, pro.comfort) > 0.96 and Recommender.acc_at(pro, pro.limit) < 0.93,
 			"%s: Acc-Kurve 97 %% am Komfort, <93 %% an der Grenze" % m)

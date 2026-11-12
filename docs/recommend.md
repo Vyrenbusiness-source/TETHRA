@@ -32,7 +32,7 @@ Accuracy curve (linear, per mode, slope 0.02 acc per star):
 
     acc(stars) = 0.97 - slope * (stars - comfort),  clamped 0.5 .. 0.995
 
-Each run implies `comfort_i = stars + (0.97 - acc) / slope` (clamped to
+Each run implies `comfort_i = stars + (acc - 0.97) / slope` (clamped to
 stars-4 .. stars+3). A failed run (or grade F) counts with at most
 `acc = 0.80 - 0.05`, so failures lower the estimate. The estimate is the
 median of the latest 30 runs, blended with the default curve as if it were 3
