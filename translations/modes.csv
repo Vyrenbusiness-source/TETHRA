@@ -20,3 +20,4 @@ Tutorial: %s,Tutorial: %s,Tutorial: %s
 Map passt nicht zum Turnier-Modus.,Map passt nicht zum Turnier-Modus.,Map does not fit the tournament mode.
 REBOUND,REBOUND,REBOUND
 TRACE,TRACE,TRACE
+Map passt nicht zum Modus %s.,Map passt nicht zum Modus %s.,Map does not fit the mode %s.

@@ -1637,6 +1637,10 @@ static func type_name(t: String) -> String:
 
 ## Warum gerade nicht gestartet werden kann ("" = alles in Ordnung).
 func mode_blocker() -> String:
+	# Trace/Rebound/Mania spielen nur Mania-4K-Maps ("map_mode" fehlt bei alten Clients).
+	var mmode = sel_map.get("map_mode", null)
+	if (mmode is int or mmode is float) and not Tournament.map_mode_ok(play_mode, int(mmode)):
+		return tr("Map passt nicht zum Modus %s.") % play_name(play_mode)
 	if mm.kind == MatchMode.Kind.TEAMS:
 		var sz := mm.team_sizes()
 		if sz[0] == 0 or sz[1] == 0:

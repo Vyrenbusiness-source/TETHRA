@@ -253,6 +253,8 @@ func add_map(data: Dictionary, by: int) -> String:
 		"stars": stars, "by": by, "online": bool(data.get("online", false)),
 		"banned": false,
 	}
+	if mm is int or mm is float:
+		clean["map_mode"] = int(mm)
 	# Kennwerte (nur Anzeige/Filter): nur gueltige Zahlen uebernehmen.
 	for kk in [["ln", 100], ["len_s", LEN_MAX_S * 4], ["bpm", BPM_MAX * 4]]:
 		var v = data.get(kk[0], null)
@@ -544,7 +546,8 @@ static func local_data(ms: MapSet, diff: int) -> Dictionary:
 	var fname := ms.osz_path.get_file()
 	var d := {"set_id": set_id_of(fname), "file": fname,
 		"version": ms.version_name_at(diff), "title": ms.title,
-		"artist": ms.artist, "stars": ms.stars_at(diff), "online": false}
+		"artist": ms.artist, "stars": ms.stars_at(diff), "online": false,
+		"map_mode": int(ms.meta_at(diff).get("mode", 0))}
 	var st := ms.stats_at(diff)
 	for k in st:
 		if int(st[k]) >= 0:
