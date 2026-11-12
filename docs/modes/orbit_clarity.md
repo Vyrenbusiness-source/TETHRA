@@ -86,3 +86,22 @@ Ruhig, ohne Glow; nichts liegt auf dem naechsten Ziel.
 
 Screenshots vorher/nachher je Situation in 1280x720 und 1920x1080 (Scratch, nicht im
 Repo), mit Read geprueft; Tests `tests/run_orbit_*_tests.gd` gruen.
+
+Befund nachher:
+
+- Akzent (Cyber Grind [Hard] 10150 ms): beide Buchstaben auf den Haelften, Doppelrand,
+  Erst-Hinweis "beide Tasten: Y + X" darunter, nichts verdeckt.
+- Halten (Fluctuation [Normal] 6000/6600 ms): Band mit Pfeilen und "HOLD" schon beim
+  Erscheinen; waehrend des Haltens Folgekreis mit Restbogen. Beim ersten Halten steht
+  nur der Erst-Hinweis "halten und der Kugel folgen" (das kurze "folgen" ueber dem
+  Kreis entfaellt dann, sonst lagen beide Texte uebereinander, 1920x1080).
+- Neustart (Happy End [4K Hard] 144900 ms): Countdown-Bogen um das erste Ziel.
+- Stapel: in den gepruften Maps liegt das verdeckte Ziel meist mehr als
+  4 Zeitpunkte spaeter und ist damit noch gar nicht sichtbar (kein Stapel-Bild zur
+  Trefferzeit). Darstellung daher mit einer kuenstlichen Szene geprueft (3 Ziele am
+  selben Ort, 300 ms Abstand): Karten versetzt hinter dem vorderen, "x3" unten rechts
+  ausserhalb des Rings, Erst-Hinweis "3 Treffer hier nacheinander" darunter.
+- Der kleine weisse Punkt auf/neben Zielen in Autoplay-Bildern ist der Zielcursor,
+  kein Teil der Zielanzeige.
+- Offen (nicht in `orbit_view.gd`): die Combo-Zahl unten in der Mitte ("16 CORE")
+  kann ein Ziel in der unteren Feldmitte ueberdecken (Fluctuation [Hyper] 6350 ms).
