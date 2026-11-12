@@ -219,6 +219,8 @@ func show_results(data: Dictionary) -> void:
 	else:
 		_build_left_panel(_main_row)
 		_build_rank_area(_main_row)
+		if _picture_source() != null:
+			_build_picture_column(_main_row)
 	_build_buttons(group)
 	_shown = true
 	if bool(data.get("lobby", false)):
@@ -852,6 +854,112 @@ func _build_buttons(group: Control) -> void:
 		bar.add_child(_button("Nochmal ansehen" if is_replay else "Nochmal", true,
 			retry_pressed.emit, "R"))
 	_reveal.append(bar)
+
+
+# ---------------------------------------------------------------------------
+# Trace: Bild der Runde (Vorschau, Speichern, Chat)
+# ---------------------------------------------------------------------------
+
+const PICTURE_TILE := 300.0
+
+
+## Quelle des Bildes aus data.trace_picture: Image (fertig, quadratisch) oder
+## {path: TracePath, judgements: Array} (wird hier gerendert). null = kein Bild.
+func _picture_source() -> Variant:
+	if score_mode() != ScoreStore.MODE_TRACE or bool(_data.get("lobby", false)):
+		return null
+	var tp: Variant = _data.get("trace_picture", null)
+	if tp is Image or (tp is Dictionary and (tp as Dictionary).get("path", null) is TracePath):
+		return tp
+	return null
+
+
+## Meta fuer die Signatur: Titel, Diff, Spieler, Acc, Datum.
+func picture_meta() -> Dictionary:
+	return {
+		"title": str(_data.get("title", "")), "version": str(_data.get("version", "")),
+		"player": str(_data.get("player", "")), "acc": float(_stats.get("accuracy", 0.0)),
+		"date": str(_data.get("date", "")),
+	}
+
+
+## Bild in Groesse `sz`; ein fertiges Image wird nur skaliert (Kopie).
+func render_picture(sz: Vector2i) -> Image:
+	var src: Variant = _picture_source()
+	if src is Image:
+		var img := (src as Image).duplicate() as Image
+		if img.get_size() != sz:
+			img.resize(sz.x, sz.y, Image.INTERPOLATE_LANCZOS)
+		return img
+	if src is Dictionary:
+		return TracePicture.render(src.path, src.get("judgements", []), sz, picture_meta())
+	return null
+
+
+func _build_picture_column(parent: Control) -> void:
+	var col := VBoxContainer.new()
+	col.custom_minimum_size = Vector2(PICTURE_TILE, 0)
+	col.alignment = BoxContainer.ALIGNMENT_CENTER
+	col.add_theme_constant_override("separation", 12)
+	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	parent.add_child(col)
+	col.add_child(_caption(tr("BILD DER RUNDE")))
+	var tile := PanelContainer.new()
+	tile.name = "PictureTile"
+	tile.custom_minimum_size = Vector2(PICTURE_TILE, PICTURE_TILE)
+	tile.add_theme_stylebox_override("panel", UiTheme.solid_box(UiTheme.RAISED, 10))
+	var tr_rect := TextureRect.new()
+	tr_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	tr_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	tr_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var thumb := render_picture(Vector2i(560, 560))
+	if thumb != null:
+		tr_rect.texture = ImageTexture.create_from_image(thumb)
+	tile.add_child(tr_rect)
+	col.add_child(tile)
+	var save_b := _button(tr("Save picture"), false, _on_save_picture)
+	save_b.name = "SavePictureButton"
+	col.add_child(save_b)
+	var send_b := _button(tr("Send to chat"), false, _on_send_picture)
+	send_b.name = "SendPictureButton"
+	send_b.visible = GameSession.chat != null
+	col.add_child(send_b)
+	_reveal.append(col)
+
+
+## Beide Formate nach user://pictures/ schreiben, Ordner oeffnen. Gibt den Quadrat-Pfad zurueck.
+func _on_save_picture() -> String:
+	var sq := render_picture(TracePicture.SIZE_SQUARE)
+	var sh := render_picture(TracePicture.SIZE_SHARE)
+	var p := TracePicture.save(sq, picture_meta())
+	if sh != null:
+		TracePicture.save(sh, picture_meta())
+	if p == "":
+		show_toast(tr("Bild konnte nicht gespeichert werden"), false)
+		return ""
+	show_toast(tr("Bild gespeichert"), false, TracePicture.FOLDER)
+	open_folder(TracePicture.FOLDER)
+	return p
+
+
+## Teilen-Format speichern und als Chat-Karte "picture" schicken.
+func _on_send_picture() -> void:
+	if GameSession.chat == null:
+		return
+	var sh := render_picture(TracePicture.SIZE_SHARE)
+	var p := TracePicture.save(sh, picture_meta())
+	if p == "":
+		show_toast(tr("Bild konnte nicht gespeichert werden"), false)
+		return
+	var md5 := ""
+	if GameSession.osu_filename != "":
+		md5 = OnlineApi._md5_bytes(OszImporter.read_file_bytes(GameSession.osz_path, GameSession.osu_filename))
+	var sid := ScoreStore.set_id_of(GameSession.osz_path.get_file())
+	GameSession.chat.call("share_picture", p, {
+		"md5": md5, "set_id": sid, "beatmapset_id": sid, "beatmap_id": 0,
+		"title": str(_data.get("title", "")), "artist": str(_data.get("artist", "")),
+		"version": str(_data.get("version", "")), "stars": GameSession.stars,
+	}, "%s %.2f%%" % [str(_data.get("player", "")), float(_stats.get("accuracy", 0.0)) * 100.0])
 
 
 # ---------------------------------------------------------------------------

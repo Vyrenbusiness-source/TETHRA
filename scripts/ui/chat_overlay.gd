@@ -35,6 +35,11 @@ var _downloading: Dictionary = {}
 var _preview_req: HTTPRequest
 var _player: AudioStreamPlayer
 var _score_cache: Dictionary = {}
+## Map-Link -> lokaler Bildpfad. Die Chat-API kennt nur Text: Bilder gehen nicht
+## ueber den Server. Der Empfaenger sieht die Map-Karte mit Hinweis "Trace picture",
+## der Sender zusaetzlich die lokale Vorschau.
+var _picture_cache: Dictionary = {}
+const PICTURE_HINT := "Trace picture"
 var _status_line: Label
 var _stick_bottom := true
 var _hint := ""
@@ -169,6 +174,42 @@ func share_map(meta: Dictionary) -> void:
 func share_score(score_id: Variant, summary: String = "") -> void:
 	var t := ChatApi.score_link(score_id)
 	_share((summary.strip_edges() + " " + t).strip_edges())
+
+
+## Trace-Bild teilen: Map-Link mit Hinweis "Trace picture"; die Vorschau bleibt lokal.
+## meta wie share_map; summary = kurzer Text (z.B. Spieler und Acc).
+func share_picture(image_path: String, meta: Dictionary, summary: String = "") -> void:
+	var link := ChatApi.map_link(meta)
+	_picture_cache[link] = image_path
+	var head := PICTURE_HINT if summary.strip_edges() == "" else "%s · %s" % [PICTURE_HINT, summary.strip_edges()]
+	_share(head + " " + link)
+
+
+## Grosse Ansicht eines lokalen Bildes; Klick oder Esc schliesst.
+func show_picture(image_path: String) -> void:
+	var img := Image.load_from_file(image_path)
+	if img == null or img.is_empty():
+		return
+	var shade := ColorRect.new()
+	shade.color = Color(0.02, 0.025, 0.04, 0.92)
+	shade.set_anchors_preset(Control.PRESET_FULL_RECT)
+	shade.mouse_filter = Control.MOUSE_FILTER_STOP
+	var tex := TextureRect.new()
+	tex.texture = ImageTexture.create_from_image(img)
+	tex.set_anchors_preset(Control.PRESET_FULL_RECT)
+	tex.offset_left = 40
+	tex.offset_right = -40
+	tex.offset_top = 40
+	tex.offset_bottom = -40
+	tex.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	tex.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	tex.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	shade.add_child(tex)
+	shade.gui_input.connect(func(e: InputEvent) -> void:
+		if e is InputEventMouseButton and e.pressed:
+			shade.queue_free())
+	shade.name = "PictureView"
+	add_child(shade)
 
 
 func _share(text: String) -> void:
@@ -747,7 +788,11 @@ func _content_widget(content: String, compact: bool) -> Control:
 	if not maplink.is_empty():
 		var card := ChatMapCard.new()
 		box.add_child(card)
-		card.setup("map", maplink, self)
+		var pic := str(_picture_cache.get(str(maplink.get("link", "")), ""))
+		if pic != "" and FileAccess.file_exists(pic):
+			card.setup("picture", maplink, self, pic)
+		else:
+			card.setup("map", maplink, self)
 	elif not scorelink.is_empty():
 		var sid := str(scorelink.score_id)
 		var card2 := ChatMapCard.new()
