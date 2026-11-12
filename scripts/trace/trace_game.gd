@@ -14,7 +14,6 @@ extends Control
 const MODE := "trace"
 const RULES := 2              ## Replay meta rules: 2 = mit Anti-Mash (falscher Knick)
 const MODS_PATH := "res://scripts/trace/trace_mods.gd"
-const SOUND_PATH := "res://scripts/trace/trace_sound.gd"
 const PICTURE_PATH := "res://scripts/trace/trace_picture.gd"
 ## Gesetzt, wenn die naechste Runde ein frisch gespieltes Replay (aktuelle Regeln) ist.
 static var fresh_replay := false
@@ -26,7 +25,6 @@ const GRADE_COLOR := {
 }
 
 var core: ManiaCore
-var _sound: Node
 var _wrong_label: Label
 var _wrong_tween: Tween
 var _old_replay := false
@@ -307,20 +305,6 @@ func _build_sound() -> void:
 	_miss_player = AudioStreamPlayer.new()
 	_miss_player.stream = Sfx.miss_stream()
 	add_child(_miss_player)
-	if ResourceLoader.exists(SOUND_PATH):
-		var sc = load(SOUND_PATH)
-		if sc != null:
-			var inst = sc.new()
-			if inst is Node:
-				_sound = inst
-				add_child(_sound)
-
-
-func _snd(m: String, a: Array = []) -> bool:
-	if _sound == null or not _sound.has_method(m):
-		return false
-	_sound.callv(m, a)
-	return true
 
 
 func _play_hit(pitch: float) -> void:
@@ -332,8 +316,6 @@ func _play_hit(pitch: float) -> void:
 
 
 func _play_miss() -> void:
-	if _snd("on_wrong"):
-		return
 	if not Settings.hitsounds or Settings.hitsound_volume <= 0.01 or _miss_player == null:
 		return
 	_miss_player.volume_db = linear_to_db(Settings.hitsound_volume) - 6.0
@@ -732,7 +714,6 @@ func _on_note_judged(index: int, result: Dictionary) -> void:
 		_hp_bar.flash_miss()
 	else:
 		_play_hit([1.0, 1.0, 0.944, 0.891, 0.794][q])
-		_snd("on_turn", [int(result.get("column", 0)), q])
 	var off := 0.0 if hold_end else float(result.get("dt", 0.0))
 	_judge_disp.show_judge(q, off)
 	if q != ManiaCore.Quality.MISS and result.has("dt"):
@@ -752,7 +733,6 @@ func _on_note_judged(index: int, result: Dictionary) -> void:
 		dtl = NAN
 	_judge_log.append(Vector4(t_note, float(col), float(q), dtl))
 	if hold_end:
-		_snd("on_hold", [col, false])
 		if bool(result.get("held", false)):
 			_hold_ok += 1
 		else:
@@ -762,9 +742,6 @@ func _on_note_judged(index: int, result: Dictionary) -> void:
 func _on_hold_started(index: int, quality: int) -> void:
 	_view.on_hold_start(index, quality)
 	_hold_head_dt[index] = core.hold_head_dt(index)
-	var hcol := (_beatmap.hit_objects[index] as ManiaNote).column
-	_snd("on_turn", [hcol, quality])
-	_snd("on_hold", [hcol, true])
 	_play_hit([1.0, 1.0, 0.944, 0.891, 0.794][quality])
 	var dt := float(core.hold_head_dt(index))
 	_judge_disp.show_judge(quality, dt)

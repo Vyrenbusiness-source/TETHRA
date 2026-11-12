@@ -19,8 +19,7 @@ Nur osu!mania-4K-Maps (Notenfolge, Zeiten und Holds unveraendert, exakt im Takt)
   `pending_head`, `lane_busy` (Mania-Verhalten unveraendert). Replay meta `rules` = 2;
   Replays mit rules 1 werden mit Hinweis abgelehnt.
 - **Hooks (nur wenn die Datei existiert):** `trace_mods.gd` (`map_column`, `from_session`,
-  Spalten der Noten vor Pfad und Wertung umbilden), `trace_sound.gd` (Node: `on_turn(col,
-  quality)`, `on_wrong()`, `on_hold(col, on)`), `trace_picture.gd` (`render(path, judgements,
+  Spalten der Noten vor Pfad und Wertung umbilden), `trace_picture.gd` (`render(path, judgements,
   size)`; Ergebnisdaten `trace_picture` = {path: TracePath, judgements: Array}).
 - **Faden:** Der Kopf bewegt sich mit konstantem Tempo `v` (Einstellung "Fadentempo", wie
   Scroll-Speed; nur Optik). Jede Note ist ein **Knick** an der Stelle, an der der Kopf zur
