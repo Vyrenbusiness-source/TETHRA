@@ -353,7 +353,7 @@ func _arm_playtime() -> void:
 	t.start()
 
 
-## Modus einer Szene fuer die Spielzeit: "" = Mania, "orbit", null = keine Gameplay-Szene.
+## Modus einer Szene fuer die Spielzeit: "" = Mania, sonst Modus-ID ("orbit" ...), null = keine Gameplay-Szene.
 static func playtime_mode_of(scene_path: String) -> Variant:
 	if scene_path.ends_with("orbit.tscn"):
 		return "orbit"
@@ -361,6 +361,10 @@ static func playtime_mode_of(scene_path: String) -> Variant:
 		return "rally"
 	if scene_path.ends_with("dirigent.tscn"):
 		return "dirigent"
+	if scene_path.ends_with("trace.tscn"):
+		return "trace"
+	if scene_path.ends_with("rebound.tscn"):
+		return "rebound"
 	if scene_path.ends_with("mania_3d.tscn") or scene_path.ends_with("gameplay_3d.tscn"):
 		return ""
 	return null
