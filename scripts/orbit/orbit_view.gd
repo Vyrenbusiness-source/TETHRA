@@ -52,7 +52,7 @@ const TRAIL_ALPHA := 0.26
 const TRAIL_LEN_K := 7.0
 ## Folgepunkte: nur zu Zielen mit Rang < FP_RANKS; Einblenden gestaffelt ueber
 ## FP_IN_SPREAD ab dem Erscheinen des Ziels, Ausblenden FP_OUT_MS.
-const FP_RANKS := 3
+const FP_RANKS := 2
 const FP_IN_SPREAD := 180.0
 const FP_IN_MS := 120.0
 const FP_OUT_MS := 90.0
@@ -607,6 +607,13 @@ func _draw_band(n: OrbitNote, R: float, alpha: float) -> void:
 ## FP_RANKS. Sie blenden mit dem Ziel nacheinander von vorn nach hinten ein und
 ## verschwinden von vorn, waehrend die Zeit vom einen zum naechsten Ziel laeuft.
 func _draw_follow(t: float, R: float, ranks: Dictionary) -> void:
+	# Hindernisse: sichtbare offene Ziele (Mitte, Freiraum). Pfeile, die ein
+	# anderes Ziel oder dessen Orbit-Ring kreuzen wuerden, entfallen dort.
+	var obs: Array = []
+	for i in ranks:
+		var rk: int = ranks[i]
+		if rk < MAX_RANKS:
+			obs.append([field_to_screen(notes[i].pos), R * ((ORBIT_K + 0.2) if rk < RING_RANKS else 1.2)])
 	var prev := -1
 	var prev_t := -INF
 	for i in range(_first, notes.size()):
@@ -619,12 +626,12 @@ func _draw_follow(t: float, R: float, ranks: Dictionary) -> void:
 		if prev >= 0 and _state[i] == ST_PENDING:
 			var rk: int = ranks.get(i, -1)
 			if rk >= 0 and rk < FP_RANKS:
-				_draw_fp_pair(notes[prev], n, R, t, rk)
+				_draw_fp_pair(notes[prev], n, R, t, rk, obs)
 		prev = i
 		prev_t = tt
 
 
-func _draw_fp_pair(a: OrbitNote, b: OrbitNote, R: float, t: float, rk: int) -> void:
+func _draw_fp_pair(a: OrbitNote, b: OrbitNote, R: float, t: float, rk: int, obs: Array) -> void:
 	var pa := field_to_screen(OrbitConverter.end_pos(a))
 	var pb := field_to_screen(b.pos)
 	var d := pa.distance_to(pb)
@@ -637,8 +644,8 @@ func _draw_fp_pair(a: OrbitNote, b: OrbitNote, R: float, t: float, rk: int) -> v
 	var dir := (pb - pa) / d
 	var nrm := Vector2(-dir.y, dir.x)
 	var cnt := int(span / step) + 1
-	var s := maxf(R * 0.11, 3.0)
-	var w := maxf(1.3, R * 0.042)
+	var s := maxf(R * 0.15, 5.0)
+	var w := maxf(1.4, R * 0.04)
 	var base := 0.5 if rk == 0 else 0.3
 	var ta := float(a.end_ms)
 	var dur := maxf(float(b.time_ms) - ta, 1.0)
@@ -651,8 +658,15 @@ func _draw_fp_pair(a: OrbitNote, b: OrbitNote, R: float, t: float, rk: int) -> v
 		if al <= 0.01:
 			continue
 		var m := pa + dir * off
+		var blocked := false
+		for o in obs:
+			if m.distance_to(o[0]) < float(o[1]):
+				blocked = true
+				break
+		if blocked:
+			continue
 		var tip := m + dir * s * 0.5
-		var chev := PackedVector2Array([tip - dir * s + nrm * s * 0.75, tip, tip - dir * s - nrm * s * 0.75])
+		var chev := PackedVector2Array([tip - dir * s + nrm * s * 0.62, tip, tip - dir * s - nrm * s * 0.62])
 		draw_polyline(chev, Color(LINE_COL, al), w, true)
 
 
