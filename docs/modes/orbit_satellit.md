@@ -19,6 +19,10 @@ druecken**. Der Takt ist sichtbar und zaehlbar ("drei, zwei, eins, jetzt").
 - jubeat/maimai/Lanota/Cytus: feste Felder bzw. Scan-Linie/Kreisrand, kein Zielen mit Maus.
 
 ## Regeln
+- **Anti-Mash (Regeln 4):** Falsche Taste auf das offene Ziel (Cursor im Trefferradius,
+  50er-Fenster, kein Ziel fuer diese Taste) = "WRONG KEY": Ziel sofort Miss. Akzent zaehlt nur
+  mit beiden Tasten, ein A-/B-Ziel nur mit seiner Taste. Richtige Taste zuerst, falsche danach:
+  Treffer bleibt. Druck ohne Ziel im Fenster oder Cursor daneben = nichts bzw. "daneben".
 - **Feld**: 4:3, Koordinaten 0..1 x 0..1 (wie osu! 512x384 normiert), zentriert,
   Hoehe = 80 % der Bildschirmhoehe.
 - **Ziel** (`OrbitNote`): `pos` (Feld), `key` 0 = A (kuehl, Scheibe), 1 = B (warm,
@@ -74,7 +78,7 @@ func laps_left(t_ms) -> int
   `press_missed(pos, key, reason)` mit reason in "aim" | "key" | "early" | "lock";
   `stats()` mit Feldern wie bisher (n_max..n_miss = CORE..MISS, max_combo, accuracy, score,
   grade, aim_err, mode = "orbit"). Replays: Event-Log `[t, EV_CURSOR, x, y]`,
-  `[t, EV_DOWN + k]`, `[t, EV_UP + k]`, `meta.orbit_rules = 3`; aeltere Regeln = "aeltere Version".
+  `[t, EV_DOWN + k]`, `[t, EV_UP + k]`, `meta.orbit_rules = 4`; aeltere Regeln = "aeltere Version".
 - `OrbitView` (scripts/orbit/orbit_view.gd) zeichnet nur; liest `notes`, `t_ms`, Cursor,
   `clock`; Feld->Bildschirm `field_to_screen(p)`, `field_scale()`.
 
