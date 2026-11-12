@@ -736,11 +736,6 @@ func _draw_opponent() -> void:
 	var wp := Vector3(x * HALF_W * 1.1, 0.24 + 0.02 * swing, LEN + 0.12 - 0.20 * swing)
 	var cm := _cam(wp)
 	var pxm := FOCAL * size.y / cm.z
-	# Gegner-Schatten (Koerper nur angedeutet, dunkler als der Raum).
-	var body := _pp(Vector3(wp.x * 0.9, 0.55, LEN + 0.45))
-	draw_set_transform(body, 0.0, Vector2(0.55, 1.0))
-	draw_circle(Vector2.ZERO, 0.24 * pxm, Color(0, 0, 0, 0.12))
-	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	_blade(Vector2(cm.x, cm.y), 0.085 * pxm, 0.078 * pxm, -0.10 - 0.35 * swing,
 			Color(0.20, 0.10, 0.10), Color(0.62, 0.66, 0.74), 0.10 * pxm)
 
