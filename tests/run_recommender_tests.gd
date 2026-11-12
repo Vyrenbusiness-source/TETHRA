@@ -93,7 +93,7 @@ func _test_few_runs_and_fails() -> void:
 	_ok(one.comfort > none.comfort and one.comfort < 4.0, "ein Lauf: vorsichtig (%.2f)" % one.comfort)
 	var ok_runs := _runs("rally", 4.0, 10)
 	var with_fail: Array = ok_runs.duplicate(true)
-	for i in 5:
+	for i in 12:  # Median: erst bei ueberwiegend Fehlschlaegen sichtbar
 		with_fail.append({"set": "f%d" % i, "diff": "d", "stars": 6.0, "accuracy": 0.5,
 			"failed": true, "grade": "F", "date": _date(10 + i)})
 	_ok(Recommender.skill("rally", with_fail).comfort < Recommender.skill("rally", ok_runs).comfort,
