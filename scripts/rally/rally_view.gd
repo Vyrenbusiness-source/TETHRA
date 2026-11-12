@@ -255,12 +255,12 @@ func _draw_room() -> void:
 	var boost := 1.0 + 0.10 * _lvl
 	# Raumlicht: weicher Kegel ueber der Tischmitte (konzentrische Ellipsen, sehr leise).
 	var lc := _pp(_w(0.0, 0.0, 0.55))
-	for i in 16:
-		var f := float(i) / 15.0
+	for i in 40:
+		var f := float(i) / 39.0
 		var rx := w * (0.62 - 0.46 * f)
 		var ry := h * (0.58 - 0.42 * f)
 		draw_set_transform(lc + Vector2(0, -h * 0.10), 0.0, Vector2(1.0, ry / rx))
-		draw_circle(Vector2.ZERO, rx, Color(COL_LIGHT, 0.011 * boost))
+		draw_circle(Vector2.ZERO, rx, Color(COL_LIGHT, 0.0045 * boost))
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	_draw_audience()
 	# Boden: hinter dem Tisch einen Hauch heller, nach vorn dunkel.
@@ -284,28 +284,29 @@ func _draw_room() -> void:
 			Color(0, 0, 0, 0.55), Color(0, 0, 0, 0))
 
 
-## Publikum: sehr dezente, unscharfe Silhouetten-Baender in Raumfarbe. Licht reagiert leise auf die Kombo.
+## Publikum: sehr dezente, weiche Silhouetten-Reihe in Raumfarbe (kein Kopf-Raster). Licht reagiert leise auf die Kombo.
 func _draw_audience() -> void:
-	var rim := 0.012 + 0.030 * _lvl
+	var w := size.x
+	var h := size.y
+	var rim := 0.010 + 0.030 * _lvl
+	var seg := 48
 	for row in 2:
-		var zc := 4.2 + 1.1 * float(row)
-		var step := 0.9 - 0.1 * float(row)
-		var n := int(12.0 / step)
-		for i in n:
+		var base_y := h * (0.115 - 0.030 * float(row))
+		var amp := h * (0.040 - 0.010 * float(row))
+		var col := COL_ROOM.lightened(0.030 - 0.012 * float(row))
+		for i in seg:
+			var x0 := w * float(i) / float(seg)
+			var x1 := w * float(i + 1) / float(seg)
 			var hs := float((i * 7919 + row * 104729) % 97) / 97.0
-			var x := -6.0 + float(i) * step + hs * 0.3
-			var wp := Vector3(x, 0.50 + 0.28 * float(row) + (hs - 0.5) * 0.10, zc)
-			var p := _pp(wp)
-			var r := 0.20 * _sc(wp)
-			var base := COL_ROOM.lightened(0.020 - 0.006 * float(row))
-			# Weicher Rand: drei uebereinander liegende Ellipsen mit sinkender Deckkraft.
-			for k in 3:
-				var f := 1.0 + 0.45 * float(k)
-				draw_set_transform(p + Vector2(0, r * 0.5), 0.0, Vector2(1.0, 0.75))
-				draw_circle(Vector2.ZERO, r * f, Color(base, 0.16))
-			draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
-			if hs > 0.5:
-				draw_circle(p - Vector2(0, r * 0.6), r * 1.3, Color(COL_LIGHT, rim * 0.5))
+			var hn := float(((i + 1) * 7919 + row * 104729) % 97) / 97.0
+			var y0 := base_y - amp * (0.35 + 0.65 * hs)
+			var y1 := base_y - amp * (0.35 + 0.65 * hn)
+			var top := Color(col, 0.0)
+			var bot := Color(col, 0.34)
+			draw_polygon(PackedVector2Array([Vector2(x0, y0 - amp * 0.9), Vector2(x1, y1 - amp * 0.9),
+					Vector2(x1, base_y), Vector2(x0, base_y)]), PackedColorArray([top, top, bot, bot]))
+			if rim > 0.0 and hs > 0.55:
+				draw_line(Vector2(x0, y0), Vector2(x1, y1), Color(COL_LIGHT, rim * (1.0 - 0.4 * float(row))), 1.2, true)
 
 
 # ---------------------------------------------------------------------------
@@ -738,7 +739,7 @@ func _draw_opponent() -> void:
 	# Gegner-Schatten (Koerper nur angedeutet, dunkler als der Raum).
 	var body := _pp(Vector3(wp.x * 0.9, 0.55, LEN + 0.45))
 	draw_set_transform(body, 0.0, Vector2(0.55, 1.0))
-	draw_circle(Vector2.ZERO, 0.30 * pxm, Color(0, 0, 0, 0.30))
+	draw_circle(Vector2.ZERO, 0.24 * pxm, Color(0, 0, 0, 0.12))
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	_blade(Vector2(cm.x, cm.y), 0.085 * pxm, 0.078 * pxm, -0.10 - 0.35 * swing,
 			Color(0.20, 0.10, 0.10), Color(0.62, 0.66, 0.74), 0.10 * pxm)
@@ -766,11 +767,11 @@ func _draw_fx() -> void:
 		var big := 1.5 if bool(f.smash) else 1.0
 		var col := zone_col(int(f.zone))
 		if str(f.kind) == "release":
-			draw_arc(p, sc * 0.09 * (1.0 + e), 0.0, TAU, 40, Color(col, 0.8 * (1.0 - u)), 1.8, true)
+			draw_arc(p, sc * 0.035 * (1.0 + 0.4 * e), 0.0, TAU, 40, Color(col, 0.8 * (1.0 - u)), 1.8, true)
 			continue
-		draw_arc(p, sc * 0.05 * (1.0 + 2.4 * big * e), 0.0, TAU, 40, Color(col, 0.7 * (1.0 - u)), 1.6, true)
+		draw_arc(p, sc * 0.030 * (1.0 + 0.55 * big * e), 0.0, TAU, 40, Color(col, 0.7 * (1.0 - u)), 1.6, true)
 		if bool(f.smash):
-			draw_arc(p, sc * 0.07 * (1.0 + 2.8 * e), 0.0, TAU, 40, Color(COL_SMASH, 0.6 * (1.0 - u)), 1.4, true)
+			draw_arc(p, sc * 0.045 * (1.0 + 0.6 * e), 0.0, TAU, 40, Color(COL_SMASH, 0.6 * (1.0 - u)), 1.4, true)
 		# Funken: wenige, kleine Punkte in Zonenfarbe, bremsen ab und fallen leicht.
 		var n := 12 if bool(f.smash) else 6
 		var tseed := int(float(f.t0)) % 997
