@@ -40,6 +40,8 @@ var w50 := 136.5
 var w_miss := 173.5
 
 var replay_log: Array = []
+## Zonenzahl dieses Laufs (3 oder 4), kommt aus RallyChart.zone_count(); steht in der Regel-Marke.
+var zones := 4
 var recording := true
 ## Ereignis-Log der Wertung: [t, "hit"/"miss"/"charge"/"drop", Index, Qualitaet].
 var event_log: Array = []
@@ -90,6 +92,7 @@ var charging: int:
 ## p_shots: Ergebnis von RallyChart.build. od/hp_drain der Map, p_mods null = GameSession.
 func setup(p_shots: Array[RallyChart.Shot], od: float, hp_drain: float = 5.0, p_mods = null) -> void:
 	shots = p_shots
+	zones = RallyChart.zone_count()
 	_tally = ManiaCore.new()
 	_tally.w_max = DifficultyCalc.mania_window_max(od)
 	_tally.w300 = DifficultyCalc.mania_window_300(od)
@@ -131,12 +134,12 @@ func setup(p_shots: Array[RallyChart.Shot], od: float, hp_drain: float = 5.0, p_
 	_pend = {}
 	_finished_emitted = false
 	event_log = []
-	replay_log = [[0, EV_RULES, REPLAY_RULES]] if recording else []
+	replay_log = [[0, EV_RULES, REPLAY_RULES, zones]] if recording else []
 
 
 func set_replay_mode(record: bool) -> void:
 	recording = record
-	replay_log = [[0, EV_RULES, REPLAY_RULES]] if record else []
+	replay_log = [[0, EV_RULES, REPLAY_RULES, zones]] if record else []
 
 
 # ---------------------------------------------------------------------------
@@ -510,6 +513,14 @@ static func load_replay(osz_path: String, version: String) -> Dictionary:
 	if parsed is Dictionary and parsed.has("events"):
 		return parsed
 	return {}
+
+
+## Zonenzahl eines Replays (Regel-Marke [0, 9, 2, zonen]; fehlt sie: 4).
+static func replay_zones(events: Array) -> int:
+	for e in events:
+		if e is Array and e.size() >= 3 and int(e[1]) == EV_RULES:
+			return 3 if e.size() > 3 and int(e[3]) == 3 else 4
+	return 4
 
 
 ## Replay mit gueltiger Regel-Marke dieser Version?

@@ -33,6 +33,7 @@ var _autoplay := false
 var _countdown_running := false
 var _song_len_ms := 1.0
 var _held := [[false, false], [false, false], [false, false], [false, false]]
+var _zones := 3
 var _view: RallyView
 var _hud: CanvasLayer
 var _bg_tex: TextureRect
@@ -160,7 +161,8 @@ func _load_beatmap() -> bool:
 	if _beatmap == null or _beatmap.hit_objects.is_empty() \
 			or not (_beatmap.is_mania() or _beatmap.mode() == 0):
 		return false
-	shots = RallyChart.build(_beatmap, float(Settings.rally_flight_ms))
+	_zones = RallyCore.replay_zones(GameSession.replay_events) if (GameSession.is_replay and GameSession.replay_mode == MODE and RallyCore.replay_ok(GameSession.replay_events)) else Settings.rally_zones
+	shots = RallyChart.build(_beatmap, float(Settings.rally_flight_ms), _zones)
 	if shots.is_empty():
 		return false
 	var stream := OszImporter.load_audio_stream(GameSession.osz_path, _beatmap)
@@ -389,8 +391,9 @@ func _build_hud() -> void:
 ## Tastenbeschriftung der 4 Zonen (Mania-4K-Belegung).
 func _zone_labels() -> Array:
 	var out := []
-	for k in RallyCore.ZONES:
-		out.append(UiTheme.key_short(Settings.key_lanes[k]))
+	var keys := Settings.rally_keys(_zones)
+	for k in _zones:
+		out.append(UiTheme.key_short(keys[k]))
 	return out
 
 
@@ -461,7 +464,7 @@ func _input(event: InputEvent) -> void:
 	if _ended or _autoplay or _replay or core == null:
 		return
 	if event is InputEventKey and not event.echo:
-		var zone := Settings.lane_for_key(event.keycode)
+		var zone := Settings.rally_zone_for_key(event.keycode, _zones)
 		if zone >= 0:
 			_press(zone, 1, event.pressed)
 
@@ -499,10 +502,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif not _countdown_running:
 			_toggle_pause(true)
 		return
-	if event.keycode == KEY_R and Settings.lane_for_key(KEY_R) == -1 and not Lobby.active:
+	if event.keycode == KEY_R and Settings.rally_zone_for_key(KEY_R, _zones) == -1 and not Lobby.active:
 		_restart()
 		return
-	if event.keycode == KEY_SPACE and not _ended and Settings.lane_for_key(KEY_SPACE) == -1 \
+	if event.keycode == KEY_SPACE and not _ended and Settings.rally_zone_for_key(KEY_SPACE, _zones) == -1 \
 			and _can_skip_intro():
 		if Lobby.active and Lobby.in_game:
 			Lobby.vote_skip()
@@ -807,7 +810,7 @@ func _show_results(is_fail: bool) -> void:
 	s["unranked"] = false
 	s["pp"] = -1.0
 	s["mode"] = MODE
-	s["stars"] = RallyChart.stars(shots)
+	s["stars"] = RallyChart.stars(shots, _zones)
 	var new_best := false
 	if not _autoplay and not GameSession.is_replay and not GameSession.tutorial:
 		var save := ScoreStore.submit(GameSession.osz_path, _beatmap.version_name(), s, MODE)
@@ -868,7 +871,7 @@ func _save_replay(s: Dictionary) -> void:
 	RallyCore.save_replay(GameSession.osz_path, _beatmap.version_name(), core.replay_log, {
 		"score": int(s.score), "grade": str(s.grade), "accuracy": float(s.accuracy),
 		"date": Time.get_datetime_string_from_system(), "mods": GameSession.mods.duplicate(),
-		"end_ms": int(_last_update_t),
+		"end_ms": int(_last_update_t), "zones": _zones,
 	})
 
 
