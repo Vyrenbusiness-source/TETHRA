@@ -24,8 +24,10 @@ const MISS_COL := Color(0.871, 0.443, 0.384)
 const GOLD := Color(1.0, 0.87, 0.64)              # warmes Buehnenlicht
 const GREY := Color(0.62, 0.62, 0.64)
 const ROWS := 4
-const BAR_LEAD_MS := 1700.0
+const BAR_LEAD_MS := 1500.0
 const APPROACH_MS := 650.0
+## Annaeherungsring am Taktstock: so lange vor dem Einsatz sichtbar.
+const CUE_RING_MS := 1000.0
 
 var chart: DirigentChart
 var core: DirigentCore
@@ -84,11 +86,11 @@ func setup(p_chart: DirigentChart, p_core: DirigentCore) -> void:
 # ---------------------------------------------------------------------------
 
 func unit_px() -> float:
-	return size.y * 0.32
+	return size.y * 0.30
 
 
 func center_px() -> Vector2:
-	return Vector2(size.x * 0.5, size.y * 0.40)
+	return Vector2(size.x * 0.5, size.y * 0.375)
 
 
 func to_px(u: Vector2) -> Vector2:
@@ -101,9 +103,9 @@ func to_unit(px: Vector2) -> Vector2:
 
 ## Einsatz-Leiste: Linie links, Marken kommen von rechts.
 func bar_rect() -> Rect2:
-	var w := minf(size.x * 0.62, 980.0)
-	var h := size.y * 0.07
-	return Rect2(Vector2((size.x - w) * 0.5, size.y * 0.868), Vector2(w, h))
+	var w := minf(size.x * 0.64, 1080.0)
+	var h := size.y * 0.082
+	return Rect2(Vector2((size.x - w) * 0.5, size.y * 0.795), Vector2(w, h))
 
 
 func _bar_line_x() -> float:
@@ -176,6 +178,7 @@ func _draw() -> void:
 	_draw_announce(bar_i, target)
 	_draw_trace(cur, nxt)
 	_draw_beat_fx()
+	_draw_cue_rings()
 	_draw_hand()
 	_draw_bar()
 
@@ -450,6 +453,82 @@ func _draw_beat_fx() -> void:
 	_beat_fx = keep
 
 
+# ---------------------------------------------------------------------------
+# Einsatz-Ring am Taktstock
+# ---------------------------------------------------------------------------
+
+## Die naechsten (hoechstens zwei) offenen Einsaetze.
+func _upcoming_cues() -> Array:
+	var out: Array = []
+	var i := _cue_first
+	while i < chart.cues.size() and out.size() < 2:
+		var tc := float(chart.cues[i].t)
+		if tc - t_ms > CUE_RING_MS:
+			break
+		if tc - t_ms > -140.0 and not (core != null and core.is_cue_done(i)):
+			out.append(i)
+		i += 1
+	return out
+
+
+func _mask_text(mask: int) -> String:
+	if mask == 1:
+		return key_names[0]
+	if mask == 2:
+		return key_names[1]
+	return key_names[0] + "+" + key_names[1]
+
+
+## Form des Einsatzes um p mit Radius r: A = Kreis, B = Raute, beide = Kreis und Raute.
+func _ring_shape(p: Vector2, r: float, mask: int, col_a: float, w: float) -> void:
+	if mask != 2:
+		draw_arc(p, r, 0.0, TAU, 40, Color(KEY_A_COL, col_a), w, true)
+	if mask != 1:
+		var d := r * (1.22 if mask == 2 else 1.4)
+		var pts := PackedVector2Array([p + Vector2(0, -d), p + Vector2(d, 0), p + Vector2(0, d), p + Vector2(-d, 0), p + Vector2(0, -d)])
+		draw_polyline(pts, Color(KEY_B_COL, col_a), w, true)
+
+
+func _draw_cue_rings() -> void:
+	if chart.cues.is_empty():
+		return
+	while _cue_first < chart.cues.size() and float(chart.cues[_cue_first].t) < t_ms - 260.0:
+		_cue_first += 1
+	var up := _upcoming_cues()
+	var p := cursor_px
+	var u := size.y / 720.0
+	for n in up.size():
+		var c: Dictionary = chart.cues[up[n]]
+		var mask := int(c.mask)
+		var k := clampf((float(c.t) - t_ms) / CUE_RING_MS, 0.0, 1.0)
+		if n == 0:
+			# Ring schrumpft vom grossen Radius auf den Stock-Kern; kurz vor dem Einsatz leuchtet er.
+			var r_end := 24.0 * u
+			var r := r_end + k * 70.0 * u
+			var a := clampf(1.0 - k * 0.55, 0.0, 1.0)
+			var near := clampf(1.0 - k * 4.0, 0.0, 1.0)
+			var col := KEY_A_COL if mask == 1 else (KEY_B_COL if mask == 2 else INK)
+			_ring_shape(p, r, mask, 0.22 * a, 9.0 * u)
+			_ring_shape(p, r, mask, a, 3.0 * u)
+			# Zielring am Stock (Einsatzzeit).
+			draw_arc(p, r_end, 0.0, TAU, 32, Color(INK, 0.30 + 0.5 * near), 1.6 * u + 1.0, true)
+			if near > 0.0:
+				draw_circle(p, r_end, Color(col, 0.18 * near), true, -1.0, true)
+			var txt := _mask_text(mask)
+			var fs := int(round(21.0 * u))
+			var tp := p + Vector2(r_end + 16.0 * u + (r - r_end) * 0.7, -r_end - 8.0 * u)
+			draw_string(_head_font, tp + Vector2(1, 1), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(0, 0, 0, 0.7))
+			draw_string(_head_font, tp, txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(col.lerp(INK, 0.25), a))
+		else:
+			# Uebernaechster Einsatz: kleine Marke links oben vom Ring, nur Vorschau.
+			var q := p + Vector2(-80.0 * u, -62.0 * u)
+			var al := 0.55 * clampf(1.0 - k * 0.6, 0.0, 1.0)
+			_ring_shape(q, 9.0 * u, mask, al, 2.2 * u)
+			var t2 := _mask_text(mask)
+			draw_string(_head_font, q + Vector2(14.0 * u, 5.0 * u), t2, HORIZONTAL_ALIGNMENT_LEFT, -1, int(round(13.0 * u)),
+				Color(INK, al))
+
+
 func _draw_hand() -> void:
 	# Spur: kurz, verjuengt sich zum Ende, Spitze leuchtet.
 	var n := _trail.size()
@@ -499,9 +578,14 @@ func _draw_bar() -> void:
 	# Trefferlinie (deutlich) mit Ring, Legende links in den Formen der Marken.
 	var held_a: bool = key_held[0]
 	var held_b: bool = key_held[1]
-	draw_line(Vector2(line_x, r.position.y - 8.0), Vector2(line_x, r.end.y + 8.0), Color(GOLD, 0.16), 8.0, true)
-	draw_line(Vector2(line_x, r.position.y - 8.0), Vector2(line_x, r.end.y + 8.0), Color(INK, 1.0), 3.0, true)
-	draw_arc(Vector2(line_x, mid_y), h * 0.40, 0.0, TAU, 40, Color(INK, 0.85), 2.5, true)
+	draw_line(Vector2(line_x, r.position.y - 10.0), Vector2(line_x, r.end.y + 10.0), Color(GOLD, 0.22), 12.0, true)
+	draw_line(Vector2(line_x, r.position.y - 10.0), Vector2(line_x, r.end.y + 10.0), Color(INK, 1.0), 3.5, true)
+	draw_arc(Vector2(line_x, mid_y), h * 0.44, 0.0, TAU, 40, Color(INK, 0.9), 2.8, true)
+	# Pfeilspitzen an Ober- und Unterkante zeigen auf die Linie.
+	var top_y := r.position.y - 10.0
+	var bot_y := r.end.y + 10.0
+	draw_colored_polygon(PackedVector2Array([Vector2(line_x - 8.0, top_y - 9.0), Vector2(line_x + 8.0, top_y - 9.0), Vector2(line_x, top_y)]), Color(GOLD, 0.95))
+	draw_colored_polygon(PackedVector2Array([Vector2(line_x - 8.0, bot_y + 9.0), Vector2(line_x, bot_y), Vector2(line_x + 8.0, bot_y + 9.0)]), Color(GOLD, 0.95))
 	_key_cap(Vector2(r.position.x + 30.0, mid_y), key_names[0], KEY_A_COL, held_a, 0)
 	_key_cap(Vector2(r.position.x + 78.0, mid_y), key_names[1], KEY_B_COL, held_b, 1)
 	if _meter_label != "":
@@ -514,7 +598,7 @@ func _draw_bar() -> void:
 	while _cue_first < chart.cues.size() and float(chart.cues[_cue_first].t) < t_ms - 260.0:
 		_cue_first += 1
 	var i := _cue_first
-	var rad := h * 0.26
+	var rad := h * 0.31
 	while i < chart.cues.size():
 		var tc := float(chart.cues[i].t)
 		if tc - t_ms > BAR_LEAD_MS:
@@ -535,6 +619,7 @@ func _draw_bar() -> void:
 		var q := int(fx[1])
 		var col := MISS_COL if q == 5 else INK
 		draw_arc(Vector2(line_x, mid_y), rad * (1.2 + 1.2 * k), 0.0, TAU, 32, Color(col, 0.7 * (1.0 - k)), 2.0, true)
+		draw_arc(cursor_px, (22.0 + 38.0 * k) * size.y / 720.0, 0.0, TAU, 32, Color(col, 0.6 * (1.0 - k)), 2.5, true)
 	_cue_fx = keep
 
 
