@@ -690,8 +690,8 @@ func _on_charge_started(index: int, quality: int) -> void:
 
 
 func _on_press_ignored(_key: int, reason: String) -> void:
-	if reason == "KEY":
-		_flash_hint(tr("andere Zone"))
+	if reason == "WRONG":
+		_flash_hint("WRONG KEY")
 
 
 # ---------------------------------------------------------------------------

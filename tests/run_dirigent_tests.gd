@@ -23,6 +23,7 @@ func _initialize() -> void:
 	_test_autoplay_ss()
 	_test_stars()
 	_test_breaks()
+	_test_anti_mash()
 	print("=== Ergebnis: %d bestanden, %d fehlgeschlagen ===" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
 
@@ -421,3 +422,52 @@ func _test_breaks() -> void:
 	for i in c.beats.size() - 1:
 		gap = gap or c.is_gap(i)
 	_ok(gap, "Pause als Luecke erkannt (Figur ruht)")
+
+
+func _spam(core: DirigentCore, c: DirigentChart) -> void:
+	for cue in c.cues:
+		var t := float(cue.t)
+		core.key_down(0, t)
+		core.key_down(1, t + 3.0)
+	core.update(float(c.cues[c.cues.size() - 1].t) + 1000.0)
+
+
+func _test_anti_mash() -> void:
+	print("-- Anti-Mash")
+	var bm := _std()
+	for i in 24:
+		_circle(bm, 1000.0 + 400.0 * i, [0, 2, 4][i % 3])   # A, B, beide
+	var c := DirigentChart.build(bm)
+	var before := _core(c)
+	before.anti_mash = false
+	_spam(before, c)
+	var after := _core(c)
+	_spam(after, c)
+	print("  Dirigent Spam A+B: vorher Einsatz-Acc %.1f%% (Misses %d), nachher %.1f%% (Misses %d)" % [
+		before.cue_acc() * 100.0, before.n_miss, after.cue_acc() * 100.0, after.n_miss])
+	_ok(after.cue_acc() < before.cue_acc() - 0.15 and after.n_miss > before.n_miss, "Spam: Einsatz-Acc faellt")
+	# Falsche Taste = sofort Miss, danach richtige heilt nicht.
+	var d := _core(c)
+	d.key_down(1, float(c.cues[0].t))
+	_ok(d.n_miss == 1 and d.combo == 0, "B auf A-Einsatz: sofort Miss")
+	d.key_down(0, float(c.cues[0].t) + 5.0)
+	_ok(d.n_miss == 1 and d.n_max == 0, "richtige danach heilt nicht")
+	# Richtige zuerst, dann Zusatztaste: Treffer bleibt.
+	var e := _core(c)
+	e.key_down(0, float(c.cues[0].t))
+	e.key_down(1, float(c.cues[0].t) + 4.0)
+	_ok(e.n_miss == 0 and e.n_max == 1, "richtig dann falsch: Treffer bleibt")
+	# Akzent (beide): A allein wertet nie, beide = Treffer.
+	var f := _core(c)
+	f.key_down(0, float(c.cues[2].t))
+	f.update(float(c.cues[2].t) + f.w50 + 1.0)
+	_ok(f.n_max + f.n300 == 0 and f.n_miss >= 1, "Akzent mit A allein: Miss")
+	var g := _core(c)
+	g.key_down(0, float(c.cues[2].t))
+	g.key_down(1, float(c.cues[2].t) + 10.0)
+	_ok(g.n_miss == 0 and g.n_max == 1, "Akzent mit beiden = Treffer")
+	# Leer-Druck ohne Einsatz im Fenster: nichts.
+	var h := _core(c)
+	h.key_down(0, 500.0)
+	_ok(h.n_miss == 0, "Leer-Druck = nichts")
+	_ok(DirigentCore.REPLAY_RULES == 2, "Replay-Regelversion 2")

@@ -15,6 +15,8 @@ extends Control
 const MODE := "rebound"
 const JUDGE_SCALE := 0.5
 const LEAD_MS := 1800.0
+## Replay-Regelversion: 2 = Anti-Mash (falsche Taste macht eine Note im 50er-Fenster zum Miss).
+const REPLAY_RULES := 2
 const GRADE_COLOR := {
 	"SS": Color(1.0, 0.92, 0.55), "S": Color(1.0, 0.85, 0.40), "A": Color(0.55, 0.85, 0.55),
 	"B": Color(0.50, 0.70, 0.95), "C": Color(0.75, 0.58, 0.95), "D": Color(0.90, 0.50, 0.45),
@@ -54,6 +56,7 @@ var _held := [false, false, false, false]
 var _plan: Array = []
 var _plan_idx := 0
 var _replay := false
+var _old_replay := false
 var _replay_idx := 0
 var _last_update_t := 0.0
 var _mp_send_cd := 0.0
@@ -89,6 +92,8 @@ func _ready() -> void:
 			seed = a.trim_prefix("--auto-seed=").to_int()
 		elif a.begins_with("--mp-cut="):
 			_mp_cut_ms = maxf(0.0, a.trim_prefix("--mp-cut=").to_float()) * 1000.0
+	if not _replay:
+		_recorded = [{"t": -1.0, "lane": -1, "down": false, "rules": REPLAY_RULES}]
 	core = ManiaCore.new()
 	core.setup(_beatmap)
 	core.note_judged.connect(_on_note_judged)
@@ -106,6 +111,9 @@ func _ready() -> void:
 		_view.key_labels.append(UiTheme.key_short(Settings.key_lanes[c]))
 	_build_hud()
 	_update_hud()
+	if _old_replay:
+		_show_old_replay()
+		return
 	if Lobby.active and Lobby.in_game:
 		Lobby.skip_now.connect(_do_skip)
 	if not _use_audio:
@@ -392,9 +400,67 @@ func _press(lane: int, down: bool) -> void:
 	_view.held[lane] = down
 	_recorded.append({"t": t, "lane": lane, "down": down})
 	if down:
-		core.key_down(lane, t)
+		_down(lane, t)
 	else:
 		core.key_up(lane, t)
+
+
+## Druck ueber die Anti-Mash-Schicht an ManiaCore geben (live, Replay und Bot gleich).
+func _down(lane: int, t: float) -> void:
+	if wrong_key_check(core, lane, t) >= 0:
+		if _view.has_method("on_wrong_key"):
+			_view.on_wrong_key(lane)
+	core.key_down(lane, t)
+
+
+## Replays ohne Regel-Marke oder mit anderer Version passen nicht zu den Regeln.
+static func replay_current(events: Array) -> bool:
+	return not events.is_empty() and events[0] is Dictionary 			and int(events[0].get("rules", 0)) == REPLAY_RULES
+
+
+## Anti-Mash: Druck auf Spalte lane ohne Note im Miss-Fenster, waehrend eine andere
+## Spalte eine ungewertete Note im 50er-Fenster hat: diese Note (die naechste) ist
+## sofort Miss. Gibt deren Index zurueck, sonst -1. Druck ohne Note irgendwo = nichts.
+static func wrong_key_check(core: ManiaCore, lane: int, t: float) -> int:
+	if core == null or core.beatmap == null or lane < 0 or lane >= core.columns:
+		return -1
+	for c in core.columns:
+		core._expire_lane(c, t)
+	if core._broken_hold[lane] >= 0:
+		return -1
+	if core._lane_head[lane] < core._lane_notes[lane].size():
+		var own: int = core._lane_notes[lane][core._lane_head[lane]]
+		if t - core.beatmap.hit_objects[own].time >= -core.w_miss:
+			return -1
+	var victim := -1
+	var best := INF
+	for c in core.columns:
+		if c == lane or core._lane_head[c] >= core._lane_notes[c].size():
+			continue
+		var idx: int = core._lane_notes[c][core._lane_head[c]]
+		var dt := absf(t - core.beatmap.hit_objects[idx].time)
+		if dt <= core.w50 and dt < best:
+			best = dt
+			victim = idx
+	if victim >= 0:
+		core._miss(victim, "WRONG")
+	return victim
+
+
+func _show_old_replay() -> void:
+	var l := Label.new()
+	l.text = tr("Dieses Replay stammt aus einer älteren Rebound-Version und lässt sich nicht mehr abspielen.")
+	l.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	l.add_theme_font_size_override("font_size", 22)
+	_hud.add_child(l)
+	_ended = true
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	await get_tree().create_timer(3.5, true).timeout
+	if is_inside_tree():
+		_back_to_browser()
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -468,8 +534,10 @@ func _feed(evs: Array, t: float) -> void:
 		var ev: Dictionary = evs[_plan_idx]
 		_plan_idx += 1
 		var lane := int(ev.lane)
+		if lane < 0 or lane > 3:
+			continue
 		if bool(ev.down):
-			core.key_down(lane, float(ev.t))
+			_down(lane, float(ev.t))
 		else:
 			core.key_up(lane, float(ev.t))
 		_held[lane] = bool(ev.down)

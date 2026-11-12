@@ -18,6 +18,8 @@ extends RefCounted
 signal beat_judged(index: int, result: Dictionary)
 signal cue_judged(index: int, result: Dictionary)
 signal key_pressed(key: int, hit: bool)
+## Falsche Taste: der Einsatz index ist sofort Miss (Anti-Mash).
+signal wrong_key(key: int, index: int)
 signal finished(stats: Dictionary)
 
 const Quality := ManiaCore.Quality
@@ -40,10 +42,13 @@ const EV_CURSOR := 0
 const EV_KEY_A := 1
 const EV_KEY_B := 2
 const EV_RULES := 9
-const REPLAY_RULES := 1
+## Regeln 2: Anti-Mash (falsche Taste macht den Einsatz im 50er-Fenster zum Miss).
+const REPLAY_RULES := 2
 
 var chart: DirigentChart
 var recording := false
+## Anti-Mash. Nur Messungen/Tests schalten es aus (Vorher-Werte); Spiel und Replay: immer an.
+var anti_mash := true
 var replay_log: Array = []
 var combo := 0
 var max_combo := 0
@@ -229,6 +234,23 @@ func _apply_key(key: int, t: float) -> void:
 			return
 		i += 1
 	key_pressed.emit(key, false)
+	if not anti_mash:
+		return
+	# Anti-Mash: Taste, die kein offener Einsatz im Fenster verlangt, waehrend ein
+	# Einsatz im 50er-Fenster eine andere Taste verlangt: dieser Einsatz ist sofort Miss.
+	# (Akzent: nur mit beiden Tasten; eine Taste allein wertet nie, jede Zusatztaste
+	# an einem A-/B-Einsatz macht ihn zum Miss.)
+	i = _cue_head
+	while i < cues.size():
+		var c2: Dictionary = cues[i]
+		var ct2 := float(c2.t)
+		if ct2 - t > w50:
+			break
+		if not _cue_done[i] and t - ct2 <= w50 and not DirigentChart.mask_has(int(c2.mask), key):
+			_finish_cue(i, Quality.MISS, 0.0)
+			wrong_key.emit(key, i)
+			return
+		i += 1
 
 
 # ---------------------------------------------------------------------------

@@ -67,6 +67,7 @@ func _run() -> void:
 	_test_bot_jitter()
 	_test_replay()
 	_test_replay_io()
+	_test_anti_mash()
 
 
 func _test_landing() -> void:
@@ -307,3 +308,93 @@ func _test_replay_io() -> void:
 	_ok(r.get("events", []).size() == plan.size() and str(r.meta.mode) == "rebound", "geladen mit Modus")
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(ReboundReplay.path_for(osz, "V")))
 	_ok(ReplayStore.path_for_key("x") != ReboundReplay.path_for("x", "V"), "getrennt von Mania-Replays")
+
+
+const RG := preload("res://scripts/rebound/rebound_game.gd")
+
+
+## Wie das Spiel: Anti-Mash-Schicht vor ManiaCore (rules=false: roh wie vor v2).
+func _play_rules(bm: Beatmap, plan: Array, rules: bool) -> ManiaCore:
+	var core := ManiaCore.new()
+	core.setup(bm)
+	var end := float(bm.hit_objects.back().end_time()) + 1000.0
+	var i := 0
+	var t := 0.0
+	while t <= end:
+		while i < plan.size() and float(plan[i].t) <= t:
+			var ev: Dictionary = plan[i]
+			if bool(ev.down):
+				if rules:
+					RG.wrong_key_check(core, int(ev.lane), float(ev.t))
+				core.key_down(int(ev.lane), float(ev.t))
+			else:
+				core.key_up(int(ev.lane), float(ev.t))
+			i += 1
+		core.update(t)
+		t += 4.0
+	return core
+
+
+## Spam: zu jeder Notenzeit alle vier Tasten.
+func _spam_plan(bm: Beatmap) -> Array:
+	var times := {}
+	for o in bm.hit_objects:
+		times[int(o.time)] = true
+	var ks: Array = times.keys()
+	ks.sort()
+	var out: Array = []
+	for t in ks:
+		for c in 4:
+			out.append({"t": t, "lane": c, "down": true})
+		for c in 4:
+			out.append({"t": t + 30, "lane": c, "down": false})
+	return out
+
+
+func _test_anti_mash() -> void:
+	var bm := _stress_map()
+	var plan := _spam_plan(bm)
+	var before := _play_rules(bm, plan, false)
+	var after := _play_rules(bm, plan, true)
+	print("  Rebound Spam: vorher Acc %.1f%% (Misses %d), nachher Acc %.1f%% (Misses %d)" % [
+		before.accuracy() * 100.0, before.n_miss, after.accuracy() * 100.0, after.n_miss])
+	_ok(after.accuracy() < before.accuracy() - 0.2 and after.accuracy() < 0.6, "Spam: Acc faellt deutlich")
+	_ok(after.n_miss > before.n_miss, "Spam gibt Misses")
+	# Bot unberuehrt: SS auch mit Schicht.
+	var bot := _play_rules(bm, ReboundReplay.bot_plan(bm), true)
+	_ok(bot.n_miss == 0 and bot.accuracy() > 0.999, "Bot mit Schicht weiter SS")
+	# Richtige + falsche gleichzeitig: Note in Spalte 0 bei 2000, Druck Spalte 2 bei 2000.
+	var one := _map([[0, 2000], [0, 4000]])
+	var c := ManiaCore.new()
+	c.setup(one)
+	var v := RG.wrong_key_check(c, 2, 1990.0)
+	_ok(v == 0 and c.n_miss == 1 and c.combo == 0, "falsche Taste: Note sofort Miss")
+	c.key_down(2, 1990.0)
+	c.key_down(0, 2000.0)
+	_ok(c.n_miss == 1 and c.n300 + c.n_max == 0, "danach richtige Taste trifft nicht mehr")
+	# Richtig zuerst, dann falsch: Treffer bleibt.
+	var d := ManiaCore.new()
+	d.setup(one)
+	RG.wrong_key_check(d, 0, 2000.0)
+	d.key_down(0, 2000.0)
+	var v2 := RG.wrong_key_check(d, 3, 2005.0)
+	_ok(v2 == -1 and d.n_miss == 0 and d.combo == 1, "richtig dann falsch: Treffer bleibt")
+	# Akkord richtig = Treffer.
+	var chord := _map([[0, 2000], [3, 2000]])
+	var e := ManiaCore.new()
+	e.setup(chord)
+	_ok(RG.wrong_key_check(e, 0, 2000.0) == -1, "Akkord: erste Taste ok")
+	e.key_down(0, 2000.0)
+	_ok(RG.wrong_key_check(e, 3, 2004.0) == -1, "Akkord: zweite Taste ok")
+	e.key_down(3, 2004.0)
+	_ok(e.n_miss == 0 and e.combo == 2, "Akkord richtig = 2 Treffer")
+	# Leer-Druck ohne Note im Fenster = nichts.
+	var f := ManiaCore.new()
+	f.setup(one)
+	_ok(RG.wrong_key_check(f, 2, 500.0) == -1 and f.n_miss == 0, "Leer-Druck (Note weit weg) = nichts")
+	var g := ManiaCore.new()
+	g.setup(one)
+	_ok(RG.wrong_key_check(g, 2, 1700.0) == -1 and g.n_miss == 0, "Druck 300 ms vor Note: nichts (ausserhalb 50er)")
+	# Replay-Regelversion.
+	_ok(RG.replay_current([{"t": -1.0, "lane": -1, "down": false, "rules": RG.REPLAY_RULES}]), "Replay v2 akzeptiert")
+	_ok(not RG.replay_current(plan), "altes Replay ohne Marke abgelehnt")

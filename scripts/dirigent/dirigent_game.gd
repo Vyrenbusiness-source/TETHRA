@@ -286,6 +286,7 @@ func _build_core() -> void:
 	core.beat_judged.connect(_on_beat_judged)
 	core.cue_judged.connect(_on_cue_judged)
 	core.key_pressed.connect(_on_key_pressed)
+	core.wrong_key.connect(func(_k, _i): if _view != null: _view.on_wrong_key())
 	core.finished.connect(func(_s): _show_results())
 	core.set_replay_mode(not _replay)
 
