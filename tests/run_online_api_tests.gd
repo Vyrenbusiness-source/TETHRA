@@ -79,6 +79,10 @@ func _run() -> void:
 	var o := OnlineApi.build_body(_result(), _meta(), "orbit")
 	_check(o.mode == "orbit" and o.has("stars") and not o.has("pp"), "Orbit: stars statt pp")
 	_check(is_equal_approx(float(o.stars), 4.5), "Orbit stars aus meta")
+	for tm in ["trace", "rebound"]:
+		var t := OnlineApi.build_body(_result(), _meta(), tm)
+		_check(t.mode == tm and t.has("stars") and not t.has("pp") and t.count_300 == 20 and t.count_miss == 1, "%s: Counts wie Mania, stars statt pp" % tm)
+	_check(not OnlineApi.REPLAY_MODES.has("trace") and not OnlineApi.REPLAY_MODES.has("rebound"), "Trace/Rebound: kein replay_content")
 	_check(is_equal_approx(OnlineApi.mod_factor(["SV", "NF"]), 0.55), "Mod-Faktor SV+NF")
 	_check(is_equal_approx(OnlineApi.mod_factor({"SV": true}), 1.1), "Mod-Faktor SV")
 	_check(is_equal_approx(OnlineApi.mod_factor([]), 1.0), "Mod-Faktor leer")

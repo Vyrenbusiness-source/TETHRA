@@ -48,14 +48,24 @@ const MODE_MANIA := "mania"
 const MODE_ORBIT := "orbit"
 const MODE_RALLY := "rally"
 const MODE_DIRIGENT := "dirigent"
+const MODE_TRACE := "trace"
+const MODE_REBOUND := "rebound"
 ## Alle Modi in Anzeige-Reihenfolge (Browser, Profil, Lobby).
-const MODES: Array[String] = ["mania", "orbit", "rally", "dirigent"]
+const MODES: Array[String] = ["mania", "orbit", "rally", "dirigent", "trace", "rebound"]
+## Modi mit Mania-4K-Wertung auf Mania-Maps (ManiaCore, Mania-Sterne, Counts wie Mania).
+const MANIA_LIKE: Array[String] = ["mania", "trace", "rebound"]
 
 
-## true fuer Modi ohne pp (Orbit, Rally, Dirigent): Wertung ueber orbit_points.
+## true fuer Modi ohne pp (alle ausser Mania): Wertung ueber orbit_points.
+## Trace/Rebound werten wie Mania 4K, haben aber keine pp (Sterne = Mania-Sterne).
 static func uses_points(mode: String) -> bool:
 	var m := MODE_MANIA if mode == "" else mode
-	return m == MODE_ORBIT or m == MODE_RALLY or m == MODE_DIRIGENT
+	return m != MODE_MANIA and MODES.has(m)
+
+
+## true fuer Mania und die Modi auf Mania-4K-Maps (Trace, Rebound).
+static func is_mania_like(mode: String) -> bool:
+	return MANIA_LIKE.has(MODE_MANIA if mode == "" else mode)
 
 
 ## Spielszene je Modus (Wurzelskript wie orbit_game: setzt Lobby/Score selbst).
@@ -64,7 +74,15 @@ const MODE_SCENES := {
 	"orbit": "res://scenes/orbit.tscn",
 	"rally": "res://scenes/rally.tscn",
 	"dirigent": "res://scenes/dirigent.tscn",
+	"trace": "res://scenes/trace.tscn",
+	"rebound": "res://scenes/rebound.tscn",
 }
+
+
+## Tutorial-Szene je Modus ("res://scenes/<modus>_tutorial.tscn") oder "" (keins gebaut).
+static func mode_tutorial(mode: String) -> String:
+	var path := "res://scenes/%s_tutorial.tscn" % normalize_mode(mode)
+	return path if ResourceLoader.exists(path) else ""
 
 
 static func mode_scene(mode: String) -> String:
@@ -98,6 +116,8 @@ static func mode_label(mode: String) -> String:
 		MODE_ORBIT: return "Orbit"
 		MODE_RALLY: return "Rally"
 		MODE_DIRIGENT: return "Dirigent"
+		MODE_TRACE: return "Trace"
+		MODE_REBOUND: return "Rebound"
 	return "Mania 4K"
 
 

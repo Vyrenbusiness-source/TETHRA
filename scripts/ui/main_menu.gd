@@ -709,21 +709,23 @@ func _build_buttons() -> void:
 	vb.anchor_bottom = 0.415
 	vb.offset_left = -180
 	vb.offset_right = 180
-	vb.add_theme_constant_override("separation", 10)
+	vb.add_theme_constant_override("separation", 8)
 	add_child(vb)
 
 	_btn_play = _menu_button("SPIELEN", true)
 	_btn_play.pressed.connect(_play)
-	_add_wrapped(vb, _btn_play)
+	_add_menu_button(vb, _btn_play)
 
-	# Eigener Modus gleichwertig neben "Spielen": oeffnet den Browser direkt
-	# im Orbit-Modus (Uebergabe ueber browser_state.cfg play_mode).
-	# Weitere Modi ruhig als eine Zeile gleich grosser Kacheln unter SPIELEN.
-	var modes := HBoxContainer.new()
-	modes.custom_minimum_size = Vector2(360, 64)
-	modes.add_theme_constant_override("separation", 8)
+	# Alle sechs Modi als ruhiges 3x2-Raster gleich grosser Kacheln unter SPIELEN:
+	# jede oeffnet den Browser direkt im Modus (browser_state.cfg play_mode).
+	# Knoepfe dafuer etwas flacher, damit "Beenden" bei 720p sichtbar bleibt.
+	var modes := GridContainer.new()
+	modes.columns = 3
+	modes.custom_minimum_size = Vector2(360, 0)
+	modes.add_theme_constant_override("h_separation", 8)
+	modes.add_theme_constant_override("v_separation", 6)
 	vb.add_child(modes)
-	for m in ["orbit", "rally", "dirigent"]:
+	for m in MENU_MODES:
 		var tile := _mode_tile(m)
 		if m == "orbit":
 			_btn_orbit = tile
@@ -732,19 +734,31 @@ func _build_buttons() -> void:
 
 	_btn_mp = _menu_button("MULTIPLAYER", false)
 	_btn_mp.pressed.connect(func(): _fade_music_out(); SceneFader.go("res://scenes/mp_lobby.tscn"))
-	_add_wrapped(vb, _btn_mp)
+	_add_menu_button(vb, _btn_mp)
 
 	var tut := _menu_button("TUTORIAL", false)
 	tut.pressed.connect(_start_tour)
-	_add_wrapped(vb, tut)
+	_add_menu_button(vb, tut)
 
 	_btn_settings = _menu_button("EINSTELLUNGEN", false)
 	_btn_settings.pressed.connect(_open_settings)
-	_add_wrapped(vb, _btn_settings)
+	_add_menu_button(vb, _btn_settings)
 
 	var quit := _menu_button("BEENDEN", false)
 	quit.pressed.connect(func(): _fade_music_out(); get_tree().quit())
-	_add_wrapped(vb, quit)
+	_add_menu_button(vb, quit)
+
+
+## Modus-Kacheln des Hauptmenues (Reihenfolge = ScoreStore.MODES).
+const MENU_MODES := ["mania", "orbit", "rally", "dirigent", "trace", "rebound"]
+## Hoehe der Hauptknoepfe und Modus-Kacheln.
+const MENU_BTN_H := 52.0
+const MODE_TILE_H := 52.0
+
+
+func _add_menu_button(parent: Control, b: Button) -> void:
+	b.custom_minimum_size.y = MENU_BTN_H
+	_add_wrapped(parent, b, MENU_BTN_H)
 
 
 ## Button in Wrapper: links Glow-Kante + Slide bei Hover, kleiner Puls beim Klick.
@@ -1213,10 +1227,27 @@ func _play_mode_entry(mode: String) -> void:
 
 
 func _mode_sub_text(mode: String) -> String:
+	# Modus ohne Spielszene: Kachel zeigt "Kommt bald" (Browser blendet ihn genauso aus).
+	if not ScoreStore.mode_ready(mode):
+		return tr("Kommt bald")
 	match mode:
+		"mania": return tr("Vier Spuren")
 		"rally": return tr("Tischtennis")
 		"dirigent": return tr("Takt führen")
+		"trace": return tr("Den Takt zeichnen")
+		"rebound": return tr("Im Takt springen")
 	return tr("Zielen + Tippen")
+
+
+## "?" auf einer Kachel: Tutorial des Modus (nur wenn scenes/<modus>_tutorial.tscn existiert).
+func _start_mode_tutorial(mode: String) -> void:
+	var path := ScoreStore.mode_tutorial(mode)
+	if path == "":
+		return
+	if mode == "orbit" and ResourceLoader.exists("res://scripts/orbit/orbit_tutorial.gd"):
+		(load("res://scripts/orbit/orbit_tutorial.gd") as GDScript).mark_seen()
+	_fade_music_out()
+	SceneFader.go(path)
 
 
 ## Modus-Kachel: flach, Bernstein-Kontur, Titel + ruhige Unterzeile.
@@ -1225,7 +1256,7 @@ func _mode_tile(mode: String) -> Button:
 	b.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
 	b.text = ""
 	b.tooltip_text = ""
-	b.custom_minimum_size = Vector2(0, 64)
+	b.custom_minimum_size = Vector2(0, MODE_TILE_H)
 	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	UiTheme.style_ghost_button(b)
 	var a := COL_ACCENT
@@ -1246,7 +1277,7 @@ func _mode_tile(mode: String) -> Button:
 	title.text = ScoreStore.mode_label(mode)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_font_override("font", UiTheme.heading_font(0))
-	title.add_theme_font_size_override("font_size", 19)
+	title.add_theme_font_size_override("font_size", 17)
 	title.add_theme_color_override("font_color", COL_ACCENT)
 	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	col.add_child(title)
@@ -1261,7 +1292,40 @@ func _mode_tile(mode: String) -> Button:
 	sub.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	col.add_child(sub)
 	_mode_subs[mode] = sub
+	if not ScoreStore.mode_ready(mode):
+		col.modulate.a = 0.55
+	if ScoreStore.mode_tutorial(mode) != "":
+		b.add_child(_tutorial_dot(mode))
 	return b
+
+
+## Kleines "?" oben rechts in der Kachel: oeffnet das Tutorial des Modus.
+func _tutorial_dot(mode: String) -> Button:
+	var q := Button.new()
+	q.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	q.text = "?"
+	q.focus_mode = Control.FOCUS_NONE
+	q.tooltip_text = tr("Tutorial: %s") % ScoreStore.mode_label(mode)
+	q.anchor_left = 1.0
+	q.anchor_right = 1.0
+	q.offset_left = -21
+	q.offset_right = -3
+	q.offset_top = 3
+	q.offset_bottom = 21
+	q.add_theme_font_size_override("font_size", 11)
+	var a := COL_ACCENT
+	for st in ["normal", "hover", "pressed"]:
+		var sb := StyleBoxFlat.new()
+		sb.set_corner_radius_all(9)
+		sb.set_border_width_all(1)
+		sb.border_color = Color(a.r, a.g, a.b, 0.45 if st == "normal" else 0.9)
+		sb.bg_color = Color(a.r, a.g, a.b, 0.0 if st == "normal" else 0.18)
+		q.add_theme_stylebox_override(st, sb)
+	q.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	q.add_theme_color_override("font_color", COL_DIM)
+	q.add_theme_color_override("font_hover_color", COL_ACCENT)
+	q.pressed.connect(_start_mode_tutorial.bind(mode))
+	return q
 
 
 func _capture() -> void:

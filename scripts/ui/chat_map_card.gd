@@ -18,6 +18,8 @@ var _btn_a: Button
 var _btn_b: Button
 var _status: Label
 var _bar: ProgressBar
+var _badge_slot: HBoxContainer
+var _badge_mode := "?"
 
 
 ## kind "map": info = ChatApi.parse_map_link(). kind "score": info = ChatApi.parse_score(),
@@ -88,9 +90,16 @@ func _build() -> void:
 	_sub.clip_text = true
 	_sub.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	col.add_child(_sub)
+	var extra_row := HBoxContainer.new()
+	extra_row.add_theme_constant_override("separation", 8)
+	col.add_child(extra_row)
+	# Modus-Abzeichen (nur Score-Karten), vor Genauigkeit/Combo.
+	_badge_slot = HBoxContainer.new()
+	extra_row.add_child(_badge_slot)
 	_extra = _label(12, UiTheme.ACCENT)
 	_extra.clip_text = true
-	col.add_child(_extra)
+	_extra.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	extra_row.add_child(_extra)
 	var btns := HBoxContainer.new()
 	btns.add_theme_constant_override("separation", 6)
 	col.add_child(btns)
@@ -108,6 +117,20 @@ func _build() -> void:
 	_bar.max_value = 1.0
 	_bar.visible = false
 	col.add_child(_bar)
+
+
+## Modus-Abzeichen der Score-Karte setzen (show=false: leeren).
+func _set_badge(mode: String, show: bool = true) -> void:
+	if _badge_slot == null:
+		return
+	if show and _badge_mode == mode and _badge_slot.get_child_count() > 0:
+		return
+	for c in _badge_slot.get_children():
+		c.queue_free()
+	_badge_mode = mode
+	_badge_slot.visible = show
+	if show:
+		_badge_slot.add_child(ModeBadge.make(mode, 12, true))
 
 
 func _label(size: int, col: Color) -> Label:
@@ -151,12 +174,14 @@ func refresh() -> void:
 		if not (info.mods as Array).is_empty():
 			parts.append("+" + "".join(info.mods))
 		_extra.text = "  ·  ".join(parts)
+		_set_badge(str(info.get("mode", "")))
 		_btn_a.visible = bool(info.has_replay) and owned
 		_btn_a.text = tr("Replay ansehen")
 		_btn_b.visible = not owned
 		_btn_b.text = tr("Herunterladen") if dl < 0.0 else tr("Lädt …")
 		_btn_b.disabled = dl >= 0.0
 	else:
+		_set_badge("", false)
 		_title.text = title if title != "" else tr("Unbekannte Map")
 		_sub.text = str(info.get("artist", ""))
 		var bits: Array = []

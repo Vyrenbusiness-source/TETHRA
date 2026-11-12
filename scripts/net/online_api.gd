@@ -305,7 +305,8 @@ static func _md5_bytes(bytes: PackedByteArray) -> String:
 
 
 ## Body fuer POST /score. result = ManiaCore.stats() (+ "pp"), meta s. meta_from_beatmap.
-## mode "mania" liefert pp, "orbit"/"rally"/"dirigent" liefern stars (result.stars bzw. meta.stars).
+## mode "mania" liefert pp, "orbit"/"rally"/"dirigent"/"trace"/"rebound" liefern stars (result.stars
+## bzw. meta.stars; Trace/Rebound: Mania-Sterne). Counts (n300 ...) immer wie Mania.
 static func build_body(result: Dictionary, meta: Dictionary, mode: String = "mania") -> Dictionary:
 	var mods: Array = result.get("mods", [])
 	var factor := float(result.get("mod_mult", mod_factor(mods)))
@@ -388,7 +389,8 @@ static func classify_submit(code: int, text: String) -> Dictionary:
 	return {"kind": "retry", "message": msg, "code": msg}
 
 
-## Nach jedem gewerteten Lauf. mode "mania" | "orbit" | "rally" | "dirigent". false = nichts gesendet
+## Nach jedem gewerteten Lauf. mode "mania" | "orbit" | "rally" | "dirigent" | "trace" | "rebound".
+## false = nichts gesendet
 ## (Online aus / nicht angemeldet / keine md5).
 func submit(result: Dictionary, meta: Dictionary, mode: String = "mania") -> bool:
 	if not enabled() or not logged_in() or str(meta.get("md5", "")) == "":
@@ -898,11 +900,15 @@ func _replay_text(osz_path: String, version: String, rmode: String) -> String:
 	return FileAccess.get_file_as_string(path)
 
 
-## replay_content fuer einen Lauf (mode "mania" | "orbit" | "rally" | "dirigent") oder "" (kein passendes
-## Replay, zu gross; Rally/Dirigent haben noch keine Replay-Ablage: immer "").
+## Modi, deren Replays der Server als replay_content annimmt.
+const REPLAY_MODES := ["mania", "orbit"]
+
+
+## replay_content fuer einen Lauf (mode "mania" | "orbit" | ...) oder "" (kein passendes Replay, zu gross).
+## Rally/Dirigent/Trace/Rebound: immer "", bis der Server ihre Replays annimmt.
 func replay_content_for(osz_path: String, version: String, mode: String, score: int,
 		date_local: String = "") -> String:
-	if osz_path == "" or mode == "rally" or mode == "dirigent":
+	if osz_path == "" or not mode in REPLAY_MODES:
 		return ""
 	var rmode := ReplayStore.MODE_ORBIT_LAST if mode == "orbit" else "mania"
 	var text := _replay_text(osz_path, version, rmode)

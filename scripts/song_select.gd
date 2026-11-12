@@ -173,9 +173,11 @@ const BROWSER_STATE_PATH := "user://browser_state.cfg"
 var _state_ready := false
 ## Spielmodus fuer 4K-Diffs: "mania" (Standard, unveraendert) oder "orbit"
 ## (zusaetzlicher Modus). Wird mit dem Browser-Zustand gemerkt.
-const PLAY_MODES := ["mania", "orbit", "rally", "dirigent"]
+const PLAY_MODES := ["mania", "orbit", "rally", "dirigent", "trace", "rebound"]
 var _play_mode := "mania"
 var _mode_btns: Array[Button] = []
+## Kleiner "Tutorial"-Knopf neben dem Modus-Umschalter (nur wenn der Modus eins hat).
+var _tutorial_btn: Button = null
 ## Orbit-Einfuehrung: dezenter Hinweis beim ersten Wechsel auf Orbit, bis
 ## das Tutorial einmal gesehen (gestartet oder weggeklickt) ist.
 const ORBIT_TUTORIAL_SCENE := "res://scenes/orbit_tutorial.tscn"
@@ -470,6 +472,8 @@ func _shot_modes() -> void:
 		[{ "score": 951880, "grade": "S", "accuracy": 0.9821, "max_combo": 640, "mode": "orbit" }, ScoreStore.MODE_ORBIT],
 		[{ "score": 702115, "grade": "B", "accuracy": 0.8874, "max_combo": 210, "mode": "orbit",
 			"mods": ["SV"], "sv_level": "strong" }, ScoreStore.MODE_ORBIT],
+		[{ "score": 883400, "grade": "A", "accuracy": 0.9520, "max_combo": 498, "mode": "trace" }, ScoreStore.MODE_TRACE],
+		[{ "score": 905120, "grade": "S", "accuracy": 0.9655, "max_combo": 530, "mode": "rebound" }, ScoreStore.MODE_REBOUND],
 	]
 	for d in demo:
 		ScoreStore.submit(osz, ver, d[0], d[1])
@@ -501,8 +505,8 @@ func _shot_modes() -> void:
 		var s := { "score": 958210 if orbit else 931400, "grade": "S", "accuracy": 0.9764,
 			"max_combo": 655, "combo": 0, "n_max": 700, "n300": 640, "n200": 41, "n100": 9,
 			"n50": 2, "n_miss": 8, "pp": -1.0 if orbit else 190.6, "sv_level": "normal" if orbit else "strong" }
-		if orbit:
-			s["mode"] = ScoreStore.MODE_ORBIT
+		if mode != "mania":
+			s["mode"] = mode
 		var rs := ResultsScreen.new()
 		add_child(rs)
 		rs.show_results({
@@ -511,7 +515,7 @@ func _shot_modes() -> void:
 			"version": ver, "cover_path": "", "offsets": offs, "player": Settings.profile_name,
 			"date": Time.get_datetime_string_from_system(), "allow_retry": true, "can_replay": false,
 			"mods": { "SV": true, "NF": false },
-			"previous_best": ScoreStore.best(osz, ver, ScoreStore.MODE_ORBIT if orbit else ""),
+			"previous_best": ScoreStore.best(osz, ver, "" if mode == "mania" else mode),
 		})
 		await get_tree().create_timer(2.5).timeout
 		await RenderingServer.frame_post_draw
@@ -972,12 +976,20 @@ func _build_info_panel() -> void:
 		play.add_theme_stylebox_override("focus", play_hover)
 	play.pressed.connect(_on_play_pressed)
 	play.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	# Modus-Umschalter "Mania 4K | Orbit" ruhig links neben SPIELEN.
-	var play_row := HBoxContainer.new()
-	play_row.add_theme_constant_override("separation", 8)
-	vb.add_child(play_row)
-	play_row.add_child(_build_mode_switch())
-	play_row.add_child(play)
+	# Modus-Umschalter (3x2) mit Tutorial-Knopf als eigene Zeile, SPIELEN darunter.
+	var mode_row := HBoxContainer.new()
+	mode_row.add_theme_constant_override("separation", 6)
+	vb.add_child(mode_row)
+	var sw := _build_mode_switch()
+	sw.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	mode_row.add_child(sw)
+	_tutorial_btn = _make_toggle(tr("Tutorial"), 12, 6)
+	_tutorial_btn.custom_minimum_size = Vector2(72, 0)
+	_tutorial_btn.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_tutorial_btn.pressed.connect(_start_mode_tutorial)
+	mode_row.add_child(_tutorial_btn)
+	_apply_tutorial_btn()
+	vb.add_child(play)
 	_play_btn = play
 
 	# Mods + Sammlung: No-Fail als Schalter, Sammlung als Ghost-Button.
@@ -1948,7 +1960,7 @@ func _share_selected_map() -> void:
 	if not _online_md5_cache.has(key):
 		_online_md5_cache[key] = OnlineApi._md5_bytes(OszImporter.read_file_bytes(_selected_set.osz_path, file))
 	var stars := _selected_set.stars_at(_selected_diff)
-	if _play_mode != "mania":
+	if not _mania_like():
 		var os_st := _orbit_stars_known(_selected_set, _selected_diff)
 		if os_st > 0.0:
 			stars = os_st
@@ -2240,7 +2252,7 @@ func _update_info_panel() -> void:
 	var keys := int(round(float(m.get("cs", 4.0))))
 	_diff_label.text = _selected_set.version_name_at(_selected_diff).strip_edges() 		+ (("  ·  %dK" % keys) if is_mania else "  ·  osu!standard")
 	_star_label.text = _stars_text(_selected_set.stars_at(_selected_diff))
-	if _play_mode != "mania" and (not is_mania or keys == 4):
+	if not _mania_like() and (not is_mania or keys == 4):
 		_orbit_stars_request(_selected_set.osz_path, _selected_set.version_name_at(_selected_diff))
 	var notes := tr("%d Noten") % int(m.get("notes", 0))
 	var od := "OD " + UiTheme.fmt_num(float(m.get("od", 0.0)))
@@ -2503,7 +2515,10 @@ func _show_online_scores(m: Dictionary, score_mode: String) -> void:
 		elif entries.is_empty():
 			_lb_hint(tr("Noch kein Online-Score auf dieser Map."))
 		for i in mini(entries.size(), 10):
-			_lb_box.add_child(_online_row(entries[i])))
+			var oe: Dictionary = entries[i] if entries[i] is Dictionary else {}
+			if str(oe.get("mode", "")) == "":
+				oe["mode"] = ScoreStore.mode_name(score_mode)
+			_lb_box.add_child(_online_row(oe)))
 
 
 ## Online-Zeile: Rang, Grade, Spielername (Klick = Web-Profil), Score, Acc, pp.
@@ -2525,6 +2540,7 @@ func _online_row(e: Dictionary) -> Control:
 	grade.add_theme_font_size_override("font_size", 15)
 	grade.add_theme_color_override("font_color", GRADE_COLOR.get(g.left(1), COL_TEXT))
 	row.add_child(grade)
+	row.add_child(ModeBadge.make(str(e.get("mode", "mania")), 14))
 	var who := str(e.get("player", "?"))
 	row.add_child(_online_avatar(who))
 	var name_btn := LinkButton.new()
@@ -2615,6 +2631,8 @@ func _score_row(rank: int, e: Dictionary) -> Control:
 	grade.add_theme_font_size_override("font_size", 15)
 	grade.add_theme_color_override("font_color", GRADE_COLOR.get(g.left(1), COL_TEXT))
 	row.add_child(grade)
+	# Modus-Symbol: jeder Score zeigt, in welchem Modus er gespielt wurde.
+	row.add_child(ModeBadge.make(str(e.get("mode", "mania")), 14))
 	var main := Label.new()
 	var is_self := bool(e.get("is_self", true))
 	main.text = "%s · %s · %dx" % [
@@ -2675,26 +2693,28 @@ func _score_row(rank: int, e: Dictionary) -> Control:
 	return row
 
 
-## Modus-Umschalter Mania 4K | Orbit | Rally | Dirigent als kompakte 2x2-Gruppe
-## (gleiche Toggle-Optik wie die Filter-Chips, Hoehe wie der SPIELEN-Knopf).
+## Modus-Umschalter Mania 4K | Orbit | Rally / Dirigent | Trace | Rebound als 3x2-Raster
+## (gleiche Toggle-Optik wie die Filter-Chips).
 const MODE_TIPS := {
 	"mania": "Klassisch: vier Spuren",
 	"orbit": "Zielen mit Maus/Tablet, Ring per Taste (osu!standard- und 4K-Maps)",
 	"rally": "Tischtennis im Takt: Schläge auf die Noten, zwei Tasten",
 	"dirigent": "Taktfigur mit der Maus führen, Einsätze per Taste",
+	"trace": "Ein Leuchtfaden zeichnet die Map: jede Note ein Knick (4K-Maps)",
+	"rebound": "Vier Bälle springen auf ihre Noten (4K-Maps)",
 }
 
 
 func _build_mode_switch() -> Control:
 	var grid := GridContainer.new()
-	grid.columns = 2
+	grid.columns = 3
 	grid.add_theme_constant_override("h_separation", 4)
 	grid.add_theme_constant_override("v_separation", 4)
-	grid.custom_minimum_size = Vector2(156, 54)
+	grid.custom_minimum_size = Vector2(0, 58)
 	_mode_btns.clear()
 	for m in PLAY_MODES:
 		var b := _make_toggle(ScoreStore.mode_label("" if m == "mania" else m), 12, 6)
-		b.custom_minimum_size = Vector2(76, 25)
+		b.custom_minimum_size = Vector2(0, 27)
 		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		b.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		b.tooltip_text = tr(MODE_TIPS[m])
@@ -2706,9 +2726,35 @@ func _build_mode_switch() -> Control:
 	return grid
 
 
-## Sichtbarkeits-Modus fuer MapSet: Orbit/Rally/Dirigent zeigen 4K und osu!standard.
+## Sichtbarkeits-Modus fuer MapSet: Orbit/Rally/Dirigent zeigen 4K und osu!standard,
+## Mania/Trace/Rebound nur Mania-4K.
 func _vm() -> String:
-	return "mania" if _play_mode == "mania" else "orbit"
+	return "mania" if _mania_like() else "orbit"
+
+
+## Aktiver Modus wertet wie Mania 4K auf Mania-Maps (Mania, Trace, Rebound).
+func _mania_like() -> bool:
+	return ScoreStore.is_mania_like(_play_mode)
+
+
+## Tutorial-Knopf nur zeigen, wenn scenes/<modus>_tutorial.tscn existiert.
+func _apply_tutorial_btn() -> void:
+	if _tutorial_btn == null:
+		return
+	var path := ScoreStore.mode_tutorial(_play_mode)
+	_tutorial_btn.visible = path != ""
+	_tutorial_btn.tooltip_text = tr("Tutorial: %s") % ScoreStore.mode_label(_pm())
+
+
+func _start_mode_tutorial() -> void:
+	if _play_mode == "orbit":
+		_start_orbit_tutorial()
+		return
+	var path := ScoreStore.mode_tutorial(_play_mode)
+	if path == "":
+		return
+	_preview.stop()
+	SceneFader.go(path)
 
 
 ## ScoreStore-Modus des aktiven Browser-Modus ("" = Mania).
@@ -2928,6 +2974,7 @@ func _restyle_sv_level() -> void:
 func _restyle_mode_switch() -> void:
 	for i in _mode_btns.size():
 		_apply_toggle(_mode_btns[i], PLAY_MODES[i] == _play_mode)
+	_apply_tutorial_btn()
 
 
 func _on_play_pressed() -> void:
@@ -3018,7 +3065,7 @@ func _on_sv_toggled(pressed: bool) -> void:
 ## Mods fuer den naechsten Start (Schnittstelle GameSession.mods).
 ## Orbit: NF + Orbit-Mods (SV wirkt im Orbit nicht und zaehlt dort nicht).
 func _current_mods() -> Dictionary:
-	if _play_mode in ["rally", "dirigent"]:
+	if _play_mode in ["rally", "dirigent", "trace", "rebound"]:
 		return {"NF": _nf_enabled}
 	if _play_mode == "orbit":
 		var m := {"NF": _nf_enabled}
@@ -3064,8 +3111,10 @@ func _watch_replay() -> void:
 		_selected_set.version_name_at(_selected_diff), rmode)
 	if data.is_empty():
 		return
-	# Orbit-Replays tragen auch HD/FI/PR (sonst liefe die Wertung anders).
-	GameSession.mods = OrbitCore.replay_mods(data) if (orbit or rg) else GameSession._replay_mods(data)
+	# Orbit-Replays tragen auch HD/FI/PR (sonst liefe die Wertung anders);
+	# Trace/Rebound speichern Mania-Mods (SV/NF ...) wie Mania.
+	var orbit_mods := (orbit or rg) and not _mania_like()
+	GameSession.mods = OrbitCore.replay_mods(data) if orbit_mods else GameSession._replay_mods(data)
 	GameSession.set_selection(
 		_selected_set.osz_path, _selected_diff,
 		_selected_set.version_name_at(_selected_diff),
@@ -3415,7 +3464,7 @@ func _on_import_finished(res: Dictionary) -> void:
 		parts.append(tr("%d ohne 4K oder Standard") % int(res.skipped))
 	if int(res.get("failed", 0)) > 0:
 		parts.append(tr("%d fehlgeschlagen") % int(res.failed))
-	if orbit_only > 0 and _play_mode == "mania":
+	if orbit_only > 0 and _mania_like():
 		parts.append(tr("%d nur im Orbit-Modus") % orbit_only)
 	parts.append_array(_import_pending_notes)
 	_import_pending_notes = []

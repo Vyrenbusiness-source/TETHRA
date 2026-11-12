@@ -20,6 +20,13 @@ const MODE_RALLY_BEST := "rally"
 const MODE_RALLY_LAST := "rally_last"
 const MODE_DIRIGENT_BEST := "dirigent"
 const MODE_DIRIGENT_LAST := "dirigent_last"
+## Trace/Rebound (Mania-4K-Wertung, Mania-Events [t, lane, down]) ebenso getrennt.
+const MODE_TRACE_BEST := "trace"
+const MODE_TRACE_LAST := "trace_last"
+const MODE_REBOUND_BEST := "rebound"
+const MODE_REBOUND_LAST := "rebound_last"
+## Spielmodi mit eigener Ablage (bester + letzter Lauf); Mania bleibt im alten Ordner.
+const OWN_DIR_MODES := ["orbit", "rally", "dirigent", "trace", "rebound"]
 
 
 ## Replay-Schluessel (= Dateiname ohne .json, auch fuer --clip <md5>).
@@ -36,6 +43,10 @@ static func dir_for(mode: String = "mania") -> String:
 		MODE_RALLY_LAST: return DIR + "/rally/last"
 		MODE_DIRIGENT_BEST: return DIR + "/dirigent"
 		MODE_DIRIGENT_LAST: return DIR + "/dirigent/last"
+		MODE_TRACE_BEST: return DIR + "/trace"
+		MODE_TRACE_LAST: return DIR + "/trace/last"
+		MODE_REBOUND_BEST: return DIR + "/rebound"
+		MODE_REBOUND_LAST: return DIR + "/rebound/last"
 	return DIR
 
 
@@ -43,18 +54,18 @@ static func is_orbit(mode: String) -> bool:
 	return mode == MODE_ORBIT_BEST or mode == MODE_ORBIT_LAST
 
 
-## Spielmodus hinter einem Replay-Modus: "mania", "orbit", "rally" oder "dirigent".
+## Spielmodus hinter einem Replay-Modus: "mania", "orbit", "rally", "dirigent", "trace", "rebound".
 static func base_mode(mode: String) -> String:
 	return mode.trim_suffix("_last") if mode != "mania" else "mania"
 
 
 ## Replay-Modus fuer den besten bzw. letzten Lauf eines Spielmodus.
 static func best_mode_of(game_mode: String) -> String:
-	return game_mode if game_mode in ["orbit", "rally", "dirigent"] else "mania"
+	return game_mode if game_mode in OWN_DIR_MODES else "mania"
 
 
 static func last_mode_of(game_mode: String) -> String:
-	return game_mode + "_last" if game_mode in ["orbit", "rally", "dirigent"] else "mania"
+	return game_mode + "_last" if game_mode in OWN_DIR_MODES else "mania"
 
 
 static func path_for_key(md5: String, mode: String = "mania") -> String:

@@ -267,6 +267,7 @@ func _on_message(c: Dictionary, op: int, data: PackedByteArray) -> void:
 				r.name = str(m.get("name", r.name)).substr(0, 28)
 				r.map = str(m.get("map", r.map)).substr(0, 80)
 				r.mode = str(m.get("mode", r.mode)).substr(0, 12)
+				r.kind = str(m.get("kind", r.get("kind", ""))).substr(0, 12)
 				r.locked = bool(m.get("locked", r.locked))
 		"kick":
 			if c.code != "" and rooms.has(c.code) and rooms[c.code].host == c:
@@ -297,6 +298,7 @@ func _on_host(c: Dictionary, m: Dictionary) -> void:
 	c.id = 1
 	rooms[code] = { "code": code, "name": str(m.get("name", "")).substr(0, 28),
 		"map": str(m.get("map", "")).substr(0, 80), "mode": str(m.get("mode", "mania")).substr(0, 12),
+		"kind": str(m.get("kind", "")).substr(0, 12),
 		"locked": bool(m.get("locked", false)), "version": c.ver, "host": c,
 		"peers": {}, "next_id": 2 }
 	_send_json(c, { "t": "hosted", "code": code, "id": 1, "max": MAX_PLAYERS })
@@ -390,5 +392,5 @@ func room_list() -> Array:
 		var r: Dictionary = rooms[code]
 		out.append({ "code": "" if r.locked else code, "name": r.name,
 			"players": r.peers.size() + 1, "max": MAX_PLAYERS, "map": r.map,
-			"mode": r.mode, "version": r.version, "locked": r.locked })
+			"mode": r.mode, "kind": r.get("kind", ""), "version": r.version, "locked": r.locked })
 	return out

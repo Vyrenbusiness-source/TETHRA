@@ -405,10 +405,11 @@ func _acct_msg_label_update() -> void:
 
 
 ## Modi in Reiter-Reihenfolge ("" = Mania 4K).
-const PROFILE_MODES := ["", ScoreStore.MODE_ORBIT, ScoreStore.MODE_RALLY, ScoreStore.MODE_DIRIGENT]
+const PROFILE_MODES := ["", ScoreStore.MODE_ORBIT, ScoreStore.MODE_RALLY, ScoreStore.MODE_DIRIGENT,
+	ScoreStore.MODE_TRACE, ScoreStore.MODE_REBOUND]
 
 
-## Segment-Umschalter Mania 4K | Orbit | Rally | Dirigent (Optik wie im Song-Browser).
+## Segment-Umschalter Mania 4K | Orbit | Rally | Dirigent | Trace | Rebound (Optik wie im Song-Browser).
 func _build_mode_switch() -> Control:
 	if not Settings.is_test_run():
 		var bs := ConfigFile.new()
@@ -428,7 +429,7 @@ func _build_mode_switch() -> Control:
 		b.text = ScoreStore.mode_label(m)
 		b.toggle_mode = true
 		b.focus_mode = Control.FOCUS_NONE
-		b.custom_minimum_size = Vector2(80, 28)
+		b.custom_minimum_size = Vector2(72, 28)
 		b.add_theme_font_size_override("font_size", 13)
 		b.tooltip_text = tr("Profilwerte für %s") % ScoreStore.mode_label(m)
 		UiTheme._attach_sounds(b)
@@ -748,6 +749,8 @@ func _play_row(e: Dictionary, mode: String) -> Control:
 	sub.add_theme_color_override("font_color", COL_DIM)
 	mid.add_child(sub)
 
+	# Modus-Symbol vor dem Rang: jeder Score zeigt seinen Modus.
+	hb.add_child(ModeBadge.make(str(e.get("mode", "")) if str(e.get("mode", "")) != "" else _mode, 16))
 	# Grade-Badge (Fail rot).
 	var g := str(e.get("grade", ""))
 	if mode == "recent" and bool(e.get("failed", false)):
@@ -868,7 +871,7 @@ func _start_map(osz_file: String, version: String) -> void:
 			idx = i
 			break
 	# Gleiche Mods wie im Song-Browser (bleiben an, bis man sie ausschaltet).
-	GameSession.mods = {"NF": Settings.mod_nf} if _mode in ["rally", "dirigent"] 			else {"NF": Settings.mod_nf, "SV": Settings.mod_sv}
+	GameSession.mods = {"NF": Settings.mod_nf} if _mode in ["rally", "dirigent", "trace", "rebound"] 			else {"NF": Settings.mod_nf, "SV": Settings.mod_sv}
 	GameSession.is_replay = false
 	GameSession.set_selection(ms.osz_path, idx, ms.version_name_at(idx),
 			ms.osu_filename_at(idx), ms.stars_at(idx))
