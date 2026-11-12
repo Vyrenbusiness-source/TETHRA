@@ -263,6 +263,13 @@ func _ready() -> void:
 				if kv.size() == 2:
 					d[kv[0]] = Array(kv[1].split("+")) if kv[0] == "grades" else int(kv[1])
 			_mode_filters[_play_mode] = sanitize_mode_filter(d)
+	for a in OS.get_cmdline_args():
+		# Debug/Shots: --rec-level=push, --rec-hidden, --rec-collapsed (nie gespeichert).
+		if a.begins_with("--rec-level="):
+			_rec = rec_sanitize(_rec)
+			_rec.levels[_play_mode] = Recommender.normalize_level(a.trim_prefix("--rec-level="))
+		elif a == "--rec-hidden" or a == "--rec-collapsed":
+			_rec[a.trim_prefix("--rec-")] = true
 	_career_state = OrbitCareer.load_state()
 	if OS.get_cmdline_args().has("--career"):
 		_career_state["mode"] = OrbitCareer.MODE_CAREER  # Debug/Shots: nie gespeichert
@@ -729,7 +736,7 @@ func _build_header() -> void:
 	# "For you" an/aus (Vorschlaege oberhalb der Liste), links in der Reihe.
 	_rec_chip = _make_toggle(tr("For you"), 13, 15)
 	_rec_chip.custom_minimum_size = Vector2(0, SCORE_H)
-	_rec_chip.tooltip_text = tr("Show or hide suggestions")
+	_rec_chip.tooltip_text = tr("Show suggestions")
 	_rec_chip.pressed.connect(func(): _set_recs_hidden(not bool(_rec.hidden)))
 	score_row.add_child(_rec_chip)
 	var rec_gap := Control.new()
@@ -4492,19 +4499,52 @@ static func rec_compute(mode: String, level: String, cands: Array, runs: Array,
 		"comfort": float(sk.comfort)}
 
 
+## Laeufe an die Bibliothek binden: Version ohne Rand-Leerzeichen (Bestwerte
+## speichern "Hard ", die Liste "Hard"), "Diff | Zusatz" der letzten Laeufe auf
+## "Diff" kuerzen, Sterne aus stars ("datei|version" -> Sterne, wie der Browser
+## sie zeigt). Laeufe ohne bekannte Sterne fallen weg (sie verzerren die Kurve).
+static func rec_runs(runs: Array, stars: Dictionary) -> Array:
+	var out: Array = []
+	for r in runs:
+		var f := str(r.get("set", ""))
+		var v := str(r.get("diff", "")).strip_edges()
+		var v2 := v.get_slice(" | ", 0).strip_edges()
+		var st := float(r.get("stars", -1.0))
+		if stars.has("%s|%s" % [f, v]):
+			st = float(stars["%s|%s" % [f, v]])
+		elif stars.has("%s|%s" % [f, v2]):
+			v = v2
+			st = float(stars["%s|%s" % [f, v2]])
+		if st <= 0.0:
+			continue
+		var c: Dictionary = r.duplicate()
+		c["diff"] = v
+		c["stars"] = st
+		out.append(c)
+	return out
+
+
 ## Mania + Push: Max-pp (SS) aus dem StarService-Cache an Kandidaten im
 ## Push-Fenster haengen; ohne Cache-Eintrag schaetzt der Recommender.
 static func rec_fill_max_pp(cands: Array, runs: Array) -> void:
 	var rng := Recommender.star_range(Recommender.skill("mania", runs), Recommender.LEVEL_PUSH)
+	var cfg := ConfigFile.new()  # einmal laden (max_pp_cached liest je Aufruf neu)
+	if cfg.load(StarService.CACHE_PATH) != OK or not cfg.has_section("maxpp"):
+		return
+	var base := {}
 	var asked := 0
 	for c in cands:
 		var st := float(c.get("stars", -1.0))
-		if st < rng.x or st > rng.y or str(c.get("osz", "")) == "":
+		var osz := str(c.get("osz", ""))
+		if st < rng.x or st > rng.y or osz == "":
 			continue
 		asked += 1
 		if asked > REC_MAXPP_CAP:
 			return
-		var v := StarService.max_pp_cached(str(c.osz), str(c.get("inner", "")))
+		if not base.has(osz):
+			base[osz] = StarService._cache_key(osz)
+		var key := "%s|%s" % [base[osz], c.get("inner", "")]
+		var v := float(cfg.get_value("maxpp", key, -1.0))
 		if v >= 0.0:
 			c["max_pp"] = v
 
@@ -4632,8 +4672,7 @@ func _apply_recs_visibility() -> void:
 	var career := _career_on()
 	_rec_box.visible = not hidden and not career
 	if _rec_chip != null:
-		_apply_toggle(_rec_chip, not hidden)
-		_rec_chip.visible = not career
+		_rec_chip.visible = hidden and not career  # nur zum Wieder-Einblenden
 	var open := not bool(_rec.collapsed)
 	if _rec_body != null:
 		_rec_body.visible = open
@@ -4702,13 +4741,13 @@ func _recs_job() -> Dictionary:
 				continue
 			var ver := ms.version_name_at(i)
 			var st := ms.stars_at(i) if mania_like else float(cache.get(_orbit_key(ms, ver), -1.0))
-			var k := "%s|%s" % [file, ver]
+			var k := "%s|%s" % [file, ver.strip_edges()]
 			stars[k] = st
 			if st <= 0.0:
 				continue
 			_rec_lookup[k] = [ms, i]
 			var vi: Dictionary = info.get(ver, {})
-			cands.append({"set": file, "diff": ver, "stars": st, "osu_mode": osu_mode,
+			cands.append({"set": file, "diff": ver.strip_edges(), "stars": st, "osu_mode": osu_mode,
 				"last_played": str(vi.get("last", "")), "best_grade": str(vi.get("grade", "")),
 				"osz": ms.osz_path, "inner": ms.osu_filename_at(i)})
 	return {"mode": mode, "level": rec_level(_rec, mode), "n": 5, "cands": cands,
@@ -4716,10 +4755,7 @@ func _recs_job() -> Dictionary:
 
 
 func _recs_work(job: Dictionary, tok: int) -> void:
-	var sm: Dictionary = job.stars
-	var runs := Recommender.runs_from_store(str(job.mode), func(e: Dictionary) -> float:
-		return float(sm.get("%s|%s" % [e.get("osz_file", ""), e.get("version", "")],
-			float(e.get("stars", -1.0)))))
+	var runs := rec_runs(Recommender.runs_from_store(str(job.mode)), job.stars)
 	if job.mode == "mania" and job.level == Recommender.LEVEL_PUSH and runs.size() >= REC_MIN_RUNS:
 		rec_fill_max_pp(job.cands, runs)
 	var res := rec_compute(str(job.mode), str(job.level), job.cands, runs, int(job.n))
@@ -4849,8 +4885,12 @@ func _rec_card(it: Dictionary, wide: bool) -> Control:
 		hb.add_child(right)
 		var st := _rec_label(right, stars_txt, 15, COL_TEXT)
 		st.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		st.clip_text = false
+		st.text_overrun_behavior = TextServer.OVERRUN_NO_TRIMMING
 		var rs := _rec_label(right, reason, 11, reason_col)
 		rs.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		rs.clip_text = false
+		rs.text_overrun_behavior = TextServer.OVERRUN_NO_TRIMMING
 	else:
 		_rec_label(tb, ms.title, 13, COL_TEXT)
 		_rec_label(tb, "%s  ·  %s" % [stars_txt, ver], 11, Color(0.78, 0.80, 0.88))
