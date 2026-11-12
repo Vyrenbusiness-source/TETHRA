@@ -28,6 +28,7 @@ var core: ManiaCore
 var _wrong_label: Label
 var _wrong_tween: Tween
 var _old_replay := false
+var _mods: Dictionary = {}
 var path: TracePath
 var _beatmap: Beatmap
 var _use_audio := false
@@ -101,6 +102,7 @@ func _ready() -> void:
 			_mp_cut_ms = maxf(0.0, a.trim_prefix("--mp-cut=").to_float()) * 1000.0
 	core = ManiaCore.new()
 	core.setup(_beatmap, -1.0, 1.0)
+	core.mod_mult *= _mod_mult()
 	core.note_judged.connect(_on_note_judged)
 	core.hold_started.connect(_on_hold_started)
 	core.finished.connect(_on_finished)
@@ -213,6 +215,14 @@ func _load_beatmap() -> bool:
 	return true
 
 
+## Score-Multiplikator der Trace-Mods (MR/HD/SS) aus TraceMods, sonst 1.
+func _mod_mult() -> float:
+	if _mods.is_empty() or not ResourceLoader.exists(MODS_PATH):
+		return 1.0
+	var m = load(MODS_PATH)
+	return float(m.call("mod_multiplier", _mods)) if m != null and m.has_method("mod_multiplier") else 1.0
+
+
 ## Hook trace_mods.gd (nur wenn vorhanden): Mirror & Co. bilden die Notenspalten um.
 func _apply_mods() -> void:
 	if not ResourceLoader.exists(MODS_PATH):
@@ -221,6 +231,7 @@ func _apply_mods() -> void:
 	if m == null or not m.has_method("map_column") or not m.has_method("from_session"):
 		return
 	var mods = m.call("from_session")
+	_mods = mods
 	for o in _beatmap.hit_objects:
 		var n := o as ManiaNote
 		n.column = clampi(int(m.call("map_column", n.column, mods)), 0, 3)
@@ -895,6 +906,10 @@ func _show_results(is_fail: bool) -> void:
 	s["pp"] = -1.0
 	s["mode"] = MODE
 	s["stars"] = GameSession.stars
+	if not _mods.is_empty() and ResourceLoader.exists(MODS_PATH):
+		var mm = load(MODS_PATH)
+		if mm != null and mm.has_method("mod_list"):
+			s["mods"] = mm.call("mod_list", _mods)
 	if Lobby.active and Lobby.in_game:
 		Lobby.send_score(int(s.score), int(s.max_combo), float(s.accuracy))
 		Lobby.send_final(PlayerStatsCard.pack(s, _hit_offsets, _acc_trace, _hold_ok, _hold_drop,
