@@ -90,6 +90,8 @@ const RALLY_ZONES_DEFAULT := 3
 var rally_zones: int = RALLY_ZONES_DEFAULT
 var rally_keys_3: Array[int] = [KEY_F, KEY_J, KEY_K]
 var rally_keys_4: Array[int] = [KEY_D, KEY_F, KEY_J, KEY_K]
+## Trace: eigene Tasten, Spalte 0..3 = links / runter / hoch / rechts (Pfeiltasten).
+var trace_keys: Array[int] = [KEY_LEFT, KEY_DOWN, KEY_UP, KEY_RIGHT]
 ## Orbit-Hintergrund: 0 = Welt (3D-Welt wie im 3D-Modus, Auswahl world_theme;
 ## ohne Welten-Paket automatisch Map-Bild), 1 = Map-Bild (abgedunkelt, bg_dim),
 ## 2 = Aus (schwarz). CLI: --orbit-bg=world|map|off.
@@ -503,6 +505,8 @@ func load_settings(path: String = PATH) -> void:
 	for i in 4:
 		rally_keys_4[i] = int(cfg.get_value("keys", "rally4_%d" % i, key_lanes[i]))
 	rally_zones = 4 if int(cfg.get_value("game", "rally_zones", RALLY_ZONES_DEFAULT)) == 4 else 3
+	for i in 4:
+		trace_keys[i] = int(cfg.get_value("keys", "trace%d" % i, trace_keys[i]))
 	orbit_key_inner = int(cfg.get_value("keys", "orbit_inner", KEY_Z))
 	orbit_key_outer = int(cfg.get_value("keys", "orbit_outer", KEY_X))
 	dirigent_key_a = int(cfg.get_value("keys", "dirigent_a", orbit_key_inner))
@@ -580,6 +584,8 @@ func save(path: String = PATH) -> void:
 	for i in 4:
 		cfg.set_value("keys", "rally4_%d" % i, rally_keys_4[i])
 	cfg.set_value("game", "rally_zones", rally_zones)
+	for i in 4:
+		cfg.set_value("keys", "trace%d" % i, trace_keys[i])
 	cfg.set_value("keys", "orbit_inner", orbit_key_inner)
 	cfg.set_value("keys", "orbit_outer", orbit_key_outer)
 	cfg.set_value("keys", "dirigent_a", dirigent_key_a)
@@ -1215,6 +1221,14 @@ func rally_zone_for_key(keycode: int, n: int = -1) -> int:
 func lane_for_key(keycode: int) -> int:
 	for i in 4:
 		if key_lanes[i] == keycode:
+			return i
+	return -1
+
+
+## Trace-Spalte (0..3) der Taste, sonst -1.
+func trace_lane_for_key(keycode: int) -> int:
+	for i in 4:
+		if trace_keys[i] == keycode:
 			return i
 	return -1
 

@@ -75,7 +75,7 @@ func _run_until(tut: Control, cond: Callable, limit: int = 6000) -> bool:
 
 func _key(tut: Control, lane: int, down: bool) -> void:
 	var ev := InputEventKey.new()
-	ev.keycode = _settings().key_lanes[lane]
+	ev.keycode = _settings().trace_keys[lane]
 	ev.pressed = down
 	tut.handle_input(ev)
 
@@ -224,9 +224,9 @@ func _test_reasons(tut: Control) -> void:
 
 func _test_keys_from_settings(tut: Control) -> void:
 	var st := _settings()
-	var old: Array[int] = st.key_lanes.duplicate()
+	var old: Array[int] = st.trace_keys.duplicate()
 	var nk: Array[int] = [KEY_Q, KEY_W, KEY_E, KEY_R]
-	st.key_lanes = nk
+	st.trace_keys = nk
 	tut.enter_step(0)
 	_check(str(tut.key_label(0)) == "Q" and str(tut.key_label(3)) == "R", "Tasten aus der Belegung")
 	_check(str(tut.body_for(0)).contains("Q") and str(tut.body_for(0)).contains("R"), "Text nennt die aktuelle Belegung")
@@ -236,7 +236,7 @@ func _test_keys_from_settings(tut: Control) -> void:
 	_key(tut, _col(tut, 0), false)
 	tut.advance(FRAME * 3.0)
 	_check(int(tut.success) == 1, "Eingabe ueber die Belegung trifft")
-	st.key_lanes = old
+	st.trace_keys = old
 
 
 func _test_skip(tut: Control) -> void:

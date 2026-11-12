@@ -48,6 +48,7 @@ const CAP_ORBIT := 20
 const CAP_RALLY := 30   ## 30..32 = Rally-Tasten (3 Zonen)
 const CAP_RALLY4 := 40  ## 40..43 = Rally-Tasten (4 Zonen)
 const CAP_DIRIGENT := 50   ## 50/51 = Dirigent A/B
+const CAP_TRACE := 60   ## 60..63 = Trace-Tasten (links, runter, hoch, rechts)
 const CAP_LANES := 3    ## 3..6 = Mania-Spuren 1-4 (auch Trace, Rebound)
 const COL_CONFLICT := Color(1.0, 0.42, 0.38)
 
@@ -851,7 +852,7 @@ func _page_keys(pg: VBoxContainer) -> void:
 		_refresh_labels())
 	_conflict_label(g, CAP_LANES)
 	_hint_label(g, "Anklicken, dann Taste drücken (Esc bricht ab)")
-	_hint_label(g, "Trace and Rebound use these keys too. Trace: 1 = left, 2 = down, 3 = up, 4 = right.")
+	_hint_label(g, "Rebound uses these keys too. Trace has its own keys below.")
 	g = _group(pg, "Rally")
 	_choice(g, "Rally: Zonen", ["3 Zonen", "4 Zonen"],
 		func(s): return 1 if s.rally_zones == 4 else 0,
@@ -903,6 +904,15 @@ func _page_keys(pg: VBoxContainer) -> void:
 	_conflict_label(g, CAP_DIRIGENT)
 	_hint_label(g, "Both parts = both keys together. Left click = A, right click = B always work too.")
 	g = _group(pg, "Trace / Rebound")
+	var trace_row := HBoxContainer.new()
+	trace_row.add_theme_constant_override("separation", 6)
+	for i in 4:
+		trace_row.add_child(_key_button(CAP_TRACE + i))
+	var tr_r := _row(g, "Trace keys", trace_row, "Left, down, up, right. Click, then press a key (Esc cancels).")
+	tr_r.set_meta("reset", func():
+		Settings.trace_keys = _defaults.trace_keys.duplicate()
+		_refresh_labels())
+	_conflict_label(g, CAP_TRACE)
 	_slider(g, "Trace speed", 300.0, 900.0, 20.0,
 		func(s): return s.trace_speed,
 		func(v): Settings.trace_speed = clampi(int(v), 300, 900),
@@ -913,7 +923,7 @@ func _page_keys(pg: VBoxContainer) -> void:
 		func(v): Settings.rebound_drop_ms = clampi(int(v), 600, 1600),
 		func(v): return "%d ms" % int(v),
 		"Rebound: time a ball falls to the paddle line. Longer = easier to read")
-	_hint_label(g, "Keys: the Mania keys 1–4 above.")
+	_hint_label(g, "Rebound keys: the Mania keys 1–4 above.")
 	# Feste Kuerzel zum Nachschlagen (nicht belegbar).
 	g = _group(pg, "Tastenkürzel", false)
 	for k in [["Scroll Speed ändern", "F3 / F4"], ["Vollbild umschalten", "F11"],
@@ -1783,6 +1793,8 @@ func _refresh_labels() -> void:
 
 ## Erster Aufnahme-Code der Belegung (Modus), zu der which gehoert.
 static func _cap_base(which: int) -> int:
+	if which >= CAP_TRACE:
+		return CAP_TRACE
 	if which >= CAP_DIRIGENT:
 		return CAP_DIRIGENT
 	if which >= CAP_RALLY4:
@@ -1804,6 +1816,7 @@ static func _cap_count(base: int) -> int:
 func _cap_get(which: int) -> int:
 	var i := which - _cap_base(which)
 	match _cap_base(which):
+		CAP_TRACE: return Settings.trace_keys[i]
 		CAP_DIRIGENT: return Settings.dirigent_key_a if i == 0 else Settings.dirigent_key_b
 		CAP_RALLY4: return Settings.rally_keys_4[i]
 		CAP_RALLY: return Settings.rally_keys_3[i]
@@ -1819,6 +1832,7 @@ func _cap_set(which: int, code: int) -> void:
 				Settings.dirigent_key_a = code
 			else:
 				Settings.dirigent_key_b = code
+		CAP_TRACE: Settings.trace_keys[i] = code
 		CAP_RALLY4: Settings.rally_keys_4[i] = code
 		CAP_RALLY: Settings.rally_keys_3[i] = code
 		CAP_ORBIT:
@@ -1835,6 +1849,7 @@ func _cap_name(which: int) -> String:
 	var i := which - base
 	match base:
 		CAP_ORBIT, CAP_DIRIGENT: return tr("key A") if i == 0 else tr("key B")
+		CAP_TRACE: return tr(["left", "down", "up", "right"][i])
 		CAP_RALLY: return tr(["left", "middle", "right"][i])
 		CAP_RALLY4: return tr("zone %d") % (i + 1)
 	return tr("key %d") % (i + 1)

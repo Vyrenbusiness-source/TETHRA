@@ -9,7 +9,7 @@ extends Control
 ##   3 Halten   dickes Segment = Hold: halten bis zum Ende
 ##   4 Akkord   zwei Pfeile = Diagonale, Gegenpaar = Kreuzknoten
 ##   5 Song     Mini-Song mit Wertung, dann "Done" zurueck in den Browser
-## Tasten aus den Settings (key_lanes: Spalte 0..3 = links, runter, hoch, rechts).
+## Tasten aus den Settings (trace_keys: Spalte 0..3 = links, runter, hoch, rechts).
 ## Neue Runden kommen von selbst, bis die Bedingung des Schritts erfuellt ist.
 ## Fehler nennen den Grund am Ort (zu frueh / zu spaet / falsche Taste / nur eine
 ## Akkord-Taste / Hold zu frueh losgelassen) und oben als Hinweis.
@@ -260,7 +260,7 @@ func _label(size_px: int, col: Color) -> Label:
 
 ## Taste der Spalte (aus den Settings).
 func key_label(col: int) -> String:
-	return UiTheme.key_short(Settings.key_lanes[clampi(col, 0, 3)])
+	return UiTheme.key_short(Settings.trace_keys[clampi(col, 0, 3)])
 
 
 func dir_name(col: int) -> String:
@@ -634,7 +634,7 @@ func _input(event: InputEvent) -> void:
 func handle_input(event: InputEvent) -> void:
 	if finished or not (event is InputEventKey) or event.echo:
 		return
-	var lane := Settings.lane_for_key(event.keycode)
+	var lane := Settings.trace_lane_for_key(event.keycode)
 	if lane >= 0:
 		press_lane(lane, event.pressed)
 		get_viewport().set_input_as_handled()

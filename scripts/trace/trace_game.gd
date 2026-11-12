@@ -1,16 +1,22 @@
 extends Control
 
-## Trace-Modus: Spielablauf (Map laden, Audio + SyncClock, Tasten der Mania-4K-Belegung,
+## Trace-Modus: Spielablauf (Map laden, Audio + SyncClock, eigene Trace-Tasten,
 ## Pause/Retry, Ende mit End-Zoom -> Ergebnis, Score unter Modus "trace", Replays,
 ## Multiplayer). Wertung: ManiaCore unveraendert. Geometrie: TracePath, Zeichnen: TraceView.
 ## Szene: res://scenes/trace.tscn mit GameSession.osz_path/difficulty_version (nur 4K-Maps).
 ##
-## Tasten: Mania-Spalte 0-3 (Settings.key_lanes) = links / runter / hoch / rechts.
+## Tasten: Settings.trace_keys (Standard Pfeile), Spalte 0-3 = links / runter / hoch / rechts.
+## Anti-Mash (Regeln 2): siehe TraceRules.press(), Replay meta rules = 2.
 ## CLI: --autoplay, --trace-map=<Teil des osz-Namens> [--trace-diff=<Version>]
 ## [--trace-dir=<Ordner>], --shot --shot-at=<ms|stream|hold|chord|hairpin|calm|end>
 ## --shot-out=<png>, --shot-results, --shot-pause, --mp-bot, --mp-cut=<s>, --mp-back=<s>.
 
 const MODE := "trace"
+const RULES := 2              ## Replay meta rules: 2 = mit Anti-Mash (falscher Knick)
+const MODS_PATH := "res://scripts/trace/trace_mods.gd"
+const PICTURE_PATH := "res://scripts/trace/trace_picture.gd"
+## Gesetzt, wenn die naechste Runde ein frisch gespieltes Replay (aktuelle Regeln) ist.
+static var fresh_replay := false
 const JUDGE_SCALE := 0.5
 const END_ZOOM_S := 2.2
 const GRADE_COLOR := {
@@ -19,6 +25,10 @@ const GRADE_COLOR := {
 }
 
 var core: ManiaCore
+var _wrong_label: Label
+var _wrong_tween: Tween
+var _old_replay := false
+var _mods: Dictionary = {}
 var path: TracePath
 var _beatmap: Beatmap
 var _use_audio := false
@@ -92,11 +102,14 @@ func _ready() -> void:
 			_mp_cut_ms = maxf(0.0, a.trim_prefix("--mp-cut=").to_float()) * 1000.0
 	core = ManiaCore.new()
 	core.setup(_beatmap, -1.0, 1.0)
+	core.mod_mult *= _mod_mult()
 	core.note_judged.connect(_on_note_judged)
 	core.hold_started.connect(_on_hold_started)
 	core.finished.connect(_on_finished)
 	if _replay:
 		_replay_events = GameSession.replay_events
+		_old_replay = not fresh_replay and _file_rules() < RULES
+		fresh_replay = false
 	path = TracePath.from_beatmap(_beatmap, float(Settings.trace_speed))
 	_build_bg()
 	_view = TraceView.new()
@@ -105,6 +118,9 @@ func _ready() -> void:
 	_build_sound()
 	_build_hud()
 	_update_hud()
+	if _old_replay:
+		_show_old_replay()
+		return
 	if Lobby.active and Lobby.in_game:
 		Lobby.skip_now.connect(_do_skip)
 	if not _use_audio:
@@ -130,6 +146,32 @@ static func _args() -> PackedStringArray:
 
 
 ## Uebersetzungen aus translations/trace.csv (auch ohne Eintrag in project.godot).
+## meta.rules der gespeicherten Replay-Datei (fehlt = 1). Ohne Datei: aktuelle Regeln.
+func _file_rules() -> int:
+	var data := ReplayStore.load_replay(GameSession.osz_path, _beatmap.version_name(), MODE)
+	if data.is_empty():
+		return RULES
+	return int((data.get("meta", {}) as Dictionary).get("rules", 1))
+
+
+## Replay mit Regeln 1 (ohne Anti-Mash) passt nicht mehr: Hinweis, zurueck zur Auswahl.
+func _show_old_replay() -> void:
+	var l := Label.new()
+	l.text = tr("Dieses Replay nutzt die alten Trace-Regeln und lässt sich nicht mehr abspielen.")
+	l.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	l.add_theme_font_size_override("font_size", 22)
+	_hud.add_child(l)
+	_ended = true
+	SyncClock.stop()
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	await get_tree().create_timer(3.5, true).timeout
+	if is_inside_tree():
+		_back_to_browser()
+
+
 static func _ensure_translations() -> void:
 	for loc in ["de", "en"]:
 		var p := "res://translations/trace.%s.translation" % loc
@@ -160,6 +202,7 @@ func _load_beatmap() -> bool:
 	if _beatmap == null or _beatmap.hit_objects.is_empty() or not _beatmap.is_mania() \
 			or _beatmap.column_count() != 4:
 		return false
+	_apply_mods()
 	var stream := OszImporter.load_audio_stream(GameSession.osz_path, _beatmap)
 	if stream != null:
 		var first := float(_beatmap.hit_objects[0].time)
@@ -170,6 +213,28 @@ func _load_beatmap() -> bool:
 		SyncClock.play(stream, lead)
 		_use_audio = true
 	return true
+
+
+## Score-Multiplikator der Trace-Mods (MR/HD/SS) aus TraceMods, sonst 1.
+func _mod_mult() -> float:
+	if _mods.is_empty() or not ResourceLoader.exists(MODS_PATH):
+		return 1.0
+	var m = load(MODS_PATH)
+	return float(m.call("mod_multiplier", _mods)) if m != null and m.has_method("mod_multiplier") else 1.0
+
+
+## Hook trace_mods.gd (nur wenn vorhanden): Mirror & Co. bilden die Notenspalten um.
+func _apply_mods() -> void:
+	if not ResourceLoader.exists(MODS_PATH):
+		return
+	var m = load(MODS_PATH)
+	if m == null or not m.has_method("map_column") or not m.has_method("from_session"):
+		return
+	var mods = m.call("from_session")
+	_mods = mods
+	for o in _beatmap.hit_objects:
+		var n := o as ManiaNote
+		n.column = clampi(int(m.call("map_column", n.column, mods)), 0, 3)
 
 
 ## Debug/Shots: --trace-map=<Teil des osz-Namens> [--trace-diff=<Version>] [--trace-dir=<Ordner>].
@@ -430,7 +495,7 @@ func _build_legend() -> void:
 					ctr - d * 0.0, ctr - d * 5.0 - perp * 8.0])
 			dot.draw_colored_polygon(poly, col))
 		item.add_child(dot)
-		var l := _corner_label(UiTheme.key_short(Settings.key_lanes[c]), 15, col.lerp(Color.WHITE, 0.4))
+		var l := _corner_label(UiTheme.key_short(Settings.trace_keys[c]), 15, col.lerp(Color.WHITE, 0.4))
 		item.add_child(l)
 		box.add_child(item)
 
@@ -459,7 +524,7 @@ func _input(event: InputEvent) -> void:
 	if _ended or _finishing or _autoplay or _replay or core == null:
 		return
 	if event is InputEventKey and not event.echo:
-		var lane := Settings.lane_for_key(event.keycode)
+		var lane := Settings.trace_lane_for_key(event.keycode)
 		if lane < 0 or get_tree().paused or _countdown_running:
 			return
 		var down: bool = event.pressed
@@ -469,7 +534,7 @@ func _input(event: InputEvent) -> void:
 		_recorded.append({"t": t, "lane": lane, "down": down})
 		_lane_held[lane] = down
 		if down:
-			core.key_down(lane, t)
+			_press(lane, t)
 		else:
 			core.key_up(lane, t)
 
@@ -483,10 +548,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif not _countdown_running and not _finishing:
 			_toggle_pause(true)
 		return
-	if event.keycode == KEY_R and Settings.lane_for_key(KEY_R) == -1 and not Lobby.active:
+	if event.keycode == KEY_R and Settings.trace_lane_for_key(KEY_R) == -1 and not Lobby.active:
 		_restart()
 		return
-	if event.keycode == KEY_SPACE and not _ended and Settings.lane_for_key(KEY_SPACE) == -1 \
+	if event.keycode == KEY_SPACE and not _ended and Settings.trace_lane_for_key(KEY_SPACE) == -1 \
 			and _can_skip_intro():
 		if Lobby.active and Lobby.in_game:
 			Lobby.vote_skip()
@@ -551,6 +616,30 @@ func _process(delta: float) -> void:
 	_update_hud()
 
 
+## Druck durch die Trace-Regel (Anti-Mash), dann ggf. ManiaCore.
+func _press(lane: int, t: float) -> void:
+	for idx in TraceRules.press(core, lane, t):
+		_on_wrong_turn(int(idx))
+
+
+## Falscher Knick: Ansicht ausfransen lassen, Text "WRONG TURN".
+func _on_wrong_turn(idx: int) -> void:
+	if _view != null and _view.has_method("on_wrong_turn"):
+		_view.call("on_wrong_turn", idx)
+	if _wrong_label == null and _hud != null:
+		_wrong_label = _corner_label(tr("WRONG TURN"), 22, Color(1.0, 0.45, 0.4))
+		_hud.add_child(_wrong_label)
+	if _wrong_label != null:
+		var vs := get_viewport_rect().size
+		_wrong_label.position = Vector2((vs.x - _wrong_label.size.x) * 0.5, vs.y * 0.72)
+		_wrong_label.modulate.a = 1.0
+		if _wrong_tween != null and _wrong_tween.is_valid():
+			_wrong_tween.kill()
+		_wrong_tween = create_tween()
+		_wrong_tween.tween_interval(0.35)
+		_wrong_tween.tween_property(_wrong_label, "modulate:a", 0.0, 0.4)
+
+
 ## Autoplay: Taste exakt zur Notenzeit, Holds bis end_time, sonst 40 ms (wie Mania).
 func _run_autoplay(t: float) -> void:
 	for c in 4:
@@ -577,7 +666,7 @@ func _feed_replay(t: float) -> void:
 		var ev: Dictionary = _replay_events[_replay_idx]
 		_replay_idx += 1
 		if bool(ev.down):
-			core.key_down(int(ev.lane), float(ev.t))
+			_press(int(ev.lane), float(ev.t))
 		else:
 			core.key_up(int(ev.lane), float(ev.t))
 
@@ -817,6 +906,10 @@ func _show_results(is_fail: bool) -> void:
 	s["pp"] = -1.0
 	s["mode"] = MODE
 	s["stars"] = GameSession.stars
+	if not _mods.is_empty() and ResourceLoader.exists(MODS_PATH):
+		var mm = load(MODS_PATH)
+		if mm != null and mm.has_method("mod_list"):
+			s["mods"] = mm.call("mod_list", _mods)
 	if Lobby.active and Lobby.in_game:
 		Lobby.send_score(int(s.score), int(s.max_combo), float(s.accuracy))
 		Lobby.send_final(PlayerStatsCard.pack(s, _hit_offsets, _acc_trace, _hold_ok, _hold_drop,
@@ -870,6 +963,8 @@ func _build_results(is_fail: bool, s: Dictionary, new_best: bool) -> void:
 		"notes_total": _beatmap.hit_objects.size(), "judge_log": _judge_log,
 		"length_ms": float(_beatmap.hit_objects.back().end_time()),
 	}
+	if ResourceLoader.exists(PICTURE_PATH):
+		data["trace_picture"] = {"script": PICTURE_PATH, "path": path, "judgements": _judge_log}
 	if _prev_best != null:
 		data["previous_best"] = _prev_best
 	if is_fail:
@@ -896,7 +991,7 @@ func _save_replay(s: Dictionary) -> void:
 	ReplayStore.save(GameSession.osz_path, _beatmap.version_name(), _recorded, {
 		"score": int(s.score), "grade": str(s.grade), "accuracy": float(s.accuracy),
 		"date": Time.get_datetime_string_from_system(), "mods": GameSession.mods.duplicate(),
-		"end_ms": int(_last_update_t),
+		"end_ms": int(_last_update_t), "rules": RULES,
 	}, MODE)
 
 
@@ -910,6 +1005,7 @@ func _on_results_replay() -> void:
 		GameSession.replay_events = _recorded.duplicate()
 		GameSession.replay_mode = MODE
 		GameSession.replay_end_ms = float(int(_last_update_t))
+		fresh_replay = true
 	else:
 		return
 	_restart()
