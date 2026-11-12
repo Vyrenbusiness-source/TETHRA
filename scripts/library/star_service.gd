@@ -128,6 +128,54 @@ static func max_pp_cached(osz_path: String, inner_osu: String) -> float:
 	return float(cfg.get_value("maxpp", key, -1.0))
 
 
+## Trace-Sterne einer Diff (TraceStars), gecacht in user://stars.cfg (Section
+## "trace_stars", Key: osz-Key|inner|Formelversion). Thread-faehig: Schreiben
+## unter Mutex, kein Szenenzugriff. -1 = nicht berechenbar.
+static var _trace_mutex := Mutex.new()
+
+
+static func trace_stars_for(osz_path: String, inner_osu: String) -> float:
+	var cached := trace_stars_cached(osz_path, inner_osu)
+	if cached >= 0.0:
+		return cached
+	var base_key := _cache_key(osz_path)
+	if base_key == "" or inner_osu == "":
+		return -1.0
+	var imp := OszImporter.import(osz_path)
+	if not imp.ok:
+		return -1.0
+	var stars := -1.0
+	for d in imp.difficulties:
+		if d.osu_filename == inner_osu:
+			var bm: Beatmap = d.beatmap
+			if bm.is_mania() and bm.column_count() == 4:
+				stars = TraceStars.from_beatmap(bm)
+			break
+	if stars < 0.0:
+		return -1.0
+	_trace_mutex.lock()
+	var cfg := ConfigFile.new()
+	cfg.load(CACHE_PATH)
+	cfg.set_value("trace_stars", _trace_key(base_key, inner_osu), stars)
+	cfg.save(CACHE_PATH)
+	_trace_mutex.unlock()
+	return stars
+
+
+## Nur Cache-Zugriff (blockiert nie). -1 = nicht im Cache.
+static func trace_stars_cached(osz_path: String, inner_osu: String) -> float:
+	var base_key := _cache_key(osz_path)
+	if base_key == "" or inner_osu == "":
+		return -1.0
+	var cfg := ConfigFile.new()
+	cfg.load(CACHE_PATH)
+	return float(cfg.get_value("trace_stars", _trace_key(base_key, inner_osu), -1.0))
+
+
+static func _trace_key(base_key: String, inner_osu: String) -> String:
+	return "%s|%s|v%d" % [base_key, inner_osu, TraceStars.VERSION]
+
+
 static func _run_starcalc(args: PackedStringArray) -> Dictionary:
 	var output: Array = []
 	var code := -1
