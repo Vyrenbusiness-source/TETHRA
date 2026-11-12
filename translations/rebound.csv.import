@@ -1,0 +1,19 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+uid="uid://dt614h5rej71d"
+
+[deps]
+
+files=["res://translations/rebound.de.translation", "res://translations/rebound.en.translation"]
+
+source_file="res://translations/rebound.csv"
+dest_files=["res://translations/rebound.de.translation", "res://translations/rebound.en.translation"]
+
+[params]
+
+compress=1
+delimiter=0
+unescape_keys=false
+unescape_translations=true

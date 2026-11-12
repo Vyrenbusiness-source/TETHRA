@@ -34,3 +34,45 @@ Zone 1-4: Tasten %s,Zone 1-4: Tasten %s,Zones 1-4: keys %s
 Weiß umrandet: beide Zonentasten,Weiß umrandet: beide Zonentasten,White ring: both zone keys
 andere Zone,andere Zone,other zone
 Altes Replay (Rally v1) passt nicht zu den neuen Regeln,Altes Replay (Rally v1) passt nicht zu den neuen Regeln,Old Rally v1 replay does not match the new rules
+Skip step  (Tab),Schritt überspringen  (Tab),Skip step  (Tab)
+Quit  (Esc),Beenden  (Esc),Quit  (Esc)
+Step %d of %d,Schritt %d von %d,Step %d of %d
+Land and press,Landen und drücken,Land and press
+Read the arc,Den Bogen lesen,Read the arc
+Smash: both keys,Smash: beide Tasten,Smash: both keys
+Charge: hold,Aufladen: halten,Charge: hold
+Mini song,Mini-Song,Mini song
+Mini song done,Mini-Song geschafft,Mini song done
+"The ball bounces on your half of the table. The zone it lands in is your key: press that zone key just as the ball reaches the racket line at the front. Keys, left to right: %s. (3 or 4 zones: settings.)","Der Ball springt auf deiner Tischhälfte auf. Die Zone, in der er landet, ist deine Taste: Drücke die Taste dieser Zone, genau wenn der Ball die Schlägerlinie vorn erreicht. Tasten von links nach rechts: %s. (3 oder 4 Zonen: Einstellungen.)","The ball bounces on your half of the table. The zone it lands in is your key: press that zone key just as the ball reaches the racket line at the front. Keys, left to right: %s. (3 or 4 zones: settings.)"
+The arc tells you how long to wait. A high lob is slow: wait for it. A flat ball is fast and the next one follows right behind. Press at the racket line every time.,"Der Bogen zeigt, wie lange du wartest. Ein hoher Lob ist langsam: warte auf ihn. Ein flacher Ball ist schnell, der nächste folgt gleich. Drücke immer an der Schlägerlinie.",The arc tells you how long to wait. A high lob is slow: wait for it. A flat ball is fast and the next one follows right behind. Press at the racket line every time.
+A ball with a white outline spans two zones: press both zone keys together (%s).,Ein Ball mit weißem Rand liegt über zwei Zonen: Drücke beide Zonentasten zusammen (%s).,A ball with a white outline spans two zones: press both zone keys together (%s).
+"A ball with a bar is a charge: press on arrival, keep holding the key until the bar ends, then let go.","Ein Ball mit Balken ist ein Aufladen: Drücke bei Ankunft, halte die Taste bis der Balken endet und lass dann los.","A ball with a bar is a charge: press on arrival, keep holding the key until the bar ends, then let go."
+Everything together. You get a score at the end.,Alles zusammen. Am Ende gibt es eine Wertung.,Everything together. You get a score at the end.
+%d balls hit,%d Bälle getroffen,%d balls hit
+%d smashes,%d Smashs,%d smashes
+%d charges held,%d Aufladungen gehalten,%d charges held
+%d of %d balls,%d von %d Bällen,%d of %d balls
+too early,zu früh,too early
+too late,zu spät,too late
+wrong zone,falsche Zone,wrong zone
+both keys,beide Tasten,both keys
+let go too early,zu früh losgelassen,let go too early
+no key,keine Taste,no key
+missed,verfehlt,missed
+Too early: wait until the ball reaches the racket line.,"Zu früh: warte, bis der Ball die Schlägerlinie erreicht.",Too early: wait until the ball reaches the racket line.
+Too late: press when the ball reaches the racket line.,"Zu spät: drücke, wenn der Ball die Schlägerlinie erreicht.",Too late: press when the ball reaches the racket line.
+Wrong zone: press the key of the zone where the ball lands (%s).,"Falsche Zone: drücke die Taste der Zone, in der der Ball landet (%s).",Wrong zone: press the key of the zone where the ball lands (%s).
+Smash: press both zone keys together.,Smash: drücke beide Zonentasten zusammen.,Smash: press both zone keys together.
+Let go too early: keep holding until the bar ends.,"Zu früh losgelassen: halte, bis der Balken endet.",Let go too early: keep holding until the bar ends.
+No key pressed: press the zone key as the ball arrives.,"Keine Taste gedrückt: drücke die Zonentaste, wenn der Ball ankommt.",No key pressed: press the zone key as the ball arrives.
+Missed.,Verfehlt.,Missed.
+Good. Next step.,Gut. Nächster Schritt.,Good. Next step.
+perfect,perfekt,perfect
+great,sehr gut,great
+good,gut,good
+ok,ok,ok
+That was Rally. Change zones and keys in the settings.,Das war Rally. Zonen und Tasten änderst du in den Einstellungen.,That was Rally. Change zones and keys in the settings.
+Done,Fertig,Done
+BALLS,BÄLLE,BALLS
+MISSES,FEHLER,MISSES
+COMBO,COMBO,COMBO

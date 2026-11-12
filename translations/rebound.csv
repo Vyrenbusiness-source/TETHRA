@@ -1,0 +1,45 @@
+keys,de,en
+Skip step  (Tab),Schritt überspringen  (Tab),Skip step  (Tab)
+Quit  (Esc),Beenden  (Esc),Quit  (Esc)
+Mini song,Mini-Song,Mini song
+Everything together. You get a score at the end.,Alles zusammen. Am Ende gibt es eine Wertung.,Everything together. You get a score at the end.
+%d holds kept,%d Holds gehalten,%d holds kept
+%d of %d notes,%d von %d Noten,%d of %d notes
+too early,zu früh,too early
+too late,zu spät,too late
+wrong key,falsche Taste,wrong key
+both keys,beide Tasten,both keys
+let go too early,zu früh losgelassen,let go too early
+no key,keine Taste,no key
+missed,verfehlt,missed
+Missed.,Verfehlt.,Missed.
+Step %d of %d,Schritt %d von %d,Step %d of %d
+Good. Next step.,Gut. Nächster Schritt.,Good. Next step.
+perfect,perfekt,perfect
+great,sehr gut,great
+good,gut,good
+ok,ok,ok
+Mini song done,Mini-Song geschafft,Mini song done
+ACCURACY,GENAUIGKEIT,ACCURACY
+NOTES,NOTEN,NOTES
+MISSES,FEHLER,MISSES
+COMBO,COMBO,COMBO
+Retry,Nochmal,Retry
+Done,Fertig,Done
+Land on the drum,Auf dem Fell landen,Land on the drum
+Height is waiting time,Höhe ist Wartezeit,Height is waiting time
+Dribble,Dribbeln,Dribble
+Squashed: hold,Gequetscht: halten,Squashed: hold
+"Four balls bounce over four drums, one key each: %s, %s, %s, %s from left to right. Press the key of a drum just as its ball lands on it. The ring on the drum closes at that moment.","Vier Bälle springen über vier Felle, je eine Taste: %s, %s, %s, %s von links nach rechts. Drücke die Taste eines Fells genau dann, wenn sein Ball darauf landet. Der Ring am Fell schließt sich in diesem Moment.","Four balls bounce over four drums, one key each: %s, %s, %s, %s from left to right. Press the key of a drum just as its ball lands on it. The ring on the drum closes at that moment."
+"The height of the arc is the waiting time: a high arc means a long pause, a low hop means the next landing is close. The faint ghost arc shows the hop after the next landing.","Die Höhe des Bogens ist die Wartezeit: ein hoher Bogen heißt lange Pause, ein flacher Hüpfer heißt, die nächste Landung ist nah. Der blasse Geisterbogen zeigt den Sprung nach der nächsten Landung.","The height of the arc is the waiting time: a high arc means a long pause, a low hop means the next landing is close. The faint ghost arc shows the hop after the next landing."
+"Small quick hops on one drum are dribbling: press the same key again and again, once per landing.","Kleine schnelle Hüpfer auf einem Fell sind Dribbeln: Drücke dieselbe Taste immer wieder, einmal pro Landung.","Small quick hops on one drum are dribbling: press the same key again and again, once per landing."
+"A ball that stays squashed on its drum is a hold: press as it lands, keep holding the key while the drum glows, let go when the ring is full.","Ein Ball, der gequetscht auf seinem Fell bleibt, ist ein Hold: Drücke bei der Landung, halte die Taste, solange das Fell glüht, und lass los, wenn der Ring voll ist.","A ball that stays squashed on its drum is a hold: press as it lands, keep holding the key while the drum glows, let go when the ring is full."
+%d landings hit,%d Landungen getroffen,%d landings hit
+%d dribbles hit,%d Dribbel getroffen,%d dribbles hit
+Too early: wait until the ball lands on the drum.,"Zu früh: Warte, bis der Ball auf dem Fell landet.",Too early: wait until the ball lands on the drum.
+Too late: press at the moment the ball lands.,Zu spät: Drücke im Moment der Landung.,Too late: press at the moment the ball lands.
+Wrong key: this ball lands on the drum of %s.,Falsche Taste: Dieser Ball landet auf dem Fell von %s.,Wrong key: this ball lands on the drum of %s.
+Two balls land together: press both keys together.,Zwei Bälle landen zusammen: Drücke beide Tasten gleichzeitig.,Two balls land together: press both keys together.
+Let go too early: keep holding until the ring is full.,"Zu früh losgelassen: Halte, bis der Ring voll ist.",Let go too early: keep holding until the ring is full.
+No key pressed: press the drum key as the ball lands.,"Keine Taste gedrückt: Drücke die Fell-Taste, wenn der Ball landet.",No key pressed: press the drum key as the ball lands.
+That was Rebound. Change the keys in the settings.,Das war Rebound. Die Tasten änderst du in den Einstellungen.,That was Rebound. Change the keys in the settings.
