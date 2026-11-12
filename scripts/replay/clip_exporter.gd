@@ -23,6 +23,11 @@ extends Node
 ## Die md5 ist der Replay-Schluessel (= Dateiname in user://replays ohne .json).
 ## Orbit: export_clip(md5, out, "orbit") -> Kindprozess mit --clip <md5>
 ## --clip-mode orbit, Replay aus user://replays/orbit (ReplayStore).
+## Trace: export_clip(md5, out, "trace") wie Orbit (--clip-mode trace). Zusaetzlich
+## export_timelapse(md5, out, "trace"): 8-s-Zeitraffer 1080x1080 fuer Social (das
+## ganze Replay wird gerendert, danach per ffmpeg auf 8 s gerafft, mittig
+## quadratisch zugeschnitten; Ton = 8-s-Musikausschnitt mit Ein-/Ausblendung).
+## Der Results-Knopf fragt ClipExporter.supports_mode(modus) ab.
 
 ## Elapsed Sekunden seit Start.
 signal progress(elapsed_s: float)
@@ -39,6 +44,15 @@ const RESOLUTION := "1280x720"
 const BYTES_PER_FRAME := 65000.0
 ## Erwartete Film-Laenge = letzter Tastendruck + Auslauf (Lead-In, Ende, Results).
 const TAIL_S := 6.0
+
+## Zeitraffer-Clip: Dauer, Kantenlaenge (quadratisch).
+const TIMELAPSE_S := 8.0
+const TIMELAPSE_SIZE := 1080
+## Modi (ReplayStore-Basismodus), die sich als Clip exportieren lassen.
+const CLIP_MODES := ["mania", "orbit", "trace"]
+## Szene je Basismodus fuer den Clip-Kindprozess (GameSession._start_clip).
+const CLIP_SCENES := {"mania": "res://scenes/mania_3d.tscn", "orbit": "res://scenes/orbit.tscn",
+	"trace": "res://scenes/trace.tscn"}
 
 ## Fenster = Viewport-Groesse des Projekts (siehe Kopf).
 var resolution: String = RESOLUTION
@@ -58,6 +72,9 @@ var _expected_bytes: float = 0.0
 var _enc_t0_ms: int = 0
 var _enc_expected_s: float = 2.0
 var _ffmpeg: String = ""
+## "full" = ganzes Replay, "timelapse" = 8-s-Quadrat-Zeitraffer.
+var style: String = "full"
+var _len_s: float = 0.0
 
 
 ## Zielordner: Editor/Dev -> user://clips, Release -> Dokumente/TETHRA Clips.
@@ -80,6 +97,76 @@ static func find_ffmpeg() -> String:
 	if OS.execute("ffmpeg", ["-version"], out, true) == 0:
 		return "ffmpeg"
 	return ""
+
+
+## Kann der Results-Knopf fuer diesen Modus (Spiel- oder Replay-Modus, z. B.
+## "trace" / "trace_last") einen Clip exportieren?
+static func supports_mode(mode: String) -> bool:
+	return ReplayStore.base_mode(mode) in CLIP_MODES
+
+
+## Szenenpfad fuer den Clip-Prozess eines Replay-Modus ("" = nicht unterstuetzt).
+static func scene_for_mode(mode: String) -> String:
+	return CLIP_SCENES.get(ReplayStore.base_mode(mode), "")
+
+
+## Standard-Zielpfad: clip_<md5>.avi bzw. timelapse_<md5>.avi (Ergebnis .mp4).
+static func default_out_path(md5: String, p_style: String = "full") -> String:
+	var prefix := "timelapse_" if p_style == "timelapse" else "clip_"
+	return clips_dir().path_join("%s%s.avi" % [prefix, md5])
+
+
+## Start des Musikausschnitts im Film (s): ab ca. 35 % der Filmlaenge, so dass
+## der Ausschnitt noch ganz hineinpasst.
+static func timelapse_audio_start_s(movie_len_s: float, dur_s: float = TIMELAPSE_S) -> float:
+	return clampf(movie_len_s * 0.35, 0.0, maxf(0.0, movie_len_s - dur_s))
+
+
+## ffmpeg-Argumente fuer den Zeitraffer (rein, testbar): Film in dur_s raffen,
+## mittig quadratisch schneiden, auf size x size skalieren, Musikausschnitt.
+static func timelapse_args(src: String, dst: String, movie_len_s: float,
+		dur_s: float = TIMELAPSE_S, size: int = TIMELAPSE_SIZE) -> PackedStringArray:
+	var factor := dur_s / maxf(movie_len_s, 0.1)
+	var a0 := timelapse_audio_start_s(movie_len_s, dur_s)
+	var vf := "[0:v]setpts=%.6f*PTS,crop='min(iw,ih)':'min(iw,ih)',scale=%d:%d,fps=30[v]" % [factor, size, size]
+	var af := "[0:a]atrim=start=%.3f:duration=%.3f,asetpts=PTS-STARTPTS,afade=t=in:d=0.4,afade=t=out:st=%.3f:d=0.8[a]" % [
+		a0, dur_s, maxf(0.0, dur_s - 0.8)]
+	return PackedStringArray(["-v", "error", "-y", "-i", src,
+		"-filter_complex", vf + ";" + af, "-map", "[v]", "-map", "[a]", "-t", "%.3f" % dur_s,
+		"-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p",
+		"-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", dst])
+
+
+## Filmdauer in s aus der ffmpeg-Ausgabe (ffprobe liegt nicht bei; 0 = unbekannt).
+static func probe_duration_s(path: String, ffmpeg: String) -> float:
+	var out := []
+	OS.execute(ffmpeg if ffmpeg != "" else "ffmpeg", ["-hide_banner", "-i", path], out, true)
+	return parse_duration_s(String(out[0]) if not out.is_empty() else "")
+
+
+## "Duration: 00:01:34.42," aus ffmpeg-Text -> Sekunden (0 = nicht gefunden).
+static func parse_duration_s(text: String) -> float:
+	var i := text.find("Duration: ")
+	if i < 0:
+		return 0.0
+	var parts := text.substr(i + 10, 11).split(":")
+	if parts.size() < 3:
+		return 0.0
+	return parts[0].to_float() * 3600.0 + parts[1].to_float() * 60.0 + parts[2].to_float()
+
+
+## Zeitraffer exportieren (Quadrat, 8 s). Braucht ffmpeg (sonst Fehler).
+## Zielpfad leer = <clips_dir>/timelapse_<md5>.avi (Ergebnis .mp4).
+func export_timelapse(md5: String, p_out_path: String = "", mode: String = "trace") -> bool:
+	if find_ffmpeg() == "":
+		last_error = "ffmpeg fehlt (Zeitraffer braucht es)"
+		finished.emit(false, p_out_path)
+		return false
+	if is_running():
+		return false
+	style = "timelapse"
+	convert_mp4 = true
+	return _export(md5, p_out_path, mode)
 
 
 ## Letzter Tastendruck des Replays in s (0 = unbekannt).
@@ -110,12 +197,23 @@ static func eta_s(fraction: float, elapsed_s: float) -> float:
 ## Startet den Export. out_path leer = <clips_dir>/clip_<md5>.avi; bei MP4-
 ## Umkodierung heisst die Ergebnisdatei .mp4 (final_path).
 ## Gibt false zurueck, wenn der Prozess nicht startet oder schon einer laeuft.
-## mode: "mania" (Standard) oder "orbit".
+## mode: "mania" (Standard), "orbit" oder "trace".
 func export_clip(md5: String, p_out_path: String = "", mode: String = "mania") -> bool:
 	if is_running():
 		return false
+	style = "full"
+	return _export(md5, p_out_path, mode)
+
+
+func _export(md5: String, p_out_path: String, mode: String) -> bool:
+	if is_running():
+		return false
 	last_error = ""
-	out_path = p_out_path if p_out_path != "" else clips_dir().path_join("clip_%s.avi" % md5)
+	if not supports_mode(mode):
+		last_error = "Modus ohne Clip-Export: " + mode
+		finished.emit(false, p_out_path)
+		return false
+	out_path = p_out_path if p_out_path != "" else default_out_path(md5, style)
 	out_path = ProjectSettings.globalize_path(out_path)
 	final_path = out_path
 	if not FileAccess.file_exists(ReplayStore.path_for_key(md5, mode)):
@@ -144,8 +242,11 @@ func export_clip(md5: String, p_out_path: String = "", mode: String = "mania") -
 	var pi := pa.find("--position")
 	if pi >= 0 and pi + 1 < pa.size():
 		pos = pa[pi + 1]
+	var res := resolution
+	if style == "timelapse":
+		res = "%dx%d" % [TIMELAPSE_SIZE, TIMELAPSE_SIZE]
 	args.append_array(["--write-movie", _render_path, "--fixed-fps", str(fps),
-		"--resolution", resolution, "--position", pos, "--clip", md5])
+		"--resolution", res, "--position", pos, "--clip", md5])
 	if mode != "mania":
 		args.append_array(["--clip-mode", mode])
 	pid = OS.create_process(OS.get_executable_path(), args)
@@ -156,6 +257,7 @@ func export_clip(md5: String, p_out_path: String = "", mode: String = "mania") -
 		return false
 	_t0_ms = Time.get_ticks_msec()
 	var len_s := replay_length_s(md5, mode)
+	_len_s = len_s
 	_expected_bytes = (len_s + TAIL_S) * fps * BYTES_PER_FRAME if len_s > 0.0 else 0.0
 	_enc_expected_s = maxf(1.0, (len_s + TAIL_S) / 20.0)
 	set_process(true)
@@ -205,9 +307,15 @@ func _poll_render() -> void:
 		set_process(false)
 		return
 	# AVI -> MP4: H.264 ultrafast (~20x Echtzeit), Audio AAC, yuv420p fuer alle Player.
-	_encode_pid = OS.create_process(_ffmpeg, ["-v", "error", "-y", "-i", _render_path,
+	var enc_args := PackedStringArray(["-v", "error", "-y", "-i", _render_path,
 		"-c:v", "libx264", "-preset", "ultrafast", "-crf", "26", "-pix_fmt", "yuv420p",
 		"-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", final_path])
+	if style == "timelapse":
+		var movie_s := probe_duration_s(_render_path, _ffmpeg)
+		if movie_s <= 0.0:
+			movie_s = _len_s + TAIL_S
+		enc_args = timelapse_args(_render_path, final_path, movie_s)
+	_encode_pid = OS.create_process(_ffmpeg, enc_args)
 	if _encode_pid <= 0:
 		# Kein Umkodieren moeglich: AVI bleibt das Ergebnis.
 		_encode_pid = -1
