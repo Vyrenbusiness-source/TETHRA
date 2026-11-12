@@ -21,6 +21,9 @@ const DIM := Color(0.616, 0.592, 0.553)
 const PLATE := Color(0.071, 0.067, 0.063)
 const HIT_COL := Color(0.62, 0.84, 0.60)
 const MISS_COL := Color(0.871, 0.443, 0.384)
+const GOLD := Color(1.0, 0.87, 0.64)              # warmes Buehnenlicht
+const GREY := Color(0.62, 0.62, 0.64)
+const ROWS := 4
 const BAR_LEAD_MS := 1700.0
 const APPROACH_MS := 650.0
 
@@ -48,6 +51,9 @@ var _cue_fx: Array = []
 var _cue_first := 0
 var _smooth_scale := 1.0
 var _meter_label := ""
+## Letzter Einsatz je Taste (Zeit), laesst die Orchester-Seite aufleuchten.
+var _last_cue := [-99999.0, -99999.0]
+var _glass: StyleBoxFlat
 
 
 func _ready() -> void:
@@ -55,6 +61,13 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_font = get_theme_default_font() if get_theme_default_font() != null else ThemeDB.fallback_font
 	_head_font = UiTheme.heading_font(2)
+	_glass = StyleBoxFlat.new()
+	_glass.bg_color = Color(0.03, 0.028, 0.026, 0.74)
+	_glass.border_color = Color(INK, 0.13)
+	_glass.set_border_width_all(1)
+	_glass.set_corner_radius_all(12)
+	_glass.shadow_color = Color(0, 0, 0, 0.35)
+	_glass.shadow_size = 10
 
 
 func setup(p_chart: DirigentChart, p_core: DirigentCore) -> void:
@@ -63,6 +76,7 @@ func setup(p_chart: DirigentChart, p_core: DirigentCore) -> void:
 	_cue_first = 0
 	_beat_fx.clear()
 	_cue_fx.clear()
+	_last_cue = [-99999.0, -99999.0]
 
 
 # ---------------------------------------------------------------------------
@@ -115,6 +129,10 @@ func on_beat_judged(index: int, result: Dictionary) -> void:
 
 func on_cue_judged(index: int, result: Dictionary) -> void:
 	_cue_fx.append([t_ms, int(result.quality), int(result.mask)])
+	if int(result.quality) != 5:
+		for k in 2:
+			if DirigentChart.mask_has(int(result.mask), k):
+				_last_cue[k] = t_ms
 
 
 func push_cursor(px: Vector2) -> void:
@@ -122,7 +140,7 @@ func push_cursor(px: Vector2) -> void:
 	var now := Time.get_ticks_msec() / 1000.0
 	_trail.append(px)
 	_trail_t.append(now)
-	while _trail.size() > 1 and now - _trail_t[0] > 0.22:
+	while _trail.size() > 1 and now - _trail_t[0] > 0.30:
 		_trail.remove_at(0)
 		_trail_t.remove_at(0)
 
@@ -138,8 +156,7 @@ func _process(_delta: float) -> void:
 func _draw() -> void:
 	if chart == null or chart.beats.is_empty():
 		return
-	var uh := unit_px()
-	var c := center_px()
+	_draw_backdrop()
 	var cur := chart.beat_at(t_ms)
 	var nxt := mini(cur + 1, chart.beats.size() - 1)
 	var gap := chart.is_gap(cur) and cur >= 0 and t_ms > float(chart.beats[cur].t) + 700.0
@@ -154,12 +171,109 @@ func _draw() -> void:
 		_draw_bar()
 		return
 	var bar_i: int = int(chart.beats[target].bar)
+	_draw_path(bar_i)
 	_draw_figure(bar_i, target)
 	_draw_announce(bar_i, target)
 	_draw_trace(cur, nxt)
 	_draw_beat_fx()
 	_draw_hand()
 	_draw_bar()
+
+
+## Konzertsaal: Buehnenlicht von oben, weicher Lichtkreis auf der Figur, Orchester unten.
+func _draw_backdrop() -> void:
+	var w := size.x
+	var h := size.y
+	var cx := w * 0.5
+	var lift := 1.0 + 0.35 * kiai + 0.10 * beat_env
+	# Lichtkegel: drei ineinander liegende Kegel ergeben weiche Kanten.
+	for j in 3:
+		var hw := h * (0.62 - 0.17 * j)
+		var top := h * (0.07 - 0.015 * j)
+		var pts := PackedVector2Array([Vector2(cx - top, 0), Vector2(cx + top, 0),
+			Vector2(cx + hw, h * 0.92), Vector2(cx - hw, h * 0.92)])
+		var a_top := 0.034 * lift
+		var cols := PackedColorArray([Color(GOLD, a_top), Color(GOLD, a_top), Color(GOLD, 0.0), Color(GOLD, 0.0)])
+		draw_polygon(pts, cols)
+	# Lichtpfuetze um die Figur.
+	var c := center_px()
+	draw_set_transform(c, 0.0, Vector2(1.0, 0.72))
+	for j in 7:
+		draw_circle(Vector2.ZERO, h * (0.62 - 0.065 * j), Color(GOLD, 0.009 * lift), true, -1.0, true)
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	# Rand und Boden dunkler: Blick bleibt in der Mitte.
+	var edge := Color(0.0, 0.0, 0.0, 0.0)
+	var shade := Color(0.02, 0.018, 0.016, 0.55)
+	draw_polygon(PackedVector2Array([Vector2(0, h * 0.62), Vector2(w, h * 0.62), Vector2(w, h), Vector2(0, h)]),
+		PackedColorArray([edge, edge, shade, shade]))
+	draw_polygon(PackedVector2Array([Vector2(0, 0), Vector2(w * 0.22, 0), Vector2(w * 0.22, h), Vector2(0, h)]),
+		PackedColorArray([Color(shade, 0.5), edge, edge, Color(shade, 0.5)]))
+	draw_polygon(PackedVector2Array([Vector2(w * 0.78, 0), Vector2(w, 0), Vector2(w, h), Vector2(w * 0.78, h)]),
+		PackedColorArray([edge, Color(shade, 0.5), Color(shade, 0.5), edge]))
+	_draw_orchestra()
+
+
+func _section_glow(key: int, row: int) -> float:
+	var age := t_ms - float(_last_cue[key]) - float(row) * 45.0
+	if age < 0.0 or age > 1400.0:
+		return 0.0
+	return minf(age / 40.0, 1.0) * exp(-age / 300.0)
+
+
+## Orchester: ROWS Reihen als Silhouetten-Boegen, links = Taste A, rechts = Taste B.
+func _draw_orchestra() -> void:
+	var w := size.x
+	var h := size.y
+	var cx := w * 0.5
+	var base_y := h * 1.0
+	var sil := Color(0.018, 0.017, 0.016)
+	for k in range(ROWS - 1, -1, -1):
+		var rx := w * (0.20 + 0.09 * k)
+		var ry := h * (0.17 + 0.026 * k)
+		var n := 13 + 3 * k
+		var hr := h * (0.0105 - 0.0011 * k)
+		for i in n:
+			var th := deg_to_rad(200.0 + 140.0 * float(i) / float(n - 1))
+			var p := Vector2(cx + cos(th) * rx, base_y - h * 0.02 + sin(th) * ry)
+			if absf(p.x - cx) < w * 0.085:
+				continue  # Gasse in der Mitte: dort steht der Dirigent, Wertung bleibt frei
+			var side := (p.x - cx) / (rx * 0.9)
+			var ga := _section_glow(0, k) * clampf(0.5 - side * 1.6, 0.0, 1.0)
+			var gb := _section_glow(1, k) * clampf(0.5 + side * 1.6, 0.0, 1.0)
+			var lit := Color(KEY_A_COL * ga + KEY_B_COL * gb, 1.0)
+			var g := minf(ga + gb, 1.0)
+			var body := p + Vector2(0, hr * 2.2)
+			if g > 0.02:
+				draw_circle(body, hr * 3.2, Color(lit, 0.10 * g), true, -1.0, true)
+			draw_circle(body, hr * 1.9, sil.lerp(Color(lit.r, lit.g, lit.b) * 0.42, g), true, -1.0, true)
+			draw_circle(p, hr, sil.lerp(Color(lit.r, lit.g, lit.b) * 0.6, g), true, -1.0, true)
+			# Feiner Rand oben: Silhouette bleibt auch ohne Einsatz lesbar.
+			draw_arc(body, hr * 1.9, deg_to_rad(200.0), deg_to_rad(340.0), 10, Color(INK, 0.07 + 0.35 * g), 1.0, true)
+
+
+## Ganzer Figurenweg als feine Linie; schon gelaufener Teil heller (Fortschritt).
+func _draw_path(bar_i: int) -> void:
+	if not show_guides:
+		return
+	var b: Dictionary = chart.bars[bar_i]
+	var first := int(b.i0)
+	var last := mini(first + int(b.count), chart.beats.size() - 1)
+	for id in range(first, last):
+		var t0 := float(chart.beats[id].t)
+		var t1 := float(chart.beats[id + 1].t)
+		if chart.is_gap(id) or t1 - t0 > 2500.0:
+			continue
+		var u_now := clampf((t_ms - t0) / maxf(t1 - t0, 1.0), 0.0, 1.0)
+		var a: Vector2 = chart.beats[id].pos
+		var e: Vector2 = chart.beats[id + 1].pos
+		var steps := 14
+		var prev := to_px(DirigentChart.path_point(a, e, 0.0))
+		for i in range(1, steps + 1):
+			var u := float(i) / float(steps)
+			var p := to_px(DirigentChart.path_point(a, e, u))
+			var done := u <= u_now
+			draw_line(prev, p, Color(GOLD, 0.30 if done else 0.09), 1.2, true)
+			prev = p
 
 
 func _draw_rest() -> void:
@@ -300,11 +414,11 @@ func _draw_trace(cur: int, nxt: int) -> void:
 		var al := 0.10
 		if behind >= 0.0:
 			al = 0.10 + 0.55 * exp(-behind * 6.0)
-		draw_line(prev, p, Color(INK, al), 3.0 if behind >= 0.0 and behind < 0.2 else 1.6, true)
+		draw_line(prev, p, Color(GOLD, al), 3.0 if behind >= 0.0 and behind < 0.2 else 1.6, true)
 		prev = p
 	var head := to_px(DirigentChart.path_point(a, b, u_now))
-	draw_circle(head, 7.0, Color(INK, 0.16), true, -1.0, true)
-	draw_circle(head, 3.5, Color(INK, 0.95), true, -1.0, true)
+	draw_circle(head, 7.0, Color(GOLD, 0.18), true, -1.0, true)
+	draw_circle(head, 3.5, Color(GOLD, 0.95), true, -1.0, true)
 
 
 func _draw_beat_fx() -> void:
@@ -320,28 +434,40 @@ func _draw_beat_fx() -> void:
 		var r := DirigentCore.HIT_R * unit_px()
 		if hit:
 			var col := HIT_COL.lerp(INK, float(fx[3]) - 0.88) if float(fx[3]) >= 0.88 else HIT_COL
-			draw_arc(p, r * (1.0 + 0.25 * k), 0.0, TAU, 56, Color(col, 0.85 * (1.0 - k)), 3.0, true)
+			var fade := (1.0 - k) * (1.0 - k)
+			for j in 5:
+				draw_circle(p, r * (0.5 + 0.28 * float(j) + 0.35 * k), Color(col, 0.075 * fade), true, -1.0, true)
+			draw_arc(p, r * (1.0 + 0.2 * k), 0.0, TAU, 56, Color(col, 0.7 * fade), 2.0, true)
 		else:
 			var h := r * 0.38
-			var al := 0.9 * (1.0 - k)
-			draw_line(p - Vector2(h, h), p + Vector2(h, h), Color(MISS_COL, al), 3.0, true)
-			draw_line(p - Vector2(h, -h), p + Vector2(h, -h), Color(MISS_COL, al), 3.0, true)
+			var al := 0.8 * (1.0 - k)
+			draw_line(p - Vector2(h, h), p + Vector2(h, h), Color(GREY, al), 2.5, true)
+			draw_line(p - Vector2(h, -h), p + Vector2(h, -h), Color(GREY, al), 2.5, true)
 			var txt := tr("Schlag verfehlt")
 			var tw := _font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 15).x
 			draw_string(_font, p + Vector2(-tw * 0.5, -r - 12.0 - 10.0 * k), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 15,
-				Color(MISS_COL, al))
+				Color(GREY, al))
 	_beat_fx = keep
 
 
 func _draw_hand() -> void:
-	if _trail.size() > 1:
-		for i in range(1, _trail.size()):
-			var al := float(i) / float(_trail.size())
-			draw_line(_trail[i - 1], _trail[i], Color(INK, 0.30 * al), 2.0 + 3.0 * al, true)
+	# Spur: kurz, verjuengt sich zum Ende, Spitze leuchtet.
+	var n := _trail.size()
+	if n > 1:
+		for i in range(1, n):
+			var al := float(i) / float(n)
+			al = al * al
+			draw_line(_trail[i - 1], _trail[i], Color(GOLD, 0.05 + 0.18 * al), 1.0 + 9.0 * al, true)
+			draw_line(_trail[i - 1], _trail[i], Color(GOLD, 0.15 + 0.55 * al), 0.8 + 3.0 * al, true)
 	var p := cursor_px
-	draw_circle(p, 11.0, Color(PLATE, 0.8), true, -1.0, true)
-	draw_arc(p, 9.0, 0.0, TAU, 28, Color(INK, 0.95), 2.0, true)
-	draw_circle(p, 2.5, Color(INK, 0.95), true, -1.0, true)
+	# Taktstock: feste Schraege (kein Wackeln), Griff unten rechts.
+	var tail := p + Vector2(0.62, 0.78) * (size.y * 0.04)
+	draw_line(tail, p, Color(0, 0, 0, 0.45), 4.5, true)
+	draw_line(tail, p, Color(INK, 0.85), 2.2, true)
+	draw_circle(tail, 3.6, Color(INK, 0.9), true, -1.0, true)
+	draw_circle(p, 17.0, Color(GOLD, 0.10), true, -1.0, true)
+	draw_circle(p, 10.0, Color(GOLD, 0.20), true, -1.0, true)
+	draw_circle(p, 4.0, Color(1.0, 0.97, 0.9, 1.0), true, -1.0, true)
 
 
 # ---------------------------------------------------------------------------
@@ -354,8 +480,7 @@ func _draw_bar() -> void:
 	var mid_y := r.position.y + r.size.y * 0.5
 	var h := r.size.y
 	# Streifen: flach, mit feiner Kante.
-	draw_rect(r, Color(1, 1, 1, 0.035), true)
-	draw_rect(r, Color(INK, 0.10), false, 1.0)
+	draw_style_box(_glass, r.grow_individual(10.0, 4.0, 10.0, 4.0))
 	# Trefferfenster-Zone um die Linie (CORE-Breite im Zeitmass).
 	if core != null:
 		var wpx := core.w300 / BAR_LEAD_MS * (r.end.x - line_x)
@@ -374,7 +499,7 @@ func _draw_bar() -> void:
 	# Trefferlinie (deutlich) mit Ring, Legende links in den Formen der Marken.
 	var held_a: bool = key_held[0]
 	var held_b: bool = key_held[1]
-	draw_line(Vector2(line_x, r.position.y - 8.0), Vector2(line_x, r.end.y + 8.0), Color(INK, 0.22), 9.0, true)
+	draw_line(Vector2(line_x, r.position.y - 8.0), Vector2(line_x, r.end.y + 8.0), Color(GOLD, 0.16), 8.0, true)
 	draw_line(Vector2(line_x, r.position.y - 8.0), Vector2(line_x, r.end.y + 8.0), Color(INK, 1.0), 3.0, true)
 	draw_arc(Vector2(line_x, mid_y), h * 0.40, 0.0, TAU, 40, Color(INK, 0.85), 2.5, true)
 	_key_cap(Vector2(r.position.x + 30.0, mid_y), key_names[0], KEY_A_COL, held_a, 0)
