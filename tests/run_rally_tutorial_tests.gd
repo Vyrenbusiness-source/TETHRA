@@ -227,13 +227,19 @@ func _test_reasons(tut: Control) -> void:
 
 func _test_keys_from_settings(tut: Control) -> void:
 	var st := _settings()
-	var old: Array[int] = st.key_lanes.duplicate()
-	var nk: Array[int] = [KEY_Q, KEY_W, KEY_E, KEY_R]
-	st.key_lanes = nk
+	# Rally hat eigene Tasten je Zonenzahl (Settings.rally_keys_3 / rally_keys_4).
+	var old3: Array[int] = st.rally_keys_3.duplicate()
+	var old4: Array[int] = st.rally_keys_4.duplicate()
+	var nk3: Array[int] = [KEY_Q, KEY_W, KEY_E]
+	var nk4: Array[int] = [KEY_Q, KEY_W, KEY_E, KEY_R]
+	st.rally_keys_3 = nk3
+	st.rally_keys_4 = nk4
 	tut.enter_step(0)
-	_check(tut.key_labels() == ["Q", "W", "E", "R"], "Tasten aus der Belegung: %s" % str(tut.key_labels()))
-	_check(str(tut.body_for(0)).contains("Q  W  E  R"), "Text nennt die aktuelle Belegung")
-	_check(tut.view.key_labels == ["Q", "W", "E", "R"], "Ansicht zeigt die Belegung")
+	var want: Array = ["Q", "W", "E", "R"] if int(tut.zones) == 4 else ["Q", "W", "E"]
+	var want_txt := "  ".join(PackedStringArray(want))
+	_check(tut.key_labels() == want, "Tasten aus der Belegung: %s" % str(tut.key_labels()))
+	_check(str(tut.body_for(0)).contains(want_txt), "Text nennt die aktuelle Belegung")
+	_check(tut.view.key_labels == want, "Ansicht zeigt die Belegung")
 	tut.bot = false
 	_run_until(tut, func(): return float(tut.t_ms) >= float(tut.shots[0].t) - 2.0, 20000)
 	var z: int = tut.shots[0].zones[0]
@@ -241,7 +247,8 @@ func _test_keys_from_settings(tut: Control) -> void:
 	_key(tut, z, false)
 	tut.advance(FRAME * 3.0)
 	_check(int(tut.success) == 1, "Eingabe ueber die Belegung trifft")
-	st.key_lanes = old
+	st.rally_keys_3 = old3
+	st.rally_keys_4 = old4
 
 
 func _test_skip(tut: Control) -> void:
