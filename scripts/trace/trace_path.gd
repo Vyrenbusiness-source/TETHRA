@@ -18,6 +18,8 @@ const WIN_MAX := 54.0           ## halbe Laenge des Knick-Bogens (max.)
 const HAIRPIN_MIN := 2.9        ## ab diesem Knickwinkel (rad) = Haarnadel
 const CHORD_MS := 2.0           ## Noten innerhalb dieser Zeit = Akkord
 const LOOK_S := 1.2             ## Vorlauf in Sekunden (gezeichneter Weg voraus)
+const ARROW_R := 18.0           ## Pfeil-Halbmesser (Einzelnote) fuer die Ueberdeckungspruefung
+const CHORD_R := 36.0           ## Halbmesser eines Akkord-Knotens (Pfeile sitzen 19 px daneben)
 const COL_ANGLE := [PI, PI * 0.5, -PI * 0.5, 0.0]  ## links, runter, hoch, rechts
 
 enum Kind { SINGLE, DIAG, CROSS, STAR }
@@ -386,3 +388,23 @@ func hairpin_count() -> int:
 		if kn.hairpin:
 			c += 1
 	return c
+
+
+## Halbmesser der Pfeile eines Knotens (Ueberdeckungspruefung).
+func knot_radius(j: int) -> float:
+	return CHORD_R if knots[j].notes.size() > 1 else ARROW_R
+
+
+## Knotenpaare [j, k], die im Vorlauf gleichzeitig sichtbar sind (Zeit <= LOOK_S) und
+## sich ueberdecken (Mittelpunktabstand < Summe der Pfeil-Halbmesser).
+func overlap_pairs() -> Array:
+	var out: Array = []
+	var look := LOOK_S * 1000.0
+	for j in knots.size():
+		var rj := knot_radius(j)
+		var k := j + 1
+		while k < knots.size() and knots[k].t - knots[j].t <= look:
+			if knots[j].pos.distance_to(knots[k].pos) < rj + knot_radius(k):
+				out.append([j, k])
+			k += 1
+	return out
