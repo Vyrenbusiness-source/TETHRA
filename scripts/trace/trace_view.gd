@@ -67,8 +67,13 @@ func setup(p: TracePath, c: ManiaCore, colors: Array[Color]) -> void:
 	mods = TraceMods.from_session()
 	_mirror = TraceMods.has(mods, "MR")
 	if key_labels.is_empty():
+		# Settings ueber den Baum holen: Tests laden die Ansicht ohne Autoloads.
+		var st: Node = get_tree().root.get_node_or_null("Settings") if is_inside_tree() else null
+		var keys: Array = []
+		if st != null:
+			keys = st.get("trace_keys") if st.get("trace_keys") != null else st.get("key_lanes")
 		for i in 4:
-			key_labels.append(UiTheme.key_short(Settings.key_lanes[i]).to_upper())
+			key_labels.append(UiTheme.key_short(int(keys[i])).to_upper() if i < keys.size() else ["←", "↓", "↑", "→"][i])
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	for j in p.knots.size():
