@@ -85,6 +85,7 @@ func _run() -> void:
 	_test_replay()
 	_test_autoplay()
 	_test_stars()
+	_test_anti_mash()
 	print("Ergebnis: %d ok, %d fehlgeschlagen" % [_passed, _failed])
 
 
@@ -245,10 +246,10 @@ func _test_zone_rule() -> void:
 	c.press_ignored.connect(func(z, r): ign.append([z, r]))
 	c.key_down(3, 1000.0)       # falsche Zone (verlangt: Zone 0)
 	c.key_up(3, 1005.0)
-	_ok(c.judged_count == 0, "falsche Zone trifft nicht")
-	_ok(ign.size() == 1 and ign[0][1] == "KEY", "falsche Zone mit Ball in Reichweite: Hinweis KEY")
+	_ok(c.judged_count == 1 and int(c.result_of(0).quality) == ManiaCore.Quality.MISS, "falsche Zone: Ball sofort Miss (v3)")
+	_ok(ign.size() == 2 and ign[0][1] == "KEY" and ign[1][1] == "WRONG", "falsche Zone mit Ball im 50er-Fenster: KEY + WRONG")
 	_press(c, 0, 1010.0)
-	_ok(c.is_judged(0) and int(c.result_of(0).quality) == ManiaCore.Quality.MAX, "richtige Zone: MAX bei 10 ms")
+	_ok(int(c.result_of(0).quality) == ManiaCore.Quality.MISS and c.combo == 0, "richtige Taste danach: Ball bleibt Miss")
 	_press(c, 1, 2000.0)        # Zone 1 auf Ball in Zone 3
 	c.update(2200.0)
 	_ok(int(c.result_of(1).get("quality", 0)) == ManiaCore.Quality.MISS, "falsche Zone: Fehlschlag nach Fenster")
@@ -473,9 +474,9 @@ func _test_replay() -> void:
 		t += 33.0
 	_ok(r.stats() == a.stats(), "Replay-Wiedergabe = Original (Score %d)" % a.score)
 	_ok(not RallyCore.replay_ok([[0, 1]]), "Replay ohne Regel-Marke ist ungueltig")
-	_ok(RallyCore.REPLAY_RULES == 2 and int(a.replay_log[0][2]) == 2, "Replay-Regel-Marke = 2")
-	_ok(not RallyCore.replay_ok([[0, RallyCore.EV_RULES, 1], [100, 1]]), "altes Replay (rules 1) wird abgelehnt")
-	_ok(RallyCore.replay_ok([[0, RallyCore.EV_RULES, 2], [100, 1]]), "Replay rules 2 wird akzeptiert")
+	_ok(RallyCore.REPLAY_RULES == 3 and int(a.replay_log[0][2]) == 3, "Replay-Regel-Marke = 3")
+	_ok(not RallyCore.replay_ok([[0, RallyCore.EV_RULES, 2], [100, 1]]), "altes Replay (rules 2) wird abgelehnt")
+	_ok(RallyCore.replay_ok([[0, RallyCore.EV_RULES, 3], [100, 1]]), "Replay rules 3 wird akzeptiert")
 	# Live-Eingabe schreibt dasselbe wie der Bot.
 	var live := RallyCore.new()
 	live.setup(sh, 7.0, 5.0, {})
@@ -545,3 +546,60 @@ func _test_stars() -> void:
 		charged.append([1000 + i * 600, i % 4, 1000 + i * 600 + 400])
 	_ok(RallyChart.stars(_shots(charged)) > RallyChart.stars(_shots(plain)), "Aufladen > normale Baelle")
 	_near(RallyChart.stars([] as Array[RallyChart.Shot]), 0.0, "leer = 0")
+
+
+## Spam: zu jeder Ballzeit alle vier Zonentasten.
+func _spam_plan(sh: Array[RallyChart.Shot]) -> Array:
+	var out: Array = []
+	var i := 0
+	for s in sh:
+		for z in 4:
+			out.append([int(s.t), RallyCore.EV_DOWN + z, i])
+		for z in 4:
+			out.append([int(s.t) + 30, RallyCore.EV_UP + z, i])
+		i += 1
+	return out
+
+
+func _test_anti_mash() -> void:
+	print("- Anti-Mash")
+	var sh := _mixed_shots()
+	var before := RallyCore.new()
+	before.anti_mash = false
+	before.setup(sh, 8.0, 5.0, {})
+	_play(before, _spam_plan(sh), 16.0, sh[-1].end + 500.0)
+	var after := RallyCore.new()
+	after.setup(sh, 8.0, 5.0, {})
+	_play(after, _spam_plan(sh), 16.0, sh[-1].end + 500.0)
+	print("  Rally Spam: vorher Acc %.1f%% (Misses %d), nachher Acc %.1f%% (Misses %d)" % [
+		before.accuracy() * 100.0, before._tally.n_miss, after.accuracy() * 100.0, after._tally.n_miss])
+	_ok(after.accuracy() < before.accuracy() - 0.2 and after.accuracy() < 0.6, "Spam: Acc faellt deutlich")
+	# Richtige + falsche gleichzeitig = Miss (falsche zuerst oder danach im Fenster).
+	var c := _core([[1000, 0], [3000, 1]])
+	c.key_down(2, 995.0)
+	c.key_down(0, 1000.0)
+	_ok(int(c.result_of(0).quality) == ManiaCore.Quality.MISS, "falsche zuerst, dann richtige = Miss")
+	var d := _core([[1000, 0], [3000, 1]])
+	_press(d, 0, 1000.0)
+	d.key_down(2, 1010.0)
+	_ok(int(d.result_of(0).quality) == ManiaCore.Quality.MAX and d.combo == 1, "richtige zuerst, falsche danach: Treffer bleibt")
+	# Leer-Druck: kein Ball in irgendeinem Fenster = nichts.
+	var e := _core([[3000, 0]])
+	_press(e, 2, 1000.0)
+	_ok(e.judged_count == 0 and e.combo == 0 and e._tally.n_miss == 0, "Leer-Druck = nichts")
+	# Schmetterball richtig = Treffer; mit dritter Zone = Miss; nur eine Taste weiter MEH.
+	var f := _core([[1000, [0, 3]], [3000, [0, 3]]])
+	f.key_down(0, 1000.0)
+	f.key_down(3, 1003.0)
+	_ok(f.is_judged(0) and int(f.result_of(0).quality) <= ManiaCore.Quality.MAX + 1, "Schmetterball richtig = Treffer")
+	var g := _core([[1000, [0, 3]]])
+	g.key_down(0, 1000.0)
+	g.key_down(1, 1004.0)
+	_ok(int(g.result_of(0).quality) == ManiaCore.Quality.MISS, "Schmetterball + dritte Zone = Miss")
+	g.key_down(3, 1006.0)
+	_ok(int(g.result_of(0).quality) == ManiaCore.Quality.MISS, "weitere richtige Taste heilt nicht")
+	# Bot unberuehrt.
+	var b := RallyCore.new()
+	b.setup(sh, 8.0, 5.0, {})
+	_play(b, RallyCore.bot_plan(sh), 16.0, sh[-1].end + 500.0)
+	_ok(str(b.stats().grade) == "SS", "Bot weiter SS")

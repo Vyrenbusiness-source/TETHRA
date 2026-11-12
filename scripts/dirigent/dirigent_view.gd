@@ -50,6 +50,7 @@ var _trail_t: Array[float] = []
 var _beat_fx: Array = []
 ## Rueckmeldungen an der Leiste: [Zeit, quality, mask]
 var _cue_fx: Array = []
+var _wrong_t := -1e9
 var _cue_first := 0
 var _smooth_scale := 1.0
 var _meter_label := ""
@@ -135,6 +136,11 @@ func on_cue_judged(index: int, result: Dictionary) -> void:
 		for k in 2:
 			if DirigentChart.mask_has(int(result.mask), k):
 				_last_cue[k] = t_ms
+
+
+## Falsche Taste: kurzer Text "WRONG KEY" ueber der Einsatz-Leiste.
+func on_wrong_key() -> void:
+	_wrong_t = t_ms
 
 
 func push_cursor(px: Vector2) -> void:
@@ -621,6 +627,13 @@ func _draw_bar() -> void:
 		draw_arc(Vector2(line_x, mid_y), rad * (1.2 + 1.2 * k), 0.0, TAU, 32, Color(col, 0.7 * (1.0 - k)), 2.0, true)
 		draw_arc(cursor_px, (22.0 + 38.0 * k) * size.y / 720.0, 0.0, TAU, 32, Color(col, 0.6 * (1.0 - k)), 2.5, true)
 	_cue_fx = keep
+	var wa := t_ms - _wrong_t
+	if wa >= 0.0 and wa < 600.0:
+		var wtxt := "WRONG KEY"
+		var wfs := int(round(r.size.y * 0.55))
+		var ww := _head_font.get_string_size(wtxt, HORIZONTAL_ALIGNMENT_LEFT, -1, wfs).x
+		draw_string(_head_font, Vector2(r.position.x + (r.size.x - ww) * 0.5, r.position.y - 22.0), wtxt,
+			HORIZONTAL_ALIGNMENT_LEFT, -1, wfs, Color(MISS_COL, 1.0 - wa / 600.0))
 
 
 ## Legende: dieselbe Form und Farbe wie die Marke (A = Kreis, B = Raute), Taste darin.

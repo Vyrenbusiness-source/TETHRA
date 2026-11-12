@@ -24,6 +24,7 @@ func _initialize() -> void:
 	_test_score()
 	_test_mods()
 	_test_replay()
+	_test_anti_mash()
 	print("=== Ergebnis: %d bestanden, %d fehlgeschlagen ===" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
 
@@ -106,9 +107,15 @@ func _test_wrong_key() -> void:
 	var log := _watch(c)
 	c.cursor_moved(P, 0.0)
 	c.key_down(0, 1000.0)
-	_ok(not c.is_judged(0) and log == [["key", 0]], "A auf B-Ziel: key, kein Treffer")
+	_ok(c.is_judged(0) and c.n_miss == 1 and log == [["wrong", 0]], "A auf B-Ziel: sofort Miss (wrong)")
 	c.key_down(1, 1010.0)
-	_ok(c.is_judged(0) and c.combo == 1, "richtige Taste danach trifft")
+	_ok(c.n_miss == 1 and c.combo == 0, "richtige Taste danach heilt nicht")
+	# Cursor daneben: nur aim, kein Miss.
+	var c2 := _core(_notes([_tap(1000.0, P, 1)]))
+	var log2 := _watch(c2)
+	c2.cursor_moved(Vector2(0.9, 0.1), 0.0)
+	c2.key_down(0, 1000.0)
+	_ok(not c2.is_judged(0) and log2.size() == 1 and log2[0][0] != "wrong", "falsche Taste neben dem Ziel: kein Miss")
 
 
 func _test_early() -> void:
@@ -376,8 +383,8 @@ func _test_replay() -> void:
 	_ok(a.score == b.score and a.max_combo == b.max_combo and a.n_miss == b.n_miss,
 		"andere Bildrate, gleiche Wertung (%d / %d)" % [a.score, b.score])
 	_ok(a.replay_log.size() > 100 and a.replay_log == b.replay_log, "Event-Log gleich (%d Events)" % a.replay_log.size())
-	_ok(int(a.replay_log[0][1]) == OrbitCore.EV_RULES and int(a.replay_log[0][2]) == 3 and OrbitCore.REPLAY_RULES == 3,
-		"meta orbit_rules = 3 als erster Eintrag")
+	_ok(int(a.replay_log[0][1]) == OrbitCore.EV_RULES and int(a.replay_log[0][2]) == 4 and OrbitCore.REPLAY_RULES == 4,
+		"meta orbit_rules = 4 als erster Eintrag")
 	var codes := {}
 	for e in a.replay_log:
 		codes[int(e[1])] = true
@@ -393,3 +400,57 @@ func _test_replay() -> void:
 		"Wiedergabe des Logs = gleiche Wertung (%d)" % r.score)
 	var cnt := OrbitCore.count_events(a.replay_log)
 	_ok(cnt.keys > 100 and cnt.cursor > 50, "count_events")
+
+
+func _spam(c: OrbitCore, ns: Array[OrbitNote]) -> void:
+	for n in ns:
+		c.cursor_moved(n.pos, n.time_ms - 30.0)
+		c.key_down(0, n.time_ms)
+		c.key_down(1, n.time_ms + 3.0)
+		c.key_up(0, n.time_ms + 40.0)
+		c.key_up(1, n.time_ms + 43.0)
+	c.update(ns[ns.size() - 1].time_ms + 500.0)
+
+
+func _test_anti_mash() -> void:
+	print("- Anti-Mash")
+	var ns := _notes([])
+	for i in 40:
+		ns.append(_tap(1000.0 + 400.0 * i, Vector2(0.3 + 0.01 * (i % 5), 0.5), [0, 1, 2, 1][i % 4]))
+	var b := _core(ns)
+	b.anti_mash = false
+	_spam(b, ns)
+	var a := _core(ns)
+	_spam(a, ns)
+	print("  Orbit Spam A+B: vorher Acc %.1f%% (Misses %d), nachher Acc %.1f%% (Misses %d)" % [
+		b.accuracy() * 100.0, b.n_miss, a.accuracy() * 100.0, a.n_miss])
+	_ok(a.accuracy() < b.accuracy() - 0.15 and a.accuracy() < 0.7 and a.n_miss > b.n_miss, "Spam: Acc faellt deutlich")
+	# A-Ziel nur mit A, nicht mit Akzent-Paar: B zuerst, dann A = Miss.
+	var c := _core(_notes([_tap(1000.0, P, 0)]))
+	c.cursor_moved(P, 0.0)
+	c.key_down(1, 1000.0)
+	c.key_down(0, 1010.0)
+	_ok(c.n_miss == 1 and c.combo == 0, "B auf A-Ziel, dann A: Miss")
+	# Richtige zuerst, falsche danach: Treffer bleibt.
+	var d := _core(_notes([_tap(1000.0, P, 0)]))
+	d.cursor_moved(P, 0.0)
+	d.key_down(0, 1000.0)
+	d.key_down(1, 1005.0)
+	_ok(d.n_miss == 0 and d.combo == 1, "richtige dann falsche: Treffer bleibt")
+	# Akzent nicht mit einer Taste allein; beide = Treffer.
+	var e := _core(_notes([_tap(1000.0, P, 2)]))
+	e.cursor_moved(P, 0.0)
+	e.key_down(0, 1000.0)
+	e.update(1000.0 + e.w50 + 1.0)
+	_ok(e.n_miss == 1 and e.combo == 0, "Akzent mit A allein: Miss")
+	var f := _core(_notes([_tap(1000.0, P, 2)]))
+	f.cursor_moved(P, 0.0)
+	f.key_down(0, 1000.0)
+	f.key_down(1, 1010.0)
+	_ok(f.n_miss == 0 and f.combo == 1, "Akzent mit beiden = Treffer")
+	# Leer-Druck: kein Ziel im Fenster = nichts.
+	var g := _core(_notes([_tap(3000.0, P, 0)]))
+	var lg := _watch(g)
+	g.cursor_moved(P, 0.0)
+	g.key_down(1, 1000.0)
+	_ok(g.n_miss == 0 and not g.is_judged(0) and not lg.has(["wrong", 1]), "Leer-Druck = nichts")

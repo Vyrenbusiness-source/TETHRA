@@ -8,7 +8,7 @@ extends RefCounted
 ## Das Ereignis-Log (replay_log) enthaelt nur die Eingaben, die Wertung folgt
 ## daraus. Fenster, Qualitaeten, ScoreV1, Acc, Grade, HP kommen aus ManiaCore.
 ##
-## Regeln v2 (docs/modes/rally.md): 4 Zonen = 4 Tasten (Index 0..3). Jede Zone hat
+## Regeln v3 (docs/modes/rally.md): 4 Zonen = 4 Tasten (Index 0..3). Jede Zone hat
 ## ihre eigene Ballfolge (kein Notelock zwischen Zonen); Druck in der falschen Zone
 ## trifft nichts. Schmetterball: beide Zonentasten innerhalb SMASH_MS (nur eine:
 ## hoechstens 50). Aufladen: Zonentaste halten, am Ende loslassen (wie Mania-Hold).
@@ -16,6 +16,7 @@ extends RefCounted
 signal shot_judged(index: int, result: Dictionary)
 signal charge_started(index: int, quality: int)
 ## Druck ohne Wirkung: reason "KEY" (falsche Zone, in einer anderen liegt ein Ball), "FREE" (kein Ball).
+## Dazu "WRONG": falsche Zone bei einem Ball im 50er-Fenster, der Ball ist sofort Miss (Anti-Mash).
 signal press_ignored(key: int, reason: String)
 signal hp_changed(hp: float)
 signal finished(stats: Dictionary)
@@ -24,7 +25,7 @@ const Quality := ManiaCore.Quality
 const MODE := "rally"
 const ZONES := 4
 const SMASH_MS := 40.0
-const REPLAY_RULES := 2
+const REPLAY_RULES := 3
 ## Ereignis-Codes: [t, EV_DOWN + Zone], [t, EV_UP + Zone], Regel-Marke [0, EV_RULES, REPLAY_RULES].
 const EV_DOWN := 1
 const EV_UP := 5
@@ -40,6 +41,8 @@ var w50 := 136.5
 var w_miss := 173.5
 
 var replay_log: Array = []
+## Anti-Mash (Regeln v3). Nur Messungen/Tests schalten es aus (Vorher-Werte); Spiel und Replay: immer an.
+var anti_mash := true
 ## Zonenzahl dieses Laufs (3 oder 4), kommt aus RallyChart.zone_count(); steht in der Regel-Marke.
 var zones := 4
 var recording := true
@@ -252,6 +255,24 @@ func _advance(t: int) -> void:
 # ---------------------------------------------------------------------------
 
 func _ignore(z: int, t: float) -> void:
+	# Anti-Mash (v3): Druck ohne Ball in dieser Zone, waehrend eine andere Zone einen
+	# ungewerteten Ball im 50er-Fenster hat: dieser Ball (der naechste) ist sofort Miss.
+	# Auch ein Schmetterball mit erster Taste faellt so, wenn eine dritte Zone dazukommt.
+	var victim := -1
+	var best := INF
+	for o in (ZONES if anti_mash else 0):
+		if o == z:
+			continue
+		var h0 := _head(o)
+		if h0 >= 0 and absf(t - shots[h0].t) <= w50 and absf(t - shots[h0].t) < best:
+			best = absf(t - shots[h0].t)
+			victim = h0
+	if victim >= 0:
+		_pend.erase(victim)
+		_miss(victim)
+		press_ignored.emit(z, "KEY")
+		press_ignored.emit(z, "WRONG")
+		return
 	# Liegt in einer anderen Zone ein Ball in Reichweite, war es die falsche Zone.
 	for o in ZONES:
 		if o == z:

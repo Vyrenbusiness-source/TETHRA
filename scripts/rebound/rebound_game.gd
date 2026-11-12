@@ -15,6 +15,9 @@ extends Control
 const MODE := "rebound"
 const JUDGE_SCALE := 0.5
 const LEAD_MS := 1800.0
+## Replay-Regelversion: 2 = Anti-Mash (falsche Taste macht eine Note im 50er-Fenster zum Miss).
+const AntiMash := preload("res://scripts/rebound/rebound_anti_mash.gd")
+const REPLAY_RULES := 2
 const GRADE_COLOR := {
 	"SS": Color(1.0, 0.92, 0.55), "S": Color(1.0, 0.85, 0.40), "A": Color(0.55, 0.85, 0.55),
 	"B": Color(0.50, 0.70, 0.95), "C": Color(0.75, 0.58, 0.95), "D": Color(0.90, 0.50, 0.45),
@@ -54,6 +57,7 @@ var _held := [false, false, false, false]
 var _plan: Array = []
 var _plan_idx := 0
 var _replay := false
+var _old_replay := false
 var _replay_idx := 0
 var _last_update_t := 0.0
 var _mp_send_cd := 0.0
@@ -89,6 +93,8 @@ func _ready() -> void:
 			seed = a.trim_prefix("--auto-seed=").to_int()
 		elif a.begins_with("--mp-cut="):
 			_mp_cut_ms = maxf(0.0, a.trim_prefix("--mp-cut=").to_float()) * 1000.0
+	if not _replay:
+		_recorded = [AntiMash.marker()]
 	core = ManiaCore.new()
 	core.setup(_beatmap)
 	core.note_judged.connect(_on_note_judged)
@@ -106,6 +112,9 @@ func _ready() -> void:
 		_view.key_labels.append(UiTheme.key_short(Settings.key_lanes[c]))
 	_build_hud()
 	_update_hud()
+	if _old_replay:
+		_show_old_replay()
+		return
 	if Lobby.active and Lobby.in_game:
 		Lobby.skip_now.connect(_do_skip)
 	if not _use_audio:
@@ -392,9 +401,38 @@ func _press(lane: int, down: bool) -> void:
 	_view.held[lane] = down
 	_recorded.append({"t": t, "lane": lane, "down": down})
 	if down:
-		core.key_down(lane, t)
+		_down(lane, t)
 	else:
 		core.key_up(lane, t)
+
+
+## Druck ueber die Anti-Mash-Schicht an ManiaCore geben (live, Replay und Bot gleich).
+func _down(lane: int, t: float) -> void:
+	if AntiMash.wrong_key_check(core, lane, t) >= 0:
+		if _view.has_method("on_wrong_key"):
+			_view.on_wrong_key(lane)
+	core.key_down(lane, t)
+
+
+## Replays ohne Regel-Marke oder mit anderer Version passen nicht zu den Regeln.
+static func replay_current(events: Array) -> bool:
+	return AntiMash.replay_current(events)
+
+
+func _show_old_replay() -> void:
+	var l := Label.new()
+	l.text = tr("Dieses Replay stammt aus einer älteren Rebound-Version und lässt sich nicht mehr abspielen.")
+	l.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	l.add_theme_font_size_override("font_size", 22)
+	_hud.add_child(l)
+	_ended = true
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	await get_tree().create_timer(3.5, true).timeout
+	if is_inside_tree():
+		_back_to_browser()
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -468,8 +506,10 @@ func _feed(evs: Array, t: float) -> void:
 		var ev: Dictionary = evs[_plan_idx]
 		_plan_idx += 1
 		var lane := int(ev.lane)
+		if lane < 0 or lane > 3:
+			continue
 		if bool(ev.down):
-			core.key_down(lane, float(ev.t))
+			_down(lane, float(ev.t))
 		else:
 			core.key_up(lane, float(ev.t))
 		_held[lane] = bool(ev.down)

@@ -4,6 +4,12 @@ Vier Baelle huepfen ueber vier Trommelfellen. Jeder Ball landet genau auf den No
 Spalte. Nur osu!mania-4K-Maps (Notenfolge, Zeiten und Holds unveraendert, exakt im Takt).
 
 ## Regeln (verbindlich)
+- **Anti-Mash (Replay-Regeln 2):** duenne Schicht in `rebound_game.gd` vor `ManiaCore`
+  (unveraendert). Druck auf eine Spalte ohne Note im Miss-Fenster, waehrend eine andere Spalte
+  eine ungewertete Note im 50er-Fenster hat = "WRONG KEY": die naechste solche Note ist sofort
+  Miss. Richtige Taste zuerst, falsche danach: Treffer bleibt. Druck ohne Note im Fenster =
+  nichts. Replays tragen als erstes Ereignis `{lane:-1, rules:2}`; Replays ohne Marke werden
+  mit Hinweis abgelehnt. Messwerte: docs/anti_mash.md.
 - **Wertung = Mania 4K:** `ManiaCore` unveraendert (OD-Fenster, MAX/300/200/100/50/Miss,
   ScoreV1, Holds wie osu!mania stable, Mods wie Mania). Spalte 0-3 = Mania-Tasten 1-4
   (Settings, Standard D F J K). Sterne = Mania-Sterne der Map, keine pp.

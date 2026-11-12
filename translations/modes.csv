@@ -57,3 +57,11 @@ Patterns,Muster,Patterns
 "Mirror: links und rechts getauscht (Score x1,0)","Mirror: links und rechts getauscht (Score x1,0)","Mirror: left and right swapped (score x1.0)"
 "Hidden: der Weg blendet zum Kopf hin aus (Score x1,06)","Hidden: der Weg blendet zum Kopf hin aus (Score x1,06)","Hidden: the path fades out toward the head (score x1.06)"
 "Short Sight: nur 500 ms Weg voraus (Score x1,08)","Short Sight: nur 500 ms Weg voraus (Score x1,08)","Short Sight: only 500 ms of path ahead (score x1.08)"
+DAILY TRACE,DAILY TRACE,DAILY TRACE
+Score %s,Wertung %s,Score %s
+played today,heute gespielt,played today
+Streak: %d days,Serie: %d Tage,Streak: %d days
+"Same map for everyone, every day. One try counts.",Jeden Tag dieselbe Map für alle. Ein Versuch zählt.,"Same map for everyone, every day. One try counts."
+Streak %d,Serie %d,Streak %d
+Finding today's map …,Suche Tagesmap …,Finding today's map …
+No 4K map found,Keine 4K-Map gefunden,No 4K map found

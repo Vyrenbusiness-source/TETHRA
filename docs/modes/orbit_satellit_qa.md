@@ -1,23 +1,23 @@
 # Orbit Satelliten: QA-Messung
 
-Erzeugt von `tests/run_orbit_qa_tests.gd` (rein rechnerischer Bot, siehe dort). Bibliothek: 963 Diffs (osu!standard + Mania 4K).
+Erzeugt von `tests/run_orbit_qa_tests.gd` (rein rechnerischer Bot, siehe dort). Bibliothek: 975 Diffs (osu!standard + Mania 4K).
 Bots: Tablet 3,5 Feld-Einheiten/s, Maus 2,5/s, je 25 ms Zeitstreuung, Trefferradius 0.05. Ziele: Tablet >= 97 %, Maus >= 94 % auf Maps unter 5 Sternen.
 
 ## Je Sterne-Gruppe
 
 | Sterne | Maps | Tablet min / Mittel | Maus min / Mittel | Ziele/s Mittel |
 |---|---|---|---|---|
-| 0.0 - 2.5 | 216 | 100.0 % / 100.0 % | 100.0 % / 100.0 % | 2.32 |
-| 2.5 - 4.0 | 234 | 100.0 % / 100.0 % | 98.8 % / 100.0 % | 3.79 |
-| 4.0 - 5.0 | 155 | 99.8 % / 100.0 % | 98.8 % / 100.0 % | 4.83 |
-| 5.0 - 6.0 | 123 | 99.0 % / 100.0 % | 87.6 % / 99.8 % | 5.51 |
-| 6.0 - 8.0 | 171 | 99.1 % / 99.9 % | 95.4 % / 99.7 % | 5.95 |
+| 0.0 - 2.5 | 218 | 100.0 % / 100.0 % | 100.0 % / 100.0 % | 2.32 |
+| 2.5 - 4.0 | 238 | 100.0 % / 100.0 % | 99.4 % / 100.0 % | 3.80 |
+| 4.0 - 5.0 | 157 | 99.8 % / 100.0 % | 99.0 % / 100.0 % | 4.83 |
+| 5.0 - 6.0 | 127 | 99.4 % / 100.0 % | 87.6 % / 99.8 % | 5.57 |
+| 6.0 - 8.0 | 171 | 99.1 % / 99.9 % | 95.1 % / 99.7 % | 5.95 |
 | 8.0 - 15.0 | 64 | 66.5 % / 98.9 % | 29.8 % / 94.7 % | 6.79 |
 
 ## Sterne-Kalibrierung (Skill: Zielen, Tempo, Lesen)
 
 - Median 4.21 Sterne, 64 Maps >= 8 Sterne (6.6 %).
-- Leichte Maps (< 2,5 Ziele/s, 128): Median 1.51, 90 %-Quantil 2.07 Sterne.
+- Leichte Maps (< 2,5 Ziele/s, 130): Median 1.54, 90 %-Quantil 2.07 Sterne.
 - Zielen: Sprung/Zeit, Richtungswechsel, schwere Spruenge (> 1,6 Feld/s zaehlen zusaetzlich). Tempo: Dichte, Tastenwechsel, Akzente, Halten. Lesen: wenige Runden, Ueberdeckung.
 - osu!standard-Maps bleiben treu (keine gekappten Spruenge, ganze Slider-Kurven); nur leichte Maps werden verkleinert. Schwere Sprung-Maps haben dafuer hohe Sterne (Maps unter 5 Sternen: Tablet und Maus erreichen die Ziele).
 
@@ -119,6 +119,7 @@ Bots: Tablet 3,5 Feld-Einheiten/s, Maus 2,5/s, je 25 ms Zeitstreuung, Trefferrad
 | mirror_2509474 [lower lower lower lower ] | 4K | 1.72 | 232 | 2.10 | 5 | 0.67 | 100.0 % | 100.0 % |
 | mirror_2442103 [Azukkii's Hard] | 4K | 1.73 | 474 | 2.10 | 6 | 0.68 | 100.0 % | 100.0 % |
 | mirror_2278487 [Normal] | 4K | 1.73 | 161 | 2.38 | 6 | 0.74 | 100.0 % | 100.0 % |
+| mirror_468353 [Beginner] | 4K | 1.74 | 279 | 2.47 | 6 | 0.70 | 100.0 % | 100.0 % |
 | mirror_2541937 [Easy] | 4K | 1.76 | 309 | 2.49 | 4 | 0.70 | 100.0 % | 100.0 % |
 | mirror_2543663 [How to wake up, Intermed] | 4K | 1.76 | 236 | 2.34 | 5 | 0.77 | 100.0 % | 100.0 % |
 | mirror_2079518 [tapperruiii's Normal] | 4K | 1.77 | 133 | 2.09 | 6 | 0.83 | 100.0 % | 100.0 % |
@@ -138,6 +139,7 @@ Bots: Tablet 3,5 Feld-Einheiten/s, Maus 2,5/s, je 25 ms Zeitstreuung, Trefferrad
 | mirror_1178589 [Easy] | 4K | 1.86 | 204 | 2.36 | 6 | 0.73 | 100.0 % | 100.0 % |
 | mirror_2426813 [danar's Normal] | 4K | 1.87 | 182 | 2.76 | 6 | 0.76 | 100.0 % | 100.0 % |
 | mirror_2403016 [easy] | 4K | 1.87 | 265 | 2.16 | 6 | 0.71 | 100.0 % | 100.0 % |
+| mirror_2269020 [Revv's Easy] | 4K | 1.88 | 327 | 2.41 | 6 | 0.69 | 100.0 % | 100.0 % |
 | mirror_2400881 [Easy] | 4K | 1.89 | 381 | 2.24 | 6 | 0.75 | 100.0 % | 100.0 % |
 | mirror_2471067 [Robeats' Easy] | 4K | 1.89 | 275 | 2.55 | 5 | 0.73 | 100.0 % | 100.0 % |
 | mirror_2467187 [Collab Easy] | 4K | 1.91 | 310 | 1.99 | 5 | 0.72 | 100.0 % | 100.0 % |
@@ -281,7 +283,7 @@ Bots: Tablet 3,5 Feld-Einheiten/s, Maus 2,5/s, je 25 ms Zeitstreuung, Trefferrad
 | mirror_2540707 [ni de yan se] | 4K | 2.74 | 256 | 2.81 | 6 | 1.08 | 100.0 % | 100.0 % |
 | mirror_2559592 [Intermediate] | 4K | 2.74 | 352 | 3.83 | 6 | 0.84 | 100.0 % | 100.0 % |
 | 1895713 meganeko - The Cyber [Easy] | 4K | 2.74 | 976 | 3.51 | 6 | 0.83 | 100.0 % | 100.0 % |
-| mirror_2508953 [Amats' Hard] | std | 2.75 | 533 | 2.70 | 6 | 1.15 | 100.0 % | 100.0 % |
+| mirror_2508953 [Amats' Hard] | std | 2.75 | 533 | 2.70 | 6 | 1.15 | 100.0 % | 99.8 % |
 | mirror_2403887 [hyahya's Easy] | 4K | 2.75 | 634 | 3.47 | 5 | 0.81 | 100.0 % | 100.0 % |
 | mirror_2560261 [Insane] | 4K | 2.77 | 232 | 2.76 | 6 | 0.99 | 100.0 % | 100.0 % |
 | mirror_2489537 [xujiarong's Easy] | 4K | 2.77 | 506 | 3.71 | 6 | 0.83 | 100.0 % | 100.0 % |
@@ -382,7 +384,7 @@ Bots: Tablet 3,5 Feld-Einheiten/s, Maus 2,5/s, je 25 ms Zeitstreuung, Trefferrad
 | mirror_2521712 [Starlog] | 4K | 3.42 | 293 | 3.43 | 6 | 1.04 | 100.0 % | 100.0 % |
 | mirror_2331207 [N0RM4L] | 4K | 3.42 | 712 | 4.80 | 6 | 0.88 | 100.0 % | 100.0 % |
 | mirror_2198573 [No borax] | 4K | 3.43 | 472 | 2.79 | 6 | 1.05 | 100.0 % | 100.0 % |
-| mirror_2422509 [rhombus] | 4K | 3.45 | 169 | 5.03 | 6 | 1.25 | 100.0 % | 98.8 % |
+| mirror_2422509 [rhombus] | 4K | 3.45 | 169 | 5.03 | 6 | 1.25 | 100.0 % | 99.4 % |
 | mirror_2318291 [BASIC] | 4K | 3.46 | 449 | 3.13 | 6 | 0.93 | 100.0 % | 100.0 % |
 | mirror_2378766 [hard...] | 4K | 3.46 | 514 | 4.13 | 6 | 0.99 | 100.0 % | 100.0 % |
 | mirror_2270163 [[: / Normal \ :]] | 4K | 3.46 | 550 | 4.24 | 6 | 0.90 | 100.0 % | 100.0 % |
@@ -415,6 +417,7 @@ Bots: Tablet 3,5 Feld-Einheiten/s, Maus 2,5/s, je 25 ms Zeitstreuung, Trefferrad
 | mirror_2323003 [Novice // Normal] | 4K | 3.62 | 575 | 3.85 | 6 | 0.96 | 100.0 % | 100.0 % |
 | mirror_2643833 [Normal] | 4K | 3.62 | 654 | 3.48 | 6 | 1.00 | 100.0 % | 100.0 % |
 | mirror_2539716 [Journey] | 4K | 3.62 | 549 | 3.72 | 6 | 1.04 | 100.0 % | 100.0 % |
+| mirror_2269020 [Ham's Normal] | 4K | 3.62 | 544 | 4.04 | 6 | 0.98 | 100.0 % | 100.0 % |
 | 2299919 Sasuke Haraguchi fea [Sava's Normal] | 4K | 3.63 | 704 | 3.62 | 6 | 0.98 | 100.0 % | 100.0 % |
 | mirror_2555143 [asociality] | 4K | 3.63 | 585 | 4.36 | 6 | 0.95 | 100.0 % | 100.0 % |
 | mirror_2489537 [Bailondo's Normal] | 4K | 3.63 | 645 | 4.73 | 6 | 1.03 | 100.0 % | 100.0 % |
@@ -446,9 +449,11 @@ Bots: Tablet 3,5 Feld-Einheiten/s, Maus 2,5/s, je 25 ms Zeitstreuung, Trefferrad
 | mirror_2329176 [PeachMarrow's Normal] | 4K | 3.78 | 539 | 4.79 | 6 | 1.04 | 100.0 % | 100.0 % |
 | mirror_2537768 [Ins6n7] | 4K | 3.78 | 387 | 4.72 | 6 | 1.00 | 100.0 % | 100.0 % |
 | mirror_2509474 [lower lower diff] | 4K | 3.78 | 428 | 3.89 | 6 | 1.21 | 100.0 % | 100.0 % |
+| mirror_2269020 [Arsonist] | 4K | 3.79 | 643 | 4.72 | 6 | 1.20 | 100.0 % | 100.0 % |
 | mirror_2559426 [advanced] | 4K | 3.79 | 157 | 4.51 | 6 | 1.19 | 100.0 % | 100.0 % |
 | mirror_2539345 [Hard] | 4K | 3.80 | 376 | 4.42 | 6 | 1.05 | 100.0 % | 100.0 % |
 | mirror_2400881 [Normal] | 4K | 3.80 | 685 | 4.03 | 6 | 1.02 | 100.0 % | 100.0 % |
+| mirror_2269020 [Avel's Hard] | 4K | 3.80 | 522 | 3.83 | 6 | 1.04 | 100.0 % | 100.0 % |
 | mirror_2535725 [Advanced] | 4K | 3.81 | 592 | 4.28 | 6 | 1.03 | 100.0 % | 100.0 % |
 | mirror_2512348 [Lizyuu's Normal] | 4K | 3.81 | 411 | 4.63 | 6 | 1.03 | 100.0 % | 100.0 % |
 | mirror_2455211 [Normal] | 4K | 3.81 | 457 | 4.55 | 6 | 0.97 | 100.0 % | 100.0 % |
@@ -467,6 +472,7 @@ Bots: Tablet 3,5 Feld-Einheiten/s, Maus 2,5/s, je 25 ms Zeitstreuung, Trefferrad
 | mirror_2483415 [Hard] | 4K | 3.94 | 604 | 4.29 | 6 | 1.07 | 100.0 % | 100.0 % |
 | mirror_2486779 [Hard] | 4K | 3.94 | 554 | 3.57 | 6 | 1.10 | 100.0 % | 100.0 % |
 | mirror_2511666 [Hard] | 4K | 3.96 | 351 | 3.98 | 6 | 1.18 | 100.0 % | 100.0 % |
+| mirror_2269020 [Aipol's Insane] | 4K | 3.97 | 524 | 3.85 | 6 | 1.17 | 100.0 % | 100.0 % |
 | mirror_2508959 [Syr's Normal] | 4K | 3.97 | 599 | 5.11 | 6 | 1.01 | 100.0 % | 100.0 % |
 | 2211311 Laur - Viyella_s Tea [BASIC] | 4K | 3.97 | 620 | 4.11 | 6 | 1.02 | 100.0 % | 100.0 % |
 | mirror_2403016 [normal] | 4K | 3.98 | 514 | 4.18 | 6 | 1.07 | 100.0 % | 100.0 % |
@@ -488,7 +494,7 @@ Bots: Tablet 3,5 Feld-Einheiten/s, Maus 2,5/s, je 25 ms Zeitstreuung, Trefferrad
 | mirror_2468221 [Advanced] | 4K | 4.08 | 730 | 4.68 | 6 | 1.00 | 100.0 % | 100.0 % |
 | mirror_2407955 [4K - Normal] | 4K | 4.09 | 537 | 4.97 | 6 | 1.09 | 100.0 % | 100.0 % |
 | mirror_2403016 [hard] | 4K | 4.09 | 476 | 3.87 | 6 | 1.10 | 100.0 % | 100.0 % |
-| mirror_2545208 [Sample Chopper] | 4K | 4.10 | 687 | 4.58 | 6 | 1.30 | 100.0 % | 99.9 % |
+| mirror_2545208 [Sample Chopper] | 4K | 4.10 | 687 | 4.58 | 6 | 1.30 | 100.0 % | 100.0 % |
 | 1606431 Zekk - Fluctuation [Normal] | 4K | 4.10 | 586 | 4.39 | 6 | 1.05 | 100.0 % | 100.0 % |
 | 2081438 Hino Isuka - Dreamin [Present!!] | 4K | 4.10 | 671 | 5.16 | 6 | 1.08 | 100.0 % | 100.0 % |
 | mirror_2388455 [Normal] | 4K | 4.12 | 627 | 3.79 | 6 | 1.02 | 100.0 % | 100.0 % |
@@ -496,7 +502,8 @@ Bots: Tablet 3,5 Feld-Einheiten/s, Maus 2,5/s, je 25 ms Zeitstreuung, Trefferrad
 | mirror_2591197 [Cyy's Normal] | 4K | 4.12 | 518 | 5.60 | 6 | 1.15 | 100.0 % | 100.0 % |
 | mirror_2563907 [Basic] | 4K | 4.12 | 529 | 5.10 | 6 | 0.98 | 100.0 % | 100.0 % |
 | mirror_2509474 [lower lower lower diff] | 4K | 4.12 | 482 | 4.36 | 6 | 1.23 | 100.0 % | 100.0 % |
-| mirror_2491936 [fall into the sky] | 4K | 4.16 | 776 | 4.26 | 6 | 1.14 | 100.0 % | 99.7 % |
+| mirror_2491936 [fall into the sky] | 4K | 4.16 | 776 | 4.26 | 6 | 1.14 | 100.0 % | 99.9 % |
+| mirror_2269020 [Apol's Extra] | 4K | 4.16 | 617 | 4.54 | 6 | 1.21 | 100.0 % | 100.0 % |
 | mirror_2398569 [Insane] | 4K | 4.17 | 964 | 4.24 | 6 | 1.15 | 100.0 % | 100.0 % |
 | mirror_2323003 [Wicked // Hard] | 4K | 4.18 | 636 | 4.26 | 6 | 1.00 | 100.0 % | 100.0 % |
 | mirror_2531098 [Hard] | 4K | 4.19 | 597 | 4.28 | 6 | 1.07 | 100.0 % | 100.0 % |
@@ -520,9 +527,10 @@ Bots: Tablet 3,5 Feld-Einheiten/s, Maus 2,5/s, je 25 ms Zeitstreuung, Trefferrad
 | mirror_2488299 [ADVANCED JUMP!!] | 4K | 4.28 | 512 | 5.13 | 6 | 1.05 | 100.0 % | 100.0 % |
 | mirror_2610887 [extra   >.<""] | 4K | 4.28 | 768 | 5.59 | 6 | 1.21 | 100.0 % | 100.0 % |
 | mirror_2447985 [kooo's Link Level I] | 4K | 4.29 | 702 | 4.69 | 6 | 1.00 | 100.0 % | 100.0 % |
-| mirror_2496763 [Kibitz's Hard] | 4K | 4.29 | 352 | 4.01 | 6 | 1.22 | 100.0 % | 99.7 % |
+| mirror_2496763 [Kibitz's Hard] | 4K | 4.29 | 352 | 4.01 | 6 | 1.22 | 100.0 % | 100.0 % |
 | mirror_2593224 [ZTactix's Advanced] | 4K | 4.29 | 553 | 3.37 | 6 | 1.11 | 99.8 % | 99.6 % |
 | mirror_2434745 [Slowpoke's Normal] | 4K | 4.30 | 393 | 4.45 | 6 | 1.15 | 100.0 % | 100.0 % |
+| mirror_468353 [Normal] | 4K | 4.30 | 603 | 5.31 | 6 | 1.11 | 100.0 % | 100.0 % |
 | mirror_2442615 [:D] | 4K | 4.30 | 705 | 4.59 | 6 | 1.23 | 100.0 % | 100.0 % |
 | 2211311 Laur - Viyella_s Tea [MASTER] | 4K | 4.31 | 630 | 4.18 | 6 | 1.14 | 100.0 % | 100.0 % |
 | mirror_2381413 [lin's normal] | 4K | 4.32 | 604 | 4.60 | 6 | 1.08 | 100.0 % | 100.0 % |
@@ -561,7 +569,7 @@ Bots: Tablet 3,5 Feld-Einheiten/s, Maus 2,5/s, je 25 ms Zeitstreuung, Trefferrad
 | mirror_2542664 [Maiiy's Hard] | 4K | 4.56 | 351 | 4.01 | 6 | 1.21 | 100.0 % | 100.0 % |
 | mirror_2543113 [I Got Something to Ask Y] | 4K | 4.57 | 1148 | 4.47 | 6 | 1.19 | 100.0 % | 100.0 % |
 | 309328 xi - Hesperides [Zan's Hard] | 4K | 4.58 | 439 | 4.02 | 6 | 1.10 | 100.0 % | 100.0 % |
-| mirror_2511666 [Tune In to the Midnight] | 4K | 4.59 | 350 | 3.97 | 6 | 1.23 | 100.0 % | 99.7 % |
+| mirror_2511666 [Tune In to the Midnight] | 4K | 4.59 | 350 | 3.97 | 6 | 1.23 | 100.0 % | 100.0 % |
 | mirror_2533221 [Gem] | 4K | 4.61 | 383 | 4.91 | 6 | 1.33 | 100.0 % | 100.0 % |
 | mirror_2508959 [Insane] | 4K | 4.61 | 660 | 5.63 | 6 | 1.12 | 100.0 % | 100.0 % |
 | mirror_2593224 [lik_0's Hyper] | 4K | 4.61 | 568 | 3.46 | 6 | 1.15 | 100.0 % | 99.8 % |
@@ -605,7 +613,7 @@ Bots: Tablet 3,5 Feld-Einheiten/s, Maus 2,5/s, je 25 ms Zeitstreuung, Trefferrad
 | mirror_2584545 [Beyond the LarpRooms] | 4K | 4.86 | 800 | 5.73 | 6 | 1.12 | 100.0 % | 100.0 % |
 | mirror_2531874 [Normal] | 4K | 4.86 | 705 | 4.68 | 6 | 1.12 | 100.0 % | 99.7 % |
 | mirror_2639744 [Sweet and Bitter Togethe] | 4K | 4.86 | 1063 | 3.87 | 6 | 1.22 | 100.0 % | 100.0 % |
-| mirror_2422509 [hard] | 4K | 4.86 | 169 | 5.04 | 6 | 1.50 | 100.0 % | 98.8 % |
+| mirror_2422509 [hard] | 4K | 4.86 | 169 | 5.04 | 6 | 1.50 | 100.0 % | 100.0 % |
 | mirror_2217940 [Advanced] | 4K | 4.87 | 1148 | 5.95 | 6 | 1.16 | 100.0 % | 100.0 % |
 | mirror_2540169 [Insane] | 4K | 4.89 | 1191 | 6.49 | 6 | 1.17 | 100.0 % | 100.0 % |
 | 1708332 MisoilePunch _pan so [Insane] | 4K | 4.89 | 878 | 5.96 | 6 | 1.21 | 100.0 % | 100.0 % |
@@ -632,7 +640,7 @@ Bots: Tablet 3,5 Feld-Einheiten/s, Maus 2,5/s, je 25 ms Zeitstreuung, Trefferrad
 | mirror_2559655 [hyper] | 4K | 4.99 | 273 | 5.44 | 6 | 1.22 | 100.0 % | 100.0 % |
 | mirror_2488299 [INSANE JUMP!!] | 4K | 5.01 | 494 | 4.95 | 6 | 1.15 | 100.0 % | 100.0 % |
 | mirror_2447985 [Ignite The Inferno] | 4K | 5.01 | 831 | 5.56 | 6 | 1.18 | 100.0 % | 100.0 % |
-| mirror_2512348 [High Ambition] | 4K | 5.01 | 429 | 4.84 | 6 | 1.20 | 100.0 % | 100.0 % |
+| mirror_2512348 [High Ambition] | 4K | 5.01 | 429 | 4.84 | 6 | 1.20 | 100.0 % | 99.8 % |
 | mirror_2400881 [XingRen's Extra] | 4K | 5.02 | 1123 | 6.60 | 6 | 1.40 | 100.0 % | 100.0 % |
 | mirror_2182334 [YOUR EMPTY EYES] | 4K | 5.04 | 597 | 6.87 | 6 | 1.26 | 100.0 % | 100.0 % |
 | mirror_1746870 [FAMoss' Insane] | 4K | 5.04 | 678 | 5.78 | 6 | 1.18 | 100.0 % | 100.0 % |
@@ -645,10 +653,10 @@ Bots: Tablet 3,5 Feld-Einheiten/s, Maus 2,5/s, je 25 ms Zeitstreuung, Trefferrad
 | mirror_2182334 [EXTREME] | 4K | 5.09 | 597 | 6.87 | 6 | 1.23 | 100.0 % | 100.0 % |
 | mirror_2643833 [RAAAAAAAAAAAAA] | 4K | 5.10 | 613 | 3.27 | 6 | 1.30 | 100.0 % | 100.0 % |
 | mirror_2559655 [cycle] | 4K | 5.11 | 277 | 5.52 | 6 | 1.27 | 100.0 % | 100.0 % |
-| mirror_2491936 [soar into the sky] | std | 5.12 | 535 | 3.27 | 6 | 1.28 | 100.0 % | 99.8 % |
+| mirror_2491936 [soar into the sky] | std | 5.12 | 535 | 3.27 | 6 | 1.28 | 100.0 % | 100.0 % |
 | mirror_2607616 [Touch the Core] | 4K | 5.12 | 913 | 5.42 | 6 | 1.16 | 100.0 % | 100.0 % |
 | mirror_2559426 [insane] | 4K | 5.13 | 164 | 4.71 | 6 | 1.42 | 100.0 % | 100.0 % |
-| mirror_2559426 [intro] | 4K | 5.13 | 164 | 4.71 | 6 | 1.51 | 99.4 % | 98.8 % |
+| mirror_2559426 [intro] | 4K | 5.13 | 164 | 4.71 | 6 | 1.51 | 99.4 % | 98.2 % |
 | mirror_2182334 [ANOTHER] | 4K | 5.13 | 553 | 6.37 | 6 | 1.17 | 100.0 % | 100.0 % |
 | 1708332 MisoilePunch _pan so [guden's L'ythlinn] | 4K | 5.15 | 878 | 5.96 | 6 | 1.23 | 100.0 % | 100.0 % |
 | mirror_2559426 [hard] | 4K | 5.15 | 163 | 4.68 | 6 | 1.45 | 100.0 % | 99.4 % |
@@ -659,18 +667,18 @@ Bots: Tablet 3,5 Feld-Einheiten/s, Maus 2,5/s, je 25 ms Zeitstreuung, Trefferrad
 | mirror_2527829 [Hard] | 4K | 5.20 | 261 | 6.14 | 6 | 1.22 | 100.0 % | 100.0 % |
 | 1708332 MisoilePunch _pan so [FAMoss' Hard] | 4K | 5.21 | 932 | 6.32 | 6 | 1.20 | 100.0 % | 100.0 % |
 | mirror_2039039 [Tengoku] | 4K | 5.21 | 337 | 3.86 | 6 | 1.33 | 100.0 % | 100.0 % |
-| mirror_2506744 [riot's insane] | std | 5.21 | 97 | 3.20 | 6 | 2.14 | 100.0 % | 95.9 % |
+| mirror_2506744 [riot's insane] | std | 5.21 | 97 | 3.20 | 6 | 2.14 | 100.0 % | 94.8 % |
 | mirror_2588413 [ChickenGold's Insane] | 4K | 5.21 | 397 | 4.52 | 6 | 1.29 | 100.0 % | 100.0 % |
 | mirror_2545184 [INSANE] | 4K | 5.22 | 489 | 7.16 | 6 | 1.27 | 100.0 % | 100.0 % |
-| mirror_2496763 [A Flower the World Forgo] | 4K | 5.22 | 357 | 4.05 | 6 | 1.45 | 99.7 % | 99.2 % |
+| mirror_2496763 [A Flower the World Forgo] | 4K | 5.22 | 357 | 4.05 | 6 | 1.45 | 100.0 % | 99.4 % |
 | mirror_2488299 [MIAU'S 1-2 JUMP!!] | 4K | 5.22 | 548 | 5.49 | 6 | 1.19 | 100.0 % | 100.0 % |
-| mirror_2531098 [Eternal Blossom] | 4K | 5.23 | 586 | 4.19 | 6 | 1.26 | 100.0 % | 100.0 % |
+| mirror_2531098 [Eternal Blossom] | 4K | 5.23 | 586 | 4.19 | 6 | 1.26 | 100.0 % | 99.8 % |
 | mirror_2593224 [Subsolar Inflorescence] | 4K | 5.24 | 641 | 3.91 | 6 | 1.32 | 100.0 % | 100.0 % |
 | mirror_2541937 [Advanced] | 4K | 5.24 | 720 | 5.80 | 6 | 1.25 | 100.0 % | 100.0 % |
 | mirror_2529073 [Nai Monster] | 4K | 5.25 | 444 | 3.31 | 6 | 1.24 | 100.0 % | 100.0 % |
 | mirror_2449429 [EXHAUST] | 4K | 5.25 | 698 | 5.78 | 6 | 1.18 | 100.0 % | 100.0 % |
 | mirror_2553525 [Watashi] | 4K | 5.26 | 388 | 4.42 | 6 | 1.26 | 100.0 % | 100.0 % |
-| mirror_2643833 [Hyper] | 4K | 5.27 | 665 | 3.55 | 6 | 1.25 | 100.0 % | 100.0 % |
+| mirror_2643833 [Hyper] | 4K | 5.27 | 665 | 3.55 | 6 | 1.25 | 100.0 % | 99.8 % |
 | 1708332 MisoilePunch _pan so [Hytex's Starry] | 4K | 5.27 | 891 | 6.04 | 6 | 1.23 | 100.0 % | 100.0 % |
 | mirror_2217940 [Hard] | 4K | 5.28 | 1416 | 7.34 | 6 | 1.27 | 100.0 % | 100.0 % |
 | mirror_2449429 [TUTORIAL?] | 4K | 5.28 | 700 | 5.79 | 6 | 1.20 | 100.0 % | 100.0 % |
@@ -678,7 +686,7 @@ Bots: Tablet 3,5 Feld-Einheiten/s, Maus 2,5/s, je 25 ms Zeitstreuung, Trefferrad
 | mirror_2559592 [Advanced] | 4K | 5.29 | 521 | 5.67 | 6 | 1.27 | 100.0 % | 100.0 % |
 | mirror_2584545 [Beyond a Simple Larper] | 4K | 5.29 | 1037 | 7.43 | 6 | 1.25 | 100.0 % | 100.0 % |
 | mirror_2329176 [Another] | 4K | 5.30 | 754 | 6.70 | 6 | 1.32 | 100.0 % | 100.0 % |
-| mirror_2511692 [Collab Extra] | 4K | 5.30 | 351 | 6.03 | 6 | 1.47 | 100.0 % | 99.7 % |
+| mirror_2511692 [Collab Extra] | 4K | 5.30 | 351 | 6.03 | 6 | 1.47 | 100.0 % | 100.0 % |
 | mirror_2467187 [FREEDOM] | 4K | 5.32 | 654 | 4.20 | 6 | 1.23 | 100.0 % | 100.0 % |
 | mirror_2545184 [ULTRA] | 4K | 5.32 | 494 | 7.24 | 6 | 1.27 | 100.0 % | 100.0 % |
 | mirror_2607616 [Hydria x Zaeem Insane] | 4K | 5.33 | 874 | 5.18 | 6 | 1.13 | 100.0 % | 100.0 % |
@@ -691,10 +699,10 @@ Bots: Tablet 3,5 Feld-Einheiten/s, Maus 2,5/s, je 25 ms Zeitstreuung, Trefferrad
 | 315435 UNDEAD CORPORATION -  [SC] | 4K | 5.40 | 974 | 7.34 | 6 | 1.49 | 100.0 % | 100.0 % |
 | mirror_2541305 [Insane] | 4K | 5.40 | 1021 | 5.56 | 6 | 1.39 | 100.0 % | 100.0 % |
 | mirror_2591197 [andryzx's Hard] | 4K | 5.40 | 603 | 6.52 | 6 | 1.31 | 100.0 % | 100.0 % |
-| mirror_2545184 [EXPERT] | 4K | 5.41 | 494 | 7.24 | 6 | 1.31 | 100.0 % | 99.8 % |
+| mirror_2545184 [EXPERT] | 4K | 5.41 | 494 | 7.24 | 6 | 1.31 | 100.0 % | 100.0 % |
 | mirror_2217940 [Hyper] | 4K | 5.41 | 1435 | 7.44 | 6 | 1.27 | 100.0 % | 100.0 % |
 | mirror_2579609 [Hard] | 4K | 5.43 | 482 | 5.02 | 6 | 1.24 | 100.0 % | 100.0 % |
-| mirror_2403016 [hyper] | 4K | 5.44 | 512 | 4.01 | 6 | 1.32 | 100.0 % | 99.8 % |
+| mirror_2403016 [hyper] | 4K | 5.44 | 512 | 4.01 | 6 | 1.32 | 100.0 % | 100.0 % |
 | mirror_2419665 [Hyper] | 4K | 5.44 | 769 | 6.41 | 6 | 1.40 | 100.0 % | 100.0 % |
 | 2032982 MYUKKE. - Anti Safet [Collab Hyper] | 4K | 5.46 | 663 | 4.70 | 6 | 1.30 | 100.0 % | 100.0 % |
 | 254581 Nightmare - Boulaface [ajee's HD] | 4K | 5.48 | 534 | 4.58 | 6 | 1.36 | 100.0 % | 100.0 % |
@@ -713,12 +721,13 @@ Bots: Tablet 3,5 Feld-Einheiten/s, Maus 2,5/s, je 25 ms Zeitstreuung, Trefferrad
 | mirror_2542664 [Monster Energy Ultra] | 4K | 5.58 | 412 | 4.67 | 6 | 1.33 | 100.0 % | 100.0 % |
 | mirror_2538971 [Normal] | 4K | 5.60 | 599 | 6.03 | 6 | 1.17 | 100.0 % | 100.0 % |
 | mirror_2527829 [Bring It On!] | 4K | 5.61 | 273 | 6.42 | 6 | 1.28 | 100.0 % | 100.0 % |
-| mirror_2531874 [Hard] | 4K | 5.62 | 840 | 5.59 | 6 | 1.26 | 100.0 % | 99.5 % |
+| mirror_2531874 [Hard] | 4K | 5.62 | 840 | 5.59 | 6 | 1.26 | 99.9 % | 99.8 % |
 | mirror_2458045 [Hyper] | 4K | 5.62 | 790 | 5.97 | 6 | 1.21 | 100.0 % | 100.0 % |
 | mirror_2455211 [Flow] | 4K | 5.63 | 755 | 7.52 | 6 | 1.53 | 100.0 % | 100.0 % |
 | mirror_2493125 [Hard] | 4K | 5.64 | 533 | 5.71 | 6 | 1.39 | 100.0 % | 100.0 % |
 | mirror_2495730 [Nova // Hard] | 4K | 5.64 | 702 | 6.01 | 6 | 1.38 | 100.0 % | 100.0 % |
 | 2310809 Trina Lydia - TETRAT [Overtone Resonance] | 4K | 5.66 | 589 | 4.48 | 6 | 1.45 | 100.0 % | 99.8 % |
+| mirror_468353 [Black Another] | 4K | 5.66 | 845 | 7.45 | 6 | 1.52 | 100.0 % | 100.0 % |
 | mirror_2506807 [Boring-chan! // Hard] | 4K | 5.67 | 702 | 4.43 | 6 | 1.20 | 100.0 % | 100.0 % |
 | mirror_2331207 [LUMP1T4'5 HYP3R] | 4K | 5.67 | 1024 | 6.90 | 6 | 1.42 | 100.0 % | 100.0 % |
 | mirror_2318291 [EXPERT] | 4K | 5.68 | 862 | 5.91 | 6 | 1.23 | 100.0 % | 100.0 % |
@@ -728,9 +737,10 @@ Bots: Tablet 3,5 Feld-Einheiten/s, Maus 2,5/s, je 25 ms Zeitstreuung, Trefferrad
 | 323493 Camellia - overcomple [Lv.06] | 4K | 5.73 | 454 | 4.10 | 6 | 1.38 | 100.0 % | 99.8 % |
 | mirror_2455211 [Insane] | 4K | 5.73 | 723 | 7.21 | 6 | 1.51 | 100.0 % | 100.0 % |
 | mirror_2400881 [Expert] | 4K | 5.74 | 1158 | 6.82 | 6 | 1.43 | 100.0 % | 100.0 % |
-| mirror_2400881 [Hard] | 4K | 5.75 | 997 | 5.87 | 6 | 1.38 | 100.0 % | 99.9 % |
+| mirror_468353 [Hyper] | 4K | 5.74 | 837 | 7.38 | 6 | 1.50 | 100.0 % | 100.0 % |
+| mirror_2400881 [Hard] | 4K | 5.75 | 997 | 5.87 | 6 | 1.38 | 100.0 % | 100.0 % |
 | 2299919 Sasuke Haraguchi fea [Slowpoke's Hard] | 4K | 5.76 | 883 | 4.51 | 6 | 1.38 | 100.0 % | 100.0 % |
-| mirror_2610887 [^ -. -^   meow, woof   u] | 4K | 5.78 | 833 | 6.07 | 6 | 1.39 | 100.0 % | 100.0 % |
+| mirror_2610887 [^ -. -^   meow, woof   u] | 4K | 5.78 | 833 | 6.07 | 6 | 1.39 | 100.0 % | 99.9 % |
 | mirror_2415880 [dendro_'s master] | 4K | 5.78 | 913 | 6.56 | 6 | 1.32 | 100.0 % | 100.0 % |
 | mirror_2467187 [Hard] | 4K | 5.79 | 647 | 4.16 | 6 | 1.25 | 100.0 % | 100.0 % |
 | mirror_2415880 [maiiy's expert] | 4K | 5.80 | 757 | 5.44 | 6 | 1.29 | 100.0 % | 100.0 % |
@@ -743,15 +753,17 @@ Bots: Tablet 3,5 Feld-Einheiten/s, Maus 2,5/s, je 25 ms Zeitstreuung, Trefferrad
 | mirror_2586880 [K1SS [ndglol]] | 4K | 5.89 | 627 | 5.08 | 6 | 1.51 | 100.0 % | 100.0 % |
 | mirror_2545191 [Hard] | 4K | 5.89 | 652 | 4.71 | 6 | 1.48 | 99.8 % | 99.8 % |
 | mirror_2217940 [Lunatic] | 4K | 5.89 | 1424 | 7.38 | 6 | 1.31 | 100.0 % | 100.0 % |
+| mirror_468353 [Eternal] | 4K | 5.89 | 845 | 7.45 | 6 | 1.54 | 100.0 % | 100.0 % |
 | mirror_2403016 [insane] | 4K | 5.89 | 495 | 3.94 | 6 | 1.41 | 100.0 % | 100.0 % |
 | mirror_2306554 [Hyper] | 4K | 5.90 | 607 | 5.46 | 6 | 1.37 | 100.0 % | 100.0 % |
-| mirror_2586880 [Nang Duoi Chan May (Thaz] | 4K | 5.90 | 678 | 6.70 | 6 | 1.57 | 100.0 % | 100.0 % |
-| mirror_2588413 [Dzar03's Extra] | 4K | 5.92 | 424 | 4.84 | 6 | 1.47 | 99.8 % | 99.5 % |
+| mirror_2586880 [Nang Duoi Chan May (Thaz] | 4K | 5.90 | 678 | 6.70 | 6 | 1.57 | 100.0 % | 99.9 % |
+| mirror_2588413 [Dzar03's Extra] | 4K | 5.92 | 424 | 4.84 | 6 | 1.47 | 100.0 % | 99.8 % |
 | mirror_2576239 [Eternity.] | 4K | 5.92 | 1384 | 5.55 | 6 | 1.36 | 100.0 % | 100.0 % |
-| mirror_2419665 [Reset] | 4K | 5.93 | 711 | 5.92 | 6 | 1.41 | 99.9 % | 99.6 % |
-| mirror_2593224 [Karin's Expert] | 4K | 5.94 | 661 | 4.03 | 6 | 1.44 | 100.0 % | 99.8 % |
-| mirror_2506744 [thick expert] | std | 5.95 | 105 | 3.46 | 6 | 2.37 | 99.0 % | 87.6 % |
-| mirror_2417924 [Top Waifu] | 4K | 5.97 | 666 | 6.13 | 6 | 1.28 | 100.0 % | 100.0 % |
+| mirror_2419665 [Reset] | 4K | 5.93 | 711 | 5.92 | 6 | 1.41 | 99.9 % | 99.7 % |
+| mirror_2593224 [Karin's Expert] | 4K | 5.94 | 661 | 4.03 | 6 | 1.44 | 100.0 % | 99.7 % |
+| mirror_468353 [Another] | 4K | 5.94 | 845 | 7.45 | 6 | 1.54 | 100.0 % | 100.0 % |
+| mirror_2506744 [thick expert] | std | 5.95 | 105 | 3.46 | 6 | 2.37 | 100.0 % | 87.6 % |
+| mirror_2417924 [Top Waifu] | 4K | 5.97 | 666 | 6.13 | 6 | 1.28 | 100.0 % | 99.8 % |
 | 254581 Nightmare - Boulaface [Crying's HD] | 4K | 5.98 | 591 | 5.08 | 6 | 1.40 | 100.0 % | 100.0 % |
 | 1895713 meganeko - The Cyber [Normal] | 4K | 6.00 | 1466 | 5.28 | 6 | 1.22 | 100.0 % | 100.0 % |
 | mirror_240415 [oko's Insane] | std | 6.00 | 348 | 3.96 | 6 | 1.90 | 100.0 % | 100.0 % |
@@ -763,24 +775,24 @@ Bots: Tablet 3,5 Feld-Einheiten/s, Maus 2,5/s, je 25 ms Zeitstreuung, Trefferrad
 | mirror_2586880 [Lam Ny Anh Nhe Bbi [[TCD] | 4K | 6.04 | 565 | 5.78 | 6 | 1.45 | 100.0 % | 99.6 % |
 | mirror_2294669 [Expert] | std | 6.05 | 252 | 5.04 | 6 | 1.60 | 100.0 % | 98.8 % |
 | mirror_2586880 [Hui Xin Zhuan Yi (Remix)] | 4K | 6.07 | 718 | 5.94 | 6 | 1.46 | 100.0 % | 100.0 % |
-| mirror_2509473 [S4 E5: DILF-Free Zone] | 4K | 6.08 | 824 | 6.43 | 6 | 1.58 | 99.9 % | 99.3 % |
+| mirror_2509473 [S4 E5: DILF-Free Zone] | 4K | 6.08 | 824 | 6.43 | 6 | 1.58 | 99.6 % | 99.4 % |
 | 1606431 Zekk - Fluctuation [Revv's Hard] | 4K | 6.08 | 637 | 4.77 | 6 | 1.42 | 100.0 % | 100.0 % |
-| mirror_2586880 [Mua Roi Vao Phong (Thazh] | 4K | 6.08 | 641 | 6.47 | 6 | 1.53 | 100.0 % | 99.7 % |
+| mirror_2586880 [Mua Roi Vao Phong (Thazh] | 4K | 6.08 | 641 | 6.47 | 6 | 1.53 | 100.0 % | 99.8 % |
 | 315435 UNDEAD CORPORATION -  [HD] | 4K | 6.09 | 820 | 6.18 | 6 | 1.34 | 100.0 % | 100.0 % |
 | mirror_2555988 [Hard] | 4K | 6.13 | 805 | 6.12 | 6 | 1.31 | 100.0 % | 100.0 % |
 | 323493 Camellia - overcomple [Lv.08] | 4K | 6.13 | 462 | 4.18 | 6 | 1.45 | 100.0 % | 100.0 % |
 | 347453 Igorrr & Ruby My Dear [Harsh [Lv.9]] | 4K | 6.13 | 793 | 3.70 | 6 | 1.40 | 100.0 % | 100.0 % |
-| mirror_2495730 [Quasar // Extra] | 4K | 6.14 | 713 | 6.10 | 6 | 1.49 | 100.0 % | 99.9 % |
+| mirror_2495730 [Quasar // Extra] | 4K | 6.14 | 713 | 6.10 | 6 | 1.49 | 100.0 % | 100.0 % |
 | mirror_2617747 [Advanced] | 4K | 6.14 | 1210 | 5.84 | 6 | 1.17 | 100.0 % | 100.0 % |
 | mirror_2611638 [Sey's Extra] | 4K | 6.15 | 712 | 5.11 | 6 | 1.49 | 100.0 % | 100.0 % |
 | mirror_2542664 [Natsu's Insane] | 4K | 6.16 | 437 | 4.95 | 6 | 1.32 | 100.0 % | 100.0 % |
 | mirror_2182334 [RENUMI'S ANOTHER] | std | 6.17 | 305 | 3.53 | 6 | 1.78 | 100.0 % | 99.3 % |
 | 2219350 Toromaru - Uncharted [4K Hard] | 4K | 6.19 | 993 | 7.07 | 6 | 1.48 | 100.0 % | 100.0 % |
-| mirror_2562340 [Love!] | 4K | 6.20 | 1033 | 5.64 | 6 | 1.28 | 100.0 % | 100.0 % |
+| mirror_2562340 [Love!] | 4K | 6.20 | 1033 | 5.64 | 6 | 1.28 | 100.0 % | 99.9 % |
 | mirror_2641034 [why is menphiss' expert ] | 4K | 6.23 | 1087 | 6.92 | 6 | 1.30 | 100.0 % | 100.0 % |
 | mirror_2591197 [Insane] | 4K | 6.24 | 629 | 6.80 | 6 | 1.39 | 100.0 % | 100.0 % |
 | mirror_2381413 [ainer's insane] | 4K | 6.24 | 906 | 6.89 | 6 | 1.44 | 100.0 % | 100.0 % |
-| mirror_2569767 [Hard] | 4K | 6.24 | 769 | 5.60 | 6 | 1.33 | 100.0 % | 99.9 % |
+| mirror_2569767 [Hard] | 4K | 6.24 | 769 | 5.60 | 6 | 1.33 | 100.0 % | 100.0 % |
 | 2310809 Trina Lydia - TETRAT [XinH's Insane] | 4K | 6.25 | 592 | 4.50 | 6 | 1.52 | 99.8 % | 99.7 % |
 | mirror_2407955 [4K - Insane] | 4K | 6.26 | 735 | 6.81 | 6 | 1.39 | 100.0 % | 100.0 % |
 | mirror_2481624 [Hard] | 4K | 6.27 | 814 | 4.81 | 6 | 1.25 | 100.0 % | 100.0 % |
@@ -800,27 +812,27 @@ Bots: Tablet 3,5 Feld-Einheiten/s, Maus 2,5/s, je 25 ms Zeitstreuung, Trefferrad
 | 251365 Halozy - Kanshou no M [World's End] | 4K | 6.39 | 1703 | 5.20 | 6 | 1.20 | 99.9 % | 99.6 % |
 | mirror_2407955 [4K - Hard] | 4K | 6.40 | 721 | 6.68 | 6 | 1.37 | 100.0 % | 100.0 % |
 | 2299919 Sasuke Haraguchi fea [Kawakawa] | 4K | 6.41 | 885 | 4.51 | 6 | 1.50 | 99.9 % | 99.8 % |
-| mirror_2454631 [Hard] | 4K | 6.41 | 541 | 5.14 | 6 | 1.61 | 99.8 % | 99.3 % |
-| mirror_2447781 [Hyper] | 4K | 6.42 | 616 | 5.55 | 6 | 1.42 | 99.8 % | 99.5 % |
-| mirror_2493125 [Another] | 4K | 6.42 | 574 | 6.15 | 6 | 1.59 | 99.8 % | 99.3 % |
+| mirror_2454631 [Hard] | 4K | 6.41 | 541 | 5.14 | 6 | 1.61 | 100.0 % | 99.4 % |
+| mirror_2447781 [Hyper] | 4K | 6.42 | 616 | 5.55 | 6 | 1.42 | 99.8 % | 99.4 % |
+| mirror_2493125 [Another] | 4K | 6.42 | 574 | 6.15 | 6 | 1.59 | 100.0 % | 99.7 % |
 | mirror_2489537 [Cobalt's Hard] | 4K | 6.44 | 765 | 5.60 | 6 | 1.23 | 100.0 % | 100.0 % |
 | mirror_2586880 [#UnnamedCrush (SV) [Swid] | 4K | 6.44 | 1135 | 6.30 | 6 | 1.50 | 100.0 % | 99.9 % |
 | 2032982 MYUKKE. - Anti Safet [Robeats' Insane] | 4K | 6.44 | 780 | 5.53 | 6 | 1.42 | 100.0 % | 100.0 % |
 | 2032982 MYUKKE. - Anti Safet [Avel's Hard] | 4K | 6.45 | 999 | 7.08 | 6 | 1.46 | 100.0 % | 100.0 % |
 | mirror_2493125 [Love Me Love Me AHH AHH ] | 4K | 6.45 | 580 | 6.21 | 6 | 1.56 | 100.0 % | 100.0 % |
-| mirror_2493125 [Expert] | 4K | 6.47 | 580 | 6.21 | 6 | 1.62 | 99.8 % | 99.1 % |
+| mirror_2493125 [Expert] | 4K | 6.47 | 580 | 6.21 | 6 | 1.62 | 99.8 % | 99.3 % |
 | 315435 UNDEAD CORPORATION -  [Jepetski's Empress] | 4K | 6.49 | 949 | 7.15 | 6 | 1.41 | 100.0 % | 100.0 % |
 | mirror_2446560 [Hard] | 4K | 6.49 | 664 | 6.94 | 6 | 1.51 | 100.0 % | 100.0 % |
 | mirror_2586880 [foggy city [Swid]] | 4K | 6.50 | 459 | 6.98 | 6 | 1.67 | 99.1 % | 98.5 % |
 | 254581 Nightmare - Boulaface [SHD] | 4K | 6.51 | 643 | 5.53 | 6 | 1.51 | 100.0 % | 99.7 % |
-| mirror_2331207 [SCH17Z0M4N1A] | 4K | 6.51 | 1068 | 7.19 | 6 | 1.50 | 100.0 % | 99.9 % |
-| mirror_2493125 [Hyper] | 4K | 6.51 | 575 | 6.16 | 6 | 1.59 | 99.7 % | 99.5 % |
+| mirror_2331207 [SCH17Z0M4N1A] | 4K | 6.51 | 1068 | 7.19 | 6 | 1.50 | 100.0 % | 100.0 % |
+| mirror_2493125 [Hyper] | 4K | 6.51 | 575 | 6.16 | 6 | 1.59 | 99.8 % | 99.3 % |
 | mirror_2586880 [Cuoi Di (Remix) [_Tomi]] | 4K | 6.53 | 776 | 5.67 | 6 | 1.54 | 100.0 % | 99.7 % |
 | mirror_2509473 [S4 E3: INSANE delusions] | 4K | 6.54 | 789 | 6.15 | 6 | 1.50 | 99.9 % | 99.7 % |
 | mirror_2381413 [hard] | 4K | 6.54 | 868 | 6.60 | 6 | 1.39 | 100.0 % | 99.9 % |
 | mirror_2583521 [Menphiss' Hard] | 4K | 6.54 | 803 | 5.97 | 6 | 1.47 | 100.0 % | 100.0 % |
-| mirror_2531874 [Insane] | 4K | 6.55 | 896 | 5.96 | 6 | 1.52 | 99.9 % | 99.7 % |
-| mirror_2586880 [afterlove [_Tomi]] | 4K | 6.55 | 580 | 6.14 | 6 | 1.57 | 99.7 % | 99.5 % |
+| mirror_2531874 [Insane] | 4K | 6.55 | 896 | 5.96 | 6 | 1.52 | 99.9 % | 99.6 % |
+| mirror_2586880 [afterlove [_Tomi]] | 4K | 6.55 | 580 | 6.14 | 6 | 1.57 | 99.7 % | 99.1 % |
 | mirror_2511692 [Slowpoke's Hard] | 4K | 6.56 | 335 | 5.76 | 6 | 1.52 | 100.0 % | 100.0 % |
 | mirror_2586880 [#Rain (SV) [_Tomi x ndgl] | 4K | 6.57 | 816 | 6.43 | 6 | 1.60 | 100.0 % | 100.0 % |
 | mirror_2458045 [Koi] | 4K | 6.58 | 850 | 6.43 | 6 | 1.32 | 100.0 % | 100.0 % |
@@ -830,16 +842,16 @@ Bots: Tablet 3,5 Feld-Einheiten/s, Maus 2,5/s, je 25 ms Zeitstreuung, Trefferrad
 | mirror_2586880 [Nhu Phut Ban Dau (Trung ] | 4K | 6.61 | 867 | 6.93 | 6 | 1.61 | 100.0 % | 99.9 % |
 | mirror_2381413 [catzu's hyper] | 4K | 6.65 | 864 | 6.57 | 6 | 1.43 | 100.0 % | 100.0 % |
 | mirror_2569767 [Maiiy's Insane] | 4K | 6.66 | 826 | 6.02 | 6 | 1.40 | 100.0 % | 100.0 % |
-| mirror_368064 [HD] | 4K | 6.67 | 758 | 5.54 | 6 | 1.29 | 99.9 % | 99.9 % |
+| mirror_368064 [HD] | 4K | 6.67 | 758 | 5.54 | 6 | 1.29 | 100.0 % | 99.7 % |
 | mirror_2617747 [Expert] | 4K | 6.68 | 1406 | 6.79 | 6 | 1.31 | 100.0 % | 100.0 % |
 | 2032982 MYUKKE. - Anti Safet [Zink's Hyper] | 4K | 6.72 | 938 | 6.63 | 6 | 1.46 | 100.0 % | 100.0 % |
-| mirror_2586880 [Anh Vui (Extended) [ndgl] | 4K | 6.72 | 1206 | 5.82 | 6 | 1.53 | 100.0 % | 100.0 % |
+| mirror_2586880 [Anh Vui (Extended) [ndgl] | 4K | 6.72 | 1206 | 5.82 | 6 | 1.53 | 100.0 % | 99.9 % |
 | mirror_2555988 [Painful love] | 4K | 6.73 | 938 | 7.13 | 6 | 1.44 | 100.0 % | 100.0 % |
-| mirror_2508953 [Worthless' Prayer and a ] | 4K | 6.74 | 1100 | 5.36 | 6 | 1.31 | 100.0 % | 99.9 % |
+| mirror_2508953 [Worthless' Prayer and a ] | 4K | 6.74 | 1100 | 5.36 | 6 | 1.31 | 100.0 % | 99.8 % |
 | mirror_2586880 [Intersection2026 (Goodby] | 4K | 6.74 | 980 | 6.50 | 6 | 1.63 | 99.8 % | 99.6 % |
 | mirror_2617747 [Menphiss' Insane] | 4K | 6.75 | 1436 | 6.94 | 6 | 1.37 | 100.0 % | 100.0 % |
-| mirror_2318291 [ULTIMA] | 4K | 6.77 | 1019 | 6.99 | 6 | 1.42 | 100.0 % | 99.9 % |
-| mirror_2586880 [#Rain (NSV) [_Tomi x ndg] | 4K | 6.77 | 820 | 6.46 | 6 | 1.60 | 100.0 % | 99.9 % |
+| mirror_2318291 [ULTIMA] | 4K | 6.77 | 1019 | 6.99 | 6 | 1.42 | 100.0 % | 100.0 % |
+| mirror_2586880 [#Rain (NSV) [_Tomi x ndg] | 4K | 6.77 | 820 | 6.46 | 6 | 1.60 | 100.0 % | 100.0 % |
 | mirror_2521385 [Gal is cute // Insane] | 4K | 6.78 | 487 | 5.61 | 6 | 1.51 | 100.0 % | 100.0 % |
 | mirror_2523377 [Another] | 4K | 6.78 | 839 | 3.85 | 6 | 1.46 | 100.0 % | 99.8 % |
 | mirror_2617747 [Azukkii's Hard] | 4K | 6.78 | 1489 | 7.19 | 6 | 1.43 | 100.0 % | 100.0 % |
@@ -848,28 +860,28 @@ Bots: Tablet 3,5 Feld-Einheiten/s, Maus 2,5/s, je 25 ms Zeitstreuung, Trefferrad
 | 315435 UNDEAD CORPORATION -  [Zenx's SHD] | 4K | 6.81 | 991 | 7.47 | 6 | 1.44 | 100.0 % | 100.0 % |
 | mirror_2569767 [Tamania's Expert] | 4K | 6.84 | 878 | 6.40 | 6 | 1.44 | 100.0 % | 100.0 % |
 | mirror_2294669 [Apostle] | std | 6.87 | 254 | 5.08 | 6 | 1.55 | 100.0 % | 97.2 % |
-| mirror_2294669 [Extreme] | std | 6.87 | 274 | 5.48 | 6 | 1.73 | 100.0 % | 98.5 % |
-| mirror_368064 [MX] | 4K | 6.88 | 768 | 5.61 | 6 | 1.35 | 100.0 % | 99.7 % |
-| mirror_2388455 [Hard] | 4K | 6.89 | 866 | 5.23 | 6 | 1.34 | 99.7 % | 99.4 % |
+| mirror_2294669 [Extreme] | std | 6.87 | 274 | 5.48 | 6 | 1.73 | 100.0 % | 97.8 % |
+| mirror_368064 [MX] | 4K | 6.88 | 768 | 5.61 | 6 | 1.35 | 100.0 % | 99.9 % |
+| mirror_2388455 [Hard] | 4K | 6.89 | 866 | 5.23 | 6 | 1.34 | 99.7 % | 99.2 % |
 | 2219350 Toromaru - Uncharted [4K Hyper] | 4K | 6.89 | 1075 | 7.65 | 6 | 1.57 | 100.0 % | 100.0 % |
 | mirror_2545191 [Insane] | 4K | 6.90 | 683 | 4.93 | 6 | 1.58 | 99.6 % | 99.0 % |
 | mirror_2318291 [MASTER] | 4K | 6.91 | 1045 | 7.17 | 6 | 1.40 | 100.0 % | 100.0 % |
 | mirror_2331207 [3XP3RT] | 4K | 6.92 | 1051 | 7.08 | 6 | 1.49 | 100.0 % | 100.0 % |
 | 323493 Camellia - overcomple [Lv.10] | 4K | 6.93 | 475 | 4.29 | 6 | 1.56 | 99.6 % | 98.5 % |
 | mirror_2531874 [Irrational Mind] | 4K | 6.93 | 897 | 5.97 | 6 | 1.55 | 100.0 % | 99.7 % |
-| mirror_2454631 [Spinning] | 4K | 6.93 | 528 | 5.01 | 6 | 1.73 | 100.0 % | 99.8 % |
+| mirror_2454631 [Spinning] | 4K | 6.93 | 528 | 5.01 | 6 | 1.73 | 99.8 % | 99.8 % |
 | mirror_2389146 [x_x] | 4K | 6.94 | 1192 | 5.64 | 6 | 1.23 | 100.0 % | 100.0 % |
 | mirror_2586880 [dissonance... [ndglol]] | 4K | 6.97 | 1483 | 6.22 | 6 | 1.58 | 99.9 % | 99.6 % |
-| mirror_2506807 [Mona-chan! // Expert] | 4K | 6.99 | 709 | 4.54 | 6 | 1.39 | 100.0 % | 99.6 % |
-| mirror_2586880 [ForeverSnow. [ndglol]] | 4K | 6.99 | 1408 | 6.19 | 6 | 1.60 | 99.9 % | 99.7 % |
-| mirror_2493125 [Insane] | 4K | 7.01 | 574 | 6.15 | 6 | 1.63 | 99.7 % | 99.3 % |
+| mirror_2506807 [Mona-chan! // Expert] | 4K | 6.99 | 709 | 4.54 | 6 | 1.39 | 100.0 % | 99.7 % |
+| mirror_2586880 [ForeverSnow. [ndglol]] | 4K | 6.99 | 1408 | 6.19 | 6 | 1.60 | 99.9 % | 99.6 % |
+| mirror_2493125 [Insane] | 4K | 7.01 | 574 | 6.15 | 6 | 1.63 | 99.7 % | 99.0 % |
 | mirror_2381413 [tragic love expert] | 4K | 7.01 | 926 | 7.05 | 6 | 1.49 | 100.0 % | 99.9 % |
 | mirror_2407955 [4K - Transformation] | 4K | 7.02 | 741 | 6.86 | 6 | 1.44 | 100.0 % | 100.0 % |
 | mirror_2443377 [Menphiss' Hard] | 4K | 7.06 | 980 | 5.25 | 6 | 1.26 | 100.0 % | 100.0 % |
-| mirror_2504508 [~=H / Illusions=~] | 4K | 7.08 | 774 | 5.69 | 6 | 1.41 | 99.9 % | 99.5 % |
+| mirror_2504508 [~=H / Illusions=~] | 4K | 7.08 | 774 | 5.69 | 6 | 1.41 | 99.7 % | 99.4 % |
 | mirror_2583521 [Expert] | 4K | 7.12 | 728 | 5.42 | 6 | 1.52 | 100.0 % | 100.0 % |
 | mirror_2351212 [Hard] | 4K | 7.12 | 755 | 4.94 | 6 | 1.46 | 100.0 % | 100.0 % |
-| mirror_2586880 [Van Su Tuy Duyen [ndglol] | 4K | 7.13 | 618 | 6.01 | 6 | 1.61 | 100.0 % | 99.8 % |
+| mirror_2586880 [Van Su Tuy Duyen [ndglol] | 4K | 7.13 | 618 | 6.01 | 6 | 1.61 | 100.0 % | 100.0 % |
 | 171880 xi - Happy End of the [4K Hard] | 4K | 7.15 | 1530 | 4.06 | 6 | 1.20 | 99.8 % | 99.3 % |
 | 347453 Igorrr & Ruby My Dear [Grotesque [Lv.18]] | 4K | 7.15 | 839 | 3.92 | 6 | 1.56 | 99.9 % | 99.6 % |
 | mirror_2641034 [why is insane like this] | 4K | 7.16 | 1217 | 7.75 | 6 | 1.49 | 100.0 % | 100.0 % |
@@ -877,37 +889,37 @@ Bots: Tablet 3,5 Feld-Einheiten/s, Maus 2,5/s, je 25 ms Zeitstreuung, Trefferrad
 | mirror_2508953 [Worthless' Hard] | 4K | 7.18 | 1039 | 5.06 | 6 | 1.29 | 99.8 % | 99.6 % |
 | 347453 Igorrr & Ruby My Dear [Brutal [Lv.15]] | 4K | 7.19 | 837 | 3.91 | 6 | 1.55 | 99.8 % | 99.3 % |
 | mirror_2436239 [4K Menphiss' Hard] | 4K | 7.20 | 748 | 6.78 | 6 | 1.31 | 100.0 % | 100.0 % |
-| mirror_2509473 [S4 E4: EXTRA naiibe & zn] | 4K | 7.22 | 824 | 6.43 | 6 | 1.58 | 99.6 % | 99.2 % |
-| mirror_2447781 [Nova] | 4K | 7.24 | 670 | 6.04 | 6 | 1.63 | 99.7 % | 99.3 % |
-| mirror_2535725 [Hard] | 4K | 7.26 | 769 | 5.55 | 6 | 1.55 | 100.0 % | 99.7 % |
+| mirror_2509473 [S4 E4: EXTRA naiibe & zn] | 4K | 7.22 | 824 | 6.43 | 6 | 1.58 | 99.6 % | 98.9 % |
+| mirror_2447781 [Nova] | 4K | 7.24 | 670 | 6.04 | 6 | 1.63 | 99.6 % | 99.3 % |
+| mirror_2535725 [Hard] | 4K | 7.26 | 769 | 5.55 | 6 | 1.55 | 100.0 % | 99.9 % |
 | mirror_2331207 [B14CK'5 1NS4N3] | 4K | 7.29 | 1048 | 7.06 | 6 | 1.49 | 100.0 % | 100.0 % |
-| mirror_2351212 [Insane] | 4K | 7.32 | 676 | 4.42 | 6 | 1.59 | 99.9 % | 99.6 % |
+| mirror_2351212 [Insane] | 4K | 7.32 | 676 | 4.42 | 6 | 1.59 | 100.0 % | 100.0 % |
 | mirror_2351212 [The Cure] | 4K | 7.32 | 678 | 4.44 | 6 | 1.55 | 100.0 % | 100.0 % |
 | 1538859 Billain - Specialist [Yuno's Hard] | 4K | 7.33 | 1188 | 7.65 | 6 | 1.62 | 100.0 % | 100.0 % |
-| mirror_2586880 [_number607.mp3 [ndglol]] | 4K | 7.39 | 830 | 6.89 | 6 | 1.66 | 99.9 % | 99.4 % |
+| mirror_2586880 [_number607.mp3 [ndglol]] | 4K | 7.39 | 830 | 6.89 | 6 | 1.66 | 99.9 % | 99.5 % |
 | mirror_2468221 [Hyper] | 4K | 7.39 | 1189 | 7.62 | 6 | 1.52 | 100.0 % | 100.0 % |
 | mirror_2563643 [Insane] | 4K | 7.40 | 1190 | 6.92 | 6 | 1.48 | 100.0 % | 100.0 % |
-| mirror_2294669 [Maple] | std | 7.41 | 285 | 5.73 | 6 | 1.77 | 99.3 % | 95.4 % |
-| mirror_2506807 [Mirac1e-chan! // Insane] | 4K | 7.41 | 787 | 5.04 | 6 | 1.37 | 99.9 % | 99.5 % |
+| mirror_2294669 [Maple] | std | 7.41 | 285 | 5.73 | 6 | 1.77 | 99.3 % | 95.1 % |
+| mirror_2506807 [Mirac1e-chan! // Insane] | 4K | 7.41 | 787 | 5.04 | 6 | 1.37 | 99.9 % | 99.1 % |
 | 2289293 Tsukasa Kaminose - r [Iridescence] | 4K | 7.42 | 1190 | 4.86 | 6 | 1.52 | 99.7 % | 99.3 % |
 | mirror_2396967 [Ema's Before It All] | 4K | 7.42 | 612 | 6.62 | 6 | 1.68 | 100.0 % | 100.0 % |
 | 1606431 Zekk - Fluctuation [Hyper] | 4K | 7.42 | 753 | 5.64 | 6 | 1.64 | 99.9 % | 99.2 % |
 | mirror_2523377 [Hyper] | 4K | 7.44 | 984 | 4.51 | 6 | 1.45 | 100.0 % | 99.9 % |
-| mirror_2586880 [Lo Mot Loi Thuong [Swid]] | 4K | 7.44 | 721 | 7.91 | 6 | 1.63 | 99.7 % | 99.4 % |
+| mirror_2586880 [Lo Mot Loi Thuong [Swid]] | 4K | 7.44 | 721 | 7.91 | 6 | 1.63 | 99.9 % | 99.6 % |
 | 2326852 Sangatsu no Phantasi [Sunshine] | 4K | 7.44 | 1342 | 7.10 | 6 | 1.44 | 100.0 % | 100.0 % |
 | 381334 aaaa - Bokutachi no T [Final Voyage] | 4K | 7.45 | 1579 | 4.42 | 6 | 1.32 | 99.7 % | 99.4 % |
 | mirror_2446560 [Insane] | 4K | 7.46 | 686 | 7.17 | 6 | 1.54 | 100.0 % | 100.0 % |
-| mirror_2586880 [#bygones [ndglol]] | 4K | 7.48 | 1469 | 6.03 | 6 | 1.60 | 100.0 % | 100.0 % |
-| mirror_2511692 [:hyper_male_pregnant:] | 4K | 7.51 | 352 | 6.05 | 6 | 1.76 | 99.7 % | 97.4 % |
+| mirror_2586880 [#bygones [ndglol]] | 4K | 7.48 | 1469 | 6.03 | 6 | 1.60 | 100.0 % | 99.9 % |
+| mirror_2511692 [:hyper_male_pregnant:] | 4K | 7.51 | 352 | 6.05 | 6 | 1.76 | 99.7 % | 98.6 % |
 | mirror_2563805 [hard] | 4K | 7.53 | 557 | 7.48 | 6 | 1.58 | 100.0 % | 100.0 % |
 | mirror_2563643 [Chocho Chocho] | 4K | 7.54 | 1186 | 6.90 | 6 | 1.49 | 100.0 % | 100.0 % |
 | 2219350 Toromaru - Uncharted [4K Insane] | 4K | 7.55 | 1081 | 7.70 | 6 | 1.61 | 100.0 % | 100.0 % |
-| mirror_2586880 [Perfect Person [ndglol x] | 4K | 7.56 | 1541 | 6.63 | 6 | 1.68 | 99.6 % | 99.0 % |
+| mirror_2586880 [Perfect Person [ndglol x] | 4K | 7.56 | 1541 | 6.63 | 6 | 1.68 | 99.7 % | 99.3 % |
 | mirror_2569767 [The Long-Awaited Moment] | 4K | 7.63 | 871 | 6.35 | 6 | 1.49 | 100.0 % | 100.0 % |
 | mirror_2481624 [Insane] | 4K | 7.64 | 970 | 5.73 | 6 | 1.55 | 100.0 % | 100.0 % |
 | mirror_2489537 [8bit-like] | 4K | 7.68 | 839 | 6.15 | 6 | 1.51 | 100.0 % | 99.9 % |
 | mirror_176446 [SHD] | 4K | 7.72 | 894 | 6.62 | 6 | 1.64 | 100.0 % | 100.0 % |
-| mirror_2586880 [Khong Can Lo Cho Tao [Jh] | 4K | 7.74 | 983 | 6.67 | 6 | 1.55 | 100.0 % | 99.8 % |
+| mirror_2586880 [Khong Can Lo Cho Tao [Jh] | 4K | 7.74 | 983 | 6.67 | 6 | 1.55 | 100.0 % | 100.0 % |
 | 171880 xi - Happy End of the [4K Insane] | 4K | 7.75 | 1524 | 4.04 | 6 | 1.28 | 99.9 % | 99.4 % |
 | mirror_2541937 [Hard] | 4K | 7.75 | 908 | 7.31 | 6 | 1.51 | 100.0 % | 100.0 % |
 | 1606431 Zekk - Fluctuation [Insane] | 4K | 7.76 | 796 | 5.96 | 6 | 1.68 | 99.9 % | 99.7 % |
@@ -915,19 +927,19 @@ Bots: Tablet 3,5 Feld-Einheiten/s, Maus 2,5/s, je 25 ms Zeitstreuung, Trefferrad
 | mirror_2623104 [i saw an angel in the mi] | 4K | 7.78 | 1397 | 5.81 | 6 | 1.62 | 99.9 % | 99.1 % |
 | mirror_2443377 [NikoSek's Expert] | 4K | 7.80 | 1011 | 5.42 | 6 | 1.38 | 100.0 % | 100.0 % |
 | mirror_2541848 [HARD://DISK_DRIVE] | 4K | 7.86 | 2503 | 5.65 | 6 | 1.32 | 100.0 % | 100.0 % |
-| mirror_2446560 [eZmmR's Executioner] | 4K | 7.89 | 675 | 7.06 | 6 | 1.61 | 100.0 % | 100.0 % |
+| mirror_2446560 [eZmmR's Executioner] | 4K | 7.89 | 675 | 7.06 | 6 | 1.61 | 100.0 % | 99.9 % |
 | 171880 xi - Happy End of the [Fullerene's 4K Catastrop] | 4K | 7.89 | 1690 | 4.48 | 6 | 1.33 | 100.0 % | 99.9 % |
 | mirror_2535725 [Sayonara] | 4K | 7.89 | 748 | 5.40 | 6 | 1.69 | 100.0 % | 100.0 % |
 | mirror_2611638 [Insane+] | 4K | 7.90 | 1036 | 7.43 | 6 | 1.62 | 100.0 % | 100.0 % |
-| mirror_2535725 [Extra] | 4K | 7.91 | 774 | 5.59 | 6 | 1.69 | 99.7 % | 99.1 % |
-| mirror_2306554 [Another] | 4K | 7.93 | 629 | 5.66 | 6 | 1.61 | 99.2 % | 97.3 % |
+| mirror_2535725 [Extra] | 4K | 7.91 | 774 | 5.59 | 6 | 1.69 | 99.9 % | 99.2 % |
+| mirror_2306554 [Another] | 4K | 7.93 | 629 | 5.66 | 6 | 1.61 | 99.2 % | 98.1 % |
 | mirror_2559592 [Hard] | 4K | 7.97 | 549 | 5.98 | 6 | 1.72 | 99.6 % | 98.7 % |
 | mirror_2616511 [Insane] | 4K | 7.98 | 934 | 6.73 | 6 | 1.48 | 99.9 % | 99.9 % |
 | mirror_2538971 [Hard] | 4K | 8.00 | 785 | 7.90 | 6 | 1.60 | 100.0 % | 100.0 % |
 | 1538859 Billain - Specialist [GoldenJumper's Insane] | 4K | 8.01 | 1293 | 8.32 | 6 | 1.74 | 100.0 % | 100.0 % |
-| mirror_2586880 [Truc Xinh v2 [ndglol]] | 4K | 8.03 | 1686 | 7.02 | 6 | 1.69 | 99.9 % | 99.7 % |
+| mirror_2586880 [Truc Xinh v2 [ndglol]] | 4K | 8.03 | 1686 | 7.02 | 6 | 1.69 | 99.9 % | 99.6 % |
 | mirror_2443377 [Insane] | 4K | 8.06 | 1012 | 5.43 | 6 | 1.37 | 100.0 % | 100.0 % |
-| mirror_2586880 [Ai Dua Em Ve (Cukak Remi] | 4K | 8.07 | 1119 | 6.45 | 6 | 1.63 | 100.0 % | 100.0 % |
+| mirror_2586880 [Ai Dua Em Ve (Cukak Remi] | 4K | 8.07 | 1119 | 6.45 | 6 | 1.63 | 100.0 % | 99.9 % |
 | 1606431 Zekk - Fluctuation [Drago's Oscillation] | 4K | 8.11 | 785 | 5.88 | 6 | 1.71 | 100.0 % | 99.9 % |
 | mirror_2481624 [Radiant] | 4K | 8.13 | 979 | 5.78 | 6 | 1.60 | 100.0 % | 100.0 % |
 | 1538859 Billain - Specialist [Humanoid] | 4K | 8.15 | 1314 | 8.46 | 6 | 1.75 | 100.0 % | 99.8 % |
@@ -937,54 +949,54 @@ Bots: Tablet 3,5 Feld-Einheiten/s, Maus 2,5/s, je 25 ms Zeitstreuung, Trefferrad
 | mirror_2563805 [fieryrage goes hardcore ] | 4K | 8.20 | 563 | 7.56 | 6 | 1.66 | 100.0 % | 100.0 % |
 | mirror_2535725 [Hyper] | 4K | 8.22 | 844 | 6.10 | 6 | 1.63 | 100.0 % | 100.0 % |
 | mirror_176446 [MX] | 4K | 8.23 | 965 | 7.15 | 6 | 1.64 | 100.0 % | 100.0 % |
-| mirror_240415 [Rage] | std | 8.24 | 368 | 4.19 | 6 | 2.13 | 100.0 % | 95.4 % |
-| mirror_2559592 [Insane] | 4K | 8.29 | 547 | 5.96 | 6 | 1.84 | 98.5 % | 96.0 % |
-| mirror_2436239 [4K Insane] | 4K | 8.36 | 760 | 6.89 | 6 | 1.49 | 100.0 % | 99.9 % |
-| mirror_2388455 [Afterglow] | 4K | 8.38 | 868 | 5.25 | 6 | 1.48 | 99.7 % | 99.1 % |
-| mirror_2504508 [~=Asteria's Temporal Ins] | 4K | 8.44 | 802 | 5.90 | 6 | 1.62 | 99.6 % | 98.5 % |
+| mirror_240415 [Rage] | std | 8.24 | 368 | 4.19 | 6 | 2.13 | 100.0 % | 94.3 % |
+| mirror_2559592 [Insane] | 4K | 8.29 | 547 | 5.96 | 6 | 1.84 | 98.5 % | 96.2 % |
+| mirror_2436239 [4K Insane] | 4K | 8.36 | 760 | 6.89 | 6 | 1.49 | 100.0 % | 100.0 % |
+| mirror_2388455 [Afterglow] | 4K | 8.38 | 868 | 5.25 | 6 | 1.48 | 99.7 % | 98.7 % |
+| mirror_2504508 [~=Asteria's Temporal Ins] | 4K | 8.44 | 802 | 5.90 | 6 | 1.62 | 99.9 % | 98.5 % |
 | mirror_971561 [Hard] | 4K | 8.47 | 1462 | 7.48 | 6 | 1.55 | 100.0 % | 100.0 % |
 | 2219350 Toromaru - Uncharted [Tails x Rick's 4K Azure ] | 4K | 8.50 | 1120 | 7.97 | 6 | 1.73 | 100.0 % | 99.7 % |
 | 2298540 Omerta - Charade (fe [sayonara.] | 4K | 8.57 | 2418 | 8.05 | 6 | 1.66 | 100.0 % | 100.0 % |
 | mirror_2182334 [MIZUJIN'S LOOK OF DESPAI] | std | 8.62 | 370 | 4.50 | 6 | 2.12 | 99.7 % | 91.9 % |
 | mirror_2403887 [Uwwal's Hard] | 4K | 8.63 | 1374 | 7.52 | 6 | 1.59 | 100.0 % | 100.0 % |
 | mirror_2541937 [Hyper] | 4K | 8.64 | 1025 | 8.25 | 6 | 1.56 | 100.0 % | 100.0 % |
-| mirror_2508953 [Melons' Insane] | std | 8.66 | 576 | 2.94 | 6 | 1.92 | 100.0 % | 96.7 % |
-| mirror_2535725 [Insane] | 4K | 8.69 | 843 | 6.09 | 6 | 1.72 | 99.8 % | 99.6 % |
+| mirror_2508953 [Melons' Insane] | std | 8.66 | 576 | 2.94 | 6 | 1.92 | 100.0 % | 97.4 % |
+| mirror_2535725 [Insane] | 4K | 8.69 | 843 | 6.09 | 6 | 1.72 | 99.9 % | 99.6 % |
 | mirror_2468221 [Another] | 4K | 8.70 | 1340 | 8.59 | 6 | 1.67 | 100.0 % | 100.0 % |
-| mirror_2559592 [Mimo etazhi] | 4K | 8.74 | 547 | 5.96 | 6 | 1.84 | 98.9 % | 95.4 % |
-| mirror_2541937 [Insane] | 4K | 8.74 | 1047 | 8.43 | 6 | 1.56 | 100.0 % | 99.9 % |
+| mirror_2559592 [Mimo etazhi] | 4K | 8.74 | 547 | 5.96 | 6 | 1.84 | 98.9 % | 95.8 % |
+| mirror_2541937 [Insane] | 4K | 8.74 | 1047 | 8.43 | 6 | 1.56 | 100.0 % | 100.0 % |
 | mirror_2538971 [The order hidden within ] | 4K | 8.77 | 814 | 8.19 | 6 | 1.71 | 100.0 % | 100.0 % |
 | mirror_2079518 [Heaven] | std | 8.83 | 194 | 3.03 | 4 | 2.26 | 99.5 % | 76.8 % |
-| mirror_2616511 [Extra] | 4K | 8.85 | 976 | 7.03 | 6 | 1.63 | 99.8 % | 99.4 % |
-| mirror_2306554 [Of his flaming blade] | 4K | 8.89 | 614 | 5.53 | 6 | 1.81 | 99.0 % | 97.4 % |
-| mirror_368064 [pishi's Extra] | std | 9.06 | 472 | 3.67 | 6 | 1.82 | 100.0 % | 96.0 % |
-| mirror_2504508 [~=Frozen Fate=~] | 4K | 9.13 | 742 | 5.46 | 6 | 1.79 | 99.5 % | 97.4 % |
+| mirror_2616511 [Extra] | 4K | 8.85 | 976 | 7.03 | 6 | 1.63 | 99.9 % | 99.4 % |
+| mirror_2306554 [Of his flaming blade] | 4K | 8.89 | 614 | 5.53 | 6 | 1.81 | 98.9 % | 97.1 % |
+| mirror_368064 [pishi's Extra] | std | 9.06 | 472 | 3.67 | 6 | 1.82 | 100.0 % | 97.2 % |
+| mirror_2504508 [~=Frozen Fate=~] | 4K | 9.13 | 742 | 5.46 | 6 | 1.79 | 99.5 % | 97.0 % |
 | mirror_2403887 [ExNeko's Insane] | 4K | 9.16 | 1342 | 7.35 | 6 | 1.67 | 100.0 % | 100.0 % |
 | mirror_2541848 [INSANE://MEMORIES_OF_YOU] | 4K | 9.18 | 2734 | 6.17 | 6 | 1.51 | 100.0 % | 100.0 % |
-| mirror_2616511 [Bust Card] | 4K | 9.18 | 968 | 6.97 | 6 | 1.66 | 99.6 % | 98.9 % |
+| mirror_2616511 [Bust Card] | 4K | 9.18 | 968 | 6.97 | 6 | 1.66 | 99.7 % | 99.2 % |
 | 309328 xi - Hesperides [Insane] | 4K | 9.22 | 585 | 5.36 | 6 | 1.65 | 100.0 % | 99.5 % |
 | mirror_2438724 [elexire's Advanced] | 4K | 9.23 | 1241 | 7.62 | 6 | 1.55 | 100.0 % | 100.0 % |
 | mirror_176446 [ExTra] | 4K | 9.26 | 952 | 6.91 | 6 | 1.73 | 100.0 % | 100.0 % |
 | 1895713 meganeko - The Cyber [Hard] | 4K | 9.27 | 1672 | 6.02 | 6 | 1.62 | 99.6 % | 98.6 % |
-| mirror_2508953 [Astronic's Extra] | std | 9.39 | 817 | 3.97 | 6 | 1.79 | 100.0 % | 98.3 % |
+| mirror_2508953 [Astronic's Extra] | std | 9.39 | 817 | 3.97 | 6 | 1.79 | 100.0 % | 98.7 % |
 | mirror_2438724 [Miaurichesu's Insane] | 4K | 9.45 | 1398 | 8.58 | 6 | 1.52 | 100.0 % | 100.0 % |
-| mirror_2468221 [S k y y -] | 4K | 9.46 | 1370 | 8.78 | 6 | 1.73 | 100.0 % | 99.9 % |
-| mirror_2506744 [mekadon's extra] | std | 9.47 | 97 | 3.20 | 6 | 3.41 | 92.8 % | 53.6 % |
-| mirror_971561 [Lenfried's Insane] | 4K | 9.63 | 1785 | 9.13 | 6 | 1.71 | 100.0 % | 99.9 % |
+| mirror_2468221 [S k y y -] | 4K | 9.46 | 1370 | 8.78 | 6 | 1.73 | 100.0 % | 100.0 % |
+| mirror_2506744 [mekadon's extra] | std | 9.47 | 97 | 3.20 | 6 | 3.41 | 89.7 % | 50.5 % |
+| mirror_971561 [Lenfried's Insane] | 4K | 9.63 | 1785 | 9.13 | 6 | 1.71 | 100.0 % | 100.0 % |
 | mirror_2541848 [ANOTHER://ERROR_403_FORB] | 4K | 9.69 | 2747 | 6.20 | 6 | 1.56 | 100.0 % | 100.0 % |
-| mirror_2294669 [Frenzy] | std | 9.71 | 289 | 5.78 | 6 | 2.02 | 98.6 % | 82.4 % |
+| mirror_2294669 [Frenzy] | std | 9.71 | 289 | 5.78 | 6 | 2.02 | 97.6 % | 83.4 % |
 | mirror_2438724 [Hylotl's Extra] | 4K | 9.72 | 1517 | 9.30 | 6 | 1.65 | 100.0 % | 100.0 % |
 | mirror_2541937 [Expert] | 4K | 9.83 | 1115 | 8.98 | 6 | 1.64 | 100.0 % | 100.0 % |
 | 1895713 meganeko - The Cyber [Sigma Grindset] | 4K | 9.84 | 1679 | 6.04 | 6 | 1.71 | 99.5 % | 98.3 % |
-| mirror_2506744 [how it feels when i'm ab] | std | 10.03 | 103 | 3.40 | 6 | 3.48 | 91.3 % | 52.4 % |
+| mirror_2506744 [how it feels when i'm ab] | std | 10.03 | 103 | 3.40 | 6 | 3.48 | 92.2 % | 52.4 % |
 | mirror_2403887 [Silver] | 4K | 10.18 | 1562 | 8.55 | 6 | 1.79 | 100.0 % | 99.9 % |
 | mirror_2541937 [Extra] | 4K | 10.18 | 1183 | 9.52 | 6 | 1.72 | 100.0 % | 100.0 % |
-| mirror_2506744 [kuki's extra] | std | 10.36 | 113 | 3.73 | 6 | 3.37 | 99.1 % | 49.6 % |
+| mirror_2506744 [kuki's extra] | std | 10.36 | 113 | 3.73 | 6 | 3.37 | 98.2 % | 49.6 % |
 | mirror_2295373 [nerves] | 4K | 10.63 | 2326 | 7.85 | 6 | 1.73 | 100.0 % | 99.9 % |
-| mirror_2541937 [Ultra] | 4K | 10.90 | 1222 | 9.84 | 6 | 1.78 | 100.0 % | 99.9 % |
+| mirror_2541937 [Ultra] | 4K | 10.90 | 1222 | 9.84 | 6 | 1.78 | 100.0 % | 100.0 % |
 | 309328 xi - Hesperides [Master] | 4K | 11.19 | 676 | 6.07 | 6 | 1.90 | 99.6 % | 98.1 % |
-| mirror_2541937 [Glory] | 4K | 11.54 | 1234 | 9.93 | 6 | 1.81 | 100.0 % | 99.9 % |
+| mirror_2541937 [Glory] | 4K | 11.54 | 1234 | 9.93 | 6 | 1.81 | 100.0 % | 100.0 % |
 | mirror_2438724 [VERMILLION SCOURGE] | 4K | 13.28 | 1797 | 11.02 | 6 | 1.92 | 100.0 % | 100.0 % |
 | mirror_2438724 [Hyper] | 4K | 14.87 | 1684 | 10.33 | 6 | 1.92 | 100.0 % | 100.0 % |
+| mirror_2508953 [Evangelical Prayer] | std | 15.00 | 824 | 4.01 | 6 | 2.55 | 91.0 % | 64.1 % |
 | mirror_2182334 [KOLMAN'S EYES HALF CLOSE] | std | 15.00 | 400 | 4.87 | 6 | 3.61 | 66.5 % | 29.8 % |
-| mirror_2508953 [Evangelical Prayer] | std | 15.00 | 824 | 4.01 | 6 | 2.55 | 90.5 % | 64.7 % |

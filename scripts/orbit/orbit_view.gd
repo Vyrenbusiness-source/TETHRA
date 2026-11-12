@@ -241,6 +241,8 @@ func on_press_missed(pos: Vector2, _key: int, reason: String) -> void:
 			text = tr("daneben")
 		"key":
 			text = tr("andere Taste")
+		"wrong":
+			text = "WRONG KEY"
 		"lock":
 			_lock_t = t_ms
 			_lock_idx = next_index()

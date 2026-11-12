@@ -787,7 +787,6 @@ func _build_buttons() -> void:
 
 ## --- Daily Trace: eine Map pro Tag fuer alle, Serie, Tages-Bild (TraceDaily) ---
 var _btn_daily: Button
-var _daily_pic: TextureRect
 var _daily_busy := false
 const DAILY_TIMEOUT_S := 8.0
 
@@ -806,12 +805,6 @@ func _build_daily_row(vb: VBoxContainer) -> void:
 	_btn_daily.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_btn_daily.pressed.connect(_daily_start)
 	row.add_child(_btn_daily)
-	_daily_pic = TextureRect.new()
-	_daily_pic.custom_minimum_size = Vector2(40, 40)
-	_daily_pic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	_daily_pic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	_daily_pic.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	row.add_child(_daily_pic)
 	_refresh_daily(state)
 
 
@@ -826,15 +819,12 @@ func _refresh_daily(state: Dictionary = {}) -> void:
 	var head := tr("DAILY TRACE")
 	if done:
 		var sc := int((state.days[today] as Dictionary).get("score", -1))
-		_btn_daily.text = "%s · %s" % [head, (tr("Wertung %s") % UiTheme.fmt_score(sc)) if sc >= 0 else tr("heute gespielt")]
+		_btn_daily.text = "%s · %s" % [head, (tr("Score %s") % UiTheme.fmt_score(sc)) if sc >= 0 else tr("played today")]
 	else:
 		_btn_daily.text = head
-	_btn_daily.tooltip_text = tr("Serie: %d Tage") % n if n > 0 else tr("Jeden Tag dieselbe Map. Ein Versuch zaehlt.")
+	_btn_daily.tooltip_text = tr("Streak: %d days") % n if n > 0 else tr("Same map for everyone, every day. One try counts.")
 	if n > 0:
-		_btn_daily.text += "  ·  %s" % (tr("Serie %d") % n)
-	if done:
-		_daily_pic.texture = ImageTexture.create_from_image(TraceDaily.picture(today, n))
-	_daily_pic.visible = done
+		_btn_daily.text += "  ·  %s" % (tr("Streak %d") % n)
 
 
 ## Ergebnis des letzten Trace-Laufs der Tages-Map uebernehmen (ScoreStore.last_submit).
@@ -856,7 +846,7 @@ func _daily_start() -> void:
 		return
 	_daily_busy = true
 	_btn_daily.disabled = true
-	_btn_daily.text = tr("Suche Tagesmap …")
+	_btn_daily.text = tr("Finding today's map …")
 	var state := TraceDaily.load_state()
 	var today := TraceDaily.today_key()
 	# Schon gespielt: dieselbe Map nochmal (zaehlt nicht), ohne neue Suche.
@@ -889,7 +879,7 @@ func _daily_start() -> void:
 	if ms == null or idx < 0:
 		_daily_busy = false
 		_btn_daily.disabled = false
-		_btn_daily.text = tr("Keine 4K-Map gefunden")
+		_btn_daily.text = tr("No 4K map found")
 		return
 	_daily_launch(ms.osz_path, idx, ms.version_name_at(idx), state, today, ms.osu_filename_at(idx), ms.stars_at(idx))
 

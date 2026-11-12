@@ -33,6 +33,11 @@ Alte Fassung (Seitenansicht, A/B) ist ersetzt: sie war langweilig (nichts zu les
   "Mehrball"), Ballwechsel-Zaehler, dezente unscharfe Publikums-Silhouetten, Licht reagiert leise auf Kombo (nie grell, kein
   Wackeln ausser <= 2 px beim Schmetterball), satter Schlagklang je Zone (tief nach hoch).
 - Replays: meta rules = 2 (alte Rally-Replays/Scores < 1.27.0 sind nicht vergleichbar).
+- **Anti-Mash (Regeln v3):** Druck in einer Zone ohne Ball im Miss-Fenster, waehrend eine
+  andere Zone einen ungewerteten Ball im 50er-Fenster hat = "WRONG KEY": dieser Ball ist
+  sofort Miss (Kombo bricht). Schmetterball: nur seine zwei Zonen zaehlen, eine dritte Zone
+  macht ihn zum Miss. Richtige Taste zuerst, falsche danach: Treffer bleibt. Druck ohne Ball
+  in irgendeinem Fenster = nichts. Replays: meta rules = 3 (rules 2 wird abgelehnt). Messwerte: docs/anti_mash.md.
 
 ## Schnittstelle Chart -> Ansicht
 `RallyChart.Shot`: `t` (Notenzeit ms), `zones: PackedInt32Array` (1 oder 2 Zonen 0..3),

@@ -445,6 +445,7 @@ func _start_round(t: float) -> void:
 	chart = make_chart(step, t + bl * LEAD_BEATS)
 	core = DirigentCore.new()
 	core.setup(chart, OD)
+	core.anti_mash = false   # Lernmodus: falsche Taste zeigt nur den Hinweis, kein Miss
 	core.beat_judged.connect(_on_beat)
 	core.cue_judged.connect(_on_cue)
 	core.key_pressed.connect(_on_key_pressed)

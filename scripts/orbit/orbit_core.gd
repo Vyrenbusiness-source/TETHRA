@@ -67,8 +67,8 @@ const GRADE_STEPS := [[0.95, "S"], [0.90, "A"], [0.82, "B"], [0.72, "C"]]
 const REC_MIN_Q := 3
 const REC_GAP_MS := 8.0
 const Q_LIMIT := 4000
-## Replay-Format 3 (Satelliten). Kleineres meta.orbit_rules = "aeltere Version".
-const REPLAY_RULES := 3
+## Replay-Format 4 (Satelliten + Anti-Mash: falsche Taste = Miss). Kleineres meta.orbit_rules = "aeltere Version".
+const REPLAY_RULES := 4
 ## [t, EV_CURSOR, x, y] / [t, EV_DOWN + k] / [t, EV_UP + k]; x/y Tausendstel Feld.
 const EV_CURSOR := 0
 const EV_DOWN := 1
@@ -101,6 +101,8 @@ var _n_done := 0
 var _aim_sum := 0.0
 var _aim_n := 0
 var deterministic := false
+## Anti-Mash (Regeln 4). Nur Messungen/Tests schalten es aus (Vorher-Werte); Spiel und Replay: immer an.
+var anti_mash := true
 var recording := false
 var replay_log: Array = []
 var _cur_q := Vector2i(-99999, -99999)
@@ -372,6 +374,8 @@ func _do_down(k: int, t: float) -> void:
 	var hit_err := 0.0
 	var pending := false
 	var later := -1
+	var key_victim := -1
+	var key_err := 0.0
 	for j in range(_head, _order.size()):
 		var i := _order[j]
 		if _judged.has(i):
@@ -403,6 +407,9 @@ func _do_down(k: int, t: float) -> void:
 				hit_err = e
 			else:
 				rs.append("key")
+				if key_victim < 0:
+					key_victim = i
+					key_err = e
 		elif later < 0 and aim_ok and (n.key == k or (is_accent and ready)):
 			later = i
 	if hit < 0:
@@ -410,6 +417,13 @@ func _do_down(k: int, t: float) -> void:
 		if pending:
 			return
 		var reason := ""
+		# Anti-Mash: falsche Taste auf das offene Ziel (Cursor drauf, 50er-Fenster, kein
+		# passendes Ziel fuer diese Taste) = sofort Miss. Akzent zaehlt nur mit beiden Tasten.
+		if anti_mash and key_victim >= 0 and later < 0:
+			_miss(key_victim, t - notes[key_victim].time_ms, key_err)
+			key_pressed.emit(k, false)
+			press_missed.emit(_cursor, k, "wrong")
+			return
 		if later >= 0:
 			reason = "lock"
 		elif rs.has("key"):
