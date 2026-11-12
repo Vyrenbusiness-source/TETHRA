@@ -16,7 +16,7 @@ const MODE := "rebound"
 const JUDGE_SCALE := 0.5
 const LEAD_MS := 1800.0
 ## Replay-Regelversion: 2 = Anti-Mash (falsche Taste macht eine Note im 50er-Fenster zum Miss).
-const REPLAY_RULES := 2
+const REPLAY_RULES := ReboundAntiMash.REPLAY_RULES
 const GRADE_COLOR := {
 	"SS": Color(1.0, 0.92, 0.55), "S": Color(1.0, 0.85, 0.40), "A": Color(0.55, 0.85, 0.55),
 	"B": Color(0.50, 0.70, 0.95), "C": Color(0.75, 0.58, 0.95), "D": Color(0.90, 0.50, 0.45),
@@ -93,7 +93,7 @@ func _ready() -> void:
 		elif a.begins_with("--mp-cut="):
 			_mp_cut_ms = maxf(0.0, a.trim_prefix("--mp-cut=").to_float()) * 1000.0
 	if not _replay:
-		_recorded = [{"t": -1.0, "lane": -1, "down": false, "rules": REPLAY_RULES}]
+		_recorded = [ReboundAntiMash.marker()]
 	core = ManiaCore.new()
 	core.setup(_beatmap)
 	core.note_judged.connect(_on_note_judged)
@@ -407,7 +407,7 @@ func _press(lane: int, down: bool) -> void:
 
 ## Druck ueber die Anti-Mash-Schicht an ManiaCore geben (live, Replay und Bot gleich).
 func _down(lane: int, t: float) -> void:
-	if wrong_key_check(core, lane, t) >= 0:
+	if ReboundAntiMash.wrong_key_check(core, lane, t) >= 0:
 		if _view.has_method("on_wrong_key"):
 			_view.on_wrong_key(lane)
 	core.key_down(lane, t)
@@ -415,36 +415,7 @@ func _down(lane: int, t: float) -> void:
 
 ## Replays ohne Regel-Marke oder mit anderer Version passen nicht zu den Regeln.
 static func replay_current(events: Array) -> bool:
-	return not events.is_empty() and events[0] is Dictionary 			and int(events[0].get("rules", 0)) == REPLAY_RULES
-
-
-## Anti-Mash: Druck auf Spalte lane ohne Note im Miss-Fenster, waehrend eine andere
-## Spalte eine ungewertete Note im 50er-Fenster hat: diese Note (die naechste) ist
-## sofort Miss. Gibt deren Index zurueck, sonst -1. Druck ohne Note irgendwo = nichts.
-static func wrong_key_check(core: ManiaCore, lane: int, t: float) -> int:
-	if core == null or core.beatmap == null or lane < 0 or lane >= core.columns:
-		return -1
-	for c in core.columns:
-		core._expire_lane(c, t)
-	if core._broken_hold[lane] >= 0:
-		return -1
-	if core._lane_head[lane] < core._lane_notes[lane].size():
-		var own: int = core._lane_notes[lane][core._lane_head[lane]]
-		if t - core.beatmap.hit_objects[own].time >= -core.w_miss:
-			return -1
-	var victim := -1
-	var best := INF
-	for c in core.columns:
-		if c == lane or core._lane_head[c] >= core._lane_notes[c].size():
-			continue
-		var idx: int = core._lane_notes[c][core._lane_head[c]]
-		var dt := absf(t - core.beatmap.hit_objects[idx].time)
-		if dt <= core.w50 and dt < best:
-			best = dt
-			victim = idx
-	if victim >= 0:
-		core._miss(victim, "WRONG")
-	return victim
+	return ReboundAntiMash.replay_current(events)
 
 
 func _show_old_replay() -> void:

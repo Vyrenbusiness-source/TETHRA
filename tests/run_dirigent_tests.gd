@@ -456,7 +456,7 @@ func _test_anti_mash() -> void:
 	var e := _core(c)
 	e.key_down(0, float(c.cues[0].t))
 	e.key_down(1, float(c.cues[0].t) + 4.0)
-	_ok(e.n_miss == 0 and e.n_max == 1, "richtig dann falsch: Treffer bleibt")
+	_ok(e.n_max == 1 and e.is_cue_done(0) and e.n_miss == 0, "richtig dann falsch: Treffer bleibt")
 	# Akzent (beide): A allein wertet nie, beide = Treffer.
 	var f := _core(c)
 	f.key_down(0, float(c.cues[2].t))
@@ -465,7 +465,7 @@ func _test_anti_mash() -> void:
 	var g := _core(c)
 	g.key_down(0, float(c.cues[2].t))
 	g.key_down(1, float(c.cues[2].t) + 10.0)
-	_ok(g.n_miss == 0 and g.n_max == 1, "Akzent mit beiden = Treffer")
+	_ok(g.n_max == 1 and g.is_cue_done(2), "Akzent mit beiden = Treffer")
 	# Leer-Druck ohne Einsatz im Fenster: nichts.
 	var h := _core(c)
 	h.key_down(0, 500.0)
