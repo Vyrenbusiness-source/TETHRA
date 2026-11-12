@@ -36,10 +36,16 @@ const LATE_COL := Color(0.97, 0.66, 0.50)
 const MAX_COL := Color(0.98, 0.93, 0.75)
 ## Freies Band oben/unten in der Zeitleiste (px).
 const BAND := 30.0
-const KEY_NAMES := ["A", "B", "SMASH"]
+## Tabellenzeilen: 4 Zonen, Schmetterball, Aufladen.
+const KEY_NAMES := ["ZONE 1", "ZONE 2", "ZONE 3", "ZONE 4", "SMASH", "CHARGE"]
+const KEY_ROWS := 6
+const KEY_ROW_H := 17.0
+const ZONE_COLS := [Color(0.52, 0.74, 0.92), Color(0.55, 0.85, 0.62), Color(0.95, 0.80, 0.35),
+	Color(0.95, 0.52, 0.30)]
+const CHARGE_COL := Color(0.78, 0.62, 0.95)
 
 var _data: Dictionary = {}
-var _log: Array = []          ## {t, key (0 A, 1 B, 2 Smash), q, dt, charge}
+var _log: Array = []          ## {t, key (0-3 Zone, 4 Schmetterball, 5 Aufladen), q, dt, charge}
 var _counts: Array[int] = [0, 0, 0, 0, 0, 0]
 var _hist := PackedInt32Array()
 var _hist_max := 1
@@ -66,9 +72,10 @@ func _ready() -> void:
 
 
 ## Ein Log-Eintrag je gewertetem Schlag (RallyGame._result_log): t (Notenzeit),
-## key (0 A, 1 B; Schmetterball = 2), quality, dt (ms).
+## key (Zone 0-3; Aufladen = 5, Schmetterball = 4), quality, dt (ms).
 static func entry(shot_t: float, key: int, smash: bool, charge: bool, result: Dictionary) -> Dictionary:
-	return {"t": shot_t, "key": 2 if smash else clampi(key, 0, 1), "q": int(result.get("quality", 5)),
+	var row := 5 if charge else (4 if smash else clampi(key, 0, 3))
+	return {"t": shot_t, "key": row, "q": int(result.get("quality", 5)),
 		"dt": float(result.get("dt", 0.0)), "charge": charge}
 
 
@@ -79,7 +86,7 @@ func show_results(data: Dictionary) -> void:
 	_log.clear()
 	for e in data.get("log", []):
 		if e is Dictionary:
-			_log.append({"t": float(e.get("t", 0.0)), "key": clampi(int(e.get("key", 0)), 0, 2),
+			_log.append({"t": float(e.get("t", 0.0)), "key": clampi(int(e.get("key", 0)), 0, KEY_ROWS - 1),
 				"q": clampi(int(e.get("q", 5)), 0, 5), "dt": float(e.get("dt", 0.0)),
 				"charge": bool(e.get("charge", false))})
 	_w50 = maxf(float(data.get("w50", 120.0)), 1.0)
@@ -107,7 +114,7 @@ func _summarize() -> void:
 	var sq := 0.0
 	var n := 0
 	_key_rows = []
-	for k in 3:
+	for k in KEY_ROWS:
 		_key_rows.append({"n": 0, "hit": 0, "val": 0.0, "dt": 0.0})
 	for e in _log:
 		var q: int = e.q
@@ -292,7 +299,7 @@ func _build_keys() -> void:
 	_keys_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_keys_box.draw.connect(_draw_keys)
 	_right.add_child(_keys_box)
-	var cols := [[tr("KEY"), 22.0, 0], [tr("HITS"), 230.0, 1], [tr("ACCURACY"), 340.0, 1],
+	var cols := [[tr("ZONE"), 22.0, 0], [tr("HITS"), 230.0, 1], [tr("ACCURACY"), 340.0, 1],
 		[tr("AVG TIMING"), 450.0, 1]]
 	for c in cols:
 		var l := _tag(c[0], UiTheme.DIM)
@@ -303,36 +310,38 @@ func _build_keys() -> void:
 		else:
 			l.position = Vector2(float(c[1]), 0)
 		_keys_box.add_child(l)
-	for k in 3:
+	for k in KEY_ROWS:
 		var kr: Dictionary = _key_rows[k]
-		var y := 18.0 + float(k) * ROW_H
+		var y := 18.0 + float(k) * KEY_ROW_H
 		var dim := int(kr.n) == 0
-		var nm := _label(tr(KEY_NAMES[k]), 14, UiTheme.DIM if dim else UiTheme.TEXT)
+		var nm := _label(tr(KEY_NAMES[k]), 13, UiTheme.DIM if dim else UiTheme.TEXT)
 		nm.position = Vector2(22, y)
 		_keys_box.add_child(nm)
 		var vals := ["%d / %d" % [int(kr.hit), int(kr.n)],
 			"—" if dim else UiTheme.fmt_pct(float(kr.val) / float(kr.n) * 100.0),
 			"—" if int(kr.hit) == 0 else "%+d ms" % int(round(float(kr.dt) / float(kr.hit)))]
 		for i in 3:
-			var v := _label(vals[i], 14, UiTheme.DIM if dim else UiTheme.TEXT, _tab)
+			var v := _label(vals[i], 13, UiTheme.DIM if dim else UiTheme.TEXT, _tab)
 			v.size = Vector2(110, 20)
 			v.position = Vector2(float(cols[i + 1][1]) - 110.0, y)
 			v.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 			_keys_box.add_child(v)
-	_keys_box.custom_minimum_size = Vector2(0, 18.0 + 3.0 * ROW_H + 4.0)
+	_keys_box.custom_minimum_size = Vector2(0, 18.0 + float(KEY_ROWS) * KEY_ROW_H + 4.0)
 
 
 static func _shape(ci: CanvasItem, p: Vector2, k: int, h: float, col: Color) -> void:
-	if k == 0:
+	if k < 4:
 		ci.draw_circle(p, h, col, true, -1.0, true)
-	elif k == 1:
+	elif k == 5:
 		ci.draw_rect(Rect2(p - Vector2(h, h) * 0.9, Vector2(h, h) * 1.8), col)
 	else:
 		ci.draw_arc(p, h * 0.85, 0.0, TAU, 20, col, 1.6, true)
 
 
 static func _key_col(k: int) -> Color:
-	return A_COL if k == 0 else (B_COL if k == 1 else SMASH_COL)
+	if k < 4:
+		return ZONE_COLS[k]
+	return SMASH_COL if k == 4 else CHARGE_COL
 
 
 func _process(delta: float) -> void:
@@ -419,8 +428,8 @@ func _draw_timeline() -> void:
 	# Legende: Formen statt Text allein.
 	var lx := r.position.x
 	var ly := r.end.y + 20.0
-	for k in 3:
-		var nm := tr(KEY_NAMES[k])
+	for k in [0, 4, 5]:
+		var nm := tr("ZONE") if k == 0 else tr(KEY_NAMES[k])
 		_shape(self, Vector2(lx + 4.0, ly - 4.0), k, 3.0, Color(UiTheme.DIM, 0.9))
 		draw_string(_font, Vector2(lx + 12.0, ly), nm, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(UiTheme.DIM, 0.9))
 		lx += 24.0 + _font.get_string_size(nm, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
@@ -465,9 +474,9 @@ func _draw_hist() -> void:
 
 
 func _draw_keys() -> void:
-	for k in 3:
-		var y := 18.0 + float(k) * ROW_H + 10.0
+	for k in KEY_ROWS:
+		var y := 18.0 + float(k) * KEY_ROW_H + 8.0
 		var dim := int(_key_rows[k].n) == 0
-		_shape(_keys_box, Vector2(8.0, y), k, 4.0, Color(_key_col(k), 0.35 if dim else 0.95))
-		_keys_box.draw_line(Vector2(0, y + ROW_H * 0.5 + 0.5), Vector2(450, y + ROW_H * 0.5 + 0.5),
+		_shape(_keys_box, Vector2(8.0, y), k, 3.6, Color(_key_col(k), 0.35 if dim else 0.95))
+		_keys_box.draw_line(Vector2(0, y + KEY_ROW_H * 0.5 + 0.5), Vector2(450, y + KEY_ROW_H * 0.5 + 0.5),
 			Color(1, 1, 1, 0.04), 1.0)

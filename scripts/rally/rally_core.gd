@@ -8,24 +8,26 @@ extends RefCounted
 ## Das Ereignis-Log (replay_log) enthaelt nur die Eingaben, die Wertung folgt
 ## daraus. Fenster, Qualitaeten, ScoreV1, Acc, Grade, HP kommen aus ManiaCore.
 ##
-## Regeln: tiefer Ball = Taste A, hoher Ball = Taste B (falsche Taste: kein
-## Treffer). Schmetterball: beide Tasten innerhalb SMASH_MS (nur eine: hoechstens 50).
-## Aufladen: Taste halten, am Ende loslassen (zu frueh loslassen = Fehlschlag).
+## Regeln v2 (docs/modes/rally.md): 4 Zonen = 4 Tasten (Index 0..3). Jede Zone hat
+## ihre eigene Ballfolge (kein Notelock zwischen Zonen); Druck in der falschen Zone
+## trifft nichts. Schmetterball: beide Zonentasten innerhalb SMASH_MS (nur eine:
+## hoechstens 50). Aufladen: Zonentaste halten, am Ende loslassen (wie Mania-Hold).
 
 signal shot_judged(index: int, result: Dictionary)
 signal charge_started(index: int, quality: int)
-## Druck ohne Wirkung: reason "KEY" (falsche Taste), "FREE" (kein Schlag in Reichweite).
+## Druck ohne Wirkung: reason "KEY" (falsche Zone, in einer anderen liegt ein Ball), "FREE" (kein Ball).
 signal press_ignored(key: int, reason: String)
 signal hp_changed(hp: float)
 signal finished(stats: Dictionary)
 
 const Quality := ManiaCore.Quality
 const MODE := "rally"
+const ZONES := 4
 const SMASH_MS := 40.0
-const REPLAY_RULES := 1
-## Ereignis-Codes: [t, EV_DOWN + Taste], [t, EV_UP + Taste], Regel-Marke [0, EV_RULES, REPLAY_RULES].
+const REPLAY_RULES := 2
+## Ereignis-Codes: [t, EV_DOWN + Zone], [t, EV_UP + Zone], Regel-Marke [0, EV_RULES, REPLAY_RULES].
 const EV_DOWN := 1
-const EV_UP := 3
+const EV_UP := 5
 const EV_RULES := 9
 const MOD_ORDER := ["NF", "SV"]
 
@@ -38,6 +40,8 @@ var w50 := 136.5
 var w_miss := 173.5
 
 var replay_log: Array = []
+## Zonenzahl dieses Laufs (3 oder 4), kommt aus RallyChart.zone_count(); steht in der Regel-Marke.
+var zones := 4
 var recording := true
 ## Ereignis-Log der Wertung: [t, "hit"/"miss"/"charge"/"drop", Index, Qualitaet].
 var event_log: Array = []
@@ -45,16 +49,18 @@ var event_log: Array = []
 var _tally := ManiaCore.new()
 var _judged: Dictionary = {}
 var _judged_count := 0
-var _next := 0
+## Ballfolge je Zone (Schlag-Indizes) und Kopfzeiger.
+var _zq: Array = []
+var _zh: Array[int] = []
 var _clock := -1
 var _log_t := 0
-var _down := [false, false]
-var _active := -1
-var _active_q := 0
-var _head_err := 0.0
-var _pend_idx := -1
-var _pend_key := 0
-var _pend_t := 0.0
+var _down: Array[bool] = []
+## Aufladen je Zone: Schlag-Index oder -1, Kopf-Qualitaet, Kopf-Fehler.
+var _act: Array[int] = []
+var _act_q: Array[int] = []
+var _head_err: Array[float] = []
+## Schmetterbaelle mit erster Taste, warten auf die zweite: Index -> [Zone, t].
+var _pend: Dictionary = {}
 var _finished_emitted := false
 
 var combo: int:
@@ -74,13 +80,19 @@ var score: int:
 	get: return _tally.score
 var judged_count: int:
 	get: return _judged_count
+## Index des (ersten) gerade aufladenden Schlags, -1 wenn keiner.
 var charging: int:
-	get: return _active
+	get:
+		for z in _act.size():
+			if _act[z] >= 0:
+				return _act[z]
+		return -1
 
 
 ## p_shots: Ergebnis von RallyChart.build. od/hp_drain der Map, p_mods null = GameSession.
 func setup(p_shots: Array[RallyChart.Shot], od: float, hp_drain: float = 5.0, p_mods = null) -> void:
 	shots = p_shots
+	zones = RallyChart.zone_count()
 	_tally = ManiaCore.new()
 	_tally.w_max = DifficultyCalc.mania_window_max(od)
 	_tally.w300 = DifficultyCalc.mania_window_300(od)
@@ -102,31 +114,44 @@ func setup(p_shots: Array[RallyChart.Shot], od: float, hp_drain: float = 5.0, p_
 	w_miss = _tally.w_miss
 	_judged = {}
 	_judged_count = 0
-	_next = 0
+	_zq = []
+	_zh = []
+	_down = []
+	_act = []
+	_act_q = []
+	_head_err = []
+	for z in ZONES:
+		_zq.append([])
+		_zh.append(0)
+		_down.append(false)
+		_act.append(-1)
+		_act_q.append(0)
+		_head_err.append(0.0)
+	for i in shots.size():
+		for z in shots[i].zones:
+			(_zq[clampi(int(z), 0, ZONES - 1)] as Array).append(i)
 	_clock = -1
-	_down = [false, false]
-	_active = -1
-	_pend_idx = -1
+	_pend = {}
 	_finished_emitted = false
 	event_log = []
-	replay_log = [[0, EV_RULES, REPLAY_RULES]] if recording else []
+	replay_log = [[0, EV_RULES, REPLAY_RULES, zones]] if recording else []
 
 
 func set_replay_mode(record: bool) -> void:
 	recording = record
-	replay_log = [[0, EV_RULES, REPLAY_RULES]] if record else []
+	replay_log = [[0, EV_RULES, REPLAY_RULES, zones]] if record else []
 
 
 # ---------------------------------------------------------------------------
 # Eingabe (Live) und Ereignisse (Replay/Bot)
 # ---------------------------------------------------------------------------
 
-func key_down(key: int, t_ms: float) -> void:
-	_event([maxi(int(t_ms), maxi(_clock, 0)), EV_DOWN + key])
+func key_down(zone: int, t_ms: float) -> void:
+	_event([maxi(int(t_ms), maxi(_clock, 0)), EV_DOWN + zone])
 
 
-func key_up(key: int, t_ms: float) -> void:
-	_event([maxi(int(t_ms), maxi(_clock, 0)), EV_UP + key])
+func key_up(zone: int, t_ms: float) -> void:
+	_event([maxi(int(t_ms), maxi(_clock, 0)), EV_UP + zone])
 
 
 ## Bot/Replay-Ereignis mitschreiben und werten (Zeit unveraendert).
@@ -143,16 +168,16 @@ func _event(ev: Array) -> void:
 ## Ein Ereignis einspeisen (Live ueber key_down/up, Replay/Bot direkt).
 func apply_event(ev: Array) -> void:
 	var code := int(ev[1])
-	if code == EV_RULES:
+	if code < EV_DOWN or code >= EV_RULES:
 		return
 	var t := int(ev[0])
 	_advance(t)
 	if _tally.failed:
 		return
 	if code >= EV_UP:
-		_on_up(clampi(code - EV_UP, 0, 1), float(t))
+		_on_up(code - EV_UP, float(t))
 	else:
-		_on_down(clampi(code - EV_DOWN, 0, 1), float(t))
+		_on_down(code - EV_DOWN, float(t))
 
 
 func update(t_ms: float) -> void:
@@ -166,100 +191,116 @@ func update(t_ms: float) -> void:
 # Zeit nachziehen
 # ---------------------------------------------------------------------------
 
+## Erster ungewerteter Ball der Zone z (-1 wenn keiner).
+func _head(z: int) -> int:
+	var q: Array = _zq[z]
+	while _zh[z] < q.size() and _judged.has(int(q[_zh[z]])):
+		_zh[z] += 1
+	return int(q[_zh[z]]) if _zh[z] < q.size() else -1
+
+
 func _advance(t: int) -> void:
 	if t <= _clock:
 		return
 	var tf := float(t)
 	# Faelliges in exakter Zeitreihenfolge abarbeiten (unabhaengig von der Bildrate):
-	# ausstehender Schmetterball, Aufladen ohne Loslassen, verpasster Schlag.
+	# ausstehender Schmetterball, Aufladen ohne Loslassen, verpasster Ball. Bei
+	# gleicher Zeit: zuerst Schmetterball, dann Aufladen, dann Baelle, Zone aufsteigend.
 	while true:
-		_skip_judged()
 		var due := INF
 		var kind := 0
-		if _pend_idx >= 0:
-			due = _pend_t + SMASH_MS
-			kind = 1
-		if _active >= 0:
-			var d := shots[_active].end + w100
-			if d < due:
-				due = d
-				kind = 2
-		if _next < shots.size() and _next != _pend_idx:
-			var d2 := shots[_next].t + w50
-			if d2 < due:
-				due = d2
-				kind = 3
+		var arg := -1
+		var pk := _pend.keys()
+		pk.sort()
+		for idx in pk:
+			var d0: float = float((_pend[idx] as Array)[1]) + SMASH_MS
+			if d0 < due:
+				due = d0
+				kind = 1
+				arg = int(idx)
+		for z in ZONES:
+			if _act[z] >= 0:
+				var d1 := shots[_act[z]].end + w100
+				if d1 < due:
+					due = d1
+					kind = 2
+					arg = z
+		for z in ZONES:
+			var h := _head(z)
+			if h >= 0 and not _pend.has(h):
+				var d2 := shots[h].t + w50
+				if d2 < due:
+					due = d2
+					kind = 3
+					arg = h
 		if kind == 0 or tf <= due:
 			break
 		_log_t = int(due)
 		match kind:
 			1:
-				_resolve_smash_single()
+				_resolve_smash_single(arg)
 			2:
-				_finish_charge(_active_q_for(w100))
+				_finish_charge(arg, _tally.hold_quality(_head_err[arg], w100))
 			_:
-				_miss(_next)
-				_next += 1
+				_miss(arg)
 	_clock = t
 	_log_t = t
-
-
-func _active_q_for(tail_err: float) -> int:
-	return _tally.hold_quality(_head_err, tail_err)
-
-
-func _skip_judged() -> void:
-	while _next < shots.size() and (_judged.has(_next) or _next == _active):
-		_next += 1
 
 
 # ---------------------------------------------------------------------------
 # Tasten
 # ---------------------------------------------------------------------------
 
-func _on_down(key: int, t: float) -> void:
-	_down[key] = true
-	if _active >= 0:
-		press_ignored.emit(key, "FREE")
+func _ignore(z: int, t: float) -> void:
+	# Liegt in einer anderen Zone ein Ball in Reichweite, war es die falsche Zone.
+	for o in ZONES:
+		if o == z:
+			continue
+		var h := _head(o)
+		if h >= 0 and absf(t - shots[h].t) <= w_miss:
+			press_ignored.emit(z, "KEY")
+			return
+	press_ignored.emit(z, "FREE")
+
+
+func _on_down(z: int, t: float) -> void:
+	if z < 0 or z >= ZONES:
 		return
-	_skip_judged()
-	# Ausstehender Schmetterball: zweite Taste innerhalb des Fensters.
-	if _pend_idx >= 0:
-		if key != _pend_key and t - _pend_t <= SMASH_MS:
-			var avg := (_pend_t + t) * 0.5 - shots[_pend_idx].t
-			var idx := _pend_idx
-			_pend_idx = -1
+	_down[z] = true
+	if _act[z] >= 0:
+		press_ignored.emit(z, "FREE")
+		return
+	var idx := _head(z)
+	if idx < 0:
+		_ignore(z, t)
+		return
+	var s := shots[idx]
+	# Schmetterball mit erster Taste: zweite Zonentaste innerhalb des Fensters.
+	if _pend.has(idx):
+		var p: Array = _pend[idx]
+		if int(p[0]) != z and t - float(p[1]) <= SMASH_MS:
+			var avg := (float(p[1]) + t) * 0.5 - s.t
+			_pend.erase(idx)
 			_apply_hit(idx, _quality_for(absf(avg)), avg)
 		else:
-			press_ignored.emit(key, "FREE")
+			press_ignored.emit(z, "FREE")
 		return
-	if _next >= shots.size():
-		press_ignored.emit(key, "FREE")
-		return
-	var idx := _next
-	var s := shots[idx]
 	var dt := t - s.t
 	if dt < -w_miss:
-		press_ignored.emit(key, "FREE")
-		return
-	if not s.smash and key != s.key:
-		press_ignored.emit(key, "KEY")
+		_ignore(z, t)
 		return
 	if dt < -w50:
-		# Zu frueh: frisst den Schlag (wie Mania).
+		# Zu frueh: frisst den Ball (wie Mania).
 		_miss(idx)
-		_next += 1
 		return
 	if s.smash:
-		_pend_idx = idx
-		_pend_key = key
-		_pend_t = t
+		_pend[idx] = [z, t]
 		return
 	var q := _quality_for(absf(dt))
 	if s.is_charge():
-		_active = idx
-		_active_q = q
-		_head_err = absf(dt)
+		_act[z] = idx
+		_act_q[z] = q
+		_head_err[z] = absf(dt)
 		_tally.combo += 1
 		_tally.max_combo = maxi(_tally.max_combo, _tally.combo)
 		_judged[idx] = {"pending": true, "dt": dt}
@@ -269,21 +310,23 @@ func _on_down(key: int, t: float) -> void:
 	_apply_hit(idx, q, dt)
 
 
-func _on_up(key: int, t: float) -> void:
-	_down[key] = false
-	if _active < 0 or key != shots[_active].key:
+func _on_up(z: int, t: float) -> void:
+	if z < 0 or z >= ZONES:
 		return
-	var end := shots[_active].end
+	_down[z] = false
+	if _act[z] < 0:
+		return
+	var end := shots[_act[z]].end
 	if t < end - w50:
-		_finish_charge(Quality.MISS)
+		_finish_charge(z, Quality.MISS)
 	else:
-		_finish_charge(_active_q_for(absf(t - end)))
+		_finish_charge(z, _tally.hold_quality(_head_err[z], absf(t - end)))
 
 
-func _resolve_smash_single() -> void:
-	var idx := _pend_idx
-	_pend_idx = -1
-	var dt := _pend_t - shots[idx].t
+func _resolve_smash_single(idx: int) -> void:
+	var p: Array = _pend[idx]
+	_pend.erase(idx)
+	var dt := float(p[1]) - shots[idx].t
 	_apply_hit(idx, maxi(_quality_for(absf(dt)), Quality.MEH), dt)
 
 
@@ -302,20 +345,20 @@ func _apply_hit(idx: int, q: int, dt: float) -> void:
 	_tally._add_score(q)
 	_heal(q)
 	event_log.append([_log_t, "hit", idx, q])
-	_store(idx, {"quality": q, "dt": dt, "late": dt > 0.0, "key": shots[idx].key,
-			"smash": shots[idx].smash, "miss_kind": ""})
+	_store(idx, {"quality": q, "dt": dt, "late": dt > 0.0, "key": shots[idx].zones[0],
+			"zones": shots[idx].zones, "smash": shots[idx].smash, "miss_kind": ""})
 
 
 func _miss(idx: int) -> void:
 	_lose()
 	event_log.append([_log_t, "miss", idx, Quality.MISS])
-	_store(idx, {"quality": Quality.MISS, "key": shots[idx].key, "smash": shots[idx].smash,
-			"miss_kind": "FULL", "late": false})
+	_store(idx, {"quality": Quality.MISS, "key": shots[idx].zones[0], "zones": shots[idx].zones,
+			"smash": shots[idx].smash, "miss_kind": "FULL", "late": false})
 
 
-func _finish_charge(q: int) -> void:
-	var idx := _active
-	_active = -1
+func _finish_charge(z: int, q: int) -> void:
+	var idx := _act[z]
+	_act[z] = -1
 	if idx < 0:
 		return
 	var head: Dictionary = _judged.get(idx, {})
@@ -323,15 +366,15 @@ func _finish_charge(q: int) -> void:
 	if q == Quality.MISS:
 		_lose()
 		event_log.append([_log_t, "drop", idx, Quality.MISS])
-		_store(idx, {"quality": Quality.MISS, "dt": dt, "key": shots[idx].key, "smash": false,
-				"hold_end": true, "held": false, "miss_kind": "DROP", "late": false})
+		_store(idx, {"quality": Quality.MISS, "dt": dt, "key": z, "zones": shots[idx].zones,
+				"smash": false, "hold_end": true, "held": false, "miss_kind": "DROP", "late": false})
 		return
 	_tally._count_quality(q)
 	_tally._add_score(q)
 	_heal(q)
 	event_log.append([_log_t, "hit", idx, q])
-	_store(idx, {"quality": q, "dt": dt, "key": shots[idx].key, "smash": false,
-			"hold_end": true, "held": true, "miss_kind": "", "late": dt > 0.0})
+	_store(idx, {"quality": q, "dt": dt, "key": z, "zones": shots[idx].zones,
+			"smash": false, "hold_end": true, "held": true, "miss_kind": "", "late": dt > 0.0})
 
 
 func _lose() -> void:
@@ -365,11 +408,11 @@ func result_of(idx: int) -> Dictionary:
 
 ## Schlag idx haelt gerade (Aufladen laeuft).
 func is_charging(idx: int) -> bool:
-	return idx == _active
+	return _act.has(idx)
 
 
 func smash_pending() -> bool:
-	return _pend_idx >= 0
+	return not _pend.is_empty()
 
 
 func accuracy() -> float:
@@ -418,13 +461,14 @@ static func bot_plan(p_shots: Array[RallyChart.Shot], seed: int = 1, jitter_ms: 
 		var t := int(round(s.t + dt))
 		var up := int(round(s.end + (rng.randf_range(-jitter_ms, jitter_ms) if jitter_ms > 0.0 else 0.0)))
 		if s.smash:
-			out.append([t, EV_DOWN + 0, i])
-			out.append([t + int(round(dt2)) + 2, EV_DOWN + 1, i])
-			out.append([t + 40, EV_UP + 0, i])
-			out.append([t + 42, EV_UP + 1, i])
+			out.append([t, EV_DOWN + s.zones[0], i])
+			out.append([t + int(round(dt2)) + 2, EV_DOWN + s.zones[1], i])
+			out.append([t + 40, EV_UP + s.zones[0], i])
+			out.append([t + 42, EV_UP + s.zones[1], i])
 		else:
-			out.append([t, EV_DOWN + s.key, i])
-			out.append([maxi(up, t + 30) if s.is_charge() else t + 40, EV_UP + s.key, i])
+			var z: int = s.zones[0]
+			out.append([t, EV_DOWN + z, i])
+			out.append([maxi(up, t + 30) if s.is_charge() else t + 40, EV_UP + z, i])
 	out.sort_custom(func(a, b):
 		if a[0] != b[0]:
 			return a[0] < b[0]
@@ -469,6 +513,14 @@ static func load_replay(osz_path: String, version: String) -> Dictionary:
 	if parsed is Dictionary and parsed.has("events"):
 		return parsed
 	return {}
+
+
+## Zonenzahl eines Replays (Regel-Marke [0, 9, 2, zonen]; fehlt sie: 4).
+static func replay_zones(events: Array) -> int:
+	for e in events:
+		if e is Array and e.size() >= 3 and int(e[1]) == EV_RULES:
+			return 3 if e.size() > 3 and int(e[3]) == 3 else 4
+	return 4
 
 
 ## Replay mit gueltiger Regel-Marke dieser Version?

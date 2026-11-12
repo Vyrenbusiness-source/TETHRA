@@ -2,7 +2,7 @@ class_name RallySound
 extends Node
 
 ## Rally-Klaenge, im Code erzeugt (kein Rauschen-Matsch, kurz und satt):
-## Schlag = trockenes "Tock" (Holzton + kurzer Anschlag), Schmetterball = tiefer
+## Schlag = trockenes "Tock" je Zone 0..3 (tief nach hoch), Schmetterball = satter, tiefer
 ## mit hellem Knack, Tischaufprall = leises Tick, Gegnerschlag = weicher Tock,
 ## Fehlschlag = dumpfes Tippen. Lautstaerke ueber Settings.hitsounds/hitsound_volume.
 ## Der Schlagklang laeuft beim Tastendruck (Latenz = ein Audio-Puffer, weit unter 150 ms).
@@ -11,8 +11,8 @@ const RATE := 44100
 const POLY := 4
 ## Protokoll der ausgeloesten Klaenge (Tests): [Art, Taste].
 var log: Array = []
-var _hit: Array = [[], []]
-var _next := [0, 0]
+var _hit: Array = [[], [], [], []]
+var _next := [0, 0, 0, 0]
 var _smash: Array[AudioStreamPlayer] = []
 var _smash_next := 0
 var _bounce: AudioStreamPlayer
@@ -24,15 +24,15 @@ static var _cache: Dictionary = {}
 
 
 func _ready() -> void:
-	for k in 2:
+	for k in 4:
 		for i in POLY:
 			_hit[k].append(_mk(_tock(k)))
 	for i in 2:
 		_smash.append(_mk(_smash_stream()))
 	_bounce = _mk(_tick())
-	_opp = _mk(_tock(2))
+	_opp = _mk(_tock(4))
 	_miss = _mk(_thud())
-	_release = _mk(_tock(3))
+	_release = _mk(_tock(5))
 	_charge = _mk(_charge_loop())
 
 
@@ -51,7 +51,9 @@ func _db(base: float) -> float:
 	return linear_to_db(maxf(Settings.hitsound_volume, 0.001)) + base
 
 
-func play_hit(key: int, q: int = 1) -> void:
+## zone 0..3: tiefer bis hoher Schlagklang.
+func play_hit(zone: int, q: int = 1) -> void:
+	var key := clampi(zone, 0, 3)
 	log.append(["hit", key])
 	if not _on():
 		return
@@ -68,7 +70,7 @@ func play_smash() -> void:
 		return
 	var p := _smash[_smash_next]
 	_smash_next = (_smash_next + 1) % _smash.size()
-	p.volume_db = _db(-2.0)
+	p.volume_db = _db(-1.0)
 	p.play()
 
 
@@ -134,15 +136,15 @@ static func _wav(samples: PackedFloat32Array, loop: bool = false) -> AudioStream
 	return w
 
 
-## Tock: Holzton mit Anschlagknacks. Art 0 = A (heller), 1 = B (tiefer), 2 = Gegner
-## (weich), 3 = Loslassen.
+## Tock: Holzton mit Anschlagknacks. Art 0..3 = Zone tief..hoch, 4 = Gegner (weich),
+## 5 = Loslassen.
 static func _tock(kind: int) -> AudioStreamWAV:
 	var key := "tock%d" % kind
 	if _cache.has(key):
 		return _cache[key]
-	var f: float = [980.0, 620.0, 520.0, 1200.0][kind]
+	var f: float = [560.0, 700.0, 880.0, 1100.0, 520.0, 1200.0][kind]
 	var dur := 0.09
-	var amp: float = [0.62, 0.66, 0.4, 0.45][kind]
+	var amp: float = [0.66, 0.64, 0.60, 0.58, 0.4, 0.45][kind]
 	var n := int(RATE * dur)
 	var out := PackedFloat32Array()
 	out.resize(n)
@@ -151,7 +153,7 @@ static func _tock(kind: int) -> AudioStreamWAV:
 		var t := float(i) / RATE
 		seed = (seed * 1103515245 + 12345) & 0x7fffffff
 		var noise := float(seed) / float(0x7fffffff) * 2.0 - 1.0
-		var body := sin(TAU * f * t * (1.0 - 0.18 * t * 10.0)) * exp(-t * 55.0)
+		var body := (sin(TAU * f * t * (1.0 - 0.18 * t * 10.0)) + 0.22 * sin(TAU * f * 2.4 * t)) 				* exp(-t * 55.0)
 		var knock := noise * exp(-t * 700.0) * 0.55
 		var s := (body + knock) * amp * minf(t / 0.0006, 1.0)
 		s *= clampf((dur - t) / 0.01, 0.0, 1.0)
@@ -163,7 +165,7 @@ static func _tock(kind: int) -> AudioStreamWAV:
 static func _smash_stream() -> AudioStreamWAV:
 	if _cache.has("smash"):
 		return _cache["smash"]
-	var dur := 0.16
+	var dur := 0.2
 	var n := int(RATE * dur)
 	var out := PackedFloat32Array()
 	out.resize(n)
@@ -172,9 +174,9 @@ static func _smash_stream() -> AudioStreamWAV:
 		var t := float(i) / RATE
 		seed = (seed * 1103515245 + 12345) & 0x7fffffff
 		var noise := float(seed) / float(0x7fffffff) * 2.0 - 1.0
-		var body := sin(TAU * 240.0 * t * (1.0 - 0.5 * t * 4.0)) * exp(-t * 26.0)
+		var body := (sin(TAU * 210.0 * t * (1.0 - 0.5 * t * 4.0)) + 0.5 * sin(TAU * 105.0 * t)) * exp(-t * 20.0)
 		var crack := noise * exp(-t * 420.0) * 0.7 + sin(TAU * 2100.0 * t) * exp(-t * 160.0) * 0.35
-		var s := (body * 0.9 + crack) * 0.75 * minf(t / 0.0005, 1.0)
+		var s := (body * 0.8 + crack) * 0.78 * minf(t / 0.0005, 1.0)
 		s *= clampf((dur - t) / 0.02, 0.0, 1.0)
 		out[i] = s
 	_cache["smash"] = _wav(out)

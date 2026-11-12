@@ -8,6 +8,8 @@ extends RefCounted
 ## Koordinaten der Flugbahn sind normiert (x in Breiten, y in Hoehen, y waechst
 ## nach unten): die Ansicht skaliert auf ihr Rechteck.
 
+## Standard-Flugzeit (= Settings.RALLY_FLIGHT_DEFAULT); das Spiel uebergibt die Einstellung.
+const DEFAULT_FLIGHT_MS := 800.0
 const KEY_A := 0
 const KEY_B := 1
 ## Akkord-Toleranz (gleiche Zeit in der Quell-Map).
@@ -42,7 +44,7 @@ const F_BOUNCE_ME := 0.72
 class Shot extends RefCounted:
 	var t := 0.0            ## Notenzeit (Schlag / Druck)
 	var end := 0.0          ## Loslassen (== t bei normalem Schlag)
-	var key := 0            ## 0 = A (tief), 1 = B (hoch)
+	var key := 0            ## nur Altlast (alte Flugbahn): 0 = linke, 1 = rechte Haelfte
 	var smash := false      ## Schmetterball: beide Tasten
 	var serve := false      ## Ball erscheint beim Gegner neu (Start/Pause)
 	var m := 0.0            ## Zeit des Gegnerschlags vor diesem Schlag
@@ -66,7 +68,16 @@ static func hit_y(key: int) -> float:
 # Aufbau aus der Map
 # ---------------------------------------------------------------------------
 
-static func build(beatmap: Beatmap) -> Array[Shot]:
+## Zonenzahl des zuletzt gebauten Charts (3 oder 4); die Ansicht liest sie hier.
+static var _zones := 4
+
+
+static func zone_count() -> int:
+	return _zones
+
+
+static func build(beatmap: Beatmap, flight_ms: float = -1.0, zones: int = 4) -> Array[Shot]:
+	_zones = 3 if zones == 3 else 4
 	var out: Array[Shot] = []
 	if beatmap == null or beatmap.hit_objects.is_empty():
 		return out
@@ -85,10 +96,45 @@ static func build(beatmap: Beatmap) -> Array[Shot]:
 			continue
 		out.append(s)
 	finalize(out)
+	if flight_ms <= 0.0:
+		flight_ms = DEFAULT_FLIGHT_MS
+	finalize_flight(out, flight_ms)
 	return out
 
 
-## Rohliste [t, end, key, finish, src] aus Mania- oder Standard-Objekten.
+## Flug-Geometrie (launch/arc/curve) macht RallyFlight (Ansicht-Agent); fehlt die
+## Klasse, gilt nur launch = t - flight_ms.
+static func finalize_flight(shots: Array[Shot], flight_ms: float) -> void:
+	var path := "res://scripts/rally/rally_flight.gd"
+	if ResourceLoader.exists(path):
+		var scr = load(path)
+		if scr != null and scr.has_method("finalize"):
+			scr.call("finalize", shots, flight_ms)
+			return
+	for s in shots:
+		s.launch = s.t - flight_ms
+
+
+## Zone aus Mania-Spalte. 4 Zonen: 4K direkt, sonst gestreckt. 3 Zonen: bei 4K
+## Spalte 0 links, 1+2 Mitte, 3 rechts; sonst gestreckt.
+static func zone_of_column(column: int, columns: int, n: int = -1) -> int:
+	if n < 0:
+		n = _zones
+	if columns <= 1:
+		return 0
+	if n == 3 and columns == 4:
+		return [0, 1, 1, 2][clampi(column, 0, 3)]
+	return clampi(int(floor(float(column) * float(n) / float(columns))), 0, n - 1)
+
+
+## Zone aus osu!standard-Feld-x (0..512): 4 Streifen (128) bzw. 3 Streifen (171 / 341).
+static func zone_of_x(x: float, n: int = -1) -> int:
+	if n < 0:
+		n = _zones
+	return clampi(int(floor(x * float(n) / 512.0)), 0, n - 1)
+
+
+## Rohliste [t, end, zone, unused, src] aus Mania- oder Standard-Objekten.
 static func _raw_events(beatmap: Beatmap) -> Array:
 	var list: Array = []
 	var k := maxi(beatmap.column_count(), 1)
@@ -98,13 +144,12 @@ static func _raw_events(beatmap: Beatmap) -> Array:
 			var end := 0.0
 			if o.is_hold and o.end_time() - o.time >= MIN_CHARGE_MS:
 				end = minf(o.end_time(), o.time + MAX_CHARGE_MS)
-			list.append([o.time, end, 0 if o.column * 2 < k else 1, false, i])
+			list.append([o.time, end, zone_of_column(o.column, k), false, i])
 		else:
-			var hs: int = o.hit_sound
 			var end := 0.0
 			if o.kind != HitObject.Kind.CIRCLE and o.end_time() - o.time >= MIN_CHARGE_MS:
 				end = minf(o.end_time(), o.time + MAX_CHARGE_MS)
-			list.append([o.time, end, 1 if (hs & 10) != 0 else 0, (hs & 4) != 0, i])
+			list.append([o.time, end, zone_of_x(o.x), false, i])
 	list.sort_custom(func(a, b):
 		if a[0] != b[0]:
 			return a[0] < b[0]
@@ -122,27 +167,32 @@ static func _group(list: Array) -> Array:
 	return groups
 
 
+## Gruppe -> Schlag: lange Note = Aufladen (Zone der laengsten), sonst >= 2 Zonen =
+## Schmetterball (aeusserste 2), sonst normaler Ball.
 static func _shot_of(g: Array) -> Shot:
 	var s := Shot.new()
 	s.t = float(g[0])
 	s.end = s.t
-	var keys := [false, false]
-	var finish := false
+	var zmin := 3
+	var zmax := 0
 	var best_end := 0.0
-	var charge_key := 0
+	var charge_zone := 0
 	s.src = int(g[1][0][4])
 	for e in g[1]:
-		keys[int(e[2])] = true
-		finish = finish or bool(e[3])
+		zmin = mini(zmin, int(e[2]))
+		zmax = maxi(zmax, int(e[2]))
 		if float(e[1]) > best_end:
 			best_end = float(e[1])
-			charge_key = int(e[2])
+			charge_zone = int(e[2])
 	if best_end > s.t:
 		s.end = best_end
-		s.key = charge_key
+		s.zones = PackedInt32Array([charge_zone])
+	elif zmax > zmin:
+		s.smash = true
+		s.zones = PackedInt32Array([zmin, zmax])
 	else:
-		s.key = 0 if keys[0] else 1
-		s.smash = (keys[0] and keys[1]) or finish
+		s.zones = PackedInt32Array([zmin])
+	s.key = 0 if s.zones[0] < 2 else 1   # Altlast: alte Flugbahn-Funktionen
 	return s
 
 
@@ -263,10 +313,14 @@ static func first_at_or_after(shots: Array[Shot], time: float) -> int:
 # ---------------------------------------------------------------------------
 
 const STAR_HOP_MS := 1000.0
-const STAR_DENS_K := 0.15
+const STAR_DENS_K := 0.11
 const STAR_DECAY := 0.95
-const STAR_SWITCH_W := 0.45
-const STAR_SWITCH_GAP_MS := 450.0
+## Zonenwechsel: Zusatzlast je Zonen-Abstand (Sprung ueber 2-3 Zonen zaehlt mehr) bei
+## Abstand unter STAR_JUMP_GAP_MS; Stream: Baelle unter STAR_STREAM_GAP_MS.
+const STAR_JUMP_W := 0.16
+const STAR_JUMP_GAP_MS := 450.0
+const STAR_STREAM_W := 0.25
+const STAR_STREAM_GAP_MS := 200.0
 const STAR_SMASH_W := 0.7
 const STAR_CHARGE_W := 0.45
 const STAR_MAX := 15.0
@@ -274,31 +328,47 @@ const STAR_KNEE := 11.0
 const STAR_STRETCH := 0.7
 
 
-## Sterne: je 2-s-Fenster Last (Schlaege/s; Tastenwechsel, Schmetterbaelle und
+## Mittlere Zonenlage eines Schlags (Schmetterball: Mitte der beiden Zonen).
+static func zone_center(s: Shot) -> float:
+	if s.zones.is_empty():
+		return float(s.key) * 2.0 + 0.5
+	var sum := 0.0
+	for z in s.zones:
+		sum += float(z)
+	return sum / float(s.zones.size())
+
+
+## Sterne: je 2-s-Fenster Last (Baelle/s; Zonenspruenge, Streams, Schmetterbaelle und
 ## Aufladen zaehlen extra), die haertesten Fenster zaehlen am meisten.
-static func stars(shots: Array[Shot]) -> float:
+static func stars(shots: Array[Shot], zones: int = -1) -> float:
 	if shots.size() < 2:
 		return 0.0
+	# Zonenabstand auf 4 Zonen normieren (3 Zonen haben kuerzere Spruenge).
+	var jump_k := 3.0 / float(maxi((zones if zones > 0 else _zones) - 1, 1))
 	var t0 := shots[0].t
 	var t_end := shots[-1].end
 	var n_win := maxi(1, int(ceil((t_end - t0) / STAR_HOP_MS)))
 	var load_w := PackedFloat32Array()
 	load_w.resize(n_win)
 	load_w.fill(0.0)
-	var last_key := -1
+	var last_c := -1.0
 	var last_t := -INF
 	for s in shots:
 		var w := clampi(int((s.t - t0) / STAR_HOP_MS), 0, n_win - 1)
 		var x := 1.0
-		if last_key >= 0 and s.key != last_key and s.t - last_t < STAR_SWITCH_GAP_MS:
-			x += STAR_SWITCH_W
+		var c := zone_center(s)
+		var gap := s.t - last_t
+		if last_c >= 0.0 and gap < STAR_JUMP_GAP_MS:
+			x += STAR_JUMP_W * jump_k * absf(c - last_c)
+		if last_c >= 0.0 and gap < STAR_STREAM_GAP_MS:
+			x += STAR_STREAM_W
 		if s.smash:
 			x += STAR_SMASH_W
 		if s.is_charge():
 			x += STAR_CHARGE_W
 		load_w[w] += x
-		last_key = s.key
-		last_t = s.t
+		last_c = c
+		last_t = s.end if s.is_charge() else s.t
 	var vals: Array[float] = []
 	for w in n_win:
 		var lw := load_w[w] + (load_w[w - 1] if w > 0 else 0.0)

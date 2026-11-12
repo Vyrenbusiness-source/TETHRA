@@ -7,7 +7,8 @@ extends Control
 ##             Kippen/Rollen), dezenter Beat-Puls, Kiai etwas heller. Darueber
 ##             eine runde dunkle Vignette: im Ring-Bereich bleibt der
 ##             Hintergrund dunkel (Lesbarkeit) und fast unbewegt.
-##   Map-Bild = Cover der Map, abgedunkelt (Settings.bg_dim).
+##   Map-Bild = Cover der Map ueber MapBackdrop (Unschaerfe/Deckkraft aus
+##             Settings.modes_bg_blur / modes_bg_dim), leichte Vignette.
 ##   Aus     = schwarz.
 ## Ohne Welten-Paket (oder wenn die Welt nicht baubar ist) faellt "Welt"
 ## automatisch auf das Map-Bild zurueck.
@@ -17,6 +18,8 @@ const BG_WORLD := 0
 const BG_MAP := 1
 const BG_OFF := 2
 const BLACK := Color(0.008, 0.01, 0.018)
+## Map-Bild: Abdunklung der Ecken (Deckkraft Schwarz).
+const MAP_VIGNETTE := 0.45
 ## SubViewport-Aufloesung relativ zum Fenster (Himmel ist weich, die Vignette
 ## dunkelt ihn ohnehin ab): spart Pixel-Shader-Last.
 const RES_SCALE := 0.75
@@ -48,7 +51,7 @@ var _vp_rect: TextureRect
 var _vig: TextureRect
 var _cam: Camera3D
 var _mat: ShaderMaterial
-var _map: TextureRect
+var _map: MapBackdrop
 var _t := 0.0
 var _flow := 0.0
 var _pulse := 0.0
@@ -72,21 +75,35 @@ func setup(beatmap: Beatmap, want: int, forced: String, stars: float, cover: Tex
 			(" theme=" + world) if mode == BG_WORLD else ""])
 
 
+## Map-Bild ueber MapBackdrop (Unschaerfe Settings.modes_bg_blur, Deckkraft
+## bg_dim = Settings.modes_bg_dim, 0 = aus), darueber eine leichte Rand-Vignette.
 func _build_map(cover: Texture2D, bg_dim: float) -> void:
-	if cover == null:
+	if cover == null or bg_dim <= 0.001:
 		return
-	_map = TextureRect.new()
-	_map.texture = cover
-	_map.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
-	_map.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	_map.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-	_map.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_map.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	# Settings.bg_dim = Deckkraft des Map-Bilds (0 = aus).
-	# Orbit dimmt staerker als Mania: Ziele liegen ueber dem ganzen Bild.
-	_map.modulate = Color(1, 1, 1, bg_dim * 0.6)
-	_map.visible = bg_dim > 0.001
+	_map = MapBackdrop.create(cover, bg_dim)
 	add_child(_map)
+	var vig := TextureRect.new()
+	vig.texture = _edge_vignette()
+	vig.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	vig.stretch_mode = TextureRect.STRETCH_SCALE
+	vig.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	vig.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(vig)
+
+
+## Leichte Vignette fuer das Map-Bild: Mitte frei, Ecken MAP_VIGNETTE dunkler.
+func _edge_vignette() -> GradientTexture2D:
+	var g := Gradient.new()
+	g.offsets = PackedFloat32Array([0.0, 0.55, 1.0])
+	g.colors = PackedColorArray([Color(BLACK, 0.0), Color(BLACK, 0.0), Color(BLACK, MAP_VIGNETTE)])
+	var gt := GradientTexture2D.new()
+	gt.gradient = g
+	gt.fill = GradientTexture2D.FILL_RADIAL
+	gt.fill_from = Vector2(0.5, 0.5)
+	gt.fill_to = Vector2(1.0, 1.0)
+	gt.width = 256
+	gt.height = 256
+	return gt
 
 
 func _build_world(beatmap: Beatmap, forced: String, stars: float, cover: Texture2D) -> bool:

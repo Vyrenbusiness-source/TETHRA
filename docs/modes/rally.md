@@ -50,6 +50,30 @@ Vector3` (Tischkoordinaten: x -1..1 quer, y Hoehe, z 0 = deine Schlaegerlinie ..
 - Multiplayer: Live-Score (Lobby.send_score) und Endergebnis (Lobby.send_final mit
   PlayerStatsCard.pack) wie mania_3d/orbit_game; Turniere ueber Lobby wie die anderen Modi.
 
+## Sterne (v2, Zonen)
+`RallyChart.stars`: je 2-s-Fenster Last (Baelle/s), je Ball 1 + Zonensprung (0,16 je Zonen-Abstand,
+nur bei Abstand < 450 ms) + Stream (0,25 bei Abstand < 200 ms) + Schmetterball (0,7) + Aufladen
+(0,45); Dichte-Kurve `0,11 * x^1,55`, haerteste Fenster zaehlen am meisten (Abklingfaktor 0,95),
+weiche Kappe ab 11, Maximum 15. Kalibriert auf der Kartenbibliothek: Median ~4 Sterne.
+Messwerte (1101 Schwierigkeiten aus 239 Maps, Flugzeit 800): 4 Zonen p10 1,1 / p25 2,3 / Median 4,1 / p75 5,7 /
+p90 7,4 / max 12,4; 3 Zonen Median 3,9 (p90 7,2). Bei 3 Zonen sind Zonensprung-Abstaende auf 4 Zonen normiert.
+
+## 3 oder 4 Zonen
+`Settings.rally_zones` (3 oder 4, Standard **3**: links / Mitte / rechts; Einstellungen > Steuerung > Rally).
+- Mania 4K: Spalte 0 = links, Spalte 1 und 2 = Mitte, Spalte 3 = rechts. Akkord Spalte 1+2 ist dann
+  ein normaler Ball (kein Schmetterball); links+rechts bleibt Schmetterball (Zonen 0 und 2).
+  Andere Spaltenzahlen werden gleichmaessig auf die Zonen verteilt.
+- osu!standard: Feld-x in 3 Streifen (x < 171 / < 341 / sonst); bei 4 Zonen 4 Streifen zu 128.
+- Tasten: 3 Zonen = `Settings.rally_keys_3` (Standard F J K), 4 Zonen = Mania-4K-Tasten.
+- `RallyChart.build(..., zones)` merkt die Zonenzahl (`RallyChart.zone_count()`), `RallyCore.zones`
+  uebernimmt sie. Sie steht in der Regel-Marke des Replays (`[0, 9, 2, zonen]`), das Abspielen
+  nutzt die Zonenzahl der Aufnahme, nicht die aktuelle Einstellung.
+
+## Einstellung
+`Settings.rally_flight_ms` (Flugzeit, 450-1400 ms, Standard 800, Einstellungen > Steuerung > Rally).
+Tasten der Zonen = Mania-4K-Tasten (`Settings.key_lanes`). Replay-Codes: EV_DOWN 1-4, EV_UP 5-8
+(je Zone), Regel-Marke 9 (mit Zonenzahl).
+
 ## Code
 scripts/rally/ (rally_chart.gd, rally_core.gd, rally_view.gd, rally_game.gd), scenes/rally.tscn,
 tests/run_rally_tests.gd.

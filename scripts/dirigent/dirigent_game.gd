@@ -455,7 +455,7 @@ func _place_hud() -> void:
 	_judge_disp.judge_gap = 0.0
 	_judge_disp.combo_gap = vs.y * 0.045 / k
 	# Wertung + Kombo zwischen Figur und Einsatz-Leiste.
-	_judge_disp.place(cy + (vs.y * 0.83 - cy) / k)
+	_judge_disp.place(cy + (vs.y * 0.745 - cy) / k)
 	_err_bar.position = Vector2((vs.x - _err_bar.size.x) * 0.5, vs.y - _err_bar.size.y - 8.0)
 	_hint.size = Vector2(vs.x, 24)
 	_hint.position = Vector2(0, vs.y * 0.075)
