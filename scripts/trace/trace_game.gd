@@ -64,6 +64,7 @@ var _mp_cut_ms := -1.0
 var _mp_skip_voted := false
 var _mp_live_seen: Dictionary = {}
 var _finishing := false
+var _dbg_seeked := false   # Debug --seek-end: springt kurz vor die letzte Note
 var _fin_t0 := 0
 var _fin_vt := 0.0
 var _shot_mode := false
@@ -516,6 +517,9 @@ func _process(delta: float) -> void:
 	if _finishing:
 		_tick_finish()
 		return
+	if not _dbg_seeked and _args().has("--seek-end"):
+		_dbg_seeked = true
+		SyncClock.seek_ms(float(_beatmap.hit_objects[-1].time) - 4000.0)
 	var t := _time_ms()
 	if _autoplay:
 		_run_autoplay(t)
@@ -806,6 +810,8 @@ func _show_results(is_fail: bool) -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	SyncClock.stop()
 	var s: Dictionary = core.stats()
+	print("TRACE ende: score=%d acc=%.4f miss=%d failed=%s" % [int(s.score), float(s.accuracy),
+			int(s.n_miss), str(is_fail)])
 	s["failed"] = is_fail or bool(s.get("failed", false))
 	s["unranked"] = false
 	s["pp"] = -1.0
@@ -826,6 +832,10 @@ func _show_results(is_fail: bool) -> void:
 		if not is_fail:
 			_submit_online(s)
 	_build_results(is_fail, s, new_best)
+	if _args().has("--quit-at-results"):
+		await get_tree().create_timer(1.0, true).timeout
+		get_tree().quit()
+		return
 	if _mp_bot:
 		print("MPORBIT final score=%d acc=%.4f combo=%d failed=%s live_seen=%s" % [
 			int(s.score), float(s.accuracy), int(s.get("max_combo", 0)), str(s.failed), str(_mp_live_seen)])

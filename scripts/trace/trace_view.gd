@@ -396,7 +396,6 @@ func _arrow(p: Vector2, d: Vector2, chord: bool, col: Color, alpha: float, grow:
 
 func _draw_head(wf: float, e: float) -> void:
 	var p := _w2s(path.head_pos(t_ms))
-	var k := _sz / maxf(1.0, 1.0)
 	var r := 6.0 * wf
 	draw_circle(p, r * 4.2, Color(HEAD, 0.07))
 	draw_circle(p, r * 2.6, Color(HEAD, 0.14))
