@@ -18,16 +18,10 @@ const CURVE_MIN_JUMP := 2.0
 const CURVE_SIDE := 0.30
 
 
-## Zonenzahl 3 oder 4 (Settings.rally_zones, Standard 3).
+## Zonenzahl 3 oder 4: die des zuletzt gebauten Charts (RallyChart.build, kommt aus
+## Settings.rally_zones bzw. der Replay-Aufnahme).
 static func zone_count() -> int:
-	var v: Variant = Settings.get("rally_zones")
-	if v != null:
-		return clampi(int(v), 3, 4)
-	# Debug-Ersatz bis Settings.rally_zones existiert: --rally-zones=4.
-	for a in OS.get_cmdline_args():
-		if a.begins_with("--rally-zones="):
-			return clampi(a.trim_prefix("--rally-zones=").to_int(), 3, 4)
-	return 3
+	return clampi(RallyChart.zone_count(), 3, 4)
 
 
 ## Quer-Mitte einer Zone (Bruchteile erlaubt, z. B. 1.5 = zwischen Zone 1 und 2) bei
