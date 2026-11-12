@@ -57,6 +57,10 @@ var key_lanes: Array[int] = [KEY_D, KEY_F, KEY_J, KEY_K]
 ## outer = B; zusaetzlich immer Maus links = A, Maus rechts = B).
 var orbit_key_inner: int = KEY_Z
 var orbit_key_outer: int = KEY_X
+## Dirigent: Taste A / Taste B (zusaetzlich immer Maus links = A, rechts = B).
+## Eigene Belegung; alte Configs ohne Eintrag uebernehmen die Orbit-Tasten.
+var dirigent_key_a: int = KEY_Z
+var dirigent_key_b: int = KEY_X
 var orbit_guides: bool = true
 ## Trace: Fadentempo (Welt-px je Sekunde, nur Optik); Standard ~1,2 s Vorlauf auf 720p.
 var trace_speed: int = 520
@@ -79,11 +83,13 @@ const RALLY_FLIGHT_MIN := 450
 const RALLY_FLIGHT_MAX := 1400
 const RALLY_FLIGHT_DEFAULT := 800
 var rally_flight_ms: int = RALLY_FLIGHT_DEFAULT
-## Rally: 3 oder 4 Zonen (Standard 3). 4 Zonen nutzen die Mania-4K-Tasten (key_lanes),
-## 3 Zonen eigene Tasten (links / Mitte / rechts).
+## Rally: 3 oder 4 Zonen (Standard 3), je Zonenzahl eine eigene Belegung
+## (3: links / Mitte / rechts, 4: Zone 1-4; alte Configs ohne Eintrag uebernehmen
+## fuer 4 Zonen die Mania-4K-Tasten).
 const RALLY_ZONES_DEFAULT := 3
 var rally_zones: int = RALLY_ZONES_DEFAULT
 var rally_keys_3: Array[int] = [KEY_F, KEY_J, KEY_K]
+var rally_keys_4: Array[int] = [KEY_D, KEY_F, KEY_J, KEY_K]
 ## Orbit-Hintergrund: 0 = Welt (3D-Welt wie im 3D-Modus, Auswahl world_theme;
 ## ohne Welten-Paket automatisch Map-Bild), 1 = Map-Bild (abgedunkelt, bg_dim),
 ## 2 = Aus (schwarz). CLI: --orbit-bg=world|map|off.
@@ -494,9 +500,13 @@ func load_settings(path: String = PATH) -> void:
 	var rk3 := [KEY_F, KEY_J, KEY_K]
 	for i in 3:
 		rally_keys_3[i] = int(cfg.get_value("keys", "rally3_%d" % i, rk3[i]))
+	for i in 4:
+		rally_keys_4[i] = int(cfg.get_value("keys", "rally4_%d" % i, key_lanes[i]))
 	rally_zones = 4 if int(cfg.get_value("game", "rally_zones", RALLY_ZONES_DEFAULT)) == 4 else 3
 	orbit_key_inner = int(cfg.get_value("keys", "orbit_inner", KEY_Z))
 	orbit_key_outer = int(cfg.get_value("keys", "orbit_outer", KEY_X))
+	dirigent_key_a = int(cfg.get_value("keys", "dirigent_a", orbit_key_inner))
+	dirigent_key_b = int(cfg.get_value("keys", "dirigent_b", orbit_key_outer))
 	orbit_guides = bool(cfg.get_value("game", "orbit_guides", true))
 	trace_speed = clampi(int(cfg.get_value("game", "trace_speed", 520)), 300, 900)
 	orbit_note_size = clampi(int(cfg.get_value("game", "orbit_note_size", 100)), 90, 120)
@@ -567,9 +577,13 @@ func save(path: String = PATH) -> void:
 		cfg.set_value("keys", "lane%d" % i, key_lanes[i])
 	for i in 3:
 		cfg.set_value("keys", "rally3_%d" % i, rally_keys_3[i])
+	for i in 4:
+		cfg.set_value("keys", "rally4_%d" % i, rally_keys_4[i])
 	cfg.set_value("game", "rally_zones", rally_zones)
 	cfg.set_value("keys", "orbit_inner", orbit_key_inner)
 	cfg.set_value("keys", "orbit_outer", orbit_key_outer)
+	cfg.set_value("keys", "dirigent_a", dirigent_key_a)
+	cfg.set_value("keys", "dirigent_b", dirigent_key_b)
 	cfg.set_value("game", "orbit_guides", orbit_guides)
 	cfg.set_value("game", "trace_speed", trace_speed)
 	cfg.set_value("game", "orbit_note_size", orbit_note_size)
@@ -1171,12 +1185,21 @@ func orbit_ring_for_key(keycode: int) -> int:
 	return -1
 
 
+## Dirigent: Taste zum Tastencode (0 = A, 1 = B) oder -1.
+func dirigent_key_for(keycode: int) -> int:
+	if keycode == dirigent_key_a:
+		return 0
+	if keycode == dirigent_key_b:
+		return 1
+	return -1
+
+
 ## Rally: Tasten der Zonen (n = 3 oder 4, -1 = Einstellung).
 func rally_keys(n: int = -1) -> Array[int]:
 	if n < 0:
 		n = rally_zones
 	if n == 4:
-		return key_lanes
+		return rally_keys_4
 	return rally_keys_3
 
 

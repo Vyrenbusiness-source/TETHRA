@@ -22,7 +22,8 @@ const EXPECTED := {
 	"audio": ["Lautstärke", "Klarheit", "Bass", "Treffer-Sounds", "Hitsound", "Treffer-Lautstärke",
 		"Audio-Offset", "Offset-Assistent"],
 	"gfx": ["Qualität", "FPS-Limit", "Vollbild", "Spur-Leuchten", "Sicherer Grafikmodus"],
-	"keys": ["Tasten 1–4", "Orbit-Tasten: A | B"],
+	"keys": ["Tasten 1–4", "Rally: Zonen", "Rally-Tasten (3 Zonen)", "Rally keys (4 zones)", "Orbit-Tasten: A | B",
+		"Dirigent keys: A | B", "Trace speed", "Rebound drop time"],
 	"profile": ["Name", "Spielsprache"],
 }
 ## Optionen der alten Bahnen-Orbit-Seite, die es nicht mehr geben darf.
@@ -80,6 +81,11 @@ func _click_at(p: Vector2) -> void:
 
 
 func _click(c: Control) -> void:
+	# Knoepfe weiter unten erst in den sichtbaren Bereich scrollen (Klick per Position).
+	var sc: ScrollContainer = _panel.get("_scroll") if _panel != null else null
+	if sc != null and sc.is_ancestor_of(c) and not sc.get_global_rect().encloses(c.get_global_rect()):
+		sc.ensure_control_visible(c)
+		await _frames(3)
 	await _click_at(c.get_global_rect().get_center())
 
 
@@ -270,6 +276,7 @@ func _run() -> void:
 	var kg: VBoxContainer = _row("keys", "Tasten 1–4").get_parent()
 	await _click(kg.get_meta("reset_btn"))
 	_check(S.key_lanes == [KEY_D, KEY_F, KEY_J, KEY_K], "Tasten zurueckgesetzt")
+	await _test_key_conflicts(S)
 
 	# --- Name einmalig (nur ungueltige Eingabe, nichts gespeichert) ------------------
 	await _click(_nav("profile"))
@@ -286,8 +293,134 @@ func _run() -> void:
 	var pr: Rect2 = (_panel.get("_panel") as Control).get_global_rect()
 	_check(pr.size.x <= 1280.0 and pr.size.y <= 720.0, "Panel passt in 1280x720 (%s)" % str(pr.size))
 
+	_test_key_roundtrip()
+
 	_restore()
 	_panel.queue_free()
 	await _frames(2)
 	print("=== %d ok, %d fehlgeschlagen ===" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
+
+
+func _conflict_shown(base: int) -> bool:
+	for l in (_panel.get("_conflict") as Dictionary).get(base, []):
+		if (l as Label).is_visible_in_tree() and (l as Label).text != "":
+			return true
+	return false
+
+
+## Doppelte Taste innerhalb eines Modus: roter Hinweis, nicht uebernommen;
+## dieselbe Taste in einem anderen Modus ist erlaubt. Jede Belegung ist aenderbar.
+func _test_key_conflicts(S: Node) -> void:
+	# Ausgangsbelegung fest (die echte settings.cfg kann andere Tasten haben).
+	S.orbit_key_inner = KEY_Z
+	S.orbit_key_outer = KEY_X
+	S.dirigent_key_a = KEY_Z
+	S.dirigent_key_b = KEY_X
+	_panel.call("_refresh_labels")
+	var lanes: Array = _panel.get("_lane_btns")
+	await _click(lanes[1])
+	await _key(KEY_D)
+	_check(S.key_lanes[1] == KEY_F and (lanes[1] as Button).text == "…" and _conflict_shown(3),
+		"Mania: D doppelt -> Hinweis, Spur 2 bleibt F, Aufnahme laeuft weiter")
+	var cl: Label = (_panel.get("_conflict") as Dictionary)[3][0]
+	_check(cl.get_theme_color("font_color").r > 0.9 and cl.get_theme_color("font_color").g < 0.6, "Hinweis ist rot")
+	await _key(KEY_ESCAPE)
+	_check(not _conflict_shown(3) and S.key_lanes[1] == KEY_F, "Esc: Hinweis weg, nichts geaendert")
+
+	# Dirigent: eigene Tasten A|B
+	var dir: Array = _panel.get("_dirigent_btns")
+	_check(dir.size() == 2 and (dir[0] as Button).text == "Z" and (dir[1] as Button).text == "X", "Dirigent zeigt Z | X")
+	await _click(dir[0])
+	await _key(KEY_A)
+	_check(S.dirigent_key_a == KEY_A and S.dirigent_key_for(KEY_A) == 0 and S.orbit_key_inner == KEY_Z,
+		"Dirigent A = A, Orbit bleibt Z")
+	await _click(dir[1])
+	await _key(KEY_A)
+	_check(S.dirigent_key_b == KEY_X and _conflict_shown(50), "Dirigent: A doppelt -> nicht uebernommen")
+	await _key(KEY_Z)
+	_check(S.dirigent_key_b == KEY_Z and S.dirigent_key_for(KEY_Z) == 1 and not _conflict_shown(50),
+		"Dirigent B = Z (Orbit nutzt Z auch: anderer Modus, erlaubt)")
+	await _click(_row("keys", "Dirigent keys: A | B").get_parent().get_meta("reset_btn"))
+	_check(S.dirigent_key_a == KEY_Z and S.dirigent_key_b == KEY_X, "Dirigent zurueckgesetzt")
+
+	# Orbit
+	var orb: Array = _panel.get("_orbit_btns")
+	await _click(orb[orb.size() - 1])
+	await _key(KEY_Z)
+	_check(S.orbit_key_outer == KEY_X and _conflict_shown(20), "Orbit: Z doppelt -> nicht uebernommen")
+	await _key(KEY_C)
+	_check(S.orbit_key_outer == KEY_C and S.orbit_ring_for_key(KEY_C) == 1, "Orbit B = C")
+	S.orbit_key_outer = KEY_X
+
+	# Rally: eigene Belegung je Zonenzahl
+	var r3: Array = _panel.get("_rally_btns")
+	var r4: Array = _panel.get("_rally4_btns")
+	_check(r3.size() == 3 and r4.size() == 4, "Rally: 3 + 4 Tastenknoepfe")
+	await _click(r3[0])
+	await _key(KEY_J)
+	_check(S.rally_keys_3[0] == KEY_F and _conflict_shown(30), "Rally 3: J doppelt -> nicht uebernommen")
+	await _key(KEY_A)
+	_check(S.rally_keys(3)[0] == KEY_A and S.rally_zone_for_key(KEY_A, 3) == 0, "Rally 3 links = A")
+	await _click(r4[3])
+	await _key(KEY_L)
+	_check(S.rally_keys(4)[3] == KEY_L and S.rally_zone_for_key(KEY_L, 4) == 3 and S.key_lanes[3] == KEY_K,
+		"Rally 4 Zone 4 = L, Mania bleibt K")
+	await _click(_row("keys", "Rally keys (4 zones)").get_parent().get_meta("reset_btn"))
+	_check(S.rally_keys_3 == [KEY_F, KEY_J, KEY_K] and S.rally_keys_4 == [KEY_D, KEY_F, KEY_J, KEY_K],
+		"Rally-Tasten zurueckgesetzt")
+
+	# Trace / Rebound
+	var ts: HSlider = _ctrl("keys", "Trace speed")
+	ts.value = 700.0
+	await _frames(2)
+	_check(S.trace_speed == 700, "Trace speed wirkt (%d)" % S.trace_speed)
+	var rd: HSlider = _ctrl("keys", "Rebound drop time")
+	rd.value = 1200.0
+	await _frames(2)
+	_check(S.rebound_drop_ms == 1200, "Rebound drop time wirkt (%d)" % S.rebound_drop_ms)
+	await _click(_row("keys", "Trace speed").get_parent().get_meta("reset_btn"))
+	_check(S.trace_speed == 520 and S.rebound_drop_ms == 1000, "Trace / Rebound zurueckgesetzt")
+	if OS.get_cmdline_args().has("--shot") or OS.get_cmdline_user_args().has("--shot"):
+		await _click(_panel.get("_lane_btns")[1])
+		await _key(KEY_D)
+		await _frames(20)
+		root.get_texture().get_image().save_png("user://settings_keys.png")
+		print("SHOT ", ProjectSettings.globalize_path("user://settings_keys.png"))
+		await _key(KEY_ESCAPE)
+		(_panel.get("_scroll") as ScrollContainer).ensure_control_visible(_row("keys", "Rebound drop time"))
+		await _frames(20)
+		root.get_texture().get_image().save_png("user://settings_keys2.png")
+		print("SHOT ", ProjectSettings.globalize_path("user://settings_keys2.png"))
+
+
+## Neue Felder: Speichern/Laden; alte Configs ohne Eintrag uebernehmen die bisherigen Tasten.
+func _test_key_roundtrip() -> void:
+	var SettingsScript: GDScript = root.get_node("/root/Settings").get_script()
+	var path := "user://test_tmp/keys_all_%d.cfg" % OS.get_process_id()
+	DirAccess.make_dir_recursive_absolute("user://test_tmp")
+	var a = SettingsScript.new()
+	_check(a.dirigent_key_a == KEY_Z and a.dirigent_key_b == KEY_X, "Dirigent Standard Z/X")
+	a.dirigent_key_a = KEY_Q
+	a.dirigent_key_b = KEY_W
+	a.rally_keys_4 = [KEY_A, KEY_S, KEY_K, KEY_L] as Array[int]
+	a.save(path)
+	var b = SettingsScript.new()
+	b.load_settings(path)
+	_check(b.dirigent_key_a == KEY_Q and b.dirigent_key_b == KEY_W and b.dirigent_key_for(KEY_W) == 1,
+		"Dirigent-Tasten Roundtrip")
+	_check(b.rally_keys_4 == [KEY_A, KEY_S, KEY_K, KEY_L], "Rally-4-Tasten Roundtrip")
+	var cfg := ConfigFile.new()
+	cfg.set_value("keys", "orbit_inner", KEY_C)
+	cfg.set_value("keys", "orbit_outer", KEY_V)
+	for i in 4:
+		cfg.set_value("keys", "lane%d" % i, [KEY_A, KEY_S, KEY_K, KEY_L][i])
+	cfg.save(path)
+	var c = SettingsScript.new()
+	c.load_settings(path)
+	_check(c.dirigent_key_a == KEY_C and c.dirigent_key_b == KEY_V, "Alte Config: Dirigent uebernimmt Orbit-Tasten")
+	_check(c.rally_keys_4 == [KEY_A, KEY_S, KEY_K, KEY_L], "Alte Config: Rally 4 uebernimmt Mania-Tasten")
+	a.free()
+	b.free()
+	c.free()
+	DirAccess.remove_absolute(path)

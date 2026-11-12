@@ -46,6 +46,10 @@ const PAGE_DEFS := {
 const PAGE_ORDER := ["field3d", "field2d", "look2d", "orbit", "notes", "audio", "gfx", "keys", "profile"]
 const CAP_ORBIT := 20
 const CAP_RALLY := 30   ## 30..32 = Rally-Tasten (3 Zonen)
+const CAP_RALLY4 := 40  ## 40..43 = Rally-Tasten (4 Zonen)
+const CAP_DIRIGENT := 50   ## 50/51 = Dirigent A/B
+const CAP_LANES := 3    ## 3..6 = Mania-Spuren 1-4 (auch Trace, Rebound)
+const COL_CONFLICT := Color(1.0, 0.42, 0.38)
 
 var _mode := MODE_3D
 var _cur := ""
@@ -86,10 +90,14 @@ var _skinvals_btn: CheckButton
 var _cover_rows: Array[Control] = []
 var _safe_hint: Label
 
-var _capturing := 0   # 0 = keine Aufnahme, 3..6 = Spur 1-4, 20/21 = Orbit innen/aussen
+var _capturing := 0   # 0 = keine Aufnahme, sonst CAP_*-Code (3..6 Spuren, 20/21 Orbit, 30.. Rally, 50/51 Dirigent)
 var _lane_btns: Array[Button] = []
 var _rally_btns: Array[Button] = []
 var _orbit_btns: Array[Button] = []   ## je zwei (innen, aussen) pro Ort, in dieser Reihenfolge
+var _rally4_btns: Array[Button] = []
+var _dirigent_btns: Array[Button] = []
+var _cap_btns := {}            ## Aufnahme-Code -> Array[Button] (alle Orte)
+var _conflict := {}            ## Basis-Code einer Belegung -> Array rote Hinweis-Labels
 
 ## Test-Harnesses (z.B. note_color_click_harness) lesen _panel.get("_note_colors") und
 ## scrollen danach zum Picker: der Zugriff von aussen zeigt die Seite Notenfarben.
@@ -644,6 +652,7 @@ func _page_look2d(pg: VBoxContainer) -> void:
 func _page_orbit(pg: VBoxContainer) -> void:
 	var g := _group(pg, "Tasten")
 	_orbit_key_row(g)
+	_conflict_label(g, CAP_ORBIT)
 	_hint_label(g, "Akzent = beide Tasten zugleich. Maus links = A, Maus rechts = B gelten immer zusätzlich.")
 	g = _group(pg, "Lesen")
 	var laps := OptionButton.new()
@@ -833,29 +842,43 @@ func _page_keys(pg: VBoxContainer) -> void:
 	var lane_row := HBoxContainer.new()
 	lane_row.add_theme_constant_override("separation", 6)
 	for i in 4:
-		var b := _key_button(3 + i)
+		var b := _key_button(CAP_LANES + i)
 		lane_row.add_child(b)
 		_lane_btns.append(b)
 	var r := _row(g, "Tasten 1–4", lane_row, "Anklicken, dann Taste drücken (Esc bricht ab)")
 	r.set_meta("reset", func():
 		Settings.key_lanes = _defaults.key_lanes.duplicate()
 		_refresh_labels())
+	_conflict_label(g, CAP_LANES)
 	_hint_label(g, "Anklicken, dann Taste drücken (Esc bricht ab)")
+	_hint_label(g, "Trace and Rebound use these keys too. Trace: 1 = left, 2 = down, 3 = up, 4 = right.")
 	g = _group(pg, "Rally")
 	_choice(g, "Rally: Zonen", ["3 Zonen", "4 Zonen"],
 		func(s): return 1 if s.rally_zones == 4 else 0,
 		func(i): Settings.rally_zones = 4 if i == 1 else 3,
-		"3 Zonen: links, Mitte, rechts (eigene Tasten). 4 Zonen: die Mania-4K-Tasten")
+		"3 zones: left, middle, right. 4 zones: zone 1–4. Each zone count has its own keys.")
 	var rally_row := HBoxContainer.new()
 	rally_row.add_theme_constant_override("separation", 6)
 	for i in 3:
 		var rb := _key_button(CAP_RALLY + i)
 		rally_row.add_child(rb)
 		_rally_btns.append(rb)
-	var rr := _row(g, "Rally-Tasten (3 Zonen)", rally_row, "Links, Mitte, rechts. Bei 4 Zonen gelten die Mania-Tasten 1–4. Anklicken, dann Taste drücken (Esc bricht ab)")
+	var rr := _row(g, "Rally-Tasten (3 Zonen)", rally_row, "Left, middle, right. Click, then press a key (Esc cancels).")
 	rr.set_meta("reset", func():
 		Settings.rally_keys_3 = _defaults.rally_keys_3.duplicate()
 		_refresh_labels())
+	_conflict_label(g, CAP_RALLY)
+	var rally4_row := HBoxContainer.new()
+	rally4_row.add_theme_constant_override("separation", 6)
+	for i in 4:
+		var rb4 := _key_button(CAP_RALLY4 + i)
+		rally4_row.add_child(rb4)
+		_rally4_btns.append(rb4)
+	var rr4 := _row(g, "Rally keys (4 zones)", rally4_row, "Zone 1–4 from left to right. Click, then press a key (Esc cancels).")
+	rr4.set_meta("reset", func():
+		Settings.rally_keys_4 = _defaults.rally_keys_4.duplicate()
+		_refresh_labels())
+	_conflict_label(g, CAP_RALLY4)
 	_slider(g, "Rally: Flugzeit", Settings.RALLY_FLIGHT_MIN, Settings.RALLY_FLIGHT_MAX, 50.0,
 		func(s): return s.rally_flight_ms,
 		func(v): Settings.rally_flight_ms = clampi(int(v), Settings.RALLY_FLIGHT_MIN, Settings.RALLY_FLIGHT_MAX),
@@ -863,12 +886,49 @@ func _page_keys(pg: VBoxContainer) -> void:
 		"Rally: Zeit vom Gegnerschlag bis zur Schlägerlinie. Länger = mehr Bälle gleichzeitig lesbar")
 	g = _group(pg, "Orbit")
 	_orbit_key_row(g)
+	_conflict_label(g, CAP_ORBIT)
 	_hint_label(g, "Akzent = beide Tasten zugleich. Maus links = A, Maus rechts = B gelten immer zusätzlich.")
+	g = _group(pg, "Dirigent")
+	var dir_row := HBoxContainer.new()
+	dir_row.add_theme_constant_override("separation", 6)
+	for k in 2:
+		var db := _key_button(CAP_DIRIGENT + k)
+		dir_row.add_child(db)
+		_dirigent_btns.append(db)
+	var dr := _row(g, "Dirigent keys: A | B", dir_row, "Left: key A (circle), right: key B (diamond). Click, then press a key (Esc cancels).")
+	dr.set_meta("reset", func():
+		Settings.dirigent_key_a = _defaults.dirigent_key_a
+		Settings.dirigent_key_b = _defaults.dirigent_key_b
+		_refresh_labels())
+	_conflict_label(g, CAP_DIRIGENT)
+	_hint_label(g, "Both parts = both keys together. Left click = A, right click = B always work too.")
+	g = _group(pg, "Trace / Rebound")
+	_slider(g, "Trace speed", 300.0, 900.0, 20.0,
+		func(s): return s.trace_speed,
+		func(v): Settings.trace_speed = clampi(int(v), 300, 900),
+		func(v): return "%d" % int(v),
+		"How fast the thread moves (looks only, timing stays the same)")
+	_slider(g, "Rebound drop time", 600.0, 1600.0, 50.0,
+		func(s): return s.rebound_drop_ms,
+		func(v): Settings.rebound_drop_ms = clampi(int(v), 600, 1600),
+		func(v): return "%d ms" % int(v),
+		"Rebound: time a ball falls to the paddle line. Longer = easier to read")
+	_hint_label(g, "Keys: the Mania keys 1–4 above.")
 	# Feste Kuerzel zum Nachschlagen (nicht belegbar).
 	g = _group(pg, "Tastenkürzel", false)
 	for k in [["Scroll Speed ändern", "F3 / F4"], ["Vollbild umschalten", "F11"],
 			["Lautstärke ändern", "Alt + Mausrad"], ["Einstellungen durchsuchen", "Strg + F"]]:
 		_row(g, k[0], _keycap(k[1]))
+
+
+## Rotes Hinweis-Label fuer doppelte Tasten einer Belegung (unsichtbar bis Konflikt).
+func _conflict_label(g: VBoxContainer, base: int) -> void:
+	var l := _hint_label(g, "")
+	l.add_theme_color_override("font_color", COL_CONFLICT)
+	l.get_parent().visible = false
+	if not _conflict.has(base):
+		_conflict[base] = []
+	(_conflict[base] as Array).append(l)
 
 
 ## Tastenkappe: kleine erhabene Flaeche mit Kuerzel (nur Anzeige).
@@ -917,6 +977,9 @@ func _key_button(which: int) -> Button:
 	b.add_theme_font_size_override("font_size", 14)
 	UiTheme.style_button(b)
 	b.pressed.connect(_start_capture.bind(which))
+	if not _cap_btns.has(which):
+		_cap_btns[which] = []
+	(_cap_btns[which] as Array).append(b)
 	return b
 
 
@@ -1707,17 +1770,90 @@ func _jump(e: Dictionary) -> void:
 # ================================================================== Tasten
 
 func _refresh_labels() -> void:
-	for i in _lane_btns.size():
-		_lane_btns[i].text = UiTheme.key_short(Settings.key_lanes[i])
-		if _capturing == 3 + i:
-			_lane_btns[i].text = "…"
-	for i in _rally_btns.size():
-		_rally_btns[i].text = "…" if _capturing == CAP_RALLY + i else UiTheme.key_short(Settings.rally_keys_3[i])
+	for which in _cap_btns:
+		var txt := "…" if _capturing == which else UiTheme.key_short(_cap_get(which))
+		for btn in _cap_btns[which]:
+			if is_instance_valid(btn):
+				(btn as Button).text = txt
 	for k in _orbit_btns.size():
-		var r := k % 2
-		var code := Settings.orbit_key_outer if r == 1 else Settings.orbit_key_inner
-		_orbit_btns[k].text = "…" if _capturing == CAP_ORBIT + r else UiTheme.key_short(code)
-		_orbit_btns[k].tooltip_text = tr("Maus rechts") if r == 1 else tr("Maus links")
+		_orbit_btns[k].tooltip_text = tr("Maus rechts") if k % 2 == 1 else tr("Maus links")
+	for k in _dirigent_btns.size():
+		_dirigent_btns[k].tooltip_text = tr("Maus rechts") if k == 1 else tr("Maus links")
+
+
+## Erster Aufnahme-Code der Belegung (Modus), zu der which gehoert.
+static func _cap_base(which: int) -> int:
+	if which >= CAP_DIRIGENT:
+		return CAP_DIRIGENT
+	if which >= CAP_RALLY4:
+		return CAP_RALLY4
+	if which >= CAP_RALLY:
+		return CAP_RALLY
+	if which >= CAP_ORBIT:
+		return CAP_ORBIT
+	return CAP_LANES
+
+
+static func _cap_count(base: int) -> int:
+	match base:
+		CAP_RALLY: return 3
+		CAP_ORBIT, CAP_DIRIGENT: return 2
+	return 4
+
+
+func _cap_get(which: int) -> int:
+	var i := which - _cap_base(which)
+	match _cap_base(which):
+		CAP_DIRIGENT: return Settings.dirigent_key_a if i == 0 else Settings.dirigent_key_b
+		CAP_RALLY4: return Settings.rally_keys_4[i]
+		CAP_RALLY: return Settings.rally_keys_3[i]
+		CAP_ORBIT: return Settings.orbit_key_inner if i == 0 else Settings.orbit_key_outer
+	return Settings.key_lanes[i]
+
+
+func _cap_set(which: int, code: int) -> void:
+	var i := which - _cap_base(which)
+	match _cap_base(which):
+		CAP_DIRIGENT:
+			if i == 0:
+				Settings.dirigent_key_a = code
+			else:
+				Settings.dirigent_key_b = code
+		CAP_RALLY4: Settings.rally_keys_4[i] = code
+		CAP_RALLY: Settings.rally_keys_3[i] = code
+		CAP_ORBIT:
+			if i == 0:
+				Settings.orbit_key_inner = code
+			else:
+				Settings.orbit_key_outer = code
+		_: Settings.key_lanes[i] = code
+
+
+## Name eines Belegungs-Platzes fuer den Konflikt-Hinweis.
+func _cap_name(which: int) -> String:
+	var base := _cap_base(which)
+	var i := which - base
+	match base:
+		CAP_ORBIT, CAP_DIRIGENT: return tr("key A") if i == 0 else tr("key B")
+		CAP_RALLY: return tr(["left", "middle", "right"][i])
+		CAP_RALLY4: return tr("zone %d") % (i + 1)
+	return tr("key %d") % (i + 1)
+
+
+## Anderer Platz derselben Belegung, der code schon nutzt, sonst -1.
+func _cap_conflict(which: int, code: int) -> int:
+	var base := _cap_base(which)
+	for j in _cap_count(base):
+		if base + j != which and _cap_get(base + j) == code:
+			return base + j
+	return -1
+
+
+func _show_conflict(base: int, text: String) -> void:
+	for l in _conflict.get(base, []):
+		if is_instance_valid(l):
+			(l as Label).text = text
+			(l as Label).get_parent().visible = text != ""
 
 
 func _open_wizard() -> void:
@@ -1730,34 +1866,30 @@ func _open_wizard() -> void:
 
 func _start_capture(which: int) -> void:
 	_capturing = which
+	_show_conflict(_cap_base(which), "")
 	_refresh_labels()
 
 
 func _input(event: InputEvent) -> void:
 	if not (event is InputEventKey and event.pressed and not event.echo):
 		return
-	if _capturing >= CAP_RALLY:
-		if event.keycode != KEY_ESCAPE:
-			Settings.rally_keys_3[clampi(_capturing - CAP_RALLY, 0, 2)] = event.keycode
+	if _capturing > 0:
+		var which := _capturing
+		var code: int = event.keycode
+		get_viewport().set_input_as_handled()
+		if code != KEY_ESCAPE:
+			var other := _cap_conflict(which, code)
+			if other >= 0:
+				# Dieselbe Taste zweimal in einem Modus: nicht uebernehmen, Aufnahme laeuft weiter.
+				_show_conflict(_cap_base(which), tr("%s is already used for %s. Press another key (Esc cancels).")
+					% [UiTheme.key_short(code), _cap_name(other)])
+				return
+			_cap_set(which, code)
+		_show_conflict(_cap_base(which), "")
 		_capturing = 0
 		_refresh_labels()
-		get_viewport().set_input_as_handled()
-	elif _capturing >= CAP_ORBIT:
-		if event.keycode != KEY_ESCAPE:
-			if _capturing == CAP_ORBIT:
-				Settings.orbit_key_inner = event.keycode
-			else:
-				Settings.orbit_key_outer = event.keycode
-		_capturing = 0
-		_refresh_labels()
-		get_viewport().set_input_as_handled()
-	elif _capturing >= 3:
-		if event.keycode != KEY_ESCAPE:
-			Settings.key_lanes[_capturing - 3] = event.keycode
-		_capturing = 0
-		_refresh_labels()
-		_refresh_2d_preview()
-		get_viewport().set_input_as_handled()
+		if _cap_base(which) == CAP_LANES:
+			_refresh_2d_preview()
 	elif event.keycode == KEY_F and event.ctrl_pressed:
 		_search.grab_focus()
 		_search.select_all()
@@ -1903,6 +2035,10 @@ func _rebuild() -> void:
 	_lane_btns.clear()
 	_rally_btns.clear()
 	_orbit_btns.clear()
+	_rally4_btns.clear()
+	_dirigent_btns.clear()
+	_cap_btns.clear()
+	_conflict.clear()
 	_cover_rows.clear()
 	_cur = ""
 	_build()
