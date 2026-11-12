@@ -871,6 +871,7 @@ func _process(delta: float) -> void:
 	core.update(t)
 	if _ended:
 		return
+	_fade_hud_over_targets(t, delta)
 	if _mp_bot:
 		_mp_bot_tick(t)
 		if _ended:
@@ -1615,3 +1616,28 @@ func _submit_online(s: Dictionary) -> void:
 	var res := s.duplicate()
 	res["date"] = Time.get_datetime_string_from_system(true)
 	api.submit(res, meta, "orbit")
+
+
+## Kombo/Wertung unten mittig liegen im Spielfeld: kommt dort in den naechsten
+## 1,5 s ein Ziel, blendet die Anzeige weich auf 20 % aus (wie das osu!-HUD).
+func _fade_hud_over_targets(t: float, delta: float) -> void:
+	if _judge_disp == null or _view == null:
+		return
+	var vs := get_viewport().get_visible_rect().size
+	var r := _view.radius_px() * 1.4
+	var zone := Rect2(Vector2(vs.x * 0.36, vs.y * 0.78), Vector2(vs.x * 0.28, vs.y * 0.22)).grow(r)
+	var covered := false
+	var i := maxi(_view.next_index(), 0)
+	var notes: Array = _view.notes
+	while i < notes.size():
+		var n: OrbitNote = notes[i]
+		if n.time_ms > t + 1500.0:
+			break
+		if zone.has_point(_view.field_to_screen(n.pos)):
+			covered = true
+			break
+		i += 1
+	var target := 0.2 if covered else 1.0
+	var a := _judge_disp.modulate.a
+	_judge_disp.modulate.a = move_toward(a, target, delta * 4.0)
+
