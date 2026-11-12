@@ -1017,12 +1017,15 @@ func _capture_shot() -> void:
 		# Ende: alles gewertet, Kamera ganz heraus (Endbild).
 		_sim_to(target)
 		_shot_hold = true
+		_legend.visible = false
+		_update_hud()
 		_view.t_ms = target
 		_view.end_zoom = 1.0
 		_view.queue_redraw()
 		await get_tree().create_timer(0.5, true).timeout
 	else:
 		await _wait_until(target)
+		_update_hud()
 	if not is_inside_tree():
 		return
 	await RenderingServer.frame_post_draw

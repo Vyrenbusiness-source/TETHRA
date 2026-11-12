@@ -128,7 +128,7 @@ func _draw() -> void:
 		zoom = exp(lerpf(0.0, log(fit), e))
 		_cam = cam_play.lerp(b.get_center(), e)
 	_sz = sc * zoom
-	var wf := sc * pow(zoom, 0.3)   # Linienstaerke: schrumpft weniger als die Welt
+	var wf := sc * pow(zoom, 0.5)   # Linienstaerke: schrumpft weniger als die Welt
 	var cur_s := path.s_at(t_ms)
 	var s_b := path.s_at(t_ms + TracePath.LOOK_S * 1000.0)
 	var s_a := cur_s - TRAIL_PX
@@ -179,8 +179,8 @@ func _draw_upcoming(cur_s: float, s_b: float, wf: float, step: float) -> void:
 	var n := pts.size()
 	for i in n:
 		var f := float(i) / float(maxi(n - 1, 1))
-		cols.append(Color(THREAD, 0.42 * pow(1.0 - f, 0.8)))
-	draw_polyline_colors(pts, cols, 1.7 * wf, true)
+		cols.append(Color(THREAD, 0.58 * pow(1.0 - f, 0.8)))
+	draw_polyline_colors(pts, cols, 2.0 * wf, true)
 
 
 ## Gespielter Faden: je Knoten-Abschnitt in Spaltenfarbe (Miss: grau), hinten blasser.
@@ -261,7 +261,7 @@ func _draw_holds(cur_s: float, s_a: float, s_b: float, wf: float, step: float) -
 		if missed:
 			draw_polyline(pts, Color(GRAY, 0.35), 11.0 * wf, true)
 		else:
-			draw_polyline(pts, Color(col.darkened(0.2), 0.62), 11.0 * wf, true)
+			draw_polyline(pts, Color(col.darkened(0.08), 0.74), 11.0 * wf, true)
 			if started and cur_s > a0:
 				var lit := _pts_screen(a0, minf(a1, cur_s), step)
 				draw_polyline(lit, Color(col.lightened(0.12), 0.97), 11.0 * wf, true)
@@ -371,7 +371,7 @@ func _draw_knot(kn: TracePath.Knot, is_next: bool, wf: float) -> void:
 		if age < FLASH_MS:
 			var u := age / FLASH_MS
 			var inv := 1.0 - u
-			draw_circle(p, (16.0 + 18.0 * u) * zs, Color(col.lightened(0.3), 0.28 * inv * inv))
+			draw_circle(p, (16.0 + 18.0 * u) * zs, Color(col.lightened(0.3), 0.15 * inv * inv))
 			draw_arc(p, (RING_NEAR + 24.0 * u) * zs, 0.0, TAU, 48, Color(col.lightened(0.3), 0.9 * inv), 2.6 * wf, true)
 	if any_hit and not open:
 		draw_circle(p, 3.0 * wf + 0.4, Color(_col(kn.notes[0]).lightened(0.2), 0.85))
@@ -402,5 +402,5 @@ func _draw_head(wf: float, e: float) -> void:
 	draw_circle(p, r * 2.6, Color(HEAD, 0.14))
 	draw_circle(p, r * 1.5, Color(INK, 0.85))
 	draw_circle(p, r, Color(HEAD, 1.0))
-	if k > 0.0 and e < 1.0:
+	if e < 1.0:
 		draw_arc(p, r * 1.9, 0.0, TAU, 32, Color(HEAD, 0.55 * (1.0 - e)), 1.4 * wf, true)
