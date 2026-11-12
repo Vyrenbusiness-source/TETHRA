@@ -108,6 +108,14 @@ var _sv_level_box: Control
 ## dort statt SV. HD und FI schliessen sich aus. Gespeichert im Browser-Zustand.
 var _orbit_mods := {"HD": false, "FI": false, "PR": false}
 var _orbit_mod_btns := {}
+## Trace-Mods (TraceMods.MODS): nur im Trace-Modus sichtbar, neben No-Fail.
+var _trace_mods := {"MR": false, "HD": false, "SS": false}
+var _trace_mod_btns := {}
+const TRACE_MOD_TIPS := {
+	"MR": "Mirror: links und rechts getauscht (Score x1,0)",
+	"HD": "Hidden: der Weg blendet zum Kopf hin aus (Score x1,06)",
+	"SS": "Short Sight: nur 500 ms Weg voraus (Score x1,08)",
+}
 const ORBIT_MOD_TIPS := {
 	"HD": "Hidden: Ziele verblassen kurz vor dem Ring (Score x1,06)",
 	"FI": "Fade-In: Ziele erscheinen erst spät (Score x1,06)",
@@ -1066,6 +1074,10 @@ func _build_info_panel() -> void:
 		var ob := _make_orbit_mod_button(k)
 		mods_row.add_child(ob)
 		_orbit_mod_btns[k] = ob
+	for k in TraceMods.MODS:
+		var tb := _make_trace_mod_button(k)
+		mods_row.add_child(tb)
+		_trace_mod_btns[k] = tb
 	_apply_mod_visibility()
 	_apply_play_state()
 
@@ -1524,6 +1536,10 @@ func _load_browser_state() -> bool:
 		if om is Dictionary:
 			for k in OrbitCore.ORBIT_MODS:
 				_orbit_mods[k] = bool(om.get(k, false))
+		var tmd = cfg.get_value("browser", "trace_mods", {})
+		if tmd is Dictionary:
+			for k in TraceMods.MODS:
+				_trace_mods[k] = bool(tmd.get(k, false))
 	return true
 
 
@@ -1542,6 +1558,7 @@ func _save_browser_state() -> void:
 	cfg.set_value("browser", "play_mode", _play_mode)
 	cfg.set_value("browser", "sv_level", SvMod.level_name())
 	cfg.set_value("browser", "orbit_mods", _orbit_mods.duplicate())
+	cfg.set_value("browser", "trace_mods", _trace_mods.duplicate())
 	cfg.set_value("browser", "recs", rec_sanitize(_rec))
 	cfg.save(BROWSER_STATE_PATH)
 
@@ -3052,6 +3069,23 @@ func _make_orbit_mod_button(key: String) -> CheckButton:
 	return b
 
 
+## Trace-Mod-Schalter (MR/HD/SS) im Stil der NF/SV-Schalter.
+func _make_trace_mod_button(key: String) -> CheckButton:
+	var b := _make_orbit_mod_button(key)
+	b.tooltip_text = TRACE_MOD_TIPS[key]
+	b.button_pressed = bool(_trace_mods.get(key, false))
+	for c in b.toggled.get_connections():
+		b.toggled.disconnect(c["callable"])
+	b.toggled.connect(func(on: bool): _on_trace_mod_toggled(key, on))
+	return b
+
+
+func _on_trace_mod_toggled(key: String, on: bool) -> void:
+	_trace_mods[key] = on
+	if _state_ready:
+		_save_browser_state()
+
+
 func _on_orbit_mod_toggled(key: String, on: bool) -> void:
 	_orbit_mods[key] = on
 	# HD und FI zusammen liessen nur ein schmales Band sichtbar: einer von beiden.
@@ -3074,6 +3108,9 @@ func _apply_mod_visibility() -> void:
 	for k in _orbit_mod_btns:
 		(_orbit_mod_btns[k] as CheckButton).visible = orbit
 		(_orbit_mod_btns[k] as CheckButton).set_pressed_no_signal(bool(_orbit_mods[k]))
+	for k in _trace_mod_btns:
+		(_trace_mod_btns[k] as CheckButton).visible = _play_mode == "trace"
+		(_trace_mod_btns[k] as CheckButton).set_pressed_no_signal(bool(_trace_mods[k]))
 
 
 func _on_sv_toggled(pressed: bool) -> void:
@@ -3088,7 +3125,12 @@ func _on_sv_toggled(pressed: bool) -> void:
 ## Mods fuer den naechsten Start (Schnittstelle GameSession.mods).
 ## Orbit: NF + Orbit-Mods (SV wirkt im Orbit nicht und zaehlt dort nicht).
 func _current_mods() -> Dictionary:
-	if _play_mode in ["rally", "dirigent", "trace", "rebound"]:
+	if _play_mode == "trace":
+		var tm := {"NF": _nf_enabled}
+		for k in TraceMods.MODS:
+			tm[k] = bool(_trace_mods.get(k, false))
+		return tm
+	if _play_mode in ["rally", "dirigent", "rebound"]:
 		return {"NF": _nf_enabled}
 	if _play_mode == "orbit":
 		var m := {"NF": _nf_enabled}
@@ -4291,6 +4333,13 @@ static func orbit_stars_compute(osz: String, version: String, mode: String = "or
 		if (bm.is_mania() or bm.mode() == 0) and bm.version_name() == version:
 			if mode == "orbit":
 				return OrbitConverter.stars(OrbitConverter.convert(bm))
+			if mode == "trace":
+				# Trace-Sterne: TraceStars (trace-stars), sonst Platzhalter.
+				var tp := "res://scripts/trace/trace_stars.gd"
+				if ResourceLoader.exists(tp):
+					var ts: GDScript = load(tp)
+					if ts != null and ts.has_method("stars_for"):
+						return float(ts.call("stars_for", bm))
 			var path := "res://scripts/%s/%s_chart.gd" % [mode, mode]
 			if ResourceLoader.exists(path):
 				var sc: GDScript = load(path)
