@@ -7,7 +7,8 @@ extends Control
 ##             Kippen/Rollen), dezenter Beat-Puls, Kiai etwas heller. Darueber
 ##             eine runde dunkle Vignette: im Ring-Bereich bleibt der
 ##             Hintergrund dunkel (Lesbarkeit) und fast unbewegt.
-##   Map-Bild = Cover der Map, abgedunkelt (Settings.bg_dim).
+##   Map-Bild = Cover der Map, weich unscharf (Gauss-Shader orbit_blur),
+##             abgedunkelt (Settings.bg_dim), leichte Vignette.
 ##   Aus     = schwarz.
 ## Ohne Welten-Paket (oder wenn die Welt nicht baubar ist) faellt "Welt"
 ## automatisch auf das Map-Bild zurueck.
@@ -17,6 +18,10 @@ const BG_WORLD := 0
 const BG_MAP := 1
 const BG_OFF := 2
 const BLACK := Color(0.008, 0.01, 0.018)
+## Map-Bild: Gauss-Blur (Sigma als Anteil der Bildhoehe) und Rand-Abdunklung.
+const BLUR_SHADER := preload("res://shaders/orbit_blur.gdshader")
+const BLUR_SIGMA_K := 0.022
+const MAP_VIGNETTE := 0.4
 ## SubViewport-Aufloesung relativ zum Fenster (Himmel ist weich, die Vignette
 ## dunkelt ihn ohnehin ab): spart Pixel-Shader-Last.
 const RES_SCALE := 0.75
@@ -77,14 +82,21 @@ func _build_map(cover: Texture2D, bg_dim: float) -> void:
 		return
 	_map = TextureRect.new()
 	_map.texture = cover
-	_map.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+	# Weicher Gauss-Blur im Shader (orbit_blur): kleine Textur mit Mipmaps.
+	_map.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	_map.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_map.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 	_map.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_map.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	# Settings.bg_dim = Deckkraft des Map-Bilds (0 = aus).
 	# Orbit dimmt staerker als Mania: Ziele liegen ueber dem ganzen Bild.
-	_map.modulate = Color(1, 1, 1, bg_dim * 0.6)
+	var mat := ShaderMaterial.new()
+	mat.shader = BLUR_SHADER
+	mat.set_shader_parameter(&"dim", clampf(bg_dim * 0.6, 0.0, 1.0))
+	mat.set_shader_parameter(&"sigma_k", BLUR_SIGMA_K)
+	mat.set_shader_parameter(&"vignette", MAP_VIGNETTE)
+	mat.set_shader_parameter(&"floor_col", Vector3(BLACK.r, BLACK.g, BLACK.b))
+	_map.material = mat
 	_map.visible = bg_dim > 0.001
 	add_child(_map)
 

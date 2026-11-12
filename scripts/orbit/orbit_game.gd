@@ -90,6 +90,8 @@ var _bot_plan: Array = []
 var _hit_log: Array = []
 ## Map-Bild-Deckkraft je Settings.bg_dim (0,3 -> 0,12 wie osu! mit hohem Dim).
 const BG_OPACITY_PER_DIM := 0.4
+## Breite des Map-Bilds fuer den Blur-Shader (Pixel; weich, also klein).
+const BLUR_TEX_W := 384
 ## Fehldrucke je Grund (aim/key/early/lock) fuer die Tasten-Statistik.
 var _presses := {"aim": 0, "key": 0, "early": 0, "lock": 0}
 ## Halten: Cursor beim Kopf-Druck (Index -> Feld-Pos).
@@ -358,7 +360,9 @@ func _build_bg() -> void:
 			clampf(Settings.bg_dim * BG_OPACITY_PER_DIM, 0.0, 0.2) / 0.6)
 
 
-## Weichgezeichnetes Map-Bild (einmal beim Laden): klein rechnen, weich zurueck.
+## Map-Bild fuer den Blur-Shader (einmal beim Laden): in Halbierungs-Schritten
+## (2x2-Mittel, kein Aliasing) auf hoechstens BLUR_TEX_W Pixel Breite, dazu
+## Mipmaps. Den eigentlichen weichen Gauss-Blur macht shaders/orbit_blur.
 static func blurred(tex: Texture2D) -> Texture2D:
 	if tex == null:
 		return null
@@ -368,13 +372,15 @@ static func blurred(tex: Texture2D) -> Texture2D:
 	img = img.duplicate()
 	if img.is_compressed():
 		img.decompress()
-	var w := img.get_width()
-	var h := img.get_height()
-	# Mehrstufig hoch, damit keine Bloecke/Pixel sichtbar werden (weich wie osu!).
-	img.resize(maxi(8, w / 64), maxi(6, h / 64), Image.INTERPOLATE_BILINEAR)
-	for f in [32, 16, 8, 4, 2]:
-		img.resize(maxi(16, w / f), maxi(12, h / f), Image.INTERPOLATE_CUBIC)
+	img.convert(Image.FORMAT_RGBA8)
+	while img.get_width() > BLUR_TEX_W * 2:
+		img.resize(maxi(1, img.get_width() / 2), maxi(1, img.get_height() / 2), Image.INTERPOLATE_BILINEAR)
+	if img.get_width() > BLUR_TEX_W:
+		var h := maxi(1, roundi(float(img.get_height()) * BLUR_TEX_W / img.get_width()))
+		img.resize(BLUR_TEX_W, h, Image.INTERPOLATE_CUBIC)
+	img.generate_mipmaps()
 	return ImageTexture.create_from_image(img)
+
 
 func _build_sound() -> void:
 	_sound = OrbitSound.new()
