@@ -46,6 +46,8 @@ func _run() -> void:
 	_test_mode_filter()
 	_test_four_modes()
 	_test_mtime()
+	_test_recs()
+	_test_menu_stack()
 	print("=== %d ok, %d fehlgeschlagen ===" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
 
@@ -213,3 +215,56 @@ func _test_mtime() -> void:
 	_ok(absi(t - int(Time.get_unix_time_from_system())) < 120, "mtime der neuen Datei ist jetzt")
 	DirAccess.remove_absolute(p)
 	DirAccess.remove_absolute(TMP)
+
+
+## "For you": Zustand, Stufe, Anzahl, Start-Vorschlaege, Rechnung, Laeufe, Grund, Stil.
+func _test_recs() -> void:
+	var st: Dictionary = SS.rec_sanitize({"levels": {"mania": "push", "orbit": "quatsch"}, "hidden": 1})
+	_ok(st.levels.mania == "push" and st.levels.orbit == "challenge" and st.levels.rally == "challenge",
+		"rec_sanitize: bekannte Stufe bleibt, sonst Challenge")
+	_ok(st.hidden == true and st.collapsed == false, "rec_sanitize: Schalter als bool")
+	_ok(SS.rec_sanitize(null).levels.size() == SS.PLAY_MODES.size(), "rec_sanitize(null): alle Modi")
+	_ok(SS.rec_level(st, "mania") == "push" and SS.rec_level({}, "trace") == "challenge", "rec_level")
+	_ok(SS.rec_count(720.0) == 3 and SS.rec_count(1080.0) == 5, "rec_count: 3 bei 720, 5 bei 1080")
+	var cands: Array = []
+	for i in 12:
+		cands.append({"set": "s%d" % (i / 2), "diff": "d%d" % i, "stars": 0.6 + 0.4 * i, "osu_mode": 3})
+	cands.append({"set": "ss", "diff": "d", "stars": 1.2, "osu_mode": 3, "best_grade": "SS"})
+	cands.append({"set": "std", "diff": "d", "stars": 1.1, "osu_mode": 0})
+	var sp: Array = SS.rec_starters("mania", cands, 3)
+	_ok(sp.size() == 3 and float(sp[0].stars) >= 1.0 and sp[0].set != "ss" and sp[0].set != "std",
+		"rec_starters: leichteste ab 1 Stern, ohne SS/unspielbar")
+	var sets := {}
+	for x in sp:
+		sets[x.set] = true
+	_ok(sets.size() == 3, "rec_starters: eine Map je Set")
+	var few: Dictionary = SS.rec_compute("mania", "challenge", cands, [], 3)
+	_ok(few.starter == true and few.items.size() == 3, "rec_compute: unter 5 Laeufen Start-Vorschlaege")
+	var runs: Array = []
+	for i in 8:
+		runs.append({"set": "r%d" % i, "diff": "d", "stars": 2.6, "accuracy": 0.9, "pp": 20.0,
+			"grade": "A", "date": "2026-01-0%dT10:00:00" % (i + 1)})
+	var full: Dictionary = SS.rec_compute("mania", "challenge", cands, runs, 3, 1800000000)
+	_ok(full.starter == false and absf(float(full.comfort) - 2.6) < 0.3 and not full.items.is_empty(),
+		"rec_compute: Vorschlaege mit Level um 2,6 (%.2f)" % float(full.comfort))
+	var rr: Array = SS.rec_runs([{"set": "a.osz", "diff": "Hard ", "stars": -1.0},
+		{"set": "a.osz", "diff": "Hard | x", "stars": -1.0}, {"set": "b.osz", "diff": "X", "stars": -1.0}],
+		{"a.osz|Hard": 3.2})
+	_ok(rr.size() == 2 and float(rr[0].stars) == 3.2 and rr[1].diff == "Hard", "rec_runs: Sterne + Version gebunden")
+	_ok(SS.rec_join_reason("expected 90 %", "") == "expected 90 %", "Grund ohne Stil")
+	_ok(SS.rec_join_reason("expected 90 %", "Jacks, like your favourites").contains("Jacks"), "Grund mit Stil")
+	var osu := "[General]\nMode: 3\n[Difficulty]\nCircleSize:4\n[HitObjects]\n"
+	for i in 40:
+		osu += "64,192,%d,1,0,0:0:0:0:\n" % (i * 120)
+	var sty: Dictionary = SS.rec_style_of_text(osu)
+	_ok(float(sty.get("jack", 0.0)) > 0.9, "rec_style_of_text: Jacks erkannt")
+
+
+## Hauptmenue: Block vertikal mittig, genug Rand unten, Logo bei 720 kleiner.
+func _test_menu_stack() -> void:
+	var MM: GDScript = load("res://scripts/ui/main_menu.gd")
+	for h in [720.0, 1080.0]:
+		var r: Dictionary = MM.menu_stack(h, 300.0)
+		_ok(absf(float(r.top) - float(r.bottom)) <= 1.0, "menu_stack %d: oben == unten" % h)
+		_ok(float(r.bottom) >= 60.0, "menu_stack %d: unten >= 60 (%.0f)" % [h, float(r.bottom)])
+	_ok(float(MM.menu_stack(720.0, 300.0).logo_scale) < 1.0, "menu_stack 720: Logo kleiner")

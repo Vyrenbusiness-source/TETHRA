@@ -4412,6 +4412,8 @@ const REC_TILE_H := 62.0
 const REC_ROW_H := 54.0
 const REC_COVER := 44.0
 const REC_MAXPP_CAP := 400       # hoechstens so viele Max-pp-Abfragen je Rechnung
+const REC_STYLE_PATH := "user://rec_style.cfg"  # Stil-Merkmale je Diff (Notenfolge), gecacht
+const REC_STYLE_CAP := 60        # hoechstens so viele neue Diffs je Rechnung auswerten
 
 var _rec := {"levels": {}, "collapsed": false, "hidden": false}
 var _rec_box: VBoxContainer
@@ -4491,12 +4493,96 @@ static func rec_starters(mode: String, cands: Array, n: int) -> Array:
 
 ## Vorschlaege oder (unter REC_MIN_RUNS Laeufen) Start-Vorschlaege.
 static func rec_compute(mode: String, level: String, cands: Array, runs: Array,
-		n: int, now: int = 0) -> Dictionary:
+		n: int, now: int = 0, tst: Dictionary = {}) -> Dictionary:
 	var sk := Recommender.skill(mode, runs)
 	if runs.size() < REC_MIN_RUNS:
 		return {"starter": true, "items": rec_starters(mode, cands, n), "comfort": float(sk.comfort)}
-	return {"starter": false, "items": Recommender.suggest(mode, level, cands, n, runs, now),
+	return {"starter": false, "items": Recommender.suggest(mode, level, cands, n, runs, now, tst),
 		"comfort": float(sk.comfort)}
+
+
+## Stil-Merkmale der Kandidaten aus der Notenfolge (Recommender.mania_style /
+## std_style), gecacht in REC_STYLE_PATH je "datei|osu" mit Aenderungszeit der
+## .osz. Laeuft im Rechen-Thread; je Aufruf hoechstens REC_STYLE_CAP neue Diffs.
+static func rec_fill_style(cands: Array) -> void:
+	var cfg := ConfigFile.new()
+	cfg.load(REC_STYLE_PATH)
+	var fresh := 0
+	var zips := {}
+	for c in cands:
+		var osz := str(c.get("osz", ""))
+		var inner := str(c.get("inner", ""))
+		if osz == "" or inner == "":
+			continue
+		var key := "%s|%s" % [osz.get_file(), inner]
+		var mt := FileAccess.get_modified_time(osz)
+		var hit = cfg.get_value("style", key, null)
+		if hit is Array and hit.size() == 2 and int(hit[0]) == mt:
+			c["style"] = hit[1]
+			continue
+		if fresh >= REC_STYLE_CAP:
+			continue
+		fresh += 1
+		if not zips.has(osz):
+			var z := ZIPReader.new()
+			zips[osz] = z if z.open(osz) == OK else null
+		var st := {}
+		if zips[osz] != null:
+			st = rec_style_of_text((zips[osz] as ZIPReader).read_file(inner).get_string_from_utf8())
+		cfg.set_value("style", key, [mt, st])
+		c["style"] = st
+	for z in zips.values():
+		if z != null:
+			(z as ZIPReader).close()
+	if fresh > 0:
+		cfg.save(REC_STYLE_PATH)
+
+
+## Stil einer .osu-Datei (Text): Mania (Mode 3) -> mania_style, sonst std_style.
+static func rec_style_of_text(text: String) -> Dictionary:
+	var mode := 0
+	var keys := 4
+	var sec := ""
+	var objs: Array = []
+	for raw in text.split("\n"):
+		var line := raw.strip_edges()
+		if line.begins_with("["):
+			sec = line
+			continue
+		if sec == "[General]" and line.begins_with("Mode:"):
+			mode = int(line.get_slice(":", 1).strip_edges())
+		elif sec == "[Difficulty]" and line.begins_with("CircleSize:"):
+			keys = maxi(1, roundi(float(line.get_slice(":", 1).strip_edges())))
+		elif sec == "[HitObjects]" and line != "":
+			var p := line.split(",")
+			if p.size() < 4:
+				continue
+			var x := float(p[0])
+			var t := float(p[2])
+			var typ := int(p[3])
+			if mode == 3:
+				objs.append([t, clampi(floori(x * keys / 512.0), 0, keys - 1), (typ & 128) != 0])
+			elif (typ & 8) == 0:  # Spinner ueberspringen
+				objs.append([t, x, float(p[1])])
+	return Recommender.mania_style(objs) if mode == 3 else Recommender.std_style(objs)
+
+
+## Vorlieben des Modus: Merkmale aller Kandidaten, Plays je Diff, Favoriten
+## (Maps in Collections). Rechen-Thread.
+static func rec_taste(mode: String, cands: Array, runs: Array) -> Dictionary:
+	var feats := {}
+	for c in cands:
+		feats["%s|%s" % [c.set, c.diff]] = c
+	var sid := "" if mode == "mania" else mode
+	var plays := {}
+	for e in ScoreStore.most_played(2000, sid):
+		var k := "%s|%s" % [str(e.get("osz_file", "")), str(e.get("version", "")).strip_edges()]
+		plays[k] = int(plays.get(k, 0)) + int(e.get("count", 0))
+	var favs := {}
+	for name in CollectionStore.list_names():
+		for f in CollectionStore.maps_in(str(name)):
+			favs[str(f).get_file()] = true
+	return Recommender.taste(runs, feats, plays, favs)
 
 
 ## Laeufe an die Bibliothek binden: Version ohne Rand-Leerzeichen (Bestwerte
@@ -4747,9 +4833,12 @@ func _recs_job() -> Dictionary:
 				continue
 			_rec_lookup[k] = [ms, i]
 			var vi: Dictionary = info.get(ver, {})
+			var meta := ms.meta_at(i)
+			var dur := float(meta.get("duration_ms", 0.0))
 			cands.append({"set": file, "diff": ver.strip_edges(), "stars": st, "osu_mode": osu_mode,
 				"last_played": str(vi.get("last", "")), "best_grade": str(vi.get("grade", "")),
-				"osz": ms.osz_path, "inner": ms.osu_filename_at(i)})
+				"osz": ms.osz_path, "inner": ms.osu_filename_at(i), "artist": ms.artist,
+				"bpm": float(meta.get("bpm", -1.0)), "length": dur / 1000.0 if dur > 0.0 else -1.0})
 	return {"mode": mode, "level": rec_level(_rec, mode), "n": 5, "cands": cands,
 		"stars": stars}
 
@@ -4758,7 +4847,11 @@ func _recs_work(job: Dictionary, tok: int) -> void:
 	var runs := rec_runs(Recommender.runs_from_store(str(job.mode)), job.stars)
 	if job.mode == "mania" and job.level == Recommender.LEVEL_PUSH and runs.size() >= REC_MIN_RUNS:
 		rec_fill_max_pp(job.cands, runs)
-	var res := rec_compute(str(job.mode), str(job.level), job.cands, runs, int(job.n))
+	var tst := {}
+	if runs.size() >= REC_MIN_RUNS:
+		rec_fill_style(job.cands)
+		tst = rec_taste(str(job.mode), job.cands, runs)
+	var res := rec_compute(str(job.mode), str(job.level), job.cands, runs, int(job.n), 0, tst)
 	res["mode"] = job.mode
 	_recs_done.call_deferred(res, tok)
 
@@ -4802,7 +4895,8 @@ func _recs_render() -> void:
 		if hit == null:
 			continue
 		items.append({"ms": hit[0], "diff": hit[1], "stars": float(it.stars),
-			"reason": str(it.get("reason", "")), "acc": float(it.get("expected_acc", -1.0))})
+			"reason": str(it.get("reason", "")), "acc": float(it.get("expected_acc", -1.0)),
+			"style": str(it.get("style_reason", ""))})
 		if items.size() >= n:
 			break
 	if items.is_empty():
@@ -4914,10 +5008,18 @@ func _rec_label(parent: Node, text: String, size: int, col: Color) -> Label:
 ## Grund kurz: Push behaelt den Recommender-Text ("+14 pp, would be top 3"),
 ## Easy/Challenge zeigen nur die erwartete Genauigkeit.
 func _rec_reason(it: Dictionary) -> String:
-	if bool(_rec_res.get("starter", false)) or float(it.acc) < 0.0 \
-			or rec_level(_rec, _play_mode) == Recommender.LEVEL_PUSH:
-		return str(it.reason)
-	return tr("expected %d %%") % roundi(float(it.acc) * 100.0)
+	var base := str(it.reason)
+	if not (bool(_rec_res.get("starter", false)) or float(it.acc) < 0.0 \
+			or rec_level(_rec, _play_mode) == Recommender.LEVEL_PUSH):
+		base = tr("expected %d %%") % roundi(float(it.acc) * 100.0)
+	return rec_join_reason(base, str(it.get("style", "")))
+
+
+## Grund + Stil-Grund ("expected 89 % · Jumpstream, like your favourites").
+static func rec_join_reason(base: String, style: String) -> String:
+	if style == "":
+		return base
+	return style if base == "" else "%s  ·  %s" % [base, style]
 
 
 func _on_rec_picked(ms: MapSet, diff: int) -> void:
