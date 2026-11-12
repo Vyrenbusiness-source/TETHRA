@@ -50,6 +50,18 @@ Vector3` (Tischkoordinaten: x -1..1 quer, y Hoehe, z 0 = deine Schlaegerlinie ..
 - Multiplayer: Live-Score (Lobby.send_score) und Endergebnis (Lobby.send_final mit
   PlayerStatsCard.pack) wie mania_3d/orbit_game; Turniere ueber Lobby wie die anderen Modi.
 
+## Sterne (v2, Zonen)
+`RallyChart.stars`: je 2-s-Fenster Last (Baelle/s), je Ball 1 + Zonensprung (0,16 je Zonen-Abstand,
+nur bei Abstand < 450 ms) + Stream (0,25 bei Abstand < 200 ms) + Schmetterball (0,7) + Aufladen
+(0,45); Dichte-Kurve `0,15 * x^1,55`, haerteste Fenster zaehlen am meisten (Abklingfaktor 0,95),
+weiche Kappe ab 11, Maximum 15. Kalibriert auf der Kartenbibliothek: Median ~4 Sterne
+(Messwerte unten).
+
+## Einstellung
+`Settings.rally_flight_ms` (Flugzeit, 450-1400 ms, Standard 800, Einstellungen > Steuerung > Rally).
+Tasten der Zonen = Mania-4K-Tasten (`Settings.key_lanes`). Replay-Codes: EV_DOWN 1-4, EV_UP 5-8
+(je Zone), Regel-Marke 9.
+
 ## Code
 scripts/rally/ (rally_chart.gd, rally_core.gd, rally_view.gd, rally_game.gd), scenes/rally.tscn,
 tests/run_rally_tests.gd.

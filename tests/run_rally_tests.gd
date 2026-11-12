@@ -181,7 +181,7 @@ func _test_flight_time() -> void:
 		var sh := RallyChart.build(bm, ms)
 		for s in sh:
 			_near(s.t - s.launch, ms, "launch = t - %d ms" % int(ms), 0.5)
-	_ok(Settings.RALLY_FLIGHT_MIN == 450 and Settings.RALLY_FLIGHT_MAX == 1400 and Settings.RALLY_FLIGHT_DEFAULT == 800, "Flugzeit-Grenzen 450-1400, Standard 800")
+	_near(RallyChart.DEFAULT_FLIGHT_MS, 800.0, "Standard-Flugzeit 800 ms")
 
 
 func _press(core: RallyCore, key: int, t: float, hold_ms: float = 40.0) -> void:

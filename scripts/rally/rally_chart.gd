@@ -8,6 +8,8 @@ extends RefCounted
 ## Koordinaten der Flugbahn sind normiert (x in Breiten, y in Hoehen, y waechst
 ## nach unten): die Ansicht skaliert auf ihr Rechteck.
 
+## Standard-Flugzeit (= Settings.RALLY_FLIGHT_DEFAULT); das Spiel uebergibt die Einstellung.
+const DEFAULT_FLIGHT_MS := 800.0
 const KEY_A := 0
 const KEY_B := 1
 ## Akkord-Toleranz (gleiche Zeit in der Quell-Map).
@@ -86,7 +88,7 @@ static func build(beatmap: Beatmap, flight_ms: float = -1.0) -> Array[Shot]:
 		out.append(s)
 	finalize(out)
 	if flight_ms <= 0.0:
-		flight_ms = float(Settings.rally_flight_ms)
+		flight_ms = DEFAULT_FLIGHT_MS
 	finalize_flight(out, flight_ms)
 	return out
 
