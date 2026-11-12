@@ -994,6 +994,9 @@ func _draw_ball(i: int, n: OrbitNote, R: float, t: float) -> void:
 	# "folgen": kurz zu Beginn des Haltens und wenn die Kugel wegzulaufen droht.
 	var since := t - _state_t[i]
 	var ta := maxf(1.0 - smoothstep(FOLLOW_TIP_MS * 0.6, FOLLOW_TIP_MS, since), warn)
+	# Erst-Hinweis an diesem Ball sagt schon "folgen": nicht doppelt beschriften.
+	if not _hint.is_empty() and int(_hint[1]) == i and warn < 0.02:
+		ta = 0.0
 	if ta > 0.02:
 		var f := get_theme_default_font()
 		if f != null:
