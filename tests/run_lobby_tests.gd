@@ -489,8 +489,8 @@ func _play_four(L) -> void:
 	L.is_host = true
 	L.crown_id = 1
 	L.players = { 1: L._new_player("Host"), 2: L._new_player("Anna") }
-	_check(L.PLAY_MODES == ["mania", "orbit", "rally", "dirigent"], "Raum kennt 4 Modi")
-	for m in ["mania", "orbit", "rally", "dirigent"]:
+	_check(L.PLAY_MODES == ["mania", "orbit", "rally", "dirigent", "trace", "rebound"], "Raum kennt 6 Modi")
+	for m in ["mania", "orbit", "rally", "dirigent", "trace", "rebound"]:
 		_check(L.norm_play(m) == m, "norm_play %s" % m)
 		L.set_play_mode(m)
 		_check(L.play_mode == m, "Krone stellt %s ein" % m)
@@ -504,8 +504,11 @@ func _play_four(L) -> void:
 	L.set_play_mode("dirigent")
 	_check(L.view_of(1) == "Dirigent", "Dirigent-Raum: Darstellung Dirigent")
 	_check(L.norm_view("Rally") == "Rally" and L.norm_view("Dirigent") == "Dirigent" and L.norm_view("Tetris") == "", "norm_view 4 Modi")
+	_check(L.norm_view("Trace") == "Trace" and L.norm_view("Rebound") == "Rebound", "norm_view Trace/Rebound")
+	_check(Tournament.map_mode_ok("trace", 3) and not Tournament.map_mode_ok("trace", 0) and not Tournament.map_mode_ok("mania", 0)
+		and Tournament.map_mode_ok("orbit", 0) and Tournament.map_mode_ok("rally", 3), "Turnier: Map-Modus je Spielmodus")
 	_check(L.play_scene("mania") == "res://scenes/mania_3d.tscn" and L.play_scene("orbit") == "res://scenes/orbit.tscn", "Szene Mania/Orbit")
-	for m in ["rally", "dirigent"]:
+	for m in ["rally", "dirigent", "trace", "rebound"]:
 		var sc: String = L.play_scene(m)
 		_check(sc == ScoreStore.mode_scene(m) if ScoreStore.mode_ready(m) else sc == "res://scenes/mania_3d.tscn", "Szene %s (fehlt sie: Mania statt Absturz)" % m)
 	L.set_play_mode("rally")

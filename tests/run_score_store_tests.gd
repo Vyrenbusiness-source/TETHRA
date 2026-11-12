@@ -104,7 +104,17 @@ func _init() -> void:
 
 ## Rally/Dirigent: eigene Sektionen, Wertung wie Orbit, Modi mischen sich nie.
 func _test_four_modes() -> void:
-	_check(ScoreStore.MODES == ["mania", "orbit", "rally", "dirigent"], "4 Modi in Reihenfolge")
+	_check(ScoreStore.MODES == ["mania", "orbit", "rally", "dirigent", "trace", "rebound"], "6 Modi in Reihenfolge")
+	_check(ScoreStore.mode_label("trace") == "Trace" and ScoreStore.mode_label("rebound") == "Rebound", "mode_label Trace/Rebound")
+	_check(ScoreStore.uses_points("trace") and ScoreStore.uses_points("rebound") and not ScoreStore.uses_points("quatsch"), "Trace/Rebound ohne pp")
+	_check(ScoreStore.is_mania_like("") and ScoreStore.is_mania_like("trace") and ScoreStore.is_mania_like("rebound")
+		and not ScoreStore.is_mania_like("orbit") and not ScoreStore.is_mania_like("rally"), "is_mania_like")
+	_check(ScoreStore.mode_scene("trace") == "res://scenes/trace.tscn" and ScoreStore.mode_scene("rebound") == "res://scenes/rebound.tscn", "mode_scene Trace/Rebound")
+	_check(ScoreStore.mode_tutorial("orbit") == "res://scenes/orbit_tutorial.tscn" and ScoreStore.mode_tutorial("quatsch") == ""
+		and (ScoreStore.mode_tutorial("rally") == "" or ResourceLoader.exists(ScoreStore.mode_tutorial("rally"))), "mode_tutorial nur mit Szene")
+	ScoreStore.submit("78 Six.osz", "Hard", { "score": 900000, "grade": "S", "accuracy": 0.97, "stars": 5.0, "mode": "trace" }, ScoreStore.MODE_TRACE)
+	_check(int(ScoreStore.best("78 Six.osz", "Hard", ScoreStore.MODE_TRACE).score) == 900000
+		and ScoreStore.best("78 Six.osz", "Hard").is_empty() and ScoreStore.best("78 Six.osz", "Hard", ScoreStore.MODE_REBOUND).is_empty(), "Trace-Bestwert getrennt von Mania/Rebound")
 	_check(ScoreStore.mode_label("rally") == "Rally" and ScoreStore.mode_label("dirigent") == "Dirigent"
 		and ScoreStore.mode_label("") == "Mania 4K" and ScoreStore.mode_label("orbit") == "Orbit", "mode_label je Modus")
 	_check(ScoreStore.uses_points("rally") and ScoreStore.uses_points("dirigent") and ScoreStore.uses_points("orbit")
