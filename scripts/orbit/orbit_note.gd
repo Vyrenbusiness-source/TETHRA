@@ -44,10 +44,17 @@ var is_hold: bool = false
 var path: PackedVector2Array = PackedVector2Array()
 ## Erscheint auf diesem Beat-Tick (ms).
 var spawn_ms: float = 0.0
-## Dauer einer Satelliten-Runde (ms), meist ein Beat.
+## Dauer einer Satelliten-Runde (ms): ein Beat, 2 Beats unter 450 ms, 4 unter 225 ms.
 var lap_ms: float = 500.0
-## Runden ab spawn_ms bis zum Treffer (Pips beim Erscheinen).
+## Runden ab spawn_ms bis zum Treffer (Pips beim Erscheinen); 0 = nur eine Teilrunde.
 var laps: int = 2
+## Beat-Dauer (ms) an time_ms, vom Konverter gesetzt (0 = unbekannt).
+var beat_ms: float = 0.0
+## Nur Sterne: Vorlauf nach der Rundenregel vor 4 (Konverter setzt ihn), damit die
+## laengeren Runden die Sterne nicht verschieben. read_laps -1 = laps/spawn_ms nehmen,
+## 0 = Ziel waere vor Regeln 4 weggefallen (zaehlt als Teilrunde, schwer zu lesen).
+var read_laps: int = -1
+var read_spawn_ms: float = 0.0
 var _path_len: PackedFloat32Array = PackedFloat32Array()
 
 
@@ -102,8 +109,11 @@ func pos_at(t_ms: float) -> Vector2:
 	return path[path.size() - 1]
 
 
-## Satellit: 0 = oben, im Uhrzeigersinn; genau oben bei t = time_ms.
+## Satellit: 0 = oben, im Uhrzeigersinn; gleichmaessig eine Runde je lap_ms, genau
+## oben bei t = time_ms und danach oben stehend (kein Weiterlaufen, kein Sprung).
 func satellite_deg(t_ms: float) -> float:
+	if t_ms >= time_ms:
+		return 0.0
 	var lap := maxf(lap_ms, 1.0)
 	return wrap_deg(360.0 - 360.0 * fposmod((time_ms - t_ms) / lap, 1.0))
 

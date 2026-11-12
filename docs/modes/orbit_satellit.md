@@ -5,7 +5,7 @@ Formen verwirrend, nicht spuerbar im Takt, "schon gesehen". Name bleibt **Orbit*
 
 ## Idee in einem Satz
 Ziele erscheinen genau auf einem Schlag an einer Stelle im Feld; um jedes Ziel kreist ein
-**Satellit genau eine Runde pro Beat**. Kleine Punkte unter dem Ziel zaehlen die
+**Satellit eine Runde pro Beat** (bei schnellen Songs pro 2 bzw. 4 Beats). Kleine Punkte unter dem Ziel zaehlen die
 Runden bis zum Treffer herunter (einer verschwindet pro Schlag). Trifft der Satellit in der
 letzten Runde die Marke oben (12 Uhr): **zielen (Cursor auf das Ziel) und die richtige Taste
 druecken**. Der Takt ist sichtbar und zaehlbar ("drei, zwei, eins, jetzt").
@@ -18,7 +18,7 @@ druecken**. Der Takt ist sichtbar und zaehlbar ("drei, zwei, eins, jetzt").
 - Taiko: Don/Ka ohne Zielen. Orbit: Don/Ka-artige Tasten + Zielen.
 - jubeat/maimai/Lanota/Cytus: feste Felder bzw. Scan-Linie/Kreisrand, kein Zielen mit Maus.
 
-## Regeln
+## Regeln (v4, ab Client 1.28.0)
 - **Anti-Mash (Regeln 4):** Falsche Taste auf das offene Ziel (Cursor im Trefferradius,
   50er-Fenster, kein Ziel fuer diese Taste) = "WRONG KEY": Ziel sofort Miss. Akzent zaehlt nur
   mit beiden Tasten, ein A-/B-Ziel nur mit seiner Taste. Richtige Taste zuerst, falsche danach:
@@ -29,13 +29,28 @@ druecken**. Der Takt ist sichtbar und zaehlbar ("drei, zwei, eins, jetzt").
   abgerundetes Quadrat), 2 = Akzent (beide Tasten, Scheibe mit weissem Ring), Zeit `time_ms`.
 - **Erscheinen**: auf dem Beat `spawn_ms` = letzter Beat-Tick <= `time_ms - laps * beat_ms`
   (Beat-Ticks aus den roten Timing-Points). `laps` = Runden (Standard 2, Einstellung
-  "Vorlauf" 1-4 Runden). Ist ein Beat kuerzer als 330 ms, zaehlt eine Runde 2 Beats
-  (`lap_ms = 2 * beat_ms`), damit der Satellit ruhig bleibt.
+  "Vorlauf" 1-4 Runden). **Rundendauer (Regeln 4)**: Beat >= 450 ms: eine Runde = 1 Beat;
+  Beat < 450 ms: 2 Beats; Beat < 225 ms: 4 Beats (`OrbitConverter.lap_ms_for`). Vorher
+  (bis Regeln 3) erst unter 330 ms 2 Beats - bei schnellen Songs war der Satellit oben zu
+  schnell. Der Vorlauf (Zeit sichtbar) bleibt wie vorher: die Runden-Einstellung zaehlt in
+  Runden der alten Regel und wird je Ziel umgerechnet (`OrbitConverter.laps_eff`, mindestens
+  1; z. B. Beat 400 ms, 2 Runden -> 1 Runde zu 2 Beats). Der Satellit wird langsamer, die
+  Ziele bleiben nicht laenger stehen. Sterne lesen den Vorlauf in Runden der alten Regel
+  (`read_laps`); Teilrunden zaehlen als schwer lesbar.
+  Passt an dichten Stellen selbst eine Runde nicht (hoechstens 6 sichtbar), erscheint
+  das Ziel auf einem spaeteren Beat mit einer Teilrunde (`laps = 0`, keine Pips); Vorlauf
+  mindestens eine halbe Runde und ein Beat. So faellt kein Ziel weg, das vor Regeln 4
+  da war; neue kommen nicht hinzu.
 - **Satellit**: Winkel `360 * frac((time_ms - t) / lap_ms)` gegen den Uhrzeigersinn
-  gerechnet so, dass er bei `t = time_ms` exakt oben steht; Punkte (Pips) unter dem Ziel =
-  verbleibende ganze Runden.
-- **Treffer**: Taste gedrueckt im Zeitfenster (OD wie Mania: CORE/SHARP/GOOD/FAIR/EDGE/MISS
-  = MAX/300/200/100/50/Miss-Fenster) **und** Cursor im Trefferradius (`AIM_RADIUS` = 1,15 x
+  gerechnet so, dass er bei `t = time_ms` exakt oben steht; gleichmaessige Geschwindigkeit
+  ohne Spitze, ab `time_ms` bleibt er oben stehen (`OrbitNote.satellite_deg`). Punkte (Pips)
+  unter dem Ziel = verbleibende ganze Runden.
+- **Zeitfenster (Regeln 4, wie osu!standard)**: std300 = 80 - 6 x OD, std100 = 140 - 8 x OD,
+  std50 = 200 - 10 x OD (ms, +-). CORE = std300 / 2, SHARP = std300, GOOD = std100,
+  FAIR = (std100 + std50) / 2, EDGE = std50, ausserhalb Miss (`OrbitCore.tier_windows`).
+  Beispiel OD 8: 16 / 32 / 76 / 98 / 120 ms. PR: alle Fenster x 0,7 (wie bisher). Vorher
+  (bis Regeln 3): Mania-Fenster (MAX/300/200/100/50).
+- **Treffer**: Taste gedrueckt im Zeitfenster **und** Cursor im Trefferradius (`AIM_RADIUS` = 1,15 x
   Zielradius) **und** richtige Taste. Akzent: beide Tasten innerhalb `ACCENT_MS` = 40 ms,
   gewertet beim zweiten Druck. Falsche Taste / daneben = kein Treffer (Feedback am Ort:
   "andere Taste", "daneben"); zu frueh (vor dem 50er-Fenster) = nichts (kein Miss).
@@ -78,7 +93,8 @@ func laps_left(t_ms) -> int
   `press_missed(pos, key, reason)` mit reason in "aim" | "key" | "early" | "lock";
   `stats()` mit Feldern wie bisher (n_max..n_miss = CORE..MISS, max_combo, accuracy, score,
   grade, aim_err, mode = "orbit"). Replays: Event-Log `[t, EV_CURSOR, x, y]`,
-  `[t, EV_DOWN + k]`, `[t, EV_UP + k]`, `meta.orbit_rules = 4`; aeltere Regeln = "aeltere Version".
+  `[t, EV_DOWN + k]`, `[t, EV_UP + k]`, `meta.orbit_rules = 4`; aeltere Regeln = "aeltere Version"
+  (Replay wird mit Hinweis abgelehnt, nicht abgespielt).
 - `OrbitView` (scripts/orbit/orbit_view.gd) zeichnet nur; liest `notes`, `t_ms`, Cursor,
   `clock`; Feld->Bildschirm `field_to_screen(p)`, `field_scale()`.
 
@@ -91,7 +107,7 @@ func laps_left(t_ms) -> int
   oben/unten), Abstand ~ Zeitabstand (gekappt), bleibt im Feld, kein Ueberlappen mit noch
   sichtbaren Zielen; Holds = Halten mit kurzem geraden/gebogenen Pfad in Flussrichtung.
 - **Lesbarkeit**: Mindestabstand 75 ms (sonst zusammenfassen), hoechstens 6 Ziele zugleich
-  sichtbar (bei mehr: Vorlauf-Runden fuer dichte Stellen verringern, nie unter 1).
+  sichtbar (bei mehr: Vorlauf-Runden fuer dichte Stellen verringern, zuletzt Teilrunde, s. o.).
   Leichte Maps (< 2,5 Ziele/s): kleine Spruenge, keine Akzente.
 - **Sterne** (0..15): Dichte, Sprungweite pro Zeit (Zielen), Tastenwechsel-Rate, Halten.
   Kalibrieren gegen die Bibliothek: Median ~4, leichte Diffs < 2,5.
@@ -127,3 +143,12 @@ func laps_left(t_ms) -> int
   Mods HD/FI (Satellit/Pips ausblenden), PR (Fenster/Radius enger).
 - **Sterne** spiegeln Zielen (Sprung/Zeit, Richtungswechsel), Tempo (Dichte, Wechsel) und
   Lesen (Runden, Ueberlappung) wider: 1 Stern leicht, 8+ schwer.
+
+## Hinweis fuer den Server-Betreiber (Regeln v4 ab Client 1.28.0)
+- Orbit-Scores enthalten dieselben Felder wie bisher (n_max..n_miss = CORE..MISS, max_combo,
+  accuracy, score, grade, aim_err, mode = "orbit"); Stufenwerte, Score-Formel und
+  Mod-Faktoren sind unveraendert, die Server-Pruefung bleibt gleich.
+- Neu sind nur die Zeitfenster (wie osu!standard) und die Rundendauer bei schnellen Songs:
+  Scores ab Client 1.28.0 (Regeln v4) sind mit aelteren nicht 1:1 vergleichbar. Wer trennen
+  will: Client-Version >= 1.28.0 = Regeln v4. Replays tragen `orbit_rules = 4`.
+- QA (Bot-Acc je Sterne-Band vorher/nachher): docs/modes/orbit_satellit_qa.md.

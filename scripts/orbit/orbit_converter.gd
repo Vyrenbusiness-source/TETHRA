@@ -15,10 +15,16 @@ const MIN_GAP_MS := 75.0
 const MAX_VISIBLE := 6
 ## Leichte Maps: weniger Ziele je Sekunde.
 const EASY_NPS := 2.5
-## Beats kuerzer als das: eine Runde = 2 Beats.
+## Regeln 4: Beat kuerzer als SLOW_BEAT_MS = eine Runde 2 Beats, kuerzer als
+## FAST_BEAT_MS = 4 Beats (Satellit bleibt lesbar). Vorher (legacy): unter
+## MIN_BEAT_MS 2 Beats.
+const SLOW_BEAT_MS := 450.0
+const FAST_BEAT_MS := 225.0
 const MIN_BEAT_MS := 330.0
 const MIN_HOLD_MS := 100.0
 const MAX_HOLD_MS := 6000.0
+## Nur Messungen (QA vorher/nachher): Runden nach der Regel vor Regeln 4.
+static var legacy_laps := false
 const EASY_HOLD_BEATS := 2.0
 
 ## Erzeugte Positionen (Mania): ganzes 4:3-Feld, Rand ~ Zielradius.
@@ -333,7 +339,7 @@ static func _build(events: Array, bm: Beatmap, laps_req: int, mania: bool) -> Ar
 		var end: float = e.end
 		var is_hold := end - t >= MIN_HOLD_MS
 		var beat := clock.beat_ms_at(t)
-		var lap := beat if beat >= MIN_BEAT_MS else 2.0 * beat
+		var lap := lap_ms_for(beat, legacy_laps)
 		var dt := 0.5 if prev_t == -INF else maxf((t - prev_t) / 1000.0, 0.0)
 		# Halte-Dauer leichter Maps
 		if is_hold and easy and not mania:
@@ -363,7 +369,8 @@ static func _build(events: Array, bm: Beatmap, laps_req: int, mania: bool) -> Ar
 				var delta := want - prev_pos
 				if delta.length() > maxd:
 					want = prev_pos + delta.normalized() * maxd
-		var spawn_req := clock.beat_tick_at_or_before(t - float(laps_req) * lap)
+		var laps_n := laps_eff(laps_req, beat)
+		var spawn_req := clock.beat_tick_at_or_before(t - float(laps_n) * lap)
 		var pos := _free_pos(want, prev_pos, placed, spawn_req, idx, prev_t != -INF) if mania else want
 		# Ziel bauen
 		var n: OrbitNote
@@ -381,7 +388,8 @@ static func _build(events: Array, bm: Beatmap, laps_req: int, mania: bool) -> Ar
 			prev_pos = pos
 			prev_t = t
 		n.lap_ms = lap
-		n.laps = laps_req
+		n.beat_ms = beat
+		n.laps = laps_n
 		placed.append([pos, spawn_req, maxf(end, t)])
 		built.append(n)
 	return _assign_laps(built, clock, laps_req)
@@ -514,14 +522,60 @@ static func _std_hold_path(raw: PackedVector2Array, pos: Vector2, src_pos: Vecto
 	return out
 
 
-## Erscheinen auf einem Beat-Tick; Runden an dichten Stellen verringern.
+## Lesen (Sterne): Runden nach der Regel vor 4 (read_laps), sonst laps.
+static func _read_laps(n: OrbitNote) -> float:
+	return float(n.read_laps if n.read_laps >= 0 else n.laps)
+
+
+static func _read_spawn(n: OrbitNote) -> float:
+	return n.read_spawn_ms if n.read_laps >= 0 else n.spawn_ms
+
+
+
+## Regeln 4: Runden je Ziel, so dass der Vorlauf (Zeit sichtbar) dem der alten Regel
+## entspricht: laps_req alte Runden in neue umgerechnet, mindestens 1. Die laengeren
+## Runden machen den Satelliten langsamer, nicht die Ziele laenger sichtbar.
+static func laps_eff(laps_req: int, beat_ms: float) -> int:
+	if legacy_laps:
+		return laps_req
+	return maxi(1, roundi(float(laps_req) * lap_ms_for(beat_ms, true) / lap_ms_for(beat_ms)))
+
+
+## Dauer einer Satelliten-Runde (ms) zum Beat. legacy: Regel vor Regeln 4 (Messung).
+static func lap_ms_for(beat_ms: float, legacy: bool = false) -> float:
+	if legacy:
+		return beat_ms if beat_ms >= MIN_BEAT_MS else 2.0 * beat_ms
+	if beat_ms < FAST_BEAT_MS:
+		return 4.0 * beat_ms
+	if beat_ms < SLOW_BEAT_MS:
+		return 2.0 * beat_ms
+	return beat_ms
+
+
+## Erscheinen auf einem Beat-Tick; Runden an dichten Stellen verringern. Passt
+## selbst eine Runde nicht (lange Runden bei schnellen Songs), erscheint das Ziel
+## auf einem spaeteren Beat mit einer Teilrunde (laps 0, keine Pips), Vorlauf aber
+## mindestens eine halbe Runde und ein Beat.
 static func _assign_laps(ns: Array[OrbitNote], clock: OrbitClock, laps_req: int) -> Array[OrbitNote]:
 	var out: Array[OrbitNote] = []
 	var vis: Array = []   # [spawn, end]
+	var vis_old: Array = []   # dasselbe nach der Regel vor 4 (nur Sterne)
 	for n in ns:
 		var end := maxf(n.end_ms, n.time_ms)
+		if not legacy_laps:
+			# Sterne lesen den Vorlauf der alten Regel: dieselbe Zuteilung mit alten Runden.
+			var lo := lap_ms_for(n.beat_ms, true) if n.beat_ms > 0.0 else n.lap_ms
+			n.read_laps = 0
+			n.read_spawn_ms = n.time_ms - lo
+			for lr in range(laps_req, 0, -1):
+				var so := clock.beat_tick_at_or_before(n.time_ms - float(lr) * lo)
+				if _fits(vis_old, so, end):
+					n.read_spawn_ms = so
+					n.read_laps = lr
+					vis_old.append([so, end])
+					break
 		var ok := false
-		var l := laps_req
+		var l := n.laps
 		while l >= 1:
 			var sp := clock.beat_tick_at_or_before(n.time_ms - float(l) * n.lap_ms)
 			if _fits(vis, sp, end):
@@ -530,6 +584,19 @@ static func _assign_laps(ns: Array[OrbitNote], clock: OrbitClock, laps_req: int)
 				ok = true
 				break
 			l -= 1
+		# Teilrunde nur fuer Ziele, die die alte Regel behalten haette (keine neuen Ziele).
+		if not ok and not legacy_laps and n.read_laps > 0:
+			var bound := n.time_ms - maxf(0.5 * n.lap_ms, clock.beat_ms_at(n.time_ms)) + 0.5
+			var sp := clock.beat_tick_at_or_before(n.time_ms - n.lap_ms)
+			while not ok:
+				var nx := clock.beat_tick_at_or_before(sp + clock.beat_ms_at(sp) + 0.5)
+				if nx <= sp + 0.5 or nx > bound:
+					break
+				sp = nx
+				if _fits(vis, sp, end):
+					n.spawn_ms = sp
+					n.laps = 0
+					ok = true
 		if ok:
 			vis.append([n.spawn_ms, end])
 			out.append(n)
@@ -604,7 +671,8 @@ static func violations(ns: Array[OrbitNote], beatmap: Beatmap) -> Dictionary:
 				v.field += 1
 				break
 		if absf(n.spawn_ms - clock.beat_tick_at_or_before(n.spawn_ms)) > 1.0 \
-				or n.spawn_ms > n.time_ms - float(n.laps) * n.lap_ms + 1.0 or n.laps < 1:
+				or n.spawn_ms > n.time_ms - float(n.laps) * n.lap_ms + 1.0 or n.laps < 0 \
+				or n.spawn_ms > n.time_ms - 0.5 * n.lap_ms + 1.0:
 			v.spawn += 1
 		if n.is_hold and (n.path.size() < 2 or n.path[0] != n.pos):
 			v.hold += 1
@@ -690,11 +758,11 @@ static func stars_raw(ns: Array[OrbitNote]) -> float:
 		if n.key == OrbitNote.KEY_ACCENT:
 			acc[w] += 1.0
 		# Lesen: wenige Runden und Ueberdeckung (Ziele nahe an noch sichtbaren)
-		var lap_pen := maxf(3.0 - float(n.laps), 0.0) * 0.5
+		var lap_pen := maxf(3.0 - _read_laps(n), 0.0) * 0.5
 		var olap := 0.0
 		for j in range(maxi(i - 6, 0), i):
 			var m := ns[j]
-			if maxf(m.end_ms, m.time_ms) > n.spawn_ms and m.pos.distance_to(n.pos) < 0.15:
+			if maxf(m.end_ms, m.time_ms) > _read_spawn(n) and m.pos.distance_to(n.pos) < 0.15:
 				olap += 0.5
 		rdg[w] += lap_pen + minf(olap, 1.5)
 		if i > 0:

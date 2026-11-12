@@ -25,6 +25,7 @@ func _initialize() -> void:
 	_test_mods()
 	_test_replay()
 	_test_anti_mash()
+	_test_windows()
 	print("=== Ergebnis: %d bestanden, %d fehlgeschlagen ===" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
 
@@ -454,3 +455,32 @@ func _test_anti_mash() -> void:
 	g.cursor_moved(P, 0.0)
 	g.key_down(1, 1000.0)
 	_ok(g.n_miss == 0 and not g.is_judged(0) and not lg.has(["wrong", 1]), "Leer-Druck = nichts")
+
+
+func _test_windows() -> void:
+	print("- Fenster wie osu!standard (Regeln 4)")
+	var w := OrbitCore.tier_windows(5.0)
+	_ok(is_equal_approx(w[0], 25.0) and is_equal_approx(w[1], 50.0) and is_equal_approx(w[2], 100.0)
+		and is_equal_approx(w[3], 125.0) and is_equal_approx(w[4], 150.0),
+		"OD 5: CORE 25, SHARP 50, GOOD 100, FAIR 125, EDGE 150 (%s)" % str(w))
+	var c := _core(_notes([_tap(1000.0, P, 0)]))
+	_ok(is_equal_approx(c.w_max, 16.0) and is_equal_approx(c.w300, 32.0) and is_equal_approx(c.w200, 76.0)
+		and is_equal_approx(c.w100, 98.0) and is_equal_approx(c.w50, 120.0), "OD 8 im Core: 16/32/76/98/120")
+	var pr := _core(_notes([_tap(1000.0, P, 0)]), {"PR": true})
+	_ok(is_equal_approx(pr.w300, 32.0 * 0.7) and is_equal_approx(pr.w50, 120.0 * 0.7), "PR: alle Fenster x 0,7")
+	var tiers := [[10.0, "n_max"], [20.0, "n300"], [60.0, "n200"], [90.0, "n100"], [115.0, "n50"]]
+	var ok := true
+	for tq in tiers:
+		var ct := _core(_notes([_tap(1000.0, P, 0)]))
+		ct.cursor_moved(P, 0.0)
+		ct.key_down(0, 1000.0 + float(tq[0]))
+		ct.update(1200.0)
+		ok = ok and int(ct.get(tq[1])) == 1
+	_ok(ok, "Stufen nach |dt| 10/20/60/90/115 ms = CORE/SHARP/GOOD/FAIR/EDGE")
+	var late := _core(_notes([_tap(1000.0, P, 0)]))
+	late.cursor_moved(P, 0.0)
+	late.key_down(0, 1000.0 + 121.0)
+	late.update(1300.0)
+	_ok(late.n_miss == 1 and late.n50 == 0, "ausserhalb EDGE = MISS")
+	var old := OrbitCore.tier_windows(8.0, true)
+	_ok(is_equal_approx(old[0], 16.5) and is_equal_approx(old[4], 127.5), "legacy (vorher): Mania-Fenster")

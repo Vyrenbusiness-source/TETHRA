@@ -360,7 +360,7 @@ func _test_spawn_on_beat() -> void:
 
 
 func _test_lap_ms() -> void:
-	print("- lap_ms: Beat, unter 330 ms zwei Beats")
+	print("- lap_ms: Beat, unter 450 ms zwei Beats, unter 225 ms vier Beats")
 	var bm := _std_bm(120.0)
 	_stream(bm, 6, 500.0)
 	_ok(absf(OrbitConverter.convert(bm)[0].lap_ms - 500.0) < 1e-6, "120 BPM: 500 ms")
@@ -369,7 +369,25 @@ func _test_lap_ms() -> void:
 	_ok(absf(OrbitConverter.convert(bm2)[0].lap_ms - 500.0) < 1e-6, "240 BPM: 2 Beats = 500 ms")
 	var bm3 := _std_bm(180.0)
 	_stream(bm3, 6, 500.0)
-	_ok(absf(OrbitConverter.convert(bm3)[0].lap_ms - 333.3333) < 0.01, "180 BPM (333 ms): 1 Beat")
+	_ok(absf(OrbitConverter.convert(bm3)[0].lap_ms - 666.6667) < 0.01, "180 BPM (333 ms): 2 Beats")
+	var bm4 := _std_bm(300.0)
+	_stream(bm4, 6, 500.0)
+	_ok(absf(OrbitConverter.convert(bm4)[0].lap_ms - 800.0) < 1e-6, "300 BPM (200 ms): 4 Beats = 800 ms")
+	_ok(is_equal_approx(OrbitConverter.lap_ms_for(450.0), 450.0) and is_equal_approx(OrbitConverter.lap_ms_for(449.0), 898.0)
+		and is_equal_approx(OrbitConverter.lap_ms_for(225.0), 450.0) and is_equal_approx(OrbitConverter.lap_ms_for(224.0), 896.0),
+		"Grenzen 450 / 225 ms")
+	_ok(is_equal_approx(OrbitConverter.lap_ms_for(333.0, true), 333.0), "legacy (vorher): 330-ms-Grenze")
+	var n := OrbitNote.make_target(2000.0, Vector2(0.5, 0.5), 0)
+	n.lap_ms = 800.0
+	var even := true
+	var prev := n.satellite_deg(400.0)
+	for i in range(1, 160):
+		var d := fposmod(n.satellite_deg(400.0 + 10.0 * i) - prev, 360.0)
+		even = even and absf(d - 4.5) < 1e-3
+		prev = n.satellite_deg(400.0 + 10.0 * i)
+	_ok(even, "Satellit gleichmaessig (4,5 Grad je 10 ms bei 800-ms-Runde, keine Spitze)")
+	_ok(is_zero_approx(n.satellite_deg(2000.0)) and is_zero_approx(n.satellite_deg(2080.0)) and n.satellite_deg(1999.0) > 359.0,
+		"Satellit endet exakt oben und bleibt dort")
 
 
 func _test_visible_limit() -> void:
@@ -382,11 +400,15 @@ func _test_visible_limit() -> void:
 		_ok(a.max_visible <= 6, "laps %d: max sichtbar %d <= 6 (%d Ziele)" % [laps, a.max_visible, ns.size()])
 	var ns4 := OrbitConverter.convert(bm, 4)
 	var min_laps := 9
-	var all_ge1 := true
+	var lead_ok := true
 	for n in ns4:
 		min_laps = mini(min_laps, n.laps)
-		all_ge1 = all_ge1 and n.laps >= 1
-	_ok(all_ge1 and min_laps < 4, "dichte Stellen verringern die Runden (min %d, nie < 1)" % min_laps)
+		lead_ok = lead_ok and n.time_ms - n.spawn_ms >= maxf(0.5 * n.lap_ms, 400.0) - 1.0
+	_ok(lead_ok and min_laps < 4, "dichte Stellen verringern die Runden (min %d, Vorlauf >= halbe Runde und 1 Beat)" % min_laps)
+	OrbitConverter.legacy_laps = true
+	var old4 := OrbitConverter.convert(bm, 4).size()
+	OrbitConverter.legacy_laps = false
+	_ok(ns4.size() >= old4, "lange Runden kosten keine Ziele (%d, vorher %d)" % [ns4.size(), old4])
 	var bm2 := _std_bm(120.0)
 	_stream(bm2, 8, 1000.0)
 	var sparse := OrbitConverter.convert(bm2, 4)

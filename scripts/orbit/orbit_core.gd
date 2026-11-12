@@ -3,7 +3,7 @@ extends RefCounted
 
 ## Orbit-Wertung (Satelliten, docs/modes/orbit_satellit.md): Ziele liegen im Feld
 ## (0..1 x 0..1) an OrbitNote.pos. Ein Treffer zaehlt nur, wenn Zeitfenster
-## (OD wie Mania) UND Cursor im Trefferradius (AIM_RADIUS x Zielradius) UND die
+## (OD wie osu!standard, tier_windows) UND Cursor im Trefferradius (AIM_RADIUS x Zielradius) UND die
 ## richtige Taste stimmen. Taste 0 = A, 1 = B; Akzent (key 2) = beide Tasten
 ## innerhalb ACCENT_MS, gewertet beim zweiten Druck.
 ## Nur das fruehste offene Ziel ist trefferbar (Notelock), ausser es liegt im
@@ -43,6 +43,8 @@ const FOLLOW_RADIUS := 2.0
 const ACCENT_MS := 40.0
 ## So lange darf die Kugel beim Halten ausserhalb des Folgeradius sein.
 const HOLD_OUT_MS := 150.0
+## Druck so weit vor dem EDGE-Fenster heisst noch "early" (sonst gar nichts).
+const EARLY_MS := 40.0
 
 const ORBIT_MODS := ["HD", "FI", "PR"]
 const ORBIT_MOD_ORDER := ["HD", "FI", "PR", "NF", "SV"]
@@ -67,7 +69,8 @@ const GRADE_STEPS := [[0.95, "S"], [0.90, "A"], [0.82, "B"], [0.72, "C"]]
 const REC_MIN_Q := 3
 const REC_GAP_MS := 8.0
 const Q_LIMIT := 4000
-## Replay-Format 4 (Satelliten + Anti-Mash: falsche Taste = Miss). Kleineres meta.orbit_rules = "aeltere Version".
+## Replay-Format 4 (Satelliten + Anti-Mash: falsche Taste = Miss, Fenster wie osu!standard,
+## Runde = 2/4 Beats bei schnellen Songs; ab Client 1.28.0). Kleineres meta.orbit_rules = "aeltere Version".
 const REPLAY_RULES := 4
 ## [t, EV_CURSOR, x, y] / [t, EV_DOWN + k] / [t, EV_UP + k]; x/y Tausendstel Feld.
 const EV_CURSOR := 0
@@ -154,18 +157,19 @@ var w_miss: float:
 
 
 ## p_notes: Ergebnis von OrbitConverter.convert. od: OverallDifficulty (Fenster wie
-## Mania). p_mods: Mod-Dictionary, null = GameSession. p_target_radius: Zielradius
+## osu!standard, tier_windows). p_mods: Mod-Dictionary, null = GameSession. p_target_radius: Zielradius
 ## in Feld-Einheiten. hp_drain: HPDrainRate der Map.
 func setup(p_notes: Array[OrbitNote], od: float, p_mods = null,
 		p_target_radius: float = DEFAULT_TARGET_RADIUS, hp_drain: float = 5.0) -> void:
 	notes = p_notes
 	_tally = ManiaCore.new()
-	_tally.w_max = DifficultyCalc.mania_window_max(od)
-	_tally.w300 = DifficultyCalc.mania_window_300(od)
-	_tally.w200 = DifficultyCalc.mania_window_200(od)
-	_tally.w100 = DifficultyCalc.mania_window_100(od)
-	_tally.w50 = DifficultyCalc.mania_window_50(od)
-	_tally.w_miss = DifficultyCalc.mania_window_miss(od)
+	var w := tier_windows(od)
+	_tally.w_max = w[0]
+	_tally.w300 = w[1]
+	_tally.w200 = w[2]
+	_tally.w100 = w[3]
+	_tally.w50 = w[4]
+	_tally.w_miss = w[5]
 	_tally._hp_miss_damage = 0.04 + 0.04 * (hp_drain / 10.0)
 	var m: Dictionary = p_mods if p_mods is Dictionary else ManiaCore.session_mods()
 	_tally.mods = m.duplicate()
@@ -234,6 +238,22 @@ static func _vertex_times(n: OrbitNote) -> PackedFloat64Array:
 	for i in acc.size():
 		out.append(n.time_ms + (dur * acc[i] / total if total > 0.0 else 0.0))
 	return out
+
+
+## Zeitfenster (+- ms, ohne Mods) [CORE, SHARP, GOOD, FAIR, EDGE, frueh]. Regeln 4 wie
+## osu!standard: std300 = 80 - 6 OD, std100 = 140 - 8 OD, std50 = 200 - 10 OD; CORE =
+## std300 / 2, SHARP = std300, GOOD = std100, FAIR = (std100 + std50) / 2, EDGE = std50,
+## ausserhalb Miss. "frueh" (EDGE + EARLY_MS) trennt nur die Fehldruck-Gruende
+## "early"/"far". legacy = Fenster vor Regeln 4 (wie Mania), nur fuer Vorher-Messungen.
+static func tier_windows(od: float, legacy: bool = false) -> PackedFloat64Array:
+	if legacy:
+		return PackedFloat64Array([DifficultyCalc.mania_window_max(od), DifficultyCalc.mania_window_300(od),
+			DifficultyCalc.mania_window_200(od), DifficultyCalc.mania_window_100(od),
+			DifficultyCalc.mania_window_50(od), DifficultyCalc.mania_window_miss(od)])
+	var s300 := DifficultyCalc.window_perfect(od)
+	var s100 := DifficultyCalc.window_good(od)
+	var s50 := DifficultyCalc.window_meh(od)
+	return PackedFloat64Array([s300 * 0.5, s300, s100, (s100 + s50) * 0.5, s50, s50 + EARLY_MS])
 
 
 static func window_scale(p_mods: Dictionary) -> float:
