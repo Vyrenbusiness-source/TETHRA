@@ -693,6 +693,19 @@ func _page_orbit(pg: VBoxContainer) -> void:
 		"Welt: die 3D-Welt, ruhig und abgedunkelt")
 	_world_row(g)
 
+	# Map-Bild hinter Orbit (Hintergrund "Map-Bild"), Rally und Dirigent.
+	var gm := _group(pg, "Map-Bild in Orbit, Rally, Dirigent")
+	_slider(gm, "Map-Bild", 0.0, 100.0, 5.0,
+		func(s): return s.modes_bg_dim * 100.0,
+		func(v): Settings.modes_bg_dim = Settings.clamp_bg_dim(v / 100.0),
+		func(v): return _fmt_bg(Settings.clamp_bg_dim(v / 100.0)),
+		"Deckkraft des Map-Bilds, 0 % = aus")
+	_slider(gm, "Hintergrund-Unschärfe", 0.0, 100.0, 5.0,
+		func(s): return float(s.modes_bg_blur),
+		func(v): Settings.modes_bg_blur = clampi(int(round(v)), 0, 100),
+		func(v): return _fmt_pct0(v / 100.0) if v > 0.5 else tr("Aus"),
+		"Wie weich das Map-Bild ist, 0 % = scharf")
+
 
 func _page_notes(pg: VBoxContainer) -> void:
 	var g := _group(pg, "Notenfarben", false)
