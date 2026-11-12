@@ -317,6 +317,10 @@ func _test_key_conflicts(S: Node) -> void:
 	S.orbit_key_outer = KEY_X
 	S.dirigent_key_a = KEY_Z
 	S.dirigent_key_b = KEY_X
+	var k3: Array[int] = [KEY_F, KEY_J, KEY_K]
+	var k4: Array[int] = [KEY_D, KEY_F, KEY_J, KEY_K]
+	S.rally_keys_3 = k3
+	S.rally_keys_4 = k4
 	_panel.call("_refresh_labels")
 	var lanes: Array = _panel.get("_lane_btns")
 	await _click(lanes[1])
