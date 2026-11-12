@@ -81,6 +81,11 @@ func _click_at(p: Vector2) -> void:
 
 
 func _click(c: Control) -> void:
+	# Knoepfe weiter unten erst in den sichtbaren Bereich scrollen (Klick per Position).
+	var sc: ScrollContainer = _panel.get("_scroll") if _panel != null else null
+	if sc != null and sc.is_ancestor_of(c) and not sc.get_global_rect().encloses(c.get_global_rect()):
+		sc.ensure_control_visible(c)
+		await _frames(3)
 	await _click_at(c.get_global_rect().get_center())
 
 
@@ -307,6 +312,12 @@ func _conflict_shown(base: int) -> bool:
 ## Doppelte Taste innerhalb eines Modus: roter Hinweis, nicht uebernommen;
 ## dieselbe Taste in einem anderen Modus ist erlaubt. Jede Belegung ist aenderbar.
 func _test_key_conflicts(S: Node) -> void:
+	# Ausgangsbelegung fest (die echte settings.cfg kann andere Tasten haben).
+	S.orbit_key_inner = KEY_Z
+	S.orbit_key_outer = KEY_X
+	S.dirigent_key_a = KEY_Z
+	S.dirigent_key_b = KEY_X
+	_panel.call("_refresh_labels")
 	var lanes: Array = _panel.get("_lane_btns")
 	await _click(lanes[1])
 	await _key(KEY_D)
