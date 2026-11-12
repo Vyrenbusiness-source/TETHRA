@@ -4727,7 +4727,7 @@ func _capture_after_first_note() -> void:
 				SyncClock.seek_ms(shot_at - 2500.0)
 				if OS.get_cmdline_args().has("--nohud"):
 					_hud.visible = false
-				print("MOVIE_START frame=%d" % Engine.get_process_frames())
+				print("MOVIE_START frame=%d t=%.2f" % [Engine.get_process_frames(), _time_ms()])
 				await get_tree().create_timer(ma.trim_prefix("--movie-len=").to_float(), true).timeout
 				get_tree().quit(0)
 				return

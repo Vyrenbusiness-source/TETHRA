@@ -106,7 +106,7 @@ mp3, songwav = song_assets()
 def readwav(p):
     with open(p, "rb") as f: raw = f.read()
     i = raw.index(b"data") + 8
-    return np.frombuffer(raw[i:], dtype="<i2").astype(np.float32)
+    return np.frombuffer(raw[i:], dtype="<i2").astype(np.float64)
 song = readwav(songwav)
 
 def dump_audio(src, dst, ss=0.0, t=None):
@@ -123,7 +123,7 @@ def correlate(clip_wav, expected_ms):
     ref = song[lo:hi]
     q = q - q.mean(); ref0 = ref - ref.mean()
     cc = fftconvolve(ref0, q[::-1], mode="valid")
-    e = np.sqrt(fftconvolve(ref0 ** 2, np.ones(len(q), np.float32), mode="valid") + 1e-6)
+    e = np.sqrt(fftconvolve(ref0 ** 2, np.ones(len(q)), mode="valid").clip(1e-6, None))
     sc = cc / (e * np.sqrt((q ** 2).sum()) + 1e-9)
     j = int(np.argmax(sc))
     pos = (lo + j) / SR * 1000.0                    # Songzeit des Clip-Abschnitts ab 0.4 s
@@ -150,11 +150,16 @@ def record(s):
     avi = os.path.join(W, "raw_" + s["name"] + ".avi"); log = os.path.join(W, s["name"] + ".log")
     if os.path.exists(avi): os.remove(avi)
     shutil.copy("tools/test_override.cfg", "override.cfg")
+    with open("override.cfg", "a") as of:
+        of.write(chr(10).join(["window/size/window_width_override=1920", "window/size/window_height_override=1080", "window/size/borderless=true", ""]))
     try:
-        cmd = ["timeout", "400", G, "--path", ".", "--audio-driver", "Dummy", "--write-movie", avi,
+        cmd = [G, "--path", ".", "--audio-driver", "Dummy", "--write-movie", avi,
                "--fixed-fps", str(FPS), "--resolution", "1920x1080", "--position", "-1920,0"] + args_for(s)
         with open(log, "w") as lf:
-            subprocess.run(cmd, stdout=lf, stderr=subprocess.STDOUT)
+            try:
+                subprocess.run(cmd, stdout=lf, stderr=subprocess.STDOUT, timeout=400)
+            except subprocess.TimeoutExpired:
+                subprocess.run(["taskkill", "/F", "/T", "/IM", os.path.basename(G)], capture_output=True)
     finally:
         if os.path.exists("override.cfg"): os.remove("override.cfg")
     txt = open(log, errors="replace").read()
@@ -165,12 +170,14 @@ def record(s):
     n = int(s["len"] * FPS)
     run([FF, "-v", "error", "-y", "-ss", "%.5f" % (f0 / FPS), "-i", avi, "-frames:v", str(n), "-an",
          "-c:v", "libx264", "-preset", "veryfast", "-crf", "10", "-pix_fmt", "yuv420p", "-r", str(FPS), clip])
-    cw = os.path.join(W, s["name"] + ".wav")
-    dump_audio(avi, cw, ss=f0 / FPS, t=5.5)
-    t_song, score = correlate(cw, s["rs"])
-    os.remove(avi); os.remove(cw)
+    # Songzeit bei Clip-Bild 0: Mania druckt sie (MOVIE_START ... t=), sonst aus dem Sprungpunkt
+    # (Film-Uhr deterministisch 1/60 s je Bild; gemessen: Sprungpunkt + 2 ms).
+    mt = re.search(r"MOVIE_START frame=\d+ t=([0-9.]+)", txt)
+    t_song = float(mt.group(1)) if mt else round(s["rs"] + 2500.0) - 2500.0 + 2.0
+    score = 1.0 if mt else 0.0
+    if not os.environ.get("KEEP"): os.remove(avi)
     json.dump({"s0": t_song, "score": score, "f0": f0}, open(meta, "w"))
-    print("clip %s: Songzeit bei Clip 0 = %.1f ms (erwartet ~%.0f), Korrelation %.2f" % (s["name"], t_song, s["rs"], score), flush=True)
+    print("clip %s: Songzeit bei Clip 0 = %.1f ms (Sprung ~%.0f, gemessen=%.0f)" % (s["name"], t_song, s["rs"], score), flush=True)
 
 if STEP in ("record", "all"):
     for s in SP:
