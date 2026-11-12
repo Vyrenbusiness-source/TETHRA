@@ -349,13 +349,13 @@ func _draw() -> void:
 	_draw_follow(t, R, ranks)
 	# 3. Objekte wie osu!: spaete zuerst, je Objekt Halten-Band und dann Ziel,
 	# so liegen spaetere Objekte (auch ihre Baender) unter frueheren und das
-	# naechste Ziel oben und frei. Laufende Halten: nur das Band.
+	# naechste Ziel oben und frei. Laufende Halten: Band ganz unten.
+	for i in vis:
+		if _state[i] == ST_HOLD:
+			_draw_band(notes[i], R, 0.8)
 	for j in range(vis.size() - 1, -1, -1):
 		var i := vis[j]
 		var n: OrbitNote = notes[i]
-		if _state[i] == ST_HOLD:
-			_draw_band(n, R, 1.0)
-			continue
 		if _state[i] != ST_PENDING:
 			continue
 		var rk: int = ranks.get(i, 0)
