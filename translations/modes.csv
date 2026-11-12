@@ -10,3 +10,11 @@ Zielen + Tippen,Zielen + Tippen,Aim + tap
 absteigend gewichtet mit 0,95ⁿ (wie pp)","Beste %s-Läufe: 4 × Sterne² × Genauigkeit⁴,
 absteigend gewichtet mit 0,95ⁿ (wie pp)","Best %s runs: 4 × stars² × accuracy⁴,
 weighted 0.95ⁿ in descending order (like pp)"
+Vier Spuren,Vier Spuren,Four lanes
+Den Takt zeichnen,Den Takt zeichnen,Draw the beat
+Im Takt springen,Im Takt springen,Bounce on the beat
+"Ein Leuchtfaden zeichnet die Map: jede Note ein Knick (4K-Maps)","Ein Leuchtfaden zeichnet die Map: jede Note ein Knick (4K-Maps)","A glowing thread draws the map: every note is a turn (4K maps)"
+Vier Bälle springen auf ihre Noten (4K-Maps),Vier Bälle springen auf ihre Noten (4K-Maps),Four balls bounce onto their notes (4K maps)
+Tutorial,Tutorial,Tutorial
+Tutorial: %s,Tutorial: %s,Tutorial: %s
+Map passt nicht zum Turnier-Modus.,Map passt nicht zum Turnier-Modus.,Map does not fit the tournament mode.
