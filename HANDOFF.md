@@ -154,3 +154,10 @@ Offen: menschlicher Spieltest (Orbit-Spass, Chat/Replay/Avatar live, Fail-Bild, 
 - Neue Modi Rally (docs/modes/rally.md, scripts/rally/) und Dirigent (docs/modes/dirigent.md, scripts/dirigent/; Score 40 % Schlaege + 60 % Einsaetze, total_notes = Einsaetze, beats_hit/beats_total extra). Multiplayer, Replays, Online-Bestenlisten, Profil-Reiter je Modus.
 - Demo-Videos aller 4 Modi: `bash tools/record_demo.sh <modus> <map-teil> <start_ms>` -> docs/media/<modus>.mp4 + _anim.webp. README mit Modus-Uebersicht.
 - Offen/Ideen: Rally-Ansicht kennt die Beat-Laenge nicht (Uebernaechster Ring fest 500 ms); Mania hat keinen MP-Bot (Smoke SKIP); Audio-Sync der Demo-Videos nicht gemessen.
+
+## Stand 2026-11-12 Abend (v1.27.0 released)
+- 6 Modi: Mania, Orbit, Rally v2 (Kamera hinter dem Spieler, 3/4 Zonen, docs/modes/rally.md), Dirigent, Trace (docs/modes/trace.md), Rebound (docs/modes/rebound.md); Trace/Rebound werten mit ManiaCore.
+- Empfehlungen "For you": scripts/library/recommender.gd, docs/recommend.md (Level = Sterne mit Rang B-A, Easy/Challenge/Push, Stil-Vorlieben).
+- Tutorials fuer alle Modi (scenes/<modus>_tutorial.tscn), Tastenbelegung aller Modi in Settings > Controls, Modus-Icons assets_game/icons/modes/*.svg (ModeBadge).
+- Map-Hintergrund Orbit/Rally/Dirigent: MapBackdrop (Settings.modes_bg_blur/modes_bg_dim); Mania unveraendert.
+- Server: min_version 1.27.0, Modi trace/rebound neu, Relay mit neuer pck neu starten (Raumart in /rooms).
