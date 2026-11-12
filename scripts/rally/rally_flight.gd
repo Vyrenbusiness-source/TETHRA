@@ -18,18 +18,33 @@ const CURVE_MIN_JUMP := 2.0
 const CURVE_SIDE := 0.30
 
 
-## Quer-Mitte einer Zone 0..3 (Bruchteile erlaubt, z. B. 1.5 = zwischen Zone 1 und 2).
-static func zone_x(zone: float) -> float:
-	return (clampf(zone, 0.0, 3.0) + 0.5) * 0.5 - 1.0
+## Zonenzahl 3 oder 4 (Settings.rally_zones, Standard 3).
+static func zone_count() -> int:
+	var v: Variant = Settings.get("rally_zones")
+	if v != null:
+		return clampi(int(v), 3, 4)
+	# Debug-Ersatz bis Settings.rally_zones existiert: --rally-zones=4.
+	for a in OS.get_cmdline_args():
+		if a.begins_with("--rally-zones="):
+			return clampi(a.trim_prefix("--rally-zones=").to_int(), 3, 4)
+	return 3
 
 
-## Zonen eines Schlags. Platzhalter fuer Charts ohne zones: key * 2, Schmetterball 0 und 3.
+## Quer-Mitte einer Zone (Bruchteile erlaubt, z. B. 1.5 = zwischen Zone 1 und 2) bei
+## `count` gleich breiten Zonen (count <= 0: aktuelle Einstellung).
+static func zone_x(zone: float, count: int = -1) -> float:
+	var n := count if count > 0 else zone_count()
+	return (clampf(zone, 0.0, float(n - 1)) + 0.5) * 2.0 / float(n) - 1.0
+
+
+## Zonen eines Schlags. Platzhalter fuer Charts ohne zones: key * (n-1), Schmetterball 0 und n-1.
 static func zones_of(s: RallyChart.Shot) -> PackedInt32Array:
 	if not s.zones.is_empty():
 		return s.zones
+	var n := zone_count()
 	if s.smash:
-		return PackedInt32Array([0, 3])
-	return PackedInt32Array([s.key * 2])
+		return PackedInt32Array([0, n - 1])
+	return PackedInt32Array([s.key * (n - 1)])
 
 
 static func zone_mean(s: RallyChart.Shot) -> float:
