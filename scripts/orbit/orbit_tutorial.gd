@@ -656,6 +656,7 @@ func _start_round(t: float) -> void:
 	notes = pattern(step, t0, _beat_ms, _round)
 	_round += 1
 	core = OrbitCore.new()
+	core.anti_mash = false   # Lernmodus: falsche Taste zeigt nur den Hinweis, kein Miss
 	core.setup(notes, OD, {"NF": true}, RADIUS)
 	core.note_judged.connect(_on_judged)
 	core.hold_started.connect(_on_hold_started)
