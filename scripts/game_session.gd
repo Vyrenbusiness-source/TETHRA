@@ -139,7 +139,7 @@ func _start_clip() -> void:
 			replay_mode = clip_mode
 			replay_end_ms = float(data.get("meta", {}).get("end_ms", -1.0))
 			set_process(true)
-			get_tree().change_scene_to_file("res://scenes/orbit.tscn" if ReplayStore.is_orbit(clip_mode) 				else "res://scenes/mania_3d.tscn")
+			get_tree().change_scene_to_file(ClipExporter.scene_for_mode(clip_mode))
 			return
 	push_error("Clip: keine Map zu md5 " + clip_md5)
 	get_tree().quit(1)
