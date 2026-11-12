@@ -5,7 +5,7 @@ extends Control
 ## Darstellung: DirigentView. Logik: DirigentChart/DirigentCore.
 ##
 ## Steuerung: die Hand (Maus/Tablet, absolute Position) fuehrt die Taktfigur von
-## Punkt zu Punkt; Taste A/B (Settings.orbit_key_inner/outer, Maus links/rechts)
+## Punkt zu Punkt; Taste A/B (Settings.dirigent_key_a/b, Maus links/rechts)
 ## setzen die Einsaetze.
 ## CLI: --dirigent --autoplay, --shot --shot-at=<ms|dense|kiai|change> --shot-out=<png>,
 ## --shot-results, --auto-miss=<n>, --auto-jitter=<ms>, --auto-aim=<0..>,
@@ -118,7 +118,7 @@ func _ready() -> void:
 	add_child(_view)
 	_view.setup(chart, core)
 	_view.show_guides = Settings.orbit_guides
-	_view.key_names = [UiTheme.key_short(Settings.orbit_key_inner), UiTheme.key_short(Settings.orbit_key_outer)]
+	_view.key_names = [UiTheme.key_short(Settings.dirigent_key_a), UiTheme.key_short(Settings.dirigent_key_b)]
 	_build_hud()
 	for k in 2:
 		var p := AudioStreamPlayer.new()
@@ -396,7 +396,7 @@ func _build_hud() -> void:
 	_hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_hint.text = tr("Führe die Hand von Punkt zu Punkt, genau auf den Schlag. Einsätze mit den Tasten %s und %s.") % [
-		UiTheme.key_short(Settings.orbit_key_inner), UiTheme.key_short(Settings.orbit_key_outer)]
+		UiTheme.key_short(Settings.dirigent_key_a), UiTheme.key_short(Settings.dirigent_key_b)]
 	_hint.add_theme_font_size_override("font_size", 15)
 	_hint.add_theme_color_override("font_color", Color(0.78, 0.82, 0.92))
 	_shadow(_hint)
@@ -511,7 +511,7 @@ func _input(event: InputEvent) -> void:
 			_set_cursor_from(event.position, _time_ms())
 			_press(key, 0, event.pressed)
 	elif event is InputEventKey and not event.echo:
-		var key := Settings.orbit_ring_for_key(event.keycode)
+		var key := Settings.dirigent_key_for(event.keycode)
 		if key >= 0:
 			_press(key, 1, event.pressed)
 
@@ -536,10 +536,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif not _countdown_running:
 			_toggle_pause(true)
 		return
-	if event.keycode == KEY_R and Settings.orbit_ring_for_key(KEY_R) == -1 and not Lobby.active:
+	if event.keycode == KEY_R and Settings.dirigent_key_for(KEY_R) == -1 and not Lobby.active:
 		_restart()
 		return
-	if event.keycode == KEY_SPACE and not _ended and Settings.orbit_ring_for_key(KEY_SPACE) == -1 \
+	if event.keycode == KEY_SPACE and not _ended and Settings.dirigent_key_for(KEY_SPACE) == -1 \
 			and _can_skip_intro():
 		if Lobby.active and Lobby.in_game:
 			Lobby.vote_skip()

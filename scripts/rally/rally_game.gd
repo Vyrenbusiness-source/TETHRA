@@ -5,7 +5,7 @@ extends Control
 ## Logik: RallyChart/RallyCore, Darstellung: RallyView. Szene: res://scenes/rally.tscn
 ## mit GameSession.osz_path/difficulty_version.
 ##
-## Tasten: 4 Zonen = Mania-4K-Tasten (Settings.key_lanes, Standard D F J K). Zwei
+## Tasten: Settings.rally_keys(n): 4 Zonen = rally_keys_4 (Standard D F J K), 3 Zonen = rally_keys_3. Zwei
 ## Zonentasten zugleich = Schmetterball, halten = Aufladen. Regeln: docs/modes/rally.md.
 ## CLI: --autoplay, --auto-miss=<n>, --auto-jitter=<ms>, --auto-seed=<n>,
 ## --rally-map=<Teil des osz-Namens> [--rally-diff=<Version>], --shot
