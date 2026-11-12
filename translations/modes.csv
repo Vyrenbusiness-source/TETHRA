@@ -33,7 +33,7 @@ Below your comfort level: relaxed maps,Unter deinem Wohlfühl-Level: entspannte 
 At your limit: maps that can set a new top score,An deiner Grenze: Maps für einen neuen Top-Score,At your limit: maps that can set a new top score
 From your comfort level up to your limit,Von deinem Wohlfühl-Level bis an deine Grenze,From your comfort level up to your limit
 Play a few maps to get suggestions,"Spiel ein paar Maps, dann kommen Vorschläge",Play a few maps to get suggestions
-Comfortable around %s,Wohlfühl-Level um %s,Comfortable around %s
+Your level: about %s,Dein Level: etwa %s,Your level: about %s
 Calculating stars …,Sterne werden berechnet …,Calculating stars …
 No fitting map in your library. Try another level or get maps online.,Keine passende Map in deiner Bibliothek. Andere Stufe wählen oder Maps online laden.,No fitting map in your library. Try another level or get maps online.
 expected %d %%,erwartet %d %%,expected %d %%
@@ -42,3 +42,15 @@ Easy: about %d %% expected,Easy: etwa %d %% erwartet,Easy: about %d %% expected
 Challenge: about %d %% expected,Challenge: etwa %d %% erwartet,Challenge: about %d %% expected
 "+%d %s, would be top %d","+%d %s, wäre Top %d","+%d %s, would be top %d"
 new top pp: +%d %s,neuer Top-pp: +%d %s,new top pp: +%d %s
+A step up: about %d %% expected,Eine Stufe höher: etwa %d %% erwartet,A step up: about %d %% expected
+"%s, like your favourites","%s, wie deine Favoriten","%s, like your favourites"
+an artist you replay,"ein Künstler, den du oft spielst",an artist you replay
+similar to maps you replay,"ähnlich wie Maps, die du oft spielst",similar to maps you replay
+Streams,Streams,Streams
+Jumpstream,Jumpstream,Jumpstream
+Jacks,Jacks,Jacks
+Chords,Chords,Chords
+Long notes,Long Notes,Long notes
+Jumps,Sprünge,Jumps
+Dense patterns,Dichte Muster,Dense patterns
+Patterns,Muster,Patterns

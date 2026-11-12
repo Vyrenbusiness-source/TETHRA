@@ -4793,7 +4793,7 @@ func _recs_render() -> void:
 	if starter:
 		_rec_sub.text = tr("Play a few maps to get suggestions")
 	elif comfort > 0.0:
-		_rec_sub.text = tr("Comfortable around %s") % _stars_text(comfort)
+		_rec_sub.text = tr("Your level: about %s") % _stars_text(comfort)
 	else:
 		_rec_sub.text = ""
 	var items: Array = []
