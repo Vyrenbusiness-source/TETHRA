@@ -99,6 +99,46 @@ func nearest_visible(index: int, play_mode: String) -> int:
 	return best
 
 
+## Sichtbare Diffs nach Modus-Sternen (leicht -> schwer). stars: Diff-Index ->
+## Sterne des aktiven Modus; fehlt ein Index (oder < 0), zaehlen die Mania-Sterne
+## vorlaeufig. Gleichstand: Bibliotheks-Reihenfolge (Index).
+func visible_by_stars(play_mode: String, stars: Dictionary) -> Array[int]:
+	var out := visible_diffs(play_mode)
+	var val := {}
+	for i in out:
+		val[i] = star_or_base(i, stars)
+	out.sort_custom(func(a: int, b: int) -> bool:
+		if not is_equal_approx(float(val[a]), float(val[b])):
+			return float(val[a]) < float(val[b])
+		return a < b)
+	return out
+
+
+## Modus-Sterne einer Diff aus stars, sonst die Mania-Sterne (vorlaeufig).
+func star_or_base(index: int, stars: Dictionary) -> float:
+	var st := float(stars.get(index, -1.0))
+	return st if st >= 0.0 else stars_at(index)
+
+
+## Hoechste Modus-Sterne der im Modus sichtbaren Diffs (-1 = keine).
+func max_visible_stars(play_mode: String, stars: Dictionary) -> float:
+	var m := -1.0
+	for i in visible_diffs(play_mode):
+		m = maxf(m, star_or_base(i, stars))
+	return m
+
+
+## Naechste Diff in der Modus-Reihenfolge order (dir -1/+1, ringfoermig);
+## current fehlt in order -> erste Diff.
+static func cycle_in(order: Array, current: int, dir: int) -> int:
+	if order.is_empty():
+		return current
+	var at := order.find(current)
+	if at < 0:
+		return order[0]
+	return order[wrapi(at + dir, 0, order.size())]
+
+
 ## osu!standard-Diff (Mode 0)?
 func is_standard(index: int) -> bool:
 	return int(meta_at(index).get("mode", -1)) == 0

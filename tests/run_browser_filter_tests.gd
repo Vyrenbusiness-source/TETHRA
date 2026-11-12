@@ -48,6 +48,7 @@ func _run() -> void:
 	_test_mtime()
 	_test_recs()
 	_test_menu_stack()
+	_test_mode_stars()
 	print("=== %d ok, %d fehlgeschlagen ===" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
 
@@ -268,3 +269,82 @@ func _test_menu_stack() -> void:
 		_ok(absf(float(r.top) - float(r.bottom)) <= 1.0, "menu_stack %d: oben == unten" % h)
 		_ok(float(r.bottom) >= 60.0, "menu_stack %d: unten >= 60 (%.0f)" % [h, float(r.bottom)])
 	_ok(float(MM.menu_stack(720.0, 300.0).logo_scale) < 1.0, "menu_stack 720: Logo kleiner")
+
+
+## Set wie im Nutzer-Screenshot: "HD" ist in Mania mittelschwer, in Rally die
+## schwerste Diff (10,65). Diffs liegen nach Mania-Sternen in der Bibliothek.
+func _star_set(osz: String) -> MapSet:
+	var ms := MapSet.new()
+	ms.osz_path = osz
+	for d in [["Easy", 1.5, 3], ["HD", 2.5, 3], ["Hard", 3.5, 3], ["Insane", 4.5, 3], ["Std", 2.0, 0]]:
+		ms.diffs.append({"version": d[0], "stars": d[1], "mode": d[2], "cs": 4.0,
+			"osu_filename": "%s.osu" % d[0]})
+	return ms
+
+
+## Browser nutzt die Sterne des aktiven Modus (Diff-Leiste, Pfeile, Auswahl,
+## Liste, Filter, Sortierung); fehlende zaehlen vorlaeufig als Mania-Sterne.
+func _test_mode_stars() -> void:
+	_ok(SS.star_src("mania") == "mania" and SS.star_src("rebound") == "mania"
+		and SS.star_src("trace") == "trace" and SS.star_src("rally") == "rally"
+		and SS.star_src("orbit") == "orbit" and SS.star_src("dirigent") == "dirigent", "Sternquelle je Modus")
+	var b: Control = SS.new()
+	var osz := "user://test_tmp/mode_stars_none.osz"
+	var ms := _star_set(osz)
+	var cache := {}
+	for v in [["Easy", 2.0], ["HD", 10.65], ["Hard", 5.0], ["Insane", 6.0], ["Std", 7.0]]:
+		cache[SS.orbit_stars_key(osz, v[0], "rally")] = v[1]
+	for v in [["Easy", 3.0], ["HD", 1.0], ["Hard", 2.0], ["Insane", 4.0], ["Std", 0.5]]:
+		cache[SS.orbit_stars_key(osz, v[0], "dirigent")] = v[1]
+	cache[SS.orbit_stars_key(osz, "Std", "orbit")] = 9.0
+	b.set("_os_cache", cache)
+	b.set("_os_cache_loaded", true)
+	b.set("_tbase", {osz: "mode_stars_none.osz|1"})
+	b.set("_trace_cache", {StarService._trace_key("mode_stars_none.osz|1", "Easy.osu"): 5.0})
+	b.set("_trace_cache_loaded", true)
+	b.set("_play_mode", "mania")
+	_ok(b.call("_mode_order", ms) == [0, 1, 2, 3], "Mania: Diffs nach Mania-Sternen")
+	_ok(b.call("_hardest", ms) == 3, "Mania: Standard = Insane")
+	b.set("_selected_set", ms)
+	b.set("_selected_diff", 1)  # HD
+	b.set("_play_mode", "rally")
+	b.set("_selected_diff", maxi(ms.nearest_visible(int(b.get("_selected_diff")), b.call("_vm")), 0))
+	var order: Array = b.call("_mode_order", ms)
+	_ok(order == [0, 2, 3, 4, 1], "Rally: Diffs nach Rally-Sternen, HD zuletzt (%s)" % str(order))
+	_ok(int(b.get("_selected_diff")) == 1, "Wechsel Mania->Rally: Auswahl bleibt HD")
+	_ok(b.call("_hardest", ms) == 1 and b.call("_easiest", ms) == 0, "Rally: Standard = HD, leichteste = Easy")
+	_ok(MapSet.cycle_in(order, 3, 1) == 4 and MapSet.cycle_in(order, 4, 1) == 1
+		and MapSet.cycle_in(order, 1, 1) == 0 and MapSet.cycle_in(order, 0, -1) == 1
+		and MapSet.cycle_in(order, 99, 1) == 0, "Pfeile folgen der Rally-Reihenfolge")
+	_ok(is_equal_approx(float(b.call("_mode_max", ms)), 10.65), "Rally: Karten-Sterne = 10,65")
+	_ok(is_equal_approx(float(b.call("_mode_stars", ms, 1)), 10.65), "Rally: Segment-Sterne der HD")
+	# Sterne-Filter 6+: Rally-Set passt, Mania nicht.
+	var smap: Dictionary = b.call("_mode_star_map", ms)
+	_ok(ms.star_or_base(1, smap) >= 6.0 and ms.star_or_base(1, {}) < 6.0, "Sternfilter mit Modus-Sternen")
+	# Fehlende Modus-Sterne: vorlaeufig Mania-Sterne.
+	cache.erase(SS.orbit_stars_key(osz, "Insane", "rally"))
+	_ok(b.call("_mode_order", ms) == [0, 3, 2, 4, 1], "Rally: fehlende Insane vorlaeufig 4,5 (Mania)")
+	_ok(float(b.call("_mode_stars_known", ms, 3)) < 0.0, "Rally: Insane noch unbekannt")
+	b.set("_play_mode", "dirigent")
+	_ok(b.call("_mode_order", ms) == [4, 1, 2, 0, 3],
+		"Dirigent: osu!standard sichtbar, nach Dirigent-Sternen")
+	b.set("_play_mode", "orbit")
+	_ok(b.call("_mode_order", ms)[0] == 0 and b.call("_hardest", ms) == 4, "Orbit: Std mit 9 Orbit-Sternen zuletzt")
+	b.set("_play_mode", "trace")
+	_ok(b.call("_mode_order", ms) == [1, 2, 3, 0], "Trace: TraceStars-Cache (Easy 5,0), Rest vorlaeufig Mania")
+	b.set("_play_mode", "rebound")
+	_ok(b.call("_mode_order", ms) == [0, 1, 2, 3] and float(b.call("_mode_stars", ms, 1)) == 2.5, "Rebound: Mania-Sterne")
+	# Liste: Sortierung "Sterne" nach Modus-Maximum.
+	var ms2 := MapSet.new()
+	ms2.osz_path = "user://test_tmp/mode_stars_two.osz"
+	ms2.diffs.append({"version": "X", "stars": 6.0, "mode": 3, "cs": 4.0, "osu_filename": "X.osu"})
+	cache[SS.orbit_stars_key(ms2.osz_path, "X", "rally")] = 3.0
+	for mode in ["mania", "rally"]:
+		b.set("_play_mode", mode)
+		var rows := []
+		for m in [ms, ms2]:
+			rows.append({"ms": m, "i": rows.size(), "stars": m.max_visible_stars(b.call("_vm"), b.call("_mode_star_map", m))})
+		SS.sort_rows(rows, SS.SORT_STARS_DOWN)
+		var first: MapSet = rows[0].ms
+		_ok(first == (ms2 if mode == "mania" else ms), "Sortierung Sterne absteigend (%s)" % mode)
+	b.free()

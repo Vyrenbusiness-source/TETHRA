@@ -1590,11 +1590,14 @@ func _refresh_filter(query: String) -> void:
 		var vis := ms.visible_diffs(_vm())
 		if vis.is_empty():
 			continue
+		# Sterne des aktiven Modus (fehlende vorlaeufig Mania-Sterne).
+		var smap := _mode_star_map(ms) if _star_filter != 0 \
+				or sort_m == SORT_STARS_UP or sort_m == SORT_STARS_DOWN else {}
 		# Sterne-Filter: Set passt, wenn IRGENDEINE sichtbare Diff im Bereich liegt.
 		if _star_filter != 0:
 			var in_range := false
 			for i in vis:
-				var st := ms.stars_at(i)
+				var st := ms.star_or_base(i, smap)
 				if st >= lo and st < hi:
 					in_range = true
 					break
@@ -1612,7 +1615,7 @@ func _refresh_filter(query: String) -> void:
 			row["last"] = set_last_played(info, versions)
 			row["plays"] = set_plays(info, versions)
 		if sort_m == SORT_STARS_UP or sort_m == SORT_STARS_DOWN:
-			row["stars"] = ms.max_stars()
+			row["stars"] = ms.max_visible_stars(_vm(), smap)
 		elif sort_m == SORT_DOWNLOADED:
 			if not _mtime_cache.has(ms.osz_path):
 				_mtime_cache[ms.osz_path] = FileAccess.get_modified_time(ms.osz_path)
@@ -1998,10 +2001,9 @@ func _share_selected_map() -> void:
 	if not _online_md5_cache.has(key):
 		_online_md5_cache[key] = OnlineApi._md5_bytes(OszImporter.read_file_bytes(_selected_set.osz_path, file))
 	var stars := _selected_set.stars_at(_selected_diff)
-	if not _mania_like():
-		var os_st := _orbit_stars_known(_selected_set, _selected_diff)
-		if os_st > 0.0:
-			stars = os_st
+	var mode_st := _mode_stars_known(_selected_set, _selected_diff)
+	if mode_st > 0.0:
+		stars = mode_st
 	var sid := ScoreStore.set_id_of(_selected_set.osz_path.get_file())
 	GameSession.chat.call("share_map", {
 		"md5": _online_md5_cache[key], "set_id": sid, "beatmapset_id": sid,
@@ -2050,7 +2052,7 @@ func _confirm_delete(ms: MapSet) -> void:
 		_library.scan()
 		_refresh_filter(_search.text)
 		if was_selected and not _filtered.is_empty():
-			_select_set(_filtered[0], 0)
+			_select_set(_filtered[0], _easiest(_filtered[0]))
 		dlg.queue_free())
 	dlg.canceled.connect(dlg.queue_free)
 	dlg.popup_centered()
@@ -2082,7 +2084,7 @@ func _make_card(ms: MapSet) -> Button:
 	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	card.focus_mode = Control.FOCUS_NONE
 	# Schmaler Diff-Streifen in Sternfarbe (einziger Farbakzent der Karte).
-	var base := _card_box(COL_CARD, _star_color(ms.max_stars()))
+	var base := _card_box(COL_CARD, _star_color(_mode_max(ms)))
 	for st in ["normal", "hover", "pressed", "focus"]:
 		card.add_theme_stylebox_override(st, base)
 	card.pressed.connect(func(): _on_card_pressed(ms))
@@ -2132,8 +2134,8 @@ func _make_card(ms: MapSet) -> Button:
 	vb.add_child(t)
 
 	var m := Label.new()
-	m.text = "%s  ·  %s  ·  %s" % [
-		_stars_text(ms.max_stars()), _format_time(ms.length_ms()), ms.creator]
+	m.text = _card_info_text(ms)
+	card.set_meta("info_lbl", m)
 	m.add_theme_font_size_override("font_size", 13)
 	m.add_theme_color_override("font_color", Color(0.78, 0.80, 0.88))
 	m.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
@@ -2237,14 +2239,14 @@ func _select_initial() -> void:
 				_scroll_to_selected.call_deferred()
 				return
 	if not _filtered.is_empty():
-		_select_set(_filtered[0], 0)
+		_select_set(_filtered[0], _easiest(_filtered[0]))
 
 
 func _on_card_pressed(ms: MapSet) -> void:
 	if _selected_set == ms:
 		_on_play_pressed()
 		return
-	_select_set(ms, ms.difficulty_count() - 1 if ms.difficulty_count() > 0 else 0)
+	_select_set(ms, _hardest(ms))
 
 
 func _select_set(ms: MapSet, diff_index: int) -> void:
@@ -2260,11 +2262,11 @@ func _select_set(ms: MapSet, diff_index: int) -> void:
 func _cycle_difficulty(dir: int) -> void:
 	if _selected_set == null:
 		return
-	var vis := _selected_set.visible_diffs(_vm())
-	if vis.is_empty():
+	# Pfeile folgen der Diff-Leiste: Reihenfolge nach Modus-Sternen.
+	var order := _mode_order(_selected_set)
+	if order.is_empty():
 		return
-	var at := vis.find(_selected_diff)
-	_selected_diff = vis[wrapi((at if at >= 0 else 0) + (dir if at >= 0 else 0), 0, vis.size())]
+	_selected_diff = MapSet.cycle_in(order, _selected_diff, dir)
 	_update_info_panel()
 
 
@@ -2290,9 +2292,11 @@ func _update_info_panel() -> void:
 	var is_mania := int(m.get("mode", 0)) == 3
 	var keys := int(round(float(m.get("cs", 4.0))))
 	_diff_label.text = _selected_set.version_name_at(_selected_diff).strip_edges() 		+ (("  ·  %dK" % keys) if is_mania else "  ·  osu!standard")
-	_star_label.text = _stars_text(_selected_set.stars_at(_selected_diff))
-	if not _mania_like() and (not is_mania or keys == 4):
+	_refresh_star_label()
+	var src := _star_src()
+	if src != "mania" and src != "trace" and _orbit_diff_ok(_selected_set, _selected_diff):
 		_orbit_stars_request(_selected_set.osz_path, _selected_set.version_name_at(_selected_diff))
+	_bg_front_set(_selected_set)
 	var notes := tr("%d Noten") % int(m.get("notes", 0))
 	var od := "OD " + UiTheme.fmt_num(float(m.get("od", 0.0)))
 	if is_mania:
@@ -2425,15 +2429,18 @@ func _frame_box(col: Color, w: int) -> StyleBoxFlat:
 func _rebuild_diff_bar() -> void:
 	for c in _diff_bar.get_children():
 		c.queue_free()
-	for i in _selected_set.visible_diffs(_vm()):
+	if _diff_bar == null or _selected_set == null:
+		return
+	for i in _mode_order(_selected_set):
 		var seg := ColorRect.new()
 		seg.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		seg.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		var sel := i == _selected_diff
 		seg.custom_minimum_size = Vector2(0, 8 if sel else 4)
-		var col := _star_color(_selected_set.stars_at(i))
+		var st := _mode_stars(_selected_set, i)
+		var col := _star_color(st)
 		seg.color = col.lightened(0.15) if sel else Color(col, 0.40)
-		seg.tooltip_text = "%s  %s" % [_selected_set.version_name_at(i), _stars_text(_selected_set.stars_at(i))]
+		seg.tooltip_text = "%s  %s" % [_selected_set.version_name_at(i), _stars_text(st)]
 		seg.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 		seg.gui_input.connect(func(e):
 			if e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_LEFT:
@@ -2815,6 +2822,7 @@ func _set_play_mode(mode: String) -> void:
 	if not PLAY_MODES.has(mode) or mode == _play_mode:
 		return
 	_play_mode = mode
+	_bg_drop_other_modes()
 	_restyle_mode_switch()
 	_apply_play_state()
 	_restyle_score_chips()  # Sortierung/Bestwert-Filter sind je Modus gemerkt
@@ -2831,7 +2839,7 @@ func _set_play_mode(mode: String) -> void:
 	if keep != null and not _filtered.has(keep):
 		_selected_set = null
 		if not _filtered.is_empty():
-			_select_set(_filtered[0], _filtered[0].difficulty_count() - 1)
+			_select_set(_filtered[0], _hardest(_filtered[0]))
 	elif _selected_set != null:
 		_selected_diff = maxi(_selected_set.nearest_visible(_selected_diff, _vm()), 0)
 		_update_info_panel()
@@ -3371,7 +3379,7 @@ func _unhandled_input(event: InputEvent) -> void:
 					_select_set(ci.ms, int(ci.diff))
 			elif not _filtered.is_empty():
 				var pick: MapSet = _filtered[randi() % _filtered.size()]
-				_select_set(pick, pick.difficulty_count() - 1)
+				_select_set(pick, _hardest(pick))
 				_scroll_to_selected.call_deferred()
 			get_viewport().set_input_as_handled()
 
@@ -3384,7 +3392,7 @@ func _move_selection(dir: int) -> void:
 		return
 	var idx := _filtered.find(_selected_set)
 	idx = clampi(idx + dir, 0, _filtered.size() - 1) if idx >= 0 else 0
-	_select_set(_filtered[idx], _filtered[idx].difficulty_count() - 1)
+	_select_set(_filtered[idx], _hardest(_filtered[idx]))
 	_scroll_to_selected()
 
 
@@ -3547,7 +3555,7 @@ func _on_import_finished(res: Dictionary) -> void:
 	if last != "":
 		for ms in _filtered:
 			if ms.osz_path == last:
-				_select_set(ms, 0)
+				_select_set(ms, _easiest(ms))
 				break
 
 
@@ -3846,7 +3854,7 @@ func _on_online_downloaded(_set_id: int, osz_path: String, select: bool) -> void
 		return
 	for ms in _filtered:
 		if ms.osz_path == osz_path:
-			_select_set(ms, ms.difficulty_count() - 1)
+			_select_set(ms, _hardest(ms))
 			break
 
 
@@ -3926,7 +3934,7 @@ func _star_color(stars: float) -> Color:
 
 ## Hintergrund-Nachrechnung fehlender Orbit-Sterne: ein Thread, eine Diff nach
 ## der anderen mit Pause, hoechstens BG_BUDGET pro Besuch, niedrige Prioritaet.
-const BG_BUDGET := 90
+const BG_BUDGET := 240
 const BG_PAUSE := 0.4
 var _os_cache: Dictionary = {}
 var _os_cache_loaded := false
@@ -4039,12 +4047,14 @@ func _accept_career_offer() -> void:
 
 ## Nach Moduswechsel/Start: Angebot nach dem Tutorial zeigen, fehlende Sterne rechnen.
 func _career_start() -> void:
-	if _play_mode != "orbit" or DisplayServer.get_name() == "headless":
+	if DisplayServer.get_name() == "headless":
+		return
+	_bg_scan()  # fehlende Modus-Sterne (alle Modi ausser Mania/Rebound)
+	_bg_pump()
+	if _play_mode != "orbit":
 		return
 	if bool(_career_state.get("offer", false)) and _orbit_hint == null:
 		_show_orbit_hint()
-	_bg_scan()
-	_bg_pump()
 
 
 func _on_career_picked(ms: MapSet, diff: int) -> void:
@@ -4073,10 +4083,187 @@ func _stars_mode() -> String:
 	return "orbit" if _play_mode == "mania" else _play_mode
 
 
+# ---------------------------------------------------------------------------
+# Modus-Sterne im Browser: Diff-Leiste, Pfeile, Standard-Auswahl, Kartenliste,
+# Sterne-Filter, Sortierung und Empfehlungen nutzen die Sterne des aktiven Modus.
+# Fehlende rechnet der Hintergrund-Thread (_bg_*), bis dahin zaehlen vorlaeufig
+# die Mania-Sterne; neue Werte sortieren entprellt nach (_resort_later).
+# ---------------------------------------------------------------------------
+
+const RESORT_DELAY := 2.0
+var _trace_cache: Dictionary = {}
+var _trace_cache_loaded := false
+var _tbase: Dictionary = {}       # osz_path -> StarService._cache_key
+var _front_token := 0
+var _resort_due := false
+
+
+## Sternquelle je Modus: "mania" (Mania, Rebound: Mania-Sterne), "trace"
+## (TraceStars ueber StarService), sonst der Modus selbst (Orbit, Rally,
+## Dirigent: orbit_stars.cfg).
+static func star_src(play_mode: String) -> String:
+	if play_mode == "" or play_mode == "mania" or play_mode == "rebound":
+		return "mania"
+	return play_mode
+
+
+func _star_src() -> String:
+	return star_src(_play_mode)
+
+
+func _trace_cache_get() -> Dictionary:
+	if not _trace_cache_loaded:
+		_trace_cache_loaded = true
+		var cfg := ConfigFile.new()
+		if cfg.load(StarService.CACHE_PATH) == OK and cfg.has_section("trace_stars"):
+			for k in cfg.get_section_keys("trace_stars"):
+				_trace_cache[k] = float(cfg.get_value("trace_stars", k, -1.0))
+	return _trace_cache
+
+
+## Cache-Schluessel der Modus-Sterne einer Diff ("" = Mania-Sterne/kein Cache).
+func _mode_star_key(ms: MapSet, i: int) -> String:
+	var src := _star_src()
+	if src == "mania":
+		return ""
+	if src == "trace":
+		if not _tbase.has(ms.osz_path):
+			_tbase[ms.osz_path] = StarService._cache_key(ms.osz_path)
+		var base: String = _tbase[ms.osz_path]
+		var inner := ms.osu_filename_at(i)
+		return "" if base == "" or inner == "" else StarService._trace_key(base, inner)
+	return _mkey(ms, ms.version_name_at(i), src)
+
+
+## Modus-Sterne einer Diff; -1 = noch nicht berechnet (Mania/Rebound: Mania-Sterne).
+func _mode_stars_known(ms: MapSet, i: int) -> float:
+	var src := _star_src()
+	if src == "mania":
+		return ms.stars_at(i)
+	var key := _mode_star_key(ms, i)
+	if key == "":
+		return -1.0
+	var cache := _trace_cache_get() if src == "trace" else _os_cache_get()
+	return float(cache.get(key, -1.0))
+
+
+## Diff-Index -> bekannte Modus-Sterne der sichtbaren Diffs (Rest: MapSet nimmt
+## vorlaeufig die Mania-Sterne).
+func _mode_star_map(ms: MapSet) -> Dictionary:
+	var out := {}
+	if _star_src() == "mania":
+		return out
+	for i in ms.visible_diffs(_vm()):
+		var st := _mode_stars_known(ms, i)
+		if st >= 0.0:
+			out[i] = st
+	return out
+
+
+## Anzeige-/Sortierwert: Modus-Sterne, sonst vorlaeufig Mania-Sterne.
+func _mode_stars(ms: MapSet, i: int) -> float:
+	var st := _mode_stars_known(ms, i)
+	return st if st >= 0.0 else ms.stars_at(i)
+
+
+## Sichtbare Diffs nach Modus-Sternen (leicht -> schwer).
+func _mode_order(ms: MapSet) -> Array[int]:
+	return ms.visible_by_stars(_vm(), _mode_star_map(ms))
+
+
+func _mode_max(ms: MapSet) -> float:
+	return ms.max_visible_stars(_vm(), _mode_star_map(ms))
+
+
+## Standard-Auswahl: schwerste bzw. leichteste Diff nach Modus-Sternen.
+func _hardest(ms: MapSet) -> int:
+	var order := _mode_order(ms)
+	return order[-1] if not order.is_empty() else maxi(ms.difficulty_count() - 1, 0)
+
+
+func _easiest(ms: MapSet) -> int:
+	var order := _mode_order(ms)
+	return order[0] if not order.is_empty() else 0
+
+
+func _card_info_text(ms: MapSet) -> String:
+	return "%s  ·  %s  ·  %s" % [_stars_text(_mode_max(ms)), _format_time(ms.length_ms()), ms.creator]
+
+
+## Sterne-Anzeige der gewaehlten Diff (Modus-Sterne mit Modus-Name).
+func _refresh_star_label() -> void:
+	if _star_label == null or _selected_set == null:
+		return
+	var src := _star_src()
+	var std := int(_selected_set.meta_at(_selected_diff).get("mode", 0)) != 3
+	if src == "mania" or not _orbit_diff_ok(_selected_set, _selected_diff) or (src == "trace" and std):
+		_star_label.text = _stars_text(_selected_set.stars_at(_selected_diff))
+		return
+	var st := _mode_stars_known(_selected_set, _selected_diff)
+	_star_label.text = ScoreStore.mode_label(src) + " " + (_stars_text(st) if st >= 0.0 else "★ …")
+
+
+## Neue Modus-Sterne: Diff-Leiste des gewaehlten Sets sofort, Liste entprellt.
+func _mode_stars_arrived(osz: String) -> void:
+	if _selected_set != null and _selected_set.osz_path == osz:
+		_rebuild_diff_bar()
+		_refresh_star_label()
+	_resort_later()
+
+
+func _resort_later() -> void:
+	if _resort_due or not is_inside_tree():
+		return
+	_resort_due = true
+	await get_tree().create_timer(RESORT_DELAY).timeout
+	_resort_due = false
+	if is_inside_tree():
+		_resort_keep()
+
+
+## Liste mit den neuen Sternen aktualisieren. Haengt die Reihenfolge an den
+## Sternen (Sortierung/Sterne-Filter), neu aufbauen und die gewaehlte Karte an
+## ihrer Bildschirmstelle halten; sonst nur Sterne/Farbe der Karten setzen.
+func _resort_keep() -> void:
+	var sort_m := int(_mode_filter()["sort"])
+	if _star_filter == 0 and sort_m != SORT_STARS_UP and sort_m != SORT_STARS_DOWN:
+		for card in _card_buttons:
+			if not is_instance_valid(card) or not card.has_meta("info_lbl"):
+				continue
+			var ms: MapSet = card.get_meta("ms")
+			(card.get_meta("info_lbl") as Label).text = _card_info_text(ms)
+			var base := _card_box(COL_CARD, _star_color(_mode_max(ms)))
+			for st in ["normal", "hover", "pressed", "focus"]:
+				card.add_theme_stylebox_override(st, base)
+		return
+	var off := NAN
+	var old_i := _filtered.find(_selected_set)
+	if old_i >= 0 and old_i < _card_buttons.size() and is_instance_valid(_card_buttons[old_i]):
+		var h := _card_buttons[old_i].get_parent().get_parent() as Control
+		off = h.position.y - float(_scroll.scroll_vertical)
+	_refresh_filter(_search.text)
+	if is_nan(off):
+		return
+	await get_tree().process_frame
+	var new_i := _filtered.find(_selected_set)
+	if not is_inside_tree() or new_i < 0 or new_i >= _card_buttons.size() \
+			or not is_instance_valid(_card_buttons[new_i]):
+		return
+	if _scroll_tween != null and _scroll_tween.is_valid():
+		_scroll_tween.kill()
+	var h2 := _card_buttons[new_i].get_parent().get_parent() as Control
+	_scroll.scroll_vertical = int(h2.position.y - off)
+
+
 func _orbit_key(ms: MapSet, ver: String) -> String:
-	var k := _stars_mode() + "|" + ms.osz_path + "|" + ver
+	return _mkey(ms, ver, _stars_mode())
+
+
+## Cache-Schluessel (orbit_stars.cfg) der Sterne von mode, gemerkt.
+func _mkey(ms: MapSet, ver: String, mode: String) -> String:
+	var k := mode + "|" + ms.osz_path + "|" + ver
 	if not _okey_cache.has(k):
-		_okey_cache[k] = orbit_stars_key(ms.osz_path, ver, _stars_mode())
+		_okey_cache[k] = orbit_stars_key(ms.osz_path, ver, mode)
 	return _okey_cache[k]
 
 
@@ -4210,16 +4397,61 @@ func _refresh_recommended() -> void:
 func _bg_scan() -> void:
 	var level := float(_career_state.get("level", OrbitCareer.START_LEVEL))
 	var missing: Array = []
+	if _star_src() == "mania":
+		return
 	for ms in _library.mapsets:
-		for i in ms.visible_diffs("orbit"):
-			if not _orbit_diff_ok(ms, i):
-				continue
-			var ver := ms.version_name_at(i)
-			var key := _orbit_key(ms, ver)
-			if not _os_cache_get().has(key) and not _bg_failed.has(key):
-				missing.append({"key": key, "osz": ms.osz_path, "ver": ver, "osu": ms.stars_at(i),
-					"mode": _stars_mode()})
+		for i in ms.visible_diffs(_vm()):
+			var item := _bg_item(ms, i)
+			if not item.is_empty():
+				missing.append(item)
 	_bg_enqueue_list(missing, level)
+
+
+## Auftrag fuer fehlende Modus-Sterne einer Diff ({} = vorhanden, unmoeglich
+## oder fehlgeschlagen). Nur 4K-Mania- und osu!standard-Diffs (Trace: nur 4K).
+func _bg_item(ms: MapSet, i: int) -> Dictionary:
+	var src := _star_src()
+	if src == "mania" or not _orbit_diff_ok(ms, i) or _mode_stars_known(ms, i) >= 0.0:
+		return {}
+	if src == "trace" and int(ms.meta_at(i).get("mode", 0)) != 3:
+		return {}
+	var key := _mode_star_key(ms, i)
+	if key == "" or _bg_failed.has(key):
+		return {}
+	return {"key": key, "osz": ms.osz_path, "ver": ms.version_name_at(i),
+		"inner": ms.osu_filename_at(i), "osu": ms.stars_at(i), "mode": src}
+
+
+## Gewaehltes Set zuerst: fehlende Modus-Sterne seiner Diffs vorn einreihen
+## (entprellt wie die Einzel-Rechnung, Scrollen startet nichts).
+func _bg_front_set(ms: MapSet) -> void:
+	if ms == null or _star_src() == "mania" or not is_inside_tree() \
+			or DisplayServer.get_name() == "headless":
+		return
+	_front_token += 1
+	var tok := _front_token
+	await get_tree().create_timer(ORBIT_STARS_DELAY).timeout
+	if tok != _front_token or not is_inside_tree() or _selected_set != ms:
+		return
+	var order := _mode_order(ms)
+	order.reverse()  # push_front: am Ende steht die leichteste vorn
+	for i in order:
+		var item := _bg_item(ms, i)
+		if not item.is_empty() and item.key != _os_want:
+			_bg_enqueue(item, true)
+	_bg_pump()
+
+
+## Moduswechsel: wartende Auftraege anderer Modi verwerfen.
+func _bg_drop_other_modes() -> void:
+	var src := _star_src()
+	var keep: Array = []
+	for it in _bg_queue:
+		if str(it.get("mode", "orbit")) == src:
+			keep.append(it)
+		else:
+			_bg_queued.erase(it.key)
+	_bg_queue = keep
 
 
 func _bg_enqueue_list(missing: Array, level: float) -> void:
@@ -4254,7 +4486,10 @@ func _bg_pump() -> void:
 
 
 func _bg_work(item: Dictionary) -> void:
-	_bg_finished.call_deferred(item, orbit_stars_compute(item.osz, item.ver, str(item.get("mode", "orbit"))))
+	var mode := str(item.get("mode", "orbit"))
+	var st := StarService.trace_stars_for(item.osz, str(item.get("inner", ""))) if mode == "trace" \
+			else orbit_stars_compute(item.osz, item.ver, mode)
+	_bg_finished.call_deferred(item, st)
 
 
 func _bg_finished(item: Dictionary, st: float) -> void:
@@ -4262,11 +4497,17 @@ func _bg_finished(item: Dictionary, st: float) -> void:
 		_bg_thread.wait_to_finish()
 		_bg_thread = null
 	_bg_queued.erase(item.key)
+	var mode := str(item.get("mode", "orbit"))
 	if st >= 0.0:
-		_os_cache_get()[item.key] = st
-		orbit_stars_store(item.key, st)
+		if mode == "trace":
+			_trace_cache_get()[item.key] = st  # StarService hat schon gespeichert
+		else:
+			_os_cache_get()[item.key] = st
+			orbit_stars_store(item.key, st)
 	else:
 		_bg_failed[item.key] = true
+	if st >= 0.0 and mode == _star_src():
+		_mode_stars_arrived(str(item.osz))
 	if _play_mode == "orbit":
 		_career_refresh_later()
 	if str(item.get("mode", "orbit")) == _stars_mode():
@@ -4334,12 +4575,9 @@ static func orbit_stars_compute(osz: String, version: String, mode: String = "or
 			if mode == "orbit":
 				return OrbitConverter.stars(OrbitConverter.convert(bm))
 			if mode == "trace":
-				# Trace-Sterne: TraceStars (trace-stars), sonst Platzhalter.
-				var tp := "res://scripts/trace/trace_stars.gd"
-				if ResourceLoader.exists(tp):
-					var ts: GDScript = load(tp)
-					if ts != null and ts.has_method("stars_for"):
-						return float(ts.call("stars_for", bm))
+				# Trace-Sterne: TraceStars (Browser nutzt StarService.trace_stars_for).
+				if bm.is_mania() and bm.column_count() == 4:
+					return TraceStars.from_beatmap(bm)
 			var path := "res://scripts/%s/%s_chart.gd" % [mode, mode]
 			if ResourceLoader.exists(path):
 				var sc: GDScript = load(path)
@@ -4405,6 +4643,8 @@ func _orbit_stars_done(key: String, st: float) -> void:
 	if st >= 0.0:
 		orbit_stars_store(key, st)
 		_os_cache_get()[key] = st
+		if _selected_set != null and _mode_star_key(_selected_set, _selected_diff) == key:
+			_mode_stars_arrived(_selected_set.osz_path)
 	if key == _os_want:
 		if st >= 0.0 and _play_mode != "mania":
 			_star_label.text = ScoreStore.mode_label(_stars_mode()) + " " + _stars_text(st)
@@ -4837,8 +5077,8 @@ func _recs_refresh() -> void:
 	if _rec_thread != null:
 		_rec_again = true
 		return
-	if _play_mode != "orbit" and not _mania_like():
-		_bg_scan()  # Rally/Dirigent: fehlende Modus-Sterne im Hintergrund
+	if _star_src() != "mania":
+		_bg_scan()  # fehlende Modus-Sterne im Hintergrund
 		_bg_pump()
 	var job := _recs_job()
 	_rec_token += 1
@@ -4861,9 +5101,7 @@ func _recs_refresh_later() -> void:
 ## Hauptthread aus Bibliothek und Caches (keine Berechnung).
 func _recs_job() -> Dictionary:
 	var mode := _play_mode
-	var mania_like := _mania_like()
 	var idx := _scores_for_mode()
-	var cache := {} if mania_like else _os_cache_get()
 	var cands: Array = []
 	var stars := {}
 	_rec_lookup = {}
@@ -4875,7 +5113,7 @@ func _recs_job() -> Dictionary:
 			if not Recommender.playable(mode, osu_mode) or not _orbit_diff_ok(ms, i):
 				continue
 			var ver := ms.version_name_at(i)
-			var st := ms.stars_at(i) if mania_like else float(cache.get(_orbit_key(ms, ver), -1.0))
+			var st := _mode_stars_known(ms, i)  # dieselben Modus-Sterne wie der Browser
 			var k := "%s|%s" % [file, ver.strip_edges()]
 			stars[k] = st
 			if st <= 0.0:
@@ -4954,7 +5192,7 @@ func _recs_render() -> void:
 		empty.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		empty.add_theme_font_size_override("font_size", 13)
 		empty.add_theme_color_override("font_color", COL_DIM)
-		var pending := not _mania_like() and (_bg_thread != null or not _bg_queue.is_empty())
+		var pending := _star_src() != "mania" and (_bg_thread != null or not _bg_queue.is_empty())
 		empty.text = tr("Calculating stars …") if pending \
 				else tr("No fitting map in your library. Try another level or get maps online.")
 		_rec_body = empty
