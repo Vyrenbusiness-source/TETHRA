@@ -23,7 +23,7 @@ const WRONG_MS := 800.0
 const RING_MS := 900.0
 const GHOST_MS := 1300.0
 const CONTACT_MS := 95.0
-const FX_MS := 560.0
+const FX_MS := 380.0
 const TRAIL_STEP_MS := 26.0
 const TRAIL_N := 5
 
@@ -130,7 +130,7 @@ func _layout() -> Lay:
 	var l := Lay.new()
 	var w := size.x
 	var h := size.y
-	l.rx = minf(w * 0.10, h * 0.14)
+	l.rx = minf(w * 0.108, h * 0.165)
 	l.ry = l.rx * 0.30
 	l.pitch = l.rx * 2.32
 	var cols := flight.columns if flight != null else 4
@@ -231,15 +231,20 @@ func _draw_drum(l: Lay, c: int) -> void:
 func _draw_keycap(l: Lay, c: int) -> void:
 	var col := lane_color(c)
 	var g: float = _glow[c]
-	var fs := int(l.rx * 0.58)
+	var fs := int(l.rx * 0.50)
 	var txt := str(key_labels[c]) if c < key_labels.size() else ""
 	var ts := _font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
 	var cx := l.cx(c)
 	var y := l.y + l.depth + l.ry + fs * 1.05
+	var edge := COL_HOLD if _rest[c] else col
+	var pw := maxf(fs * 1.5, ts.x + fs * 0.7)
+	var plate := Rect2(cx - pw * 0.5, y - fs * 1.05, pw, fs * 1.5)
+	_cap_style.bg_color = Color(edge, 0.10 + 0.40 * g)
+	_cap_style.border_color = Color(edge, 0.55 + 0.45 * g)
+	_cap_style.set_border_width_all(2)
+	draw_style_box(_cap_style, plate)
 	draw_string(_font, Vector2(cx - ts.x * 0.5, y), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs,
-			Color(1, 1, 1, 0.62 + 0.38 * g).lerp(col.lightened(0.3), 0.25 * (1.0 - g)))
-	var bw := l.rx * (0.55 + 0.45 * g)
-	draw_rect(Rect2(cx - bw * 0.5, y + fs * 0.22, bw, 3.0), Color(COL_HOLD if _rest[c] else col, 0.45 + 0.55 * g))
+			Color(1, 1, 1, 0.80 + 0.20 * g))
 
 
 ## Landering + Geister-Bogen des Zielflugs. Hold: doppelter Ring in Gold.
@@ -450,13 +455,10 @@ func _draw_fx(l: Lay) -> void:
 		var e := 1.0 - (1.0 - q) * (1.0 - q)
 		var rr := lerpf(l.ball_r * 1.1, l.rx * (0.78 if miss else 1.28), e)
 		_ell(Vector2(cx, l.y), 0.3)
-		draw_arc(Vector2.ZERO, rr, 0.0, TAU, 48, Color(jc, (0.30 if miss else 0.85) * (1.0 - q)), lerpf(3.4, 1.0, q), true)
-		if not miss and int(fx.q) <= 1:
-			var r2 := lerpf(l.ball_r * 0.8, l.rx * 0.95, e)
-			draw_arc(Vector2.ZERO, r2, 0.0, TAU, 40, Color(jc, 0.45 * (1.0 - q)), 1.6, true)
+		draw_arc(Vector2.ZERO, rr, 0.0, TAU, 48, Color(jc, (0.30 if miss else 0.90) * (1.0 - q)), lerpf(3.6, 1.0, q), true)
 		_flat()
-		if age < 200.0:
-			var fl := 1.0 - age / 200.0
+		if age < 160.0:
+			var fl := 1.0 - age / 160.0
 			_ell(Vector2(l.cx(c), l.y), 0.3)
 			draw_circle(Vector2.ZERO, l.rx, Color(jc, (0.10 if miss else 0.26) * fl))
 			_flat()
