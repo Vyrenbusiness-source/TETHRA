@@ -43,7 +43,7 @@ const MAX_PER_SET := 2
 const MAX_PER_ARTIST := 2
 const STYLE_W := 0.3        # Stil-Bonus: 1,0 Passung wiegt 0,3 Sterne Abstand (Push: +30 % Gewinn)
 const STYLE_MIN_MAPS := 5   # Vorlieben erst ab 5 gespielten Maps mit Merkmalen
-const STYLE_SHOW := 0.55    # Stil-Grund erst ab dieser Passung
+const STYLE_SHOW := 0.6     # Stil-Grund erst ab dieser Passung
 
 ## Stufen relativ zum Level P (Sterne): [lo, hi] und Ziel.
 const EASY_LO := -1.3
@@ -517,30 +517,27 @@ static func style_match(t: Dictionary, cand: Dictionary) -> Dictionary:
 		parts.append([exp(-0.5 * zl * zl), 0.15, "length"])
 	var sw := 0.0
 	var sv := 0.0
-	var best_part := ""
-	var best_v := 0.0
 	for p in parts:
 		sw += float(p[1])
 		sv += float(p[0]) * float(p[1])
-		if float(p[0]) * float(p[1]) > best_v:
-			best_v = float(p[0]) * float(p[1])
-			best_part = str(p[2])
 	if sw < 0.3:  # zu wenig Merkmale fuer eine Aussage
 		return {"bonus": 0.0, "reason": ""}
 	var bonus := sv / sw
 	var reason := ""
 	if bonus >= STYLE_SHOW:
-		match best_part:
-			"style":
-				reason = TranslationServer.translate("%s, like your favourites") % \
-						TranslationServer.translate(str(STYLE_LABELS.get(dom, "Patterns"))) if dom != "" \
-						else TranslationServer.translate("similar to maps you replay")
-			"artist":
-				reason = TranslationServer.translate("an artist you replay")
-			"genre", "language":
-				reason = TranslationServer.translate("%s, like your favourites") % str(cand.get(best_part, ""))
-			_:
-				reason = TranslationServer.translate("similar to maps you replay")
+		# Nur deutliche Gruende: Stil, Kuenstler, Genre/Sprache; "similar to maps
+		# you replay" nur bei sehr hoher Passung und echten Wiederholungen.
+		var val := {}
+		for p in parts:
+			val[str(p[2])] = float(p[0])
+		if dom != "" and float(val.get("style", 0.0)) >= 0.7:
+			reason = TranslationServer.translate("%s, like your favourites") % TranslationServer.translate(str(STYLE_LABELS.get(dom, "Patterns")))
+		elif float(val.get("artist", 0.0)) >= 0.75:
+			reason = TranslationServer.translate("an artist you replay")
+		elif float(val.get("genre", 0.0)) >= 0.75:
+			reason = TranslationServer.translate("%s, like your favourites") % str(cand.get("genre", ""))
+		elif bonus >= 0.8 and bool(t.get("repeat", false)):
+			reason = TranslationServer.translate("similar to maps you replay")
 	return {"bonus": bonus, "reason": reason}
 
 

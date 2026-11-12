@@ -4516,7 +4516,7 @@ static func rec_fill_style(cands: Array) -> void:
 			continue
 		var key := "%s|%s" % [osz.get_file(), inner]
 		var mt := FileAccess.get_modified_time(osz)
-		var hit = cfg.get_value("style", key, null)
+		var hit = cfg.get_value("style", key) if cfg.has_section_key("style", key) else null
 		if hit is Array and hit.size() == 2 and int(hit[0]) == mt:
 			c["style"] = hit[1]
 			continue
