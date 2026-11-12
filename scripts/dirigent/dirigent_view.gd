@@ -84,11 +84,11 @@ func setup(p_chart: DirigentChart, p_core: DirigentCore) -> void:
 # ---------------------------------------------------------------------------
 
 func unit_px() -> float:
-	return size.y * 0.34
+	return size.y * 0.32
 
 
 func center_px() -> Vector2:
-	return Vector2(size.x * 0.5, size.y * 0.43)
+	return Vector2(size.x * 0.5, size.y * 0.40)
 
 
 func to_px(u: Vector2) -> Vector2:
@@ -102,8 +102,8 @@ func to_unit(px: Vector2) -> Vector2:
 ## Einsatz-Leiste: Linie links, Marken kommen von rechts.
 func bar_rect() -> Rect2:
 	var w := minf(size.x * 0.62, 980.0)
-	var h := size.y * 0.085
-	return Rect2(Vector2((size.x - w) * 0.5, size.y * 0.855), Vector2(w, h))
+	var h := size.y * 0.07
+	return Rect2(Vector2((size.x - w) * 0.5, size.y * 0.868), Vector2(w, h))
 
 
 func _bar_line_x() -> float:
