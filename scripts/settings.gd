@@ -135,6 +135,11 @@ var bg_dim: float = 0.3
 var _bg_dim_cli := -1.0
 var _bg_dim_saved := 0.3
 var bg_blur: bool = true
+## Unschaerfe des Map-Bilds in Orbit, Rally und Dirigent (Mania 2D: bg_blur):
+## 0 = scharf, 100 = sehr weich. Standard 80 ("stark").
+var modes_bg_blur: int = 80
+## Deckkraft des Map-Bilds in Orbit, Rally und Dirigent (0 = kein Map-Bild).
+var modes_bg_dim: float = 0.2
 ## 2D-Notenform: 0 = Balken (flache Rechtecke), 1 = Kreis (runde Noten,
 ## Holds mit runden Enden, Receptors als Ringe).
 var note_style_2d: int = 0
@@ -508,6 +513,8 @@ func load_settings(path: String = PATH) -> void:
 	playfield_2d = bool(cfg.get_value("game", "playfield_2d", false))
 	bg_dim = clamp_bg_dim(float(cfg.get_value("game", "bg_dim", 0.3)))
 	bg_blur = bool(cfg.get_value("game", "bg_blur", true))
+	modes_bg_blur = clampi(int(cfg.get_value("game", "modes_bg_blur", 80)), 0, 100)
+	modes_bg_dim = clamp_bg_dim(float(cfg.get_value("game", "modes_bg_dim", 0.2)))
 	note_style_2d = clampi(int(cfg.get_value("game", "note_style_2d", 0)), 0, 1)
 	mod_sv = bool(cfg.get_value("mods", "sv", false))
 	mod_nf = bool(cfg.get_value("mods", "nf", false))
@@ -569,6 +576,8 @@ func save(path: String = PATH) -> void:
 	var bg_keep := _bg_dim_cli >= 0.0 and is_equal_approx(bg_dim, _bg_dim_cli)
 	cfg.set_value("game", "bg_dim", _bg_dim_saved if bg_keep else bg_dim)
 	cfg.set_value("game", "bg_blur", bg_blur)
+	cfg.set_value("game", "modes_bg_blur", modes_bg_blur)
+	cfg.set_value("game", "modes_bg_dim", modes_bg_dim)
 	cfg.set_value("game", "note_style_2d", note_style_2d)
 	cfg.set_value("game", "lane_width_2d", lane_width_2d)
 	cfg.set_value("mods", "sv", mod_sv)
@@ -825,6 +834,11 @@ static func clamp_lane_spacing(v: float) -> float:
 
 
 ## Hintergrund-Deckkraft (2D) auf 0..1 ziehen, 5-%-Raster.
+## Mip-Stufe fuer shaders/modes_bg_blur.gdshader aus modes_bg_blur (0..100).
+static func blur_lod(amount: int) -> float:
+	return clampf(float(amount), 0.0, 100.0) / 100.0 * 6.0
+
+
 static func clamp_bg_dim(v: float) -> float:
 	if is_nan(v):
 		return 0.3
