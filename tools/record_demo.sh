@@ -1,6 +1,6 @@
 #!/bin/bash
 # Demo-Video eines Modus aufnehmen (Godot Movie Maker + ffmpeg). Aufruf:
-#   tools/record_demo.sh <mania|orbit|rally|dirigent> <map-teil> <start_ms> [laenge_s=22] [ausgabe=docs/media/<modus>]
+#   tools/record_demo.sh <mania|orbit|rally|dirigent|trace|rebound> <map-teil> <start_ms> [laenge_s=22] [ausgabe=docs/media/<modus>]
 # Schreibt <ausgabe>.mp4 (H.264, 1280x720, 60 fps, AAC) und <ausgabe>_anim.webp
 # (stumm, 6 s, 640 px). Nur selbst-beendend (timeout), kein Godot danach offen.
 # Godot-Rohfilm: /tmp/demo_<modus>.avi (Marker MOVIE_START frame=<n> im Log).
@@ -15,6 +15,8 @@ case $mode in
 mania) extra=(--mania --map="$map") ;;  # unveraendert gespielt (45-s-Watchdog), <start_ms> = Filmzeit
 orbit) extra=(--orbit-map="$map" --shot --shot-at="$from" --movie-len="$len") ;;
 rally) extra=(--rally-map="$map" --shot --shot-at="$from" --movie-len="$len") ;;
+trace) extra=(--trace-map="$map" --shot --shot-at="$from" --movie-len="$len") ;;
+rebound) extra=(--rebound-map="$map" --shot --shot-at="$from" --movie-len="$len") ;;
 dirigent) extra=(--dirigent-map="$map" --movie-from="$from" --movie-len="$len") ;;
 esac
 timeout 400 "$G" --path . --audio-driver Dummy --write-movie "$avi" --fixed-fps 60 --resolution 1280x720 \
