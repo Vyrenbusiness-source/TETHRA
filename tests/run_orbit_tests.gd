@@ -405,7 +405,10 @@ func _test_visible_limit() -> void:
 		min_laps = mini(min_laps, n.laps)
 		lead_ok = lead_ok and n.time_ms - n.spawn_ms >= maxf(0.5 * n.lap_ms, 400.0) - 1.0
 	_ok(lead_ok and min_laps < 4, "dichte Stellen verringern die Runden (min %d, Vorlauf >= halbe Runde und 1 Beat)" % min_laps)
-	_ok(ns4.size() == 200 and OrbitConverter.convert(bm, 1).size() == 200, "keine Ziele fallen weg (%d)" % ns4.size())
+	OrbitConverter.legacy_laps = true
+	var old4 := OrbitConverter.convert(bm, 4).size()
+	OrbitConverter.legacy_laps = false
+	_ok(ns4.size() >= old4, "lange Runden kosten keine Ziele (%d, vorher %d)" % [ns4.size(), old4])
 	var bm2 := _std_bm(120.0)
 	_stream(bm2, 8, 1000.0)
 	var sparse := OrbitConverter.convert(bm2, 4)

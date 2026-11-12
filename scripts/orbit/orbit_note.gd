@@ -48,6 +48,9 @@ var spawn_ms: float = 0.0
 var lap_ms: float = 500.0
 ## Runden ab spawn_ms bis zum Treffer (Pips beim Erscheinen); 0 = nur eine Teilrunde.
 var laps: int = 2
+## Beat-Dauer (ms) an time_ms, vom Konverter gesetzt (0 = unbekannt); Sterne rechnen
+## den Vorlauf damit in Runden der Regel vor 4 um (Lesen bleibt vergleichbar).
+var beat_ms: float = 0.0
 var _path_len: PackedFloat32Array = PackedFloat32Array()
 
 

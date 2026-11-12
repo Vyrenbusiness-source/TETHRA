@@ -387,6 +387,7 @@ static func _build(events: Array, bm: Beatmap, laps_req: int, mania: bool) -> Ar
 			prev_pos = pos
 			prev_t = t
 		n.lap_ms = lap
+		n.beat_ms = beat
 		n.laps = laps_req
 		placed.append([pos, spawn_req, maxf(end, t)])
 		built.append(n)
@@ -520,6 +521,14 @@ static func _std_hold_path(raw: PackedVector2Array, pos: Vector2, src_pos: Vecto
 	return out
 
 
+## Lesen (Sterne): Vorlauf in Runden der Regel vor 4 (1 Beat, erst unter 330 ms 2 Beats),
+## damit die laengeren Runden (Regeln 4) die Sterne nur ueber den echten Vorlauf aendern.
+static func _read_laps(n: OrbitNote) -> float:
+	if n.beat_ms <= 0.0:
+		return float(n.laps)
+	return floorf((n.time_ms - n.spawn_ms) / lap_ms_for(n.beat_ms, true) + 0.001)
+
+
 ## Dauer einer Satelliten-Runde (ms) zum Beat. legacy: Regel vor Regeln 4 (Messung).
 static func lap_ms_for(beat_ms: float, legacy: bool = false) -> float:
 	if legacy:
@@ -551,11 +560,13 @@ static func _assign_laps(ns: Array[OrbitNote], clock: OrbitClock, laps_req: int)
 				break
 			l -= 1
 		if not ok and not legacy_laps:
-			var beat := clock.beat_ms_at(n.time_ms)
-			var last := clock.beat_tick_at_or_before(n.time_ms - maxf(0.5 * n.lap_ms, beat) + 0.5)
+			var bound := n.time_ms - maxf(0.5 * n.lap_ms, clock.beat_ms_at(n.time_ms)) + 0.5
 			var sp := clock.beat_tick_at_or_before(n.time_ms - n.lap_ms)
-			while not ok and sp < last - 0.5:
-				sp = clock.beat_tick_at_or_before(sp + clock.beat_ms_at(sp) + 0.5)
+			while not ok:
+				var nx := clock.beat_tick_at_or_before(sp + clock.beat_ms_at(sp) + 0.5)
+				if nx <= sp + 0.5 or nx > bound:
+					break
+				sp = nx
 				if _fits(vis, sp, end):
 					n.spawn_ms = sp
 					n.laps = 0
@@ -721,7 +732,7 @@ static func stars_raw(ns: Array[OrbitNote]) -> float:
 		if n.key == OrbitNote.KEY_ACCENT:
 			acc[w] += 1.0
 		# Lesen: wenige Runden und Ueberdeckung (Ziele nahe an noch sichtbaren)
-		var lap_pen := maxf(3.0 - float(n.laps), 0.0) * 0.5
+		var lap_pen := maxf(3.0 - _read_laps(n), 0.0) * 0.5
 		var olap := 0.0
 		for j in range(maxi(i - 6, 0), i):
 			var m := ns[j]
