@@ -161,3 +161,15 @@ Offen: menschlicher Spieltest (Orbit-Spass, Chat/Replay/Avatar live, Fail-Bild, 
 - Tutorials fuer alle Modi (scenes/<modus>_tutorial.tscn), Tastenbelegung aller Modi in Settings > Controls, Modus-Icons assets_game/icons/modes/*.svg (ModeBadge).
 - Map-Hintergrund Orbit/Rally/Dirigent: MapBackdrop (Settings.modes_bg_blur/modes_bg_dim); Mania unveraendert.
 - Server: min_version 1.27.0, Modi trace/rebound neu, Relay mit neuer pck neu starten (Raumart in /rooms).
+
+## Stand 2026-11-12 spaet: Neustart wegen RAM-Leck (nur 59 MB frei), alle Agents gestoppt
+In main (nicht gepusht, nicht released; letztes Release v1.27.0): Trace komplett ausgebaut (eigene Pfeiltasten Settings.trace_keys, Anti-Mash "Wrong turn" in scripts/trace/trace_rules.gd, Optik/Zeitraffer, TracePicture Speichern/Chat, TraceMods MR/HD/SS, TraceStars, Trace-QA, Trace-Clips, Trace-Versus MP, Daily Trace), Browser nutzt Modus-Sterne in allen 6 Modi (Rally/Dirigent echte Chart-Sterne, Cache v2), Ergebnis Trace/Rebound zeigt Punkte, Clips starten Szene je Modus.
+warmd: v0.4.45 installiert (~/.local/bin im PATH erst in neuen Shells; sonst `export PATH="$HOME/.local/bin:$PATH"`).
+
+Offen, in dieser Reihenfolge nach dem Neustart:
+1. anti-mash (Branch warmd/anti-mash, Handoff .git/warmd-handoff/anti-mash.md): Rally/Orbit/Dirigent-Tests nachpruefen, docs/anti_mash.md (Rebound 76->26 %, Dirigent 100->67 % schon gemessen), MP-Smokes, warmd check, finish, dann mergen.
+2. chat-score-card (warmd/chat-score-card, Handoff vorhanden): Tests gruen (zuletzt 175 ok / 43 rot vor Layout-Fix), Screenshot, check, finish, mergen.
+3. Danach (Dateien frei, wenn 1. gemergt): .warmd/tasks108.txt rebound-look (Hold-Baelle eigene Farbe/Form sofort erkennbar, klareres Design), .warmd/tasks110.txt orbit-clarity (unklare Orbit-Momente) + orbit-timing (Fenster wie osu!std, Satellit langsamer, Regeln v4 -> Server min_version beim naechsten Release).
+4. warmd-Fix offen (Repo Desktop/warmd, Branch fix/runner-fail-reason, ungeprueft): FAIL-runner-Zeile mit Exit-Code/Timeout-Grund, Runner-Timeout unter Last; Anlass: tests/run_mastering_tests.gd faellt im Gate nach "ALL OK" zufaellig durch.
+5. Daily-Trace-Texte noch deutsch als Quelle (sollten englisch sein), FEHLKNICKE in Live-Leiste uebersetzen.
+6. Dann Release v1.28.0 (Server: trace/rebound Regeln, Orbit v4, Daily-Text docs/server_daily.md, Relay neu).
