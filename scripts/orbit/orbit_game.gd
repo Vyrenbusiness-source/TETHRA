@@ -1450,7 +1450,7 @@ func _measure_fps(sec: float) -> void:
 ## "hold"/"arc" (mitten im Halten), "hold-in" (kurz vor einem Halten-Kopf),
 ## "accent"/"chord" (kurz vor einem Akzent), "stream" (Anfang der ersten
 ## Folge von 6 Zielen mit <= 200 ms Abstand), "jump" (groesster Sprung je
-## Zeit), "dense" (meiste sichtbare Ziele).
+## Zeit), "dense" (meiste sichtbare Ziele), "kiai" (1,5 s im ersten Kiai).
 func _shot_target(v: String, def: float) -> float:
 	if v.is_valid_float():
 		return v.to_float()
@@ -1492,6 +1492,11 @@ func _shot_target(v: String, def: float) -> float:
 					best = d / dt
 					at = float(n.time_ms) - 120.0
 			return at
+	if v == "kiai":
+		for tp in _beatmap.timing_points:
+			if (tp.kiai or (tp.effects & 1) != 0) and tp.time >= from:
+				return tp.time + 1500.0
+		return def
 	for i in notes.size():
 		var n := notes[i]
 		if n.time_ms < from:
