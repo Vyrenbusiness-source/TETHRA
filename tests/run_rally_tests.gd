@@ -74,6 +74,7 @@ func _run() -> void:
 	print("=== TETHRA Rally-Tests (v2, 4 Zonen) ===")
 	_test_chart_std()
 	_test_chart_mania()
+	_test_chart_3zones()
 	_test_merge()
 	_test_flight_time()
 	_test_zone_rule()
@@ -145,6 +146,54 @@ func _test_chart_mania() -> void:
 	_ok(shots[5].smash and shots[5].zones == PackedInt32Array([1, 2]), "Akkord Mitte = Schmetterball 1+2")
 	_ok(shots[6].smash and shots[6].zones == PackedInt32Array([0, 2]), "3 Noten = die 2 aeussersten Zonen")
 	_ok(shots[7].is_charge() and shots[7].zones == PackedInt32Array([3]) and is_equal_approx(shots[7].end, 8800.0), "Hold = Aufladen bis zum Ende")
+
+
+func _test_chart_3zones() -> void:
+	print("- Chart mit 3 Zonen")
+	var bm := _beatmap(3,
+		"64,192,1000,1,0,0:0:0:0:
+" +
+		"192,192,2000,1,0,0:0:0:0:
+" +
+		"320,192,3000,1,0,0:0:0:0:
+" +
+		"448,192,4000,1,0,0:0:0:0:
+" +
+		"192,192,5000,1,0,0:0:0:0:
+320,192,5000,1,0,0:0:0:0:
+" +
+		"64,192,6000,1,0,0:0:0:0:
+448,192,6000,1,0,0:0:0:0:
+")
+	var shots := RallyChart.build(bm, 800.0, 3)
+	_ok(RallyChart.zone_count() == 3, "zone_count = 3")
+	_ok(shots.size() == 6, "6 Baelle, war %d" % shots.size())
+	var want := [0, 1, 1, 2]
+	for i in 4:
+		_ok(shots[i].zones == PackedInt32Array([want[i]]) and not shots[i].smash, "Spalte %d -> Zone %d" % [i, want[i]])
+	_ok(not shots[4].smash and shots[4].zones == PackedInt32Array([1]), "Akkord Spalte 1+2 = ein Ball in der Mitte")
+	_ok(shots[5].smash and shots[5].zones == PackedInt32Array([0, 2]), "Akkord aussen = Schmetterball links+rechts")
+	var std := _beatmap(0,
+		"170,100,1000,1,0,0:0:0:0:
+" +
+		"172,100,2000,1,0,0:0:0:0:
+" +
+		"340,100,3000,1,0,0:0:0:0:
+" +
+		"342,100,4000,1,0,0:0:0:0:
+")
+	var ss := RallyChart.build(std, 800.0, 3)
+	_ok(ss[0].zones[0] == 0 and ss[1].zones[0] == 1 and ss[2].zones[0] == 1 and ss[3].zones[0] == 2, "osu!std x in 3 Streifen (171/341)")
+	# Bot spielt 3 Zonen fehlerfrei; Core uebernimmt die Zonenzahl.
+	var c := RallyCore.new()
+	c.setup(shots, 8.0, 5.0, {})
+	_ok(c.zones == 3, "Core.zones = 3")
+	_play(c, RallyCore.bot_plan(shots), 16.0, shots[-1].end + 500.0)
+	var st := c.stats()
+	_ok(str(st.grade) == "SS" and int(st.n_miss) == 0, "Bot 3 Zonen: SS")
+	_ok(RallyCore.replay_zones([[0, RallyCore.EV_RULES, RallyCore.REPLAY_RULES, c.zones]]) == 3, "Replay merkt 3 Zonen")
+	RallyChart.build(bm, 800.0, 4)   # Zonenzahl zuruecksetzen
+	_ok(RallyChart.zone_count() == 4, "zone_count zurueck auf 4")
 
 
 func _test_merge() -> void:

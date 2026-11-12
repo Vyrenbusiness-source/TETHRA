@@ -313,7 +313,7 @@ static func first_at_or_after(shots: Array[Shot], time: float) -> int:
 # ---------------------------------------------------------------------------
 
 const STAR_HOP_MS := 1000.0
-const STAR_DENS_K := 0.15
+const STAR_DENS_K := 0.11
 const STAR_DECAY := 0.95
 ## Zonenwechsel: Zusatzlast je Zonen-Abstand (Sprung ueber 2-3 Zonen zaehlt mehr) bei
 ## Abstand unter STAR_JUMP_GAP_MS; Stream: Baelle unter STAR_STREAM_GAP_MS.
