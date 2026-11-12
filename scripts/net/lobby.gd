@@ -66,6 +66,9 @@ var crown_id := 1
 var play_mode := "mania"
 ## {set_id, file, version, title, artist, stars}
 var sel_map: Dictionary = {}
+## Map + Modus der zuletzt gestarteten Runde (Versus-Bilder im Raum, auch nach neuer Map-Wahl).
+var round_map: Dictionary = {}
+var round_mode := ""
 ## Raum-Mods (vom Kronentraeger gewaehlt, fuer alle gleich): {"SV": bool, "NF": bool}
 var mods: Dictionary = { "SV": false, "NF": false }
 ## LAN-Discovery: ip -> {name, players, t}
@@ -142,7 +145,7 @@ const VIEWS := ["3D", "2D", "Orbit", "Rally", "Dirigent", "Trace", "Rebound"]
 
 func _new_player(pname: String) -> Dictionary:
 	return { "name": pname, "ready": false, "score": 0, "combo": 0,
-		"acc": 1.0, "final": {}, "view": "" }
+		"acc": 1.0, "miss": 0, "final": {}, "view": "" }
 
 
 ## Nur bekannte Werte durchlassen, alles andere (auch Nicht-Strings) wird "".
@@ -489,6 +492,8 @@ func _exit_tree() -> void:
 
 
 func _reset() -> void:
+	round_map = {}
+	round_mode = ""
 	if _upnp_thread != null:
 		_upnp_thread.wait_to_finish()
 		_upnp_thread = null
@@ -985,6 +990,8 @@ func cl_start() -> void:
 		return
 	in_game = true
 	skip_votes = {}
+	round_map = sel_map.duplicate()
+	round_mode = play_mode
 	if is_host:
 		# Nur Turnierrunden: eine freie Runde davor liesse _tour_peers stehen,
 		# dann startet der Turnier-Autoablauf nie (wartet auf leere Liste).
@@ -999,6 +1006,7 @@ func cl_start() -> void:
 		players[id].score = 0
 		players[id].combo = 0
 		players[id].acc = 1.0
+		players[id].miss = 0
 		players[id].final = {}
 	if spectating:
 		game_start.emit()
@@ -1063,10 +1071,11 @@ func _nearest_4k(path: String, imp: Dictionary, want: float) -> int:
 
 ## Lokale .osz zur gewaehlten Map finden: exakter Dateiname, fuehrende
 ## Set-ID oder mirror_<id>.osz.
-func resolve_local_path() -> String:
+func resolve_local_path(m: Dictionary = {}) -> String:
+	var src := sel_map if m.is_empty() else m
 	var maps_dir := MapLibrary.default_maps_dir()
-	var want_file := str(sel_map.get("file", ""))
-	var set_id := int(sel_map.get("set_id", 0))
+	var want_file := str(src.get("file", ""))
+	var set_id := int(src.get("set_id", 0))
 	var dir := DirAccess.open(maps_dir)
 	if dir == null:
 		return ""
@@ -1089,34 +1098,83 @@ func resolve_local_path() -> String:
 # Live-Scores + Finale
 # ---------------------------------------------------------------------------
 
-func send_score(score: int, combo: int, acc: float) -> void:
+## miss = Fehlknicke/Misses bisher (Trace-Live-Leiste); -1 = aus dem laufenden Spiel lesen.
+## Alte Clients senden 3 Werte (miss fehlt = -1, Anzeige ohne Fehlknicke).
+func send_score(score: int, combo: int, acc: float, miss: int = -1) -> void:
 	if not active or not in_game:
 		return
 	acc = clampf(acc, 0.0, 1.0)
+	if miss < 0:
+		miss = scene_misses()
 	var me := multiplayer.get_unique_id()
 	if players.has(me):
 		players[me].score = score
 		players[me].combo = combo
 		players[me].acc = acc
-	rpc("cl_score", score, combo, acc)
+		players[me].miss = miss
+	rpc("cl_score", score, combo, acc, miss)
+	if play_mode == "trace":
+		LiveTeamBar.ensure_trace(get_tree().current_scene)
 	scores_changed.emit()
 
 
 @rpc("any_peer", "call_remote", "unreliable_ordered")
-func cl_score(score: int, combo: int, acc: float) -> void:
+func cl_score(score: int, combo: int, acc: float, miss: int = -1) -> void:
 	acc = clampf(acc, 0.0, 1.0)
 	var id := multiplayer.get_remote_sender_id()
 	if players.has(id):
 		players[id].score = score
 		players[id].combo = combo
 		players[id].acc = acc
+		players[id].miss = clampi(miss, -1, PlayerStatsCard.MAX_COUNT)
 		scores_changed.emit()
+
+
+## ManiaCore der laufenden Spielszene (Trace/Rebound/Mania haben "core"), sonst null.
+func scene_core() -> ManiaCore:
+	var sc := get_tree().current_scene if is_inside_tree() else null
+	if sc == null or not ("core" in sc):
+		return null
+	return sc.get("core") as ManiaCore
+
+
+## Misses der laufenden Runde (-1 = kein ManiaCore in der Szene).
+func scene_misses() -> int:
+	var c := scene_core()
+	return c.n_miss if c != null else -1
+
+
+## Miss-Bitfeld (1 Bit je Note, Bit i = Note i verfehlt) aus den Urteilen eines ManiaCore.
+static func miss_bits_of(core: ManiaCore) -> PackedByteArray:
+	var n := core.beatmap.hit_objects.size() if core != null and core.beatmap != null else 0
+	var idx := PackedInt32Array()
+	if n == 0:
+		return PlayerStatsCard.pack_miss_bits(idx, 0)
+	for i in core._judged:
+		var r: Variant = core._judged[i]
+		if r is Dictionary and int((r as Dictionary).get("quality", -1)) == ManiaCore.Quality.MISS:
+			idx.append(int(i))
+	return PlayerStatsCard.pack_miss_bits(idx, n)
+
+
+## Bitfeld-Helfer liegen in PlayerStatsCard (ohne Autoload nutzbar).
+static func pack_miss_bits(idx: PackedInt32Array, n: int) -> PackedByteArray:
+	return PlayerStatsCard.pack_miss_bits(idx, n)
+
+
+static func unpack_miss_bits(bits: PackedByteArray) -> PackedInt32Array:
+	return PlayerStatsCard.unpack_miss_bits(bits)
 
 
 func send_final(stats: Dictionary) -> void:
 	if not active or not in_game:
 		return
 	var me := multiplayer.get_unique_id()
+	if play_mode == "trace" and not stats.has("miss_bits"):
+		var c := scene_core()
+		if c != null:
+			stats["miss_bits"] = miss_bits_of(c)
+			stats["notes"] = c.beatmap.hit_objects.size()
 	stats = PlayerStatsCard.sanitize(stats)
 	if players.has(me):
 		players[me].final = stats

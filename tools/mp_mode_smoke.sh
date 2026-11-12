@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Modus-Multiplayer-Smoke (MODE=orbit|rally|dirigent; Rally/Dirigent-Szene muss die
+# Modus-Multiplayer-Smoke (MODE=orbit|rally|dirigent|trace; Rally/Dirigent-Szene muss die
 # Zeilen "MPORBIT start:" und "MPORBIT final ... live_seen=" wie orbit_game ausgeben).
 # Orbit-Multiplayer-Smoke: zwei echte Godot-Prozesse (Host + Client, headless)
 # ueber 127.0.0.1. Ablauf (scripts/ui/mp_lobby.gd _mp_orbit):
@@ -10,6 +10,8 @@
 # naechsten Map): prueft das Bereit-Melden bei der Rueckkehr in den Raum.
 # Jeder Prozess hat ein eigenes APPDATA (user://), Scores/Settings des Nutzers
 # bleiben unberuehrt. Maps: die N kleinsten .osz aus MAPS_SRC in einen Testordner.
+#
+# MODE=trace prueft zusaetzlich Versus-Live-Leiste, Miss-Bitfeld und Versus-Bilder im Raum.
 #
 #   tools/mp_mode_smoke.sh            (Exit 0 = gruen)
 #   GODOT=<exe> PORT=11110 CUT=8 MAPS_SRC=<ordner> KEEP=1 tools/mp_mode_smoke.sh
@@ -48,8 +50,8 @@ CP=$!
 wait $HP; HRC=$?
 wait $CP; CRC=$?
 
-grep -hE "^MP(ORBIT|RALLY)" "$WORK/host.log" | sed 's/^/H| /'
-grep -hE "^MP(ORBIT|RALLY)" "$WORK/client.log" | sed 's/^/C| /'
+grep -hE "^MP(ORBIT|RALLY|TRACE versus)" "$WORK/host.log" | sed 's/^/H| /'
+grep -hE "^MP(ORBIT|RALLY|TRACE versus)" "$WORK/client.log" | sed 's/^/C| /'
 
 fail=0
 check() {  # check <log> <regex> <text>
@@ -77,8 +79,31 @@ for side in host client; do
 	fi
 done
 # Client spielt mit Fehlern (--auto-miss): Genauigkeit unter 100 %.
-grep -Eq "^MP(ORBIT|RALLY) final .*acc=0\.[0-9]+ .*failed=" "$WORK/client.log" \
-	|| { echo "FAIL client: keine Fehler gespielt"; fail=1; }
+# Trace: nur, sobald trace_game --auto-miss kennt (sonst Hinweis statt Fehler).
+AUTO_MISS=1
+if [ "$MODE" = trace ] && ! grep -q -- "--auto-miss" scripts/trace/trace_game.gd; then
+	AUTO_MISS=0
+	echo "SKIP client misses: trace_game.gd kennt --auto-miss noch nicht"
+fi
+if [ $AUTO_MISS -eq 1 ]; then
+	grep -Eq "^MP(ORBIT|RALLY) final .*acc=0\.[0-9]+ .*failed=" "$WORK/client.log" \
+		|| { echo "FAIL client: keine Fehler gespielt"; fail=1; }
+fi
+if [ "$MODE" = trace ]; then
+	for side in host client; do
+		check $side "^MPTRACE versus bar players=2" "Versus-Live-Leiste in der Trace-Runde"
+		check $side "MPORBIT [A-Z]+ s1 room finals \[[0-9]+:[^]]* miss=[0-9]+ bits=[0-9]+/[1-9][0-9]*, [0-9]+:[^]]* miss=[0-9]+ bits=[0-9]+/[1-9]" "Miss-Bitfeld in beiden Endergebnissen"
+		check $side "MPORBIT [A-Z]+ s1 versus pictures n=2" "Versus-Bilder im Raum"
+		# Gezaehlte Misses = Bits im Feld (das Feld traegt genau die verfehlten Noten).
+		if ! grep -E "s1 room finals" "$WORK/$side.log" | grep -Eo "miss=[0-9]+ bits=[0-9]+" \
+				| awk -F'[= ]' '$2 != $4 { bad = 1 } END { exit bad }'; then
+			echo "FAIL $side: Misses und Bitfeld passen nicht"; fail=1
+		fi
+	done
+	if [ $AUTO_MISS -eq 1 ]; then
+		check host "s1 room finals .*miss=[1-9][0-9]* bits=[1-9]" "Client-Misses im Bitfeld beim Host"
+	fi
+fi
 
 if [ $fail -eq 0 ]; then
 	echo "MP-ORBIT-SMOKE OK (logs: $WORK)"
