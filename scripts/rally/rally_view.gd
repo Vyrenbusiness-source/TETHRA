@@ -33,7 +33,7 @@ const HALF_W := 0.7625
 const LEN := 2.74
 const NET_H := 0.1525
 const BALL_R := 0.042
-const SMASH_R := 0.062
+const SMASH_R := 0.0588
 const TRAIL_MS := 100.0
 const FX_MS := 260.0
 const MISS_FLY_MS := 450.0
@@ -212,13 +212,10 @@ func _draw() -> void:
 	var balls := _collect_balls()
 	_draw_shadows(balls)
 	_draw_opponent()
-	for b in balls:
-		if float(b.P.z) > 0.5:
-			_draw_ball(b)
 	_draw_net()
+	# Alle Baelle nach dem Netz: nie vom Netz ueberdeckt.
 	for b in balls:
-		if float(b.P.z) <= 0.5:
-			_draw_ball(b)
+		_draw_ball(b)
 	_draw_player()
 	_draw_fx()
 	_draw_keys()
@@ -258,12 +255,12 @@ func _draw_room() -> void:
 	var boost := 1.0 + 0.10 * _lvl
 	# Raumlicht: weicher Kegel ueber der Tischmitte (konzentrische Ellipsen, sehr leise).
 	var lc := _pp(_w(0.0, 0.0, 0.55))
-	for i in 16:
-		var f := float(i) / 15.0
+	for i in 40:
+		var f := float(i) / 39.0
 		var rx := w * (0.62 - 0.46 * f)
 		var ry := h * (0.58 - 0.42 * f)
 		draw_set_transform(lc + Vector2(0, -h * 0.10), 0.0, Vector2(1.0, ry / rx))
-		draw_circle(Vector2.ZERO, rx, Color(COL_LIGHT, 0.011 * boost))
+		draw_circle(Vector2.ZERO, rx, Color(COL_LIGHT, 0.0045 * boost))
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	_draw_audience()
 	# Boden: hinter dem Tisch einen Hauch heller, nach vorn dunkel.
@@ -287,32 +284,29 @@ func _draw_room() -> void:
 			Color(0, 0, 0, 0.55), Color(0, 0, 0, 0))
 
 
-## Publikum: Silhouetten in drei Reihen hinter dem Gegner. Licht/Funkeln waechst mit der Kombo.
+## Publikum: sehr dezente, weiche Silhouetten-Reihe in Raumfarbe (kein Kopf-Raster). Licht reagiert leise auf die Kombo.
 func _draw_audience() -> void:
-	var rim := 0.045 + 0.05 * _lvl
-	for row in 3:
-		var zc := 3.9 + 0.95 * float(row)
-		var yh := 0.55 + 0.30 * float(row)
-		var step := 0.52 - 0.04 * float(row)
-		var n := int(11.0 / step)
-		for i in n:
+	var w := size.x
+	var h := size.y
+	var rim := 0.010 + 0.030 * _lvl
+	var seg := 48
+	for row in 2:
+		var base_y := h * (0.115 - 0.030 * float(row))
+		var amp := h * (0.040 - 0.010 * float(row))
+		var col := COL_ROOM.lightened(0.030 - 0.012 * float(row))
+		for i in seg:
+			var x0 := w * float(i) / float(seg)
+			var x1 := w * float(i + 1) / float(seg)
 			var hs := float((i * 7919 + row * 104729) % 97) / 97.0
-			var x := -5.5 + float(i) * step + hs * 0.18
-			var hy := yh + (hs - 0.5) * 0.10
-			var wp := Vector3(x, hy, zc)
-			var p := _pp(wp)
-			var r := 0.095 * _sc(wp)
-			var body := COL_ROOM.lightened(0.014 + 0.008 * float(2 - row))
-			draw_set_transform(p + Vector2(0, r * 2.1), 0.0, Vector2(1.0, 0.82))
-			draw_circle(Vector2.ZERO, r * 1.75, body)
-			draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
-			draw_circle(p, r, body.lightened(0.02))
-			# Lichtkante oben (Hallenlicht), staerker bei hoher Kombo.
-			draw_arc(p, r, PI * 1.12, PI * 1.88, 10, Color(COL_LIGHT, rim * (1.0 - 0.25 * float(row))), 1.2, true)
-			# Handy-Lichter ab Kombo 50: wenige, leise, nie blinkend.
-			if _lvl > 0.0 and hs > 1.0 - 0.10 * _lvl:
-				draw_circle(p + Vector2(r * 0.8, r * 1.6), maxf(r * 0.16, 1.2),
-						Color(0.95, 0.90, 0.80, 0.35 * minf(_lvl, 1.0)))
+			var hn := float(((i + 1) * 7919 + row * 104729) % 97) / 97.0
+			var y0 := base_y - amp * (0.35 + 0.65 * hs)
+			var y1 := base_y - amp * (0.35 + 0.65 * hn)
+			var top := Color(col, 0.0)
+			var bot := Color(col, 0.34)
+			draw_polygon(PackedVector2Array([Vector2(x0, y0 - amp * 0.9), Vector2(x1, y1 - amp * 0.9),
+					Vector2(x1, base_y), Vector2(x0, base_y)]), PackedColorArray([top, top, bot, bot]))
+			if rim > 0.0 and hs > 0.55:
+				draw_line(Vector2(x0, y0), Vector2(x1, y1), Color(COL_LIGHT, rim * (1.0 - 0.4 * float(row))), 1.2, true)
 
 
 # ---------------------------------------------------------------------------
@@ -416,19 +410,21 @@ func _draw_zones() -> void:
 
 
 func _draw_keys() -> void:
-	var fs := int(size.y * 0.024)
+	var fs := int(size.y * 0.034)
 	for z in _n():
 		var col := zone_col(z)
 		var lit: float = _lit[z]
 		var c := _pp(_w((_zx(z, 0.0) + _zx(z + 1, 0.0)) * 0.5, -0.034, 0.0))
-		var half := Vector2(size.y * 0.036, size.y * 0.021)
+		var half := Vector2(size.y * 0.050, size.y * 0.030)
 		var rc := Rect2(c - half, half * 2.0)
-		draw_rect(rc, Color(col, 0.05 + 0.34 * lit), true)
-		draw_rect(rc, Color(col, 0.30 + 0.60 * lit), false, 1.4)
+		draw_rect(rc, Color(col, 0.10 + 0.42 * lit), true)
+		if lit > 0.02:
+			draw_rect(rc.grow(size.y * 0.008 * lit), Color(col, 0.16 * lit), true)
+		draw_rect(rc, Color(col, 0.55 + 0.45 * lit), false, 1.8)
 		var txt: String = str(key_labels[z]) if z < key_labels.size() else ""
 		var ts := _key_font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
 		draw_string(_key_font, c + Vector2(-ts.x * 0.5, ts.y * 0.30), txt,
-				HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(col.lerp(Color.WHITE, 0.25 + 0.5 * lit), 0.55 + 0.45 * lit))
+				HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(col.lerp(Color.WHITE, 0.40 + 0.5 * lit), 0.85 + 0.15 * lit))
 
 
 func _draw_charge_bands() -> void:
@@ -607,7 +603,8 @@ func _draw_ball(b: Dictionary) -> void:
 	var r := rad * FOCAL * size.y / cm.z
 	var far := clampf((P.z - 0.35) / 0.65, 0.0, 1.0)
 	# Tiefe: ferne Baelle heller (Nebel zum Licht), nahe satt.
-	var c := col.lerp(Color(1, 1, 1), 0.22 * far)
+	var c := col.lerp(Color(1, 1, 1), 0.40 * far)
+	r *= 1.0 - 0.18 * far
 	var s: RallyChart.Shot = b.s
 	if str(b.kind) == "in":
 		var step := 6
@@ -709,8 +706,8 @@ func _draw_player() -> void:
 	var cm := _cam(wp)
 	var pxm := FOCAL * size.y / cm.z
 	var zc := zone_col(clampi(int(round((px + 1.0) * float(_n()) * 0.5 - 0.5)), 0, _n() - 1))
-	_blade(Vector2(cm.x, cm.y), 0.058 * pxm, 0.054 * pxm, 0.10 - 0.25 * sv + 0.10 * wind,
-			Color(0.115, 0.105, 0.105).lerp(zc, 0.10), zc, 0.11 * pxm)
+	_blade(Vector2(cm.x, cm.y), 0.040 * pxm, 0.037 * pxm, 0.10 - 0.25 * sv + 0.10 * wind,
+			Color(0.115, 0.105, 0.105).lerp(zc, 0.10), zc, 0.08 * pxm)
 
 
 func _draw_opponent() -> void:
@@ -739,11 +736,6 @@ func _draw_opponent() -> void:
 	var wp := Vector3(x * HALF_W * 1.1, 0.24 + 0.02 * swing, LEN + 0.12 - 0.20 * swing)
 	var cm := _cam(wp)
 	var pxm := FOCAL * size.y / cm.z
-	# Gegner-Schatten (Koerper nur angedeutet, dunkler als der Raum).
-	var body := _pp(Vector3(wp.x * 0.9, 0.55, LEN + 0.45))
-	draw_set_transform(body, 0.0, Vector2(0.55, 1.0))
-	draw_circle(Vector2.ZERO, 0.30 * pxm, Color(0, 0, 0, 0.30))
-	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	_blade(Vector2(cm.x, cm.y), 0.085 * pxm, 0.078 * pxm, -0.10 - 0.35 * swing,
 			Color(0.20, 0.10, 0.10), Color(0.62, 0.66, 0.74), 0.10 * pxm)
 
@@ -770,11 +762,11 @@ func _draw_fx() -> void:
 		var big := 1.5 if bool(f.smash) else 1.0
 		var col := zone_col(int(f.zone))
 		if str(f.kind) == "release":
-			draw_arc(p, sc * 0.09 * (1.0 + e), 0.0, TAU, 40, Color(col, 0.8 * (1.0 - u)), 1.8, true)
+			draw_arc(p, sc * 0.035 * (1.0 + 0.4 * e), 0.0, TAU, 40, Color(col, 0.8 * (1.0 - u)), 1.8, true)
 			continue
-		draw_arc(p, sc * 0.05 * (1.0 + 2.4 * big * e), 0.0, TAU, 40, Color(col, 0.7 * (1.0 - u)), 1.6, true)
+		draw_arc(p, sc * 0.030 * (1.0 + 0.55 * big * e), 0.0, TAU, 40, Color(col, 0.7 * (1.0 - u)), 1.6, true)
 		if bool(f.smash):
-			draw_arc(p, sc * 0.07 * (1.0 + 2.8 * e), 0.0, TAU, 40, Color(COL_SMASH, 0.6 * (1.0 - u)), 1.4, true)
+			draw_arc(p, sc * 0.045 * (1.0 + 0.6 * e), 0.0, TAU, 40, Color(COL_SMASH, 0.6 * (1.0 - u)), 1.4, true)
 		# Funken: wenige, kleine Punkte in Zonenfarbe, bremsen ab und fallen leicht.
 		var n := 12 if bool(f.smash) else 6
 		var tseed := int(float(f.t0)) % 997
@@ -798,7 +790,7 @@ func _draw_counter() -> void:
 	var fs := int(size.y * 0.034)
 	var txt := str(cb)
 	var ts := _body_font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
-	var c := Vector2(size.x * 0.5, size.y * 0.062)
+	var c := Vector2(size.x * 0.5, size.y * 0.108)
 	var a := 0.55 + 0.10 * _lvl
 	draw_string(_body_font, c + Vector2(-ts.x * 0.5, 0), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs,
 			Color(COL_LINE, a))

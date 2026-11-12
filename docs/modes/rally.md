@@ -28,9 +28,9 @@ Alte Fassung (Seitenansicht, A/B) ist ersetzt: sie war langweilig (nichts zu les
   Treffer (Taste ohne Ball in der Zone wird ignoriert, kein Notelock zwischen Zonen).
 - **Lesbarkeit:** Landepunkt-Ring in der Zone erscheint, wenn der Ball losfliegt, und schrumpft
   bis zur Landung; Ball mit Schatten auf dem Tisch (Schatten zeigt die Zone schon im Flug).
-  Schmetterball weiss umrandet + groesser, Aufladen mit Laufband ueber die Zone.
+  Schmetterball weiss umrandet + max. 1,4x Ball, Aufladen mit Laufband ueber die Zone.
 - **Gefuehl:** Gegner spielt sichtbar (Schlaeger schwingt je Ball, bei Streams schneller
-  "Mehrball"), Ballwechsel-Zaehler, Publikum/Licht reagiert auf Kombo (nie grell, kein
+  "Mehrball"), Ballwechsel-Zaehler, dezente unscharfe Publikums-Silhouetten, Licht reagiert leise auf Kombo (nie grell, kein
   Wackeln ausser <= 2 px beim Schmetterball), satter Schlagklang je Zone (tief nach hoch).
 - Replays: meta rules = 2 (alte Rally-Replays/Scores < 1.27.0 sind nicht vergleichbar).
 
