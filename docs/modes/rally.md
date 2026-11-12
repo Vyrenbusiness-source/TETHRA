@@ -2,26 +2,48 @@
 
 Tischtennis im Takt einer normalen .osz-Map (osu!standard oder Mania 4K).
 
-## Regeln
-- Seitenansicht: Spieler links, Gegner rechts, Tisch, **ein** Ball.
-- Jede Note der Map (nach Zusammenfassen) ist **dein Schlag** genau zur Notenzeit. Nach deinem
-  Schlag fliegt der Ball zum Gegner, prallt auf dessen Tischhaelfte, der Gegner schlaegt zur
-  Mitte der Zeit bis zur naechsten Note zurueck, der Ball prallt auf deiner Haelfte und
-  erreicht deinen Schlaeger exakt zur naechsten Notenzeit. Flugzeit = Notenabstand: grosse
-  Abstaende = hoher langsamer Lob, Streams = flacher schneller Wechsel.
-- Tasten: tiefer Ball = A, hoher Ball = B (osu!: Whistle/Clap = B, sonst A; Mania: Spalten
-  1-2 = A, 3-4 = B). Finish bzw. Akkord ueber beide Seiten = **Schmetterball**: beide Tasten
-  (innerhalb 40 ms). Lange Note/Slider = **Aufladen**: Taste halten, am Ende loslassen.
-- Zeitfenster aus OD wie Mania (MAX/300/200/100/50/Miss), Zusammenfassen < 90 ms bzw. 1/4 Beat
-  bei leichten Maps (< 2,5 Noten/s nur Achtel).
-- Lesbarkeit: Aufprallmarke + Schatten auf deiner Seite zeigt WANN (Ring schrumpft auf die
-  Notenzeit) und WELCHE Taste (Farbe A kuehl / B warm, Schmetterball weiss umrandet).
-  Naechster Ball deutlich, sonst nichts Bewegtes im Weg.
-- Fehlschlag: Ball fliegt vorbei, kurzer Neuaufschlag des Gegners (Ball erscheint fuer die
-  naechste Note neu).
+## Regeln v2 (4 Zonen, 2026-11-12, verbindlich)
+Alte Fassung (Seitenansicht, A/B) ist ersetzt: sie war langweilig (nichts zu lesen, nichts zu entscheiden).
+
+- **Ansicht hinter dem Spieler:** Kamera knapp hinter und ueber deinem Schlaeger, der Tisch laeuft
+  in Perspektive vom unteren Bildrand weg, Netz in der Mitte, Gegner am fernen Ende. Deine
+  Tischhaelfte ist in **4 Zonen** (Spalten links nach rechts) geteilt, dezent markiert,
+  Tasten wie Mania 4K (Settings, Standard D F J K) unten an den Zonen.
+- **Ein Ball je Note.** Jede Note (nach Zusammenfassen) ist ein Ball, der in einer Zone landet
+  und zur Notenzeit an deiner Schlaeger-Linie ankommt. Du triffst ihn mit der Zonentaste.
+  - Mania 4K: Zone = Spalte (exakt die Notenfolge der Map, perfekt im Takt).
+  - osu!standard: Zone = Feld-x in 4 Streifen (x < 128 / 256 / 384 / sonst).
+- **Konstante Flugzeit** (wie Scroll-Speed): Jeder Ball wird `FLIGHT_MS` vor seiner Notenzeit
+  beim Gegner gespielt (Einstellung "Flugzeit" 450-1400 ms, Standard 800; Mod-unabhaengig
+  fuer die Wertung). Darum sind bei Streams mehrere Baelle gleichzeitig in der Luft
+  ("Mehrball-Training") – lesbar, weil jeder Ball denselben Weg in derselben Zeit nimmt.
+  Bogenhoehe nach Abstand zur vorigen Note (gross = Lob, klein = flacher Drive), nur Optik.
+  Zonenwechsel ueber >= 2 Spalten = leichter Seitwaerts-Effet in der Kurve (Topspin-Optik).
+- **Akkord** (2+ Noten gleichzeitig) = **Schmetterball**: ein grosser Ball, landet zwischen
+  den Zonen; alle beteiligten Zonentasten (max. 2, aeussere) innerhalb 40 ms. >2 Noten: die
+  zwei aeussersten Spalten.
+- **Lange Note/Slider** = **Aufladen**: Zonentaste halten, Ball bleibt am Schlaeger ("Spin
+  aufladen", Ring fuellt sich), am Ende loslassen; Wertung wie Mania-Hold (osu!mania stable).
+- **Wertung** wie Mania (OD-Fenster, MAX/300/200/100/50/Miss, ScoreV1), falsche Zone = kein
+  Treffer (Taste ohne Ball in der Zone wird ignoriert, kein Notelock zwischen Zonen).
+- **Lesbarkeit:** Landepunkt-Ring in der Zone erscheint, wenn der Ball losfliegt, und schrumpft
+  bis zur Landung; Ball mit Schatten auf dem Tisch (Schatten zeigt die Zone schon im Flug).
+  Schmetterball weiss umrandet + groesser, Aufladen mit Laufband ueber die Zone.
+- **Gefuehl:** Gegner spielt sichtbar (Schlaeger schwingt je Ball, bei Streams schneller
+  "Mehrball"), Ballwechsel-Zaehler, Publikum/Licht reagiert auf Kombo (nie grell, kein
+  Wackeln ausser <= 2 px beim Schmetterball), satter Schlagklang je Zone (tief nach hoch).
+- Replays: meta rules = 2 (alte Rally-Replays/Scores < 1.27.0 sind nicht vergleichbar).
+
+## Schnittstelle Chart -> Ansicht
+`RallyChart.Shot`: `t` (Notenzeit ms), `zones: PackedInt32Array` (1 oder 2 Zonen 0..3),
+`smash: bool`, `charge: bool`, `end` (ms, Aufladen), `launch` (= t - flight_ms),
+`arc` (Bogenhoehe 0..1), `curve` (-1..1 Seitwaerts-Effet). `RallyChart.ball_pos(shot, t) ->
+Vector3` (Tischkoordinaten: x -1..1 quer, y Hoehe, z 0 = deine Schlaegerlinie .. 1 = Gegner),
+`landing_time(shot)`, `zone_x(zone) -> float`. Die Ansicht projiziert Vector3 selbst
+(Perspektive) und zeichnet nur; Wertung nur im Core.
 
 ## Wettbewerb und Multiplayer (Pflicht)
-- Deterministische Wertung (Ereignis-Log, bildratenunabhaengig), Replays (meta rules = 1).
+- Deterministische Wertung (Ereignis-Log, bildratenunabhaengig), Replays (meta rules = 2).
 - Score/Acc/Grades wie Mania (ScoreV1, stats() mit n_max..n_miss, max_combo, accuracy, score,
   grade, mode "rally"), Sterne 0..15 (Dichte, Tastenwechsel, Schmetterbaelle, Aufladen),
   ScoreStore-Modus "rally", Online-Submit mode "rally" (Server erweitert sich).
