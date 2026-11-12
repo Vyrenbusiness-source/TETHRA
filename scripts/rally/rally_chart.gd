@@ -297,8 +297,12 @@ static func first_at_or_after(shots: Array[Shot], time: float) -> int:
 const STAR_HOP_MS := 1000.0
 const STAR_DENS_K := 0.15
 const STAR_DECAY := 0.95
-const STAR_SWITCH_W := 0.45
-const STAR_SWITCH_GAP_MS := 450.0
+## Zonenwechsel: Zusatzlast je Zonen-Abstand (Sprung ueber 2-3 Zonen zaehlt mehr) bei
+## Abstand unter STAR_JUMP_GAP_MS; Stream: Baelle unter STAR_STREAM_GAP_MS.
+const STAR_JUMP_W := 0.16
+const STAR_JUMP_GAP_MS := 450.0
+const STAR_STREAM_W := 0.25
+const STAR_STREAM_GAP_MS := 200.0
 const STAR_SMASH_W := 0.7
 const STAR_CHARGE_W := 0.45
 const STAR_MAX := 15.0
@@ -306,7 +310,17 @@ const STAR_KNEE := 11.0
 const STAR_STRETCH := 0.7
 
 
-## Sterne: je 2-s-Fenster Last (Schlaege/s; Tastenwechsel, Schmetterbaelle und
+## Mittlere Zonenlage eines Schlags (Schmetterball: Mitte der beiden Zonen).
+static func zone_center(s: Shot) -> float:
+	if s.zones.is_empty():
+		return float(s.key) * 2.0 + 0.5
+	var sum := 0.0
+	for z in s.zones:
+		sum += float(z)
+	return sum / float(s.zones.size())
+
+
+## Sterne: je 2-s-Fenster Last (Baelle/s; Zonenspruenge, Streams, Schmetterbaelle und
 ## Aufladen zaehlen extra), die haertesten Fenster zaehlen am meisten.
 static func stars(shots: Array[Shot]) -> float:
 	if shots.size() < 2:
@@ -317,20 +331,24 @@ static func stars(shots: Array[Shot]) -> float:
 	var load_w := PackedFloat32Array()
 	load_w.resize(n_win)
 	load_w.fill(0.0)
-	var last_key := -1
+	var last_c := -1.0
 	var last_t := -INF
 	for s in shots:
 		var w := clampi(int((s.t - t0) / STAR_HOP_MS), 0, n_win - 1)
 		var x := 1.0
-		if last_key >= 0 and s.key != last_key and s.t - last_t < STAR_SWITCH_GAP_MS:
-			x += STAR_SWITCH_W
+		var c := zone_center(s)
+		var gap := s.t - last_t
+		if last_c >= 0.0 and gap < STAR_JUMP_GAP_MS:
+			x += STAR_JUMP_W * absf(c - last_c)
+		if last_c >= 0.0 and gap < STAR_STREAM_GAP_MS:
+			x += STAR_STREAM_W
 		if s.smash:
 			x += STAR_SMASH_W
 		if s.is_charge():
 			x += STAR_CHARGE_W
 		load_w[w] += x
-		last_key = s.key
-		last_t = s.t
+		last_c = c
+		last_t = s.end if s.is_charge() else s.t
 	var vals: Array[float] = []
 	for w in n_win:
 		var lw := load_w[w] + (load_w[w - 1] if w > 0 else 0.0)
