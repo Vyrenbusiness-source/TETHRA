@@ -333,12 +333,6 @@ static func _build(events: Array, bm: Beatmap, laps_req: int, mania: bool) -> Ar
 	var flow := Vector2(1.0, 0.0)
 	var heading := 0.0
 	var built: Array[OrbitNote] = []
-	# Sterne: Mania-Platzierung nach der alten Runden-Regel mitrechnen (laengere
-	# Sichtbarkeit drueckt die Ziele sonst auseinander und hebt die Sprung-Terme).
-	var old_place := mania and not legacy_laps
-	var placed_o: Array = []
-	var prev_o := Vector2(0.5, 0.5)
-	var head_o := 0.0
 	for idx in kept.size():
 		var e: Dictionary = kept[idx]
 		var t: float = e.t
@@ -375,25 +369,9 @@ static func _build(events: Array, bm: Beatmap, laps_req: int, mania: bool) -> Ar
 				var delta := want - prev_pos
 				if delta.length() > maxd:
 					want = prev_pos + delta.normalized() * maxd
-		var spawn_req := clock.beat_tick_at_or_before(t - float(laps_req) * lap)
+		var laps_n := laps_eff(laps_req, beat)
+		var spawn_req := clock.beat_tick_at_or_before(t - float(laps_n) * lap)
 		var pos := _free_pos(want, prev_pos, placed, spawn_req, idx, prev_t != -INF) if mania else want
-		var pos_o := Vector2(-1.0, -1.0)
-		var end_o := Vector2(-1.0, -1.0)
-		if old_place:
-			var want_o := Vector2(0.5, 0.5)
-			if prev_t != -INF:
-				var st := _mania_step(prev_o, head_o, int(e.col), dt)
-				want_o = st[0]
-				head_o = st[1]
-			var flow_o := Vector2(cos(head_o) * 0.75, sin(head_o)).normalized()
-			var spawn_o := clock.beat_tick_at_or_before(t - float(laps_req) * lap_ms_for(beat, true))
-			pos_o = _free_pos(want_o, prev_o, placed_o, spawn_o, idx, prev_t != -INF)
-			placed_o.append([pos_o, spawn_o, maxf(end, t)])
-			end_o = pos_o
-			if is_hold:
-				var po := _mania_path(pos_o, flow_o, end - t, idx)
-				end_o = po[po.size() - 1]
-			prev_o = end_o
 		# Ziel bauen
 		var n: OrbitNote
 		if is_hold:
@@ -411,9 +389,7 @@ static func _build(events: Array, bm: Beatmap, laps_req: int, mania: bool) -> Ar
 			prev_t = t
 		n.lap_ms = lap
 		n.beat_ms = beat
-		n.laps = laps_req
-		n.read_pos = pos_o
-		n.read_end = end_o
+		n.laps = laps_n
 		placed.append([pos, spawn_req, maxf(end, t)])
 		built.append(n)
 	return _assign_laps(built, clock, laps_req)
@@ -555,12 +531,14 @@ static func _read_spawn(n: OrbitNote) -> float:
 	return n.read_spawn_ms if n.read_laps >= 0 else n.spawn_ms
 
 
-static func _rpos(n: OrbitNote) -> Vector2:
-	return n.read_pos if n.read_pos.x >= 0.0 else n.pos
 
-
-static func _rend(n: OrbitNote) -> Vector2:
-	return n.read_end if n.read_end.x >= 0.0 else end_pos(n)
+## Regeln 4: Runden je Ziel, so dass der Vorlauf (Zeit sichtbar) dem der alten Regel
+## entspricht: laps_req alte Runden in neue umgerechnet, mindestens 1. Die laengeren
+## Runden machen den Satelliten langsamer, nicht die Ziele laenger sichtbar.
+static func laps_eff(laps_req: int, beat_ms: float) -> int:
+	if legacy_laps:
+		return laps_req
+	return maxi(1, roundi(float(laps_req) * lap_ms_for(beat_ms, true) / lap_ms_for(beat_ms)))
 
 
 ## Dauer einer Satelliten-Runde (ms) zum Beat. legacy: Regel vor Regeln 4 (Messung).
@@ -587,7 +565,6 @@ static func _assign_laps(ns: Array[OrbitNote], clock: OrbitClock, laps_req: int)
 		if not legacy_laps:
 			# Sterne lesen den Vorlauf der alten Regel: dieselbe Zuteilung mit alten Runden.
 			var lo := lap_ms_for(n.beat_ms, true) if n.beat_ms > 0.0 else n.lap_ms
-			n.star_skip = true
 			n.read_laps = 0
 			n.read_spawn_ms = n.time_ms - lo
 			for lr in range(laps_req, 0, -1):
@@ -595,11 +572,10 @@ static func _assign_laps(ns: Array[OrbitNote], clock: OrbitClock, laps_req: int)
 				if _fits(vis_old, so, end):
 					n.read_spawn_ms = so
 					n.read_laps = lr
-					n.star_skip = false
 					vis_old.append([so, end])
 					break
 		var ok := false
-		var l := laps_req
+		var l := n.laps
 		while l >= 1:
 			var sp := clock.beat_tick_at_or_before(n.time_ms - float(l) * n.lap_ms)
 			if _fits(vis, sp, end):
@@ -608,7 +584,8 @@ static func _assign_laps(ns: Array[OrbitNote], clock: OrbitClock, laps_req: int)
 				ok = true
 				break
 			l -= 1
-		if not ok and not legacy_laps:
+		# Teilrunde nur fuer Ziele, die die alte Regel behalten haette (keine neuen Ziele).
+		if not ok and not legacy_laps and n.read_laps > 0:
 			var bound := n.time_ms - maxf(0.5 * n.lap_ms, clock.beat_ms_at(n.time_ms)) + 0.5
 			var sp := clock.beat_tick_at_or_before(n.time_ms - n.lap_ms)
 			while not ok:
@@ -756,11 +733,6 @@ static func analyze(ns: Array[OrbitNote], beatmap: Beatmap = null) -> Dictionary
 
 ## Rohwert der Orbit-Sterne (vor der Kalibrierung).
 static func stars_raw(ns: Array[OrbitNote]) -> float:
-	var all := ns
-	ns = []
-	for n in all:
-		if not n.star_skip:
-			ns.append(n)
 	if ns.size() < 2:
 		return 0.0
 	var t0 := ns[0].time_ms
@@ -790,19 +762,19 @@ static func stars_raw(ns: Array[OrbitNote]) -> float:
 		var olap := 0.0
 		for j in range(maxi(i - 6, 0), i):
 			var m := ns[j]
-			if maxf(m.end_ms, m.time_ms) > _read_spawn(n) and _rpos(m).distance_to(_rpos(n)) < 0.15:
+			if maxf(m.end_ms, m.time_ms) > _read_spawn(n) and m.pos.distance_to(n.pos) < 0.15:
 				olap += 0.5
 		rdg[w] += lap_pen + minf(olap, 1.5)
 		if i > 0:
 			var p := ns[i - 1]
 			var gap := maxf(n.time_ms - maxf(p.end_ms, p.time_ms), 40.0)
-			var dist := _rend(p).distance_to(_rpos(n))
+			var dist := end_pos(p).distance_to(n.pos)
 			jmp[w] += minf(dist / (gap / 1000.0), STAR_JUMP_CAP)
 			jxs[w] += maxf(minf(dist / (gap / 1000.0), STAR_JX_CAP) - STAR_JX_FROM, 0.0)
 			if i > 1:
 				var q := ns[i - 2]
-				var v1 := _rend(p) - _rend(q)
-				var v2 := _rpos(n) - _rend(p)
+				var v1 := end_pos(p) - end_pos(q)
+				var v2 := n.pos - end_pos(p)
 				if v1.length() > 0.02 and v2.length() > 0.02:
 					# Richtungswechsel (0 gerade .. PI Umkehr), gewichtet mit dem Sprung
 					trn[w] += absf(v1.angle_to(v2)) / PI 							* minf(dist / (gap / 1000.0), STAR_JUMP_CAP)

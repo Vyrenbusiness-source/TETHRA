@@ -51,14 +51,10 @@ var laps: int = 2
 ## Beat-Dauer (ms) an time_ms, vom Konverter gesetzt (0 = unbekannt).
 var beat_ms: float = 0.0
 ## Nur Sterne: Vorlauf nach der Rundenregel vor 4 (Konverter setzt ihn), damit die
-## laengeren Runden die Sterne nicht verschieben. read_laps -1 = laps/spawn_ms nehmen;
-## star_skip = Ziel waere vor Regeln 4 weggefallen (Teilrunde), zaehlt nicht mit.
+## laengeren Runden die Sterne nicht verschieben. read_laps -1 = laps/spawn_ms nehmen,
+## 0 = Ziel waere vor Regeln 4 weggefallen (zaehlt als Teilrunde, schwer zu lesen).
 var read_laps: int = -1
 var read_spawn_ms: float = 0.0
-var star_skip: bool = false
-## Nur Sterne (Mania): Position und Endpunkt nach der alten Platzierung (x < 0 = pos).
-var read_pos: Vector2 = Vector2(-1.0, -1.0)
-var read_end: Vector2 = Vector2(-1.0, -1.0)
 var _path_len: PackedFloat32Array = PackedFloat32Array()
 
 

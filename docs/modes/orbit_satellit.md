@@ -32,9 +32,15 @@ druecken**. Der Takt ist sichtbar und zaehlbar ("drei, zwei, eins, jetzt").
   "Vorlauf" 1-4 Runden). **Rundendauer (Regeln 4)**: Beat >= 450 ms: eine Runde = 1 Beat;
   Beat < 450 ms: 2 Beats; Beat < 225 ms: 4 Beats (`OrbitConverter.lap_ms_for`). Vorher
   (bis Regeln 3) erst unter 330 ms 2 Beats - bei schnellen Songs war der Satellit oben zu
-  schnell. Passt an dichten Stellen selbst eine Runde nicht (hoechstens 6 sichtbar), erscheint
+  schnell. Der Vorlauf (Zeit sichtbar) bleibt wie vorher: die Runden-Einstellung zaehlt in
+  Runden der alten Regel und wird je Ziel umgerechnet (`OrbitConverter.laps_eff`, mindestens
+  1; z. B. Beat 400 ms, 2 Runden -> 1 Runde zu 2 Beats). Der Satellit wird langsamer, die
+  Ziele bleiben nicht laenger stehen. Sterne lesen den Vorlauf in Runden der alten Regel
+  (`read_laps`); Teilrunden zaehlen als schwer lesbar.
+  Passt an dichten Stellen selbst eine Runde nicht (hoechstens 6 sichtbar), erscheint
   das Ziel auf einem spaeteren Beat mit einer Teilrunde (`laps = 0`, keine Pips); Vorlauf
-  mindestens eine halbe Runde und ein Beat. So faellt kein Ziel weg.
+  mindestens eine halbe Runde und ein Beat. So faellt kein Ziel weg, das vor Regeln 4
+  da war; neue kommen nicht hinzu.
 - **Satellit**: Winkel `360 * frac((time_ms - t) / lap_ms)` gegen den Uhrzeigersinn
   gerechnet so, dass er bei `t = time_ms` exakt oben steht; gleichmaessige Geschwindigkeit
   ohne Spitze, ab `time_ms` bleibt er oben stehen (`OrbitNote.satellite_deg`). Punkte (Pips)
