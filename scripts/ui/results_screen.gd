@@ -692,6 +692,15 @@ func _hero_stat(cap: String, value: String, col: Color) -> VBoxContainer:
 
 func _hero_pp() -> VBoxContainer:
 	var pp := float(_data.get("pp", -1.0))
+	# Trace/Rebound: keine pp, sondern Punkte wie Rangliste und Empfehlungen
+	# (4 * Sterne^2 * Acc^4, Recommender.K_POINTS).
+	if score_mode() == "trace" or score_mode() == "rebound":
+		var st := float(_data.get("stars", GameSession.stars))
+		if st > 0.0 and not bool(_data.get("unranked", false)) and not bool(_stats.get("failed", false)):
+			var acc := clampf(float(_stats.get("accuracy", 0.0)), 0.0, 1.0)
+			var pts := 4.0 * st * st * pow(acc, 4.0)
+			return _hero_stat("PERFORMANCE", "%s pts" % fmt_dec(pts, 1), UiTheme.ACCENT2)
+		return _hero_stat("PERFORMANCE", "—", MUTED)
 	if pp < 0.0 or bool(_data.get("unranked", false)) or score_mode() == ScoreStore.MODE_ORBIT:
 		return _hero_stat("PERFORMANCE", "—", MUTED)
 	return _hero_stat("PERFORMANCE", "%s pp" % fmt_dec(pp, 1), UiTheme.ACCENT2)
