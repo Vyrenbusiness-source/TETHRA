@@ -135,6 +135,8 @@ var bg_blur: bool = true
 var modes_bg_blur: int = 80
 ## Deckkraft des Map-Bilds in Orbit, Rally und Dirigent (0 = kein Map-Bild).
 var modes_bg_dim: float = 0.2
+## Rebound: Fallzeit des hereinfallenden Balls in ms (600-1600, nur Optik).
+var rebound_drop_ms: int = 1000
 ## 2D-Notenform: 0 = Balken (flache Rechtecke), 1 = Kreis (runde Noten,
 ## Holds mit runden Enden, Receptors als Ringe).
 var note_style_2d: int = 0
@@ -508,6 +510,7 @@ func load_settings(path: String = PATH) -> void:
 	bg_blur = bool(cfg.get_value("game", "bg_blur", true))
 	modes_bg_blur = clampi(int(cfg.get_value("game", "modes_bg_blur", 80)), 0, 100)
 	modes_bg_dim = clamp_bg_dim(float(cfg.get_value("game", "modes_bg_dim", 0.2)))
+	rebound_drop_ms = clampi(int(cfg.get_value("game", "rebound_drop_ms", 1000)), 600, 1600)
 	note_style_2d = clampi(int(cfg.get_value("game", "note_style_2d", 0)), 0, 1)
 	mod_sv = bool(cfg.get_value("mods", "sv", false))
 	mod_nf = bool(cfg.get_value("mods", "nf", false))
@@ -570,6 +573,7 @@ func save(path: String = PATH) -> void:
 	cfg.set_value("game", "bg_blur", bg_blur)
 	cfg.set_value("game", "modes_bg_blur", modes_bg_blur)
 	cfg.set_value("game", "modes_bg_dim", modes_bg_dim)
+	cfg.set_value("game", "rebound_drop_ms", rebound_drop_ms)
 	cfg.set_value("game", "note_style_2d", note_style_2d)
 	cfg.set_value("game", "lane_width_2d", lane_width_2d)
 	cfg.set_value("mods", "sv", mod_sv)
