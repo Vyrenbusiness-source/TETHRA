@@ -13,7 +13,8 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 G=${GODOT:-/c/Users/Gexanx/Desktop/rhyg/Godot_v4.7-stable_win64_console.exe}
 FF=${FFMPEG:-/c/Users/Gexanx/Desktop/rhyg/release/stage/ffmpeg.exe}
 export WORK=${WORK:-${TMPDIR:-/tmp}/trailer_work}
-export MAP=${MAP:-Viyella} DIFF=${DIFF:-MASTER} FF G ROOT ONLY=${ONLY:-}
+export FULLDIFF=${FULLDIFF:-Helpless Resistance: Despair}
+export MAP=${MAP:-Calamity} DIFF=${DIFF:-Despair} FF G ROOT ONLY=${ONLY:-}
 export OSZ_DIR=${OSZ_DIR:-/c/Users/Gexanx/Desktop/rhyg/maps}
 export LOGO=${LOGO:-/c/Users/Gexanx/Desktop/rhyg/docs/media/logo_wordmark.png}
 export OUT=${OUT:-C:/Users/Gexanx/Desktop/TETHRA_Trailer.mp4}
@@ -27,44 +28,50 @@ from scipy.signal import fftconvolve
 
 W = os.environ["WORK"]; FF = os.environ["FF"]; G = os.environ["G"]; STEP = os.environ["STEP"]
 ONLY = os.environ.get("ONLY", "")
+FULLDIFF = os.environ.get("FULLDIFF", "Helpless Resistance: Despair")
 SR = 22050
-BEAT = 275.229357798165          # Timing-Point 808 ms (218 BPM), 4/4
-BAR = BEAT * 4
-def bar(b): return 808.0 + b * BAR
-B0, B1 = 6, 78                    # Trailer = Takte 6..78 (~79 s); Drop (Kiai) ab Takt 40
-T0 = bar(B0)
+# Takt-Einheit u: 0..8 = 170 BPM ab 1393 ms (je 1411.76 ms), ab u=8 210 BPM ab 12686 ms (je 1142.857 ms)
+BAR_A = 60000.0 / 170 * 4
+BAR_B = 60000.0 / 210 * 4
+def tm(u):
+    return 1393.0 + u * BAR_A if u <= 8 else 12686.0 + (u - 8) * BAR_B
+B0, B1 = 0, 68                    # Trailer: 1393 ms .. 81257 ms (79,9 s); Drop 30971 = u24, Kiai 40114 = u32, 58400 = u48
+T0 = tm(B0)
 FPS = 60
+bar = tm
 
 def run(cmd, **kw):
     return subprocess.run(cmd, check=True, **kw)
 
 # ---------------------------------------------------------------- Plan
-# (start_bar, laenge_in_takten, modus, welt, flash)
+# (start_u, laenge_in_takten, modus, welt, flash)
 cuts = []
 def add(b, n, mode, world="", flash=False): cuts.append((b, n, mode, world, flash))
-add(6, 2, "title")
-for i, w in enumerate(["galaxy", "neon", "aurora", "abyss", "fractal"]):
-    add(8 + 2 * i, 2, "3d", w)
-add(18, 2, "2d"); add(20, 2, "orbit"); add(22, 2, "rally")
-add(24, 2, "dirigent"); add(26, 2, "trace"); add(28, 2, "rebound")
-add(30, 2, "3d", "singularity"); add(32, 2, "2d"); add(34, 2, "3d", "storm")
-add(36, 1, "orbit"); add(37, 1, "rally"); add(38, 1, "dirigent"); add(39, 1, "trace")
+add(0, 2, "title")
+for i, w in enumerate(["galaxy", "neon", "aurora", "abyss"]):
+    add(2 + 2 * i, 2, "3d", w)
+add(10, 2, "2d"); add(12, 2, "orbit"); add(14, 2, "rally")
+add(16, 2, "dirigent"); add(18, 2, "trace"); add(20, 2, "rebound")
+add(22, 2, "3d", "fractal")
 seq = ["3d", "2d", "orbit", "rally", "dirigent", "trace", "rebound"]
-drop_worlds = ["boss", "obsidian", "rift", "monolith", "nerve", "eclipse"]
-k = 0; wi = 0
-for b in range(40, 56):                       # 1-Takt-Schnitte
-    m = seq[k % 7]; k += 1
-    w = ""
-    if m == "3d": w = drop_worlds[wi % len(drop_worlds)]; wi += 1
-    add(b, 1, m, w, flash=(b % 4 == 0))
-for b in range(56, 64):                       # 2-Beat-Schnitte
-    for h in (0, 1):
-        m = seq[k % 7]; k += 1
-        w = ""
-        if m == "3d": w = drop_worlds[wi % len(drop_worlds)]; wi += 1
-        add(b + 0.5 * h, 0.5, m, w, flash=(h == 0 and b % 4 == 0))
-add(64, 4, "trace"); add(68, 4, "3d", "galaxy"); add(72, 2, "orbit")
-add(74, 4, "end")
+drop_worlds = ["singularity", "storm", "boss", "obsidian", "rift", "monolith", "nerve", "eclipse"]
+st = {"k": 0, "wi": 0}
+def nxt():
+    m = seq[st["k"] % 7]; st["k"] += 1; w = ""
+    if m == "3d": w = drop_worlds[st["wi"] % len(drop_worlds)]; st["wi"] += 1
+    return m, w
+def run_cuts(a, e, step):
+    b = float(a)
+    while b < e - 1e-9:
+        m, w = nxt()
+        add(b, step, m, w, flash=(abs((b - 24) % 4) < 1e-9))
+        b += step
+run_cuts(24, 32, 1)        # Drop: jeder Takt
+run_cuts(32, 38, 0.5)      # Kiai: Beats (2er-Gruppen)
+run_cuts(38, 48, 1)
+run_cuts(48, 56, 0.5)
+run_cuts(56, 62, 1)
+add(62, 2, "3d", "galaxy"); add(64, 4, "end")
 assert abs(sum(c[1] for c in cuts) - (B1 - B0)) < 1e-9, sum(c[1] for c in cuts)
 
 def spans():
@@ -133,7 +140,7 @@ def correlate(clip_wav, expected_ms):
 def args_for(s):
     m, w = s["key"]
     shot_at = s["rs"] + 2500.0
-    common = ["--autoplay", "--lang=en", "--nohud", "--shot",
+    common = ["--autoplay", "--lang=en", "--nohud", "--%s-diff=%s" % (m, FULLDIFF), "--shot",
               "--shot-at=%d" % round(shot_at), "--movie-len=%.2f" % s["len"]]
     scene = ["res://scenes/song_select.tscn"]
     if m in ("3d", "2d"):
@@ -142,7 +149,7 @@ def args_for(s):
         else: a += ["--3d", "--theme=" + w]
         return scene + a + common
     if m == "dirigent":   # eigener Filmmodus: --movie-from (spult auf from-2,5 s), kein --shot
-        return scene + ["--mode=dirigent", "--dirigent-map=" + os.environ["MAP"], "--autoplay", "--lang=en",
+        return scene + ["--mode=dirigent", "--dirigent-map=" + os.environ["MAP"], "--dirigent-diff=" + FULLDIFF, "--autoplay", "--lang=en",
                         "--movie-from=%d" % round(shot_at), "--movie-len=%.2f" % s["len"]]
     return scene + ["--mode=" + m, "--%s-map=%s" % (m, os.environ["MAP"])] + common
 
