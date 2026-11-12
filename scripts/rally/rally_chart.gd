@@ -48,6 +48,11 @@ class Shot extends RefCounted:
 	var m := 0.0            ## Zeit des Gegnerschlags vor diesem Schlag
 	var exit_after := false ## nach diesem Schlag folgt eine Pause
 	var src := 0            ## Index des Quellobjekts
+	# --- Rally v2 (docs/modes/rally.md "Regeln v2"): 4 Zonen ---
+	var zones := PackedInt32Array()  ## 1 Zone (0..3) oder 2 Zonen beim Schmetterball
+	var launch := 0.0       ## Gegnerschlag = t - Flugzeit (RallyFlight.finalize)
+	var arc := 0.0          ## Bogenhoehe 0..1 (nur Optik, RallyFlight.finalize)
+	var curve := 0.0        ## Seitwaerts-Effet -1..1 (nur Optik, RallyFlight.finalize)
 
 	func is_charge() -> bool:
 		return end > t
