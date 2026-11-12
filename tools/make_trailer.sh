@@ -141,6 +141,9 @@ def args_for(s):
         if m == "2d": a.append("--2d")
         else: a += ["--3d", "--theme=" + w]
         return scene + a + common
+    if m == "dirigent":   # eigener Filmmodus: --movie-from (spult auf from-2,5 s), kein --shot
+        return scene + ["--mode=dirigent", "--dirigent-map=" + os.environ["MAP"], "--autoplay", "--lang=en",
+                        "--movie-from=%d" % round(shot_at), "--movie-len=%.2f" % s["len"]]
     return scene + ["--mode=" + m, "--%s-map=%s" % (m, os.environ["MAP"])] + common
 
 def record(s):
