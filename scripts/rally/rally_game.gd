@@ -220,27 +220,8 @@ func _build_bg() -> void:
 	base.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(base)
 	var tex := OszImporter.load_background_texture(GameSession.osz_path, _beatmap)
-	var img: Image = tex.get_image() if tex != null else null
-	if img != null and not img.is_empty():
-		# Ruhiger Grund: Karten-Bild stark geblurrt und auf ~15 % Helligkeit.
-		img = img.duplicate() as Image
-		if img.is_compressed():
-			img.decompress()
-		img.convert(Image.FORMAT_RGBA8)
-		if img.get_width() > 960:
-			img.resize(960, int(960.0 * img.get_height() / img.get_width()), Image.INTERPOLATE_BILINEAR)
-		img.generate_mipmaps()
-		var rect := ColorRect.new()
-		rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		var mat := ShaderMaterial.new()
-		mat.shader = load("res://shaders/bg_blur.gdshader")
-		mat.set_shader_parameter("bg_tex", ImageTexture.create_from_image(img))
-		mat.set_shader_parameter("tex_size", Vector2(img.get_width(), img.get_height()))
-		mat.set_shader_parameter("opacity", 0.15)
-		mat.set_shader_parameter("blur_lod", 5.6)
-		rect.material = mat
-		add_child(rect)
+	if tex != null:
+		add_child(MapBackdrop.create(tex))
 	# Weiche Vignette: Mitte offen, Raender dunkel (Platz fuer die HUD-Werte).
 	var grad := Gradient.new()
 	grad.colors = PackedColorArray([Color(UiTheme.BG, 0.0), Color(UiTheme.BG, 0.0), Color(UiTheme.BG, 0.78)])
