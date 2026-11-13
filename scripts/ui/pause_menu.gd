@@ -66,13 +66,13 @@ func _init() -> void:
 	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(center)
 
-	# Deckende Graphit-Flaeche, Bernstein-Haarlinie oben als einzige Kante.
+	# Deckende Graphit-Flaeche mit Haarlinien-Rand, wie das Einstellungs-Panel.
 	_panel = PanelContainer.new()
 	var psb := StyleBoxFlat.new()
 	psb.bg_color = Color(UiTheme.SURFACE.r, UiTheme.SURFACE.g, UiTheme.SURFACE.b, 0.97)
 	psb.set_corner_radius_all(UiTheme.R_MAX)
-	psb.border_width_top = 2
-	psb.border_color = UiTheme.ACCENT
+	psb.set_border_width_all(1)
+	psb.border_color = UiTheme.LINE
 	psb.content_margin_left = PAD
 	psb.content_margin_right = PAD
 	psb.content_margin_top = 22

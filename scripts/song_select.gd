@@ -72,7 +72,7 @@ var _bpm_cache: Dictionary = {}
 # Weiches Scrollen der Liste beim Kartenwechsel.
 var _scroll_tween: Tween
 const CARD_H := 76.0
-const CARD_RADIUS := 12
+const CARD_RADIUS := 6
 var _frame_idle: StyleBoxFlat
 var _frame_hover: StyleBoxFlat
 var _frame_sel: StyleBoxFlat
@@ -580,13 +580,13 @@ func _build_ui() -> void:
 	_bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_bg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-	_bg.modulate = Color(0.34, 0.34, 0.40)
+	_bg.modulate = Color(0.30, 0.29, 0.28)
 	_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_bg)
 
 	var overlay := ColorRect.new()
 	overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	overlay.color = Color(0.0, 0.0, 0.0, 0.55)
+	overlay.color = Color(UiTheme.BG.r, UiTheme.BG.g, UiTheme.BG.b, 0.60)
 	overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(overlay)
 
@@ -835,7 +835,7 @@ func _square_margins(b: Button) -> void:
 ## Ein Stil fuer aktiv (Akzent-Toenung, Akzentschrift), einer fuer inaktiv (Ghost).
 func _toggle_box(active: bool, radius: int, hover: bool = false) -> StyleBoxFlat:
 	var sb := StyleBoxFlat.new()
-	sb.set_corner_radius_all(radius)
+	sb.set_corner_radius_all(mini(radius, UiTheme.R_MAX))
 	sb.set_border_width_all(1)
 	sb.content_margin_left = 14
 	sb.content_margin_right = 14
@@ -1168,7 +1168,7 @@ func _build_stage() -> void:
 	_stage_shadow = Panel.new()
 	var sh := StyleBoxFlat.new()
 	sh.bg_color = Color(0, 0, 0, 0.35)
-	sh.set_corner_radius_all(20)
+	sh.set_corner_radius_all(8)
 	sh.shadow_color = Color(0, 0, 0, 0.45)
 	sh.shadow_size = 28
 	sh.shadow_offset = Vector2(0, 10)
@@ -1180,7 +1180,7 @@ func _build_stage() -> void:
 	_stage_mask = Panel.new()
 	var mk := StyleBoxFlat.new()
 	mk.bg_color = Color.WHITE
-	mk.set_corner_radius_all(20)
+	mk.set_corner_radius_all(8)
 	mk.anti_aliasing = true
 	_stage_mask.add_theme_stylebox_override("panel", mk)
 	_stage_mask.clip_children = CanvasItem.CLIP_CHILDREN_ONLY
@@ -1196,7 +1196,7 @@ func _build_stage() -> void:
 	var rim := Panel.new()
 	var rb := StyleBoxFlat.new()
 	rb.bg_color = Color(0, 0, 0, 0)
-	rb.set_corner_radius_all(20)
+	rb.set_corner_radius_all(8)
 	rb.set_border_width_all(1)
 	rb.border_color = Color(1, 1, 1, 0.14)
 	rim.add_theme_stylebox_override("panel", rb)
@@ -1839,10 +1839,10 @@ func _beat_react(delta: float) -> void:
 		p = _beat.beat_env
 	if _bg != null:
 		_bg.pivot_offset = _bg.size * 0.5
-		var s := 1.0 + 0.015 * p
+		var s := 1.0  # steht still, nur die Helligkeit atmet leicht
 		_bg.scale = Vector2(s, s)
-		var b := 0.34 + 0.04 * p
-		_bg.modulate = Color(b, b, b + 0.06)
+		var b := 0.30 + 0.03 * p
+		_bg.modulate = Color(b, b * 0.97, b * 0.93)
 	var idx := _filtered.find(_selected_set)
 	var card: Button = null
 	if idx >= 0 and idx < _card_buttons.size() and is_instance_valid(_card_buttons[idx]):
@@ -2280,7 +2280,8 @@ func _update_info_panel() -> void:
 	# Sofort das schnelle Thumbnail zeigen, das Full-Res-Cover einen Frame
 	# spaeter nachladen (Klicks fuehlen sich sofort an).
 	var quick := _selected_set.thumb_texture()
-	_bg.texture = quick
+	# Hintergrund: nur ein weicher Farbverlauf des Covers, kein erkennbares Motiv.
+	_bg.texture = UiTheme.blurred_texture(quick, 8) if quick != null else null
 	_cover.texture = quick
 	_prep_due = Time.get_ticks_msec() + PREPARE_DELAY_MS
 	_bg_wait_set = null
@@ -2759,7 +2760,7 @@ func _build_mode_switch() -> Control:
 	grid.custom_minimum_size = Vector2(0, 58)
 	_mode_btns.clear()
 	for m in PLAY_MODES:
-		var b := _make_toggle(ScoreStore.mode_label("" if m == "mania" else m), 12, 6)
+		var b := _make_toggle(ScoreStore.mode_label("" if m == "mania" else m), 13, 6)
 		b.custom_minimum_size = Vector2(0, 27)
 		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		b.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -3167,7 +3168,6 @@ func _load_fullres_bg(target_set: MapSet) -> void:
 		return
 	var tex := target_set.background_texture()
 	if tex != null and _selected_set == target_set:
-		_bg.texture = tex
 		_cover.texture = tex
 
 
