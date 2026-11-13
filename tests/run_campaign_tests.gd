@@ -24,8 +24,76 @@ func _initialize() -> void:
 	_test_file()
 	_test_maps()
 	_test_validate_errors()
+
+
+## Autoloads (Settings, GameSession) stehen erst im ersten Frame im Baum.
+func _process(_delta: float) -> bool:
+	_test_world_force()
 	print("=== Campaign-Tests: %d Pruefungen, %d Fehler ===" % [_count, _fail])
 	quit(1 if _fail > 0 else 0)
+	return true
+
+
+func _saved_world(s: Node, path: String) -> int:
+	s.save(path)
+	var cfg := ConfigFile.new()
+	cfg.load(path)
+	return int(cfg.get_value("game", "world_theme", -1))
+
+
+## Welt-Zwang der Stufe: gilt nur, waehrend die Spielszene sich aufbaut. Er steht nie
+## in den Einstellungen, auch nicht, wenn mitten in der Stufe gespeichert wird.
+func _test_world_force() -> void:
+	var s := root.get_node_or_null("/root/Settings")
+	var gs := root.get_node_or_null("/root/GameSession")
+	_ok(s != null and gs != null, "Autoloads Settings und GameSession da")
+	if s == null or gs == null:
+		return
+	DirAccess.make_dir_recursive_absolute("user://test_tmp")
+	var path := "user://test_tmp/campaign_settings_%d.cfg" % OS.get_process_id()
+	var order: Array = s.WORLD_ORDER
+	var world := str(order[order.size() - 1])
+	var own := 2
+	var before: int = s.world_theme
+	s.world_theme = own
+	gs.start_campaign("c01s1", world)
+	_ok(gs.campaign_active(), "Stufe laeuft")
+	_ok(s.world_theme == own, "Stufenstart laesst die Einstellung in Ruhe")
+	_ok(_saved_world(s, path) == own, "Speichern vor der Spielszene: eigene Welt")
+	var src := GDScript.new()
+	src.source_code = "extends Node
+var seen := \"\"
+func _ready() -> void:
+	seen = get_node(\"/root/Settings\").world_theme_name()
+"
+	src.reload()
+	var game := Node.new()
+	game.set_script(src)
+	game.scene_file_path = ScoreStore.MODE_SCENES.mania
+	root.add_child(game)
+	_ok(str(game.get("seen")) == world, "Spielszene sieht beim Aufbau die Welt des Kapitels")
+	_ok(s.world_theme == own, "nach dem Aufbau wieder die eigene Welt")
+	_ok(_saved_world(s, path) == own, "Speichern mitten in der Stufe: eigene Welt")
+	s.world_theme = 3
+	_ok(_saved_world(s, path) == 3, "Weltwechsel in der Pause bleibt")
+	game.free()
+	var retry := Node.new()
+	retry.set_script(src)
+	retry.scene_file_path = ScoreStore.MODE_SCENES.orbit
+	root.add_child(retry)
+	_ok(str(retry.get("seen")) == world, "Neustart der Stufe: wieder die Welt des Kapitels")
+	_ok(s.world_theme == 3, "Neustart laesst die Einstellung in Ruhe")
+	retry.free()
+	gs.end_campaign()
+	_ok(not gs.campaign_active() and s.world_theme == 3, "Stufenende: Einstellung unveraendert")
+	var free_play := Node.new()
+	free_play.set_script(src)
+	free_play.scene_file_path = ScoreStore.MODE_SCENES.mania
+	root.add_child(free_play)
+	_ok(str(free_play.get("seen")) == str(order[2]), "ohne Kampagne: eigene Welt")
+	free_play.free()
+	s.world_theme = before
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 
 
 func _run(acc: float, grade: String, miss: int, score: int = 500000, failed: bool = false) -> Dictionary:
