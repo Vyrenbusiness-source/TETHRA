@@ -208,3 +208,7 @@ Zu früh losgelassen: halte bis zum Ende.,Zu früh losgelassen: halte bis zum En
 Kugel verloren: bleib mit dem Cursor auf ihr.,Kugel verloren: bleib mit dem Cursor auf ihr.,Ball lost: keep the cursor on it.
 "Verpasst: drück, wenn der Satellit oben ist.","Verpasst: drück, wenn der Satellit oben ist.",Missed: press when the satellite is at the top.
 %d von %d getroffen. Noch einmal.,%d von %d getroffen. Noch einmal.,%d of %d hit. Once more.
+folgen,folgen,follow
+beide Tasten: %s + %s,beide Tasten: %s + %s,both keys: %s + %s
+halten und der Kugel folgen,halten und der Kugel folgen,hold and follow the ball
+%d Treffer hier nacheinander,%d Treffer hier nacheinander,%d hits here in a row
