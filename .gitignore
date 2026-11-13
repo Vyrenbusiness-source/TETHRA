@@ -21,3 +21,6 @@ omen_update.bat
 assets/
 override.cfg
 __pycache__/
+
+# Musik des Nutzers (urheberrechtlich geschuetzt, nie committen)
+own songs/
