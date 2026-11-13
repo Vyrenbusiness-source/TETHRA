@@ -17,7 +17,7 @@ const JUDGE_SCALE := 0.5
 const LEAD_MS := 1800.0
 ## Replay-Regelversion: 2 = Anti-Mash (falsche Taste macht eine Note im 50er-Fenster zum Miss).
 const AntiMash := preload("res://scripts/rebound/rebound_anti_mash.gd")
-const REPLAY_RULES := 2
+const REPLAY_RULES := 3
 const GRADE_COLOR := {
 	"SS": Color(1.0, 0.92, 0.55), "S": Color(1.0, 0.85, 0.40), "A": Color(0.55, 0.85, 0.55),
 	"B": Color(0.50, 0.70, 0.95), "C": Color(0.75, 0.58, 0.95), "D": Color(0.90, 0.50, 0.45),

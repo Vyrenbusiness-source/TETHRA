@@ -24,6 +24,8 @@ const FAST_BEAT_MS := 340.0
 ## Hoechstes Handtempo (Einheiten/s) ueber alle Punkte-Spruenge (Test, Bot-Messung).
 const MAX_SPEED := 5.0
 const MERGE_MS := 90.0
+## Unter diesem Abstand wechselt die Taste (Regeln 3).
+const FAST_KEY_MS := 180.0
 const BREAK_MS := 4000.0
 const KIAI_SCALE := 1.15
 const QUIET_SCALE := 0.8
@@ -127,6 +129,28 @@ func _build_cues(beatmap: Beatmap) -> void:
 			continue
 		first_t = t
 		cues.append({"t": t, "mask": mask})
+	playable_keys(cues)
+
+
+## Regeln 3: zwei Finger schaffen keine schnellen Folgen auf einer Taste. Folgt ein Einsatz
+## in weniger als FAST_KEY_MS auf den vorigen, wechselt die Taste (Wechselschlag); ein
+## Akzent (beide) mit einem Nachbarn naeher als FAST_KEY_MS wird ein einfacher Einsatz.
+## Zeiten und Zahl der Einsaetze bleiben.
+static func playable_keys(list: Array[Dictionary]) -> void:
+	var prev_mask := 0
+	var prev_t := -INF
+	for i in list.size():
+		var t := float(list[i].t)
+		var mask := int(list[i].mask)
+		var fast_prev := t - prev_t < FAST_KEY_MS
+		var fast_next := i + 1 < list.size() and float(list[i + 1].t) - t < FAST_KEY_MS
+		if mask == 3 and (fast_prev or fast_next):
+			mask = 1
+		if mask != 3 and fast_prev and prev_mask != 3:
+			mask = 3 - prev_mask
+		list[i].mask = mask
+		prev_mask = mask
+		prev_t = t
 
 
 ## Rote Punkte als [t, beat_length, meter], sortiert; ohne Punkt: 120 BPM, 4/4.
@@ -294,6 +318,7 @@ const STAR_CUE_K := 0.34
 const STAR_SPEED_K := 0.55
 const STAR_SPEED_REF := 2.6      # Einheiten/s der Hand, ab der es spuerbar wird
 const STAR_BOTH_W := 0.5         # beide Tasten gleichzeitig zaehlt zusaetzlich
+const STAR_FAST_W := 0.5         # Wechselschlag (Abstand < FAST_KEY_MS) zaehlt zusaetzlich
 const STAR_A := 0.382
 const STAR_POW := 2.5
 const STAR_MAX := 15.0
@@ -329,9 +354,11 @@ func stars() -> float:
 	load_w.fill(0.0)
 	dist_w.fill(0.0)
 	time_w.fill(0.0)
+	var prev_ct := -INF
 	for c in cues:
 		var w := clampi(int((float(c.t) - t0) / STAR_HOP_MS), 0, n_win - 1)
-		load_w[w] += 1.0 + (STAR_BOTH_W if int(c.mask) == 3 else 0.0)
+		load_w[w] += 1.0 + (STAR_BOTH_W if int(c.mask) == 3 else 0.0) 				+ (STAR_FAST_W if float(c.t) - prev_ct < FAST_KEY_MS else 0.0)
+		prev_ct = float(c.t)
 	for i in range(0, beats.size() - 1):
 		if is_gap(i):
 			continue

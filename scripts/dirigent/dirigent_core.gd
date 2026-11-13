@@ -43,7 +43,9 @@ const EV_KEY_A := 1
 const EV_KEY_B := 2
 const EV_RULES := 9
 ## Regeln 2: Anti-Mash (falsche Taste macht den Einsatz im 50er-Fenster zum Miss).
-const REPLAY_RULES := 2
+const REPLAY_RULES := 3
+## Nachzuegler: so lange nach dem 50er-Fenster eines verfehlten Einsatzes ist seine Taste frei.
+const LATE_GRACE_MS := 37.0
 
 var chart: DirigentChart
 var recording := false
@@ -72,6 +74,8 @@ var _cue_got: Array[int] = []
 var _cue_dt: Array[float] = []
 var _cue_done: Array[bool] = []
 var _cue_judged := 0
+## Zeit des letzten verfehlten Einsatzes je Taste (Nachzuegler-Regel, Regeln 3).
+var _miss_t: Array[float] = [-INF, -INF]
 var _beat_val := 0.0
 var _beat_done := 0
 var _cue_val := 0.0
@@ -114,6 +118,7 @@ func setup(p_chart: DirigentChart, od: float) -> void:
 		_cue_dt.append(0.0)
 		_cue_done.append(false)
 	_cue_judged = 0
+	_miss_t = [-INF, -INF]
 	_beat_val = 0.0
 	_beat_done = 0
 	_cue_val = 0.0
@@ -236,6 +241,10 @@ func _apply_key(key: int, t: float) -> void:
 	key_pressed.emit(key, false)
 	if not anti_mash:
 		return
+	# Nachzuegler (Regeln 3): der Druck galt einem eben verfehlten Einsatz dieser Taste.
+	if t - _miss_t[key] <= w50 + LATE_GRACE_MS:
+		_miss_t[key] = -INF
+		return
 	# Anti-Mash: Taste, die kein offener Einsatz im Fenster verlangt, waehrend ein
 	# Einsatz im 50er-Fenster eine andere Taste verlangt: dieser Einsatz ist sofort Miss.
 	# (Akzent: nur mit beiden Tasten; eine Taste allein wertet nie, jede Zusatztaste
@@ -327,6 +336,9 @@ func _finish_cue(i: int, q: int, dt: float) -> void:
 		Quality.MEH: n50 += 1
 		_: n_miss += 1
 	if q == Quality.MISS:
+		for k in 2:
+			if DirigentChart.mask_has(int(chart.cues[i].mask), k) and (_cue_got[i] >> k) & 1 == 0:
+				_miss_t[k] = float(chart.cues[i].t)
 		combo = 0
 	else:
 		combo += 1

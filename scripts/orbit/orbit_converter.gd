@@ -25,6 +25,8 @@ const MIN_HOLD_MS := 100.0
 const MAX_HOLD_MS := 6000.0
 ## Nur Messungen (QA vorher/nachher): Runden nach der Regel vor Regeln 4.
 static var legacy_laps := false
+## Nur Messung (Vorher-Werte): Tasten wie vor Regeln 5.
+static var legacy_keys := false
 const EASY_HOLD_BEATS := 2.0
 
 ## Erzeugte Positionen (Mania): ganzes 4:3-Feld, Rand ~ Zielradius.
@@ -57,6 +59,8 @@ const MANIA_HOLD_MAX := 0.4
 
 ## Mania-Strom: Abstand darunter = Wechselschlag der Tasten.
 const STREAM_MS := 250.0
+## Unter diesem Abstand wechselt die Taste (Regeln 5).
+const FAST_KEY_MS := 180.0
 ## Zielradius wie osu!: 54,4 - 4,48 x CS osu!-Pixel bei 384 px Feldhoehe
 ## (Feld-Einheiten = Feldhoehe; CS 4 -> 36,5 / 384 = 0,095).
 const RADIUS_PER_OSU_PX := 1.0 / 384.0
@@ -306,6 +310,30 @@ static func _prefix(p: PackedVector2Array, len: float) -> PackedVector2Array:
 # 2. Aufbau
 # ---------------------------------------------------------------------------
 
+## Regeln 5: zwei Finger schaffen keine schnellen Folgen auf einer Taste. Folgt ein Ziel
+## in weniger als FAST_KEY_MS auf das Ende des vorigen, wechselt die Taste (Wechselschlag,
+## auch Halten); ein Akzent (beide) mit einem Nachbarn naeher als FAST_KEY_MS wird ein
+## einfaches Ziel (A, im Strom die Wechseltaste). Zeiten, Orte und Zahl der Ziele bleiben.
+## Laeuft auf den fertigen Zielen (nach der Sichtbarkeits-Auswahl).
+static func playable_keys(ns: Array[OrbitNote]) -> void:
+	var pkey := -1
+	var pend := -INF
+	for i in ns.size():
+		var n := ns[i]
+		var end := maxf(n.end_ms, n.time_ms)
+		var fast_prev := n.time_ms - pend < FAST_KEY_MS
+		var fast_next := i + 1 < ns.size() and ns[i + 1].time_ms - end < FAST_KEY_MS
+		if n.key == OrbitNote.KEY_ACCENT and (fast_prev or fast_next):
+			n.key = OrbitNote.KEY_A
+		if n.key == OrbitNote.KEY_ACCENT:
+			pkey = -1
+		else:
+			if fast_prev and pkey >= 0:
+				n.key = 1 - pkey
+			pkey = n.key
+		pend = end
+
+
 static func _build(events: Array, bm: Beatmap, laps_req: int, mania: bool) -> Array[OrbitNote]:
 	var out: Array[OrbitNote] = []
 	var clock := OrbitClock.from_beatmap(bm)
@@ -392,7 +420,10 @@ static func _build(events: Array, bm: Beatmap, laps_req: int, mania: bool) -> Ar
 		n.laps = laps_n
 		placed.append([pos, spawn_req, maxf(end, t)])
 		built.append(n)
-	return _assign_laps(built, clock, laps_req)
+	var res := _assign_laps(built, clock, laps_req)
+	if not legacy_keys:
+		playable_keys(res)
+	return res
 
 
 ## Mania-Fluss: Laufrichtung dreht je Spalte, zieht zur Mitte (je weiter draussen,

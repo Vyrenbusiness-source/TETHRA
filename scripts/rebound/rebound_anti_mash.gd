@@ -3,8 +3,8 @@ extends RefCounted
 ## Rebound Anti-Mash: duenne Schicht vor ManiaCore (ManiaCore bleibt unveraendert).
 ## Live, Replay und Bot gehen ueber dieselbe Funktion (rebound_game.gd).
 
-## Replay-Regelversion: 2 = Anti-Mash.
-const REPLAY_RULES := 2
+## Replay-Regelversion: 2 = Anti-Mash, 3 = Nachzuegler frei.
+const REPLAY_RULES := 3
 
 
 static func marker() -> Dictionary:
@@ -29,6 +29,13 @@ static func wrong_key_check(core: ManiaCore, lane: int, t: float) -> int:
 	if core._lane_head[lane] < core._lane_notes[lane].size():
 		var own: int = core._lane_notes[lane][core._lane_head[lane]]
 		if t - core.beatmap.hit_objects[own].time >= -core.w_miss:
+			return -1
+	# Nachzuegler (Regeln 3): die vorige Note dieser Spalte war Miss und der Druck liegt im
+	# Miss-Fenster um ihre Zeit. Der Druck galt ihr, er trifft keine andere Spalte.
+	if core._lane_head[lane] > 0:
+		var prev: int = core._lane_notes[lane][core._lane_head[lane] - 1]
+		var res = core._judged.get(prev, null)
+		if res is Dictionary and int(res.get("quality", -1)) == ManiaCore.Quality.MISS 				and absf(t - core.beatmap.hit_objects[prev].time) <= core.w_miss:
 			return -1
 	var victim := -1
 	var best := INF

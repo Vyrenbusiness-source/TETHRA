@@ -24,6 +24,7 @@ func _initialize() -> void:
 	_test_stars()
 	_test_breaks()
 	_test_anti_mash()
+	_test_rules_3()
 	print("=== Ergebnis: %d bestanden, %d fehlgeschlagen ===" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
 
@@ -399,8 +400,8 @@ func _test_stars() -> void:
 	var single := _std(120.0, 4)
 	var chords := _std(120.0, 4)
 	for i in 120:
-		_circle(single, 1000.0 + float(i) * 160.0, 0)
-		_circle(chords, 1000.0 + float(i) * 160.0, 4)
+		_circle(single, 1000.0 + float(i) * 200.0, 0)
+		_circle(chords, 1000.0 + float(i) * 200.0, 4)
 	_ok(DirigentChart.build(chords).stars() > DirigentChart.build(single).stars(), "Akkorde (beide Tasten) zaehlen mehr")
 	_ok(DirigentChart.build(_std()).stars() == 0.0, "leere Map: 0 Sterne")
 
@@ -470,4 +471,41 @@ func _test_anti_mash() -> void:
 	var h := _core(c)
 	h.key_down(0, 500.0)
 	_ok(h.n_miss == 0, "Leer-Druck = nichts")
-	_ok(DirigentCore.REPLAY_RULES == 2, "Replay-Regelversion 2")
+	_ok(DirigentCore.REPLAY_RULES == 3, "Replay-Regelversion 3")
+
+
+func _test_rules_3() -> void:
+	print("-- Regeln 3: Wechselschlag, Nachzuegler")
+	var bm := _std()
+	for i in 6:
+		_circle(bm, 1000.0 + 120.0 * i, 0)   # Strom, in der Map alles A
+	_circle(bm, 3000.0, 4)                    # Akzent, frei
+	_circle(bm, 4000.0, 4)                    # Akzent mit Nachbar nach 120 ms
+	_circle(bm, 4120.0, 0)
+	_circle(bm, 5000.0, 0)
+	_circle(bm, 5400.0, 0)                    # langsam: gleiche Taste bleibt
+	var c := DirigentChart.build(bm)
+	var masks: Array = []
+	for cue in c.cues:
+		masks.append(int(cue.mask))
+	_ok(masks == [1, 2, 1, 2, 1, 2, 3, 1, 2, 1, 1], "Strom wechselt, enger Akzent wird einfach %s" % str(masks))
+	var min_same := INF
+	var last := [-INF, -INF]
+	for cue in c.cues:
+		for k in 2:
+			if DirigentChart.mask_has(int(cue.mask), k):
+				min_same = minf(min_same, float(cue.t) - float(last[k]))
+				last[k] = float(cue.t)
+	_ok(min_same >= DirigentChart.FAST_KEY_MS, "gleiche Taste nie unter 180 ms (%.0f)" % min_same)
+	# Nachzuegler: A verpasst, A kurz danach trifft den B-Einsatz nicht (einmal).
+	var bm2 := _std()
+	_circle(bm2, 1000.0, 0)
+	_circle(bm2, 1100.0, 2)
+	_circle(bm2, 3000.0, 0)
+	var c2 := DirigentChart.build(bm2)
+	var d := _core(c2)
+	d.update(1000.0 + d.w50 + 2.0)
+	d.key_down(0, 1000.0 + d.w50 + 5.0)
+	_ok(d.n_miss == 1 and not d.is_cue_done(1), "spaeter Druck nach Miss: keine falsche Taste")
+	d.key_down(0, 1000.0 + d.w50 + 7.0)
+	_ok(d.n_miss == 2 and d.is_cue_done(1), "Nachzuegler gilt nur einmal")

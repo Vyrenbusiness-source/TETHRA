@@ -25,7 +25,7 @@ const Quality := ManiaCore.Quality
 const MODE := "rally"
 const ZONES := 4
 const SMASH_MS := 40.0
-const REPLAY_RULES := 3
+const REPLAY_RULES := 4
 ## Ereignis-Codes: [t, EV_DOWN + Zone], [t, EV_UP + Zone], Regel-Marke [0, EV_RULES, REPLAY_RULES].
 const EV_DOWN := 1
 const EV_UP := 5
@@ -64,6 +64,8 @@ var _act_q: Array[int] = []
 var _head_err: Array[float] = []
 ## Schmetterbaelle mit erster Taste, warten auf die zweite: Index -> [Zone, t].
 var _pend: Dictionary = {}
+## Schmetterbaelle, die mit nur einer Taste gewertet wurden (zweite Taste darf nachkommen).
+var _single: Dictionary = {}
 var _finished_emitted := false
 
 var combo: int:
@@ -135,6 +137,7 @@ func setup(p_shots: Array[RallyChart.Shot], od: float, hp_drain: float = 5.0, p_
 			(_zq[clampi(int(z), 0, ZONES - 1)] as Array).append(i)
 	_clock = -1
 	_pend = {}
+	_single = {}
 	_finished_emitted = false
 	event_log = []
 	replay_log = [[0, EV_RULES, REPLAY_RULES, zones]] if recording else []
@@ -254,7 +257,28 @@ func _advance(t: int) -> void:
 # Tasten
 # ---------------------------------------------------------------------------
 
+## Regeln v4 (Nachzuegler): der vorige Ball dieser Zone war Miss oder ein Schmetterball mit
+## nur einer Taste, und der Druck liegt im Miss-Fenster um seine Zeit. So ein Druck galt
+## diesem Ball: er zaehlt nicht als falsche Taste und frisst den naechsten Ball nicht.
+func _graced(z: int, t: float) -> bool:
+	_head(z)
+	var q: Array = _zq[z]
+	var k := _zh[z] - 1
+	if k < 0 or k >= q.size():
+		return false
+	var p := int(q[k])
+	if absf(t - shots[p].t) > w_miss:
+		return false
+	if _single.has(p):
+		return true
+	var r: Dictionary = _judged.get(p, {})
+	return int(r.get("quality", -1)) == Quality.MISS
+
+
 func _ignore(z: int, t: float) -> void:
+	if _graced(z, t):
+		press_ignored.emit(z, "FREE")
+		return
 	# Anti-Mash (v3): Druck ohne Ball in dieser Zone, waehrend eine andere Zone einen
 	# ungewerteten Ball im 50er-Fenster hat: dieser Ball (der naechste) ist sofort Miss.
 	# Auch ein Schmetterball mit erster Taste faellt so, wenn eine dritte Zone dazukommt.
@@ -311,6 +335,9 @@ func _on_down(z: int, t: float) -> void:
 		_ignore(z, t)
 		return
 	if dt < -w50:
+		if _graced(z, t):
+			press_ignored.emit(z, "FREE")
+			return
 		# Zu frueh: frisst den Ball (wie Mania).
 		_miss(idx)
 		return
@@ -347,6 +374,7 @@ func _on_up(z: int, t: float) -> void:
 func _resolve_smash_single(idx: int) -> void:
 	var p: Array = _pend[idx]
 	_pend.erase(idx)
+	_single[idx] = true
 	var dt := float(p[1]) - shots[idx].t
 	_apply_hit(idx, maxi(_quality_for(absf(dt)), Quality.MEH), dt)
 

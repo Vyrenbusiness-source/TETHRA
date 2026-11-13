@@ -86,6 +86,7 @@ func _run() -> void:
 	_test_autoplay()
 	_test_stars()
 	_test_anti_mash()
+	_test_rules_v4()
 	print("Ergebnis: %d ok, %d fehlgeschlagen" % [_passed, _failed])
 
 
@@ -474,9 +475,9 @@ func _test_replay() -> void:
 		t += 33.0
 	_ok(r.stats() == a.stats(), "Replay-Wiedergabe = Original (Score %d)" % a.score)
 	_ok(not RallyCore.replay_ok([[0, 1]]), "Replay ohne Regel-Marke ist ungueltig")
-	_ok(RallyCore.REPLAY_RULES == 3 and int(a.replay_log[0][2]) == 3, "Replay-Regel-Marke = 3")
+	_ok(RallyCore.REPLAY_RULES == 4 and int(a.replay_log[0][2]) == 4, "Replay-Regel-Marke = 4")
 	_ok(not RallyCore.replay_ok([[0, RallyCore.EV_RULES, 2], [100, 1]]), "altes Replay (rules 2) wird abgelehnt")
-	_ok(RallyCore.replay_ok([[0, RallyCore.EV_RULES, 3], [100, 1]]), "Replay rules 3 wird akzeptiert")
+	_ok(RallyCore.replay_ok([[0, RallyCore.EV_RULES, 4], [100, 1]]), "Replay rules 4 wird akzeptiert")
 	# Live-Eingabe schreibt dasselbe wie der Bot.
 	var live := RallyCore.new()
 	live.setup(sh, 7.0, 5.0, {})
@@ -603,3 +604,65 @@ func _test_anti_mash() -> void:
 	b.setup(sh, 8.0, 5.0, {})
 	_play(b, RallyCore.bot_plan(sh), 16.0, sh[-1].end + 500.0)
 	_ok(str(b.stats().grade) == "SS", "Bot weiter SS")
+
+
+func _min_same_zone(sh: Array[RallyChart.Shot]) -> float:
+	var last := [-INF, -INF, -INF, -INF]
+	var best := INF
+	for s in sh:
+		for z in s.zones:
+			best = minf(best, s.t - float(last[z]))
+			last[z] = s.end
+	return best
+
+
+func _test_rules_v4() -> void:
+	print("- Regeln v4: Zonen-Abstand, Nachzuegler")
+	# Mania 4K, Spalte 2 und 3 im Wechsel (100 ms): bei 3 Zonen lagen beide in der Mitte.
+	var lines: Array[String] = []
+	for i in 8:
+		lines.append("%d,192,%d,1,0,0:0:0:0:" % [(1 + i % 2) * 128 + 64, 1000 + 100 * i])
+	var bm := _beatmap(3, "\n".join(lines))
+	var s3 := RallyChart.build(bm, 800.0, 3)
+	_ok(s3.size() == 8, "3 Zonen: alle 8 Baelle bleiben (%d)" % s3.size())
+	_ok(_min_same_zone(s3) >= RallyChart.SAME_ZONE_MS, "3 Zonen: keine Zone unter 130 ms (%.0f)" % _min_same_zone(s3))
+	var times_ok := true
+	for i in s3.size():
+		times_ok = times_ok and is_equal_approx(s3[i].t, 1000.0 + 100.0 * i)
+	_ok(times_ok, "Zeiten bleiben exakt")
+	var s4 := RallyChart.build(bm, 800.0, 4)
+	var same := s4.size() == 8
+	for i in s4.size():
+		same = same and s4[i].zones[0] == 1 + i % 2
+	_ok(same, "4 Zonen: Folge der Map bleibt")
+	# Keine Zone frei: Ball entfaellt. Schmetterball mit belegter Zone: normaler Ball.
+	var d := RallyChart.spread_jacks(_shots([[1000, 0], [1050, 1], [1100, 2], [1120, 0]]), 3)
+	_ok(d.size() == 3, "alle Zonen belegt: Ball entfaellt (%d)" % d.size())
+	var sm := RallyChart.spread_jacks(_shots([[1000, 0], [1100, [0, 2]]]), 3)
+	_ok(sm.size() == 2 and not sm[1].smash and sm[1].zones.size() == 1 and sm[1].zones[0] == 2,
+		"Schmetterball mit belegter Zone = normaler Ball in der freien")
+	var slow := RallyChart.spread_jacks(_shots([[1000, 1], [1130, 1], [1260, 1]]), 3)
+	_ok(slow[1].zones[0] == 1 and slow[2].zones[0] == 1, "130 ms in einer Zone bleibt")
+	# Nachzuegler: Ball verpasst, Druck kurz danach trifft keinen anderen Ball.
+	var c := _core([[1000, 0], [1100, 1], [3000, 0]])
+	c.update(1000.0 + c.w50 + 2.0)
+	c.key_down(0, 1000.0 + c.w50 + 5.0)
+	_ok(c._tally.n_miss == 1 and not c.is_judged(1), "spaeter Druck nach Miss: keine falsche Taste")
+	c.key_down(1, 1000.0 + c.w50 + 8.0)
+	_ok(c.is_judged(1) and c._tally.n_miss == 1, "der andere Ball ist danach noch treffbar")
+	var e := _core([[1000, 0], [1300, 0]])
+	e.update(1000.0 + e.w50 + 2.0)
+	e.key_down(0, 1000.0 + e.w50 + 4.0)
+	_ok(e._tally.n_miss == 1 and not e.is_judged(1), "spaeter Druck frisst den naechsten Ball nicht")
+	# Schmetterball: zweite Taste zu spaet = nur MEH, trifft aber keinen anderen Ball.
+	var f := _core([[1000, [0, 3]], [1060, 1]])
+	f.key_down(0, 1000.0)
+	f.update(1046.0)
+	f.key_down(3, 1050.0)
+	_ok(f.is_judged(0) and not f.is_judged(1), "Schmetterball: spaete zweite Taste ist frei")
+	# Ohne verpassten Ball bleibt die falsche Taste ein Miss.
+	var g := _core([[1000, 0], [3000, 1]])
+	g.key_down(2, 1000.0)
+	_ok(int(g.result_of(0).quality) == ManiaCore.Quality.MISS, "falsche Taste ohne Nachzuegler = Miss")
+	_ok(not RallyCore.replay_ok([[0, RallyCore.EV_RULES, 3, 4]]) and RallyCore.replay_ok([[0, RallyCore.EV_RULES, 4, 3]]),
+		"Replay Regeln 3 abgelehnt, 4 akzeptiert")
