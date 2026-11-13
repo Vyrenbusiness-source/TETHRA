@@ -87,7 +87,9 @@ func _text() -> void:
 	_ok(ChatApi.tidy_text("🔎 Filter: \nb") == "b", "Emoji + leere Filter-Zeile weg")
 	_ok(ChatApi.tidy_text("Filters: 4K, Rice") == "Filters: 4K, Rice", "Filters mit Inhalt bleibt")
 	_ok(ChatApi.tidy_text("**Filters:** 4K") == "**Filters:** 4K", "fettes Filters mit Inhalt bleibt")
-	_ok(ChatApi.tidy_text("a\n\n\n\nb") == "a\n\nb", "Leerzeilen zusammengefasst")
+	_ok(str(ChatApi.parse_content("Older:\n[A by B](/tethra/songs?set=1)\nx").text) == "Older:\nx",
+		"Link-Zeile hinterlaesst keine Leerzeile")
+	_ok(ChatApi.tidy_text("a\n\n\n\nb") =="a\n\nb", "Leerzeilen zusammengefasst")
 	_ok(ChatApi.tidy_text("🎵 Song ⭐ 4") == "Song ★ 4", "Emoji mitten im Text, Stern-Emoji -> ★ ('%s')" % ChatApi.tidy_text("🎵 Song ⭐ 4"))
 	_ok(ChatApi.tidy_text("gg 👍🏽") == "gg", "Hautton-Emoji ohne Rest")
 	_ok(ChatApi.tidy_text("hallo ♪ ✓") == "hallo ♪ ✓", "Symbole der Schrift bleiben")
