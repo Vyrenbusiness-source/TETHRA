@@ -58,6 +58,18 @@ const DEFAULTS := {
 	"db_w_sec": 1.0,           # Abschnittswechsel ueber 16 Schlaege
 	"db_w_first": 2.0,          # Bonus fuer den Schlag des ersten deutlichen Anschlags ...
 	"db_first_mode": 2,       # ... 0 = erster Anschlag, 1 = erster ab Median-Staerke, 2 = erster Bass ab Median
+	# Taktanfang mit Harmonie (Chroma je Schlag aus dem dezimierten Signal), abgestimmt mit
+	# Haelfte A gegen B (grid.md). Ohne dezimiertes Signal gelten die db_w_*-Gewichte oben.
+	"db2_w_low": 0.34,          # Bass-Akzent
+	"db2_w_nov": 0.16,          # Energiewechsel ueber 4 Schlaege
+	"db2_w_hc1": 0.31,          # Akkordwechsel Schlag gegen Vorschlag (130-1050 Hz)
+	"db2_w_hc2": 0.30,          # Akkordwechsel 2 Schlaege gegen 2 Schlaege
+	"db2_w_hb": 0.38,           # Bass-Grundton-Wechsel (41-123 Hz)
+	"db2_w_first": 1.26,        # erster deutlicher Bass-Anschlag
+	"chroma_max_beats": 600,    # Chroma nur fuer so viele Schlaege (gleichmaessig verteilte Bloecke), 0 = alle
+	"harmony": true,            # Harmonie-Merkmale fuer den Taktanfang (braucht das dezimierte Signal)
+	"phase_first_w": 0.1,       # Viertel des ersten deutlichen Anschlags: Bonus auf den Log-Akzent
+	"foreign_family": [1.0, 2.0, 0.5],  # Fenster mit diesen Verhaeltnissen zum Hauptpuls gelten als gleiches Tempo
 	"debug": false,
 }
 
@@ -76,7 +88,35 @@ static func _fail(msg: String) -> Dictionary:
 static func track(pcm: PackedFloat32Array, rate: int, params: Dictionary = {}) -> Dictionary:
 	if rate <= 0 or pcm.size() < rate * 4:
 		return _fail("Audio kuerzer als 4 s")
-	return track_env(envelope(pcm, rate, params), params)
+	var feat := envelope(pcm, rate, params)
+	feat["lo"] = decimate(pcm, rate)
+	feat["lo_rate"] = float(rate) / maxi(1, int(round(rate / LO_RATE)))
+	return track_env(feat, params)
+
+
+## Zielrate des dezimierten Signals fuer die Harmonie-Merkmale.
+const LO_RATE := 2756.25
+
+## Mono-Signal auf ~2756 Hz: zweimal Tiefpass 1000 Hz (einpolig), Mittel je Block.
+static func decimate(pcm: PackedFloat32Array, rate: int) -> PackedFloat32Array:
+	var fac: int = maxi(1, int(round(rate / LO_RATE)))
+	var n: int = pcm.size() / fac
+	var out := PackedFloat32Array()
+	out.resize(n)
+	var a := 1.0 - exp(-TAU * 1000.0 / rate)
+	var y1 := 0.0
+	var y2 := 0.0
+	var inv := 1.0 / fac
+	var i := 0
+	for j in n:
+		var acc := 0.0
+		for _k in fac:
+			y1 += a * (pcm[i] - y1)
+			y2 += a * (y1 - y2)
+			acc += y2
+			i += 1
+		out[j] = acc * inv
+	return out
 
 
 # ---------------------------------------------------------------------------
@@ -393,7 +433,7 @@ static func _rough_segments(ac: Dictionary, lag0: float, dur: float, P: Dictiona
 		var pl := _pulse(a, lag_ms, P)
 		var s_fam := 0.0
 		var near := false
-		for f in FAMILY:
+		for f in P.foreign_family:
 			var lf: float = lag0 / float(f)
 			for d in [-1.0, 0.0, 1.0]:
 				s_fam = maxf(s_fam, _comb(a, lf + d))
@@ -688,6 +728,108 @@ static func _score(h: Dictionary, ref_bpm: float, P: Dictionary) -> float:
 	return s
 
 
+## Chroma (12) je Schlag ab t + 20 ms: Goertzel auf den Noten lo_note..hi_note, Hann-Fenster
+## mit n Abtastwerten; dec = 2 halbiert die Rate (Bass). Ergebnis: Array von PackedFloat64Array.
+static func _chroma(x: PackedFloat32Array, rate: float, ts: PackedFloat64Array, lo_note: int, hi_note: int, n: int, dec: int) -> Array:
+	var r := rate / dec
+	var win := PackedFloat64Array()
+	win.resize(n)
+	for k in n:
+		win[k] = 0.5 - 0.5 * cos(TAU * k / (n - 1))
+	var coefs := PackedFloat64Array()
+	for m in range(lo_note, hi_note + 1):
+		coefs.append(2.0 * cos(TAU * 440.0 * pow(2.0, (m - 69) / 12.0) / r))
+	var seg := PackedFloat64Array()
+	seg.resize(n)
+	var out: Array = []
+	for t in ts:
+		var c := PackedFloat64Array()
+		c.resize(12)
+		var a := int((t + 20.0) / 1000.0 * r)
+		if a >= 0 and (a + n) * dec <= x.size():
+			for k in n:
+				var v := 0.0
+				var b := (a + k) * dec
+				for d in dec:
+					v += x[b + d]
+				seg[k] = v / dec * win[k]
+			for bi in coefs.size():
+				var cc := coefs[bi]
+				var s1 := 0.0
+				var s2 := 0.0
+				for k in n:
+					var s0 := seg[k] + cc * s1 - s2
+					s2 = s1
+					s1 = s0
+				c[(lo_note + bi) % 12] += s1 * s1 + s2 * s2 - cc * s1 * s2
+			for k in 12:
+				c[k] = sqrt(maxf(c[k], 0.0))
+		out.append(c)
+	return out
+
+
+static func _cosd(u: PackedFloat64Array, v: PackedFloat64Array) -> float:
+	var uv := 0.0
+	var uu := 0.0
+	var vv := 0.0
+	for k in u.size():
+		uv += u[k] * v[k]
+		uu += u[k] * u[k]
+		vv += v[k] * v[k]
+	return 1.0 - uv / (sqrt(uu) * sqrt(vv) + 1e-9)
+
+
+static func _addv(u: PackedFloat64Array, v: PackedFloat64Array) -> PackedFloat64Array:
+	var w := u.duplicate()
+	for k in w.size():
+		w[k] += v[k]
+	return w
+
+
+## Harmonie-Merkmale je Schlag [hc1, hc2, hb, gueltig] fuer die Schlaege phase + (k0 + j) * X,
+## j < nb. Bei mehr als chroma_max_beats Schlaegen nur gleichmaessig verteilte Bloecke.
+static func _harm_feats(F: Dictionary, X: float, phase: float, k0: int, nb: int, P: Dictionary) -> Array:
+	var x: PackedFloat32Array = F.lo
+	var rate: float = F.lo_rate
+	var use := PackedByteArray()
+	use.resize(nb)
+	var lim := int(P.chroma_max_beats)
+	if lim <= 0 or nb <= lim:
+		use.fill(1)
+	else:
+		var blk := 32
+		var nblk := maxi(1, lim / blk)
+		for b in nblk:
+			var s0 := int(float(b) * (nb - blk) / maxi(nblk - 1, 1))
+			for j in range(s0, mini(nb, s0 + blk)):
+				use[j] = 1
+	var ts := PackedFloat64Array()
+	var idx := PackedInt32Array()
+	for j in nb:
+		if use[j] == 1:
+			ts.append(phase + (k0 + j) * X)
+			idx.append(j)
+	var C := _chroma(x, rate, ts, 48, 84, 512, 1)
+	var Cb := _chroma(x, rate, ts, 28, 51, 256, 2)
+	var hc1 := PackedFloat64Array()
+	var hc2 := PackedFloat64Array()
+	var hb := PackedFloat64Array()
+	var valid := PackedByteArray()
+	hc1.resize(nb)
+	hc2.resize(nb)
+	hb.resize(nb)
+	valid.resize(nb)
+	for i in ts.size():
+		var j := idx[i]
+		if i >= 1 and idx[i - 1] == j - 1:
+			hc1[j] = _cosd(C[i], C[i - 1])
+			hb[j] = _cosd(Cb[i], Cb[i - 1])
+			valid[j] = 1
+			if i >= 2 and i + 1 < ts.size() and idx[i - 2] == j - 2 and idx[i + 1] == j + 1:
+				hc2[j] = _cosd(_addv(C[i], C[i + 1]), _addv(C[i - 1], C[i - 2]))
+	return [hc1, hc2, hb, valid]
+
+
 ## Taktart (4/3) und Taktanfang aus Statistik je Schlag. phase = Zeit des Schlags mit Index 0.
 static func _meter(F: Dictionary, X: float, phase: float, lo: float, hi: float, P: Dictionary) -> Dictionary:
 	var flux: PackedFloat32Array = F.flux
@@ -740,29 +882,49 @@ static func _meter(F: Dictionary, X: float, phase: float, lo: float, hi: float, 
 		var r := (a - b) / (a + b + 1e-6)
 		feats[4][j] = r * r
 	var wts := [float(P.db_w_low), float(P.db_w_acc), float(P.db_w_hc), float(P.db_w_nov), float(P.db_w_sec)]
+	var nf := 5
+	var masks: Array = [null, null, null, null, null]
+	var harm: bool = bool(P.harmony) and F.has("lo") and (F.lo as PackedFloat32Array).size() > 0
+	if harm:
+		var hf := _harm_feats(F, X, phase, k0, nb, P)
+		for i in 3:
+			feats.append(hf[i])
+			masks.append(hf[3])
+		nf = 8
 	var res := {}
 	for m in [4, 3]:
 		var rows: Array = []
 		for p in m:
-			rows.append([0.0, 0.0, 0.0, 0.0, 0.0])
-		for fi in 5:
+			var row := []
+			row.resize(nf)
+			row.fill(0.0)
+			rows.append(row)
+		for fi in nf:
 			var arr: PackedFloat64Array = feats[fi]
+			var mk = masks[fi]
 			var mean := 0.0
-			for v in arr:
-				mean += v
-			mean /= nb
+			var cnt := 0.0
+			for j in nb:
+				if mk == null or mk[j] == 1:
+					mean += arr[j]
+					cnt += 1.0
+			if cnt < 8.0:
+				continue
+			mean /= cnt
 			var sd := 0.0
-			for v in arr:
-				sd += (v - mean) * (v - mean)
-			sd = sqrt(sd / nb) + 1e-9
+			for j in nb:
+				if mk == null or mk[j] == 1:
+					sd += (arr[j] - mean) * (arr[j] - mean)
+			sd = sqrt(sd / cnt) + 1e-9
 			var sums := PackedFloat64Array()
 			sums.resize(m)
 			var cnts := PackedFloat64Array()
 			cnts.resize(m)
 			for j in nb:
-				var p := posmod(k0 + j, m)
-				sums[p] += arr[j]
-				cnts[p] += 1.0
+				if mk == null or mk[j] == 1:
+					var p := posmod(k0 + j, m)
+					sums[p] += arr[j]
+					cnts[p] += 1.0
 			for p in m:
 				if cnts[p] > 0.0:
 					rows[p][fi] = (sums[p] / cnts[p] - mean) / (sd / sqrt(cnts[p]))
@@ -814,6 +976,19 @@ static func _meter(F: Dictionary, X: float, phase: float, lo: float, hi: float, 
 		meter = 3
 	out["meter"] = meter
 	out["db"] = phase + int(best[meter][0]) * X
+	if harm:
+		# Taktanfang mit Harmonie: Bass-Akzent, Energiewechsel, Akkord- und Grundton-Wechsel.
+		var w2 := [float(P.db2_w_low), 0.0, 0.0, float(P.db2_w_nov), 0.0, float(P.db2_w_hc1), float(P.db2_w_hc2), float(P.db2_w_hb)]
+		var bp := 0
+		var bv := -INF
+		for p in meter:
+			var d := float(P.db2_w_first) if p == int(pf[meter][2]) else 0.0
+			for fi in nf:
+				d += float(w2[fi]) * float(res[meter][p][fi])
+			if d > bv:
+				bv = d
+				bp = p
+		out["db"] = phase + bp * X
 	out["q"] = float(best[meter][1])
 	out["s4"] = float(best[4][1])
 	out["s3"] = float(best[3][1])
@@ -822,7 +997,7 @@ static func _meter(F: Dictionary, X: float, phase: float, lo: float, hi: float, 
 
 ## Ein Segment [lo, hi] (ms) auswerten; tcs = Kandidaten der groben Periode (ms), jeder
 ## bringt seine Tempo-Familie mit, alle Hypothesen treten gegeneinander an.
-static func _fit_segment(F: Dictionary, lo: float, hi: float, tcs: Array, ref_bpm: float, P: Dictionary) -> Dictionary:
+static func _fit_segment(F: Dictionary, lo: float, hi: float, tcs: Array, ref_bpm: float, P: Dictionary, fam: Array = FAMILY) -> Dictionary:
 	var pt: PackedFloat64Array = F.pt
 	var pw: PackedFloat64Array = F.pw
 	var i0 := pt.bsearch(lo)
@@ -851,7 +1026,7 @@ static func _fit_segment(F: Dictionary, lo: float, hi: float, tcs: Array, ref_bp
 		var T1 := _scan(sub.t, sub.w, tc, 0.03, step, [1, 2, 3])
 		var T2 := _scan(ts, ws, T1, 2.0 * step, step * 0.1, [1, 2, 3, 4])
 		t2s.append(T2)
-		for f in FAMILY:
+		for f in fam:
 			var X: float = T2 / float(f)
 			var bpm := 60000.0 / X
 			if bpm < float(P.bpm_min) or bpm > float(P.bpm_max):
@@ -931,9 +1106,19 @@ static func _fit_segment(F: Dictionary, lo: float, hi: float, tcs: Array, ref_bp
 	# Schlag unter den Vierteln: das Viertel mit dem staerksten mittleren Akzent.
 	var q_shift := 0
 	if float(P.phase_q_ratio) > 0.0:
-		var a_best := _accent(F, X, phase, lo, hi).x * float(P.phase_q_ratio)
+		# Viertel des ersten deutlichen Anschlags (Songs beginnen meist auf einem Schlag).
+		var sw := pw.slice(i0, i1)
+		sw.sort()
+		var mw: float = sw[sw.size() / 2]
+		var qf := -1
+		for i in range(i0, i1):
+			if pw[i] >= mw:
+				qf = posmod(int(roundf((pt[i] - phase) / (X / 4.0))), 4)
+				break
+		var fw := float(P.phase_first_w)
+		var a_best := log(maxf(_accent(F, X, phase, lo, hi).x * float(P.phase_q_ratio), 1e-9)) + (fw if qf == 0 else 0.0)
 		for j in range(1, 4):
-			var aj := _accent(F, X, phase + j * X / 4.0, lo, hi).x
+			var aj := log(maxf(_accent(F, X, phase + j * X / 4.0, lo, hi).x, 1e-9)) + (fw if qf == j else 0.0)
 			if aj > a_best:
 				a_best = aj
 				q_shift = j
@@ -1038,7 +1223,8 @@ static func track_env(feat: Dictionary, params: Dictionary = {}) -> Dictionary:
 		var r: Dictionary = rough[i]
 		var len := float(r.hi) - float(r.lo)
 		var mg := minf(2000.0, 0.2 * len) if rough.size() > 1 else 0.0
-		fits[i] = _fit_segment(F, float(r.lo) + mg, float(r.hi) - mg, [float(r.T)], ref_bpm, P)
+		# Folgesegmente: nur Oktaven des eigenen Pulses (3:4 usw. waere wieder das Haupttempo).
+		fits[i] = _fit_segment(F, float(r.lo) + mg, float(r.hi) - mg, [float(r.T)], ref_bpm, P, [1.0, 2.0, 0.5])
 	var list: Array = []
 	for i in rough.size():
 		var ft: Dictionary = fits[i]
