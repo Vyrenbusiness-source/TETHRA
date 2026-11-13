@@ -44,6 +44,9 @@ var _lib: MapLibrary = null
 ## der Sender zusaetzlich die lokale Vorschau.
 var _picture_cache: Dictionary = {}
 const PICTURE_HINT := "Trace picture"
+## Hoechstens so viele Map-Karten je Nachricht (der Bot schickt selten mehr als eine).
+const MAX_CARDS := 3
+var _font_cache: Dictionary = {}
 var _status_line: Label
 var _stick_bottom := true
 var _hint := ""
@@ -513,12 +516,12 @@ func _conversation_row(c: Dictionary) -> Control:
 
 
 func _preview_text(t: String) -> String:
-	if not ChatApi.parse_map_link(t).is_empty():
-		var m := ChatApi.parse_map_link(t)
+	var m := ChatApi.parse_map_link(t)
+	if not m.is_empty():
 		return "♪ " + (str(m.title) if str(m.title) != "" else tr("Map"))
 	if not ChatApi.parse_score_link(t).is_empty():
 		return "★ " + tr("Score")
-	return t.replace("\n", " ")
+	return ChatApi.preview_plain(t)
 
 
 func _dot(online: bool) -> Control:
@@ -768,29 +771,23 @@ func _bubble(m: Dictionary, mine: bool) -> Control:
 	return outer
 
 
-## Nachrichteninhalt: Text und/oder Map-/Score-Karte.
+## Nachrichteninhalt: Text (Markdown des Bots formatiert) und/oder Map-/Score-Karten.
+## Jeder Map-Link wird eine Karte (hoechstens MAX_CARDS), der Link selbst steht nicht im Text.
 func _content_widget(content: String, compact: bool) -> Control:
-	var maplink := ChatApi.parse_map_link(content)
-	var scorelink := ChatApi.parse_score_link(content) if maplink.is_empty() else {}
-	var rest := content
-	if not maplink.is_empty():
-		rest = str(maplink.text)
-	elif not scorelink.is_empty():
-		rest = str(scorelink.text)
+	var parsed := ChatApi.parse_content(content)
+	var maps: Array = parsed.maps
+	var scorelink := ChatApi.parse_score_link(content) if maps.is_empty() else {}
+	var rest := str(parsed.text)
+	if not scorelink.is_empty():
+		rest = ChatApi.tidy_text(str(scorelink.text))
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 6)
-	var card_w := PANEL_W - 90.0 if not (maplink.is_empty() and scorelink.is_empty()) else PANEL_W - 150.0
+	var card_w := PANEL_W - 90.0 if not (maps.is_empty() and scorelink.is_empty()) else PANEL_W - 150.0
 	box.custom_minimum_size = Vector2(card_w if not compact else PANEL_W - 40.0, 0)
 	if rest != "":
-		var l := Label.new()
-		l.text = rest
-		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		l.custom_minimum_size = Vector2(60, 0)
-		l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		l.add_theme_font_size_override("font_size", 14)
-		l.add_theme_color_override("font_color", UiTheme.TEXT)
-		box.add_child(l)
-	if not maplink.is_empty():
+		box.add_child(_text_widget(rest))
+	for i in mini(maps.size(), MAX_CARDS):
+		var maplink: Dictionary = maps[i]
 		var card := ChatMapCard.new()
 		box.add_child(card)
 		var pic := str(_picture_cache.get(str(maplink.get("link", "")), ""))
@@ -798,7 +795,7 @@ func _content_widget(content: String, compact: bool) -> Control:
 			card.setup("picture", maplink, self, pic)
 		else:
 			card.setup("map", maplink, self)
-	elif not scorelink.is_empty():
+	if not scorelink.is_empty():
 		var sid := str(scorelink.score_id)
 		var card2 := ChatMapCard.new()
 		box.add_child(card2)
@@ -812,6 +809,57 @@ func _content_widget(content: String, compact: bool) -> Control:
 				if is_instance_valid(card2):
 					card2.set_info(info))
 	return box
+
+
+## Nachrichtentext. Ohne Markdown ein Label wie bisher, sonst RichTextLabel
+## (fett, kursiv, Links klickbar).
+func _text_widget(text: String) -> Control:
+	var bb := ChatApi.md_to_bbcode(text, "#" + UiTheme.ACCENT.to_html(false))
+	if bb == text:
+		var l := Label.new()
+		l.text = text
+		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		l.custom_minimum_size = Vector2(60, 0)
+		l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		l.add_theme_font_size_override("font_size", 14)
+		l.add_theme_color_override("font_color", UiTheme.TEXT)
+		return l
+	var r := RichTextLabel.new()
+	r.bbcode_enabled = true
+	r.fit_content = true
+	r.scroll_active = false
+	r.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	r.custom_minimum_size = Vector2(60, 0)
+	r.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	r.mouse_filter = Control.MOUSE_FILTER_PASS
+	for k in ["normal_font_size", "bold_font_size", "italics_font_size", "bold_italics_font_size"]:
+		r.add_theme_font_size_override(k, 14)
+	r.add_theme_color_override("default_color", UiTheme.TEXT)
+	r.add_theme_font_override("bold_font", _text_font(700, false))
+	r.add_theme_font_override("italics_font", _text_font(400, true))
+	r.add_theme_font_override("bold_italics_font", _text_font(700, true))
+	r.text = bb
+	r.meta_clicked.connect(_open_link)
+	return r
+
+
+## Schnitt der Fliesstext-Schrift (UiTheme.body_font) in fett/kursiv.
+func _text_font(weight: int, italic: bool) -> Font:
+	var key := "%d|%s" % [weight, italic]
+	if not _font_cache.has(key):
+		var f := SystemFont.new()
+		f.font_names = PackedStringArray(["Segoe UI", "Noto Sans", "Arial"])
+		f.font_weight = weight
+		f.font_italic = italic
+		_font_cache[key] = f
+	return _font_cache[key]
+
+
+## Link aus einer Nachricht im Browser oeffnen (nur http/https, Seitenpfade ueber butzebot.com).
+func _open_link(meta: Variant) -> void:
+	var url := ChatApi.absolute_url(str(meta))
+	if url != "":
+		OS.shell_open(url)
 
 
 static func local_time_offset_s() -> int:
@@ -1035,12 +1083,10 @@ func _select_local(info: Dictionary) -> Dictionary:
 	var gs := _gs()
 	if local == null or gs == null:
 		return {}
-	var diff := 0
-	var want := str(info.get("version", info.get("difficulty", ""))).to_lower()
+	var names: Array = []
 	for d in local.difficulty_count():
-		if want != "" and local.version_name_at(d).to_lower() == want:
-			diff = d
-			break
+		names.append(local.version_name_at(d))
+	var diff := ChatApi.pick_diff(names, str(info.get("version", "")), str(info.get("difficulty", "")))
 	gs.set_selection(local.osz_path, diff, local.version_name_at(diff),
 		local.osu_filename_at(diff), local.stars_at(diff))
 	return {"ms": local, "diff": diff}
@@ -1080,10 +1126,13 @@ func start_replay(info: Dictionary, data: Dictionary) -> bool:
 	return true
 
 
-# --- Screenshot (--shot-chat=<Ordner>) -----------------------------------------
+# --- Screenshot (--shot-chat=<Ordner> [--lang=en]) -----------------------------------------
 
 func _run_shot(dir: String) -> void:
 	DirAccess.make_dir_recursive_absolute(dir)
+	for a in OS.get_cmdline_args() + OS.get_cmdline_user_args():
+		if a.begins_with("--lang="):
+			TranslationServer.set_locale(a.trim_prefix("--lang="))
 	await get_tree().create_timer(1.5).timeout
 	api.transport = Callable()
 	api.conversations = [
@@ -1122,6 +1171,23 @@ func _run_shot(dir: String) -> void:
 		{"id": "m5", "sender_id": "1", "content": ChatApi.score_link("78"), "created_at": "2026-11-08T14:07:00Z", "reply_to": {}},
 		{"id": "m6", "sender_id": "2", "content": ChatApi.score_link("79"), "created_at": "2026-11-08T14:08:00Z", "reply_to": {}},
 	]
+	api.conversations.append({"id": "c3", "other_id": "9", "name": "TETHRA Bot", "country": "", "online": true,
+		"last_message": "**Found a map for you!**\n[End Time by Cres](/tethra/songs?detail=cres_end_time&difficulty=hyper&set=1766740)",
+		"last_sender_id": "9", "unread": 0, "updated_at": ""})
+	api.messages["c3"] = [
+		{"id": "b1", "sender_id": "1", "content": "!map 4k 3-4*", "created_at": "2026-11-08T14:10:00Z", "reply_to": {}},
+		{"id": "b2", "sender_id": "9", "content": "**Found a map for you!**\n\n"
+			+ "[End Time by Cres](/tethra/songs?detail=cres_end_time&difficulty=hyper&set=1766740)\n"
+			+ "**[4K] Hyper** — 3.39★ | 8.1 NPS | Rice | 2:08\n🎯 🎹\nFilters:",
+			"created_at": "2026-11-08T14:10:02Z", "reply_to": {}},
+		{"id": "b3", "sender_id": "9", "content": "🎵 **Tip:** type *!help* for all commands, or read "
+			+ "[the guide](/tethra/help).\n- `!map 4k` random 4K map\n- `!top` your best scores",
+			"created_at": "2026-11-08T14:11:00Z", "reply_to": {}},
+		{"id": "b4", "sender_id": "9", "content": "Older message:\n"
+			+ "[Ending Theme by Nanatsu no Taizai](https://butzebot.com/omen/songs?detail=ending_theme&difficulty=4k_hard&set=1060425)\n"
+			+ "**4K Hard** — 3.84★ | 6.2 NPS | Rice | 1:29\n**Filters:** 4K",
+			"created_at": "2026-11-08T14:12:00Z", "reply_to": {}},
+	]
 	api.unread = 2
 	_panel.visible = true
 	api.overlay_open = false
@@ -1134,5 +1200,9 @@ func _run_shot(dir: String) -> void:
 	_render()
 	await get_tree().create_timer(3.0).timeout
 	get_viewport().get_texture().get_image().save_png(dir.path_join("chat_thread.png"))
+	api.open_id = "c3"
+	_render()
+	await get_tree().create_timer(3.0).timeout
+	get_viewport().get_texture().get_image().save_png(dir.path_join("chat_bot.png"))
 	print("SHOT-CHAT fertig ", _panel.get_global_rect(), " ", size, " vis=", _panel.visible, " api=", api.active())
 	get_tree().quit()

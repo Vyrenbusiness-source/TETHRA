@@ -204,28 +204,249 @@ static func map_link(meta: Dictionary) -> String:
 
 
 ## Erster Map-Link im Text. Leeres Dictionary = keiner. Sonst
-## {md5, set_id, beatmap_id, title, artist, version, stars, link, text} mit text = Rest ohne Link.
+## {md5, set_id, beatmap_id, title, artist, version, difficulty, stars, link, text}
+## mit text = Rest ohne Link. Kennt alle Formen aus parse_content().
 static func parse_map_link(content: String) -> Dictionary:
-	var re := RegEx.new()
-	re.compile("https://butzebot\\.com/tethra/map/([0-9A-Za-z]+)(\\?[^\\s]*)?")
-	var m := re.search(content)
-	if m == null:
-		return {}
-	var q: Dictionary = {}
-	var qs := m.get_string(2).trim_prefix("?")
-	for part in qs.split("&", false):
-		var kv := part.split("=", true, 1)
-		q[kv[0]] = kv[1].uri_decode() if kv.size() > 1 else ""
-	var set_id := int(q.get("set", "0"))
-	if set_id <= 0:
-		return {}
-	var rest := (content.substr(0, m.get_start()) + content.substr(m.get_end())).strip_edges()
-	return {
-		"md5": m.get_string(1), "set_id": set_id, "beatmap_id": int(q.get("b", "0")),
-		"title": str(q.get("t", "")), "artist": str(q.get("a", "")),
-		"version": str(q.get("v", "")), "stars": float(q.get("s", "0")),
-		"link": m.get_string(), "text": rest,
-	}
+	var maps: Array = parse_content(content).maps
+	return {} if maps.is_empty() else maps[0]
+
+
+# --- Bot-Nachrichten: Map-Links aller Formen, Markdown ---------------------------
+
+const SITE := "https://butzebot.com"
+## Platzhalter fuer einen entfernten Map-Link (Zeilen nur daraus verschwinden ganz).
+const _CUT := "\u0001"
+## Zeichen aus den Symbol-Bloecken, die die UI-Schrift sicher hat (bleiben stehen).
+const _KEEP_SYMBOLS := [0x2605, 0x2606, 0x2665, 0x266A, 0x266B, 0x2713, 0x2715]
+
+static var _re_cache: Dictionary = {}
+
+
+static func _re(pattern: String) -> RegEx:
+	if not _re_cache.has(pattern):
+		var re := RegEx.new()
+		re.compile(pattern)
+		_re_cache[pattern] = re
+	return _re_cache[pattern]
+
+
+## Nachricht zerlegen: {text, maps}. maps = alle Map-Links (je ein Dictionary wie
+## parse_map_link), text = aufgeraeumter Rest (tidy_text) ohne diese Links.
+## Erkannte Links, relativ oder mit https://butzebot.com davor, nackt oder als
+## Markdown "[Titel by Kuenstler](link)":
+##   /tethra/map/<md5>?set=<id>&b=&t=&a=&v=&s=      (Spieler-Links, map_link())
+##   /tethra/songs?detail=<slug>&difficulty=<slug>&set=<id>   (TETHRA Bot)
+##   /omen/songs?...                                 (alte Bot-Nachrichten)
+## Ohne set-ID gibt es keine Karte: der Link bleibt als Text stehen.
+static func parse_content(content: String) -> Dictionary:
+	var re := _re("(?:\\[([^\\]\\n]*)\\]\\()?(?<![\\w.:/-])((?:https?://(?:www\\.)?butzebot\\.com)?"
+		+ "/(?:tethra|omen)/(?:map/([0-9A-Za-z]+)|songs)(\\?[^\\s)]*)?)")
+	var follow := _re("^[ \\t]*\\r?\\n[ \\t]*\\*\\*(.+?)\\*\\*\\s*[—–-]\\s*([0-9]+(?:[.,][0-9]+)?)\\s*[★⭐]")
+	var maps: Array = []
+	var text := ""
+	var pos := 0
+	for m in re.search_all(content):
+		var q: Dictionary = {}
+		for part in m.get_string(4).trim_prefix("?").split("&", false):
+			var kv := part.split("=", true, 1)
+			q[kv[0]] = kv[1].uri_decode() if kv.size() > 1 else ""
+		var set_id := int(q.get("set", "0"))
+		if set_id <= 0:
+			continue
+		var has_label := m.get_start(1) >= 0
+		var end := m.get_end()
+		if has_label and content.substr(end, 1) == ")":
+			end += 1
+		var title := str(q.get("t", ""))
+		var artist := str(q.get("a", ""))
+		if title == "" and has_label:
+			var label := m.get_string(1).strip_edges()
+			var by := label.rfind(" by ")
+			title = label.substr(0, by).strip_edges() if by > 0 else label
+			if by > 0 and artist == "":
+				artist = label.substr(by + 4).strip_edges()
+		if title == "":
+			title = str(q.get("detail", "")).capitalize()
+		var diff := str(q.get("difficulty", ""))
+		var version := str(q.get("v", ""))
+		var stars := float(q.get("s", "0"))
+		# Zeile nach dem Bot-Link: "**[4K] Hyper** — 3.39★ | ..." traegt Diff-Name und Sterne.
+		var line := follow.search(content.substr(end))
+		if line != null:
+			if version == "":
+				version = line.get_string(1).strip_edges()
+			if stars <= 0.0:
+				stars = float(line.get_string(2).replace(",", "."))
+		if version == "":
+			version = diff.replace("_", " ")
+		maps.append({
+			"md5": m.get_string(3), "set_id": set_id, "beatmap_id": int(q.get("b", "0")),
+			"title": title, "artist": artist, "version": version, "difficulty": diff,
+			"stars": stars, "link": m.get_string(2),
+			"text": (content.substr(0, m.get_start()) + content.substr(end)).strip_edges(),
+		})
+		text += content.substr(pos, m.get_start() - pos) + _CUT
+		pos = end
+	text += content.substr(pos)
+	return {"text": tidy_text(text), "maps": maps}
+
+
+## Text fuer die Anzeige aufraeumen: Emoji weg (die UI-Schrift hat sie nicht, sonst
+## Kaestchen), Zeilen nur aus Emoji oder entferntem Link weg, leere "Filters:"-Zeilen
+## des Bots weg, Leerzeilen und Leerzeichen zusammengefasst.
+static func tidy_text(text: String) -> String:
+	var out: PackedStringArray = []
+	var empty_filter := _re("^[*_\\s]*(?i:filters?)[*_\\s]*:[*_\\s]*$")
+	var spaces := _re("[ \\t]{2,}")
+	for raw in text.replace("\r", "").split("\n"):
+		var line := spaces.sub(strip_emoji(raw).replace(_CUT, " "), " ", true).strip_edges()
+		if line == "":
+			# Leerzeile nur, wenn sie schon leer war (nicht durch Emoji/Link entstanden).
+			if raw.strip_edges() == "" and not raw.contains(_CUT) and out.size() > 0 and out[out.size() - 1] != "":
+				out.append("")
+			continue
+		if empty_filter.search(line) != null:
+			continue
+		out.append(line)
+	while out.size() > 0 and out[out.size() - 1] == "":
+		out.remove_at(out.size() - 1)
+	return "\n".join(out)
+
+
+## Emoji und ihre Zusatzzeichen entfernen; Stern-Emoji wird zu ★.
+static func strip_emoji(s: String) -> String:
+	var out := ""
+	var from := 0
+	for i in s.length():
+		var c := s.unicode_at(i)
+		if c < 0x2000:
+			continue
+		var star := c == 0x2B50 or c == 0x1F31F
+		var drop := star or c == 0xFE0F or c == 0x200D or c == 0x20E3 \
+			or (c >= 0x2300 and c <= 0x23FF) or (c >= 0x2B00 and c <= 0x2BFF) \
+			or (c >= 0x2600 and c <= 0x27BF and not _KEEP_SYMBOLS.has(c)) \
+			or (c >= 0x1F000 and c <= 0x1FAFF) or (c >= 0xE0000 and c <= 0xE007F)
+		if drop:
+			out += s.substr(from, i - from) + ("★" if star else "")
+			from = i + 1
+	return out + s.substr(from)
+
+
+## Relativer Seitenpfad -> volle Adresse. Nur http(s); alles andere "" (nicht oeffnen).
+static func absolute_url(url: String) -> String:
+	if url.begins_with("/") and not url.begins_with("//"):
+		return SITE + url
+	if url.begins_with("https://") or url.begins_with("http://"):
+		return url
+	return ""
+
+
+## Markdown des Bots -> BBCode fuer RichTextLabel: **fett**, *kursiv*, [Text](Link),
+## nackte Links, "# Titel", "- Liste", `code`. Eckige Klammern des Textes werden
+## maskiert, fremdes BBCode wirkt also nicht. link_color = "#rrggbb" faerbt Links.
+static func md_to_bbcode(text: String, link_color: String = "") -> String:
+	return _md(text, true, link_color)
+
+
+## Dasselbe als reiner Text (Unterhaltungsliste, Antwort-Zitat).
+static func md_to_plain(text: String) -> String:
+	return _md(text, false, "")
+
+
+## Kurztext einer Nachricht fuer Liste und Zitat: Karte als "♪ Titel" (ohne Titel
+## nur "♪"), sonst Klartext in einer Zeile.
+static func preview_plain(content: String) -> String:
+	var p := parse_content(content)
+	if not p.maps.is_empty():
+		return ("♪ " + str(p.maps[0].title)).strip_edges()
+	return md_to_plain(str(p.text)).replace("\n", " ")
+
+
+static func _md(text: String, rich: bool, link_color: String) -> String:
+	var out: PackedStringArray = []
+	var head := _re("^#{1,6}\\s+(.*)$")
+	var item := _re("^[-*]\\s+(.*)$")
+	for line in text.split("\n"):
+		var h := head.search(line)
+		var it := item.search(line)
+		if h != null:
+			var inner := _md_inline(h.get_string(1), rich, link_color)
+			out.append("[b]%s[/b]" % inner if rich else inner)
+		elif it != null:
+			out.append("• " + _md_inline(it.get_string(1), rich, link_color))
+		else:
+			out.append(_md_inline(line, rich, link_color))
+	return "\n".join(out)
+
+
+static func _md_inline(s: String, rich: bool, link_color: String) -> String:
+	var re := _re("\\[([^\\]\\n]+)\\]\\(([^)\\s]+)\\)|(https?://[^\\s<>\\[\\]]+)|\\*\\*(.+?)\\*\\*"
+		+ "|(?<![*\\w])\\*(?=\\S)([^*\\n]+?)(?<=\\S)\\*(?![*\\w])|`([^`\\n]+)`")
+	var out := ""
+	var pos := 0
+	while pos < s.length():
+		var m := re.search(s, pos)
+		if m == null:
+			break
+		out += _md_text(s.substr(pos, m.get_start() - pos), rich)
+		pos = m.get_end()
+		if m.get_start(1) >= 0:
+			out += _md_link(m.get_string(2), _md_inline(m.get_string(1), rich, link_color), rich, link_color)
+		elif m.get_start(3) >= 0:
+			var url := m.get_string(3)
+			var cut := url.length()
+			while cut > 0 and ".,;:!?)".contains(url[cut - 1]):
+				cut -= 1
+			pos -= url.length() - cut
+			url = url.substr(0, cut)
+			out += _md_link(url, _md_text(url, rich), rich, link_color)
+		elif m.get_start(4) >= 0:
+			var b := _md_inline(m.get_string(4), rich, link_color)
+			out += "[b]%s[/b]" % b if rich else b
+		elif m.get_start(5) >= 0:
+			var i := _md_inline(m.get_string(5), rich, link_color)
+			out += "[i]%s[/i]" % i if rich else i
+		else:
+			out += _md_text(m.get_string(6), rich)
+	return out + _md_text(s.substr(pos), rich)
+
+
+static func _md_text(s: String, rich: bool) -> String:
+	return s.replace("[", "[lb]") if rich else s
+
+
+static func _md_link(url: String, label: String, rich: bool, link_color: String) -> String:
+	var target := absolute_url(url).replace("[", "%5B").replace("]", "%5D")
+	if not rich or target == "":
+		return label
+	var tag := "[url=%s]%s[/url]" % [target, label]
+	return "[color=%s]%s[/color]" % [link_color, tag] if link_color != "" else tag
+
+
+## Diff-Index zu einem Karten-Link. names = Diff-Namen des lokalen Sets. Erst der genaue
+## Name (version), dann der Slug aus difficulty= ("4k_hyper"), dann der Slug als Teil
+## des Namens ("hyper" in "[4K] Hyper"). Kein Treffer = 0.
+static func pick_diff(names: Array, version: String, slug: String) -> int:
+	var want := version.strip_edges().to_lower()
+	if want != "":
+		for d in names.size():
+			if str(names[d]).strip_edges().to_lower() == want:
+				return d
+	var s := diff_slug(slug if slug != "" else version)
+	if s == "":
+		return 0
+	for d in names.size():
+		if diff_slug(str(names[d])) == s:
+			return d
+	for d in names.size():
+		if diff_slug(str(names[d])).contains(s):
+			return d
+	return 0
+
+
+## "[4K] Hyper" -> "4k_hyper".
+static func diff_slug(s: String) -> String:
+	return _re("[^0-9a-z]+").sub(s.to_lower(), "_", true).trim_prefix("_").trim_suffix("_")
 
 
 # --- Score-Links / Replays -----------------------------------------------------
