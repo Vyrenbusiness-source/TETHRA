@@ -27,6 +27,7 @@ func _process(_delta: float) -> bool:
 		_started = true
 		print("=== TETHRA SV-Start-Tests ===")
 		_test_lead_math()
+		_test_lead_cap()
 		_clock = root.get_node_or_null("/root/SyncClock")
 		_ok(_clock != null, "SyncClock vorhanden")
 		if _clock == null:
@@ -127,6 +128,45 @@ func _test_lead_math() -> void:
 		# Erste Note: vor der ersten Linie gilt Tempo 1 -> volle Anflugzeit.
 		_ok(absf(sm.spawn_time(498.0, pre) - (498.0 - pre)) < 0.001, "Scroll %.2f: Note 0 volle Anflugzeit %.0f ms" % [scale, pre])
 		_ok(absf(sm.visible_lead(498.0, pre, pre) - pre) < 0.001, "Scroll %.2f: Note 0 durchgehend sichtbar" % scale)
+
+
+## Extrem langsamer Anfang (rote Linie 60000 ms/Beat, Rest 400 ms): ohne Deckel
+## laege der frueheste Spawn Minuten vor dem Song. Der Vorlauf bleibt bei
+## normaler Anflugzeit + MAX_SV_LEAD_EXTRA_MS.
+func _test_lead_cap() -> void:
+	print("- start_lead_ms: Deckel bei extrem langsamem Anfang")
+	var tps := "0,60000,4,1,1,40,1,0
+5000,400,4,1,1,40,1,0
+"
+	var notes := ""
+	for i in 200:
+		notes += "%d,192,%d,1,0,0:0:0:0:
+" % [64 + 128 * (i % 4), 5000 + i * 200]
+	var txt := "osu file format v14
+
+[General]
+Mode: 3
+
+[Difficulty]
+HPDrainRate: 5
+CircleSize: 4
+OverallDifficulty: 7
+ApproachRate: 5
+SliderMultiplier: 1.4
+
+[TimingPoints]
+" + tps + "
+[HitObjects]
+" + notes
+	var bm: Beatmap = OsuParser.parse(txt).beatmap
+	for scale in [0.104, 1.0, 2.0]:
+		var pre := ManiaCore.preempt_for(scale)
+		var raw := ManiaCore.START_BUFFER_MS - ManiaCore.first_spawn_ms(bm, scale, {})
+		var base := maxf(ManiaCore.START_BUFFER_MS - (5000.0 - pre), 0.0)
+		var lead := ManiaCore.start_lead_ms(bm, scale, {})
+		_ok(raw > base + 20000.0, "Scroll %.2f: ohne Deckel %.0f ms Vorlauf" % [scale, raw])
+		_ok(absf(lead - (base + ManiaCore.MAX_SV_LEAD_EXTRA_MS)) < 0.001, "Scroll %.2f: Vorlauf gedeckelt auf %.0f ms" % [scale, lead])
+		_ok(lead >= base, "Scroll %.2f: nie unter der normalen Anflugzeit" % scale)
 
 
 func _silence(sec: float) -> AudioStreamWAV:
