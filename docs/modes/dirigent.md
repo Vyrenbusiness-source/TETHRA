@@ -17,6 +17,13 @@ Taktfigur mit Maus/Tablet fuehren (Zielen = Takt) und Einsaetze mit zwei Tasten 
     37 ms frei (einmal): er macht den naechsten Einsatz nicht zum Miss.
   - Sterne: jeder Einsatz unter 180 ms Abstand zaehlt +0,5 (`STAR_FAST_W`).
   - Replay-Marke rules = 3 (rules 2 wird abgelehnt). Messwerte: docs/modes/gameplay_tune.md.
+- **Regeln 4 (Mindestabstand der Schlaege):** zwei gewertete Schlaege liegen nie naeher als
+  `MIN_BEAT_GAP_MS` = 250 ms beisammen. An der Grenze zweier roter Timing-Punkte weicht der letzte
+  Schlag des alten Abschnitts der Eins des neuen; folgen kurze Abschnitte dicht aufeinander,
+  bleibt die letzte Eins. Einsaetze aendern sich nicht. Replay-Marke rules = 4 (rules 3 wird
+  abgelehnt, Server `min_version` anheben). Messwerte: docs/qa/approach_audit_orbit_dirigent.md.
+- **Ansicht nach Pausen:** die Figur steht `REST_LEAD_MS` = 1500 ms vor dem ersten Schlag nach
+  einer Pause wieder (keine Regel, nur Bild).
 - **Taktfigur**: feste Punkte je Taktart aus dem roten Timing-Point: 4/4 Schlagfigur
   (1 unten, 2 links, 3 rechts, 4 oben), 3/4 Dreieck (unten, rechts, oben), 2/4 (unten, oben),
   6/8 als 2 Hauptschlaege, ungerade Taktarten als Kreis mit n Punkten. Bei Schlaegen < 340 ms

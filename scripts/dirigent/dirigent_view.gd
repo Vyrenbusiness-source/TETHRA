@@ -37,6 +37,10 @@ const GREY := Color(0.62, 0.62, 0.64)
 const ROWS := 4
 const BAR_LEAD_MS := 1500.0
 const APPROACH_MS := 650.0
+## Nach einer Pause steht die Figur mit dem Zielpunkt so lange vor dem ersten Schlag
+## wieder (vorher erst auf dem Schlag selbst: kein Vorlauf).
+const REST_LEAD_MS := 1500.0
+const REST_AFTER_MS := 700.0
 ## Annaeherungsring am Taktstock: so lange vor dem Einsatz sichtbar.
 const CUE_RING_MS := 1000.0
 
@@ -234,7 +238,7 @@ func _draw() -> void:
 		return
 	var cur := chart.beat_at(t_ms)
 	var nxt := mini(cur + 1, chart.beats.size() - 1)
-	var gap := chart.is_gap(cur) and cur >= 0 and t_ms > float(chart.beats[cur].t) + 700.0
+	var gap := rest_at(chart, cur, t_ms)
 	var before_first := cur < 0
 	var target := nxt if not before_first else 0
 	if cur >= 0 and cur + 1 >= chart.beats.size():
@@ -334,6 +338,25 @@ func _draw_path(bar_i: int) -> void:
 				draw_polyline(pts, Color(0, 0, 0, 0.30), 4.0 * u, true)
 			else:
 				draw_polyline(pts, Color(INK, 0.24), maxf(1.0, 1.5 * u), true)
+
+
+## Pause: die Figur ruht ("Pause" statt Figur). cur = chart.beat_at(t).
+static func rest_at(ch: DirigentChart, cur: int, t: float, rest_lead: float = REST_LEAD_MS) -> bool:
+	if cur < 0 or not ch.is_gap(cur) or t <= float(ch.beats[cur].t) + REST_AFTER_MS:
+		return false
+	if cur + 1 >= ch.beats.size():
+		return true
+	return t < float(ch.beats[cur + 1].t) - rest_lead
+
+
+## Messung/Tests: so lange vor seiner Zeit steht Schlag i als Zielpunkt da (ms).
+static func beat_lead_ms(ch: DirigentChart, i: int, rest_lead: float = REST_LEAD_MS) -> float:
+	if i <= 0:
+		return INF
+	var iv := float(ch.beats[i].t) - float(ch.beats[i - 1].t)
+	if not ch.is_gap(i - 1):
+		return iv
+	return clampf(rest_lead, 0.0, iv - REST_AFTER_MS)
 
 
 func _draw_rest() -> void:

@@ -55,6 +55,9 @@ var beat_ms: float = 0.0
 ## 0 = Ziel waere vor Regeln 4 weggefallen (zaehlt als Teilrunde, schwer zu lesen).
 var read_laps: int = -1
 var read_spawn_ms: float = 0.0
+## Beat-Tick, mit dem der Konverter die Sichtbarkeit zuteilt (hoechstens MAX_VISIBLE).
+## spawn_ms liegt davor, wenn der Mindestvorlauf (MIN_LEAD_MS) es verlangt; -1 = spawn_ms.
+var slot_ms: float = -1.0
 var _path_len: PackedFloat32Array = PackedFloat32Array()
 
 

@@ -37,7 +37,7 @@ func _run() -> void:
 	_test_compact()
 	_test_store()
 	_test_orbit_mods()
-	_test_rules_marker()
+	await _test_rules_marker()
 	_test_game_replay()
 	print("=== %d ok, %d fehlgeschlagen ===" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
@@ -330,6 +330,7 @@ func _test_orbit_mods() -> void:
 	var ns := _chart()
 	var evs := _human(ns, 5)
 	var plain: OrbitCore = _live(ns, evs, 11)[0]
+	var pr: OrbitCore = _live(ns, evs, 11, {"PR": true})[0]
 	for mods in [{"PR": true}, {"HD": true, "PR": true}, {"FI": true, "NF": true}]:
 		var tag := OrbitCore.mods_text(mods)
 		var live := _live(ns, evs, 11, mods)
@@ -342,8 +343,17 @@ func _test_orbit_mods() -> void:
 		_check(_same_stats(lc.stats(), (rp[0] as OrbitCore).stats()), "%s: Stats gleich" % tag)
 		_check(_same_judgements(live[1], rp[1]), "%s: Urteile gleich" % tag)
 		_check((rp[0] as OrbitCore).stats().mods == lc.stats().mods, "%s: Mods im Ergebnis" % tag)
-	# PR wertet strenger: gleiche Eingaben, weniger Bestnoten.
-	var pr: OrbitCore = _live(ns, evs, 11, {"PR": true})[0]
+	# Score-Faktoren: NF 0,5, HD/FI 1,06, PR 1,12; SV wirkt in Orbit nicht und zaehlt nicht.
+	_check(is_equal_approx(OrbitCore.mod_multiplier({"SV": true}), 1.0) and OrbitCore.mod_list({"SV": true, "HD": true}) == ["HD"],
+		"SV: kein Faktor und kein Badge in Orbit (%.2f)" % OrbitCore.mod_multiplier({"SV": true}))
+	_check(is_equal_approx(OrbitCore.mod_multiplier({"NF": true}), 0.5) and is_equal_approx(OrbitCore.mod_multiplier({"HD": true, "PR": true}), 1.06 * 1.12)
+		and is_equal_approx(OrbitCore.mod_multiplier({"FI": true}), 1.06) and is_equal_approx(OrbitCore.mod_multiplier({}), 1.0), "Faktoren NF/HD/FI/PR")
+	_check(is_equal_approx(OrbitCore.mod_multiplier({"HD": true, "FI": true}), 1.06) and OrbitCore.mod_list({"HD": true, "FI": true}) == ["HD"],
+		"HD + FI zusammen: nur HD gilt")
+	var svc: OrbitCore = _live(ns, evs, 11, {"SV": true, "NF": true})[0]
+	_check(is_equal_approx(svc.mod_mult, 0.5) and not bool(svc.mods.get("SV", false)) and svc.no_fail,
+		"Lauf mit SV + NF aus dem Raum: Faktor 0,5, NF aktiv")
+	_check(pr.target_radius < plain.target_radius and pr.w300 < plain.w300, "PR: Radius und Fenster enger")
 	_check(pr.n_max + pr.n300 < plain.n_max + plain.n300 or pr.n_miss > plain.n_miss,
 		"PR: gleiche Eingaben werten strenger")
 	# Ohne Mods abgespielt weicht ein PR-Lauf ab (Mods sind noetig).
@@ -367,6 +377,13 @@ func _test_rules_marker() -> void:
 	_check(not game.is_old_replay([[0, OrbitCore.EV_RULES, OrbitCore.REPLAY_RULES]]), "Marke aktuell (Satelliten)")
 	_check(OrbitCore.REPLAY_RULES == 5 and game.is_old_replay([[0, OrbitCore.EV_RULES, 4]]),
 		"Regeln 5 (Wechselschlag unter 180 ms): Marke 4 = aeltere Version")
+	# Bekannter Fehler "Cannot call method 'create_timer' on a null value": eine Warte-Folge
+	# lief nach dem Szenenwechsel weiter. _sleep bricht ausserhalb des Baums sauber ab.
+	for path in ["res://scripts/orbit/orbit_game.gd", "res://scripts/dirigent/dirigent_game.gd"]:
+		var node: Control = (load(path) as GDScript).new()
+		var alive: bool = await node._sleep(0.01)
+		_check(not alive, "%s: Warten ausserhalb der Szene bricht ab (kein create_timer auf null)" % path.get_file())
+		node.free()
 
 
 ## Wiedergabe ueber das Spiel (OrbitGame._feed_replay): gleiche Wertung, Cursor

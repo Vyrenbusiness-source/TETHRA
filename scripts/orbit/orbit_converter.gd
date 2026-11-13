@@ -21,6 +21,10 @@ const EASY_NPS := 2.5
 const SLOW_BEAT_MS := 450.0
 const FAST_BEAT_MS := 225.0
 const MIN_BEAT_MS := 330.0
+## Kein Ziel erscheint spaeter als so lange vor seiner Zeit. Die Zuteilung (welche Ziele
+## bleiben) rechnet weiter mit dem Beat-Tick der Teilrunde: gleiche Ziele, gleiche Sterne,
+## Replays bleiben gueltig; an diesen Stellen sind kurz mehr als MAX_VISIBLE Ziele da.
+const MIN_LEAD_MS := 450.0
 const MIN_HOLD_MS := 100.0
 const MAX_HOLD_MS := 6000.0
 ## Nur Messungen (QA vorher/nachher): Runden nach der Regel vor Regeln 4.
@@ -630,8 +634,16 @@ static func _assign_laps(ns: Array[OrbitNote], clock: OrbitClock, laps_req: int)
 					ok = true
 		if ok:
 			vis.append([n.spawn_ms, end])
+			n.slot_ms = n.spawn_ms
+			if not legacy_laps and n.time_ms - n.spawn_ms < MIN_LEAD_MS:
+				n.spawn_ms = minf(n.spawn_ms, clock.beat_tick_at_or_before(n.time_ms - MIN_LEAD_MS + 0.5))
 			out.append(n)
 	return out
+
+
+## Zuteilungs-Tick (siehe OrbitNote.slot_ms).
+static func _slot(n: OrbitNote) -> float:
+	return n.slot_ms if n.slot_ms >= 0.0 else n.spawn_ms
 
 
 static func _fits(vis: Array, sp: float, end: float) -> bool:
@@ -711,7 +723,7 @@ static func violations(ns: Array[OrbitNote], beatmap: Beatmap) -> Dictionary:
 		var c := 0
 		for j in range(maxi(i - 64, 0), i + 1):
 			var m := ns[j]
-			if m.spawn_ms <= n.spawn_ms and n.spawn_ms < maxf(m.end_ms, m.time_ms):
+			if _slot(m) <= _slot(n) and _slot(n) < maxf(m.end_ms, m.time_ms):
 				c += 1
 				if mania_map and j != i and m.pos.distance_to(n.pos) < SEP * 0.5:
 					v.overlap += 1

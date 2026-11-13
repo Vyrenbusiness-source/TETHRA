@@ -46,7 +46,11 @@ druecken**. Der Takt ist sichtbar und zaehlbar ("drei, zwei, eins, jetzt").
   (`read_laps`); Teilrunden zaehlen als schwer lesbar.
   Passt an dichten Stellen selbst eine Runde nicht (hoechstens 6 sichtbar), erscheint
   das Ziel auf einem spaeteren Beat mit einer Teilrunde (`laps = 0`, keine Pips); Vorlauf
-  mindestens eine halbe Runde und ein Beat. So faellt kein Ziel weg, das vor Regeln 4
+  mindestens eine halbe Runde und ein Beat, und nie unter 450 ms (`MIN_LEAD_MS`): liegt der
+  zugeteilte Tick naeher, erscheint das Ziel auf dem Beat-Tick davor. Die Zuteilung rechnet
+  weiter mit dem zugeteilten Tick (`slot_ms`), dort sind dann kurz bis zu 8 Ziele da. Die
+  Ansicht zeichnet 4 Raenge, ein Ziel dahinter ab 500 ms vor seiner Zeit (`READ_MS`).
+  So faellt kein Ziel weg, das vor Regeln 4
   da war; neue kommen nicht hinzu.
 - **Satellit**: Winkel `360 * frac((time_ms - t) / lap_ms)` gegen den Uhrzeigersinn
   gerechnet so, dass er bei `t = time_ms` exakt oben steht; gleichmaessige Geschwindigkeit

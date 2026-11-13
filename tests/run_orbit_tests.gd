@@ -22,6 +22,7 @@ func _initialize() -> void:
 	_test_spawn_on_beat()
 	_test_lap_ms()
 	_test_visible_limit()
+	_test_min_lead()
 	_test_min_gap()
 	_test_easy()
 	_test_determinism()
@@ -398,7 +399,9 @@ func _test_visible_limit() -> void:
 	for laps in [1, 2, 4]:
 		var ns := OrbitConverter.convert(bm, laps)
 		var a := OrbitConverter.analyze(ns, bm)
-		_ok(a.max_visible <= 6, "laps %d: max sichtbar %d <= 6 (%d Ziele)" % [laps, a.max_visible, ns.size()])
+		# Zuteilung: hoechstens 6. Der Mindestvorlauf (450 ms) zieht einzelne Ziele einen Beat vor: bis 8.
+		_ok(int(OrbitConverter.violations(ns, bm).visible) == 0 and a.max_visible <= 8,
+				"laps %d: Zuteilung <= 6, sichtbar %d <= 8 (%d Ziele)" % [laps, a.max_visible, ns.size()])
 	var ns4 := OrbitConverter.convert(bm, 4)
 	var min_laps := 9
 	var lead_ok := true
@@ -415,6 +418,39 @@ func _test_visible_limit() -> void:
 	var sparse := OrbitConverter.convert(bm2, 4)
 	_ok(sparse[3].laps == 4, "lockere Stellen behalten alle Runden")
 	_ok(OrbitConverter.violations(OrbitConverter.convert(bm, 2), bm).visible == 0, "violations: visible 0")
+
+
+## Fund "Noten kommen direkt": (1) Teilrunden schneller Songs erschienen nur einen Beat
+## vor der Zeit (353 ms bei 170 BPM), (2) die Ansicht zeichnet nur 4 Raenge: in dichten
+## Folgen stand ein Ziel erst 4 Abstaende vor dem Treffer da.
+func _test_min_lead() -> void:
+	print("- Mindestvorlauf 450 ms (Konverter + Ansicht)")
+	_ok(OrbitView.shown_rank(5, 1000.0, 400.0) == 5 and OrbitView.shown_rank(5, 1000.0, 520.0) == OrbitView.MAX_RANKS - 1
+			and OrbitView.shown_rank(1, 1000.0, 0.0) == 1, "Rang jenseits 4 wird ab READ_MS vor der Zeit gezeichnet")
+	for bpm in [170.0, 200.0, 260.0]:
+		var bm := _std_bm(bpm)
+		_stream(bm, 300, 88.0)
+		var ns := OrbitConverter.convert(bm, 2)
+		var min_spawn := INF
+		var min_shown := INF
+		var min_old := INF
+		var part := 0
+		for i in ns.size():
+			min_spawn = minf(min_spawn, ns[i].time_ms - ns[i].spawn_ms)
+			min_shown = minf(min_shown, ns[i].time_ms - OrbitView.first_shown_ms(ns, i))
+			min_old = minf(min_old, ns[i].time_ms - OrbitView.first_shown_ms(ns, i, OrbitView.MAX_RANKS, 0.0))
+			part += 1 if ns[i].laps == 0 else 0
+		_ok(ns.size() > 100 and (part > 0 or bpm > 180.0), "%d BPM: dichte Folge (%d Teilrunden von %d)" % [int(bpm), part, ns.size()])
+		_ok(min_spawn >= OrbitConverter.MIN_LEAD_MS - 1.0, "%d BPM: jedes Ziel erscheint >= 450 ms vorher (%.0f)" % [int(bpm), min_spawn])
+		_ok(min_shown >= OrbitConverter.MIN_LEAD_MS - 1.0, "%d BPM: jedes Ziel wird >= 450 ms vorher gezeichnet (%.0f; nur 4 Raenge: %.0f)"
+				% [int(bpm), min_shown, min_old])
+		var v := OrbitConverter.violations(ns, bm)
+		_ok(int(v.visible) == 0 and int(v.spawn) == 0 and OrbitConverter.analyze(ns, bm).max_visible <= 8,
+				"%d BPM: Zuteilung bleibt bei 6, sichtbar hoechstens 8 (%d)" % [int(bpm), OrbitConverter.analyze(ns, bm).max_visible])
+		OrbitConverter.legacy_laps = true
+		var old_n := OrbitConverter.convert(bm, 2).size()
+		OrbitConverter.legacy_laps = false
+		_ok(ns.size() >= old_n, "%d BPM: Mindestvorlauf kostet keine Ziele (%d, alt %d)" % [int(bpm), ns.size(), old_n])
 
 
 func _test_min_gap() -> void:
@@ -552,6 +588,7 @@ func _test_library() -> void:
 	var bad_maps := 0
 	var tot := {}
 	var worst_vis := 0
+	var min_lead := INF
 	var stars_list: Array[float] = []
 	var easy_stars: Array[float] = []
 	var errs := 0
@@ -581,6 +618,8 @@ func _test_library() -> void:
 						print("  Verstoss %s [%s] laps %d: %s" % [str(f).left(30), bm.version_name(), laps, str(v)])
 				if laps == 2:
 					worst_vis = maxi(worst_vis, OrbitConverter.analyze(ns).max_visible)
+					for i in ns.size():
+						min_lead = minf(min_lead, ns[i].time_ms - OrbitView.first_shown_ms(ns, i))
 					if ns.size() >= 20:
 						var s := OrbitConverter.stars(ns)
 						stars_list.append(s)
@@ -588,7 +627,8 @@ func _test_library() -> void:
 							easy_stars.append(s)
 	print("  %d Diffs, Verstoesse %s" % [maps, str(tot)])
 	_ok(maps > 0 and bad_maps == 0, "ganze Bibliothek ohne Verstoss (%d Diffs x 3 Vorlaeufe)" % maps)
-	_ok(worst_vis <= 6, "nie mehr als 6 sichtbar (%d)" % worst_vis)
+	_ok(worst_vis <= 8, "nie mehr als 8 sichtbar (Zuteilung 6 + Mindestvorlauf; %d)" % worst_vis)
+	_ok(min_lead >= OrbitConverter.MIN_LEAD_MS - 1.0, "jedes Ziel der Bibliothek steht >= 450 ms vor seiner Zeit da (%.0f)" % min_lead)
 	if stars_list.size() > 20:
 		stars_list.sort()
 		var med := stars_list[stars_list.size() / 2]
