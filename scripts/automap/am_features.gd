@@ -45,8 +45,14 @@ const DEFAULTS := {
 	"mask_decay_db": 1.0,        # so schnell (dB je Frame) faellt die Verdeckung nach einem gehaltenen Ton
 	"median_time": 9,            # Frames (ungerade), harmonisch
 	"median_freq": 5,            # Baender (ungerade), perkussiv
-	"onset_shift_ms": 3.0,       # Ausgleich der Fensterlage (per Klick-Test bestimmt)
-	"shift_low_ms": 3.0,         # dasselbe fuer Kick/Bass (tiefe Toene bauen sich langsamer auf)
+	# Lage der Anschlagzeit gegen den Fluss-Gipfel. Absolut per Klick-Test (onset_shift_ms), die
+	# Gruppen relativ dazu gegen die Menschen-Maps abgestimmt (docs/automap/features.md): der Gipfel
+	# liegt bei Kick/Bass 14..18 ms und bei Ton/Stimme 6..10 ms spaeter als bei Snare/Hat. Ein
+	# Zurueckgehen an den Beginn des Anstiegs aenderte daran nichts (fester Versatz).
+	"onset_shift_ms": 3.0,       # Snare/Hat/other
+	"shift_low_ms": -13.0,       # Kick/Bass
+	"shift_harm_ms": -5.0,       # Instrument/Stimme
+	"kick_min": 0.25,            # schwaechere Kicks (perkussive Staerke, normiert) lagen in der Messung auf Zufallsniveau
 	"hold_ratio": 0.5,           # Pegel 3..5 Frames nach dem Einsatz (Zeit-Median) / Spitze: darueber ein Ton
 	"min_flux": 0.6,             # kleinster Anstieg (Log-Einheiten), der als Anschlag zaehlt
 	"min_gap_ms": 45.0,          # Mindestabstand zweier Anschlaege derselben Ebene
@@ -842,7 +848,10 @@ static func analyze(pcm: PackedFloat32Array, rate: int, params: Dictionary = {})
 			continue
 		# Kick nur, wenn die Leistung unter 150 Hz traegt: der Einsatz eines Tons in den Mitten (Stimme,
 		# Instrument) leckt ueber die Hauptkeule des Fensters auch nach unten.
-		if _rise(w_lo, f, frames) >= k_ratio * _rise(w_pm, f, frames):
+		var r_lo := _rise(w_lo, f, frames)
+		if r_lo >= k_ratio * _rise(w_pm, f, frames):
+			# Staerke aus der perkussiven Leistung: ein liegender Bass senkt den Roh-Anstieg, nicht diese.
+			e[1] = sqrt(r_lo)
 			kicks.append(e)
 	var basses: Array = []
 	for e in bass_c:
@@ -864,6 +873,8 @@ static func analyze(pcm: PackedFloat32Array, rate: int, params: Dictionary = {})
 		else:
 			mids.append(e)
 	_normalize(kicks)
+	var k_min: float = p.kick_min
+	kicks = kicks.filter(func(e: Array) -> bool: return float(e[1]) >= k_min)
 	_normalize(mids)
 	_normalize(hats)
 	_normalize(basses)
@@ -973,7 +984,7 @@ static func analyze(pcm: PackedFloat32Array, rate: int, params: Dictionary = {})
 			f_next = int(kept[i + 1][2])
 		var sus := _sustain(hp.hb[bnd], f, mini(f_next, f + sus_max_f), sus_keep) * frame_ms
 		var pos := _pos(hz, p.vocal_pitch_lo_hz, p.vocal_pitch_hi_hz) if is_voc else _pos(hz, p.tonal_pitch_lo_hz, p.tonal_pitch_hi_hz)
-		events.append({"t_ms": maxf(0.0, float(e[0]) * frame_ms + shift), "strength": e[1],
+		events.append({"t_ms": maxf(0.0, float(e[0]) * frame_ms + float(p.shift_harm_ms)), "strength": e[1],
 				"kind": "vocal" if is_voc else "tonal", "pitch": pos,
 				"sustain_ms": sus if sus >= sus_min else 0.0})
 	events.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.t_ms < b.t_ms)

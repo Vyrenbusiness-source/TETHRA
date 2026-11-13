@@ -327,8 +327,10 @@ func _test_noise() -> void:
 	var k := 0
 	var s := 0
 	var h := 0
+	# Kick: Zeitlage gegen die Menschen-Maps abgestimmt (shift_low_ms); echte Kicks bauen den Tiefton
+	# langsamer auf als dieser kuenstliche mit sofortigem Einsatz, daher hier 20 ms statt 12 ms.
 	for t in kk:
-		if not _find(an, ["kick"], t, 12.0).is_empty():
+		if not _find(an, ["kick"], t, 20.0).is_empty():
 			k += 1
 	for t in sn:
 		if not _find(an, ["snare"], t, 12.0).is_empty():
@@ -337,7 +339,7 @@ func _test_noise() -> void:
 		if not _find(an, ["hat"], t, 12.0).is_empty():
 			h += 1
 	print("  schlagzeug: kick %d/6, snare %d/6, hat %d/6, %s" % [k, s, h, _count(an)])
-	_ok(k == 6, "schlagzeug: tiefer Schlag -> kick innerhalb 12 ms")
+	_ok(k == 6, "schlagzeug: tiefer Schlag -> kick innerhalb 20 ms")
 	_ok(s == 6, "schlagzeug: breites Rauschen -> snare innerhalb 12 ms")
 	_ok(h == 6, "schlagzeug: hohes Rauschen -> hat innerhalb 12 ms")
 	var wrong := 0
