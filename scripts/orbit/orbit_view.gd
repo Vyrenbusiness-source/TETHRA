@@ -44,14 +44,16 @@ const BAND_K := 1.4
 ## Quadrat-Halbseite und Eckenradius relativ zum Zielradius.
 const SQUARE_K := 0.86
 const CORNER_K := 0.34
-const LATER_ALPHA := 0.45
+const LATER_ALPHA := 0.62
 ## Lesbarkeit: Ring + Satellit nur fuer die naechsten RING_RANKS Zeitpunkte, danach nur die
 ## Form (blasser); mehr als MAX_RANKS kommende Zeitpunkte werden nicht gezeigt.
 const RING_RANKS := 2
 const MAX_RANKS := 4
-const FAR_ALPHA := 0.3
+const FAR_ALPHA := 0.4
 const POP_IN_MS := 90.0
-const HIT_MS := 220.0
+const HIT_MS := 150.0
+## Nachleuchten: feiner Ring in Stufenfarbe bleibt etwas laenger stehen.
+const GLOW_MS := 210.0
 const HIT_FLASH_MS := 70.0
 ## Treffer: Schatten des Orbit-Rings mit Druck-Punkt (frueh/spaet) so lange sichtbar.
 const PRESS_DOT_MS := 300.0
@@ -74,9 +76,8 @@ const FP_IN_SPREAD := 180.0
 const FP_IN_MS := 120.0
 const FP_OUT_MS := 90.0
 ## Koerper-Verlauf: Mitte heller, Rand oben/unten dunkler (Anteile).
-const GRAD_IN := 0.10
-const GRAD_TOP := 0.06
-const GRAD_BOTTOM := 0.30
+const GRAD_TOP := 0.16
+const GRAD_BOTTOM := 0.34
 const PRESS_MS := 560.0
 const LOCK_MS := 170.0
 const MAX_PRESS := 6
@@ -95,21 +96,30 @@ const RESUME_REAL_MS := 350
 const FOLLOW_TIP_MS := 900.0
 ## Erst-Hinweis (Akzent/Halten/Stapel, einmal je Sitzung): Hoechstdauer.
 const HINT_MS := 2600.0
-const HINT_COL := Color(0.92, 0.94, 1.0)
+const HINT_COL := Color(0.925, 0.902, 0.855)
 
 ## Farben (auch von OrbitResults/OrbitTutorial genutzt: INNER = A, OUTER = B).
-const A_COL := Color(0.38, 0.74, 1.0)
-const B_COL := Color(1.0, 0.60, 0.30)
+const A_COL := Color(0.36, 0.69, 0.96)
+const B_COL := Color(0.97, 0.62, 0.25)
+## Warmes Weiss fuer Linien/Raender (UiTheme.TEXT) und Bernstein (UiTheme.ACCENT).
+const INK := Color(0.925, 0.902, 0.855)
+const AMBER := Color(0.949, 0.635, 0.227)
+## Spielflaeche: Graphit-Buehne ueber die volle Hoehe (nur mit show_stage).
+const STAGE_TOP := Color(0.102, 0.098, 0.091, 0.95)
+const STAGE_BOTTOM := Color(0.060, 0.057, 0.053, 0.97)
+const STAGE_PAD_K := 0.09
+const GRID_X := 8
+const GRID_Y := 6
 const INNER_COL := A_COL
 const OUTER_COL := B_COL
 const MISS_COL := Color(0.50, 0.52, 0.58)
 const MAX_COL := Color(1.0, 0.96, 0.86)
-const PLATE_COL := Color(0.012, 0.016, 0.028)
+const PLATE_COL := Color(0.030, 0.028, 0.026)
 const EARLY_COL := Color(0.45, 0.80, 1.00)
 const LATE_COL := Color(1.00, 0.58, 0.45)
 const MISS_X_COL := Color(0.95, 0.42, 0.42)
 const HEAD_COL := Color(0.97, 0.97, 1.0)
-const LINE_COL := Color(0.82, 0.88, 1.0)
+const LINE_COL := Color(0.925, 0.902, 0.855)
 const WARN_COL := Color(1.0, 0.36, 0.32)
 
 const ST_PENDING := 0
@@ -152,6 +162,9 @@ var cursor_k := 1.0
 ## key_hint). Nicht "aus": das naechste Ziel traegt immer seinen Buchstaben und
 ## Erst-Hinweise erscheinen.
 var hint_mode := -1
+## Buehne (definierte Spielflaeche) zeichnen: nur das Spiel setzt das; Vorschau,
+## Tutorial und Endbild zeigen nur die Feld-Ecken.
+var show_stage := false
 
 ## Erst-Hinweise je Sitzung (Prozess): Art -> schon gezeigt.
 static var _seen_hints: Dictionary = {}
@@ -177,6 +190,8 @@ var _lock_idx := -1
 var _square := PackedVector2Array()
 var _half_a := PackedVector2Array()
 var _half_b := PackedVector2Array()
+var _grid := PackedVector2Array()
+var _grid_for := Rect2()
 var _disk := PackedVector2Array()
 ## Cursor-Spur: Feld-Positionen und Songzeiten.
 var _trail_p := PackedVector2Array()
@@ -245,6 +260,20 @@ func field_rect() -> Rect2:
 		w = s.x * 0.96
 		h = w / ASPECT
 	return Rect2((s - Vector2(w, h)) * 0.5, Vector2(w, h))
+
+
+## Buehne in Pixeln: Feld plus Rand links/rechts, volle Hoehe.
+func stage_rect() -> Rect2:
+	var fr := field_rect()
+	var m := fr.size.y * STAGE_PAD_K
+	var x0 := maxf(fr.position.x - m, 0.0)
+	var x1 := minf(fr.end.x + m, size.x)
+	return Rect2(x0, 0.0, x1 - x0, size.y)
+
+
+## Einheitliche Strichstaerke (fein) zu einem Zielradius.
+static func _lw(R: float) -> float:
+	return maxf(1.5, R * 0.05)
 
 
 ## Pixel je Feld-Einheit fuer Radien (Feldhoehe).
@@ -548,10 +577,12 @@ func _draw_target(i: int, n: OrbitNote, R: float, alpha: float, is_next: bool,
 		c.x += sin(k * TAU * 3.0) * R * 0.12 * (1.0 - k)
 	var r := R * _pop_scale(n, t)
 	var ring_r := r * ORBIT_K
-	var lw := maxf(1.5, R * 0.05)
-	# Orbit-Ring (Puls nur Helligkeit/Breite, dezent).
-	var ring_a := (lerpf(0.22, 0.30, em) + 0.08 * kiai + 0.2 * pulse) * alpha
-	draw_arc(c, ring_r, 0.0, TAU, 80, Color(1, 1, 1, ring_a), lw * (1.0 + 0.4 * pulse), true)
+	var lw := _lw(R)
+	# Orbit-Ring als Bahn: dunkle Nut, darin die feine helle Linie (Puls nur
+	# Helligkeit/Breite, dezent).
+	var ring_a := (lerpf(0.26, 0.40, em) + 0.08 * kiai + 0.2 * pulse) * alpha
+	draw_arc(c, ring_r, 0.0, TAU, 80, Color(0, 0, 0, 0.34 * alpha), lw * 3.0, true)
+	draw_arc(c, ring_r, 0.0, TAU, 80, Color(INK, ring_a), lw * (1.0 + 0.4 * pulse), true)
 	var sa := _sat_alpha(n, t) * alpha
 	var deg := n.satellite_deg(t)
 	# Letzte Runde: Rest bis zur Marke heller (zaehlt "jetzt" herunter).
@@ -560,10 +591,12 @@ func _draw_target(i: int, n: OrbitNote, R: float, alpha: float, is_next: bool,
 		var a1 := TAU - PI * 0.5
 		if a1 > a0 + 0.02:
 			draw_arc(c, ring_r, a0, a1, maxi(6, int(64.0 * (a1 - a0) / TAU)),
-					Color(1, 1, 1, 0.5 * sa), lw * 1.35, true)
+					Color(1, 1, 1, 0.62 * sa), lw * 1.6, true)
 	# Marke oben: kurzer kraeftiger Querstrich durch den Ring.
 	var mk := Color(1, 1, 1, lerpf(0.75, 1.0, em) * alpha)
 	var mh := R * 0.2
+	draw_line(c + Vector2(0, -ring_r + mh + 1.5), c + Vector2(0, -ring_r - mh - 1.5),
+			Color(0, 0, 0, 0.55 * alpha), lw * 2.2 + 3.0, true)
 	draw_line(c + Vector2(0, -ring_r + mh), c + Vector2(0, -ring_r - mh), mk, lw * 2.2, true)
 	# Ziel.
 	_draw_body(c, r, n.key, alpha, em)
@@ -599,36 +632,40 @@ func _draw_target(i: int, n: OrbitNote, R: float, alpha: float, is_next: bool,
 	draw_circle(sp, sr, Color(1, 1, 1, sa), true, -1.0, true)
 
 
-## em 0..1 = Hervorhebung (1 = naechstes Ziel: heller, weisser Rand). Unter dem
-## Koerper liegt eine dunkle, fast deckende Platte: gedimmte Ziele bleiben
-## geschlossene Flaechen, nichts scheint durch.
+## em 0..1 = Hervorhebung (1 = naechstes Ziel: heller, weisser Rand). Aufbau von
+## unten: weicher Schatten, dunkle fast deckende Platte (gedimmte Ziele bleiben
+## geschlossene Flaechen), Verlauf oben hell / unten dunkel, dunkle Kontur,
+## heller Rand, feine Innenkante, Lichtkante oben.
 func _draw_body(c: Vector2, r: float, key: int, alpha: float, em: float) -> void:
 	var strong := em > 0.5
-	var rim_w := maxf(1.6, r * lerpf(0.065, 0.085, em))
-	var dark := lerpf(0.46, 0.30, em)
-	var rim_a := Color(A_COL.lightened(0.45), 0.85 * alpha).lerp(Color(1, 1, 1, alpha), em)
-	var rim_b := Color(B_COL.lightened(0.45), 0.85 * alpha).lerp(Color(1, 1, 1, alpha), em)
-	var edge := Color(0, 0, 0, 0.35 * alpha)
-	var plate := Color(PLATE_COL, minf(alpha * 2.4, 0.94))
+	var lw := _lw(r)
+	var rim_w := maxf(2.0, r * 0.075)
+	var dark := lerpf(0.36, 0.14, em)
+	var rim_a := Color(A_COL.lightened(0.5), 0.9 * alpha).lerp(Color(1, 1, 1, alpha), em)
+	var rim_b := Color(B_COL.lightened(0.5), 0.9 * alpha).lerp(Color(1, 1, 1, alpha), em)
+	var edge := Color(0, 0, 0, 0.5 * alpha)
+	var inner := Color(0, 0, 0, 0.28 * alpha)
+	var shine := Color(1, 1, 1, lerpf(0.10, 0.26, em) * alpha)
+	var plate := Color(PLATE_COL, minf(alpha * 2.4, 0.96))
+	var sq := key == OrbitNote.KEY_B
+	# Flaeche kraeftiger als Rand/Ring: auch spaetere Ziele bleiben farbige Objekte.
+	var fa := minf(1.0, alpha * 1.35)
+	_draw_shadow(c, r, sq, alpha)
 	match key:
 		OrbitNote.KEY_B:
 			var h := r * SQUARE_K
-			var pts := PackedVector2Array()
-			for p in _square:
-				pts.append(c + p * h)
+			var pts := _square_pts(c, h, false)
 			draw_colored_polygon(pts, plate)
-			_fill_grad(c, r, pts, B_COL.darkened(dark), alpha)
-			var outer := PackedVector2Array()
-			for p in _square:
-				outer.append(c + p * (h + 0.75))
-			outer.append(outer[0])
-			draw_polyline(outer, edge, 1.5, true)
-			var inner := PackedVector2Array()
-			var hi := h - rim_w * 0.5
-			for p in _square:
-				inner.append(c + p * hi)
-			inner.append(inner[0])
-			draw_polyline(inner, rim_b, rim_w, true)
+			_fill_grad(c, h, pts, B_COL.darkened(dark), fa)
+			draw_polyline(_square_pts(c, h + 0.75, true), edge, 1.5, true)
+			draw_polyline(_square_pts(c, h - rim_w * 0.5, true), rim_b, rim_w, true)
+			draw_polyline(_square_pts(c, h - rim_w - lw * 0.3, true), inner, lw * 0.7, true)
+			# Lichtkante: obere Seite der Innenflaeche (Ecke links bis Ecke rechts).
+			var hs := h - rim_w - lw * 1.6
+			var top := PackedVector2Array()
+			for k in range(17, 26):
+				top.append(c + _square[k] * hs)
+			draw_polyline(top, shine, lw * 0.8, true)
 		OrbitNote.KEY_ACCENT:
 			var pa := PackedVector2Array()
 			var pb := PackedVector2Array()
@@ -637,27 +674,53 @@ func _draw_body(c: Vector2, r: float, key: int, alpha: float, em: float) -> void
 			for p in _half_b:
 				pb.append(c + p * r)
 			draw_circle(c, r, plate, true, -1.0, true)
-			_fill_grad(c + Vector2(-r * 0.4, 0.0), r, pa, A_COL.darkened(dark), alpha)
-			_fill_grad(c + Vector2(r * 0.4, 0.0), r, pb, B_COL.darkened(dark), alpha)
+			_fill_grad(c, r, pa, A_COL.darkened(dark), fa)
+			_fill_grad(c, r, pb, B_COL.darkened(dark), fa)
 			draw_arc(c, r + 0.75, 0.0, TAU, 64, edge, 1.5, true)
-			draw_arc(c, r - rim_w * 0.6, 0.0, TAU, 64, Color(1, 1, 1, alpha), rim_w * 1.2, true)
+			draw_arc(c, r - rim_w * 0.5, 0.0, TAU, 64, Color(1, 1, 1, alpha), rim_w, true)
+			draw_arc(c, r - rim_w - lw * 0.3, 0.0, TAU, 64, inner, lw * 0.7, true)
+			draw_arc(c, r - rim_w - lw * 1.6, -PI * 0.82, -PI * 0.18, 24, shine, lw * 0.8, true)
 			# Doppelrand: zweiter feiner Ring aussen = "beide Tasten".
-			var r2 := r + rim_w * 1.5
-			draw_arc(c, r2 + 1.0, 0.0, TAU, 64, edge, maxf(1.2, rim_w * 0.6) + 2.0, true)
-			draw_arc(c, r2, 0.0, TAU, 64, Color(1, 1, 1, (0.95 if strong else 0.7) * alpha),
-					maxf(1.2, rim_w * 0.6), true)
+			var r2 := r + rim_w * 1.4
+			draw_arc(c, r2, 0.0, TAU, 64, edge, lw + 2.5, true)
+			draw_arc(c, r2, 0.0, TAU, 64, Color(1, 1, 1, (0.95 if strong else 0.7) * alpha), lw, true)
 		_:
 			var pts := PackedVector2Array()
 			for p in _disk:
 				pts.append(c + p * r)
 			draw_circle(c, r, plate, true, -1.0, true)
-			_fill_grad(c, r, pts, A_COL.darkened(dark), alpha)
+			_fill_grad(c, r, pts, A_COL.darkened(dark), fa)
 			draw_arc(c, r + 0.75, 0.0, TAU, 64, edge, 1.5, true)
 			draw_arc(c, r - rim_w * 0.5, 0.0, TAU, 64, rim_a, rim_w, true)
+			draw_arc(c, r - rim_w - lw * 0.3, 0.0, TAU, 64, inner, lw * 0.7, true)
+			draw_arc(c, r - rim_w - lw * 1.6, -PI * 0.82, -PI * 0.18, 24, shine, lw * 0.8, true)
 
 
-## Flaeche mit dezentem Innenverlauf: Faecher um c (Mitte etwas heller), Rand
-## oben kaum, unten etwas dunkler. outline = konvexer Umriss um c.
+## Abgerundetes Quadrat um c mit Halbseite h (closed: erster Punkt am Ende noch einmal).
+func _square_pts(c: Vector2, h: float, closed: bool) -> PackedVector2Array:
+	var pts := PackedVector2Array()
+	for p in _square:
+		pts.append(c + p * h)
+	if closed:
+		pts.append(pts[0])
+	return pts
+
+
+## Weicher Schatten unter einem Ziel: drei gestaffelte dunkle Flaechen, leicht
+## nach unten versetzt (kein Shader).
+func _draw_shadow(c: Vector2, r: float, square: bool, alpha: float) -> void:
+	var o := c + Vector2(0.0, r * 0.09)
+	for k in 3:
+		var g := 1.0 + 0.055 * float(3 - k)
+		var col := Color(0, 0, 0, 0.13 * alpha)
+		if square:
+			draw_colored_polygon(_square_pts(o, r * SQUARE_K * g, false), col)
+		else:
+			draw_circle(o, r * g, col, true, -1.0, true)
+
+
+## Flaeche mit senkrechtem Verlauf: Faecher um c, oben heller, unten dunkler.
+## outline = konvexer Umriss um c.
 func _fill_grad(c: Vector2, r: float, outline: PackedVector2Array, base: Color, alpha: float) -> void:
 	var n := outline.size()
 	if n < 3:
@@ -668,10 +731,15 @@ func _fill_grad(c: Vector2, r: float, outline: PackedVector2Array, base: Color, 
 	cols.resize(n + 1)
 	var idx := PackedInt32Array()
 	idx.resize(n * 3)
-	pts[0] = c
-	cols[0] = Color(base.lightened(GRAD_IN), alpha)
-	var top := Color(base.darkened(GRAD_TOP), alpha)
+	var top := Color(base.lightened(GRAD_TOP), alpha)
 	var bottom := Color(base.darkened(GRAD_BOTTOM), alpha)
+	# Mitte = Schwerpunkt des Umrisses, damit auch Halbscheiben sauber verlaufen.
+	var mid := Vector2.ZERO
+	for q in outline:
+		mid += q
+	mid /= float(n)
+	pts[0] = mid
+	cols[0] = top.lerp(bottom, clampf((mid.y - c.y) / maxf(r, 1.0), -1.0, 1.0) * 0.5 + 0.5)
 	for k in n:
 		pts[k + 1] = outline[k]
 		var dy := clampf((outline[k].y - c.y) / maxf(r, 1.0), -1.0, 1.0)
@@ -857,25 +925,60 @@ func _band_free(rc: Rect2, vis: Array[int], R: float) -> bool:
 	return true
 
 
-## Ecken des 4:3-Felds: kurze, dezente Winkel.
+## Spielflaeche. Mit show_stage: Graphit-Buehne ueber die volle Hoehe (weicher
+## Schatten nach aussen, feine Lichtkanten), darin ein feines Raster aus
+## Passkreuzen und die Feld-Ecken. Ohne: nur die Ecken.
 func _draw_marks() -> void:
 	var fr := field_rect()
-	var l := fr.size.y * 0.035
 	var k := clampf(kiai, 0.0, 1.0)
-	var col := Color(1, 1, 1, 0.14 + 0.06 * k)
 	var w := maxf(1.0, fr.size.y * 0.0022)
-	# Kiai: feiner Rahmen, pulst sehr dezent im Beat (Musik-Reaktion aus = ruhig).
-	if k > 0.01:
+	if show_stage:
+		var st := stage_rect()
+		var sw := fr.size.y * 0.06
+		var sh := Color(0, 0, 0, 0.55)
+		var s0 := Color(0, 0, 0, 0.0)
+		if st.position.x > 1.0:
+			draw_polygon(PackedVector2Array([Vector2(st.position.x - sw, 0.0), Vector2(st.position.x, 0.0),
+					Vector2(st.position.x, st.end.y), Vector2(st.position.x - sw, st.end.y)]),
+					PackedColorArray([s0, sh, sh, s0]))
+			draw_polygon(PackedVector2Array([Vector2(st.end.x, 0.0), Vector2(st.end.x + sw, 0.0),
+					Vector2(st.end.x + sw, st.end.y), Vector2(st.end.x, st.end.y)]),
+					PackedColorArray([sh, s0, s0, sh]))
+		draw_polygon(PackedVector2Array([st.position, Vector2(st.end.x, 0.0), st.end, Vector2(st.position.x, st.end.y)]),
+				PackedColorArray([STAGE_TOP, STAGE_TOP, STAGE_BOTTOM, STAGE_BOTTOM]))
+		# Lichtkanten links/rechts: im Kiai leicht bernstein, pulst sehr dezent.
+		var ec := Color(INK, 0.16).lerp(Color(AMBER, 0.30 + 0.25 * _pulse()), k)
+		var ein := Color(1, 1, 1, 0.035)
+		for x: float in [st.position.x, st.end.x]:
+			var d := 1.0 if x == st.position.x else -1.0
+			draw_line(Vector2(x + d * w * 0.5, 0.0), Vector2(x + d * w * 0.5, st.end.y), ec, w)
+			draw_line(Vector2(x + d * w * 2.5, 0.0), Vector2(x + d * w * 2.5, st.end.y), ein, w)
+		# Raster: Passkreuze an den Teilpunkten des Felds (ein Aufruf).
+		if _grid_for != fr:
+			_grid_for = fr
+			_grid = PackedVector2Array()
+			var gl := maxf(2.5, fr.size.y * 0.006)
+			for gy in range(0, GRID_Y + 1):
+				for gx in range(0, GRID_X + 1):
+					var gp := (fr.position + fr.size * Vector2(float(gx) / GRID_X, float(gy) / GRID_Y)).round() + Vector2(0.5, 0.5)
+					_grid.append(gp - Vector2(gl, 0.0))
+					_grid.append(gp + Vector2(gl, 0.0))
+					_grid.append(gp - Vector2(0.0, gl))
+					_grid.append(gp + Vector2(0.0, gl))
+		draw_multiline(_grid, Color(INK, 0.075), maxf(1.0, w * 0.8))
+	elif k > 0.01:
+		# Kiai: feiner Rahmen, pulst sehr dezent im Beat (Musik-Reaktion aus = ruhig).
 		var fa := k * (0.035 + 0.075 * _pulse())
-		draw_rect(fr.grow(w * 2.0), Color(LINE_COL, fa * 0.35), false, w * 4.0, true)
 		draw_rect(fr, Color(LINE_COL, fa), false, w, true)
+	var l := fr.size.y * 0.035
+	var col := Color(INK, (0.30 if show_stage else 0.14) + 0.06 * k)
 	var cs := [fr.position, Vector2(fr.end.x, fr.position.y), fr.end, Vector2(fr.position.x, fr.end.y)]
 	var dx := [1.0, -1.0, -1.0, 1.0]
 	var dy := [1.0, 1.0, -1.0, -1.0]
 	for j in 4:
 		var p: Vector2 = cs[j]
-		draw_line(p, p + Vector2(l * dx[j], 0.0), col, w, true)
-		draw_line(p, p + Vector2(0.0, l * dy[j]), col, w, true)
+		draw_line(p, p + Vector2(l * dx[j], 0.0), col, w * 1.3, true)
+		draw_line(p, p + Vector2(0.0, l * dy[j]), col, w * 1.3, true)
 
 
 func _band_points(n: OrbitNote) -> PackedVector2Array:
@@ -970,20 +1073,25 @@ func _draw_band_detail(n: OrbitNote, R: float, alpha: float, index: int = -1) ->
 	draw_string(f, p, text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(col, 0.9 * a))
 
 
+## Halten-Band als Schiene: weicher Schatten, heller Rand, dunkler Koerper,
+## etwas hellere Mittelbahn (Tiefe ohne Shader), am Ende ein kleiner Ring.
 func _draw_band_body(n: OrbitNote, R: float, alpha: float) -> void:
 	var pts := _band_points(n)
 	var col := key_col(n.key)
 	var w := R * BAND_K
-	var rim := maxf(1.5, R * 0.05)
-	var edge := Color(col.lightened(0.3), 0.40 * alpha)
-	var body := Color(col.darkened(0.68), 0.62 * alpha)
-	draw_polyline(pts, edge, w, true)
-	draw_circle(pts[pts.size() - 1], w * 0.5, edge, true, -1.0, true)
-	draw_polyline(pts, body, w - rim * 2.0, true)
-	draw_circle(pts[pts.size() - 1], w * 0.5 - rim, body, true, -1.0, true)
-	# Ende: kleiner Ring.
-	draw_arc(pts[pts.size() - 1], R * 0.36, 0.0, TAU, 40, Color(col.lightened(0.5), 0.7 * alpha),
-			maxf(1.5, R * 0.06), true)
+	var rim := _lw(R) * 1.2
+	var last := pts[pts.size() - 1]
+	var shadow := Color(0, 0, 0, 0.22 * alpha)
+	var edge := Color(col.lightened(0.25), 0.62 * alpha)
+	var body := Color(col.darkened(0.74), 0.9 * alpha)
+	var lane := Color(col.darkened(0.58), 0.55 * alpha)
+	var layers := [[w + R * 0.22, shadow], [w, edge], [w - rim * 2.0, body], [w * 0.5, lane]]
+	for ly in layers:
+		var lw2: float = ly[0]
+		draw_polyline(pts, ly[1], lw2, true)
+		draw_circle(pts[0], lw2 * 0.5, ly[1], true, -1.0, true)
+		draw_circle(last, lw2 * 0.5, ly[1], true, -1.0, true)
+	draw_arc(last, R * 0.36, 0.0, TAU, 40, Color(col.lightened(0.5), 0.75 * alpha), _lw(R) * 1.3, true)
 
 
 ## Folgepunkte wie osu!: feine Pfeile zwischen aufeinanderfolgenden
@@ -1072,8 +1180,13 @@ func _draw_ball(i: int, n: OrbitNote, R: float, t: float) -> void:
 	if rest > 0.01:
 		draw_arc(bp, fr, -PI * 0.5, -PI * 0.5 + TAU * rest, maxi(8, int(72.0 * rest)),
 				Color(1, 1, 1, 0.9).lerp(Color(WARN_COL, 0.95), warn), maxf(2.4, R * 0.12), true)
-	draw_circle(bp, R * 0.6, Color(col.darkened(0.15), 1.0), true, -1.0, true)
-	draw_arc(bp, R * 0.6, 0.0, TAU, 48, Color(1, 1, 1, 0.95), maxf(2.0, R * 0.11), true)
+	_draw_shadow(bp, R * 0.6, false, 1.0)
+	var bpts := PackedVector2Array()
+	for q in _disk:
+		bpts.append(bp + q * R * 0.6)
+	_fill_grad(bp, R * 0.6, bpts, col.darkened(0.1), 1.0)
+	draw_arc(bp, R * 0.6 + 0.75, 0.0, TAU, 48, Color(0, 0, 0, 0.5), 1.5, true)
+	draw_arc(bp, R * 0.6 - R * 0.05, 0.0, TAU, 48, Color(1, 1, 1, 0.97), maxf(2.0, R * 0.1), true)
 	# "folgen": kurz zu Beginn des Haltens und wenn die Kugel wegzulaufen droht.
 	var since := t - _state_t[i]
 	var ta := maxf(1.0 - smoothstep(FOLLOW_TIP_MS * 0.6, FOLLOW_TIP_MS, since), warn)
@@ -1127,32 +1240,39 @@ func _draw_fx(i: int, n: OrbitNote, R: float, t: float, nxt: int = -1) -> void:
 ## beim Druck stand (links = frueh, rechts = spaet), nur unterhalb der besten Stufe.
 func _draw_hit_fx(i: int, n: OrbitNote, p: Vector2, R: float, dt: float, with_dot: bool) -> void:
 	var qcol: Color = JudgeDisplay.COLORS[clampi(_state_q[i], 0, 5)]
+	var kc := Color.WHITE if n.key == OrbitNote.KEY_ACCENT else key_col(n.key).lightened(0.4)
 	if dt < HIT_MS:
 		var k := dt / HIT_MS
 		var e := 1.0 - pow(1.0 - k, 3.0)
-		var a := (1.0 - k) * (1.0 - 0.4 * k)
-		# Kurzer, schwacher Schein auf der Flaeche (nur am Anfang).
+		var a := (1.0 - k) * (1.0 - k)
+		# Kurzes Aufleuchten der Zielflaeche in ihrer Form (nur am Anfang).
 		if dt < HIT_FLASH_MS:
-			var fc := Color.WHITE if n.key == OrbitNote.KEY_ACCENT else key_col(n.key).lightened(0.35)
-			draw_circle(p, R * lerpf(0.95, 1.1, e), Color(fc, 0.2 * (1.0 - dt / HIT_FLASH_MS)),
-					true, -1.0, true)
-		# Ring in Tastenfarbe (Akzent: halb/halb), dehnt sich aus und blendet.
-		var r1 := R * lerpf(1.0, 1.28, e)
-		var w1 := maxf(1.5, R * 0.085 * (1.0 - 0.6 * k))
+			var fa0 := 0.32 * (1.0 - dt / HIT_FLASH_MS)
+			if n.key == OrbitNote.KEY_B:
+				draw_colored_polygon(_square_pts(p, R * SQUARE_K * lerpf(1.0, 1.06, e), false), Color(kc, fa0))
+			else:
+				draw_circle(p, R * lerpf(1.0, 1.06, e), Color(kc, fa0), true, -1.0, true)
+		# Umriss in Zielform und Tastenfarbe springt nach aussen und wird duenner.
+		var w1 := maxf(1.5, R * 0.11 * (1.0 - 0.7 * e))
 		if n.key == OrbitNote.KEY_ACCENT:
-			draw_arc(p, r1, PI * 0.5, PI * 1.5, 32, Color(A_COL.lightened(0.3), 0.85 * a), w1, true)
-			draw_arc(p, r1, -PI * 0.5, PI * 0.5, 32, Color(B_COL.lightened(0.3), 0.85 * a), w1, true)
+			var r1 := R * lerpf(1.0, 1.24, e)
+			draw_arc(p, r1, PI * 0.5, PI * 1.5, 32, Color(A_COL.lightened(0.35), 0.95 * a), w1, true)
+			draw_arc(p, r1, -PI * 0.5, PI * 0.5, 32, Color(B_COL.lightened(0.35), 0.95 * a), w1, true)
 		else:
-			draw_arc(p, r1, 0.0, TAU, 56, Color(key_col(n.key).lightened(0.3), 0.85 * a), w1, true)
-		# Aussen ein feiner Ring in Stufenfarbe (MAX/300/200/...).
-		var r2 := R * lerpf(1.06, 1.46, e)
-		draw_arc(p, r2, 0.0, TAU, 64, Color(qcol, 0.6 * a), maxf(1.2, R * 0.04), true)
+			_draw_outline(p, R * lerpf(1.0, 1.24, e), n.key, Color(kc, 0.95 * a), w1)
+	# Nachleuchten: feiner Ring in Stufenfarbe (CORE/SHARP/...), dehnt sich
+	# langsamer und blendet weich aus.
+	if dt < GLOW_MS:
+		var g := dt / GLOW_MS
+		var ge := 1.0 - pow(1.0 - g, 4.0)
+		draw_arc(p, R * lerpf(1.1, 1.42, ge), 0.0, TAU, 64, Color(qcol, 0.6 * (1.0 - g) * (1.0 - g)),
+				_lw(R), true)
 	# Nur wenn der Druck nicht in der besten Stufe lag: sonst bleibt es ruhig.
 	if not with_dot or dt >= PRESS_DOT_MS or _state_q[i] <= 0:
 		return
 	var fa := 1.0 - smoothstep(PRESS_DOT_MS * 0.4, PRESS_DOT_MS, dt)
 	var ring_r := R * ORBIT_K
-	var lw := maxf(1.5, R * 0.05)
+	var lw := _lw(R)
 	var deg := clampf(360.0 * _state_dt[i] / maxf(float(n.lap_ms), 1.0), -PRESS_DOT_MAX_DEG, PRESS_DOT_MAX_DEG)
 	var ar := deg_to_rad(deg)
 	var ecol := EARLY_COL if deg < 0.0 else LATE_COL
@@ -1204,8 +1324,8 @@ func _draw_cursor(R: float) -> void:
 	_draw_trail(r)
 	draw_circle(p, r + 2.0, Color(0, 0, 0, 0.6), true, -1.0, true)
 	draw_circle(p, r, Color(1, 1, 1, 1.0), true, -1.0, true)
-	if down:
-		draw_arc(p, r + 4.5, 0.0, TAU, 32, Color(1, 1, 1, 0.55), 1.5, true)
+	# Feiner Ring: gedrueckt enger und heller (Taste sichtbar am Cursor).
+	draw_arc(p, r + (3.5 if down else 5.5), 0.0, TAU, 32, Color(1, 1, 1, 0.7 if down else 0.22), 1.5, true)
 
 
 ## Weiche kurze Spur hinter dem Cursor (letzte TRAIL_MS Songzeit): ein Band,

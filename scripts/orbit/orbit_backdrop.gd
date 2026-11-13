@@ -17,9 +17,10 @@ extends Control
 const BG_WORLD := 0
 const BG_MAP := 1
 const BG_OFF := 2
-const BLACK := Color(0.008, 0.01, 0.018)
+## Grund: warmes Graphit (UiTheme.BG, dunkler), kein Blauschwarz.
+const BLACK := Color(0.034, 0.032, 0.030)
 ## Map-Bild: Abdunklung der Ecken (Deckkraft Schwarz).
-const MAP_VIGNETTE := 0.45
+const MAP_VIGNETTE := 0.2
 ## SubViewport-Aufloesung relativ zum Fenster (Himmel ist weich, die Vignette
 ## dunkelt ihn ohnehin ab): spart Pixel-Shader-Last.
 const RES_SCALE := 0.75

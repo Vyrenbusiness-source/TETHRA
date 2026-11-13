@@ -73,6 +73,13 @@ var _score_label: Label
 var _grade_label: Label
 var _time_label: Label
 var _top_fill: ColorRect
+var _top_bg: ColorRect
+var _title_label: Label
+var _tag_label: Label
+var _stat_left: VBoxContainer
+var _stat_right: VBoxContainer
+## HUD-Schriften [Label, Groesse bei 720 px Hoehe]: skalieren mit der Fensterhoehe.
+var _hud_fonts: Array = []
 var _pause_menu: PauseMenu
 var _results_screen: OrbitResults
 var _sound: OrbitSound
@@ -167,6 +174,7 @@ func _ready() -> void:
 	_view.mod_hidden = bool(core.mods.get("HD", false))
 	_view.mod_fade_in = bool(core.mods.get("FI", false))
 	_view.show_cursor = true
+	_view.show_stage = true
 	_build_sound()
 	_build_hud()
 	_update_hud()  # Startwerte schon im Intro sichtbar
@@ -366,66 +374,57 @@ func _build_hud() -> void:
 
 	var title := Label.new()
 	title.text = "%s — %s  ·  %s" % [_beatmap.artist(), _beatmap.title(), _beatmap.version_name()]
-	title.position = Vector2(24, 14)
-	title.add_theme_font_size_override("font_size", 14)
-	title.add_theme_color_override("font_color", Color(0.78, 0.82, 0.92))
+	title.add_theme_color_override("font_color", UiTheme.TEXT)
 	_shadow(title)
-	title.modulate.a = 0.75
+	title.modulate.a = 0.8
 	_hud.add_child(title)
+	_title_label = title
+	_hud_fonts.append([title, 14])
 	var mode_tag := Label.new()
 	mode_tag.text = tr("ORBIT")
-	mode_tag.position = Vector2(24, 34)
 	mode_tag.add_theme_font_override("font", UiTheme.heading_font(3))
-	mode_tag.add_theme_font_size_override("font_size", 11)
-	mode_tag.add_theme_color_override("font_color", Color(OrbitView.INNER_COL, 0.8))
+	mode_tag.add_theme_color_override("font_color", Color(UiTheme.ACCENT, 0.9))
 	_hud.add_child(mode_tag)
+	_tag_label = mode_tag
+	_hud_fonts.append([mode_tag, 11])
 	var ttw := create_tween()
 	ttw.tween_interval(8.0)
-	ttw.tween_property(title, "modulate:a", 0.35, 1.5)
+	ttw.tween_property(title, "modulate:a", 0.4, 1.5)
 
 	_time_label = Label.new()
 	_time_label.anchor_left = 1.0
 	_time_label.anchor_right = 1.0
-	_time_label.offset_left = -240
-	_time_label.offset_right = -20
-	_time_label.offset_top = 14
 	_time_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	_time_label.add_theme_font_size_override("font_size", 14)
-	_time_label.add_theme_color_override("font_color", Color(0.7, 0.74, 0.85, 0.85))
+	_time_label.add_theme_color_override("font_color", UiTheme.DIM)
 	_time_label.add_theme_font_override("font", _tabular_font(_time_label))
 	_shadow(_time_label)
 	_hud.add_child(_time_label)
+	_hud_fonts.append([_time_label, 14])
 
-	var top_bg := ColorRect.new()
-	top_bg.anchor_right = 1.0
-	top_bg.offset_bottom = 4
-	top_bg.color = Color(1, 1, 1, 0.08)
-	top_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_hud.add_child(top_bg)
+	_top_bg = ColorRect.new()
+	_top_bg.anchor_right = 1.0
+	_top_bg.color = Color(UiTheme.TEXT, 0.08)
+	_top_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_hud.add_child(_top_bg)
 	_top_fill = ColorRect.new()
 	_top_fill.anchor_right = 0.0
-	_top_fill.offset_bottom = 4
-	_top_fill.color = Color(UiTheme.ACCENT.r, UiTheme.ACCENT.g, UiTheme.ACCENT.b, 0.75)
+	_top_fill.color = Color(UiTheme.ACCENT, 0.85)
 	_top_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_hud.add_child(_top_fill)
 
-	# Werte links/rechts neben den Ringen, vertikal mittig (ruhig, nie im Feld).
-	var left := _stat_column(0.11)
-	_acc_label = _stat_block(left, tr("GENAUIGKEIT"), 40)
-	_grade_label = _stat_block(left, tr("RANG"), 24)
-	var right := _stat_column(0.89)
-	_score_label = _stat_block(right, tr("PUNKTE"), 30)
+	# Werte in den Seitenstreifen neben der Buehne, vertikal mittig: links
+	# Punkte und Genauigkeit, rechts der Rang (ruhig, nie im Feld).
+	_stat_left = _stat_column()
+	_score_label = _stat_block(_stat_left, tr("PUNKTE"), 30)
+	_acc_label = _stat_block(_stat_left, tr("GENAUIGKEIT"), 30)
+	_stat_right = _stat_column()
+	_grade_label = _stat_block(_stat_right, tr("RANG"), 52)
+	_grade_label.add_theme_font_override("font", UiTheme.heading_font(0))
 
 	_hp_bar = HpBar.new()
 	_hp_bar.label_text = "HP"
 	_hud.add_child(_hp_bar)
 	_hp_bar.setup(theme_col)
-	_hp_bar.anchor_left = 0.5
-	_hp_bar.anchor_right = 0.5
-	_hp_bar.offset_left = -160
-	_hp_bar.offset_right = 160
-	_hp_bar.offset_top = 6
-	_hp_bar.offset_bottom = 30
 
 	_err_bar = HitErrorBar.new()
 	_hud.add_child(_err_bar)
@@ -449,11 +448,10 @@ func _build_hud() -> void:
 	if mt != "":
 		_mods_label = Label.new()
 		_mods_label.text = mt
-		_mods_label.position = Vector2(24, 50)
 		_mods_label.add_theme_font_override("font", UiTheme.heading_font(3))
-		_mods_label.add_theme_font_size_override("font_size", 11)
-		_mods_label.add_theme_color_override("font_color", Color(OrbitView.OUTER_COL, 0.85))
+		_mods_label.add_theme_color_override("font_color", UiTheme.DIM)
 		_hud.add_child(_mods_label)
+		_hud_fonts.append([_mods_label, 11])
 
 	_build_legend()
 
@@ -493,15 +491,15 @@ func _build_legend() -> void:
 		item.add_child(icon)
 		var l := Label.new()
 		l.text = it[1]
-		l.add_theme_font_size_override("font_size", 15)
-		var col: Color = Color.WHITE if key == OrbitNote.KEY_ACCENT else OrbitView.key_col(key)
-		l.add_theme_color_override("font_color", col.lerp(Color.WHITE, 0.35))
+		_hud_fonts.append([l, 15])
+		var col: Color = UiTheme.TEXT if key == OrbitNote.KEY_ACCENT else OrbitView.key_col(key)
+		l.add_theme_color_override("font_color", col.lerp(UiTheme.TEXT, 0.35))
 		_shadow(l)
 		item.add_child(l)
 	var keys := Label.new()
 	keys.text = tr("Zielen und drücken, wenn der Satellit oben ankommt (auch Maus links/rechts)")
-	keys.add_theme_font_size_override("font_size", 15)
-	keys.add_theme_color_override("font_color", Color(0.78, 0.82, 0.92))
+	_hud_fonts.append([keys, 15])
+	keys.add_theme_color_override("font_color", UiTheme.DIM.lerp(UiTheme.TEXT, 0.5))
 	_shadow(keys)
 	box.add_child(keys)
 
@@ -538,47 +536,77 @@ func _place_hud() -> void:
 	_judge_disp.judge_gap = 0.0
 	_judge_disp.combo_gap = vs.y * 0.045 / k
 	_judge_disp.place(cy + (vs.y * 0.915 - cy) / k)
-	_err_bar.position = Vector2((vs.x - _err_bar.size.x) * 0.5, vs.y - _err_bar.size.y - 10.0)
-	_legend.size = Vector2(vs.x, 24)
+	# Alles skaliert mit der Fensterhoehe (720 px = 1).
+	var u := vs.y / 720.0
+	for e in _hud_fonts:
+		(e[0] as Label).add_theme_font_size_override("font_size", maxi(8, roundi(float(e[1]) * u)))
+	_err_bar.pivot_offset = Vector2(_err_bar.size.x * 0.5, _err_bar.size.y)
+	_err_bar.scale = Vector2(u, u)
+	_err_bar.position = Vector2((vs.x - _err_bar.size.x) * 0.5, vs.y - _err_bar.size.y - 10.0 * u)
+	_legend.size = Vector2(vs.x, 24.0 * u)
 	_legend.position = Vector2(0, vs.y * 0.925)
+	_title_label.position = Vector2(24, 13) * u
+	_tag_label.position = Vector2(24, 34) * u
+	if _mods_label != null:
+		_mods_label.position = Vector2(24, 50) * u
+	_time_label.offset_left = -260.0 * u
+	_time_label.offset_right = -24.0 * u
+	_time_label.offset_top = 13.0 * u
+	var bar_h := maxf(3.0, roundf(3.0 * u))
+	_top_bg.offset_bottom = bar_h
+	_top_fill.offset_bottom = bar_h
+	_hp_bar.position = Vector2(vs.x * 0.5 - 160.0, 8.0 * u)
+	_hp_bar.size = Vector2(320, 24)
+	_hp_bar.pivot_offset = Vector2(160, 0)
+	_hp_bar.scale = Vector2(u, u)
+	# Seitenstreifen: Mitte zwischen Fensterrand und Buehne; ohne Streifen
+	# (schmales Fenster) wie bisher bei 11 % / 89 %.
+	var fh := vs.y * OrbitView.FIELD_H_K
+	var fw := minf(fh * OrbitView.ASPECT, vs.x * 0.96)
+	var gut := maxf((vs.x - fw) * 0.5 - fh * OrbitView.STAGE_PAD_K, 0.0)
+	var cx := gut * 0.5 if gut >= 190.0 * u else vs.x * 0.11
+	_stat_place(_stat_left, cx, u)
+	_stat_place(_stat_right, vs.x - cx, u)
 
 
-func _stat_column(ax: float) -> VBoxContainer:
+func _stat_column() -> VBoxContainer:
 	var v := VBoxContainer.new()
-	v.anchor_left = ax
-	v.anchor_right = ax
-	v.anchor_top = 0.5
-	v.anchor_bottom = 0.5
-	v.offset_left = -120
-	v.offset_right = 120
 	v.grow_vertical = Control.GROW_DIRECTION_BOTH
 	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	v.add_theme_constant_override("separation", 22)
 	_hud.add_child(v)
 	return v
+
+
+func _stat_place(v: VBoxContainer, cx: float, u: float) -> void:
+	v.add_theme_constant_override("separation", roundi(26.0 * u))
+	v.reset_size()
+	var sz := v.get_combined_minimum_size()
+	v.size = Vector2(maxf(sz.x, 240.0 * u), sz.y)
+	v.position = Vector2(cx - v.size.x * 0.5, (get_viewport().get_visible_rect().size.y - sz.y) * 0.5)
 
 
 func _stat_block(column: VBoxContainer, caption: String, size_px: int) -> Label:
 	var block := VBoxContainer.new()
 	block.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	block.add_theme_constant_override("separation", -2)
+	block.add_theme_constant_override("separation", 0)
 	column.add_child(block)
 	var cap := Label.new()
 	cap.text = caption
 	cap.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	cap.add_theme_font_size_override("font_size", 13)
-	cap.add_theme_color_override("font_color", Color(0.58, 0.61, 0.70))
+	cap.add_theme_font_override("font", UiTheme.heading_font(2))
+	cap.add_theme_color_override("font_color", UiTheme.DIM)
 	cap.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.6))
 	cap.add_theme_constant_override("shadow_outline_size", 5)
 	block.add_child(cap)
+	_hud_fonts.append([cap, 11])
 	var val := Label.new()
 	val.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	val.add_theme_font_size_override("font_size", size_px)
-	val.add_theme_color_override("font_color", Color(0.97, 0.98, 1.0))
+	val.add_theme_color_override("font_color", UiTheme.TEXT)
 	val.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.6))
 	val.add_theme_constant_override("shadow_outline_size", 6)
 	val.add_theme_font_override("font", _tabular_font(val))
 	block.add_child(val)
+	_hud_fonts.append([val, size_px])
 	return val
 
 
