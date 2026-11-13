@@ -186,3 +186,13 @@ README-Videos laufen ueber GitHub Pages (docs/watch.html?v=<name>, Pages aus mai
 Server: min_version 1.29.0, Scores < 1.29.0 der vier Modi raus, Relay neu (Artifact aktualisiert).
 Offen: menschlicher Spieltest der neuen Regeln; Settings-Seite unveraendert (nur angesehen); Lobby/Fail-Bilder Dirigent+Trace/1440p nie selbst geprueft; docs/anti_mash.md nennt Rebound-Spam 25,9 % (jetzt 27,6 %); Uebersetzungs-Keys fuer "Picture"/"In den Chat senden" im Ergebnis fehlen (UiTheme.is_german()).
 Agents liefen mit model=fable (Opus/Sonnet-Subagents: API 403 Cloudflare).
+
+## Stand 2026-11-13 Abend (v1.31.0 released)
+- v1.30.0: faire Sichtzeit in allen Modi (docs/qa/approach_audit_*.md), Dirigent Regeln 4 (250 ms), SV-Faktor 1,1 nur Mania, neue Medien + Website docs/index.html (SEO/OG/JSON-LD), Repo-Topics/Beschreibung.
+- v1.31.0: Mania 2D Pop-in (Intro/Break-Ring neben dem Feld, Spawn an sichtbarer Kante bei stage_scale > 100 %, --debug-popin), Trace-Tutorial/Clips, Einstellungen neu, Uebersetzungen (translations/polish.csv).
+- SV-Mod und Map-SV bleiben wie sie sind (Nutzer: "muss so sein").
+- Server-Artifact aktuell bis v1.30.0; v1.31.0 ohne Server-Aenderung (nur Relay neu).
+- Laeuft: qa-live (Pause/Break/Retry/Fail/Replay/Mods/MP je Modus per Lauf, Bericht docs/qa/live_qa.md).
+- Social Preview docs/media/social_preview.png muss der Nutzer in den GitHub-Settings hochladen.
+- warmd-Luecke: zweiter `warmd split` waehrend ein Batch laeuft -> beim Ende des zweiten Batches wurde der noch laufende Task des ersten (mania-2d-popin) zu frueh gemergt ("OK batch ended"). In warmd beheben.
+- ISCC aus Git Bash: /D-Schalter werden zu Pfaden umgeschrieben -> ISCC ueber PowerShell aufrufen.
