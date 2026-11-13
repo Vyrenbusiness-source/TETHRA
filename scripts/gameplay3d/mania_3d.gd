@@ -3704,6 +3704,17 @@ func _update_break_overlay(t: float) -> void:
 		_break_cur = idx
 		_break_skip = can_skip
 	_break_ov.update(t)
+	if _pf2d != null:
+		# 2D: Ring neben das Feld, nicht ueber die mittleren Spalten (die ersten Noten
+		# nach Intro/Break liefen sonst 40 % ihrer Anflugzeit dahinter). Passt er
+		# nirgends daneben, ist er weg, bevor die erste Note ins Feld kommt.
+		var vw := get_viewport().get_visible_rect().size.x
+		var cx := Playfield2D.overlay_center_x(_pf2d.screen_field_rect(), vw, 320.0)
+		if is_nan(cx):
+			_break_ov.position.x = 0.0
+			_break_ov.modulate.a *= clampf((_breaks[idx].y - core.preempt - t) / 250.0, 0.0, 1.0)
+		else:
+			_break_ov.position.x = cx - vw * 0.5
 
 
 ## HUD-Spalte: vertikal um anchor_pos zentriert, Bloecke mit festem Abstand.
@@ -4803,7 +4814,7 @@ func _capture_after_first_note() -> void:
 		var now := _time_ms()
 		var ny: float = _pf2d.z_to_y(_note_z(hit_t, now))
 		var ly: float = _pf2d.line_y()
-		var travel := (hit_t - now) * ly / maxf(ly - ny, 0.001)
+		var travel := (hit_t - now) * (ly - _pf2d.track_top()) / maxf(ly - ny, 0.001)
 		print("TRAVEL2D speed=%d rest=%.1f ms note_y=%.1f line_y=%.1f -> %.0f ms (lazer %.0f ms)" % [
 			Settings.scroll_speed if Settings._scroll_override <= 0 else Settings._scroll_override,
 			hit_t - now, ny, ly, travel, Settings.scroll_time_ms(Settings.mania_scroll * Settings.SCROLL_MAX_TIME_RANGE / Settings.SCROLL_BASE_PREEMPT)])
