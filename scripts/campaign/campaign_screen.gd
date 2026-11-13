@@ -6,6 +6,9 @@ extends Control
 ##
 ## Harness: --shot-campaign=<Praefix> speichert <Praefix>_path.png, _stage.png und
 ## _result.png mit Demo-Stand (ohne Netz, ohne Schreiben) und beendet sich.
+## --shot-campaign-run=<Praefix> [--shot-campaign-stage=<Stufe>] --campaign-path=<Datei>
+## --autoplay: echter Stufenlauf (GameSession.campaign_run_prefix). Die Stufen davor
+## gelten in der Testdatei als geschafft.
 
 const BASE := Vector2(1280.0, 720.0)
 const COLS := 7
@@ -93,6 +96,13 @@ func _ready() -> void:
 	_all = Campaign.load_data()
 	_data = Campaign.for_mode(_all, _mode)
 	_state = _demo_state() if _shot != "" else Campaign.load_state()
+	var run_shot := GameSession.campaign_run_prefix()
+	if run_shot != "":
+		if Campaign.default_path() == Campaign.PATH:
+			push_error("--shot-campaign-run braucht --campaign-path=<Testdatei>")
+			get_tree().quit(2)
+			return
+		GameSession.campaign_return = _seed_run_state()
 	var bg := ColorRect.new()
 	bg.color = UiTheme.BG
 	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -125,6 +135,8 @@ func _ready() -> void:
 		print("=== Campaign Headless OK (%d Kapitel, %d Fehler) ===" % [
 			Campaign.chapters(_data).size(), Campaign.validate(_all).size()])
 		get_tree().quit(0)
+	elif run_shot != "":
+		_run_stage_shot(run_shot)
 	elif _shot != "":
 		_run_shots()
 
@@ -788,6 +800,36 @@ func _save_shot(suffix: String) -> void:
 	var path := "%s_%s.png" % [_shot, suffix]
 	get_viewport().get_texture().get_image().save_png(path)
 	print("SHOT gespeichert: " + path)
+
+
+## Harness: Stufe waehlen (Vorgaenger in der Testdatei als geschafft eintragen).
+func _seed_run_state() -> String:
+	var target := "mania-c01s1"
+	for a in OS.get_cmdline_args() + OS.get_cmdline_user_args():
+		if a.begins_with("--shot-campaign-stage="):
+			target = a.trim_prefix("--shot-campaign-stage=")
+	var data := Campaign.for_mode(_all, Campaign.mode_of_stage(_all, target))
+	for s: Dictionary in Campaign.all_stages(data):
+		if str(s.id) == target:
+			break
+		if not Campaign.stage_cleared(_state, str(s.id)):
+			Campaign.apply_run(_state, s, {"failed": false, "accuracy": 0.97, "grade": "S",
+				"n_miss": 2, "score": 930000, "max_combo": 400})
+	Campaign.save_state(_state)
+	return target
+
+
+func _run_stage_shot(prefix: String) -> void:
+	await get_tree().create_timer(2.0).timeout
+	await RenderingServer.frame_post_draw
+	get_viewport().get_texture().get_image().save_png(prefix + "_stage.png")
+	var st := Campaign.stage_by_id(_data, _stage_id)
+	print("CAMPAIGN-RUN Stufe %s, offen %s, lokal %s, Welt-Einstellung %d" % [_stage_id,
+		str(Campaign.stage_open(_data, _state, _stage_id)), str(not _local(st).is_empty()), Settings.world_theme])
+	_start_stage()
+	if not GameSession.campaign_active():
+		push_error("Stufe startet nicht")
+		get_tree().quit(2)
 
 
 func _run_shots() -> void:

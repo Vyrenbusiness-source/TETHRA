@@ -461,6 +461,15 @@ static func set_id_of_file(osz_file: String) -> int:
 
 ## Lokale Map der Stufe: {osz_path, index, version, osu_filename, stars} oder {}.
 ## sets: Array aus MapSet (oder Dictionaries {osz_path, diffs:[{version, osu_filename, stars}]}).
+## Diff-Name der Liste gegen den Namen in der .osu. Die Online-Quelle setzt bei Mania
+## die Tastenzahl davor ("[4K] Easy"), in der Datei steht nur "Easy".
+static func diff_matches(want: String, have: String) -> bool:
+	if want == have:
+		return true
+	var close := want.find("K] ")
+	return want.begins_with("[") and close >= 2 and want.substr(1, close - 1).is_valid_int() 			and want.substr(close + 3) == have
+
+
 static func find_local(stage: Dictionary, sets: Array) -> Dictionary:
 	var want := int(stage.get("set_id", 0))
 	if want <= 0:
@@ -473,8 +482,8 @@ static func find_local(stage: Dictionary, sets: Array) -> Dictionary:
 		var diffs: Array = ms.get("diffs")
 		for i in diffs.size():
 			var d: Dictionary = diffs[i]
-			if str(d.get("version", "")) == diff:
-				return {"osz_path": osz, "index": i, "version": diff,
+			if diff_matches(diff, str(d.get("version", ""))):
+				return {"osz_path": osz, "index": i, "version": str(d.get("version", "")),
 					"osu_filename": str(d.get("osu_filename", "")), "stars": float(d.get("stars", -1.0))}
 	return {}
 

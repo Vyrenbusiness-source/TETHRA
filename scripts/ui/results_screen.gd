@@ -266,6 +266,7 @@ func show_results(data: Dictionary) -> void:
 	_build_campaign(group)
 	_build_buttons(group)
 	_shown = true
+	_campaign_run_shot()
 	if bool(data.get("lobby", false)):
 		_play_lobby_intro()
 		if Lobby.in_round():
@@ -2685,6 +2686,25 @@ func _campaign_setup() -> void:
 	var nx := Campaign.next_stage_id(cdata, stage_id)
 	if nx != "" and Campaign.stage_cleared(state, stage_id) and Campaign.has_map(Campaign.stage_by_id(cdata, nx)):
 		_camp_next = nx
+
+
+## Harness --shot-campaign-run (GameSession.campaign_run_prefix): Ergebnis des echten
+## Stufenlaufs abfotografieren, Eintrag melden, beenden.
+func _campaign_run_shot() -> void:
+	var prefix := GameSession.campaign_run_prefix()
+	if prefix == "" or _camp.is_empty() or bool(_camp.get("preview", false)):
+		return
+	await get_tree().create_timer(3.4, true).timeout
+	await RenderingServer.frame_post_draw
+	if not is_inside_tree():
+		return
+	get_viewport().get_texture().get_image().save_png(prefix + "_result.png")
+	var sid := str(_camp.get("stage_id", ""))
+	var saved := Campaign.load_state()
+	print("CAMPAIGN-RUN Ergebnis: Stufe %s, Sterne im Lauf %d, gespeichert %s, naechste '%s', Welt-Einstellung %d" % [
+		sid, int((_camp.out as Dictionary).get("stars_run", 0)),
+		str(Campaign.entry(saved, sid)), _camp_next, Settings.world_theme])
+	get_tree().quit(0)
 
 
 ## Zurueck in die Kampagnen-Szene; target = Stufe, die dort gewaehlt ist ("" = diese).

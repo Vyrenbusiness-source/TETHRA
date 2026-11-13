@@ -100,6 +100,8 @@ func _campaign_on_node_added(n: Node) -> void:
 		return
 	if not ScoreStore.MODE_SCENES.values().has(n.scene_file_path):
 		return
+	if campaign_run_prefix() != "":
+		_campaign_run_game_shot(n)
 	var wi := Settings.WORLD_ORDER.find(str(campaign.get("world", "")))
 	if wi < 0 or _campaign_world_prev >= 0:
 		return
@@ -112,6 +114,26 @@ func _campaign_world_release() -> void:
 	if _campaign_world_prev >= 0:
 		Settings.world_theme = _campaign_world_prev
 	_campaign_world_prev = -1
+
+
+## Harness --shot-campaign-run=<Praefix>: echter Stufenlauf (Kampagnen-Szene startet die
+## Stufe, --autoplay spielt, Ergebnis traegt ein). Bilder <Praefix>_stage.png, _game.png,
+## _result.png. Nur mit --campaign-path=<Datei>, nie gegen den echten Stand.
+static func campaign_run_prefix() -> String:
+	for a in OS.get_cmdline_args() + OS.get_cmdline_user_args():
+		if a.begins_with("--shot-campaign-run="):
+			return a.trim_prefix("--shot-campaign-run=")
+	return ""
+
+
+func _campaign_run_game_shot(game: Node) -> void:
+	var prefix := campaign_run_prefix()
+	await get_tree().create_timer(14.0, true).timeout
+	await RenderingServer.frame_post_draw
+	if not is_instance_valid(game) or not game.is_inside_tree():
+		return
+	get_viewport().get_texture().get_image().save_png(prefix + "_game.png")
+	print("CAMPAIGN-RUN Spiel: Welt-Einstellung %d" % Settings.world_theme)
 
 
 ## Kampagne endet, sobald eine Szene folgt, die keine Spielszene ist (Browser, Menue, Kampagne).
@@ -387,7 +409,7 @@ func _arm_test_watchdog() -> void:
 	if limit <= 0.0 and FileAccess.file_exists("res://override.cfg"):
 		limit = 60.0
 	# Live-QA (tests/live_qa.gd): mehrere Runden in einem Prozess, aussen timeout 150.
-	if all.has("--live-qa"):
+	if all.has("--live-qa") or campaign_run_prefix() != "":
 		limit = 145.0
 	# Movie-Aufnahmen (--write-movie) begrenzt Godot selbst per --quit-after;
 	# die Watchdog-Zeit laeuft dort in Echtzeit und wuerde lange Aufnahmen kappen.

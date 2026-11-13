@@ -290,6 +290,15 @@ func _test_maps() -> void:
 	var loc := Campaign.find_local(st, sets)
 	_ok(str(loc.get("osu_filename", "")) == "e.osu" and int(loc.get("index", -1)) == 1, "find_local: Set und Diff")
 	_ok(Campaign.find_local(Campaign.all_stages(d)[1], sets).is_empty(), "find_local: fehlt")
+	# Online-Name "[4K] Easy", in der .osu steht "Easy".
+	var pre: Dictionary = st.duplicate()
+	pre["diff"] = "[4K] Easy"
+	var loc_pre := Campaign.find_local(pre, sets)
+	_ok(str(loc_pre.get("osu_filename", "")) == "e.osu" and str(loc_pre.get("version", "")) == "Easy",
+		"find_local: Tastenzahl vor dem Diff-Namen")
+	_ok(Campaign.diff_matches("[7K] Brutal [Lv.15]", "Brutal [Lv.15]"), "diff_matches: [7K]")
+	_ok(not Campaign.diff_matches("[4K] Easy", "Hard") and not Campaign.diff_matches("[Extra] Easy", "Easy")
+		and not Campaign.diff_matches("Easy", "[4K] Easy"), "diff_matches: sonst genau")
 	var miss := Campaign.missing_sets(d.chapters[0], sets)
 	_ok(miss.size() == 5 and not miss.has(100) and miss.has(101), "missing_sets")
 	_ok(Campaign.length_text(125) == "2:05", "length_text")
