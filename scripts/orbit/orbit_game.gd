@@ -544,7 +544,7 @@ func _place_hud() -> void:
 	_err_bar.scale = Vector2(u, u)
 	_err_bar.position = Vector2((vs.x - _err_bar.size.x) * 0.5, vs.y - _err_bar.size.y - 10.0 * u)
 	_legend.size = Vector2(vs.x, 24.0 * u)
-	_legend.position = Vector2(0, vs.y * 0.925)
+	_legend.position = Vector2(0, vs.y * 0.885)
 	_title_label.position = Vector2(24, 13) * u
 	_tag_label.position = Vector2(24, 34) * u
 	if _mods_label != null:

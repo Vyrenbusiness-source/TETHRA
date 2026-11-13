@@ -113,15 +113,29 @@ func laps_left(t_ms) -> int
   Kalibrieren gegen die Bibliothek: Median ~4, leichte Diffs < 2,5.
 
 ## Optik (clean wie osu!, Anti-KI-Look)
-- Dunkler ruhiger Grund (Welt-Hintergrund stark abgedunkelt/unscharf), kein Glow, keine Deko.
+- Stil TETHRA Graphit + Bernstein (scripts/ui/ui_theme.gd), kein Glow, keine Deko.
+- **Buehne** (nur im Spiel, `OrbitView.show_stage`): Graphit-Flaeche ueber die volle Hoehe,
+  Feld plus 9 % Feldhoehe Rand je Seite (`stage_rect()`), senkrechter Verlauf, weicher
+  Schatten nach aussen, feine Lichtkanten (im Kiai leicht bernstein), feines Raster aus
+  Passkreuzen (8 x 6 Felder) und Feld-Ecken. Das Map-Bild bleibt in den Seitenstreifen.
+  Vorschau, Tutorial und Endbild zeigen nur die Feld-Ecken.
 - Ziel A: kuehle Scheibe mit hellem Rand; Ziel B: warmes abgerundetes Quadrat; Akzent:
-  Scheibe mit beiden Farben (halb/halb) und weissem Ring. Naechstes Ziel voll deckend,
-  spaetere 55 %, Taste (z. B. "Z"/"X") im naechsten Ziel (Option auto/an/aus).
+  Scheibe mit beiden Farben (halb/halb) und weissem Doppelring. Jedes Ziel von unten:
+  weicher Schatten, deckende Platte, Verlauf oben hell / unten dunkel, dunkle Kontur,
+  heller Rand, feine Innenkante, Lichtkante oben. Naechstes Ziel voll deckend mit weissem
+  Rand, spaetere 62 % (Flaeche kraeftiger als Rand), Taste (z. B. "Z"/"X") im naechsten
+  Ziel (Option auto/an/aus). Strichstaerken einheitlich aus dem Zielradius (`_lw`).
+- HUD (orbit_game.gd): skaliert mit der Fensterhoehe (720 px = 1). Oben Titel + ORBIT
+  (Bernstein), HP, Zeit, Fortschritt; Seitenstreifen links Punkte + Genauigkeit, rechts
+  Rang; unten Kombo/Stufe und Timing-Leiste.
 - Satellit: kleiner weisser Punkt auf duennem Orbit-Ring (1,6 x Zielradius), Marke oben
   (kurzer Strich). Pips (Runden) klein unter dem Ziel. Erscheinen mit kurzem Pop auf dem Beat.
 - Duenne Verbindungslinie zum naechsten Ziel (wie Folge-Punkte, dezent).
-- Treffer: knapper Ausdehn-und-Ausblend-Effekt in Zielfarbe (< 150 ms); Miss: kleines X.
-- Halten: weiches Band entlang des Pfads in Zielfarbe, Kugel + Folgekreis.
+- Treffer: Flaeche leuchtet 70 ms in Zielform auf, Umriss in Zielform und Tastenfarbe
+  springt in 150 ms nach aussen (Ease-out) und wird duenner, feiner Ring in Stufenfarbe
+  leuchtet 210 ms nach; Miss: grauer Umriss + kleines X.
+- Halten: Band als Schiene entlang des Pfads (deckend: heller Rand, dunkler Koerper,
+  hellere Mittelbahn), Kugel mit Schatten + Folgekreis.
 - Musik: Orbit-Ringe pulsieren dezent auf jedem Beat (staerker auf der Takt-Eins), Kiai etwas
   heller; Einstellung "Musik-Reaktion" bleibt.
 - HUD wie Mania (gleiche Schrift/Positionen).

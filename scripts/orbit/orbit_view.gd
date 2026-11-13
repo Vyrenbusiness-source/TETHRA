@@ -1081,11 +1081,15 @@ func _draw_band_body(n: OrbitNote, R: float, alpha: float) -> void:
 	var w := R * BAND_K
 	var rim := _lw(R) * 1.2
 	var last := pts[pts.size() - 1]
-	var shadow := Color(0, 0, 0, 0.22 * alpha)
-	var edge := Color(col.lightened(0.25), 0.62 * alpha)
-	var body := Color(col.darkened(0.74), 0.9 * alpha)
-	var lane := Color(col.darkened(0.58), 0.55 * alpha)
-	var layers := [[w + R * 0.22, shadow], [w, edge], [w - rim * 2.0, body], [w * 0.5, lane]]
+	# Deckende Farben (gegen den Graphit-Grund gemischt): Kappen und Linie
+	# ueberlagern sich ohne sichtbare Naehte, nichts scheint durch.
+	var a := clampf(alpha, 0.0, 1.0)
+	var ground := Color(0.08, 0.077, 0.072)
+	var edge := ground.lerp(col.lightened(0.2), 0.7 * a)
+	var body := ground.lerp(col.darkened(0.72), a)
+	var lane := ground.lerp(col.darkened(0.56), a)
+	draw_polyline(pts, Color(0, 0, 0, 0.2 * a), w + R * 0.22, true)
+	var layers := [[w, edge], [w - rim * 2.0, body], [w * 0.46, lane]]
 	for ly in layers:
 		var lw2: float = ly[0]
 		draw_polyline(pts, ly[1], lw2, true)
