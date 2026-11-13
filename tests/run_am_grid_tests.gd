@@ -295,6 +295,7 @@ func _measure(maps_dir: String, count: int, args: PackedStringArray) -> void:
 	var cache_dir := _arg(args, "--cache", ProjectSettings.globalize_path("user://am_grid_cache"))
 	var out_path := _arg(args, "--out", ProjectSettings.globalize_path("res://docs/automap/grid.md"))
 	var dump_path := _arg(args, "--dump", "")
+	var only := _arg(args, "--only", "")
 	var params := {"debug": true}
 	var pj := _arg(args, "--params", "")
 	if pj != "":
@@ -317,6 +318,8 @@ func _measure(maps_dir: String, count: int, args: PackedStringArray) -> void:
 		var name := files[int(pos)]
 		pos += step
 		idx += 1
+		if only != "" and not Array(only.split(",")).any(func(o): return name.contains(o)):
+			continue
 		var osz := maps_dir.path_join(name)
 		var imp := OszImporter.import(osz)
 		if not imp.ok:
@@ -352,6 +355,15 @@ func _measure(maps_dir: String, count: int, args: PackedStringArray) -> void:
 				rec.off, rec.drift, str(rec.db_ok), rec.nseg, rec.conf, t_trk])
 		if dump != null:
 			_dump(dump, rec, grid, tr)
+		if only != "":
+			var dbg: Dictionary = grid.get("debug", {})
+			print("  map: ", tr.segs.map(func(s): return "%.1f@%.1f m%d" % [60000.0 / float(s.bl), float(s.t), int(s.meter)]))
+			print("  det: ", grid.segments.map(func(s): return "%.3f@%.1f m%d db%.1f" % [s.bpm, s.start_ms, s.meter, s.downbeat_ms]))
+			for k in dbg:
+				if k != "hyps":
+					print("  %s: %s" % [k, str(dbg[k])])
+			for h in dbg.get("hyps", []):
+				print("  H %.3f f%.3f r1 %.3f r2 %.3f r4 %.3f r3 %.3f rl1 %.3f fill %.2f sc %.4f" % [h.bpm, float(h.bpm) / rec.bpm_map, h.r1, h.r2, h.r4, h.r3, h.rl1, h.fill, h.score])
 	if dump != null:
 		dump.close()
 	var md := _report(recs, skipped, files.size())
@@ -439,6 +451,15 @@ func _dump(f: FileAccess, rec: Dictionary, grid: Dictionary, _tr: Dictionary) ->
 	for h in dbg.get("hyps", []):
 		f.store_line("H\t%s\t%s\t%.3f\t%.4f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.4f" % [rec.name.left(40), rec.cat, h.bpm, float(h.bpm) / float(rec.bpm_map),
 				h.r1, h.r2, h.r4, h.r3, h.rl1, h.rl2, h.fill, h.a1, h.a2, h.score])
+	if rec.exact and dbg.has("ph4"):
+		# Wahre Viertel-Phase des Schlags relativ zur gewaehlten Phase (0 = richtig, 2 = Halbe daneben).
+		var Mq: Dictionary = rec.M
+		var q := posmod(int(round((float(Mq.t) + float(G.DEFAULTS.lead_ms) - float(dbg.phase)) / (float(Mq.bl) / 4.0))), 4)
+		var pl := "P\t%s\t%d" % [rec.name.left(40), q]
+		for row in dbg.ph4:
+			for v in row:
+				pl += "\t%.4f" % v
+		f.store_line(pl)
 	var mt: Dictionary = dbg.get("meter", {})
 	if rec.exact and mt.has("db4") and not mt.db4.is_empty():
 		# Wahrer Taktanfang als Index relativ zum Schlag 0 der Analyse.

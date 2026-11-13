@@ -30,6 +30,7 @@ const DEFAULTS := {
 	"bpm_max": 330.0,
 	"pulse_min_ms": 200.0,      # Suchbereich des groben Pulses (Autokorrelation)
 	"pulse_max_ms": 1000.0,
+	"n_pulses": 4,              # Kandidaten des groben Pulses (lokale ACF-Maxima)
 	"prior_bpm": 160.0,         # Tempo-Vorwissen (Log-Normal um diesen Wert)
 	"prior_sigma_oct": 0.6,
 	"w_half": 0.5,              # Gewicht Halbe/Viertel des Schlags in der Stuetzung
@@ -319,6 +320,36 @@ static func _pulse(a: PackedFloat32Array, lag_ms: float, P: Dictionary) -> Vecto
 	if absf(den) > 1e-12:
 		fr = clampf(0.5 * (ya - yc) / den, -0.5, 0.5)
 	return Vector2(bl + fr, best)
+
+
+## Kandidaten fuer den groben Puls (ms): staerkster Puls zuerst, dann die naechststaerksten
+## lokalen Maxima der Kamm-Autokorrelation (mindestens 4 % auseinander).
+static func _pulse_cands(a: PackedFloat32Array, lag_ms: float, P: Dictionary) -> Array:
+	var l0 := maxi(_MIN_LAG * 2, int(float(P.pulse_min_ms) / lag_ms))
+	var l1 := mini(a.size() / 2 - 1, int(float(P.pulse_max_ms) / lag_ms))
+	var vals := PackedFloat64Array()
+	for l in range(l0 - 1, l1 + 2):
+		vals.append(_comb(a, l))
+	var loc: Array = []
+	for i in range(1, vals.size() - 1):
+		if vals[i] >= vals[i - 1] and vals[i] > vals[i + 1]:
+			var fr := 0.0
+			var den := vals[i - 1] - 2.0 * vals[i] + vals[i + 1]
+			if absf(den) > 1e-12:
+				fr = clampf(0.5 * (vals[i - 1] - vals[i + 1]) / den, -0.5, 0.5)
+			loc.append([vals[i], (l0 - 1 + i + fr) * lag_ms])
+	loc.sort_custom(func(x, y): return x[0] > y[0])
+	var out: Array = []
+	for c in loc:
+		if out.size() >= int(P.n_pulses):
+			break
+		var dup := false
+		for o in out:
+			if absf(float(c[1]) / float(o) - 1.0) < 0.04:
+				dup = true
+		if not dup:
+			out.append(c[1])
+	return out
 
 
 ## Grobe Segmente [{lo, hi, T}] (ms): Hauptpuls und Laeufe von Fenstern mit fremdem Tempo.
@@ -737,8 +768,9 @@ static func _meter(F: Dictionary, X: float, phase: float, lo: float, hi: float, 
 	return out
 
 
-## Ein Segment [lo, hi] (ms) um die grobe Periode tc auswerten.
-static func _fit_segment(F: Dictionary, lo: float, hi: float, tc: float, ref_bpm: float, P: Dictionary) -> Dictionary:
+## Ein Segment [lo, hi] (ms) auswerten; tcs = Kandidaten der groben Periode (ms), jeder
+## bringt seine Tempo-Familie mit, alle Hypothesen treten gegeneinander an.
+static func _fit_segment(F: Dictionary, lo: float, hi: float, tcs: Array, ref_bpm: float, P: Dictionary) -> Dictionary:
 	var pt: PackedFloat64Array = F.pt
 	var pw: PackedFloat64Array = F.pw
 	var i0 := pt.bsearch(lo)
@@ -751,9 +783,6 @@ static func _fit_segment(F: Dictionary, lo: float, hi: float, tc: float, ref_bpm
 	var lws: PackedFloat64Array = top.lw
 	var sub := _top(F, i0, i1, int(P.scan_peaks))
 	var D := maxf(hi - lo, 4000.0)
-	var step := 0.25 * (tc / 3.0) / D
-	var T1 := _scan(sub.t, sub.w, tc, 0.03, step, [1, 2, 3])
-	var T2 := _scan(ts, ws, T1, 2.0 * step, step * 0.1, [1, 2, 3, 4])
 	var W := 0.0
 	var WL := 0.0
 	for i in ws.size():
@@ -764,24 +793,40 @@ static func _fit_segment(F: Dictionary, lo: float, hi: float, tc: float, ref_bpm
 	var acf: PackedFloat32Array = F.acf
 	var lag_ms: float = F.lag_ms
 	var hyps: Array = []
-	for f in FAMILY:
-		var X: float = T2 / float(f)
-		var bpm := 60000.0 / X
-		if bpm < float(P.bpm_min) or bpm > float(P.bpm_max):
-			continue
-		var r := _res(ts, ws, X)
-		var bp := _best_phase(ts, ws, X)
-		var h := {"f": f, "X": X, "bpm": bpm, "phase": bp,
-				"r1": r.x / W, "r2": _res(ts, ws, X / 2.0).x / W, "r4": _res(ts, ws, X / 4.0).x / W,
-				"r3": _res(ts, ws, X / 3.0).x / W,
-				"rl1": _res(ts, lws, X).x / WL, "rl2": _res(ts, lws, 2.0 * X).x / WL,
-				"fill": _fill(pt, i0, i1, X, bp, lo, hi),
-				"a1": _ai(acf, X / lag_ms) / maxf(acf[0], 1e-9), "a2": _ai(acf, 2.0 * X / lag_ms) / maxf(acf[0], 1e-9)}
-		h["score"] = _score(h, ref_bpm, P)
-		hyps.append(h)
+	var t2s: Array = []
+	for tc in tcs:
+		var step := 0.25 * (float(tc) / 3.0) / D
+		var T1 := _scan(sub.t, sub.w, tc, 0.03, step, [1, 2, 3])
+		var T2 := _scan(ts, ws, T1, 2.0 * step, step * 0.1, [1, 2, 3, 4])
+		t2s.append(T2)
+		for f in FAMILY:
+			var X: float = T2 / float(f)
+			var bpm := 60000.0 / X
+			if bpm < float(P.bpm_min) or bpm > float(P.bpm_max):
+				continue
+			var r := _res(ts, ws, X)
+			var dup := -1
+			for j in hyps.size():
+				if absf(float(hyps[j].X) / X - 1.0) < 0.004:
+					dup = j
+			if dup >= 0 and float(hyps[dup].r1) >= r.x / W:
+				continue
+			var bp := _best_phase(ts, ws, X)
+			var h := {"f": f, "X": X, "bpm": bpm, "phase": bp,
+					"r1": r.x / W, "r2": _res(ts, ws, X / 2.0).x / W, "r4": _res(ts, ws, X / 4.0).x / W,
+					"r3": _res(ts, ws, X / 3.0).x / W,
+					"rl1": _res(ts, lws, X).x / WL, "rl2": _res(ts, lws, 2.0 * X).x / WL,
+					"fill": _fill(pt, i0, i1, X, bp, lo, hi),
+					"a1": _ai(acf, X / lag_ms) / maxf(acf[0], 1e-9), "a2": _ai(acf, 2.0 * X / lag_ms) / maxf(acf[0], 1e-9)}
+			h["score"] = _score(h, ref_bpm, P)
+			if dup >= 0:
+				hyps[dup] = h
+			else:
+				hyps.append(h)
 	if hyps.is_empty():
 		return {"ok": false}
 	hyps.sort_custom(func(a, b): return float(a.score) > float(b.score))
+	var T2: float = t2s[0]
 	var win: Dictionary = hyps[0]
 	var X: float = win.X
 	# Feinste tragende Teilung fuer die Regression.
@@ -832,8 +877,16 @@ static func _fit_segment(F: Dictionary, lo: float, hi: float, tc: float, ref_bpm
 	var res := {"ok": true, "X": X, "phase": phase, "pd": pd, "meter": mt.meter, "db": mt.db,
 			"conf": conf, "alts": alts, "lo": lo, "hi": hi}
 	if bool(P.debug):
+		var ph4: Array = []
+		var rl := _res(ts, lws, X)
+		var ra := _res(ts, ws, X)
+		for j in 4:
+			var c := phase + j * X / 4.0
+			var a := _accent(F, X, c, lo, hi)
+			ph4.append([a.x, a.y, _fill(pt, i0, i1, X, c, lo, hi), cos(TAU * (c - rl.y) / X) * rl.x / WL,
+					cos(TAU * (c - ra.y) / X) * ra.x / W])
 		res["dbg"] = {"hyps": hyps, "T2": T2, "h_use": h_use, "snapped": snapped, "flipped": flipped,
-				"half_delta": half_delta, "acc0": acc0, "acc1": acc1, "meter": mt, "phase": phase}
+				"half_delta": half_delta, "acc0": acc0, "acc1": acc1, "meter": mt, "phase": phase, "ph4": ph4}
 	return res
 
 
@@ -891,9 +944,13 @@ static func track_env(feat: Dictionary, params: Dictionary = {}) -> Dictionary:
 	var fits: Array = []
 	fits.resize(rough.size())
 	var mr: Dictionary = rough[main_i]
-	var mfit := _fit_segment(F, mr.lo, mr.hi, mr.T, 0.0, P)
+	var cands: Array = [float(mr.T)]
+	for c in _pulse_cands(ac.glob, ac.lag_ms, P):
+		if absf(float(c) / float(mr.T) - 1.0) >= 0.04:
+			cands.append(c)
+	var mfit := _fit_segment(F, mr.lo, mr.hi, cands, 0.0, P)
 	if not mfit.ok and rough.size() > 1:
-		mfit = _fit_segment(F, 0.0, dur, p0.x * float(ac.lag_ms), 0.0, P)
+		mfit = _fit_segment(F, 0.0, dur, [p0.x * float(ac.lag_ms)], 0.0, P)
 		rough = [{"lo": 0.0, "hi": dur, "T": p0.x * float(ac.lag_ms)}]
 		fits = [null]
 		main_i = 0
@@ -907,7 +964,7 @@ static func track_env(feat: Dictionary, params: Dictionary = {}) -> Dictionary:
 		var r: Dictionary = rough[i]
 		var len := float(r.hi) - float(r.lo)
 		var mg := minf(2000.0, 0.2 * len) if rough.size() > 1 else 0.0
-		fits[i] = _fit_segment(F, float(r.lo) + mg, float(r.hi) - mg, r.T, ref_bpm, P)
+		fits[i] = _fit_segment(F, float(r.lo) + mg, float(r.hi) - mg, [float(r.T)], ref_bpm, P)
 	var list: Array = []
 	for i in rough.size():
 		var ft: Dictionary = fits[i]
