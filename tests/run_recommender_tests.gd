@@ -13,7 +13,7 @@ const NOW := 1800000000  # feste Testzeit (Unix)
 
 
 func _initialize() -> void:
-	print("=== TETHRA Recommender-Tests ===")
+	print("=== OMEN Recommender-Tests ===")
 	_test_skill_levels()
 	_test_profiles()
 	_test_mid_player_regression()

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""TETHRA Welt-Thema "Rift": der Raum reisst. Gigantischer gezackter Spalt aus fahlem
+"""OMEN Welt-Thema "Rift": der Raum reisst. Gigantischer gezackter Spalt aus fahlem
 gruen-grauem Licht im Schwarz, Bruchkanten, fliegende Bruchstuecke und Splitterstaub.
 
 Erzeugt in assets_game/themes/rift/ (8192x4096, WebP):

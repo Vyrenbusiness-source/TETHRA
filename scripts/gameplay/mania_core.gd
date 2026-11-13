@@ -1,7 +1,7 @@
 class_name ManiaCore
 extends RefCounted
 
-## TETHRA-Mania (4K): 4 Spalten, eine Taste pro Spalte, Timing-Fenster aus OD
+## OMEN-Mania (4K): 4 Spalten, eine Taste pro Spalte, Timing-Fenster aus OD
 ## (Mania-Formeln). Hold-Notes (LN): beim Head druecken und bis zum Ende
 ## halten — fruehes Loslassen ist ein Miss ("DROP"). Jede Note/LN zaehlt
 ## als EIN Acc-Objekt (konsistent mit dem Standard-Modus).
@@ -755,7 +755,7 @@ static func fail_reason_text(r: Dictionary) -> String:
 func diag_text(title: String, t_fail: float) -> String:
 	var r := ManiaCore.analyze_fail(diag_log, diag_spikes, t_fail)
 	var out: Array[String] = []
-	out.append("TETHRA Fail-Diagnose")
+	out.append("OMEN Fail-Diagnose")
 	out.append("map: %s" % title)
 	out.append("zeit: %.0f ms   hp: %.3f   combo-max: %d" % [t_fail, hp, max_combo])
 	out.append("grund: %s" % (ManiaCore.fail_reason_text(r) if r.kind != "none" else "-"))

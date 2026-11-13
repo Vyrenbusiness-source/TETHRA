@@ -1,37 +1,37 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/media/logo_wordmark.png">
-    <img src="docs/media/logo.svg" alt="TETHRA, a free rhythm game for Windows" width="420">
+    <img src="docs/media/logo.svg" alt="OMEN, a free rhythm game for Windows" width="323">
   </picture>
 </p>
 
 <p align="center">
-  <b>TETHRA is a free rhythm game for Windows that plays osu! maps: osu!mania 4K (VSRG) in 3D worlds or on the classic 2D field, with your osu! skins.</b><br>
+  <b>OMEN is a free rhythm game for Windows that plays osu! maps: osu!mania 4K (VSRG) in 3D worlds or on the classic 2D field, with your osu! skins.</b><br>
   Six modes in one music game: Mania, Orbit, Rally, Dirigent, Trace and Rebound. An SV mod for any map, map downloads in the game, replays, leaderboards, multiplayer and tournaments.
 </p>
 
 <p align="center">
-  <a href="https://github.com/Vyrenbusiness-source/TETHRA/releases/download/worlds/TETHRA_Setup.exe"><img src="https://img.shields.io/badge/Download%20for%20Windows-TETHRA__Setup.exe-E9A23B?style=for-the-badge&labelColor=1B1A18" alt="Download TETHRA for Windows, free rhythm game installer TETHRA_Setup.exe" height="48"></a>
+  <a href="https://github.com/Vyrenbusiness-source/OMEN/releases/download/worlds/OMEN_Setup.exe"><img src="https://img.shields.io/badge/Download%20for%20Windows-OMEN__Setup.exe-E9A23B?style=for-the-badge&labelColor=1B1A18" alt="Download OMEN for Windows, free rhythm game installer OMEN_Setup.exe" height="48"></a>
 </p>
 
 <p align="center">
   <sub>One installer, everything included: game, 13 worlds, sample maps. No osu! or Godot needed. Updates install themselves.<br>
-  <a href="https://vyrenbusiness-source.github.io/TETHRA/">Website</a> · <a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=trailer">Trailer</a> · <a href="#how-to-install-tethra-on-windows">How to install</a> · <a href="#faq">FAQ</a></sub>
+  <a href="https://vyrenbusiness-source.github.io/OMEN/">Website</a> · <a href="https://vyrenbusiness-source.github.io/OMEN/watch.html?v=trailer">Trailer</a> · <a href="#how-to-install-omen-on-windows">How to install</a> · <a href="#faq">FAQ</a></sub>
 </p>
 
 <p align="center">
-  <a href="https://github.com/Vyrenbusiness-source/TETHRA/releases/latest"><img src="https://img.shields.io/github/v/release/Vyrenbusiness-source/TETHRA?label=version&color=E9A23B" alt="Latest TETHRA version"></a>
-  <a href="https://github.com/Vyrenbusiness-source/TETHRA/releases"><img src="https://img.shields.io/github/downloads/Vyrenbusiness-source/TETHRA/total?label=downloads&color=E9A23B" alt="Total downloads"></a>
+  <a href="https://github.com/Vyrenbusiness-source/OMEN/releases/latest"><img src="https://img.shields.io/github/v/release/Vyrenbusiness-source/OMEN?label=version&color=E9A23B" alt="Latest OMEN version"></a>
+  <a href="https://github.com/Vyrenbusiness-source/OMEN/releases"><img src="https://img.shields.io/github/downloads/Vyrenbusiness-source/OMEN/total?label=downloads&color=E9A23B" alt="Total downloads"></a>
   <img src="https://img.shields.io/badge/platform-Windows-555?logo=windows&logoColor=white" alt="Platform: Windows">
 </p>
 
 <p align="center">
-  <a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=trailer"><img src="docs/media/trailer_thumb.webp" alt="TETHRA trailer: a free rhythm game with six modes, from osu!mania 4K to Orbit, Rally, Dirigent, Trace and Rebound" width="100%"></a><br>
-  <sub><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=trailer"><b>▶ Watch the trailer</b></a> (79 s, all six modes)</sub>
+  <a href="https://vyrenbusiness-source.github.io/OMEN/watch.html?v=trailer"><img src="docs/media/trailer_thumb.webp" alt="OMEN trailer: a free rhythm game with six modes, from osu!mania 4K to Orbit, Rally, Dirigent, Trace and Rebound" width="100%"></a><br>
+  <sub><a href="https://vyrenbusiness-source.github.io/OMEN/watch.html?v=trailer"><b>▶ Watch the trailer</b></a> (79 s, all six modes)</sub>
 </p>
 
 <p align="center">
-  <img src="docs/media/play_3d_hero.webp" alt="TETHRA 4K rhythm game in 3D: four osu!mania lanes flying through a world that pulses with the beat" width="100%">
+  <img src="docs/media/play_3d_hero.webp" alt="OMEN 4K rhythm game in 3D: four osu!mania lanes flying through a world that pulses with the beat" width="100%">
 </p>
 
 ## Features
@@ -49,14 +49,14 @@
 
 <table>
   <tr>
-    <td width="33%" align="center"><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=mania"><img src="docs/media/mania_anim.webp" alt="Mania gameplay: osu!mania 4K notes in a 3D world" width="100%"></a><br><b>Mania</b><br><sub>osu!mania 4K in 3D worlds or the classic 2D field.<br><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=mania">▶ Watch with sound</a></sub></td>
-    <td width="33%" align="center"><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=orbit"><img src="docs/media/orbit_anim.webp" alt="Orbit gameplay: aim at targets on the beat" width="100%"></a><br><b>Orbit</b><br><sub>Aim at targets, count the satellite laps, hit on the beat.<br><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=orbit">▶ Watch with sound</a></sub></td>
-    <td width="33%" align="center"><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=rally"><img src="docs/media/rally_anim.webp" alt="Rally gameplay: table tennis rhythm mode" width="100%"></a><br><b>Rally</b><br><sub>Table tennis in the rhythm of the map.<br><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=rally">▶ Watch with sound</a></sub></td>
+    <td width="33%" align="center"><a href="https://vyrenbusiness-source.github.io/OMEN/watch.html?v=mania"><img src="docs/media/mania_anim.webp" alt="Mania gameplay: osu!mania 4K notes in a 3D world" width="100%"></a><br><b>Mania</b><br><sub>osu!mania 4K in 3D worlds or the classic 2D field.<br><a href="https://vyrenbusiness-source.github.io/OMEN/watch.html?v=mania">▶ Watch with sound</a></sub></td>
+    <td width="33%" align="center"><a href="https://vyrenbusiness-source.github.io/OMEN/watch.html?v=orbit"><img src="docs/media/orbit_anim.webp" alt="Orbit gameplay: aim at targets on the beat" width="100%"></a><br><b>Orbit</b><br><sub>Aim at targets, count the satellite laps, hit on the beat.<br><a href="https://vyrenbusiness-source.github.io/OMEN/watch.html?v=orbit">▶ Watch with sound</a></sub></td>
+    <td width="33%" align="center"><a href="https://vyrenbusiness-source.github.io/OMEN/watch.html?v=rally"><img src="docs/media/rally_anim.webp" alt="Rally gameplay: table tennis rhythm mode" width="100%"></a><br><b>Rally</b><br><sub>Table tennis in the rhythm of the map.<br><a href="https://vyrenbusiness-source.github.io/OMEN/watch.html?v=rally">▶ Watch with sound</a></sub></td>
   </tr>
   <tr>
-    <td width="33%" align="center"><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=dirigent"><img src="docs/media/dirigent_anim.webp" alt="Dirigent gameplay: conduct the beat with the cursor" width="100%"></a><br><b>Dirigent</b><br><sub>Conduct the beat with the cursor, play the cues with two keys.<br><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=dirigent">▶ Watch with sound</a></sub></td>
-    <td width="33%" align="center"><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=trace"><img src="docs/media/trace_anim.webp" alt="Trace gameplay: a glowing thread draws the 4K map" width="100%"></a><br><b>Trace</b><br><sub>A glowing thread draws the map as you play it.<br><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=trace">▶ Watch with sound</a></sub></td>
-    <td width="33%" align="center"><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=rebound"><img src="docs/media/rebound_anim.webp" alt="Rebound gameplay: balls bounce on drums to the beat" width="100%"></a><br><b>Rebound</b><br><sub>Four balls bounce on four drums and land on your notes.<br><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=rebound">▶ Watch with sound</a></sub></td>
+    <td width="33%" align="center"><a href="https://vyrenbusiness-source.github.io/OMEN/watch.html?v=dirigent"><img src="docs/media/dirigent_anim.webp" alt="Dirigent gameplay: conduct the beat with the cursor" width="100%"></a><br><b>Dirigent</b><br><sub>Conduct the beat with the cursor, play the cues with two keys.<br><a href="https://vyrenbusiness-source.github.io/OMEN/watch.html?v=dirigent">▶ Watch with sound</a></sub></td>
+    <td width="33%" align="center"><a href="https://vyrenbusiness-source.github.io/OMEN/watch.html?v=trace"><img src="docs/media/trace_anim.webp" alt="Trace gameplay: a glowing thread draws the 4K map" width="100%"></a><br><b>Trace</b><br><sub>A glowing thread draws the map as you play it.<br><a href="https://vyrenbusiness-source.github.io/OMEN/watch.html?v=trace">▶ Watch with sound</a></sub></td>
+    <td width="33%" align="center"><a href="https://vyrenbusiness-source.github.io/OMEN/watch.html?v=rebound"><img src="docs/media/rebound_anim.webp" alt="Rebound gameplay: balls bounce on drums to the beat" width="100%"></a><br><b>Rebound</b><br><sub>Four balls bounce on four drums and land on your notes.<br><a href="https://vyrenbusiness-source.github.io/OMEN/watch.html?v=rebound">▶ Watch with sound</a></sub></td>
   </tr>
 </table>
 
@@ -75,8 +75,8 @@ Targets appear on a beat at a place in the field. A satellite circles each targe
 Mods: Hidden, Fade-In and Precision (tighter windows). Your best Orbit runs add up to an Orbit rating in your profile. Settings: laps ahead, target size and cursor size.
 
 <p align="center">
-  <a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=orbit"><img src="docs/media/orbit_anim.webp" alt="Orbit gameplay: targets with circling satellites and lap pips" width="420"></a><br>
-  <sub><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=orbit"><b>▶ Watch with sound</b></a> · New to Orbit? The game offers a short tutorial the first time you switch to it.</sub>
+  <a href="https://vyrenbusiness-source.github.io/OMEN/watch.html?v=orbit"><img src="docs/media/orbit_anim.webp" alt="Orbit gameplay: targets with circling satellites and lap pips" width="420"></a><br>
+  <sub><a href="https://vyrenbusiness-source.github.io/OMEN/watch.html?v=orbit"><b>▶ Watch with sound</b></a> · New to Orbit? The game offers a short tutorial the first time you switch to it.</sub>
 </p>
 
 <p align="center">
@@ -95,8 +95,8 @@ You look over the shoulder of your player: the camera sits behind and above your
 - **Miss.** The ball flies past and the opponent serves again for the next note.
 
 <p align="center">
-  <a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=rally"><img src="docs/media/rally_anim.webp" alt="Rally gameplay: the table seen from behind the player, three zones and a ball with the landing ring" width="420"></a><br>
-  <sub><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=rally"><b>▶ Watch with sound</b></a></sub>
+  <a href="https://vyrenbusiness-source.github.io/OMEN/watch.html?v=rally"><img src="docs/media/rally_anim.webp" alt="Rally gameplay: the table seen from behind the player, three zones and a ball with the landing ring" width="420"></a><br>
+  <sub><a href="https://vyrenbusiness-source.github.io/OMEN/watch.html?v=rally"><b>▶ Watch with sound</b></a></sub>
 </p>
 
 ## Dirigent: conduct the beat, play the cues
@@ -108,8 +108,8 @@ You do two things at once. With the mouse or pen you lead a conducting pattern: 
 - **Read.** The big point is the current beat with a ring that shrinks to the beat. The next point is small and numbered.
 
 <p align="center">
-  <a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=dirigent"><img src="docs/media/dirigent_anim.webp" alt="Dirigent gameplay: conducting pattern and the cue strip" width="420"></a><br>
-  <sub><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=dirigent"><b>▶ Watch with sound</b></a></sub>
+  <a href="https://vyrenbusiness-source.github.io/OMEN/watch.html?v=dirigent"><img src="docs/media/dirigent_anim.webp" alt="Dirigent gameplay: conducting pattern and the cue strip" width="420"></a><br>
+  <sub><a href="https://vyrenbusiness-source.github.io/OMEN/watch.html?v=dirigent"><b>▶ Watch with sound</b></a></sub>
 </p>
 
 
@@ -122,8 +122,8 @@ A glowing thread grows across the field at a steady speed. Every note is a bend 
 - **End.** After the last note the camera zooms out and shows the whole picture of the map.
 
 <p align="center">
-  <a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=trace"><img src="docs/media/trace_anim.webp" alt="Trace gameplay: a glowing thread with arrows at every bend" width="420"></a><br>
-  <sub><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=trace"><b>▶ Watch with sound</b></a></sub>
+  <a href="https://vyrenbusiness-source.github.io/OMEN/watch.html?v=trace"><img src="docs/media/trace_anim.webp" alt="Trace gameplay: a glowing thread with arrows at every bend" width="420"></a><br>
+  <sub><a href="https://vyrenbusiness-source.github.io/OMEN/watch.html?v=trace"><b>▶ Watch with sound</b></a></sub>
 </p>
 
 ## Rebound: bounce on the beat
@@ -134,8 +134,8 @@ Four drums in a row, one ball over each. A ball lands on its drum exactly at the
 - **Keys.** The key under each drum, default `D` `F` `J` `K`. Judgement, holds, mods and star rating are the same as in Mania. Only osu!mania 4K maps.
 
 <p align="center">
-  <a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=rebound"><img src="docs/media/rebound_anim.webp" alt="Rebound gameplay: four balls bouncing on four drums" width="420"></a><br>
-  <sub><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=rebound"><b>▶ Watch with sound</b></a></sub>
+  <a href="https://vyrenbusiness-source.github.io/OMEN/watch.html?v=rebound"><img src="docs/media/rebound_anim.webp" alt="Rebound gameplay: four balls bouncing on four drums" width="420"></a><br>
+  <sub><a href="https://vyrenbusiness-source.github.io/OMEN/watch.html?v=rebound"><b>▶ Watch with sound</b></a></sub>
 </p>
 
 ## Suggestions for you
@@ -165,14 +165,14 @@ Every mode has a short interactive tutorial. The game offers it the first time y
 Switch on **SV** in the song browser. The mod writes scroll changes from the map's own beat grid: notes bounce on every beat in the chorus, surge, hold, run backwards for a moment and jump on strong beats. They still arrive exactly on time. Two levels: Normal and Strong.
 
 <p align="center">
-  <a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=sv_mod"><img src="docs/media/sv_mod_anim.webp" alt="SV mod: scroll velocity changes on a 4K map without its own SV, in the chorus of The Cyber Grind" width="360"></a><br>
-  <sub>meganeko – The Cyber Grind, a map without its own SV. <a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=sv_mod"><b>▶ Watch with sound</b></a></sub>
+  <a href="https://vyrenbusiness-source.github.io/OMEN/watch.html?v=sv_mod"><img src="docs/media/sv_mod_anim.webp" alt="SV mod: scroll velocity changes on a 4K map without its own SV, in the chorus of The Cyber Grind" width="360"></a><br>
+  <sub>meganeko – The Cyber Grind, a map without its own SV. <a href="https://vyrenbusiness-source.github.io/OMEN/watch.html?v=sv_mod"><b>▶ Watch with sound</b></a></sub>
 </p>
 
 ## osu!mania 4K in 3D worlds or on the classic 2D field
 
 <p align="center">
-  <a href="docs/media/play_3d_worlds.webp"><img src="docs/media/play_3d_worlds.webp" alt="The 13 3D worlds of the TETHRA rhythm game" width="100%"></a><br>
+  <a href="docs/media/play_3d_worlds.webp"><img src="docs/media/play_3d_worlds.webp" alt="The 13 3D worlds of the OMEN rhythm game" width="100%"></a><br>
   <sub>13 worlds that move with the music: Galaxy, Boss, Aurora, Neon, Eclipse, Abyss, Fractal, Obsidian, Storm, Singularity, Monolith, Rift, Nerve.</sub>
 </p>
 
@@ -210,7 +210,7 @@ Sign in or register in the game (or on [butzebot.com](https://butzebot.com/tethr
 
 <table>
   <tr>
-    <td width="50%"><a href="docs/media/ui_login.webp"><img src="docs/media/ui_login.webp" alt="Sign-in dialog for the optional TETHRA online account"></a></td>
+    <td width="50%"><a href="docs/media/ui_login.webp"><img src="docs/media/ui_login.webp" alt="Sign-in dialog for the optional OMEN online account"></a></td>
     <td valign="top">
       <ul>
         <li><b>Leaderboards</b> per map and mode (Mania, Orbit). Your best runs count.</li>
@@ -225,23 +225,23 @@ Sign in or register in the game (or on [butzebot.com](https://butzebot.com/tethr
 
 ## Play your own music
 
-Drop an `.mp3`, `.ogg` or `.wav` onto the song browser, or pick it with **Import**. TETHRA finds the tempo and beats and builds an Orbit map in about a second. It is playable in Orbit only. It needs FFmpeg next to the game or on your PATH. Import also takes `.osz` files and a whole osu! `Songs` folder (4K Mania and osu!standard maps).
+Drop an `.mp3`, `.ogg` or `.wav` onto the song browser, or pick it with **Import**. OMEN finds the tempo and beats and builds an Orbit map in about a second. It is playable in Orbit only. It needs FFmpeg next to the game or on your PATH. Import also takes `.osz` files and a whole osu! `Songs` folder (4K Mania and osu!standard maps).
 
-## How to install TETHRA on Windows
+## How to install OMEN on Windows
 
-1. Download **[TETHRA_Setup.exe](https://github.com/Vyrenbusiness-source/TETHRA/releases/download/worlds/TETHRA_Setup.exe)** (about 430 MB).
+1. Download **[OMEN_Setup.exe](https://github.com/Vyrenbusiness-source/OMEN/releases/download/worlds/OMEN_Setup.exe)** (about 430 MB).
 2. Run it. If Windows shows "Windows protected your PC", click **More info**, then **Run anyway**. The game is not code-signed.
-3. Start TETHRA from the desktop or the start menu. New versions install themselves.
+3. Start OMEN from the desktop or the start menu. New versions install themselves.
 
-Graphics problems? Start "TETHRA (Kompatibilitätsmodus)" from the start menu (OpenGL instead of Vulkan). After a crash the game starts in a safe graphics mode by itself.
+Graphics problems? Start "OMEN (Kompatibilitätsmodus)" from the start menu (OpenGL instead of Vulkan). After a crash the game starts in a safe graphics mode by itself.
 
-The `TETHRA.pck` files on the [release pages](https://github.com/Vyrenbusiness-source/TETHRA/releases) are the update packages the game downloads on its own. You do not need them.
+The `OMEN.pck` and `TETHRA.pck` files (same content; installs from before the rename look for the old name) on the [release pages](https://github.com/Vyrenbusiness-source/OMEN/releases) are the update packages the game downloads on its own. You do not need them.
 
 ## FAQ
 
-**Is TETHRA free?** Yes. The download is free, and the online account is optional.
+**Is OMEN free?** Yes. The download is free, and the online account is optional.
 
-**Do I need osu!?** No. TETHRA is a game of its own. It plays `.osz` files and downloads maps in the game.
+**Do I need osu!?** No. OMEN is a game of its own. It plays `.osz` files and downloads maps in the game.
 
 **Can I use my osu! maps?** Yes. Import `.osz` files or a whole osu! `Songs` folder. 4K osu!mania maps and osu!standard maps are supported.
 
@@ -261,19 +261,19 @@ The `TETHRA.pck` files on the [release pages](https://github.com/Vyrenbusiness-s
 
 1. Install [Godot 4.7](https://godotengine.org/download).
 2. Clone this repository and open `project.godot`, or run `godot --path .`
-3. Export a pack: `godot --headless --path . --export-pack "Windows" TETHRA.pck`
+3. Export a pack: `godot --headless --path . --export-pack "Windows" OMEN.pck`
 
-## Find TETHRA
+## Find OMEN
 
-TETHRA is a free 4K rhythm game (VSRG) for Windows PC, built with Godot. Website: [vyrenbusiness-source.github.io/TETHRA](https://vyrenbusiness-source.github.io/TETHRA/). Download: [TETHRA_Setup.exe](https://github.com/Vyrenbusiness-source/TETHRA/releases/download/worlds/TETHRA_Setup.exe). Found a bug? [Open an issue](https://github.com/Vyrenbusiness-source/TETHRA/issues).
+OMEN is a free 4K rhythm game (VSRG) for Windows PC, built with Godot. Website: [vyrenbusiness-source.github.io/OMEN](https://vyrenbusiness-source.github.io/OMEN/). Download: [OMEN_Setup.exe](https://github.com/Vyrenbusiness-source/OMEN/releases/download/worlds/OMEN_Setup.exe). Found a bug? [Open an issue](https://github.com/Vyrenbusiness-source/OMEN/issues).
 
 ## Credits
 
-- osu! is a trademark of ppy Pty Ltd. TETHRA is an independent project and is not affiliated with osu!.
+- osu! is a trademark of ppy Pty Ltd. OMEN is an independent project and is not affiliated with osu!.
 - Maps belong to their mappers. The online browser downloads through a public mirror.
 - Star rating and pp: [rosu-pp](https://github.com/MaxOhn/rosu-pp). Clips are encoded with [FFmpeg](https://ffmpeg.org) (GPL, shipped as a separate program).
 - Built with [Godot Engine](https://godotengine.org).
 
 ## Deutsch
 
-TETHRA ist ein kostenloses Rhythmusspiel für Windows: osu!mania-4K-Maps in 3D oder 2D, jede Map per SV-Mod als SV-Map (Noten tanzen auf dem Beat) und fünf eigene Modi mit normalen osu!-Maps: Orbit (Ziele erscheinen auf dem Beat, ein Satellit kreist eine Runde pro Beat, Punkte zählen die Runden herunter; im letzten Umlauf zielst du auf das Ziel und drückst Taste A, B oder beide beim Akzent), Rally (Tischtennis im Takt der Map), Dirigent (Taktfigur mit der Maus führen, Einsätze mit zwei Tasten spielen), Trace (ein Leuchtfaden zeichnet die Map, jede Note ist ein Knick in Richtung ihrer Spalte) und Rebound (vier Bälle hüpfen auf vier Trommelfellen und landen genau auf den Noten; beide nur mit 4K-Maps). Rally läuft mit Blick hinter den Spieler und 4 Zonen (oder 3). Der Browser schlägt unter „For you“ passende Maps vor (Easy, Challenge, Push) und lernt dein Level und deinen Stil, und jeder Modus hat ein kurzes Tutorial. Zu jedem Modus gibt es oben ein Video mit Ton. Dazu Online-Konto mit Bestenlisten, Web-Profilen und Chat, Replays, Multiplayer über den Server, eigene Musik als Orbit-Map, Online-Map-Browser, osu!-Skins, Clips und Turniere. Installation: **[TETHRA_Setup.exe](https://github.com/Vyrenbusiness-source/TETHRA/releases/download/worlds/TETHRA_Setup.exe)** herunterladen, ausführen, spielen. Meldet Windows „Der Computer wurde durch Windows geschützt“: **Weitere Informationen** → **Trotzdem ausführen**. Updates kommen automatisch. Maps gehören ihren Mappern, osu! ist eine Marke von ppy.
+OMEN ist ein kostenloses Rhythmusspiel für Windows: osu!mania-4K-Maps in 3D oder 2D, jede Map per SV-Mod als SV-Map (Noten tanzen auf dem Beat) und fünf eigene Modi mit normalen osu!-Maps: Orbit (Ziele erscheinen auf dem Beat, ein Satellit kreist eine Runde pro Beat, Punkte zählen die Runden herunter; im letzten Umlauf zielst du auf das Ziel und drückst Taste A, B oder beide beim Akzent), Rally (Tischtennis im Takt der Map), Dirigent (Taktfigur mit der Maus führen, Einsätze mit zwei Tasten spielen), Trace (ein Leuchtfaden zeichnet die Map, jede Note ist ein Knick in Richtung ihrer Spalte) und Rebound (vier Bälle hüpfen auf vier Trommelfellen und landen genau auf den Noten; beide nur mit 4K-Maps). Rally läuft mit Blick hinter den Spieler und 4 Zonen (oder 3). Der Browser schlägt unter „For you“ passende Maps vor (Easy, Challenge, Push) und lernt dein Level und deinen Stil, und jeder Modus hat ein kurzes Tutorial. Zu jedem Modus gibt es oben ein Video mit Ton. Dazu Online-Konto mit Bestenlisten, Web-Profilen und Chat, Replays, Multiplayer über den Server, eigene Musik als Orbit-Map, Online-Map-Browser, osu!-Skins, Clips und Turniere. Installation: **[OMEN_Setup.exe](https://github.com/Vyrenbusiness-source/OMEN/releases/download/worlds/OMEN_Setup.exe)** herunterladen, ausführen, spielen. Meldet Windows „Der Computer wurde durch Windows geschützt“: **Weitere Informationen** → **Trotzdem ausführen**. Updates kommen automatisch. Maps gehören ihren Mappern, osu! ist eine Marke von ppy.

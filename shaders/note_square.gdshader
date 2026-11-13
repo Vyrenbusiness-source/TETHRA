@@ -1,7 +1,7 @@
 shader_type spatial;
 render_mode unshaded, blend_mix, depth_draw_never, cull_disabled;
 
-// TETHRA-Note: abgerundete RAUTE (45-Grad-Quadrat) — bewusst kein osu-Kreis.
+// OMEN-Note: abgerundete RAUTE (45-Grad-Quadrat) — bewusst kein osu-Kreis.
 //  - dunkler Kern (Lesbarkeit auf jedem Hintergrund)
 //  - leuchtender Rauten-Rand (rim_boost = Fenster-Flash / Musik)
 //  - weicher Aussen-Halo

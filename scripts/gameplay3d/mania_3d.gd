@@ -1,6 +1,6 @@
 extends Node3D
 
-## TETHRA 4K: RAUMSCHIFF-INTERCEPT.
+## OMEN 4K: RAUMSCHIFF-INTERCEPT.
 ## Du fliegst ein Schiff ueber einen Energie-Highway im All. Vier Schienen
 ## laufen auf dich zu; Drohnen-Orbs gleiten mit KONSTANTER Geschwindigkeit
 ## heran und kreuzen exakt zur Hit-Time die ABFANGLINIE vor deinem Schiff —
@@ -3995,7 +3995,7 @@ func _show_results(is_fail: bool) -> void:
 			s.n_max, s.n300, s.n200, s.n100, s.n50, s.n_miss, s.max_combo)
 		if pp_res.has("pp"):
 			pp = float(pp_res.pp)
-		# TETHRA-pp-Floor: Die offizielle Mania-Formel vergibt unter ~80%
+		# OMEN-pp-Floor: Die offizielle Mania-Formel vergibt unter ~80%
 		# (Custom-)Accuracy exakt 0 pp — fuer die Solo-Progression gibt es
 		# stattdessen einen Acc-basierten Mindestwert, verankert an der
 		# ECHTEN rosu-SS-pp dieser Diff (nie mehr als rosu bei guter Acc).

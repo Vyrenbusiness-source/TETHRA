@@ -29,7 +29,7 @@ func _ok(cond: bool, label: String) -> void:
 
 
 func _run() -> void:
-	print("=== TETHRA Audio-Map-Tests ===")
+	print("=== OMEN Audio-Map-Tests ===")
 	var args := OS.get_cmdline_user_args()
 	var mi := args.find("--measure")
 	if mi >= 0 and mi + 1 < args.size():
@@ -103,7 +103,7 @@ func _test_click_track() -> void:
 	_ok(res.ok, "generate ok: " + str(res.error))
 	if not res.ok:
 		return
-	_ok(res.osz_path.get_file() == "Testband - Klickspur (TETHRA Auto).osz", "osz-Name: " + res.osz_path.get_file())
+	_ok(res.osz_path.get_file() == "Testband - Klickspur (OMEN Auto).osz", "osz-Name: " + res.osz_path.get_file())
 	_ok(absf(res.bpm - 128.0) < 0.05, "generate BPM %s" % res.bpm)
 	var imp := OszImporter.import(res.osz_path)
 	_ok(imp.ok, "OszImporter liest die Map")

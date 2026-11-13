@@ -27,7 +27,7 @@ var _failed := 0
 
 
 func _initialize() -> void:
-	print("=== TETHRA Orbit-QA (Satelliten) ===")
+	print("=== OMEN Orbit-QA (Satelliten) ===")
 	_test_bot_model()
 	var rows := _measure_library()
 	_test_library(rows)

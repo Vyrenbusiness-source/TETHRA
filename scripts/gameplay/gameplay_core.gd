@@ -1,7 +1,7 @@
 class_name GameplayCore
 extends RefCounted
 
-## TETHRA-Spiellogik (Tipp-Modus, final): Maus zielt, Hook-Taste im
+## OMEN-Spiellogik (Tipp-Modus, final): Maus zielt, Hook-Taste im
 ## Timing-Fenster druecken. Judgement-Regeln exakt Masterplan 3.5
 ## (DifficultyCalc) — Fenster/Radius unveraenderlich.
 ## Slider: Head klicken + Taste bis zum Ende halten (EIN Acc-Objekt,

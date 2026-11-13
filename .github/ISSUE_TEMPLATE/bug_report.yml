@@ -19,7 +19,7 @@ body:
   - type: input
     id: version
     attributes:
-      label: TETHRA version
+      label: OMEN version
       placeholder: e.g. 1.6.1
     validations:
       required: true

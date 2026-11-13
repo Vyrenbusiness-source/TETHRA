@@ -282,6 +282,7 @@ func _run() -> void:
 	a.token = "tok"
 	_check(OnlineApi.REGISTER_URL == "https://butzebot.com/tethra/register", "Register-URL (Website)")
 	_check(not a.has_method("register") and not a.has_method("verify"), "keine In-Game-Registrierung")
+	_server_name_tests()
 
 	# --- Leaderboard-Aufruf
 	_log.clear()
@@ -306,6 +307,68 @@ func _run() -> void:
 
 
 # --- Backfill ------------------------------------------------------------------
+
+## Server-Name tethra -> omen: Pfad und Header-Praefix an einer Stelle, Umschalten per Probe.
+func _server_name_tests() -> void:
+	_check(OnlineApi.BASE_URL == "https://butzebot.com/panel-api/tethra"
+			and OnlineApi.api_base("omen") == "https://butzebot.com/panel-api/omen", "API-Basis je Server-Name")
+	var ho := OnlineApi.headers_for("omen", "k", "t")
+	_check(ho.has("x-omen-api-key: k") and ho.has("x-omen-user-token: t") and ho.has("x-tethra-api-key: k")
+			and ho.has("x-tethra-user-token: t"), "omen: x-omen-* und x-tethra-* Header")
+	var ht := OnlineApi.headers_for("tethra", "k", "t")
+	_check(ht.size() == 3 and not ("x-omen" in "\n".join(ht)), "tethra: nur x-tethra-* Header")
+	# Probe-Auswertung
+	var j := "{\"error\":\"Unknown API route\"}"
+	_check(OnlineApi.probe_result(404, j, false) == "tethra" and OnlineApi.probe_result(404, j, true) == "tethra", "404 -> tethra")
+	_check(OnlineApi.probe_result(200, "{\"user\":{}}", true) == "omen", "200 -> omen")
+	_check(OnlineApi.probe_result(401, "{\"error\":\"Missing x-omen-user-token header\"}", false) == "omen", "401 ohne Login -> omen")
+	_check(OnlineApi.probe_result(401, "{}", true) == "tethra", "401 mit Login -> bleibt tethra (kein Abmelden)")
+	for c in [0, 429, 500, 503]:
+		_check(OnlineApi.probe_result(c, "{}", false) == "", "%d -> unklar" % c)
+	_check(OnlineApi.probe_result(200, "<html>", false) == "", "HTML -> unklar")
+	# Ablauf: Probe fragt /panel-api/omen/auth/me, danach laufen Anfragen ueber omen.
+	var a := _api()
+	_check(a.server_name == "tethra" and a.base_url == OnlineApi.BASE_URL, "Start: tethra")
+	_script = [[404, j]]
+	var seen := []
+	a.probe_server(func(n): seen.append(n))
+	_check(_log.size() == 1 and _log[0].url == "https://butzebot.com/panel-api/omen/auth/me" and _log[0].method == "GET"
+			and (_log[0].headers as PackedStringArray).has("x-omen-user-token: tok"), "Probe-Anfrage")
+	_check(seen == ["tethra"] and a.base_url == OnlineApi.BASE_URL, "404: bleibt tethra")
+	_script = [[200, "{\"user\":{\"username\":\"x\"}}"]]
+	a.probe_server(func(n): seen.append(n))
+	_check(seen == ["tethra", "omen"] and a.server_name == "omen" and a.base_url.ends_with("/panel-api/omen"), "200: omen")
+	_log.clear()
+	_script = [[200, "{}"]]
+	a.submit(_result(), _meta())
+	_check(_log.size() == 1 and _log[0].url == "https://butzebot.com/panel-api/omen/score"
+			and (_log[0].headers as PackedStringArray).has("x-omen-api-key: k")
+			and (_log[0].headers as PackedStringArray).has("x-tethra-api-key: k"), "Submit ueber omen, beide Header")
+	# Gemerkt fuer den naechsten Start; Netzfehler aendert nichts.
+	var b := OnlineApi.new()
+	b.cfg_path = TMP_CFG
+	b.load_server()
+	_check(b.server_name == "omen" and b.base_url.ends_with("/panel-api/omen"), "naechster Start beginnt mit omen")
+	b.free()
+	_script = [[0, ""]]
+	a.probe_server()
+	_check(a.server_name == "omen", "Probe offline: bleibt omen")
+	_script = [[404, j]]
+	a.probe_server()
+	_check(a.server_name == "tethra" and a.base_url == OnlineApi.BASE_URL, "omen wieder weg: zurueck auf tethra")
+	# Eigene base_url (Test/lokaler Server) wird nie ueberschrieben.
+	a.base_url = "http://127.0.0.1:9/api"
+	a.use_server("omen")
+	_check(a.base_url == "http://127.0.0.1:9/api" and a.server_name == "omen", "eigene base_url bleibt")
+	a.use_server("quatsch")
+	_check(a.server_name == "omen", "unbekannter Name ignoriert")
+	a.free()
+	# Website/Chat/Relay-Links bleiben vorerst unter /tethra/ (v1.36.0 erkennt nur die).
+	_check(OnlineApi.LINK_NAME == "tethra" and ChatApi.SCORE_URL == "https://butzebot.com/tethra/score/"
+			and ChatApi.MAP_URL == "https://butzebot.com/tethra/map/", "Links: /tethra/")
+	var RP: GDScript = load("res://scripts/net/relay_peer.gd")
+	_check(str(RP.DEFAULT_URL) == "wss://butzebot.com/tethra/mp", "Relay: /tethra/mp")
+
 
 func _entry(f: String, v: String, n: int, extra: Dictionary = {}) -> Dictionary:
 	var e := {"osz_file": f, "version": v, "n_max": n - 2, "n300": 1, "n200": 0, "n100": 1,

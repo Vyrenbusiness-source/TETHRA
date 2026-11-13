@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""TETHRA Welt-Thema "Neon": Synthwave-Nacht als equirektangulares Panorama.
+"""OMEN Welt-Thema "Neon": Synthwave-Nacht als equirektangulares Panorama.
 
 Erzeugt assets_game/themes/neon/neon_sky.webp (Standard 4096x2048):
   - Nachthimmel violett -> magenta -> Glut am Horizont, feiner Nebel-Dunst,

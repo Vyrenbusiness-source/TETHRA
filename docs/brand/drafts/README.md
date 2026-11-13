@@ -1,4 +1,6 @@
-# TETHRA Logo-Entwuerfe
+# Logo-Entwuerfe (Verlauf)
+
+Die Entwuerfe entstanden, als das Spiel noch TETHRA hiess, und zeigen deshalb dieses Wort. Gewaehlt wurde Entwurf 3 "Bahn"; die Endfassung mit dem Namen OMEN liegt in `docs/brand/`.
 
 Erzeugt von `tools/render_logo_drafts.py` (SVG von Hand konstruiert, Wortmarke als Pfade, PNG per Chrome headless). Je Entwurf: `*_mark`, `*_wordmark`, `*_icon` (256 px) als SVG und PNG. Vergleich: `overview.png`. Farben: Graphit `#121110`, Text `#ECE6DA`, Bernstein `#F2A23A` (auf hellem Grund `#C77D12`). Nicht im Spiel eingebaut.
 

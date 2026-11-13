@@ -54,7 +54,7 @@ func _ok(cond: bool, label: String) -> void:
 
 
 func _initialize() -> void:
-	print("=== TETHRA Chat-Score-Karte ===")
+	print("=== OMEN Chat-Score-Karte ===")
 	_parse()
 	_texts()
 	_buttons()

@@ -10,7 +10,7 @@ const OD := 8.0
 
 
 func _initialize() -> void:
-	print("=== TETHRA Orbit-Core-Tests (Satelliten) ===")
+	print("=== OMEN Orbit-Core-Tests (Satelliten) ===")
 	_test_hit()
 	_test_aim_miss()
 	_test_wrong_key()

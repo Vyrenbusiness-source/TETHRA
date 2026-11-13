@@ -25,7 +25,7 @@ var _t_start_usec := 0
 func _process(_delta: float) -> bool:
 	if not _started:
 		_started = true
-		print("=== TETHRA SV-Start-Tests ===")
+		print("=== OMEN SV-Start-Tests ===")
 		_test_lead_math()
 		_test_lead_cap()
 		_clock = root.get_node_or_null("/root/SyncClock")

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""TETHRA Skybox-Generator: equirektangulare Weltraum-Panoramen (offline).
+"""OMEN Skybox-Generator: equirektangulare Weltraum-Panoramen (offline).
 
 Erzeugt pro Palette zwei Texturen in assets_game/space/:
   sky_<name>.webp        Nebel-Ebene: mehrschichtige domain-warped fbm-Nebel

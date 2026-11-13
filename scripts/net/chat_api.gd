@@ -1,14 +1,18 @@
 class_name ChatApi
 extends Node
 
-## Ingame-Chat ueber den TETHRA-Server: HTTP, Parsing, Polling, Map-Links.
+## Ingame-Chat ueber den OMEN-Server: HTTP, Parsing, Polling, Map-Links.
 ## Zugangsdaten kommen nur lesend aus OnlineApi (Header, Token, Basis-URL).
 
 const MAX_LEN := 2000
 const UNREAD_INTERVAL_S := 30.0
 const OPEN_INTERVAL_S := 4.0
 const MESSAGE_LIMIT := 50
-const MAP_URL := "https://butzebot.com/tethra/map/"
+## "/tethra/..." = historische Kennung (Server-Pfade auf butzebot.com, stehen auch in alten
+## Chat-Nachrichten). Der Bot heisst so, wie der Server ihn liefert ("TETHRA Bot").
+## Erzeugte Links nutzen OnlineApi.LINK_NAME; erkannt werden /tethra/ und /omen/ (LINK_NAMES).
+const MAP_URL := OnlineApi.SITE_BASE + "/map/"
+const LINK_NAMES := "(?:tethra|omen)"
 const COVER_URL := "https://assets.ppy.sh/beatmaps/%d/covers/list@2x.jpg"
 const PREVIEW_URL := "https://b.ppy.sh/preview/%d.mp3"
 
@@ -236,11 +240,11 @@ static func _re(pattern: String) -> RegEx:
 ## Markdown "[Titel by Kuenstler](link)":
 ##   /tethra/map/<md5>?set=<id>&b=&t=&a=&v=&s=      (Spieler-Links, map_link())
 ##   /tethra/songs?detail=<slug>&difficulty=<slug>&set=<id>   (TETHRA Bot)
-##   /omen/songs?...                                 (alte Bot-Nachrichten)
+##   /omen/map/..., /omen/songs?...                  (alte Bot-Nachrichten, kuenftiger Server-Name)
 ## Ohne set-ID gibt es keine Karte: der Link bleibt als Text stehen.
 static func parse_content(content: String) -> Dictionary:
 	var re := _re("(?:\\[([^\\]\\n]*)\\]\\()?(?<![\\w.:/-])((?:https?://(?:www\\.)?butzebot\\.com)?"
-		+ "/(?:tethra|omen)/(?:map/([0-9A-Za-z]+)|songs)(\\?[^\\s)]*)?)")
+		+ "/" + LINK_NAMES + "/(?:map/([0-9A-Za-z]+)|songs)(\\?[^\\s)]*)?)")
 	var follow := _re("^[ \\t]*\\r?\\n[ \\t]*\\*\\*(.+?)\\*\\*\\s*[—–-]\\s*([0-9]+(?:[.,][0-9]+)?)\\s*[★⭐]")
 	var maps: Array = []
 	var text := ""
@@ -451,7 +455,7 @@ static func diff_slug(s: String) -> String:
 
 # --- Score-Links / Replays -----------------------------------------------------
 
-const SCORE_URL := "https://butzebot.com/tethra/score/"
+const SCORE_URL := OnlineApi.SITE_BASE + "/score/"
 
 
 static func score_link(score_id: Variant) -> String:
@@ -461,7 +465,7 @@ static func score_link(score_id: Variant) -> String:
 ## Erster Score-Link im Text: {score_id, link, text} oder {}.
 static func parse_score_link(content: String) -> Dictionary:
 	var re := RegEx.new()
-	re.compile("https://butzebot\\.com/tethra/score/([0-9A-Za-z_-]+)")
+	re.compile("https://butzebot\\.com/" + LINK_NAMES + "/score/([0-9A-Za-z_-]+)")
 	var m := re.search(content)
 	if m == null:
 		return {}
