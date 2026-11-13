@@ -861,7 +861,21 @@ func _measure(maps_dir: String, n_sets: int, learn: bool) -> void:
 	if learn:
 		_write_patterns(human, fa, fb, mae_fit, nf, n_sets_4k, n_diffs)
 		AmChart.reload_patterns()
-	# Phase B: aus n Sets erzeugen
+	# Phase B je Variante (AM_VARIANTS = JSON-Liste von params, Standard: [{}] = DEFAULTS)
+	var variants: Array = [{}]
+	var vj := OS.get_environment("AM_VARIANTS")
+	if vj != "":
+		var parsed = JSON.parse_string(vj)
+		if parsed is Array and not parsed.is_empty():
+			variants = parsed
+	for vi in variants.size():
+		if variants.size() > 1:
+			print("
+# Variante %d: %s" % [vi, JSON.stringify(variants[vi])])
+		_phase_b(tops, human, n_sets, variants[vi], t_all)
+
+
+func _phase_b(tops: Array, human: Array, n_sets: int, params: Dictionary, t_all: int) -> void:
 	var step := maxf(float(tops.size()) / float(maxi(n_sets, 1)), 1.0)
 	var picked: Array = []
 	var pos := 0.0
@@ -888,12 +902,12 @@ func _measure(maps_dir: String, n_sets: int, learn: bool) -> void:
 		var top: Dictionary = picked[si]
 		var feats := _features_of(top["notes"], top["kiai"])
 		var t0 := Time.get_ticks_msec()
-		var all := AmChart.build_all(feats, top["grid"])
+		var all := AmChart.build_all(feats, top["grid"], params)
 		times_ms.append(float(Time.get_ticks_msec() - t0))
 		var zp := ZIPPacker.new()
 		var osz := "set%03d.osz" % si
 		zp.open(out_dir.path_join(osz))
-		var m := {"osz": osz, "est": [], "capped": [], "src": float(top["stars"])}
+		var m := {"osz": osz, "est": [], "capped": [], "src": float(top["stars"]), "st": []}
 		var prev := {}
 		for pi in 5:
 			var prof: String = AmChart.PROFILES[pi]
@@ -901,6 +915,7 @@ func _measure(maps_dir: String, n_sets: int, learn: bool) -> void:
 			if not res["ok"]:
 				m["est"].append(-1.0)
 				m["capped"].append(true)
+				m["st"].append({})
 				continue
 			var notes: Array = res["notes"]
 			var viol := AmChart.lint(notes, top["grid"], prof)
@@ -915,7 +930,11 @@ func _measure(maps_dir: String, n_sets: int, learn: bool) -> void:
 			else:
 				est_cap[pi] += 1
 			if notes.size() >= 20:
-				_agg_add(gen[pi], AmChart.pattern_stats(notes, top["grid"]))
+				var pst := AmChart.pattern_stats(notes, top["grid"])
+				_agg_add(gen[pi], pst)
+				m["st"].append(pst)
+			else:
+				m["st"].append({})
 			var times := _times(notes)
 			for k in prev:
 				if not times.has(k):
@@ -938,6 +957,9 @@ func _measure(maps_dir: String, n_sets: int, learn: bool) -> void:
 	var r_high := [0, 0, 0, 0, 0]      # ueber dem Band
 	var r_err: Array = [[], [], [], [], []]
 	var r_stars: Array = [[], [], [], [], []]
+	var genb: Array = []        # erzeugte Diffs nach ihrem rosu-Band (wie die Menschen-Maps)
+	for i in 5:
+		genb.append(_agg_new())
 	for m: Dictionary in meta:
 		var entry = rosu.get(m["osz"], {})
 		var sd: Dictionary = entry.get("stars", {}) if entry is Dictionary else {}
@@ -948,6 +970,9 @@ func _measure(maps_dir: String, n_sets: int, learn: bool) -> void:
 				continue
 			var sr: float = info["stars"]
 			var band: Array = AmChart.DEFAULTS["star_bands"][prof]
+			var bb := _band_of(sr)
+			if bb >= 0 and not (m["st"][pi] as Dictionary).is_empty():
+				_agg_add(genb[bb], m["st"][pi])
 			r_n[pi] += 1
 			r_stars[pi].append(sr)
 			r_err[pi].append(absf(sr - float(m["est"][pi])))
@@ -1012,6 +1037,37 @@ func _measure(maps_dir: String, n_sets: int, learn: bool) -> void:
 		line_top += " %s | %s |" % [_pct(_top_share(human[pi], top4)), _pct(_top_share(gen[pi], top4))]
 	print(line_sim)
 	print(line_top)
+	print("
+## Erzeugt nach rosu-Band (jede erzeugte Diff in dem Band, in dem ihre rosu-Sterne liegen)
+")
+	var head2 := "| Kennzahl |"
+	var sep2 := "|---|"
+	for pi in 5:
+		head2 += " %s Mensch | %s erzeugt |" % [AmChart.PROFILES[pi], AmChart.PROFILES[pi]]
+		sep2 += "---|---|"
+	print(head2)
+	print(sep2)
+	var gbs: Array = []
+	for pi in 5:
+		gbs.append(_summ(genb[pi]))
+	for rd in [["Maps", "maps", 0], ["Akkord-Zeilen", "chord", 1], ["3er/4er-Akkorde", "chord3", 1],
+			["Noten in Jacks (1/4)", "jack", 1], ["Hold-Anteil", "hold", 1], ["Noten/s Mittel", "nps", 2],
+			["Noten/s Spitze", "peak", 2]]:
+		var line := "| %s |" % rd[0]
+		for pi in 5:
+			for sdict: Dictionary in [hs[pi], gbs[pi]]:
+				var val = sdict[rd[1]]
+				if int(rd[2]) == 0:
+					line += " %d |" % int(val)
+				elif int(rd[2]) == 1:
+					line += " %s |" % _pct(float(val))
+				else:
+					line += " %.2f |" % float(val)
+		print(line)
+	var line_top2 := "| Anteil 4er-Muster in den Top %d der Menschen |" % TOP4
+	for pi in 5:
+		line_top2 += " %s | %s |" % [_pct(_top_share(human[pi], _top(human[pi]["g4"], TOP4))), _pct(_top_share(genb[pi], _top(human[pi]["g4"], TOP4)))]
+	print(line_top2)
 	print("\n## Sterne-Trefferquote je Profil (%d Sets)\n" % picked.size())
 	print("| Profil | Band | rosu im Band | unter Band (davon Vorlage schon unter Band) | ueber Band | ausserhalb, als capped gemeldet | ausserhalb, nicht gemeldet | rosu Median | Schaetzung im Band | Fehler Schaetzung gegen rosu (Mittel) | lint-Verstoesse |")
 	print("|---|---|---|---|---|---|---|---|---|---|---|")

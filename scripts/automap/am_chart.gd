@@ -40,6 +40,9 @@ const DEFAULTS := {
 	"ngram_weight": 0.6,          # Anteil des 4er-Modells (naechste Zeile nach den 3 vorigen, Menschen-Maps)
 	"sharpness": 1.3,
 	"chord_boost_max": 0.15,      # hoechstens so viel mehr Akkorde, wenn die Sterne nicht reichen
+	"fresh_weight": 0.0,          # Spalte nicht in der vorvorigen/drittletzten Zeile (Menschen laufen ueber alle Spalten)
+	"top_boost": 0.0,             # Zusatzgewicht fuer die 60 haeufigsten 4er-Muster der Menschen im Band
+	"sus_bonus": 0.3,             # gehaltene Toene in der Auswahl bevorzugen (Holds wie bei den Menschen)
 	"figure_weight": 1.8,         # Treppe/Triller/Roll aus Tonhoehe und Hi-Hat-Laeufen
 	"jack_weight": 2.0,           # Jacks auf den Anteil der Menschen-Maps des Bands halten
 	"easy_hold_max_beats": 2.0,   # Easy/Normal: Hold ohne Ueberlappung hoechstens so lang, Zeilen darin entfallen
@@ -107,6 +110,7 @@ const S_JN := 25       # Noten in Jacks bisher
 const S_ROWS := 26     # gesetzte Zeilen
 const S_CH := 27       # davon Akkorde
 const S_C3 := 28       # davon 3er/4er-Akkorde
+const S_RARE := 29     # davon auf der seltenen Teilung
 
 static var _pat_cache: Dictionary = {}
 static var _pat_mutex := Mutex.new()
@@ -910,6 +914,14 @@ static func _pat_ready(src: Dictionary) -> Dictionary:
 				for k in gs:
 					gd[int(String(k))] = float(gs[k])
 			pat[gname] = gd
+		var vals: Array = (pat["g4"] as Dictionary).values()
+		vals.sort()
+		var cut: float = vals[maxi(vals.size() - 60, 0)] if not vals.is_empty() else 2.0
+		var top4 := {}
+		for k4 in pat["g4"]:
+			if float(pat["g4"][k4]) >= cut:
+				top4[k4] = true
+		pat["top4"] = top4
 		out["bands"][prof] = pat
 	return out
 
@@ -939,7 +951,7 @@ static func _tune(C: Dictionary, G: Dictionary, profile: String, parent: Diction
 	var eff := PackedFloat64Array()
 	eff.resize(n)
 	for r in n:
-		eff[r] = score[r] + dg * (inten[r] - 0.5)
+		eff[r] = score[r] + dg * (inten[r] - 0.5) + (float(P["sus_bonus"]) if susb[r] >= float(R["hold_min"]) - EPS else 0.0)
 		if has_parent and pflags[r] == 0:
 			continue
 		if _unit_ok(tick[r], units):
@@ -1047,9 +1059,10 @@ static func _make(C: Dictionary, G: Dictionary, X: Dictionary, d: float, seed_ad
 	var R: Dictionary = X["R"]
 	var s2 := 1.0
 	var s3 := 1.0
+	var sr := 1.0
 	var res := {}
-	for attempt in 3:
-		res = _make1(C, G, X, d, seed_add, s2, s3)
+	for attempt in 4:
+		res = _make1(C, G, X, d, seed_add, s2, s3, sr)
 		var rows := maxi(int(res["rows"]), 1)
 		var sh2 := float(res["chords"]) / float(rows)
 		var sh3 := float(res["c3"]) / float(rows)
@@ -1057,16 +1070,21 @@ static func _make(C: Dictionary, G: Dictionary, X: Dictionary, d: float, seed_ad
 		var lim3 := float(R["c3_max"]) * 0.92
 		var ok2 := float(R["chord_max"]) >= 1.0 or sh2 <= lim2 or int(res["chords"]) <= 2
 		var ok3 := int(R["chord"]) < 3 or float(R["c3_max"]) >= 1.0 or sh3 <= lim3 or int(res["c3"]) <= 1
-		if ok2 and ok3:
+		var shr := float(res["rare_rows"]) / float(rows)
+		var limr := float(R["rare_max"]) * 0.95
+		var okr := int(R["rare"]) == 0 or shr <= limr or int(res["rare_rows"]) <= 2
+		if ok2 and ok3 and okr:
 			break
+		if not okr:
+			sr *= limr / shr * 0.97
 		if not ok2:
 			s2 *= lim2 / sh2 * 0.97
 		if not ok3:
-			s3 *= lim3 / maxf(sh3, 0.0001) * 0.95
+			s3 = 0.0 if attempt >= 2 else s3 * lim3 / maxf(sh3, 0.0001) * 0.95
 	return res
 
 
-static func _make1(C: Dictionary, G: Dictionary, X: Dictionary, d: float, seed_add: int, s2: float, s3: float) -> Dictionary:
+static func _make1(C: Dictionary, G: Dictionary, X: Dictionary, d: float, seed_add: int, s2: float, s3: float, sr: float) -> Dictionary:
 	var n: int = C["n"]
 	var R: Dictionary = X["R"]
 	var P: Dictionary = X["P"]
@@ -1088,6 +1106,7 @@ static func _make1(C: Dictionary, G: Dictionary, X: Dictionary, d: float, seed_a
 		# darueber bis knapp unter die Obergrenze der Spielbarkeits-Regel (mehr Noten statt Akkorde)
 		var rs: float = R["rare_share"]
 		var f := minf(rs * clampf(d, 0.0, 1.0) + boost * maxf(float(R["rare_max"]) * 0.9 - rs, 0.0), float(R["rare_max"]) * 0.9)
+		f *= sr
 		var kr := mini(rare.size(), int(floor(f / maxf(1.0 - f, 0.05) * float(k))))
 		for i in kr:
 			flags[rare[i]] = 1
@@ -1119,6 +1138,12 @@ static func _make1(C: Dictionary, G: Dictionary, X: Dictionary, d: float, seed_a
 			sel.append(r)
 			sizes[r] = 1
 	var ns := sel.size()
+	# Takte mit Vorlage erben Akkorde und Holds: jede Vorlage zaehlt mit ihren Kopien
+	var tcount := PackedInt32Array()
+	tcount.resize(n)
+	for r: int in sel:
+		if tmpl[r] >= 0 and flags[tmpl[r]] == 1:
+			tcount[tmpl[r]] += 1
 	# Akzente -> Akkorde (Anteil aus den Menschen-Maps des Bands)
 	var maxc: int = R["chord"]
 	var psizes: PackedByteArray = X["psizes"]
@@ -1130,12 +1155,6 @@ static func _make1(C: Dictionary, G: Dictionary, X: Dictionary, d: float, seed_a
 		var n3 := int(round(minf(float(pat["chord3_share"]) * mult, float(R["c3_max"]) * 0.85) * float(ns) * s3)) if maxc >= 3 else 0
 		var cu: int = R["chord_unit"]
 		var c3: int = R["c3_unit"]
-		# Takte mit Vorlage erben die Akkorde: jede Vorlage zaehlt mit ihren Kopien
-		var tcount := PackedInt32Array()
-		tcount.resize(n)
-		for r: int in sel:
-			if tmpl[r] >= 0 and flags[tmpl[r]] == 1:
-				tcount[tmpl[r]] += 1
 		var got := 0
 		for r: int in order_acc:
 			if got >= n2:
@@ -1177,9 +1196,9 @@ static func _make1(C: Dictionary, G: Dictionary, X: Dictionary, d: float, seed_a
 	for r: int in X["sus_rows"]:
 		if goth >= kh:
 			break
-		if flags[r] == 1:
+		if flags[r] == 1 and tmpl[r] < 0 and goth + 1 + tcount[r] <= kh + 1:
 			holdf[r] = 1
-			goth += 1
+			goth += 1 + tcount[r]
 	for r: int in sel:
 		if tmpl[r] >= 0:
 			holdf[r] = holdf[tmpl[r]] if flags[tmpl[r]] == 1 else 0
@@ -1190,7 +1209,7 @@ static func _make1(C: Dictionary, G: Dictionary, X: Dictionary, d: float, seed_a
 			"ovl_budget": int(0.85 * float(R["ovl_max"]) * float(ns)), "seed_i": int(X["seed"]) & 3, "avoid": 0,
 			"ep": exp(float(P["pitch_weight"])), "erole": exp(float(P["role_weight"]))}
 	var S: Array = [-1e9, -1e9, -1e9, -1e9, 0, 0, 0, 0, -1e9, -1e9, -1e9, -1e9, 0, 0, 0, -1e9, -1.0, 1.5, 0, 0, 0, -1e9,
-			-1.0, 1, 0, 0, 0, 0, 0]
+			-1.0, 1, 0, 0, 0, 0, 0, 0]
 	var notes: Array = []
 	var memo := {}
 	var motif_min: int = P["motif_min_rows"]
@@ -1299,7 +1318,7 @@ static func _make1(C: Dictionary, G: Dictionary, X: Dictionary, d: float, seed_a
 				chords += 1
 		i = j
 	return {"notes": notes, "flags": flags, "sizes": sizes, "maxjack": int(S[S_MAXJ]), "bars": bars,
-			"reused": reused, "chords": int(S[S_CH]), "c3": int(S[S_C3]), "rows": int(S[S_ROWS]),
+			"reused": reused, "chords": int(S[S_CH]), "c3": int(S[S_C3]), "rows": int(S[S_ROWS]), "rare_rows": int(S[S_RARE]),
 			"L": int(S[S_L]), "R": int(S[S_R])}
 
 
@@ -1483,6 +1502,9 @@ static func _do_row(S: Array, C: Dictionary, G: Dictionary, Y: Dictionary, q: in
 		hist = 0
 	S[S_HIST] = ((hist << 4) | mask) & 0xFFFFFFFF
 	S[S_ROWS] = int(S[S_ROWS]) + 1
+	var c_tick: PackedInt32Array = C["tick"]
+	if int(R["rare"]) > 0 and not _unit_ok(c_tick[r], R["units"]):
+		S[S_RARE] = int(S[S_RARE]) + 1
 	if POP[mask] >= 2:
 		S[S_CH] = int(S[S_CH]) + 1
 	if POP[mask] >= 3:
@@ -1555,6 +1577,9 @@ static func _choose(S: Array, C: Dictionary, Y: Dictionary, r: int, size: int, f
 				rdir = -rdir
 			fig = 1 << (pcol + rdir)
 	var efig: float = exp(float(P["figure_weight"]))
+	var fresh: float = P["fresh_weight"]
+	var top4: Dictionary = pat["top4"]
+	var etop: float = 1.0 + float(P["top_boost"])
 	# Jacks: Anteil der Menschen-Maps des Bands halten
 	var jratio := float(S[S_JN]) / float(maxi(lr, 30)) / maxf(float(pat["jack_share"]), 0.003)
 	var jexp := clampf(-float(P["jack_weight"]) * (jratio - 1.0), -4.0, 0.5)
@@ -1603,6 +1628,10 @@ static func _choose(S: Array, C: Dictionary, Y: Dictionary, r: int, size: int, f
 				w *= exp(-0.5 * absf(mc - p * 3.0))
 		if fig != 0 and m == fig:
 			w *= efig
+		if fresh > 0.0 and near:
+			w *= exp(-fresh * float(POP[m & ((hist >> 8) & 15)] + POP[m & ((hist >> 4) & 15)]) / float(POP[m]))
+		if has3 and top4.has(h3 | m):
+			w *= etop
 		if rc >= 0 and (m >> rc) & 1 == 1:
 			w *= erole
 		w *= exp(-kbal * float(NLR[m]))
