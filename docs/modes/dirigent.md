@@ -18,7 +18,7 @@ Taktfigur mit Maus/Tablet fuehren (Zielen = Takt) und Einsaetze mit zwei Tasten 
   (Trefferradius fest, Zielfaktor 1,0 im inneren Halbradius bis 0,88 am Rand). Anzeige: der
   aktuelle Zielpunkt gross mit Anflugring (schrumpft bis zum Schlag), der naechste klein
   nummeriert, die uebrigen Punkte nur als kleine Marken; Leuchtspur nur fuer den Weg zum
-  Zielpunkt (Ideal-Weg); kein Grund hinter der Figur. Daneben = "Schlag verfehlt" (zaehlt als Miss im Takt-Anteil).
+  Zielpunkt (Ideal-Weg); die Figur liegt auf einer runden Buehne (Graphit-Scheibe), an deren Rand die Takt-Uhr laeuft (ein Strich je Schlag der Figur, Schlag 1 oben, Bernstein-Bogen = Stelle im Takt). Daneben = "Schlag verfehlt" (zaehlt als Miss im Takt-Anteil).
 - **Einsaetze (Tasten)**: Noten der Map (zusammengefasst < 90 ms) als Tasten-Ereignisse:
   A (osu! ohne Whistle/Clap, Mania Spalten 1-2) / B (Whistle/Clap, Spalten 3-4), Finish bzw.
   Akkord ueber beide Seiten = beide. Anzeige: kleine Einsatz-Marken laufen auf einer Leiste
