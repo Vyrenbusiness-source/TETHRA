@@ -178,7 +178,8 @@ func _movie_run() -> void:
 	if _use_audio:
 		SyncClock.seek_ms(cut)
 	print("MOVIE_START frame=%d" % Engine.get_process_frames())
-	await get_tree().create_timer(len_s, true).timeout
+	if not await _sleep(len_s):
+		return
 	get_tree().quit(0)
 
 
@@ -703,6 +704,16 @@ func _countdown_wait(sec: float) -> bool:
 	return is_inside_tree()
 
 
+## Echtzeit warten (auch bei pausiertem Tree). false = Szene ist inzwischen weg (oder
+## war es schon): der Aufrufer bricht ab. Vorher: "Cannot call method 'create_timer'
+## on a null value", wenn eine Shot-/Endbild-Folge nach dem Szenenwechsel weiterlief.
+func _sleep(sec: float) -> bool:
+	if not is_inside_tree():
+		return false
+	await get_tree().create_timer(sec, true).timeout
+	return is_inside_tree()
+
+
 func _restart() -> void:
 	get_tree().paused = false
 	SyncClock.stop()
@@ -779,7 +790,8 @@ func _show_results() -> void:
 		for a in _args():
 			if a.begins_with("--mp-back="):
 				back_s = clampf(a.trim_prefix("--mp-back=").to_float(), 0.0, 60.0)
-		await get_tree().create_timer(back_s, true).timeout
+		if not await _sleep(back_s):
+			return
 		if is_inside_tree():
 			_back_to_browser()
 
@@ -912,7 +924,8 @@ func _capture_shot() -> void:
 
 
 func _capture_results_shot() -> void:
-	await get_tree().create_timer(2.6, true).timeout
+	if not await _sleep(2.6):
+		return
 	await RenderingServer.frame_post_draw
 	if not is_inside_tree():
 		return

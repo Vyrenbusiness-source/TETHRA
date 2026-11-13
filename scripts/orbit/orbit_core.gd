@@ -171,7 +171,7 @@ func setup(p_notes: Array[OrbitNote], od: float, p_mods = null,
 	_tally.w50 = w[4]
 	_tally.w_miss = w[5]
 	_tally._hp_miss_damage = 0.04 + 0.04 * (hp_drain / 10.0)
-	var m: Dictionary = p_mods if p_mods is Dictionary else ManiaCore.session_mods()
+	var m: Dictionary = normalize_mods(p_mods if p_mods is Dictionary else ManiaCore.session_mods())
 	_tally.mods = m.duplicate()
 	_tally.mod_mult = mod_multiplier(m)
 	_tally.no_fail = bool(m.get("NF", false))
@@ -260,7 +260,19 @@ static func window_scale(p_mods: Dictionary) -> float:
 	return PR_SCALE if bool(p_mods.get("PR", false)) else 1.0
 
 
+## Mods, wie Orbit sie wertet: SV wirkt in Orbit nicht (kein Scroll) und zaehlt darum
+## nicht (kam ueber den Mehrspieler-Raum und das Profil mit x1,1 herein); HD und FI
+## schliessen sich aus (zusammen bliebe vom Satelliten nichts): HD bleibt.
+static func normalize_mods(p_mods: Dictionary) -> Dictionary:
+	var m := p_mods.duplicate()
+	m.erase("SV")
+	if bool(m.get("HD", false)) and bool(m.get("FI", false)):
+		m["FI"] = false
+	return m
+
+
 static func mod_multiplier(p_mods: Dictionary) -> float:
+	p_mods = normalize_mods(p_mods)
 	var m := ManiaCore.mod_multiplier(p_mods)
 	for k in ORBIT_MOD_MULT:
 		if bool(p_mods.get(k, false)):
@@ -269,6 +281,7 @@ static func mod_multiplier(p_mods: Dictionary) -> float:
 
 
 static func mod_list(p_mods: Dictionary) -> Array:
+	p_mods = normalize_mods(p_mods)
 	var out := []
 	for k in ORBIT_MOD_ORDER:
 		if bool(p_mods.get(k, false)):

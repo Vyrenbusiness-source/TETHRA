@@ -423,6 +423,20 @@ func _test_breaks() -> void:
 	for i in c.beats.size() - 1:
 		gap = gap or c.is_gap(i)
 	_ok(gap, "Pause als Luecke erkannt (Figur ruht)")
+	# Fund: die Figur ruhte bis auf den ersten Schlag nach der Pause (Vorlauf 0 ms).
+	var after := 0
+	for i in range(1, c.beats.size()):
+		if not c.is_gap(i - 1):
+			continue
+		after += 1
+		var tb := float(c.beats[i].t)
+		_ok(DirigentView.beat_lead_ms(c, i) >= 1000.0, "erster Schlag nach der Pause steht >= 1 s vorher da (%.0f ms)"
+				% DirigentView.beat_lead_ms(c, i))
+		_ok(DirigentView.rest_at(c, i - 1, tb - DirigentView.REST_LEAD_MS - 100.0)
+				and not DirigentView.rest_at(c, i - 1, tb - DirigentView.REST_LEAD_MS + 100.0)
+				and not DirigentView.rest_at(c, i - 1, tb - 1.0), "Figur ruht nur bis 1,5 s vor dem Schlag")
+		_ok(not DirigentView.rest_at(c, i - 1, float(c.beats[i - 1].t) + 300.0), "kurz nach dem letzten Schlag noch keine Pause")
+	_ok(after == 1, "ein Wiedereinstieg (%d)" % after)
 
 
 func _spam(core: DirigentCore, c: DirigentChart) -> void:

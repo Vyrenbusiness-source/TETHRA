@@ -203,7 +203,8 @@ func _ready() -> void:
 		_resume_with_countdown(1.0)
 		if OS.get_cmdline_args().has("--shot-intro"):
 			# Shot: Intro/Countdown (Ziffer "3" steht, Spiel pausiert).
-			await get_tree().create_timer(0.45, true).timeout
+			if not await _sleep(0.45):
+				return
 			await RenderingServer.frame_post_draw
 			_save_shot(_shot_path("orbit_intro.png"))
 			get_tree().quit(0)
@@ -229,7 +230,8 @@ func _show_old_replay() -> void:
 	_hud.add_child(l)
 	_ended = true
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-	await get_tree().create_timer(3.5, true).timeout
+	if not await _sleep(3.5):
+		return
 	if is_inside_tree():
 		_back_to_browser()
 
@@ -1159,6 +1161,16 @@ func _countdown_wait(sec: float) -> bool:
 	return is_inside_tree()
 
 
+## Echtzeit warten (auch bei pausiertem Tree). false = Szene ist inzwischen weg (oder
+## war es schon): der Aufrufer bricht ab. Vorher: "Cannot call method 'create_timer'
+## on a null value", wenn eine Shot-/Endbild-Folge nach dem Szenenwechsel weiterlief.
+func _sleep(sec: float) -> bool:
+	if not is_inside_tree():
+		return false
+	await get_tree().create_timer(sec, true).timeout
+	return is_inside_tree()
+
+
 func _restart() -> void:
 	get_tree().paused = false
 	SyncClock.stop()
@@ -1235,6 +1247,8 @@ func _show_results(is_fail: bool) -> void:
 		"can_clip": _replay or has_log,
 	})
 	var grade := "F" if is_fail else str(s.get("grade", "D"))
+	if not is_inside_tree():
+		return
 	get_tree().create_timer(0.38, true).timeout.connect(func():
 		if is_inside_tree() and _use_audio:
 			Sfx.rank_reveal(grade))
@@ -1248,7 +1262,8 @@ func _show_results(is_fail: bool) -> void:
 		for a in OS.get_cmdline_args():
 			if a.begins_with("--mp-back="):
 				back_s = clampf(a.trim_prefix("--mp-back=").to_float(), 0.0, 60.0)
-		await get_tree().create_timer(back_s, true).timeout
+		if not await _sleep(back_s):
+			return
 		if is_inside_tree():
 			_back_to_browser()
 
@@ -1257,7 +1272,7 @@ func _show_results(is_fail: bool) -> void:
 func _replay_meta(s: Dictionary) -> Dictionary:
 	return {
 		"score": int(s.score), "grade": str(s.grade), "accuracy": float(s.accuracy),
-		"date": Time.get_datetime_string_from_system(), "mods": GameSession.mods.duplicate(),
+		"date": Time.get_datetime_string_from_system(), "mods": core.mods.duplicate(),
 		"end_ms": int(_last_update_t), "mode": MODE, "orbit_rules": OrbitCore.REPLAY_RULES,
 	}
 
@@ -1342,8 +1357,11 @@ func _capture_shot() -> void:
 			target = _shot_target(a.trim_prefix("--shot-at="), target)
 	if OS.get_cmdline_args().has("--shot-pause"):
 		await _wait_until(target)
+		if not is_inside_tree():
+			return
 		_toggle_pause(true)
-		await get_tree().create_timer(0.6, true).timeout
+		if not await _sleep(0.6):
+			return
 		await RenderingServer.frame_post_draw
 		_save_shot(_shot_path("orbit_pause.png"))
 		get_tree().quit(0)
@@ -1409,7 +1427,8 @@ func _movie_hold(_target: float) -> bool:
 	for a in OS.get_cmdline_args():
 		if a.begins_with("--movie-len="):
 			print("MOVIE_START frame=%d" % Engine.get_process_frames())
-			await get_tree().create_timer(a.trim_prefix("--movie-len=").to_float(), true).timeout
+			if not await _sleep(a.trim_prefix("--movie-len=").to_float()):
+				return
 			get_tree().quit(0)
 			return true
 	return false
@@ -1532,7 +1551,8 @@ func _save_shot(path: String) -> void:
 
 
 func _capture_results_shot() -> void:
-	await get_tree().create_timer(2.6, true).timeout
+	if not await _sleep(2.6):
+		return
 	await RenderingServer.frame_post_draw
 	if not is_inside_tree():
 		return

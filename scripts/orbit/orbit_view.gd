@@ -51,6 +51,10 @@ const RING_RANKS := 2
 const MAX_RANKS := 4
 const FAR_ALPHA := 0.4
 const POP_IN_MS := 90.0
+## Lesbarkeit: ein erschienenes Ziel jenseits von MAX_RANKS wird trotzdem (blass, wie
+## der letzte Rang) gezeichnet, sobald es hoechstens READ_MS vor seiner Zeit steht.
+## Sonst taucht es in dichten Folgen erst 4 Abstaende vor dem Treffer auf.
+const READ_MS := 500.0
 const HIT_MS := 150.0
 ## Nachleuchten: feiner Ring in Stufenfarbe bleibt etwas laenger stehen.
 const GLOW_MS := 210.0
@@ -445,7 +449,7 @@ func _draw() -> void:
 		if tt - last_t > CHORD_EPS_MS:
 			rank += 1
 			last_t = tt
-		ranks[i] = rank
+		ranks[i] = shown_rank(rank, tt, t)
 	# Stapel: spaetere offene Ziele am Ort eines frueheren (anderer Zeitpunkt).
 	var cover := {}    # verdecktes Ziel -> Lage (1, 2, ...)
 	var stack_n := {}  # vorderes Ziel -> Zahl der Ziele dort (inkl. sich)
@@ -539,6 +543,57 @@ func _emph(i: int, is_next: bool, t: float) -> float:
 			j -= 1
 		_next_t[i] = t if j >= 0 and t - _state_t[j] < EMPH_MS else t - EMPH_MS
 	return smoothstep(0.0, EMPH_MS, t - _next_t[i])
+
+
+## Rang, mit dem ein offenes Ziel gezeichnet wird (>= MAX_RANKS = gar nicht).
+static func shown_rank(rank: int, time_ms: float, t: float, read_ms: float = READ_MS) -> int:
+	if rank >= MAX_RANKS and time_ms - t <= read_ms:
+		return MAX_RANKS - 1
+	return rank
+
+
+## Messung/Tests: Rang von Ziel i zur Zeit t bei perfektem Spiel (jedes fruehere Ziel
+## ist zu seiner Zeit gewertet): Zahl frueherer offener, erschienener Zeitpunkte.
+static func audit_rank(ns: Array[OrbitNote], i: int, t: float) -> int:
+	var ti := float(ns[i].time_ms)
+	var rank := 0
+	var last := INF
+	for j in range(i - 1, -1, -1):
+		var tj := float(ns[j].time_ms)
+		if tj <= t:
+			break
+		if ti - tj <= CHORD_EPS_MS or float(ns[j].spawn_ms) > t:
+			continue
+		if last - tj > CHORD_EPS_MS:
+			rank += 1
+			last = tj
+	return rank
+
+
+## Messung/Tests: Songzeit, ab der Ziel i bei perfektem Spiel gezeichnet wird
+## (max_rank = MAX_RANKS: ueberhaupt sichtbar, RING_RANKS: mit Ring und Satellit).
+static func first_shown_ms(ns: Array[OrbitNote], i: int, max_rank: int = MAX_RANKS,
+		read_ms: float = READ_MS) -> float:
+	var sp := float(ns[i].spawn_ms)
+	var ti := float(ns[i].time_ms)
+	var cands: Array[float] = [sp]
+	for j in range(i - 1, -1, -1):
+		var tj := float(ns[j].time_ms)
+		if tj <= sp:
+			break
+		cands.append(tj)
+	if ti - read_ms > sp:
+		cands.append(ti - read_ms)
+	cands.sort()
+	for c in cands:
+		if c >= ti:
+			break
+		var rk := audit_rank(ns, i, c)
+		if max_rank >= MAX_RANKS:
+			rk = shown_rank(rk, ti, c, read_ms)
+		if rk < max_rank:
+			return c
+	return ti
 
 
 func _alpha_of(_i: int, n: OrbitNote, em: float, t: float) -> float:
