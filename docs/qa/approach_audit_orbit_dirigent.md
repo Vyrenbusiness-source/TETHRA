@@ -27,8 +27,13 @@ Ansicht gerechnet, nicht geschätzt.
 | 7+ | 27 | 31 221 | 1 846 | 7 913 | 306 ms | 0 | 453 ms |
 | Summe | 239 | 139 806 | 2 217 | 15 157 (10,8 %) | 300 ms | 0 | 450 ms |
 
-Mit 1 Runde (Einstellung `orbit_laps` = 1) dasselbe Bild: vorher 15 177 Ziele unter 450 ms,
-nachher 0. Zahl der Ziele und Sterne-Bänder sind vorher und nachher gleich.
+Mit 1 Runde (Einstellung `orbit_laps` = 1): vorher 15 177 Ziele unter 450 ms. Nachher nicht
+eigens gemessen: beide Untergrenzen (Konverter 450 ms, Ansicht 500 ms) hängen nicht von der
+Rundenzahl ab. Zahl der Ziele und Sterne-Bänder sind vorher und nachher gleich.
+
+Ganze Bibliothek nach dem Fix (`tests/run_orbit_tests.gd`, 976 Diffs, 2 Runden): kleinster
+Vorlauf 450 ms, höchstens 8 Ziele zugleich erschienen, keine Konverter-Verstöße, Sterne-Median
+4,24.
 
 ### Dirigent (239 Charts, 62 896 Schläge, 161 254 Einsätze)
 
