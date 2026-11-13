@@ -3914,7 +3914,7 @@ func _resume_with_countdown(step: float = 0.4) -> void:
 	lbl.queue_free()
 	_countdown_running = false
 	if _autoplay:
-		print("COUNTDOWN fertig")
+		print("TMPDBG countdown-ende raw=%.0f first_note=%.0f preempt=%.0f" % [SyncClock.raw_time_ms(), _beatmap.hit_objects[0].time, core.preempt])
 	get_tree().paused = false
 	SyncClock.resume()
 	Input.mouse_mode = Input.MOUSE_MODE_CONFINED_HIDDEN
