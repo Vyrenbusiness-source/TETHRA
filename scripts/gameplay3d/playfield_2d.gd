@@ -173,9 +173,39 @@ func field_rect() -> Rect2:
 	return Rect2(x, 0.0, sw, vs.y)
 
 
-## Z (Strecke) -> Bild-Y: linear, Z_FAR an der Oberkante.
+## Feld-Y des Spawn-Horizonts: die sichtbare Feldkante. Bei Skalierung > 100 % liegt
+## Feld-Y 0 ausserhalb des Bildes (skaliert wird um die Kante bei der Linie); die
+## Note erschien dann erst nach bis zu 40 % ihrer Anflugzeit im Bild.
+func track_top() -> float:
+	var s := Settings.stage_scale_2d
+	if s <= 1.0:
+		return 0.0
+	return minf(_vs().y * (1.0 - 1.0 / s), line_y() * 0.5)
+
+
+## Z (Strecke) -> Bild-Y: linear, Z_FAR an der sichtbaren Oberkante (track_top).
 func z_to_y(z: float) -> float:
-	return line_y() - (z_line - z) / (z_line - z_far) * line_y()
+	var ly := line_y()
+	return ly - (z_line - z) / (z_line - z_far) * (ly - track_top())
+
+
+## X-Mitte fuer eine Anzeige der Breite box_w (Intro-/Break-Ring), die das Feld frei
+## laesst: Bildmitte, wenn dort Platz ist, sonst direkt neben dem Feld auf der Seite
+## mit mehr Platz. NAN = passt nirgends daneben (Aufrufer blendet sie rechtzeitig aus).
+## Mittig lag der Ring ueber den mittleren Spalten: die ersten Noten nach Intro und
+## Break waren 40 % ihrer Anflugzeit verdeckt.
+static func overlay_center_x(field: Rect2, view_w: float, box_w: float, margin: float = 24.0) -> float:
+	var mid := view_w * 0.5
+	var half := box_w * 0.5
+	if mid + half + margin <= field.position.x or mid - half - margin >= field.end.x:
+		return mid
+	var room_l := field.position.x
+	var room_r := view_w - field.end.x
+	if maxf(room_l, room_r) < box_w + margin * 2.0:
+		return NAN
+	if room_r >= room_l:
+		return field.end.x + margin + half
+	return field.position.x - margin - half
 
 
 ## osu!-Einheiten von oben (480 = Bildhoehe) -> Y im Feld.
@@ -443,11 +473,12 @@ func _update_mask() -> void:
 	if not _mask:
 		return
 	var ly := line_y()
-	var cov := ly * f
+	var top := track_top()
+	var cov := (ly - top) * f
 	var g := maxf(1.0, cov * MASK_FADE)
 	if covers_from_top():
-		_m0 = cov - g
-		_m1 = cov
+		_m0 = top + cov - g
+		_m1 = top + cov
 	else:
 		_m0 = ly - cov + g
 		_m1 = ly - cov
