@@ -14,7 +14,7 @@ var _failed := 0
 
 
 func _initialize() -> void:
-	print("=== TETHRA Song-Import-Tests ===")
+	print("=== OMEN Song-Import-Tests ===")
 	var root := ProjectSettings.globalize_path(ROOT)
 	_rm(root)
 	var songs := root.path_join("Songs")

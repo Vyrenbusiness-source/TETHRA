@@ -39,7 +39,7 @@ func _settings() -> Node:
 
 
 func _run() -> void:
-	print("=== TETHRA Rally-Tutorial-Tests ===")
+	print("=== OMEN Rally-Tutorial-Tests ===")
 	var S: GDScript = load(SCRIPT)
 	var old_seen: String = S.seen_path
 	var old_zones: int = _settings().rally_zones

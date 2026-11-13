@@ -13,7 +13,7 @@ var _failed := 0
 
 
 func _initialize() -> void:
-	print("=== TETHRA Clip-Tests ===")
+	print("=== OMEN Clip-Tests ===")
 	_test_logic()
 	var args := OS.get_cmdline_user_args()
 	var i := args.find("--integration")

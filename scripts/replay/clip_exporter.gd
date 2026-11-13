@@ -77,15 +77,25 @@ var style: String = "full"
 var _len_s: float = 0.0
 
 
-## Zielordner: Editor/Dev -> user://clips, Release -> Dokumente/TETHRA Clips.
+## Zielordner: Editor/Dev -> user://clips, Release -> Dokumente/OMEN Clips.
+## Gibt es schon "TETHRA Clips" (Name bis v1.35.0), bleibt es bei dem Ordner:
+## die Clips des Nutzers liegen dort.
 static func clips_dir() -> String:
 	var d: String
 	if OS.has_feature("editor"):
 		d = ProjectSettings.globalize_path("user://clips")
 	else:
-		d = OS.get_system_dir(OS.SYSTEM_DIR_DOCUMENTS).path_join("TETHRA Clips")
+		d = clips_dir_in(OS.get_system_dir(OS.SYSTEM_DIR_DOCUMENTS))
 	DirAccess.make_dir_recursive_absolute(d)
 	return d
+
+
+## Clip-Ordner unter docs: der alte, falls vorhanden, sonst der neue.
+static func clips_dir_in(docs: String) -> String:
+	var old := docs.path_join("TETHRA Clips")
+	if DirAccess.dir_exists_absolute(old):
+		return old
+	return docs.path_join("OMEN Clips")
 
 
 ## ffmpeg suchen: neben der Exe (mitgeliefert), sonst im PATH. "" = keins.
@@ -232,7 +242,8 @@ func _export(md5: String, p_out_path: String, mode: String) -> bool:
 	if OS.has_feature("editor"):
 		args.append_array(["--path", ProjectSettings.globalize_path("res://")])
 	else:
-		var pck := OS.get_executable_path().get_base_dir().path_join("TETHRA.pck")
+		# Paket der laufenden Exe (OMEN.exe -> OMEN.pck, alte Installation TETHRA.exe -> TETHRA.pck).
+		var pck := OS.get_executable_path().get_basename() + ".pck"
 		if FileAccess.file_exists(pck):
 			args.append_array(["--main-pack", pck])
 	# Fensterposition: wie der Elternprozess, falls der eine bekam (Testlaeufe auf

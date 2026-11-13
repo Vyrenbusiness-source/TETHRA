@@ -31,7 +31,7 @@ func _check(cond: bool, label: String) -> void:
 
 
 func _run() -> void:
-	print("=== TETHRA Orbit-Replay-Tests (Satelliten) ===")
+	print("=== OMEN Orbit-Replay-Tests (Satelliten) ===")
 	_test_determinism()
 	_test_fail_freeze()
 	_test_compact()

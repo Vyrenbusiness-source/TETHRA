@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
-# Ausweich-Quelle fuer den Updater: Branch "dist" mit latest.json und TETHRA.pck
+# Ausweich-Quelle fuer den Updater: Branch "dist" mit latest.json und OMEN.pck
 # in Teilen unter 20 MB (raw.githubusercontent.com und jsDelivr liefern sie aus,
 # auch wenn GitHub-Release-Downloads oder die API haengen).
 # Aufruf nach jedem Release:  bash tools/publish_dist.sh "<Release-Notes>"
 set -euo pipefail
 cd "$(dirname "$0")/.."
-PCK=release/TETHRA.pck
+PCK=release/OMEN.pck
+# Teilnamen "TETHRA.pck.NNN" = historische Kennung. Der Updater liest die Namen aus
+# latest.json (seit v1.21.1), sie bleiben trotzdem wie bisher.
+PARTNAME=TETHRA.pck
 [ -f "$PCK" ] || { echo "FAIL $PCK fehlt"; exit 1; }
 VER="$(sed -n 's/^const CURRENT_VERSION := "\(.*\)"/\1/p' scripts/net/updater.gd)"
 [ -n "$VER" ] || { echo "FAIL Version nicht gefunden"; exit 1; }
@@ -22,13 +25,13 @@ git worktree add -q --detach "$WT"
   git rm -rqf . >/dev/null 2>&1 || true
   rm -rf ./* 2>/dev/null || true
 )
-split -b "$PART" -d -a 3 "$PCK" "$WT/TETHRA.pck."
+split -b "$PART" -d -a 3 "$PCK" "$WT/$PARTNAME."
 SHA="$(sha256sum "$PCK" | cut -d' ' -f1)"
 SIZE="$(stat -c %s "$PCK")"
-python - "$WT" "$VER" "$SHA" "$SIZE" "$NOTES" <<'PY'
+python - "$WT" "$VER" "$SHA" "$SIZE" "$NOTES" "$PARTNAME" <<'PY'
 import json, os, sys
-wt, ver, sha, size, notes = sys.argv[1:6]
-parts = sorted(f for f in os.listdir(wt) if f.startswith("TETHRA.pck."))
+wt, ver, sha, size, notes, partname = sys.argv[1:7]
+parts = sorted(f for f in os.listdir(wt) if f.startswith(partname + "."))
 d = {"version": ver, "size": int(size), "sha256": sha, "notes": notes,
      "parts": [{"name": f, "size": os.path.getsize(os.path.join(wt, f))} for f in parts]}
 assert sum(p["size"] for p in d["parts"]) == int(size)
@@ -41,5 +44,5 @@ PY
   git push -qf origin HEAD:dist
 )
 # jsDelivr-Cache fuer den Branch leeren (sonst bis zu 12 h alt)
-curl -s -o /dev/null "https://purge.jsdelivr.net/gh/Vyrenbusiness-source/TETHRA@dist/latest.json" || true
-echo "OK dist v$VER ($SIZE B, $(ls "$WT"/TETHRA.pck.* | wc -l) Teile)"
+curl -s -o /dev/null "https://purge.jsdelivr.net/gh/Vyrenbusiness-source/OMEN@dist/latest.json" || true
+echo "OK dist v$VER ($SIZE B, $(ls "$WT"/"$PARTNAME".* | wc -l) Teile)"

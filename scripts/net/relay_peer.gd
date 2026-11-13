@@ -4,6 +4,7 @@ extends MultiplayerPeerExtension
 ## Ersetzt ENet: Host = Peer 1, Beitretende bekommen ihre ID vom Relay.
 ## Alles laeuft zuverlaessig + geordnet (TCP), der Transfer-Modus ist egal.
 
+## "/tethra/mp" = historische Kennung (Server-Pfad auf butzebot.com), nur mit dem Server aendern.
 const DEFAULT_URL := "wss://butzebot.com/tethra/mp"
 const PING_EVERY := 5.0
 const CONNECT_TIMEOUT := 8.0

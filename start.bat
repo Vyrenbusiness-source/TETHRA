@@ -1,5 +1,5 @@
 @echo off
-REM TETHRA starten (Godot 4.7, Windows).
+REM OMEN starten (Godot 4.7, Windows).
 REM Startet die Main-Scene (Song-Browser) aus dem Projektordner.
 
 setlocal
@@ -14,7 +14,7 @@ if not exist "%GODOT%" (
     exit /b 1
 )
 
-echo Starte TETHRA...
+echo Starte OMEN...
 start "" "%GODOT%" --path .
 
 endlocal

@@ -7,6 +7,8 @@ extends Node
 ## Fuer Tests: `transport` ersetzt das Netz (Fake-Antworten), cfg_path/queue_path
 ## zeigen auf Testdateien.
 
+## Server-Pfade und Header ("/tethra/...", "x-tethra-...") = historische Kennung: so heissen sie
+## auf butzebot.com (das Spiel hiess bis v1.35.0 TETHRA). Nur zusammen mit dem Server aendern.
 const BASE_URL := "https://butzebot.com/panel-api/tethra"
 const API_KEY := "70bab2e56a48e488abad5285057e6bca10815e6101f2cddc"  # nicht geheim (Open Source), Schutz = Spieler-Token + Server-Regeln
 const PROFILE_URL := "https://butzebot.com/tethra/player/"

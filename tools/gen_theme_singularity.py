@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""TETHRA Welt-Thema "Singularitaet": schwarzes Loch als equirektangulares Panorama.
+"""OMEN Welt-Thema "Singularitaet": schwarzes Loch als equirektangulares Panorama.
 
 Erzeugt (Standard 4096x2048) nach assets_game/themes/singularity/:
   singularity_sky.webp      Hauptebene (tex_a): Schatten des Lochs, duenne

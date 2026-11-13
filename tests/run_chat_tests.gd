@@ -17,7 +17,7 @@ func _ok(cond: bool, label: String) -> void:
 
 
 func _initialize() -> void:
-	print("=== TETHRA Chat-Tests ===")
+	print("=== OMEN Chat-Tests ===")
 	_parsing()
 	_links()
 	_scores()

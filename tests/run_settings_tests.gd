@@ -20,7 +20,7 @@ func _process(_delta: float) -> bool:
 
 
 func _run() -> void:
-	print("=== TETHRA Settings-Tests ===")
+	print("=== OMEN Settings-Tests ===")
 	SettingsScript = root.get_node("/root/Settings").get_script()
 	var path := "user://settings_test_tmp.cfg"
 	# Roundtrip: Werte schreiben, in frische Instanz laden.

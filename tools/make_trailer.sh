@@ -1,5 +1,5 @@
 #!/bin/bash
-# TETHRA-Trailer (16:9, 1920x1080, 60 fps). Aufruf:
+# OMEN-Trailer (16:9, 1920x1080, 60 fps). Aufruf:
 #   tools/make_trailer.sh [record|cut|all]      (Standard: all)
 # Env: WORK=<Ordner fuer Zwischendateien (Rohclips), am Ende loeschen>, ONLY=<Teil des Clip-Namens>
 #      MAP=<Teil des osz-Namens>, DIFF=<Version>, OUT=<mp4>
@@ -17,7 +17,7 @@ export FULLDIFF=${FULLDIFF:-Helpless Resistance: Despair}
 export MAP=${MAP:-Calamity} DIFF=${DIFF:-Despair} FF G ROOT ONLY=${ONLY:-}
 export OSZ_DIR=${OSZ_DIR:-/c/Users/Gexanx/Desktop/rhyg/maps}
 export LOGO=${LOGO:-/c/Users/Gexanx/Desktop/rhyg/docs/media/logo_wordmark.png}
-export OUT=${OUT:-C:/Users/Gexanx/Desktop/TETHRA_Trailer.mp4}
+export OUT=${OUT:-C:/Users/Gexanx/Desktop/OMEN_Trailer.mp4}
 export STEP
 mkdir -p "$WORK"
 cd "$ROOT" || exit 1
@@ -214,7 +214,7 @@ def card(kind, path):
         t = "SIX WAYS TO PLAY ONE SONG"
     else:
         f = ImageFont.truetype("C:/Windows/Fonts/segoeui.ttf", 50)
-        t = "TETHRA  \u00b7  free  \u00b7  github.com/Vyrenbusiness-source/TETHRA"
+        t = "OMEN  \u00b7  free  \u00b7  github.com/Vyrenbusiness-source/OMEN"
     w = d.textlength(t, font=f)
     d.text(((Wd - w) / 2, 400 + lg.height + 70), t, font=f, fill=(190, 205, 235))
     bg.save(path)

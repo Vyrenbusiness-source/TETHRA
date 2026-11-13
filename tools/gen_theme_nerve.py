@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""TETHRA Welt-Thema "Nerv": ein unendliches Netz schwarzer Fasern, Synapsen-Impulse in Bordeaux.
+"""OMEN Welt-Thema "Nerv": ein unendliches Netz schwarzer Fasern, Synapsen-Impulse in Bordeaux.
 
 Erzeugt in assets_game/themes/nerve/ fuenf Texturen (8192x4096, WebP):
   nerve_sky.webp     Panorama (RGB): dunkler Dunst, Bordeaux-Nebel, ferne unscharfe Fasernetze.

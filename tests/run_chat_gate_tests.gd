@@ -21,7 +21,7 @@ func _check(cond: bool, label: String) -> void:
 
 
 func _run() -> void:
-	print("=== TETHRA Chat-Sperre im Spiel ===")
+	print("=== OMEN Chat-Sperre im Spiel ===")
 	var gs: Node = root.get_node_or_null("GameSession")
 	_check(gs != null and gs.has_method("chat_input_allowed"), "GameSession.chat_input_allowed fehlt")
 	if gs != null and gs.has_method("chat_input_allowed"):

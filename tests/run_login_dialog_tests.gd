@@ -109,7 +109,7 @@ func _run() -> void:
 	_check(LD.error_text("Invalid credentials") == "Benutzername oder Passwort falsch.", "falsches Passwort")
 	_check(LD.error_text("HTTP 401").begins_with("Benutzername oder Passwort"), "401 ohne Text")
 	_check(LD.error_text("email_not_verified").begins_with("E-Mail noch nicht bestätigt"), "E-Mail nicht bestaetigt")
-	_check(LD.error_text("Email not confirmed").contains("Mail von TETHRA"), "Hinweis auf Mail")
+	_check(LD.error_text("Email not confirmed").contains("Mail von OMEN"), "Hinweis auf Mail")
 	_check(LD.error_text("offline").begins_with("Server nicht erreichbar"), "offline")
 	_check(LD.error_text("HTTP 502").begins_with("Server nicht erreichbar"), "5xx -> Server")
 	_check(LD.error_text("HTTP 429").begins_with("Zu viele Versuche"), "429")

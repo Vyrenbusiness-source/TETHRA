@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""TETHRA Welt-Thema "Sturm": abstrakter Gewitter-Mahlstrom als Panorama.
+"""OMEN Welt-Thema "Sturm": abstrakter Gewitter-Mahlstrom als Panorama.
 
 Erzeugt (Standard 4096x2048, equirektangular) in assets_game/themes/storm/:
   storm_sky.webp         ferne Ebene: Trichter aus dunklen Wolkenmassen, die

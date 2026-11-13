@@ -34,7 +34,7 @@ func _check(cond: bool, label: String) -> void:
 
 
 func _run() -> void:
-	print("=== TETHRA Orbit-Tutorial-Tests (Satelliten) ===")
+	print("=== OMEN Orbit-Tutorial-Tests (Satelliten) ===")
 	var S: GDScript = load(SCRIPT)
 	var old_seen: String = S.seen_path
 	var old_career: String = S.career_path

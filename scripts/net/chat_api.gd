@@ -1,13 +1,15 @@
 class_name ChatApi
 extends Node
 
-## Ingame-Chat ueber den TETHRA-Server: HTTP, Parsing, Polling, Map-Links.
+## Ingame-Chat ueber den OMEN-Server: HTTP, Parsing, Polling, Map-Links.
 ## Zugangsdaten kommen nur lesend aus OnlineApi (Header, Token, Basis-URL).
 
 const MAX_LEN := 2000
 const UNREAD_INTERVAL_S := 30.0
 const OPEN_INTERVAL_S := 4.0
 const MESSAGE_LIMIT := 50
+## "/tethra/..." = historische Kennung (Server-Pfade auf butzebot.com, stehen auch in alten
+## Chat-Nachrichten). Der Bot heisst so, wie der Server ihn liefert ("TETHRA Bot").
 const MAP_URL := "https://butzebot.com/tethra/map/"
 const COVER_URL := "https://assets.ppy.sh/beatmaps/%d/covers/list@2x.jpg"
 const PREVIEW_URL := "https://b.ppy.sh/preview/%d.mp3"

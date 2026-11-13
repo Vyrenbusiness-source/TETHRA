@@ -9,7 +9,7 @@ var _failed := 0
 
 
 func _initialize() -> void:
-	print("=== TETHRA Orbit-Tests (Satelliten-Konverter) ===")
+	print("=== OMEN Orbit-Tests (Satelliten-Konverter) ===")
 	_test_std_basic()
 	_test_skill()
 	_test_taiko_keys()

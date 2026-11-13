@@ -16,7 +16,7 @@ func _check(ok: bool, msg: String) -> void:
 
 
 func _initialize() -> void:
-	var dir := OS.get_temp_dir().path_join("tethra_gpu_guard_test_%d" % Time.get_ticks_usec())
+	var dir := OS.get_temp_dir().path_join("omen_gpu_guard_test_%d" % Time.get_ticks_usec())
 	DirAccess.make_dir_recursive_absolute(dir)
 	var marker := dir.path_join("running.marker")
 	var ov := dir.path_join("override.cfg")

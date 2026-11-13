@@ -8,7 +8,7 @@ var _failed := 0
 
 
 func _initialize() -> void:
-	print("=== TETHRA Clip-Trace-Tests ===")
+	print("=== OMEN Clip-Trace-Tests ===")
 	_ok(ClipExporter.supports_mode("trace"), "supports_mode trace")
 	_ok(ClipExporter.supports_mode("trace_last"), "supports_mode trace_last")
 	_ok(ClipExporter.supports_mode("mania") and ClipExporter.supports_mode("orbit"), "mania/orbit weiter ok")

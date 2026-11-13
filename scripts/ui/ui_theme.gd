@@ -1,7 +1,7 @@
 class_name UiTheme
 extends RefCounted
 
-## Zentrale Design-Sprache von TETHRA: "Instrumententafel".
+## Zentrale Design-Sprache von OMEN: "Instrumententafel".
 ## Warmer Graphit-Grund, ruhige deckende Flaechen mit Haarlinien, eine einzige
 ## Signalfarbe (Bernstein) fuer das, was zaehlt, kleine Radien, keine Glows.
 ##
@@ -374,7 +374,7 @@ static func blurred_texture(tex: Texture2D, divisor: int = 10) -> Texture2D:
 	return ImageTexture.create_from_image(img)
 
 
-## Globales TETHRA-Theme: ersetzt das graue Godot-Standard-Aussehen ALLER
+## Globales OMEN-Theme: ersetzt das graue Godot-Standard-Aussehen ALLER
 ## Controls (Slider, Dropdowns, Scrollbalken, Popups, Eingabefelder …) durch
 ## die Instrumententafel-Optik. Wird einmalig beim Start auf das Root-Window
 ## gelegt — Panels mit eigenen Overrides behalten ihre Speziallooks.

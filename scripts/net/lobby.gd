@@ -16,6 +16,8 @@ const CODE_ALPHABET := "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
 ## Oeffentliches Raum-Verzeichnis (ntfy.sh-Topic als kostenloses Rendezvous):
 ## Hosts OHNE Passwort announcen Code+Name+Spielerzahl, Browser pollen die
 ## Liste — offene Raeume erscheinen weltweit automatisch.
+## "tethra-rooms-v1" = historische Kennung (das Spiel hiess bis v1.35.0 TETHRA): aeltere
+## Versionen lesen und schreiben dasselbe Topic, deshalb bleibt der Name.
 const ROOMS_URL := "https://ntfy.sh/tethra-rooms-v1"
 ## Tatsaechliche Ports: Standard, oder --mp-port=<n> (Tests; LAN-Ansage auf n+1).
 var game_port := GAME_PORT
@@ -402,7 +404,7 @@ func _setup_upnp() -> void:
 	for attempt in 2:
 		if _upnp.discover(3000, 2, "InternetGatewayDevice") == UPNP.UPNP_RESULT_SUCCESS \
 				and _upnp.get_gateway() != null and _upnp.get_gateway().is_valid_gateway():
-			_upnp.add_port_mapping(game_port, game_port, "TETHRA", "UDP", 0)
+			_upnp.add_port_mapping(game_port, game_port, "OMEN", "UDP", 0)
 			ip = _upnp.query_external_address()
 			break
 	call_deferred("_upnp_done", ip)
@@ -570,6 +572,7 @@ func _process(delta: float) -> void:
 			_bcast_t -= delta
 			if _bcast_t <= 0.0:
 				_bcast_t = 1.0
+				# Feld "tethra" = historische Kennung der LAN-Ansage (aeltere Versionen pruefen genau das).
 				var msg := JSON.stringify({ "tethra": 1, "name": room_name,
 					"players": players.size(), "code": room_code, "mode": play_mode,
 					"kind": room_type() })
@@ -880,10 +883,12 @@ func _apply_mods(m: Dictionary) -> void:
 	_sync()
 
 
-## Debug/Smoke: --mp-mods=NF,SV (oder Umgebungsvariable TETHRA_MP_MODS) setzt die Mods
+## Debug/Smoke: --mp-mods=NF,SV (oder Umgebungsvariable OMEN_MP_MODS, alt: TETHRA_MP_MODS) setzt die Mods
 ## eines neuen Raums, ohne Klick im Raum (tools/mp_mode_smoke.sh, docs/qa/live_qa.md).
 static func _debug_mods() -> Dictionary:
-	var want := OS.get_environment("TETHRA_MP_MODS")
+	var want := OS.get_environment("OMEN_MP_MODS")
+	if want == "":
+		want = OS.get_environment("TETHRA_MP_MODS")
 	for a in OS.get_cmdline_args():
 		if a.begins_with("--mp-mods="):
 			want = a.trim_prefix("--mp-mods=")

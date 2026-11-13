@@ -125,7 +125,7 @@ func _exit_tree() -> void:
 
 ## User-Agent fuer alle Anfragen (catboy.best lehnt Anfragen ohne ab).
 static func user_agent() -> String:
-	return "TETHRA/%s (Godot %s; 4K-Mania-Client)" % [
+	return "OMEN/%s (Godot %s; 4K-Mania-Client)" % [
 		str(ProjectSettings.get_setting("application/config/version", "1.0")),
 		str(Engine.get_version_info().get("string", "4"))]
 

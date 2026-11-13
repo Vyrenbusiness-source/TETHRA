@@ -71,7 +71,7 @@ func _core(list: Array, mods: Dictionary = {}) -> RallyCore:
 
 
 func _run() -> void:
-	print("=== TETHRA Rally-Tests (v2, 4 Zonen) ===")
+	print("=== OMEN Rally-Tests (v2, 4 Zonen) ===")
 	_test_chart_std()
 	_test_chart_mania()
 	_test_chart_3zones()

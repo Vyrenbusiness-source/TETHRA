@@ -11,7 +11,7 @@ var _sections := 0
 
 
 func _initialize() -> void:
-	print("=== TETHRA Mirror-Tests ===")
+	print("=== OMEN Mirror-Tests ===")
 	_test_genres()
 	_test_url()
 	_test_parse()
@@ -85,8 +85,8 @@ func _test_url() -> void:
 	_ok(u.contains("offset=0"), "negativer Offset -> 0")
 	u = BeatmapMirror.build_search_url("x", 0, BeatmapMirror.Sort.PLAYS, 1, true, "https://t.invalid/s")
 	_ok(u.begins_with("https://t.invalid/s?"), "Override-URL")
-	_ok(BeatmapMirror.user_agent().begins_with("TETHRA/"), "User-Agent gesetzt")
-	_ok(BeatmapMirror.headers()[0].begins_with("User-Agent: TETHRA/"), "User-Agent-Header")
+	_ok(BeatmapMirror.user_agent().begins_with("OMEN/"), "User-Agent gesetzt")
+	_ok(BeatmapMirror.headers()[0].begins_with("User-Agent: OMEN/"), "User-Agent-Header")
 	_sections += 1
 
 

@@ -1459,7 +1459,7 @@ func toggle_preview(m: Dictionary) -> void:
 			st.data = body
 			_play_stream(st))
 	_preview_req.request("https://b.ppy.sh/preview/%d.mp3" % sid,
-			["User-Agent: TETHRA"])
+			["User-Agent: OMEN"])
 
 
 func _play_local(ms: MapSet) -> void:

@@ -23,7 +23,7 @@ func _near(a: float, b: float) -> bool:
 
 
 func _init() -> void:
-	print("=== TETHRA Orbit-Rating-Tests ===")
+	print("=== OMEN Orbit-Rating-Tests ===")
 	_test_points()
 	_test_weighting()
 	_test_store()

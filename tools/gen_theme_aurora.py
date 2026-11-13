@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""TETHRA Welt-Thema "Aurora"/"Frost" (bedrohliche Polarnacht): offline-Panoramen fuer
+"""OMEN Welt-Thema "Aurora"/"Frost" (bedrohliche Polarnacht): offline-Panoramen fuer
 shaders/theme_aurora.gdshader. Fuer ruhige, melodische Songs.
 
 Erzeugt in assets_game/themes/aurora/:

@@ -38,7 +38,7 @@ static func test_judgements(path: TracePath, miss_every: int) -> Array:
 
 
 func _initialize() -> void:
-	print("=== TETHRA Trace-Bild-Tests ===")
+	print("=== OMEN Trace-Bild-Tests ===")
 	var path := test_path()
 	var meta := {"title": "Testlied", "version": "Hard", "player": "Tester", "acc": 0.9742,
 		"date": "2026-11-12T10:00:00"}

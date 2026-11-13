@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""TETHRA Welt-Thema "Abgrund": duestere Leere mit Monolithen, kein Neon.
+"""OMEN Welt-Thema "Abgrund": duestere Leere mit Monolithen, kein Neon.
 
 Erzeugt (Standard 4096x2048, Seed-reproduzierbar):
   assets_game/themes/abyss/abyss_sky.webp      Panorama (Farbe, wurzel-kodiert)

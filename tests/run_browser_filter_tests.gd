@@ -34,7 +34,7 @@ func _ok(cond: bool, label: String) -> void:
 
 
 func _run() -> void:
-	print("=== TETHRA Browser-Filter-Tests ===")
+	print("=== OMEN Browser-Filter-Tests ===")
 	SS = load("res://scripts/song_select.gd")
 	if SS == null or not SS.can_instantiate():
 		print("  FAIL: song_select.gd laedt nicht")

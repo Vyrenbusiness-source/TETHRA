@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""TETHRA Welt-Thema "Obsidian": schwarzes Oel unter fast schwarzem Himmel.
+"""OMEN Welt-Thema "Obsidian": schwarzes Oel unter fast schwarzem Himmel.
 
 Erzeugt in assets_game/themes/obsidian/:
   obsidian_sky.webp    4096x2048 equirektangulares Panorama (Standard):

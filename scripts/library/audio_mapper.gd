@@ -58,7 +58,7 @@ static func generate(audio_path: String, maps_dir: String, difficulty: String = 
 	if osu.note_count < 8:
 		return _fail("Zu wenige Noten erkannt (%d). Ist die Datei Musik?" % osu.note_count)
 	DirAccess.make_dir_recursive_absolute(maps_dir)
-	var base := "%s - %s (TETHRA Auto)" % [meta.artist, meta.title]
+	var base := "%s - %s (OMEN Auto)" % [meta.artist, meta.title]
 	var osz_path := maps_dir.path_join(_safe_name(base) + ".osz")
 	var audio_bytes := FileAccess.get_file_as_bytes(audio_path)
 	if audio_bytes.is_empty():
@@ -67,7 +67,7 @@ static func generate(audio_path: String, maps_dir: String, difficulty: String = 
 	var err := zip.open(osz_path)
 	if err != OK:
 		return _fail("Konnte .osz nicht schreiben (Fehler %d): %s" % [err, osz_path])
-	var osu_name := _safe_name("%s - %s (TETHRA Auto) [%s]" % [meta.artist, meta.title, difficulty]) + ".osu"
+	var osu_name := _safe_name("%s - %s (OMEN Auto) [%s]" % [meta.artist, meta.title, difficulty]) + ".osu"
 	zip.start_file(osu_name)
 	zip.write_file(osu.text.to_utf8_buffer())
 	zip.close_file()
@@ -510,10 +510,10 @@ static func build_osu(an: Dictionary, meta: Dictionary, difficulty: String, audi
 	lines.append("TitleUnicode:" + meta.title)
 	lines.append("Artist:" + meta.artist)
 	lines.append("ArtistUnicode:" + meta.artist)
-	lines.append("Creator:TETHRA Auto")
+	lines.append("Creator:OMEN Auto")
 	lines.append("Version:" + difficulty)
 	lines.append("Source:")
-	lines.append("Tags:tethra auto orbit")
+	lines.append("Tags:omen auto orbit")
 	lines.append("")
 	lines.append("[Difficulty]")
 	lines.append("HPDrainRate:5")

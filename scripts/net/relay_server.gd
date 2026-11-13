@@ -1,7 +1,7 @@
 extends Node
 
 ## Relay-Server fuer Online-Multiplayer (nur TCP/WebSocket, kein UDP).
-## Start headless:  godot --headless --main-pack TETHRA.pck --mp-relay --port 47900
+## Start headless:  godot --headless --main-pack OMEN.pck --mp-relay --port 47900
 ## Protokoll: docs/net/relay.md. Ein Port: WebSocket (Spiel) + HTTP GET /rooms.
 ##
 ## Binaerframes tragen Spieldaten:  [i32 to LE][u8 mode][u8 channel][payload]

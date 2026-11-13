@@ -9,7 +9,7 @@ var _failed := 0
 
 
 func _initialize() -> void:
-	print("=== TETHRA Mania-Tests (4K) ===")
+	print("=== OMEN Mania-Tests (4K) ===")
 	_test_parser()
 	_test_press_windows()
 	_test_wrong_time_ignored()

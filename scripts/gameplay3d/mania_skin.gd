@@ -12,7 +12,7 @@ const SKINS_DIR := "user://skins"
 ## Eingebaute Skins (tools/gen_mania_skins.py) liegen unter res://assets_game/skins/<Name>/.
 ## Export: die PNGs gehen als importierte Texturen ins .pck (load() funktioniert dort,
 ## Image.load_from_file auf res:// nicht); skin.ini ist eine Rohdatei und kommt ueber
-## export_presets.cfg include_filter mit. Die Dateiliste steht in der ini ([TETHRA] Files),
+## export_presets.cfg include_filter mit. Die Dateiliste steht in der ini ([OMEN] Files),
 ## weil ein Verzeichnis-Listing im .pck die Originalnamen nicht verlaesslich liefert.
 const BUILTIN_DIR := "res://assets_game/skins"
 const BUILTIN_PREFIX := "builtin:"
@@ -56,7 +56,7 @@ var has_mania_block := false
 
 ## Eingebaute Skins: Noten/Holds/Kappen sind neutrale Graustufen-Bilder, Playfield2D
 ## toent sie mit der Notenfarbe. auto_colors = Palette des Generators je Spalte
-## ([TETHRA] AutoColors), also die Farben des Modus "auto".
+## ([OMEN] AutoColors), also die Farben des Modus "auto".
 var tintable := false
 var auto_colors: Array = []
 ## Nur der Fallback-Skin (Balken fuer importierte Skins ohne Notenbilder): Noten-
@@ -605,6 +605,7 @@ static func is_builtin(id: String) -> bool:
 
 
 ## Datei im Skin-Ordner mit dem Originalnamen (Dateiname der .osk/.zip bzw. Ordnername).
+## "tethra_name.txt" = historische Kennung: liegt so in den Skin-Ordnern der Nutzer (user://skins).
 const NAME_FILE := "tethra_name.txt"
 
 
@@ -678,7 +679,8 @@ static func _load_builtin(p_name: String) -> ManiaSkin:
 	s.skin_name = p_name
 	s._dir = dir
 	for sec in parse_ini(text):
-		if String(sec.get("_section", "")).to_lower() == "tethra":
+		# Abschnitt [OMEN]; [TETHRA] = alter Name (Skins aus Versionen bis v1.35.0).
+		if String(sec.get("_section", "")).to_lower() in ["omen", "tethra"]:
 			for fn in String(sec.get("files", "")).split(",", false):
 				s._files[fn.strip_edges().to_lower() + "@2x"] = fn.strip_edges() + "@2x.png"
 			s.tintable = String(sec.get("tint", "0")).strip_edges() == "1"

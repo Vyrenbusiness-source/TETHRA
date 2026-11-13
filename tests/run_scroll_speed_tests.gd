@@ -24,7 +24,7 @@ func _process(_delta: float) -> bool:
 
 
 func _run() -> void:
-	print("=== TETHRA Scroll-Speed-Tests ===")
+	print("=== OMEN Scroll-Speed-Tests ===")
 	SettingsScript = root.get_node("/root/Settings").get_script()
 	_formula()
 	_conversion()

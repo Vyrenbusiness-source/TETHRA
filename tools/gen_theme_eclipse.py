@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""TETHRA Welt-Thema "Eklipse": schwarze Sonne ueber verbrannter Ebene.
+"""OMEN Welt-Thema "Eklipse": schwarze Sonne ueber verbrannter Ebene.
 
 Duester, gefaehrlich, fast farblos: nur Schwarz/Anthrazit und ein mattes
 Gold-Weiss (Korona). Kein Neon, keine Glut.
