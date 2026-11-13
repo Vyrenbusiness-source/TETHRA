@@ -31,9 +31,9 @@ const QUALITY_COLOR := [
 	Color(0.42, 0.64, 1.0), Color(0.64, 0.66, 0.72), Color(1.0, 0.38, 0.42),
 ]
 const GRADE_COLOR := {
-	"SS": Color(1.0, 0.94, 0.72), "S": Color(1.0, 0.85, 0.25),
-	"A": Color(0.4, 1.0, 0.5), "B": Color(0.35, 0.75, 1.0),
-	"C": Color(0.9, 0.6, 1.0), "D": Color(1.0, 0.4, 0.4),
+	"SS": Color(1.0, 0.95, 0.80), "S": Color(1.0, 0.80, 0.40),
+	"A": Color(0.58, 0.86, 0.62), "B": Color(0.54, 0.75, 0.96),
+	"C": Color(0.78, 0.66, 0.94), "D": Color(0.90, 0.54, 0.47),
 }
 const FAIL_COLOR := UiTheme.BAD
 ## Mikro-Labels: hell genug fuer Kontrast auf Glas (nicht unter 12 px nutzen).
@@ -88,6 +88,7 @@ var _shown := false
 var _pages: Array[Control] = []  # [Uebersicht, Details]
 var _tabs: Array[Button] = []
 var _page := 0
+var _cover_tex: Texture2D
 
 
 func _ready() -> void:
@@ -211,6 +212,7 @@ func show_results(data: Dictionary) -> void:
 	_pages.clear()
 	_tabs.clear()
 	_page = 0
+	_cover_tex = _load_cover()
 	_build_background()
 	_build_header()
 	var group := _build_group()
@@ -225,8 +227,115 @@ func show_results(data: Dictionary) -> void:
 	_shown = true
 	if bool(data.get("lobby", false)):
 		_play_lobby_intro()
+		if Lobby.active:
+			for sig in [Lobby.scores_changed, Lobby.players_changed]:
+				if not sig.is_connected(_auto_board):
+					sig.connect(_auto_board)
+			_auto_board()
 	else:
 		_play_intro()
+		# Debug/Shots: --results-page=<n> oeffnet einen Reiter (1 = Details).
+		for arg in OS.get_cmdline_args():
+			if arg.begins_with("--results-page="):
+				show_page(int(arg.trim_prefix("--results-page=")))
+
+
+## Multiplayer: Rangliste und Platzierung direkt aus der Lobby (alle Modi gleich,
+## auch wenn das Spiel set_board nicht selbst aufruft).
+func _auto_board() -> void:
+	if not _shown or not is_inside_tree() or not Lobby.active or not bool(_data.get("lobby", false)):
+		return
+	var ranked: Array = Lobby.ranked_players()
+	var my_id := multiplayer.get_unique_id()
+	var entries: Array = []
+	var scores := {}
+	var all_done := true
+	for p in ranked:
+		var fin: Dictionary = p.get("final", {})
+		entries.append({"id": int(p.id), "name": str(p.name), "final": fin, "score": int(p.get("score", 0))})
+		if fin.is_empty():
+			all_done = false
+		else:
+			scores[int(p.id)] = int(fin.get("score", p.get("score", 0)))
+	set_board(entries, my_id, Lobby.mods_text(GameSession.mods))
+	if not all_done or not scores.has(my_id):
+		return
+	var better := 0
+	var tied := 0
+	for id in scores:
+		if id != my_id and int(scores[id]) > int(scores[my_id]):
+			better += 1
+		elif id != my_id and int(scores[id]) == int(scores[my_id]):
+			tied += 1
+	var txt := tr("PLATZ %d VON %d") % [better + 1, scores.size()]
+	if better == 0 and tied == 0:
+		txt = tr("SIEG")
+	elif better == 0:
+		txt = tr("GLEICHSTAND AUF PLATZ 1")
+	set_placement(txt, better == 0)
+
+
+## Cover der laufenden Map (GameSession) fuer Endbilder ohne eigenes Beatmap-Objekt.
+static func session_cover() -> Texture2D:
+	var osz := str(GameSession.osz_path)
+	if osz == "" or not FileAccess.file_exists(osz):
+		return null
+	var zr := ZIPReader.new()
+	if zr.open(osz) != OK:
+		return null
+	var want := str(GameSession.difficulty_version)
+	var bg := ""
+	for f in zr.get_files():
+		if not f.to_lower().ends_with(".osu"):
+			continue
+		var txt := zr.read_file(f).get_string_from_utf8()
+		var file := _osu_background(txt)
+		if file == "":
+			continue
+		if bg == "":
+			bg = file
+		if want == "":
+			break
+		if txt.contains("Version:" + want):
+			bg = file
+			break
+	zr.close()
+	return OszImporter.load_image_texture(osz, bg) if bg != "" else null
+
+
+static func _osu_background(txt: String) -> String:
+	var at := txt.find("[Events]")
+	if at < 0:
+		return ""
+	for line in txt.substr(at, 4000).split("\n"):
+		var l := line.strip_edges()
+		if l.begins_with("0,0,"):
+			var parts := l.split(",")
+			if parts.size() >= 3:
+				return parts[2].strip_edges().trim_prefix("\"").trim_suffix("\"")
+	return ""
+
+
+## Gemeinsame Felder fuer die Modus-Endbilder (Orbit, Rally, Dirigent), die nur
+## Lauf-Daten bekommen: Spieler, Datum, Cover, Multiplayer-Rangliste.
+static func mode_data(src: Dictionary, mp: MultiplayerAPI) -> Dictionary:
+	var d := src.duplicate()
+	if not d.has("player"):
+		d["player"] = Settings.profile_name
+	if not d.has("date"):
+		d["date"] = Time.get_datetime_string_from_system()
+	d["pp"] = -1.0
+	if not (d.get("cover", null) is Texture2D) and str(d.get("cover_path", "")) == "":
+		var c := session_cover()
+		if c != null:
+			d["cover"] = c
+	if Lobby.active and mp != null:
+		var me := mp.get_unique_id()
+		d["lobby"] = true
+		d["my_id"] = me
+		if Lobby.players.has(me):
+			d["final"] = Lobby.players[me].get("final", {})
+	return d
 
 
 # ---------------------------------------------------------------------------
@@ -264,25 +373,13 @@ func _build_background() -> void:
 	base.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	base.color = UiTheme.BG
 	add_child(base)
-	var cover := _load_cover()
-	if cover != null:
-		var bg := TextureRect.new()
-		bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		bg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-		bg.texture = UiTheme.blurred_texture(cover, 14)
-		bg.modulate = Color(0.48, 0.47, 0.45)
-		add_child(bg)
-	var dim := ColorRect.new()
-	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	dim.color = Color(UiTheme.BG, 0.6)
-	add_child(dim)
-	# Vignette: Raender weich abdunkeln, Mitte bleibt offen.
+	# Ruhiger Graphit-Verlauf: Mitte minimal heller, Raender dunkler. Das Cover
+	# steht scharf im Kopf und hinter dem Rang, nicht als Fleck im Grund.
 	var vig := TextureRect.new()
 	vig.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	vig.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	vig.stretch_mode = TextureRect.STRETCH_SCALE
-	vig.texture = _radial_tex(Color(0, 0, 0, 0.0), Color(0, 0, 0, 0.6), 0.35)
+	vig.texture = _radial_tex(Color(1, 1, 1, 0.03), Color(0, 0, 0, 0.34), 0.25)
 	vig.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(vig)
 
@@ -310,6 +407,10 @@ func mod_badge_texts() -> Array:
 	var out: Array = []
 	for m in active_mods():
 		out.append(ScoreStore.mods_label({ "mods": [m], "sv_level": lv }))
+	# Modus-eigene Mods (Orbit: HD, PR ...) als fertige Texte.
+	for m in _data.get("mod_texts", []):
+		if str(m) != "" and not out.has(str(m)):
+			out.append(str(m))
 	return out
 
 
@@ -386,9 +487,24 @@ func _build_header() -> void:
 	line.texture = gt
 	add_child(line)
 
+	var tx := 40.0
+	if _cover_tex != null:
+		var th := TextureRect.new()
+		th.position = Vector2(40, 12)
+		th.size = Vector2(107, 60)
+		th.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		th.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+		th.texture = _cover_tex
+		th.clip_contents = true
+		th.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		strip.add_child(th)
+		tx = 163.0
 	var title := Label.new()
 	title.text = "%s — %s" % [str(_data.get("artist", "")), str(_data.get("title", ""))]
-	title.position = Vector2(40, 12)
+	title.position = Vector2(tx, 12)
+	title.size = Vector2(maxf(get_viewport_rect().size.x - tx - 300.0, 200.0), 32)
+	title.clip_text = true
+	title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	title.add_theme_font_override("font", UiTheme.heading_font(1))
 	title.add_theme_font_size_override("font_size", 25)
 	title.add_theme_color_override("font_color", UiTheme.TEXT)
@@ -400,7 +516,7 @@ func _build_header() -> void:
 	var ver := str(_data.get("version", "")).strip_edges()
 	ver = ver.trim_suffix("·  " + tr("Orbit")).trim_suffix("· " + tr("Orbit")).strip_edges()
 	sub.text = ver
-	sub.position = Vector2(41, 48)
+	sub.position = Vector2(tx + 1.0, 48)
 	sub.add_theme_font_override("font", UiTheme.heading_font(1))
 	sub.add_theme_font_size_override("font_size", 15)
 	sub.add_theme_color_override("font_color", UiTheme.ACCENT.lerp(UiTheme.TEXT, 0.35))
@@ -513,14 +629,22 @@ func _build_left_panel(parent: Control) -> void:
 	top.add_child(top_fill)
 	var jlog := judge_log()
 	var with_details := not jlog.is_empty()
+	var mode_page: Dictionary = _data.get("mode_page", {})
+	var tab_titles: Array = []
 	if with_details:
+		tab_titles.append(tr("Details"))
+	if mode_page.get("content", null) is Control:
+		tab_titles.append(str(mode_page.get("title", tr("Details"))))
+	if not tab_titles.is_empty():
 		top.add_child(_tab_button(tr("Übersicht"), 0))
-		top.add_child(_tab_button(tr("Details"), 1))
+		for i in tab_titles.size():
+			top.add_child(_tab_button(tab_titles[i], i + 1))
 	_reveal.append(top)
 	var srow := HBoxContainer.new()
 	srow.add_theme_constant_override("separation", 22)
 	vb.add_child(srow)
 	_score_lbl = Label.new()
+	_score_lbl.name = "Score"
 	_score_lbl.text = "0"
 	_score_lbl.add_theme_font_override("font", UiTheme.heading_font(3))
 	_score_lbl.add_theme_font_size_override("font_size", 54)
@@ -536,10 +660,20 @@ func _build_left_panel(parent: Control) -> void:
 	var acc_v := _hero_stat("GENAUIGKEIT", fmt_pct(acc), UiTheme.TEXT)
 	_acc_lbl = acc_v.get_meta("value")
 	srow.add_child(acc_v)
-	var combo_v := _hero_stat("MAX. KOMBO", "%s×" % fmt_int(int(_stats.get("max_combo", 0))), UiTheme.TEXT)
+	var combo_v := _hero_stat(str(_data.get("combo_caption", "MAX. KOMBO")),
+		"%s×" % fmt_int(int(_stats.get("max_combo", 0))), UiTheme.TEXT)
 	srow.add_child(combo_v)
-	var pp_v := _hero_pp()
-	srow.add_child(pp_v)
+	# Modus-Endbilder ohne pp: eigene Kennzahlen statt eines leeren Feldes.
+	var extras: Array = _data.get("hero_extra", [])
+	var pp_v: VBoxContainer = null
+	if extras.is_empty():
+		pp_v = _hero_pp()
+		srow.add_child(pp_v)
+	else:
+		srow.add_theme_constant_override("separation", 22 if extras.size() < 2 else 18)
+		for ex in extras:
+			pp_v = _hero_stat(str(ex[0]), str(ex[1]), UiTheme.TEXT)
+			srow.add_child(pp_v)
 	if not deltas.is_empty():
 		var boxes := {"score": score_box, "acc": acc_v, "combo": combo_v, "pp": pp_v}
 		for k in boxes:
@@ -558,10 +692,28 @@ func _build_left_panel(parent: Control) -> void:
 	var card := PlayerStatsCard.new()
 	card._s = 0.86
 	var jd: Control = card._judgements(st)
+	var tier_names: Array = _data.get("tier_names", [])
+	if tier_names.size() == 6 and jd.get_child_count() > 1:
+		for i in 6:
+			var cell := jd.get_child(1).get_child(i)
+			if cell != null and cell.get_child_count() > 0 and cell.get_child(0) is Label:
+				(cell.get_child(0) as Label).text = str(tier_names[i])
 	over.add_child(jd)
 	_reveal.append(jd)
 	if st.has("ur"):
 		var tm: Control = card._timing(st, {})
+		# Modus-Kennzahlen an der Stelle des Hold-Feldes ([Titel, Wert, Hinweis]).
+		var cells: Array = _data.get("cells", [])
+		if not cells.is_empty() and tm.get_child_count() > 2:
+			var old := tm.get_child(2)
+			tm.remove_child(old)
+			old.queue_free()
+			for i in cells.size():
+				var cd: Array = cells[i]
+				var cs: Control = card._stat(str(cd[0]), str(cd[1]), UiTheme.TEXT, card._px(22),
+					str(cd[2]) if cd.size() > 2 else "", CAPTION)
+				tm.add_child(cs)
+				tm.move_child(cs, 2 + i)
 		over.add_child(tm)
 		_reveal.append(tm)
 		var is_fail := bool(_data.get("is_fail", false))
@@ -582,6 +734,12 @@ func _build_left_panel(parent: Control) -> void:
 		det.visible = false
 		vb.add_child(det)
 		_pages.append(det)
+	if mode_page.get("content", null) is Control:
+		var mpage: Control = mode_page.content
+		mpage.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		mpage.visible = false
+		vb.add_child(mpage)
+		_pages.append(mpage)
 
 
 ## Paket wie im MP (PlayerStatsCard.pack) aus Stats, Offsets und optionalem
@@ -723,12 +881,44 @@ func _add_fail_reason(parent: Control, font_size: int) -> void:
 
 
 func _build_rank_area(parent: Control) -> void:
+	# Huelle: Cover scharf hinter dem Rang (abgedunkelt), sonst ruhige Flaeche.
+	var sleeve := PanelContainer.new()
+	sleeve.custom_minimum_size = Vector2(RANK_COL_W, 0)
+	sleeve.clip_contents = true
+	sleeve.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var ssb := UiTheme.glass_box(18, 0.72)
+	ssb.set_content_margin_all(0)
+	sleeve.add_theme_stylebox_override("panel", ssb)
+	parent.add_child(sleeve)
+	_reveal.append(sleeve)
+	if _cover_tex != null:
+		var art := TextureRect.new()
+		art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+		art.texture = _cover_tex
+		art.modulate = Color(0.62, 0.61, 0.59)
+		art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		sleeve.add_child(art)
+		var shade := TextureRect.new()
+		shade.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		shade.stretch_mode = TextureRect.STRETCH_SCALE
+		var sg := Gradient.new()
+		sg.set_color(0, Color(UiTheme.BG, 0.50))
+		sg.set_color(1, Color(UiTheme.BG, 0.94))
+		var sgt := GradientTexture2D.new()
+		sgt.gradient = sg
+		sgt.fill_from = Vector2(0, 0)
+		sgt.fill_to = Vector2(0, 1)
+		sgt.width = 4
+		sgt.height = 128
+		shade.texture = sgt
+		shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		sleeve.add_child(shade)
 	var col := VBoxContainer.new()
-	col.custom_minimum_size = Vector2(RANK_COL_W, 0)
 	col.alignment = BoxContainer.ALIGNMENT_CENTER
-	col.add_theme_constant_override("separation", 22)
+	col.add_theme_constant_override("separation", 18)
 	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	parent.add_child(col)
+	sleeve.add_child(col)
 	var is_fail := bool(_data.get("is_fail", false))
 	var grade := "F" if is_fail else str(_stats.get("grade", "D"))
 	var rc: Color = FAIL_COLOR if is_fail else GRADE_COLOR.get(grade, Color.WHITE)
@@ -763,11 +953,12 @@ func _build_rank_area(parent: Control) -> void:
 	disc.offset_bottom = -26
 	disc.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	disc.stretch_mode = TextureRect.STRETCH_SCALE
-	disc.texture = _disc_tex(Color(UiTheme.BG, 0.55))
+	disc.texture = _disc_tex(Color(UiTheme.BG, 0.86 if _cover_tex != null else 0.55))
 	disc.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_ring_ctrl.add_child(disc)
 
 	_rank_lbl = Label.new()
+	_rank_lbl.name = "Grade"
 	_rank_lbl.text = grade
 	_rank_lbl.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_rank_lbl.offset_top = -14
@@ -778,8 +969,8 @@ func _build_rank_area(parent: Control) -> void:
 	_rank_lbl.add_theme_font_size_override("font_size", 220 if grade.length() < 2 else 168)
 	_rank_lbl.add_theme_color_override("font_color", rc)
 	# Duenne, farbverwandte Kontur + weicher Schatten statt dicker Kante.
-	_rank_lbl.add_theme_color_override("font_outline_color", Color(rc.lightened(0.45), 0.55))
-	_rank_lbl.add_theme_constant_override("outline_size", 3)
+	_rank_lbl.add_theme_color_override("font_outline_color", Color(rc.lightened(0.3), 0.35))
+	_rank_lbl.add_theme_constant_override("outline_size", 2)
 	_rank_lbl.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.30))
 	_rank_lbl.add_theme_constant_override("shadow_offset_x", 0)
 	_rank_lbl.add_theme_constant_override("shadow_offset_y", 5)
@@ -841,27 +1032,35 @@ func _build_buttons(group: Control) -> void:
 	group.add_child(bar)
 	var is_replay := bool(_data.get("is_replay", false))
 	var lobby := bool(_data.get("lobby", false))
-	bar.add_child(_button((("Zur Siegerehrung" if Lobby.tournament.phase == Tournament.Phase.END else "Zum Zwischenstand")
+	var back := _button((("Zur Siegerehrung" if Lobby.tournament.phase == Tournament.Phase.END else "Zum Zwischenstand")
 		if Lobby.tournament != null else "Zur Lobby")
 		if lobby else "Zum Song-Browser", false,
-		back_pressed.emit, "Esc"))
+		back_pressed.emit, "Esc")
+	back.name = "BackButton"
+	bar.add_child(back)
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bar.add_child(spacer)
 	# Clip-Export gibt es nur fuer Mania (mania_3d) und Orbit; andere Modi ohne Knopf.
-	if score_mode() in ["", ScoreStore.MODE_ORBIT]:
-		bar.add_child(_button("⤓  Clip speichern", false, clip_pressed.emit))
-	if not is_replay and not lobby:
+	if score_mode() in ["", ScoreStore.MODE_ORBIT] and bool(_data.get("can_clip", true)):
+		var clip := _button("⤓  Clip speichern", false, clip_pressed.emit)
+		clip.name = "ClipButton"
+		bar.add_child(clip)
+	if not is_replay and not lobby and bool(_data.get("can_share", true)):
 		bar.add_child(ScoreShare.make_button(GameSession.osz_path, GameSession.difficulty_version,
 			int(_stats.get("score", 0)), score_mode(), "",
 			func(b: Button): UiTheme.style_button(b, false)))
 	if bool(_data.get("can_replay", true)):
-		bar.add_child(_button("Selbst spielen" if is_replay else "▶  Replay ansehen", false,
-			replay_pressed.emit))
+		var rp := _button("Selbst spielen" if is_replay else "▶  Replay ansehen", false,
+			replay_pressed.emit)
+		rp.name = "ReplayButton"
+		bar.add_child(rp)
 	if bool(_data.get("allow_retry", not lobby)):
-		bar.add_child(_button("Nochmal ansehen" if is_replay else "Nochmal", true,
-			retry_pressed.emit, "R"))
+		var retry := _button("Nochmal ansehen" if is_replay else "Nochmal", true,
+			retry_pressed.emit, "R")
+		retry.name = "RetryButton"
+		bar.add_child(retry)
 	_reveal.append(bar)
 
 
