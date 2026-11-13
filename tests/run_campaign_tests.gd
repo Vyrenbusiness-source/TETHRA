@@ -28,71 +28,127 @@ func _initialize() -> void:
 
 ## Autoloads (Settings, GameSession) stehen erst im ersten Frame im Baum.
 func _process(_delta: float) -> bool:
-	_test_world_force()
+	_test_own_settings()
+	_test_start_mods()
 	print("=== Campaign-Tests: %d Pruefungen, %d Fehler ===" % [_count, _fail])
 	quit(1 if _fail > 0 else 0)
 	return true
 
 
-func _saved_world(s: Node, path: String) -> int:
-	s.save(path)
-	var cfg := ConfigFile.new()
-	cfg.load(path)
-	return int(cfg.get_value("game", "world_theme", -1))
+## Alle Einstellungen als {Name: Wert} (Skript-Variablen des Autoloads Settings).
+func _settings_snapshot(s: Node) -> Dictionary:
+	var out := {}
+	for p: Dictionary in s.get_property_list():
+		if int(p.usage) & PROPERTY_USAGE_SCRIPT_VARIABLE and not str(p.name).begins_with("_"):
+			var v: Variant = s.get(p.name)
+			if typeof(v) != TYPE_OBJECT:
+				out[str(p.name)] = v
+	return out
 
 
-## Welt-Zwang der Stufe: gilt nur, waehrend die Spielszene sich aufbaut. Er steht nie
-## in den Einstellungen, auch nicht, wenn mitten in der Stufe gespeichert wird.
-func _test_world_force() -> void:
+func _settings_diff(a: Dictionary, b: Dictionary) -> String:
+	var out: Array[String] = []
+	for k: String in a:
+		if a[k] != b.get(k):
+			out.append(k)
+	return ", ".join(out)
+
+
+const _PROBE_SRC := "extends Node
+var seen := {}
+var world := \"\"
+func _ready() -> void:
+	var s := get_node(\"/root/Settings\")
+	world = s.world_theme_name()
+	for p in s.get_property_list():
+		if int(p.usage) & PROPERTY_USAGE_SCRIPT_VARIABLE and not str(p.name).begins_with(\"_\"):
+			var v = s.get(p.name)
+			if typeof(v) != TYPE_OBJECT:
+				seen[str(p.name)] = v
+"
+
+
+## Eine Kampagnen-Stufe startet mit den Einstellungen des Spielers, genau wie ein Start aus
+## dem Song-Browser: Die Spielszene jedes Modus sieht beim Aufbau dieselben Werte (2D/3D,
+## Welt inklusive Auto, Scroll Speed, Skin ...). Die Kapitel-Welt wird nie erzwungen.
+func _test_own_settings() -> void:
 	var s := root.get_node_or_null("/root/Settings")
 	var gs := root.get_node_or_null("/root/GameSession")
 	_ok(s != null and gs != null, "Autoloads Settings und GameSession da")
 	if s == null or gs == null:
 		return
-	DirAccess.make_dir_recursive_absolute("user://test_tmp")
-	var path := "user://test_tmp/campaign_settings_%d.cfg" % OS.get_process_id()
-	var order: Array = s.WORLD_ORDER
-	var world := str(order[order.size() - 1])
-	var own := 2
-	var before: int = s.world_theme
-	s.world_theme = own
-	gs.start_campaign("c01s1", world)
-	_ok(gs.campaign_active(), "Stufe laeuft")
-	_ok(s.world_theme == own, "Stufenstart laesst die Einstellung in Ruhe")
-	_ok(_saved_world(s, path) == own, "Speichern vor der Spielszene: eigene Welt")
 	var src := GDScript.new()
-	src.source_code = "extends Node
-var seen := \"\"
-func _ready() -> void:
-	seen = get_node(\"/root/Settings\").world_theme_name()
-"
+	src.source_code = _PROBE_SRC
 	src.reload()
-	var game := Node.new()
-	game.set_script(src)
-	game.scene_file_path = ScoreStore.MODE_SCENES.mania
-	root.add_child(game)
-	_ok(str(game.get("seen")) == world, "Spielszene sieht beim Aufbau die Welt des Kapitels")
-	_ok(s.world_theme == own, "nach dem Aufbau wieder die eigene Welt")
-	_ok(_saved_world(s, path) == own, "Speichern mitten in der Stufe: eigene Welt")
-	s.world_theme = 3
-	_ok(_saved_world(s, path) == 3, "Weltwechsel in der Pause bleibt")
-	game.free()
-	var retry := Node.new()
-	retry.set_script(src)
-	retry.scene_file_path = ScoreStore.MODE_SCENES.orbit
-	root.add_child(retry)
-	_ok(str(retry.get("seen")) == world, "Neustart der Stufe: wieder die Welt des Kapitels")
-	_ok(s.world_theme == 3, "Neustart laesst die Einstellung in Ruhe")
-	retry.free()
-	gs.end_campaign()
-	_ok(not gs.campaign_active() and s.world_theme == 3, "Stufenende: Einstellung unveraendert")
-	var free_play := Node.new()
-	free_play.set_script(src)
-	free_play.scene_file_path = ScoreStore.MODE_SCENES.mania
-	root.add_child(free_play)
-	_ok(str(free_play.get("seen")) == str(order[2]), "ohne Kampagne: eigene Welt")
-	free_play.free()
-	s.world_theme = before
+	var before_2d: bool = s.playfield_2d
+	var before_world: int = s.world_theme
+	var all := Campaign.load_data()
+	# Eigene Wahl: 2D an, Welt Auto (0) und eine feste Welt, die kein Kapitel dieser Stufen ist.
+	for own_world: int in [0, 2]:
+		for own_2d: bool in [true, false]:
+			s.playfield_2d = own_2d
+			s.world_theme = own_world
+			var own := _settings_snapshot(s)
+			for mode: String in ScoreStore.MODES:
+				var chs := Campaign.chapters(Campaign.for_mode(all, mode))
+				if chs.is_empty():
+					continue
+				var ch: Dictionary = chs[chs.size() - 1]
+				var id := str(((ch.stages as Array)[0] as Dictionary).id)
+				var tag := "%s (2D %s, Welt %d)" % [mode, str(own_2d), own_world]
+				if gs.get_method_argument_count("start_campaign") == 2:
+					gs.call("start_campaign", id, str(ch.world))   # Stand vor dem Fix
+				else:
+					gs.call("start_campaign", id)
+				_ok(gs.campaign_active(), "Stufe laeuft: " + tag)
+				for attempt in 2:   # Start und Neustart der Stufe
+					var game := Node.new()
+					game.set_script(src)
+					game.scene_file_path = ScoreStore.mode_scene(mode)
+					root.add_child(game)
+					var seen: Dictionary = game.get("seen")
+					_ok(str(game.get("world")) == s.world_theme_name() and int(seen.get("world_theme", -1)) == own_world,
+						"Spielszene sieht die eigene Welt, nicht die des Kapitels: " + tag)
+					_ok(bool(seen.get("playfield_2d")) == own_2d, "Spielszene sieht eigenes 2D/3D: " + tag)
+					_ok(_settings_diff(own, seen) == "", "Spielszene sieht alle eigenen Einstellungen: %s [%s]" % [tag, _settings_diff(own, seen)])
+					game.free()
+				gs.end_campaign()
+				_ok(_settings_diff(own, _settings_snapshot(s)) == "", "Stufenende: Einstellungen unveraendert: " + tag)
+	_ok(not ("_campaign_world_prev" in gs), "kein Welt-Zwang mehr in GameSession")
+	_ok(not gs.campaign.has("world"), "laufende Stufe traegt keine Welt")
+	s.playfield_2d = before_2d
+	s.world_theme = before_world
+
+
+## Mods eines Stufenstarts = Mods des Spielers fuer den Modus (wie der Song-Browser sie
+## setzt) plus die Mods der Stufe. No Fail gibt es in der Kampagne nicht.
+func _test_start_mods() -> void:
+	var c := Campaign.new()
+	_ok(c.has_method("start_mods") and c.has_method("player_mods"), "Campaign.start_mods / player_mods vorhanden")
+	if not c.has_method("start_mods") or not c.has_method("player_mods"):
+		return
+	DirAccess.make_dir_recursive_absolute("user://test_tmp")
+	var path := "user://test_tmp/campaign_browser_%d.cfg" % OS.get_process_id()
+	var cfg := ConfigFile.new()
+	cfg.set_value("browser", "orbit_mods", {"HD": true, "FI": false, "PR": true})
+	cfg.set_value("browser", "trace_mods", {"MR": true, "HD": false, "SS": false})
+	cfg.save(path)
+	var mania: Dictionary = c.call("player_mods", "mania", true, path)
+	_ok(mania == {"NF": false, "SV": true}, "Mania: SV des Spielers gilt")
+	_ok(c.call("player_mods", "mania", false, path) == {"NF": false, "SV": false}, "Mania ohne SV")
+	_ok(c.call("player_mods", "orbit", true, path) == {"NF": false, "HD": true, "FI": false, "PR": true}, "Orbit: HD/FI/PR des Spielers gelten")
+	_ok(c.call("player_mods", "trace", true, path) == {"NF": false, "MR": true, "HD": false, "SS": false}, "Trace: MR/HD/SS des Spielers gelten")
+	for m: String in ["rally", "dirigent", "rebound"]:
+		_ok(c.call("player_mods", m, true, path) == {"NF": false}, m + ": keine eigenen Mods")
+	_ok(c.call("player_mods", "orbit", false, "user://test_tmp/gibt_es_nicht.cfg") == {"NF": false, "HD": false, "FI": false, "PR": false}, "ohne Browser-Stand: Orbit-Mods aus")
+	var plain := {"mode": "mania", "mods": []}
+	var sv := {"mode": "mania", "mods": ["SV"]}
+	_ok(c.call("start_mods", plain, {"NF": true, "SV": true}) == {"NF": false, "SV": true}, "No Fail gilt in der Kampagne nie")
+	_ok(c.call("start_mods", sv, {"NF": false, "SV": false}) == {"NF": false, "SV": true}, "Mod der Stufe kommt dazu")
+	_ok(c.call("start_mods", plain, {"NF": false, "SV": false}) == {"NF": false, "SV": false}, "ohne Mods bleibt es ohne")
+	var player := {"NF": true, "HD": true}
+	c.call("start_mods", plain, player)
+	_ok(player == {"NF": true, "HD": true}, "start_mods aendert die Eingabe nicht")
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 
 
