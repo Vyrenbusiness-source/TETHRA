@@ -29,7 +29,7 @@ Alte Fassung (Seitenansicht, A/B) ist ersetzt: sie war langweilig (nichts zu les
 - **Lesbarkeit:** Je Zone ein fester Umriss in Ballgroesse am Treffpunkt ueber der Schlaglinie; ein
   Ring erscheint, wenn der Ball losfliegt, und zieht sich bis zur Notenzeit auf den Umriss zusammen
   (naechster Schlag kraeftig, folgende duenn und erst ab einer Beat-Laenge). Der Aufsetzpunkt ist
-  nur eine feste, leise Marke (schrumpft nicht, kein zweites Zeitsignal); Ball mit Schatten auf dem Tisch (Schatten zeigt die Zone schon im Flug).
+  nur eine feste, leise Marke (schrumpft nicht, kein zweites Zeitsignal); Ball mit Schatten auf dem Tisch (Schatten zeigt die Zone schon im Flug). Raum: Rueckwand, Boden und Leuchte ueber dem Tisch (nur Optik); Baelle als Kugeln mit weichem Schatten.
   Schmetterball weiss umrandet + max. 1,4x Ball, Aufladen mit Laufband ueber die Zone.
 - **Gefuehl:** Gegner spielt sichtbar (Schlaeger schwingt je Ball, bei Streams schneller
   "Mehrball"), Ballwechsel-Zaehler, dezente unscharfe Publikums-Silhouetten, Licht reagiert leise auf Kombo (nie grell, kein
