@@ -707,7 +707,7 @@ func _show_info(i: int) -> void:
 		var sopen := Campaign.stage_open(_data, _state, id)
 		var boss := bool(st.get("boss", false))
 		var cv := _cover(x, 588, 88, 50, _world_color(str(ch.world)), _info)
-		cv.dim = 0.0 if sopen else 0.74
+		cv.dim = 0.0 if sopen else 0.8
 		cv.tex = _want_cover(st, cv)
 		if boss:
 			_line(x, 638, 88, 2, UiTheme.ACCENT if sopen else Color(UiTheme.ACCENT.r, UiTheme.ACCENT.g, UiTheme.ACCENT.b, 0.4), _info)
