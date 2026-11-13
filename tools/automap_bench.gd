@@ -819,7 +819,8 @@ static func aggregate(recs: Array, split: String = "") -> Dictionary:
 		n += 1
 		if not r.get("ok", false):
 			n_fail += 1
-		else:
+		elif float(r.get("time_ms", 0.0)) > 0.0:
+			# time_ms 0 = nicht gemessen (Abstimmung rechnet mit Zwischenergebnissen im Speicher)
 			times.append(float(r.time_ms))
 			norms.append(float(r.time_norm_ms))
 		if r.get("single", false):
@@ -1040,7 +1041,7 @@ static func target_rows(a: Dictionary, caps: Dictionary) -> Array:
 				"nicht messbar, weil die Noten keine Spalten haben", "**nein** (fehlt)"])
 	rows.append(["Dauer", "ganzer Ablauf je Song, auf 4 min umgerechnet, 95. Perzentil (Maximum)", "≤ 15 s",
 			"%s s (%s s; Median roh %s s; n=%d)" % [_f(_div(a.dur_norm_p95, 1000.0)), _f(_div(a.dur_norm_max, 1000.0)), _f(_div(a.dur_med, 1000.0)), int(a.n_dur)],
-			_verdict(int(a.n_dur), a.dur_norm_p95 != null and a.dur_norm_p95 <= 15000.0)])
+			_verdict(int(a.n_dur), a.dur_norm_p95 != null and a.dur_norm_p95 <= 15000.0, "keine Laufzeit gemessen (Abstimmung nutzt Zwischenergebnisse)")])
 	return rows
 
 
@@ -1512,6 +1513,7 @@ func _cli_bench(args: PackedStringArray) -> int:
 	var files := list_osz(maps_dir)
 	var t_start := Time.get_ticks_msec()
 	var count := 0
+	var skipped: Array = []
 	var info := {"Maps-Ordner": "%d .osz" % files.size(),
 			"Weg": "AutoMapper4K.generate, erzeugtes Set zurückgelesen" if use_generate else "Stufen einzeln (decode, Gitter, Features, Noten)"}
 	if not mods.missing.is_empty() and mods.name == "alt":
@@ -1528,6 +1530,7 @@ func _cli_bench(args: PackedStringArray) -> int:
 		var truth := load_truth(osz, StarService.stars_for(osz) if not args.has("--no-stars") else {})
 		if not truth.ok:
 			print("  UEBERSPRUNGEN %s: %s" % [f, truth.error])
+			skipped.append("%s (%s)" % [_short(f), str(truth.error).get_slice(":", 0)])
 			continue
 		var audio := extract_file(osz, truth.audio_name, out_abs.path_join("audio_tmp"))
 		var prod := {"ok": false, "error": "Audio im Set nicht gefunden: " + str(truth.audio_name), "caps": mods.caps}
@@ -1568,6 +1571,8 @@ func _cli_bench(args: PackedStringArray) -> int:
 	else:
 		info["Sterne"] = "nicht berechnet (%s)" % ("--no-stars" if mods.caps.cols else "Mapper ohne Spalten")
 	info["Laufzeit"] = "%.0f s für %d Sets" % [(Time.get_ticks_msec() - t_start) / 1000.0, count]
+	if not skipped.is_empty():
+		info["Nicht gemessen"] = "%d Sets nicht lesbar oder ohne Diff mit Noten, zählen in keiner Kennzahl: %s" % [skipped.size(), ", ".join(skipped)]
 	if limit > 0 or only_set != "":
 		var part: Array = []
 		if limit > 0:

@@ -18,7 +18,7 @@ extends SceneTree
 
 const B := preload("res://tools/automap_bench.gd")
 const PARAMS_PATH := "res://data/automap/params.json"
-const OLD_KNOBS := [{"key": "post.offset_shift_ms", "min": -30.0, "max": 30.0, "int": false}]
+const OLD_KNOBS := [{"key": "post.offset_shift_ms", "min": -20.0, "max": 20.0, "int": false, "start": 0.0}]
 
 var _done := false
 

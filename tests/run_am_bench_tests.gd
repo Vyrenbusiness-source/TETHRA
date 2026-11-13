@@ -255,6 +255,9 @@ func _test_record_and_report() -> void:
 	var ag: Dictionary = B.aggregate([good])
 	_near(ag.tempo_exact, 1.0, "aggregate Tempo")
 	_near(B.objective(ag), 1.0, "Zielgroesse perfekt = 1")
+	var untimed: Dictionary = B.song_record("u.osz", _truth(), _product(500.0), 0.0, 20000.0)
+	var ag_u: Dictionary = B.aggregate([untimed])
+	_ok(int(ag_u.n_dur) == 0 and str(B.target_rows(ag_u, untimed.caps if untimed.has("caps") else {"cols": true, "holds": true, "kiai": true, "profiles": B.PROFILES})[13][4]).begins_with("nicht messbar"), "Laufzeit 0 = nicht gemessen, nicht 'ja'")
 	# 9 ms zu spaet: Tempo stimmt, Offset 9, Noten noch im Fenster
 	var late: Dictionary = B.song_record("late.osz", _truth(), _product(500.0, 9.0), 3000.0, 20000.0)
 	_near(late.offset_ms, 9.0, "9 ms spaet")
