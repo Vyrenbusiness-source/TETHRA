@@ -22,9 +22,15 @@ extends Control
 ## naechsten Ziel laeuft. Ecken des Felds dezent markiert, im Kiai pulst ein
 ## feiner Rahmen sehr leise im Beat. Halten: schmales, transparentes Band entlang des Pfads, Kugel und
 ## Folgekreis. Treffer: Ring dehnt sich aus und blendet (HIT_MS) in Tastenfarbe,
-## aussen ein feiner Ring in Stufenfarbe; Miss: kleines X blendet kurz aus (nie
-## ueber dem naechsten Ziel); Fehldruck: kurzes
+## aussen ein feiner Ring in Stufenfarbe; dazu bleibt die Marke kurz als
+## Bezug stehen: Marke und ein Punkt zeigen, wo der Satellit beim Druck stand
+## (links der Marke = zu frueh, kuehl; rechts = zu spaet, warm), nur wenn der
+## Druck nicht in der besten Stufe lag. Miss: Umriss des Ziels
+## verblasst grau, kleines X (nie ueber dem naechsten Ziel); Fehldruck: kurzes
 ## Wort am Cursor. Cursor mit weicher kurzer Spur. Kein Glow, keine Partikel.
+## Spaetere Ziele sind deckend, aber gedimmt (dunkle Platte unter dem Koerper):
+## Ueberlappungen bleiben sauber. Wird ein Ziel zum naechsten, blendet die
+## Hervorhebung weich ueber EMPH_MS ein (kein Sprung).
 
 ## Feld: Hoehe relativ zur Control-Hoehe, Seitenverhaeltnis 4:3.
 const FIELD_H_K := 0.8
@@ -47,6 +53,14 @@ const FAR_ALPHA := 0.3
 const POP_IN_MS := 90.0
 const HIT_MS := 220.0
 const HIT_FLASH_MS := 70.0
+## Treffer: Schatten des Orbit-Rings mit Druck-Punkt (frueh/spaet) so lange sichtbar.
+const PRESS_DOT_MS := 300.0
+## Druck-Punkt: groesster gezeigter Winkel neben der Marke (Grad).
+const PRESS_DOT_MAX_DEG := 60.0
+## Uebergang "spaeter" -> "naechstes Ziel" (Deckkraft, Rand) in ms.
+const EMPH_MS := 110.0
+## Folgekreis waechst beim Halten-Beginn weich auf (ms).
+const FOLLOW_IN_MS := 140.0
 const MISS_MARK_MS := 260.0
 ## Cursor-Spur (Songzeit-ms) und ihre Deckkraft an der Spitze.
 const TRAIL_MS := 90.0
@@ -150,6 +164,11 @@ var _resume_idx := -1
 var _state := PackedInt32Array()
 var _state_t := PackedFloat64Array()
 var _state_q := PackedInt32Array()
+## Zeitfehler des Drucks (ms, < 0 = zu frueh) und Zeit, seit der ein Ziel das naechste ist.
+var _state_dt := PackedFloat64Array()
+var _next_t := PackedFloat64Array()
+## Sichtbare offene Ziele dieses Frames: [Index, Pixel-Position, Freiraum-Radius].
+var _obs: Array = []
 var _first := 0
 var _max_lead := 0.0
 var _press: Array = []  # [pos, text, t0]
@@ -193,6 +212,11 @@ func setup(p_notes: Array) -> void:
 	_state_t.resize(n)
 	_state_q = PackedInt32Array()
 	_state_q.resize(n)
+	_state_dt = PackedFloat64Array()
+	_state_dt.resize(n)
+	_next_t = PackedFloat64Array()
+	_next_t.resize(n)
+	_next_t.fill(INF)
 	_max_lead = 0.0
 	for i in n:
 		_max_lead = maxf(_max_lead, float(notes[i].time_ms) - float(notes[i].spawn_ms))
@@ -264,6 +288,8 @@ func on_judged(index: int, result: Dictionary) -> void:
 		_state[index] = ST_MISS if q == 5 else ST_HIT
 	_state_t[index] = t_ms
 	_state_q[index] = q
+	if not hold_end:
+		_state_dt[index] = float(result.get("dt", 0.0))
 	hold_warn.erase(index)
 	queue_redraw()
 
@@ -346,7 +372,7 @@ func _advance_first() -> void:
 		var st := _state[_first]
 		if st == ST_PENDING or st == ST_HOLD:
 			break
-		if t_ms - _state_t[_first] < MISS_MARK_MS + 50.0:
+		if t_ms - _state_t[_first] < PRESS_DOT_MS + 50.0:
 			break
 		_first += 1
 
@@ -410,6 +436,10 @@ func _draw() -> void:
 				stack_n[j] = cnt
 				cover[i] = cnt - 1
 				break
+	_obs.clear()
+	for i in vis:
+		if ranks.has(i) and int(ranks[i]) < MAX_RANKS:
+			_obs.append([i, field_to_screen(notes[i].pos), R * ((ORBIT_K + 0.1) if int(ranks[i]) < RING_RANKS else 1.05)])
 	_track_resume(t, nxt)
 	_update_hint(t, vis, ranks, stack_n)
 	# 2. Folgepunkte zwischen aufeinanderfolgenden Zeitpunkten (unter allem).
@@ -429,18 +459,19 @@ func _draw() -> void:
 		if rk >= MAX_RANKS:
 			continue
 		var is_next := absf(float(n.time_ms) - nxt_t) <= CHORD_EPS_MS
-		var a := _alpha_of(i, n, nxt_t, t)
+		var em := _emph(i, is_next, t)
+		var a := _alpha_of(i, n, em, t)
 		if rk >= RING_RANKS:
 			a = minf(a, FAR_ALPHA * clampf((t - float(n.spawn_ms)) / POP_IN_MS, 0.0, 1.0))
 		if n.is_hold:
-			_draw_band(n, R, a, rk < RING_RANKS)
+			_draw_band(n, R, a, rk < RING_RANKS, i)
 		if cover.has(i):
 			# Verdeckt im Stapel: versetzte Karte ohne eigenen Ring/Satelliten.
 			var off := Vector2(1.0, 1.0) * R * STACK_OFF * float(cover[i])
 			_draw_body(field_to_screen(n.pos) + off, R * _pop_scale(n, t), n.key,
-					maxf(a, 0.5 * clampf((t - float(n.spawn_ms)) / POP_IN_MS, 0.0, 1.0)), false)
+					maxf(a, 0.5 * clampf((t - float(n.spawn_ms)) / POP_IN_MS, 0.0, 1.0)), 0.0)
 			continue
-		_draw_target(i, n, R, a, is_next, pulse, t, rk < RING_RANKS)
+		_draw_target(i, n, R, a, is_next, pulse, t, rk < RING_RANKS, em)
 		if rk < RING_RANKS and int(stack_n.get(i, 1)) >= 2:
 			_draw_stack_count(field_to_screen(n.pos), R, int(stack_n[i]), a)
 		if is_next and i == nxt and _is_restart(nxt):
@@ -466,11 +497,23 @@ func _draw() -> void:
 		_draw_cursor(R)
 
 
-func _alpha_of(_i: int, n: OrbitNote, nxt_t: float, t: float) -> float:
-	var a := clampf((t - float(n.spawn_ms)) / POP_IN_MS, 0.0, 1.0)
-	if absf(float(n.time_ms) - nxt_t) > CHORD_EPS_MS:
-		a *= LATER_ALPHA
-	return a
+## Hervorhebung 0..1: 1 = naechstes Ziel. Blendet weich ein, sobald ein Ziel das
+## naechste wird (Songzeit; Sprung zurueck setzt neu an).
+func _emph(i: int, is_next: bool, t: float) -> float:
+	if not is_next:
+		_next_t[i] = INF
+		return 0.0
+	if _next_t[i] > t:
+		# Erstes Ziel der Map / nach einer Luecke: sofort voll (nichts zum Ueberblenden).
+		var j := i - 1
+		while j >= 0 and _state[j] == ST_PENDING:
+			j -= 1
+		_next_t[i] = t if j >= 0 and t - _state_t[j] < EMPH_MS else t - EMPH_MS
+	return smoothstep(0.0, EMPH_MS, t - _next_t[i])
+
+
+func _alpha_of(_i: int, n: OrbitNote, em: float, t: float) -> float:
+	return clampf((t - float(n.spawn_ms)) / POP_IN_MS, 0.0, 1.0) * lerpf(LATER_ALPHA, 1.0, em)
 
 
 func _pop_scale(n: OrbitNote, t: float) -> float:
@@ -493,11 +536,11 @@ func _sat_alpha(n: OrbitNote, t: float) -> float:
 
 
 func _draw_target(i: int, n: OrbitNote, R: float, alpha: float, is_next: bool,
-		pulse: float, t: float, with_ring: bool = true) -> void:
+		pulse: float, t: float, with_ring: bool = true, em: float = 1.0) -> void:
 	if alpha <= 0.0:
 		return
 	if not with_ring:
-		_draw_body(field_to_screen(n.pos), R * _pop_scale(n, t), n.key, alpha, false)
+		_draw_body(field_to_screen(n.pos), R * _pop_scale(n, t), n.key, alpha, 0.0)
 		return
 	var c := field_to_screen(n.pos)
 	if i == _lock_idx and t - _lock_t < LOCK_MS:
@@ -507,7 +550,7 @@ func _draw_target(i: int, n: OrbitNote, R: float, alpha: float, is_next: bool,
 	var ring_r := r * ORBIT_K
 	var lw := maxf(1.5, R * 0.05)
 	# Orbit-Ring (Puls nur Helligkeit/Breite, dezent).
-	var ring_a := ((0.30 if is_next else 0.22) + 0.08 * kiai + 0.2 * pulse) * alpha
+	var ring_a := (lerpf(0.22, 0.30, em) + 0.08 * kiai + 0.2 * pulse) * alpha
 	draw_arc(c, ring_r, 0.0, TAU, 80, Color(1, 1, 1, ring_a), lw * (1.0 + 0.4 * pulse), true)
 	var sa := _sat_alpha(n, t) * alpha
 	var deg := n.satellite_deg(t)
@@ -519,13 +562,13 @@ func _draw_target(i: int, n: OrbitNote, R: float, alpha: float, is_next: bool,
 			draw_arc(c, ring_r, a0, a1, maxi(6, int(64.0 * (a1 - a0) / TAU)),
 					Color(1, 1, 1, 0.5 * sa), lw * 1.35, true)
 	# Marke oben: kurzer kraeftiger Querstrich durch den Ring.
-	var mk := Color(1, 1, 1, (1.0 if is_next else 0.75) * alpha)
+	var mk := Color(1, 1, 1, lerpf(0.75, 1.0, em) * alpha)
 	var mh := R * 0.2
 	draw_line(c + Vector2(0, -ring_r + mh), c + Vector2(0, -ring_r - mh), mk, lw * 2.2, true)
 	# Ziel.
-	_draw_body(c, r, n.key, alpha, is_next)
+	_draw_body(c, r, n.key, alpha, em)
 	if is_next and letters_on():
-		_draw_key_label(c, r, n.key, alpha)
+		_draw_key_label(c, r, n.key, alpha * em)
 	if sa <= 0.0:
 		return
 	# Pips: verbleibende Runden ("noch 2 Runden"), gut sichtbar zwischen Ziel
@@ -556,18 +599,24 @@ func _draw_target(i: int, n: OrbitNote, R: float, alpha: float, is_next: bool,
 	draw_circle(sp, sr, Color(1, 1, 1, sa), true, -1.0, true)
 
 
-func _draw_body(c: Vector2, r: float, key: int, alpha: float, strong: bool) -> void:
-	var rim_w := maxf(1.6, r * (0.085 if strong else 0.065))
-	var dark := 0.30 if strong else 0.46
-	var rim_a := Color(1, 1, 1, alpha) if strong else Color(A_COL.lightened(0.45), 0.85 * alpha)
-	var rim_b := Color(1, 1, 1, alpha) if strong else Color(B_COL.lightened(0.45), 0.85 * alpha)
+## em 0..1 = Hervorhebung (1 = naechstes Ziel: heller, weisser Rand). Unter dem
+## Koerper liegt eine dunkle, fast deckende Platte: gedimmte Ziele bleiben
+## geschlossene Flaechen, nichts scheint durch.
+func _draw_body(c: Vector2, r: float, key: int, alpha: float, em: float) -> void:
+	var strong := em > 0.5
+	var rim_w := maxf(1.6, r * lerpf(0.065, 0.085, em))
+	var dark := lerpf(0.46, 0.30, em)
+	var rim_a := Color(A_COL.lightened(0.45), 0.85 * alpha).lerp(Color(1, 1, 1, alpha), em)
+	var rim_b := Color(B_COL.lightened(0.45), 0.85 * alpha).lerp(Color(1, 1, 1, alpha), em)
 	var edge := Color(0, 0, 0, 0.35 * alpha)
+	var plate := Color(PLATE_COL, minf(alpha * 2.4, 0.94))
 	match key:
 		OrbitNote.KEY_B:
 			var h := r * SQUARE_K
 			var pts := PackedVector2Array()
 			for p in _square:
 				pts.append(c + p * h)
+			draw_colored_polygon(pts, plate)
 			_fill_grad(c, r, pts, B_COL.darkened(dark), alpha)
 			var outer := PackedVector2Array()
 			for p in _square:
@@ -587,6 +636,7 @@ func _draw_body(c: Vector2, r: float, key: int, alpha: float, strong: bool) -> v
 				pa.append(c + p * r)
 			for p in _half_b:
 				pb.append(c + p * r)
+			draw_circle(c, r, plate, true, -1.0, true)
 			_fill_grad(c + Vector2(-r * 0.4, 0.0), r, pa, A_COL.darkened(dark), alpha)
 			_fill_grad(c + Vector2(r * 0.4, 0.0), r, pb, B_COL.darkened(dark), alpha)
 			draw_arc(c, r + 0.75, 0.0, TAU, 64, edge, 1.5, true)
@@ -600,6 +650,7 @@ func _draw_body(c: Vector2, r: float, key: int, alpha: float, strong: bool) -> v
 			var pts := PackedVector2Array()
 			for p in _disk:
 				pts.append(c + p * r)
+			draw_circle(c, r, plate, true, -1.0, true)
 			_fill_grad(c, r, pts, A_COL.darkened(dark), alpha)
 			draw_arc(c, r + 0.75, 0.0, TAU, 64, edge, 1.5, true)
 			draw_arc(c, r - rim_w * 0.5, 0.0, TAU, 64, rim_a, rim_w, true)
@@ -785,13 +836,25 @@ func _draw_hint(t: float, R: float, vis: Array[int], ranks: Dictionary) -> void:
 			if q.distance_to(pj) < rr:
 				free = false
 				break
-		if not free:
+		if not free or not _band_free(rc, vis, R):
 			continue
-		var p := rc.position + Vector2(0.0, asc)
+		var p := (rc.position + Vector2(0.0, asc)).round()
 		draw_string_outline(f, p, text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, maxi(3, int(fs * 0.32)),
 				Color(0, 0, 0, 0.6 * a))
 		draw_string(f, p, text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(HINT_COL, 0.92 * a))
 		return
+
+
+## Liegt rc neben allen sichtbaren Halten-Baendern (offen oder laufend)?
+func _band_free(rc: Rect2, vis: Array[int], R: float) -> bool:
+	for j in vis:
+		if not notes[j].is_hold or (_state[j] != ST_PENDING and _state[j] != ST_HOLD):
+			continue
+		for pp in _band_points(notes[j]):
+			var q := Vector2(clampf(pp.x, rc.position.x, rc.end.x), clampf(pp.y, rc.position.y, rc.end.y))
+			if q.distance_to(pp) < R * BAND_K * 0.5:
+				return false
+	return true
 
 
 ## Ecken des 4:3-Felds: kurze, dezente Winkel.
@@ -843,17 +906,29 @@ static func _path_len(pts: PackedVector2Array) -> float:
 	return l
 
 
-func _draw_band(n: OrbitNote, R: float, alpha: float, detail: bool = false) -> void:
+func _draw_band(n: OrbitNote, R: float, alpha: float, detail: bool = false, index: int = -1) -> void:
 	if alpha <= 0.0 or n.path.size() < 2:
 		return
 	_draw_band_body(n, R, alpha)
 	if detail:
-		_draw_band_detail(n, R, alpha)
+		_draw_band_detail(n, R, alpha, index)
+
+
+## Liegt rc frei (kein anderes sichtbares Ziel samt Ring darunter)?
+func _rect_free(rc: Rect2, skip: int) -> bool:
+	for o in _obs:
+		if int(o[0]) == skip:
+			continue
+		var pj: Vector2 = o[1]
+		var q := Vector2(clampf(pj.x, rc.position.x, rc.end.x), clampf(pj.y, rc.position.y, rc.end.y))
+		if q.distance_to(pj) < float(o[2]):
+			return false
+	return true
 
 
 ## Halten schon beim Erscheinen erkennbar: feine Pfeile in Laufrichtung auf dem
 ## Band und ein kleines "HOLD" (auf dem Band, bei kurzen Baendern hinter dem Ende).
-func _draw_band_detail(n: OrbitNote, R: float, alpha: float) -> void:
+func _draw_band_detail(n: OrbitNote, R: float, alpha: float, index: int = -1) -> void:
 	var pts := _band_points(n)
 	var total := _path_len(pts)
 	var a := minf(1.0, alpha * 1.6)
@@ -886,7 +961,10 @@ func _draw_band_detail(n: OrbitNote, R: float, alpha: float) -> void:
 	else:
 		var q2: Array = _along(pts, total)
 		at = (q2[0] as Vector2) + (q2[1] as Vector2) * (R * BAND_K * 0.5 + sz.x * 0.5 + R * 0.2)
-	var p := at + Vector2(-sz.x * 0.5, (f.get_ascent(fs) - f.get_descent(fs)) * 0.5)
+	# Nur auf freier Stelle: das Wort liegt nie auf einem anderen Ziel oder dessen Ring.
+	if not _rect_free(Rect2(at - sz * 0.5, sz).grow(R * 0.08), index):
+		return
+	var p := (at + Vector2(-sz.x * 0.5, (f.get_ascent(fs) - f.get_descent(fs)) * 0.5)).round()
 	draw_string_outline(f, p, text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, maxi(3, int(fs * 0.3)),
 			Color(0, 0, 0, 0.55 * a))
 	draw_string(f, p, text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(col, 0.9 * a))
@@ -898,7 +976,7 @@ func _draw_band_body(n: OrbitNote, R: float, alpha: float) -> void:
 	var w := R * BAND_K
 	var rim := maxf(1.5, R * 0.05)
 	var edge := Color(col.lightened(0.3), 0.40 * alpha)
-	var body := Color(col.darkened(0.6), 0.42 * alpha)
+	var body := Color(col.darkened(0.68), 0.62 * alpha)
 	draw_polyline(pts, edge, w, true)
 	draw_circle(pts[pts.size() - 1], w * 0.5, edge, true, -1.0, true)
 	draw_polyline(pts, body, w - rim * 2.0, true)
@@ -980,8 +1058,13 @@ func _draw_ball(i: int, n: OrbitNote, R: float, t: float) -> void:
 	var bp := field_to_screen(n.pos_at(t))
 	var col := key_col(n.key)
 	var warn := clampf(float(hold_warn.get(i, 0.0)), 0.0, 1.0)
-	var fr := R * FOLLOW_K
-	var fcol := Color(1, 1, 1, 0.55).lerp(Color(WARN_COL, 0.9), warn)
+	var since0 := t - _state_t[i]
+	var grow := 1.0 - pow(1.0 - clampf(since0 / FOLLOW_IN_MS, 0.0, 1.0), 3.0)
+	var fr := R * lerpf(1.15, FOLLOW_K, grow)
+	var fcol := Color(1, 1, 1, 0.55 * grow).lerp(Color(WARN_COL, 0.9), warn)
+	# Kopf getroffen: gleiche Rueckmeldung wie bei einem Einzelziel.
+	if since0 >= 0.0 and since0 < HIT_MS:
+		_draw_hit_fx(i, n, field_to_screen(n.pos), R, since0, false)
 	draw_arc(bp, fr, 0.0, TAU, 72, fcol, maxf(1.6, R * 0.07), true)
 	# Restzeit: heller Bogen auf dem Folgekreis, leert sich bis zum Ende.
 	var dur := maxf(float(n.end_ms) - float(n.time_ms), 1.0)
@@ -1017,29 +1100,10 @@ func _draw_fx(i: int, n: OrbitNote, R: float, t: float, nxt: int = -1) -> void:
 		return
 	match st:
 		ST_HIT, ST_HOLD_DONE:
-			if dt >= HIT_MS:
+			if dt >= PRESS_DOT_MS:
 				return
-			var k := dt / HIT_MS
-			var e := 1.0 - pow(1.0 - k, 3.0)
-			var a := (1.0 - k) * (1.0 - 0.4 * k)
 			var p := field_to_screen(OrbitConverter.end_pos(n) if st == ST_HOLD_DONE else n.pos)
-			var qcol: Color = JudgeDisplay.COLORS[clampi(_state_q[i], 0, 5)]
-			# Kurzer, schwacher Blitz auf der Flaeche (nur am Anfang).
-			if dt < HIT_FLASH_MS:
-				var fc := Color.WHITE if n.key == OrbitNote.KEY_ACCENT else key_col(n.key).lightened(0.35)
-				draw_circle(p, R * lerpf(0.95, 1.1, e), Color(fc, 0.2 * (1.0 - dt / HIT_FLASH_MS)),
-						true, -1.0, true)
-			# Ring in Tastenfarbe (Akzent: halb/halb), dehnt sich aus und blendet.
-			var r1 := R * lerpf(1.0, 1.4, e)
-			var w1 := maxf(1.5, R * 0.1 * (1.0 - 0.6 * k))
-			if n.key == OrbitNote.KEY_ACCENT:
-				draw_arc(p, r1, PI * 0.5, PI * 1.5, 32, Color(A_COL.lightened(0.3), 0.85 * a), w1, true)
-				draw_arc(p, r1, -PI * 0.5, PI * 0.5, 32, Color(B_COL.lightened(0.3), 0.85 * a), w1, true)
-			else:
-				draw_arc(p, r1, 0.0, TAU, 56, Color(key_col(n.key).lightened(0.3), 0.85 * a), w1, true)
-			# Aussen ein feiner Ring in Stufenfarbe (MAX/300/200/...).
-			var r2 := R * lerpf(1.06, 1.62, e)
-			draw_arc(p, r2, 0.0, TAU, 64, Color(qcol, 0.6 * a), maxf(1.2, R * 0.045), true)
+			_draw_hit_fx(i, n, p, R, dt, st == ST_HIT)
 		ST_MISS, ST_DROP:
 			if dt >= MISS_MARK_MS:
 				return
@@ -1048,11 +1112,70 @@ func _draw_fx(i: int, n: OrbitNote, R: float, t: float, nxt: int = -1) -> void:
 			if nxt >= 0 and p.distance_to(field_to_screen(notes[nxt].pos)) < R * (ORBIT_K + 0.3):
 				return
 			var a := clampf(dt / 30.0, 0.0, 1.0) * (1.0 - smoothstep(MISS_MARK_MS * 0.3, MISS_MARK_MS, dt))
+			# Umriss des verpassten Ziels verblasst grau (welches war es?).
+			if st == ST_MISS:
+				_draw_outline(p, R * (1.0 - 0.05 * dt / MISS_MARK_MS), n.key, Color(MISS_COL, 0.55 * a), maxf(1.4, R * 0.055))
 			var h := R * 0.22
 			var col := Color(MISS_X_COL, 0.85 * a)
 			var w := maxf(1.8, R * 0.07)
 			draw_line(p - Vector2(h, h), p + Vector2(h, h), col, w, true)
 			draw_line(p - Vector2(h, -h), p + Vector2(h, -h), col, w, true)
+
+
+## Treffer an p (dt ms seit dem Treffer): Ring in Tastenfarbe dehnt sich aus,
+## aussen fein die Stufenfarbe. with_dot: Marke und ein Punkt, wo der Satellit
+## beim Druck stand (links = frueh, rechts = spaet), nur unterhalb der besten Stufe.
+func _draw_hit_fx(i: int, n: OrbitNote, p: Vector2, R: float, dt: float, with_dot: bool) -> void:
+	var qcol: Color = JudgeDisplay.COLORS[clampi(_state_q[i], 0, 5)]
+	if dt < HIT_MS:
+		var k := dt / HIT_MS
+		var e := 1.0 - pow(1.0 - k, 3.0)
+		var a := (1.0 - k) * (1.0 - 0.4 * k)
+		# Kurzer, schwacher Schein auf der Flaeche (nur am Anfang).
+		if dt < HIT_FLASH_MS:
+			var fc := Color.WHITE if n.key == OrbitNote.KEY_ACCENT else key_col(n.key).lightened(0.35)
+			draw_circle(p, R * lerpf(0.95, 1.1, e), Color(fc, 0.2 * (1.0 - dt / HIT_FLASH_MS)),
+					true, -1.0, true)
+		# Ring in Tastenfarbe (Akzent: halb/halb), dehnt sich aus und blendet.
+		var r1 := R * lerpf(1.0, 1.28, e)
+		var w1 := maxf(1.5, R * 0.085 * (1.0 - 0.6 * k))
+		if n.key == OrbitNote.KEY_ACCENT:
+			draw_arc(p, r1, PI * 0.5, PI * 1.5, 32, Color(A_COL.lightened(0.3), 0.85 * a), w1, true)
+			draw_arc(p, r1, -PI * 0.5, PI * 0.5, 32, Color(B_COL.lightened(0.3), 0.85 * a), w1, true)
+		else:
+			draw_arc(p, r1, 0.0, TAU, 56, Color(key_col(n.key).lightened(0.3), 0.85 * a), w1, true)
+		# Aussen ein feiner Ring in Stufenfarbe (MAX/300/200/...).
+		var r2 := R * lerpf(1.06, 1.46, e)
+		draw_arc(p, r2, 0.0, TAU, 64, Color(qcol, 0.6 * a), maxf(1.2, R * 0.04), true)
+	# Nur wenn der Druck nicht in der besten Stufe lag: sonst bleibt es ruhig.
+	if not with_dot or dt >= PRESS_DOT_MS or _state_q[i] <= 0:
+		return
+	var fa := 1.0 - smoothstep(PRESS_DOT_MS * 0.4, PRESS_DOT_MS, dt)
+	var ring_r := R * ORBIT_K
+	var lw := maxf(1.5, R * 0.05)
+	var deg := clampf(360.0 * _state_dt[i] / maxf(float(n.lap_ms), 1.0), -PRESS_DOT_MAX_DEG, PRESS_DOT_MAX_DEG)
+	var ar := deg_to_rad(deg)
+	var ecol := EARLY_COL if deg < 0.0 else LATE_COL
+	# Kurzer Bogen von der Marke bis zum Druck-Punkt, Marke als Bezug.
+	draw_arc(p, ring_r, -PI * 0.5 + minf(ar, 0.0), -PI * 0.5 + maxf(ar, 0.0), 12, Color(ecol, 0.55 * fa), lw, true)
+	var mh := R * 0.14
+	draw_line(p + Vector2(0, -ring_r + mh), p + Vector2(0, -ring_r - mh), Color(1, 1, 1, 0.6 * fa), lw * 1.6, true)
+	var sp := p + Vector2(sin(ar), -cos(ar)) * ring_r
+	var sr := maxf(2.6, R * 0.11)
+	draw_circle(sp, sr + maxf(1.2, R * 0.04), Color(0, 0, 0, 0.6 * fa), true, -1.0, true)
+	draw_circle(sp, sr, Color(ecol, fa), true, -1.0, true)
+
+
+## Umriss der Zielform (A Kreis, B Quadrat, Akzent Kreis).
+func _draw_outline(c: Vector2, r: float, key: int, col: Color, w: float) -> void:
+	if key == OrbitNote.KEY_B:
+		var pts := PackedVector2Array()
+		for q in _square:
+			pts.append(c + q * r * SQUARE_K)
+		pts.append(pts[0])
+		draw_polyline(pts, col, w, true)
+	else:
+		draw_arc(c, r, 0.0, TAU, 56, col, w, true)
 
 
 func _draw_press(t: float, R: float) -> void:
