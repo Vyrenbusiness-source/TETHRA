@@ -12,11 +12,14 @@ const TOP4 := 60
 const TOP8 := 40
 
 var _failed := 0
+var _passed := 0
+var _sections := 0
 
 
 func _check(ok: bool, msg: String) -> void:
 	if ok:
 		print("  ok   ", msg)
+		_passed += 1
 	else:
 		print("  FAIL ", msg)
 		_failed += 1
@@ -37,7 +40,11 @@ func _initialize() -> void:
 	_test_tempo_change()
 	_test_lint_detects()
 	_test_stars_and_stats()
-	print("=== %s ===" % ("ALLE OK" if _failed == 0 else "%d FEHLER" % _failed))
+	# Ein Laufzeitfehler bricht eine Testfunktion ab, ohne _check aufzurufen: darum mitzaehlen.
+	if _sections != 7 or _passed < 60:
+		print("  FAIL nur %d Abschnitte / %d Pruefungen gelaufen (Skriptfehler?)" % [_sections, _passed])
+		_failed += 1
+	print("=== %s ===" % ("ALLE OK (%d)" % _passed if _failed == 0 else "%d FEHLER" % _failed))
 	quit(1 if _failed > 0 else 0)
 
 
@@ -148,7 +155,7 @@ func _test_errors() -> void:
 	_check(not AmChart.build(s["features"], {"segments": []}, "Hard")["ok"], "leeres Gitter -> ok=false")
 	_check(not AmChart.build({"events": []}, s["grid"], "Hard")["ok"], "keine Ereignisse -> ok=false")
 	_check(AmChart.PROFILES == ["Easy", "Normal", "Hard", "Insane", "Expert"], "PROFILES wie Spec")
-
+	_sections += 1  # nur erreicht ohne Laufzeitfehler
 
 func _test_synthetic() -> void:
 	print("-- synthetischer Song, alle Profile")
@@ -221,14 +228,15 @@ func _test_synthetic() -> void:
 	var n_intro := _cols_in(hard, start, start + 8.0 * bar).size()
 	var n_cho := _cols_in(hard, start + 28.0 * bar, start + 36.0 * bar).size()
 	_check(n_cho > n_intro * 2, "Hard: Refrain dichter als Intro (%d gegen %d Noten in 8 Takten)" % [n_cho, n_intro])
-	# Wiederholung: Vers-Takte b und b+2 tragen dieselbe Musik -> dasselbe Muster (oder gespiegelt)
+	# Wiederholung: Vers-Takte b und b+4 tragen dieselbe Musik (Melodie alle 2, Basslinie alle 4 Takte)
+	# -> dasselbe Muster (oder gespiegelt)
 	for prof: String in ["Normal", "Hard"]:
 		var notes: Array = all[prof]["notes"]
 		var same_rhythm := 0
 		var same_cols := 0
-		for b in range(9, 22):
+		for b in range(8, 20):
 			var a := _cols_in(notes, start + float(b) * bar, start + float(b + 1) * bar)
-			var c := _cols_in(notes, start + float(b + 2) * bar, start + float(b + 3) * bar)
+			var c := _cols_in(notes, start + float(b + 4) * bar, start + float(b + 5) * bar)
 			if a.size() < 3 or a.size() != c.size():
 				continue
 			var rhythm := true
@@ -274,7 +282,7 @@ func _test_synthetic() -> void:
 	for prof: String in AmChart.PROFILES:
 		cnt.append(all[prof]["notes"].size())
 	_check(cnt[0] < cnt[1] and cnt[1] < cnt[2] and cnt[2] <= cnt[3] and cnt[3] <= cnt[4], "Notenzahl steigt mit dem Profil %s" % str(cnt))
-
+	_sections += 1  # nur erreicht ohne Laufzeitfehler
 
 func _test_pitch_direction() -> void:
 	print("-- Tonhoehe -> Spaltenrichtung")
@@ -318,7 +326,7 @@ func _test_pitch_direction() -> void:
 	_check(AmChart.lint(notes, grid, "Normal").is_empty(), "Melodie: lint = 0")
 	_check(total > 100 and agree >= oppose * 3 and agree * 10 >= total * 6,
 			"Spalte folgt der Tonhoehe: %d gleich, %d gegen, %d Schritte" % [agree, oppose, total])
-
+	_sections += 1  # nur erreicht ohne Laufzeitfehler
 
 func _test_roles() -> void:
 	print("-- Kick/Snare: feste Rollen")
@@ -346,7 +354,7 @@ func _test_roles() -> void:
 	_check(sn > 30 and sm * 10 >= sn * 6, "Snare liegt ueberwiegend in einer Spalte %s" % str(snare))
 	_check(kick.find(km) != snare.find(sm), "Kick und Snare in verschiedenen Spalten")
 	_check(AmChart.lint(res["notes"], grid, "Easy").is_empty(), "Schlagzeug: lint = 0")
-
+	_sections += 1  # nur erreicht ohne Laufzeitfehler
 
 func _test_tempo_change() -> void:
 	print("-- Tempowechsel (zwei Segmente)")
@@ -371,7 +379,7 @@ func _test_tempo_change() -> void:
 				on = false
 		_check(viol.is_empty() and on and notes.size() > 10, "%s: lint = 0 und auf dem Gitter ueber den Tempowechsel (%d Noten)%s" % [
 				prof, notes.size(), "" if viol.is_empty() else " " + viol[0]])
-
+	_sections += 1  # nur erreicht ohne Laufzeitfehler
 
 func _n(t: float, col: int, e: float = -1.0) -> Dictionary:
 	return {"t_ms": t, "col": col, "end_ms": e}
@@ -405,7 +413,7 @@ func _test_lint_detects() -> void:
 	for i in 14:
 		burst.append(_n(float(i) * 50.0, [0, 2, 1, 3][i % 4]))
 	_check(not AmChart.lint(burst, grid, "Insane").is_empty(), "zu lange 1/8-Folge in Insane")
-
+	_sections += 1  # nur erreicht ohne Laufzeitfehler
 
 func _test_stars_and_stats() -> void:
 	print("-- Sterne und Statistik")
@@ -460,7 +468,7 @@ func _test_stars_and_stats() -> void:
 			outer += 1
 	_check(res["notes"].size() >= 70 and outer * 10 >= res["notes"].size() * 9,
 			"Setzer nutzt die Mustertabellen (%d von %d Noten nach gelerntem Muster)" % [outer, res["notes"].size()])
-
+	_sections += 1  # nur erreicht ohne Laufzeitfehler
 
 # ---------------------------------------------------------------------------
 # Messung ueber maps/

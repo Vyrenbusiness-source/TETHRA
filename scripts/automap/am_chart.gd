@@ -503,7 +503,7 @@ static func _g_snap(G: Dictionary, t: float, unit: int, mode: int) -> float:
 	var beat: PackedFloat64Array = G["beat"]
 	var u := beat[i] / 24.0 * float(unit)
 	var k := (t - start[i]) / u
-	var r := start[i] + (round(k) if mode == 0 else floor(k + 1e-6)) * u
+	var r := start[i] + (roundf(k) if mode == 0 else floorf(k + 1e-6)) * u
 	if i + 1 < start.size() and r > start[i + 1] - 0.5:
 		r = start[i + 1]
 	return r
@@ -615,8 +615,8 @@ static func _prep(features: Dictionary, G: Dictionary, P: Dictionary) -> Diction
 		if float(votes.get(key, 0.0)) > 0.0:
 			tick = int(round(x / 4.0)) * 4
 		else:
-			var q6 := round(x / 6.0) * 6.0
-			var q3 := round(x / 3.0) * 3.0
+			var q6 := roundf(x / 6.0) * 6.0
+			var q3 := roundf(x / 3.0) * 3.0
 			var bias := bias_ms / (beat[si] / 24.0)
 			tick = int(q6) if absf(x - q6) <= absf(x - q3) + bias else int(q3)
 		var ts := start[si] + float(tick) * beat[si] / 24.0
