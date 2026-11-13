@@ -1510,7 +1510,7 @@ func _build_logo(x0: float, st: Dictionary) -> void:
 
 	# Unterzeile (Katakana, Systemfont mit CJK-Glyphen), daneben laeuft die
 	# Haarlinie bis zur rechten Rasterkante: sie traegt den Block darunter.
-	var sub := _label("テトラ・リズムの彼方へ", 15.0, UiTheme.DIM)
+	var sub := _label("オーメン・リズムの彼方へ", 15.0, UiTheme.DIM)
 	var jp_font := SystemFont.new()
 	jp_font.font_names = PackedStringArray(["Yu Gothic UI", "Meiryo", "MS Gothic", "Noto Sans CJK JP"])
 	sub.add_theme_font_override("font", jp_font)
