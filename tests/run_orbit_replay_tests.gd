@@ -365,8 +365,8 @@ func _test_rules_marker() -> void:
 		"ohne Marke = aeltere Version")
 	_check(game.is_old_replay([[0, OrbitCore.EV_RULES, 2]]), "Marke 2 (Bahnen) = aeltere Version")
 	_check(not game.is_old_replay([[0, OrbitCore.EV_RULES, OrbitCore.REPLAY_RULES]]), "Marke aktuell (Satelliten)")
-	_check(OrbitCore.REPLAY_RULES == 4 and game.is_old_replay([[0, OrbitCore.EV_RULES, 3]]),
-		"Regeln 4 (osu!std-Fenster, lange Runden): Marke 3 = aeltere Version")
+	_check(OrbitCore.REPLAY_RULES == 5 and game.is_old_replay([[0, OrbitCore.EV_RULES, 4]]),
+		"Regeln 5 (Wechselschlag unter 180 ms): Marke 4 = aeltere Version")
 
 
 ## Wiedergabe ueber das Spiel (OrbitGame._feed_replay): gleiche Wertung, Cursor
