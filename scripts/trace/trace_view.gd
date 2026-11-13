@@ -7,6 +7,12 @@ extends Control
 ## Annaeherungsring, der bis zur Notenzeit schrumpft. Gespielte Strecke leuchtet in
 ## Spaltenfarbe nach, Miss = grauer, ausgefranster Faden. Holds: dicker, leuchtender
 ## Streifen bis zur Loslass-Marke. Am Ende zoomt `end_zoom` (0..1) auf das ganze Bild.
+##
+## Tiefe: die Welt liegt als leicht geneigter Boden im Bild (`_tilt`). Die Abbildung zieht
+## nur zur Bildmitte zusammen (unten Faktor 1, oben kleiner), darum liegt alles, was die
+## flache Kamera im Bild hat (TraceRules.fair_camera), auch geneigt im Bild.
+## Musik: Takt und Kiai kommen ohne Zustand aus den Timing-Punkten der Map (Seek-sicher):
+## Boden-Raster, Staub-Ebenen, Lichtwelle am Taktanfang, Kiai mit Bernstein-Licht und mehr Tiefe.
 
 const INK := Color(0.045, 0.052, 0.07)
 const THREAD := Color(0.86, 0.90, 0.97)
@@ -26,6 +32,14 @@ const JUDGE_COL := [
 	Color(0.50, 0.70, 0.95), Color(0.78, 0.60, 0.95), Color(0.55, 0.555, 0.57),
 ]
 const WRONG_COL := Color(0.92, 0.30, 0.28)
+const AMBER := Color(1.0, 0.74, 0.32)
+const TILT := 0.24                   ## Boden-Neigung: oben 1/(1+TILT) so gross wie unten
+const TILT_KIAI := 0.10              ## im Kiai kommt so viel dazu
+const KIAI_IN_MS := 600.0
+const KIAI_OUT_MS := 900.0
+const GLINT_MS := 320.0              ## Glanz nach einem Treffer laeuft so lange voraus
+const GLINT_PX := 250.0
+const MILE_MS := 900.0               ## Kombo-Meilenstein: Bodenring
 ## End-Zeitraffer: end_zoom 0..1 = Auszoomen (0..0.2), Neuzeichnen (0.2..0.85), Einpassen (0.85..1).
 const END_OUT := 0.2
 const END_DRAW := 0.85
@@ -51,6 +65,17 @@ var _holds: Array = []               ## { note, col, s0, s1, t0, t1, k }
 var _cam := Vector2.ZERO
 var _sz := 1.0                       ## Welt -> Schirm
 var _ctr := Vector2.ZERO
+var _tilt := 0.0                     ## Neigung dieses Bildes (0 = flach)
+var _kx := 0.0                       ## Kiai-Anteil 0..1 dieses Bildes
+var _env := 0.0                      ## Takt-Huellkurve 0..1 dieses Bildes
+var _cur_s := 0.0
+var _s_b := 0.0
+var _red_t := PackedFloat64Array()   ## rote Timing-Punkte: Zeit, Beat-Laenge, Takt
+var _red_len := PackedFloat64Array()
+var _red_meter := PackedInt32Array()
+var _kiai: Array[Vector2] = []       ## Kiai-Abschnitte (Start, Ende), kurze Luecken geschlossen
+var _mile_t := -1.0e9                ## Sicht-ms des letzten Kombo-Meilensteins
+var _mile_combo := 0
 
 
 func setup(p: TracePath, c: ManiaCore, colors: Array[Color]) -> void:
@@ -76,6 +101,7 @@ func setup(p: TracePath, c: ManiaCore, colors: Array[Color]) -> void:
 			key_labels.append(UiTheme.key_short(int(keys[i])).to_upper() if i < keys.size() else ["←", "↓", "↑", "→"][i])
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_read_timing(c.beatmap if c != null else null)
 	for j in p.knots.size():
 		var kn := p.knots[j]
 		for h in kn.holds:
@@ -83,6 +109,59 @@ func setup(p: TracePath, c: ManiaCore, colors: Array[Color]) -> void:
 				"note": int(h.note), "col": int(h.col), "s0": kn.s, "s1": float(h.s_end),
 				"t0": kn.t, "t1": float(h.t_end), "k": j,
 			})
+
+
+## Takt und Kiai der Map merken. Sehr schnelle Beats zaehlen doppelt lang (kein Flimmern).
+func _read_timing(bm: Beatmap) -> void:
+	_red_t.clear()
+	_red_len.clear()
+	_red_meter.clear()
+	_kiai.clear()
+	if bm == null:
+		return
+	for tp in bm.timing_points:
+		if tp.uninherited and tp.beat_length > 0.0:
+			var bl := float(tp.beat_length)
+			while bl < 280.0:
+				bl *= 2.0
+			_red_t.append(tp.time)
+			_red_len.append(bl)
+			_red_meter.append(clampi(tp.meter, 1, 12))
+	var all: Array[Vector2] = []
+	for iv in bm.kiai_intervals:
+		var a := float(iv.start)
+		var b := float(iv.end)
+		if not all.is_empty() and a - all[-1].y < 1500.0:
+			all[-1] = Vector2(all[-1].x, maxf(all[-1].y, b))
+		elif b > a:
+			all.append(Vector2(a, b))
+	# Kurze Kiai-Blitze sind kein eigener Moment.
+	for v in all:
+		if v.y - v.x >= 2000.0:
+			_kiai.append(v)
+
+
+## Takt zur Zeit t: x = Huellkurve (1 am Beat, faellt ab), y = ms seit Taktanfang (-1 = kein
+## Takt bekannt), z = Beat-Laenge in ms.
+func _beat_at(t: float) -> Vector3:
+	if _red_t.is_empty():
+		return Vector3(0.0, -1.0, 0.0)
+	var i := 0
+	while i + 1 < _red_t.size() and _red_t[i + 1] <= t:
+		i += 1
+	var bl := _red_len[i]
+	var rel := t - _red_t[i]
+	return Vector3(exp(-4.0 * fposmod(rel, bl) / bl), fposmod(rel, bl * float(_red_meter[i])), bl)
+
+
+## Kiai-Anteil 0..1 zur Zeit t, weich ein und aus.
+func _kiai_at(t: float) -> float:
+	var k := 0.0
+	for iv in _kiai:
+		if t < iv.x or t > iv.y + KIAI_OUT_MS:
+			continue
+		k = maxf(k, _smooth((t - iv.x) / KIAI_IN_MS) * (1.0 - _smooth((t - iv.y) / KIAI_OUT_MS)))
+	return k
 
 
 func _col(note: int) -> Color:
@@ -95,6 +174,11 @@ func on_judged(index: int, result: Dictionary) -> void:
 		return
 	var q := int(result.get("quality", 5))
 	var kn := path.knots[path.note_knot[index]]
+	if q != 5 and core != null:
+		var cb := int(core.combo)
+		if cb != _mile_combo and (cb == 50 or (cb > 0 and cb % 100 == 0)):
+			_mile_combo = cb
+			_mile_t = t_ms
 	if bool(result.get("hold_end", false)):
 		_live.erase(index)
 		_done[index] = 1
@@ -139,7 +223,22 @@ func _w2s(p: Vector2) -> Vector2:
 	var v := (p - _cam) * _sz
 	if _mirror:
 		v.x = -v.x
-	return _ctr + v
+	return _ctr + v * _pq(v.y)
+
+
+## Tiefen-Faktor fuer Schirm-Abstand y von der Bildmitte (px, vor der Neigung): am unteren
+## Rand 1, nach oben kleiner. Nie groesser als 1 im Bild, also rutscht nichts hinaus.
+func _pq(y: float) -> float:
+	if _tilt <= 0.0:
+		return 1.0
+	return 1.0 / maxf(1.0 + _tilt * (0.5 - y / maxf(_ctr.y * 2.0, 1.0)), 0.5)
+
+
+## Groesse von Pfeil und Ring an einem Weltpunkt: in der Bildmitte 1, vorn/hinten nur wenig anders.
+func _depth_size(p: Vector2) -> float:
+	if _tilt <= 0.0:
+		return 1.0
+	return clampf(_pq((p.y - _cam.y) * _sz) * (1.0 + _tilt * 0.5), 0.9, 1.08)
 
 
 ## Pfeilrichtung (Welt) -> Schirm, bei Mirror gespiegelt.
@@ -215,7 +314,18 @@ func _draw() -> void:
 	var wf := sc * pow(zoom, 0.5)   # Linienstaerke: schrumpft weniger als die Welt
 	var step := clampf(5.0 / maxf(_sz, 0.05), 6.0, 60.0)
 	var floor_a := lerpf(0.12, 0.9, _smooth(u / END_OUT))
+	# Tiefe und Musik: im End-Zeitraffer flach und still (das Bild ist die Karte).
+	var live := 1.0 - _smooth(u / END_OUT)
+	var bt := _beat_at(t_ms)
+	_kx = _kiai_at(t_ms) * live
+	_env = bt.x * live
+	_tilt = (TILT + TILT_KIAI * _kx) * live
+	_cur_s = cur_s
+	_s_b = s_b
+	_draw_depth(vs, sc, live)
 	_draw_grid(vs)
+	if live > 0.02:
+		_draw_waves(bt, wf, live)
 	_draw_holds(cur_s, s_a, s_b, wf, step)
 	if u <= 0.0:
 		_draw_upcoming(cur_s, s_b, wf)
@@ -234,17 +344,139 @@ static func _smooth(x: float) -> float:
 	return v * v * (3.0 - 2.0 * v)
 
 
+## Hinter dem Boden: Kiai-Licht am Horizont und zwei Staub-Ebenen (ruecken langsamer als
+## der Boden, das gibt Tiefe). Alles ohne Zustand aus Zeit und Kamera.
+func _draw_depth(vs: Vector2, sc: float, live: float) -> void:
+	if live <= 0.02 or _sz < 0.45 * sc:
+		return
+	if _kx > 0.01:
+		var h := vs.y * 0.42
+		var a := (0.075 + 0.03 * _env) * _kx
+		draw_primitive(PackedVector2Array([Vector2.ZERO, Vector2(vs.x, 0.0), Vector2(vs.x, h), Vector2(0.0, h)]),
+				PackedColorArray([Color(AMBER, a), Color(AMBER, a), Color(AMBER, 0.0), Color(AMBER, 0.0)]),
+				PackedVector2Array())
+	_draw_far_rings(vs, sc, live)
+	_draw_specks(vs, sc, 0.38, 0.55, 11, live)
+	_draw_specks(vs, sc, 0.68, 0.8, 47, live)
+
+
+## Fernste Ebene: wenige grosse, duenne Kreise tief unter dem Boden. Sie ziehen sehr langsam
+## mit, daran sieht man die Fahrt. Im Kiai Bernstein, sonst kaum heller als der Grund.
+func _draw_far_rings(vs: Vector2, sc: float, live: float) -> void:
+	var cell := 760.0
+	var par := 0.22
+	var z := _sz * 0.5
+	var cam := _cam * par
+	var half := vs * 0.5 / z * (1.0 + _tilt)
+	var col := THREAD.lerp(AMBER, 0.8 * _kx)
+	var a := (0.045 + 0.035 * _kx + 0.015 * _env) * live
+	var lw := maxf(1.0, sc)
+	for ix in range(int(floor((cam.x - half.x) / cell)) - 1, int(floor((cam.x + half.x) / cell)) + 2):
+		for iy in range(int(floor((cam.y - half.y) / cell)) - 1, int(floor((cam.y + half.y) / cell)) + 2):
+			var h := _hash(ix * 5 + 3, iy * 11 + 7)
+			if h < 0.5:
+				continue
+			var c := (Vector2(float(ix) + _hash(ix + 91, iy + 17), float(iy) + _hash(ix + 29, iy + 73)) * cell - cam) * z
+			var rad := (170.0 + 300.0 * _hash(ix + 41, iy + 5)) * z
+			var pts := PackedVector2Array()
+			for i in 41:
+				var ang := TAU * float(i) / 40.0
+				var v := c + Vector2(cos(ang), sin(ang)) * rad
+				if _mirror:
+					v.x = -v.x
+				pts.append(_ctr + v * _pq(v.y))
+			draw_polyline(pts, Color(col, a * (0.6 + 0.8 * (h - 0.5))), lw, true)
+			if h > 0.7:
+				# Innenkreis: zwei Ringe lesen sich als Objekt, nicht als Zufall.
+				for i in 41:
+					pts[i] = pts[i].lerp(_ctr + c * _pq(c.y), 0.14)
+				draw_polyline(pts, Color(col, a * 0.5), lw, true)
+
+
+## Eine Staub-Ebene: `par` = Anteil der Kamerafahrt, `scl` = Massstab gegen den Boden.
+func _draw_specks(vs: Vector2, sc: float, par: float, scl: float, sd: int, live: float) -> void:
+	var cell := 230.0
+	var z := _sz * scl
+	var cam := _cam * par + Vector2(0.0, -t_ms * 0.004 * par)
+	var half := vs * 0.5 / z * (1.0 + _tilt)
+	var col := THREAD.lerp(AMBER, 0.55 * _kx)
+	var pulse := (0.8 + 0.45 * _env) * live
+	for ix in range(int(floor((cam.x - half.x) / cell)), int(floor((cam.x + half.x) / cell)) + 1):
+		for iy in range(int(floor((cam.y - half.y) / cell)), int(floor((cam.y + half.y) / cell)) + 1):
+			var h := _hash(ix * 7 + sd, iy * 13 + sd)
+			if h < 0.42:
+				continue
+			var v := (Vector2(float(ix) + _hash(ix + sd, iy + 31), float(iy) + _hash(ix + 57, iy + sd)) * cell - cam) * z
+			if _mirror:
+				v.x = -v.x
+			var r := (1.0 + 1.7 * _hash(ix + 3, iy + sd * 5)) * sc * scl
+			var c := AMBER if h > 0.9 else col
+			draw_circle(_ctr + v * _pq(v.y), r, Color(c, (0.08 + 0.36 * (h - 0.42)) * pulse))
+
+
+## Lichtwelle am Taktanfang (Ring auf dem Boden um die Stelle des Kopfes) und der Ring
+## eines Kombo-Meilensteins. Duenn und kurz: nichts blitzt, nichts verdeckt Pfeile.
+func _draw_waves(bt: Vector3, wf: float, live: float) -> void:
+	var first_t := path.knots[0].t
+	var last_t := path.knots[path.knots.size() - 1].t
+	if bt.y >= 0.0 and t_ms > first_t - 2000.0 and t_ms < last_t + 600.0:
+		var dur := clampf(bt.z * 2.0, 520.0, 1100.0)
+		if bt.y < dur:
+			var k := bt.y / dur
+			var inv := 1.0 - k
+			var c := THREAD.lerp(AMBER, 0.75 * _kx)
+			var ctr := path.head_pos(t_ms - bt.y)
+			var rad := lerpf(46.0, 430.0 + 90.0 * _kx, 1.0 - inv * inv)
+			_floor_ring(ctr, rad, Color(c, (0.13 + 0.12 * _kx) * inv * inv * live), 1.5 * wf)
+			if _kx > 0.3:
+				_floor_ring(ctr, rad * 0.7, Color(c, 0.1 * _kx * inv * inv * live), 1.1 * wf)
+	var age := t_ms - _mile_t
+	if age >= 0.0 and age < MILE_MS:
+		var k2 := age / MILE_MS
+		var inv2 := 1.0 - k2
+		var ctr2 := path.head_pos(_mile_t)
+		var rad2 := lerpf(30.0, 560.0, 1.0 - inv2 * inv2 * inv2)
+		_floor_ring(ctr2, rad2, Color(AMBER, 0.4 * inv2 * inv2 * live), 2.2 * wf)
+		_floor_ring(ctr2, rad2 * 0.82, Color(AMBER, 0.2 * inv2 * inv2 * live), 1.2 * wf)
+
+
+## Kreis in der Welt (liegt auf dem Boden, erscheint geneigt als Ellipse).
+func _floor_ring(c: Vector2, r: float, col: Color, w: float) -> void:
+	if col.a <= 0.004:
+		return
+	var pts := PackedVector2Array()
+	for i in 49:
+		var a := TAU * float(i) / 48.0
+		pts.append(_w2s(c + Vector2(cos(a), sin(a)) * r))
+	draw_polyline(pts, col, w, true)
+
+
 func _draw_grid(vs: Vector2) -> void:
 	var sp := GRID
 	while sp * _sz < 34.0:
 		sp *= 2.0
-	var half := vs * 0.5 / _sz
+	var half := vs * 0.5 / _sz * (1.0 + _tilt)
 	var x0 := floorf((_cam.x - half.x) / sp) * sp
 	var y0 := floorf((_cam.y - half.y) / sp) * sp
 	var nx := int(ceil(half.x * 2.0 / sp)) + 2
 	var ny := int(ceil(half.y * 2.0 / sp)) + 2
-	var col := Color(THREAD, 0.07)
+	var col := Color(THREAD, 0.07 + 0.035 * _env)
 	var r := maxf(1.3, 1.9 * vs.y / 720.0)
+	# Bodenlinien: geben dem geneigten Boden Fluchtlinien. Jede zweite etwas klarer.
+	if _tilt > 0.0:
+		var lc := THREAD.lerp(AMBER, 0.7 * _kx)
+		var la := (0.042 + 0.028 * _kx) * _tilt / TILT
+		var lw := maxf(1.0, vs.y / 720.0)
+		var xe := x0 + float(nx - 1) * sp
+		var ye := y0 + float(ny - 1) * sp
+		for ix in nx:
+			var x := x0 + ix * sp
+			var major := posmod(int(round(x / sp)), 2) == 0
+			draw_line(_w2s(Vector2(x, y0)), _w2s(Vector2(x, ye)), Color(lc, la * (1.7 if major else 1.0)), lw, true)
+		for iy in ny:
+			var y := y0 + iy * sp
+			var major2 := posmod(int(round(y / sp)), 2) == 0
+			draw_line(_w2s(Vector2(x0, y)), _w2s(Vector2(xe, y)), Color(lc, la * (1.7 if major2 else 1.0)), lw, true)
 	for ix in nx:
 		for iy in ny:
 			draw_circle(_w2s(Vector2(x0 + ix * sp, y0 + iy * sp)), r, col)
@@ -269,6 +501,35 @@ func _draw_upcoming(cur_s: float, s_b: float, wf: float) -> void:
 	for h in _holds:
 		if float(h.s1) >= cur_s and float(h.s0) <= s_b:
 			cover.append(h)
+	# Schiene: durchgehende feine Linie unter den Punkten, im Takt etwas heller.
+	var rail := path.sample(cur_s, s_b, 12.0)
+	var rn := rail.size()
+	if rn >= 2:
+		var rc := PackedColorArray()
+		var base := THREAD.lerp(AMBER, 0.3 * _kx)
+		var lift := 0.34 + 0.1 * _env
+		for i in rn:
+			var rf := float(i) / float(rn - 1)
+			var rs := cur_s + span * rf
+			var ra := lift * pow(1.0 - rf, 0.8) * clampf(rf * span / 40.0, 0.0, 1.0)
+			ra *= TraceMods.path_alpha(look * rf, mods)
+			for h in cover:
+				if rs >= float(h.s0) and rs <= float(h.s1):
+					ra = 0.0
+			rc.append(Color(base, ra))
+			rail[i] = _w2s(rail[i])
+		# Bahn: zwei feine Randlinien neben der Mittellinie (nah klar, vorn blasser).
+		var rnr := _normals(rail)
+		var side := PackedVector2Array()
+		side.resize(rn)
+		var sc_col := PackedColorArray()
+		for i in rn:
+			sc_col.append(Color(base, rc[i].a * 0.42))
+		for sg in [-1.0, 1.0]:
+			for i in rn:
+				side[i] = rail[i] + rnr[i] * sg * 8.5 * wf
+			draw_polyline_colors(side, sc_col, 1.0 * wf, true)
+		draw_polyline_colors(rail, rc, 1.5 * wf, true)
 	while s < s_b:
 		var f := (s - cur_s) / span
 		var a := 0.62 * pow(1.0 - f, 0.9) * clampf((s - cur_s) / 50.0, 0.0, 1.0)
@@ -344,8 +605,9 @@ func _trail(s0: float, s1: float, col: Color, a: float, cur_s: float, span: floa
 		dk_core.append(core_col.darkened(0.5 * (1.0 - fs[i])))
 	var nr := _normals(pts)
 	# [halbe Breite, Feder, Alpha, Kern]
-	_ribbon(pts, nr, wk, fs, dk, wf * 10.0, wf * 9.0, 0.07 * a)
-	_ribbon(pts, nr, wk, fs, dk, wf * 3.6, wf * 4.5, 0.2 * a)
+	var edge := 1.0 + 0.4 * _env + 0.45 * _kx   # Lichtkante: im Takt und im Kiai kraeftiger
+	_ribbon(pts, nr, wk, fs, dk, wf * 10.0, wf * 9.0, 0.07 * a * edge)
+	_ribbon(pts, nr, wk, fs, dk, wf * 3.6, wf * 4.5, 0.2 * a * edge)
 	_ribbon(pts, nr, wk, fs, dk, wf * 2.3, wf * 1.1, 0.93 * a)
 	_ribbon(pts, nr, wk, fs, dk_core, wf * 0.8, wf * 0.7, 0.9 * a)
 
@@ -505,7 +767,8 @@ func _draw_knot(kn: TracePath.Knot, is_next: bool, wf: float) -> void:
 			any_hit = true
 	var look := TracePath.LOOK_S * 1000.0
 	var fade_in := clampf((look - dt) / 260.0, 0.0, 1.0)
-	var zs := _sz
+	var ks := _depth_size(kn.pos)
+	var zs := _sz * ks
 	if open:
 		# Annaeherungsring: schrumpft bis zur Notenzeit.
 		var frac := clampf(dt / APPROACH_MS, 0.0, 1.0)
@@ -527,7 +790,7 @@ func _draw_knot(kn: TracePath.Knot, is_next: bool, wf: float) -> void:
 			if _hit_t[n] >= 0.0:
 				continue
 			var grow := 1.0 + 0.2 * (1.0 - frac) if is_next or dt < APPROACH_MS else 1.0
-			_arrow(p, _dir(kn.cols[i]), chord, _col(n), fade_in, grow, kn.cols[i])
+			_arrow(p, _dir(kn.cols[i]), chord, _col(n), fade_in, grow * ks, kn.cols[i])
 	# Treffer-Leuchten und ausblendender Pfeil.
 	for i in kn.notes.size():
 		var n: int = kn.notes[i]
@@ -538,15 +801,39 @@ func _draw_knot(kn: TracePath.Knot, is_next: bool, wf: float) -> void:
 		var col := _col(n)
 		if age < ARROW_FADE_MS:
 			var fa := 1.0 - age / ARROW_FADE_MS
-			_arrow(p, _dir(kn.cols[i]), kn.notes.size() > 1, col, fa, 1.0 + 0.3 * (1.0 - fa), kn.cols[i])
+			_arrow(p, _dir(kn.cols[i]), kn.notes.size() > 1, col, fa, (1.0 + 0.3 * (1.0 - fa)) * ks, kn.cols[i])
 		if age < FLASH_MS:
 			var u := age / FLASH_MS
 			var inv := 1.0 - u
 			var jc: Color = JUDGE_COL[clampi(_hit_q[n], 0, 5)]
 			draw_circle(p, (14.0 + 16.0 * u) * zs, Color(jc, 0.2 * inv * inv))
 			draw_arc(p, (RING_NEAR * 0.7 + 26.0 * u) * zs, 0.0, TAU, 48, Color(jc, 0.9 * inv), 2.8 * wf * inv + 0.6, true)
+			# Zweiter, duenner Ring laeuft weiter hinaus: der Treffer wirkt satter.
+			var eo := 1.0 - inv * inv
+			draw_arc(p, (RING_NEAR * 0.7 + 58.0 * eo) * zs, 0.0, TAU, 48, Color(jc, 0.42 * inv * inv), 1.2 * wf, true)
+		if age < GLINT_MS and i == 0 and end_zoom <= 0.0:
+			_glint(age, JUDGE_COL[clampi(_hit_q[n], 0, 5)], wf)
 	if any_hit and not open:
 		draw_circle(p, 3.0 * wf + 0.4, Color(_col(kn.notes[0]).lightened(0.2), 0.85))
+
+
+## Glanz nach einem Treffer: kurzes helles Stueck laeuft dem Kopf auf der Schiene voraus.
+func _glint(age: float, col: Color, wf: float) -> void:
+	var k := age / GLINT_MS
+	var mid := _cur_s + 26.0 + GLINT_PX * (1.0 - (1.0 - k) * (1.0 - k))
+	var s0 := maxf(mid - 48.0, _cur_s)
+	var s1 := minf(mid + 48.0, _s_b)
+	if s1 - s0 < 10.0:
+		return
+	var pts := _pts_screen(s0, s1, 8.0)
+	var n := pts.size()
+	if n < 2:
+		return
+	var c := col.lerp(Color.WHITE, 0.55)
+	var cs := PackedColorArray()
+	for i in n:
+		cs.append(Color(c, sin(PI * float(i) / float(n - 1)) * 0.8 * (1.0 - k)))
+	draw_polyline_colors(pts, cs, 3.0 * wf, true)
 
 
 ## Pfeilspitze in Richtung d (Welt) mit Tastenbuchstabe, bei Akkord seitlich zum Rand verschoben.
@@ -585,4 +872,5 @@ func _draw_head(p0: Vector2, wf: float, fin: float, racing: bool) -> void:
 	draw_circle(p, r * 1.5, Color(INK, 0.85 * fa))
 	draw_circle(p, r, Color(HEAD, fa))
 	if not racing:
-		draw_arc(p, r * 1.9, 0.0, TAU, 32, Color(HEAD, 0.55 * fa), 1.4 * wf, true)
+		# Bernstein-Ring atmet im Takt (nur Radius und Deckkraft, kein Blitz).
+		draw_arc(p, r * (1.9 + 0.5 * _env), 0.0, TAU, 32, Color(HEAD.lerp(AMBER, 0.7), (0.6 + 0.3 * _env) * fa), 1.5 * wf, true)
