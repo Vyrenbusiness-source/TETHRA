@@ -70,7 +70,7 @@ var sel_map: Dictionary = {}
 var round_map: Dictionary = {}
 var round_mode := ""
 ## Raum-Mods (vom Kronentraeger gewaehlt, fuer alle gleich): {"SV": bool, "NF": bool}
-var mods: Dictionary = { "SV": false, "NF": false }
+var mods: Dictionary = _debug_mods()
 ## LAN-Discovery: ip -> {name, players, t}
 var lan_rooms: Dictionary = {}
 ## Intro-Skip: peer_id -> true; erst wenn ALLE gedrueckt haben, wird gesprungen.
@@ -517,7 +517,7 @@ func _reset() -> void:
 	_join_pw = ""
 	players = {}
 	sel_map = {}
-	mods = { "SV": false, "NF": false }
+	mods = _debug_mods()
 	played = []
 	play_mode = "mania"
 	crown_id = 1
@@ -873,6 +873,17 @@ func _apply_mods(m: Dictionary) -> void:
 	_sync()
 
 
+## Debug/Smoke: --mp-mods=NF,SV (oder Umgebungsvariable TETHRA_MP_MODS) setzt die Mods
+## eines neuen Raums, ohne Klick im Raum (tools/mp_mode_smoke.sh, docs/qa/live_qa.md).
+static func _debug_mods() -> Dictionary:
+	var want := OS.get_environment("TETHRA_MP_MODS")
+	for a in OS.get_cmdline_args():
+		if a.begins_with("--mp-mods="):
+			want = a.trim_prefix("--mp-mods=")
+	var list := want.to_upper().split(",", false)
+	return { "SV": "SV" in list, "NF": "NF" in list }
+
+
 static func _norm_mods(m: Dictionary) -> Dictionary:
 	return { "SV": bool(m.get("SV", false)), "NF": bool(m.get("NF", false)) }
 
@@ -1034,6 +1045,8 @@ func _load_selection(path: String) -> bool:
 			GameSession.set_selection(path, i, d.beatmap.version_name(),
 				d.osu_filename, float(sel_map.get("stars", 0.0)))
 			GameSession.mods = mods.duplicate()
+			if OS.get_cmdline_args().has("--mp-bot"):
+				print("MPLOBBY round mods=[%s] host=%s" % [mods_text(mods), is_host])
 			return true
 	# Online-Pick ohne Diff-Name: 4K-Diff mit den naechsten Sternen waehlen.
 	var best := _nearest_4k(path, imp, float(sel_map.get("stars", 0.0)))
