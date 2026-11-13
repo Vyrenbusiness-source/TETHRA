@@ -114,6 +114,7 @@ func _ready() -> void:
 	add_child(_view)
 	_view.setup(shots, core)
 	_view.key_labels = _zone_labels()
+	_view.beat_ms = RallyChart._beat_ms(_beatmap, shots[0].t)
 	_sound = RallySound.new()
 	add_child(_sound)
 	_build_hud()
@@ -655,6 +656,7 @@ func _on_shot_judged(index: int, result: Dictionary) -> void:
 	var q := int(result.get("quality", 5))
 	var s := shots[index]
 	_view.on_judged(index, result)
+	_view.beat_ms = RallyChart._beat_ms(_beatmap, s.t)
 	var hold_end := bool(result.get("hold_end", false))
 	if hold_end:
 		_sound.stop_charge()
@@ -691,7 +693,7 @@ func _on_charge_started(index: int, quality: int) -> void:
 
 func _on_press_ignored(_key: int, reason: String) -> void:
 	if reason == "WRONG":
-		_flash_hint("WRONG KEY")
+		_flash_hint(tr("wrong key"))
 
 
 # ---------------------------------------------------------------------------
