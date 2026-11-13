@@ -29,6 +29,8 @@ func _initialize() -> void:
 	_test_reverse_scroll()
 	_test_sparse_reverse()
 	_test_normal_level(bm)
+	_test_start_lead()
+	_test_replay_vis()
 	_test_real_maps()
 	print("=== Ergebnis: %d bestanden, %d fehlgeschlagen ===" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
@@ -214,6 +216,45 @@ func _test_fair(bm: Beatmap, label: String, tps: Array = []) -> void:
 				short += 1
 	_ok(short == 0, "%s: jede Note >= %d%% der Anflugzeit sichtbar (%d zu kurz)" % [label, int(min_vis * 100.0), short])
 	_test_reverse_fair(bm, sm, label)
+
+
+## Songstart und Intro-Skip: jede Note bekommt ihre volle Anflugzeit plus
+## Puffer, auch mit Konstant (CS) auf einer Map, deren SV am Anfang schnell ist,
+## und bei Scroll Speed 1-5 (Anflug laenger als der alte feste Skip-Abstand).
+func _test_start_lead() -> void:
+	print("- Songstart/Intro-Skip: volle Anflugzeit")
+	# Erste Note bei 1000 ms, SV x2 ab Songanfang.
+	var bm := _parse(_osu_text("1000,400,4,1,0,100,1,0\n", 8, 400.0, "1000,-50,4,1,0,100,0,0\n"))
+	var first: float = bm.hit_objects[0].time
+	for speed in [1, 5, 25, 40]:
+		var scale: float = 1200.0 * float(speed) / 11485.0
+		var pre := ManiaCore.preempt_for(scale)
+		for mods in [{}, {"CS": true}, {"SV": true}, {"SV": true, "CS": true}]:
+			var lead := ManiaCore.start_lead_ms(bm, scale, mods)
+			var core_sm := ManiaCore.build_scroll_map(bm, mods)
+			if bool(mods.get("CS", false)):
+				core_sm = ScrollMap.new()
+				core_sm.build([], 99999.0)
+			var spawn := INF
+			for o in bm.hit_objects:
+				spawn = minf(spawn, core_sm.spawn_time(o.time, pre))
+			_ok(spawn + lead >= ManiaCore.START_BUFFER_MS - 0.01,
+					"Speed %d %s: erste Note erscheint %.0f ms nach Start (>= 600)" % [speed, str(mods), spawn + lead])
+			var skip := ManiaCore.skip_target_ms(bm, scale, mods)
+			_ok(skip <= spawn - ManiaCore.START_BUFFER_MS + 0.01 and skip <= first - 2200.0,
+					"Speed %d %s: Skip-Ziel %.0f vor dem Erscheinen (%.0f)" % [speed, str(mods), skip, spawn])
+
+
+## Replay: Hidden/FadeIn/Cover kommen aus den Mods des Laufs, nicht aus der
+## aktuellen Einstellung.
+func _test_replay_vis() -> void:
+	print("- Replay: Sicht-Mods des Laufs")
+	var none := ManiaCore.vis_mods({"SV": true, "NF": true})
+	_ok(int(none.vis) == 0, "ohne Sicht-Mod: frei, egal was eingestellt ist")
+	_ok(int(ManiaCore.vis_mods({"HD": true}).vis) == 2, "Hidden-Replay")
+	_ok(int(ManiaCore.vis_mods({"FI": true, "HD": false}).vis) == 1, "FadeIn-Replay")
+	var co := ManiaCore.vis_mods({"CO": true, "CO_pct": 35, "CO_bottom": true})
+	_ok(int(co.vis) == 3 and int(co.pct) == 35 and bool(co.bottom), "Cover-Replay: 35 % von unten")
 
 
 func _test_is_sv(bm: Beatmap) -> void:

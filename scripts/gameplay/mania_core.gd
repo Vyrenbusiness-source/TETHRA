@@ -245,6 +245,62 @@ static func build_scroll_map(bm: Beatmap, p_mods = null) -> ScrollMap:
 	return sm
 
 
+## Sicht-Mod eines Laufs aus seinem Mods-Dictionary (Replay): vis wie
+## Settings.VIS_* (0 keine, 1 FadeIn, 2 Hidden, 3 Cover), pct = Cover-Anteil
+## in Prozent, bottom = Cover von der Linie aus.
+static func vis_mods(p_mods: Dictionary) -> Dictionary:
+	var vis := 0
+	if bool(p_mods.get("FI", false)):
+		vis = 1
+	elif bool(p_mods.get("HD", false)):
+		vis = 2
+	elif bool(p_mods.get("CO", false)):
+		vis = 3
+	return {"vis": vis, "pct": clampi(int(p_mods.get("CO_pct", 50)), 0, 100),
+		"bottom": bool(p_mods.get("CO_bottom", false))}
+
+
+## Reaktionspuffer vor der ersten sichtbaren Note beim Songstart (ms).
+const START_BUFFER_MS := 600.0
+## Intro-Skip: mindestens so weit vor der ersten Note landen (ms).
+const SKIP_BEFORE_MS := 2200.0
+
+
+## Zeitpunkt, zu dem die erste Note ins Bild kommt. Rechnet mit den Mods des
+## Laufs: Konstant (CS) fliegt mit voller Anflugzeit an, auch wenn das SV der
+## Map die erste Note schneller holt; bei SV-Ruecklauf kann eine spaetere
+## Note zuerst erscheinen.
+static func first_spawn_ms(bm: Beatmap, scroll_scale: float, p_mods: Dictionary) -> float:
+	var pre := preempt_for(scroll_scale)
+	var first := INF
+	if bool(p_mods.get("CS", false)):
+		for o in bm.hit_objects:
+			first = minf(first, o.time - pre)
+		return first
+	var sm := build_scroll_map(bm, p_mods)
+	for o in bm.hit_objects:
+		first = minf(first, sm.spawn_time(o.time, pre))
+	return first
+
+
+## Vorlauf (Stille vor dem Song, ms), damit JEDE Note ihre volle Anflugzeit
+## plus START_BUFFER_MS bekommt. Nie kleiner als AudioLeadIn der Map.
+static func start_lead_ms(bm: Beatmap, scroll_scale: float, p_mods: Dictionary) -> float:
+	var lead := bm.audio_lead_in()
+	if bm.hit_objects.is_empty():
+		return lead
+	return maxf(lead, START_BUFFER_MS - first_spawn_ms(bm, scroll_scale, p_mods))
+
+
+## Ziel des Intro-Skips: die erste Note behaelt ihre volle Anflugzeit plus
+## Puffer (frueher fest 2200 ms vor der Note: bei Scroll Speed 1-5 stand sie
+## nach dem Sprung schon mitten im Feld).
+static func skip_target_ms(bm: Beatmap, scroll_scale: float, p_mods: Dictionary) -> float:
+	var first_t: float = bm.hit_objects[0].time
+	return minf(first_t - SKIP_BEFORE_MS,
+			first_spawn_ms(bm, scroll_scale, p_mods) - START_BUFFER_MS)
+
+
 ## Combo-Anteil des Scores: ab 100er-Combo zaehlt eine Note voll.
 func score_multiplier() -> float:
 	return minf(float(combo), 100.0) / 100.0

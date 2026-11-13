@@ -614,6 +614,8 @@ func _build_playfield_2d() -> void:
 	_pf2d.setup(core.columns, _lane_k_2d, Z_LINE, Z_FAR, keys, _lane_color(0), _note_style_2d,
 			_note_k_2d)
 	_pf2d.skin = _load_skin_2d()
+	if GameSession.is_replay:
+		_pf2d.set_run_mods(GameSession.mods)
 	pf_layer.add_child(_pf2d)
 
 
@@ -689,17 +691,13 @@ func _load_beatmap() -> bool:
 		var scroll := Settings.mania_scroll
 		if GameSession.tutorial:
 			scroll = minf(scroll, 1.0) * 0.65
-		var preempt := ManiaCore.preempt_for(scroll)
-		var lead := _beatmap.audio_lead_in()
-		var first_t: float = _beatmap.hit_objects[0].time
-		# SV: Anflugzeit der ersten Note folgt der Scroll-Position (lazer).
-		var sm := ManiaCore.build_scroll_map(_beatmap)
-		if not sm.is_identity():
-			preempt = first_t - sm.spawn_time(first_t, preempt)
-		var need := preempt + 600.0
-		if first_t + lead < need:
-			lead = need - first_t
-		SyncClock.play(stream, lead)
+		# SV: Anflugzeit folgt der Scroll-Position (lazer). Mit den Mods des
+		# Laufs rechnen (Konstant fliegt mit voller Anflugzeit an); _ready
+		# mischt sie erst nach dem Laden in GameSession.mods.
+		var run_mods: Dictionary = GameSession.mods.duplicate()
+		if not GameSession.is_replay:
+			run_mods.merge(Settings.extra_mods(_2d), true)
+		SyncClock.play(stream, ManiaCore.start_lead_ms(_beatmap, scroll, run_mods))
 		_use_audio = true
 	return true
 
@@ -2093,8 +2091,20 @@ func _fx_level() -> float:
 
 
 func _do_skip() -> void:
-	SyncClock.seek_ms(_beatmap.hit_objects[0].time - 2200.0)
-	_update_break_overlay(_beatmap.hit_objects[0].time - 2200.0)
+	var target := _skip_target()
+	SyncClock.seek_ms(target)
+	_update_break_overlay(target)
+
+
+## Ziel des Intro-Skips: die erste Note behaelt ihre volle Anflugzeit.
+## Je Anflugzeit einmal gerechnet (die Break-Anzeige fragt jeden Frame).
+var _skip_cache := NAN
+var _skip_cache_preempt := -1.0
+func _skip_target() -> float:
+	if is_nan(_skip_cache) or _skip_cache_preempt != core.preempt:
+		_skip_cache_preempt = core.preempt
+		_skip_cache = ManiaCore.skip_target_ms(_beatmap, ManiaCore.BASE_PREEMPT / core.preempt, core.mods)
+	return _skip_cache
 
 
 func _can_skip_intro() -> bool:
@@ -2102,7 +2112,7 @@ func _can_skip_intro() -> bool:
 		return false
 	if _beatmap == null or _beatmap.hit_objects.is_empty() or not _use_audio:
 		return false
-	return _beatmap.hit_objects[0].time - _time_ms() > 4500.0
+	return _skip_target() - _time_ms() > 2300.0
 
 
 # ---------------------------------------------------------------------------

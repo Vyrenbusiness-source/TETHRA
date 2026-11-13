@@ -386,14 +386,40 @@ var _m0 := 0.0   ## Deckkraft 0 bei _m0 ...
 var _m1 := 1.0   ## ... bis 1 bei _m1 (linear), ausserhalb konstant
 
 
+## Replay: Sicht-Mods des aufgezeichneten Laufs (GameSession.mods: FI/HD/CO,
+## CO_pct, CO_bottom) statt der aktuellen Einstellung. Vorher zeigte ein
+## Hidden-Replay das Feld ohne Abdeckung, sobald die Einstellung anders stand.
+var _run_vis := -1
+var _run_cover_pct := 50
+var _run_cover_bottom := false
+
+
+func set_run_mods(m: Dictionary) -> void:
+	var v := ManiaCore.vis_mods(m)
+	_run_vis = int(v.vis)
+	_run_cover_pct = int(v.pct)
+	_run_cover_bottom = bool(v.bottom)
+
+
+func _vis() -> int:
+	return _run_vis if _run_vis >= 0 else Settings.mod_vis_2d
+
+
 ## Abdeckungsanteil (0..1 der Strecke Oberkante -> Linie) fuer den aktuellen Mod.
 func cover_fraction() -> float:
-	match Settings.mod_vis_2d:
+	match _vis():
 		Settings.VIS_FADE_IN, Settings.VIS_HIDDEN:
 			return minf(HIDDEN_MAX, HIDDEN_MIN + float(_combo) * HIDDEN_PER_COMBO)
 		Settings.VIS_COVER:
-			return float(Settings.cover_pct_2d) / 100.0
+			return float(_run_cover_pct if _run_vis >= 0 else Settings.cover_pct_2d) / 100.0
 	return 0.0
+
+
+## Wie cover_from_top(), mit den Mods des Laufs (Replay).
+func covers_from_top() -> bool:
+	if _run_vis < 0:
+		return cover_from_top()
+	return _run_vis == Settings.VIS_FADE_IN or (_run_vis == Settings.VIS_COVER and not _run_cover_bottom)
 
 
 ## Abdeckung von oben (true) oder von der Linie aus (false)?
@@ -414,7 +440,7 @@ func _update_mask() -> void:
 	var ly := line_y()
 	var cov := ly * f
 	var g := maxf(1.0, cov * MASK_FADE)
-	if cover_from_top():
+	if covers_from_top():
 		_m0 = cov - g
 		_m1 = cov
 	else:
