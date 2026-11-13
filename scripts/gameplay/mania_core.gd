@@ -262,6 +262,8 @@ static func vis_mods(p_mods: Dictionary) -> Dictionary:
 
 ## Reaktionspuffer vor der ersten sichtbaren Note beim Songstart (ms).
 const START_BUFFER_MS := 600.0
+## Hoechster Zusatz-Vorlauf, den SV am Songanfang erzwingen darf (ms).
+const MAX_SV_LEAD_EXTRA_MS := 5000.0
 ## Intro-Skip: mindestens so weit vor der ersten Note landen (ms).
 const SKIP_BEFORE_MS := 2200.0
 
@@ -289,7 +291,13 @@ static func start_lead_ms(bm: Beatmap, scroll_scale: float, p_mods: Dictionary) 
 	var lead := bm.audio_lead_in()
 	if bm.hit_objects.is_empty():
 		return lead
-	return maxf(lead, START_BUFFER_MS - first_spawn_ms(bm, scroll_scale, p_mods))
+	var need := START_BUFFER_MS - first_spawn_ms(bm, scroll_scale, p_mods)
+	# Deckel: extrem langsames SV am Anfang zieht den fruehesten Spawn beliebig
+	# weit vor den Song (Map mit 107 s Stille). Mehr als die normale Anflugzeit
+	# der ersten Note plus MAX_SV_LEAD_EXTRA_MS wird nicht gewartet; solche
+	# Noten stehen beim Start dann schon (fast still) im Feld.
+	var base: float = maxf(START_BUFFER_MS - (bm.hit_objects[0].time - preempt_for(scroll_scale)), 0.0)
+	return maxf(lead, minf(need, base + MAX_SV_LEAD_EXTRA_MS))
 
 
 ## Ziel des Intro-Skips: die erste Note behaelt ihre volle Anflugzeit plus

@@ -69,6 +69,86 @@ var _perf_frames: Array = []
 ## Online-Scores / Website-Anbindung (scripts/net/online_api.gd).
 var online: OnlineApi
 
+## Kampagne (scripts/campaign/campaign.gd): laufende Stufe {"stage": id, "world": name}
+## oder {}. campaign_return: Stufe, bei der die Kampagnen-Szene oeffnet.
+## Welt des Kapitels: Settings.world_theme traegt sie nur, waehrend die Spielszene sich
+## aufbaut (Eintritt in den Baum bis ready, ein synchroner Abschnitt ohne Eingaben).
+## Davor und danach steht dort die eigene Wahl des Spielers. So kann kein
+## Settings.save() mitten in der Stufe die Kapitel-Welt in settings.cfg schreiben.
+var campaign: Dictionary = {}
+var campaign_return: String = ""
+var _campaign_world_prev := -1
+
+
+func campaign_active() -> bool:
+	return str(campaign.get("stage", "")) != ""
+
+
+func start_campaign(stage_id: String, world: String) -> void:
+	end_campaign()
+	campaign = {"stage": stage_id, "world": world}
+
+
+func end_campaign() -> void:
+	_campaign_world_release()
+	campaign = {}
+
+
+## Spielszene betritt den Baum (auch beim Neustart der Stufe): Welt bis zu ihrem ready setzen.
+func _campaign_on_node_added(n: Node) -> void:
+	if not campaign_active() or n.get_parent() != get_tree().root:
+		return
+	if not ScoreStore.MODE_SCENES.values().has(n.scene_file_path):
+		return
+	if campaign_run_prefix() != "":
+		_campaign_run_game_shot(n)
+	# Autoload ueber den Baum: dieses Skript laden auch Tests ohne Autoloads.
+	var st := get_node_or_null("/root/Settings")
+	if st == null:
+		return
+	var wi: int = st.WORLD_ORDER.find(str(campaign.get("world", "")))
+	if wi < 0 or _campaign_world_prev >= 0:
+		return
+	_campaign_world_prev = int(st.world_theme)
+	st.world_theme = wi + 1
+	n.ready.connect(_campaign_world_release, CONNECT_ONE_SHOT)
+
+
+func _campaign_world_release() -> void:
+	var st := get_node_or_null("/root/Settings")
+	if _campaign_world_prev >= 0 and st != null:
+		st.world_theme = _campaign_world_prev
+	_campaign_world_prev = -1
+
+
+## Harness --shot-campaign-run=<Praefix>: echter Stufenlauf (Kampagnen-Szene startet die
+## Stufe, --autoplay spielt, Ergebnis traegt ein). Bilder <Praefix>_stage.png, _game.png,
+## _result.png. Nur mit --campaign-path=<Datei>, nie gegen den echten Stand.
+static func campaign_run_prefix() -> String:
+	for a in OS.get_cmdline_args() + OS.get_cmdline_user_args():
+		if a.begins_with("--shot-campaign-run="):
+			return a.trim_prefix("--shot-campaign-run=")
+	return ""
+
+
+func _campaign_run_game_shot(game: Node) -> void:
+	var prefix := campaign_run_prefix()
+	await get_tree().create_timer(14.0, true).timeout
+	await RenderingServer.frame_post_draw
+	if not is_instance_valid(game) or not game.is_inside_tree():
+		return
+	get_viewport().get_texture().get_image().save_png(prefix + "_game.png")
+	print("CAMPAIGN-RUN Spiel: Welt-Einstellung %d" % int(get_node("/root/Settings").world_theme))
+
+
+## Kampagne endet, sobald eine Szene folgt, die keine Spielszene ist (Browser, Menue, Kampagne).
+func _campaign_on_scene_changed() -> void:
+	if not campaign_active():
+		return
+	var sc := get_tree().current_scene
+	if sc == null or not ScoreStore.MODE_SCENES.values().has(sc.scene_file_path):
+		end_campaign()
+
 
 func _ready() -> void:
 	online = OnlineApi.new()
@@ -78,6 +158,8 @@ func _ready() -> void:
 	set_process(false)
 	_arm_test_watchdog()
 	_arm_playtime()
+	get_tree().scene_changed.connect(_campaign_on_scene_changed)
+	get_tree().node_added.connect(_campaign_on_node_added)
 	perf_enabled = OS.get_cmdline_args().has("--perf") or OS.get_cmdline_user_args().has("--perf")
 	if perf_enabled:
 		perf_since("Engine-Start -> Autoload GameSession", 0)
@@ -332,7 +414,7 @@ func _arm_test_watchdog() -> void:
 	if limit <= 0.0 and FileAccess.file_exists("res://override.cfg"):
 		limit = 60.0
 	# Live-QA (tests/live_qa.gd): mehrere Runden in einem Prozess, aussen timeout 150.
-	if all.has("--live-qa"):
+	if all.has("--live-qa") or campaign_run_prefix() != "":
 		limit = 145.0
 	# Movie-Aufnahmen (--write-movie) begrenzt Godot selbst per --quit-after;
 	# die Watchdog-Zeit laeuft dort in Echtzeit und wuerde lange Aufnahmen kappen.

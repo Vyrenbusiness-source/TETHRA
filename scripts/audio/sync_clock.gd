@@ -204,6 +204,11 @@ var _lead_in_ms: float = 0.0
 ## das Audio noch nicht spielt und keine Audio-Position existiert).
 var _lead_in_elapsed_ms: float = 0.0
 var _last_tick_usec: int = 0
+## Vorlauf wartet auf seinen ersten Tick: play() laeuft meist mitten im Laden
+## der Szene (_ready). Die Ladezeit bis zum ersten Frame bzw. bis pause() darf
+## den Vorlauf nicht verbrauchen, sonst stehen die ersten Noten beim Start
+## schon mitten im Feld (Map mit 4788 Timing-Points: 1,5 s Ladezeit).
+var _lead_armed := false
 var _finished_emitted: bool = false
 var _paused: bool = false
 ## Gecachte Ausgabelatenz in ms (siehe Kopf).
@@ -390,6 +395,7 @@ func play(stream: AudioStream, lead_in_ms: float = 0.0) -> void:
 	_paused = false
 	_lead_in_ms = maxf(lead_in_ms, 0.0)
 	_lead_in_elapsed_ms = 0.0
+	_lead_armed = true
 	_finished_emitted = false
 	_last_tick_usec = _now_usec()
 	_refresh_latency()
@@ -538,7 +544,7 @@ func _raw_time_ms(now_usec: int) -> float:
 	match _state:
 		State.LEAD_IN:
 			var e := _lead_in_elapsed_ms
-			if not _paused:
+			if not _paused and not _lead_armed:
 				e += float(now_usec - _last_tick_usec) / 1000.0
 			return e - _lead_in_ms - _latency_ms
 		State.PLAYING:
@@ -620,6 +626,11 @@ func _process(delta: float) -> void:
 
 
 func _advance_lead_in(now_usec: int) -> void:
+	if _lead_armed:
+		# Erster Tick nach play(): Vorlauf beginnt JETZT (Ladezeit zaehlt nicht).
+		_lead_armed = false
+		_last_tick_usec = now_usec
+		return
 	_lead_in_elapsed_ms += float(now_usec - _last_tick_usec) / 1000.0
 	_last_tick_usec = now_usec
 

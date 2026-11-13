@@ -639,10 +639,10 @@ const COL_GAP := 48.0
 const TILE_W := 232.0
 const TILE_H := 140.0
 const TILE_GAP := 12.0
-const PLAY_H := 60.0
-const ROW_H := 44.0
+const PLAY_H := 58.0
+const ROW_H := 37.0
 const EDGE := 32.0
-const BLOCK_H := TILE_H * 2.0 + TILE_GAP  # 292 = PLAY_H + 12 + 5 * ROW_H
+const BLOCK_H := TILE_H * 2.0 + TILE_GAP  # 292 = PLAY_H + 12 + 6 * ROW_H
 
 ## Symbole der Modi (Quelle: assets_game/icons/modes/<modus>.svg, gleiche Pfade).
 ## Hier als Text, damit sie in der Zielgroesse scharf gerastert werden.
@@ -1663,6 +1663,8 @@ func _build_buttons(x0: float, y0: float) -> void:
 	_intro.append(_btn_play)
 	var y := y0 + PLAY_H + 12.0
 
+	y = _build_campaign_row(x0, y)
+
 	_btn_mp = _menu_button("MULTIPLAYER", false)
 	_btn_mp.pressed.connect(_leave.bind("res://scenes/mp_lobby.tscn"))
 	y = _add_row(_btn_mp, x0, y)
@@ -1703,6 +1705,23 @@ func _add_row(b: Button, x0: float, y: float) -> float:
 	b.focus_exited.connect(upd)
 	_intro.append(b)
 	return y + ROW_H
+
+
+## --- Kampagne: Weg durch die Welten, feste Maps fuer alle (Campaign) ---
+func _build_campaign_row(x0: float, y: float) -> float:
+	var b := _menu_button("KAMPAGNE", false)
+	b.pressed.connect(_leave.bind(Campaign.SCENE))
+	var ny := _add_row(b, x0, y)
+	b.name = "RowCampaign"
+	var data := Campaign.load_data()
+	var det := _label(tr("%d / %d Sterne") % [Campaign.total_stars_all(data, Campaign.load_state()),
+		Campaign.max_stars_all(data)], 13.0, UiTheme.DIM)
+	det.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	det.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	det.clip_text = true
+	b.add_child(det)
+	_place(det, 132.0, 0.0, COL_W - 132.0 - 20.0, ROW_H)
+	return ny
 
 
 ## --- Daily Trace: eine Map pro Tag fuer alle, Serie, Tages-Bild (TraceDaily) ---

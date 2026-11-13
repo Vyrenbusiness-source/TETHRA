@@ -131,6 +131,8 @@ var _lb_online := false
 var _lb_src_btns: Array[Button] = []
 var _online_gen := 0
 var _online_md5_cache: Dictionary = {}
+## Maps, für die der pp-Nachtrag aus der Online-Rangliste schon versucht wurde.
+var _pp_fill_tried: Dictionary = {}
 
 # Lazy-Loading der Karten-Thumbnails (2 pro Frame).
 var _thumb_queue: Array = []
@@ -2803,6 +2805,7 @@ func _update_info_panel() -> void:
 		_lb_box.add_child(empty)
 	for i in tops.size():
 		_lb_box.add_child(_score_row(i, tops[i]))
+	_fill_missing_pp(tops, score_mode)
 	# Replay-Button nur zeigen, wenn fuer diese Diff ein Replay existiert.
 	# Orbit: Replay des besten Orbit-Laufs (ReplayStore-Modus "orbit").
 	if _replay_btn != null:
@@ -3127,6 +3130,52 @@ func _online_avatar(who: String) -> Control:
 
 
 ## Eine Leaderboard-Zeile: Rang, Grade, Score/Acc, pp, Datum.
+## Mitspieler-Scores ohne pp (Live-Endergebnis im Multiplayer): pp aus der
+## Online-Rangliste der Map nachtragen (gleicher Spieler + Score) und die Liste
+## neu aufbauen. Je Map/Modus nur ein Versuch pro Sitzung.
+func _fill_missing_pp(tops: Array, score_mode: String) -> void:
+	if score_mode != "" or _selected_set == null:
+		return  # pp gibt es nur in Mania
+	var missing := false
+	for e in tops:
+		if not bool(e.get("is_self", true)) and float(e.get("pp", -1.0)) <= 0.0:
+			missing = true
+			break
+	var api: OnlineApi = GameSession.online
+	if not missing or api == null or not api.enabled() or not api.logged_in():
+		return
+	var file := _selected_set.osu_filename_at(_selected_diff)
+	var key := _selected_set.osz_path + "|" + file
+	if _pp_fill_tried.has(key):
+		return
+	_pp_fill_tried[key] = true
+	if not _online_md5_cache.has(key):
+		_online_md5_cache[key] = OnlineApi._md5_bytes(OszImporter.read_file_bytes(_selected_set.osz_path, file))
+	var md5: String = _online_md5_cache[key]
+	if md5 == "":
+		return
+	var map_key := ScoreStore.map_id(_selected_set.osz_path, _selected_set.version_name_at(_selected_diff))
+	var gen := _online_gen
+	api.leaderboard(ScoreStore.mode_name(score_mode), md5, 0, func(ok: bool, entries: Array, _msg: String):
+		if not ok:
+			_pp_fill_tried.erase(key)  # Server nicht erreichbar: später erneut
+			return
+		if ScoreStore.fill_others_pp(map_key, entries) > 0 and gen == _online_gen 				and is_inside_tree() and not _lb_online:
+			_update_info_panel())
+
+
+## Geschätzte pp eines Fremd-Scores ohne pp: Max-pp der Diff mal Acc-Anteil
+## (0 bei 80 %, 1 bei 100 %). -1, wenn Max-pp noch nicht berechnet ist.
+func _estimate_pp(e: Dictionary) -> float:
+	if _selected_set == null or bool(e.get("unranked", false)):
+		return -1.0
+	var max_pp := StarService.max_pp_cached(_selected_set.osz_path,
+		_selected_set.osu_filename_at(_selected_diff))
+	if max_pp <= 0.0:
+		return -1.0
+	return max_pp * Recommender.acc_factor(float(e.get("accuracy", 0.0)))
+
+
 func _score_row(rank: int, e: Dictionary) -> Control:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 7)
@@ -3175,6 +3224,13 @@ func _score_row(rank: int, e: Dictionary) -> Control:
 	var pp_lbl := Label.new()
 	var pp_val := float(e.get("pp", -1.0))
 	pp_lbl.text = UiTheme.fmt_pp(pp_val) if pp_val > 0.0 else "—"
+	if pp_val <= 0.0 and not is_self and str(e.get("mode", "mania")) == "mania":
+		var est := _estimate_pp(e)
+		if est > 0.0:
+			pp_lbl.text = "≈ " + UiTheme.fmt_pp(est)
+			pp_lbl.tooltip_text = tr("Geschätzt aus Accuracy (Multiplayer-Score ohne pp)")
+			pp_lbl.mouse_filter = Control.MOUSE_FILTER_PASS
+			pp_lbl.modulate.a = 0.7
 	if str(e.get("mode", "")) == ScoreStore.MODE_ORBIT:
 		pp_lbl.visible = false  # Orbit hat keine pp
 	pp_lbl.add_theme_font_size_override("font_size", 13)
