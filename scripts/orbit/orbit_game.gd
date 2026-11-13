@@ -655,6 +655,16 @@ func _update_break_overlay(t: float) -> void:
 		_break_cur = idx
 		_break_skip = can_skip
 	_break_ov.update(t)
+	# Der Ring liegt mitten im Feld: weg, bevor das erste Ziel nach dem Break erscheint.
+	_break_ov.modulate.a *= BreakOverlay.clear_alpha(_break_clear_ms(_breaks[idx].y), t)
+
+
+## Zeit, zu der das erste Ziel ab end_ms sichtbar wird (spawn_ms).
+func _break_clear_ms(end_ms: float) -> float:
+	for n in notes:
+		if float(n.time_ms) >= end_ms - 1.0:
+			return float(n.spawn_ms)
+	return end_ms
 
 
 func _beat_ms() -> float:
