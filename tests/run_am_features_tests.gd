@@ -5,7 +5,8 @@ extends SceneTree
 ##   Godot..._console.exe --headless --audio-driver Dummy --path . --script res://tests/run_am_features_tests.gd
 ## Messung gegen Menschen-Maps, ein Prozess fuer alle Sets, schreibt docs/automap/features.md:
 ##   ... --script res://tests/run_am_features_tests.gd -- --measure <maps-ordner> <anzahl> [ordner eigene songs]
-##   optional: --set name=wert,name=wert (Parameter ueberschreiben), --no-report
+##   optional: --set name=wert,name=wert (Parameter ueberschreiben), --no-report,
+##   --dump <datei.json> (Noten und Ereignisse je Set fuer Auswertungen ausserhalb von Godot)
 
 const RATE := 22050
 const KINDS: Array[String] = ["kick", "snare", "hat", "bass", "tonal", "vocal", "other"]
@@ -49,7 +50,9 @@ func _run() -> void:
 		var own := ""
 		if mi + 3 < args.size() and not args[mi + 3].begins_with("--"):
 			own = args[mi + 3]
-		_measure(args[mi + 1], int(args[mi + 2]) if mi + 2 < args.size() else 150, own, params, args.find("--no-report") < 0)
+		var di := args.find("--dump")
+		var dump := args[di + 1] if di >= 0 and di + 1 < args.size() else ""
+		_measure(args[mi + 1], int(args[mi + 2]) if mi + 2 < args.size() else 150, own, params, args.find("--no-report") < 0, dump)
 		quit(0)
 		return
 	_test_tags()
@@ -740,7 +743,8 @@ func _read_set(osz: String, tmp: String) -> Dictionary:
 	return {"pcm": dec.pcm, "notes": uniq, "top": top, "holds": holds, "hold_share": float(holds.size()) / maxi(hold_notes, 1)}
 
 
-func _measure(maps_dir: String, count: int, own_dir: String, params: Dictionary, report: bool) -> void:
+func _measure(maps_dir: String, count: int, own_dir: String, params: Dictionary, report: bool, dump: String = "") -> void:
+	var dumped: Array = []
 	var files: Array[String] = []
 	for f in DirAccess.get_files_at(maps_dir):
 		if f.to_lower().ends_with(".osz"):
@@ -780,10 +784,22 @@ func _measure(maps_dir: String, count: int, own_dir: String, params: Dictionary,
 		sets.append({"name": name, "notes": rs.notes, "ev_t": ev_t, "ev_k": ev_k, "sus": sus, "secs": secs,
 				"dur": an.duration_ms, "ms": ms, "holds": rs.holds, "hold_share": rs.hold_share,
 				"kiai": top.kiai, "top_t": top.times, "top_hs": top.hs})
+		if dump != "":
+			var evs: Array = []
+			for e: Dictionary in an.events:
+				evs.append([snappedf(e.t_ms, 0.1), KINDS.find(e.kind), snappedf(e.strength, 0.001), snappedf(e.pitch, 0.001), snappedf(e.sustain_ms, 1.0)])
+			dumped.append({"name": name, "notes": Array(rs.notes), "events": evs, "kiai": top.kiai, "holds": rs.holds,
+					"secs": secs, "dur": an.duration_ms, "top_t": Array(top.times), "top_hs": Array(top.hs),
+					"energy": Array(an.energy), "frame_ms": an.frame_ms})
 		var d0 := _nearest(rs.notes, ev_t, 0.0)
 		print("%3d %s | %.0f s | %d Noten | %d Ereignisse | roh-Recall30 %.2f | %d ms" % [sets.size(), name.left(44),
 				float(an.duration_ms) / 1000.0, rs.notes.size(), ev_t.size(), float(_within(d0, 30.0)) / rs.notes.size(), ms])
 	var total_s := (Time.get_ticks_msec() - t_start) / 1000.0
+	if dump != "":
+		var fd := FileAccess.open(dump, FileAccess.WRITE)
+		fd.store_string(JSON.stringify(dumped))
+		fd.close()
+		print("Dump: ", dump)
 	if sets.is_empty():
 		print("keine Sets")
 		return

@@ -33,7 +33,7 @@ const B_MID_END := 15
 const B_PM_START := 3     # Snare-Koerper: Baender 3..13 (150 Hz..2,7 kHz)
 const B_PM_END := 14
 const B_HI_START := 14    # Hi-Hat/Becken: Baender 14..19 (> 2,7 kHz)
-const AGG_K := 14          # Werte je Frame aus der HPSS-Stufe
+const AGG_K := 15          # Werte je Frame aus der HPSS-Stufe
 
 const DEFAULTS := {
 	"threads": 0,                # 0 = alle Kerne, 1 = ohne Thread-Pool
@@ -46,14 +46,14 @@ const DEFAULTS := {
 	"median_time": 9,            # Frames (ungerade), harmonisch
 	"median_freq": 5,            # Baender (ungerade), perkussiv
 	"onset_shift_ms": 3.0,       # Ausgleich der Fensterlage (per Klick-Test bestimmt)
+	"shift_low_ms": 3.0,         # dasselbe fuer Kick/Bass (tiefe Toene bauen sich langsamer auf)
+	"hold_ratio": 0.5,           # Pegel 3..5 Frames nach dem Einsatz (Zeit-Median) / Spitze: darueber ein Ton
 	"min_flux": 0.6,             # kleinster Anstieg (Log-Einheiten), der als Anschlag zaehlt
 	"min_gap_ms": 45.0,          # Mindestabstand zweier Anschlaege derselben Ebene
 	"kick_abs": 1.2, "kick_rel": 1.3,
 	"snare_abs": 1.2, "snare_rel": 1.3,
 	"hat_abs": 1.0, "hat_rel": 1.3,
 	"bass_abs": 1.5, "bass_rel": 1.4,
-	"mid_abs": 1.5, "mid_rel": 1.4,
-	"vocal_relax": 0.75,         # Schwelle fuer Silben in Stimm-Passagen (x mid_abs/mid_rel)
 	"snare_ratio": 0.15,         # Hoehen-/Mitten-Leistung im Anschlag: darunter "other"
 	"hat_ratio": 12.0,           # darueber ist es ein Becken, kein Trommel-Anschlag
 	"kick_over_snare": 0.8,      # Kick schluckt gleichzeitigen Mitten-Anschlag ab diesem Verhaeltnis
@@ -285,12 +285,10 @@ class _Hpss extends RefCounted:
 		var o := PackedFloat32Array()
 		o.resize(maxi(f1 - f0, 0) * AGG_K)
 		var lnb := nb
-		var plh := PackedFloat32Array()
-		plh.resize(lnb)
-		plh.fill(0.0)
-		var plp := PackedFloat32Array()
-		plp.resize(lnb)
-		plp.fill(0.0)
+		var pr1 := PackedFloat32Array()
+		pr1.resize(lnb)
+		pr1.fill(0.0)
+		var pr2 := pr1.duplicate()
 		var ls := s
 		var gb := PackedFloat32Array()
 		gb.resize(lnb)
@@ -300,14 +298,13 @@ class _Hpss extends RefCounted:
 			gb[b] = gamma / maxf(float(refs[b]), floor_ref)
 		var r := kf >> 1
 		var wn := mini(kf, lnb)
-		var fs := maxi(f0 - 1, 0)
+		var fs := maxi(f0 - 2, 0)
 		for f in range(fs, f1):
 			var row := f * lnb
-			var a_lowp := 0.0
-			var a_pm := 0.0
-			var a_ph := 0.0
-			var a_hl := 0.0
-			var a_hm := 0.0
+			var a_kick := 0.0
+			var a_bass := 0.0
+			var a_mid := 0.0
+			var a_hi := 0.0
 			var e_hl := 0.0
 			var e_hm := 0.0
 			var e_p := 0.0
@@ -317,6 +314,8 @@ class _Hpss extends RefCounted:
 			var w_lo := 0.0
 			var w_hl := 0.0
 			var w_hm := 0.0
+			var s_l5 := 0.0
+			var s_mid := 0.0
 			var mk := mask[f]
 			for b in lnb:
 				var w0 := clampi(b - r, 0, lnb - wn)
@@ -330,59 +329,61 @@ class _Hpss extends RefCounted:
 				var lg := gb[b]
 				var spv := maxf(sv * (1.0 - mh) - mk, 0.0)
 				var shv := maxf(hv * mh - mk, 0.0)
+				var ssv := maxf(sv - mk, 0.0)
 				var lh := log(1.0 + lg * shv)
 				var lp := log(1.0 + lg * spv)
-				if b >= B_HI_START:
-					w_hi += spv * spv
-				elif b >= B_PM_START:
-					w_pm += spv * spv
-				else:
-					w_lo += spv * spv
-				var dh := lh - plh[b]
-				var dp := lp - plp[b]
-				plh[b] = lh
-				plp[b] = lp
+				# Anschlag: Rohpegel gegen das Hoechste der zwei Frames davor (Schwankungen zaehlen nicht)
+				var lr := log(1.0 + lg * ssv)
+				var dr := lr - maxf(pr1[b], pr2[b])
+				pr2[b] = pr1[b]
+				pr1[b] = lr
 				e_tot += sv * sv
 				e_p += lp
 				if b < B_BASS_END:
 					w_hl += shv * shv
+					s_l5 += ssv * ssv
 					e_hl += lh
-					if dh > 0.0:
-						a_hl += dh
 				elif b < B_MID_END:
-					w_hm += shv * shv
 					e_hm += lh
-					if dh > 0.0:
-						a_hm += dh
-				if dp > 0.0:
+				if b >= B_HI_START:
+					w_hi += spv * spv
+				elif b >= B_PM_START:
+					w_pm += spv * spv
+					w_hm += shv * shv
+					s_mid += ssv * ssv
+				else:
+					w_lo += spv * spv
+				if dr > 0.0:
 					if b < B_LOW_END:
-						a_lowp += dp
-					elif b < B_PM_END:
-						a_pm += dp
-					else:
-						a_ph += dp
+						a_kick += dr
+					if b < B_BASS_END:
+						a_bass += dr
+					if b >= B_HI_START:
+						a_hi += dr
+					elif b >= B_PM_START:
+						a_mid += dr
 			if f >= f0:
 				var i := (f - f0) * AGG_K
 				if f == 0:
-					a_lowp = 0.0
-					a_pm = 0.0
-					a_ph = 0.0
-					a_hl = 0.0
-					a_hm = 0.0
-				o[i] = a_lowp
-				o[i + 1] = a_pm
-				o[i + 2] = a_ph
-				o[i + 3] = a_hl
-				o[i + 4] = a_hm
-				o[i + 5] = e_hl
-				o[i + 6] = e_hm
-				o[i + 7] = e_p
-				o[i + 8] = e_tot
-				o[i + 9] = w_pm
-				o[i + 10] = w_hi
-				o[i + 11] = w_lo
-				o[i + 12] = w_hl
-				o[i + 13] = w_hm
+					a_kick = 0.0
+					a_bass = 0.0
+					a_mid = 0.0
+					a_hi = 0.0
+				o[i] = a_kick
+				o[i + 1] = a_bass
+				o[i + 2] = a_mid
+				o[i + 3] = a_hi
+				o[i + 4] = e_hl
+				o[i + 5] = e_hm
+				o[i + 6] = e_p
+				o[i + 7] = e_tot
+				o[i + 8] = w_pm
+				o[i + 9] = w_hi
+				o[i + 10] = w_lo
+				o[i + 11] = w_hl
+				o[i + 12] = w_hm
+				o[i + 13] = s_l5
+				o[i + 14] = s_mid
 		out[ci] = o
 
 
@@ -771,11 +772,10 @@ static func analyze(pcm: PackedFloat32Array, rate: int, params: Dictionary = {})
 	var agg := PackedFloat32Array()
 	for ci in chunks:
 		agg.append_array(hp.out[ci])
-	var f_lowp := PackedFloat32Array()
-	var f_pm := PackedFloat32Array()
-	var f_ph := PackedFloat32Array()
-	var f_hl := PackedFloat32Array()
-	var f_hm := PackedFloat32Array()
+	var f_kick := PackedFloat32Array()
+	var f_bass := PackedFloat32Array()
+	var f_mid := PackedFloat32Array()
+	var f_hi := PackedFloat32Array()
 	var e_hl := PackedFloat32Array()
 	var e_hm := PackedFloat32Array()
 	var e_p := PackedFloat32Array()
@@ -785,24 +785,15 @@ static func analyze(pcm: PackedFloat32Array, rate: int, params: Dictionary = {})
 	var w_lo := PackedFloat32Array()
 	var w_hl := PackedFloat32Array()
 	var w_hm := PackedFloat32Array()
-	for arr: PackedFloat32Array in [f_lowp, f_pm, f_ph, f_hl, f_hm, e_hl, e_hm, e_p, e_tot, w_pm, w_hi, w_lo, w_hl, w_hm]:
+	var s_l5 := PackedFloat32Array()
+	var s_mid := PackedFloat32Array()
+	var tracks: Array[PackedFloat32Array] = [f_kick, f_bass, f_mid, f_hi, e_hl, e_hm, e_p, e_tot, w_pm, w_hi, w_lo, w_hl, w_hm, s_l5, s_mid]
+	for arr in tracks:
 		arr.resize(frames)
 	for f in frames:
 		var i := f * AGG_K
-		f_lowp[f] = agg[i]
-		f_pm[f] = agg[i + 1]
-		f_ph[f] = agg[i + 2]
-		f_hl[f] = agg[i + 3]
-		f_hm[f] = agg[i + 4]
-		e_hl[f] = agg[i + 5]
-		e_hm[f] = agg[i + 6]
-		e_p[f] = agg[i + 7]
-		e_tot[f] = agg[i + 8]
-		w_pm[f] = agg[i + 9]
-		w_hi[f] = agg[i + 10]
-		w_lo[f] = agg[i + 11]
-		w_hl[f] = agg[i + 12]
-		w_hm[f] = agg[i + 13]
+		for k in AGG_K:
+			tracks[k][f] = agg[i + k]
 
 	# ---- 3. Stimme: Anteil gleitender Tonhoehe um jeden Frame
 	var glide := PackedFloat32Array()
@@ -831,41 +822,57 @@ static func analyze(pcm: PackedFloat32Array, rate: int, params: Dictionary = {})
 		voc[f] = (glide[b] - glide[a]) / (b - a)
 
 	# ---- 4. Anschlaege je Ebene
+	# Einsatz-Zeit aus dem Rohspektrum (Anstieg gegen die zwei Frames davor; die harmonische Spur ist
+	# durch den Zeit-Median traeg und zu spaet). Die Ebene entscheidet die Trennung: bleibt der Pegel
+	# danach im Zeit-Median stehen, ist es ein Ton (Bass/Instrument/Stimme), sonst ein Schlag.
 	var gap := maxi(1, int(round(float(p.min_gap_ms) / frame_ms)))
 	var mf: float = p.min_flux
-	var kicks := _pick(f_lowp, p.kick_abs, p.kick_rel, gap, false, mf)
-	var mids := _pick(f_pm, p.snare_abs, p.snare_rel, gap, false, mf)
-	var hats := _pick(f_ph, p.hat_abs, p.hat_rel, gap, false, mf)
-	var basses := _pick(f_hl, p.bass_abs, p.bass_rel, gap, true, mf)
-	var relax: float = p.vocal_relax
-	var harm := _pick(f_hm, float(p.mid_abs) * relax, float(p.mid_rel) * relax, gap, true, mf * relax)
-	# Kick nur, wenn die Leistung unter 150 Hz traegt: der Einsatz eines Tons in den Mitten (Stimme,
-	# Instrument) leckt ueber die Hauptkeule des Fensters auch nach unten.
+	var lows := _pick(f_kick, p.kick_abs, p.kick_rel, gap, false, mf)
+	var bass_c := _pick(f_bass, p.bass_abs, p.bass_rel, gap, false, mf)
+	var mid_c := _pick(f_mid, p.snare_abs, p.snare_rel, gap, false, mf)
+	var hats := _pick(f_hi, p.hat_abs, p.hat_rel, gap, false, mf)
+	var hold2: float = float(p.hold_ratio) * float(p.hold_ratio)
 	var k_ratio: float = p.kick_ratio
-	var kicks_ok: Array = []
-	for e in kicks:
-		var f: int = e[2]
-		if _rise(w_lo, f, frames) >= k_ratio * _rise(w_pm, f, frames):
-			kicks_ok.append(e)
-	kicks = kicks_ok
-	# Bass nur, wenn die gehaltene Leistung unter 260 Hz den Anstieg traegt: der Grundton einer
-	# Stimme oder eines Instruments liegt oft ueber 150 Hz, die Leistung aber in den Mitten.
 	var b_ratio: float = p.bass_ratio
-	var bass_ok: Array = []
-	for e in basses:
+	var t_ratio: float = p.tonal_ratio
+	var kicks: Array = []
+	for e in lows:
 		var f: int = e[2]
+		if _held(w_hl, s_l5, f, frames) >= hold2:
+			continue
+		# Kick nur, wenn die Leistung unter 150 Hz traegt: der Einsatz eines Tons in den Mitten (Stimme,
+		# Instrument) leckt ueber die Hauptkeule des Fensters auch nach unten.
+		if _rise(w_lo, f, frames) >= k_ratio * _rise(w_pm, f, frames):
+			kicks.append(e)
+	var basses: Array = []
+	for e in bass_c:
+		var f: int = e[2]
+		if _held(w_hl, s_l5, f, frames) < hold2:
+			continue
+		# Bass nur, wenn die gehaltene Leistung unter 260 Hz den Anstieg traegt: der Grundton einer
+		# Stimme oder eines Instruments liegt oft ueber 150 Hz, die Leistung aber in den Mitten.
 		if _rise(w_hl, f, frames, 4) >= b_ratio * _rise(w_hm, f, frames, 4):
-			bass_ok.append(e)
-	basses = bass_ok
+			basses.append(e)
+	var mids: Array = []
+	var harm: Array = []
+	for e in mid_c:
+		var f: int = e[2]
+		if _held(w_hm, s_mid, f, frames) >= hold2:
+			# Einsatz eines lauten Basstons streut kurz in die Mitten; ein Ton dort muss gegen den Bass zaehlen.
+			if _rise(w_hm, f, frames, 4) >= t_ratio * _rise(w_hl, f, frames, 4):
+				harm.append(e)
+		else:
+			mids.append(e)
 	_normalize(kicks)
 	_normalize(mids)
 	_normalize(hats)
 	_normalize(basses)
 	var kick_idx := _frame_index(kicks, frames)
 	var shift: float = p.onset_shift_ms
+	var shift_low: float = p.shift_low_ms
 	var events: Array = []
 	for e in kicks:
-		events.append({"t_ms": maxf(0.0, float(e[0]) * frame_ms + shift), "strength": e[1], "kind": "kick", "pitch": -1.0, "sustain_ms": 0.0})
+		events.append({"t_ms": maxf(0.0, float(e[0]) * frame_ms + shift_low), "strength": e[1], "kind": "kick", "pitch": -1.0, "sustain_ms": 0.0})
 	var snare_list: Array = []
 	var k_over: float = p.kick_over_snare
 	var sn_ratio: float = p.snare_ratio
@@ -936,23 +943,15 @@ static func analyze(pcm: PackedFloat32Array, rate: int, params: Dictionary = {})
 			if i + 1 < basses.size():
 				f_next = int(basses[i + 1][2])
 			var sus := _sustain(hp.hb[bnd], f, mini(f_next, f + sus_max_f), sus_keep) * frame_ms
-			events.append({"t_ms": maxf(0.0, float(e[0]) * frame_ms + shift), "strength": e[1], "kind": "bass",
+			events.append({"t_ms": maxf(0.0, float(e[0]) * frame_ms + shift_low), "strength": e[1], "kind": "bass",
 					"pitch": _pos(bhz[i], p.bass_pitch_lo_hz, p.bass_pitch_hi_hz),
 					"sustain_ms": sus if sus >= sus_min else 0.0})
 
 	# Instrument / Stimme
 	var voc_min: float = p.vocal_min
-	var t_ratio: float = p.tonal_ratio
 	var kept: Array = []
 	for e in harm:
-		var f: int = e[2]
-		# Einsatz eines lauten Basstons streut kurz in die Mitten; ein Ton dort muss gegen den Bass zaehlen.
-		if _rise(w_hm, f, frames, 4) < t_ratio * _rise(w_hl, f, frames, 4):
-			continue
-		var is_voc := voc[f] >= voc_min
-		if not is_voc and float(e[3]) * relax < 1.0:
-			continue
-		e.append(is_voc)
+		e.append(voc[int(e[2])] >= voc_min)
 		kept.append(e)
 	_normalize(kept)
 	for i in kept.size():
@@ -999,9 +998,39 @@ static func analyze(pcm: PackedFloat32Array, rate: int, params: Dictionary = {})
 	var res := {"ok": true, "error": "", "duration_ms": duration_ms, "events": events, "energy": energy,
 			"frame_ms": frame_ms, "sections": sections}
 	if p.get("debug", false):
-		res["debug"] = {"f_lowp": f_lowp, "f_pm": f_pm, "f_ph": f_ph, "f_hl": f_hl, "f_hm": f_hm, "voc": voc,
+		res["debug"] = {"f_kick": f_kick, "f_bass": f_bass, "f_mid": f_mid, "f_hi": f_hi, "voc": voc,
 				"spec": spec, "refs": hp.refs, "floor_ref": hp.floor_ref, "hb": hp.hb, "nb": nb}
 	return res
+
+
+## Gehaltener Anteil des Einsatzes: Zuwachs der Zeit-Median-Leistung (3..5 Frames danach gegen 1..3
+## Frames davor) / Zuwachs der Rohleistung (Spitze f..f+2 gegen davor). Ein Schlag ueber einem
+## liegenden Ton aendert den Zeit-Median kaum (-> 0), ein neuer Ton hebt ihn (-> 1).
+static func _held(wh: PackedFloat32Array, sr: PackedFloat32Array, f: int, frames: int) -> float:
+	var pk := 0.0
+	for g in range(f, mini(f + 3, frames)):
+		pk = maxf(pk, sr[g])
+	var hb := 0.0
+	var sb := 0.0
+	var cb := 0
+	for g in range(maxi(f - 3, 0), f):
+		hb += wh[g]
+		sb += sr[g]
+		cb += 1
+	if cb > 0:
+		hb /= cb
+		sb /= cb
+	var acc := 0.0
+	var c := 0
+	for g in range(f + 3, mini(f + 6, frames)):
+		acc += wh[g]
+		c += 1
+	if c == 0:
+		return 0.0
+	var d_raw := pk - sb
+	if d_raw <= 1e-12:
+		return 0.0
+	return maxf(acc / c - hb, 0.0) / d_raw
 
 
 ## Anstieg einer Leistungs-Spur am Anschlag-Frame f: Hoechstwert in f..f+ahead gegen 2 Frames vorher, >= 0.
