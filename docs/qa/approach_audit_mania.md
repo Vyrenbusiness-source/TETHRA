@@ -143,3 +143,76 @@ weltabhaengige Sichtgrenze, die Horizont-Glut liegt hinter `Z_FAR`).
 - Autoplay im Fenster (Monitor 2, Dummy-Audio), je 45 s: 3D `--sv --scroll=40`
   und 2D `--sv --scroll=5`; 3D-Shot bei 30 s. Kein SCRIPT ERROR, kein ERROR.
 - Headless: `run_sv_mod_tests.gd` 143 bestanden, `run_sv_tests.gd` 20 bestanden.
+
+## 2D Pop-in
+
+Stand: Branch `warmd/mania-2d-popin`, Basis v1.30.0. Nutzer: "manche Noten
+kommen direkt, man hat keine Chance, sie zu treffen", nur im 2D-Feld.
+
+### Messung
+
+`--debug-popin` (Playfield2D, ohne Flag ein bool-Test je Note): je Note der erste
+Frame, in dem der Kopf wirklich im Bild liegt (nach `stage_xf`, im Viewport und
+im Clip, Maske > 0, kein deckendes Control darueber), und die sichtbare Zeit bis
+zur Trefferzeit. Fund = erst nach 15 % der Strecke sichtbar oder weniger als
+70 % der Anflugzeit sichtbar. Ausgabe `POPIN ...` je Fund, `POPIN-SUM ...` am
+Ende. Laeufe: Autoplay im Fenster, je 45 s, Maps ohne SV, Nutzer-Einstellungen
+(Skin `builtin:Kreise`, Spurbreite 135 %, Scroll Speed 8 = 1436 ms Anflug).
+
+Maps: Uncharted Sky (dichte Streams, 90 Noten im Lauf), Strobe Light
+(66 % Holds, 164 Noten), ETERNAL DRAIN [Eternal] (Intro 4,8 s, 658 Noten).
+
+### Ursachen
+
+1. **Intro-/Break-Ring ueber dem Feld.** `BreakOverlay` (240 px, 72 % deckend)
+   lag in der Bildmitte und blieb bis zur Trefferzeit der ersten Note plus
+   380 ms. Mit mittigem Feld deckte er die mittleren Spalten von 33 % bis 67 %
+   der Bildhoehe: die ersten Noten nach Intro und nach jedem Break liefen dort
+   40 % ihrer Anflugzeit hinter dem Ring und kamen kurz vor der Linie wieder
+   heraus. In 3D liegt an der Stelle der Horizont, darum nur 2D. Passt zu
+   "manche Noten" (nur die ersten nach Intro/Break, nur mittlere Spalten).
+   Fix: `Playfield2D.overlay_center_x`, der Ring steht in 2D neben dem Feld
+   (Bildmitte, wenn das Feld links/rechts steht). Passt er nirgends daneben
+   (schmales Fenster), ist er weg, bevor die erste Note ins Feld kommt.
+2. **Skalierung > 100 %.** Das Feld wird um die Kante bei der Linie skaliert,
+   Feld-Y 0 (Spawn) lag dann ausserhalb des Bildes: bei 150 % erschien JEDE
+   Note erst nach 40 % der Strecke. Fix: `Playfield2D.track_top`, `z_to_y` legt
+   den Spawn an die sichtbare Bildkante (FadeIn/Cover rechnen ab dort). Volle
+   Anflugzeit, Linie unveraendert, bei 100 % und darunter keine Aenderung.
+
+Keine Regelaenderung, SV unveraendert. Test `tests/run_popin_2d_tests.gd`
+(vorher 6 FAIL + 2 Skriptfehler, danach 17 bestanden).
+
+### Vorher / nachher
+
+| Lauf | vorher: Funde, kleinste Sichtzeit | nachher |
+|---|---|---|
+| Intro, 1280x720, Nutzer-Einstellungen | 6 Noten, 59 % (erst-sichtbar 0 %, dann verdeckt) | 0, 99 % |
+| Intro, Scroll Speed 30 (383 ms) | 3 Noten, 59 % | 0, 91 % |
+| Intro, osu!-Skin BubbleSkinHappyEdit, eigene HitPosition 420 | 7 Noten, 61 % | 0, 98 % |
+| Intro, 1920x1061 | 0, 72 % (Ring kleiner im Verhaeltnis) | nicht neu gemessen |
+| Skalierung 150 % | 90 von 90, erst bei 40 % der Strecke, 60 % | 0, 100 % |
+| Skalierung 150 %, Scroll nach oben, osu!-Skin | 90 von 90, erst bei 35 %, 66 % | 0, 100 % |
+| Skalierung 125 %, Holds | nicht gemessen | 0, 100 % |
+| Intro, Feld links, eigene Werte | nicht gemessen | 0, 95 % |
+| Intro, Fenster 640x720 (Ring passt nicht daneben) | nicht gemessen | 0, 94 % |
+
+### Ohne Fund gemessen (vorher, je 0 Funde, Sichtzeit >= 96 %)
+
+1680x1050 (16:10); eingebauter Look Balken und Kreise (`--skin2d=`);
+osu!-Skins BubbleSkinHappyEdit (Holds) und Aoki 1.2; eigene Werte HitPosition
+300 und 480 + Feld links; Skalierung 50 %; Scroll nach oben; Scroll nach oben +
+Skalierung 70 % (Holds); Spurbreite 70 %; Hidden; Cover von unten (75 %, Wirkung
+des Mods); Konstant; Scroll Speed 5 und 30; Holds-Map.
+
+Gewollt, kein Fund: FadeIn (Noten ab 15 % sichtbar, 83 %), Cover 50 % von oben
+(ab 38 %, 62 %): das ist die Wirkung des Mods.
+
+### Nicht gemessen
+
+- 2560x1440: der Testmonitor begrenzt das Fenster auf 1061 Zeilen.
+- Break mitten im Song: in der Stichprobe keine Map ohne SV mit Break in den
+  ersten 45 s. Gleicher Ring, gleicher Code wie beim Intro.
+- Pause/Resume, Retry, Intro-Skip: brauchen Eingaben, per Autoplay nicht
+  ausgeloest. Im Code: Pause haelt die Uhr, das 3-2-1 ist nur Text.
+- Echte Eingaben (Misses, fruehes Druecken): Autoplay trifft alles.
