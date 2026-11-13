@@ -101,8 +101,8 @@ func _ready() -> void:
 var chat: Control
 
 
-func _make_chat() -> void:
-	if DisplayServer.get_name() == "headless" and not OS.get_cmdline_args().has("--chat-headless"):
+func _make_chat(force: bool = false) -> void:
+	if not force and DisplayServer.get_name() == "headless" and not OS.get_cmdline_args().has("--chat-headless"):
 		return
 	var layer := CanvasLayer.new()
 	layer.name = "ChatLayer"
@@ -110,6 +110,8 @@ func _make_chat() -> void:
 	add_child(layer)
 	chat = load("res://scripts/ui/chat_overlay.gd").new()
 	layer.add_child(chat)
+	# _process ist aus (nur Clips): die Sperre laeuft am Bild-Signal des Baums.
+	get_tree().process_frame.connect(_gate_chat)
 
 
 ## Replay zur md5 in der Bibliothek suchen (md5 = "<osz-Dateiname>|<version>"),
@@ -146,6 +148,24 @@ func _start_clip() -> void:
 
 
 ## Clip-Modus: sobald die Results stehen (Mania3D._ended), 3 s warten, dann beenden.
+## Chat-Taste F nur ausserhalb der Spielszenen: F ist in Rebound/Rally/Mania eine
+## Spieltaste. ChatOverlay kennt nur Mania/Orbit, darum sperrt GameSession die Eingabe
+## des Overlays in allen sechs Modi (und im Bild des Szenenwechsels, Szene == null).
+static func chat_input_allowed(scene_path: String) -> bool:
+	return scene_path != "" and playtime_mode_of(scene_path) == null
+
+
+func _gate_chat() -> void:
+	if chat == null:
+		return
+	var cur := get_tree().current_scene
+	var allow := chat_input_allowed(cur.scene_file_path if cur != null else "")
+	if chat.is_processing_input() != allow:
+		chat.set_process_input(allow)
+	if not allow and chat.has_method("is_open") and chat.is_open():
+		chat.close()
+
+
 func _process(_dt: float) -> void:
 	if clip_md5 == "":
 		return

@@ -26,7 +26,7 @@ trap cleanup EXIT
 
 rc=0
 run() {  # run <modus> <gruppe> <faelle> [extra-flags...]
-	local mode=$1 group=$2 cases=$3; shift 3
+	local mode=$1 group=$2 cases=${QA_CASES:-$3}; shift 3
 	[ -z "$ONLY_MODE" ] || [ "$ONLY_MODE" = "$mode" ] || return 0
 	[ -z "$ONLY_GROUP" ] || [ "$ONLY_GROUP" = "$group" ] || return 0
 	local log="$OUT/${mode}_${group}.log"

@@ -254,6 +254,11 @@ func _wait_scene(old_id: int) -> Node:
 	return null
 
 
+func _chat_open() -> bool:
+	var chat = _gs.get("chat")
+	return chat != null and chat.has_method("is_open") and bool(chat.is_open())
+
+
 func _stats(sc: Node) -> Dictionary:
 	return sc.core.stats()
 
@@ -474,6 +479,7 @@ func _case_retry() -> void:
 		return
 	_info("vor-retry", _brief(r.stats))
 	var score_before := int(r.stats.get("score", 0))
+	_check(not _chat_open(), "chat-zu", "Chat-Overlay (Taste F) darf im Spiel nicht aufgehen")
 	var old_id := sc.get_instance_id()
 	await _tap(KEY_R)
 	sc = await _wait_scene(old_id)
@@ -495,9 +501,6 @@ func _case_retry() -> void:
 	score_before = int(r.stats.get("score", 0))
 	await _frames(3)
 	await _tap(KEY_ESCAPE)
-	if not paused:
-		_info("escape-ohne-wirkung", "t=%d countdown=%s ended=%s fokus=%s" % [int(sc._time_ms()), str(sc.get("_countdown_running")), str(sc.get("_ended")), str(root.gui_get_focus_owner())])
-		await _tap(KEY_ESCAPE)
 	var pm = sc.get("_pause_menu")
 	old_id = sc.get_instance_id()
 	if _check(paused and pm != null and pm.visible, "retry-pausenmenue", "paused=%s" % paused):
