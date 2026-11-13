@@ -409,9 +409,16 @@ static func meta_from_beatmap(bm: Beatmap, osz_path: String, osu_filename: Strin
 		"length_ms": int(bm.duration_ms()),
 		"total_notes": bm.hit_objects.size(),
 		"stars": stars,
-		"ranked": true,
+		"ranked": not AmWriter.is_auto_set(osz_path),
 		"osz_path": osz_path,
 	}
+
+
+## Set vom Auto-Mapper (eigene Musik): Creator "OMEN Auto" oder Dateiname
+## "... (OMEN Auto).osz". Solche Sets sind unranked und erzeugen nie Online-Scores.
+static func is_auto_map(meta: Dictionary) -> bool:
+	return str(meta.get("creator", "")) == AmWriter.CREATOR \
+		or AmWriter.is_auto_set(str(meta.get("osz_path", "")))
 
 
 static func _md5_bytes(bytes: PackedByteArray) -> String:
@@ -514,6 +521,8 @@ static func classify_submit(code: int, text: String) -> Dictionary:
 func submit(result: Dictionary, meta: Dictionary, mode: String = "mania") -> bool:
 	if not enabled() or not logged_in() or str(meta.get("md5", "")) == "":
 		return false
+	if is_auto_map(meta):
+		return false  # aus eigener Musik erzeugt: immer unranked, nie online
 	var body := build_body(result, meta, mode)
 	var osz := str(meta.get("osz_path", ""))
 	var ver := str(meta.get("difficulty", ""))
@@ -696,7 +705,7 @@ static func backfill_candidates(entries: Array, done_keys: Array, osz_files: Dic
 		var f := str(e.get("osz_file", "")).get_file()
 		var v := str(e.get("version", ""))
 		var key := backfill_key(f, v)
-		if done_keys.has(key) or seen.has(key) or not osz_files.has(f):
+		if done_keys.has(key) or seen.has(key) or not osz_files.has(f) or AmWriter.is_auto_set(f):
 			continue
 		seen[key] = true
 		out.append({"key": key, "osz_file": f, "osz_path": str(osz_files[f]),

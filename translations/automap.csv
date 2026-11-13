@@ -1,0 +1,22 @@
+keys,de,en
+Check the beat,Takt prüfen,Check the beat
+"The click should land exactly on the beat of the music. If it runs twice as fast, half as fast or between the beats, correct it here and regenerate.","Der Klick soll genau auf dem Schlag der Musik liegen. Läuft er doppelt so schnell, halb so schnell oder zwischen den Schlägen, korrigiere es hier und erzeuge neu.","The click should land exactly on the beat of the music. If it runs twice as fast, half as fast or between the beats, correct it here and regenerate."
+Tempo,Tempo,Tempo
+Offset,Versatz,Offset
+×0.5,"×0,5",×0.5
+×1.5,"×1,5",×1.5
+×2,×2,×2
+−5 ms,−5 ms,−5 ms
++5 ms,+5 ms,+5 ms
+Looks right,Passt,Looks right
+Regenerate,Neu erzeugen,Regenerate
+Decoding audio,Audio wird gelesen,Decoding audio
+Finding the beat,Takt wird gesucht,Finding the beat
+Listening to the music,Musik wird ausgewertet,Listening to the music
+Placing notes,Noten werden gesetzt,Placing notes
+Writing the set,Set wird geschrieben,Writing the set
+1 song in “own songs” has no map yet,1 Song in „own songs“ hat noch keine Map,1 song in “own songs” has no map yet
+%d songs in “own songs” have no map yet,%d Songs in „own songs“ haben noch keine Map,%d songs in “own songs” have no map yet
+Not now,Jetzt nicht,Not now
+Create 4K maps,4K-Maps erzeugen,Create 4K maps
+"ffmpeg is missing, so music cannot be analysed","ffmpeg fehlt, Musik kann nicht ausgewertet werden","ffmpeg is missing, so music cannot be analysed"
