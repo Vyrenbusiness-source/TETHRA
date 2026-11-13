@@ -260,7 +260,7 @@ func _build_page() -> Control:
 	top.add_child(sc)
 	sc.add_child(_tag(tr("ZIELSTREUUNG")))
 	_scatter = Control.new()
-	_scatter.custom_minimum_size = Vector2(164, 150)
+	_scatter.custom_minimum_size = Vector2(188, 150)
 	_scatter.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_scatter.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_scatter.draw.connect(_draw_scatter)

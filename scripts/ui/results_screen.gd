@@ -789,6 +789,10 @@ func _add_fail_marker(graphs: Control) -> void:
 	if trace_box != null and trace_box.get_child_count() > 1:
 		target = trace_box.get_child(trace_box.get_child_count() - 1)
 	var label_txt := fail_text()
+	# Stelle des Fails unbekannt (Modus ohne Laengenangabe): Verlauf nicht stauchen,
+	# die Ueberschrift "bis zum Fail" genuegt.
+	if f < 0.0 and target != null:
+		return
 	if target == null:
 		var l := _caption(label_txt.to_upper())
 		l.add_theme_color_override("font_color", FAIL_COLOR.lerp(CAPTION, 0.35))
