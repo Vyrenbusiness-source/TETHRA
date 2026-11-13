@@ -29,6 +29,9 @@ const FADE_H := 26.0
 const COL_SIDE := Color(0.084, 0.080, 0.075)
 const COL_CARD := Color(0.131, 0.126, 0.117)
 const COL_ROW_HOVER := Color(0.925, 0.902, 0.855, 0.035)
+const COL_ROW_FOCUS := Color(0.949, 0.635, 0.227, 0.07)
+const ROW_PAD := 10                  ## Einzug von Abschnittstitel, Zeile und Hinweis (ein Raster)
+const SECTION_GAP := 30              ## Abstand zwischen Abschnitten
 const COL_SEP := Color(0.925, 0.902, 0.855, 0.07)
 
 ## Seiten: id -> [Titel, Untertitel, Modi (leer = allgemein), Vorschau ("", "2d", "world")]
@@ -230,12 +233,12 @@ func _arrange(id: String) -> void:
 		return
 	var cols := HBoxContainer.new()
 	cols.name = "Cols"
-	cols.add_theme_constant_override("separation", 14)
+	cols.add_theme_constant_override("separation", 44)
 	vb.add_child(cols)
 	var a := VBoxContainer.new()
 	var b := VBoxContainer.new()
 	for col in [a, b]:
-		col.add_theme_constant_override("separation", 14)
+		col.add_theme_constant_override("separation", SECTION_GAP)
 		col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		cols.add_child(col)
 	var total := 0
@@ -274,10 +277,10 @@ func _build_sidebar(parent: Control) -> void:
 	var title := Label.new()
 	title.text = "Einstellungen"
 	title.add_theme_font_override("font", UiTheme.heading_font(0))
-	title.add_theme_font_size_override("font_size", 20)
+	title.add_theme_font_size_override("font_size", 17)
 	title.add_theme_color_override("font_color", UiTheme.TEXT)
 	col.add_child(title)
-	col.add_child(_vgap(12))
+	col.add_child(_vgap(14))
 
 	_search = LineEdit.new()
 	_search.placeholder_text = "Einstellung suchen…"
@@ -295,7 +298,7 @@ func _build_sidebar(parent: Control) -> void:
 	col.add_child(_side_label("Modus"))
 	col.add_child(_vgap(6))
 	var seg := HBoxContainer.new()
-	seg.add_theme_constant_override("separation", 2)
+	seg.add_theme_constant_override("separation", 0)
 	col.add_child(seg)
 	for m in 3:
 		var b := Button.new()
@@ -337,9 +340,9 @@ func _build_sidebar(parent: Control) -> void:
 func _build_content(parent: Control) -> void:
 	var m := MarginContainer.new()
 	m.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	m.add_theme_constant_override("margin_left", PAD)
+	m.add_theme_constant_override("margin_left", PAD + 4)
 	m.add_theme_constant_override("margin_right", PAD)
-	m.add_theme_constant_override("margin_top", 16)
+	m.add_theme_constant_override("margin_top", 18)
 	m.add_theme_constant_override("margin_bottom", 0)
 	parent.add_child(m)
 	var col := VBoxContainer.new()
@@ -355,7 +358,7 @@ func _build_content(parent: Control) -> void:
 	head.add_child(tcol)
 	_title = Label.new()
 	_title.add_theme_font_override("font", UiTheme.heading_font(0))
-	_title.add_theme_font_size_override("font_size", 22)
+	_title.add_theme_font_size_override("font_size", 28)
 	_title.add_theme_color_override("font_color", UiTheme.TEXT)
 	tcol.add_child(_title)
 	_subtitle = Label.new()
@@ -405,8 +408,8 @@ func _build_content(parent: Control) -> void:
 	wrap.add_child(_scroll)
 	var stack := MarginContainer.new()
 	stack.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	stack.add_theme_constant_override("margin_top", 16)
-	stack.add_theme_constant_override("margin_bottom", 20)
+	stack.add_theme_constant_override("margin_top", 22)
+	stack.add_theme_constant_override("margin_bottom", 24)
 	stack.add_theme_constant_override("margin_right", 14)
 	stack.name = "Stack"
 	_scroll.add_child(stack)
@@ -425,7 +428,7 @@ func _build_content(parent: Control) -> void:
 	_pv_col = VBoxContainer.new()
 	_pv_col.add_theme_constant_override("separation", 8)
 	var pvm := MarginContainer.new()
-	pvm.add_theme_constant_override("margin_top", 16)
+	pvm.add_theme_constant_override("margin_top", 22)
 	pvm.add_theme_constant_override("margin_bottom", 20)
 	pvm.add_child(_pv_col)
 	body.add_child(pvm)
@@ -477,7 +480,7 @@ func _side_label(t: String) -> Label:
 
 func _new_page(id: String) -> VBoxContainer:
 	var vb := VBoxContainer.new()
-	vb.add_theme_constant_override("separation", 14)
+	vb.add_theme_constant_override("separation", SECTION_GAP)
 	vb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	vb.visible = false
 	_scroll.get_node("Stack").add_child(vb)
@@ -1193,13 +1196,9 @@ func _refresh_2d_preview() -> void:
 ## Gruppe = ruhige Karte: Titel (Satzschreibung) + "Zuruecksetzen", darunter Zeilen
 ## mit Haarlinien. Gibt die Zeilen-Box zurueck.
 func _group(pg: VBoxContainer, title: String, resettable: bool = true) -> VBoxContainer:
+	# Flacher Abschnitt wie in Menue und Lobby: Titel, Haarlinie, Zeilen. Keine Karte.
 	var card := PanelContainer.new()
-	var cb := UiTheme.solid_box(COL_CARD, 12)
-	cb.set_border_width_all(1)
-	cb.border_color = Color(UiTheme.TEXT, 0.07)
-	cb.content_margin_top = 4
-	cb.content_margin_bottom = 4
-	card.add_theme_stylebox_override("panel", cb)
+	card.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 	pg.add_child(card)
 	if _build_pg != "":
 		_pages[_build_pg].cards.append(card)
@@ -1207,20 +1206,22 @@ func _group(pg: VBoxContainer, title: String, resettable: bool = true) -> VBoxCo
 	col.add_theme_constant_override("separation", 0)
 	card.add_child(col)
 	var head := HBoxContainer.new()
-	head.custom_minimum_size = Vector2(0, 34)
+	head.custom_minimum_size = Vector2(0, 30)
 	var hm := MarginContainer.new()
-	hm.add_theme_constant_override("margin_left", 14)
-	hm.add_theme_constant_override("margin_right", 8)
+	hm.add_theme_constant_override("margin_left", ROW_PAD)
+	hm.add_theme_constant_override("margin_right", ROW_PAD - 6)
 	hm.add_child(head)
 	col.add_child(hm)
 	var l := Label.new()
 	l.text = title
 	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	l.add_theme_font_override("font", UiTheme.heading_font(0))
-	l.add_theme_font_size_override("font_size", 14)
+	l.add_theme_font_override("font", UiTheme.heading_font(1))
+	l.add_theme_font_size_override("font_size", 16)
 	l.add_theme_color_override("font_color", UiTheme.TEXT)
 	head.add_child(l)
+	col.add_child(_vgap(4))
+	col.add_child(UiTheme.hairline())
 	var rows := VBoxContainer.new()
 	rows.add_theme_constant_override("separation", 0)
 	rows.set_meta("title", title)
@@ -1269,14 +1270,33 @@ func _row(rows: VBoxContainer, cap: String, ctrl: Control, tip: String = "",
 	row.custom_minimum_size = Vector2(0, ROW_H)
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = Color(0, 0, 0, 0)
-	sb.content_margin_left = 14
-	sb.content_margin_right = 14
+	sb.content_margin_left = ROW_PAD
+	sb.content_margin_right = ROW_PAD
 	if not first:
 		sb.border_width_top = 1
 		sb.border_color = COL_SEP
 	row.add_theme_stylebox_override("panel", sb)
-	row.mouse_entered.connect(func(): sb.bg_color = COL_ROW_HOVER)
-	row.mouse_exited.connect(func(): sb.bg_color = Color(0, 0, 0, 0))
+	# Zeile hebt sich unter der Maus und bei Tastaturfokus der Bedienung ab.
+	var st := {"hover": false, "focus": 0}
+	var paint := func():
+		sb.bg_color = COL_ROW_FOCUS if int(st.focus) > 0 else (COL_ROW_HOVER if st.hover else Color(0, 0, 0, 0))
+	row.mouse_entered.connect(func():
+		st.hover = true
+		paint.call())
+	row.mouse_exited.connect(func():
+		st.hover = false
+		paint.call())
+	var focusables: Array = [ctrl]
+	focusables.append_array(ctrl.find_children("*", "Control", true, false))
+	for fc in focusables:
+		if (fc as Control).focus_mode == Control.FOCUS_NONE:
+			continue
+		(fc as Control).focus_entered.connect(func():
+			st.focus = int(st.focus) + 1
+			paint.call())
+		(fc as Control).focus_exited.connect(func():
+			st.focus = maxi(int(st.focus) - 1, 0)
+			paint.call())
 	rows.add_child(row)
 	var h := HBoxContainer.new()
 	h.add_theme_constant_override("separation", 16)
@@ -1330,8 +1350,8 @@ func _hint_label(rows: VBoxContainer, t: String) -> Label:
 	l.add_theme_font_size_override("font_size", 12)
 	l.add_theme_color_override("font_color", UiTheme.DIM)
 	var m := MarginContainer.new()
-	m.add_theme_constant_override("margin_left", 14)
-	m.add_theme_constant_override("margin_right", 14)
+	m.add_theme_constant_override("margin_left", ROW_PAD)
+	m.add_theme_constant_override("margin_right", ROW_PAD)
 	m.add_theme_constant_override("margin_bottom", 10)
 	m.add_child(l)
 	rows.add_child(m)
@@ -1547,18 +1567,25 @@ func _update_mode_buttons() -> void:
 		var b := _mode_btns[i]
 		var on := i == _mode
 		b.set_pressed_no_signal(on)
-		var sb := UiTheme.solid_box(UiTheme.ACCENT if on else UiTheme.RAISED, 6)
-		sb.content_margin_left = 4
-		sb.content_margin_right = 4
+		# Reiter mit Unterstrich wie die Modus-Leiste der Lobby, keine gefuellte Pille.
+		var sb := StyleBoxFlat.new()
+		sb.bg_color = Color(0, 0, 0, 0)
+		sb.border_width_bottom = 2 if on else 1
+		sb.border_color = UiTheme.ACCENT if on else UiTheme.LINE
+		sb.content_margin_left = 2
+		sb.content_margin_right = 2
+		sb.content_margin_bottom = 5 if on else 6
 		var hv: StyleBoxFlat = sb.duplicate()
-		hv.bg_color = sb.bg_color.lightened(0.08)
-		for st in ["normal", "pressed", "hover_pressed"]:
+		if not on:
+			hv.border_color = Color(UiTheme.TEXT, 0.34)
+		for st in ["normal", "pressed", "hover_pressed", "focus"]:
 			b.add_theme_stylebox_override(st, sb)
 		b.add_theme_stylebox_override("hover", hv)
-		var fc := UiTheme.ON_ACCENT if on else UiTheme.DIM
+		var fc := UiTheme.TEXT if on else UiTheme.DIM
 		for c in ["font_color", "font_pressed_color", "font_hover_pressed_color"]:
 			b.add_theme_color_override(c, fc)
-		b.add_theme_color_override("font_hover_color", UiTheme.ON_ACCENT if on else UiTheme.TEXT)
+		b.add_theme_color_override("font_hover_color", UiTheme.TEXT)
+		b.add_theme_font_override("font", UiTheme.heading_font(0) if on else UiTheme.body_font())
 
 
 func _rebuild_nav() -> void:
