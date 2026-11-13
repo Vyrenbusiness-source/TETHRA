@@ -71,7 +71,7 @@ const REC_GAP_MS := 8.0
 const Q_LIMIT := 4000
 ## Replay-Format 4 (Satelliten + Anti-Mash: falsche Taste = Miss, Fenster wie osu!standard,
 ## Runde = 2/4 Beats bei schnellen Songs; ab Client 1.28.0). Kleineres meta.orbit_rules = "aeltere Version".
-const REPLAY_RULES := 4
+const REPLAY_RULES := 5
 ## [t, EV_CURSOR, x, y] / [t, EV_DOWN + k] / [t, EV_UP + k]; x/y Tausendstel Feld.
 const EV_CURSOR := 0
 const EV_DOWN := 1

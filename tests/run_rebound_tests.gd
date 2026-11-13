@@ -396,5 +396,15 @@ func _test_anti_mash() -> void:
 	g.setup(one)
 	_ok(RG.wrong_key_check(g, 2, 1700.0) == -1 and g.n_miss == 0, "Druck 300 ms vor Note: nichts (ausserhalb 50er)")
 	# Replay-Regelversion.
-	_ok(RG.replay_current([{"t": -1.0, "lane": -1, "down": false, "rules": RG.REPLAY_RULES}]), "Replay v2 akzeptiert")
+	# Nachzuegler (Regeln 3): Note verpasst, Druck kurz danach trifft die Nachbarspalte nicht.
+	var late := _map([[0, 2000], [1, 2100], [0, 4000]])
+	var h := ManiaCore.new()
+	h.setup(late)
+	var t_late := 2000.0 + h.w50 + 5.0
+	_ok(RG.wrong_key_check(h, 0, t_late) == -1 and h.n_miss == 1, "spaeter Druck nach Miss: keine falsche Taste")
+	h.key_down(0, t_late)
+	h.key_down(1, t_late + 2.0)
+	_ok(h.n_miss == 1 and h.combo == 1, "Nachbarspalte danach noch treffbar")
+	_ok(RG.REPLAY_RULES == 3 and RG.replay_current([{"t": -1.0, "lane": -1, "down": false, "rules": RG.REPLAY_RULES}]), "Replay v3 akzeptiert")
+	_ok(not RG.replay_current([{"t": -1.0, "lane": -1, "down": false, "rules": 2}]), "Replay v2 abgelehnt")
 	_ok(not RG.replay_current(plan), "altes Replay ohne Marke abgelehnt")

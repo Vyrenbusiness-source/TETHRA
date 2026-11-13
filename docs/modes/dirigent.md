@@ -8,6 +8,15 @@ Taktfigur mit Maus/Tablet fuehren (Zielen = Takt) und Einsaetze mit zwei Tasten 
   50er-Fenster eine andere Taste verlangt = "WRONG KEY": dieser Einsatz ist sofort Miss. Akzent
   (beide) zaehlt nur mit beiden Tasten; ein A-/B-Einsatz wird mit seiner Taste gewertet. Richtige
   Taste zuerst, Zusatztaste danach: Treffer bleibt. Replay-Marke rules = 2.
+- **Regeln 3 (2026-11-13, spielbar mit zwei Fingern):**
+  - *Wechselschlag:* folgt ein Einsatz in weniger als `FAST_KEY_MS` = 180 ms auf den vorigen,
+    nimmt er die andere Taste; ein Akzent (beide) mit einem Nachbarn naeher als 180 ms wird ein
+    einfacher Einsatz (`DirigentChart.playable_keys`). Zeiten und Zahl der Einsaetze bleiben.
+    Ab 180 ms gilt die Taste aus der Map (Klang bzw. Spaltenseite).
+  - *Nachzuegler:* nach einem verfehlten Einsatz ist ein Druck seiner Taste bis 50er-Fenster +
+    37 ms frei (einmal): er macht den naechsten Einsatz nicht zum Miss.
+  - Sterne: jeder Einsatz unter 180 ms Abstand zaehlt +0,5 (`STAR_FAST_W`).
+  - Replay-Marke rules = 3 (rules 2 wird abgelehnt). Messwerte: docs/modes/gameplay_tune.md.
 - **Taktfigur**: feste Punkte je Taktart aus dem roten Timing-Point: 4/4 Schlagfigur
   (1 unten, 2 links, 3 rechts, 4 oben), 3/4 Dreieck (unten, rechts, oben), 2/4 (unten, oben),
   6/8 als 2 Hauptschlaege, ungerade Taktarten als Kreis mit n Punkten. Bei Schlaegen < 340 ms

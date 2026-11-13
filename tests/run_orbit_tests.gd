@@ -27,6 +27,7 @@ func _initialize() -> void:
 	_test_determinism()
 	_test_stars()
 	_test_analyze()
+	_test_playable_keys()
 	_test_library()
 	print("=== Ergebnis: %d bestanden, %d fehlgeschlagen ===" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
@@ -283,9 +284,9 @@ func _test_mania_pattern() -> void:
 	# Strom 120 ms: Spalten 0,1,2,3 -> Wechselschlag
 	for i in 4:
 		_add(bm, 1000.0 + 120.0 * i, i)
-	# wiederholter Klang (gleiche Spalte) im Strom: gleiche Taste
+	# wiederholter Klang (gleiche Spalte) im Strom ab 180 ms: gleiche Taste
 	for i in 4:
-		_add(bm, 3000.0 + 120.0 * i, 3)
+		_add(bm, 3000.0 + 220.0 * i, 3)
 	var ns := OrbitConverter.convert(bm)
 	_ok(ns.size() == 8, "8 Ziele (%d)" % ns.size())
 	var alt := ns[1].key != ns[0].key and ns[2].key != ns[1].key and ns[3].key != ns[2].key
@@ -597,3 +598,36 @@ func _test_library() -> void:
 			easy_stars.sort()
 			var q90 := easy_stars[int(easy_stars.size() * 0.9)]
 			_ok(q90 < 2.5, "leichte Diffs (< 2,5 Ziele/s): 90 %% unter 2,5 Sterne (%.2f, %d Diffs)" % [q90, easy_stars.size()])
+
+
+func _test_playable_keys() -> void:
+	print("- Regeln 5: Wechselschlag unter 180 ms")
+	var bm := _std_bm()
+	for i in 12:
+		_circle(bm, 1000.0 + 150.0 * i, 100.0 + 10.0 * i, 100.0, 0)
+	_circle(bm, 3000.0, 100.0, 100.0, 4)   # Akzent mit Nachbar nach 100 ms
+	_circle(bm, 3100.0, 150.0, 100.0, 0)
+	_circle(bm, 4000.0, 200.0, 100.0, 4)   # Akzent, frei
+	_circle(bm, 4400.0, 250.0, 100.0, 0)
+	_circle(bm, 4800.0, 300.0, 100.0, 0)   # langsam: gleiche Taste bleibt
+	var ns := OrbitConverter.convert(bm)
+	var alt := ns.size() == 17
+	for i in range(1, mini(12, ns.size())):
+		alt = alt and ns[i].key != ns[i - 1].key and ns[i].key != OrbitNote.KEY_ACCENT
+	_ok(alt, "std-Strom (150 ms, ein Klang) wechselt A/B, kein Ziel faellt weg (%d)" % ns.size())
+	_ok(ns[12].key == OrbitNote.KEY_A and ns[13].key == OrbitNote.KEY_B, "enger Akzent wird einfaches Ziel, Nachbar wechselt")
+	_ok(ns[14].key == OrbitNote.KEY_ACCENT, "freier Akzent bleibt")
+	_ok(ns[15].key == OrbitNote.KEY_A and ns[16].key == OrbitNote.KEY_A, "ab 180 ms bleibt die Taste des Klangs")
+	OrbitConverter.legacy_keys = true
+	var old := OrbitConverter.convert(bm)
+	OrbitConverter.legacy_keys = false
+	_ok(old[1].key == old[0].key and old[12].key == OrbitNote.KEY_ACCENT, "legacy_keys: Tasten wie vor Regeln 5")
+	# Mania: gleiche Spalte unter 180 ms wechselt jetzt auch.
+	var mb := _mania_bm()
+	for i in 6:
+		_add(mb, 1000.0 + 120.0 * i, 3)
+	var mn := OrbitConverter.convert(mb)
+	var malt := mn.size() == 6
+	for i in range(1, mn.size()):
+		malt = malt and mn[i].key != mn[i - 1].key
+	_ok(malt, "Mania: schnelle gleiche Spalte wechselt A/B")

@@ -16,6 +16,8 @@ const KEY_B := 1
 const CHORD_EPS_MS := 2.0
 ## Zwei Schlaege naeher als das werden zusammengefasst.
 const MERGE_MS := 90.0
+## Kleinster Abstand zweier Baelle in derselben Zone (Regeln v4).
+const SAME_ZONE_MS := 130.0
 ## Leichte Maps (Schlaege/s darunter): nur Achtel, also Mindestabstand 1/4 Beat.
 const LIGHT_NPS := 2.5
 ## Kuerzere Slider/Holds bleiben normale Schlaege.
@@ -95,10 +97,52 @@ static func build(beatmap: Beatmap, flight_ms: float = -1.0, zones: int = 4) -> 
 		if not out.is_empty() and s.t - out[-1].end < gap:
 			continue
 		out.append(s)
+	out = spread_jacks(out, _zones)
 	finalize(out)
 	if flight_ms <= 0.0:
 		flight_ms = DEFAULT_FLIGHT_MS
 	finalize_flight(out, flight_ms)
+	return out
+
+
+## Regeln v4: keine Zone zweimal in weniger als SAME_ZONE_MS (ein Finger je Zone schafft
+## das nicht; bei 3 Zonen entstehen solche Folgen aus Spalte 2+3 der Map). Der Ball weicht
+## in die naechste freie Zone aus (bei Gleichstand die laenger unbenutzte, dann die
+## niedrigere); ist keine frei, entfaellt er. Schmetterball mit belegter Zone wird ein
+## normaler Ball in seiner freien Zone. Zeiten bleiben exakt.
+static func spread_jacks(shots: Array[Shot], zones: int) -> Array[Shot]:
+	var out: Array[Shot] = []
+	var last: Array[float] = []
+	for z in zones:
+		last.append(-INF)
+	for s in shots:
+		var free: Array[int] = []
+		for z in s.zones:
+			if s.t - last[z] >= SAME_ZONE_MS:
+				free.append(int(z))
+		if free.size() < s.zones.size():
+			var pick := -1
+			if not free.is_empty():
+				pick = free[0]
+			else:
+				var from: int = s.zones[0]
+				var best := INF
+				for z in zones:
+					if s.t - last[z] < SAME_ZONE_MS:
+						continue
+					# Abstand zuerst, dann die laenger unbenutzte Zone, dann die niedrigere.
+					var cost := float(absi(z - from)) * 1.0e7 + maxf(last[z], -1.0e6) * 1.0e-3 + float(z) * 1.0e-6
+					if cost < best:
+						best = cost
+						pick = z
+			if pick < 0:
+				continue
+			s.smash = false
+			s.zones = PackedInt32Array([pick])
+			s.key = 0 if pick < 2 else 1
+		for z in s.zones:
+			last[z] = maxf(s.end, s.t)
+		out.append(s)
 	return out
 
 

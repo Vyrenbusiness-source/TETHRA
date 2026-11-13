@@ -384,8 +384,8 @@ func _test_replay() -> void:
 	_ok(a.score == b.score and a.max_combo == b.max_combo and a.n_miss == b.n_miss,
 		"andere Bildrate, gleiche Wertung (%d / %d)" % [a.score, b.score])
 	_ok(a.replay_log.size() > 100 and a.replay_log == b.replay_log, "Event-Log gleich (%d Events)" % a.replay_log.size())
-	_ok(int(a.replay_log[0][1]) == OrbitCore.EV_RULES and int(a.replay_log[0][2]) == 4 and OrbitCore.REPLAY_RULES == 4,
-		"meta orbit_rules = 4 als erster Eintrag")
+	_ok(int(a.replay_log[0][1]) == OrbitCore.EV_RULES and int(a.replay_log[0][2]) == 5 and OrbitCore.REPLAY_RULES == 5,
+		"meta orbit_rules = 5 als erster Eintrag")
 	var codes := {}
 	for e in a.replay_log:
 		codes[int(e[1])] = true

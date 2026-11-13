@@ -10,6 +10,11 @@ Spalte. Nur osu!mania-4K-Maps (Notenfolge, Zeiten und Holds unveraendert, exakt 
   Miss. Richtige Taste zuerst, falsche danach: Treffer bleibt. Druck ohne Note im Fenster =
   nichts. Replays tragen als erstes Ereignis `{lane:-1, rules:2}`; Replays ohne Marke werden
   mit Hinweis abgelehnt. Messwerte: docs/anti_mash.md.
+- **Nachzuegler (Replay-Regeln 3, 2026-11-13):** war die vorige Note der Spalte ein Miss und
+  liegt der Druck im Miss-Fenster um ihre Zeit, galt er dieser Note: kein "WRONG KEY", keine
+  andere Spalte wird Miss. Vorher riss ein einziger zu spaeter Druck in dichten Stellen eine
+  Kette von Misses. Replays mit `rules:2` werden mit Hinweis abgelehnt. Messwerte:
+  docs/modes/gameplay_tune.md.
 - **Wertung = Mania 4K:** `ManiaCore` unveraendert (OD-Fenster, MAX/300/200/100/50/Miss,
   ScoreV1, Holds wie osu!mania stable, Mods wie Mania). Spalte 0-3 = Mania-Tasten 1-4
   (Settings, Standard D F J K). Sterne = Mania-Sterne der Map, keine pp.
