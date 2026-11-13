@@ -898,9 +898,15 @@ func _phase_b(tops: Array, human: Array, n_sets: int, params: Dictionary, t_all:
 		for f in old.get_files():
 			old.remove(f)
 	var meta: Array = []      # je Set: {osz, est: [5], capped: [5]}
+	var tpl_hold: Array = []  # Hold-Anteil der Vorlage (schwerste Menschen-Diff des Sets)
 	for si in picked.size():
 		var top: Dictionary = picked[si]
 		var feats := _features_of(top["notes"], top["kiai"])
+		var th := 0
+		for nt: Dictionary in top["notes"]:
+			if float(nt["end_ms"]) >= 0.0:
+				th += 1
+		tpl_hold.append(float(th) / float(maxi(top["notes"].size(), 1)))
 		var t0 := Time.get_ticks_msec()
 		var all := AmChart.build_all(feats, top["grid"], params)
 		times_ms.append(float(Time.get_ticks_msec() - t0))
@@ -1084,6 +1090,7 @@ func _phase_b(tops: Array, human: Array, n_sets: int, params: Dictionary, t_all:
 	print("| Stellen im leichteren, die im schwereren Profil fehlen | %d |" % subset_bad)
 	print("| Rechenzeit build_all je Set: Mittel / Median / Maximum | %.0f ms / %.0f ms / %.0f ms |" % [_mean(times_ms), _quant(times_ms, 0.5), _quant(times_ms, 1.0)])
 	print("| rosu-Ergebnisse erhalten | %d Sets |" % rosu.size())
+	print("| Hold-Anteil der Vorlagen (Mittel / Median) | %s / %s |" % [_pct(_mean(tpl_hold)), _pct(_quant(tpl_hold, 0.5))])
 	var src_bands := [0, 0, 0, 0, 0, 0]
 	for m: Dictionary in meta:
 		var b := _band_of(float(m["src"]))

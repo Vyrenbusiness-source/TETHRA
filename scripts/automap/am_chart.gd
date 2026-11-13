@@ -37,13 +37,13 @@ const DEFAULTS := {
 	"pitch_step": 0.04,
 	"role_weight": 1.5,           # feste Spalten fuer Kick/Snare je Abschnitt
 	"balance_weight": 6.0,
-	"ngram_weight": 0.6,          # Anteil des 4er-Modells (naechste Zeile nach den 3 vorigen, Menschen-Maps)
-	"sharpness": 1.3,
+	"ngram_weight": 0.95,          # Anteil des 4er-Modells (naechste Zeile nach den 3 vorigen, Menschen-Maps)
+	"sharpness": 2.0,
 	"chord_boost_max": 0.15,      # hoechstens so viel mehr Akkorde, wenn die Sterne nicht reichen
-	"fresh_weight": 0.0,          # Spalte nicht in der vorvorigen/drittletzten Zeile (Menschen laufen ueber alle Spalten)
-	"top_boost": 0.0,             # Zusatzgewicht fuer die 60 haeufigsten 4er-Muster der Menschen im Band
+	"fresh_weight": 1.0,          # Spalte nicht in der vorvorigen/drittletzten Zeile (Menschen laufen ueber alle Spalten)
+	"top_boost": 20.0,             # Zusatzgewicht fuer die 60 haeufigsten 4er-Muster der Menschen im Band
 	"sus_bonus": 0.3,             # gehaltene Toene in der Auswahl bevorzugen (Holds wie bei den Menschen)
-	"figure_weight": 1.8,         # Treppe/Triller/Roll aus Tonhoehe und Hi-Hat-Laeufen
+	"figure_weight": 1.0,         # Treppe/Triller/Roll aus Tonhoehe und Hi-Hat-Laeufen
 	"jack_weight": 2.0,           # Jacks auf den Anteil der Menschen-Maps des Bands halten
 	"easy_hold_max_beats": 2.0,   # Easy/Normal: Hold ohne Ueberlappung hoechstens so lang, Zeilen darin entfallen
 }
@@ -884,6 +884,7 @@ static func _pat_ready(src: Dictionary) -> Dictionary:
 		var pat := {"chord_share": float(b.get("chord_share", fallback_chords[pi])),
 				"chord3_share": float(b.get("chord3_share", 0.02 if pi >= 3 else 0.0)),
 				"hold_share": float(b.get("hold_share_mean", 0.15)),
+				"hold_p90": float(b.get("hold_share_p90", 0.3)),
 				"holds_per_row": clampf(float(b.get("holds_per_row", 1.0)), 1.0, 2.0),
 				"kiai_ratio": clampf(float(b.get("kiai_ratio", 1.3)), 1.0, 2.5),
 				"jack_cap": int(b.get("jack_cap", 8)), "jack_share": float(b.get("jack_share", 0.05))}
@@ -1190,7 +1191,9 @@ static func _make1(C: Dictionary, G: Dictionary, X: Dictionary, d: float, seed_a
 	var holdf := PackedByteArray()
 	holdf.resize(n)
 	# Anteil der Hold-Noten wie bei den Menschen (Holds je Note; Akkord-Zeilen tragen mehr Noten)
-	var kh := int(round(float(pat["hold_share"]) * float(P["hold_share_scale"]) * float(ns)
+	# Obergrenze: 90. Perzentil der Menschen (Songs mit vielen gehaltenen Toenen bekommen mehr Holds,
+	# wie LN-lastige Menschen-Maps); ohne gehaltene Toene keine Holds
+	var kh := int(round(float(pat["hold_p90"]) * float(P["hold_share_scale"]) * float(ns)
 			* (1.0 + float(pat["chord_share"])) / (float(pat["holds_per_row"]) if int(R["overlap"]) == 2 else 1.0)))
 	var goth := 0
 	for r: int in X["sus_rows"]:
@@ -1618,10 +1621,11 @@ static func _choose(S: Array, C: Dictionary, Y: Dictionary, r: int, size: int, f
 		if p >= 0.0:
 			if pp >= 0.0:
 				var dp := p - pp
+				# Gegenrichtung zur Tonhoehe stark bestraft (Musik-Regel vor Muster-Haeufigkeit)
 				if dp > thr:
-					w *= ep if mc > pc + 0.01 else (1.0 / ep if mc < pc - 0.01 else 0.7)
+					w *= ep if mc > pc + 0.01 else (1.0 / (ep * ep) if mc < pc - 0.01 else 0.7)
 				elif dp < -thr:
-					w *= ep if mc < pc - 0.01 else (1.0 / ep if mc > pc + 0.01 else 0.7)
+					w *= ep if mc < pc - 0.01 else (1.0 / (ep * ep) if mc > pc + 0.01 else 0.7)
 				elif gap > 0.25 + EPS and absf(mc - pc) < 0.01:
 					w *= sqrt(ep)
 			else:
