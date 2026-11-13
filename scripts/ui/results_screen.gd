@@ -92,8 +92,48 @@ var _cover_tex: Texture2D
 
 
 func _ready() -> void:
-	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_STOP
+	get_viewport().size_changed.connect(_fit)
+	_fit()
+
+
+func _exit_tree() -> void:
+	var vp := get_viewport()
+	if vp != null and _set_oversampling:
+		vp.oversampling_override = 0.0
+		_set_oversampling = false
+
+
+## Massstab des Endbilds: das Layout ist fuer 1280x720 gebaut und waechst mit dem
+## Fenster (1080p = 1,5x, 1440p = 2x). Schrift bleibt scharf, weil der Viewport
+## die Glyphen im selben Massstab rastert. Die Lobby-Ansicht nutzt ab 1600x900
+## ihr breites Layout (fuer 1920x1080 gebaut) und waechst erst darueber.
+var _u := 1.0
+var _set_oversampling := false
+
+
+func ui_scale_for(v: Vector2, lobby: bool) -> float:
+	if lobby and v.x >= 1600.0 and v.y >= 900.0:
+		return clampf(minf(v.x / 1920.0, v.y / 1080.0), 1.0, 4.0)
+	return clampf(minf(v.x / 1280.0, v.y / 720.0), 0.75, 4.0)
+
+
+func _fit() -> void:
+	if not is_inside_tree():
+		return
+	var v := get_viewport_rect().size
+	_u = ui_scale_for(v, bool(_data.get("lobby", false)))
+	set_anchors_preset(Control.PRESET_TOP_LEFT)
+	position = Vector2.ZERO
+	scale = Vector2(_u, _u)
+	size = v / _u
+	var vp := get_viewport()
+	if not is_equal_approx(_u, 1.0):
+		vp.oversampling_override = _u
+		_set_oversampling = true
+	elif _set_oversampling:
+		vp.oversampling_override = 0.0
+		_set_oversampling = false
 
 
 var _toast: PanelContainer
@@ -212,6 +252,7 @@ func show_results(data: Dictionary) -> void:
 	_pages.clear()
 	_tabs.clear()
 	_page = 0
+	_fit()
 	_cover_tex = _load_cover()
 	_build_background()
 	_build_header()
@@ -221,8 +262,6 @@ func show_results(data: Dictionary) -> void:
 	else:
 		_build_left_panel(_main_row)
 		_build_rank_area(_main_row)
-		if _picture_source() != null:
-			_build_picture_column(_main_row)
 	_build_buttons(group)
 	_shown = true
 	if bool(data.get("lobby", false)):
@@ -502,7 +541,7 @@ func _build_header() -> void:
 	var title := Label.new()
 	title.text = "%s — %s" % [str(_data.get("artist", "")), str(_data.get("title", ""))]
 	title.position = Vector2(tx, 12)
-	title.size = Vector2(maxf(get_viewport_rect().size.x - tx - 300.0, 200.0), 32)
+	title.size = Vector2(maxf(size.x - tx - 300.0, 200.0), 32)
 	title.clip_text = true
 	title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	title.add_theme_font_override("font", UiTheme.heading_font(1))
@@ -635,6 +674,10 @@ func _build_left_panel(parent: Control) -> void:
 		tab_titles.append(tr("Details"))
 	if mode_page.get("content", null) is Control:
 		tab_titles.append(str(mode_page.get("title", tr("Details"))))
+	# Trace: Bild der Runde als eigener Reiter (eine dritte Spalte passt nicht ins Raster).
+	var with_picture := _picture_source() != null
+	if with_picture:
+		tab_titles.append("Bild" if UiTheme.is_german() else "Picture")
 	if not tab_titles.is_empty():
 		top.add_child(_tab_button(tr("Übersicht"), 0))
 		for i in tab_titles.size():
@@ -660,7 +703,7 @@ func _build_left_panel(parent: Control) -> void:
 	var acc_v := _hero_stat("GENAUIGKEIT", fmt_pct(acc), UiTheme.TEXT)
 	_acc_lbl = acc_v.get_meta("value")
 	srow.add_child(acc_v)
-	var combo_v := _hero_stat(str(_data.get("combo_caption", "MAX. KOMBO")),
+	var combo_v := _hero_stat(str(_data.get("combo_caption", tr("MAX. KOMBO"))),
 		"%s×" % fmt_int(int(_stats.get("max_combo", 0))), UiTheme.TEXT)
 	srow.add_child(combo_v)
 	# Modus-Endbilder ohne pp: eigene Kennzahlen statt eines leeren Feldes.
@@ -740,6 +783,11 @@ func _build_left_panel(parent: Control) -> void:
 		mpage.visible = false
 		vb.add_child(mpage)
 		_pages.append(mpage)
+	if with_picture:
+		var ppage := _build_picture_page()
+		ppage.visible = false
+		vb.add_child(ppage)
+		_pages.append(ppage)
 
 
 ## Paket wie im MP (PlayerStatsCard.pack) aus Stats, Offsets und optionalem
@@ -829,11 +877,11 @@ func _add_fail_marker(graphs: Control) -> void:
 	row.add_child(rest)
 
 
-## Breitenanteil des gespielten Verlaufs bei Fail. Mindestens ein Drittel,
-## sonst ist der Verlauf bei fruehem Fail unlesbar.
+## Breitenanteil des gespielten Verlaufs bei Fail. Mindestens 45 %, sonst ist
+## der Verlauf bei fruehem Fail unlesbar und "Start"/"Ende" laufen ineinander.
 func fail_played() -> float:
 	var f := fail_fraction()
-	return clampf(f, 0.35, 0.96) if f >= 0.0 else 0.96
+	return clampf(f, 0.45, 0.96) if f >= 0.0 else 0.96
 
 
 ## Kennzahl neben dem Score: kleine Beschriftung, Wert darunter.
@@ -1108,35 +1156,56 @@ func render_picture(sz: Vector2i) -> Image:
 	return null
 
 
-func _build_picture_column(parent: Control) -> void:
-	var col := VBoxContainer.new()
-	col.custom_minimum_size = Vector2(PICTURE_TILE, 0)
-	col.alignment = BoxContainer.ALIGNMENT_CENTER
-	col.add_theme_constant_override("separation", 12)
-	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	parent.add_child(col)
-	col.add_child(_caption(tr("BILD DER RUNDE")))
+func _build_picture_page() -> Control:
+	var page := HBoxContainer.new()
+	page.name = "PicturePage"
+	page.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	page.add_theme_constant_override("separation", 28)
+	page.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var tile := PanelContainer.new()
 	tile.name = "PictureTile"
 	tile.custom_minimum_size = Vector2(PICTURE_TILE, PICTURE_TILE)
+	tile.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	tile.clip_contents = true
 	tile.add_theme_stylebox_override("panel", UiTheme.solid_box(UiTheme.RAISED, 10))
 	var tr_rect := TextureRect.new()
 	tr_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	tr_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	tr_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var thumb := render_picture(Vector2i(560, 560))
+	var thumb := render_picture(Vector2i(720, 720))
 	if thumb != null:
 		tr_rect.texture = ImageTexture.create_from_image(thumb)
 	tile.add_child(tr_rect)
-	col.add_child(tile)
-	var save_b := _button(tr("Save picture"), false, _on_save_picture)
+	page.add_child(tile)
+	var col := VBoxContainer.new()
+	col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	col.alignment = BoxContainer.ALIGNMENT_CENTER
+	col.add_theme_constant_override("separation", 12)
+	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	page.add_child(col)
+	var german := UiTheme.is_german()
+	col.add_child(_caption("BILD DER RUNDE" if german else "PICTURE OF THE RUN"))
+	var note := Label.new()
+	note.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	note.text = "Deine Linie dieser Runde als Bild, quadratisch und im Teilen-Format." if german 		else "Your line from this run as an image, square and in share format."
+	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	note.add_theme_font_size_override("font_size", 14)
+	note.add_theme_color_override("font_color", CAPTION)
+	col.add_child(note)
+	var gap := Control.new()
+	gap.custom_minimum_size = Vector2(0, 6)
+	gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	col.add_child(gap)
+	var save_b := _button(tr("Bild speichern"), false, _on_save_picture)
 	save_b.name = "SavePictureButton"
+	save_b.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	col.add_child(save_b)
-	var send_b := _button(tr("Send to chat"), false, _on_send_picture)
+	var send_b := _button("In den Chat senden" if german else "Send to chat", false, _on_send_picture)
 	send_b.name = "SendPictureButton"
+	send_b.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	send_b.visible = GameSession.chat != null
 	col.add_child(send_b)
-	_reveal.append(col)
+	return page
 
 
 ## Beide Formate nach user://pictures/ schreiben, Ordner oeffnen. Gibt den Quadrat-Pfad zurueck.
@@ -1677,13 +1746,13 @@ var _narrow := false
 
 
 func _lobby_rank_w() -> float:
-	var w := get_viewport_rect().size.x
+	var w := size.x
 	return clampf(w * 0.235, 290.0, 430.0)
 
 
 func _build_lobby_area(parent: Control) -> void:
 	_main_row.add_theme_constant_override("separation", 20)
-	var vw := get_viewport_rect().size
+	var vw := size
 	_narrow = vw.x < 1600.0 or vw.y < 900.0
 	_lobby_col = VBoxContainer.new()
 	_lobby_col.custom_minimum_size = Vector2(_lobby_rank_w(), 0)
