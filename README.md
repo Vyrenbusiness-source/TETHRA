@@ -24,8 +24,8 @@
 </p>
 
 <p align="center">
-  <a href="docs/media/trailer.mp4"><img src="docs/media/trailer_thumb.webp" alt="TETHRA trailer: six modes, one game" width="100%"></a><br>
-  <sub><a href="docs/media/trailer.mp4"><b>▶ Watch the trailer</b></a> (79 s, all six modes)</sub>
+  <a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=trailer"><img src="docs/media/trailer_thumb.webp" alt="TETHRA trailer: six modes, one game" width="100%"></a><br>
+  <sub><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=trailer"><b>▶ Watch the trailer</b></a> (79 s, all six modes)</sub>
 </p>
 
 <p align="center">
@@ -36,14 +36,14 @@
 
 <table>
   <tr>
-    <td width="33%" align="center"><a href="docs/media/mania.mp4"><img src="docs/media/mania_anim.webp" alt="Mania gameplay" width="100%"></a><br><b>Mania</b><br><sub>osu!mania 4K in 3D worlds or the classic 2D field.<br><a href="docs/media/mania.mp4">▶ Watch with sound</a></sub></td>
-    <td width="33%" align="center"><a href="docs/media/orbit.mp4"><img src="docs/media/orbit_anim.webp" alt="Orbit gameplay" width="100%"></a><br><b>Orbit</b><br><sub>Aim at targets, count the satellite laps, hit on the beat.<br><a href="docs/media/orbit.mp4">▶ Watch with sound</a></sub></td>
-    <td width="33%" align="center"><a href="docs/media/rally.mp4"><img src="docs/media/rally_anim.webp" alt="Rally gameplay" width="100%"></a><br><b>Rally</b><br><sub>Table tennis in the rhythm of the map.<br><a href="docs/media/rally.mp4">▶ Watch with sound</a></sub></td>
+    <td width="33%" align="center"><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=mania"><img src="docs/media/mania_anim.webp" alt="Mania gameplay" width="100%"></a><br><b>Mania</b><br><sub>osu!mania 4K in 3D worlds or the classic 2D field.<br><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=mania">▶ Watch with sound</a></sub></td>
+    <td width="33%" align="center"><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=orbit"><img src="docs/media/orbit_anim.webp" alt="Orbit gameplay" width="100%"></a><br><b>Orbit</b><br><sub>Aim at targets, count the satellite laps, hit on the beat.<br><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=orbit">▶ Watch with sound</a></sub></td>
+    <td width="33%" align="center"><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=rally"><img src="docs/media/rally_anim.webp" alt="Rally gameplay" width="100%"></a><br><b>Rally</b><br><sub>Table tennis in the rhythm of the map.<br><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=rally">▶ Watch with sound</a></sub></td>
   </tr>
   <tr>
-    <td width="33%" align="center"><a href="docs/media/dirigent.mp4"><img src="docs/media/dirigent_anim.webp" alt="Dirigent gameplay" width="100%"></a><br><b>Dirigent</b><br><sub>Conduct the beat with the cursor, play the cues with two keys.<br><a href="docs/media/dirigent.mp4">▶ Watch with sound</a></sub></td>
-    <td width="33%" align="center"><a href="docs/media/trace.mp4"><img src="docs/media/trace_anim.webp" alt="Trace gameplay" width="100%"></a><br><b>Trace</b><br><sub>A glowing thread draws the map as you play it.<br><a href="docs/media/trace.mp4">▶ Watch with sound</a></sub></td>
-    <td width="33%" align="center"><a href="docs/media/rebound.mp4"><img src="docs/media/rebound_anim.webp" alt="Rebound gameplay" width="100%"></a><br><b>Rebound</b><br><sub>Four balls bounce on four drums and land on your notes.<br><a href="docs/media/rebound.mp4">▶ Watch with sound</a></sub></td>
+    <td width="33%" align="center"><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=dirigent"><img src="docs/media/dirigent_anim.webp" alt="Dirigent gameplay" width="100%"></a><br><b>Dirigent</b><br><sub>Conduct the beat with the cursor, play the cues with two keys.<br><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=dirigent">▶ Watch with sound</a></sub></td>
+    <td width="33%" align="center"><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=trace"><img src="docs/media/trace_anim.webp" alt="Trace gameplay" width="100%"></a><br><b>Trace</b><br><sub>A glowing thread draws the map as you play it.<br><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=trace">▶ Watch with sound</a></sub></td>
+    <td width="33%" align="center"><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=rebound"><img src="docs/media/rebound_anim.webp" alt="Rebound gameplay" width="100%"></a><br><b>Rebound</b><br><sub>Four balls bounce on four drums and land on your notes.<br><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=rebound">▶ Watch with sound</a></sub></td>
   </tr>
 </table>
 
@@ -62,8 +62,8 @@ Targets appear on a beat at a place in the field. A satellite circles each targe
 Mods: Hidden, Fade-In and Precision (tighter windows). Your best Orbit runs add up to an Orbit rating in your profile. Settings: laps ahead, target size and cursor size.
 
 <p align="center">
-  <a href="docs/media/orbit.mp4"><img src="docs/media/orbit_anim.webp" alt="Orbit gameplay: targets with circling satellites and lap pips" width="420"></a><br>
-  <sub><a href="docs/media/orbit.mp4"><b>▶ Watch with sound</b></a> · New to Orbit? The game offers a short tutorial the first time you switch to it.</sub>
+  <a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=orbit"><img src="docs/media/orbit_anim.webp" alt="Orbit gameplay: targets with circling satellites and lap pips" width="420"></a><br>
+  <sub><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=orbit"><b>▶ Watch with sound</b></a> · New to Orbit? The game offers a short tutorial the first time you switch to it.</sub>
 </p>
 
 <p align="center">
@@ -82,8 +82,8 @@ You look over the shoulder of your player: the camera sits behind and above your
 - **Miss.** The ball flies past and the opponent serves again for the next note.
 
 <p align="center">
-  <a href="docs/media/rally.mp4"><img src="docs/media/rally_anim.webp" alt="Rally gameplay: the table seen from behind the player, three zones and a ball with the landing ring" width="420"></a><br>
-  <sub><a href="docs/media/rally.mp4"><b>▶ Watch with sound</b></a></sub>
+  <a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=rally"><img src="docs/media/rally_anim.webp" alt="Rally gameplay: the table seen from behind the player, three zones and a ball with the landing ring" width="420"></a><br>
+  <sub><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=rally"><b>▶ Watch with sound</b></a></sub>
 </p>
 
 ## Dirigent: conduct the beat, play the cues
@@ -95,8 +95,8 @@ You do two things at once. With the mouse or pen you lead a conducting pattern: 
 - **Read.** The big point is the current beat with a ring that shrinks to the beat. The next point is small and numbered.
 
 <p align="center">
-  <a href="docs/media/dirigent.mp4"><img src="docs/media/dirigent_anim.webp" alt="Dirigent gameplay: conducting pattern and the cue strip" width="420"></a><br>
-  <sub><a href="docs/media/dirigent.mp4"><b>▶ Watch with sound</b></a></sub>
+  <a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=dirigent"><img src="docs/media/dirigent_anim.webp" alt="Dirigent gameplay: conducting pattern and the cue strip" width="420"></a><br>
+  <sub><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=dirigent"><b>▶ Watch with sound</b></a></sub>
 </p>
 
 
@@ -109,8 +109,8 @@ A glowing thread grows across the field at a steady speed. Every note is a bend 
 - **End.** After the last note the camera zooms out and shows the whole picture of the map.
 
 <p align="center">
-  <a href="docs/media/trace.mp4"><img src="docs/media/trace_anim.webp" alt="Trace gameplay: a glowing thread with arrows at every bend" width="420"></a><br>
-  <sub><a href="docs/media/trace.mp4"><b>▶ Watch with sound</b></a></sub>
+  <a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=trace"><img src="docs/media/trace_anim.webp" alt="Trace gameplay: a glowing thread with arrows at every bend" width="420"></a><br>
+  <sub><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=trace"><b>▶ Watch with sound</b></a></sub>
 </p>
 
 ## Rebound: bounce on the beat
@@ -121,8 +121,8 @@ Four drums in a row, one ball over each. A ball lands on its drum exactly at the
 - **Keys.** The key under each drum, default `D` `F` `J` `K`. Judgement, holds, mods and star rating are the same as in Mania. Only osu!mania 4K maps.
 
 <p align="center">
-  <a href="docs/media/rebound.mp4"><img src="docs/media/rebound_anim.webp" alt="Rebound gameplay: four balls bouncing on four drums" width="420"></a><br>
-  <sub><a href="docs/media/rebound.mp4"><b>▶ Watch with sound</b></a></sub>
+  <a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=rebound"><img src="docs/media/rebound_anim.webp" alt="Rebound gameplay: four balls bouncing on four drums" width="420"></a><br>
+  <sub><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=rebound"><b>▶ Watch with sound</b></a></sub>
 </p>
 
 ## Suggestions for you
@@ -152,8 +152,8 @@ Every mode has a short interactive tutorial. The game offers it the first time y
 Switch on **SV** in the song browser. The mod writes scroll changes from the map's own beat grid: notes bounce on every beat in the chorus, surge, hold, run backwards for a moment and jump on strong beats. They still arrive exactly on time. Two levels: Normal and Strong.
 
 <p align="center">
-  <a href="docs/media/sv_mod.mp4"><img src="docs/media/sv_mod_anim.webp" alt="SV mod in the chorus of The Cyber Grind" width="360"></a><br>
-  <sub>meganeko – The Cyber Grind, a map without its own SV. <a href="docs/media/sv_mod.mp4"><b>▶ Watch with sound</b></a></sub>
+  <a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=sv_mod"><img src="docs/media/sv_mod_anim.webp" alt="SV mod in the chorus of The Cyber Grind" width="360"></a><br>
+  <sub>meganeko – The Cyber Grind, a map without its own SV. <a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=sv_mod"><b>▶ Watch with sound</b></a></sub>
 </p>
 
 ## 3D worlds and the classic 2D field
