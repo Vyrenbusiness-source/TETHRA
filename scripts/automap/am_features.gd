@@ -82,7 +82,7 @@ const DEFAULTS := {
 	"section_window_s": 4.0,
 	"section_min_s": 8.0,
 	"section_novelty": 0.22,
-	"kiai_abs": 0.6, "kiai_margin": 0.2,
+	"kiai_abs": 0.5, "kiai_margin": 0.15,   # beste Variante der Messung ueber 155 Sets
 	"break_max": 0.3,
 	"lead_drums_eps": 4.0, "lead_bass_eps": 2.5, "lead_tonal_eps": 3.0, "lead_vocal_frac": 0.6,
 }

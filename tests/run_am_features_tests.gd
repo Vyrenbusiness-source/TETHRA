@@ -828,9 +828,30 @@ func _measure(maps_dir: String, count: int, own_dir: String, params: Dictionary,
 	var kind_chance := PackedInt32Array()
 	var kind_ev := PackedInt32Array()
 	var kind_on := PackedInt32Array()
-	for arr: PackedInt32Array in [kind_hit, kind_chance, kind_ev, kind_on]:
+	var kind_on_ch := PackedInt32Array()
+	for arr: PackedInt32Array in [kind_hit, kind_chance, kind_ev, kind_on, kind_on_ch]:
 		arr.resize(KINDS.size())
 		arr.fill(0)
+	# Vorlauf je Ebene: der Wert (0..50 ms, 2er-Schritte), bei dem die meisten Ereignisse der Ebene auf Noten liegen
+	var lead_k := PackedFloat32Array()
+	for i in KINDS.size():
+		var best_l := 0.0
+		var best_c := -1
+		for li in 26:
+			var c := 0
+			for s: Dictionary in sets:
+				var ts := PackedFloat32Array()
+				var nts := PackedFloat32Array()
+				for t: float in s.notes:
+					nts.append(t + li * 2.0)
+				for j in s.ev_t.size():
+					if s.ev_k[j] == i:
+						ts.append(s.ev_t[j])
+				c += _within(_nearest(ts, nts, 0.0), 20.0)
+			if c > best_c:
+				best_c = c
+				best_l = li * 2.0
+		lead_k.append(best_l)
 	var n_ev := 0
 	var ev_on := 0
 	var dur_sum := 0.0
@@ -872,8 +893,10 @@ func _measure(maps_dir: String, count: int, own_dir: String, params: Dictionary,
 		chance20 += _within(_nearest(notes, ev_t, lead + 137.0), 20.0)
 		hit20_own += _within(_nearest(notes, ev_t, float(s.lead)), 20.0)
 		var note_shift := PackedFloat32Array()
+		var note_ch := PackedFloat32Array()
 		for t in notes:
 			note_shift.append(t + lead)
+			note_ch.append(t + lead + 137.0)
 		ev_on += _within(_nearest(ev_t, note_shift, 0.0), 20.0)
 		n_ev += ev_t.size()
 		var by_kind: Array[PackedFloat32Array] = []
@@ -886,6 +909,7 @@ func _measure(maps_dir: String, count: int, own_dir: String, params: Dictionary,
 			kind_hit[i] += _within(_nearest(notes, by_kind[i], lead), 20.0)
 			kind_chance[i] += _within(_nearest(notes, by_kind[i], lead + 137.0), 20.0)
 			kind_on[i] += _within(_nearest(by_kind[i], note_shift, 0.0), 20.0)
+			kind_on_ch[i] += _within(_nearest(by_kind[i], note_ch, 0.0), 20.0)
 		dur_sum += float(s.dur)
 		ms_sum += float(s.ms)
 		ms_per_min_max = maxf(ms_per_min_max, float(s.ms) / (float(s.dur) / 60000.0))
@@ -1018,13 +1042,15 @@ func _measure(maps_dir: String, count: int, own_dir: String, params: Dictionary,
 	L.append("## Ist-Werte je Ebene")
 	L.append("")
 	L.append("Recall allein = Anteil der Map-Noten, an denen ein Ereignis genau dieser Ebene liegt (+-20 ms).")
-	L.append("Zufall = derselbe Wert mit um 137 ms verschobenen Noten. Treffer = Anteil der Ereignisse der Ebene auf einer Map-Note.")
+	L.append("Zufall = derselbe Wert mit um 137 ms verschobenen Noten. Treffer = Anteil der Ereignisse der Ebene auf einer Map-Note,")
+	L.append("Treffer-Zufall dasselbe mit verschobenen Noten. Vorlauf der Ebene = Vorlauf, bei dem die Ebene allein die meisten Treffer hat")
+	L.append("(gleich dem globalen Vorlauf = Zeitlage der Ebene stimmt).")
 	L.append("")
-	L.append("| Ebene | Ereignisse/min | Recall allein | Zufall | Treffer |")
-	L.append("|---|---|---|---|---|")
+	L.append("| Ebene | Ereignisse/min | Recall allein | Zufall | Treffer | Treffer-Zufall | Vorlauf der Ebene |")
+	L.append("|---|---|---|---|---|---|---|")
 	for i in KINDS.size():
-		L.append("| %s | %.1f | %.3f | %.3f | %.3f |" % [KINDS[i], kind_ev[i] / mins, float(kind_hit[i]) / n_notes,
-				float(kind_chance[i]) / n_notes, float(kind_on[i]) / maxi(kind_ev[i], 1)])
+		L.append("| %s | %.1f | %.3f | %.3f | %.3f | %.3f | %.0f ms |" % [KINDS[i], kind_ev[i] / mins, float(kind_hit[i]) / n_notes,
+				float(kind_chance[i]) / n_notes, float(kind_on[i]) / maxi(kind_ev[i], 1), float(kind_on_ch[i]) / maxi(kind_ev[i], 1), lead_k[i]])
 	L.append("")
 	L.append("## Hitsounds der Maps als Hinweis (dichteste Diff, nur Sets mit >= 20 Claps)")
 	L.append("")
@@ -1050,6 +1076,23 @@ func _measure(maps_dir: String, count: int, own_dir: String, params: Dictionary,
 	L.append("|---|---|")
 	for key: String in ["drums", "bass", "tonal", "vocal"]:
 		L.append("| %s | %.3f |" % [key, float(lead_cnt[key]) / dur_sum])
+	L.append("")
+
+	L.append("## Grenzen (geschlossen, nicht gemessen)")
+	L.append("")
+	L.append("- Die Maps sagen nicht, welche Ebene eine Note traegt. \"Recall allein\" und \"Treffer\" messen nur, ob Ereignisse einer")
+	L.append("  Ebene auf Map-Noten liegen, nicht ob die Art stimmt. Ob ein Kick wirklich ein Kick ist, belegen nur die Unit-Tests")
+	L.append("  mit kuenstlichen Signalen; die Hitsound-Tabelle ist ein grober Hinweis (Mapper setzen Clap/Finish/Whistle nach Stil).")
+	L.append("- Das Ziel Recall >= 0,95 bei 20 ms ueber die vereinigten Noten aller Diffs ist nicht erreicht: Maps setzen viele Noten")
+	L.append("  ohne eigenen Einsatz (Rhythmus fortgefuehrt, Gitter-Fuellung, Streams). Mehr Ereignisse heben den Recall nur auf")
+	L.append("  Zufallsniveau (Zeile Zufall), deshalb gilt Treffer gegen Treffer-Zufall als Mass fuer echte Einsaetze.")
+	L.append("- Zeitlage: absolut per Klick-Test, die Gruppen Kick/Bass und Ton/Stimme relativ dazu gegen 12 dieser Sets abgestimmt")
+	L.append("  (fester Versatz). Mit 512er-FFT (23 ms) schwanken Tiefton-Baender unter Basstoenen; Kick bleibt die schwaechste Ebene.")
+	L.append("- vocal gegen tonal: Stimme = gleitende Tonhoehe der staerksten Spektrallinie. In dichter, mehrstimmiger Musik springt")
+	L.append("  diese Linie zwischen Instrumenten; Stimme wird dann als tonal erkannt oder umgekehrt. Ohne Wahrheit in den Maps.")
+	L.append("- lead der Abschnitte ist eine Heuristik aus Ereignisdichten und Stimm-Anteil, ohne Wahrheit; Kiai folgt Lautheit und")
+	L.append("  Dichte, Mapper setzen Kiai nach der Liedform (Refrain), die nicht erkannt wird.")
+	L.append("- sustain folgt dem harmonischen Pegel im Band des Tons; ob ein Mapper dort einen Hold setzt, ist Stilfrage.")
 	L.append("")
 
 	# Eigene Songs
