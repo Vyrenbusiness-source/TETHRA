@@ -55,7 +55,7 @@ const DEFAULTS := {
 	"db_w_acc": 0.0,
 	"db_w_hc": 0.5,
 	"db_w_nov": 2.0,
-	"db_w_sec": 0.0,            # Abschnittswechsel ueber 16 Schlaege
+	"db_w_sec": 1.0,           # Abschnittswechsel ueber 16 Schlaege
 	"db_w_first": 2.0,          # Bonus fuer den Schlag des ersten deutlichen Anschlags ...
 	"db_first_mode": 2,       # ... 0 = erster Anschlag, 1 = erster ab Median-Staerke, 2 = erster Bass ab Median
 	"debug": false,
