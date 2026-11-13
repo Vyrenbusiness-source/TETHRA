@@ -964,7 +964,7 @@ func _btn(text: String, primary: bool = false, h: int = BAR_H) -> Button:
 		ds = _box(Color(COL_ACCENT, 0.06), R, Color(COL_ACCENT, 0.28))
 		b.add_theme_font_override("font", _f_display)
 		for fc in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color", "font_hover_pressed_color"]:
-			b.add_theme_color_override(fc, Color(0.02, 0.05, 0.08))
+			b.add_theme_color_override(fc, UiTheme.ON_ACCENT)
 	else:
 		n = _box(Color(1, 1, 1, 0.07), R)
 		hv = _box(Color(1, 1, 1, 0.13), R)
@@ -1615,12 +1615,12 @@ func _refresh_rooms() -> void:
 			var ver := str(o.get("version", ""))
 			var wrong: bool = ver != Lobby.UpdaterS.CURRENT_VERSION
 			var locked := bool(o.get("locked", false))
-			var where := tr("Online")
+			var rcode := str(o.get("code", ""))
+			var where := rcode if rcode != "" else tr("Online")
 			if wrong:
 				where = "v" + ver
 			elif locked:
 				where = tr("Passwort")
-			var rcode := str(o.get("code", ""))
 			_rooms_list.add_child(_room_card(false, str(o.name), int(o.players), where,
 				str(o.get("mode", "mania")), str(o.get("kind", "")), o, func():
 					if wrong:
@@ -2265,7 +2265,7 @@ func _refresh_room() -> void:
 		elif why == "" and not Lobby.all_ready():
 			why = tr("Noch nicht alle sind bereit.")
 		_start_btn.tooltip_text = why
-		_start_btn.add_theme_color_override("font_disabled_color", COL_FAINT)
+		_start_btn.add_theme_color_override("font_disabled_color", Color(COL_DIM, 0.85))
 	else:
 		var me_ready := Lobby.players.has(my_id) and bool(Lobby.players[my_id].get("ready", false))
 		_start_btn.text = UiTheme.sentence(tr("BEREIT") if me_ready else (tr("MAP LÄDT") if _downloading else tr("NICHT BEREIT")))
