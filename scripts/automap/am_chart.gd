@@ -1209,7 +1209,7 @@ static func _make1(C: Dictionary, G: Dictionary, X: Dictionary, d: float, seed_a
 	rng.seed = int(X["seed"]) + seed_add * 7919
 	var Y := {"sel": sel, "holdf": holdf, "rng": rng, "R": R, "pat": pat, "P": P,
 			"jack_cap": mini(int(R["jack"]), maxi(int(pat["jack_cap"]), 1)) if int(R["jack"]) > 0 else 0,
-			"ovl_budget": int(0.85 * float(R["ovl_max"]) * float(ns)), "seed_i": int(X["seed"]) & 3, "avoid": 0,
+			"ovl_budget": int(0.6 * float(R["ovl_max"]) * float(ns)), "seed_i": int(X["seed"]) & 3, "avoid": 0,
 			"ep": exp(float(P["pitch_weight"])), "erole": exp(float(P["role_weight"]))}
 	var S: Array = [-1e9, -1e9, -1e9, -1e9, 0, 0, 0, 0, -1e9, -1e9, -1e9, -1e9, 0, 0, 0, -1e9, -1.0, 1.5, 0, 0, 0, -1e9,
 			-1.0, 1, 0, 0, 0, 0, 0, 0]
