@@ -232,6 +232,44 @@ static func score_tag(data: Dictionary, stage_id: String) -> String:
 	return "%s/%s" % [str(data.get("version", VERSION)), stage_id]
 
 
+# ------------------------------------------------------------------ Start
+
+## Gespeicherte Browser-Schalter (song_select.gd BROWSER_STATE_PATH): Orbit- und Trace-Mods.
+const BROWSER_STATE := "user://browser_state.cfg"
+
+
+## Mods des Spielers fuer einen Modus, genau wie der Song-Browser sie beim Start setzt
+## (song_select._current_mods), nur ohne No Fail: das gibt es in der Kampagne nicht.
+## sv = Settings.mod_sv. Orbit/Trace-Schalter aus browser_state (fehlt = aus).
+static func player_mods(mode: String, sv: bool, browser_path: String = BROWSER_STATE) -> Dictionary:
+	var cfg := ConfigFile.new()
+	var have := cfg.load(browser_path) == OK
+	var out := {"NF": false}
+	var keys: Array = []
+	var saved: Variant = {}
+	match mode:
+		"mania":
+			out["SV"] = sv
+		"orbit":
+			keys = OrbitCore.ORBIT_MODS
+			saved = cfg.get_value("browser", "orbit_mods", {}) if have else {}
+		"trace":
+			keys = TraceMods.MODS
+			saved = cfg.get_value("browser", "trace_mods", {}) if have else {}
+	for k: String in keys:
+		out[k] = bool((saved as Dictionary).get(k, false)) if saved is Dictionary else false
+	return out
+
+
+## Mods eines Stufenstarts: die des Spielers plus die der Stufe (SV); No Fail immer aus.
+static func start_mods(stage: Dictionary, player: Dictionary) -> Dictionary:
+	var out := player.duplicate()
+	for m: Variant in stage.get("mods", []):
+		out[str(m)] = true
+	out["NF"] = false
+	return out
+
+
 # ------------------------------------------------------------------ Ziele
 
 static func grade_value(g: String) -> int:

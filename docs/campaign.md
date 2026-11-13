@@ -16,8 +16,12 @@ Alle Spieler spielen dieselben Maps, damit die Scores vergleichbar sind.
   Zusatz- und Meisterziel zaehlen nur zusammen mit dem Hauptziel. Ein Fail erfuellt nie ein Ziel.
   Erfuellte Ziele bleiben erhalten (Sterne aus mehreren Laeufen addieren sich).
 - Freischaltung: naechste Stufe nach dem Hauptziel, naechstes Kapitel nach der Boss-Stufe.
-- Die Welt des Kapitels wird fuer die Stufe erzwungen (nur im Speicher, die Einstellung des
-  Spielers bleibt). Mods legt die Stufe fest (NF gibt es in der Kampagne nicht).
+- Eine Stufe startet wie ein Start aus dem Song-Browser: eigene Einstellungen (2D/3D, Welt
+  inklusive Auto, Scroll Speed, Skin, Notenfarben, Spurbreite, Hintergrund ...) und eigene Mods
+  des Modus (Mania SV, Orbit HD/FI/PR, Trace MR/HD/SS). Dazu kommen die Mods der Stufe.
+  No Fail gibt es in der Kampagne nicht (`Campaign.start_mods`, `Campaign.player_mods`).
+- Die Kapitel-Welt ist nur Thema der Kampagnen-Ansicht (Kapitelbild, Name), im Spiel laeuft
+  die Welt des Spielers.
 
 Mania-Kapitel (Band = osu!mania-Sternwert der 4K-Diff):
 
@@ -70,8 +74,6 @@ setzt bei Mania die Tastenzahl vor den Namen (`[4K] Easy`), in der .osu steht nu
 - `GameSession.campaign`: laufende Stufe. `ResultsScreen` traegt den Lauf ein und zeigt
   Ziele, Sterne, "Naechste Stufe".
 - Hauptmenue: Zeile "Kampagne" mit Sternestand.
-- Welt des Kapitels: `Settings.world_theme` traegt sie nur, waehrend die Spielszene sich aufbaut
-  (Baum-Eintritt bis ready). Die eigene Wahl des Spielers bleibt in `settings.cfg`.
 - Autoplay (Testflag) traegt nie in den echten Stand ein, nur in eine `--campaign-path`-Datei.
 - Harness echter Stufenlauf: `res://scenes/campaign.tscn --autoplay --shot-campaign-run=<Praefix>
   [--shot-campaign-stage=<Stufe>] --campaign-path=<Testdatei>` startet die Stufe, spielt sie,
@@ -87,7 +89,8 @@ setzt bei Mania die Tastenzahl vor den Namen (`[4K] Easy`), in der .osu steht nu
 ## Tests
 
 `tests/run_campaign_tests.gd`: Datenformat, Ziele, Sterne, Freischaltung, Speichern
-(nur eigene Testdatei).
+(nur eigene Testdatei), Stufenstart mit eigenen Einstellungen in allen 6 Modi
+(`_test_own_settings`) und eigenen Mods (`_test_start_mods`).
 
 ## Offen
 

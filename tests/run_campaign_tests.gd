@@ -96,10 +96,7 @@ func _test_own_settings() -> void:
 				var ch: Dictionary = chs[chs.size() - 1]
 				var id := str(((ch.stages as Array)[0] as Dictionary).id)
 				var tag := "%s (2D %s, Welt %d)" % [mode, str(own_2d), own_world]
-				if gs.get_method_argument_count("start_campaign") == 2:
-					gs.call("start_campaign", id, str(ch.world))   # Stand vor dem Fix
-				else:
-					gs.call("start_campaign", id)
+				gs.start_campaign(id)
 				_ok(gs.campaign_active(), "Stufe laeuft: " + tag)
 				for attempt in 2:   # Start und Neustart der Stufe
 					var game := Node.new()

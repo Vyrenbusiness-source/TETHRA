@@ -698,11 +698,9 @@ func _start_stage() -> void:
 	var loc := _local(st)
 	if st.is_empty() or loc.is_empty() or _shot != "" or not Campaign.stage_open(_data, _state, _stage_id):
 		return
-	var mods := {}
-	for m: Variant in st.get("mods", []):
-		mods[str(m)] = true
-	GameSession.start_campaign(_stage_id, str(_chapter_dict().get("world", "")))
-	GameSession.mods = mods
+	# Wie ein Start aus dem Song-Browser: eigene Mods, eigene Einstellungen (2D/3D, Welt ...).
+	GameSession.start_campaign(_stage_id)
+	GameSession.mods = Campaign.start_mods(st, Campaign.player_mods(str(st.mode), Settings.mod_sv))
 	GameSession.is_replay = false
 	GameSession.replay_events = []
 	GameSession.replay_mode = "mania"
