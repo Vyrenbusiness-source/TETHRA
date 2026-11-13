@@ -300,6 +300,10 @@ func _ready() -> void:
 			var cn := a.trim_prefix("--shot-coll").trim_prefix("=")
 			_active_collection = cn if CollectionStore.exists(cn) else ""
 			_set_collection_mode(true)
+		# Harness: dazu den Dialog "Neue Sammlung" (Modus-Wahl) oeffnen; speichert nichts.
+		if a == "--shot-coll-dialog":
+			_collection_name_dialog.call_deferred(tr("Neue Sammlung"), "", tr("Anlegen"),
+				func(_n: String, _m: String) -> bool: return true, _play_mode)
 	_apply_career_layout()
 	_refresh_filter(_search.text)
 	_state_ready = restore
@@ -5188,7 +5192,7 @@ const REC_STYLE_CAP := 60        # hoechstens so viele neue Diffs je Rechnung au
 const REC_SEEN_PATH := "user://rec_seen.cfg"      # wie oft ein Vorschlag schon gezeigt wurde
 const REC_SEEN_DAYS := 21        # aeltere Eintraege verfallen
 const REC_ONLINE_PATH := "user://rec_online.cfg"  # Antworten der Online-Suche (12 h)
-const REC_ONLINE_N := 3          # Online-Kacheln je Seite
+const REC_ONLINE_N := 2          # Online-Kacheln je Seite (breit genug fuer Grund + "Get")
 
 var _rec := {"levels": {}, "collapsed": false, "hidden": false}
 var _rec_box: VBoxContainer
@@ -5537,11 +5541,16 @@ static func _rec_translations() -> void:
 		var t := load(path) as Translation
 		if t != null:
 			TranslationServer.add_translation(t)
+	# Auch Englisch eintragen: ohne Eintrag greift die Rueckfall-Sprache (de).
 	var de := Translation.new()
 	de.locale = "de"
+	var en := Translation.new()
+	en.locale = "en"
 	for k in REC_DE:
 		de.add_message(k, REC_DE[k])
+		en.add_message(k, k)
 	TranslationServer.add_translation(de)
+	TranslationServer.add_translation(en)
 
 
 func _build_recs() -> void:
@@ -5773,7 +5782,7 @@ func _recs_work(job: Dictionary, tok: int) -> void:
 	res["mode"] = job.mode
 	# Stilprofil (sichtbar) und Suchauftrag fuer Online-Vorschlaege.
 	res["taste"] = tst
-	res["profile"] = Recommender.profile_text(tst)
+	res["profile"] = Recommender.profile_text(tst, 6)
 	res["profile_parts"] = Recommender.profile_parts(tst)
 	var lv := Recommender.LEVEL_EASY if bool(res.starter) else str(job.level)
 	res["query"] = Recommender.online_query(str(job.mode), lv, Recommender.skill(str(job.mode), runs), tst,
@@ -5816,15 +5825,11 @@ func _recs_render() -> void:
 	if starter:
 		_rec_sub.text = tr("Play a few maps to get suggestions")
 		_rec_sub.tooltip_text = ""
-	elif profile != "":
-		# Sichtbares Stilprofil; der Tooltip nennt alle Teile und das Level.
-		_rec_sub.text = profile
-		var parts: Array = _rec_res.get("profile_parts", [])
-		_rec_sub.tooltip_text = "%s\n%s\n%s" % [tr("Your style: %s") % ", ".join(parts), level_txt,
-			tr("From the maps you play in %s") % collection_mode_hint(_play_mode)]
 	else:
 		_rec_sub.text = level_txt
 		_rec_sub.tooltip_text = ""
+	if starter:
+		profile = ""
 	var valid: Array = []
 	for it in _rec_res.get("items", []):
 		var hit = _rec_lookup.get("%s|%s" % [it.set, it.diff])
@@ -5841,6 +5846,8 @@ func _recs_render() -> void:
 	var online := Recommender.page_slice(_rec_on_list, _rec_page, REC_ONLINE_N)
 	var body := VBoxContainer.new()
 	body.add_theme_constant_override("separation", 6)
+	if profile != "" or pages > 1:
+		body.add_child(_rec_profile_row(profile, pages))
 	if items.is_empty():
 		var empty := Label.new()
 		empty.custom_minimum_size = Vector2(0, 30)
@@ -5862,9 +5869,8 @@ func _recs_render() -> void:
 		for i in range(items.size(), n):
 			hb.add_child(_rec_spacer())  # kurze letzte Seite: Kacheln behalten ihre Breite
 		body.add_child(hb)
-	if pages > 1 or not online.is_empty():
-		body.add_child(_rec_foot(pages, not online.is_empty()))
 	if not online.is_empty():
+		body.add_child(_rec_online_caption())
 		var ob := HBoxContainer.new()
 		ob.add_theme_constant_override("separation", 8)
 		for o in online:
@@ -5872,6 +5878,10 @@ func _recs_render() -> void:
 		for i in range(online.size(), REC_ONLINE_N):
 			ob.add_child(_rec_spacer())
 		body.add_child(ob)
+	var gap := Control.new()  # Luft zur Liste
+	gap.custom_minimum_size = Vector2(0, 2)
+	gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	body.add_child(gap)
 	_rec_body = body
 	_rec_box.add_child(_rec_body)
 	_apply_recs_visibility()
@@ -5897,26 +5907,26 @@ func _rec_spacer() -> Control:
 	return c
 
 
-## Zeile unter den Vorschlaegen: links die Ueberschrift der Online-Gruppe,
+## Zeile ueber den Vorschlaegen: links das Stilprofil ("Your style: ..."),
 ## rechts Seite und "Show more".
-func _rec_foot(pages: int, online: bool) -> Control:
+func _rec_profile_row(profile: String, pages: int) -> Control:
 	var row := HBoxContainer.new()
-	row.custom_minimum_size = Vector2(0, 22)
-	row.add_theme_constant_override("separation", 8)
-	if online:
-		var cap := _rec_label(row, "Online", 13, COL_TEXT)
-		cap.add_theme_font_override("font", UiTheme.heading_font(1))
-		cap.clip_text = false
-		cap.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		var hint := _rec_label(row, tr("Not in your library yet"), 12, COL_DIM)
-		hint.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		hint.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	else:
-		row.add_child(_rec_spacer())
+	row.custom_minimum_size = Vector2(0, 20)
+	row.add_theme_constant_override("separation", 10)
+	var pl := _rec_label(row, profile, 12, Color(0.78, 0.80, 0.88))
+	pl.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	pl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	pl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	if profile != "":
+		pl.mouse_filter = Control.MOUSE_FILTER_PASS  # Tooltip: alle Teile des Profils
+		var parts: Array = _rec_res.get("profile_parts", [])
+		pl.tooltip_text = "%s\n%s" % [tr("Your style: %s") % ", ".join(parts),
+			tr("From the maps you play in %s") % collection_mode_hint(_play_mode)]
 	if pages > 1:
-		var pl := _rec_label(row, "%d / %d" % [_rec_page + 1, pages], 12, COL_DIM)
-		pl.clip_text = false
-		pl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		var pg := _rec_label(row, "%d / %d" % [_rec_page + 1, pages], 12, COL_DIM)
+		pg.clip_text = false
+		pg.text_overrun_behavior = TextServer.OVERRUN_NO_TRIMMING
+		pg.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		var more := Button.new()
 		more.text = tr("Show more")
 		more.tooltip_text = tr("Show more suggestions")
@@ -5934,6 +5944,24 @@ func _rec_foot(pages: int, online: bool) -> Control:
 			_rec_page += 1
 			_recs_render())
 		row.add_child(more)
+	return row
+
+
+## Ueberschrift der Online-Gruppe.
+func _rec_online_caption() -> Control:
+	var row := HBoxContainer.new()
+	row.custom_minimum_size = Vector2(0, 18)
+	row.add_theme_constant_override("separation", 8)
+	var cap := _rec_label(row, "Online", 13, COL_TEXT)
+	cap.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	cap.add_theme_font_override("font", UiTheme.heading_font(1))
+	cap.clip_text = false
+	cap.text_overrun_behavior = TextServer.OVERRUN_NO_TRIMMING
+	cap.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	var hint := _rec_label(row, tr("Not in your library yet"), 12, COL_DIM)
+	hint.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	hint.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	hint.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	return row
 
 
@@ -5976,8 +6004,11 @@ func _rec_online_update() -> void:
 	_online.quiet_search(key, text, osu_mode, page * BeatmapMirror.PAGE_SIZE)
 
 
-## Harness-Laeufe (--shot-...) und --no-rec-online fragen den Mirror nie.
+## Harness-Laeufe (--shot-...) und --no-rec-online fragen den Mirror nie;
+## --rec-online erlaubt es einem Harness-Lauf ausdruecklich (Live-Pruefung).
 func _rec_net_off() -> bool:
+	if _arg_value("--rec-online") != null:
+		return false
 	for a in OS.get_cmdline_args() + OS.get_cmdline_user_args():
 		if a.begins_with("--shot") or a == "--no-rec-online" or a == "--screenshot":
 			return true
@@ -6019,7 +6050,7 @@ func _rec_online_card(o: Dictionary) -> Control:
 	btn.focus_mode = Control.FOCUS_NONE
 	btn.clip_contents = true
 	btn.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
-	btn.tooltip_text = "%s - %s\n%s" % [str(o.artist), str(o.title), tr("Click to listen")]
+	btn.tooltip_text = "%s - %s\n%s\n%s" % [str(o.artist), str(o.title), str(o.reason), tr("Click to listen")]
 	UiTheme._attach_sounds(btn)
 	OrbitCareerPanel._style_row(btn, false)
 	btn.pressed.connect(_rec_online_preview.bind(o))
@@ -6086,7 +6117,7 @@ func _rec_mark_preview() -> void:
 	for id in _rec_on_rows:
 		var row: Dictionary = _rec_on_rows[id]
 		if is_instance_valid(row.sub):
-			(row.sub as Label).text = tr("Playing preview") if int(id) == cur else str(row.text)
+			(row.sub as Label).text = tr("Playing preview") if cur > 0 and int(id) == cur else str(row.text)
 
 
 func _rec_online_get(id: int) -> void:
@@ -6146,7 +6177,7 @@ func _shot_recs() -> void:
 			"expected_acc": 0.91 - 0.004 * items.size(), "reason": "",
 			"style_reason": fits[items.size() % fits.size()]})
 	_rec_res = {"mode": _play_mode, "starter": false, "items": items, "comfort": 2.6, "taste": t,
-		"profile": Recommender.profile_text(t), "profile_parts": Recommender.profile_parts(t), "query": {}}
+		"profile": Recommender.profile_text(t, 6), "profile_parts": Recommender.profile_parts(t), "query": {}}
 	_rec_on_list = []
 	var names := ["Glass Harbor", "Second Sun", "Paper Planes at Night", "Low Tide", "Amber Signal",
 		"Slow Circuit", "Northern Line", "Quiet Engine", "Field Notes"]
@@ -6181,7 +6212,9 @@ func _rec_card(it: Dictionary, wide: bool) -> Control:
 	btn.size_flags_stretch_ratio = 1.0
 	btn.focus_mode = Control.FOCUS_NONE
 	btn.clip_contents = true
-	btn.tooltip_text = "%s - %s [%s]" % [ms.artist, ms.title, ms.version_name_at(diff).strip_edges()]
+	btn.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	btn.tooltip_text = "%s - %s [%s]\n%s" % [ms.artist, ms.title, ms.version_name_at(diff).strip_edges(),
+		_rec_reason(it)]
 	UiTheme._attach_sounds(btn)
 	OrbitCareerPanel._style_row(btn, false)
 	btn.pressed.connect(_on_rec_picked.bind(ms, diff))
@@ -6230,9 +6263,22 @@ func _rec_card(it: Dictionary, wide: bool) -> Control:
 		rs.clip_text = false
 		rs.text_overrun_behavior = TextServer.OVERRUN_NO_TRIMMING
 	else:
-		_rec_label(tb, ms.title, 13, COL_TEXT)
-		_rec_label(tb, "%s  ·  %s" % [stars_txt, ver], 11, Color(0.78, 0.80, 0.88))
-		_rec_label(tb, reason, 11, reason_col)
+		# Kachel: Titel + Sterne, darunter der Grund auf bis zu zwei Zeilen.
+		var top := HBoxContainer.new()
+		top.add_theme_constant_override("separation", 6)
+		top.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		tb.add_child(top)
+		var tl := _rec_label(top, ms.title, 13, COL_TEXT)
+		tl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		var sl := _rec_label(top, stars_txt, 11, Color(0.78, 0.80, 0.88))
+		sl.clip_text = false
+		sl.text_overrun_behavior = TextServer.OVERRUN_NO_TRIMMING
+		sl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		var rl := _rec_label(tb, _rec_reason_short(it), 11, reason_col)
+		rl.clip_text = false
+		rl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		rl.max_lines_visible = 2
+		rl.add_theme_constant_override("line_spacing", 0)
 	_rec_rows.append({"btn": btn, "ms": ms, "diff": diff})
 	return btn
 
@@ -6259,7 +6305,17 @@ func _rec_reason(it: Dictionary) -> String:
 	return rec_join_reason(base, str(it.get("style", "")))
 
 
-## Grund + Stil-Grund ("expected 89 % · Jumpstream, like your favourites").
+## Grund fuer die schmale Kachel: "89 %  ·  fits: 180 BPM, Streams" statt
+## "expected 89 %  ·  fits: ...".
+func _rec_reason_short(it: Dictionary) -> String:
+	var style := str(it.get("style", ""))
+	if style == "" or bool(_rec_res.get("starter", false)) or float(it.acc) < 0.0 \
+			or rec_level(_rec, _play_mode) == Recommender.LEVEL_PUSH:
+		return _rec_reason(it)
+	return "%d %%  ·  %s" % [roundi(float(it.acc) * 100.0), style]
+
+
+## Grund + Stil-Grund ("expected 89 %  ·  fits: 180 BPM, Jumpstream").
 static func rec_join_reason(base: String, style: String) -> String:
 	if style == "":
 		return base

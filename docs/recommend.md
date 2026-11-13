@@ -54,9 +54,9 @@ Needs 5 played maps with features.
 
 Note data and tags are read in the background and cached in `user://rec_style.cfg`.
 
-**Visible**: the head line shows `Recommender.profile_text`, at most 4 parts:
-"Your style: Jumpstream, 170-190 BPM, 2.4-3.1 ★, Electronic" (de: "Dein Stil: ...").
-The tooltip lists every part and the level.
+**Visible**: a line above the suggestions shows `Recommender.profile_text`, at most
+5 parts: "Your style: Jumpstream, 170-190 BPM, ★ 2.4-3.1, Electronic" (de: "Dein
+Stil: ..."). Its tooltip lists every part; the head shows the level.
 
 **Bonus**: a matching map gets a bonus worth up to 0.3 stars of distance (Push:
 +30 % gain). Parts: patterns 0.35, artist 0.2, genre/language 0.15, BPM 0.15,
@@ -90,8 +90,8 @@ Maps that are not in the library, as their own group "Online" under the local on
   simply missing, no error text.
 - Ranking (`online_rank`): closest difficulty to the level target, style bonus,
   a little popularity, novelty, one map per artist. Owned sets are removed.
-- Card: cover, title, stars, BPM, reason. Click plays the preview, "Get" downloads
-  through the online browser; the map is selected as soon as it is installed.
+- Card (2 per page): cover, title, stars, BPM, reason. Click plays the preview, "Get"
+  downloads through the online browser; the map is selected as soon as it is installed.
 
 ## Suggestions
 

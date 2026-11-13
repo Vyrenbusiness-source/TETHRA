@@ -601,12 +601,14 @@ static func top_patterns(t: Dictionary, n: int = 2) -> Array:
 	return out
 
 
+## Bereich als Text; Dezimaltrenner nach Sprache (de: Komma).
 static func _range_text(lo: float, hi: float, step: float, fmt: String) -> String:
 	var a := snappedf(lo, step)
 	var b := snappedf(hi, step)
-	if is_equal_approx(a, b):
-		return fmt % a
-	return "%s-%s" % [fmt % a, fmt % b]
+	var txt: String = (fmt % a) if is_equal_approx(a, b) else "%s-%s" % [fmt % a, fmt % b]
+	if TranslationServer.get_locale().begins_with("de"):
+		txt = txt.replace(".", ",")
+	return txt
 
 
 ## Teile des Stilprofils, wichtigste zuerst: Muster, SV, BPM-Bereich,
@@ -621,7 +623,7 @@ static func profile_parts(t: Dictionary) -> Array:
 	if float(t.get("bpm_lo", -1.0)) > 0.0:
 		out.append(_range_text(float(t.bpm_lo), float(t.bpm_hi), 5.0, "%d") + " BPM")
 	if float(t.get("stars_lo", -1.0)) > 0.0:
-		out.append(_range_text(float(t.stars_lo), float(t.stars_hi), 0.1, "%.1f") + " ★")
+		out.append("★ " + _range_text(float(t.stars_lo), float(t.stars_hi), 0.1, "%.1f"))
 	var genre := top_key(t.get("genres", {}), total, 0.3)
 	if genre != "":
 		out.append(TranslationServer.translate(genre.capitalize()))
@@ -637,7 +639,7 @@ static func profile_parts(t: Dictionary) -> Array:
 	return out
 
 
-## Sichtbares Stilprofil, kurz: "Your style: Jumpstream, 170-190 BPM, 2.4-3.1 ★".
+## Sichtbares Stilprofil, kurz: "Your style: Jumpstream, 170-190 BPM, ★ 2.4-3.1".
 ## Hoechstens max_parts Teile; "" ohne Profil.
 static func profile_text(t: Dictionary, max_parts: int = 4) -> String:
 	var parts := profile_parts(t)
