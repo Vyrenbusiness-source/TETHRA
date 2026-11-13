@@ -646,7 +646,8 @@ func _draw_player() -> void:
 		var lead := shots[jn].t - t_ms
 		if lead > 0.0 and lead < 220.0:
 			wind = sin(PI * 0.5 * (1.0 - lead / 220.0))
-	var wp := Vector3(px * HALF_W, 0.125 + 0.03 * sv + 0.01 * wind, -0.04 + 0.14 * sv - 0.05 * wind)
+	# Blatt genau am Treffpunkt (hinter dem Umriss); Schwung nach vorn, Ausholen leicht zurueck.
+	var wp := Vector3(px * HALF_W, RallyFlight.Y_RACKET + BALL_R + 0.02 * sv, 0.10 * sv - 0.03 * wind)
 	var cm := _cam(wp)
 	var pxm := FOCAL * size.y / cm.z
 	var zc := zone_col(clampi(int(round((px + 1.0) * float(_n()) * 0.5 - 0.5)), 0, _n() - 1))
@@ -779,9 +780,9 @@ func _draw_targets() -> void:
 		var al := (1.0 if lead else 0.42) * vis * (0.40 + 0.60 * (1.0 - rem))
 		if lead:
 			draw_arc(p, r, 0.0, TAU, 48, Color(col, 0.75 * vis), 1.8 * _u, true)
-		draw_arc(p, r * (1.0 + 2.4 * rem), 0.0, TAU, 56, Color(col, al), (2.4 if lead else 1.3) * _u, true)
+		draw_arc(p, r * (1.0 + 1.7 * rem), 0.0, TAU, 56, Color(col, al), (2.4 if lead else 1.3) * _u, true)
 		if s.smash and zs.size() > 1:
 			# Schmetterball: Schlaglinie beider Zonen in Weiss = beide Tasten.
-			var xa := _zx(int(zs[0]), 0.012)
-			var xb := _zx(int(zs[zs.size() - 1]) + 1, -0.012)
-			draw_line(_pp(_w(xa, 0.001, 0.0)), _pp(_w(xb, 0.001, 0.0)), Color(COL_SMASH, al), 3.0 * _u, true)
+			for z in zs:
+				draw_line(_pp(_w(_zx(z, 0.012), 0.001, 0.0)), _pp(_w(_zx(z + 1, -0.012), 0.001, 0.0)),
+						Color(COL_SMASH, al), 3.0 * _u, true)
