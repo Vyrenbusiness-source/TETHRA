@@ -9,7 +9,8 @@ extends SceneTree
 ## Fensterlauf fuer Screenshots (nicht headless, eigenes APPDATA, --maps-dir=<Testordner>):
 ##   ... --script res://tools/automap_cli.gd -- <audio> --shot <dir> --maps-dir=<dir>
 ## zieht die Datei in den Browser und speichert progress.png, check.png,
-## check_changed.png und browser.png.
+## check_changed.png und browser.png (dazu offer.png, wenn "own songs" ein
+## Angebot ausloest).
 
 var _shot_dir := ""
 var _shot_audio := ""
@@ -104,6 +105,8 @@ func _process(_delta: float) -> bool:
 		return false
 	match _step:
 		0:
+			if ss.get("_own_offer") != null:
+				_save("offer")   # Angebot fuer "own songs" unten rechts
 			ss.call("_open_import_panel")
 			ss.call("_import_paths", PackedStringArray([_shot_audio]))
 			_step = 1

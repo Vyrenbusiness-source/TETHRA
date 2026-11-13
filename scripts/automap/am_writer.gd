@@ -10,11 +10,25 @@ extends RefCounted
 ##   artist, title        Pflicht
 ##   with_orbit: bool     Orbit-Diffs (osu!standard) auf demselben Gitter mitschreiben
 ##   ffmpeg: String       Pfad zu ffmpeg; fehlt das Feld, wird ClipExporter.find_ffmpeg()
-##                        gefragt, "" = kein eingebettetes Cover
+##                        gefragt, "" = kein eingebettetes Cover, keine Umwandlung
+##   waveform: PackedFloat32Array  Huellkurve 0..1 (AmWriter.waveform) fuer das erzeugte
+##                        Vorschaubild, wenn kein Bild da ist; fehlt sie, dienen
+##                        features.energy bzw. features.events als Quelle
+##
+## Audio: mp3/ogg unveraendert. Andere Formate (wav, flac ...) spielt das Spiel
+## aus der .osz nicht ab (OszImporter kennt nur mp3/ogg), deshalb werden sie per
+## ffmpeg zu audio.ogg (Vorbis) gewandelt; ohne ffmpeg schlaegt das Schreiben fehl.
 
 const CREATOR := "OMEN Auto"
 const SUFFIX := "(OMEN Auto)"
 const IMAGE_EXTS := ["jpg", "jpeg", "png", "webp"]
+## Formate, die OszImporter direkt abspielt.
+const NATIVE_AUDIO := ["mp3", "ogg"]
+const ERR_CONVERT := "cannot convert audio to .ogg"
+## Erzeugtes Vorschaubild (ohne Cover): Groesse, Anzahl Balken.
+const PREVIEW_W := 1280
+const PREVIEW_H := 720
+const PREVIEW_BARS := 150
 ## OD/HP je Profil. Unbekannte Profile bekommen FALLBACK_DIFF.
 const PROFILE_DIFF := {
 	"Easy": {"od": 5.0, "hp": 5.0},
@@ -39,9 +53,17 @@ static func write_osz(audio_path: String, maps_dir: String, meta: Dictionary, gr
 		return _fail("audio file not readable: " + audio_path)
 	var artist := str(meta.get("artist", "Unknown"))
 	var title := str(meta.get("title", audio_path.get_file().get_basename()))
-	var audio_name := "audio." + audio_path.get_extension().to_lower()
+	var ext := audio_path.get_extension().to_lower()
+	var audio_name := "audio." + ext
 	var ff := str(meta["ffmpeg"]) if meta.has("ffmpeg") else ClipExporter.find_ffmpeg()
+	if not ext in NATIVE_AUDIO:
+		audio_bytes = to_ogg(audio_path, ff)
+		if audio_bytes.is_empty():
+			return _fail(ERR_CONVERT + ": " + audio_path.get_file())
+		audio_name = "audio.ogg"
 	var cover := find_cover(audio_path, ff)
+	if str(cover.get("name", "")) == "":
+		cover = preview_image(meta.get("waveform", PackedFloat32Array()), features)
 	var bg_name := str(cover.get("name", ""))
 
 	var files: Array = []   # [name, bytes]
@@ -121,28 +143,48 @@ static func is_auto_set(osz_path: String) -> bool:
 # ---------------------------------------------------------------------------
 
 ## Bild fuer das Set: {name: "bg.jpg"|"bg.png"|"", bytes}. Vorrang: Bild mit
-## gleichem Namen neben der Musikdatei, dann genau ein Bild im selben Ordner,
-## dann das eingebettete Cover (ffmpeg). Ohne Bild: name "".
+## gleichem Namen neben der Musikdatei (.jpg/.jpeg/.png/.webp, Gross-/Klein-
+## schreibung egal; zuerst exakt, dann nur Buchstaben/Ziffern verglichen, z. B.
+## "Song_Name.JPG" zu "Song Name.mp3"), dann genau ein Bild im selben Ordner,
+## dann das eingebettete Cover (ffmpeg). Unlesbare Bilder werden uebersprungen.
+## Ohne Bild: name "" (write_osz erzeugt dann preview_image).
 static func find_cover(audio_path: String, ffmpeg: String) -> Dictionary:
 	var dir := audio_path.get_base_dir()
 	var stem := audio_path.get_file().get_basename()
 	var images: Array[String] = []
-	var same := ""
+	var exact: Array[String] = []
+	var loose: Array[String] = []
 	var d := DirAccess.open(dir)
 	if d != null:
-		for f in d.get_files():
-			if f.get_extension().to_lower() in IMAGE_EXTS:
-				images.append(f)
-				if same == "" and f.get_basename() == stem:
-					same = f
-	var pick := same
-	if pick == "" and images.size() == 1:
-		pick = images[0]
-	if pick != "":
-		var r := _as_bg(FileAccess.get_file_as_bytes(dir.path_join(pick)))
+		var files := d.get_files()
+		files.sort()
+		for f in files:
+			if not f.get_extension().to_lower() in IMAGE_EXTS:
+				continue
+			images.append(f)
+			if f.get_basename().to_lower() == stem.to_lower():
+				exact.append(f)
+			elif _loose(f.get_basename()) != "" and _loose(f.get_basename()) == _loose(stem):
+				loose.append(f)
+	var picks: Array[String] = []
+	picks.append_array(exact)
+	picks.append_array(loose)
+	if images.size() == 1 and picks.is_empty():
+		picks.append(images[0])
+	for p in picks:
+		var r := _as_bg(FileAccess.get_file_as_bytes(dir.path_join(p)))
 		if str(r.name) != "":
 			return r
 	return embedded_cover(audio_path, ffmpeg)
+
+
+## Name nur aus Kleinbuchstaben und Ziffern (fuer den lockeren Namensvergleich).
+static func _loose(s: String) -> String:
+	var out := ""
+	for ch in s.to_lower():
+		if (ch >= "a" and ch <= "z") or (ch >= "0" and ch <= "9") or ch.unicode_at(0) > 127:
+			out += ch
+	return out
 
 
 ## Eingebettetes Cover (Album-Art im Tag) unveraendert herausloesen.
@@ -177,6 +219,134 @@ static func _as_bg(bytes: PackedByteArray) -> Dictionary:
 	if img.get_format() != Image.FORMAT_RGB8:
 		img.convert(Image.FORMAT_RGB8)
 	return {"name": "bg.jpg", "bytes": img.save_jpg_to_buffer(0.92)}
+
+
+## Huellkurve des Songs fuer das Vorschaubild: RMS je Abschnitt, normiert 0..1.
+static func waveform(pcm: PackedFloat32Array, bins: int = PREVIEW_BARS) -> PackedFloat32Array:
+	var out := PackedFloat32Array()
+	out.resize(maxi(bins, 0))
+	var n := pcm.size()
+	if n == 0 or bins <= 0:
+		return out
+	for b in bins:
+		var i := int(float(b) * n / bins)
+		var e := int(float(b + 1) * n / bins)
+		var sum := 0.0
+		var cnt := 0
+		while i < e:
+			var v := pcm[i]
+			sum += v * v
+			cnt += 1
+			i += 5
+		out[b] = sqrt(sum / maxi(cnt, 1))
+	return _normalized(out)
+
+
+## Huellkurve aus den Features (energy, sonst Summe der Anschlagstaerken).
+static func _features_wave(features: Dictionary, bins: int) -> PackedFloat32Array:
+	var out := PackedFloat32Array()
+	out.resize(bins)
+	var energy: PackedFloat32Array = features.get("energy", PackedFloat32Array())
+	if energy.size() >= bins:
+		for b in bins:
+			var a := int(float(b) * energy.size() / bins)
+			var e := maxi(int(float(b + 1) * energy.size() / bins), a + 1)
+			var s := 0.0
+			for i in range(a, e):
+				s += energy[i]
+			out[b] = s / (e - a)
+		return _normalized(out)
+	var dur := float(features.get("duration_ms", 0.0))
+	if dur <= 0.0:
+		return out
+	for ev in features.get("events", []):
+		var b := clampi(int(float(ev.t_ms) / dur * bins), 0, bins - 1)
+		out[b] += float(ev.get("strength", 0.5))
+	return _normalized(out)
+
+
+## Auf das 97. Perzentil normieren, leicht glaetten.
+static func _normalized(v: PackedFloat32Array) -> PackedFloat32Array:
+	if v.is_empty():
+		return v
+	var s := v.duplicate()
+	s.sort()
+	var top := maxf(s[int((s.size() - 1) * 0.97)], 0.000001)
+	var out := PackedFloat32Array()
+	out.resize(v.size())
+	for i in v.size():
+		var a := v[maxi(i - 1, 0)]
+		var c := v[mini(i + 1, v.size() - 1)]
+		out[i] = clampf((a * 0.25 + v[i] * 0.5 + c * 0.25) / top, 0.0, 1.0)
+	return out
+
+
+## Ruhiges Vorschaubild ohne Cover: die Huellkurve des Songs als Balken in
+## Bernstein auf Graphit (UiTheme), Kiai-Abschnitte voll, der Rest gedaempft,
+## darunter ein schwacher Spiegel. Kein Text (Titel zeigt der Browser).
+## {name: "bg.jpg", bytes} oder name "" ohne Quelle.
+static func preview_image(wave: PackedFloat32Array, features: Dictionary) -> Dictionary:
+	var bins := PREVIEW_BARS
+	if wave.size() != bins:
+		wave = _features_wave(features, bins)
+	var any := false
+	for v in wave:
+		if v > 0.0:
+			any = true
+			break
+	if not any:
+		return {"name": "", "bytes": PackedByteArray()}
+	var w := PREVIEW_W
+	var h := PREVIEW_H
+	var img := Image.create(w, h, false, Image.FORMAT_RGB8)
+	# Graphit mit sanft hellerer Mitte.
+	for y in h:
+		var k := exp(-pow((float(y) - h * 0.5) / (h * 0.33), 2.0))
+		img.fill_rect(Rect2i(0, y, w, 1), UiTheme.BG.lerp(UiTheme.SURFACE, k))
+	var dur := float(features.get("duration_ms", 0.0))
+	var kiai := kiai_ranges(features)
+	var x0 := 128
+	var span := w - 2 * x0
+	var pitch := float(span) / bins
+	var bar_w := maxi(int(pitch * 0.58), 2)
+	var mid := int(h * 0.56)
+	var top_h := h * 0.36
+	img.fill_rect(Rect2i(x0, mid, span, 1), UiTheme.BG.lerp(UiTheme.TEXT, 0.10))
+	for b in bins:
+		var t := (float(b) + 0.5) / bins * dur
+		var lit := false
+		for k in kiai:
+			if t >= float(k[0]) and t < float(k[1]):
+				lit = true
+		var col := UiTheme.ACCENT if lit else UiTheme.BG.lerp(UiTheme.ACCENT, 0.45)
+		var v := pow(clampf(wave[b], 0.0, 1.0), 0.85)
+		var up := maxi(int(4.0 + v * top_h), 2)
+		var x := x0 + int(b * pitch)
+		img.fill_rect(Rect2i(x, mid - up - 2, bar_w, up), col)
+		var down := maxi(int(up * 0.35), 1)
+		img.fill_rect(Rect2i(x, mid + 3, bar_w, down), UiTheme.BG.lerp(col, 0.28))
+	return {"name": "bg.jpg", "bytes": img.save_jpg_to_buffer(0.9)}
+
+
+## Audio per ffmpeg zu Ogg Vorbis (Stereo bleibt, Laenge und Lage sample-genau).
+## Leer bei Fehler oder ohne ffmpeg.
+static func to_ogg(audio_path: String, ffmpeg: String) -> PackedByteArray:
+	var bytes := PackedByteArray()
+	if ffmpeg == "":
+		return bytes
+	var tmp := ProjectSettings.globalize_path("user://am_audio_%d.ogg" % Time.get_ticks_usec())
+	for codec in [["-c:a", "libvorbis", "-q:a", "6"], ["-c:a", "vorbis", "-strict", "-2", "-ac", "2"]]:
+		var args: Array = ["-v", "error", "-y", "-i", audio_path, "-vn", "-map", "0:a:0"]
+		args.append_array(codec)
+		args.append(tmp)
+		var code := OS.execute(ffmpeg, PackedStringArray(args), [], true)
+		if code == 0 and FileAccess.file_exists(tmp):
+			bytes = FileAccess.get_file_as_bytes(tmp)
+		if FileAccess.file_exists(tmp):
+			DirAccess.remove_absolute(tmp)
+		if not bytes.is_empty():
+			break
+	return bytes
 
 
 # ---------------------------------------------------------------------------

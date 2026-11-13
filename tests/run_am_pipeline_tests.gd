@@ -40,6 +40,7 @@ func _run() -> void:
 	_test_timing()
 	_test_writer()
 	_test_cover_beside()
+	_test_unranked()
 	_test_pipeline_helpers()
 	_test_no_ffmpeg()
 	_test_own_songs()
@@ -192,8 +193,21 @@ func _test_writer() -> void:
 		return
 	var osz := str(w.osz_path)
 	_ok(osz.get_file() == "Test_ Artist - Title_ (OMEN Auto).osz", "Dateiname: " + osz.get_file())
-	_ok(str(w.get("background", "x")) == "", "ohne Bild und ohne ffmpeg kein Hintergrund")
+	_ok(str(w.get("background", "x")) == "bg.jpg", "ohne Bild: erzeugtes Vorschaubild bg.jpg")
 	var names := _zip_names(osz)
+	_ok(names.has("bg.jpg"), "Vorschaubild im Paket")
+	var prev := OszImporter.decode_image_bytes(OszImporter.read_file_bytes(osz, "bg.jpg"))
+	_ok(prev != null and prev.get_width() == AmWriter.PREVIEW_W and prev.get_height() == AmWriter.PREVIEW_H, "Vorschaubild 1280x720 lesbar")
+	if prev != null:
+		var corner := prev.get_pixel(8, 8)
+		_ok(corner.r < 0.15 and corner.g < 0.15 and corner.b < 0.15, "Vorschaubild: Grund Graphit (%s)" % str(corner))
+		var amber := 0
+		for x in range(0, prev.get_width(), 4):
+			for y in range(0, prev.get_height(), 8):
+				var c := prev.get_pixel(x, y)
+				if c.r > 0.75 and c.g > 0.45 and c.g < 0.75 and c.b < 0.4:
+					amber += 1
+		_ok(amber > 50, "Vorschaubild: Bernstein-Balken (%d)" % amber)
 	_ok(names.has("audio.mp3"), "Audio als audio.mp3")
 	_ok(OszImporter.read_file_bytes(osz, "audio.mp3") == FileAccess.get_file_as_bytes(audio), "Audio unveraendert")
 	var osu_count := 0
@@ -219,7 +233,7 @@ func _test_writer() -> void:
 		_ok(int(bm.general.get("PreviewTime", "-1")) == 16500, prof + ": PreviewTime")
 		_near(bm.od(), float(AmWriter.PROFILE_DIFF[prof].od), 0.01, prof + ": OD")
 		_near(bm.hp(), float(AmWriter.PROFILE_DIFF[prof].hp), 0.01, prof + ": HP")
-		_ok(bm.background_file == "", prof + ": kein Hintergrund-Eintrag")
+		_ok(bm.background_file == "bg.jpg", prof + ": Vorschaubild in [Events]")
 		var red: Array = []
 		var green := 0
 		for tp in bm.timing_points:
@@ -326,6 +340,56 @@ func _test_cover_beside() -> void:
 	# Zwei fremde Bilder: keins gewinnt.
 	other.save_jpg(src2.path_join("b.jpg"))
 	_ok(str(AmWriter.find_cover(audio2, "").name) == "", "zwei Bilder ohne Namensgleichheit: keins")
+	# Gross-/Kleinschreibung egal, .JPEG gross; schlaegt die fremden Bilder.
+	var src3 := _sub("src_cover3")
+	var audio3 := _fake_audio(src3, "Artist - Song (Official Video).mp3")
+	other.save_jpg(src3.path_join("other.jpg"))
+	img.save_jpg(src3.path_join("artist - song (official video).JPEG"))
+	var c3: Dictionary = AmWriter.find_cover(audio3, "")
+	var i3 := OszImporter.decode_image_bytes(c3.bytes) if str(c3.name) != "" else null
+	_ok(str(c3.name) == "bg.jpg" and i3 != null and i3.get_width() == 64, "gleicher Name, andere Schreibung (.JPEG)")
+	# Lockerer Vergleich: nur Buchstaben/Ziffern ("Artist_-_Song_(Official_Video).webp").
+	var src4 := _sub("src_cover4")
+	var audio4 := _fake_audio(src4, "Artist - Song (Official Video).mp3")
+	other.save_jpg(src4.path_join("x.jpg"))
+	img.save_webp(src4.path_join("Artist_-_Song_(Official_Video).WEBP"))
+	var c4: Dictionary = AmWriter.find_cover(audio4, "")
+	var i4 := OszImporter.decode_image_bytes(c4.bytes) if str(c4.name) != "" else null
+	_ok(str(c4.name) == "bg.jpg" and i4 != null and i4.get_width() == 64, "aehnlicher Name (webp, Unterstriche)")
+	# Kaputtes Bild gleichen Namens: uebersprungen, nicht als Hintergrund.
+	var src5 := _sub("src_cover5")
+	var audio5 := _fake_audio(src5, "s.ogg")
+	_fake_audio(src5, "s.png")
+	_ok(str(AmWriter.find_cover(audio5, "").name) == "", "unlesbares Bild wird uebersprungen")
+	# Ohne Quelle (keine Features, keine Huellkurve): kein Vorschaubild.
+	_ok(str(AmWriter.preview_image(PackedFloat32Array(), {}).name) == "", "ohne Quelle kein Vorschaubild")
+	var wv := AmWriter.waveform(PackedFloat32Array([0.0, 0.5, -0.5, 0.0, 1.0, -1.0, 0.2, -0.2, 0.0, 0.0]), 5)
+	_ok(wv.size() == 5 and wv[2] >= wv[0], "waveform: 5 Werte, laute Stelle hoeher")
+
+
+func _test_unranked() -> void:
+	_ok(OnlineApi.is_auto_map({"creator": "OMEN Auto", "osz_path": "x/Some.osz"}), "Creator OMEN Auto: Auto-Set")
+	_ok(OnlineApi.is_auto_map({"creator": "", "osz_path": "x/A - B (OMEN Auto).osz"}), "Dateiname (OMEN Auto): Auto-Set")
+	_ok(not OnlineApi.is_auto_map({"creator": "peppy", "osz_path": "x/A - B.osz"}), "fremde Map: kein Auto-Set")
+	var api := OnlineApi.new()
+	api.cfg_path = _dir.path_join("online.cfg")
+	api.queue_path = _dir.path_join("online_queue.json")
+	api.api_key = "k"
+	api.token = "tok"
+	var meta := {"md5": "abc", "osu_b64": "QQ==", "difficulty": "Hard", "artist": "A", "title": "B",
+		"creator": "OMEN Auto", "osz_path": "x/A - B (OMEN Auto).osz", "total_notes": 10, "ranked": false}
+	_ok(not api.submit({"score": 1000, "accuracy": 0.9}, meta, "mania"), "Auto-Set: kein Online-Submit")
+	_ok(api.queue_size() == 0, "Auto-Set: nichts in der Warteschlange")
+	meta.creator = "Someone"
+	_ok(not api.submit({"score": 1000}, meta, "orbit"), "Auto-Set (Dateiname): kein Online-Submit")
+	api.free()
+	var entries := [
+		{"mode": "mania", "osz_file": "A - B (OMEN Auto).osz", "version": "Hard", "grade": "S"},
+		{"mode": "mania", "osz_file": "Real.osz", "version": "Hard", "grade": "S"},
+	]
+	var files := {"A - B (OMEN Auto).osz": "x/A - B (OMEN Auto).osz", "Real.osz": "x/Real.osz"}
+	var cands := OnlineApi.backfill_candidates(entries, [], files)
+	_ok(cands.size() == 1 and str(cands[0].osz_file) == "Real.osz", "Nachtrag alter Scores laesst Auto-Sets aus")
 
 
 func _test_pipeline_helpers() -> void:
@@ -368,6 +432,11 @@ func _test_no_ffmpeg() -> void:
 	_ok(not bool(r2.ok) and str(r2.error) != "", "Datei fehlt: Fehler")
 	for k in ["ok", "error", "osz_path", "bpm", "offset_ms", "confidence", "diffs", "alternatives"]:
 		_ok(r.has(k), "Fehler-Ergebnis hat Feld " + k)
+	# .wav braucht ffmpeg zum Wandeln (das Spiel spielt aus der .osz nur mp3/ogg).
+	var wav := _fake_audio(src, "w.wav")
+	var w: Dictionary = AmWriter.write_osz(wav, out, {"artist": "A", "title": "W", "ffmpeg": ""}, _grid2(), _features(), [_chart("Hard", 250.0)])
+	_ok(not bool(w.ok) and str(w.error).begins_with(AmWriter.ERR_CONVERT), "wav ohne ffmpeg: klare Meldung (%s)" % str(w.error))
+	_ok(_osz_files(out).is_empty(), "wav ohne ffmpeg: nichts geschrieben")
 
 
 func _test_own_songs() -> void:
@@ -499,6 +568,25 @@ func _test_real_audio() -> void:
 		if str(f).ends_with(".osz"):
 			n_osz += 1
 	_ok(n_osz == 1, "nach Neu-Erzeugen genau ein Set (%d)" % n_osz)
+
+	# .wav ohne Cover: Set mit audio.ogg (spielbar) und erzeugtem Vorschaubild.
+	var src_w := _sub("src_wav")
+	var wav2 := src_w.path_join("Click Wave.wav")
+	_write_click_wav(wav2, 120.0, 12.0)
+	var out_w := _sub("out_wav")
+	var rw: Dictionary = AutoMapper4K.generate(wav2, out_w, {"stars": false, "with_orbit": false, "profiles": ["Hard"]})
+	_ok(bool(rw.ok), "wav: generate ok: " + str(rw.get("error", "")))
+	if bool(rw.ok):
+		var ow := str(rw.osz_path)
+		var nw := _zip_names(ow)
+		_ok(nw.has("audio.ogg") and not nw.has("audio.wav"), "wav: als audio.ogg im Set: " + str(nw))
+		var st := OszImporter.load_audio_stream_named(ow, "audio.ogg")
+		_ok(st is AudioStreamOggVorbis, "wav: Stream im Spiel ladbar")
+		if st != null:
+			_near(st.get_length(), 12.0, 0.15, "wav: Laenge nach dem Wandeln")
+		var pw: Dictionary = OsuParser.parse(_zip_text(ow, AmWriter.osu_name(str(rw.artist), str(rw.title), "Hard")))
+		_ok(bool(pw.ok) and pw.beatmap.audio_filename() == "audio.ogg", "wav: AudioFilename audio.ogg")
+		_ok(str(rw.background) == "bg.jpg" and bool(pw.ok) and pw.beatmap.background_file == "bg.jpg", "wav ohne Cover: Vorschaubild aus dem Song")
 
 	# Abbruch: nichts Neues im Ordner.
 	var out2 := _sub("out_cancel")

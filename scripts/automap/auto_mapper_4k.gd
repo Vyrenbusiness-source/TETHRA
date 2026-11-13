@@ -64,6 +64,7 @@ static func generate(audio_path: String, maps_dir: String, opts: Dictionary = {}
 	var features: Dictionary = AmFeatures.analyze(pcm, rate, params.get("features", {}))
 	if not bool(features.get("ok", false)):
 		return _fail(str(features.get("error", "analysis failed")))
+	var wave := AmWriter.waveform(pcm)   # Vorschaubild, falls der Song kein Cover hat
 	pcm = PackedFloat32Array()
 	if _stop(cancelled):
 		return _fail(ERR_CANCELLED)
@@ -81,7 +82,7 @@ static func generate(audio_path: String, maps_dir: String, opts: Dictionary = {}
 
 	_report(progress, STAGE_WRITE, 0.0)
 	var wmeta := {"artist": str(meta.get("artist", "Unknown")), "title": str(meta.get("title", "")),
-		"with_orbit": bool(opts.get("with_orbit", true)), "ffmpeg": ff}
+		"with_orbit": bool(opts.get("with_orbit", true)), "ffmpeg": ff, "waveform": wave}
 	if wmeta.title == "":
 		wmeta.title = audio_path.get_file().get_basename()
 	var w: Dictionary = AmWriter.write_osz(audio_path, maps_dir, wmeta, grid, features, charts)
