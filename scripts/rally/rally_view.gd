@@ -7,7 +7,8 @@ extends Control
 ## von t_ms + Wertung (RallyCore): Baelle, Ringe und Schlaeger werden jedes Bild aus
 ## RallyFlight neu berechnet, nichts davon steuert die Wertung.
 ## Farbe = Zone (tief kuehl -> hoch warm), Schmetterball weiss umrandet und groesser,
-## schrumpfender Landering + Schatten auf dem Tisch = WO und WANN.
+## Umriss am Treffpunkt + Ring, der sich bis zur Notenzeit darauf zusammenzieht = WANN,
+## Schatten und Aufsetzmarke auf dem Tisch = WO.
 
 const COL_A := Color(0.46, 0.62, 0.88)
 const COL_B := Color(0.95, 0.60, 0.34)
@@ -35,9 +36,9 @@ const NET_H := 0.1525
 const BALL_R := 0.042
 const SMASH_R := 0.0588
 const TRAIL_MS := 100.0
-const FX_MS := 260.0
+const FX_MS := 420.0
+const FX_RING_MS := 230.0
 const MISS_FLY_MS := 450.0
-const GOLD := 2.399963
 
 var beat_ms := 500.0
 var shots: Array[RallyChart.Shot] = []
@@ -51,7 +52,7 @@ var flight_ms := 800.0
 var _fx: Array = []
 var _hit_t: Dictionary = {}
 var _rel_t: Dictionary = {}
-var _shake := 0.0
+var _u := 1.0
 var _lit := [0.0, 0.0, 0.0, 0.0]
 var _pulse := [-9999.0, -9999.0, -9999.0, -9999.0]
 var _miss := [-9999.0, -9999.0, -9999.0, -9999.0]
@@ -113,18 +114,17 @@ func on_judged(idx: int, result: Dictionary) -> void:
 	if q == 5:
 		for z in zs:
 			_miss[z] = t_ms
+		_add_fx("miss", s, t_ms, q, 0.0)
 		return
 	if bool(result.get("hold_end", false)):
 		_rel_t[idx] = t_ms
-		_add_fx("release", s, t_ms)
+		_add_fx("release", s, t_ms, q, 0.0)
 		return
 	_hit_t[idx] = t_ms
-	_add_fx("hit", s, t_ms)
+	_add_fx("hit", s, t_ms, q, float(result.get("dt", 0.0)))
 	_swing_t = t_ms
 	for z in zs:
 		_pulse[z] = t_ms
-	if s.smash:
-		_shake = 1.0
 
 
 func on_charge(idx: int) -> void:
@@ -135,13 +135,13 @@ func on_charge(idx: int) -> void:
 	_swing_t = t_ms
 	for z in RallyFlight.zones_of(s):
 		_pulse[z] = t_ms
-	_add_fx("hit", s, t_ms)
+	_add_fx("hit", s, t_ms, 0, 0.0)
 
 
-func _add_fx(kind: String, s: RallyChart.Shot, t0: float) -> void:
+func _add_fx(kind: String, s: RallyChart.Shot, t0: float, q: int = 0, dt: float = 0.0) -> void:
 	var zs := RallyFlight.zones_of(s)
 	_fx.append({"t0": t0, "kind": kind, "x": RallyFlight.shot_x(s), "smash": s.smash,
-			"zone": int(zs[0])})
+			"zone": int(zs[0]), "q": q, "dt": dt})
 	while _fx.size() > 16:
 		_fx.pop_front()
 
@@ -156,11 +156,10 @@ func reset_fx() -> void:
 
 
 func _process(delta: float) -> void:
-	_shake = maxf(_shake - delta * 7.0, 0.0)
 	for k in _n():
 		var on := 1.0 if (k < held.size() and bool(held[k])) else 0.0
 		var cur: float = _lit[k]
-		_lit[k] = move_toward(cur, on, delta * (14.0 if on > cur else 5.0))
+		_lit[k] = move_toward(cur, on, delta * (16.0 if on > cur else 6.0))
 	var cb := core.combo if core != null else 0
 	var target := 3.0 if cb >= 200 else (2.0 if cb >= 100 else (1.0 if cb >= 50 else 0.0))
 	_lvl = move_toward(_lvl, target, delta * 1.2)
@@ -199,11 +198,7 @@ func _sc(w: Vector3) -> float:
 func _draw() -> void:
 	if shots.is_empty() or size.x < 10.0:
 		return
-	var off := Vector2.ZERO
-	if _shake > 0.0:
-		# Kamera-Impuls nur beim Schmetterball, hoechstens 2 px.
-		off = Vector2(sin(t_ms * 0.09), cos(t_ms * 0.13)) * (1.9 * _shake)
-	draw_set_transform(off, 0.0, Vector2.ONE)
+	_u = size.y / 720.0
 	_draw_room()
 	_draw_table()
 	_draw_zones()
@@ -213,14 +208,14 @@ func _draw() -> void:
 	_draw_shadows(balls)
 	_draw_opponent()
 	_draw_net()
+	# Schlaeger hinter Umriss und Ball: er faengt, verdeckt aber nichts.
+	_draw_player()
+	_draw_targets()
 	# Alle Baelle nach dem Netz: nie vom Netz ueberdeckt.
 	for b in balls:
 		_draw_ball(b)
-	_draw_player()
 	_draw_fx()
 	_draw_keys()
-	_draw_counter()
-	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 
 func _quad(a: Vector2, b: Vector2, c: Vector2, d: Vector2, col: Color) -> void:
@@ -250,8 +245,8 @@ func _ground_ring(cx: float, cz: float, r: float, col: Color, width: float, fill
 func _draw_room() -> void:
 	var w := size.x
 	var h := size.y
-	# Halbtransparent: das Map-Bild (MapBackdrop des Game-Knotens) scheint durch.
-	draw_rect(Rect2(0, 0, w, h), Color(COL_ROOM, 0.74))
+	# Halbtransparent: das Map-Bild (MapBackdrop des Game-Knotens) scheint nur leise durch.
+	draw_rect(Rect2(0, 0, w, h), Color(COL_ROOM, 0.84))
 	var boost := 1.0 + 0.10 * _lvl
 	# Raumlicht: weicher Kegel ueber der Tischmitte (konzentrische Ellipsen, sehr leise).
 	var lc := _pp(_w(0.0, 0.0, 0.55))
@@ -260,13 +255,8 @@ func _draw_room() -> void:
 		var rx := w * (0.62 - 0.46 * f)
 		var ry := h * (0.58 - 0.42 * f)
 		draw_set_transform(lc + Vector2(0, -h * 0.10), 0.0, Vector2(1.0, ry / rx))
-		draw_circle(Vector2.ZERO, rx, Color(COL_LIGHT, 0.0045 * boost))
+		draw_circle(Vector2.ZERO, rx, Color(COL_LIGHT, 0.0040 * boost))
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
-	_draw_audience()
-	# Boden: hinter dem Tisch einen Hauch heller, nach vorn dunkel.
-	var yh := _pp(_w(0.0, 0.0, 1.9)).y
-	_quad_g(Vector2(0, yh), Vector2(w, yh), Vector2(w, h), Vector2(0, h),
-			Color(COL_LIGHT, 0.030), Color(0, 0, 0, 0.0))
 	# Weicher Schatten unter dem Tisch.
 	var sc := _pp(_w(0.0, -0.76, 0.5))
 	for i in 5:
@@ -274,39 +264,13 @@ func _draw_room() -> void:
 		draw_set_transform(sc, 0.0, Vector2(1.0, 0.16))
 		draw_circle(Vector2.ZERO, w * (0.42 - 0.07 * f2), Color(0, 0, 0, 0.07))
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
-	# Vignette.
-	var vg := 0.62
-	_quad_g(Vector2(0, 0), Vector2(w * 0.16, 0), Vector2(w * 0.16, h), Vector2(0, h),
-			Color(0, 0, 0, vg), Color(0, 0, 0, 0))
-	_quad_g(Vector2(w, 0), Vector2(w * 0.84, 0), Vector2(w * 0.84, h), Vector2(w, h),
-			Color(0, 0, 0, vg), Color(0, 0, 0, 0))
-	_quad_g(Vector2(0, 0), Vector2(w, 0), Vector2(w, h * 0.12), Vector2(0, h * 0.12),
-			Color(0, 0, 0, 0.55), Color(0, 0, 0, 0))
-
-
-## Publikum: sehr dezente, weiche Silhouetten-Reihe in Raumfarbe (kein Kopf-Raster). Licht reagiert leise auf die Kombo.
-func _draw_audience() -> void:
-	var w := size.x
-	var h := size.y
-	var rim := 0.010 + 0.030 * _lvl
-	var seg := 48
-	for row in 2:
-		var base_y := h * (0.115 - 0.030 * float(row))
-		var amp := h * (0.040 - 0.010 * float(row))
-		var col := COL_ROOM.lightened(0.030 - 0.012 * float(row))
-		for i in seg:
-			var x0 := w * float(i) / float(seg)
-			var x1 := w * float(i + 1) / float(seg)
-			var hs := float((i * 7919 + row * 104729) % 97) / 97.0
-			var hn := float(((i + 1) * 7919 + row * 104729) % 97) / 97.0
-			var y0 := base_y - amp * (0.35 + 0.65 * hs)
-			var y1 := base_y - amp * (0.35 + 0.65 * hn)
-			var top := Color(col, 0.0)
-			var bot := Color(col, 0.34)
-			draw_polygon(PackedVector2Array([Vector2(x0, y0 - amp * 0.9), Vector2(x1, y1 - amp * 0.9),
-					Vector2(x1, base_y), Vector2(x0, base_y)]), PackedColorArray([top, top, bot, bot]))
-			if rim > 0.0 and hs > 0.55:
-				draw_line(Vector2(x0, y0), Vector2(x1, y1), Color(COL_LIGHT, rim * (1.0 - 0.4 * float(row))), 1.2, true)
+	# Vignette: weich von den Seiten, keine harte Kante.
+	var vg := Color(0, 0, 0, 0.46)
+	var v0 := Color(0, 0, 0, 0.0)
+	draw_polygon(PackedVector2Array([Vector2(0, 0), Vector2(w * 0.30, 0), Vector2(w * 0.30, h), Vector2(0, h)]),
+			PackedColorArray([vg, v0, v0, vg]))
+	draw_polygon(PackedVector2Array([Vector2(w, 0), Vector2(w * 0.70, 0), Vector2(w * 0.70, h), Vector2(w, h)]),
+			PackedColorArray([vg, v0, v0, vg]))
 
 
 # ---------------------------------------------------------------------------
@@ -385,46 +349,43 @@ func _zone_quad(z: int, z0: float, z1: float, inset: float, col: Color, col_far:
 func _draw_zones() -> void:
 	for z in _n():
 		var col := zone_col(z)
-		var pulse := clampf(1.0 - (t_ms - float(_pulse[z])) / 260.0, 0.0, 1.0)
+		var pulse := clampf(1.0 - (t_ms - float(_pulse[z])) / 220.0, 0.0, 1.0)
 		var miss := clampf(1.0 - (t_ms - float(_miss[z])) / 320.0, 0.0, 1.0)
 		var lit: float = _lit[z]
-		var a := 0.085 + 0.20 * lit + 0.12 * pulse * pulse
+		var a := 0.055 + 0.15 * lit + 0.10 * pulse * pulse
 		# Zone auf deiner Haelfte: vorn kraeftiger, zur Mitte hin auslaufend.
-		_zone_quad(z, 0.0, 0.5, 0.012, Color(col, a), Color(col, a * 0.25))
+		_zone_quad(z, 0.0, 0.5, 0.012, Color(col, a), Color(col, a * 0.20))
 		if miss > 0.0:
-			_zone_quad(z, 0.0, 0.5, 0.012, Color(COL_MISS, 0.16 * miss), Color(COL_MISS, 0.03 * miss))
-		# Leuchtende Vorderkante der gedrueckten Zone.
+			_zone_quad(z, 0.0, 0.5, 0.012, Color(COL_MISS, 0.14 * miss), Color(COL_MISS, 0.02 * miss))
+		# Vorderkante in Zonenfarbe: die Schlaglinie.
 		var xa := _zx(z, 0.012)
 		var xb := _zx(z + 1, -0.012)
-		var la := 0.45 + 0.50 * lit
-		draw_line(_pp(_w(xa, 0.001, 0.0)), _pp(_w(xb, 0.001, 0.0)), Color(col, la), 2.0, true)
-		# Verlaengerung nach vorn (Lichtstreifen Richtung Taste).
-		_zone_quad(z, -0.62, 0.0, 0.012, Color(col, 0.0), Color(col, 0.07 + 0.25 * lit))
+		draw_line(_pp(_w(xa, 0.001, 0.0)), _pp(_w(xb, 0.001, 0.0)), Color(col, 0.55 + 0.45 * lit),
+				(2.0 + 1.0 * lit) * _u, true)
 	# Feine Trennlinien.
 	for i in _n() + 1:
 		var x := _zx(i, 0.0)
-		var ea := 0.14 if (i == 0 or i == _n()) else 0.10
+		var ea := 0.14 if (i == 0 or i == _n()) else 0.09
 		draw_line(_pp(_w(x, 0.001, 0.0)), _pp(_w(x, 0.001, 0.5)), Color(COL_LINE, ea), 1.0, true)
-	# Schlaegerlinie.
-	draw_line(_pp(_w(-1, 0.001, 0.0)), _pp(_w(1, 0.001, 0.0)), Color(COL_LINE, 0.22), 1.2, true)
 
 
 func _draw_keys() -> void:
-	var fs := int(size.y * 0.034)
+	var fs := int(size.y * 0.026)
 	for z in _n():
 		var col := zone_col(z)
 		var lit: float = _lit[z]
 		var c := _pp(_w((_zx(z, 0.0) + _zx(z + 1, 0.0)) * 0.5, -0.034, 0.0))
-		var half := Vector2(size.y * 0.050, size.y * 0.030)
-		var rc := Rect2(c - half, half * 2.0)
-		draw_rect(rc, Color(col, 0.10 + 0.42 * lit), true)
-		if lit > 0.02:
-			draw_rect(rc.grow(size.y * 0.008 * lit), Color(col, 0.16 * lit), true)
-		draw_rect(rc, Color(col, 0.55 + 0.45 * lit), false, 1.8)
+		var half := Vector2(size.y * 0.034, size.y * 0.024)
+		var rc := Rect2((c - half + Vector2(0, size.y * 0.012)).round(), (half * 2.0).round())
+		# Ruhige dunkle Platte, Zonenfarbe nur als Leiste unten und beim Druecken.
+		draw_rect(rc, Color(0.070, 0.070, 0.078, 0.94).lerp(Color(col.darkened(0.25), 1.0), 0.70 * lit), true)
+		draw_rect(rc, Color(COL_LINE, 0.14 + 0.30 * lit), false, 1.0)
+		var bar := maxf(round(2.0 * _u), 2.0)
+		draw_rect(Rect2(rc.position.x, rc.end.y - bar, rc.size.x, bar), Color(col, 0.85 + 0.15 * lit), true)
 		var txt: String = str(key_labels[z]) if z < key_labels.size() else ""
 		var ts := _key_font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
-		draw_string(_key_font, c + Vector2(-ts.x * 0.5, ts.y * 0.30), txt,
-				HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(col.lerp(Color.WHITE, 0.40 + 0.5 * lit), 0.85 + 0.15 * lit))
+		draw_string(_key_font, (rc.get_center() + Vector2(-ts.x * 0.5, fs * 0.34 - bar * 0.5)).round(), txt,
+				HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(COL_LINE, 0.74 + 0.26 * lit))
 
 
 func _draw_charge_bands() -> void:
@@ -457,8 +418,11 @@ func _draw_charge_bands() -> void:
 
 
 func _draw_landings() -> void:
+	## Aufsetzpunkt: nur eine feste, leise Marke (WO der Ball aufspringt). Das WANN zeigt
+	## allein der Ring am Treffpunkt (_draw_targets), nichts hier schrumpft.
 	var j := RallyChart.first_at_or_after(shots, t_ms)
 	var jmax := RallyChart.first_at_or_after(shots, t_ms + flight_ms + 1.0)
+	var cz := RallyFlight.Z_LAND * LEN
 	for k in range(j, jmax):
 		var s := shots[k]
 		if s.launch > t_ms:
@@ -466,25 +430,10 @@ func _draw_landings() -> void:
 		var land := RallyFlight.landing_time(s)
 		if t_ms >= land:
 			continue
-		var span := maxf(land - s.launch, 1.0)
-		var rem := clampf((land - t_ms) / span, 0.0, 1.0)
-		var vis := clampf((t_ms - s.launch) / 90.0, 0.0, 1.0)
-		var zs := RallyFlight.zones_of(s)
-		var r := 0.055 + 0.085 * rem
-		var rr := r * (1.28 if s.smash else 1.0)
-		var al := (0.20 + 0.65 * (1.0 - rem)) * vis
-		var cz := RallyFlight.Z_LAND * LEN
-		for z in zs:
-			var cx := RallyFlight.zone_x(z) * HALF_W
-			var col := zone_col(z)
-			_ground_ring(cx, cz, rr, Color(col, al), 2.0 if s.smash else 1.6, 0.10)
-			if s.smash:
-				_ground_ring(cx, cz, rr + 0.025, Color(COL_SMASH, al * 0.85), 1.4)
-		if zs.size() > 1:
-			var xa := RallyFlight.zone_x(zs[0]) * HALF_W
-			var xb := RallyFlight.zone_x(zs[zs.size() - 1]) * HALF_W
-			draw_line(_pp(Vector3(xa + rr, 0.002, cz)), _pp(Vector3(xb - rr, 0.002, cz)),
-					Color(COL_SMASH, al * 0.5), 1.2, true)
+		var vis := clampf((t_ms - s.launch) / 120.0, 0.0, 1.0) * clampf((land - t_ms) / 80.0, 0.0, 1.0)
+		var col := COL_SMASH if s.smash else zone_col(int(RallyFlight.zones_of(s)[0]))
+		_ground_ring(RallyFlight.shot_x(s) * HALF_W, cz, 0.034 * (1.3 if s.smash else 1.0),
+				Color(col, 0.30 * vis), 1.2 * _u, 0.30)
 
 
 # ---------------------------------------------------------------------------
@@ -575,20 +524,15 @@ func _draw_shadows(balls: Array) -> void:
 			continue
 		var rad := float(b.rad)
 		var hgt := clampf(P.y / 0.7, 0.0, 1.0)
-		var al := float(b.a) * (0.20 - 0.12 * hgt)
-		var col: Color = b.col
+		var al := float(b.a) * (0.34 - 0.20 * hgt)
 		var cx := P.x * HALF_W
 		var cz := P.z * LEN
-		var r := rad * (1.1 + 0.4 * hgt)
+		var r := rad * (0.95 + 0.45 * hgt)
 		var pts := PackedVector2Array()
-		var pts2 := PackedVector2Array()
 		for i in 20:
 			var an := TAU * float(i) / 20.0
 			pts.append(_pp(Vector3(cx + cos(an) * r, 0.002, cz + sin(an) * r)))
-			pts2.append(_pp(Vector3(cx + cos(an) * r * 0.62, 0.003, cz + sin(an) * r * 0.62)))
 		draw_colored_polygon(pts, Color(0, 0, 0, al))
-		# Zonenfarbe als feiner Schein im Schatten: zeigt die Zone schon im Flug.
-		draw_colored_polygon(pts2, Color(col, 0.22 * float(b.a)))
 
 
 func _draw_ball(b: Dictionary) -> void:
@@ -602,12 +546,12 @@ func _draw_ball(b: Dictionary) -> void:
 	var p := Vector2(cm.x, cm.y)
 	var r := rad * FOCAL * size.y / cm.z
 	var far := clampf((P.z - 0.35) / 0.65, 0.0, 1.0)
-	# Tiefe: ferne Baelle heller (Nebel zum Licht), nahe satt.
-	var c := col.lerp(Color(1, 1, 1), 0.40 * far)
-	r *= 1.0 - 0.18 * far
+	# Tiefe: ferne Baelle einen Hauch heller, Zonenfarbe bleibt lesbar.
+	var c := col.lerp(Color(1, 1, 1), 0.16 * far)
 	var s: RallyChart.Shot = b.s
 	if str(b.kind) == "in":
-		var step := 6
+		# Spur: schmal, laeuft spitz aus.
+		var step := 7
 		var prev := p
 		for i in range(1, step + 1):
 			var tt := t_ms - TRAIL_MS * float(i) / float(step)
@@ -617,21 +561,21 @@ func _draw_ball(b: Dictionary) -> void:
 			var cq := _cam(_w(q.x, q.y + rad, q.z))
 			var pq := Vector2(cq.x, cq.y)
 			var f := 1.0 - float(i) / float(step + 1)
-			draw_line(prev, pq, Color(c, 0.22 * f * al), maxf(r * 1.5 * f, 1.0), true)
+			draw_line(prev, pq, Color(c, 0.30 * f * al), maxf(r * 1.25 * f, 1.0), true)
 			prev = pq
 	if bool(b.smash):
-		draw_arc(p, r + maxf(r * 0.16, 2.0), 0.0, TAU, 40, Color(COL_SMASH, 0.95 * al), maxf(r * 0.10, 1.6), true)
+		draw_arc(p, r + maxf(r * 0.18, 2.0), 0.0, TAU, 40, Color(COL_SMASH, 0.95 * al), maxf(r * 0.10, 1.6), true)
 	if str(b.kind) == "held":
 		var k: int = b.k
 		var h0: float = float(_hit_t.get(k, s.t))
 		var prog := clampf((t_ms - h0) / maxf(s.end - h0, 1.0), 0.0, 1.0)
-		var rr := r * 1.75
-		draw_arc(p, rr, 0.0, TAU, 48, Color(c, 0.22), 2.0, true)
-		draw_arc(p, rr, -PI * 0.5, -PI * 0.5 + TAU * prog, 48, Color(c, 0.95), 3.2, true)
-	draw_circle(p, r, Color(c.darkened(0.12), al))
-	draw_circle(p + Vector2(-r * 0.16, -r * 0.2), r * 0.74, Color(c.lightened(0.10), al))
-	draw_circle(p + Vector2(-r * 0.34, -r * 0.38), r * 0.22, Color(1, 1, 1, 0.55 * al))
-	draw_arc(p, r, 0.0, TAU, 28, Color(0, 0, 0, 0.30 * al), 1.0, true)
+		var rr := r * 1.70
+		draw_arc(p, rr, 0.0, TAU, 48, Color(c, 0.22), 2.0 * _u, true)
+		draw_arc(p, rr, -PI * 0.5, -PI * 0.5 + TAU * prog, 48, Color(c, 0.95), 3.0 * _u, true)
+	draw_circle(p, r, Color(c.darkened(0.16), al))
+	draw_circle(p + Vector2(-r * 0.14, -r * 0.18), r * 0.76, Color(c.lightened(0.08), al))
+	draw_circle(p + Vector2(-r * 0.32, -r * 0.36), r * 0.20, Color(1, 1, 1, 0.50 * al))
+	draw_arc(p, r, 0.0, TAU, 32, Color(0, 0, 0, 0.42 * al), 1.0, true)
 
 
 # ---------------------------------------------------------------------------
@@ -660,7 +604,7 @@ func _blade(c: Vector2, rx: float, ry: float, ang: float, rubber: Color, edge: C
 		c + _rot(Vector2(-gw, top), ang), c + _rot(Vector2(gw, top), ang),
 		c + _rot(Vector2(gw * 1.15, top + handle), ang), c + _rot(Vector2(-gw * 1.15, top + handle), ang)])
 	draw_colored_polygon(grip, COL_WOOD.darkened(0.62))
-	draw_colored_polygon(outer, COL_WOOD.darkened(0.52))
+	draw_colored_polygon(outer, COL_WOOD.darkened(0.74))
 	draw_colored_polygon(inner, rubber)
 	var hl := PackedVector2Array()
 	for i in 14:
@@ -669,7 +613,7 @@ func _blade(c: Vector2, rx: float, ry: float, ang: float, rubber: Color, edge: C
 	draw_polyline(hl, Color(1, 1, 1, 0.10), 1.4, true)
 	var closed := inner.duplicate()
 	closed.append(inner[0])
-	draw_polyline(closed, Color(edge, 0.55), 1.4, true)
+	draw_polyline(closed, Color(edge, 0.30), 1.2, true)
 
 
 func _player_x() -> float:
@@ -702,11 +646,12 @@ func _draw_player() -> void:
 		var lead := shots[jn].t - t_ms
 		if lead > 0.0 and lead < 220.0:
 			wind = sin(PI * 0.5 * (1.0 - lead / 220.0))
-	var wp := Vector3(px * HALF_W * 1.02 + 0.03, 0.045 + 0.05 * sv + 0.01 * wind, -0.05 + 0.16 * sv - 0.05 * wind)
+	# Blatt genau am Treffpunkt (hinter dem Umriss); Schwung nach vorn, Ausholen leicht zurueck.
+	var wp := Vector3(px * HALF_W, RallyFlight.Y_RACKET + BALL_R + 0.02 * sv, 0.10 * sv - 0.03 * wind)
 	var cm := _cam(wp)
 	var pxm := FOCAL * size.y / cm.z
 	var zc := zone_col(clampi(int(round((px + 1.0) * float(_n()) * 0.5 - 0.5)), 0, _n() - 1))
-	_blade(Vector2(cm.x, cm.y), 0.040 * pxm, 0.037 * pxm, 0.10 - 0.25 * sv + 0.10 * wind,
+	_blade(Vector2(cm.x, cm.y), 0.066 * pxm, 0.062 * pxm, 0.10 - 0.25 * sv + 0.10 * wind,
 			Color(0.115, 0.105, 0.105).lerp(zc, 0.10), zc, 0.08 * pxm)
 
 
@@ -746,6 +691,7 @@ func _draw_opponent() -> void:
 
 func _draw_fx() -> void:
 	var keep: Array = []
+	var fs := int(size.y * 0.020)
 	for f in _fx:
 		var age := t_ms - float(f.t0)
 		if age < 0.0:
@@ -754,48 +700,89 @@ func _draw_fx() -> void:
 		if age > FX_MS:
 			continue
 		keep.append(f)
-		var u := age / FX_MS
-		var e := 1.0 - pow(1.0 - u, 3.0)
-		var base := Vector3(float(f.x) * HALF_W, RallyFlight.Y_RACKET + BALL_R, 0.0)
-		var p := _pp(base)
-		var sc := _sc(base)
-		var big := 1.5 if bool(f.smash) else 1.0
+		var smash := bool(f.smash)
+		var rad := SMASH_R if smash else BALL_R
+		var cm := _hit_c(float(f.x), rad)
+		var p := Vector2(cm.x, cm.y)
+		var r := rad * FOCAL * size.y / cm.z
 		var col := zone_col(int(f.zone))
-		if str(f.kind) == "release":
-			draw_arc(p, sc * 0.035 * (1.0 + 0.4 * e), 0.0, TAU, 40, Color(col, 0.8 * (1.0 - u)), 1.8, true)
+		var kind := str(f.kind)
+		var ul := age / FX_MS
+		if kind == "miss":
+			# Fehlschlag: kleines, mattes Kreuz am Treffpunkt, kein Blitz.
+			var am := (1.0 - ul) * (1.0 - ul)
+			var d := r * 0.50
+			draw_line(p + Vector2(-d, -d), p + Vector2(d, d), Color(COL_MISS, 0.85 * am), 2.0 * _u, true)
+			draw_line(p + Vector2(-d, d), p + Vector2(d, -d), Color(COL_MISS, 0.85 * am), 2.0 * _u, true)
 			continue
-		draw_arc(p, sc * 0.030 * (1.0 + 0.55 * big * e), 0.0, TAU, 40, Color(col, 0.7 * (1.0 - u)), 1.6, true)
-		if bool(f.smash):
-			draw_arc(p, sc * 0.045 * (1.0 + 0.6 * e), 0.0, TAU, 40, Color(COL_SMASH, 0.6 * (1.0 - u)), 1.4, true)
-		# Funken: wenige, kleine Punkte in Zonenfarbe, bremsen ab und fallen leicht.
-		var n := 12 if bool(f.smash) else 6
-		var tseed := int(float(f.t0)) % 997
-		for i in n:
-			var h := float((i * 7919 + tseed * 31) % 101) / 101.0
-			var ang := GOLD * float(i) + h * 2.0
-			var spd := (0.30 + 0.45 * h) * big
-			var d := Vector2(cos(ang), -absf(sin(ang)) * 0.8 - 0.25)
-			var q := p + d * spd * sc * 0.40 * e + Vector2(0, u * u * sc * 0.07)
-			var sa := (1.0 - u) * (1.0 - u)
-			draw_circle(q, maxf(sc * 0.006 * (1.0 - 0.5 * u), 1.0), Color(col.lerp(Color.WHITE, 0.35), 0.75 * sa))
+		var q := int(f.q)
+		var u := age / FX_RING_MS
+		if u < 1.0:
+			# Ein sauberer Ring, der kurz aufgeht; schwaechere Wertung = leiser.
+			var e := 1.0 - pow(1.0 - u, 3.0)
+			var strong := 1.0 if q <= 1 else (0.70 if q == 2 else 0.45)
+			var hot := col.lerp(Color.WHITE, 0.35)
+			if kind == "hit":
+				draw_circle(p, r, Color(hot, 0.34 * strong * (1.0 - u) * (1.0 - u)))
+			draw_arc(p, r * (1.0 + (0.85 if smash else 0.60) * e), 0.0, TAU, 48,
+					Color(hot, 0.90 * strong * (1.0 - u)), lerpf(2.6, 1.0, u) * _u, true)
+			if smash:
+				draw_arc(p, r * (1.30 + 1.0 * e), 0.0, TAU, 48, Color(COL_SMASH, 0.55 * (1.0 - u)), 1.4 * _u, true)
+		var dt := float(f.dt)
+		if kind == "hit" and q >= 1 and absf(dt) > 0.5:
+			# Frueh / spaet: klein, direkt ueber dem Treffpunkt.
+			var txt := tr("früh") if dt < 0.0 else tr("spät")
+			var ts := _body_font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
+			var la := 1.0 - ul * ul
+			var at := (p + Vector2(-ts.x * 0.5, -r * 1.75 - 4.0 * _u * ul)).round()
+			draw_string_outline(_body_font, at, txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 3, Color(0, 0, 0, 0.55 * la))
+			draw_string(_body_font, at, txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(COL_LINE, 0.90 * la))
 	_fx = keep
 
 
-func _draw_counter() -> void:
-	if core == null:
-		return
-	var cb := core.combo
-	if cb < 2:
-		return
-	var fs := int(size.y * 0.034)
-	var txt := str(cb)
-	var ts := _body_font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
-	var c := Vector2(size.x * 0.5, size.y * 0.108)
-	var a := 0.55 + 0.10 * _lvl
-	draw_string(_body_font, c + Vector2(-ts.x * 0.5, 0), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs,
-			Color(COL_LINE, a))
-	var ls := int(size.y * 0.016)
-	var lab := "BALLWECHSEL" if UiTheme.is_german() else "RALLY"
-	var lsz := _body_font.get_string_size(lab, HORIZONTAL_ALIGNMENT_LEFT, -1, ls)
-	draw_string(_body_font, c + Vector2(-lsz.x * 0.5, ts.y * 0.55), lab, HORIZONTAL_ALIGNMENT_LEFT, -1, ls,
-			Color(COL_LINE, 0.32))
+## Bildschirmpunkt (x, y, Tiefe) der Ballmitte im Treffmoment.
+func _hit_c(x: float, rad: float) -> Vector3:
+	return _cam(_w(x, RallyFlight.Y_RACKET + rad, 0.0))
+
+
+## Treffpunkte: je Zone ein fester Umriss in Ballgroesse ueber der Schlaglinie. Der Ball
+## fliegt genau in diesen Umriss, ein Ring zieht sich bis zur Notenzeit darauf zusammen.
+## Rangfolge: naechster Schlag kraeftig, folgende duenn und erst ab einer Beat-Laenge.
+func _draw_targets() -> void:
+	var T := t_ms
+	for z in _n():
+		var cz := _hit_c(RallyFlight.zone_x(z), BALL_R)
+		var rz := BALL_R * FOCAL * size.y / cz.z
+		draw_arc(Vector2(cz.x, cz.y), rz, 0.0, TAU, 40, Color(zone_col(z), 0.20 + 0.25 * float(_lit[z])),
+				1.2 * _u, true)
+	var j := RallyChart.first_at_or_after(shots, T - 60.0)
+	var jmax := RallyChart.first_at_or_after(shots, T + flight_ms + 1.0)
+	var near := clampf(beat_ms, 200.0, flight_ms)
+	var lead_t := -1.0
+	for k in range(j, jmax):
+		var s := shots[k]
+		if _result_hit(k) != -1 or T < s.launch:
+			continue
+		var until := s.t - T
+		if lead_t < 0.0:
+			lead_t = s.t
+		var lead := absf(s.t - lead_t) < 1.5
+		if not lead and until > near:
+			continue
+		var rad := SMASH_R if s.smash else BALL_R
+		var cm := _hit_c(RallyFlight.shot_x(s), rad)
+		var p := Vector2(cm.x, cm.y)
+		var r := rad * FOCAL * size.y / cm.z
+		var rem := clampf(until / flight_ms, 0.0, 1.0)
+		var vis := clampf((T - s.launch) / 120.0, 0.0, 1.0) * clampf(1.0 + until / 60.0, 0.0, 1.0)
+		var zs := RallyFlight.zones_of(s)
+		var col := COL_SMASH if s.smash else zone_col(int(zs[0]))
+		var al := (1.0 if lead else 0.42) * vis * (0.40 + 0.60 * (1.0 - rem))
+		if lead:
+			draw_arc(p, r, 0.0, TAU, 48, Color(col, 0.75 * vis), 1.8 * _u, true)
+		draw_arc(p, r * (1.0 + 1.7 * rem), 0.0, TAU, 56, Color(col, al), (2.4 if lead else 1.3) * _u, true)
+		if s.smash and zs.size() > 1:
+			# Schmetterball: Schlaglinie beider Zonen in Weiss = beide Tasten.
+			for z in zs:
+				draw_line(_pp(_w(_zx(z, 0.012), 0.001, 0.0)), _pp(_w(_zx(z + 1, -0.012), 0.001, 0.0)),
+						Color(COL_SMASH, al), 3.0 * _u, true)

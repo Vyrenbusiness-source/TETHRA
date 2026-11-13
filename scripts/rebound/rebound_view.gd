@@ -3,7 +3,8 @@ extends Control
 
 ## Rebound: Darstellung. Vier Trommelfelle im unteren Bilddrittel, je ein Ball, der
 ## nach ReboundFlight huepft. Rein visuell (liest Zeit und Urteile, wertet nichts).
-## Lesbarkeit zuerst: Landering schrumpft bis zur Notenzeit, feiner Geister-Bogen
+## Lesbarkeit zuerst: Landering schrumpft gleichmaessig bis zur Notenzeit auf einen festen
+## Zielring, die naechste Landung fuehrt (spaetere Ringe duenner), feiner Geister-Bogen
 ## zeigt den Huepfer danach, Schatten wird zur Landung kleiner und dunkler.
 
 const COL_MISS := Color(0.55, 0.555, 0.57)
@@ -23,7 +24,8 @@ const WRONG_MS := 800.0
 const RING_MS := 900.0
 const GHOST_MS := 1300.0
 const CONTACT_MS := 95.0
-const FX_MS := 380.0
+const FX_MS := 420.0
+const FX_RING_MS := 260.0
 const TRAIL_STEP_MS := 26.0
 const TRAIL_N := 5
 
@@ -46,6 +48,9 @@ var _font: Font
 var _cap_style: StyleBoxFlat
 var _lane_cols: Array = []
 var _last_hpx := 400.0
+var _lead_t := INF
+var _u := 1.0
+var _body_font: Font
 
 
 func setup(p_flight: ReboundFlight) -> void:
@@ -56,6 +61,7 @@ func setup(p_flight: ReboundFlight) -> void:
 		for s in flight.segs[c]:
 			_seg_of[(s as ReboundFlight.Seg).idx] = s
 	_font = UiTheme.heading_font(2)
+	_body_font = UiTheme.body_font()
 	_cap_style = StyleBoxFlat.new()
 	_cap_style.set_corner_radius_all(7)
 	_cap_style.bg_color = Color(1, 1, 1, 0.06)
@@ -84,7 +90,8 @@ func lane_color(c: int) -> Color:
 func on_judged(index: int, result: Dictionary) -> void:
 	var q := int(result.get("quality", 5))
 	judged[index] = q
-	_add_fx(index, int(result.get("column", 0)), q)
+	var dt := 0.0 if bool(result.get("hold_end", false)) else float(result.get("dt", 0.0))
+	_add_fx(index, int(result.get("column", 0)), q, dt)
 
 
 func on_hold_start(index: int, quality: int) -> void:
@@ -99,10 +106,10 @@ func on_wrong_key(col: int) -> void:
 		_wrong.pop_front()
 
 
-func _add_fx(index: int, col: int, q: int) -> void:
+func _add_fx(index: int, col: int, q: int, dt: float = 0.0) -> void:
 	var s = _seg_of.get(index)
 	var x := (s as ReboundFlight.Seg).x1 if s != null else 0.0
-	_fx.append({"t0": t_ms, "col": col, "q": q, "x": x})
+	_fx.append({"t0": t_ms, "col": col, "q": q, "x": x, "dt": dt})
 	if _fx.size() > 40:
 		_fx.pop_front()
 
@@ -163,12 +170,18 @@ func _draw() -> void:
 		return
 	var l := _layout()
 	_last_hpx = l.hpx
+	_u = size.y / 720.0
 	_draw_floor(l)
 	var balls: Array = []
+	# Naechste Landung ueber alle Spalten: sie fuehrt, alles Spaetere tritt zurueck.
+	_lead_t = INF
 	for c in flight.columns:
 		var bb := flight.ball(c, t_ms)
 		balls.append(bb)
 		_rest[c] = bb.kind == ReboundFlight.Kind.REST
+		var k := flight.first_landing_at_or_after(c, t_ms)
+		if k >= 0 and not _rest[c]:
+			_lead_t = minf(_lead_t, (flight.segs[c][k] as ReboundFlight.Seg).t1)
 	for c in flight.columns:
 		_draw_drum(l, c)
 	for c in flight.columns:
@@ -183,6 +196,8 @@ func _draw() -> void:
 
 
 func _draw_floor(l: Lay) -> void:
+	# Hintergrund zurueck: das Map-Bild scheint nur leise durch.
+	draw_rect(Rect2(Vector2.ZERO, size), Color(0.035, 0.035, 0.040, 0.52))
 	var y0 := l.y - l.ry * 3.0
 	var pts := PackedVector2Array([Vector2(0, y0), Vector2(size.x, y0), Vector2(size.x, size.y), Vector2(0, size.y)])
 	var top := Color(0.03, 0.03, 0.035, 0.0)
@@ -214,16 +229,17 @@ func _draw_drum(l: Lay, c: int) -> void:
 	var cx := l.cx(c)
 	var rest: bool = _rest[c]
 	var edge := COL_HOLD if rest else col
-	var body := COL_BODY.lerp(edge, 0.10 + (0.22 if rest else 0.0) + 0.18 * g)
+	var body := COL_BODY.lerp(edge, 0.05 + (0.20 if rest else 0.0) + 0.10 * g)
 	# Seitenband: nur eine ruhige dunkle Kante.
 	_ell(Vector2(cx, l.y + l.depth), 0.3)
 	draw_circle(Vector2.ZERO, l.rx, COL_BODY.darkened(0.4))
 	_flat()
 	draw_rect(Rect2(cx - l.rx, l.y, l.rx * 2.0, l.depth), COL_BODY.darkened(0.4))
-	# Fell.
+	# Fell: dunkle Flaeche, eine feine Kante in Spaltenfarbe.
 	_ell(Vector2(cx, l.y), 0.3)
 	draw_circle(Vector2.ZERO, l.rx, body)
-	draw_arc(Vector2.ZERO, l.rx, 0.0, TAU, 64, Color(edge, 0.75 + 0.25 * maxf(g, 1.0 if rest else 0.0)), 3.4, true)
+	draw_arc(Vector2.ZERO, l.rx, 0.0, TAU, 72, Color(edge, 0.55 + 0.45 * maxf(g, 1.0 if rest else 0.0)),
+			(2.0 + 0.8 * g) * _u, true)
 	_flat()
 
 
@@ -231,20 +247,21 @@ func _draw_drum(l: Lay, c: int) -> void:
 func _draw_keycap(l: Lay, c: int) -> void:
 	var col := lane_color(c)
 	var g: float = _glow[c]
-	var fs := int(l.rx * 0.50)
+	var fs := int(l.rx * 0.24)
+	var lf := size.y * 0.020
 	var txt := str(key_labels[c]) if c < key_labels.size() else ""
 	var ts := _font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
 	var cx := l.cx(c)
-	var y := l.y + l.depth + l.ry + fs * 1.05
 	var edge := COL_HOLD if _rest[c] else col
-	var pw := maxf(fs * 1.5, ts.x + fs * 0.7)
-	var plate := Rect2(cx - pw * 0.5, y - fs * 1.05, pw, fs * 1.5)
-	_cap_style.bg_color = Color(edge, 0.10 + 0.40 * g)
-	_cap_style.border_color = Color(edge, 0.55 + 0.45 * g)
-	_cap_style.set_border_width_all(2)
-	draw_style_box(_cap_style, plate)
-	draw_string(_font, Vector2(cx - ts.x * 0.5, y), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs,
-			Color(1, 1, 1, 0.80 + 0.20 * g))
+	var pw := maxf(fs * 1.9, ts.x + fs * 0.9)
+	var plate := Rect2(Vector2(cx - pw * 0.5, l.y + l.depth + l.ry + lf * 1.9).round(), Vector2(pw, fs * 1.5).round())
+	# Ruhige dunkle Platte, Spaltenfarbe nur als Leiste unten und beim Druecken.
+	draw_rect(plate, Color(0.070, 0.070, 0.078, 0.94).lerp(Color(edge.darkened(0.25), 1.0), 0.70 * g), true)
+	draw_rect(plate, Color(1, 1, 1, 0.14 + 0.30 * g), false, 1.0)
+	var bar := maxf(round(2.0 * _u), 2.0)
+	draw_rect(Rect2(plate.position.x, plate.end.y - bar, plate.size.x, bar), Color(edge, 0.85 + 0.15 * g), true)
+	draw_string(_font, (plate.get_center() + Vector2(-ts.x * 0.5, fs * 0.34 - bar * 0.5)).round(), txt,
+			HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(0.925, 0.902, 0.855, 0.74 + 0.26 * g))
 
 
 ## Landering + Geister-Bogen des Zielflugs. Hold: doppelter Ring in Gold.
@@ -257,17 +274,21 @@ func _draw_target(l: Lay, c: int, b: Dictionary) -> void:
 	var col := COL_HOLD if s.hold else lane_color(c)
 	var until := s.t1 - t_ms
 	var win := minf(RING_MS, maxf(s.dur(), 120.0))
+	var lead := absf(s.t1 - _lead_t) <= 1.5
 	if until <= win and until >= -10.0 and b.kind != ReboundFlight.Kind.REST:
+		# Gleichmaessig schrumpfend (keine Bremse am Ende): der Moment bleibt ablesbar.
 		var q := clampf(1.0 - until / win, 0.0, 1.0)
-		var ease_q := q * q * (3.0 - 2.0 * q)
-		var rr := lerpf(l.rx * 0.96, l.ball_r * 1.18, ease_q)
-		var lw := 1.8 + 2.2 * q
+		var rt := l.ball_r * 1.18
+		# Start so weit, dass der Ring auch bei seitlicher Landung auf dem Fell bleibt.
+		var rr := lerpf(maxf(l.rx * 0.94 - absf(s.x1) * l.a, rt * 1.5), rt, q)
+		var ka := 1.0 if lead else 0.50
 		_ell(Vector2(l.cx(c) + s.x1 * l.a, l.y), 0.3)
-		draw_arc(Vector2.ZERO, rr, 0.0, TAU, 48, Color(col.lerp(Color.WHITE, 0.2 * q), 0.30 + 0.70 * q), lw, true)
+		# Fester Zielring: darauf schliesst sich der Landering.
+		draw_arc(Vector2.ZERO, rt, 0.0, TAU, 48, Color(col, (0.28 + 0.40 * q) * ka), 1.4 * _u, true)
+		draw_arc(Vector2.ZERO, rr, 0.0, TAU, 56, Color(col.lerp(Color.WHITE, 0.25 * q), (0.35 + 0.65 * q) * ka),
+				(1.6 + 1.6 * q) * (1.0 if lead else 0.7) * _u, true)
 		if s.hold:
-			draw_arc(Vector2.ZERO, rr * 0.80, 0.0, TAU, 40, Color(col, 0.30 + 0.70 * q), lw * 0.8, true)
-		if q > 0.82:
-			draw_circle(Vector2.ZERO, l.ball_r * 1.18, Color(col, 0.14 * (q - 0.82) / 0.18))
+			draw_arc(Vector2.ZERO, rr * 0.80, 0.0, TAU, 48, Color(col, (0.30 + 0.60 * q) * ka), 1.4 * _u, true)
 		_flat()
 	# Geister-Bogen: der Huepfer nach dieser Landung (uebernaechste Note, gedimmt).
 	if until < GHOST_MS and k + 1 < arr.size():
@@ -282,9 +303,9 @@ func _draw_target(l: Lay, c: int, b: Dictionary) -> void:
 				var xx := lerpf(n.x0, n.x1, p)
 				var pos := Vector2(l.cx(c) + xx * l.a, l.y - l.ball_r - hh * l.hpx)
 				if n.hold:
-					draw_arc(pos, 2.6, 0.0, TAU, 10, Color(gc, 0.34 * fade), 1.4, true)
+					draw_arc(pos, 2.4 * _u, 0.0, TAU, 10, Color(gc, 0.30 * fade), 1.2 * _u, true)
 				else:
-					draw_circle(pos, 1.6, Color(gc, 0.22 * fade))
+					draw_circle(pos, 1.4 * _u, Color(gc, 0.18 * fade))
 
 
 func _draw_chords(l: Lay, balls: Array) -> void:
@@ -370,7 +391,7 @@ func _draw_ball_full(l: Lay, c: int, b: Dictionary) -> void:
 			if hold:
 				draw_line(prev, tp, Color(col, 0.38 * f * alpha), 2.4 * f + 0.8, true)
 			else:
-				draw_line(prev, tp, Color(col, 0.16 * f * alpha), R * 0.9 * f, true)
+				draw_line(prev, tp, Color(col, 0.20 * f * alpha), R * 0.62 * f, true)
 			prev = tp
 	if hold:
 		_draw_hold_thread(l, c, b, pos, R * sq.y, col, alpha)
@@ -428,38 +449,47 @@ func _draw_wrong(l: Lay) -> void:
 		keep.append(w)
 		var q := age / WRONG_MS
 		var a := (1.0 - q * q) * minf(age / 80.0, 1.0)
-		var fs := int(maxf(l.rx * 0.20, 12.0))
-		var txt := "WRONG KEY"
-		var ts := _font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
-		var cx := l.cx(int(w.col))
-		var y := l.y - l.ball_r * 3.0 - 10.0 * q
-		var r := Rect2(cx - ts.x * 0.5 - 8.0, y - fs - 2.0, ts.x + 16.0, fs + 10.0)
-		draw_rect(r, Color(0.05, 0.04, 0.04, 0.70 * a))
-		draw_rect(Rect2(r.position.x, r.end.y - 2.0, r.size.x, 2.0), Color(COL_WRONG, 0.85 * a))
-		draw_string(_font, Vector2(cx - ts.x * 0.5, y), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(COL_WRONG, a))
+		var fs := int(size.y * 0.020)
+		var txt := tr("wrong key")
+		var ts := _body_font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
+		var at := Vector2(l.cx(int(w.col)) - ts.x * 0.5, l.y - l.ball_r * 3.0).round()
+		draw_string_outline(_body_font, at, txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 3, Color(0, 0, 0, 0.60 * a))
+		draw_string(_body_font, at, txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(COL_WRONG, a))
 	_wrong = keep
 
 
 func _draw_fx(l: Lay) -> void:
 	var keep: Array = []
+	var fs := int(size.y * 0.020)
 	for fx in _fx:
 		var age: float = t_ms - float(fx.t0)
 		if age < 0.0 or age > FX_MS:
 			continue
 		keep.append(fx)
-		var q := age / FX_MS
 		var c: int = fx.col
-		var jc: Color = JUDGE_COL[clampi(int(fx.q), 0, 5)]
-		var cx: float = l.cx(c) + float(fx.x) * l.a
-		var miss: bool = int(fx.q) == 5
-		var e := 1.0 - (1.0 - q) * (1.0 - q)
-		var rr := lerpf(l.ball_r * 1.1, l.rx * (0.78 if miss else 1.28), e)
-		_ell(Vector2(cx, l.y), 0.3)
-		draw_arc(Vector2.ZERO, rr, 0.0, TAU, 48, Color(jc, (0.30 if miss else 0.90) * (1.0 - q)), lerpf(3.6, 1.0, q), true)
-		_flat()
-		if age < 160.0:
-			var fl := 1.0 - age / 160.0
+		var qi := int(fx.q)
+		var jc: Color = JUDGE_COL[clampi(qi, 0, 5)]
+		var miss: bool = qi == 5
+		var q := age / FX_RING_MS
+		if q < 1.0:
+			# Ein sauberer Puls der Fellkante (mittig): im Fell bleiben nur Ziel- und Landering.
+			var e := 1.0 - (1.0 - q) * (1.0 - q)
+			var rr := l.rx * (1.0 + (0.0 if miss else 0.07) * e)
 			_ell(Vector2(l.cx(c), l.y), 0.3)
-			draw_circle(Vector2.ZERO, l.rx, Color(jc, (0.10 if miss else 0.26) * fl))
+			draw_arc(Vector2.ZERO, rr, 0.0, TAU, 72, Color(jc, (0.40 if miss else 0.95) * (1.0 - q)),
+					lerpf(3.4, 1.2, q) * _u, true)
 			_flat()
+		if age < 120.0:
+			var fl := 1.0 - age / 120.0
+			_ell(Vector2(l.cx(c), l.y), 0.3)
+			draw_circle(Vector2.ZERO, l.rx, Color(jc, (0.05 if miss else 0.16) * fl * fl))
+			_flat()
+		var dt := float(fx.dt)
+		if not miss and qi >= 1 and absf(dt) > 0.5:
+			# Frueh / spaet: klein, direkt unter dem Fell.
+			var txt := tr("früh") if dt < 0.0 else tr("spät")
+			var ts := _body_font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
+			var ul := age / FX_MS
+			var at := Vector2(l.cx(c) - ts.x * 0.5, l.y + l.depth + l.ry + fs * 1.15).round()
+			draw_string(_body_font, at, txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(jc, 0.95 * (1.0 - ul * ul)))
 	_fx = keep

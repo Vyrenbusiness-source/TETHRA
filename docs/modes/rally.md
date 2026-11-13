@@ -26,8 +26,10 @@ Alte Fassung (Seitenansicht, A/B) ist ersetzt: sie war langweilig (nichts zu les
   aufladen", Ring fuellt sich), am Ende loslassen; Wertung wie Mania-Hold (osu!mania stable).
 - **Wertung** wie Mania (OD-Fenster, MAX/300/200/100/50/Miss, ScoreV1), falsche Zone = kein
   Treffer (Taste ohne Ball in der Zone wird ignoriert, kein Notelock zwischen Zonen).
-- **Lesbarkeit:** Landepunkt-Ring in der Zone erscheint, wenn der Ball losfliegt, und schrumpft
-  bis zur Landung; Ball mit Schatten auf dem Tisch (Schatten zeigt die Zone schon im Flug).
+- **Lesbarkeit:** Je Zone ein fester Umriss in Ballgroesse am Treffpunkt ueber der Schlaglinie; ein
+  Ring erscheint, wenn der Ball losfliegt, und zieht sich bis zur Notenzeit auf den Umriss zusammen
+  (naechster Schlag kraeftig, folgende duenn und erst ab einer Beat-Laenge). Der Aufsetzpunkt ist
+  nur eine feste, leise Marke (schrumpft nicht, kein zweites Zeitsignal); Ball mit Schatten auf dem Tisch (Schatten zeigt die Zone schon im Flug).
   Schmetterball weiss umrandet + max. 1,4x Ball, Aufladen mit Laufband ueber die Zone.
 - **Gefuehl:** Gegner spielt sichtbar (Schlaeger schwingt je Ball, bei Streams schneller
   "Mehrball"), Ballwechsel-Zaehler, dezente unscharfe Publikums-Silhouetten, Licht reagiert leise auf Kombo (nie grell, kein
