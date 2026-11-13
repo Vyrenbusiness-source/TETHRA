@@ -163,6 +163,7 @@ var _collection_mode := false
 var _active_collection := ""
 var _chips_row: HFlowContainer
 var _coll_undo := ""  # zuletzt geloeschte Sammlung (Rueckgaengig-Chip)
+var _coll_unplayable: Array = []  # Maps der Sammlung ohne Diff fuer den Modus (markierte Karten)
 # Lokale Filter: Sterne-Bereich + Sortierung (clean als Chip-Reihe).
 var _star_filter := 0
 ## Sortierung (SORT_*) und Bestwert-Filter je Spielmodus getrennt:
@@ -299,6 +300,10 @@ func _ready() -> void:
 			var cn := a.trim_prefix("--shot-coll").trim_prefix("=")
 			_active_collection = cn if CollectionStore.exists(cn) else ""
 			_set_collection_mode(true)
+		# Harness: dazu den Dialog "Neue Sammlung" (Modus-Wahl) oeffnen; speichert nichts.
+		if a == "--shot-coll-dialog":
+			_collection_name_dialog.call_deferred(tr("Neue Sammlung"), "", tr("Anlegen"),
+				func(_n: String, _m: String) -> bool: return true, _play_mode)
 	_apply_career_layout()
 	_refresh_filter(_search.text)
 	_state_ready = restore
@@ -347,6 +352,9 @@ func _ready() -> void:
 		_on_play_pressed.call_deferred()
 	elif OS.get_cmdline_args().has("--shot-sv"):
 		_shot_sv.call_deferred()
+	elif _arg_value("--shot-recs") != null:
+		# Harness: "For you" mit Beispiel-Profil und Online-Gruppe (ohne Netz) als PNG.
+		_shot_recs.call_deferred()
 	elif OS.get_cmdline_args().has("--shot-modes"):
 		# Harness: Scores je Modus (Browser, Results, Profil) als PNGs.
 		_shot_modes.call_deferred()
@@ -1361,8 +1369,8 @@ func _style_tabs() -> void:
 func _set_collection_mode(on: bool) -> void:
 	_collection_mode = on
 	_coll_undo = ""
-	if on and not CollectionStore.exists(_active_collection):
-		var names := CollectionStore.list_names()
+	if on and not CollectionStore.list_for(_play_mode).has(_active_collection):
+		var names := CollectionStore.list_for(_play_mode)
 		_active_collection = names[0] if not names.is_empty() else ""
 	_chips_row.visible = on
 	_apply_career_layout()
@@ -1396,6 +1404,22 @@ const COLL_EN := {
 	"Schließen": "Close",
 	"Alle Maps zeigen": "Show all maps",
 	"  ·  %d in anderem Modus": "  ·  %d in another mode",
+	"alle Modi": "all modes",
+	"Alle Modi": "All modes",
+	"Gilt für": "Used in",
+	"Nur %s": "%s only",
+	"Bearbeiten": "Edit",
+	"Sammlung \"%s\" bearbeiten": "Edit collection \"%s\"",
+	"Name oder Modus von \"%s\" ändern": "Change name or mode of \"%s\"",
+	"Nicht in %s spielbar": "Not playable in %s",
+	"Nur osu!standard-Diffs. Spielbar in %s.": "osu!standard difficulties only. Playable in %s.",
+	"Diese Map hat keine Diff für %s. Sie bleibt in der Sammlung.":
+		"This map has no difficulty for %s. It stays in the collection.",
+	"Noch keine Sammlung für %s.": "No collection for %s yet.",
+	"Noch keine Sammlung für %s. Lege oben mit \"+ Neu\" eine an oder nutze \"+ Sammlung\" im Info-Panel.":
+		"No collection for %s yet. Create one with \"+ New\" above, or use \"+ Collection\" in the info panel.",
+	"\"%s\" in Sammlungen": "\"%s\" in collections",
+	"Neue Sammlung…": "New collection…",
 	"Noch keine Sammlung. Lege oben mit \"+ Neu\" eine an oder nutze \"+ Sammlung\" im Info-Panel.":
 		"No collections yet. Create one with \"+ New\" above, or use \"+ Collection\" in the info panel.",
 	"\"%s\" ist noch leer. Unter \"Heruntergeladen\" eine Map wählen, dann \"+ Sammlung\" im Info-Panel.":
@@ -1429,6 +1453,7 @@ static func collection_view(mapsets: Array, files: Array, vm: String, q: String)
 		want[str(f)] = true
 	var found := {}
 	var shown: Array = []
+	var unplayable: Array = []
 	var other_mode := 0
 	var search_hidden := 0
 	for ms in mapsets:
@@ -1437,13 +1462,34 @@ static func collection_view(mapsets: Array, files: Array, vm: String, q: String)
 			continue
 		found[f] = true
 		if ms.visible_diffs(vm).is_empty():
+			# Ohne Diff fuer den Modus: nicht versteckt, sondern markiert gezeigt.
 			other_mode += 1
+			if q == "" or ms.search_haystack().contains(q):
+				unplayable.append(ms)
 		elif q != "" and not ms.search_haystack().contains(q):
 			search_hidden += 1
 		else:
 			shown.append(ms)
-	return {"shown": shown, "other_mode": other_mode, "search_hidden": search_hidden,
-		"missing": want.size() - found.size()}
+	return {"shown": shown, "unplayable": unplayable, "other_mode": other_mode,
+		"search_hidden": search_hidden, "missing": want.size() - found.size()}
+
+
+## Kleiner Modus-Hinweis einer Sammlung: Modus-Name bzw. "alle Modi".
+static func collection_mode_hint(mode: String) -> String:
+	_coll_translations()
+	var m := CollectionStore.normalize_mode(mode)
+	if m == CollectionStore.MODE_ALL:
+		return TranslationServer.translate("alle Modi")
+	return ScoreStore.mode_label("" if m == "mania" else m)
+
+
+## Modi, in denen das Set mindestens eine Diff hat.
+static func playable_modes(ms: MapSet) -> Array:
+	var out: Array = []
+	for m in PLAY_MODES:
+		if not ms.visible_diffs("mania" if ScoreStore.is_mania_like(m) else "orbit").is_empty():
+			out.append(m)
+	return out
 
 
 ## Grund fuer eine leere Sammlungs-Liste: "none" (keine Sammlung), "empty",
@@ -1467,6 +1513,9 @@ func _collection_empty_text() -> String:
 	var view := collection_view(_library.mapsets, files, _vm(), _search.text.strip_edges().to_lower())
 	match collection_empty_reason(_active_collection, view):
 		"none":
+			if not CollectionStore.list_names().is_empty():
+				return tr("Noch keine Sammlung für %s. Lege oben mit \"+ Neu\" eine an oder nutze \"+ Sammlung\" im Info-Panel.") \
+						% collection_mode_hint(_play_mode)
 			return tr("Noch keine Sammlung. Lege oben mit \"+ Neu\" eine an oder nutze \"+ Sammlung\" im Info-Panel.")
 		"search":
 			return tr("Kein Treffer für die Suche in \"%s\".") % _active_collection
@@ -1502,7 +1551,8 @@ func _rebuild_chips() -> void:
 		c.queue_free()
 	if not _collection_mode:
 		return
-	var names := CollectionStore.list_names()
+	# Nur Sammlungen des aktuellen Modus und "alle Modi".
+	var names := CollectionStore.list_for(_play_mode)
 	if not names.has(_active_collection):
 		_active_collection = names[0] if not names.is_empty() and _coll_undo == "" else ""
 	if _coll_undo != "":
@@ -1522,7 +1572,8 @@ func _rebuild_chips() -> void:
 		ub.add_theme_color_override("font_color", COL_ACCENT)
 	elif names.is_empty():
 		var hint := Label.new()
-		hint.text = tr("Noch keine Sammlung.")
+		hint.text = tr("Noch keine Sammlung.") if CollectionStore.list_names().is_empty() \
+				else tr("Noch keine Sammlung für %s.") % collection_mode_hint(_play_mode)
 		hint.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
 		hint.add_theme_font_size_override("font_size", 13)
 		hint.add_theme_color_override("font_color", COL_DIM)
@@ -1544,23 +1595,26 @@ func _rebuild_chips() -> void:
 			_coll_undo = ""
 			_coll_changed())
 		_chips_row.add_child(chip)
+		_coll_chip_hint(chip, CollectionStore.mode_of(name), name == _active_collection)
 	_coll_action(tr("+ Neu"), tr("Neue Sammlung anlegen"), func():
-		_collection_name_dialog(tr("Neue Sammlung"), "", tr("Anlegen"), func(n: String) -> bool:
-			if not CollectionStore.create(n):
+		_collection_name_dialog(tr("Neue Sammlung"), "", tr("Anlegen"), func(n: String, mode: String) -> bool:
+			if not CollectionStore.create(n, mode):
 				return false
 			_active_collection = n.strip_edges()
 			_coll_undo = ""
 			_coll_changed()
-			return true))
+			return true, _play_mode))
 	if _active_collection != "":
 		var act := _active_collection
-		_coll_action(tr("Umbenennen"), tr("Sammlung \"%s\" umbenennen") % act, func():
-			_collection_name_dialog(tr("Sammlung \"%s\" umbenennen") % act, act, tr("Speichern"), func(n: String) -> bool:
-				if not CollectionStore.rename(act, n):
+		_coll_action(tr("Bearbeiten"), tr("Name oder Modus von \"%s\" ändern") % act, func():
+			_collection_name_dialog(tr("Sammlung \"%s\" bearbeiten") % act, act, tr("Speichern"), func(n: String, mode: String) -> bool:
+				var nn := n.strip_edges()
+				if nn != act and not CollectionStore.rename(act, nn):
 					return false
-				_active_collection = n.strip_edges()
+				CollectionStore.set_mode(nn, mode)
+				_active_collection = nn
 				_coll_changed()
-				return true))
+				return true, CollectionStore.mode_of(act)))
 		_coll_action(tr("Löschen"), tr("Sammlung \"%s\" löschen (lässt sich zurückholen)") % act, func():
 			CollectionStore.delete(act)
 			_coll_undo = act
@@ -1602,8 +1656,32 @@ func _coll_overlay(title_text: String) -> Array:
 	return [overlay, vb]
 
 
-## Name eingeben (Neu / Umbenennen). on_ok(name) -> bool: false = Name abgelehnt.
-func _collection_name_dialog(title_text: String, initial: String, ok_text: String, on_ok: Callable) -> void:
+## Kleiner Modus-Hinweis rechts im Sammlungs-Chip (Chip haengt schon im Baum).
+func _coll_chip_hint(chip: Button, mode: String, active: bool) -> void:
+	var hl := Label.new()
+	hl.text = collection_mode_hint(mode)
+	hl.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	hl.add_theme_font_size_override("font_size", 11)
+	var own := CollectionStore.normalize_mode(mode) != CollectionStore.MODE_ALL
+	var col := UiTheme.ACCENT2 if own else COL_DIM
+	hl.add_theme_color_override("font_color", Color(col, 0.95 if active or own else 0.75))
+	hl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	chip.add_child(hl)
+	var text_w := chip.get_minimum_size().x
+	var hint_w := hl.get_minimum_size().x
+	chip.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	chip.custom_minimum_size = Vector2(text_w + hint_w + 6.0, CHIPS_H)
+	hl.set_anchors_and_offsets_preset(Control.PRESET_RIGHT_WIDE)
+	hl.offset_left = -(hint_w + 13.0)
+	hl.offset_right = -13.0
+	hl.offset_top = 1.0
+
+
+## Name und Modus eingeben (Neu / Bearbeiten). on_ok(name, modus) -> bool:
+## false = Name abgelehnt. mode0 = vorgewaehlter Modus ("" = alle Modi).
+func _collection_name_dialog(title_text: String, initial: String, ok_text: String, on_ok: Callable,
+		mode0: String = "") -> void:
 	var ov := _coll_overlay(title_text)
 	var overlay: Control = ov[0]
 	var vb: VBoxContainer = ov[1]
@@ -1613,6 +1691,33 @@ func _collection_name_dialog(title_text: String, initial: String, ok_text: Strin
 	edit.max_length = 40
 	edit.custom_minimum_size = Vector2(0, 40)
 	vb.add_child(edit)
+	# Modus der Sammlung: "Alle Modi" oder genau einer.
+	var cap := Label.new()
+	cap.text = tr("Gilt für")
+	cap.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	cap.add_theme_font_size_override("font_size", 12)
+	cap.add_theme_color_override("font_color", COL_DIM)
+	vb.add_child(cap)
+	var flow := HFlowContainer.new()
+	flow.add_theme_constant_override("h_separation", 6)
+	flow.add_theme_constant_override("v_separation", 6)
+	vb.add_child(flow)
+	var picked := [CollectionStore.normalize_mode(mode0)]
+	var pick_btns: Array = []
+	var options: Array = [CollectionStore.MODE_ALL]
+	options.append_array(PLAY_MODES)
+	for opt in options:
+		var mb := _make_toggle(tr("Alle Modi") if opt == "" else collection_mode_hint(opt), 13, 13)
+		mb.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+		mb.custom_minimum_size = Vector2(0, 30)
+		_apply_toggle(mb, opt == picked[0])
+		var o: String = opt
+		mb.pressed.connect(func():
+			picked[0] = o
+			for j in pick_btns.size():
+				_apply_toggle(pick_btns[j], options[j] == o))
+		flow.add_child(mb)
+		pick_btns.append(mb)
 	var err := Label.new()
 	err.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
 	err.add_theme_font_size_override("font_size", 13)
@@ -1637,7 +1742,7 @@ func _collection_name_dialog(title_text: String, initial: String, ok_text: Strin
 	var submit := func():
 		if edit.text.strip_edges() == "":
 			return
-		if on_ok.call(edit.text):
+		if on_ok.call(edit.text, str(picked[0])):
 			overlay.queue_free()
 		else:
 			err.text = tr("Diesen Namen gibt es schon.")
@@ -1712,9 +1817,10 @@ func _open_collection_popup() -> void:
 	var fill_boxes := func():
 		for c in boxes.get_children():
 			c.queue_free()
-		for name in CollectionStore.list_names():
+		for name in CollectionStore.list_for(_play_mode):
 			var cb := CheckBox.new()
-			cb.text = name
+			cb.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+			cb.text = "%s  ·  %s" % [name, collection_mode_hint(CollectionStore.mode_of(name))]
 			cb.button_pressed = CollectionStore.contains(name, _selected_set.osz_path)
 			cb.toggled.connect(func(_on):
 				CollectionStore.toggle(name, _selected_set.osz_path)
@@ -1726,13 +1832,13 @@ func _open_collection_popup() -> void:
 	new_row.add_theme_constant_override("separation", 8)
 	vb.add_child(new_row)
 	var new_edit := LineEdit.new()
-	new_edit.placeholder_text = "Neue Sammlung…"
+	new_edit.placeholder_text = "%s  ·  %s" % [tr("Neue Sammlung…"), tr("Nur %s") % collection_mode_hint(_play_mode)]
 	new_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	new_row.add_child(new_edit)
 	var new_btn := Button.new()
-	new_btn.text = "Anlegen"
+	new_btn.text = tr("Anlegen")
 	var add_new := func():
-		if CollectionStore.create(new_edit.text):
+		if CollectionStore.create(new_edit.text, _play_mode):
 			CollectionStore.toggle(new_edit.text.strip_edges(), _selected_set.osz_path)
 			new_edit.text = ""
 			fill_boxes.call()
@@ -1742,7 +1848,7 @@ func _open_collection_popup() -> void:
 	new_row.add_child(new_btn)
 
 	var close := Button.new()
-	close.text = "Schließen"
+	close.text = tr("Schließen")
 	close.custom_minimum_size = Vector2(0, 40)
 	close.pressed.connect(func():
 		overlay.queue_free()
@@ -1859,17 +1965,24 @@ func _refresh_filter(query: String) -> void:
 	var idx: Dictionary = _scores_for_mode() if need_scores else {}
 	var rows: Array = []
 	_filtered.clear()
+	_coll_unplayable.clear()
+	var coll_files := {}
+	if coll and _active_collection != "":
+		for f in CollectionStore.maps_in(_active_collection):
+			coll_files[str(f)] = true
 	for ms in _library.mapsets:
 		if q != "" and not ms.search_haystack().contains(q):
 			continue
 		if _collection_mode:
-			if _active_collection == "" or not CollectionStore.contains(_active_collection, ms.osz_path):
+			if not coll_files.has(ms.osz_path.get_file()):
 				continue
 		if _sv_filter and not coll and not ms.has_sv():
 			continue
 		# Modus-Filter: osu!standard-Diffs nur im Orbit-Modus (MapSet.mode_shows).
 		var vis := ms.visible_diffs(_vm())
 		if vis.is_empty():
+			if coll:
+				_coll_unplayable.append(ms)  # bleibt sichtbar, als nicht spielbar markiert
 			continue
 		# Sterne des aktiven Modus (fehlende vorlaeufig Mania-Sterne).
 		var smap := _mode_star_map(ms) if star_f \
@@ -2254,7 +2367,11 @@ func _rebuild_cards() -> void:
 		_card_buttons.append(card)
 		card.mouse_entered.connect(_slide_card.bind(card, true))
 		card.mouse_exited.connect(_slide_card.bind(card, false))
-	if _filtered.is_empty() and (_collection_mode or not _library.mapsets.is_empty()):
+	if _collection_mode:
+		for ms in _coll_unplayable:
+			_list_box.add_child(_make_unplayable_card(ms))
+	if _filtered.is_empty() and (_coll_unplayable.is_empty() or not _collection_mode) \
+			and (_collection_mode or not _library.mapsets.is_empty()):
 		var empty := Label.new()
 		empty.text = _collection_empty_text() if _collection_mode else tr("Keine Maps für diese Filter")
 		empty.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
@@ -2280,6 +2397,66 @@ func _rebuild_cards() -> void:
 	if _selected_set != null:
 		_apply_card_highlight()
 	_refresh_recommended()
+
+
+## Sammlungs-Ansicht: Map ohne Diff fuer den aktuellen Modus. Bleibt sichtbar,
+## gedimmt und klar markiert; nicht waehlbar.
+func _make_unplayable_card(ms: MapSet) -> Control:
+	var mode_name := collection_mode_hint(_play_mode)
+	var names: Array = []
+	for m in playable_modes(ms):
+		names.append(collection_mode_hint(m))
+	var card := PanelContainer.new()
+	card.custom_minimum_size = Vector2(0, CARD_H)
+	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	card.add_theme_stylebox_override("panel", _card_box(Color(COL_CARD, 0.55), Color(COL_DIM, 0.35)))
+	card.tooltip_text = tr("Diese Map hat keine Diff für %s. Sie bleibt in der Sammlung.") % mode_name
+	var pad := MarginContainer.new()
+	pad.add_theme_constant_override("margin_left", 20)
+	pad.add_theme_constant_override("margin_right", 16)
+	pad.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	card.add_child(pad)
+	var hb := HBoxContainer.new()
+	hb.add_theme_constant_override("separation", 12)
+	hb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	pad.add_child(hb)
+	var vb := VBoxContainer.new()
+	vb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vb.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	vb.add_theme_constant_override("separation", 4)
+	vb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hb.add_child(vb)
+	var t := Label.new()
+	t.text = "%s - %s" % [ms.artist, ms.title]
+	t.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	t.add_theme_font_size_override("font_size", 17)
+	t.add_theme_color_override("font_color", Color(COL_TEXT, 0.55))
+	t.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	t.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vb.add_child(t)
+	var sub := Label.new()
+	sub.text = tr("Nur osu!standard-Diffs. Spielbar in %s.") % ", ".join(names)
+	sub.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	sub.add_theme_font_size_override("font_size", 13)
+	sub.add_theme_color_override("font_color", COL_DIM)
+	sub.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	sub.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vb.add_child(sub)
+	var tag := Label.new()
+	tag.text = tr("Nicht in %s spielbar") % mode_name
+	tag.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	tag.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	tag.add_theme_font_size_override("font_size", 12)
+	tag.add_theme_color_override("font_color", COL_ACCENT)
+	var tb := _rounded_box(Color(COL_ACCENT, 0.08), 4, Color(COL_ACCENT, 0.45), 1)
+	tb.content_margin_left = 8
+	tb.content_margin_right = 8
+	tb.content_margin_top = 3
+	tb.content_margin_bottom = 3
+	tag.add_theme_stylebox_override("normal", tb)
+	tag.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hb.add_child(tag)
+	return card
 
 
 ## "An Freund schicken": Map-Link ins Chat-Overlay (GameSession.chat).
@@ -3123,6 +3300,8 @@ func _set_play_mode(mode: String) -> void:
 	_apply_career_layout()
 	_career_start()
 	_recs_refresh()
+	if _collection_mode:
+		_rebuild_chips()  # Sammlungen haengen am Modus
 	# Sichtbare Maps haengen am Modus (osu!standard nur im Orbit-Modus).
 	var keep := _selected_set
 	_refresh_filter(_search.text)
@@ -4104,15 +4283,24 @@ func _shot_import() -> void:
 # Online-Tab (scripts/ui/online_browser.gd)
 # ---------------------------------------------------------------------------
 
+## Online-Browser anlegen (unsichtbar): Suche, Vorhoeren und Download laufen
+## ueber ihn, auch fuer die Online-Vorschlaege in "For you".
+func _ensure_online() -> void:
+	if _online != null:
+		return
+	_online = OnlineBrowser.new(_library)
+	_online.visible = false
+	add_child(_online)
+	_online.preview_stream.connect(func(st: AudioStream): _switch_preview(st, 0.0, ""))
+	_online.preview_stop.connect(_stop_preview_soft)
+	_online.preview_stop.connect(_rec_mark_preview)
+	_online.map_downloaded.connect(_on_online_downloaded)
+	_online.closed.connect(_on_online_closed)
+	_online.quiet_done.connect(_on_rec_online)
+
+
 func _open_download_panel() -> void:
-	if _online == null:
-		_online = OnlineBrowser.new(_library)
-		_online.visible = false
-		add_child(_online)
-		_online.preview_stream.connect(func(st: AudioStream): _switch_preview(st, 0.0, ""))
-		_online.preview_stop.connect(_stop_preview_soft)
-		_online.map_downloaded.connect(_on_online_downloaded)
-		_online.closed.connect(_on_online_closed)
+	_ensure_online()
 	_stop_preview_soft()
 	_online.open()
 
@@ -5001,6 +5189,10 @@ const REC_COVER := 44.0
 const REC_MAXPP_CAP := 400       # hoechstens so viele Max-pp-Abfragen je Rechnung
 const REC_STYLE_PATH := "user://rec_style.cfg"  # Stil-Merkmale je Diff (Notenfolge), gecacht
 const REC_STYLE_CAP := 60        # hoechstens so viele neue Diffs je Rechnung auswerten
+const REC_SEEN_PATH := "user://rec_seen.cfg"      # wie oft ein Vorschlag schon gezeigt wurde
+const REC_SEEN_DAYS := 21        # aeltere Eintraege verfallen
+const REC_ONLINE_PATH := "user://rec_online.cfg"  # Antworten der Online-Suche (12 h)
+const REC_ONLINE_N := 2          # Online-Kacheln je Seite (breit genug fuer Grund + "Get")
 
 var _rec := {"levels": {}, "collapsed": false, "hidden": false}
 var _rec_box: VBoxContainer
@@ -5018,7 +5210,45 @@ var _rec_res := {}               # {mode, starter, items, comfort}
 var _rec_lookup := {}            # "datei|version" -> [MapSet, diff]
 var _rec_rows: Array = []        # {btn, ms, diff}
 var _rec_cover_mat: ShaderMaterial
+var _rec_page := 0               # Seite ("Show more"), gilt fuer lokale und Online-Vorschlaege
+var _rec_frozen := false         # Harness: festes Beispiel, keine Rechnung
+var _rec_seen := {}              # "modus|datei|version" bzw. "modus|online:<id>" -> [Anzahl, Tag]
+var _rec_seen_loaded := false
+var _rec_on_cache := {}          # Suche -> {t, pages, end, results} (Recommender.online_cache_put)
+var _rec_on_loaded := false
+var _rec_on_list: Array = []     # geordnete Online-Vorschlaege der aktuellen Suche
+var _rec_on_rows := {}           # Set-ID -> {cover, get, sub, text}
+var _rec_on_fail_at := 0
+var _rec_on_offset := 0
+var _rec_blank: ImageTexture
 static var _rec_tr_loaded := false
+
+## Deutsche Texte der Vorschlaege (Quelle Englisch = Schluessel), ohne Eintrag
+## in translations/.
+const REC_DE := {
+	"Your style: %s": "Dein Stil: %s",
+	"fits: %s": "passt: %s",
+	"like %s": "wie %s",
+	"mapped by %s": "Mapper %s",
+	"about %d:%02d long": "etwa %d:%02d lang",
+	"in your star range": "in deinem Sterne-Bereich",
+	"Show more": "Mehr anzeigen",
+	"Show more suggestions": "Weitere Vorschläge zeigen",
+	"Not in your library yet": "Noch nicht in deiner Bibliothek",
+	"Get": "Laden",
+	"Retry": "Nochmal",
+	"Download and play right away": "Herunterladen und sofort spielen",
+	"Click to listen": "Klicken zum Vorhören",
+	"Playing preview": "Vorschau läuft",
+	"From the maps you play in %s": "Aus den Maps, die du in %s spielst",
+	"Electronic": "Elektronisch",
+	"Video game": "Videospiel",
+	"Classical": "Klassik",
+	"Hip hop": "Hip-Hop",
+	"Japanese": "Japanisch",
+	"Korean": "Koreanisch",
+	"Chinese": "Chinesisch",
+}
 
 
 ## Zustand bereinigen: Stufe je Modus (unbekannt -> Challenge), zwei Schalter.
@@ -5080,12 +5310,54 @@ static func rec_starters(mode: String, cands: Array, n: int) -> Array:
 
 ## Vorschlaege oder (unter REC_MIN_RUNS Laeufen) Start-Vorschlaege.
 static func rec_compute(mode: String, level: String, cands: Array, runs: Array,
-		n: int, now: int = 0, tst: Dictionary = {}) -> Dictionary:
+		n: int, now: int = 0, tst: Dictionary = {}, seen: Dictionary = {}) -> Dictionary:
 	var sk := Recommender.skill(mode, runs)
 	if runs.size() < REC_MIN_RUNS:
 		return {"starter": true, "items": rec_starters(mode, cands, n), "comfort": float(sk.comfort)}
-	return {"starter": false, "items": Recommender.suggest(mode, level, cands, n, runs, now, tst),
+	return {"starter": false, "items": Recommender.suggest(mode, level, cands, n, runs, now, tst, seen),
 		"comfort": float(sk.comfort)}
+
+
+## osu!-Sterne minus Modus-Sterne (Median der eigenen Maps des Such-Modus):
+## der Mirror kennt nur osu!-Sterne. Mania 0.
+static func rec_star_shift(mode: String, cands: Array) -> float:
+	if mode == "mania":
+		return 0.0
+	var want := 0 if mode == "orbit" else 3
+	var d: Array = []
+	for c in cands:
+		var b := float(c.get("base_stars", -1.0))
+		if b > 0.0 and float(c.get("stars", -1.0)) > 0.0 and int(c.get("osu_mode", 3)) == want:
+			d.append(b - float(c.stars))
+	return Recommender._median(d) if d.size() >= 3 else 0.0
+
+
+## Gezeigt-Zaehler: keys (ohne Praefix) heute einmal hochzaehlen. seen:
+## "praefix|key" -> [Anzahl, Tag]. true = etwas geaendert.
+static func rec_seen_note(seen: Dictionary, prefix: String, keys: Array, day: int) -> bool:
+	var changed := false
+	for k in keys:
+		var full := "%s|%s" % [prefix, k]
+		var cur = seen.get(full)
+		if cur is Array and cur.size() == 2 and int(cur[1]) == day:
+			continue
+		seen[full] = [(int(cur[0]) if cur is Array and cur.size() == 2 else 0) + 1, day]
+		changed = true
+	return changed
+
+
+## Zaehler eines Modus fuer den Recommender ("key" -> Anzahl); verfallene
+## Eintraege (aelter als REC_SEEN_DAYS) fliegen dabei aus seen.
+static func rec_seen_counts(seen: Dictionary, prefix: String, day: int) -> Dictionary:
+	var out := {}
+	for full in seen.keys():
+		var cur = seen[full]
+		if not (cur is Array) or cur.size() != 2 or day - int(cur[1]) > REC_SEEN_DAYS:
+			seen.erase(full)
+			continue
+		if str(full).begins_with(prefix + "|"):
+			out[str(full).substr(prefix.length() + 1)] = int(cur[0])
+	return out
 
 
 ## Stil-Merkmale der Kandidaten aus der Notenfolge (Recommender.mania_style /
@@ -5104,8 +5376,9 @@ static func rec_fill_style(cands: Array) -> void:
 		var key := "%s|%s" % [osz.get_file(), inner]
 		var mt := FileAccess.get_modified_time(osz)
 		var hit = cfg.get_value("style", key) if cfg.has_section_key("style", key) else null
-		if hit is Array and hit.size() == 2 and int(hit[0]) == mt:
+		if hit is Array and hit.size() == 3 and int(hit[0]) == mt:
 			c["style"] = hit[1]
+			rec_apply_meta(c, hit[2])
 			continue
 		if fresh >= REC_STYLE_CAP:
 			continue
@@ -5114,15 +5387,51 @@ static func rec_fill_style(cands: Array) -> void:
 			var z := ZIPReader.new()
 			zips[osz] = z if z.open(osz) == OK else null
 		var st := {}
+		var meta := {}
 		if zips[osz] != null:
-			st = rec_style_of_text((zips[osz] as ZIPReader).read_file(inner).get_string_from_utf8())
-		cfg.set_value("style", key, [mt, st])
+			var text := (zips[osz] as ZIPReader).read_file(inner).get_string_from_utf8()
+			st = rec_style_of_text(text)
+			meta = rec_meta_of_text(text)
+		cfg.set_value("style", key, [mt, st, meta])
 		c["style"] = st
+		rec_apply_meta(c, meta)
 	for z in zips.values():
 		if z != null:
 			(z as ZIPReader).close()
 	if fresh > 0:
 		cfg.save(REC_STYLE_PATH)
+
+
+## Genre, Sprache und Tags aus dem Kopf einer .osu-Datei (Tags + Source).
+static func rec_meta_of_text(text: String) -> Dictionary:
+	var tags := ""
+	var source := ""
+	for raw in text.substr(0, 8000).split("\n"):
+		var line := raw.strip_edges()
+		if line.begins_with("Tags:"):
+			tags = line.trim_prefix("Tags:").strip_edges()
+		elif line.begins_with("Source:"):
+			source = line.trim_prefix("Source:").strip_edges()
+		elif line == "[Difficulty]":
+			break
+	var g := Recommender.genre_from_tags(tags, source)
+	var words: Array = []
+	for w in tags.to_lower().split(" ", false):
+		if w.length() >= 3 and not words.has(w):
+			words.append(w)
+		if words.size() >= 8:
+			break
+	return {"genre": str(g.genre), "language": str(g.language), "tags": words}
+
+
+static func rec_apply_meta(c: Dictionary, meta) -> void:
+	if not (meta is Dictionary):
+		return
+	for k in ["genre", "language"]:
+		if str(meta.get(k, "")) != "":
+			c[k] = str(meta[k])
+	if meta.get("tags") is Array and not (meta.tags as Array).is_empty():
+		c["tags"] = meta.tags
 
 
 ## Stil einer .osu-Datei (Text): Mania (Mode 3) -> mania_style, sonst std_style.
@@ -5232,6 +5541,16 @@ static func _rec_translations() -> void:
 		var t := load(path) as Translation
 		if t != null:
 			TranslationServer.add_translation(t)
+	# Auch Englisch eintragen: ohne Eintrag greift die Rueckfall-Sprache (de).
+	var de := Translation.new()
+	de.locale = "de"
+	var en := Translation.new()
+	en.locale = "en"
+	for k in REC_DE:
+		de.add_message(k, REC_DE[k])
+		en.add_message(k, k)
+	TranslationServer.add_translation(de)
+	TranslationServer.add_translation(en)
 
 
 func _build_recs() -> void:
@@ -5271,7 +5590,14 @@ func _build_recs() -> void:
 	_rec_sub.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	_rec_sub.add_theme_font_size_override("font_size", 12)
 	_rec_sub.add_theme_color_override("font_color", COL_DIM)
+	_rec_sub.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	_rec_sub.mouse_filter = Control.MOUSE_FILTER_PASS  # Tooltip: ganzes Stilprofil
 	head.add_child(_rec_sub)
+	var mir := get_node_or_null("/root/Mirror")
+	if mir != null:
+		mir.cover_ready.connect(_on_rec_cover)
+		mir.download_progress.connect(_on_rec_dl_progress)
+		mir.download_failed.connect(_on_rec_dl_failed)
 	_rec_level_btns.clear()
 	for lv in Recommender.LEVELS:
 		var b := _make_toggle(Recommender.level_label(lv), 12, 13)
@@ -5369,7 +5695,7 @@ func _rec_fold_icon(open: bool) -> ImageTexture:
 
 ## Neu rechnen (nach Start, Lauf, Moduswechsel, Stufe, neuen Sternen).
 func _recs_refresh() -> void:
-	if _rec_box == null or DisplayServer.get_name() == "headless":
+	if _rec_box == null or DisplayServer.get_name() == "headless" or _rec_frozen:
 		return
 	_apply_recs_visibility()
 	if bool(_rec.hidden) or _career_on():
@@ -5405,6 +5731,12 @@ func _recs_job() -> Dictionary:
 	var cands: Array = []
 	var stars := {}
 	_rec_lookup = {}
+	if not _rec_seen_loaded:
+		_rec_seen_loaded = true
+		var scfg := ConfigFile.new()
+		if scfg.load(REC_SEEN_PATH) == OK:
+			var sv = scfg.get_value("seen", "all", {})
+			_rec_seen = sv if sv is Dictionary else {}
 	for ms in _library.mapsets:
 		var file := ms.osz_path.get_file()
 		var info: Dictionary = idx.get(file, {})
@@ -5422,12 +5754,19 @@ func _recs_job() -> Dictionary:
 			var vi: Dictionary = info.get(ver, {})
 			var meta := ms.meta_at(i)
 			var dur := float(meta.get("duration_ms", 0.0))
+			var last := str(vi.get("last", ""))
+			if last != "" and _rec_seen.has("%s|%s" % [mode, k]) \
+					and Recommender._unix(last) / 86400 >= int((_rec_seen["%s|%s" % [mode, k]] as Array)[1]):
+				_rec_seen.erase("%s|%s" % [mode, k])  # seither gespielt: wieder neu
 			cands.append({"set": file, "diff": ver.strip_edges(), "stars": st, "osu_mode": osu_mode,
-				"last_played": str(vi.get("last", "")), "best_grade": str(vi.get("grade", "")),
+				"last_played": last, "best_grade": str(vi.get("grade", "")),
 				"osz": ms.osz_path, "inner": ms.osu_filename_at(i), "artist": ms.artist,
+				"title": ms.title, "mapper": ms.creator, "sv": bool(meta.get("sv", false)),
+				"base_stars": ms.stars_at(i),
 				"bpm": float(meta.get("bpm", -1.0)), "length": dur / 1000.0 if dur > 0.0 else -1.0})
-	return {"mode": mode, "level": rec_level(_rec, mode), "n": 5, "cands": cands,
-		"stars": stars}
+	var per := rec_count(get_viewport_rect().size.y)
+	return {"mode": mode, "level": rec_level(_rec, mode), "n": per * Recommender.PAGE_MAX, "cands": cands,
+		"stars": stars, "seen": rec_seen_counts(_rec_seen, mode, Recommender.now_local() / 86400)}
 
 
 func _recs_work(job: Dictionary, tok: int) -> void:
@@ -5438,8 +5777,16 @@ func _recs_work(job: Dictionary, tok: int) -> void:
 	if runs.size() >= REC_MIN_RUNS:
 		rec_fill_style(job.cands)
 		tst = rec_taste(str(job.mode), job.cands, runs)
-	var res := rec_compute(str(job.mode), str(job.level), job.cands, runs, int(job.n), 0, tst)
+	var res := rec_compute(str(job.mode), str(job.level), job.cands, runs, int(job.n), 0, tst,
+		job.get("seen", {}))
 	res["mode"] = job.mode
+	# Stilprofil (sichtbar) und Suchauftrag fuer Online-Vorschlaege.
+	res["taste"] = tst
+	res["profile"] = Recommender.profile_text(tst, 6)
+	res["profile_parts"] = Recommender.profile_parts(tst)
+	var lv := Recommender.LEVEL_EASY if bool(res.starter) else str(job.level)
+	res["query"] = Recommender.online_query(str(job.mode), lv, Recommender.skill(str(job.mode), runs), tst,
+		rec_star_shift(str(job.mode), job.cands))
 	_recs_done.call_deferred(res, tok)
 
 
@@ -5453,9 +5800,11 @@ func _recs_done(res: Dictionary, tok: int) -> void:
 		_rec_again = false
 		_recs_refresh()
 		return
-	if tok != _rec_token or str(res.get("mode", "")) != _play_mode:
+	if tok != _rec_token or str(res.get("mode", "")) != _play_mode or _rec_frozen:
 		return
 	_rec_res = res
+	_rec_page = 0
+	_rec_online_update()
 	_recs_render()
 
 
@@ -5466,26 +5815,39 @@ func _recs_render() -> void:
 		_rec_body.queue_free()
 		_rec_body = null
 	_rec_rows.clear()
+	_rec_on_rows.clear()
 	var n := rec_count(get_viewport_rect().size.y)
 	var tall := n > 3
 	var starter := bool(_rec_res.get("starter", false))
 	var comfort := float(_rec_res.get("comfort", -1.0))
+	var profile := str(_rec_res.get("profile", ""))
+	var level_txt := (tr("Your level: about %s") % _stars_text(comfort)) if comfort > 0.0 else ""
 	if starter:
 		_rec_sub.text = tr("Play a few maps to get suggestions")
-	elif comfort > 0.0:
-		_rec_sub.text = tr("Your level: about %s") % _stars_text(comfort)
+		_rec_sub.tooltip_text = ""
 	else:
-		_rec_sub.text = ""
-	var items: Array = []
+		_rec_sub.text = level_txt
+		_rec_sub.tooltip_text = ""
+	if starter:
+		profile = ""
+	var valid: Array = []
 	for it in _rec_res.get("items", []):
 		var hit = _rec_lookup.get("%s|%s" % [it.set, it.diff])
 		if hit == null:
 			continue
-		items.append({"ms": hit[0], "diff": hit[1], "stars": float(it.stars),
+		valid.append({"ms": hit[0], "diff": hit[1], "stars": float(it.stars),
 			"reason": str(it.get("reason", "")), "acc": float(it.get("expected_acc", -1.0)),
-			"style": str(it.get("style_reason", ""))})
-		if items.size() >= n:
-			break
+			"style": str(it.get("style_reason", "")), "key": "%s|%s" % [it.set, it.diff]})
+	# Seiten: "Show more" blaettert, gerechnet ist schon alles (kein Ruckeln).
+	var pages := maxi(Recommender.page_count(valid.size(), n),
+		Recommender.page_count(_rec_on_list.size(), REC_ONLINE_N))
+	_rec_page = posmod(_rec_page, pages)
+	var items := Recommender.page_slice(valid, _rec_page, n)
+	var online := Recommender.page_slice(_rec_on_list, _rec_page, REC_ONLINE_N)
+	var body := VBoxContainer.new()
+	body.add_theme_constant_override("separation", 6)
+	if profile != "" or pages > 1:
+		body.add_child(_rec_profile_row(profile, pages))
 	if items.is_empty():
 		var empty := Label.new()
 		empty.custom_minimum_size = Vector2(0, 30)
@@ -5495,22 +5857,348 @@ func _recs_render() -> void:
 		var pending := _star_src() != "mania" and (_bg_thread != null or not _bg_queue.is_empty())
 		empty.text = tr("Calculating stars …") if pending \
 				else tr("No fitting map in your library. Try another level or get maps online.")
-		_rec_body = empty
+		body.add_child(empty)
 	elif tall:
-		var vb := VBoxContainer.new()
-		vb.add_theme_constant_override("separation", 6)
 		for it in items:
-			vb.add_child(_rec_card(it, true))
-		_rec_body = vb
+			body.add_child(_rec_card(it, true))
 	else:
 		var hb := HBoxContainer.new()
 		hb.add_theme_constant_override("separation", 8)
 		for it in items:
 			hb.add_child(_rec_card(it, false))
-		_rec_body = hb
+		for i in range(items.size(), n):
+			hb.add_child(_rec_spacer())  # kurze letzte Seite: Kacheln behalten ihre Breite
+		body.add_child(hb)
+	if not online.is_empty():
+		body.add_child(_rec_online_caption())
+		var ob := HBoxContainer.new()
+		ob.add_theme_constant_override("separation", 8)
+		for o in online:
+			ob.add_child(_rec_online_card(o))
+		for i in range(online.size(), REC_ONLINE_N):
+			ob.add_child(_rec_spacer())
+		body.add_child(ob)
+	var gap := Control.new()  # Luft zur Liste
+	gap.custom_minimum_size = Vector2(0, 2)
+	gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	body.add_child(gap)
+	_rec_body = body
 	_rec_box.add_child(_rec_body)
 	_apply_recs_visibility()
 	_recs_mark_selected()
+	_rec_mark_preview()
+	# Neuheit: was heute gezeigt wurde, zaehlt einmal.
+	var shown: Array = []
+	for it in items:
+		shown.append(str(it.key))
+	for o in online:
+		shown.append("online:%d" % int(o.id))
+	if not _rec_frozen and _rec_box.is_visible_in_tree() and not bool(_rec.collapsed) \
+			and rec_seen_note(_rec_seen, _play_mode, shown, Recommender.now_local() / 86400):
+		var scfg := ConfigFile.new()
+		scfg.set_value("seen", "all", _rec_seen)
+		scfg.save(REC_SEEN_PATH)
+
+
+func _rec_spacer() -> Control:
+	var c := Control.new()
+	c.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return c
+
+
+## Zeile ueber den Vorschlaegen: links das Stilprofil ("Your style: ..."),
+## rechts Seite und "Show more".
+func _rec_profile_row(profile: String, pages: int) -> Control:
+	var row := HBoxContainer.new()
+	row.custom_minimum_size = Vector2(0, 20)
+	row.add_theme_constant_override("separation", 10)
+	var pl := _rec_label(row, profile, 12, Color(0.78, 0.80, 0.88))
+	pl.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	pl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	pl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	if profile != "":
+		pl.mouse_filter = Control.MOUSE_FILTER_PASS  # Tooltip: alle Teile des Profils
+		var parts: Array = _rec_res.get("profile_parts", [])
+		pl.tooltip_text = "%s\n%s" % [tr("Your style: %s") % ", ".join(parts),
+			tr("From the maps you play in %s") % collection_mode_hint(_play_mode)]
+	if pages > 1:
+		var pg := _rec_label(row, "%d / %d" % [_rec_page + 1, pages], 12, COL_DIM)
+		pg.clip_text = false
+		pg.text_overrun_behavior = TextServer.OVERRUN_NO_TRIMMING
+		pg.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		var more := Button.new()
+		more.text = tr("Show more")
+		more.tooltip_text = tr("Show more suggestions")
+		more.flat = true
+		more.focus_mode = Control.FOCUS_NONE
+		more.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+		more.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		more.add_theme_font_size_override("font_size", 12)
+		more.add_theme_color_override("font_color", COL_ACCENT)
+		more.add_theme_color_override("font_hover_color", COL_TEXT)
+		more.add_theme_color_override("font_pressed_color", COL_TEXT)
+		more.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+		UiTheme._attach_sounds(more)
+		more.pressed.connect(func():
+			_rec_page += 1
+			_recs_render())
+		row.add_child(more)
+	return row
+
+
+## Ueberschrift der Online-Gruppe.
+func _rec_online_caption() -> Control:
+	var row := HBoxContainer.new()
+	row.custom_minimum_size = Vector2(0, 18)
+	row.add_theme_constant_override("separation", 8)
+	var cap := _rec_label(row, "Online", 13, COL_TEXT)
+	cap.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	cap.add_theme_font_override("font", UiTheme.heading_font(1))
+	cap.clip_text = false
+	cap.text_overrun_behavior = TextServer.OVERRUN_NO_TRIMMING
+	cap.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	var hint := _rec_label(row, tr("Not in your library yet"), 12, COL_DIM)
+	hint.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	hint.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	hint.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	return row
+
+
+# --- Online-Vorschlaege: Maps, die noch nicht in der Bibliothek liegen ---
+
+## Liste der Online-Vorschlaege aus dem Cache ordnen und, wenn noetig und
+## erlaubt, eine Mirror-Seite holen (still; ohne Netz bleibt die Gruppe weg).
+func _rec_online_update() -> void:
+	_rec_on_list = []
+	var q: Dictionary = _rec_res.get("query", {})
+	if q.is_empty() or _rec_frozen or _rec_net_off():
+		return
+	if not _rec_on_loaded:
+		_rec_on_loaded = true
+		var cfg := ConfigFile.new()
+		if cfg.load(REC_ONLINE_PATH) == OK:
+			var cv = cfg.get_value("online", "cache", {})
+			_rec_on_cache = cv if cv is Dictionary else {}
+	var key := str(q.key)
+	var now := int(Time.get_unix_time_from_system())
+	var cached := Recommender.online_cached(_rec_on_cache, key, now)
+	if not cached.is_empty():
+		var owned := OnlineBrowser.owned_set_ids(_library)
+		var free: Array = []
+		for r in cached:
+			if OnlineBrowser.visible_result(r, owned, 0.0, 99.0, 0):
+				free.append(r)
+		_rec_on_list = Recommender.online_rank(q, _rec_res.get("taste", {}), free,
+			REC_ONLINE_N * Recommender.PAGE_MAX,
+			rec_seen_counts(_rec_seen, _play_mode, Recommender.now_local() / 86400))
+	var page := Recommender.online_fetch_page(_rec_on_cache, key, now, _rec_on_list.size(), REC_ONLINE_N,
+		_rec_on_fail_at)
+	if page < 0:
+		return
+	_ensure_online()
+	var osu_mode := int(q.osu_mode)
+	var text := str(q.get("genre", ""))
+	if text == "":
+		text = "4k" if osu_mode == BeatmapMirror.MODE_MANIA else "a"
+	_online.quiet_search(key, text, osu_mode, page * BeatmapMirror.PAGE_SIZE)
+
+
+## Harness-Laeufe (--shot-...) und --no-rec-online fragen den Mirror nie;
+## --rec-online erlaubt es einem Harness-Lauf ausdruecklich (Live-Pruefung).
+func _rec_net_off() -> bool:
+	if _arg_value("--rec-online") != null:
+		return false
+	for a in OS.get_cmdline_args() + OS.get_cmdline_user_args():
+		if a.begins_with("--shot") or a == "--no-rec-online" or a == "--screenshot":
+			return true
+	return false
+
+
+func _on_rec_online(tag: String, results: Array, ok: bool, raw_count: int) -> void:
+	var now := int(Time.get_unix_time_from_system())
+	if not ok:
+		_rec_on_fail_at = now  # kein Netz: Gruppe bleibt einfach weg
+		return
+	_rec_on_fail_at = 0
+	Recommender.online_cache_put(_rec_on_cache, tag, results, now, raw_count < BeatmapMirror.PAGE_SIZE)
+	var cfg := ConfigFile.new()
+	cfg.set_value("online", "cache", _rec_on_cache)
+	cfg.save(REC_ONLINE_PATH)
+	if not is_inside_tree() or _rec_box == null:
+		return
+	_rec_online_update()
+	if str((_rec_res.get("query", {}) as Dictionary).get("key", "")) == tag:
+		_recs_render()
+
+
+func _rec_blank_tex() -> ImageTexture:
+	if _rec_blank == null:
+		var img := Image.create(4, 4, false, Image.FORMAT_RGBA8)
+		img.fill(UiTheme.RAISED)
+		_rec_blank = ImageTexture.create_from_image(img)
+	return _rec_blank
+
+
+## Online-Kachel: Cover, Titel, Sterne + BPM, Grund. Klick = vorhoeren,
+## "Get" laedt die Map ueber den Online-Browser (danach sofort gewaehlt).
+func _rec_online_card(o: Dictionary) -> Control:
+	var id := int(o.id)
+	var btn := Button.new()
+	btn.custom_minimum_size = Vector2(0, REC_TILE_H)
+	btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	btn.focus_mode = Control.FOCUS_NONE
+	btn.clip_contents = true
+	btn.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	btn.tooltip_text = "%s - %s\n%s\n%s" % [str(o.artist), str(o.title), str(o.reason), tr("Click to listen")]
+	UiTheme._attach_sounds(btn)
+	OrbitCareerPanel._style_row(btn, false)
+	btn.pressed.connect(_rec_online_preview.bind(o))
+	var hb := HBoxContainer.new()
+	hb.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	hb.offset_left = 9
+	hb.offset_right = -9
+	hb.add_theme_constant_override("separation", 10)
+	hb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	btn.add_child(hb)
+	var mir := get_node_or_null("/root/Mirror")
+	var cover := TextureRect.new()
+	var tex: Texture2D = mir.cached_cover(id) if mir != null and id > 0 else null
+	cover.texture = tex if tex != null else _rec_blank_tex()
+	cover.custom_minimum_size = Vector2(REC_COVER, REC_COVER)
+	cover.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	cover.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	cover.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	cover.material = _rec_cover_mat
+	cover.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hb.add_child(cover)
+	if tex == null and mir != null and id > 0 and str(o.get("cover_url", "")) != "":
+		mir.fetch_cover(id, str(o.cover_url))
+	var tb := VBoxContainer.new()
+	tb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	tb.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	tb.add_theme_constant_override("separation", 0)
+	tb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hb.add_child(tb)
+	_rec_label(tb, str(o.title), 13, COL_TEXT)
+	var info := _stars_text(float(o.stars))
+	if float(o.get("bpm", -1.0)) > 0.0:
+		info += "  ·  %d BPM" % roundi(float(o.bpm))
+	_rec_label(tb, info, 11, Color(0.78, 0.80, 0.88))
+	var sub := _rec_label(tb, str(o.reason), 11, UiTheme.ACCENT2)
+	var get_btn := Button.new()
+	get_btn.text = tr("Get")
+	get_btn.tooltip_text = tr("Download and play right away")
+	get_btn.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	get_btn.focus_mode = Control.FOCUS_NONE
+	get_btn.custom_minimum_size = Vector2(52, 26)
+	get_btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	get_btn.add_theme_font_size_override("font_size", 12)
+	UiTheme.style_ghost_button(get_btn, 13)
+	get_btn.pressed.connect(_rec_online_get.bind(id))
+	hb.add_child(get_btn)
+	_rec_on_rows[id] = {"cover": cover, "get": get_btn, "sub": sub, "text": str(o.reason)}
+	if mir != null and id > 0 and mir.is_downloading(id):
+		_on_rec_dl_progress(id, mir.active_ratio(id))
+	return btn
+
+
+func _rec_online_preview(o: Dictionary) -> void:
+	if int(o.id) <= 0:
+		return
+	_ensure_online()
+	_online.preview_toggle({"id": int(o.id), "preview_url": str(o.get("preview_url", ""))})
+	_rec_mark_preview()
+
+
+## Kachel, deren Vorschau laeuft, zeigt das statt des Grundes.
+func _rec_mark_preview() -> void:
+	var cur := _online.preview_id() if _online != null else -1
+	for id in _rec_on_rows:
+		var row: Dictionary = _rec_on_rows[id]
+		if is_instance_valid(row.sub):
+			(row.sub as Label).text = tr("Playing preview") if cur > 0 and int(id) == cur else str(row.text)
+
+
+func _rec_online_get(id: int) -> void:
+	if id <= 0:
+		return
+	_ensure_online()
+	_online.start_download(id)  # gleicher Weg wie im Online-Tab; fertig -> _on_online_downloaded
+	_on_rec_dl_progress(id, 0.0)
+
+
+func _on_rec_cover(set_id: int, texture: Texture2D) -> void:
+	var row = _rec_on_rows.get(set_id)
+	if row != null and is_instance_valid(row.cover) and texture != null:
+		(row.cover as TextureRect).texture = texture
+
+
+func _on_rec_dl_progress(set_id: int, ratio: float) -> void:
+	var row = _rec_on_rows.get(set_id)
+	if row != null and is_instance_valid(row.get):
+		(row.get as Button).disabled = true
+		(row.get as Button).text = "%d %%" % roundi(clampf(ratio, 0.0, 1.0) * 100.0)
+
+
+func _on_rec_dl_failed(set_id: int, message: String) -> void:
+	var row = _rec_on_rows.get(set_id)
+	if row != null and is_instance_valid(row.get):
+		(row.get as Button).disabled = false
+		(row.get as Button).text = tr("Retry")
+		(row.get as Button).tooltip_text = message
+
+
+## Harness --shot-recs[=Seite] [--shot-out=<png>]: "For you" mit festem
+## Beispiel (Maps der Bibliothek, Beispiel-Profil, Online-Gruppe ohne Netz).
+func _shot_recs() -> void:
+	_rec_frozen = true
+	_state_ready = false  # nichts speichern
+	_rec["hidden"] = false
+	_rec["collapsed"] = false
+	var t := {"total": 10.0, "maps": 12, "style": {"jumpstream": 0.42, "stream": 0.2, "jack": 0.05},
+		"sv": -1.0, "bpm_lo": 172.0, "bpm_hi": 188.0, "stars_lo": 2.4, "stars_hi": 3.1,
+		"genres": {"electronic": 6.0}, "languages": {"japanese": 5.0}, "mappers": {"kira": 3.0},
+		"length": 142.0}
+	var fits := [
+		tr("fits: %s") % ", ".join(["180 BPM", tr("Jumpstream"), tr("like %s") % "Night Drive"]),
+		tr("fits: %s") % ", ".join(["176 BPM", tr("Streams")]),
+		tr("fits: %s") % ", ".join([tr("Jumpstream"), tr("mapped by %s") % "Kira"]),
+		"",
+	]
+	var job := _recs_job()
+	var items: Array = []
+	var sets := {}
+	for c in job.cands:
+		if sets.has(c.set) or items.size() >= 18:
+			continue
+		sets[c.set] = true
+		items.append({"set": c.set, "diff": c.diff, "stars": float(c.stars),
+			"expected_acc": 0.91 - 0.004 * items.size(), "reason": "",
+			"style_reason": fits[items.size() % fits.size()]})
+	_rec_res = {"mode": _play_mode, "starter": false, "items": items, "comfort": 2.6, "taste": t,
+		"profile": Recommender.profile_text(t, 6), "profile_parts": Recommender.profile_parts(t), "query": {}}
+	_rec_on_list = []
+	var names := ["Glass Harbor", "Second Sun", "Paper Planes at Night", "Low Tide", "Amber Signal",
+		"Slow Circuit", "Northern Line", "Quiet Engine", "Field Notes"]
+	for i in names.size():
+		_rec_on_list.append({"id": -(i + 1), "title": names[i], "artist": "Artist %d" % (i + 1),
+			"creator": "Mapper", "stars": 2.6 + 0.1 * (i % 5), "osu_stars": 2.6 + 0.1 * (i % 5),
+			"bpm": 170.0 + 4.0 * (i % 4), "length": 140.0, "cover_url": "", "preview_url": "",
+			"reason": fits[i % 3] if i % 3 != 2 else tr("in your star range")})
+	_rec_page = int(str(_arg_value("--shot-recs")))
+	_recs_render()
+	_capture_screenshot_and_quit()
+
+
+## Wert von --name bzw. --name=<wert> auf der Kommandozeile; null = fehlt.
+func _arg_value(name: String) -> Variant:
+	for a in OS.get_cmdline_args() + OS.get_cmdline_user_args():
+		if a == name:
+			return ""
+		if a.begins_with(name + "="):
+			return a.trim_prefix(name + "=")
+	return null
 
 
 ## Karte wie die Orbit-Karriere "Up next": Cover, Titel, Diff, Sterne, Grund.
@@ -5524,7 +6212,9 @@ func _rec_card(it: Dictionary, wide: bool) -> Control:
 	btn.size_flags_stretch_ratio = 1.0
 	btn.focus_mode = Control.FOCUS_NONE
 	btn.clip_contents = true
-	btn.tooltip_text = "%s - %s [%s]" % [ms.artist, ms.title, ms.version_name_at(diff).strip_edges()]
+	btn.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	btn.tooltip_text = "%s - %s [%s]\n%s" % [ms.artist, ms.title, ms.version_name_at(diff).strip_edges(),
+		_rec_reason(it)]
 	UiTheme._attach_sounds(btn)
 	OrbitCareerPanel._style_row(btn, false)
 	btn.pressed.connect(_on_rec_picked.bind(ms, diff))
@@ -5573,9 +6263,22 @@ func _rec_card(it: Dictionary, wide: bool) -> Control:
 		rs.clip_text = false
 		rs.text_overrun_behavior = TextServer.OVERRUN_NO_TRIMMING
 	else:
-		_rec_label(tb, ms.title, 13, COL_TEXT)
-		_rec_label(tb, "%s  ·  %s" % [stars_txt, ver], 11, Color(0.78, 0.80, 0.88))
-		_rec_label(tb, reason, 11, reason_col)
+		# Kachel: Titel + Sterne, darunter der Grund auf bis zu zwei Zeilen.
+		var top := HBoxContainer.new()
+		top.add_theme_constant_override("separation", 6)
+		top.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		tb.add_child(top)
+		var tl := _rec_label(top, ms.title, 13, COL_TEXT)
+		tl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		var sl := _rec_label(top, stars_txt, 11, Color(0.78, 0.80, 0.88))
+		sl.clip_text = false
+		sl.text_overrun_behavior = TextServer.OVERRUN_NO_TRIMMING
+		sl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		var rl := _rec_label(tb, _rec_reason_short(it), 11, reason_col)
+		rl.clip_text = false
+		rl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		rl.max_lines_visible = 2
+		rl.add_theme_constant_override("line_spacing", 0)
 	_rec_rows.append({"btn": btn, "ms": ms, "diff": diff})
 	return btn
 
@@ -5602,7 +6305,17 @@ func _rec_reason(it: Dictionary) -> String:
 	return rec_join_reason(base, str(it.get("style", "")))
 
 
-## Grund + Stil-Grund ("expected 89 % · Jumpstream, like your favourites").
+## Grund fuer die schmale Kachel: "89 %  ·  fits: 180 BPM, Streams" statt
+## "expected 89 %  ·  fits: ...".
+func _rec_reason_short(it: Dictionary) -> String:
+	var style := str(it.get("style", ""))
+	if style == "" or bool(_rec_res.get("starter", false)) or float(it.acc) < 0.0 \
+			or rec_level(_rec, _play_mode) == Recommender.LEVEL_PUSH:
+		return _rec_reason(it)
+	return "%d %%  ·  %s" % [roundi(float(it.acc) * 100.0), style]
+
+
+## Grund + Stil-Grund ("expected 89 %  ·  fits: 180 BPM, Jumpstream").
 static func rec_join_reason(base: String, style: String) -> String:
 	if style == "":
 		return base
