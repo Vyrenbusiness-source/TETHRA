@@ -156,6 +156,13 @@ var _ember_mat: ShaderMaterial
 var _recorded: Array = []
 ## --autoplay (nur Screenshots/Debug): trifft jede Note exakt, speichert nichts.
 var _autoplay := false
+## MP-Smoke (--mp-bot, tools/mp_mode_smoke.sh): Autoplay auch im Raum, Abbruch nach
+## --mp-cut=<s> ab der ersten Note, --auto-miss=<n> laesst jede n-te Note aus.
+var _mp_bot := false
+var _mp_cut_ms := -1.0
+var _mp_skip_voted := false
+var _mp_live_seen: Dictionary = {}
+var _auto_miss := 0
 var _auto_idx := 0
 var _auto_release: Array[float] = []
 var _replay_idx := 0
@@ -434,7 +441,14 @@ func _ready() -> void:
 	if bool(GameSession.mods.get("CS", false)):
 		_apply_constant_speed(scroll)
 	_clock.setup(_beatmap.timing_points)
-	_autoplay = OS.get_cmdline_args().has("--autoplay") 			and not GameSession.is_replay and not Lobby.active
+	_mp_bot = Lobby.active and Lobby.in_game and OS.get_cmdline_args().has("--mp-bot") 			and not GameSession.is_replay
+	_autoplay = (OS.get_cmdline_args().has("--autoplay") and not GameSession.is_replay 			and not Lobby.active) or _mp_bot
+	if _mp_bot:
+		for a in OS.get_cmdline_args():
+			if a.begins_with("--mp-cut="):
+				_mp_cut_ms = maxf(0.0, a.trim_prefix("--mp-cut=").to_float()) * 1000.0
+			elif a.begins_with("--auto-miss="):
+				_auto_miss = maxi(0, a.trim_prefix("--auto-miss=").to_int())
 	_auto_release.resize(core.columns)
 	_auto_release.fill(-1.0)
 	core.note_spawned.connect(_on_note_spawned)
@@ -486,9 +500,11 @@ func _ready() -> void:
 	if not _use_audio:
 		_debug_start_usec = Time.get_ticks_usec()
 		_debug_running = true
+	if _mp_bot:
+		print("MPORBIT start: %d Noten, autoplay=%s" % [_beatmap.hit_objects.size(), _autoplay])
 	if DisplayServer.get_name() != "headless":
 		Input.mouse_mode = Input.MOUSE_MODE_CONFINED_HIDDEN
-	else:
+	elif not _mp_bot:
 		_run_smoke_test()
 		return
 	if OS.get_cmdline_args().has("--shot-results"):
@@ -2048,6 +2064,8 @@ func _run_autoplay(t: float) -> void:
 	while _auto_idx < objs.size() and objs[_auto_idx].time <= t:
 		var n := objs[_auto_idx] as ManiaNote
 		_auto_idx += 1
+		if _auto_miss > 0 and _auto_idx % _auto_miss == 0:
+			continue
 		var c := n.column
 		if c < 0 or c >= _auto_release.size():
 			continue
@@ -2057,6 +2075,22 @@ func _run_autoplay(t: float) -> void:
 		core.key_down(c, n.time)
 		_lane_held[c] = true
 		_auto_release[c] = n.end_time() if n.is_hold else n.time + 40.0
+
+
+## MP-Smoke: Intro-Skip mitstimmen, Live-Score der anderen merken, nach --mp-cut enden.
+func _mp_bot_tick(t: float) -> void:
+	if not _mp_skip_voted and _can_skip_intro():
+		_mp_skip_voted = true
+		Lobby.vote_skip()
+	var me := multiplayer.get_unique_id()
+	for id in Lobby.players:
+		var p: Dictionary = Lobby.players[id]
+		if int(id) == me or not (p.get("final", {}) as Dictionary).is_empty():
+			continue
+		_mp_live_seen[int(id)] = maxi(int(_mp_live_seen.get(int(id), 0)), int(p.get("score", 0)))
+	if _mp_cut_ms >= 0.0 and t >= _mp_cut_ms + float(_beatmap.hit_objects[0].time):
+		print("MPMANIA cut at %d ms" % int(t))
+		_show_results(core.failed)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -2177,6 +2211,10 @@ func _process(delta: float) -> void:
 	if _autoplay:
 		_run_autoplay(t)
 	core.update(t)
+	if _mp_bot and not _ended:
+		_mp_bot_tick(t)
+		if _ended:
+			return
 	# Tutorial: vor jedem neuen Element anhalten und erklaeren.
 	if GameSession.tutorial and not _ended and not _countdown_running \
 			and _tut_idx < _tut_steps.size() and t >= float(_tut_steps[_tut_idx].t):
@@ -4026,6 +4064,16 @@ func _show_results(is_fail: bool) -> void:
 		if not is_fail:
 			_submit_online(s)
 	_build_results(is_fail, s, pp, unranked, new_best)
+	if _mp_bot:
+		print("MPORBIT final score=%d acc=%.4f combo=%d failed=%s live_seen=%s" % [
+			int(s.score), float(s.accuracy), int(s.get("max_combo", 0)), str(is_fail), str(_mp_live_seen)])
+		var back_s := 1.5
+		for a in OS.get_cmdline_args():
+			if a.begins_with("--mp-back="):
+				back_s = clampf(a.trim_prefix("--mp-back=").to_float(), 0.0, 60.0)
+		await get_tree().create_timer(back_s, true).timeout
+		if is_inside_tree():
+			_back_to_browser()
 
 
 ## Fail-Diagnose: Grund (eine Zeile) bestimmen und user://logs/fail_<datum>.txt

@@ -6,8 +6,13 @@
 #
 #   tools/mp_relay_smoke.sh            (Exit 0 = gruen)
 #   GODOT=<exe> PORT=47911 tools/mp_relay_smoke.sh
+#   MODE=<mania|orbit|rally|dirigent|trace|rebound> tools/mp_relay_smoke.sh
+#     ganze Runde + Turnier im Modus ueber den Relay (Ablauf von tools/mp_mode_smoke.sh).
 set -u
 cd "$(dirname "$0")/.."
+if [ -n "${MODE:-}" ]; then
+	RELAY=1 PORT=${PORT:-47911} exec bash tools/mp_mode_smoke.sh
+fi
 G=${GODOT:-/c/Users/Gexanx/Desktop/rhyg/Godot_v4.7-stable_win64_console.exe}
 PORT=${PORT:-47911}
 LIMIT=${LIMIT:-90}
