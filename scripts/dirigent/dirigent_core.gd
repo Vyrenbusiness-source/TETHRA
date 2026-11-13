@@ -43,7 +43,7 @@ const EV_KEY_A := 1
 const EV_KEY_B := 2
 const EV_RULES := 9
 ## Regeln 2: Anti-Mash (falsche Taste macht den Einsatz im 50er-Fenster zum Miss).
-const REPLAY_RULES := 3
+const REPLAY_RULES := 4
 ## Nachzuegler: so lange nach dem 50er-Fenster eines verfehlten Einsatzes ist seine Taste frei.
 const LATE_GRACE_MS := 37.0
 

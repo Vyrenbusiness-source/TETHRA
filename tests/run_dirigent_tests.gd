@@ -24,6 +24,7 @@ func _initialize() -> void:
 	_test_stars()
 	_test_breaks()
 	_test_anti_mash()
+	_test_rules_4()
 	_test_rules_3()
 	print("=== Ergebnis: %d bestanden, %d fehlgeschlagen ===" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
@@ -485,7 +486,43 @@ func _test_anti_mash() -> void:
 	var h := _core(c)
 	h.key_down(0, 500.0)
 	_ok(h.n_miss == 0, "Leer-Druck = nichts")
-	_ok(DirigentCore.REPLAY_RULES == 3, "Replay-Regelversion 3")
+	_ok(DirigentCore.REPLAY_RULES == 4, "Replay-Regelversion 4")
+
+
+## Fund: an der Grenze roter Timing-Punkte lagen zwei gewertete Schlaege unter 250 ms
+## beisammen (Bibliothek: 37 Stellen, bis 0,5 ms): der zweite stand zu spaet als Ziel da.
+func _test_rules_4() -> void:
+	print("-- Regeln 4: Schlaege mindestens 250 ms auseinander")
+	var bm := _std(120.0, 4)
+	_tp(bm, 4200.0, 120.0)     # neuer Abschnitt 200 ms nach dem Schlag bei 4000
+	_tp(bm, 8300.0, 120.0)     # 100 ms nach dem Schlag bei 8200
+	_tp(bm, 8400.0, 120.0)     # und gleich noch einer
+	for i in 24:
+		_circle(bm, 1000.0 + float(i) * 500.0)
+	var c := DirigentChart.build(bm)
+	var min_gap := INF
+	var times := {}
+	for i in c.beats.size():
+		times[int(round(float(c.beats[i].t)))] = true
+		if i > 0:
+			min_gap = minf(min_gap, float(c.beats[i].t) - float(c.beats[i - 1].t))
+	_ok(c.beats.size() > 10 and min_gap >= DirigentChart.MIN_BEAT_GAP_MS, "kleinster Schlagabstand >= 250 ms (%.0f)" % min_gap)
+	_ok(times.has(4200) and not times.has(4000), "die Eins des neuen Abschnitts bleibt, der Schlag davor weicht")
+	_ok(times.has(8400) and not times.has(8300) and not times.has(8200), "kurze Abschnitte hintereinander: nur die letzte Eins")
+	var bars_ok := true
+	var sum := 0
+	for b in c.bars:
+		bars_ok = bars_ok and int(b.count) >= 1 and int(b.i0) == sum
+		sum += int(b.count)
+	_ok(bars_ok and sum == c.beats.size(), "Takte decken alle Schlaege lueckenlos (%d)" % sum)
+	var plan := DirigentCore.bot_plan(c, 1, 0.0, 0.0, 0)
+	var core := _core(c)
+	_drive(core, plan, float(c.beats[-1].t) + 1500.0)
+	_ok(core.is_finished() and core.accuracy() > 0.98, "Bot spielt das Chart sauber (%.3f)" % core.accuracy())
+	# DirigentReplay.is_current lehnt jede andere Marke ab (braucht GameSession, hier nur die Marke).
+	var rec := _core(c)
+	rec.set_replay_mode(true)
+	_ok(int(rec.replay_log[0][1]) == DirigentCore.EV_RULES and int(rec.replay_log[0][2]) == 4, "neues Replay traegt die Marke 4")
 
 
 func _test_rules_3() -> void:

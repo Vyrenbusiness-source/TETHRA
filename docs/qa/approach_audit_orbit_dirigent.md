@@ -43,7 +43,9 @@ Vorlauf 450 ms, höchstens 8 Ziele zugleich erschienen, keine Konverter-Verstö�
 | erster Schlag nach einer Pause (39 Stellen) | 0 ms | 1500 ms |
 | Schlag als Zielpunkt im Fluss | ein Schlagabstand (>= 340 ms, Regel `FAST_BEAT_MS`) | unverändert |
 | Schlag als kleiner nummerierter Punkt | zwei Schlagabstände | unverändert |
-| Schläge mit Abstand < 250 ms | 37 (0,06 %) | 37, offen (siehe unten) |
+| Schläge mit Abstand < 250 ms | 37 (0,06 %) | 0 (Regeln 4) |
+| kleinster Schlagabstand | 0,5 ms | 282 ms |
+| gewertete Schläge | 62 896 | 62 859 |
 
 ## Funde und Fixes
 
@@ -118,6 +120,22 @@ Test: `tests/run_orbit_replay_tests.gd`, `_test_rules_marker` (beide Spiele, Kno
 Der Fehler selbst wurde nicht im Fenster nachgestellt: der Test deckt die Ursache ab, nicht
 den genauen Ablauf des gemeldeten Falls.
 
+### 7. Dirigent: Schläge unter 250 ms Abstand an Timing-Grenzen (37 Stellen), Regeln 4
+
+Ursache: `DirigentChart._build_beats` setzt je rotem Timing-Punkt ein eigenes Schlagraster. Der
+letzte Schlag des alten Abschnitts und die Eins des neuen lagen bis 0,5 ms beisammen (z. B.
+"Dream of You" Beginner bei 108,9 s: 197 ms). Der zweite stand dann nur so lange als Ziel da.
+
+Fix: `MIN_BEAT_GAP_MS` = 250. Ein Schlag, dem die Eins des nächsten Abschnitts in weniger als
+250 ms folgt, entfällt; ebenso ein Schlag, der weniger als 250 ms nach dem vorigen käme.
+Einsätze (Tasten) bleiben. Stichprobe: 37 Schläge weniger (62 896 -> 62 859), kleinster Abstand
+0,5 ms -> 282 ms.
+
+Regeländerung: **Dirigent Regeln 4** (`DirigentCore.REPLAY_RULES` 3 -> 4). Replays mit Marke 3
+lehnt `DirigentReplay.is_current` ab (wie bisher Marke 2). **Server: `min_version` für Dirigent
+auf die Version mit Regeln 4 anheben**, Scores älterer Clients zählen andere Schläge.
+Spec: `docs/modes/dirigent.md`. Test: `tests/run_dirigent_tests.gd`, `_test_rules_4`.
+
 ## Geprüft, kein Fund
 
 - Scroll Speed 1-40: in Orbit ohne Wirkung (`apply_scroll_speed` leer), Dirigent hat keine.
@@ -139,10 +157,6 @@ den genauen Ablauf des gemeldeten Falls.
 
 ## Offen
 
-- Dirigent: 37 Schläge (0,06 %) mit weniger als 250 ms Abstand zum vorigen, an Grenzen roter
-  Timing-Punkte (z. B. "Dream of You" Beginner bei 108,9 s: 197 ms). Der Punkt steht zwei
-  Schläge vorher klein da, als Ziel aber nur 197 ms. Ein Fix ändert das Chart (Schlag
-  streichen): Dirigent-`REPLAY_RULES` 3 -> 4 und alle Dirigent-Replays ungültig. Nicht gemacht.
 - Orbit: Ring und Satellit (das Zeitmaß) zeigen weiter nur die 2 nächsten Ränge. In Folgen
   mit 75 ms Abstand steht der Ring 150 ms vorher; die Position steht 450 ms vorher. Das ist
   Optik des Modus und blieb unverändert.

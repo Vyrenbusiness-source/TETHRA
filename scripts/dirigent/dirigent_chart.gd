@@ -27,6 +27,9 @@ const MERGE_MS := 90.0
 ## Unter diesem Abstand wechselt die Taste (Regeln 3).
 const FAST_KEY_MS := 180.0
 const BREAK_MS := 4000.0
+## Regeln 4: zwei gewertete Schlaege liegen nie naeher beisammen. An der Grenze zweier roter
+## Timing-Punkte weicht der letzte Schlag des alten Abschnitts der Eins des neuen.
+const MIN_BEAT_GAP_MS := 250.0
 const KIAI_SCALE := 1.15
 const QUIET_SCALE := 0.8
 ## Kiai: erweiterte 4/4-Figur (weiter aussen), Skala sonst wie normale Figur.
@@ -215,6 +218,9 @@ func _build_beats(beatmap: Beatmap) -> void:
 				judged = idx_in_bar % 3 == 0
 			else:
 				judged = idx_in_bar % step == 0
+			if judged and (t_end - t < MIN_BEAT_GAP_MS
+					or (not beats.is_empty() and t - float(beats[-1].t) < MIN_BEAT_GAP_MS)):
+				judged = false
 			if judged and _in_windows(windows, t, bar_len):
 				var pt := idx_in_bar / 3 if meter == 6 else idx_in_bar / step
 				pt = clampi(pt, 0, fk.n - 1)
