@@ -222,3 +222,8 @@ Offene Fragen an den Nutzer: Trace auf mitfahrende Kamera (nur kommendes Stueck 
 Server: Artifact aktuell (inkl. Bot-Link-Wuensche); PDF fuer Server-Owner: Desktop/TETHRA_Server_Update_seit_11.11.pdf. Kampagnen-Gesamtrangliste braucht neuen Endpunkt (docs/net/campaign_server.md im campaign-Branch) -> nach Merge ans Artifact.
 Offset-Frage Kollege (-31 ms): kein Rechenfehler, Godot meldet nur 10 ms Ausgabelatenz; Vorschlag "Offset aus letztem Lauf uebernehmen" offen.
 Agents: model=fable (Opus/Sonnet-Subagents hatten 403). Max ~3 Agents gleichzeitig.
+
+## Stand 2026-11-13 ~21:05 (v1.35.0 released)
+- v1.35.0 released + gepusht: for-you-v2 (Stilprofil, Grund je Vorschlag, "Mehr anzeigen", Online-Gruppe, Collections je Modus) und trace-look-v2. Gate im Haupt-Checkout gruen (513 s), Paket-Version per Start geprueft, Smoke 0 Fehler, dist gespiegelt, TETHRA_Setup.exe im Tag "worlds" neu (v1.35.0). Keine Server-Aenderung.
+- Laeuft (Agents, model=fable, ab WIP): warmd/campaign (Welt-Zwang-Fix, Stufenlauf, Screenshots) und warmd/sv-start-popin (Fix pruefen, 20er-Stichprobe). Beide standen zuletzt in `warmd check`. Danach von Hand mergen: WARMD_BASE=1 warmd merge warmd/<task>, dann Release v1.36.0; Kampagnen-Endpunkt (docs/net/campaign_server.md) ans Server-Artifact.
+- Weiter offen wie im Abschnitt davor: Online-Kacheln von "For you" nie live geklickt; mp-all-modes, tutorials-v2 neu starten; Nutzer-Fragen (Trace-Kamera, Mania-Varianten 3/4/6/10/14/15, 30 Ideen, Offset-Uebernahme).
