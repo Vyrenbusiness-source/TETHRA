@@ -24,6 +24,8 @@ func _initialize() -> void:
 	_test_file()
 	_test_maps()
 	_test_validate_errors()
+	_test_live()
+	_test_lock_reason()
 
 
 ## Autoloads (Settings, GameSession) stehen erst im ersten Frame im Baum.
@@ -381,3 +383,41 @@ func _test_validate_errors() -> void:
 	d = _mini()
 	d.chapters[1]["world"] = "nirgendwo"
 	_ok(not Campaign.validate_one(d).is_empty(), "Welt geprueft")
+
+
+## Ziele live im HUD: erfuellt (HOLD), offen, verloren.
+func _test_live() -> void:
+	var H := Campaign.LIVE_HOLD
+	var O := Campaign.LIVE_OPEN
+	var L := Campaign.LIVE_LOST
+	_ok(Campaign.goal_live({"type": "pass"}, _run(0.5, "D", 9)) == O, "live: pass erst am Ende")
+	_ok(Campaign.goal_live({"type": "pass"}, _run(0.9, "A", 0, 1, true)) == L, "live: Fail verliert pass")
+	_ok(Campaign.goal_live({"type": "acc", "value": 0.95}, _run(0.96, "S", 0)) == H, "live: acc darueber")
+	_ok(Campaign.goal_live({"type": "acc", "value": 0.95}, _run(0.94, "A", 0)) == O, "live: acc darunter bleibt offen")
+	_ok(Campaign.goal_live({"type": "grade", "value": "S"}, _run(0.96, "S", 0)) == H, "live: Rang gehalten")
+	_ok(Campaign.goal_live({"type": "miss", "value": 2}, _run(0.9, "A", 2)) == H, "live: Miss-Grenze gehalten")
+	_ok(Campaign.goal_live({"type": "miss", "value": 2}, _run(0.9, "A", 3)) == L, "live: zu viele Misses")
+	var st := {"goals": [{"type": "miss", "value": 0}, {"type": "acc", "value": 0.9}, {"type": "pass"}]}
+	_ok(Campaign.goals_live(st, _run(0.99, "S", 1)) == [L, L, L], "live: Hauptziel verloren -> alle verloren")
+	_ok(Campaign.goals_live(st, _run(0.85, "B", 0)) == [H, O, O], "live: gemischt")
+	_ok(Campaign.goal_live_value({"type": "miss", "value": 8}, _run(0.9, "A", 3)) == "3 / 8", "live: Miss-Stand")
+	_ok(Campaign.goal_live_value({"type": "grade", "value": "A"}, _run(0.9, "A", 3)) == "A", "live: Rang")
+	_ok(Campaign.goal_live_value({"type": "pass"}, _run(0.9, "A", 3)) == "", "live: pass ohne Wert")
+	_ok(Campaign.goal_best_value({"type": "acc", "value": 0.9}, {}) == "", "Bestwert: nicht gespielt")
+	_ok(Campaign.goal_short({"type": "miss", "value": 3}).contains("3"), "Kurzform Miss")
+	_ok(Campaign.goal_short({"type": "acc", "value": 0.958}).contains("95"), "Kurzform Genauigkeit")
+	_ok(Campaign.goal_short({"type": "grade", "value": "A"}).contains("A") and Campaign.goal_short({"type": "pass"}) != "", "Kurzform Rang, pass")
+	_ok(Campaign.goal_best_value({"type": "grade", "value": "A"}, {"score": 1, "grade": "B"}) == "B", "Bestwert: Rang")
+
+
+## Warum gesperrt: Stufe davor oder Boss des Kapitels davor.
+func _test_lock_reason() -> void:
+	var d := _mini()
+	var all := Campaign.all_stages(d)
+	var state := Campaign.new_state()
+	_ok(Campaign.lock_reason(d, state, "c01s1") == "", "offen: kein Grund")
+	_ok(Campaign.lock_reason(d, state, "c01s3").contains("2"), "gesperrt: Stufe 2 fehlt")
+	_ok(Campaign.lock_reason(d, state, "c02s1").contains("1"), "gesperrt: Boss Kapitel 1 fehlt")
+	Campaign.apply_run(state, all[0], _run(0.5, "D", 40))
+	_ok(Campaign.lock_reason(d, state, "c01s2") == "", "nach dem Ziel offen")
+	_ok(Campaign.chapter_cleared_count(d.chapters[0], state) == 1, "eine Stufe geschafft")

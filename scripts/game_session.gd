@@ -89,14 +89,33 @@ func end_campaign() -> void:
 	campaign = {}
 
 
-## Harness: Spielszene einer Stufe betritt den Baum (auch beim Neustart) -> Bild der Stufe.
+## Spielszene einer Stufe betritt den Baum (auch beim Neustart): Ziele ins HUD,
+## Harness: Bild der Stufe.
 func _campaign_on_node_added(n: Node) -> void:
 	if not campaign_active() or n.get_parent() != get_tree().root:
 		return
 	if not ScoreStore.MODE_SCENES.values().has(n.scene_file_path):
 		return
+	_campaign_attach_hud.call_deferred(n.get_instance_id())
 	if campaign_run_prefix() != "":
 		_campaign_run_game_shot(n)
+
+
+func _campaign_attach_hud(game_id: int) -> void:
+	var game := instance_from_id(game_id) as Node
+	if game == null or not game.is_inside_tree() or not campaign_active():
+		return
+	var all := Campaign.load_data()
+	var sid := str(campaign.get("stage", ""))
+	var data := Campaign.for_mode(all, Campaign.mode_of_stage(all, sid))
+	var st := Campaign.stage_by_id(data, sid)
+	var ci := Campaign.chapter_index_of(data, sid)
+	if st.is_empty() or ci < 0:
+		return
+	var head := "%s  ·  %s  ·  %s" % [Campaign.tr_("Kampagne"),
+		Campaign.world_label(str((Campaign.chapters(data)[ci] as Dictionary).get("world", ""))),
+		Campaign.stage_label(st, Campaign.stage_index_of(data, sid))]
+	CampaignHud.attach(game, st, head)
 
 
 ## Harness --shot-campaign-run=<Praefix>: echter Stufenlauf (Kampagnen-Szene startet die

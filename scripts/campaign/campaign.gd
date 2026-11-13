@@ -305,6 +305,86 @@ static func goals_met(stage: Dictionary, run: Dictionary) -> Array:
 	return out
 
 
+## Stand eines Ziels waehrend des Laufs (stats wie ManiaCore.stats()).
+const LIVE_OPEN := 0   ## noch offen (pass erst am Ende, acc/grade gerade darunter)
+const LIVE_HOLD := 1   ## waere jetzt erfuellt
+const LIVE_LOST := 2   ## in diesem Lauf nicht mehr zu schaffen (Fail, zu viele Misses)
+
+
+static func goal_live(goal: Dictionary, stats: Dictionary) -> int:
+	if bool(stats.get("failed", false)):
+		return LIVE_LOST
+	match str(goal.get("type", "")):
+		"miss":
+			return LIVE_LOST if int(stats.get("n_miss", 0)) > int(goal.get("value", 0)) else LIVE_HOLD
+		"acc", "grade":
+			return LIVE_HOLD if goal_met(goal, stats) else LIVE_OPEN
+	return LIVE_OPEN
+
+
+## Alle drei Ziele live. Ist das Hauptziel verloren, sind es die anderen auch.
+static func goals_live(stage: Dictionary, stats: Dictionary) -> Array:
+	var gs: Array = stage.get("goals", [])
+	var out: Array = []
+	for i in gs.size():
+		out.append(goal_live(gs[i], stats))
+	if not out.is_empty() and int(out[0]) == LIVE_LOST:
+		out.fill(LIVE_LOST)
+	return out
+
+
+## Aktueller Wert zum Ziel im Lauf: Genauigkeit, Misses "3 / 8", Rang ("" bei pass).
+static func goal_live_value(goal: Dictionary, stats: Dictionary) -> String:
+	match str(goal.get("type", "")):
+		"acc":
+			return acc_text(float(stats.get("accuracy", 0.0)))
+		"miss":
+			return "%d / %d" % [int(stats.get("n_miss", 0)), int(goal.get("value", 0))]
+		"grade":
+			return str(stats.get("grade", ""))
+	return ""
+
+
+## Wert des eigenen Bestlaufs zu einem Ziel ("" = nicht gespielt oder nichts zu zeigen).
+static func goal_best_value(goal: Dictionary, e: Dictionary) -> String:
+	if not e.has("score"):
+		return ""
+	match str(goal.get("type", "")):
+		"acc":
+			return acc_text(float(e.get("accuracy", 0.0)))
+		"miss":
+			var n := int(e.get("n_miss", 0))
+			return tr_("1 Miss") if n == 1 else (tr_("%d Misses") % n)
+		"grade":
+			return str(e.get("grade", ""))
+	return ""
+
+
+## Warum eine Stufe gesperrt ist ("" = offen).
+static func lock_reason(data: Dictionary, state: Dictionary, id: String) -> String:
+	if stage_open(data, state, id):
+		return ""
+	var ci := chapter_index_of(data, id)
+	if ci < 0:
+		return ""
+	if not chapter_open(data, state, ci):
+		return tr_("Erst den Boss von Kapitel %d schaffen") % ci
+	var sts: Array = (chapters(data)[ci] as Dictionary).get("stages", [])
+	for i in range(1, sts.size()):
+		if str((sts[i] as Dictionary).get("id", "")) == id:
+			return tr_("Erst %s schaffen") % stage_label(sts[i - 1], i - 1)
+	return ""
+
+
+## Stufen eines Kapitels, deren Hauptziel geschafft ist.
+static func chapter_cleared_count(ch: Dictionary, state: Dictionary) -> int:
+	var n := 0
+	for s: Dictionary in ch.get("stages", []):
+		if stage_cleared(state, str(s.get("id", ""))):
+			n += 1
+	return n
+
+
 static func count_true(a: Array) -> int:
 	var n := 0
 	for v: Variant in a:
@@ -522,7 +602,8 @@ static func find_local(stage: Dictionary, sets: Array) -> Dictionary:
 			var d: Dictionary = diffs[i]
 			if diff_matches(diff, str(d.get("version", ""))):
 				return {"osz_path": osz, "index": i, "version": str(d.get("version", "")),
-					"osu_filename": str(d.get("osu_filename", "")), "stars": float(d.get("stars", -1.0))}
+					"osu_filename": str(d.get("osu_filename", "")), "stars": float(d.get("stars", -1.0)),
+					"set": ms}
 	return {}
 
 
@@ -550,6 +631,14 @@ static func pct_text(v: float) -> String:
 	return t + "%"
 
 
+## Genauigkeit mit zwei Nachkommastellen ("97,12 %" / "97.12%").
+static func acc_text(v: float) -> String:
+	var t := "%.2f" % (v * 100.0)
+	if TranslationServer.get_locale().begins_with("de"):
+		return t.replace(".", ",") + " %"
+	return t + "%"
+
+
 static func goal_text(goal: Dictionary) -> String:
 	match str(goal.get("type", "")):
 		"pass":
@@ -564,6 +653,22 @@ static func goal_text(goal: Dictionary) -> String:
 			if n == 0:
 				return tr_("Kein Miss")
 			return tr_("Höchstens %d Misses") % n
+	return ""
+
+
+## Kurzform fuer das Spiel-HUD ("Genauigkeit ≥ 95,8 %", "≤ 8 Misses").
+static func goal_short(goal: Dictionary) -> String:
+	match str(goal.get("type", "")):
+		"pass":
+			return tr_("Ohne Fail")
+		"acc":
+			return tr_("Genauigkeit ≥ %s") % pct_text(float(goal.get("value", 0.0)))
+		"grade":
+			var g := str(goal.get("value", ""))
+			return (tr_("Rang %s") % g) if g == "SS" else (tr_("Rang ≥ %s") % g)
+		"miss":
+			var n := int(goal.get("value", 0))
+			return tr_("Kein Miss") if n == 0 else (tr_("≤ %d Misses") % n)
 	return ""
 
 

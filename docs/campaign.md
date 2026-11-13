@@ -71,11 +71,30 @@ setzt bei Mania die Tastenzahl vor den Namen (`[4K] Easy`), in der .osu steht nu
 - `scripts/campaign/campaign.gd` (`Campaign`): Logik, statisch, testbar. Fortschritt in
   `user://campaign.json` (`--campaign-path=` fuer Tests/Harness).
 - `scripts/campaign/campaign_screen.gd` + `scenes/campaign.tscn`: Kapitelweg, Stufenansicht.
+  - Kapitelweg: 13 Weltbilder als Weg, je Kapitel Sterne und sechs Striche (geschafft/offen/
+    gesperrt); unten das gewaehlte Kapitel mit den Covern seiner sechs Stufen (Boss mit
+    Bernstein-Kante), Stand oder Sperrgrund.
+  - Kapitel: links der Weg der Stufen (Wegpunkt, Cover, Titel, Sperrgrund, Sterne; Boss als
+    Raute und groesser), darunter das naechste Kapitel. Rechts die gewaehlte Stufe: grosses Bild
+    mit Titel, Schwierigkeit/Laenge/BPM/Diff, Ziele mit Stand (erfuellt oder Wert des Bestlaufs),
+    Bestwert, Online-Rangliste mit Avataren, Start.
+  - Bilder: lokales Thumbnail (`MapSet.thumb_texture`), sonst Online-Cover ueber die Set-ID
+    (`Mirror.fetch_cover`, `assets.ppy.sh/.../card@2x.jpg`), sonst Platzhalter in Kapitel-Farbe.
+    Gewaehlte Stufe: `GameSession.preload_selection` (wie der Song-Browser), dann grosses Bild,
+    weichgezeichneter Hintergrund und Vorschau des Songs (Bus Music, weich ein/aus).
+  - Bedienung: Pfeile waehlen, Enter oeffnet/startet, zweiter Klick auf die gewaehlte Stufe
+    startet, Esc zurueck.
+- `scripts/campaign/campaign_hud.gd` (`CampaignHud`): Ziele im Spiel, links unter den Werten der
+  Szene, live gehalten/offen/verloren (`Campaign.goals_live`) mit aktuellem Wert. GameSession
+  haengt es an jede Spielszene einer Stufe (auch Neustart); beim Ergebnis blendet es sich aus.
 - `GameSession.campaign`: laufende Stufe. `ResultsScreen` traegt den Lauf ein und zeigt
   Ziele, Sterne, "Naechste Stufe".
 - Hauptmenue: Zeile "Kampagne" mit Sternestand.
 - Autoplay (Testflag) traegt nie in den echten Stand ein, nur in eine `--campaign-path`-Datei.
-- Harness echter Stufenlauf: `res://scenes/campaign.tscn --autoplay --shot-campaign-run=<Praefix>
+- Harness Ansicht: `res://scenes/campaign.tscn --shot-campaign=<Praefix> [--maps-dir=<Ordner>]`
+  speichert `_path.png`, `_path_locked.png`, `_stage.png`, `_locked.png`, `_result.png`
+  (Demo-Stand, nichts wird gespeichert).
+- Harness echter Stufenlauf (`--autoplay` vor einem `--`, sonst spielt niemand): `res://scenes/campaign.tscn --autoplay --shot-campaign-run=<Praefix>
   [--shot-campaign-stage=<Stufe>] --campaign-path=<Testdatei>` startet die Stufe, spielt sie,
   traegt ein, speichert `<Praefix>_stage.png`, `_game.png`, `_result.png` und beendet sich
   (Watchdog 145 s, aussen `timeout 150`).
@@ -89,7 +108,7 @@ setzt bei Mania die Tastenzahl vor den Namen (`[4K] Easy`), in der .osu steht nu
 ## Tests
 
 `tests/run_campaign_tests.gd`: Datenformat, Ziele, Sterne, Freischaltung, Speichern
-(nur eigene Testdatei), Stufenstart mit eigenen Einstellungen in allen 6 Modi
+(nur eigene Testdatei), Live-Ziele und Sperrgruende, Stufenstart mit eigenen Einstellungen in allen 6 Modi
 (`_test_own_settings`) und eigenen Mods (`_test_start_mods`).
 
 ## Offen
