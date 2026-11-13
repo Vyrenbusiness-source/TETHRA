@@ -68,6 +68,7 @@ func _run() -> void:
 	_test_replay()
 	_test_replay_io()
 	_test_anti_mash()
+	_test_preview()
 
 
 func _test_landing() -> void:
@@ -408,3 +409,44 @@ func _test_anti_mash() -> void:
 	_ok(RG.REPLAY_RULES == 3 and RG.replay_current([{"t": -1.0, "lane": -1, "down": false, "rules": RG.REPLAY_RULES}]), "Replay v3 akzeptiert")
 	_ok(not RG.replay_current([{"t": -1.0, "lane": -1, "down": false, "rules": 2}]), "Replay v2 abgelehnt")
 	_ok(not RG.replay_current(plan), "altes Replay ohne Marke abgelehnt")
+
+
+## QA Vorlauf: jede Landung ist mindestens 450 ms vorher lesbar (Ball im Flug oder
+## Geister-Bogen), auch schnelle Folgen in einer Spalte und die Note direkt nach einem Hold.
+func _test_preview() -> void:
+	print("- Vorlauf (QA)")
+	var list: Array = [[0, 2000]]
+	for i in 8:
+		list.append([0, 2100 + i * 100])        # Jack 100 ms
+	list.append([1, 2000, 3000])                 # Hold
+	list.append([1, 3080])                       # 80 ms nach Hold-Ende
+	list.append([1, 3200])
+	list.append([2, 2000])
+	list.append([2, 6000])                       # Pause: faellt neu herein
+	list.append([2, 6120])
+	var f := ReboundFlight.from_beatmap(_map(list), 600.0)
+	var worst := 1.0e9
+	for c in f.columns:
+		for k in f.seg_count(c):
+			worst = minf(worst, f.segs[c][k].t1 - f.readable_from(c, k))
+	_ok(worst >= 450.0, "kleinster Vorlauf >= 450 ms (war %.0f)" % worst)
+	# Jack: waehrend der Ball zur 1. Note faellt, sind die Folge-Landungen bis 900 ms voraus dabei.
+	var r: Vector2i = f.preview_range(0, 1900.0)
+	_ok(r.x == 1 and r.y == 8, "Kette im Fall: Fluege 1..8 (war %s)" % str(r))
+	r = f.preview_range(0, 2250.0)
+	_ok(r.x == 4 and r.y == 8, "Kette im Jack ab dem uebernaechsten (war %s)" % str(r))
+	# Hold liegt: der Huepfer danach wird schon waehrend des Holds gezeigt.
+	r = f.preview_range(1, 2500.0)
+	_ok(r.x == 1 and r.y == 2, "nach Hold: Flug 1..2 waehrend des Haltens (war %s)" % str(r))
+	r = f.preview_range(1, 2050.0)
+	_ok(r.x > r.y, "Hold-Folge weiter als 900 ms weg: noch nichts")
+	# Fall, der noch nicht begonnen hat: keine schwebenden Boegen; Pause trennt die Kette.
+	r = f.preview_range(2, 3000.0)
+	_ok(r.x > r.y, "vor dem Hereinfallen keine Vorschau")
+	r = f.preview_range(2, 1900.0)
+	_ok(r.x > r.y, "Kette endet an der Pause")
+	_near(f.readable_from(2, 1), 5400.0, "Fall: lesbar ab Fallbeginn")
+	# Songstart: Vorlauf reicht fuer die volle Fallzeit, mit und ohne AudioLeadIn.
+	_near(ReboundFlight.lead_in_ms(200.0, 1600.0, 0.0), 2000.0, "Lead-In kurzer Start")
+	_near(ReboundFlight.lead_in_ms(200.0, 1600.0, 3000.0), 3000.0, "AudioLeadIn bleibt, wenn groesser")
+	_near(ReboundFlight.lead_in_ms(9000.0, 1000.0, 0.0), 0.0, "spaete erste Note: kein Zusatz")

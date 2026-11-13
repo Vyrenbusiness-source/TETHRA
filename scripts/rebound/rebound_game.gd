@@ -97,6 +97,9 @@ func _ready() -> void:
 		_recorded = [AntiMash.marker()]
 	core = ManiaCore.new()
 	core.setup(_beatmap)
+	# SV wirkt in Rebound nicht (ein Mehrspieler-Raum kann es setzen): kein Faktor, kein Badge.
+	core.mods.erase("SV")
+	core.mod_mult = ManiaCore.mod_multiplier(core.mods)
 	core.note_judged.connect(_on_note_judged)
 	core.hold_started.connect(_on_hold_started)
 	core.finished.connect(func(_s): _show_results(false))
@@ -156,9 +159,7 @@ func _load_beatmap() -> bool:
 	var stream := OszImporter.load_audio_stream(GameSession.osz_path, _beatmap)
 	if stream != null:
 		var lead := _beatmap.audio_lead_in()
-		var need := float(Settings.rebound_drop_ms) + 600.0
-		if _first_t + lead < need:
-			lead = need - _first_t
+		lead = ReboundFlight.lead_in_ms(_first_t, float(Settings.rebound_drop_ms), lead)
 		SyncClock.play(stream, lead)
 		_use_audio = true
 	return true
@@ -190,7 +191,7 @@ func _time_ms() -> float:
 		return SyncClock.judgement_time_ms()
 	if not _debug_running:
 		return 0.0
-	return float(Time.get_ticks_usec() - _debug_start_usec) / 1000.0 - 1000.0
+	return float(Time.get_ticks_usec() - _debug_start_usec) / 1000.0 - maxf(1000.0, ReboundFlight.lead_in_ms(_first_t, float(Settings.rebound_drop_ms), 0.0))
 
 
 func _visual_ms() -> float:

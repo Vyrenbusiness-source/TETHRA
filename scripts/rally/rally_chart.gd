@@ -28,6 +28,8 @@ const BREAK_MS := 3500.0
 const SERVE_LEAD_MS := 1800.0
 ## Nach dem Schlag vor einer Pause fliegt der Ball so lange zum Gegner und verschwindet.
 const EXIT_MS := 800.0
+## Zeit zwischen Uhr-Start und dem ersten Gegnerschlag.
+const START_PAD_MS := 900.0
 
 ## Layout (normiert).
 const X_PLAYER := 0.20
@@ -157,6 +159,12 @@ static func finalize_flight(shots: Array[Shot], flight_ms: float) -> void:
 			return
 	for s in shots:
 		s.launch = s.t - flight_ms
+
+
+## Vorlauf der Uhr vor Zeit 0: mindestens der AudioLeadIn der Map und genug, dass der erste
+## Ball seine volle Flugzeit sichtbar ist (auch ohne Audio, Retry, Replay, Mehrspieler).
+static func lead_in_ms(first_t: float, flight_ms: float, audio_lead_ms: float) -> float:
+	return maxf(audio_lead_ms, flight_ms + START_PAD_MS - first_t)
 
 
 ## Zone aus Mania-Spalte. 4 Zonen: 4K direkt, sonst gestreckt. 3 Zonen: bei 4K

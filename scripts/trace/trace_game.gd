@@ -82,6 +82,19 @@ var _shot_hold := false
 var _sim_done := false
 
 
+## Ansicht des Spiels (QA Vorlauf). Die Spalten sind in _apply_mods schon getauscht, also
+## spiegelt die Ansicht nicht nochmal (TraceMods.view_mods), und die Kamera haelt die Knoten
+## der naechsten 600 ms im Bild (TraceRules.fair_camera).
+class FairView extends TraceView:
+	func setup(p: TracePath, c: ManiaCore, colors: Array[Color]) -> void:
+		super.setup(p, c, colors)
+		mods = TraceMods.view_mods(mods)
+		_mirror = false
+
+	func _camera(t: float) -> Vector2:
+		return TraceRules.fair_camera(path, t, super._camera(t), TraceRules.view_half(size))
+
+
 func _ready() -> void:
 	_ensure_translations()
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -102,7 +115,9 @@ func _ready() -> void:
 			_mp_cut_ms = maxf(0.0, a.trim_prefix("--mp-cut=").to_float()) * 1000.0
 	core = ManiaCore.new()
 	core.setup(_beatmap, -1.0, 1.0)
-	core.mod_mult *= _mod_mult()
+	# SV wirkt in Trace nicht: kein Faktor, kein Badge (TraceMods.strip_foreign).
+	core.mods = TraceMods.strip_foreign(core.mods)
+	core.mod_mult = ManiaCore.mod_multiplier(core.mods) * _mod_mult()
 	core.note_judged.connect(_on_note_judged)
 	core.hold_started.connect(_on_hold_started)
 	core.finished.connect(_on_finished)
@@ -112,7 +127,7 @@ func _ready() -> void:
 		fresh_replay = false
 	path = TracePath.from_beatmap(_beatmap, float(Settings.trace_speed))
 	_build_bg()
-	_view = TraceView.new()
+	_view = FairView.new()
 	add_child(_view)
 	_view.setup(path, core, _note_colors())
 	_build_sound()
@@ -207,9 +222,7 @@ func _load_beatmap() -> bool:
 	if stream != null:
 		var first := float(_beatmap.hit_objects[0].time)
 		var lead := _beatmap.audio_lead_in()
-		var need := 1900.0 - first
-		if lead < need:
-			lead = need
+		lead = TraceRules.lead_in_ms(first, lead)
 		SyncClock.play(stream, lead)
 		_use_audio = true
 	return true
@@ -273,7 +286,7 @@ func _time_ms() -> float:
 		return SyncClock.judgement_time_ms()
 	if not _debug_running:
 		return 0.0
-	return float(Time.get_ticks_usec() - _debug_start_usec) / 1000.0 - 1000.0
+	return float(Time.get_ticks_usec() - _debug_start_usec) / 1000.0 - maxf(1000.0, TraceRules.lead_in_ms(_first_ms(), 0.0))
 
 
 func _visual_ms() -> float:

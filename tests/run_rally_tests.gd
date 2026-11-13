@@ -87,6 +87,7 @@ func _run() -> void:
 	_test_stars()
 	_test_anti_mash()
 	_test_rules_v4()
+	_test_qa_fair()
 	print("Ergebnis: %d ok, %d fehlgeschlagen" % [_passed, _failed])
 
 
@@ -666,3 +667,34 @@ func _test_rules_v4() -> void:
 	_ok(int(g.result_of(0).quality) == ManiaCore.Quality.MISS, "falsche Taste ohne Nachzuegler = Miss")
 	_ok(not RallyCore.replay_ok([[0, RallyCore.EV_RULES, 3, 4]]) and RallyCore.replay_ok([[0, RallyCore.EV_RULES, 4, 3]]),
 		"Replay Regeln 3 abgelehnt, 4 akzeptiert")
+
+
+## QA: Vorlauf am Songstart und SV-Faktor.
+func _test_qa_fair() -> void:
+	print("- QA: Vorlauf und Mods")
+	# Jeder Ball fliegt die volle eingestellte Flugzeit sichtbar (launch = t - Flugzeit).
+	var bm := _beatmap(3, "64,192,300,1,0\n192,192,390,1,0\n320,192,480,1,0\n448,192,570,1,0\n64,192,5000,1,0\n448,192,5100,1,0")
+	for zones in [3, 4]:
+		for fl in [450.0, 800.0, 1400.0]:
+			var sh := RallyChart.build(bm, fl, zones)
+			var worst := 1.0e9
+			for s in sh:
+				worst = minf(worst, s.t - s.launch)
+			_near(worst, fl, "Flugzeit %d, %d Zonen: Vorlauf konstant" % [int(fl), zones])
+	# Songstart: Uhr beginnt frueh genug fuer den ersten Ball (auch ohne Audio).
+	_near(RallyChart.lead_in_ms(300.0, 1400.0, 0.0), 2000.0, "Lead-In kurzer Start")
+	_near(RallyChart.lead_in_ms(300.0, 800.0, 3000.0), 3000.0, "AudioLeadIn bleibt, wenn groesser")
+	_near(RallyChart.lead_in_ms(9000.0, 800.0, 0.0), 0.0, "spaete erste Note: kein Zusatz")
+	# SV wirkt in Rally nicht (Mehrspieler-Raum kann es setzen): kein Faktor, kein Badge.
+	var a := _core([[1000, 0]])
+	var b := _core([[1000, 0]], {"SV": true})
+	_press(a, 0, 1000.0)
+	_press(b, 0, 1000.0)
+	a.update(5000.0)
+	b.update(5000.0)
+	_ok(a.score == b.score and a.score > 0, "SV ohne Score-Faktor (%d / %d)" % [a.score, b.score])
+	_ok(not (b.stats().mods as Array).has("SV"), "SV nicht in der Mod-Liste")
+	var n := _core([[1000, 0]], {"NF": true, "SV": true})
+	_press(n, 0, 1000.0)
+	n.update(5000.0)
+	_ok(absi(n.score * 2 - a.score) <= 2 and (n.stats().mods as Array) == ["NF"], "NF bleibt x0,5")

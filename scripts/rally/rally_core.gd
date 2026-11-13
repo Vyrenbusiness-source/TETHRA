@@ -30,7 +30,8 @@ const REPLAY_RULES := 4
 const EV_DOWN := 1
 const EV_UP := 5
 const EV_RULES := 9
-const MOD_ORDER := ["NF", "SV"]
+## SV wirkt in Rally nicht: kein Faktor, kein Badge (ein Mehrspieler-Raum kann es setzen).
+const MOD_ORDER := ["NF"]
 
 var shots: Array[RallyChart.Shot] = []
 var w_max := 16.5
@@ -108,7 +109,8 @@ func setup(p_shots: Array[RallyChart.Shot], od: float, hp_drain: float = 5.0, p_
 	_tally._hp_miss_damage = 0.04 + 0.04 * (hp_drain / 10.0)
 	var m: Dictionary = p_mods if p_mods is Dictionary else ManiaCore.session_mods()
 	_tally.mods = m.duplicate()
-	_tally.mod_mult = ManiaCore.mod_multiplier(m)
+	_tally.mods.erase("SV")
+	_tally.mod_mult = ManiaCore.mod_multiplier(_tally.mods)
 	_tally.no_fail = bool(m.get("NF", false))
 	_tally._total_notes = shots.size()
 	w_max = _tally.w_max
