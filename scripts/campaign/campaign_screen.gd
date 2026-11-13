@@ -4,7 +4,7 @@ extends Control
 ## eines Kapitels (Ziele, Bestwert, Online-Rangliste der Map). Logik: Campaign.
 ## Entwurf auf 1280x720, gleichmaessig skaliert. Graphit + Bernstein, flache Flaechen.
 ##
-## Harness: --campaign-shot=<Praefix> speichert <Praefix>_path.png, _stage.png und
+## Harness: --shot-campaign=<Praefix> speichert <Praefix>_path.png, _stage.png und
 ## _result.png mit Demo-Stand (ohne Netz, ohne Schreiben) und beendet sich.
 
 const BASE := Vector2(1280.0, 720.0)
@@ -86,8 +86,8 @@ func _ready() -> void:
 	theme = UiTheme.build_theme()
 	_head_font = UiTheme.heading_font(0)
 	for a in OS.get_cmdline_args() + OS.get_cmdline_user_args():
-		if a.begins_with("--campaign-shot="):
-			_shot = a.trim_prefix("--campaign-shot=")
+		if a.begins_with("--shot-campaign="):
+			_shot = a.trim_prefix("--shot-campaign=")
 	_data = Campaign.load_data()
 	_state = _demo_state() if _shot != "" else Campaign.load_state()
 	var bg := ColorRect.new()
@@ -223,7 +223,10 @@ static func world_thumb(world: String) -> Texture2D:
 		return _thumbs[world]
 	var out: Texture2D = null
 	var dir := WorldTheme.asset_dir(world)
-	for p: String in ["%s/%s_sky.webp" % [dir, world], "%s/sky_%s.webp" % [dir, world]]:
+	var cands: Array[String] = ["%s/%s_sky.webp" % [dir, world], "%s/sky_%s.webp" % [dir, world]]
+	if world == WorldTheme.GALAXY:
+		cands = ["res://assets_game/space/sky_azure.webp"]
+	for p in cands:
 		if not ResourceLoader.exists(p):
 			continue
 		var t := load(p) as Texture2D

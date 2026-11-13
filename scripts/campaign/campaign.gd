@@ -364,7 +364,11 @@ static func load_state(path: String = "") -> Dictionary:
 	var p := default_path() if path == "" else path
 	if not FileAccess.file_exists(p):
 		return new_state()
-	var d: Variant = JSON.parse_string(FileAccess.get_file_as_string(p))
+	# JSON-Instanz statt parse_string: kaputte Datei ohne Fehlerzeile im Log.
+	var j := JSON.new()
+	if j.parse(FileAccess.get_file_as_string(p)) != OK:
+		return new_state()
+	var d: Variant = j.data
 	if not (d is Dictionary) or not ((d as Dictionary).get("stages") is Dictionary):
 		return new_state()
 	return d
