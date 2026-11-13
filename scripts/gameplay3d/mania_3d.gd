@@ -651,9 +651,9 @@ func _update_playfield_2d(t: float) -> void:
 		var zh: float = (entry.root as Node3D).position.z
 		if obj.is_hold:
 			_pf2d.add_hold(obj.column, zh, _note_z(obj.end_time(), t), c,
-					Playfield2D.STATE_HELD if held else Playfield2D.STATE_NORMAL)
+					Playfield2D.STATE_HELD if held else Playfield2D.STATE_NORMAL, index, obj.time - t)
 		else:
-			_pf2d.add_note(obj.column, zh, c)
+			_pf2d.add_note(obj.column, zh, c, Playfield2D.STATE_NORMAL, index, obj.time - t)
 	for rb in _released_beams:
 		_pf2d.add_hold(int(rb.col), _note_z(float(rb.head), t), _note_z(float(rb.end), t),
 				NoteColors.color_for(int(rb.col), true, true, CLEAN_HOLD), Playfield2D.STATE_DEAD)
@@ -665,6 +665,45 @@ func _update_playfield_2d(t: float) -> void:
 		_pf2d.add_note(int(_missed_2d[mi][1]), z, Color.GRAY, Playfield2D.STATE_DEAD)
 	_pf2d.set_combo(core.combo)
 	_pf2d.set_lanes(_lane_held, _pad_flash, _pad_judge_col)
+	if Playfield2D.dbg_popin:
+		_pf2d.dbg_preempt = core.preempt
+		_pf2d.dbg_sv = not core.scroll.is_identity()
+		if not _pf2d.dbg_occluder.is_valid():
+			_pf2d.dbg_occluder = _dbg_popin_occluder
+
+
+## --debug-popin: deckt ein sichtbares, deckendes Control ueber dem 2D-Feld
+## (HUD, Break-Anzeige, Countdown, Pause) die Mitte des Rechtecks zu? "" = frei.
+func _dbg_popin_occluder(r: Rect2) -> String:
+	var p := r.get_center()
+	for layer in get_children():
+		if layer is CanvasLayer and (layer as CanvasLayer).visible and (layer as CanvasLayer).layer >= 0 \
+				and _pf2d.get_parent() != layer:
+			var hit := _dbg_popin_hit(layer, p, 1.0)
+			if hit != "":
+				return hit
+	return ""
+
+
+func _dbg_popin_hit(n: Node, p: Vector2, alpha: float) -> String:
+	for ch in n.get_children():
+		var a := alpha
+		if ch is CanvasItem:
+			if not (ch as CanvasItem).visible:
+				continue
+			a *= (ch as CanvasItem).modulate.a * (ch as CanvasItem).self_modulate.a
+		if a < 0.5:
+			continue
+		if ch is Control and (ch as Control).get_global_rect().has_point(p):
+			var solid := ch is Panel or ch is PanelContainer or ch is TextureRect or ch is NinePatchRect
+			if ch is ColorRect:
+				solid = (ch as ColorRect).color.a * a >= 0.5 and (ch as ColorRect).material == null
+			if solid:
+				return "%s(%s)" % [ch.name, ch.get_class()]
+		var hit := _dbg_popin_hit(ch, p, a)
+		if hit != "":
+			return hit
+	return ""
 
 
 func _load_beatmap() -> bool:

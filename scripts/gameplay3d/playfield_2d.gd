@@ -32,7 +32,8 @@ var preview_size := Vector2.ZERO  ## > 0: Vorschau-Modus, _vs() nutzt diese Groe
 var _disc_tex: Texture2D
 var _ring_tex: Texture2D
 
-# Pro Frame gefuellt: [col, z_head, z_tail, color, state, is_hold]
+# Pro Frame gefuellt: [col, z_head, z_tail, color, state, is_hold, id, left_ms]
+# (id/left_ms nur fuer --debug-popin: Notenindex, Restzeit bis zur Trefferzeit)
 var _items: Array = []
 var _held: Array = []
 var _flash: Array = []
@@ -82,12 +83,14 @@ func begin_frame() -> void:
 	_items.clear()
 
 
-func add_note(col: int, z_head: float, color: Color, state: int = STATE_NORMAL) -> void:
-	_items.append([col, z_head, z_head, color, state, false])
+func add_note(col: int, z_head: float, color: Color, state: int = STATE_NORMAL,
+		id: int = -1, left_ms: float = 0.0) -> void:
+	_items.append([col, z_head, z_head, color, state, false, id, left_ms])
 
 
-func add_hold(col: int, z_head: float, z_tail: float, color: Color, state: int = STATE_NORMAL) -> void:
-	_items.append([col, z_head, z_tail, color, state, true])
+func add_hold(col: int, z_head: float, z_tail: float, color: Color, state: int = STATE_NORMAL,
+		id: int = -1, left_ms: float = 0.0) -> void:
+	_items.append([col, z_head, z_tail, color, state, true, id, left_ms])
 
 
 func set_lanes(held: Array, flash: Array, flash_col: Array) -> void:
@@ -328,6 +331,8 @@ func _draw() -> void:
 			if yh < -nh or yh > vs.y + nh:
 				continue
 			_draw_bar(Rect2(x0, yh - nh * 0.5, w, nh), c)
+		if dbg_popin:
+			_dbg_mark(it, Rect2(x0, yh - nh * 0.5, w, nh), c.a)
 	if not keys_under:
 		_draw_receptors(fr, cw, ly, nh, vs)
 
@@ -535,6 +540,8 @@ func _draw_circle_item(it: Array, x0: float, w: float, yh: float, c: Color, st: 
 	elif yh < -d or yh > vs.y + d:
 		return
 	var r := Rect2(cx - d * 0.5, yh - d * 0.5, d, d)
+	if dbg_popin:
+		_dbg_mark(it, r, c.a)
 	_nd_tex(_disc_tex, r, c)
 	_nd_tex(_ring_tex, r, c.lerp(Color(1, 1, 1), 0.45))
 
@@ -725,6 +732,8 @@ func _draw_skin_item(it: Array, xs: Array, ws: Array, vs: Vector2) -> void:
 			_nd_tex(tail, Rect2(nx, top - th, nw, th), mod * tn)
 	elif yh < -hh or yh > vs.y + hh:
 		return
+	if dbg_popin:
+		_dbg_mark(it, Rect2(nx, yh - hh, nw, hh), (mod * tn).a if head != null else 1.0)
 	if head != null:
 		_nd_tex(head, Rect2(nx, yh - hh, nw, hh), mod * tn)
 	else:
@@ -968,6 +977,8 @@ func _draw_osu_item(it: Array, xs: Array, ws: Array, vs: Vector2, ly: float, lay
 		var nh := _osu_note_h(nt)
 		if yh < 0.0 or yh - nh > vs.y:
 			return
+		if dbg_popin:
+			_dbg_mark(it, Rect2(x, yh - nh, w, nh), mod.a)
 		_nd_tex(nt, Rect2(x, yh - nh, w, nh), mod)
 		return
 	if st == STATE_HELD:
@@ -985,6 +996,8 @@ func _draw_osu_item(it: Array, xs: Array, ws: Array, vs: Vector2, ly: float, lay
 		return
 	if layer == 1:
 		if head != null:
+			if dbg_popin:
+				_dbg_mark(it, Rect2(x, yh - hh, w, hh), mod.a)
 			_nd_tex(head, Rect2(x, yh - hh, w, hh), mod)
 		return
 	var body := sk.tex("body_%d" % col)
@@ -1141,3 +1154,99 @@ func _draw_osu_combo(fr: Rect2, vs: Vector2, now: float) -> void:
 		draw_texture_rect(e[0], Rect2(x, -sz.y * 0.5, sz.x, sz.y), false)
 		x += sz.x - over
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+
+# ---------------------------------------------------------- Debug: --debug-popin
+# Misst je Note, wann ihr Kopf wirklich im Bild gezeichnet wird (nach stage_xf, im
+# Viewport und im Clip, Maske > 0, nicht von einem deckenden Control verdeckt):
+# erster sichtbarer Frame (Strecken-Anteil, Restzeit) und die sichtbare Zeit bis zum
+# Treffer. Ohne Flag kostet es einen bool-Test je gezeichneter Note.
+# Ausgabe beim Verlassen der Szene: "POPIN ..." je Fund (erst nach 15 % der Strecke
+# sichtbar oder weniger als 70 % der Anflugzeit sichtbar), dann "POPIN-SUM ...".
+
+static var dbg_popin: bool = OS.get_cmdline_args().has("--debug-popin") \
+		or OS.get_cmdline_user_args().has("--debug-popin")
+const DBG_PROG_MAX := 0.15
+const DBG_LEAD_MIN := 0.70
+var dbg_preempt := 0.0          ## Anflugzeit des Laufs (ms)
+var dbg_sv := false             ## Lauf mit SV (Map oder Mod): kurze Sicht ist dort gewollt
+var dbg_occluder := Callable()  ## func(screen_rect: Rect2) -> String ("" = frei)
+## id -> [erster Strecken-Anteil (-1 = nie sichtbar), Restzeit dabei, sichtbar ms,
+##        verdeckt ms, letzte Restzeit, Grund, Spalte, Hold, Bild-Y beim ersten Mal]
+var _dbg := {}
+
+
+func _dbg_mark(it: Array, r: Rect2, a: float) -> void:
+	var id: int = it[6]
+	if id < 0 or int(it[4]) == STATE_DEAD:
+		return
+	var left: float = it[7]
+	var e: Array = _dbg.get(id, [])
+	if e.is_empty():
+		e = [-1.0, 0.0, 0.0, 0.0, left, "", int(it[0]), bool(it[5]), 0.0]
+		_dbg[id] = e
+	if left < 0.0:
+		return   # nach der Trefferzeit (gehaltener Hold, spaeter Treffer): zaehlt nicht
+	var why := ""
+	var xf := stage_xf()
+	var p0 := xf * r.position
+	var p1 := xf * r.end
+	var sr := Rect2(Vector2(minf(p0.x, p1.x), minf(p0.y, p1.y)), (p1 - p0).abs())
+	var vis := sr.intersection(Rect2(Vector2.ZERO, _vs()))
+	if clip_contents:
+		var c0 := xf * Vector2.ZERO
+		var c1 := xf * size
+		vis = vis.intersection(Rect2(Vector2(minf(c0.x, c1.x), minf(c0.y, c1.y)), (c1 - c0).abs()))
+	if a * maxf(mask_alpha(r.position.y), mask_alpha(r.end.y)) <= 0.02:
+		why = "mask"
+	elif vis.size.y < minf(2.0, sr.size.y) or vis.size.x < 1.0:
+		why = "offscreen"
+	elif dbg_occluder.is_valid():
+		why = str(dbg_occluder.call(vis))
+	var dt := maxf(0.0, float(e[4]) - left)
+	e[4] = left
+	if why != "":
+		e[3] = float(e[3]) + dt
+		if not str(e[5]).contains(why):
+			e[5] = str(e[5]) + why + " "
+		return
+	e[2] = float(e[2]) + dt
+	if float(e[0]) < 0.0:
+		e[0] = clampf((float(it[1]) - z_far) / (z_line - z_far), 0.0, 1.0)
+		e[1] = left
+		e[8] = sr.get_center().y
+
+
+func dbg_summary() -> String:
+	var out := PackedStringArray()
+	var n := 0
+	var finds := 0
+	var max_prog := 0.0
+	var min_vis := 1.0
+	var never := 0
+	for id in _dbg:
+		var e: Array = _dbg[id]
+		if float(e[4]) > 80.0:
+			continue   # beim Abbruch noch im Anflug
+		n += 1
+		var prog: float = e[0]
+		var ratio := float(e[2]) / dbg_preempt if dbg_preempt > 0.0 else 1.0
+		if prog < 0.0:
+			never += 1
+			prog = 1.0
+		max_prog = maxf(max_prog, prog)
+		min_vis = minf(min_vis, ratio)
+		if prog > DBG_PROG_MAX or ratio < DBG_LEAD_MIN:
+			finds += 1
+			if finds <= 12:
+				out.append("POPIN id=%d col=%d hold=%s first_prog=%.3f screen_y=%.0f left=%.0f vis=%.0f hid=%.0f of %.0f ms ratio=%.2f sv=%s grund=%s" % [
+						id, int(e[6]), str(e[7]), float(e[0]), float(e[8]), float(e[1]), float(e[2]),
+						float(e[3]), dbg_preempt, ratio, str(dbg_sv), str(e[5])])
+	out.append("POPIN-SUM notes=%d never=%d finds=%d max_first_prog=%.3f min_vis_ratio=%.2f preempt=%.0f sv=%s vs=%s line_y=%.0f xf=%s" % [
+			n, never, finds, max_prog, min_vis, dbg_preempt, str(dbg_sv), str(_vs()), line_y(), str(stage_xf())])
+	return "\n".join(out)
+
+
+func _exit_tree() -> void:
+	if dbg_popin and preview_size.x <= 0.0:
+		print(dbg_summary())
