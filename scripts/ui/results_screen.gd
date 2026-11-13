@@ -2672,7 +2672,9 @@ func _campaign_setup() -> void:
 	var preview := inject.has("state")
 	var state: Dictionary = inject.state if preview else Campaign.load_state()
 	var out: Dictionary
-	if bool(_data.get("is_replay", false)):
+	# Autoplay (Testflag) zaehlt wie ein Replay nie fuer den echten Stand, nur fuer eine Testdatei.
+	var auto_real := OS.get_cmdline_args().has("--autoplay") and Campaign.default_path() == Campaign.PATH
+	if bool(_data.get("is_replay", false)) or auto_real:
 		var met := Campaign.goals_met(stage, run)
 		out = {"met_run": met, "stars_run": Campaign.count_true(met), "gained": 0, "cleared_now": false}
 	else:

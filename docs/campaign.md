@@ -58,7 +58,9 @@ neue `version` (alte Scores bleiben der alten Version zugeordnet).
 
 Fehlende Maps laedt die Kapitelansicht beim Oeffnen automatisch ueber `BeatmapMirror.download`
 (gleicher Weg wie der Online-Browser) und zeigt den Fortschritt.
-Lokal gefunden wird eine Map ueber die Set-ID im Dateinamen und den Diff-Namen.
+Lokal gefunden wird eine Map ueber die Set-ID im Dateinamen und den Diff-Namen. Die Online-Quelle
+setzt bei Mania die Tastenzahl vor den Namen (`[4K] Easy`), in der .osu steht nur `Easy`:
+`Campaign.diff_matches` nimmt beides.
 
 ## Code
 
@@ -68,6 +70,13 @@ Lokal gefunden wird eine Map ueber die Set-ID im Dateinamen und den Diff-Namen.
 - `GameSession.campaign`: laufende Stufe. `ResultsScreen` traegt den Lauf ein und zeigt
   Ziele, Sterne, "Naechste Stufe".
 - Hauptmenue: Zeile "Kampagne" mit Sternestand.
+- Welt des Kapitels: `Settings.world_theme` traegt sie nur, waehrend die Spielszene sich aufbaut
+  (Baum-Eintritt bis ready). Die eigene Wahl des Spielers bleibt in `settings.cfg`.
+- Autoplay (Testflag) traegt nie in den echten Stand ein, nur in eine `--campaign-path`-Datei.
+- Harness echter Stufenlauf: `res://scenes/campaign.tscn --autoplay --shot-campaign-run=<Praefix>
+  [--shot-campaign-stage=<Stufe>] --campaign-path=<Testdatei>` startet die Stufe, spielt sie,
+  traegt ein, speichert `<Praefix>_stage.png`, `_game.png`, `_result.png` und beendet sich
+  (Watchdog 145 s, aussen `timeout 150`).
 
 ## Ranglisten
 
