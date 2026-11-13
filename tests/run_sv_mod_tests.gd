@@ -31,7 +31,6 @@ func _initialize() -> void:
 	_test_normal_level(bm)
 	_test_start_lead()
 	_test_replay_vis()
-	_test_live_speed(bm)
 	_test_real_maps()
 	print("=== Ergebnis: %d bestanden, %d fehlgeschlagen ===" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
@@ -217,29 +216,6 @@ func _test_fair(bm: Beatmap, label: String, tps: Array = []) -> void:
 				short += 1
 	_ok(short == 0, "%s: jede Note >= %d%% der Anflugzeit sichtbar (%d zu kurz)" % [label, int(min_vis * 100.0), short])
 	_test_reverse_fair(bm, sm, label)
-	_test_lead(bm, label)
-
-
-## Anflug bei echten Scroll Speeds (40/25/15/10/5): das SV wird fuer die
-## Anflugzeit des Spielers erzeugt, jede Note liegt direkt vor dem Treffer
-## ununterbrochen mindestens SvMod.fair_need(view) ms im Bild (QA "Noten
-## kommen direkt": frueher ein SV fuer alle Speeds, nur bei 600/1200/2400 ms
-## geprueft, bei Scroll Speed 25 = 459 ms blieben bis 45 ms uebrig).
-func _test_lead(bm: Beatmap, label: String) -> void:
-	if SvMod.has_own_sv(bm):
-		return
-	var bad := 0
-	var worst := INF
-	for view in SvMod.FAIR_VIEWS:
-		var need := SvMod.fair_need(view)
-		var sm := _sm(bm, SvMod.generate(bm, SvMod.map_seed(bm), view))
-		for o in bm.hit_objects:
-			var l := sm.visible_lead(o.time, view, need)
-			if l < need - 0.01:
-				bad += 1
-				worst = minf(worst, l / need)
-	_ok(bad == 0, "%s: Sichtzeit vor dem Treffer bei Scroll Speed 5-40 (%d zu kurz, schlechteste %.0f%%)" % [
-		label, bad, 0.0 if bad == 0 else worst * 100.0])
 
 
 ## Songstart und Intro-Skip: jede Note bekommt ihre volle Anflugzeit plus
@@ -247,8 +223,6 @@ func _test_lead(bm: Beatmap, label: String) -> void:
 ## und bei Scroll Speed 1-5 (Anflug laenger als der alte feste Skip-Abstand).
 func _test_start_lead() -> void:
 	print("- Songstart/Intro-Skip: volle Anflugzeit")
-	_ok(absf(SvMod.fair_need(459.4) - 459.4 * 0.33) < 0.01 and absf(SvMod.fair_need(287.125) - 150.0) < 0.01
-			and absf(SvMod.fair_need(2297.0) - 450.0) < 0.01, "fair_need: 152 ms bei Speed 25, 150 ms bei Speed 40, 450 ms bei Speed 5")
 	# Erste Note bei 1000 ms, SV x2 ab Songanfang.
 	var bm := _parse(_osu_text("1000,400,4,1,0,100,1,0\n", 8, 400.0, "1000,-50,4,1,0,100,0,0\n"))
 	var first: float = bm.hit_objects[0].time
@@ -257,7 +231,7 @@ func _test_start_lead() -> void:
 		var pre := ManiaCore.preempt_for(scale)
 		for mods in [{}, {"CS": true}, {"SV": true}, {"SV": true, "CS": true}]:
 			var lead := ManiaCore.start_lead_ms(bm, scale, mods)
-			var core_sm := ManiaCore.build_scroll_map(bm, mods, pre)
+			var core_sm := ManiaCore.build_scroll_map(bm, mods)
 			if bool(mods.get("CS", false)):
 				core_sm = ScrollMap.new()
 				core_sm.build([], 99999.0)
@@ -281,36 +255,6 @@ func _test_replay_vis() -> void:
 	_ok(int(ManiaCore.vis_mods({"FI": true, "HD": false}).vis) == 1, "FadeIn-Replay")
 	var co := ManiaCore.vis_mods({"CO": true, "CO_pct": 35, "CO_bottom": true})
 	_ok(int(co.vis) == 3 and int(co.pct) == 35 and bool(co.bottom), "Cover-Replay: 35 % von unten")
-
-
-## Scroll Speed live geaendert: das SV wird fuer die neue Anflugzeit neu
-## erzeugt, Konstant bleibt konstant.
-func _test_live_speed(bm: Beatmap) -> void:
-	print("- Scroll Speed live: SV folgt der Anflugzeit")
-	var gs = root.get_node_or_null("GameSession")
-	if gs == null:
-		return
-	gs.mods = {"SV": true}
-	var core := ManiaCore.new()
-	core.setup(bm, -1.0, 1200.0 * 25 / 11485.0)
-	core.set_scroll_scale(1200.0 * 40 / 11485.0)
-	var want := ManiaCore.build_scroll_map(bm, {"SV": true}, 11485.0 / 40.0)
-	_ok(core.scroll._mult == want._mult and core.scroll._times == want._times, "SV fuer Speed 40 neu erzeugt")
-	var need := SvMod.fair_need(core.preempt)
-	var bad := 0
-	for o in bm.hit_objects:
-		if core.scroll.visible_lead(o.time, core.preempt, need) < need - 0.01:
-			bad += 1
-	_ok(bad == 0, "nach dem Wechsel jede Note fair sichtbar (%d zu kurz)" % bad)
-	gs.mods = {"SV": true, "CS": true}
-	var cs := ManiaCore.new()
-	cs.setup(bm, -1.0, 1.0)
-	var flat := ScrollMap.new()
-	flat.build([], 99999.0)
-	cs.scroll = flat
-	cs.set_scroll_scale(2.0)
-	_ok(cs.scroll.is_identity(), "Konstant bleibt konstant")
-	gs.mods = {}
 
 
 func _test_is_sv(bm: Beatmap) -> void:
@@ -450,14 +394,14 @@ func _test_core_wiring(bm: Beatmap) -> void:
 	print("- Einbau in ManiaCore.build_scroll_map")
 	var plain := ManiaCore.build_scroll_map(bm, {})
 	_ok(plain.is_identity(), "ohne Mod: identisch wie vorher")
-	var sv := ManiaCore.build_scroll_map(bm, {"SV": true}, ManiaCore.BASE_PREEMPT)
+	var sv := ManiaCore.build_scroll_map(bm, {"SV": true})
 	_ok(not sv.is_identity(), "mit SV: Tempowechsel")
 	var gs = root.get_node_or_null("GameSession")
 	_ok(gs != null, "Autoload GameSession vorhanden")
 	if gs == null:
 		return
 	gs.mods = {"SV": true, "NF": false}
-	var from_session := ManiaCore.build_scroll_map(bm, null, ManiaCore.BASE_PREEMPT)
+	var from_session := ManiaCore.build_scroll_map(bm)
 	_ok(from_session._mult == sv._mult, "liest GameSession.mods[\"SV\"]")
 	var core := ManiaCore.new()
 	core.setup(bm)
@@ -639,21 +583,9 @@ func _test_strong(bm: Beatmap) -> void:
 		if sm._mult[k] > 0.0:
 			max_m = maxf(max_m, sm._mult[k])
 			min_m = minf(min_m, sm._mult[k])
-	# Bei Scroll Speed 25 (459 ms) nimmt die faire Sichtzeit Bursts heraus, nach
-	# denen eine Note in weniger als fair_need ms faellig waere; ab Scroll
-	# Speed 15 bleibt der Beat-Tanz voll erhalten.
-	_ok(float(into) / beats >= 0.2, "Kiai: Burst genau in den Beat bei Speed 25 (%d von %d Beats)" % [into, beats])
+	_ok(float(into) / beats >= 0.6, "Kiai: Burst genau in den Beat (%d von %d Beats)" % [into, beats])
 	_ok(max_m >= 3.5, "Bursts deutlich ueber 3x (max %.2f)" % max_m)
 	_ok(min_m <= 0.2, "fast Freeze (min %.2f)" % min_m)
-	var smv := _sm(bm, SvMod.generate(bm, SvMod.map_seed(bm), 765.667))
-	var n15 := 0
-	for bar in range(16, 32):
-		for beat in 4:
-			var t1 := 1000.0 + (bar * 4 + beat + 1) * 400.0
-			var m_in := (smv.position(t1) - smv.position(t1 - 4.0)) / 4.0
-			if m_in > 1.5 and m_in > (smv.position(t1 - 200.0) - smv.position(t1 - 240.0)) / 40.0:
-				n15 += 1
-	_ok(float(n15) / beats >= 0.6, "Kiai: Burst genau in den Beat bei Speed 15 (%d von %d Beats)" % [n15, beats])
 	print("    %s" % _describe(sm))
 
 

@@ -161,10 +161,6 @@ func set_scroll_scale(scroll_scale: float) -> void:
 	preempt = preempt_for(scroll_scale)
 	if beatmap == null:
 		return
-	# SV-Mod: das SV ist fuer die Anflugzeit erzeugt (faire Sichtzeit) -> neu.
-	# Konstant (CS) hat die Tabelle ersetzt und bleibt.
-	if bool(mods.get("SV", false)) and not bool(mods.get("CS", false)):
-		scroll = build_scroll_map(beatmap, mods, preempt)
 	var objs := beatmap.hit_objects
 	for i in range(_next_spawn, mini(objs.size(), _spawn_times.size())):
 		_spawn_times[i] = scroll.spawn_time(objs[i].time, preempt)
@@ -174,7 +170,7 @@ func set_scroll_scale(scroll_scale: float) -> void:
 ## Baut die SV-Positionstabelle und die Spawn-Zeiten (einmal beim Laden).
 func _build_scroll() -> void:
 	var objs := beatmap.hit_objects
-	scroll = build_scroll_map(beatmap, mods, preempt)
+	scroll = build_scroll_map(beatmap, mods)
 	_spawn_times.resize(objs.size())
 	for i in objs.size():
 		_spawn_times[i] = scroll.spawn_time(objs[i].time, preempt)
@@ -230,8 +226,7 @@ static func session_mods() -> Dictionary:
 ## SV-Tabelle einer Map (lastTime = groesste Endzeit aller Objekte, lazer).
 ## p_mods null = GameSession.mods. Mit "SV" kommen die gruenen Linien aus
 ## SvMod (deterministisch je Map, Maps mit eigenem SV bleiben unveraendert).
-## p_preempt: Anflugzeit des Spielers (SV-Mod: faire Sichtzeit, <= 0 Standard).
-static func build_scroll_map(bm: Beatmap, p_mods = null, p_preempt: float = 0.0) -> ScrollMap:
+static func build_scroll_map(bm: Beatmap, p_mods = null) -> ScrollMap:
 	var m: Dictionary = p_mods if p_mods is Dictionary else session_mods()
 	var objs := bm.hit_objects
 	var last_time := 0.0
@@ -245,7 +240,7 @@ static func build_scroll_map(bm: Beatmap, p_mods = null, p_preempt: float = 0.0)
 	var sm := ScrollMap.new()
 	var tps: Array = bm.timing_points
 	if bool(m.get("SV", false)):
-		tps = SvMod.timing_points_for(bm, p_preempt)
+		tps = SvMod.timing_points_for(bm)
 	sm.build(tps, last_time)
 	return sm
 
@@ -282,7 +277,7 @@ static func first_spawn_ms(bm: Beatmap, scroll_scale: float, p_mods: Dictionary)
 		for o in bm.hit_objects:
 			first = minf(first, o.time - pre)
 		return first
-	var sm := build_scroll_map(bm, p_mods, pre)
+	var sm := build_scroll_map(bm, p_mods)
 	for o in bm.hit_objects:
 		first = minf(first, sm.spawn_time(o.time, pre))
 	return first

@@ -99,53 +99,22 @@ const MIN_REV_BEAT := 0.12
 const JUMP_M := 10.0
 const M_REV_MAX := 10.0
 
-## Faire Sichtzeit (QA "Noten kommen direkt"): das SV wird fuer die Anflugzeit
-## des Spielers erzeugt (view = ManiaCore.preempt = 11485 / Scroll Speed ms).
-## Jede Note liegt direkt vor dem Treffer ununterbrochen mindestens
-## fair_need(view) ms im Bild: kein Burst holt sie erst kurz vorher ins Bild,
-## kein Ruecklauf schiebt sie kurz vorher hinter die Linie oder ueber die
-## Oberkante. Frueher war das SV fuer alle Scroll Speeds gleich und nur bei
-## 600/1200/2400 ms geprueft: bei Scroll Speed 25 blieben bis 45 ms uebrig.
-## FAIR_VIEWS: Scroll Speed 40, 25, 15, 10, 5 (Tests, Messung).
-const FAIR_VIEWS := [287.125, 459.4, 765.667, 1148.5, 2297.0]
-## Ohne Angabe: Anflugzeit des Standard-Scroll-Speeds 25.
-const FAIR_VIEW_DEFAULT := 459.4
-## Mindestanteil der Anflugzeit (Normal / Stark), Untergrenze in ms
-## (Reaktionszeit; nie mehr als 80 % der Anflugzeit) und Deckel in ms:
-## langsame Scroll Speeds brauchen nicht mehr als FAIR_MS Vorlauf.
-const FAIR_RATIO := 0.4
-const FAIR_RATIO_STRONG := 0.33
-const FAIR_ABS_MS := 150.0
-const FAIR_ABS_SHARE := 0.8
-const FAIR_MS := 450.0
-
-
-## Geforderte ununterbrochene Sichtzeit vor dem Treffer zur Anflugzeit view.
-static func fair_need(view: float) -> float:
-	var r := FAIR_RATIO_STRONG if strength >= STRENGTH_STRONG else FAIR_RATIO
-	return minf(FAIR_MS, maxf(view * r, minf(FAIR_ABS_MS, view * FAIR_ABS_SHARE)))
-
 static var _cache_seed := -1
 static var _cache_strength := -1
-static var _cache_view := -1.0
 static var _cache: Array = []
 
 
 ## Timing-Points fuer die ScrollMap mit aktivem SV-Mod (Ergebnis je Map gecacht).
-## view: Anflugzeit des Spielers in ms (<= 0: Standard-Scroll-Speed).
-static func timing_points_for(bm: Beatmap, view: float = 0.0) -> Array:
+static func timing_points_for(bm: Beatmap) -> Array:
 	if bm == null:
 		return []
 	if bm.hit_objects.is_empty() or has_own_sv(bm):
 		return bm.timing_points
 	var s := map_seed(bm)
-	if view <= 0.0:
-		view = FAIR_VIEW_DEFAULT
-	if s != _cache_seed or strength != _cache_strength or view != _cache_view:
-		_cache = generate(bm, s, view)
+	if s != _cache_seed or strength != _cache_strength:
+		_cache = generate(bm, s)
 		_cache_seed = s
 		_cache_strength = strength
-		_cache_view = view
 	return _cache
 
 
@@ -191,11 +160,7 @@ static func _count(sorted: PackedFloat64Array, lo: float, hi: float) -> int:
 
 
 ## Kern: rote Linien der Map + generierte gruene Linien.
-## view: Anflugzeit in ms, fuer die die Sichtzeit fair sein muss (<= 0: Standard).
-static func generate(bm: Beatmap, seed_value: int, view: float = 0.0) -> Array:
-	if view <= 0.0:
-		view = FAIR_VIEW_DEFAULT
-	var fneed := fair_need(view)
+static func generate(bm: Beatmap, seed_value: int) -> Array:
 	var reds := _sorted_reds(bm.timing_points)
 	if reds.is_empty() or bm.hit_objects.is_empty():
 		return bm.timing_points
@@ -427,20 +392,11 @@ static func generate(bm: Beatmap, seed_value: int, view: float = 0.0) -> Array:
 		blocks.append([t0, t1, pieces, sec, [pieces, [[t0, 1.0]]], 0])
 		i += span
 
-	# Fairness: ueberlagerte Noten und zu kurze Sichtzeit vor dem Treffer
-	# -> betroffene Bloecke ruhiger, zuletzt m = 1.
+	# Fairness: ueberlagerte Noten -> betroffene Bloecke auf m = 1.
 	var pairs := _column_pairs(bm)
-	var hits := PackedFloat64Array()
-	for o in bm.hit_objects:
-		if hits.is_empty() or o.time > hits[hits.size() - 1]:
-			hits.append(o.time)
 	var out: Array = []
 	var bad := true
-	# Ab iters - 2 nur noch m = 1 (wird nur ruhiger, endet sicher): laeuft, bis
-	# nichts mehr verletzt ist (ein geglaetteter Block kann die Sichtzeit der
-	# Note dahinter aendern).
-	var iters := 12 if strong_mode else 8
-	for iter in iters + 40:
+	for _iter in (8 if strong_mode else 4):
 		out = _emit(reds, sec_bl, base, blocks)
 		var sm := ScrollMap.new()
 		sm.build(out, last_time)
@@ -462,35 +418,6 @@ static func generate(bm: Beatmap, seed_value: int, view: float = 0.0) -> Array:
 					var k: int = mini(int(b[5]) + 1, alts.size() - 1)
 					b[5] = k
 					b[2] = alts[k]
-					bad = true
-		# Sichtzeit: die Note liegt direkt vor dem Treffer ununterbrochen
-		# fair_need(view) ms im Bild (kein Burst, der sie erst spaet ins Bild
-		# holt, kein Ruecklauf, der sie hinter die Linie oder ueber die
-		# Oberkante schiebt). Die letzten Durchlaeufe setzen m = 1.
-		# Erst nur der Block direkt vor der Note (dort sitzt der Burst), dann das
-		# ganze Fenster.
-		var force := iter >= iters - 2
-		var near_only := iter < iters / 2
-		var bi := 0
-		for h in hits:
-			if sm.visible_lead(h, view, fneed) >= fneed - 0.001:
-				continue
-			var win := fneed
-			bad = true  # auch wenn dieser Durchlauf nichts aendert (near_only)
-			while bi < blocks.size() and float(blocks[bi][1]) <= h - win:
-				bi += 1
-			var bj := bi
-			while bj < blocks.size() and float(blocks[bj][0]) < h:
-				var fb: Array = blocks[bj]
-				bj += 1
-				if near_only and bj < blocks.size() and float(blocks[bj][0]) < h:
-					continue
-				var fp: Array = fb[2]
-				if fp.size() > 1 or float(fp[0][1]) != 1.0:
-					var falts: Array = fb[4]
-					var fk: int = falts.size() - 1 if force else mini(int(fb[5]) + 1, falts.size() - 1)
-					fb[5] = fk
-					fb[2] = falts[fk]
 					bad = true
 		if not bad:
 			break
