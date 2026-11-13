@@ -69,7 +69,9 @@ const DEFAULTS := {
 	"chroma_max_beats": 600,    # Chroma nur fuer so viele Schlaege (gleichmaessig verteilte Bloecke), 0 = alle
 	"harmony": true,            # Harmonie-Merkmale fuer den Taktanfang (braucht das dezimierte Signal)
 	"phase_first_w": 0.1,       # Viertel des ersten deutlichen Anschlags: Bonus auf den Log-Akzent
-	"foreign_family": [1.0, 2.0, 0.5],  # Fenster mit diesen Verhaeltnissen zum Hauptpuls gelten als gleiches Tempo
+	# Fenster mit diesen Verhaeltnissen zum Hauptpuls gelten als gleiches Tempo. Nur Oktaven
+	# ([1, 2, 0,5]) findet 140 statt 180 in einem Set, teilt aber 5 Sets mit einem Tempo (grid.md).
+	"foreign_family": FAMILY,
 	"debug": false,
 }
 
@@ -1191,6 +1193,9 @@ static func track_env(feat: Dictionary, params: Dictionary = {}) -> Dictionary:
 	var ac := _acf_blocks(flux, hop_ms)
 	var F := {"flux": flux, "low": feat.low, "zc": feat.zc, "hop_ms": hop_ms,
 			"pt": pk.t, "pw": pk.w, "plw": pk.lw, "acf": ac.glob, "lag_ms": ac.lag_ms}
+	if feat.has("lo"):
+		F["lo"] = feat.lo
+		F["lo_rate"] = float(feat.get("lo_rate", LO_RATE))
 	var p0 := _pulse(ac.glob, ac.lag_ms, P)
 	if p0.y <= 0.0:
 		return _fail("Kein Puls gefunden")
