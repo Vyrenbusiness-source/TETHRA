@@ -10,6 +10,7 @@ extends SceneTree
 const BAND_EDGES := [2.0, 2.9, 3.9, 4.9, 6.5]   # Grenzen zwischen den Profil-Baendern (rosu-Sterne)
 const TOP4 := 60
 const TOP8 := 40
+const G4_STORE := 1500   # so viele 4er-Muster je Band in patterns.json (Modell fuer den Setzer)
 
 var _failed := 0
 var _passed := 0
@@ -128,6 +129,18 @@ func _own_tick(grid: Dictionary, t: float) -> int:
 	return int(round(x))
 
 
+## [[t, col], ...] -> {t: [Spalten sortiert]}
+func _rows_of(cols: Array) -> Dictionary:
+	var d := {}
+	for x: Array in cols:
+		if not d.has(x[0]):
+			d[x[0]] = []
+		d[x[0]].append(int(x[1]))
+	for k in d:
+		d[k].sort()
+	return d
+
+
 func _times(notes: Array) -> Dictionary:
 	var d := {}
 	for nt: Dictionary in notes:
@@ -164,7 +177,7 @@ func _test_synthetic() -> void:
 	var t0 := Time.get_ticks_msec()
 	var all := AmChart.build_all(s["features"], grid)
 	print("     build_all: %d ms" % (Time.get_ticks_msec() - t0))
-	var unit_of := {"Easy": [12], "Normal": [12], "Hard": [6], "Insane": [3], "Expert": [3, 4]}
+	var unit_of := {"Easy": [12], "Normal": [6], "Hard": [3], "Insane": [3], "Expert": [3, 4]}
 	var start: float = s["start"]
 	var bar: float = s["bar"]
 	var prev_times := {}
@@ -239,20 +252,33 @@ func _test_synthetic() -> void:
 			var c := _cols_in(notes, start + float(b + 4) * bar, start + float(b + 5) * bar)
 			if a.size() < 3 or a.size() != c.size():
 				continue
+			# je Zeitpunkt die Spalten als Menge (Akkord-Reihenfolge egal); gespiegelt: Spalte 3 - c
 			var rhythm := true
 			var eq := true
 			var mir := true
 			for i in a.size():
 				if a[i][0] != c[i][0]:
 					rhythm = false
-				if a[i][1] != c[i][1]:
-					eq = false
-				if a[i][1] != 3 - int(c[a.size() - 1 - i][1]) and a[i][1] != 3 - int(c[i][1]):
-					mir = false
+			if rhythm:
+				var ra := _rows_of(a)
+				var rc := _rows_of(c)
+				for k in ra:
+					var sa: Array = ra[k]
+					var sc: Array = rc.get(k, [])
+					var sm: Array = []
+					for x: int in sc:
+						sm.append(3 - x)
+					sm.sort()
+					if sa != sc:
+						eq = false
+					if sa != sm:
+						mir = false
 			if rhythm:
 				same_rhythm += 1
 				if eq or mir:
 					same_cols += 1
+				elif OS.get_environment("AM_DEBUG") != "":
+					print("     DEBUG %s Takt %d: %s / %s" % [prof, b, str(a), str(c)])
 		_check(same_rhythm >= 3 and same_cols * 10 >= same_rhythm * 7,
 				"%s: wiederholte Takte gleich gesetzt (%d von %d)" % [prof, same_cols, same_rhythm])
 	# Akzente -> Akkorde: Akkorde liegen ueberwiegend auf dem Schlag
@@ -360,7 +386,8 @@ func _test_roles() -> void:
 	_check(kn > 30 and km * 10 >= kn * 6, "Kick liegt ueberwiegend in einer Spalte %s" % str(kick))
 	_check(sn > 30 and sm * 10 >= sn * 6, "Snare liegt ueberwiegend in einer Spalte %s" % str(snare))
 	_check(kick.find(km) != snare.find(sm), "Kick und Snare in verschiedenen Spalten")
-	_check(AmChart.lint(res["notes"], grid, "Easy").is_empty(), "Schlagzeug: lint = 0")
+	var dviol := AmChart.lint(res["notes"], grid, "Easy")
+	_check(dviol.is_empty(), "Schlagzeug: lint = 0%s" % ("" if dviol.is_empty() else " (" + dviol[0] + ")"))
 	_sections += 1  # nur erreicht ohne Laufzeitfehler
 
 func _test_tempo_change() -> void:
@@ -400,13 +427,33 @@ func _test_lint_detects() -> void:
 		ok_notes.append(_n(float(i) * 400.0, [0, 2, 1, 3][i % 4]))
 	_check(AmChart.lint(ok_notes, grid, "Easy").is_empty(), "saubere Easy-Folge: 0")
 	_check(not AmChart.lint([_n(0.0, 0), _n(137.0, 1)], grid, "Hard").is_empty(), "neben dem Gitter")
-	_check(not AmChart.lint([_n(0.0, 0), _n(100.0, 1)], grid, "Normal").is_empty(), "1/4 in Normal")
-	_check(not AmChart.lint([_n(0.0, 0), _n(0.0, 1)], grid, "Easy").is_empty(), "Akkord in Easy")
-	_check(not AmChart.lint([_n(0.0, 0), _n(0.0, 1), _n(0.0, 2)], grid, "Hard").is_empty(), "3er-Akkord in Hard")
+	_check(not AmChart.lint([_n(0.0, 0), _n(50.0, 1)], grid, "Normal").is_empty(), "1/8 in Normal")
+	_check(AmChart.lint([_n(0.0, 0), _n(100.0, 1), _n(400.0, 2)], grid, "Normal").is_empty(), "kurzes 1/4 in Normal erlaubt")
+	var qrun: Array = []
+	for i in 9:
+		qrun.append(_n(float(i) * 100.0, [0, 2, 1, 3][i % 4]))
+	_check(not AmChart.lint(qrun, grid, "Normal").is_empty(), "zu langer 1/4-Lauf in Normal")
+	_check(AmChart.lint([_n(0.0, 0), _n(200.0, 2)], grid, "Easy").is_empty(), "1/2 in Easy erlaubt")
+	_check(not AmChart.lint([_n(0.0, 0), _n(100.0, 2)], grid, "Easy").is_empty(), "1/4 in Easy")
+	_check(AmChart.lint([_n(0.0, 0), _n(0.0, 1), _n(400.0, 2)], grid, "Easy").is_empty(), "2er-Akkord auf dem Schlag in Easy erlaubt")
+	_check(not AmChart.lint([_n(0.0, 0), _n(200.0, 1), _n(200.0, 2)], grid, "Easy").is_empty(), "Akkord neben dem Schlag in Easy")
+	_check(not AmChart.lint([_n(0.0, 0), _n(0.0, 1), _n(0.0, 2)], grid, "Easy").is_empty(), "3er-Akkord in Easy")
+	var chs: Array = []
+	for i in 12:
+		chs.append(_n(float(i) * 800.0, i % 2))
+		chs.append(_n(float(i) * 800.0, 2 + i % 2))
+	_check(not AmChart.lint(chs, grid, "Easy").is_empty(), "zu viele Akkorde in Easy")
+	_check(AmChart.lint([_n(0.0, 0), _n(0.0, 1), _n(0.0, 2)], grid, "Hard").is_empty(), "3er-Akkord auf dem Schlag in Hard erlaubt")
+	_check(not AmChart.lint([_n(0.0, 3), _n(100.0, 0), _n(100.0, 1), _n(100.0, 2)], grid, "Hard").is_empty(), "3er-Akkord neben dem Schlag in Hard")
+	_check(not AmChart.lint([_n(0.0, 0), _n(0.0, 1), _n(0.0, 2), _n(0.0, 3), _n(400.0, 0)], grid, "Hard").is_empty(), "4er-Akkord in Hard")
 	_check(not AmChart.lint([_n(0.0, 0), _n(100.0, 0), _n(200.0, 0)], grid, "Hard").is_empty(), "Jack 3 in Hard")
 	_check(AmChart.lint([_n(0.0, 0), _n(100.0, 0), _n(200.0, 1)], grid, "Hard").is_empty(), "Jack 2 in Hard erlaubt")
 	_check(not AmChart.lint([_n(0.0, 0), _n(200.0, 0)], grid, "Easy").is_empty(), "Mindestabstand Easy")
-	_check(not AmChart.lint([_n(0.0, 0, 1200.0), _n(400.0, 2)], grid, "Easy").is_empty(), "Note waehrend Hold in Easy")
+	var ovl: Array = [_n(0.0, 0, 4000.0)]
+	for i in range(1, 10):
+		ovl.append(_n(float(i) * 400.0, [2, 3, 1][i % 3]))
+	_check(not AmChart.lint(ovl, grid, "Easy").is_empty(), "zu oft Note waehrend Hold in Easy")
+	_check(AmChart.lint([_n(0.0, 0, 1200.0), _n(400.0, 2)], grid, "Easy").is_empty(), "selten Note waehrend Hold in Easy erlaubt")
 	_check(AmChart.lint([_n(0.0, 0, 1200.0), _n(400.0, 2)], grid, "Hard").is_empty(), "Note waehrend Hold in Hard erlaubt")
 	_check(not AmChart.lint([_n(0.0, 0, 1230.0)], grid, "Hard").is_empty(), "Hold-Ende neben dem Gitter")
 	_check(not AmChart.lint([_n(0.0, 0, 800.0), _n(400.0, 0)], grid, "Hard").is_empty(), "Note im Hold der eigenen Spalte")
@@ -501,14 +548,16 @@ func _agg_new() -> Dictionary:
 	return {"maps": 0, "notes": 0, "rows": 0, "sizes": [0, 0, 0, 0, 0], "uni": uni, "big": big, "gaps": [0, 0, 0, 0],
 			"holds": 0, "hold_rows": 0, "hold_beats": 0.0, "left": 0, "right": 0, "moves": [0, 0, 0, 0],
 			"jack_runs": [0, 0, 0, 0, 0, 0, 0, 0, 0], "jack_notes": 0, "g4": {}, "g8": {},
-			"hold_shares": [], "nps": [], "peaks": [], "kiai": []}
+			"hold_shares": [], "nps": [], "peaks": [], "kiai": [],
+			"pos": [0, 0, 0, 0], "cpos": [0, 0, 0, 0], "c3pos": [0, 0, 0, 0], "ovl": 0,
+			"qrun": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]}
 
 
 func _agg_add(a: Dictionary, st: Dictionary) -> void:
 	a["maps"] += 1
-	for key: String in ["notes", "rows", "holds", "hold_rows", "hold_beats", "left", "right", "jack_notes"]:
+	for key: String in ["notes", "rows", "holds", "hold_rows", "hold_beats", "left", "right", "jack_notes", "ovl"]:
 		a[key] += st[key]
-	for key: String in ["sizes", "uni", "gaps", "moves", "jack_runs"]:
+	for key: String in ["sizes", "uni", "gaps", "moves", "jack_runs", "pos", "cpos", "c3pos", "qrun"]:
 		for i in a[key].size():
 			a[key][i] += st[key][i]
 	for g in 4:
@@ -560,7 +609,26 @@ func _summ(a: Dictionary) -> Dictionary:
 			"chord3": float(a["sizes"][3] + a["sizes"][4]) / rows, "jack": float(a["jack_notes"]) / notes,
 			"hold": float(a["holds"]) / notes, "hold_beats": float(a["hold_beats"]) / float(maxi(a["holds"], 1)),
 			"nps": _mean(a["nps"]), "peak": _mean(a["peaks"]), "left": float(a["left"]) / float(maxi(a["left"] + a["right"], 1)),
-			"g8th": a["gaps"][0] / gp, "g4th": a["gaps"][1] / gp, "ghalf": a["gaps"][2] / gp}
+			"g8th": a["gaps"][0] / gp, "g4th": a["gaps"][1] / gp, "ghalf": a["gaps"][2] / gp,
+			"pos_half": float(a["pos"][1]) / rows, "pos_q": float(a["pos"][2]) / rows, "pos_fine": float(a["pos"][3]) / rows,
+			"chord_on": float(a["cpos"][0]) / float(maxi(a["cpos"][0] + a["cpos"][1] + a["cpos"][2] + a["cpos"][3], 1)),
+			"chord3_on": float(a["c3pos"][0]) / float(maxi(a["c3pos"][0] + a["c3pos"][1] + a["c3pos"][2] + a["c3pos"][3], 1)),
+			"ovl": float(a["ovl"]) / notes, "qrun_p90": _hist_q(a["qrun"], 0.9), "qrun_p99": _hist_q(a["qrun"], 0.99)}
+
+
+## Quantil eines Laengen-Histogramms (Index = Laenge).
+func _hist_q(h: Array, q: float) -> float:
+	var tot := 0
+	for x in h:
+		tot += int(x)
+	if tot == 0:
+		return 0.0
+	var acc := 0
+	for i in h.size():
+		acc += int(h[i])
+		if float(acc) >= q * float(tot):
+			return float(i)
+	return float(h.size() - 1)
 
 
 ## Aehnlichkeit der Zeilen-Uebergaenge (0..1): Schnittmenge der Verteilungen je Abstandsklasse,
@@ -905,7 +973,11 @@ func _measure(maps_dir: String, n_sets: int, learn: bool) -> void:
 			["weiter Sprung", "wide", 1], ["Akkord-Zeilen", "chord", 1], ["3er/4er-Akkorde", "chord3", 1],
 			["Noten in Jacks (1/4)", "jack", 1], ["Hold-Anteil", "hold", 1], ["Hold-Laenge (Schlaege)", "hold_beats", 2],
 			["Noten/s Mittel", "nps", 2], ["Noten/s Spitze", "peak", 2], ["linke Hand", "left", 1],
-			["Abstand 1/8 und feiner", "g8th", 1], ["Abstand 1/4", "g4th", 1], ["Abstand 1/2", "ghalf", 1]]
+			["Abstand 1/8 und feiner", "g8th", 1], ["Abstand 1/4", "g4th", 1], ["Abstand 1/2", "ghalf", 1],
+			["Zeilen auf 1/2 (zwischen den Schlaegen)", "pos_half", 1], ["Zeilen auf 1/4", "pos_q", 1],
+			["Zeilen feiner als 1/4", "pos_fine", 1], ["Akkorde auf dem Schlag", "chord_on", 1],
+			["3er/4er-Akkorde auf dem Schlag", "chord3_on", 1], ["Noten waehrend eines Holds", "ovl", 1],
+			["Lauf aus 1/4-Abstaenden, Zeilen (90. / 99. Perzentil)", "qrun_p90", 3]]
 	var hs: Array = []
 	var gs: Array = []
 	for pi in 5:
@@ -927,6 +999,8 @@ func _measure(maps_dir: String, n_sets: int, learn: bool) -> void:
 					line += " %d |" % int(val)
 				elif int(rd[2]) == 1:
 					line += " %s |" % _pct(float(val))
+				elif int(rd[2]) == 3:
+					line += " %d / %d |" % [int(val), int(sdict["qrun_p99"])]
 				else:
 					line += " %.2f |" % float(val)
 		print(line)
@@ -998,7 +1072,7 @@ func _write_patterns(human: Array, fa: float, fb: float, mae: float, nf: int, n_
 				arr.append(snappedf(float(x) / maxf(bs, 1.0), 0.00001))
 			big.append(arr)
 		var grams := {}
-		for spec in [["g4", TOP4], ["g8", TOP8]]:
+		for spec in [["g4", G4_STORE], ["g8", TOP8]]:
 			var d: Dictionary = a[spec[0]]
 			var top := _top(d, int(spec[1]))
 			var out := {}
@@ -1019,7 +1093,11 @@ func _write_patterns(human: Array, fa: float, fb: float, mae: float, nf: int, n_
 				"jack_runs": runs, "jack_cap": cap,
 				"moves": [snappedf(a["moves"][0] / mv, 0.0001), snappedf(a["moves"][1] / mv, 0.0001),
 						snappedf(a["moves"][2] / mv, 0.0001), snappedf(a["moves"][3] / mv, 0.0001)],
-				"uni": uni, "big": big, "g4": grams["g4"], "g8": grams["g8"]})
+				"uni": uni, "big": big, "g4": grams["g4"], "g8": grams["g8"],
+				"pos_half": snappedf(s["pos_half"], 0.0001), "pos_q": snappedf(s["pos_q"], 0.0001),
+				"pos_fine": snappedf(s["pos_fine"], 0.0001), "chord_on": snappedf(s["chord_on"], 0.0001),
+				"chord3_on": snappedf(s["chord3_on"], 0.0001), "ovl_share": snappedf(s["ovl"], 0.0001),
+				"qrun_p90": s["qrun_p90"], "qrun_p99": s["qrun_p99"], "qrun": a["qrun"]})
 	# duenn besetzte Baender uebernehmen die Tabellen des naechsten besetzten Bands
 	for pi in 5:
 		var entry: Dictionary = ready[pi]

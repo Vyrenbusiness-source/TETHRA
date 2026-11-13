@@ -31,35 +31,48 @@ const DEFAULTS := {
 	"support_weight": 0.45,       # uebrige Ebenen, wenn sie nicht fuehren
 	"dens_gain": 0.4,             # Dichte folgt Intensitaet (mal gelerntes Kiai-Verhaeltnis)
 	"snap_quarter_bias_ms": 6.0,  # 1/4 gewinnt gegen 1/8 bei fast gleichem Abstand
-	"easy_half_share": 0.11,      # Easy: Anteil 1/2-Noten ("selten")
 	"hold_share_scale": 1.0,
 	"motif_min_rows": 3,          # ab so vielen Zeilen je Takt gilt ein Takt als Motiv
 	"pitch_weight": 2.0,          # Tonhoehe -> Spaltenrichtung
 	"pitch_step": 0.04,
 	"role_weight": 1.5,           # feste Spalten fuer Kick/Snare je Abschnitt
 	"balance_weight": 6.0,
-	"ngram_weight": 1.0,          # haeufige 4er/8er-Muster der Menschen-Maps
+	"ngram_weight": 0.6,          # Anteil des 4er-Modells (naechste Zeile nach den 3 vorigen, Menschen-Maps)
 	"sharpness": 1.3,
-	"chord_boost_max": 0.3,       # hoechstens so viel mehr Akkorde, wenn die Sterne nicht reichen
-	"easy_hold_max_beats": 2.0,   # Easy: Hold hoechstens so lang, Zeilen darin entfallen
+	"chord_boost_max": 0.15,      # hoechstens so viel mehr Akkorde, wenn die Sterne nicht reichen
+	"figure_weight": 1.8,         # Treppe/Triller/Roll aus Tonhoehe und Hi-Hat-Laeufen
+	"jack_weight": 2.0,           # Jacks auf den Anteil der Menschen-Maps des Bands halten
+	"easy_hold_max_beats": 2.0,   # Easy/Normal: Hold ohne Ueberlappung hoechstens so lang, Zeilen darin entfallen
 }
 
 ## Spielbarkeits-Regeln je Profil (Spec-Tabelle). Einheiten: 1/24 Schlag (24 = 1/1, 12 = 1/2,
 ## 6 = 1/4, 3 = 1/8, 4 = 1/6). chord_unit/c3_unit: Akkorde mit 2 bzw. 3 Noten nur auf dieser Teilung.
+## Seit 2026-11-13 gelten die Statistiken der Menschen-Maps je Sterne-Band als Regel (patterns.json,
+## 238 Sets / 989 4K-Diffs): *_share = Wert der Menschen (Ziel des Setzers), *_max = Obergrenze fuer
+## lint = Menschen-Wert x 1,25. rare = seltene Teilung (Zeilen nur auf dieser Teilung), burst = hoechstens
+## so viele Abstaende <= burst_gap in Folge (Normal: 1/4-Lauf bis 7 Zeilen = 90. Perzentil der Menschen).
 const RULES := {
-	"Easy": {"units": [24], "rare": 12, "chord": 1, "chord_unit": 24, "c3_unit": 24, "jack": 0,
-			"gap": 1.0, "bal_lo": 0.40, "bal_hi": 0.60, "hold_unit": 12, "overlap": 0, "hold_min": 1.0, "burst": 0},
-	"Normal": {"units": [12], "rare": 0, "chord": 2, "chord_unit": 24, "c3_unit": 24, "jack": 0,
-			"gap": 0.5, "bal_lo": 0.40, "bal_hi": 0.60, "hold_unit": 12, "overlap": 1, "hold_min": 1.0, "burst": 0},
-	"Hard": {"units": [6], "rare": 0, "chord": 2, "chord_unit": 6, "c3_unit": 24, "jack": 2,
-			"gap": 0.25, "bal_lo": 0.42, "bal_hi": 0.58, "hold_unit": 6, "overlap": 2, "hold_min": 0.25, "burst": 0},
-	"Insane": {"units": [6, 3], "rare": 0, "chord": 3, "chord_unit": 6, "c3_unit": 24, "jack": 3,
-			"gap": 0.25, "bal_lo": 0.42, "bal_hi": 0.58, "hold_unit": 6, "overlap": 2, "hold_min": 0.25, "burst": 8},
-	"Expert": {"units": [6, 3, 4], "rare": 0, "chord": 3, "chord_unit": 1, "c3_unit": 6, "jack": 4,
-			"gap": 0.125, "bal_lo": 0.42, "bal_hi": 0.58, "hold_unit": 3, "overlap": 2, "hold_min": 0.25, "burst": 0},
+	"Easy": {"units": [24], "rare": 12, "rare_share": 0.269, "rare_max": 0.336,
+			"chord": 2, "chord_unit": 24, "c3_unit": 24, "chord_max": 0.229, "c3_max": 0.0, "jack": 0,
+			"gap": 1.0, "bal_lo": 0.40, "bal_hi": 0.60, "hold_unit": 12, "overlap": 1, "ovl_max": 0.0375,
+			"hold_min": 0.5, "burst": 0, "burst_gap": 0.0, "burst_keep": 24},
+	"Normal": {"units": [12], "rare": 6, "rare_share": 0.127, "rare_max": 0.159,
+			"chord": 3, "chord_unit": 24, "c3_unit": 24, "chord_max": 0.411, "c3_max": 0.0199, "jack": 0,
+			"gap": 0.5, "bal_lo": 0.40, "bal_hi": 0.60, "hold_unit": 6, "overlap": 1, "ovl_max": 0.086,
+			"hold_min": 0.5, "burst": 6, "burst_gap": 0.27, "burst_keep": 12},
+	"Hard": {"units": [6], "rare": 3, "rare_share": 0.081, "rare_max": 0.101,
+			"chord": 3, "chord_unit": 6, "c3_unit": 24, "chord_max": 0.462, "c3_max": 0.065, "jack": 2,
+			"gap": 0.25, "bal_lo": 0.42, "bal_hi": 0.58, "hold_unit": 6, "overlap": 2, "ovl_max": 1.0,
+			"hold_min": 0.25, "burst": 2, "burst_gap": 0.13, "burst_keep": 6},
+	"Insane": {"units": [6, 3], "rare": 0, "rare_share": 0.0, "rare_max": 0.0,
+			"chord": 3, "chord_unit": 6, "c3_unit": 24, "chord_max": 0.495, "c3_max": 0.113, "jack": 3,
+			"gap": 0.25, "bal_lo": 0.42, "bal_hi": 0.58, "hold_unit": 6, "overlap": 2, "ovl_max": 1.0,
+			"hold_min": 0.25, "burst": 8, "burst_gap": 0.13, "burst_keep": 6},
+	"Expert": {"units": [6, 3, 4], "rare": 0, "rare_share": 0.0, "rare_max": 0.0,
+			"chord": 3, "chord_unit": 1, "c3_unit": 6, "chord_max": 0.513, "c3_max": 0.132, "jack": 4,
+			"gap": 0.125, "bal_lo": 0.42, "bal_hi": 0.58, "hold_unit": 3, "overlap": 2, "ovl_max": 1.0,
+			"hold_min": 0.25, "burst": 0, "burst_gap": 0.0, "burst_keep": 6},
 }
-const EASY_HALF_MAX := 0.20       # lint: Easy hoechstens so viele 1/2-Noten
-const NORMAL_OVERLAP_MAX := 0.10  # lint: Normal hoechstens so viele Noten waehrend eines Holds
 const BALANCE_MIN_NOTES := 20     # lint: Hand-Balance erst ab so vielen Noten
 
 const EPS := 0.01
@@ -86,7 +99,14 @@ const S_PC := 17       # mittlere Spalte der vorigen Zeile
 const S_HIST := 18     # letzte 8 Masken (je 4 Bit)
 const S_MAXJ := 19
 const S_OVL := 20
-const S_BLOCK := 21    # Normal: keine Zeile vor diesem Schlag (laufender Hold ohne Ueberlappung)
+const S_BLOCK := 21    # Easy/Normal: keine Zeile vor diesem Schlag (laufender Hold ohne Ueberlappung)
+const S_PP2 := 22      # Tonhoehe vor zwei Zeilen
+const S_DIR := 23      # letzte Laufrichtung (+1 rechts, -1 links)
+const S_PK := 24       # Instrumente der vorigen Zeile
+const S_JN := 25       # Noten in Jacks bisher
+const S_ROWS := 26     # gesetzte Zeilen
+const S_CH := 27       # davon Akkorde
+const S_C3 := 28       # davon 3er/4er-Akkorde
 
 static var _pat_cache: Dictionary = {}
 static var _pat_mutex := Mutex.new()
@@ -183,11 +203,8 @@ static func lint(notes: Array, grid: Dictionary, profile: String) -> Array[Strin
 		var bp: float = tk[3]
 		if float(tk[2]) > 1.0:
 			v.append("nicht auf dem Gitter: %d ms (%.1f ms daneben)" % [int(t), float(tk[2])])
-		elif not _unit_ok(tick, units):
-			if rare > 0 and posmod(tick, rare) == 0:
-				rare_n += 1
-			else:
-				v.append("Teilung zu fein fuer %s: %d ms" % [profile, int(t)])
+		elif not _unit_ok(tick, units) and not (rare > 0 and posmod(tick, rare) == 0):
+			v.append("Teilung zu fein fuer %s: %d ms" % [profile, int(t)])
 		# Zeilen (Akkorde)
 		if absf(bp - row_bp) < EPS:
 			row_size += 1
@@ -233,6 +250,8 @@ static func lint(notes: Array, grid: Dictionary, profile: String) -> Array[Strin
 	for i in nrows:
 		var sz: int = rows_size[i]
 		var tick: int = rows_tick[i]
+		if rare > 0 and not _unit_ok(tick, units) and posmod(tick, rare) == 0:
+			rare_n += 1
 		if sz > int(R["chord"]) and not (profile == "Expert" and sz == 4 and i == nrows - 1):
 			v.append("Akkord zu gross (%d) in Zeile %d" % [sz, i])
 		elif sz == 2 and posmod(tick, int(R["chord_unit"])) != 0:
@@ -240,18 +259,29 @@ static func lint(notes: Array, grid: Dictionary, profile: String) -> Array[Strin
 		elif sz == 3 and posmod(tick, int(R["c3_unit"])) != 0:
 			v.append("3er-Akkord abseits des Akzents in Zeile %d" % i)
 		if int(R["burst"]) > 0 and i > 0:
-			if rows_bp[i] - rows_bp[i - 1] <= 0.13:
+			if rows_bp[i] - rows_bp[i - 1] <= float(R["burst_gap"]):
 				burst += 1
 				if burst > int(R["burst"]):
-					v.append("1/8-Folge zu lang in Zeile %d" % i)
+					v.append("schnelle Folge zu lang in Zeile %d" % i)
 			else:
 				burst = 0
-	if rare > 0 and rare_n > maxi(2, int(EASY_HALF_MAX * n)):
-		v.append("zu viele 1/2-Noten fuer %s: %d von %d" % [profile, rare_n, n])
+	if rare > 0 and rare_n > maxi(2, int(float(R["rare_max"]) * float(nrows))):
+		v.append("zu viele Zeilen auf der seltenen Teilung fuer %s: %d von %d" % [profile, rare_n, nrows])
+	var n2 := 0
+	var n3 := 0
+	for sz: int in rows_size:
+		if sz == 2:
+			n2 += 1
+		elif sz >= 3:
+			n3 += 1
+	if float(R["chord_max"]) < 1.0 and n2 + n3 > maxi(2, int(float(R["chord_max"]) * float(nrows))):
+		v.append("zu viele Akkorde fuer %s: %d von %d Zeilen" % [profile, n2 + n3, nrows])
+	if int(R["chord"]) >= 3 and float(R["c3_max"]) < 1.0 and n3 > maxi(1, int(float(R["c3_max"]) * float(nrows))):
+		v.append("zu viele 3er-Akkorde fuer %s: %d von %d Zeilen" % [profile, n3, nrows])
 	var ovl_rule: int = R["overlap"]
 	if ovl_rule == 0 and ovl_n > 0:
 		v.append("Hold und Note gleichzeitig: %d" % ovl_n)
-	elif ovl_rule == 1 and ovl_n > maxi(2, int(NORMAL_OVERLAP_MAX * n)):
+	elif ovl_rule == 1 and ovl_n > maxi(2, int(float(R["ovl_max"]) * n)):
 		v.append("zu oft Hold und Note gleichzeitig: %d von %d" % [ovl_n, n])
 	if n >= BALANCE_MIN_NOTES:
 		var share := float(left) / float(n)
@@ -337,11 +367,22 @@ static func pattern_stats(notes: Array, grid: Dictionary) -> Dictionary:
 	var out := {"notes": notes.size(), "rows": 0, "sizes": [0, 0, 0, 0, 0], "uni": uni, "big": big,
 			"gaps": [0, 0, 0, 0], "holds": 0, "hold_rows": 0, "hold_beats": 0.0, "left": 0, "right": 0,
 			"moves": [0, 0, 0, 0], "jack_runs": [0, 0, 0, 0, 0, 0, 0, 0, 0], "jack_notes": 0,
-			"g4": {}, "g8": {}, "dur_s": 0.0, "nps_peak": 0.0}
+			"g4": {}, "g8": {}, "dur_s": 0.0, "nps_peak": 0.0,
+			# Lage der Zeilen (1/1, 1/2, 1/4, feiner), Akkorde je Lage, Laeufe aus 1/4-Abstaenden
+			# (Zeilen je Lauf, 1..16), Noten waehrend eines Holds einer anderen Spalte
+			"pos": [0, 0, 0, 0], "cpos": [0, 0, 0, 0], "c3pos": [0, 0, 0, 0],
+			"qrun": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "ovl": 0}
 	var G := _grid(grid)
 	var n := notes.size()
 	if n == 0 or int(G["n"]) == 0:
 		return out
+	var pos: Array = out["pos"]
+	var cpos: Array = out["cpos"]
+	var c3pos: Array = out["c3pos"]
+	var qrun: Array = out["qrun"]
+	var qr := 1
+	var hstart := [-1e9, -1e9, -1e9, -1e9]
+	var hend := [-1e9, -1e9, -1e9, -1e9]
 	var last := [-1e9, -1e9, -1e9, -1e9]
 	var run := [0, 0, 0, 0]
 	var jr: Array = out["jack_runs"]
@@ -377,6 +418,13 @@ static func pattern_stats(notes: Array, grid: Dictionary) -> Dictionary:
 				out["left"] = int(out["left"]) + 1
 			else:
 				out["right"] = int(out["right"]) + 1
+			for c in 4:
+				if c != col and float(hend[c]) > bp + EPS and float(hstart[c]) < bp - EPS:
+					out["ovl"] = int(out["ovl"]) + 1
+					break
+			if float(nt["end_ms"]) > t:
+				hstart[col] = bp
+				hend[col] = _g_bp(G, float(nt["end_ms"]))
 			if bp - float(last[col]) <= 0.25 + EPS:
 				run[col] = int(run[col]) + 1
 			else:
@@ -394,7 +442,20 @@ static func pattern_stats(notes: Array, grid: Dictionary) -> Dictionary:
 		rows += 1
 		sizes[POP[mask]] = int(sizes[POP[mask]]) + 1
 		uni[mask] = int(uni[mask]) + 1
+		var tk := int(_tick_at(G, t)[1])
+		var pc := 0 if posmod(tk, 24) == 0 else (1 if posmod(tk, 12) == 0 else (2 if posmod(tk, 6) == 0 else 3))
+		pos[pc] = int(pos[pc]) + 1
+		if POP[mask] >= 2:
+			cpos[pc] = int(cpos[pc]) + 1
+		if POP[mask] >= 3:
+			c3pos[pc] = int(c3pos[pc]) + 1
 		var gap := bp - pbp
+		if pm != 0 and gap <= 0.27:
+			qr += 1
+		else:
+			if qr >= 2:
+				qrun[mini(qr, 16)] = int(qrun[mini(qr, 16)]) + 1
+			qr = 1
 		if pm != 0:
 			var gc := _gapclass(gap)
 			gaps[gc] = int(gaps[gc]) + 1
@@ -420,6 +481,8 @@ static func pattern_stats(notes: Array, grid: Dictionary) -> Dictionary:
 		if int(run[c]) >= 2:
 			jr[mini(int(run[c]), 8)] = int(jr[mini(int(run[c]), 8)]) + 1
 			jack_notes += int(run[c])
+	if qr >= 2:
+		qrun[mini(qr, 16)] = int(qrun[mini(qr, 16)]) + 1
 	out["rows"] = rows
 	out["jack_notes"] = jack_notes
 	out["dur_s"] = maxf((float(notes[n - 1]["t_ms"]) - float(notes[0]["t_ms"])) / 1000.0, 1.0)
@@ -819,7 +882,7 @@ static func _pat_ready(src: Dictionary) -> Dictionary:
 				"hold_share": float(b.get("hold_share_mean", 0.15)),
 				"holds_per_row": clampf(float(b.get("holds_per_row", 1.0)), 1.0, 2.0),
 				"kiai_ratio": clampf(float(b.get("kiai_ratio", 1.3)), 1.0, 2.5),
-				"jack_cap": int(b.get("jack_cap", 8))}
+				"jack_cap": int(b.get("jack_cap", 8)), "jack_share": float(b.get("jack_share", 0.05))}
 		var uni := PackedFloat32Array()
 		uni.resize(16)
 		uni.fill(1.0 / 15.0)
@@ -892,7 +955,8 @@ static func _tune(C: Dictionary, G: Dictionary, profile: String, parent: Diction
 	rare.sort_custom(by_score)
 	var order_acc := allowed.duplicate()
 	order_acc.sort_custom(func(a: int, b: int) -> bool: return acc[a] > acc[b] if acc[a] != acc[b] else a < b)
-	sus_rows.sort_custom(func(a: int, b: int) -> bool: return susb[a] > susb[b] if susb[a] != susb[b] else a < b)
+	# Holds auf den staerksten gehaltenen Toenen (nicht den laengsten: Laengen wie bei den Menschen)
+	sus_rows.sort_custom(by_score)
 	var star_a: float = P["star_scale"]
 	var star_b: float = P["star_offset"]
 	if star_a <= 0.0:
@@ -977,8 +1041,32 @@ static func _tune(C: Dictionary, G: Dictionary, profile: String, parent: Diction
 	return best
 
 
-## Ein Durchgang: Auswahl (Dichte d), Akkorde, Holds, Spalten.
+## Ein Durchgang: Auswahl (Dichte d), Akkorde, Holds, Spalten. Zeilen in Holds entfallen erst beim
+## Setzen; liegt der Akkord-Anteil danach ueber der Regel, wird mit weniger Akkorden neu gesetzt.
 static func _make(C: Dictionary, G: Dictionary, X: Dictionary, d: float, seed_add: int) -> Dictionary:
+	var R: Dictionary = X["R"]
+	var s2 := 1.0
+	var s3 := 1.0
+	var res := {}
+	for attempt in 3:
+		res = _make1(C, G, X, d, seed_add, s2, s3)
+		var rows := maxi(int(res["rows"]), 1)
+		var sh2 := float(res["chords"]) / float(rows)
+		var sh3 := float(res["c3"]) / float(rows)
+		var lim2 := float(R["chord_max"]) * 0.95
+		var lim3 := float(R["c3_max"]) * 0.92
+		var ok2 := float(R["chord_max"]) >= 1.0 or sh2 <= lim2 or int(res["chords"]) <= 2
+		var ok3 := int(R["chord"]) < 3 or float(R["c3_max"]) >= 1.0 or sh3 <= lim3 or int(res["c3"]) <= 1
+		if ok2 and ok3:
+			break
+		if not ok2:
+			s2 *= lim2 / sh2 * 0.97
+		if not ok3:
+			s3 *= lim3 / maxf(sh3, 0.0001) * 0.95
+	return res
+
+
+static func _make1(C: Dictionary, G: Dictionary, X: Dictionary, d: float, seed_add: int, s2: float, s3: float) -> Dictionary:
 	var n: int = C["n"]
 	var R: Dictionary = X["R"]
 	var P: Dictionary = X["P"]
@@ -996,7 +1084,11 @@ static func _make(C: Dictionary, G: Dictionary, X: Dictionary, d: float, seed_ad
 		flags[order_score[i]] = 1
 	var boost := maxf(d - 1.0, 0.0)
 	if rare.size() > 0:
-		var kr := mini(rare.size(), int(floor(minf(float(P["easy_half_share"]) * (1.0 + boost), 0.22) * float(k))))
+		# seltene Teilung (Easy 1/2, Normal 1/4, Hard 1/8): bis d = 1 der Anteil der Menschen-Maps,
+		# darueber bis knapp unter die Obergrenze der Spielbarkeits-Regel (mehr Noten statt Akkorde)
+		var rs: float = R["rare_share"]
+		var f := minf(rs * clampf(d, 0.0, 1.0) + boost * maxf(float(R["rare_max"]) * 0.9 - rs, 0.0), float(R["rare_max"]) * 0.9)
+		var kr := mini(rare.size(), int(floor(f / maxf(1.0 - f, 0.05) * float(k))))
 		for i in kr:
 			flags[rare[i]] = 1
 	var tmpl: PackedInt32Array = C["tmpl"]
@@ -1011,8 +1103,8 @@ static func _make(C: Dictionary, G: Dictionary, X: Dictionary, d: float, seed_ad
 		for r in n:
 			if flags[r] == 0:
 				continue
-			if bp[r] - pb <= 0.13:
-				if posmod(tick[r], 6) != 0 and gaps + 1 >= burst:
+			if bp[r] - pb <= float(R["burst_gap"]):
+				if posmod(tick[r], int(R["burst_keep"])) != 0 and gaps + 1 >= burst:
 					flags[r] = 0
 					continue
 				gaps += 1
@@ -1034,17 +1126,23 @@ static func _make(C: Dictionary, G: Dictionary, X: Dictionary, d: float, seed_ad
 	if maxc >= 2:
 		var mult := 1.0 + boost * float(P["chord_boost_max"])
 		var order_acc: Array = X["order_acc"]
-		var n2 := int(round(minf(float(pat["chord_share"]) * mult, 0.7) * float(ns)))
-		var n3 := int(round(minf(float(pat["chord3_share"]) * mult, 0.3) * float(ns))) if maxc >= 3 else 0
+		var n2 := int(round(minf(float(pat["chord_share"]) * mult, float(R["chord_max"]) * 0.9) * float(ns) * s2))
+		var n3 := int(round(minf(float(pat["chord3_share"]) * mult, float(R["c3_max"]) * 0.85) * float(ns) * s3)) if maxc >= 3 else 0
 		var cu: int = R["chord_unit"]
 		var c3: int = R["c3_unit"]
+		# Takte mit Vorlage erben die Akkorde: jede Vorlage zaehlt mit ihren Kopien
+		var tcount := PackedInt32Array()
+		tcount.resize(n)
+		for r: int in sel:
+			if tmpl[r] >= 0 and flags[tmpl[r]] == 1:
+				tcount[tmpl[r]] += 1
 		var got := 0
 		for r: int in order_acc:
 			if got >= n2:
 				break
-			if flags[r] == 1 and posmod(tick[r], cu) == 0 and (not has_parent or psizes[r] >= 2):
+			if flags[r] == 1 and tmpl[r] < 0 and got + 1 + tcount[r] <= n2 + 1 and posmod(tick[r], cu) == 0 and (not has_parent or psizes[r] >= 2):
 				sizes[r] = 2
-				got += 1
+				got += 1 + tcount[r]
 		got = 0
 		var qof := {}
 		for q in ns:
@@ -1052,7 +1150,7 @@ static func _make(C: Dictionary, G: Dictionary, X: Dictionary, d: float, seed_ad
 		for r: int in order_acc:
 			if got >= n3:
 				break
-			if sizes[r] == 2 and posmod(tick[r], c3) == 0 and (not has_parent or psizes[r] >= 3):
+			if sizes[r] == 2 and tmpl[r] < 0 and got + 1 + tcount[r] <= n3 and posmod(tick[r], c3) == 0 and (not has_parent or psizes[r] >= 3):
 				# 3er-Akkord nur zwischen Einzelnoten (sonst erzwungene Jacks)
 				var q: int = qof[r]
 				if q > 0 and bp[r] - bp[sel[q - 1]] <= 0.26 and sizes[sel[q - 1]] >= 2:
@@ -1060,7 +1158,7 @@ static func _make(C: Dictionary, G: Dictionary, X: Dictionary, d: float, seed_ad
 				if q + 1 < ns and bp[sel[q + 1]] - bp[r] <= 0.26 and sizes[sel[q + 1]] >= 2:
 					continue
 				sizes[r] = 3
-				got += 1
+				got += 1 + tcount[r]
 		for r: int in sel:
 			if tmpl[r] >= 0:
 				var sz: int = sizes[tmpl[r]] if flags[tmpl[r]] == 1 else 1
@@ -1072,7 +1170,9 @@ static func _make(C: Dictionary, G: Dictionary, X: Dictionary, d: float, seed_ad
 	# gehaltene Toene -> Holds (hoechstens der Anteil, den Menschen im Band setzen)
 	var holdf := PackedByteArray()
 	holdf.resize(n)
-	var kh := int(round(float(pat["hold_share"]) * float(P["hold_share_scale"]) * float(ns)))
+	# Anteil der Hold-Noten wie bei den Menschen (Holds je Note; Akkord-Zeilen tragen mehr Noten)
+	var kh := int(round(float(pat["hold_share"]) * float(P["hold_share_scale"]) * float(ns)
+			* (1.0 + float(pat["chord_share"])) / (float(pat["holds_per_row"]) if int(R["overlap"]) == 2 else 1.0)))
 	var goth := 0
 	for r: int in X["sus_rows"]:
 		if goth >= kh:
@@ -1087,15 +1187,21 @@ static func _make(C: Dictionary, G: Dictionary, X: Dictionary, d: float, seed_ad
 	rng.seed = int(X["seed"]) + seed_add * 7919
 	var Y := {"sel": sel, "holdf": holdf, "rng": rng, "R": R, "pat": pat, "P": P,
 			"jack_cap": mini(int(R["jack"]), maxi(int(pat["jack_cap"]), 1)) if int(R["jack"]) > 0 else 0,
-			"ovl_budget": int(0.06 * float(ns)), "seed_i": int(X["seed"]) & 3,
+			"ovl_budget": int(0.85 * float(R["ovl_max"]) * float(ns)), "seed_i": int(X["seed"]) & 3, "avoid": 0,
 			"ep": exp(float(P["pitch_weight"])), "erole": exp(float(P["role_weight"]))}
-	var S: Array = [-1e9, -1e9, -1e9, -1e9, 0, 0, 0, 0, -1e9, -1e9, -1e9, -1e9, 0, 0, 0, -1e9, -1.0, 1.5, 0, 0, 0, -1e9]
+	var S: Array = [-1e9, -1e9, -1e9, -1e9, 0, 0, 0, 0, -1e9, -1e9, -1e9, -1e9, 0, 0, 0, -1e9, -1.0, 1.5, 0, 0, 0, -1e9,
+			-1.0, 1, 0, 0, 0, 0, 0]
 	var notes: Array = []
 	var memo := {}
 	var motif_min: int = P["motif_min_rows"]
 	var bars := 0
 	var reused := 0
 	var chords := 0
+	var c_bp: PackedFloat64Array = C["bp"]
+	var prev_mirror := -1       # vorheriger Takt kopiert: 0 gleich, 1 gespiegelt; -1 frisch gesetzt
+	var snap: Array = []        # Zustand vor der letzten Zeile des vorigen, frisch gesetzten Takts
+	var snap_q := -1
+	var snap_sig := ""          # dessen Motiv-Eintrag (falls gemerkt)
 	var i := 0
 	while i < ns:
 		var j := i
@@ -1109,68 +1215,72 @@ static func _make(C: Dictionary, G: Dictionary, X: Dictionary, d: float, seed_ad
 			sig = _bar_sig(C, sel, i, j, sizes, holdf)
 			if memo.has(sig):
 				var masks: PackedInt32Array = memo[sig]
-				var bal := 0
-				for m in masks:
-					bal += int(NLR[m])
-				var dev := float(int(S[S_L]) - int(S[S_R])) / float(int(S[S_L]) + int(S[S_R]) + 6)
-				var first_mirror := absf(dev) > 0.03 and dev * float(bal) > 0.0
-				# erst ganz gleich (oder gespiegelt); geht das nicht, Zeile fuer Zeile so nah wie moeglich
-				# (beide Richtungen probieren, die mit mehr Treffern gewinnt)
-				var best_hit := -1
-				var best_S: Array = []
-				var best_notes: Array = []
-				var best_flags := PackedByteArray()
-				var best_sizes := PackedByteArray()
-				var n0 := notes.size()
-				for attempt in 4:
-					var mirror := (attempt % 2 == 1) != first_mirror
-					var partial := attempt >= 2
-					var S2 := S.duplicate()
-					var tmp_notes: Array = []
-					var fl := flags.duplicate()
-					var sz := sizes.duplicate()
-					var ok := true
-					var hit := 0
-					for q in range(i, j):
-						var m: int = masks[q - i]
-						if mirror:
-							m = MIRROR[m]
-						var got := _do_row(S2, C, G, Y, q, POP[m], m, tmp_notes)
-						if got == m:
-							hit += 1
-							if m == 0:
-								fl[sel[q]] = 0
-								sz[sel[q]] = 0
-						elif partial:
-							got = _do_row(S2, C, G, Y, q, POP[m], 0, tmp_notes)
-							if got <= 0:
-								fl[sel[q]] = 0
-								sz[sel[q]] = 0
-						else:
-							ok = false
-							break
-					if ok and hit > best_hit:
-						best_hit = hit
-						best_S = S2
-						best_notes = tmp_notes
-						best_flags = fl
-						best_sizes = sz
-					if ok and not partial:
+				var first_mirror := false
+				if prev_mirror >= 0:
+					# gleiche Richtung wie der Vortakt: dann passt auch der Uebergang
+					first_mirror = prev_mirror == 1
+				else:
+					var bal := 0
+					for m in masks:
+						bal += int(NLR[m])
+					var dev := float(int(S[S_L]) - int(S[S_R])) / float(int(S[S_L]) + int(S[S_R]) + 6)
+					first_mirror = absf(dev) > 0.03 and dev * float(bal) > 0.0
+				var res := {}
+				for mirror: bool in [first_mirror, not first_mirror]:
+					res = _try_copy(S, C, G, Y, i, j, masks, mirror, false, flags, sizes)
+					if not res.is_empty():
 						break
-				if best_hit >= 0:
-					S = best_S
-					notes.append_array(best_notes)
-					flags = best_flags
-					sizes = best_sizes
-					if best_hit * 5 >= (j - i) * 4:
-						reused += 1
-					done = true
-				notes.resize(n0 + best_notes.size())
+				# Regeln am Uebergang lokal loesen: letzte Zeile des Vortakts so neu setzen, dass die
+				# Spalten des Motivanfangs frei sind, dann das Motiv ganz uebernehmen
+				if res.is_empty() and snap_q == i - 1 and not snap.is_empty():
+					for mirror: bool in [first_mirror, not first_mirror]:
+						var avoid := 0
+						for q in range(i, j):
+							if c_bp[sel[q]] > c_bp[sel[i]] + 0.6:
+								break
+							avoid |= MIRROR[masks[q - i]] if mirror else masks[q - i]
+						var S3: Array = (snap[0] as Array).duplicate()
+						var tmp3: Array = []
+						Y["avoid"] = avoid
+						var m3 := _do_row(S3, C, G, Y, i - 1, sizes[sel[i - 1]], 0, tmp3)
+						Y["avoid"] = 0
+						if m3 <= 0:
+							continue
+						var sz3 := sizes.duplicate()
+						sz3[sel[i - 1]] = POP[m3]
+						res = _try_copy(S3, C, G, Y, i, j, masks, mirror, false, flags, sz3)
+						if not res.is_empty():
+							notes.resize(int(snap[1]))
+							notes.append_array(tmp3)
+							if snap_sig != "" and memo.has(snap_sig):
+								var pmk: PackedInt32Array = memo[snap_sig]
+								pmk[pmk.size() - 1] = m3
+								memo[snap_sig] = pmk
+							break
+				if res.is_empty():
+					# sonst Zeile fuer Zeile so nah wie moeglich (beide Richtungen, mehr Treffer gewinnt)
+					for mirror: bool in [first_mirror, not first_mirror]:
+						var t := _try_copy(S, C, G, Y, i, j, masks, mirror, true, flags, sizes)
+						if res.is_empty() or int(t["hit"]) > int(res["hit"]):
+							res = t
+				S = res["S"]
+				notes.append_array(res["notes"])
+				flags = res["flags"]
+				sizes = res["sizes"]
+				if int(res["hit"]) * 5 >= (j - i) * 4:
+					reused += 1
+				prev_mirror = 1 if res["mirror"] else 0
+				snap = []
+				snap_q = -1
+				snap_sig = ""
+				done = true
 		if not done:
+			prev_mirror = -1
 			var placed := PackedInt32Array()
-			var clean := true
 			for q in range(i, j):
 				var r: int = sel[q]
+				snap = [S.duplicate(), notes.size()]
+				snap_q = q
 				var m := _do_row(S, C, G, Y, q, sizes[r], 0, notes)
 				placed.append(m)
 				if m == 0:
@@ -1178,17 +1288,51 @@ static func _make(C: Dictionary, G: Dictionary, X: Dictionary, d: float, seed_ad
 					flags[r] = 0
 					sizes[r] = 0
 				else:
-					if POP[m] != sizes[r]:
-						clean = false
 					sizes[r] = POP[m]
-			if sig != "" and clean and not memo.has(sig):
+			snap_sig = ""
+			# auch nicht ganz sauber gesetzte Takte merken: Kopien uebernehmen genau das Gesetzte
+			if sig != "" and not memo.has(sig):
 				memo[sig] = placed
+				snap_sig = sig
 		for q in range(i, j):
 			if sizes[sel[q]] >= 2:
 				chords += 1
 		i = j
 	return {"notes": notes, "flags": flags, "sizes": sizes, "maxjack": int(S[S_MAXJ]), "bars": bars,
-			"reused": reused, "chords": chords, "L": int(S[S_L]), "R": int(S[S_R])}
+			"reused": reused, "chords": int(S[S_CH]), "c3": int(S[S_C3]), "rows": int(S[S_ROWS]),
+			"L": int(S[S_L]), "R": int(S[S_R])}
+
+
+## Uebernimmt ein Motiv (Masken je Zeile, evtl. gespiegelt). partial = false: nur ganz oder gar
+## nicht ({} bei Fehlschlag); partial = true: passende Zeilen gleich, die anderen frei gesetzt.
+static func _try_copy(S: Array, C: Dictionary, G: Dictionary, Y: Dictionary, i: int, j: int, masks: PackedInt32Array,
+		mirror: bool, partial: bool, flags: PackedByteArray, sizes: PackedByteArray) -> Dictionary:
+	var sel: PackedInt32Array = Y["sel"]
+	var S2 := S.duplicate()
+	var tmp: Array = []
+	var fl := flags.duplicate()
+	var sz := sizes.duplicate()
+	var hit := 0
+	for q in range(i, j):
+		var m: int = masks[q - i]
+		if mirror:
+			m = MIRROR[m]
+		var got := _do_row(S2, C, G, Y, q, POP[m], m, tmp)
+		if got == m:
+			hit += 1
+			if m == 0:
+				fl[sel[q]] = 0
+				sz[sel[q]] = 0
+		elif partial:
+			got = _do_row(S2, C, G, Y, q, POP[m], 0, tmp)
+			if got <= 0:
+				fl[sel[q]] = 0
+				sz[sel[q]] = 0
+			else:
+				sz[sel[q]] = POP[got]
+		else:
+			return {}
+	return {"S": S2, "notes": tmp, "flags": fl, "sizes": sz, "hit": hit, "mirror": mirror}
 
 
 ## Kennung eines Takts: Rhythmus, Akkordgroessen, Holds, Instrument und Tonhoehen-Verlauf.
@@ -1238,6 +1382,9 @@ static func _do_row(S: Array, C: Dictionary, G: Dictionary, Y: Dictionary, q: in
 		free |= 1 << c
 	if overlap == 0 and active > 0:
 		return -1 if forced > 0 else 0
+	var avoid: int = Y["avoid"]
+	if avoid != 0 and forced == 0 and POP[free & ~avoid] >= size:
+		free &= ~avoid
 	var mask := 0
 	if forced > 0:
 		if (forced & free) != forced:
@@ -1278,7 +1425,7 @@ static func _do_row(S: Array, C: Dictionary, G: Dictionary, Y: Dictionary, q: in
 			while qq < sel.size() and c_bp[sel[qq]] < end_bp - EPS:
 				cnt += 1
 				qq += 1
-			if c_susb[r] >= 2.0 and int(S[S_OVL]) + cnt <= int(Y["ovl_budget"]):
+			if int(S[S_OVL]) + cnt <= int(Y["ovl_budget"]):
 				S[S_OVL] = int(S[S_OVL]) + cnt
 			else:
 				# wie Easy: Hold behaelt seine Laenge (gedeckelt), Zeilen darin entfallen
@@ -1320,6 +1467,8 @@ static func _do_row(S: Array, C: Dictionary, G: Dictionary, Y: Dictionary, q: in
 		var dl: float = bp - float(S[S_LAST + c])
 		var run: int = int(S[S_RUN + c]) + 1 if dl <= 0.25 + EPS else 1
 		S[S_RUN + c] = run
+		if run >= 2:
+			S[S_JN] = int(S[S_JN]) + (2 if run == 2 else 1)
 		if run > int(S[S_MAXJ]):
 			S[S_MAXJ] = run
 		S[S_LAST + c] = bp
@@ -1333,16 +1482,28 @@ static func _do_row(S: Array, C: Dictionary, G: Dictionary, Y: Dictionary, q: in
 	if bp - float(S[S_PBP]) > 0.52:
 		hist = 0
 	S[S_HIST] = ((hist << 4) | mask) & 0xFFFFFFFF
+	S[S_ROWS] = int(S[S_ROWS]) + 1
+	if POP[mask] >= 2:
+		S[S_CH] = int(S[S_CH]) + 1
+	if POP[mask] >= 3:
+		S[S_C3] = int(S[S_C3]) + 1
+	var pmask: int = S[S_PM]
+	if POP[mask] == 1 and POP[pmask] == 1 and mask != pmask:
+		S[S_DIR] = 1 if MC[mask] > MC[pmask] else -1
 	S[S_PM] = mask
 	S[S_PBP] = bp
 	if p >= 0.0:
+		S[S_PP2] = S[S_PP]
 		S[S_PP] = p
 	S[S_PC] = MC[mask]
+	var c_kinds: PackedInt32Array = C["kinds"]
+	S[S_PK] = c_kinds[r]
 	return mask
 
 
-## Waehlt die Spalten einer Zeile: gelernte Uebergaenge der Menschen-Maps, gewichtet mit
-## Tonhoehe, Kick/Snare-Rolle, Hand-Balance und haeufigen 4er/8er-Mustern.
+## Waehlt die Spalten einer Zeile: 4er-Modell der Menschen-Maps (naechste Zeile nach den drei
+## vorigen) gemischt mit den Zeilen-Uebergaengen je Abstand, gewichtet mit Tonhoehe, Figuren
+## (Treppe, Triller, Roll), Kick/Snare-Rolle, Hand-Balance und Jack-Anteil des Bands.
 static func _choose(S: Array, C: Dictionary, Y: Dictionary, r: int, size: int, free: int, bp: float) -> int:
 	var pat: Dictionary = Y["pat"]
 	var P: Dictionary = Y["P"]
@@ -1359,6 +1520,7 @@ static func _choose(S: Array, C: Dictionary, Y: Dictionary, r: int, size: int, f
 	var c_pitch: PackedFloat64Array = C["pitch"]
 	var p: float = c_pitch[r]
 	var pp: float = S[S_PP]
+	var pp2: float = S[S_PP2]
 	var pc: float = S[S_PC]
 	var thr: float = P["pitch_step"]
 	var ep: float = Y["ep"]
@@ -1371,17 +1533,62 @@ static func _choose(S: Array, C: Dictionary, Y: Dictionary, r: int, size: int, f
 	elif kinds & 2:
 		rc = ROLES[(c_sec[r] + int(Y["seed_i"])) & 3][1]
 	var erole: float = Y["erole"]
-	var nw: float = P["ngram_weight"]
+	var lam: float = P["ngram_weight"]
 	var sharp: float = P["sharpness"]
-	var hist: int = S[S_HIST] if gap <= 0.52 else 0
+	var near := gap <= 0.52
+	var hist: int = S[S_HIST] if near else 0
+	# Figur: bevorzugte Einzelspalte (Maske) aus Tonhoehe und Instrument
+	var fig := 0
+	if size == 1 and near and POP[pm] == 1:
+		var pcol := int(MC[pm])
+		var m2 := (hist >> 4) & 15
+		if p >= 0.0 and pp >= 0.0 and pp2 >= 0.0:
+			if absf(p - pp2) <= thr and absf(p - pp) > thr and POP[m2] == 1 and m2 != pm:
+				fig = m2                                   # Triller: zwei Toene im Wechsel
+			elif (p - pp > thr and pp - pp2 > thr) or (p - pp < -thr and pp - pp2 < -thr):
+				var dir := 1 if p > pp else -1             # Treppe: Tonhoehe laeuft weiter
+				if pcol + dir >= 0 and pcol + dir <= 3:
+					fig = 1 << (pcol + dir)
+		if fig == 0 and rc < 0 and (kinds & 4) != 0 and (int(S[S_PK]) & 4) != 0 and gap <= 0.26:
+			var rdir: int = S[S_DIR]                       # Roll: Hi-Hat-Lauf
+			if pcol + rdir < 0 or pcol + rdir > 3:
+				rdir = -rdir
+			fig = 1 << (pcol + rdir)
+	var efig: float = exp(float(P["figure_weight"]))
+	# Jacks: Anteil der Menschen-Maps des Bands halten
+	var jratio := float(S[S_JN]) / float(maxi(lr, 30)) / maxf(float(pat["jack_share"]), 0.003)
+	var jexp := clampf(-float(P["jack_weight"]) * (jratio - 1.0), -4.0, 0.5)
 	var cands: Array = MASKS_BY_SIZE[size]
-	var ws := PackedFloat64Array()
 	var ms := PackedInt32Array()
-	var total := 0.0
+	var wb := PackedFloat64Array()
+	var wg := PackedFloat64Array()
+	var sb := 0.0
+	var sg := 0.0
+	var h3 := (hist & 0xFFF) << 4
+	var has3 := near and ((hist >> 8) & 15) != 0
 	for m: int in cands:
 		if (m & free) != m:
 			continue
-		var w: float = (uni[m] if pm == 0 else bigarr[pm * 16 + m]) + 0.002
+		var b: float = (uni[m] if pm == 0 else bigarr[pm * 16 + m]) + 0.002
+		var g := 0.0
+		if has3:
+			g = float(g4.get(h3 | m, 0.0))
+		ms.append(m)
+		wb.append(b)
+		wg.append(g)
+		sb += b
+		sg += g
+	if ms.is_empty():
+		return 0
+	var ws := PackedFloat64Array()
+	ws.resize(ms.size())
+	var total := 0.0
+	for i in ms.size():
+		var m: int = ms[i]
+		var w: float = wb[i] / sb
+		if sg > 0.0:
+			w = (1.0 - lam) * w + lam * wg[i] / sg
+		w += 0.0005
 		var mc: float = MC[m]
 		if p >= 0.0:
 			if pp >= 0.0:
@@ -1394,21 +1601,19 @@ static func _choose(S: Array, C: Dictionary, Y: Dictionary, r: int, size: int, f
 					w *= sqrt(ep)
 			else:
 				w *= exp(-0.5 * absf(mc - p * 3.0))
+		if fig != 0 and m == fig:
+			w *= efig
 		if rc >= 0 and (m >> rc) & 1 == 1:
 			w *= erole
 		w *= exp(-kbal * float(NLR[m]))
+		if gap <= 0.25 + EPS and (m & pm) != 0:
+			w *= exp(jexp * float(POP[m & pm]))
 		var k8 := ((hist << 4) | m) & 0xFFFFFFFF
-		var k4 := k8 & 0xFFFF
-		if g4.has(k4):
-			w *= 1.0 + nw * float(g4[k4])
 		if g8.has(k8):
-			w *= 1.0 + 2.0 * nw * float(g8[k8])
+			w *= 1.0 + float(g8[k8])
 		w = pow(w, sharp)
-		ws.append(w)
-		ms.append(m)
+		ws[i] = w
 		total += w
-	if ms.is_empty():
-		return 0
 	var rng: RandomNumberGenerator = Y["rng"]
 	var x := rng.randf() * total
 	for i in ms.size():
