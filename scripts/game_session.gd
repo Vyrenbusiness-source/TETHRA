@@ -102,17 +102,22 @@ func _campaign_on_node_added(n: Node) -> void:
 		return
 	if campaign_run_prefix() != "":
 		_campaign_run_game_shot(n)
-	var wi := Settings.WORLD_ORDER.find(str(campaign.get("world", "")))
+	# Autoload ueber den Baum: dieses Skript laden auch Tests ohne Autoloads.
+	var st := get_node_or_null("/root/Settings")
+	if st == null:
+		return
+	var wi: int = st.WORLD_ORDER.find(str(campaign.get("world", "")))
 	if wi < 0 or _campaign_world_prev >= 0:
 		return
-	_campaign_world_prev = Settings.world_theme
-	Settings.world_theme = wi + 1
+	_campaign_world_prev = int(st.world_theme)
+	st.world_theme = wi + 1
 	n.ready.connect(_campaign_world_release, CONNECT_ONE_SHOT)
 
 
 func _campaign_world_release() -> void:
-	if _campaign_world_prev >= 0:
-		Settings.world_theme = _campaign_world_prev
+	var st := get_node_or_null("/root/Settings")
+	if _campaign_world_prev >= 0 and st != null:
+		st.world_theme = _campaign_world_prev
 	_campaign_world_prev = -1
 
 
@@ -133,7 +138,7 @@ func _campaign_run_game_shot(game: Node) -> void:
 	if not is_instance_valid(game) or not game.is_inside_tree():
 		return
 	get_viewport().get_texture().get_image().save_png(prefix + "_game.png")
-	print("CAMPAIGN-RUN Spiel: Welt-Einstellung %d" % Settings.world_theme)
+	print("CAMPAIGN-RUN Spiel: Welt-Einstellung %d" % int(get_node("/root/Settings").world_theme))
 
 
 ## Kampagne endet, sobald eine Szene folgt, die keine Spielszene ist (Browser, Menue, Kampagne).
