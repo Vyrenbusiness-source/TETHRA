@@ -7,10 +7,17 @@ extends RefCounted
 ## Geloeschte Sammlungen wandern in die Section "deleted" (Papierkorb) und
 ## lassen sich mit restore() zurueckholen: ein Fehlklick kostet keine Daten.
 ## Vor jedem Schreiben wird der letzte Stand mit Inhalt nach <Datei>.bak kopiert.
+## Modus je Sammlung: Section "modes", Key = Name, Value = Modus (mania, orbit,
+## rally, dirigent, trace, rebound). Kein Eintrag = "alle Modi" (MODE_ALL): alte
+## Dateien bleiben unveraendert gueltig, nichts wird umgeschrieben.
 
 const PATH := "user://collections.cfg"
 const SEC := "collections"
 const SEC_TRASH := "deleted"
+const SEC_MODE := "modes"
+const SEC_TRASH_MODE := "deleted_modes"
+const MODE_ALL := ""  # Sammlung gilt in allen Modi
+const MODES: Array[String] = ["mania", "orbit", "rally", "dirigent", "trace", "rebound"]
 
 ## Tests setzen hier eine eigene Datei (nie gegen die echten Nutzerdaten).
 static var path_override := ""
@@ -69,7 +76,13 @@ static func exists(name: String) -> bool:
 	return name != "" and _read().has_section_key(SEC, name)
 
 
-static func create(name: String) -> bool:
+## Unbekannter Modus -> MODE_ALL.
+static func normalize_mode(mode: String) -> String:
+	return mode if MODES.has(mode) else MODE_ALL
+
+
+## mode: Modus der Sammlung, MODE_ALL ("") = alle Modi.
+static func create(name: String, mode: String = MODE_ALL) -> bool:
 	name = name.strip_edges()
 	if name == "":
 		return false
@@ -77,7 +90,41 @@ static func create(name: String) -> bool:
 	if cfg == null or cfg.has_section_key(SEC, name):
 		return false
 	cfg.set_value(SEC, name, [])
+	_put_mode(cfg, SEC_MODE, name, mode)
 	return _save(cfg)
+
+
+static func _put_mode(cfg: ConfigFile, sec: String, name: String, mode: String) -> void:
+	var m := normalize_mode(mode)
+	if m != MODE_ALL:
+		cfg.set_value(sec, name, m)
+	elif cfg.has_section_key(sec, name):
+		cfg.erase_section_key(sec, name)
+
+
+## Modus einer Sammlung; MODE_ALL ("") = alle Modi (auch jede alte Sammlung).
+static func mode_of(name: String) -> String:
+	return normalize_mode(str(_read().get_value(SEC_MODE, name, MODE_ALL)))
+
+
+## Modus aendern. false: Sammlung fehlt oder Datei nicht schreibbar.
+static func set_mode(name: String, mode: String) -> bool:
+	var cfg := _open()
+	if cfg == null or not cfg.has_section_key(SEC, name):
+		return false
+	_put_mode(cfg, SEC_MODE, name, mode)
+	return _save(cfg)
+
+
+## Sammlungen fuer einen Modus: die des Modus und alle "alle Modi", sortiert.
+static func list_for(mode: String) -> Array:
+	var cfg := _read()
+	var out: Array = []
+	for name in list_names():
+		var m := normalize_mode(str(cfg.get_value(SEC_MODE, name, MODE_ALL)))
+		if m == MODE_ALL or m == mode:
+			out.append(name)
+	return out
 
 
 ## Umbenennen, Maps bleiben. false: leer, Ziel gibt es schon, Quelle fehlt.
@@ -90,6 +137,8 @@ static func rename(old_name: String, new_name: String) -> bool:
 		return false
 	cfg.set_value(SEC, new_name, cfg.get_value(SEC, old_name, []))
 	cfg.erase_section_key(SEC, old_name)
+	_put_mode(cfg, SEC_MODE, new_name, str(cfg.get_value(SEC_MODE, old_name, MODE_ALL)))
+	_put_mode(cfg, SEC_MODE, old_name, MODE_ALL)
 	return _save(cfg)
 
 
@@ -100,6 +149,8 @@ static func delete(name: String) -> void:
 		return
 	cfg.set_value(SEC_TRASH, name, cfg.get_value(SEC, name, []))
 	cfg.erase_section_key(SEC, name)
+	_put_mode(cfg, SEC_TRASH_MODE, name, str(cfg.get_value(SEC_MODE, name, MODE_ALL)))
+	_put_mode(cfg, SEC_MODE, name, MODE_ALL)
 	_save(cfg)
 
 
@@ -125,6 +176,10 @@ static func restore(name: String) -> bool:
 		for f in cur:
 			if not maps.has(f):
 				maps.append(f)
+	# Modus kommt mit zurueck; gibt es den Namen schon wieder, gilt dessen Modus.
+	if not cfg.has_section_key(SEC, name):
+		_put_mode(cfg, SEC_MODE, name, str(cfg.get_value(SEC_TRASH_MODE, name, MODE_ALL)))
+	_put_mode(cfg, SEC_TRASH_MODE, name, MODE_ALL)
 	cfg.set_value(SEC, name, maps)
 	cfg.erase_section_key(SEC_TRASH, name)
 	return _save(cfg)

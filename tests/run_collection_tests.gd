@@ -55,6 +55,8 @@ func _run() -> void:
 	_test_safety()
 	_test_view()
 	_wipe()
+	_test_modes()
+	_wipe()
 	CollectionStore.path_override = ""
 	if _failed == 0:
 		print("COLLECTION-TESTS OK")
@@ -177,3 +179,54 @@ func _test_view() -> void:
 		"Grund: Dateien fehlen")
 	_check(SongSelect.collection_empty_reason("A", SongSelect.collection_view(sets, files, "mania", "")) == "",
 		"Grund: keiner, wenn Maps da sind")
+
+
+func _test_modes() -> void:
+	print("Sammlungen je Modus")
+	# Alte Datei ohne Modus-Section: alles bleibt, alles gilt in allen Modi.
+	var old := ConfigFile.new()
+	old.set_value("collections", "Alt", ["1 a.osz", "3 c.osz"])
+	old.set_value("collections", "Zweite", ["2 b.osz"])
+	old.save(TEST_PATH)
+	var before := FileAccess.get_file_as_bytes(TEST_PATH)
+	_check(CollectionStore.mode_of("Alt") == CollectionStore.MODE_ALL, "alte Sammlung = alle Modi")
+	for m in CollectionStore.MODES:
+		_check(CollectionStore.list_for(m) == ["Alt", "Zweite"], "alte Sammlungen in %s sichtbar" % m)
+	_check(FileAccess.get_file_as_bytes(TEST_PATH) == before, "Lesen schreibt die alte Datei nicht um")
+	# Neue Sammlung mit Modus.
+	_check(CollectionStore.create("Orbit-Liste", "orbit"), "Sammlung mit Modus anlegen")
+	_check(FileAccess.get_file_as_bytes(TEST_PATH + ".bak") == before, ".bak haelt den Stand vor der Aenderung")
+	_check(CollectionStore.maps_in("Alt") == ["1 a.osz", "3 c.osz"], "Maps der alten Sammlung unveraendert")
+	_check(CollectionStore.mode_of("Orbit-Liste") == "orbit", "Modus gespeichert")
+	_check(CollectionStore.list_for("orbit") == ["Alt", "Orbit-Liste", "Zweite"], "Orbit: eigene + alle Modi")
+	_check(CollectionStore.list_for("mania") == ["Alt", "Zweite"], "Mania: Orbit-Sammlung nicht in der Liste")
+	_check(CollectionStore.list_names().size() == 3, "list_names kennt weiter alle")
+	_check(CollectionStore.create("Frei") and CollectionStore.mode_of("Frei") == "", "ohne Angabe = alle Modi")
+	_check(CollectionStore.create("Kaputt", "tennis") and CollectionStore.mode_of("Kaputt") == "", "unbekannter Modus = alle Modi")
+	# Modus aendern, umbenennen, loeschen, zurueckholen.
+	_check(CollectionStore.set_mode("Alt", "rally") and CollectionStore.mode_of("Alt") == "rally", "Modus aendern")
+	_check(CollectionStore.maps_in("Alt") == ["1 a.osz", "3 c.osz"], "Modus aendern laesst die Maps")
+	_check(CollectionStore.set_mode("Alt", "") and CollectionStore.mode_of("Alt") == "", "zurueck auf alle Modi")
+	_check(not CollectionStore.set_mode("Gibt es nicht", "orbit"), "Modus nur fuer vorhandene Sammlung")
+	_check(CollectionStore.rename("Orbit-Liste", "Orbit 2") and CollectionStore.mode_of("Orbit 2") == "orbit"
+		and CollectionStore.mode_of("Orbit-Liste") == "", "Umbenennen nimmt den Modus mit")
+	CollectionStore.toggle("Orbit 2", "3 c.osz")
+	CollectionStore.delete("Orbit 2")
+	_check(not CollectionStore.list_for("orbit").has("Orbit 2"), "geloescht: nicht mehr in der Liste")
+	_check(CollectionStore.restore("Orbit 2") and CollectionStore.mode_of("Orbit 2") == "orbit"
+		and CollectionStore.maps_in("Orbit 2") == ["3 c.osz"], "Zurueckholen bringt Modus und Maps")
+	# Ansicht: im Modus nicht spielbare Maps werden gezeigt, aber markiert.
+	var sets := [
+		_mk("1 a.osz", "Ghost", [_d("Easy", 1.5)]),
+		_mk("3 c.osz", "Std Only", [_d("Std", 3.0, 0)]),
+	]
+	var v: Dictionary = SongSelect.collection_view(sets, ["1 a.osz", "3 c.osz"], "mania", "")
+	_check((v.unplayable as Array).size() == 1 and (v.unplayable[0] as MapSet).title == "Std Only",
+		"Mania: osu!standard-Map als nicht spielbar gelistet")
+	v = SongSelect.collection_view(sets, ["1 a.osz", "3 c.osz"], "mania", "ghost")
+	_check((v.unplayable as Array).is_empty(), "Suche gilt auch fuer nicht spielbare Maps")
+	v = SongSelect.collection_view(sets, ["1 a.osz", "3 c.osz"], "orbit", "")
+	_check((v.unplayable as Array).is_empty(), "Orbit: alles spielbar")
+	_check(SongSelect.collection_mode_hint("orbit") != "" and SongSelect.collection_mode_hint("") != ""
+		and SongSelect.collection_mode_hint("orbit") != SongSelect.collection_mode_hint(""),
+		"Modus-Hinweis fuer Modus und alle Modi")
