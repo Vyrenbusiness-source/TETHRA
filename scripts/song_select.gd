@@ -161,7 +161,8 @@ var _replay_btn: Button
 # Collections-Ansicht.
 var _collection_mode := false
 var _active_collection := ""
-var _chips_row: HBoxContainer
+var _chips_row: HFlowContainer
+var _coll_undo := ""  # zuletzt geloeschte Sammlung (Rueckgaengig-Chip)
 # Lokale Filter: Sterne-Bereich + Sortierung (clean als Chip-Reihe).
 var _star_filter := 0
 ## Sortierung (SORT_*) und Bestwert-Filter je Spielmodus getrennt:
@@ -283,12 +284,20 @@ func _ready() -> void:
 		_career_state["mode"] = OrbitCareer.MODE_CAREER  # Debug/Shots: nie gespeichert
 	elif OS.get_cmdline_args().has("--career-free"):
 		_career_state["mode"] = OrbitCareer.MODE_FREE
+	_coll_translations()
 	_build_ui()
 	GameSession.perf_since("Browser: UI aufbauen", t_ui)
 	t_ui = Time.get_ticks_usec()
 	if restore:
 		_search.text = _saved_search
 		if _collection_mode:
+			_set_collection_mode(true)
+	for a in OS.get_cmdline_args():
+		# Harness: --shot-coll oder --shot-coll=<Name> startet in der Sammlungs-Ansicht
+		# (nie gespeichert; Daten aus --collections-path=<Test-Kopie>).
+		if a == "--shot-coll" or a.begins_with("--shot-coll="):
+			var cn := a.trim_prefix("--shot-coll").trim_prefix("=")
+			_active_collection = cn if CollectionStore.exists(cn) else ""
 			_set_collection_mode(true)
 	_apply_career_layout()
 	_refresh_filter(_search.text)
@@ -793,10 +802,12 @@ func _build_header() -> void:
 	_restyle_score_chips()
 
 	# Chip-Reihe fuer Sammlungen (nur im Collections-Modus sichtbar).
-	_chips_row = HBoxContainer.new()
+	# Flow: viele Sammlungen brechen um, statt die Spalte zu sprengen.
+	_chips_row = HFlowContainer.new()
 	_chips_row.custom_minimum_size = Vector2(0, CHIPS_H)
-	_chips_row.alignment = BoxContainer.ALIGNMENT_END
-	_chips_row.add_theme_constant_override("separation", 6)
+	_chips_row.alignment = FlowContainer.ALIGNMENT_END
+	_chips_row.add_theme_constant_override("h_separation", 6)
+	_chips_row.add_theme_constant_override("v_separation", 6)
 	_chips_row.visible = false
 	_filter_stack.add_child(_chips_row)
 	_build_recs()
@@ -1349,7 +1360,8 @@ func _style_tabs() -> void:
 
 func _set_collection_mode(on: bool) -> void:
 	_collection_mode = on
-	if on and _active_collection == "":
+	_coll_undo = ""
+	if on and not CollectionStore.exists(_active_collection):
 		var names := CollectionStore.list_names()
 		_active_collection = names[0] if not names.is_empty() else ""
 	_chips_row.visible = on
@@ -1359,19 +1371,162 @@ func _set_collection_mode(on: bool) -> void:
 	_refresh_filter(_search.text)
 
 
+## Englische Texte der Sammlungs-Ansicht (Quelle Deutsch = Schluessel), ohne
+## Eintrag in translations/.
+static var _coll_tr_loaded := false
+const COLL_EN := {
+	"+ Neu": "+ New",
+	"Neue Sammlung anlegen": "Create a new collection",
+	"Neue Sammlung": "New collection",
+	"Name der Sammlung": "Collection name",
+	"Umbenennen": "Rename",
+	"Löschen": "Delete",
+	"Sammlung \"%s\" umbenennen": "Rename collection \"%s\"",
+	"Sammlung \"%s\" löschen (lässt sich zurückholen)": "Delete collection \"%s\" (can be restored)",
+	"\"%s\" gelöscht": "\"%s\" deleted",
+	"Rückgängig": "Undo",
+	"Papierkorb (%d)": "Trash (%d)",
+	"Gelöschte Sammlungen": "Deleted collections",
+	"Wiederherstellen": "Restore",
+	"Noch keine Sammlung.": "No collections yet.",
+	"Diesen Namen gibt es schon.": "That name already exists.",
+	"Anlegen": "Create",
+	"Speichern": "Save",
+	"Abbrechen": "Cancel",
+	"Schließen": "Close",
+	"Alle Maps zeigen": "Show all maps",
+	"  ·  %d in anderem Modus": "  ·  %d in another mode",
+	"Noch keine Sammlung. Lege oben mit \"+ Neu\" eine an oder nutze \"+ Sammlung\" im Info-Panel.":
+		"No collections yet. Create one with \"+ New\" above, or use \"+ Collection\" in the info panel.",
+	"\"%s\" ist noch leer. Unter \"Heruntergeladen\" eine Map wählen, dann \"+ Sammlung\" im Info-Panel.":
+		"\"%s\" is empty. Pick a map under \"Downloaded\", then use \"+ Collection\" in the info panel.",
+	"Die Maps in \"%s\" sind in diesem Modus nicht spielbar.":
+		"The maps in \"%s\" cannot be played in this mode.",
+	"Kein Treffer für die Suche in \"%s\".": "No search match in \"%s\".",
+	"Die Maps in \"%s\" liegen nicht mehr im maps-Ordner.":
+		"The maps in \"%s\" are no longer in the maps folder.",
+}
+
+
+static func _coll_translations() -> void:
+	if _coll_tr_loaded:
+		return
+	_coll_tr_loaded = true
+	var t := Translation.new()
+	t.locale = "en"
+	for k in COLL_EN:
+		t.add_message(k, COLL_EN[k])
+	TranslationServer.add_translation(t)
+
+
+## Sammlungs-Ansicht: was von den Eintraegen einer Sammlung zu sehen ist.
+## files = .osz-Namen der Sammlung, vm = Sicht-Modus (MapSet.mode_shows),
+## q = Suchtext (klein, "" = keine Suche). Sterne-, Bestwert-, Noten- und
+## SV-Filter zaehlen hier bewusst nicht. Getestet in tests/run_collection_tests.gd.
+static func collection_view(mapsets: Array, files: Array, vm: String, q: String) -> Dictionary:
+	var want := {}
+	for f in files:
+		want[str(f)] = true
+	var found := {}
+	var shown: Array = []
+	var other_mode := 0
+	var search_hidden := 0
+	for ms in mapsets:
+		var f: String = ms.osz_path.get_file()
+		if not want.has(f):
+			continue
+		found[f] = true
+		if ms.visible_diffs(vm).is_empty():
+			other_mode += 1
+		elif q != "" and not ms.search_haystack().contains(q):
+			search_hidden += 1
+		else:
+			shown.append(ms)
+	return {"shown": shown, "other_mode": other_mode, "search_hidden": search_hidden,
+		"missing": want.size() - found.size()}
+
+
+## Grund fuer eine leere Sammlungs-Liste: "none" (keine Sammlung), "empty",
+## "search", "other_mode", "missing"; "" = es gibt Maps zu zeigen.
+static func collection_empty_reason(active: String, view: Dictionary) -> String:
+	if active == "":
+		return "none"
+	if not (view.get("shown", []) as Array).is_empty():
+		return ""
+	if int(view.get("search_hidden", 0)) > 0:
+		return "search"
+	if int(view.get("other_mode", 0)) > 0:
+		return "other_mode"
+	if int(view.get("missing", 0)) > 0:
+		return "missing"
+	return "empty"
+
+
+func _collection_empty_text() -> String:
+	var files := CollectionStore.maps_in(_active_collection) if _active_collection != "" else []
+	var view := collection_view(_library.mapsets, files, _vm(), _search.text.strip_edges().to_lower())
+	match collection_empty_reason(_active_collection, view):
+		"none":
+			return tr("Noch keine Sammlung. Lege oben mit \"+ Neu\" eine an oder nutze \"+ Sammlung\" im Info-Panel.")
+		"search":
+			return tr("Kein Treffer für die Suche in \"%s\".") % _active_collection
+		"other_mode":
+			return tr("Die Maps in \"%s\" sind in diesem Modus nicht spielbar.") % _active_collection
+		"missing":
+			return tr("Die Maps in \"%s\" liegen nicht mehr im maps-Ordner.") % _active_collection
+	return tr("\"%s\" ist noch leer. Unter \"Heruntergeladen\" eine Map wählen, dann \"+ Sammlung\" im Info-Panel.") % _active_collection
+
+
+func _coll_action(text: String, tip: String, on_press: Callable) -> Button:
+	var b := Button.new()
+	b.text = text
+	b.tooltip_text = tip
+	b.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	b.focus_mode = Control.FOCUS_NONE
+	b.custom_minimum_size = Vector2(0, CHIPS_H)
+	b.add_theme_font_size_override("font_size", 13)
+	UiTheme.style_ghost_button(b, 15)
+	b.pressed.connect(on_press)
+	_chips_row.add_child(b)
+	return b
+
+
+func _coll_changed() -> void:
+	_rebuild_chips()
+	_refresh_filter(_search.text)
+
+
 func _rebuild_chips() -> void:
 	for c in _chips_row.get_children():
+		_chips_row.remove_child(c)
 		c.queue_free()
 	if not _collection_mode:
 		return
 	var names := CollectionStore.list_names()
-	if names.is_empty():
+	if not names.has(_active_collection):
+		_active_collection = names[0] if not names.is_empty() and _coll_undo == "" else ""
+	if _coll_undo != "":
+		# Gerade geloescht: sofort zurueckholbar.
+		var gone := Label.new()
+		gone.text = tr("\"%s\" gelöscht") % _coll_undo
+		gone.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+		gone.add_theme_font_size_override("font_size", 13)
+		gone.add_theme_color_override("font_color", COL_DIM)
+		_chips_row.add_child(gone)
+		var undo_name := _coll_undo
+		var ub := _coll_action(tr("Rückgängig"), "", func():
+			CollectionStore.restore(undo_name)
+			_coll_undo = ""
+			_active_collection = undo_name
+			_coll_changed())
+		ub.add_theme_color_override("font_color", COL_ACCENT)
+	elif names.is_empty():
 		var hint := Label.new()
-		hint.text = "Keine Sammlungen — im Info-Panel \"+ Sammlung\" nutzen"
+		hint.text = tr("Noch keine Sammlung.")
+		hint.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
 		hint.add_theme_font_size_override("font_size", 13)
 		hint.add_theme_color_override("font_color", COL_DIM)
 		_chips_row.add_child(hint)
-		return
 	var have := {}
 	for ms in _library.mapsets:
 		have[ms.osz_path.get_file()] = true
@@ -1381,29 +1536,148 @@ func _rebuild_chips() -> void:
 			if have.has(f):
 				present += 1
 		var chip := _make_toggle("%s (%d)" % [name, present], 13, 15)
+		chip.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
 		chip.custom_minimum_size = Vector2(0, CHIPS_H)
 		_apply_toggle(chip, name == _active_collection)
 		chip.pressed.connect(func():
 			_active_collection = name
-			_rebuild_chips()
-			_refresh_filter(_search.text))
+			_coll_undo = ""
+			_coll_changed())
 		_chips_row.add_child(chip)
-	# Aktive Sammlung loeschen (kleines x am Ende der Reihe).
+	_coll_action(tr("+ Neu"), tr("Neue Sammlung anlegen"), func():
+		_collection_name_dialog(tr("Neue Sammlung"), "", tr("Anlegen"), func(n: String) -> bool:
+			if not CollectionStore.create(n):
+				return false
+			_active_collection = n.strip_edges()
+			_coll_undo = ""
+			_coll_changed()
+			return true))
 	if _active_collection != "":
-		var del := Button.new()
-		del.text = "✕"
-		del.tooltip_text = tr("Sammlung \"%s\" löschen") % _active_collection
-		del.custom_minimum_size = Vector2(CHIPS_H, CHIPS_H)
-		del.add_theme_font_size_override("font_size", 13)
-		UiTheme.style_ghost_button(del, 15)
-		_square_margins(del)
-		del.pressed.connect(func():
-			CollectionStore.delete(_active_collection)
-			var rest := CollectionStore.list_names()
-			_active_collection = rest[0] if not rest.is_empty() else ""
-			_rebuild_chips()
-			_refresh_filter(_search.text))
-		_chips_row.add_child(del)
+		var act := _active_collection
+		_coll_action(tr("Umbenennen"), tr("Sammlung \"%s\" umbenennen") % act, func():
+			_collection_name_dialog(tr("Sammlung \"%s\" umbenennen") % act, act, tr("Speichern"), func(n: String) -> bool:
+				if not CollectionStore.rename(act, n):
+					return false
+				_active_collection = n.strip_edges()
+				_coll_changed()
+				return true))
+		_coll_action(tr("Löschen"), tr("Sammlung \"%s\" löschen (lässt sich zurückholen)") % act, func():
+			CollectionStore.delete(act)
+			_coll_undo = act
+			_active_collection = ""
+			_coll_changed())
+	var trash := CollectionStore.deleted_names()
+	if _coll_undo == "" and not trash.is_empty():
+		_coll_action(tr("Papierkorb (%d)") % trash.size(), tr("Gelöschte Sammlungen"), _open_collection_trash)
+
+
+## Kleines Overlay mit Titel; liefert [overlay, VBox fuer den Inhalt].
+func _coll_overlay(title_text: String) -> Array:
+	var overlay := Control.new()
+	overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	add_child(overlay)
+	var dim := ColorRect.new()
+	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	dim.color = Color(0, 0, 0, 0.6)
+	overlay.add_child(dim)
+	var center := CenterContainer.new()
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	overlay.add_child(center)
+	var panel := PanelContainer.new()
+	panel.custom_minimum_size = Vector2(420, 0)
+	panel.add_theme_stylebox_override("panel", _rounded_box(Color(0.07, 0.07, 0.11, 0.98), 14))
+	center.add_child(panel)
+	var pad := MarginContainer.new()
+	for side in ["left", "right", "top", "bottom"]:
+		pad.add_theme_constant_override("margin_" + side, 16)
+	panel.add_child(pad)
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", 10)
+	pad.add_child(vb)
+	var title := Label.new()
+	title.text = title_text
+	title.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	title.add_theme_font_size_override("font_size", 18)
+	vb.add_child(title)
+	return [overlay, vb]
+
+
+## Name eingeben (Neu / Umbenennen). on_ok(name) -> bool: false = Name abgelehnt.
+func _collection_name_dialog(title_text: String, initial: String, ok_text: String, on_ok: Callable) -> void:
+	var ov := _coll_overlay(title_text)
+	var overlay: Control = ov[0]
+	var vb: VBoxContainer = ov[1]
+	var edit := LineEdit.new()
+	edit.text = initial
+	edit.placeholder_text = tr("Name der Sammlung")
+	edit.max_length = 40
+	edit.custom_minimum_size = Vector2(0, 40)
+	vb.add_child(edit)
+	var err := Label.new()
+	err.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	err.add_theme_font_size_override("font_size", 13)
+	err.add_theme_color_override("font_color", Color(1.0, 0.55, 0.45))
+	err.visible = false
+	vb.add_child(err)
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_END
+	row.add_theme_constant_override("separation", 8)
+	vb.add_child(row)
+	var cancel := Button.new()
+	cancel.text = tr("Abbrechen")
+	cancel.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	cancel.custom_minimum_size = Vector2(110, 40)
+	cancel.pressed.connect(overlay.queue_free)
+	row.add_child(cancel)
+	var ok := Button.new()
+	ok.text = ok_text
+	ok.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	ok.custom_minimum_size = Vector2(110, 40)
+	row.add_child(ok)
+	var submit := func():
+		if edit.text.strip_edges() == "":
+			return
+		if on_ok.call(edit.text):
+			overlay.queue_free()
+		else:
+			err.text = tr("Diesen Namen gibt es schon.")
+			err.visible = true
+	ok.pressed.connect(submit)
+	edit.text_submitted.connect(func(_t): submit.call())
+	edit.grab_focus.call_deferred()
+	edit.select_all.call_deferred()
+
+
+## Papierkorb: geloeschte Sammlungen zurueckholen.
+func _open_collection_trash() -> void:
+	var ov := _coll_overlay(tr("Gelöschte Sammlungen"))
+	var overlay: Control = ov[0]
+	var vb: VBoxContainer = ov[1]
+	for name in CollectionStore.deleted_names():
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 8)
+		vb.add_child(row)
+		var lbl := Label.new()
+		lbl.text = str(name)
+		lbl.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+		lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		lbl.clip_text = true
+		row.add_child(lbl)
+		var rb := Button.new()
+		rb.text = tr("Wiederherstellen")
+		rb.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+		rb.pressed.connect(func():
+			CollectionStore.restore(str(name))
+			_active_collection = str(name)
+			overlay.queue_free()
+			_coll_changed())
+		row.add_child(rb)
+	var close := Button.new()
+	close.text = tr("Schließen")
+	close.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	close.custom_minimum_size = Vector2(0, 40)
+	close.pressed.connect(overlay.queue_free)
+	vb.add_child(close)
 
 
 ## Overlay: gewaehlte Map in Sammlungen packen / entfernen / neue anlegen.
@@ -1457,12 +1731,14 @@ func _open_collection_popup() -> void:
 	new_row.add_child(new_edit)
 	var new_btn := Button.new()
 	new_btn.text = "Anlegen"
-	new_btn.pressed.connect(func():
+	var add_new := func():
 		if CollectionStore.create(new_edit.text):
 			CollectionStore.toggle(new_edit.text.strip_edges(), _selected_set.osz_path)
 			new_edit.text = ""
 			fill_boxes.call()
-			_rebuild_chips())
+			_rebuild_chips()
+	new_btn.pressed.connect(add_new)
+	new_edit.text_submitted.connect(func(_t): add_new.call())
 	new_row.add_child(new_btn)
 
 	var close := Button.new()
@@ -1470,6 +1746,7 @@ func _open_collection_popup() -> void:
 	close.custom_minimum_size = Vector2(0, 40)
 	close.pressed.connect(func():
 		overlay.queue_free()
+		_rebuild_chips()
 		_refresh_filter(_search.text))
 	vb.add_child(close)
 
@@ -1573,7 +1850,11 @@ func _refresh_filter(query: String) -> void:
 	var best_f := int(mf["best"])
 	var grades: Array = mf["grades"]
 	var sort_m := int(mf["sort"])
-	var by_best := best_f != BEST_ALL or not grades.is_empty()
+	# Sammlungs-Ansicht zeigt IMMER alle ihre Maps: Sterne-, Bestwert-, Noten- und
+	# SV-Filter gelten dort nicht (ihre Chips sind dann ausgeblendet).
+	var coll := _collection_mode
+	var star_f := _star_filter != 0 and not coll
+	var by_best := (best_f != BEST_ALL or not grades.is_empty()) and not coll
 	var need_scores := by_best or sort_m == SORT_RECENT or sort_m == SORT_MOST_PLAYED
 	var idx: Dictionary = _scores_for_mode() if need_scores else {}
 	var rows: Array = []
@@ -1584,17 +1865,17 @@ func _refresh_filter(query: String) -> void:
 		if _collection_mode:
 			if _active_collection == "" or not CollectionStore.contains(_active_collection, ms.osz_path):
 				continue
-		if _sv_filter and not ms.has_sv():
+		if _sv_filter and not coll and not ms.has_sv():
 			continue
 		# Modus-Filter: osu!standard-Diffs nur im Orbit-Modus (MapSet.mode_shows).
 		var vis := ms.visible_diffs(_vm())
 		if vis.is_empty():
 			continue
 		# Sterne des aktiven Modus (fehlende vorlaeufig Mania-Sterne).
-		var smap := _mode_star_map(ms) if _star_filter != 0 \
+		var smap := _mode_star_map(ms) if star_f \
 				or sort_m == SORT_STARS_UP or sort_m == SORT_STARS_DOWN else {}
 		# Sterne-Filter: Set passt, wenn IRGENDEINE sichtbare Diff im Bereich liegt.
-		if _star_filter != 0:
+		if star_f:
 			var in_range := false
 			for i in vis:
 				var st := ms.star_or_base(i, smap)
@@ -1627,16 +1908,12 @@ func _refresh_filter(query: String) -> void:
 	_rebuild_cards()
 	var count_txt := tr("%d Maps") % _filtered.size()
 	if _collection_mode and _active_collection != "":
-		# Eintraege, deren .osz nicht mehr im maps-Ordner liegt, klar ausweisen.
-		var missing := 0
-		var have := {}
-		for ms2 in _library.mapsets:
-			have[ms2.osz_path.get_file()] = true
-		for f in CollectionStore.maps_in(_active_collection):
-			if not have.has(f):
-				missing += 1
-		if missing > 0:
-			count_txt += tr("  ·  %d fehlen (gelöscht?)") % missing
+		# Was fehlt, klar ausweisen: anderer Modus bzw. .osz nicht mehr im maps-Ordner.
+		var view := collection_view(_library.mapsets, CollectionStore.maps_in(_active_collection), _vm(), "")
+		if int(view.other_mode) > 0:
+			count_txt += tr("  ·  %d in anderem Modus") % int(view.other_mode)
+		if int(view.missing) > 0:
+			count_txt += tr("  ·  %d fehlen (gelöscht?)") % int(view.missing)
 	_count_label.text = count_txt
 
 
@@ -1977,15 +2254,28 @@ func _rebuild_cards() -> void:
 		_card_buttons.append(card)
 		card.mouse_entered.connect(_slide_card.bind(card, true))
 		card.mouse_exited.connect(_slide_card.bind(card, false))
-	if _filtered.is_empty() and not _library.mapsets.is_empty():
+	if _filtered.is_empty() and (_collection_mode or not _library.mapsets.is_empty()):
 		var empty := Label.new()
-		empty.text = tr("Keine Maps für diese Filter")
+		empty.text = _collection_empty_text() if _collection_mode else tr("Keine Maps für diese Filter")
+		empty.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
 		empty.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		empty.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		empty.custom_minimum_size = Vector2(0, CARD_H)
 		empty.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		empty.add_theme_font_size_override("font_size", 14)
 		empty.add_theme_color_override("font_color", COL_DIM)
 		_list_box.add_child(empty)
+		if _collection_mode:
+			# Klarer Rueckweg aus einer leeren Sammlung.
+			var back := Button.new()
+			back.text = tr("Alle Maps zeigen")
+			back.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+			back.custom_minimum_size = Vector2(0, 40)
+			back.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+			back.add_theme_font_size_override("font_size", 14)
+			UiTheme.style_ghost_button(back, 10)
+			back.pressed.connect(func(): _set_collection_mode(false))
+			_list_box.add_child(back)
 	_scores_cfg = null
 	if _selected_set != null:
 		_apply_card_highlight()
@@ -4011,7 +4301,12 @@ func _apply_career_layout() -> void:
 	_career_level_lbl.visible = orbit and not career
 	_career_level_lbl.text = tr("Empfohlen: %s ★") % OrbitCareer.range_text(float(_career_state.get("level", OrbitCareer.START_LEVEL)))
 	_filter_row.visible = not career
-	_score_chips_row.visible = not career
+	# Sammlungs-Ansicht: Filter, die dort nicht gelten, gar nicht erst zeigen.
+	_score_chips_row.visible = not career and not _collection_mode
+	for sc in _star_chips:
+		sc.visible = not _collection_mode
+	if _sv_chip != null:
+		_sv_chip.visible = not _collection_mode
 	_chips_row.visible = _collection_mode and not career
 	if _list_mask != null:
 		_list_mask.visible = not career
@@ -5048,9 +5343,11 @@ func _apply_recs_visibility() -> void:
 		return
 	var hidden := bool(_rec.hidden)
 	var career := _career_on()
-	_rec_box.visible = not hidden and not career
+	# Sammlungs-Ansicht: keine Vorschlaege, dort zaehlt nur die eigene Liste.
+	var off := career or _collection_mode
+	_rec_box.visible = not hidden and not off
 	if _rec_chip != null:
-		_rec_chip.visible = hidden and not career  # nur zum Wieder-Einblenden
+		_rec_chip.visible = hidden and not off  # nur zum Wieder-Einblenden
 	var open := not bool(_rec.collapsed)
 	if _rec_body != null:
 		_rec_body.visible = open
