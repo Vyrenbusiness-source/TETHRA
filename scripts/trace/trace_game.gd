@@ -8,7 +8,7 @@ extends Control
 ## Tasten: Settings.trace_keys (Standard Pfeile), Spalte 0-3 = links / runter / hoch / rechts.
 ## Anti-Mash (Regeln 2): siehe TraceRules.press(), Replay meta rules = 2.
 ## CLI: --autoplay, --trace-map=<Teil des osz-Namens> [--trace-diff=<Version>]
-## [--trace-dir=<Ordner>], --shot --shot-at=<ms|stream|hold|chord|hairpin|calm|end>
+## [--trace-dir=<Ordner>], --shot --shot-at=<ms|stream|hold|chord|hairpin|calm|kiai|end>
 ## --shot-out=<png>, --shot-results, --shot-pause, --mp-bot, --mp-cut=<s>, --mp-back=<s>.
 
 const MODE := "trace"
@@ -1056,6 +1056,11 @@ func _shot_target(v: String, def: float) -> float:
 	var kn := path.knots
 	if v == "end":
 		return float(_beatmap.hit_objects.back().end_time()) + 200.0
+	if v == "kiai":
+		for iv in _beatmap.kiai_intervals:
+			if float(iv.end) - float(iv.start) > 4000.0 and float(iv.start) > 8000.0:
+				return float(iv.start) + 2600.0
+		return def
 	if v == "stream":
 		var best := -1
 		var j0 := 0

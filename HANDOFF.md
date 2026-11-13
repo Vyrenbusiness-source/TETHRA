@@ -206,3 +206,19 @@ Agents liefen mit model=fable (Opus/Sonnet-Subagents: API 403 Cloudflare).
   - mp-all-modes (.warmd/tasks122.txt): --mp-bot fuer Mania (lief gerade verbose), Rebound im Smoke, Relay-Smoke alle 6 Modi, ObjectDB-Leak beim Beenden.
   Fortsetzen: Agent je Task mit model=fable (Opus/Sonnet-Subagents hatten API 403), Prompt "Read .warmd/tasks/<task>.md, git log im Worktree, weiter ab WIP". Batch-Marker fehlt evtl. -> nach Ende von Hand mergen: WARMD_BASE=1 warmd merge warmd/<task>.
 - Nutzer-Vorgaben neu: Regeln immer aenderbar (memory feedback-rules-change); SV-Mod/Map-SV bleiben wie sie sind; Social Preview docs/media/social_preview.png selbst hochladen.
+
+## Stand 2026-11-13 ~21:00 (letztes Release v1.34.0, Neustart)
+Released heute Abend: v1.33.0 (Mania Max-pp = SS mit allen MAX/n_geki, Cache maxpp_v2; Solo neben offenem Raum zaehlt nicht als MP: Lobby.in_round()), v1.34.0 (Collections: Filter blenden nichts aus, Neu/Umbenennen/Loeschen mit Papierkorb, .bak vor jedem Speichern; Chat: Bot-Markdown + Map-Links als Karten, docs/net/bot_links.md).
+In main, NICHT gepusht, NICHT released (Merge-Gate wurde beim Neustart abgebrochen, Tests der Branches waren gruen; erster Gate-Lauf scheiterte nur am bekannten Wackel-Test run_mastering_tests.gd):
+- e070b3c Merge for-you-v2: Collections je Modus, "For you" mit Stilprofil, Grund je Vorschlag, "Mehr anzeigen", Online-Gruppe (Download/Vorhoeren der Online-Kacheln nie live geklickt; neue Texte als REC_DE/COLL_EN im Code statt translations/).
+- 090b2c0 Merge trace-look-v2: Trace ohne Ringe (nur Zielring am naechsten Knoten), schraeger Boden, durchgehende Bahn, Beat-Lichtwelle, Kiai bernstein.
+  -> Zuerst: WARMD_BASE=1 warmd check im Haupt-Checkout, dann push + Release v1.35.0.
+Offene Branches (WIP, gestoppt):
+- warmd/campaign (Worktree .warmd-worktrees/rhyg/campaign, 4 Commits): Kampagne je Modus, Mania 13 Kapitel/78 echte 4K-Maps, andere Modi je 1 Kapitel, data/campaign.json, scenes/campaign.tscn, scripts/campaign/*, docs/campaign.md, docs/net/campaign_server.md. Agent war mitten im Fix "Welt-Zwang darf nicht in settings.cfg haengen bleiben" (roter Test geschrieben, Fix fehlt). Danach: echter Stufenlauf per Harness, Stufe/Ergebnis-Screenshots, warmd check, finish. Handoff .git/warmd-handoff/campaign.md.
+- warmd/sv-start-popin (2 Commits): Ursache gefunden "SyncClock: Ladezeit nach play() frisst den Vorlauf" (Repro: maps/mirror_2141771.osz, sath4 <3#006 [Recollectia, w/ [-SVzzZ-]], 2D, --debug-popin -> finds=9, erste Noten erst 528 ms vor Treffer). Fix/Test pruefen, Stichprobe 20 SV-Maps, warmd check, finish.
+- warmd/mp-all-modes, warmd/tutorials-v2: gedroppt (spaeter neu starten, Tasks .warmd/tasks122.txt).
+Nutzer-Entscheidungen: SV-Mod/Map-SV bleiben wie sie sind; Regeln immer aenderbar; alle 6 Modi bleiben (Loeschen abgesagt); Kampagne je Modus (Mania zuerst), Ranglisten der Teilnehmer.
+Offene Fragen an den Nutzer: Trace auf mitfahrende Kamera (nur kommendes Stueck sichtbar, wie im Groove-Coaster-Video, keine Kopie) umbauen? Gewaehlte Mania-Varianten aus TETHRA_Plan_Mania_Varianten.pdf: 3 Uebungsmodus, 4 Minen, 6 echte 7K-Maps, 10 Sudden Death/Perfect, 14 Marathon mit DJ-sauberen Uebergaengen (gleiche Schwierigkeit, Mashup), 15 Turbo -> bauen. 30 gameplay-veraendernde Ideen wurden genannt (Nutzer hat noch nicht gewaehlt).
+Server: Artifact aktuell (inkl. Bot-Link-Wuensche); PDF fuer Server-Owner: Desktop/TETHRA_Server_Update_seit_11.11.pdf. Kampagnen-Gesamtrangliste braucht neuen Endpunkt (docs/net/campaign_server.md im campaign-Branch) -> nach Merge ans Artifact.
+Offset-Frage Kollege (-31 ms): kein Rechenfehler, Godot meldet nur 10 ms Ausgabelatenz; Vorschlag "Offset aus letztem Lauf uebernehmen" offen.
+Agents: model=fable (Opus/Sonnet-Subagents hatten 403). Max ~3 Agents gleichzeitig.

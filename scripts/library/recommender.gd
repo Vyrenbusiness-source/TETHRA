@@ -10,7 +10,8 @@ extends RefCounted
 ##   failed, unranked, grade, date "YYYY-MM-DDTHH:MM:SS"}
 ## Kandidat: {set, diff, stars, osu_mode (3 = 4K, 0 = Standard; Standard 3),
 ##   max_pp (optional, Mania: pp bei SS), last_played (optional), best_grade (optional),
-##   artist/genre/language/bpm/length/style (optional, fuer den Stil-Bonus)}
+##   artist/title/mapper/genre/language/tags/bpm/length/style/sv (optional, fuer
+##   Stilprofil, Stil-Bonus und Grund)}
 
 const LEVEL_EASY := "easy"            # Easy: unter dem Komfort-Level
 const LEVEL_CHALLENGE := "challenge"  # Challenge: Komfort bis Grenze (Standard)
@@ -43,7 +44,16 @@ const MAX_PER_SET := 2
 const MAX_PER_ARTIST := 2
 const STYLE_W := 0.3        # Stil-Bonus: 1,0 Passung wiegt 0,3 Sterne Abstand (Push: +30 % Gewinn)
 const STYLE_MIN_MAPS := 5   # Vorlieben erst ab 5 gespielten Maps mit Merkmalen
-const STYLE_SHOW := 0.6     # Stil-Grund erst ab dieser Passung
+const STYLE_SHOW := 0.45    # Grund ("fits: ...") erst ab dieser Passung
+const NOVELTY_W := 0.12     # je Mal schon gezeigt (ohne Lauf): 0,12 Sterne Abstand
+const NOVELTY_CAP := 4      # hoechstens 4 Mal zaehlen
+const PAGE_MAX := 6         # "Show more": hoechstens so viele Seiten
+const ONLINE_STAR_PAD := 0.15  # Online-Suche: Sterne-Bereich etwas weiter
+const LIKE_MAX := 22        # "like <Titel>": Titel hoechstens so lang
+const ONLINE_TTL := 43200   # Online-Antwort 12 h gueltig (eine Anfrage je Suche)
+const ONLINE_RETRY := 600   # nach einem Fehler fruehestens in 10 min wieder
+const ONLINE_PAGES := 2     # hoechstens 2 Mirror-Seiten je Suche
+const ONLINE_KEEP := 8      # so viele Suchen bleiben im Cache
 
 ## Stufen relativ zum Level P (Sterne): [lo, hi] und Ziel.
 const EASY_LO := -1.3
@@ -74,6 +84,29 @@ const MANIA_K := 6.5
 const STYLE_LABELS := {
 	"stream": "Streams", "jumpstream": "Jumpstream", "jack": "Jacks",
 	"chord": "Chords", "hold": "Long notes", "jumps": "Jumps", "dense": "Dense patterns",
+}
+## Genre und Sprache aus Tags/Quelle einer Map (kleingeschriebene Woerter bzw.
+## Wortfolgen). Genre-Namen wie bei osu! (englisch, klein).
+const GENRE_WORDS := {
+	"electronic": ["electronic", "edm", "dnb", "drum and bass", "dubstep", "techno", "trance", "house",
+		"hardcore", "speedcore", "breakcore", "chiptune", "electro", "artcore", "hardstyle", "psytrance", "eurobeat"],
+	"rock": ["rock", "punk", "emo", "post-rock", "alternative", "j-rock", "jrock", "indie"],
+	"metal": ["metal", "metalcore", "deathcore", "djent"],
+	"pop": ["pop", "j-pop", "jpop", "k-pop", "kpop", "idol"],
+	"anime": ["anime", "opening", "ending", "tv size"],
+	"video game": ["touhou", "videogame", "video game", "game", "ost", "soundtrack", "bms", "arcade",
+		"konami", "sdvx", "maimai", "chunithm", "cytus", "deemo", "arcaea", "beatmania", "iidx"],
+	"hip hop": ["hip hop", "hip-hop", "hiphop", "rap", "trap"],
+	"classical": ["classical", "piano", "orchestra", "orchestral", "symphony"],
+	"jazz": ["jazz", "swing", "funk"],
+	"folk": ["folk", "celtic"],
+}
+const LANGUAGE_WORDS := {
+	"japanese": ["japanese", "j-pop", "jpop", "j-rock", "jrock", "vocaloid", "anime", "utaite", "touhou", "miku"],
+	"korean": ["korean", "k-pop", "kpop"],
+	"english": ["english"],
+	"chinese": ["chinese", "c-pop", "mandarin"],
+	"instrumental": ["instrumental"],
 }
 
 
@@ -407,18 +440,63 @@ static func std_style(objs: Array) -> Dictionary:
 		"dense": snappedf(clampf(float(a.size()) / (span / 1000.0) / 8.0, 0.0, 1.0), 0.001)}
 
 
-## Vorlieben aus dem Spielverhalten. runs: Laeufe; feats: "set|diff" ->
-## {artist, genre?, language?, bpm?, length? (s), style? (Anteile)};
+## Genre und Sprache aus Tags + Quelle (Text einer .osu): {genre, language},
+## jeweils "" wenn nichts passt. Meiste Treffer gewinnt, Gleichstand nach Name.
+static func genre_from_tags(tags: String, source: String = "") -> Dictionary:
+	var text := " %s %s " % [tags.to_lower(), source.to_lower()]
+	for ch in [",", ";", "/", "(", ")", "[", "]", "\t"]:
+		text = text.replace(ch, " ")
+	var out := {}
+	for pair in [["genre", GENRE_WORDS], ["language", LANGUAGE_WORDS]]:
+		var best := ""
+		var best_n := 0
+		var names: Array = (pair[1] as Dictionary).keys()
+		names.sort()
+		for name in names:
+			var n := 0
+			for w in pair[1][name]:
+				if text.contains(" %s " % str(w)):
+					n += 1
+			if n > best_n:
+				best_n = n
+				best = str(name)
+		out[pair[0]] = best
+	return out
+
+
+## Haeufigster Schluessel eines Gewichts-Dictionary ab Anteil min_share, sonst "".
+static func top_key(d: Dictionary, total: float, min_share: float) -> String:
+	var best := ""
+	var best_w := 0.0
+	var keys: Array = d.keys()
+	keys.sort()
+	for k in keys:
+		if float(d[k]) > best_w:
+			best_w = float(d[k])
+			best = str(k)
+	return best if total > 0.0 and best_w / total >= min_share else ""
+
+
+## Stilprofil (Vorlieben) aus dem Spielverhalten eines Modus. runs: Laeufe;
+## feats: "set|diff" -> {artist, title?, mapper?, genre?, language?, tags?
+## (Array), bpm?, length? (s), style? (Anteile), sv? (bool)};
 ## plays: "set|diff" -> Anzahl Plays; favs: set -> true (Favoriten/Collections).
 ## Gewicht je Map: 1 + 0,5 je Wiederholung (bis 4) + 0,5 bei Acc >= 93 % +
-## 1,5 Favorit, mal 0,7..1,0 nach Laenge. {} bei weniger als STYLE_MIN_MAPS Maps.
+## 1,5 Favorit, mal 0,7..1,0 nach Laenge (Spielzeit). {} bei weniger als
+## STYLE_MIN_MAPS Maps. Ergebnis: {total, maps, artists, mappers, genres,
+## languages, tags, style, sv (Anteil, -1 = unbekannt), bpm, bpm_spread, bpm_lo,
+## bpm_hi, stars_lo, stars_hi, length, repeat, examples (Muster -> [Gewicht,
+## Titel, Set]), example ([Gewicht, Titel, Set])}.
 static func taste(runs: Array, feats: Dictionary, plays: Dictionary = {}, favs: Dictionary = {}) -> Dictionary:
 	var best_acc: Dictionary = {}
+	var run_stars: Dictionary = {}
 	for r in runs:
 		if not (r is Dictionary) or _failed(r):
 			continue
 		var k := _key(r)
 		best_acc[k] = maxf(float(best_acc.get(k, 0.0)), float(r.get("accuracy", 0.0)))
+		if float(r.get("stars", -1.0)) > 0.0:
+			run_stars[k] = float(r.stars)
 	for k in plays:
 		if int(plays[k]) > 0 and not best_acc.has(k):
 			best_acc[k] = 0.0
@@ -431,6 +509,13 @@ static func taste(runs: Array, feats: Dictionary, plays: Dictionary = {}, favs: 
 	var style_w := 0.0
 	var bpm_pairs: Array = []
 	var len_pairs: Array = []
+	var star_pairs: Array = []
+	var mappers := {}
+	var tags := {}
+	var sv_w := 0.0
+	var sv_n := 0.0
+	var examples := {}
+	var example: Array = [0.0, "", ""]
 	var total := 0.0
 	var maps := 0
 	for k in keys:
@@ -450,10 +535,24 @@ static func taste(runs: Array, feats: Dictionary, plays: Dictionary = {}, favs: 
 			len_pairs.append([ln, w])
 		maps += 1
 		total += w
-		for pair in [[artists, "artist"], [genres, "genre"], [langs, "language"]]:
+		for pair in [[artists, "artist"], [genres, "genre"], [langs, "language"], [mappers, "mapper"]]:
 			var v := str(fd.get(pair[1], "")).strip_edges().to_lower()
 			if v != "":
 				pair[0][v] = float(pair[0].get(v, 0.0)) + w
+		var tg = fd.get("tags", [])
+		if tg is Array:
+			for one in tg:
+				tags[str(one)] = float(tags.get(str(one), 0.0)) + w
+		if fd.has("sv"):
+			sv_n += w
+			if bool(fd.sv):
+				sv_w += w
+		var stv := float(run_stars.get(k, fd.get("stars", -1.0)))
+		if stv > 0.0:
+			star_pairs.append([stv, w])
+		var title := str(fd.get("title", "")).strip_edges()
+		if title != "" and w > float(example[0]):
+			example = [w, title, set_id]
 		var bpm := float(fd.get("bpm", -1.0))
 		if bpm > 0.0:
 			bpm_pairs.append([bpm, w])
@@ -461,25 +560,106 @@ static func taste(runs: Array, feats: Dictionary, plays: Dictionary = {}, favs: 
 		if stl is Dictionary and not stl.is_empty():
 			style_w += w
 			for sk in stl:
-				style[sk] = float(style.get(sk, 0.0)) + w * float(stl[sk])
+				var share := float(stl[sk])
+				style[sk] = float(style.get(sk, 0.0)) + w * share
+				# Beispiel-Map je Muster: die am staerksten gewichtete mit klarem Anteil.
+				if title != "" and share >= 0.2 and w * share > float((examples.get(sk, [0.0]) as Array)[0]):
+					examples[sk] = [w * share, title, set_id]
 	if maps < STYLE_MIN_MAPS or total <= 0.0:
 		return {}
 	for sk in style:
 		style[sk] = float(style[sk]) / style_w
+	var many_bpm := bpm_pairs.size() >= 3
+	var many_stars := star_pairs.size() >= 3
 	return {"total": total, "maps": maps, "artists": artists, "genres": genres,
-		"languages": langs, "style": style,
+		"languages": langs, "style": style, "mappers": mappers, "tags": tags,
+		"sv": sv_w / sv_n if sv_n > 0.0 else -1.0,
+		"bpm_lo": _wquantile(bpm_pairs, 0.2) if many_bpm else -1.0,
+		"bpm_hi": _wquantile(bpm_pairs, 0.8) if many_bpm else -1.0,
+		"stars_lo": _wquantile(star_pairs, 0.2) if many_stars else -1.0,
+		"stars_hi": _wquantile(star_pairs, 0.8) if many_stars else -1.0,
+		"examples": examples, "example": example,
 		"bpm": _wquantile(bpm_pairs, 0.5) if bpm_pairs.size() >= 3 else -1.0,
 		"bpm_spread": maxf(15.0, absf(_wquantile(bpm_pairs, 0.75) - _wquantile(bpm_pairs, 0.25))) if bpm_pairs.size() >= 3 else 0.0,
 		"length": _wquantile(len_pairs, 0.5) if len_pairs.size() >= 3 else -1.0,
 		"repeat": plays.values().filter(func(v): return int(v) >= 3).size() > 0}
 
 
-## Passung eines Kandidaten zu den Vorlieben: {bonus 0..1, reason}. Teile mit
-## Gewicht: Stil 0,35, Kuenstler 0,2, Genre/Sprache 0,15, BPM 0,15, Laenge 0,15;
-## fehlende Merkmale zaehlen nicht mit.
+## Die staerksten Muster des Profils (Anteil >= 0,15), hoechstens n, als Namen.
+static func top_patterns(t: Dictionary, n: int = 2) -> Array:
+	var st = t.get("style", {})
+	if not (st is Dictionary):
+		return []
+	var keys: Array = (st as Dictionary).keys()
+	keys.sort()
+	keys.sort_custom(func(a, b): return float(st[a]) > float(st[b]) and not is_equal_approx(float(st[a]), float(st[b])))
+	var out: Array = []
+	for k in keys:
+		if float(st[k]) < 0.15 or out.size() >= n:
+			break
+		out.append(TranslationServer.translate(str(STYLE_LABELS.get(k, k))))
+	return out
+
+
+## Bereich als Text; Dezimaltrenner nach Sprache (de: Komma).
+static func _range_text(lo: float, hi: float, step: float, fmt: String) -> String:
+	var a := snappedf(lo, step)
+	var b := snappedf(hi, step)
+	var txt: String = (fmt % a) if is_equal_approx(a, b) else "%s-%s" % [fmt % a, fmt % b]
+	if TranslationServer.get_locale().begins_with("de"):
+		txt = txt.replace(".", ",")
+	return txt
+
+
+## Teile des Stilprofils, wichtigste zuerst: Muster, SV, BPM-Bereich,
+## Sterne-Bereich, Genre, Sprache, Laenge, Mapper. [] ohne Profil.
+static func profile_parts(t: Dictionary) -> Array:
+	if t.is_empty():
+		return []
+	var total := float(t.get("total", 0.0))
+	var out: Array = top_patterns(t, 2)
+	if float(t.get("sv", -1.0)) >= 0.5:
+		out.append("SV")
+	if float(t.get("bpm_lo", -1.0)) > 0.0:
+		out.append(_range_text(float(t.bpm_lo), float(t.bpm_hi), 5.0, "%d") + " BPM")
+	if float(t.get("stars_lo", -1.0)) > 0.0:
+		out.append("★ " + _range_text(float(t.stars_lo), float(t.stars_hi), 0.1, "%.1f"))
+	var genre := top_key(t.get("genres", {}), total, 0.3)
+	if genre != "":
+		out.append(TranslationServer.translate(genre.capitalize()))
+	var lang := top_key(t.get("languages", {}), total, 0.4)
+	if lang != "":
+		out.append(TranslationServer.translate(lang.capitalize()))
+	var ln := float(t.get("length", -1.0))
+	if ln > 0.0:
+		out.append(TranslationServer.translate("about %d:%02d long") % [int(ln) / 60, int(ln) % 60])
+	var mapper := top_key(t.get("mappers", {}), total, 0.25)
+	if mapper != "":
+		out.append(TranslationServer.translate("mapped by %s") % mapper)
+	return out
+
+
+## Sichtbares Stilprofil, kurz: "Your style: Jumpstream, 170-190 BPM, ★ 2.4-3.1".
+## Hoechstens max_parts Teile; "" ohne Profil.
+static func profile_text(t: Dictionary, max_parts: int = 4) -> String:
+	var parts := profile_parts(t)
+	if parts.is_empty():
+		return ""
+	return TranslationServer.translate("Your style: %s") % ", ".join(parts.slice(0, max_parts))
+
+
+static func _short(title: String) -> String:
+	return title if title.length() <= LIKE_MAX else title.substr(0, LIKE_MAX - 1).strip_edges() + "…"
+
+
+## Passung eines Kandidaten zum Stilprofil: {bonus 0..1, reason, fits}. Teile
+## mit Gewicht: Muster 0,35, Kuenstler 0,2, Genre/Sprache 0,15, BPM 0,15,
+## Laenge 0,15, Mapper 0,1, Tags 0,1, SV 0,1; fehlende Merkmale zaehlen nicht
+## mit. reason = "fits: 180 BPM, Streams, like <Map>" aus den Teilen, die
+## wirklich passen (fits), sonst "".
 static func style_match(t: Dictionary, cand: Dictionary) -> Dictionary:
 	if t.is_empty():
-		return {"bonus": 0.0, "reason": ""}
+		return {"bonus": 0.0, "reason": "", "fits": []}
 	var parts: Array = []  # [Wert, Gewicht, Art]
 	var total: float = float(t.total)
 	var stl = cand.get("style", {})
@@ -507,6 +687,20 @@ static func style_match(t: Dictionary, cand: Dictionary) -> Dictionary:
 		if gv != "" and not (t[g[1]] as Dictionary).is_empty():
 			var gs: float = float((t[g[1]] as Dictionary).get(gv, 0.0)) / total
 			parts.append([clampf(gs * 1.5, 0.0, 1.0), 0.075, g[0]])
+	var mp := str(cand.get("mapper", "")).strip_edges().to_lower()
+	var t_mappers: Dictionary = t.get("mappers", {})
+	if mp != "" and not t_mappers.is_empty():
+		parts.append([clampf(float(t_mappers.get(mp, 0.0)) / total * 4.0, 0.0, 1.0), 0.1, "mapper"])
+	var ctags = cand.get("tags", [])
+	var t_tags: Dictionary = t.get("tags", {})
+	if ctags is Array and not (ctags as Array).is_empty() and not t_tags.is_empty():
+		var hit := 0.0
+		for one in ctags:
+			hit = maxf(hit, float(t_tags.get(str(one), 0.0)) / total)
+		parts.append([clampf(hit * 1.5, 0.0, 1.0), 0.1, "tags"])
+	var t_sv := float(t.get("sv", -1.0))
+	if cand.has("sv") and t_sv >= 0.0:
+		parts.append([1.0 - absf(t_sv - (1.0 if bool(cand.sv) else 0.0)), 0.1, "sv"])
 	var bpm := float(cand.get("bpm", -1.0))
 	if bpm > 0.0 and float(t.bpm) > 0.0:
 		var z := (bpm - float(t.bpm)) / float(t.bpm_spread)
@@ -521,24 +715,37 @@ static func style_match(t: Dictionary, cand: Dictionary) -> Dictionary:
 		sw += float(p[1])
 		sv += float(p[0]) * float(p[1])
 	if sw < 0.3:  # zu wenig Merkmale fuer eine Aussage
-		return {"bonus": 0.0, "reason": ""}
+		return {"bonus": 0.0, "reason": "", "fits": []}
 	var bonus := sv / sw
-	var reason := ""
+	var fits: Array = []
 	if bonus >= STYLE_SHOW:
-		# Nur deutliche Gruende: Stil, Kuenstler, Genre/Sprache; "similar to maps
-		# you replay" nur bei sehr hoher Passung und echten Wiederholungen.
+		# Nur Teile, die deutlich passen; hoechstens zwei Merkmale + "like <Map>".
 		var val := {}
 		for p in parts:
 			val[str(p[2])] = float(p[0])
-		if dom != "" and float(val.get("style", 0.0)) >= 0.7:
-			reason = TranslationServer.translate("%s, like your favourites") % TranslationServer.translate(str(STYLE_LABELS.get(dom, "Patterns")))
-		elif float(val.get("artist", 0.0)) >= 0.75:
-			reason = TranslationServer.translate("an artist you replay")
-		elif float(val.get("genre", 0.0)) >= 0.75:
-			reason = TranslationServer.translate("%s, like your favourites") % str(cand.get("genre", ""))
-		elif bonus >= 0.8 and bool(t.get("repeat", false)):
-			reason = TranslationServer.translate("similar to maps you replay")
-	return {"bonus": bonus, "reason": reason}
+		if bpm > 0.0 and float(val.get("bpm", 0.0)) >= 0.75:
+			fits.append("%d BPM" % roundi(bpm))
+		if dom != "" and float(val.get("style", 0.0)) >= 0.6:
+			fits.append(TranslationServer.translate(str(STYLE_LABELS.get(dom, "Patterns"))))
+		if bool(cand.get("sv", false)) and t_sv >= 0.5:
+			fits.append("SV")
+		if float(val.get("artist", 0.0)) >= 0.75:
+			fits.append(str(cand.get("artist", "")))
+		elif float(val.get("mapper", 0.0)) >= 0.75:
+			fits.append(TranslationServer.translate("mapped by %s") % str(cand.get("mapper", "")))
+		elif float(val.get("genre", 0.0)) >= 0.6:
+			fits.append(TranslationServer.translate(str(cand.get("genre", "")).capitalize()))
+		fits = fits.slice(0, 2)
+		var ex = (t.get("examples", {}) as Dictionary).get(dom)
+		if dom != "" and float(val.get("style", 0.0)) >= 0.7 and ex is Array \
+				and str(ex[2]) != str(cand.get("set", "")):
+			fits.append(TranslationServer.translate("like %s") % _short(str(ex[1])))
+		elif fits.is_empty() and bonus >= 0.8 and bool(t.get("repeat", false)):
+			fits.append(TranslationServer.translate("similar to maps you replay"))
+	var reason := ""
+	if not fits.is_empty():
+		reason = TranslationServer.translate("fits: %s") % ", ".join(fits)
+	return {"bonus": bonus, "reason": reason, "fits": fits}
 
 
 # --- Vorschlaege ---
@@ -556,10 +763,13 @@ static func now_local() -> int:
 
 ## Vorschlaege fuer Modus und Stufe, sortiert (beste zuerst), hoechstens n.
 ## runs: Laeufe des Modus (z.B. runs_from_store()). now: Unix-Zeit (0 = jetzt).
-## taste: Vorlieben (taste(), {} = ohne Stil-Bonus). Rueckgabe: [{set, diff,
-## stars, expected_acc, expected_perf, reason, style_reason}].
+## taste: Vorlieben (taste(), {} = ohne Stil-Bonus). seen: "set|diff" -> wie
+## oft schon gezeigt, ohne gespielt zu werden (Neuheit: je Mal NOVELTY_W Sterne
+## Abstand, hoechstens NOVELTY_CAP Mal; Push: je Mal 8 % weniger Gewinn).
+## Rueckgabe: [{set, diff, stars, expected_acc, expected_perf, reason,
+## style_reason}]. Seiten: mit n = Seitengroesse * Seiten rufen, page_slice().
 static func suggest(mode: String, level: String, cands: Array, n: int = 5,
-		runs: Array = [], now: int = 0, tst: Dictionary = {}) -> Array:
+		runs: Array = [], now: int = 0, tst: Dictionary = {}, seen: Dictionary = {}) -> Array:
 	var m := normalize_mode(mode)
 	var lv := normalize_level(level)
 	if cands.is_empty() or n <= 0:
@@ -598,6 +808,7 @@ static func suggest(mode: String, level: String, cands: Array, n: int = 5,
 			continue
 		var sm := style_match(tst, cd)
 		var bonus: float = float(sm.bonus)
+		var stale := float(clampi(int(seen.get(k, 0)), 0, NOVELTY_CAP))
 		var acc := acc_at(sk, st)
 		var score := 0.0
 		var reason := ""
@@ -624,19 +835,19 @@ static func suggest(mode: String, level: String, cands: Array, n: int = 5,
 			if perf <= old or rank > TOP_N or gain < 0.5:
 				if st <= c + PUSH_STEP_HI + 0.0001:
 					item.reason = TranslationServer.translate("A step up: about %d %% expected") % roundi(acc * 100.0)
-					item["_score"] = -absf(st - (c + PUSH_STEP)) + STYLE_W * bonus
+					item["_score"] = -absf(st - (c + PUSH_STEP)) + STYLE_W * bonus - NOVELTY_W * stale
 					steps.append(item)
 				continue
-			score = gain * (1.0 + STYLE_W * bonus)
+			score = gain * (1.0 + STYLE_W * bonus) * (1.0 - 0.08 * stale)
 			if rank == 1 and m == "mania":
 				reason = TranslationServer.translate("new top pp: +%d %s") % [roundi(gain), u]
 			else:
 				reason = TranslationServer.translate("+%d %s, would be top %d") % [roundi(gain), u, rank]
 		elif lv == LEVEL_EASY:
-			score = -absf(st - (c + EASY_TARGET)) + STYLE_W * bonus
+			score = -absf(st - (c + EASY_TARGET)) + STYLE_W * bonus - NOVELTY_W * stale
 			reason = TranslationServer.translate("Easy: about %d %% expected") % roundi(acc * 100.0)
 		else:
-			score = -absf(st - (c + CHALLENGE_TARGET)) + STYLE_W * bonus
+			score = -absf(st - (c + CHALLENGE_TARGET)) + STYLE_W * bonus - NOVELTY_W * stale
 			reason = TranslationServer.translate("Challenge: about %d %% expected") % roundi(acc * 100.0)
 		item.reason = reason
 		item["_score"] = score
@@ -675,6 +886,168 @@ static func suggest(mode: String, level: String, cands: Array, n: int = 5,
 		s.erase("_score")
 		s.erase("_artist")
 	return out
+
+
+# --- Seiten ---
+
+## Anzahl Seiten fuer total Eintraege (mindestens 1, hoechstens PAGE_MAX).
+static func page_count(total: int, per: int) -> int:
+	if per <= 0 or total <= 0:
+		return 1
+	return clampi(int(ceil(float(total) / float(per))), 1, PAGE_MAX)
+
+
+## Seite page (0-basiert, laeuft nach der letzten wieder bei 0 los).
+static func page_slice(items: Array, page: int, per: int) -> Array:
+	if per <= 0 or items.is_empty():
+		return []
+	var p := posmod(page, page_count(items.size(), per))
+	return items.slice(p * per, mini(items.size(), (p + 1) * per))
+
+
+# --- Online-Vorschlaege (nicht heruntergeladene Maps) ---
+
+## Zielsterne der Stufe.
+static func level_target(sk: Dictionary, level: String) -> float:
+	var c: float = float(sk.comfort)
+	match normalize_level(level):
+		LEVEL_EASY: return maxf(c + EASY_TARGET, 0.5)
+		LEVEL_PUSH: return c + PUSH_STEP
+	return c + CHALLENGE_TARGET
+
+
+## Suchauftrag passend zum Profil: {mode, osu_mode (0 = osu!standard fuer Orbit,
+## sonst 3 = 4K), lo, hi, target (osu!-Sterne), shift, genre, bpm, key}.
+## star_shift = osu!-Sterne minus Modus-Sterne (Median der eigenen Maps; Mania 0),
+## weil der Mirror nur osu!-Sterne kennt. key = Cache-Schluessel (Sterne auf 0,5).
+static func online_query(mode: String, level: String, sk: Dictionary, t: Dictionary = {},
+		star_shift: float = 0.0) -> Dictionary:
+	var m := normalize_mode(mode)
+	var rng := star_range(sk, level)
+	var lo := maxf(0.0, rng.x + star_shift - ONLINE_STAR_PAD)
+	var hi := maxf(lo + 0.3, rng.y + star_shift + ONLINE_STAR_PAD)
+	var genre := top_key(t.get("genres", {}), float(t.get("total", 0.0)), 0.35) if not t.is_empty() else ""
+	var osu_mode := 0 if m == "orbit" else 3
+	return {"mode": m, "osu_mode": osu_mode, "lo": lo, "hi": hi,
+		"target": level_target(sk, level) + star_shift, "shift": star_shift,
+		"genre": genre, "bpm": float(t.get("bpm", -1.0)) if not t.is_empty() else -1.0,
+		"key": "%d|%.1f|%s" % [osu_mode, floorf((lo + hi) * 0.5 * 2.0) / 2.0, genre]}
+
+
+## Online-Kandidaten ordnen. results: Mirror-Eintraege {id, title, artist,
+## creator, stars, star_list, bpm, length_s, plays, genre? (Name), sv?,
+## cover_url, preview_url}, schon ohne eigene Maps. seen: "online:<id>" -> wie
+## oft gezeigt. Je Set die Diff am naechsten am Ziel im Bereich [lo, hi]; Sets
+## ohne solche Diff fallen weg. Eine Map je Kuenstler. Rueckgabe: [{id, title,
+## artist, creator, stars (Modus-Skala), osu_stars, bpm, length, reason,
+## cover_url, preview_url}], beste zuerst, hoechstens n.
+static func online_rank(q: Dictionary, t: Dictionary, results: Array, n: int = 6,
+		seen: Dictionary = {}) -> Array:
+	var lo := float(q.get("lo", 0.0))
+	var hi := float(q.get("hi", 99.0))
+	var target := float(q.get("target", (lo + hi) * 0.5))
+	var scored: Array = []
+	var ids := {}
+	for r in results:
+		if not (r is Dictionary) or ids.has(int(r.get("id", 0))):
+			continue
+		var star_list: Array = r.get("star_list", [])
+		if star_list.is_empty():
+			star_list = [float(r.get("stars", 0.0))]
+		var best := -1.0
+		for sv in star_list:
+			var f := float(sv)
+			if f >= lo - 0.0001 and f <= hi + 0.0001 and (best < 0.0 or absf(f - target) < absf(best - target)):
+				best = f
+		if best < 0.0:
+			continue
+		ids[int(r.get("id", 0))] = true
+		var cand := {"set": "online:%d" % int(r.get("id", 0)), "artist": str(r.get("artist", "")),
+			"mapper": str(r.get("creator", "")), "bpm": float(r.get("bpm", -1.0)),
+			"length": float(r.get("length_s", -1.0)), "genre": str(r.get("genre", ""))}
+		if r.has("sv") and int(q.get("osu_mode", 3)) == 3:
+			cand["sv"] = bool(r.sv)
+		var sm := style_match(t, cand)
+		var stale := float(clampi(int(seen.get(cand.set, 0)), 0, NOVELTY_CAP))
+		var popular := clampf(log(float(r.get("plays", 0)) + 1.0) / log(10.0), 0.0, 6.0) * 0.02
+		var reason := str(sm.reason)
+		if reason == "":
+			reason = TranslationServer.translate("in your star range")
+		scored.append({"id": int(r.get("id", 0)), "title": str(r.get("title", "")),
+			"artist": str(r.get("artist", "")), "creator": str(r.get("creator", "")),
+			"stars": maxf(0.1, best - float(q.get("shift", 0.0))), "osu_stars": best,
+			"bpm": float(r.get("bpm", -1.0)), "length": float(r.get("length_s", -1.0)),
+			"reason": reason, "cover_url": str(r.get("cover_url", "")),
+			"preview_url": str(r.get("preview_url", "")),
+			"_score": -absf(best - target) + STYLE_W * float(sm.bonus) + popular - NOVELTY_W * stale})
+	scored.sort_custom(func(a, b):
+		if not is_equal_approx(float(a._score), float(b._score)):
+			return float(a._score) > float(b._score)
+		return int(a.id) < int(b.id))
+	var out: Array = []
+	var arts := {}
+	for pass_i in 2:
+		for s in scored:
+			if out.size() >= n:
+				break
+			var art := str(s.artist).to_lower()
+			if out.has(s) or (pass_i == 0 and arts.has(art)):
+				continue
+			arts[art] = true
+			out.append(s)
+	for s in out:
+		s.erase("_score")
+	return out
+
+
+## Online-Antwort in den Cache legen: cache[key] = {t, pages, end, results}.
+## Frischer Eintrag: Seite anhaengen (ohne doppelte Sets); sonst ersetzen.
+## end = Mirror hat keine weitere Seite. Aelteste Suchen ueber ONLINE_KEEP fallen weg.
+static func online_cache_put(cache: Dictionary, key: String, results: Array, now: int, end: bool = false) -> void:
+	var ent = cache.get(key)
+	if ent is Dictionary and now - int(ent.get("t", 0)) < ONLINE_TTL:
+		var ids := {}
+		for r in ent.results:
+			ids[int(r.get("id", 0))] = true
+		for r in results:
+			if not ids.has(int(r.get("id", 0))):
+				ent.results.append(r)
+		ent["pages"] = int(ent.get("pages", 1)) + 1
+		ent["end"] = end
+	else:
+		cache[key] = {"t": now, "pages": 1, "end": end, "results": results.duplicate()}
+	while cache.size() > ONLINE_KEEP:
+		var oldest := ""
+		for k in cache:
+			if k != key and (oldest == "" or int(cache[k].get("t", 0)) < int(cache[oldest].get("t", 0))):
+				oldest = str(k)
+		if oldest == "":
+			break
+		cache.erase(oldest)
+
+
+## Gueltige Cache-Eintraege einer Suche ([] = nichts oder abgelaufen).
+static func online_cached(cache: Dictionary, key: String, now: int) -> Array:
+	var ent = cache.get(key)
+	if ent is Dictionary and now - int(ent.get("t", 0)) < ONLINE_TTL and ent.get("results") is Array:
+		return ent.results
+	return []
+
+
+## Welche Mirror-Seite jetzt zu holen ist (0-basiert), -1 = keine Anfrage.
+## Sparsam: frischer Cache reicht; eine zweite Seite nur, wenn weniger als want
+## Vorschlaege (have) uebrig sind; nach einem Fehler ONLINE_RETRY Pause.
+static func online_fetch_page(cache: Dictionary, key: String, now: int, have: int, want: int,
+		fail_at: int = 0) -> int:
+	if fail_at > 0 and now - fail_at < ONLINE_RETRY:
+		return -1
+	var ent = cache.get(key)
+	if not (ent is Dictionary) or now - int(ent.get("t", 0)) >= ONLINE_TTL:
+		return 0
+	var pages := int(ent.get("pages", 1))
+	if have < want and pages < ONLINE_PAGES and not bool(ent.get("end", false)):
+		return pages
+	return -1
 
 
 # --- Anbindung an ScoreStore ---

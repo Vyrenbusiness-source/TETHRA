@@ -16,6 +16,8 @@ signal preview_stop
 signal map_downloaded(set_id: int, osz_path: String, select: bool)
 ## Turnier-Modus: Karte waehlt die Map fuer den Pool (statt sie zu laden).
 signal map_chosen(data: Dictionary)
+## Stille Suche fuer "For you" fertig. ok = false: kein Netz / Mirror kaputt.
+signal quiet_done(tag: String, results: Array, ok: bool, raw_count: int)
 
 const TEXT := UiTheme.TEXT
 const DIM := UiTheme.DIM
@@ -1763,3 +1765,110 @@ func _shot(path: String) -> void:
 	await RenderingServer.frame_post_draw
 	get_viewport().get_texture().get_image().save_png(path)
 	print("SHOT gespeichert: " + path)
+
+
+# ---------------------------------------------------------------------------
+# Stille Suche und Vorhoeren fuer "For you" (song_select.gd)
+# ---------------------------------------------------------------------------
+# Eigene Anfrage, damit die Suche des Online-Tabs (Mirror.search) ungestoert
+# bleibt. Gleiche Kette wie BeatmapMirror: osu.direct (nach Beliebtheit
+# sortiert), dann catboy, dann osu.direct ohne Sortierung. Schlaegt alles fehl,
+# meldet quiet_done mit ok = false und sonst nichts: kein Fehlertext.
+
+var _quiet_req: HTTPRequest
+var _quiet := {}
+
+
+## Englischer osu!-Genre-Name (klein) zur genre_id; "" fuer ohne Angabe / Sonstiges.
+static func genre_name(genre_id: int) -> String:
+	if genre_id == 1 or genre_id == 6:
+		return ""
+	for k in BeatmapMirror.GENRE_OSU_NAMES:
+		if int(BeatmapMirror.GENRE_OSU_NAMES[k]) == genre_id:
+			return str(k)
+	return ""
+
+
+## Die Adressen der Kette, in der Reihenfolge der Versuche.
+static func quiet_urls(query: String, osu_mode: int, offset: int = 0) -> Array:
+	var st := BeatmapMirror.STATUS_RANKED
+	return [
+		BeatmapMirror.build_search_url(query, offset, BeatmapMirror.Sort.PLAYS, st, true, "", osu_mode),
+		BeatmapMirror.build_search_url(query, offset, BeatmapMirror.Sort.RELEVANCE, st, false, "", osu_mode),
+		BeatmapMirror.build_search_url(query, offset, BeatmapMirror.Sort.RELEVANCE, st, false,
+			BeatmapMirror.SORTED_SEARCH_URL, osu_mode),
+	]
+
+
+## Mirror-Antwort (JSON-Text) -> {ok, results, raw}. results wie
+## BeatmapMirror.parse_item, dazu genre (Name). Ohne Netz testbar.
+static func quiet_parse(text: String, osu_mode: int) -> Dictionary:
+	var data: Variant = JSON.parse_string(text) if text.strip_edges().begins_with("[") else null
+	if not (data is Array):
+		return {"ok": false, "results": [], "raw": 0}
+	var results: Array = []
+	for item in data:
+		if item is Dictionary:
+			var r := BeatmapMirror.parse_item(item, osu_mode)
+			if not r.is_empty():
+				r["genre"] = genre_name(int(r.get("genre_id", 1)))
+				results.append(r)
+	return {"ok": true, "results": results, "raw": (data as Array).size()}
+
+
+func quiet_busy() -> bool:
+	return not _quiet.is_empty()
+
+
+## Eine stille Suche starten. false: es laeuft schon eine.
+func quiet_search(tag: String, query: String, osu_mode: int, offset: int = 0) -> bool:
+	if quiet_busy():
+		return false
+	if _quiet_req == null:
+		_quiet_req = HTTPRequest.new()
+		_quiet_req.timeout = 12.0
+		add_child(_quiet_req)
+		_quiet_req.request_completed.connect(_on_quiet_completed)
+	_quiet = {"tag": tag, "urls": quiet_urls(query, osu_mode, offset), "i": 0, "mode": osu_mode}
+	_quiet_send()
+	return true
+
+
+func _quiet_send() -> void:
+	if _quiet.is_empty():
+		return
+	var urls: Array = _quiet.urls
+	while int(_quiet.i) < urls.size():
+		if _quiet_req.request(str(urls[int(_quiet.i)]), BeatmapMirror.headers()) == OK:
+			return
+		_quiet["i"] = int(_quiet.i) + 1
+	_quiet_finish({"ok": false, "results": [], "raw": 0})
+
+
+func _on_quiet_completed(result: int, code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
+	if _quiet.is_empty():
+		return
+	var parsed := {"ok": false, "results": [], "raw": 0}
+	if result == HTTPRequest.RESULT_SUCCESS and code == 200:
+		parsed = quiet_parse(body.get_string_from_utf8(), int(_quiet.mode))
+	if not bool(parsed.ok):
+		_quiet["i"] = int(_quiet.i) + 1
+		_quiet_send.call_deferred()  # naechster Mirror der Kette
+		return
+	_quiet_finish(parsed)
+
+
+func _quiet_finish(parsed: Dictionary) -> void:
+	var tag := str(_quiet.tag)
+	_quiet = {}
+	quiet_done.emit(tag, parsed.results, bool(parsed.ok), int(parsed.raw))
+
+
+## Vorhoeren ohne offenen Online-Tab (gleicher Weg wie die Karten dort).
+func preview_toggle(r: Dictionary) -> void:
+	_toggle_preview(r)
+
+
+## Set, dessen Vorschau gerade laeuft oder laedt (-1 = keine).
+func preview_id() -> int:
+	return _preview_set
