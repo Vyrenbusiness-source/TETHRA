@@ -66,7 +66,7 @@ var _hint: Label
 var _pause_menu: PauseMenu
 var _results: DirigentResults
 var _bg: ColorRect
-var _cover: TextureRect
+var _cover: Control
 ## Einsatz-Klaenge je Taste (gleiche Streams wie die Orbit-Spuren).
 var _snd: Array = [null, null]
 
@@ -248,36 +248,10 @@ func _cli_pick() -> void:
 ## Konzertsaal-Grund: Map-Bild weich geblurt und stark abgedunkelt (wie Orbit),
 ## Buehnenlicht und Orchester zeichnet die View darueber.
 func _build_cover() -> void:
-	var cover := _blurred(OszImporter.load_background_texture(GameSession.osz_path, _beatmap))
-	if cover == null or Settings.bg_dim <= 0.001:
-		return
-	_cover = TextureRect.new()
-	_cover.texture = cover
-	_cover.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
-	_cover.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	_cover.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-	_cover.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_cover.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_cover.modulate = Color(1, 1, 1, clampf(Settings.bg_dim * 0.28, 0.05, 0.1))
+	# Gemeinsamer Modus-Hintergrund (weich, abgedunkelt, Vignette, Korn); ohne Bild
+	# bleibt der Graphit-Grund.
+	_cover = MapBackdrop.create(OszImporter.load_background_texture(GameSession.osz_path, _beatmap))
 	add_child(_cover)
-
-
-## Weichgezeichnetes Bild (einmal beim Laden): klein rechnen, mehrstufig weich zurueck.
-static func _blurred(tex: Texture2D) -> Texture2D:
-	if tex == null:
-		return null
-	var img := tex.get_image()
-	if img == null or img.is_empty():
-		return tex
-	img = img.duplicate()
-	if img.is_compressed():
-		img.decompress()
-	var w := img.get_width()
-	var h := img.get_height()
-	img.resize(maxi(8, w / 64), maxi(6, h / 64), Image.INTERPOLATE_BILINEAR)
-	for f in [32, 16, 8, 4, 2]:
-		img.resize(maxi(16, w / f), maxi(12, h / f), Image.INTERPOLATE_CUBIC)
-	return ImageTexture.create_from_image(img)
 
 
 func _build_core() -> void:
@@ -456,7 +430,7 @@ func _place_hud() -> void:
 	_judge_disp.judge_gap = 0.0
 	_judge_disp.combo_gap = vs.y * 0.045 / k
 	# Wertung + Kombo zwischen Figur und Einsatz-Leiste.
-	_judge_disp.place(cy + (vs.y * 0.745 - cy) / k)
+	_judge_disp.place(cy + (vs.y * 0.757 - cy) / k)
 	_err_bar.position = Vector2((vs.x - _err_bar.size.x) * 0.5, vs.y - _err_bar.size.y - 8.0)
 	_hint.size = Vector2(vs.x, 24)
 	_hint.position = Vector2(0, vs.y * 0.075)

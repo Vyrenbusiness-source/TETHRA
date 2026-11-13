@@ -676,6 +676,273 @@ var _body_font: Font
 static var _tex_cache := {}
 
 
+const PREVIEW_H := 82.0
+
+
+## Mini-Vorschau eines Modus in der Kachel: das Spielfeld mit seinen echten Objekten,
+## gefuellte Formen mit Kontur (kein Linien-Piktogramm). Gezeichnet in
+## Entwurfs-Einheiten (Breite x PREVIEW_H), skaliert scharf mit u. Steht still;
+## bei Hover/Fokus laeuft die Szene ruhig in einer Schleife.
+class ModePreview extends Control:
+	const INK := UiTheme.TEXT
+	const AMBER := UiTheme.ACCENT
+	const DARK := Color(0.043, 0.041, 0.038)
+	var mode := "mania"
+	var u := 1.0
+	var col := Color.WHITE
+	var hover := 0.0
+	var want := 0.0
+	var ph := 0.3
+	var _bg: StyleBoxFlat
+
+	func _ready() -> void:
+		clip_contents = true
+		set_process(false)
+
+	func set_hover(on: bool) -> void:
+		want = 1.0 if on else 0.0
+		set_process(true)
+
+	func _process(delta: float) -> void:
+		hover = move_toward(hover, want, delta * 7.0)
+		if want > 0.0:
+			ph = fposmod(ph + delta * 0.42, 1.0)
+		elif hover <= 0.0:
+			set_process(false)
+		queue_redraw()
+
+	func _poly(pts: PackedVector2Array, fill: Color, line: Color, w: float) -> void:
+		draw_colored_polygon(pts, fill)
+		var c := pts.duplicate()
+		c.append(pts[0])
+		c.append(pts[1])
+		draw_polyline(c, line, w, true)
+
+	func _dot(p: Vector2, r: float, fill: Color, line: Color, w: float = 1.4) -> void:
+		draw_circle(p, r + 1.6, Color(DARK, fill.a), true, -1.0, true)
+		draw_circle(p, r, fill, true, -1.0, true)
+		draw_arc(p, r - 0.4, 0.0, TAU, 40, line, w, true)
+
+	func _ellipse(c: Vector2, rx: float, ry: float) -> PackedVector2Array:
+		var pts := PackedVector2Array()
+		for i in 40:
+			var a := TAU * float(i) / 40.0
+			pts.append(c + Vector2(cos(a) * rx, sin(a) * ry))
+		return pts
+
+	func _draw() -> void:
+		var s := size
+		if _bg == null:
+			_bg = StyleBoxFlat.new()
+			_bg.anti_aliasing = true
+		var k := roundi(3.0 * u)
+		_bg.corner_radius_top_left = k
+		_bg.corner_radius_top_right = k
+		_bg.bg_color = Color(0.058, 0.055, 0.052).lerp(Color(0.072, 0.068, 0.063), hover)
+		draw_style_box(_bg, Rect2(Vector2.ZERO, s))
+		var hair := maxf(roundf(u), 1.0)
+		draw_rect(Rect2(0.0, s.y - hair, s.x, hair), Color(INK, 0.10), true)
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2(u, u))
+		var w := s.x / u
+		var h := s.y / u
+		var dim := 0.80 + 0.20 * hover
+		match mode:
+			"orbit":
+				_orbit(w, h, dim)
+			"rally":
+				_rally(w, h, dim)
+			"dirigent":
+				_dirigent(w, h, dim)
+			"trace":
+				_trace(w, h, dim)
+			"rebound":
+				_rebound(w, h, dim)
+			_:
+				_mania(w, h, dim)
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+	# Mania: Bahn in Perspektive, vier Spuren, fallende Noten, Trefferlinie.
+	func _mania(w: float, h: float, a: float) -> void:
+		var cx := w * 0.5
+		var y0 := -2.0
+		var x_at := func(l: float, y: float) -> float:
+			return cx + (l - 2.0) * lerpf(13.0, 31.0, (y - y0) / (h - y0))
+		_poly(PackedVector2Array([Vector2(x_at.call(0.0, y0), y0), Vector2(x_at.call(4.0, y0), y0),
+			Vector2(x_at.call(4.0, h), h), Vector2(x_at.call(0.0, h), h)]),
+			Color(0.105, 0.100, 0.093, 1.0), Color(INK, 0.30 * a), 1.2)
+		for l in range(1, 4):
+			draw_line(Vector2(x_at.call(float(l), y0), y0), Vector2(x_at.call(float(l), h), h), Color(INK, 0.10), 1.0, true)
+		var ly := h - 15.0
+		var notes := [[0, 0.02], [2, 0.16], [1, 0.34], [3, 0.47], [0, 0.62], [2, 0.74], [1, 0.90]]
+		for n in notes:
+			var t := fposmod(float(n[1]) + ph, 1.0)
+			var y := y0 + t * t * (h - y0 + 8.0) * 0.98 + t * 4.0
+			var sc := lerpf(0.42, 1.0, clampf((y - y0) / (h - y0), 0.0, 1.0))
+			var nh := 7.0 * sc
+			var l := float(n[0])
+			var g := 2.2 * sc
+			var al := a * clampf(t * 9.0, 0.0, 1.0) * clampf((ly + 9.0 - y) / 7.0, 0.0, 1.0)
+			if al <= 0.01:
+				continue
+			var c := INK if (int(n[0]) == 0 or int(n[0]) == 3) else col
+			_poly(PackedVector2Array([Vector2(x_at.call(l, y - nh) + g, y - nh), Vector2(x_at.call(l + 1.0, y - nh) - g, y - nh),
+				Vector2(x_at.call(l + 1.0, y) - g, y), Vector2(x_at.call(l, y) + g, y)]),
+				Color(c.darkened(0.12), al), Color(c.lightened(0.3), al), 1.0)
+		draw_line(Vector2(x_at.call(0.0, ly), ly), Vector2(x_at.call(4.0, ly), ly), Color(DARK, 0.8), 5.0, true)
+		draw_line(Vector2(x_at.call(0.0, ly), ly), Vector2(x_at.call(4.0, ly), ly), Color(AMBER, a), 2.4, true)
+
+	# Orbit: Kern, Bahn, Ziel auf der Bahn mit Anflugring, Satellit mit Spur.
+	func _orbit(w: float, h: float, a: float) -> void:
+		var c := Vector2(w * 0.5, h * 0.5 + 1.0)
+		var r := 28.0
+		draw_arc(c, 39.0, 0.0, TAU, 72, Color(INK, 0.07), 1.0, true)
+		draw_arc(c, r, 0.0, TAU, 72, Color(DARK, 0.9), 4.5, true)
+		draw_arc(c, r, 0.0, TAU, 72, Color(INK, 0.34 * a), 1.6, true)
+		_dot(c, 6.5, Color(col.darkened(0.45), 1.0), Color(col, a), 1.5)
+		var ta := -0.62
+		var tp := c + Vector2(cos(ta), sin(ta)) * r
+		var sa := ta - (1.0 - ph) * TAU
+		var pts := PackedVector2Array()
+		var cols := PackedColorArray()
+		for i in 17:
+			var f := float(i) / 16.0
+			var ang := sa - 1.1 * (1.0 - f)
+			pts.append(c + Vector2(cos(ang), sin(ang)) * r)
+			cols.append(Color(AMBER, 0.85 * f * f * a))
+		draw_polyline_colors(pts, cols, 2.6, true)
+		draw_arc(tp, 9.0 + 9.0 * (1.0 - ph), 0.0, TAU, 40, Color(INK, (0.25 + 0.6 * ph) * a), 1.4, true)
+		_dot(tp, 8.5, Color(col.darkened(0.10), a), Color(col.lightened(0.4), a), 1.5)
+		_dot(c + Vector2(cos(sa), sin(sa)) * r, 4.6, Color(AMBER, 1.0), Color(AMBER.lightened(0.45), 1.0), 1.2)
+
+	# Rally: Tisch in Perspektive mit Netz, Ball im Bogen mit Schatten, Schlaeger.
+	func _rally(w: float, h: float, a: float) -> void:
+		var cx := w * 0.5
+		var yt := 20.0
+		var yb := h + 6.0
+		var hw := func(y: float) -> float:
+			return lerpf(40.0, 92.0, (y - yt) / (yb - yt))
+		_poly(PackedVector2Array([Vector2(cx - hw.call(yt), yt), Vector2(cx + hw.call(yt), yt),
+			Vector2(cx + hw.call(yb), yb), Vector2(cx - hw.call(yb), yb)]),
+			Color(col.darkened(0.62), 1.0), Color(INK, 0.75 * a), 1.5)
+		draw_line(Vector2(cx, yt), Vector2(cx, yb), Color(INK, 0.28 * a), 1.2, true)
+		var yn := 43.0
+		_poly(PackedVector2Array([Vector2(cx - hw.call(yn) - 3.0, yn - 8.0), Vector2(cx + hw.call(yn) + 3.0, yn - 8.0),
+			Vector2(cx + hw.call(yn) + 3.0, yn), Vector2(cx - hw.call(yn) - 3.0, yn)]),
+			Color(DARK, 0.72), Color(INK, 0.55 * a), 1.2)
+		var t := ph
+		var from := Vector2(cx - 16.0, 28.0)
+		var to := Vector2(cx + 34.0, 68.0)
+		var g := from.lerp(to, t)
+		var bp := g + Vector2(0.0, -30.0 * sin(PI * t))
+		var br := lerpf(3.2, 5.6, t)
+		draw_colored_polygon(_ellipse(g, br * 1.5, br * 0.55), Color(0, 0, 0, 0.42))
+		for i in 5:
+			var tt := t - 0.05 * float(i + 1)
+			if tt > 0.0:
+				var q := from.lerp(to, tt) + Vector2(0.0, -30.0 * sin(PI * tt))
+				draw_circle(q, 1.4, Color(INK, (0.42 - 0.08 * float(i)) * a), true, -1.0, true)
+		_dot(bp, br, Color(INK, 1.0), Color(1, 1, 1, 0.9), 1.0)
+		var pp := Vector2(cx + 62.0, 62.0)
+		draw_line(pp + Vector2(5.0, 8.0), pp + Vector2(14.0, 22.0), Color(DARK, 1.0), 8.0, true)
+		draw_line(pp + Vector2(5.0, 8.0), pp + Vector2(14.0, 22.0), Color(0.55, 0.42, 0.28, a), 5.0, true)
+		_dot(pp, 11.0, Color(AMBER.darkened(0.10), a), Color(AMBER.lightened(0.4), a), 1.5)
+
+	# Dirigent: Buehne, Taktfigur mit Schlagpunkten, Taktstock auf dem Weg zum Ziel.
+	func _dirigent(w: float, h: float, a: float) -> void:
+		var c := Vector2(w * 0.5, h * 0.5)
+		draw_circle(c, 37.0, Color(0.118, 0.112, 0.104, 1.0), true, -1.0, true)
+		draw_arc(c, 37.0, 0.0, TAU, 72, Color(INK, 0.22 * a), 1.3, true)
+		var p := [c + Vector2(0, 24), c + Vector2(-25, 6), c + Vector2(25, 6), c + Vector2(0, -24)]
+		var curve := func(i0: int, i1: int, t: float) -> Vector2:
+			var m: Vector2 = (p[i0] + p[i1]) * 0.5
+			var ctl: Vector2 = m + (c + Vector2(0, 14) - m) * 0.9
+			return (p[i0] as Vector2).lerp(ctl, t).lerp(ctl.lerp(p[i1], t), t)
+		for sgm in [[0, 1], [1, 2], [2, 3]]:
+			var pts := PackedVector2Array()
+			for i in 13:
+				pts.append(curve.call(sgm[0], sgm[1], float(i) / 12.0))
+			draw_polyline(pts, Color(INK, 0.22 * a), 1.3, true)
+		var tr_pts := PackedVector2Array()
+		var tr_cols := PackedColorArray()
+		for i in 13:
+			var f := float(i) / 12.0
+			tr_pts.append(curve.call(1, 2, ph * f))
+			tr_cols.append(Color(col.lightened(0.25), 0.9 * f * a))
+		if ph > 0.03:
+			draw_polyline_colors(tr_pts, tr_cols, 2.4, true)
+		_dot(p[0], 3.2, Color(INK, 0.35 * a), Color(INK, 0.0))
+		_dot(p[1], 3.2, Color(INK, 0.35 * a), Color(INK, 0.0))
+		_dot(p[3], 4.2, Color(0.25, 0.24, 0.22, 1.0), Color(INK, 0.6 * a), 1.2)
+		draw_arc(p[2], 10.0 + 9.0 * (1.0 - ph), 0.0, TAU, 40, Color(AMBER, (0.3 + 0.6 * ph) * a), 1.4, true)
+		_dot(p[2], 10.0, Color(0.235, 0.224, 0.208, 1.0), Color(INK, 0.95 * a), 1.8)
+		var hp: Vector2 = curve.call(1, 2, ph)
+		draw_line(hp + Vector2(9, 12), hp, Color(DARK, 0.8), 4.4, true)
+		draw_line(hp + Vector2(9, 12), hp, Color(INK, 0.95), 2.0, true)
+		draw_circle(hp + Vector2(9, 12), 2.4, AMBER, true, -1.0, true)
+		_dot(hp, 3.4, Color(1.0, 0.97, 0.9, 1.0), Color(1, 1, 1, 0.0))
+
+	# Trace: Faden mit Knicken, Knoten an den Ecken, Kopf laeuft den Faden entlang.
+	func _trace(w: float, h: float, a: float) -> void:
+		var x0 := (w - 196.0) * 0.5
+		var pts := PackedVector2Array([Vector2(x0, 60), Vector2(x0 + 42, 60), Vector2(x0 + 42, 32), Vector2(x0 + 92, 32),
+			Vector2(x0 + 92, 56), Vector2(x0 + 140, 56), Vector2(x0 + 140, 22), Vector2(x0 + 196, 22)])
+		var total := 0.0
+		for i in range(1, pts.size()):
+			total += pts[i].distance_to(pts[i - 1])
+		var go := total * (0.06 + 0.88 * ph)
+		draw_polyline(pts, Color(DARK, 0.9), 6.0, true)
+		draw_polyline(pts, Color(INK, 0.26 * a), 2.0, true)
+		var done := PackedVector2Array([pts[0]])
+		var head := pts[0]
+		var acc := 0.0
+		var passed := 0
+		for i in range(1, pts.size()):
+			var seg := pts[i].distance_to(pts[i - 1])
+			if acc + seg <= go:
+				done.append(pts[i])
+				head = pts[i]
+				passed = i
+				acc += seg
+			else:
+				head = pts[i - 1].lerp(pts[i], (go - acc) / seg)
+				done.append(head)
+				break
+		if done.size() > 1:
+			draw_polyline(done, Color(col, a), 3.2, true)
+		for i in range(1, pts.size() - 1):
+			var q := pts[i]
+			var d := 4.6
+			var on := i <= passed
+			_poly(PackedVector2Array([q + Vector2(0, -d), q + Vector2(d, 0), q + Vector2(0, d), q + Vector2(-d, 0)]),
+				Color(col.darkened(0.1), 1.0) if on else Color(0.16, 0.155, 0.145, 1.0),
+				Color(col.lightened(0.4), a) if on else Color(INK, 0.5 * a), 1.2)
+		_dot(head, 5.2, Color(AMBER, 1.0), Color(AMBER.lightened(0.45), 1.0), 1.3)
+
+	# Rebound: Trommel von schraeg oben, Ball im Bogen, Aufschlag-Ring auf dem Fell.
+	func _rebound(w: float, h: float, a: float) -> void:
+		var cx := w * 0.5
+		var top := Vector2(cx, 62.0)
+		var rx := 46.0
+		var ry := 10.0
+		_poly(PackedVector2Array([Vector2(cx - rx, top.y), Vector2(cx + rx, top.y), Vector2(cx + rx - 3.0, h + 4.0), Vector2(cx - rx + 3.0, h + 4.0)]),
+			Color(col.darkened(0.66), 1.0), Color(col.darkened(0.2), a), 1.2)
+		for i in 5:
+			var lx := cx - rx + 10.0 + float(i) * 18.0
+			draw_line(Vector2(lx, top.y + 8.0), Vector2(lx + 1.0, h), Color(col, 0.22 * a), 1.2, true)
+		_poly(_ellipse(top, rx, ry), Color(col.darkened(0.30), 1.0), Color(col.lightened(0.35), a), 1.6)
+		draw_polyline(_ellipse(top, rx - 7.0, ry - 2.6), Color(col.lightened(0.2), 0.35 * a), 1.0, true)
+		var arc := func(t: float) -> Vector2:
+			return Vector2(cx - 62.0 + 124.0 * t, top.y - 7.0 - 46.0 * absf(cos(PI * t)))
+		for i in 21:
+			var t := float(i) / 20.0
+			draw_circle(arc.call(t), 1.1, Color(INK, 0.24 * a), true, -1.0, true)
+		var near := clampf(1.0 - absf(ph - 0.5) / 0.16, 0.0, 1.0)
+		if ph >= 0.5 and near > 0.0:
+			var e := 1.0 - near
+			draw_polyline(_ellipse(top, 12.0 + 26.0 * e, 2.6 + 5.6 * e), Color(AMBER, near * a), 1.6, true)
+		_dot(arc.call(ph), 6.0, Color(INK, 1.0), Color(1, 1, 1, 0.9), 1.0)
+
+
 ## Logo-Buehne: Wortmarke als Textur, der Bernstein-Punkt der Spur-Marke atmet
 ## im Takt (kleiner Radius-Puls, kein Blitz).
 class LogoStage extends Control:
@@ -851,46 +1118,11 @@ func _process(delta: float) -> void:
 
 
 func _add_blur_layers(tex: Texture2D) -> void:
-	var rect := TextureRect.new()
-	rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-	rect.texture = UiTheme.blurred_texture(tex, 24)
-	rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	rect.resized.connect(func(): rect.pivot_offset = rect.size * 0.5)
-	# Entsaettigt: das Cover gibt Stimmung, die Farbe gehoert dem Bernstein.
-	var mat := ShaderMaterial.new()
-	var sh := Shader.new()
-	sh.code = "shader_type canvas_item;\nvoid fragment() {\n\tvec4 c = texture(TEXTURE, UV);\n\tfloat g = dot(c.rgb, vec3(0.299, 0.587, 0.114));\n\tCOLOR = vec4(mix(vec3(g), c.rgb, 0.45) * 0.55, c.a);\n}\n"
-	mat.shader = sh
-	rect.material = mat
-	add_child(rect)
-	_bg_rect = rect
-	var overlay := ColorRect.new()
-	overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	overlay.color = Color(UiTheme.BG.r * 0.6, UiTheme.BG.g * 0.6, UiTheme.BG.b * 0.6, 0.72)
-	overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(overlay)
-	_dim_overlay = overlay
-	# Weiche Vignette: Raender dunkler, Mitte frei.
-	var vg := Gradient.new()
-	vg.set_color(0, Color(0, 0, 0, 0.0))
-	vg.set_color(1, Color(0, 0, 0, 0.5))
-	vg.set_offset(0, 0.45)
-	var vt := GradientTexture2D.new()
-	vt.gradient = vg
-	vt.fill = GradientTexture2D.FILL_RADIAL
-	vt.fill_from = Vector2(0.5, 0.5)
-	vt.fill_to = Vector2(1.0, 1.0)
-	vt.width = 256
-	vt.height = 256
-	var vr := TextureRect.new()
-	vr.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	vr.texture = vt
-	vr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	vr.stretch_mode = TextureRect.STRETCH_SCALE
-	vr.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(vr)
+	# Cover als ruhige Farbstimmung: sehr weich (kein erkennbares Motiv), entsaettigt,
+	# abgedunkelt, mit Vignette und feinem Korn (MapBackdrop). Steht still.
+	var bg := MapBackdrop.create(tex, 0.30, 100)
+	bg.set_calm(1.6, 0.6, 0.72, 0.24, 100)
+	add_child(bg)
 
 
 # --- Masse -----------------------------------------------------------------
@@ -1364,7 +1596,7 @@ func _mode_tile(mode: String) -> Button:
 	var t := UiTheme.TEXT
 	var a := COL_ACCENT
 	var bw := maxi(roundi(_u), 1)
-	var normal := _flat(Color(s.r, s.g, s.b, 0.80), 4.0)
+	var normal := _flat(Color(s.r, s.g, s.b, 0.96), 4.0)
 	normal.set_border_width_all(bw)
 	normal.border_color = Color(t.r, t.g, t.b, 0.10)
 	var hover := _flat(Color(r.r, r.g, r.b, 0.92), 4.0)
@@ -1373,6 +1605,11 @@ func _mode_tile(mode: String) -> Button:
 	var pressed := _flat(Color(s.r, s.g, s.b, 0.95), 4.0)
 	pressed.set_border_width_all(bw)
 	pressed.border_color = a
+	for sb: StyleBoxFlat in [normal, hover, pressed]:
+		sb.shadow_color = Color(0, 0, 0, 0.34)
+		sb.shadow_size = roundi(12.0 * _u)
+		sb.shadow_offset = Vector2(0.0, _px(4.0))
+	hover.bg_color = Color(r.r, r.g, r.b, 0.98)
 	b.add_theme_stylebox_override("normal", normal)
 	b.add_theme_stylebox_override("hover", hover)
 	b.add_theme_stylebox_override("pressed", pressed)
@@ -1388,27 +1625,37 @@ func _fill_tile(b: Button, mode: String) -> void:
 	box.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	b.add_child(box)
-	var icon := TextureRect.new()
-	icon.texture = _mode_icon(mode, _px(36.0))
-	icon.modulate = ModeBadge.color(mode)
-	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	box.add_child(icon)
-	_place(icon, 20.0, 20.0, 36.0, 36.0)
-	var title := _label(ScoreStore.mode_label(mode), 22.0, UiTheme.TEXT, true)
+	# Mini-Vorschau des Spielfelds (gezeichnet, kein Icon), darunter Name + Unterzeile.
+	var pv := ModePreview.new()
+	pv.mode = mode
+	pv.u = _u
+	pv.col = ModeBadge.color(mode)
+	pv.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.add_child(pv)
+	var bw := 1.0 / _u * maxf(roundf(_u), 1.0)
+	_place(pv, bw, bw, TILE_W - 2.0 * bw, PREVIEW_H)
+	var upd := func(): pv.set_hover(b.is_hovered() or b.has_focus())
+	b.mouse_entered.connect(upd)
+	b.mouse_exited.connect(upd)
+	b.focus_entered.connect(upd)
+	b.focus_exited.connect(upd)
+	var title := _label(ScoreStore.mode_label(mode), 19.0, UiTheme.TEXT, true)
+	title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	box.add_child(title)
-	_place(title, 20.0, 76.0, TILE_W - 40.0, 28.0)
+	_place(title, 16.0, PREVIEW_H + 7.0, TILE_W - 32.0, 24.0)
 	var sub := _label(_mode_sub_text(mode), 13.0, UiTheme.DIM)
+	sub.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	sub.clip_text = true
 	sub.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	box.add_child(sub)
-	_place(sub, 20.0, 104.0, TILE_W - 40.0, 20.0)
+	_place(sub, 16.0, PREVIEW_H + 30.0, TILE_W - 32.0, 18.0)
 	_mode_subs[mode] = sub
 	if not ready:
 		box.modulate.a = 0.5
 	if ScoreStore.mode_tutorial(mode) != "":
 		var q := _tutorial_dot(mode)
 		b.add_child(q)
-		_place(q, TILE_W - 16.0 - 24.0, 16.0, 24.0, 24.0)
+		_place(q, TILE_W - 10.0 - 22.0, 10.0, 22.0, 22.0)
 
 
 ## Kleines "?" oben rechts in der Kachel: oeffnet das Tutorial des Modus.
