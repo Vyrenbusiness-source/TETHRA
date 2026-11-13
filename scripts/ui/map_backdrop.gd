@@ -13,8 +13,9 @@ extends ColorRect
 ## abgedunkelt und mit feinem Korn gerastert (kein Banding in den dunklen Verlaeufen).
 
 const MAX_W := 960  ## klein genug fuer billige Mips, gross genug fuer "scharf"
-## Anteil der vollen Weichheit: das Bild bleibt als Form lesbar statt als Fleck.
-const LOD_SCALE := 0.70
+## Faktor auf die Weichheit: bei der Vorgabe (80) bleibt vom Bild nur ein ruhiger
+## Farb- und Lichtverlauf, keine halb erkennbaren Formen und keine Randstreifen.
+const LOD_SCALE := 1.45
 
 const SHADER_CODE := """shader_type canvas_item;
 uniform sampler2D bg_tex : filter_linear_mipmap, repeat_disable;
@@ -22,8 +23,8 @@ uniform vec2 tex_size = vec2(1920.0, 1080.0);
 uniform float has_tex = 0.0;
 uniform float opacity : hint_range(0.0, 1.0) = 0.2;
 uniform float blur_lod : hint_range(0.0, 8.0) = 3.0;
-uniform float saturation : hint_range(0.0, 1.0) = 0.72;
-uniform float vignette : hint_range(0.0, 1.0) = 0.62;
+uniform float saturation : hint_range(0.0, 1.0) = 0.60;
+uniform float vignette : hint_range(0.0, 1.0) = 0.50;
 
 vec3 smooth_tap(vec2 uv, int lod) {
 	vec2 ts = vec2(textureSize(bg_tex, lod));
@@ -76,7 +77,7 @@ void fragment() {
 		img = img / (1.0 + 0.35 * l);
 	}
 	// Warmer Graphit-Grund, oben eine Spur heller (Raum statt Schwarz).
-	vec3 base = mix(vec3(0.050, 0.047, 0.044), vec3(0.026, 0.024, 0.023), smoothstep(0.0, 1.0, UV.y));
+	vec3 base = mix(vec3(0.062, 0.059, 0.056), vec3(0.036, 0.034, 0.032), smoothstep(0.0, 1.0, UV.y));
 	vec3 c = base + img * opacity * 1.25;
 	vec2 d = (UV - 0.5) * vec2(min(sa, 2.0) / 1.78, 1.0);
 	float v = smoothstep(0.28, 0.98, length(d) * 1.25);

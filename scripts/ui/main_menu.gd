@@ -679,14 +679,18 @@ static var _tex_cache := {}
 const PREVIEW_H := 82.0
 
 
-## Mini-Vorschau eines Modus in der Kachel: das Spielfeld mit seinen echten Objekten,
-## gefuellte Formen mit Kontur (kein Linien-Piktogramm). Gezeichnet in
-## Entwurfs-Einheiten (Breite x PREVIEW_H), skaliert scharf mit u. Steht still;
-## bei Hover/Fokus laeuft die Szene ruhig in einer Schleife.
+## Mini-Vorschau eines Modus in der Kachel: eine kleine Spielszene mit den echten
+## Objekten und Farben des Modus (gefuellte Formen mit Verlauf, Schatten und Kontur,
+## kein Linien-Piktogramm). Gezeichnet in Entwurfs-Einheiten (Breite x PREVIEW_H),
+## skaliert scharf mit u. Steht still; bei Hover/Fokus laeuft die Szene ruhig in
+## einer Schleife.
 class ModePreview extends Control:
 	const INK := UiTheme.TEXT
 	const AMBER := UiTheme.ACCENT
 	const DARK := Color(0.043, 0.041, 0.038)
+	const BLUE := Color(0.33, 0.53, 0.76)
+	const TEAL := Color(0.37, 0.72, 0.68)
+	const ORANGE := Color(0.90, 0.53, 0.26)
 	var mode := "mania"
 	var u := 1.0
 	var col := Color.WHITE
@@ -694,6 +698,7 @@ class ModePreview extends Control:
 	var want := 0.0
 	var ph := 0.3
 	var _bg: StyleBoxFlat
+	var _rr: StyleBoxFlat
 
 	func _ready() -> void:
 		clip_contents = true
@@ -730,6 +735,68 @@ class ModePreview extends Control:
 			pts.append(c + Vector2(cos(a) * rx, sin(a) * ry))
 		return pts
 
+	func _ring(c: Vector2, rx: float, ry: float, line: Color, w: float) -> void:
+		var pts := _ellipse(c, rx, ry)
+		pts.append(pts[0])
+		draw_polyline(pts, line, w, true)
+
+	## Viereck mit senkrechtem Verlauf (oben/unten).
+	func _quad(tl: Vector2, tr: Vector2, br: Vector2, bl: Vector2, top: Color, bot: Color) -> void:
+		draw_polygon(PackedVector2Array([tl, tr, br, bl]), PackedColorArray([top, top, bot, bot]))
+
+	func _shadow(p: Vector2, rx: float, ry: float, al: float) -> void:
+		draw_colored_polygon(_ellipse(p, rx * 1.4, ry * 1.4), Color(0, 0, 0, al * 0.45))
+		draw_colored_polygon(_ellipse(p, rx, ry), Color(0, 0, 0, al))
+
+	## Kugel mit Licht von oben links: Kontur, Schattenseite, Koerper, Licht, Glanzpunkt.
+	func _ball(p: Vector2, r: float, c: Color, al: float = 1.0) -> void:
+		draw_circle(p, r + 0.9, Color(DARK, 0.9 * al), true, -1.0, true)
+		draw_circle(p, r, Color(c.darkened(0.45), al), true, -1.0, true)
+		draw_circle(p + Vector2(-0.10, -0.12) * r, r * 0.84, Color(c.darkened(0.14), al), true, -1.0, true)
+		draw_circle(p + Vector2(-0.22, -0.26) * r, r * 0.55, Color(c.lightened(0.16), al), true, -1.0, true)
+		draw_circle(p + Vector2(-0.34, -0.38) * r, r * 0.21, Color(1, 1, 1, 0.82 * al), true, -1.0, true)
+
+	## Flache Scheibe mit Tiefe: Schatten, dunkle Fuellung, heller oben, Rand in Farbe.
+	func _disc(p: Vector2, r: float, c: Color, al: float, rim: float = 1.8) -> void:
+		draw_circle(p + Vector2(0.0, 1.8), r + 1.2, Color(0, 0, 0, 0.40 * al), true, -1.0, true)
+		draw_circle(p, r, Color(c.darkened(0.62), 1.0), true, -1.0, true)
+		draw_circle(p + Vector2(0.0, -r * 0.12), r * 0.84, Color(c.darkened(0.50), 1.0), true, -1.0, true)
+		draw_arc(p, r - rim * 0.5, 0.0, TAU, 48, Color(c, al), rim, true)
+
+	func _half(p: Vector2, r: float, a0: float, c: Color) -> void:
+		var pts := PackedVector2Array()
+		for i in 25:
+			var ang := a0 + PI * float(i) / 24.0
+			pts.append(p + Vector2(cos(ang), sin(ang)) * r)
+		draw_colored_polygon(pts, c)
+
+	func _capsule(p0: Vector2, p1: Vector2, r: float, fill: Color, line: Color) -> void:
+		draw_line(p0, p1, line, (r + 1.3) * 2.0, true)
+		draw_circle(p0, r + 1.3, line, true, -1.0, true)
+		draw_circle(p1, r + 1.3, line, true, -1.0, true)
+		draw_line(p0, p1, fill, r * 2.0, true)
+		draw_circle(p0, r, fill, true, -1.0, true)
+		draw_circle(p1, r, fill, true, -1.0, true)
+
+	func _rrect(r: Rect2, rad: float, fill: Color, line: Color, lw: int) -> void:
+		if _rr == null:
+			_rr = StyleBoxFlat.new()
+			_rr.anti_aliasing = true
+		_rr.bg_color = fill
+		_rr.border_color = line
+		_rr.set_border_width_all(lw)
+		_rr.set_corner_radius_all(roundi(rad))
+		draw_style_box(_rr, r)
+
+	## Ziffer scharf in Bildpunkten (nicht ueber die Skalierung der Zeichenflaeche).
+	func _num(p: Vector2, txt: String, px: float, c: Color) -> void:
+		var f := get_theme_default_font()
+		var fs := maxi(roundi(px * u), 6)
+		var bw := 40.0 * u
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		draw_string(f, Vector2(p.x * u - bw * 0.5, p.y * u + float(fs) * 0.36), txt, HORIZONTAL_ALIGNMENT_CENTER, bw, fs, c)
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2(u, u))
+
 	func _draw() -> void:
 		var s := size
 		if _bg == null:
@@ -738,14 +805,15 @@ class ModePreview extends Control:
 		var k := roundi(3.0 * u)
 		_bg.corner_radius_top_left = k
 		_bg.corner_radius_top_right = k
-		_bg.bg_color = Color(0.058, 0.055, 0.052).lerp(Color(0.072, 0.068, 0.063), hover)
+		var top := Color(0.086, 0.083, 0.079).lerp(Color(0.100, 0.096, 0.090), hover)
+		var bot := Color(0.047, 0.045, 0.043).lerp(Color(0.056, 0.053, 0.050), hover)
+		_bg.bg_color = top
 		draw_style_box(_bg, Rect2(Vector2.ZERO, s))
-		var hair := maxf(roundf(u), 1.0)
-		draw_rect(Rect2(0.0, s.y - hair, s.x, hair), Color(INK, 0.10), true)
+		_quad(Vector2(0.0, float(k)), Vector2(s.x, float(k)), Vector2(s.x, s.y), Vector2(0.0, s.y), top, bot)
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2(u, u))
 		var w := s.x / u
 		var h := s.y / u
-		var dim := 0.80 + 0.20 * hover
+		var dim := 0.86 + 0.14 * hover
 		match mode:
 			"orbit":
 				_orbit(w, h, dim)
@@ -760,99 +828,197 @@ class ModePreview extends Control:
 			_:
 				_mania(w, h, dim)
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		var hair := maxf(roundf(u), 1.0)
+		draw_rect(Rect2(0.0, s.y - hair, s.x, hair), Color(INK, 0.10), true)
 
-	# Mania: Bahn in Perspektive, vier Spuren, fallende Noten, Trefferlinie.
+	# Mania: Bahn in Perspektive, vier Spuren, fallende Noten, Tasten-Licht, Trefferlinie.
 	func _mania(w: float, h: float, a: float) -> void:
 		var cx := w * 0.5
 		var y0 := -2.0
-		var x_at := func(l: float, y: float) -> float:
-			return cx + (l - 2.0) * lerpf(13.0, 31.0, (y - y0) / (h - y0))
-		_poly(PackedVector2Array([Vector2(x_at.call(0.0, y0), y0), Vector2(x_at.call(4.0, y0), y0),
-			Vector2(x_at.call(4.0, h), h), Vector2(x_at.call(0.0, h), h)]),
-			Color(0.105, 0.100, 0.093, 1.0), Color(INK, 0.30 * a), 1.2)
-		for l in range(1, 4):
-			draw_line(Vector2(x_at.call(float(l), y0), y0), Vector2(x_at.call(float(l), h), h), Color(INK, 0.10), 1.0, true)
 		var ly := h - 15.0
-		var notes := [[0, 0.02], [2, 0.16], [1, 0.34], [3, 0.47], [0, 0.62], [2, 0.74], [1, 0.90]]
+		var x_at := func(l: float, y: float) -> float:
+			return cx + (l - 2.0) * lerpf(16.0, 37.0, (y - y0) / (h - y0))
+		_quad(Vector2(x_at.call(0.0, y0), y0), Vector2(x_at.call(4.0, y0), y0),
+			Vector2(x_at.call(4.0, h), h), Vector2(x_at.call(0.0, h), h),
+			Color(0.060, 0.058, 0.056, 1.0), Color(0.150, 0.143, 0.132, 1.0))
+		var lane_col := [INK, col, col, INK]
+		var notes := [[0, 0.02], [2, 0.14], [1, 0.27], [3, 0.40], [1, 0.52], [0, 0.64], [2, 0.77], [3, 0.90]]
+		var ys := []
+		var press := [0.0, 0.0, 0.0, 0.0]
 		for n in notes:
 			var t := fposmod(float(n[1]) + ph, 1.0)
 			var y := y0 + t * t * (h - y0 + 8.0) * 0.98 + t * 4.0
+			ys.append(y)
+			var l := int(n[0])
+			press[l] = maxf(press[l], clampf(1.0 - absf(y - ly - 3.0) / 11.0, 0.0, 1.0))
+		# Tasten-Licht: Saeule ueber der gedrueckten Spur.
+		for l in 4:
+			if press[l] > 0.01:
+				var c: Color = lane_col[l]
+				var yt := ly - 40.0
+				_quad(Vector2(x_at.call(float(l), yt), yt), Vector2(x_at.call(float(l) + 1.0, yt), yt),
+					Vector2(x_at.call(float(l) + 1.0, ly), ly), Vector2(x_at.call(float(l), ly), ly),
+					Color(c, 0.0), Color(c, 0.30 * press[l] * a))
+		for l in range(1, 4):
+			draw_line(Vector2(x_at.call(float(l), y0), y0), Vector2(x_at.call(float(l), h), h), Color(INK, 0.11), 1.0, true)
+		for l in [0.0, 4.0]:
+			draw_line(Vector2(x_at.call(l, y0), y0), Vector2(x_at.call(l, h), h), Color(INK, 0.50 * a), 1.4, true)
+		for i in notes.size():
+			var n: Array = notes[i]
+			var y: float = ys[i]
+			var t := fposmod(float(n[1]) + ph, 1.0)
 			var sc := lerpf(0.42, 1.0, clampf((y - y0) / (h - y0), 0.0, 1.0))
-			var nh := 7.0 * sc
+			var nh := 8.0 * sc
 			var l := float(n[0])
-			var g := 2.2 * sc
-			var al := a * clampf(t * 9.0, 0.0, 1.0) * clampf((ly + 9.0 - y) / 7.0, 0.0, 1.0)
+			var g := 2.4 * sc
+			var al := clampf(t * 9.0, 0.0, 1.0) * clampf((ly + 9.0 - y) / 7.0, 0.0, 1.0)
 			if al <= 0.01:
 				continue
-			var c := INK if (int(n[0]) == 0 or int(n[0]) == 3) else col
-			_poly(PackedVector2Array([Vector2(x_at.call(l, y - nh) + g, y - nh), Vector2(x_at.call(l + 1.0, y - nh) - g, y - nh),
-				Vector2(x_at.call(l + 1.0, y) - g, y), Vector2(x_at.call(l, y) + g, y)]),
-				Color(c.darkened(0.12), al), Color(c.lightened(0.3), al), 1.0)
+			var c: Color = lane_col[int(n[0])]
+			var tl := Vector2(x_at.call(l, y - nh) + g, y - nh)
+			var tr := Vector2(x_at.call(l + 1.0, y - nh) - g, y - nh)
+			var br := Vector2(x_at.call(l + 1.0, y) - g, y)
+			var bl := Vector2(x_at.call(l, y) + g, y)
+			draw_colored_polygon(PackedVector2Array([tl + Vector2(-0.8, 1.6), tr + Vector2(0.8, 1.6), br + Vector2(0.8, 2.2), bl + Vector2(-0.8, 2.2)]), Color(0, 0, 0, 0.45 * al))
+			_quad(tl, tr, br, bl, Color(c.lightened(0.10), al), Color(c.darkened(0.30), al))
+			draw_line(tl, tr, Color(c.lightened(0.55), al), 1.0, true)
+		# Tasten unter der Trefferlinie.
+		for l in 4:
+			var c: Color = lane_col[l]
+			var g := 1.6
+			var k0 := Color(0.105, 0.100, 0.094, 1.0).lerp(Color(c.darkened(0.35), 1.0), press[l] * 0.8)
+			_quad(Vector2(x_at.call(float(l), ly) + g, ly + 2.5), Vector2(x_at.call(float(l) + 1.0, ly) - g, ly + 2.5),
+				Vector2(x_at.call(float(l) + 1.0, h) - g, h), Vector2(x_at.call(float(l), h) + g, h),
+				k0, k0.darkened(0.35))
 		draw_line(Vector2(x_at.call(0.0, ly), ly), Vector2(x_at.call(4.0, ly), ly), Color(DARK, 0.8), 5.0, true)
 		draw_line(Vector2(x_at.call(0.0, ly), ly), Vector2(x_at.call(4.0, ly), ly), Color(AMBER, a), 2.4, true)
 
-	# Orbit: Kern, Bahn, Ziel auf der Bahn mit Anflugring, Satellit mit Spur.
+	# Orbit: Zielfeld mit Scheiben, Zieh-Bahnen, Quadrat mit Anflugring, geteilter
+	# Scheibe (zwei Tasten) und Zeiger.
 	func _orbit(w: float, h: float, a: float) -> void:
-		var c := Vector2(w * 0.5, h * 0.5 + 1.0)
-		var r := 28.0
-		draw_arc(c, 39.0, 0.0, TAU, 72, Color(INK, 0.07), 1.0, true)
-		draw_arc(c, r, 0.0, TAU, 72, Color(DARK, 0.9), 4.5, true)
-		draw_arc(c, r, 0.0, TAU, 72, Color(INK, 0.34 * a), 1.6, true)
-		_dot(c, 6.5, Color(col.darkened(0.45), 1.0), Color(col, a), 1.5)
-		var ta := -0.62
-		var tp := c + Vector2(cos(ta), sin(ta)) * r
-		var sa := ta - (1.0 - ph) * TAU
-		var pts := PackedVector2Array()
-		var cols := PackedColorArray()
-		for i in 17:
-			var f := float(i) / 16.0
-			var ang := sa - 1.1 * (1.0 - f)
-			pts.append(c + Vector2(cos(ang), sin(ang)) * r)
-			cols.append(Color(AMBER, 0.85 * f * f * a))
-		draw_polyline_colors(pts, cols, 2.6, true)
-		draw_arc(tp, 9.0 + 9.0 * (1.0 - ph), 0.0, TAU, 40, Color(INK, (0.25 + 0.6 * ph) * a), 1.4, true)
-		_dot(tp, 8.5, Color(col.darkened(0.10), a), Color(col.lightened(0.4), a), 1.5)
-		_dot(c + Vector2(cos(sa), sin(sa)) * r, 4.6, Color(AMBER, 1.0), Color(AMBER.lightened(0.45), 1.0), 1.2)
+		var cx := w * 0.5
+		for gx in 9:
+			for gy in 3:
+				var q := Vector2(cx - 112.0 + 28.0 * float(gx), 13.0 + 28.0 * float(gy))
+				draw_line(q - Vector2(2, 0), q + Vector2(2, 0), Color(INK, 0.09), 1.0)
+				draw_line(q - Vector2(0, 2), q + Vector2(0, 2), Color(INK, 0.09), 1.0)
+		# Blaue Zieh-Bahn mit Kopf, zweite Scheibe.
+		var b0 := Vector2(cx - 64.0, 27.0)
+		var b1 := Vector2(cx - 20.0, 19.0)
+		_capsule(b0, b1, 9.5, Color(BLUE.darkened(0.72), 1.0), Color(BLUE.darkened(0.38), a))
+		draw_arc(b1, 5.6, 0.0, TAU, 32, Color(BLUE.darkened(0.15), a), 1.6, true)
+		_disc(Vector2(cx - 80.0, 57.0), 12.5, BLUE, a)
+		_disc(b0, 13.5, BLUE, a)
+		# Bernstein-Quadrat mit Anflugring.
+		var sq := Vector2(cx - 36.0, 54.0)
+		draw_arc(sq, 17.5, 0.0, TAU, 48, Color(INK, 0.30 * a), 1.3, true)
+		draw_line(sq + Vector2(0, -20.5), sq + Vector2(0, -15.0), Color(INK, 0.65 * a), 1.8, true)
+		_rrect(Rect2(sq - Vector2(11, 11) + Vector2(0, 1.6), Vector2(22, 22)), 5.0, Color(0, 0, 0, 0.4), Color(0, 0, 0, 0.0), 0)
+		_rrect(Rect2(sq - Vector2(11, 11), Vector2(22, 22)), 5.0, Color(AMBER.darkened(0.52), 1.0), Color(AMBER.lightened(0.12), a), 2)
+		_rrect(Rect2(sq - Vector2(8, 8), Vector2(16, 9)), 3.0, Color(AMBER, 0.14), Color(0, 0, 0, 0.0), 0)
+		# Bernstein-Zieh-Bahn rechts mit Folgering.
+		var s0 := Vector2(cx + 50.0, 43.0)
+		var s1 := Vector2(cx + 88.0, 62.0)
+		_capsule(s0, s1, 9.5, Color(AMBER.darkened(0.68), 1.0), Color(AMBER.darkened(0.28), a))
+		draw_arc(s1, 5.6, 0.0, TAU, 32, Color(AMBER.darkened(0.10), a), 1.6, true)
+		draw_arc(s0, 23.0, 0.0, TAU, 64, Color(INK, 0.26 * a), 1.3, true)
+		draw_arc(s0, 23.0, -PI * 0.5, -PI * 0.5 + TAU * (0.12 + 0.5 * ph), 40, Color(INK, 0.92 * a), 2.2, true)
+		draw_circle(s0 + Vector2(0, 1.6), 11.4, Color(0, 0, 0, 0.4), true, -1.0, true)
+		draw_circle(s0, 10.6, Color(INK, 1.0), true, -1.0, true)
+		draw_circle(s0, 8.3, Color(AMBER.darkened(0.14), 1.0), true, -1.0, true)
+		draw_circle(s0 + Vector2(0, -1.4), 6.2, Color(AMBER.lightened(0.06), 1.0), true, -1.0, true)
+		draw_circle(s0, 2.3, Color(INK, 1.0), true, -1.0, true)
+		# Geteilte Scheibe (zwei Tasten zugleich) mit schrumpfendem Anflugring.
+		var sp := Vector2(cx + 4.0, 51.0)
+		draw_circle(sp + Vector2(0, 1.8), 15.6, Color(0, 0, 0, 0.42), true, -1.0, true)
+		_half(sp, 12.6, PI * 0.5, Color(BLUE.darkened(0.05), 1.0))
+		_half(sp, 12.6, -PI * 0.5, Color(AMBER.darkened(0.20), 1.0))
+		draw_arc(sp, 14.4, 0.0, TAU, 48, Color(INK, 1.0), 2.0, true)
+		draw_arc(sp, 14.4 + 11.0 * (1.0 - ph), 0.0, TAU, 48, Color(INK, (0.20 + 0.6 * ph) * a), 1.3, true)
+		# Zeiger auf dem Weg vom Quadrat zur Scheibe.
+		var e := ph * ph * (3.0 - 2.0 * ph)
+		var cur := (sq + Vector2(6, -4)).lerp(sp + Vector2(-13.5, 5.5), e)
+		_dot(cur, 3.8, Color(1, 1, 1, 1), Color(1, 1, 1, 0.0))
 
-	# Rally: Tisch in Perspektive mit Netz, Ball im Bogen mit Schatten, Schlaeger.
+	# Rally: Tisch in Perspektive mit Netz, drei Baelle im Flug mit Schatten, Schlaeger.
 	func _rally(w: float, h: float, a: float) -> void:
 		var cx := w * 0.5
-		var yt := 20.0
-		var yb := h + 6.0
+		var yt := 21.0
+		var yb := h + 8.0
 		var hw := func(y: float) -> float:
-			return lerpf(40.0, 92.0, (y - yt) / (yb - yt))
-		_poly(PackedVector2Array([Vector2(cx - hw.call(yt), yt), Vector2(cx + hw.call(yt), yt),
-			Vector2(cx + hw.call(yb), yb), Vector2(cx - hw.call(yb), yb)]),
-			Color(col.darkened(0.62), 1.0), Color(INK, 0.75 * a), 1.5)
-		draw_line(Vector2(cx, yt), Vector2(cx, yb), Color(INK, 0.28 * a), 1.2, true)
-		var yn := 43.0
-		_poly(PackedVector2Array([Vector2(cx - hw.call(yn) - 3.0, yn - 8.0), Vector2(cx + hw.call(yn) + 3.0, yn - 8.0),
-			Vector2(cx + hw.call(yn) + 3.0, yn), Vector2(cx - hw.call(yn) - 3.0, yn)]),
-			Color(DARK, 0.72), Color(INK, 0.55 * a), 1.2)
-		var t := ph
-		var from := Vector2(cx - 16.0, 28.0)
-		var to := Vector2(cx + 34.0, 68.0)
-		var g := from.lerp(to, t)
-		var bp := g + Vector2(0.0, -30.0 * sin(PI * t))
-		var br := lerpf(3.2, 5.6, t)
-		draw_colored_polygon(_ellipse(g, br * 1.5, br * 0.55), Color(0, 0, 0, 0.42))
-		for i in 5:
-			var tt := t - 0.05 * float(i + 1)
-			if tt > 0.0:
-				var q := from.lerp(to, tt) + Vector2(0.0, -30.0 * sin(PI * tt))
-				draw_circle(q, 1.4, Color(INK, (0.42 - 0.08 * float(i)) * a), true, -1.0, true)
-		_dot(bp, br, Color(INK, 1.0), Color(1, 1, 1, 0.9), 1.0)
-		var pp := Vector2(cx + 62.0, 62.0)
-		draw_line(pp + Vector2(5.0, 8.0), pp + Vector2(14.0, 22.0), Color(DARK, 1.0), 8.0, true)
-		draw_line(pp + Vector2(5.0, 8.0), pp + Vector2(14.0, 22.0), Color(0.55, 0.42, 0.28, a), 5.0, true)
-		_dot(pp, 11.0, Color(AMBER.darkened(0.10), a), Color(AMBER.lightened(0.4), a), 1.5)
+			return lerpf(47.0, 106.0, (y - yt) / (yb - yt))
+		var lx := func(l: float, y: float) -> float:
+			return cx + (l - 2.0) * hw.call(y) * 0.5
+		_quad(Vector2(lx.call(0.0, yt), yt), Vector2(lx.call(4.0, yt), yt), Vector2(lx.call(4.0, yb), yb), Vector2(lx.call(0.0, yb), yb),
+			Color(0.105, 0.140, 0.185, 1.0), Color(0.190, 0.240, 0.305, 1.0))
+		var tint := [BLUE, TEAL, Color(0.86, 0.74, 0.46), ORANGE]
+		for l in [1, 2]:
+			var c: Color = tint[l]
+			_quad(Vector2(lx.call(float(l), yt), yt), Vector2(lx.call(float(l) + 1.0, yt), yt),
+				Vector2(lx.call(float(l) + 1.0, yb), yb), Vector2(lx.call(float(l), yb), yb), Color(c, 0.02), Color(c, 0.13))
+		for l in [1.0, 3.0]:
+			draw_line(Vector2(lx.call(l, yt), yt), Vector2(lx.call(l, yb), yb), Color(INK, 0.13), 1.0, true)
+		draw_line(Vector2(cx, yt), Vector2(cx, yb), Color(INK, 0.40 * a), 1.2, true)
+		draw_polyline(PackedVector2Array([Vector2(lx.call(0.0, yb), yb), Vector2(lx.call(0.0, yt), yt), Vector2(lx.call(4.0, yt), yt), Vector2(lx.call(4.0, yb), yb)]),
+			Color(INK, 0.85 * a), 1.5, true)
+		# Zielringe an der vorderen Kante.
+		for l in 4:
+			var c: Color = tint[l]
+			_ring(Vector2(lx.call(float(l) + 0.5, 73.0), 73.0), 10.0, 4.0, Color(c, 0.50 * a), 1.1)
+		var yn := 46.0
+		var balls := [[1.5, TEAL, 0.0], [2.5, Color(0.94, 0.92, 0.88), 0.36], [3.5, ORANGE, 0.70]]
+		var draw_ball := func(b: Array, far: bool) -> void:
+			var t := fposmod(float(b[2]) + ph, 1.0)
+			var gy := lerpf(25.0, 75.0, t)
+			if (gy < yn) != far:
+				return
+			var gx: float = lx.call(float(b[0]), gy)
+			var hop := 24.0 * sin(PI * t / 0.6) if t < 0.6 else 12.0 * sin(PI * (t - 0.6) / 0.4)
+			var r := lerpf(3.0, 6.6, t)
+			var al := clampf(t * 8.0, 0.0, 1.0) * clampf((1.0 - t) * 8.0, 0.0, 1.0)
+			_shadow(Vector2(gx, gy), r * 1.15, r * 0.40, 0.36 * al)
+			_ball(Vector2(gx, gy - r - hop), r, b[1], al)
+		for b in balls:
+			draw_ball.call(b, true)
+		# Netz: Gewebe, helle Oberkante, Pfosten.
+		var nx0: float = lx.call(0.0, yn) - 4.0
+		var nx1: float = lx.call(4.0, yn) + 4.0
+		draw_rect(Rect2(nx0, yn - 10.0, nx1 - nx0, 10.0), Color(0.78, 0.84, 0.90, 0.13), true)
+		var x := nx0 + 4.0
+		while x < nx1:
+			draw_line(Vector2(x, yn - 10.0), Vector2(x, yn), Color(INK, 0.10), 1.0)
+			x += 4.0
+		draw_line(Vector2(nx0, yn - 5.0), Vector2(nx1, yn - 5.0), Color(INK, 0.10), 1.0)
+		draw_line(Vector2(nx0, yn - 10.0), Vector2(nx1, yn - 10.0), Color(INK, 0.92 * a), 1.8, true)
+		draw_line(Vector2(nx0, yn - 11.5), Vector2(nx0, yn + 1.5), Color(INK, 0.75 * a), 2.0, true)
+		draw_line(Vector2(nx1, yn - 11.5), Vector2(nx1, yn + 1.5), Color(INK, 0.75 * a), 2.0, true)
+		# Schlaeger hinter dem weissen Ball.
+		var pp := Vector2(lx.call(2.5, 70.0) - 3.0, 62.0)
+		draw_line(pp + Vector2(-2.0, 9.0), pp + Vector2(-5.0, 24.0), Color(DARK, 1.0), 7.5, true)
+		draw_line(pp + Vector2(-2.0, 9.0), pp + Vector2(-5.0, 24.0), Color(0.62, 0.46, 0.28, 1.0), 5.0, true)
+		draw_circle(pp + Vector2(0, 1.6), 12.2, Color(0, 0, 0, 0.4), true, -1.0, true)
+		draw_circle(pp, 11.6, Color(0.86, 0.80, 0.68, 1.0), true, -1.0, true)
+		draw_circle(pp, 9.8, Color(0.170, 0.150, 0.130, 1.0), true, -1.0, true)
+		draw_circle(pp + Vector2(0, -1.5), 7.6, Color(0.215, 0.190, 0.165, 1.0), true, -1.0, true)
+		for b in balls:
+			draw_ball.call(b, false)
 
-	# Dirigent: Buehne, Taktfigur mit Schlagpunkten, Taktstock auf dem Weg zum Ziel.
+	# Dirigent: runde Buehne mit Takt-Uhr, Schlagpunkte mit Ziffern, Taktstock auf dem
+	# Weg zum naechsten Schlag; darunter die Einsatz-Leiste (Kreis/Raute je Taste).
 	func _dirigent(w: float, h: float, a: float) -> void:
-		var c := Vector2(w * 0.5, h * 0.5)
-		draw_circle(c, 37.0, Color(0.118, 0.112, 0.104, 1.0), true, -1.0, true)
-		draw_arc(c, 37.0, 0.0, TAU, 72, Color(INK, 0.22 * a), 1.3, true)
-		var p := [c + Vector2(0, 24), c + Vector2(-25, 6), c + Vector2(25, 6), c + Vector2(0, -24)]
+		var cx := w * 0.5
+		var c := Vector2(cx, 30.0)
+		var rad := 43.0
+		draw_circle(c + Vector2(0, 2.0), rad + 2.0, Color(0, 0, 0, 0.36), true, -1.0, true)
+		draw_circle(c, rad, Color(0.100, 0.096, 0.090, 1.0), true, -1.0, true)
+		draw_circle(c + Vector2(0, -2.0), rad * 0.90, Color(0.128, 0.123, 0.115, 1.0), true, -1.0, true)
+		draw_arc(c, rad * 0.62, 0.0, TAU, 64, Color(INK, 0.06), 1.0, true)
+		draw_arc(c, rad, 0.0, TAU, 72, Color(INK, 0.30 * a), 1.2, true)
+		var a1 := -PI * 0.5 + TAU * (0.16 + 0.25 * ph)
+		draw_arc(c, rad + 3.6, -PI * 0.5, a1, 40, Color(AMBER, a), 1.8, true)
+		draw_line(c + Vector2(0, -rad - 6.2), c + Vector2(0, -rad - 1.0), Color(AMBER, a), 1.6, true)
+		draw_circle(c + Vector2(cos(a1), sin(a1)) * (rad + 3.6), 2.3, Color(AMBER, 1.0), true, -1.0, true)
+		var p := [c + Vector2(0, 23), c + Vector2(-28, 3), c + Vector2(28, 3), c + Vector2(0, -19)]
 		var curve := func(i0: int, i1: int, t: float) -> Vector2:
 			var m: Vector2 = (p[i0] + p[i1]) * 0.5
 			var ctl: Vector2 = m + (c + Vector2(0, 14) - m) * 0.9
@@ -861,86 +1027,163 @@ class ModePreview extends Control:
 			var pts := PackedVector2Array()
 			for i in 13:
 				pts.append(curve.call(sgm[0], sgm[1], float(i) / 12.0))
-			draw_polyline(pts, Color(INK, 0.22 * a), 1.3, true)
+			draw_polyline(pts, Color(INK, 0.24 * a), 1.2, true)
+		draw_circle(p[0], 3.0, Color(INK, 0.42 * a), true, -1.0, true)
+		# Schlag 2 gerade getroffen: Bernstein-Scheibe mit auslaufendem Ring.
+		draw_arc(p[1], 7.4 + 8.0 * ph, 0.0, TAU, 40, Color(AMBER, 0.75 * (1.0 - ph) * a), 1.3, true)
+		draw_circle(p[1], 7.0, Color(AMBER.darkened(0.48), 1.0), true, -1.0, true)
+		draw_arc(p[1], 6.5, 0.0, TAU, 40, Color(AMBER, a), 1.5, true)
+		# Schlag 4 wartet, Schlag 3 ist das Ziel (gross, Anflugring).
+		draw_circle(p[3], 6.8, Color(0.185, 0.178, 0.167, 1.0), true, -1.0, true)
+		draw_arc(p[3], 6.3, 0.0, TAU, 40, Color(INK, 0.50 * a), 1.2, true)
+		_num(p[3], "4", 8.5, Color(INK, 0.70 * a))
+		draw_arc(p[2], 10.6 + 9.0 * (1.0 - ph), 0.0, TAU, 40, Color(INK, (0.18 + 0.5 * ph) * a), 1.2, true)
+		draw_circle(p[2] + Vector2(0, 1.8), 11.2, Color(0, 0, 0, 0.4), true, -1.0, true)
+		draw_circle(p[2], 10.6, Color(0.215, 0.206, 0.193, 1.0), true, -1.0, true)
+		draw_arc(p[2], 9.9, 0.0, TAU, 48, Color(INK, a), 1.7, true)
+		_num(p[2], "3", 12.0, Color(INK, a))
+		# Taktstock.
+		var e := ph * ph * (3.0 - 2.0 * ph)
 		var tr_pts := PackedVector2Array()
 		var tr_cols := PackedColorArray()
 		for i in 13:
 			var f := float(i) / 12.0
-			tr_pts.append(curve.call(1, 2, ph * f))
-			tr_cols.append(Color(col.lightened(0.25), 0.9 * f * a))
-		if ph > 0.03:
-			draw_polyline_colors(tr_pts, tr_cols, 2.4, true)
-		_dot(p[0], 3.2, Color(INK, 0.35 * a), Color(INK, 0.0))
-		_dot(p[1], 3.2, Color(INK, 0.35 * a), Color(INK, 0.0))
-		_dot(p[3], 4.2, Color(0.25, 0.24, 0.22, 1.0), Color(INK, 0.6 * a), 1.2)
-		draw_arc(p[2], 10.0 + 9.0 * (1.0 - ph), 0.0, TAU, 40, Color(AMBER, (0.3 + 0.6 * ph) * a), 1.4, true)
-		_dot(p[2], 10.0, Color(0.235, 0.224, 0.208, 1.0), Color(INK, 0.95 * a), 1.8)
-		var hp: Vector2 = curve.call(1, 2, ph)
+			tr_pts.append(curve.call(1, 2, e * f))
+			tr_cols.append(Color(AMBER.lightened(0.2), 0.85 * f * a))
+		if e > 0.03:
+			draw_polyline_colors(tr_pts, tr_cols, 2.2, true)
+		var hp: Vector2 = curve.call(1, 2, e)
 		draw_line(hp + Vector2(9, 12), hp, Color(DARK, 0.8), 4.4, true)
 		draw_line(hp + Vector2(9, 12), hp, Color(INK, 0.95), 2.0, true)
-		draw_circle(hp + Vector2(9, 12), 2.4, AMBER, true, -1.0, true)
-		_dot(hp, 3.4, Color(1.0, 0.97, 0.9, 1.0), Color(1, 1, 1, 0.0))
-
-	# Trace: Faden mit Knicken, Knoten an den Ecken, Kopf laeuft den Faden entlang.
-	func _trace(w: float, h: float, a: float) -> void:
-		var x0 := (w - 196.0) * 0.5
-		var pts := PackedVector2Array([Vector2(x0, 60), Vector2(x0 + 42, 60), Vector2(x0 + 42, 32), Vector2(x0 + 92, 32),
-			Vector2(x0 + 92, 56), Vector2(x0 + 140, 56), Vector2(x0 + 140, 22), Vector2(x0 + 196, 22)])
-		var total := 0.0
-		for i in range(1, pts.size()):
-			total += pts[i].distance_to(pts[i - 1])
-		var go := total * (0.06 + 0.88 * ph)
-		draw_polyline(pts, Color(DARK, 0.9), 6.0, true)
-		draw_polyline(pts, Color(INK, 0.26 * a), 2.0, true)
-		var done := PackedVector2Array([pts[0]])
-		var head := pts[0]
-		var acc := 0.0
-		var passed := 0
-		for i in range(1, pts.size()):
-			var seg := pts[i].distance_to(pts[i - 1])
-			if acc + seg <= go:
-				done.append(pts[i])
-				head = pts[i]
-				passed = i
-				acc += seg
+		draw_circle(hp + Vector2(9, 12), 2.5, AMBER, true, -1.0, true)
+		_dot(hp, 3.6, Color(1.0, 0.97, 0.9, 1.0), Color(1, 1, 1, 0.0))
+		# Einsatz-Leiste.
+		var ly := 72.5
+		var x0 := cx - 94.0
+		var x1 := cx + 94.0
+		_rrect(Rect2(x0, ly - 7.5 + 1.5, x1 - x0, 15.0), 5.0, Color(0, 0, 0, 0.35), Color(0, 0, 0, 0.0), 0)
+		_rrect(Rect2(x0, ly - 7.5, x1 - x0, 15.0), 5.0, Color(0.088, 0.085, 0.080, 1.0), Color(INK, 0.16), 1)
+		var jx := x0 + 17.0
+		for i in 14:
+			var x := jx + (float(i) + 1.0 - 2.0 * ph) * 15.0
+			if x < jx - 0.5 or x > x1 - 7.0:
+				continue
+			var al := clampf((x1 - 7.0 - x) / 12.0, 0.0, 1.0)
+			var q := Vector2(x, ly)
+			if i % 2 == 0:
+				draw_circle(q, 5.0, Color(DARK, al), true, -1.0, true)
+				draw_circle(q, 4.2, Color(AMBER.darkened(0.22), al), true, -1.0, true)
+				draw_circle(q + Vector2(0, -0.8), 3.0, Color(AMBER.lightened(0.08), al), true, -1.0, true)
 			else:
-				head = pts[i - 1].lerp(pts[i], (go - acc) / seg)
-				done.append(head)
-				break
-		if done.size() > 1:
-			draw_polyline(done, Color(col, a), 3.2, true)
-		for i in range(1, pts.size() - 1):
-			var q := pts[i]
-			var d := 4.6
-			var on := i <= passed
-			_poly(PackedVector2Array([q + Vector2(0, -d), q + Vector2(d, 0), q + Vector2(0, d), q + Vector2(-d, 0)]),
-				Color(col.darkened(0.1), 1.0) if on else Color(0.16, 0.155, 0.145, 1.0),
-				Color(col.lightened(0.4), a) if on else Color(INK, 0.5 * a), 1.2)
-		_dot(head, 5.2, Color(AMBER, 1.0), Color(AMBER.lightened(0.45), 1.0), 1.3)
+				var d := 4.8
+				_poly(PackedVector2Array([q + Vector2(0, -d), q + Vector2(d, 0), q + Vector2(0, d), q + Vector2(-d, 0)]),
+					Color(BLUE.lightened(0.05), al), Color(BLUE.lightened(0.45), al), 1.0)
+		var kk := fposmod(ph * 2.0, 1.0)
+		draw_arc(Vector2(jx, ly), 6.2 + 3.2 * kk, 0.0, TAU, 40, Color(AMBER, 0.8 * (1.0 - kk) * a), 1.2, true)
+		draw_arc(Vector2(jx, ly), 5.8, 0.0, TAU, 40, Color(INK, 0.95 * a), 1.5, true)
 
-	# Rebound: Trommel von schraeg oben, Ball im Bogen, Aufschlag-Ring auf dem Fell.
+	# Trace: farbiges Band je Richtung, Richtungspfeile ueber den Abschnitten, Kopf
+	# mit Bernstein-Spur.
+	func _trace(w: float, h: float, a: float) -> void:
+		var cx := w * 0.5
+		var seg_col := [Color(0.96, 0.76, 0.36), Color(0.36, 0.80, 0.95), Color(0.56, 0.93, 0.70), Color(0.95, 0.44, 0.80)]
+		var seg_dir := [Vector2.RIGHT, Vector2.LEFT, Vector2.UP, Vector2.DOWN]
+		var n := 72
+		var pts := PackedVector2Array()
+		for i in n + 1:
+			var f := float(i) / float(n)
+			pts.append(Vector2(cx - 98.0 + 196.0 * f, 53.0 + 14.0 * sin(f * 7.2 + 0.4) + 4.0 * sin(f * 14.0)))
+		var g := (0.06 + 0.86 * ph) * float(n)
+		var hi := clampi(int(g), 1, n - 2)
+		var head := pts[hi].lerp(pts[hi + 1], clampf(g - float(hi), 0.0, 1.0))
+		var parts := []
+		for s4 in 4:
+			var i0 := maxi(s4 * n / 4, hi + 1)
+			var i1 := (s4 + 1) * n / 4
+			if i1 - i0 < 1:
+				parts.append(PackedVector2Array())
+				continue
+			var part := pts.slice(i0, i1 + 1)
+			if i0 == hi + 1:
+				part.insert(0, head)
+			parts.append(part)
+		for part: PackedVector2Array in parts:
+			if part.size() > 1:
+				draw_polyline(part, Color(DARK, 0.95), 9.4, true)
+		for s4 in 4:
+			var part: PackedVector2Array = parts[s4]
+			if part.size() < 2:
+				continue
+			var c: Color = seg_col[s4]
+			draw_polyline(part, Color(c.darkened(0.30), a), 6.4, true)
+			draw_polyline(part, Color(c, a), 4.0, true)
+			draw_polyline(part, Color(c.lightened(0.45), 0.55 * a), 1.2, true)
+		# Abschnittsgrenzen: Querstrich, darueber der Richtungspfeil.
+		for s4 in range(1, 4):
+			var i := s4 * n / 4
+			if i <= hi:
+				continue
+			var c: Color = seg_col[s4]
+			var q := pts[i]
+			var tan := (pts[i + 1] - pts[i - 1]).normalized()
+			var nrm := Vector2(-tan.y, tan.x)
+			draw_line(q - nrm * 7.5, q + nrm * 7.5, Color(DARK, 0.9), 4.0, true)
+			draw_line(q - nrm * 7.0, q + nrm * 7.0, Color(c.lightened(0.35), a), 1.8, true)
+			var ap := q + Vector2(0.0, -19.0 if q.y > 34.0 else 19.0)
+			var d: Vector2 = seg_dir[s4]
+			var sd := Vector2(-d.y, d.x)
+			var arrow := PackedVector2Array([ap + d * 7.5, ap - d * 5.5 + sd * 6.6, ap - d * 2.0, ap - d * 5.5 - sd * 6.6])
+			var out := PackedVector2Array()
+			for v in arrow:
+				out.append(ap + (v - ap) * 1.28)
+			draw_colored_polygon(out, Color(DARK, 0.95))
+			_poly(arrow, Color(c.darkened(0.05), a), Color(c.lightened(0.45), a), 1.0)
+		# Gespielter Weg und Kopf.
+		var done := pts.slice(0, hi + 1)
+		done.append(head)
+		draw_polyline(done, Color(DARK, 0.9), 4.6, true)
+		draw_polyline(done, Color(AMBER, 0.9 * a), 2.2, true)
+		draw_circle(head, 9.6, Color(INK, 0.12), true, -1.0, true)
+		draw_arc(head, 9.6, 0.0, TAU, 40, Color(INK, 0.38 * a), 1.0, true)
+		_dot(head, 4.4, Color(1, 1, 1, 1), Color(1, 1, 1, 0.0))
+
+	# Rebound: vier Trommeln mit Chromrand auf dem Pult, Kugeln springen im Takt,
+	# Schatten und Aufschlag-Ring auf dem Fell.
 	func _rebound(w: float, h: float, a: float) -> void:
 		var cx := w * 0.5
-		var top := Vector2(cx, 62.0)
-		var rx := 46.0
-		var ry := 10.0
-		_poly(PackedVector2Array([Vector2(cx - rx, top.y), Vector2(cx + rx, top.y), Vector2(cx + rx - 3.0, h + 4.0), Vector2(cx - rx + 3.0, h + 4.0)]),
-			Color(col.darkened(0.66), 1.0), Color(col.darkened(0.2), a), 1.2)
-		for i in 5:
-			var lx := cx - rx + 10.0 + float(i) * 18.0
-			draw_line(Vector2(lx, top.y + 8.0), Vector2(lx + 1.0, h), Color(col, 0.22 * a), 1.2, true)
-		_poly(_ellipse(top, rx, ry), Color(col.darkened(0.30), 1.0), Color(col.lightened(0.35), a), 1.6)
-		draw_polyline(_ellipse(top, rx - 7.0, ry - 2.6), Color(col.lightened(0.2), 0.35 * a), 1.0, true)
-		var arc := func(t: float) -> Vector2:
-			return Vector2(cx - 62.0 + 124.0 * t, top.y - 7.0 - 46.0 * absf(cos(PI * t)))
-		for i in 21:
-			var t := float(i) / 20.0
-			draw_circle(arc.call(t), 1.1, Color(INK, 0.24 * a), true, -1.0, true)
-		var near := clampf(1.0 - absf(ph - 0.5) / 0.16, 0.0, 1.0)
-		if ph >= 0.5 and near > 0.0:
-			var e := 1.0 - near
-			draw_polyline(_ellipse(top, 12.0 + 26.0 * e, 2.6 + 5.6 * e), Color(AMBER, near * a), 1.6, true)
-		_dot(arc.call(ph), 6.0, Color(INK, 1.0), Color(1, 1, 1, 0.9), 1.0)
+		for i in 4:
+			var px := cx + (float(i) - 1.5) * 50.0
+			draw_rect(Rect2(px - 20.0, 5.0, 40.0, 44.0), Color(INK, 0.022), true)
+			draw_rect(Rect2(px - 20.0, 5.0, 40.0, 44.0), Color(INK, 0.055), false, 1.0)
+		_quad(Vector2(cx - 106.0, 46.0), Vector2(cx + 106.0, 46.0), Vector2(cx + 112.0, h + 2.0), Vector2(cx - 112.0, h + 2.0),
+			Color(0.140, 0.135, 0.127, 1.0), Color(0.066, 0.063, 0.060, 1.0))
+		draw_line(Vector2(cx - 106.0, 46.0), Vector2(cx + 106.0, 46.0), Color(INK, 0.24), 1.2, true)
+		var ball_col := [Color(0.27, 0.53, 0.95), Color(0.74, 0.85, 0.97), Color(0.74, 0.85, 0.97), Color(0.27, 0.53, 0.95)]
+		var offs := [0.0, 0.55, 0.25, 0.80]
+		var high := [30.0, 24.0, 33.0, 20.0]
+		var chrome := Color(0.80, 0.82, 0.85, 1.0)
+		for i in 4:
+			var p := Vector2(cx + (float(i) - 1.5) * 50.0, 58.0)
+			var c: Color = ball_col[i]
+			var t := fposmod(ph * 2.0 + float(offs[i]), 1.0)
+			var up := sin(PI * t)
+			_shadow(p + Vector2(0, 9.0), 22.0, 5.0, 0.30)
+			draw_colored_polygon(_ellipse(p + Vector2(0, 6.5), 21.0, 6.0), Color(0.050, 0.050, 0.053, 1.0))
+			draw_rect(Rect2(p.x - 21.0, p.y, 42.0, 6.5), Color(0.050, 0.050, 0.053, 1.0), true)
+			for k in 5:
+				var bx := p.x - 16.0 + 8.0 * float(k)
+				var by := p.y + 5.6 - 0.9 * absf(float(k) - 2.0)
+				draw_line(Vector2(bx, by), Vector2(bx, by + 4.0), Color(chrome, 0.55), 1.2)
+			_ring(p + Vector2(0, 5.0), 21.0, 6.0, Color(c, 0.40 * a), 1.0)
+			draw_colored_polygon(_ellipse(p, 21.0, 6.0), chrome.darkened(0.25))
+			draw_colored_polygon(_ellipse(p + Vector2(0, -0.6), 20.6, 5.6), chrome)
+			draw_colored_polygon(_ellipse(p, 19.0, 4.8), Color(0.120, 0.120, 0.126, 1.0))
+			_ring(p, 13.5, 3.3, Color(c, 0.32 * a), 1.0)
+			if t < 0.4:
+				var e := t / 0.4
+				_ring(p, 5.0 + 12.0 * e, 1.3 + 3.0 * e, Color(c.lightened(0.3), (1.0 - e) * a), 1.4)
+			_shadow(p, 7.5 * (1.0 - 0.45 * up), 2.0 * (1.0 - 0.45 * up), 0.55 * (1.0 - 0.55 * up))
+			_ball(p + Vector2(0.0, -8.0 - float(high[i]) * up), 8.4, c)
 
 
 ## Logo-Buehne: Wortmarke als Textur, der Bernstein-Punkt der Spur-Marke atmet
