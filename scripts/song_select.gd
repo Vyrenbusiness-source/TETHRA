@@ -163,6 +163,7 @@ var _collection_mode := false
 var _active_collection := ""
 var _chips_row: HFlowContainer
 var _coll_undo := ""  # zuletzt geloeschte Sammlung (Rueckgaengig-Chip)
+var _coll_unplayable: Array = []  # Maps der Sammlung ohne Diff fuer den Modus (markierte Karten)
 # Lokale Filter: Sterne-Bereich + Sortierung (clean als Chip-Reihe).
 var _star_filter := 0
 ## Sortierung (SORT_*) und Bestwert-Filter je Spielmodus getrennt:
@@ -1361,8 +1362,8 @@ func _style_tabs() -> void:
 func _set_collection_mode(on: bool) -> void:
 	_collection_mode = on
 	_coll_undo = ""
-	if on and not CollectionStore.exists(_active_collection):
-		var names := CollectionStore.list_names()
+	if on and not CollectionStore.list_for(_play_mode).has(_active_collection):
+		var names := CollectionStore.list_for(_play_mode)
 		_active_collection = names[0] if not names.is_empty() else ""
 	_chips_row.visible = on
 	_apply_career_layout()
@@ -1396,6 +1397,22 @@ const COLL_EN := {
 	"Schließen": "Close",
 	"Alle Maps zeigen": "Show all maps",
 	"  ·  %d in anderem Modus": "  ·  %d in another mode",
+	"alle Modi": "all modes",
+	"Alle Modi": "All modes",
+	"Gilt für": "Used in",
+	"Nur %s": "%s only",
+	"Bearbeiten": "Edit",
+	"Sammlung \"%s\" bearbeiten": "Edit collection \"%s\"",
+	"Name oder Modus von \"%s\" ändern": "Change name or mode of \"%s\"",
+	"Nicht in %s spielbar": "Not playable in %s",
+	"Nur osu!standard-Diffs. Spielbar in %s.": "osu!standard difficulties only. Playable in %s.",
+	"Diese Map hat keine Diff für %s. Sie bleibt in der Sammlung.":
+		"This map has no difficulty for %s. It stays in the collection.",
+	"Noch keine Sammlung für %s.": "No collection for %s yet.",
+	"Noch keine Sammlung für %s. Lege oben mit \"+ Neu\" eine an oder nutze \"+ Sammlung\" im Info-Panel.":
+		"No collection for %s yet. Create one with \"+ New\" above, or use \"+ Collection\" in the info panel.",
+	"\"%s\" in Sammlungen": "\"%s\" in collections",
+	"Neue Sammlung…": "New collection…",
 	"Noch keine Sammlung. Lege oben mit \"+ Neu\" eine an oder nutze \"+ Sammlung\" im Info-Panel.":
 		"No collections yet. Create one with \"+ New\" above, or use \"+ Collection\" in the info panel.",
 	"\"%s\" ist noch leer. Unter \"Heruntergeladen\" eine Map wählen, dann \"+ Sammlung\" im Info-Panel.":
@@ -1429,6 +1446,7 @@ static func collection_view(mapsets: Array, files: Array, vm: String, q: String)
 		want[str(f)] = true
 	var found := {}
 	var shown: Array = []
+	var unplayable: Array = []
 	var other_mode := 0
 	var search_hidden := 0
 	for ms in mapsets:
@@ -1437,13 +1455,34 @@ static func collection_view(mapsets: Array, files: Array, vm: String, q: String)
 			continue
 		found[f] = true
 		if ms.visible_diffs(vm).is_empty():
+			# Ohne Diff fuer den Modus: nicht versteckt, sondern markiert gezeigt.
 			other_mode += 1
+			if q == "" or ms.search_haystack().contains(q):
+				unplayable.append(ms)
 		elif q != "" and not ms.search_haystack().contains(q):
 			search_hidden += 1
 		else:
 			shown.append(ms)
-	return {"shown": shown, "other_mode": other_mode, "search_hidden": search_hidden,
-		"missing": want.size() - found.size()}
+	return {"shown": shown, "unplayable": unplayable, "other_mode": other_mode,
+		"search_hidden": search_hidden, "missing": want.size() - found.size()}
+
+
+## Kleiner Modus-Hinweis einer Sammlung: Modus-Name bzw. "alle Modi".
+static func collection_mode_hint(mode: String) -> String:
+	_coll_translations()
+	var m := CollectionStore.normalize_mode(mode)
+	if m == CollectionStore.MODE_ALL:
+		return TranslationServer.translate("alle Modi")
+	return ScoreStore.mode_label("" if m == "mania" else m)
+
+
+## Modi, in denen das Set mindestens eine Diff hat.
+static func playable_modes(ms: MapSet) -> Array:
+	var out: Array = []
+	for m in PLAY_MODES:
+		if not ms.visible_diffs("mania" if ScoreStore.is_mania_like(m) else "orbit").is_empty():
+			out.append(m)
+	return out
 
 
 ## Grund fuer eine leere Sammlungs-Liste: "none" (keine Sammlung), "empty",
@@ -1467,6 +1506,9 @@ func _collection_empty_text() -> String:
 	var view := collection_view(_library.mapsets, files, _vm(), _search.text.strip_edges().to_lower())
 	match collection_empty_reason(_active_collection, view):
 		"none":
+			if not CollectionStore.list_names().is_empty():
+				return tr("Noch keine Sammlung für %s. Lege oben mit \"+ Neu\" eine an oder nutze \"+ Sammlung\" im Info-Panel.") \
+						% collection_mode_hint(_play_mode)
 			return tr("Noch keine Sammlung. Lege oben mit \"+ Neu\" eine an oder nutze \"+ Sammlung\" im Info-Panel.")
 		"search":
 			return tr("Kein Treffer für die Suche in \"%s\".") % _active_collection
@@ -1502,7 +1544,8 @@ func _rebuild_chips() -> void:
 		c.queue_free()
 	if not _collection_mode:
 		return
-	var names := CollectionStore.list_names()
+	# Nur Sammlungen des aktuellen Modus und "alle Modi".
+	var names := CollectionStore.list_for(_play_mode)
 	if not names.has(_active_collection):
 		_active_collection = names[0] if not names.is_empty() and _coll_undo == "" else ""
 	if _coll_undo != "":
@@ -1522,7 +1565,8 @@ func _rebuild_chips() -> void:
 		ub.add_theme_color_override("font_color", COL_ACCENT)
 	elif names.is_empty():
 		var hint := Label.new()
-		hint.text = tr("Noch keine Sammlung.")
+		hint.text = tr("Noch keine Sammlung.") if CollectionStore.list_names().is_empty() \
+				else tr("Noch keine Sammlung für %s.") % collection_mode_hint(_play_mode)
 		hint.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
 		hint.add_theme_font_size_override("font_size", 13)
 		hint.add_theme_color_override("font_color", COL_DIM)
@@ -1544,23 +1588,26 @@ func _rebuild_chips() -> void:
 			_coll_undo = ""
 			_coll_changed())
 		_chips_row.add_child(chip)
+		_coll_chip_hint(chip, CollectionStore.mode_of(name), name == _active_collection)
 	_coll_action(tr("+ Neu"), tr("Neue Sammlung anlegen"), func():
-		_collection_name_dialog(tr("Neue Sammlung"), "", tr("Anlegen"), func(n: String) -> bool:
-			if not CollectionStore.create(n):
+		_collection_name_dialog(tr("Neue Sammlung"), "", tr("Anlegen"), func(n: String, mode: String) -> bool:
+			if not CollectionStore.create(n, mode):
 				return false
 			_active_collection = n.strip_edges()
 			_coll_undo = ""
 			_coll_changed()
-			return true))
+			return true, _play_mode))
 	if _active_collection != "":
 		var act := _active_collection
-		_coll_action(tr("Umbenennen"), tr("Sammlung \"%s\" umbenennen") % act, func():
-			_collection_name_dialog(tr("Sammlung \"%s\" umbenennen") % act, act, tr("Speichern"), func(n: String) -> bool:
-				if not CollectionStore.rename(act, n):
+		_coll_action(tr("Bearbeiten"), tr("Name oder Modus von \"%s\" ändern") % act, func():
+			_collection_name_dialog(tr("Sammlung \"%s\" bearbeiten") % act, act, tr("Speichern"), func(n: String, mode: String) -> bool:
+				var nn := n.strip_edges()
+				if nn != act and not CollectionStore.rename(act, nn):
 					return false
-				_active_collection = n.strip_edges()
+				CollectionStore.set_mode(nn, mode)
+				_active_collection = nn
 				_coll_changed()
-				return true))
+				return true, CollectionStore.mode_of(act)))
 		_coll_action(tr("Löschen"), tr("Sammlung \"%s\" löschen (lässt sich zurückholen)") % act, func():
 			CollectionStore.delete(act)
 			_coll_undo = act
@@ -1602,8 +1649,32 @@ func _coll_overlay(title_text: String) -> Array:
 	return [overlay, vb]
 
 
-## Name eingeben (Neu / Umbenennen). on_ok(name) -> bool: false = Name abgelehnt.
-func _collection_name_dialog(title_text: String, initial: String, ok_text: String, on_ok: Callable) -> void:
+## Kleiner Modus-Hinweis rechts im Sammlungs-Chip (Chip haengt schon im Baum).
+func _coll_chip_hint(chip: Button, mode: String, active: bool) -> void:
+	var hl := Label.new()
+	hl.text = collection_mode_hint(mode)
+	hl.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	hl.add_theme_font_size_override("font_size", 11)
+	var own := CollectionStore.normalize_mode(mode) != CollectionStore.MODE_ALL
+	var col := UiTheme.ACCENT2 if own else COL_DIM
+	hl.add_theme_color_override("font_color", Color(col, 0.95 if active or own else 0.75))
+	hl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	chip.add_child(hl)
+	var text_w := chip.get_minimum_size().x
+	var hint_w := hl.get_minimum_size().x
+	chip.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	chip.custom_minimum_size = Vector2(text_w + hint_w + 6.0, CHIPS_H)
+	hl.set_anchors_and_offsets_preset(Control.PRESET_RIGHT_WIDE)
+	hl.offset_left = -(hint_w + 13.0)
+	hl.offset_right = -13.0
+	hl.offset_top = 1.0
+
+
+## Name und Modus eingeben (Neu / Bearbeiten). on_ok(name, modus) -> bool:
+## false = Name abgelehnt. mode0 = vorgewaehlter Modus ("" = alle Modi).
+func _collection_name_dialog(title_text: String, initial: String, ok_text: String, on_ok: Callable,
+		mode0: String = "") -> void:
 	var ov := _coll_overlay(title_text)
 	var overlay: Control = ov[0]
 	var vb: VBoxContainer = ov[1]
@@ -1613,6 +1684,33 @@ func _collection_name_dialog(title_text: String, initial: String, ok_text: Strin
 	edit.max_length = 40
 	edit.custom_minimum_size = Vector2(0, 40)
 	vb.add_child(edit)
+	# Modus der Sammlung: "Alle Modi" oder genau einer.
+	var cap := Label.new()
+	cap.text = tr("Gilt für")
+	cap.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	cap.add_theme_font_size_override("font_size", 12)
+	cap.add_theme_color_override("font_color", COL_DIM)
+	vb.add_child(cap)
+	var flow := HFlowContainer.new()
+	flow.add_theme_constant_override("h_separation", 6)
+	flow.add_theme_constant_override("v_separation", 6)
+	vb.add_child(flow)
+	var picked := [CollectionStore.normalize_mode(mode0)]
+	var pick_btns: Array = []
+	var options: Array = [CollectionStore.MODE_ALL]
+	options.append_array(PLAY_MODES)
+	for opt in options:
+		var mb := _make_toggle(tr("Alle Modi") if opt == "" else collection_mode_hint(opt), 13, 13)
+		mb.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+		mb.custom_minimum_size = Vector2(0, 30)
+		_apply_toggle(mb, opt == picked[0])
+		var o: String = opt
+		mb.pressed.connect(func():
+			picked[0] = o
+			for j in pick_btns.size():
+				_apply_toggle(pick_btns[j], options[j] == o))
+		flow.add_child(mb)
+		pick_btns.append(mb)
 	var err := Label.new()
 	err.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
 	err.add_theme_font_size_override("font_size", 13)
@@ -1637,7 +1735,7 @@ func _collection_name_dialog(title_text: String, initial: String, ok_text: Strin
 	var submit := func():
 		if edit.text.strip_edges() == "":
 			return
-		if on_ok.call(edit.text):
+		if on_ok.call(edit.text, str(picked[0])):
 			overlay.queue_free()
 		else:
 			err.text = tr("Diesen Namen gibt es schon.")
@@ -1712,9 +1810,10 @@ func _open_collection_popup() -> void:
 	var fill_boxes := func():
 		for c in boxes.get_children():
 			c.queue_free()
-		for name in CollectionStore.list_names():
+		for name in CollectionStore.list_for(_play_mode):
 			var cb := CheckBox.new()
-			cb.text = name
+			cb.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+			cb.text = "%s  ·  %s" % [name, collection_mode_hint(CollectionStore.mode_of(name))]
 			cb.button_pressed = CollectionStore.contains(name, _selected_set.osz_path)
 			cb.toggled.connect(func(_on):
 				CollectionStore.toggle(name, _selected_set.osz_path)
@@ -1726,13 +1825,13 @@ func _open_collection_popup() -> void:
 	new_row.add_theme_constant_override("separation", 8)
 	vb.add_child(new_row)
 	var new_edit := LineEdit.new()
-	new_edit.placeholder_text = "Neue Sammlung…"
+	new_edit.placeholder_text = "%s  ·  %s" % [tr("Neue Sammlung…"), tr("Nur %s") % collection_mode_hint(_play_mode)]
 	new_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	new_row.add_child(new_edit)
 	var new_btn := Button.new()
-	new_btn.text = "Anlegen"
+	new_btn.text = tr("Anlegen")
 	var add_new := func():
-		if CollectionStore.create(new_edit.text):
+		if CollectionStore.create(new_edit.text, _play_mode):
 			CollectionStore.toggle(new_edit.text.strip_edges(), _selected_set.osz_path)
 			new_edit.text = ""
 			fill_boxes.call()
@@ -1742,7 +1841,7 @@ func _open_collection_popup() -> void:
 	new_row.add_child(new_btn)
 
 	var close := Button.new()
-	close.text = "Schließen"
+	close.text = tr("Schließen")
 	close.custom_minimum_size = Vector2(0, 40)
 	close.pressed.connect(func():
 		overlay.queue_free()
@@ -1859,17 +1958,24 @@ func _refresh_filter(query: String) -> void:
 	var idx: Dictionary = _scores_for_mode() if need_scores else {}
 	var rows: Array = []
 	_filtered.clear()
+	_coll_unplayable.clear()
+	var coll_files := {}
+	if coll and _active_collection != "":
+		for f in CollectionStore.maps_in(_active_collection):
+			coll_files[str(f)] = true
 	for ms in _library.mapsets:
 		if q != "" and not ms.search_haystack().contains(q):
 			continue
 		if _collection_mode:
-			if _active_collection == "" or not CollectionStore.contains(_active_collection, ms.osz_path):
+			if not coll_files.has(ms.osz_path.get_file()):
 				continue
 		if _sv_filter and not coll and not ms.has_sv():
 			continue
 		# Modus-Filter: osu!standard-Diffs nur im Orbit-Modus (MapSet.mode_shows).
 		var vis := ms.visible_diffs(_vm())
 		if vis.is_empty():
+			if coll:
+				_coll_unplayable.append(ms)  # bleibt sichtbar, als nicht spielbar markiert
 			continue
 		# Sterne des aktiven Modus (fehlende vorlaeufig Mania-Sterne).
 		var smap := _mode_star_map(ms) if star_f \
@@ -2254,7 +2360,11 @@ func _rebuild_cards() -> void:
 		_card_buttons.append(card)
 		card.mouse_entered.connect(_slide_card.bind(card, true))
 		card.mouse_exited.connect(_slide_card.bind(card, false))
-	if _filtered.is_empty() and (_collection_mode or not _library.mapsets.is_empty()):
+	if _collection_mode:
+		for ms in _coll_unplayable:
+			_list_box.add_child(_make_unplayable_card(ms))
+	if _filtered.is_empty() and (_coll_unplayable.is_empty() or not _collection_mode) \
+			and (_collection_mode or not _library.mapsets.is_empty()):
 		var empty := Label.new()
 		empty.text = _collection_empty_text() if _collection_mode else tr("Keine Maps für diese Filter")
 		empty.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
@@ -2280,6 +2390,66 @@ func _rebuild_cards() -> void:
 	if _selected_set != null:
 		_apply_card_highlight()
 	_refresh_recommended()
+
+
+## Sammlungs-Ansicht: Map ohne Diff fuer den aktuellen Modus. Bleibt sichtbar,
+## gedimmt und klar markiert; nicht waehlbar.
+func _make_unplayable_card(ms: MapSet) -> Control:
+	var mode_name := collection_mode_hint(_play_mode)
+	var names: Array = []
+	for m in playable_modes(ms):
+		names.append(collection_mode_hint(m))
+	var card := PanelContainer.new()
+	card.custom_minimum_size = Vector2(0, CARD_H)
+	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	card.add_theme_stylebox_override("panel", _card_box(Color(COL_CARD, 0.55), Color(COL_DIM, 0.35)))
+	card.tooltip_text = tr("Diese Map hat keine Diff für %s. Sie bleibt in der Sammlung.") % mode_name
+	var pad := MarginContainer.new()
+	pad.add_theme_constant_override("margin_left", 20)
+	pad.add_theme_constant_override("margin_right", 16)
+	pad.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	card.add_child(pad)
+	var hb := HBoxContainer.new()
+	hb.add_theme_constant_override("separation", 12)
+	hb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	pad.add_child(hb)
+	var vb := VBoxContainer.new()
+	vb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vb.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	vb.add_theme_constant_override("separation", 4)
+	vb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hb.add_child(vb)
+	var t := Label.new()
+	t.text = "%s - %s" % [ms.artist, ms.title]
+	t.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	t.add_theme_font_size_override("font_size", 17)
+	t.add_theme_color_override("font_color", Color(COL_TEXT, 0.55))
+	t.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	t.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vb.add_child(t)
+	var sub := Label.new()
+	sub.text = tr("Nur osu!standard-Diffs. Spielbar in %s.") % ", ".join(names)
+	sub.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	sub.add_theme_font_size_override("font_size", 13)
+	sub.add_theme_color_override("font_color", COL_DIM)
+	sub.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	sub.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vb.add_child(sub)
+	var tag := Label.new()
+	tag.text = tr("Nicht in %s spielbar") % mode_name
+	tag.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	tag.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	tag.add_theme_font_size_override("font_size", 12)
+	tag.add_theme_color_override("font_color", COL_ACCENT)
+	var tb := _rounded_box(Color(COL_ACCENT, 0.08), 4, Color(COL_ACCENT, 0.45), 1)
+	tb.content_margin_left = 8
+	tb.content_margin_right = 8
+	tb.content_margin_top = 3
+	tb.content_margin_bottom = 3
+	tag.add_theme_stylebox_override("normal", tb)
+	tag.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hb.add_child(tag)
+	return card
 
 
 ## "An Freund schicken": Map-Link ins Chat-Overlay (GameSession.chat).
@@ -3123,6 +3293,8 @@ func _set_play_mode(mode: String) -> void:
 	_apply_career_layout()
 	_career_start()
 	_recs_refresh()
+	if _collection_mode:
+		_rebuild_chips()  # Sammlungen haengen am Modus
 	# Sichtbare Maps haengen am Modus (osu!standard nur im Orbit-Modus).
 	var keep := _selected_set
 	_refresh_filter(_search.text)
