@@ -105,8 +105,8 @@ func _ready() -> void:
 	if GameSession.is_replay and not _replay:
 		GameSession.is_replay = false
 		GameSession.replay_events = []
-	_mp_bot = Lobby.active and Lobby.in_game and args.has("--mp-bot")
-	_autoplay = ((args.has("--autoplay") and not Lobby.active) or _mp_bot) and not _replay
+	_mp_bot = Lobby.in_round() and args.has("--mp-bot")
+	_autoplay = ((args.has("--autoplay") and not Lobby.in_round()) or _mp_bot) and not _replay
 	for a in args:
 		if a.begins_with("--mp-cut="):
 			_mp_cut_ms = maxf(0.0, a.trim_prefix("--mp-cut=").to_float()) * 1000.0
@@ -133,7 +133,7 @@ func _ready() -> void:
 	if _old_replay:
 		_show_old_replay()
 		return
-	if Lobby.active and Lobby.in_game:
+	if Lobby.in_round():
 		Lobby.skip_now.connect(_do_skip)
 	if not _use_audio:
 		_debug_start_usec = Time.get_ticks_usec()
@@ -558,12 +558,12 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif not _countdown_running and not _finishing:
 			_toggle_pause(true)
 		return
-	if event.keycode == KEY_R and Settings.trace_lane_for_key(KEY_R) == -1 and not Lobby.active:
+	if event.keycode == KEY_R and Settings.trace_lane_for_key(KEY_R) == -1 and not Lobby.in_round():
 		_restart()
 		return
 	if event.keycode == KEY_SPACE and not _ended and Settings.trace_lane_for_key(KEY_SPACE) == -1 \
 			and _can_skip_intro():
-		if Lobby.active and Lobby.in_game:
+		if Lobby.in_round():
 			Lobby.vote_skip()
 		else:
 			_do_skip()
@@ -610,7 +610,7 @@ func _process(delta: float) -> void:
 			return
 	_view.t_ms = _visual_ms()
 	_view.queue_redraw()
-	if Lobby.active and Lobby.in_game:
+	if Lobby.in_round():
 		_mp_send_cd -= delta
 		if _mp_send_cd <= 0.0:
 			_mp_send_cd = 0.25
@@ -895,7 +895,7 @@ func _back_to_browser() -> void:
 	GameSession.replay_events = []
 	GameSession.replay_mode = "mania"
 	SyncClock.stop()
-	if Lobby.active:
+	if Lobby.in_round():
 		get_tree().change_scene_to_file("res://scenes/mp_lobby.tscn")
 	else:
 		get_tree().change_scene_to_file("res://scenes/song_select.tscn")
@@ -920,7 +920,7 @@ func _show_results(is_fail: bool) -> void:
 		var mm = load(MODS_PATH)
 		if mm != null and mm.has_method("mod_list"):
 			s["mods"] = mm.call("mod_list", _mods)
-	if Lobby.active and Lobby.in_game:
+	if Lobby.in_round():
 		Lobby.send_score(int(s.score), int(s.max_combo), float(s.accuracy))
 		Lobby.send_final(PlayerStatsCard.pack(s, _hit_offsets, _acc_trace, _hold_ok, _hold_drop,
 				bool(s.failed)))
@@ -966,9 +966,9 @@ func _build_results(is_fail: bool, s: Dictionary, new_best: bool) -> void:
 		"new_best": new_best, "title": _beatmap.title(), "artist": _beatmap.artist(),
 		"version": _beatmap.version_name(), "cover_path": "", "offsets": _hit_offsets,
 		"player": Settings.profile_name, "date": Time.get_datetime_string_from_system(),
-		"allow_retry": not Lobby.active,
+		"allow_retry": not Lobby.in_round(),
 		"can_replay": GameSession.is_replay or _recorded.size() > 0,
-		"is_replay": GameSession.is_replay, "lobby": Lobby.active,
+		"is_replay": GameSession.is_replay, "lobby": Lobby.in_round(),
 		"trace": _acc_trace, "h_ok": _hold_ok, "h_drop": _hold_drop,
 		"notes_total": _beatmap.hit_objects.size(), "judge_log": _judge_log,
 		"length_ms": float(_beatmap.hit_objects.back().end_time()),
@@ -982,7 +982,7 @@ func _build_results(is_fail: bool, s: Dictionary, new_best: bool) -> void:
 	var cover := OszImporter.load_background_texture(GameSession.osz_path, _beatmap)
 	if cover != null:
 		data["cover"] = cover
-	if Lobby.active:
+	if Lobby.in_round():
 		var me := multiplayer.get_unique_id()
 		data["my_id"] = me
 		if Lobby.players.has(me):

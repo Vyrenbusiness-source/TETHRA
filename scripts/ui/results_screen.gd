@@ -266,7 +266,7 @@ func show_results(data: Dictionary) -> void:
 	_shown = true
 	if bool(data.get("lobby", false)):
 		_play_lobby_intro()
-		if Lobby.active:
+		if Lobby.in_round():
 			for sig in [Lobby.scores_changed, Lobby.players_changed]:
 				if not sig.is_connected(_auto_board):
 					sig.connect(_auto_board)
@@ -282,7 +282,7 @@ func show_results(data: Dictionary) -> void:
 ## Multiplayer: Rangliste und Platzierung direkt aus der Lobby (alle Modi gleich,
 ## auch wenn das Spiel set_board nicht selbst aufruft).
 func _auto_board() -> void:
-	if not _shown or not is_inside_tree() or not Lobby.active or not bool(_data.get("lobby", false)):
+	if not _shown or not is_inside_tree() or not Lobby.in_round() or not bool(_data.get("lobby", false)):
 		return
 	var ranked: Array = Lobby.ranked_players()
 	var my_id := multiplayer.get_unique_id()
@@ -368,7 +368,7 @@ static func mode_data(src: Dictionary, mp: MultiplayerAPI) -> Dictionary:
 		var c := session_cover()
 		if c != null:
 			d["cover"] = c
-	if Lobby.active and mp != null:
+	if Lobby.in_round() and mp != null:
 		var me := mp.get_unique_id()
 		d["lobby"] = true
 		d["my_id"] = me
@@ -1050,13 +1050,13 @@ func _build_rank_area(parent: Control) -> void:
 		tag.add_theme_color_override("font_color", UiTheme.TEXT.lerp(CAPTION, 0.4))
 	# Multiplayer: statt "GESCHAFFT" zaehlt die Platzierung (FULL COMBO /
 	# NICHT GESCHAFFT bleiben als Zusatz sichtbar).
-	if Lobby.active and tag.text == "GESCHAFFT":
+	if Lobby.in_round() and tag.text == "GESCHAFFT":
 		tag.queue_free()
 	else:
 		col.add_child(tag)
 		_reveal.append(tag)
 	_add_fail_reason(col, 20)
-	if Lobby.active:
+	if Lobby.in_round():
 		_place_tag = Label.new()
 		_place_tag.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		_place_tag.add_theme_font_override("font", UiTheme.heading_font(7))

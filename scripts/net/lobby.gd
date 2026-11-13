@@ -480,6 +480,13 @@ func _on_connected_to_server() -> void:
 	send_view()
 
 
+## Laeuft gerade eine Raum-Runde? Nur dann gilt ein Spiel als Multiplayer.
+## Ein offener Raum allein (Spieler ist ins Menue gegangen) zaehlt nicht:
+## Solo-Laeufe daneben bleiben Solo (Ergebnis, Retry, Replay, kein Senden).
+func in_round() -> bool:
+	return active and in_game
+
+
 func leave() -> void:
 	_reset()
 

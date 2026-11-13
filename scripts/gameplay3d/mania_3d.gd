@@ -434,7 +434,7 @@ func _ready() -> void:
 	if bool(GameSession.mods.get("CS", false)):
 		_apply_constant_speed(scroll)
 	_clock.setup(_beatmap.timing_points)
-	_autoplay = OS.get_cmdline_args().has("--autoplay") 			and not GameSession.is_replay and not Lobby.active
+	_autoplay = OS.get_cmdline_args().has("--autoplay") 			and not GameSession.is_replay and not Lobby.in_round()
 	_auto_release.resize(core.columns)
 	_auto_release.fill(-1.0)
 	core.note_spawned.connect(_on_note_spawned)
@@ -2070,14 +2070,14 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	# R = Map sofort neu starten (im Spiel UND auf dem Results-Screen),
 	# ausser R ist als Lane-Taste belegt.
-	if event.keycode == KEY_R and Settings.lane_for_key(KEY_R) == -1 			and not Lobby.active:
+	if event.keycode == KEY_R and Settings.lane_for_key(KEY_R) == -1 			and not Lobby.in_round():
 		_restart()
 		return
 	# Intro-Skip: Leertaste springt lange Vorlaeufe bis kurz vor die erste
 	# Note (nur wenn Space keine Lane-Taste ist).
 	if event.keycode == KEY_SPACE and not _ended \
 			and Settings.lane_for_key(KEY_SPACE) == -1 and _can_skip_intro():
-		if Lobby.active and Lobby.in_game:
+		if Lobby.in_round():
 			Lobby.vote_skip()  # Multiplayer: springt erst, wenn ALLE druecken
 		else:
 			_do_skip()
@@ -2712,7 +2712,7 @@ func _process(delta: float) -> void:
 func _process_tail(t: float, delta: float) -> void:
 	_update_break_overlay(t)
 	# Multiplayer: eigenen Live-Score ~4x pro Sekunde teilen.
-	if Lobby.active and Lobby.in_game and not _ended:
+	if Lobby.in_round() and not _ended:
 		_mp_send_t -= delta
 		if _mp_send_t <= 0.0:
 			_mp_send_t = 0.25
@@ -3597,7 +3597,7 @@ func _build_hud() -> void:
 
 	# MULTIPLAYER: Live-Scoreboard links (wie osu!mania) — sortiert nach
 	# Score, eigener Eintrag hervorgehoben; Ueberholen sieht man sofort.
-	if Lobby.active and Lobby.in_game:
+	if Lobby.in_round():
 		_mp_board = Control.new()
 		_mp_board.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		_mp_board.offset_left = 18
@@ -3958,7 +3958,7 @@ func _back_to_browser() -> void:
 	GameSession.replay_events = []
 	SyncClock.stop()
 	# Multiplayer: zurueck in den Raum statt in den Song-Browser.
-	if Lobby.active:
+	if Lobby.in_round():
 		get_tree().change_scene_to_file("res://scenes/mp_lobby.tscn")
 	else:
 		get_tree().change_scene_to_file("res://scenes/song_select.tscn")
@@ -4006,7 +4006,7 @@ func _show_results(is_fail: bool) -> void:
 				pp = maxf(pp, max_pp * pow(acc, 6.0) * 0.55)
 	s["pp"] = pp
 	# Multiplayer: letzten Live-Stand + Finale (mit pp) an alle melden.
-	if Lobby.active and Lobby.in_game:
+	if Lobby.in_round():
 		Lobby.send_score(core.score, core.combo, core.accuracy())
 		Lobby.send_final(PlayerStatsCard.pack(s, _hit_offsets, _acc_trace,
 			_hold_ok, _hold_drop, is_fail))
@@ -4049,7 +4049,7 @@ func _write_fail_diag() -> String:
 ## Waehrend des Spiels ruhen Updater-Download und Mirror-Abschluss (Datei-/Zip-
 ## Arbeit im Hauptthread = Ruckler). Im Multiplayer bleibt alles aktiv.
 func _park_background_net() -> void:
-	if Lobby.active:
+	if Lobby.in_round():
 		return
 	for n in [Updater, Mirror]:
 		if n != null and n.process_mode != Node.PROCESS_MODE_DISABLED:
@@ -4116,10 +4116,10 @@ func _build_results(is_fail: bool, s: Dictionary, pp: float, unranked: bool, new
 		"offsets": _hit_offsets,
 		"player": Settings.profile_name,
 		"date": Time.get_datetime_string_from_system(),
-		"allow_retry": not Lobby.active,
+		"allow_retry": not Lobby.in_round(),
 		"can_replay": GameSession.is_replay or _recorded.size() > 0,
 		"is_replay": GameSession.is_replay,
-		"lobby": Lobby.active,
+		"lobby": Lobby.in_round(),
 		# Fuer Acc-Verlauf, Holds und Fail-Marker im Ergebnisbild.
 		"trace": _acc_trace,
 		"h_ok": _hold_ok,
@@ -4136,7 +4136,7 @@ func _build_results(is_fail: bool, s: Dictionary, pp: float, unranked: bool, new
 		data["length_ms"] = float(_beatmap.hit_objects.back().end_time())
 	if is_fail:
 		data["fail_ms"] = maxf(_time_ms(), 0.0)
-	if Lobby.active:
+	if Lobby.in_round():
 		var me := multiplayer.get_unique_id()
 		data["my_id"] = me
 		if Lobby.players.has(me):
@@ -4152,7 +4152,7 @@ func _build_results(is_fail: bool, s: Dictionary, pp: float, unranked: bool, new
 
 	# MULTIPLAYER-Endscreen: Rangliste + Stats-Karten im ResultsScreen
 	# (traeufeln live ein, wenn andere fertig werden).
-	if Lobby.active:
+	if Lobby.in_round():
 		Lobby.scores_changed.connect(_refresh_mp_ranking)
 		Lobby.players_changed.connect(_refresh_mp_ranking)
 		_refresh_mp_ranking()

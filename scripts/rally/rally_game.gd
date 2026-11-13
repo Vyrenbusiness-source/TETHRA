@@ -83,8 +83,8 @@ func _ready() -> void:
 	if GameSession.is_replay and not _replay:
 		GameSession.is_replay = false
 		GameSession.replay_events = []
-	_mp_bot = Lobby.active and Lobby.in_game and OS.get_cmdline_args().has("--mp-bot")
-	_autoplay = ((OS.get_cmdline_args().has("--autoplay") and not Lobby.active) or _mp_bot) and not _replay
+	_mp_bot = Lobby.in_round() and OS.get_cmdline_args().has("--mp-bot")
+	_autoplay = ((OS.get_cmdline_args().has("--autoplay") and not Lobby.in_round()) or _mp_bot) and not _replay
 	var jitter := 0.0
 	var seed := 1
 	var skip := 0
@@ -121,7 +121,7 @@ func _ready() -> void:
 	_update_hud()
 	if old_replay:
 		_flash_hint(tr("Altes Replay (Rally v1) passt nicht zu den neuen Regeln"))
-	if Lobby.active and Lobby.in_game:
+	if Lobby.in_round():
 		Lobby.skip_now.connect(_do_skip)
 	if not _use_audio:
 		_debug_start_usec = Time.get_ticks_usec()
@@ -501,12 +501,12 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif not _countdown_running:
 			_toggle_pause(true)
 		return
-	if event.keycode == KEY_R and Settings.rally_zone_for_key(KEY_R, _zones) == -1 and not Lobby.active:
+	if event.keycode == KEY_R and Settings.rally_zone_for_key(KEY_R, _zones) == -1 and not Lobby.in_round():
 		_restart()
 		return
 	if event.keycode == KEY_SPACE and not _ended and Settings.rally_zone_for_key(KEY_SPACE, _zones) == -1 \
 			and _can_skip_intro():
-		if Lobby.active and Lobby.in_game:
+		if Lobby.in_round():
 			Lobby.vote_skip()
 		else:
 			_do_skip()
@@ -544,7 +544,7 @@ func _process(delta: float) -> void:
 	var vt := _visual_ms()
 	_view.t_ms = vt
 	_play_flight_sounds(vt)
-	if Lobby.active and Lobby.in_game:
+	if Lobby.in_round():
 		_mp_send_cd -= delta
 		if _mp_send_cd <= 0.0:
 			_mp_send_cd = 0.25
@@ -792,7 +792,7 @@ func _back_to_browser() -> void:
 	get_tree().paused = false
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	SyncClock.stop()
-	if Lobby.active:
+	if Lobby.in_round():
 		get_tree().change_scene_to_file("res://scenes/mp_lobby.tscn")
 	else:
 		get_tree().change_scene_to_file("res://scenes/song_select.tscn")
@@ -820,7 +820,7 @@ func _show_results(is_fail: bool) -> void:
 		_save_replay(s)
 		if not is_fail:
 			_submit_online(s)
-	if Lobby.active and Lobby.in_game:
+	if Lobby.in_round():
 		Lobby.send_score(int(s.score), int(s.max_combo), float(s.accuracy))
 		Lobby.send_final(PlayerStatsCard.pack(s, _hit_offsets, _acc_trace, 0, 0, s.failed))
 	var rs := RallyResults.new()
@@ -836,8 +836,8 @@ func _show_results(is_fail: bool) -> void:
 	rs.show_results({
 		"is_fail": is_fail, "s": s, "log": _result_log(), "w50": core.w50, "w_max": core.w_max,
 		"new_best": new_best, "title": _beatmap.title(), "artist": _beatmap.artist(),
-		"version": _beatmap.version_name(), "allow_retry": not Lobby.active,
-		"can_replay": not Lobby.active and (_replay or core.replay_log.size() > 1),
+		"version": _beatmap.version_name(), "allow_retry": not Lobby.in_round(),
+		"can_replay": not Lobby.in_round() and (_replay or core.replay_log.size() > 1),
 		"smashes": _smashes, "charges": _charges,
 	})
 	if OS.get_cmdline_args().has("--shot-results"):
