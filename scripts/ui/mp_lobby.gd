@@ -31,10 +31,10 @@ const ROW_H := 40
 const PROW_H := 40
 const SIDE_W := 344
 # Spalten der Raumliste (Kopf und Zeilen teilen sie, damit die Kanten fluchten).
-const RC_ICON := 20
+const RC_ICON := 80
 const RC_MODE := 132
 const RC_WHERE := 148
-const RC_PLAYERS := 72
+const RC_PLAYERS := 84
 const RC_JOIN := 104
 # Spalten der Spielerliste.
 const PC_BADGE := 56
@@ -87,7 +87,9 @@ var _mod_btns: Dictionary = {}
 var _code_label: Label
 var _downloading := false
 var _dl_set := 0
-var _bg_rect: TextureRect
+var _bg_rect: MapBackdrop
+var _title_sets: Dictionary = {}
+var _title_sets_n := -1
 var _map_tex: Texture2D = null
 var _preview: AudioStreamPlayer
 var _preview_fade: Tween
@@ -156,18 +158,10 @@ func _ready() -> void:
 	bg.color = UiTheme.BG
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(bg)
-	_bg_rect = TextureRect.new()
-	_bg_rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_bg_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	_bg_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-	_bg_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_bg_rect.visible = false
+	# Wie im Hauptmenue: nur ein ruhiger Farb- und Lichtverlauf, kein erkennbares Motiv.
+	_bg_rect = MapBackdrop.create(null, 0.24, 100)
+	_bg_rect.set_calm(1.6, 0.6, 0.72, 0.24, 100)
 	add_child(_bg_rect)
-	var dim := ColorRect.new()
-	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	dim.color = Color(0.02, 0.02, 0.03, 0.80)
-	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(dim)
 
 	# Vollbild-Raster: Rand M ringsum, Kopfzeile, Haarlinie, Inhalt (Browser oder Raum).
 	var root := VBoxContainer.new()
@@ -1149,6 +1143,16 @@ func _icon(id: String) -> Texture2D:
 			rs.append([tip, tip + Vector2(-3.2, -0.6)])
 			rs.append([tip, tip + Vector2(0.4, 3.2)])
 			tex = _line_icon(16, rs)
+		"lock":
+			# Buegel als gefuellter Bogen, Koerper als Rechteck (12 px, fuer Textzeilen).
+			var lp := PackedVector2Array()
+			for i in 13:
+				var a := PI + PI * i / 12.0
+				lp.append(Vector2(6, 5.2) + Vector2(cos(a), sin(a)) * 3.4)
+			for i in 13:
+				var a := TAU - PI * i / 12.0
+				lp.append(Vector2(6, 5.2) + Vector2(cos(a), sin(a)) * 2.0)
+			tex = _fill_icon(12, lp, Rect2(1.8, 5.2, 8.4, 5.8))
 		"cup":
 			tex = _line_icon(16, [[Vector2(4.5, 2.5), Vector2(11.5, 2.5)], [Vector2(4.5, 2.5), Vector2(5, 7)],
 				[Vector2(11.5, 2.5), Vector2(11, 7)], [Vector2(5, 7), Vector2(8, 9.5)], [Vector2(11, 7), Vector2(8, 9.5)],
@@ -1237,6 +1241,7 @@ func _build_browser() -> void:
 	_tr_online.pressed.connect(func(): _set_transport(false))
 	_tr_direct.pressed.connect(func(): _set_transport(true))
 	side.add_child(trh)
+	side.add_child(_gap(4))
 	side.add_child(_section("Raum erstellen"))
 	_name_edit = _field("Raumname")
 	_name_edit.text = _possessive_room(Settings.profile_name)
@@ -1418,14 +1423,62 @@ func _avatar(pname: String, sz: int = 28) -> Control:
 	return p
 
 
+## Lokales Set zum Kartennamen aus der Raum-Ansage ("Titel [Diff]"), sonst null.
+func _set_by_room_map(map_name: String) -> MapSet:
+	if map_name == "":
+		return null
+	if _title_sets_n != _library.mapsets.size():
+		_title_sets_n = _library.mapsets.size()
+		_title_sets = {}
+		for ms in _library.mapsets:
+			_title_sets[str(ms.title).to_lower()] = ms
+	var t := map_name
+	var cut := t.rfind(" [")
+	if cut > 0 and t.ends_with("]"):
+		t = t.substr(0, cut)
+	return _title_sets.get(t.to_lower(), null)
+
+
+## Bildkachel der Raumzeile: Cover der Raum-Map (falls lokal vorhanden), sonst
+## eine Graphit-Flaeche mit dem Modus-Zeichen.
+func _room_thumb(map_name: String, mode: String) -> Control:
+	var p := PanelContainer.new()
+	p.custom_minimum_size = Vector2(RC_ICON, 46)
+	p.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	p.clip_children = CanvasItem.CLIP_CHILDREN_AND_DRAW
+	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	p.add_theme_stylebox_override("panel", _box(UiTheme.RAISED, R))
+	var ms := _set_by_room_map(map_name)
+	var tex: Texture2D = ms.thumb_texture() if ms != null else null
+	if tex != null:
+		var img := TextureRect.new()
+		img.texture = tex
+		img.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		img.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+		img.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		p.add_child(img)
+	else:
+		var cc := CenterContainer.new()
+		cc.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var mb := ModeBadge.make(mode, 20)
+		mb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		mb.modulate.a = 0.75
+		cc.add_child(mb)
+		p.add_child(cc)
+	return p
+
+
 ## Tabellenzeile der Raumliste; die ganze Zeile ist der Knopf.
-## Die Raum-Ansage kennt nur Name, Spielerzahl, Code und Spielmodus.
+## Zeigt, was die Raum-Ansage hergibt: Name, Map (mit Cover, falls lokal vorhanden),
+## Spielmodus, Raum-Art, Schloss, Spielerzahl (mit Obergrenze, falls bekannt).
 func _room_card(lan: bool, rname: String, players_n: int, where: String, mode: String,
-		kind: String, on_join: Callable) -> Control:
+		kind: String, info: Dictionary, on_join: Callable) -> Control:
+	var map_name := str(info.get("map", ""))
+	var locked := bool(info.get("locked", false))
+	var max_n := int(info.get("max", 0))
 	var card := Button.new()
-	card.custom_minimum_size = Vector2(0, 52)
+	card.custom_minimum_size = Vector2(0, 64)
 	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	card.tooltip_text = rname
 	var n := StyleBoxFlat.new()
 	n.bg_color = Color(1, 1, 1, 0.0)
 	n.border_width_bottom = 1
@@ -1447,20 +1500,29 @@ func _room_card(lan: bool, rname: String, players_n: int, where: String, mode: S
 	hb.add_theme_constant_override("separation", 16)
 	hb.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	card.add_child(hb)
+	var pm := Lobby.norm_play(mode)
 	hb.add_child(_hgap(0))
-	hb.add_child(_icon_rect("lan" if lan else "globe", COL_DIM, RC_ICON))
+	hb.add_child(_room_thumb(map_name, pm))
+	# Name, darunter die Map des Raums (oder dass noch keine gewaehlt ist).
+	var ncol := VBoxContainer.new()
+	ncol.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	ncol.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	ncol.add_theme_constant_override("separation", 1)
+	ncol.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hb.add_child(ncol)
 	var nl := _lbl(rname, FS_M, COL_TEXT)
-	nl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	nl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	nl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	nl.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
-	hb.add_child(nl)
+	ncol.add_child(nl)
+	var sub := _lbl(map_name if map_name != "" else tr("Noch keine Map gewählt."), FS_S, COL_DIM if map_name != "" else COL_FAINT)
+	sub.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	sub.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	ncol.add_child(sub)
 	# Modus (Symbol + Name) und darunter die Raum-Art, beides vor dem Beitreten sichtbar.
-	var pm := Lobby.norm_play(mode)
 	var mcol := VBoxContainer.new()
 	mcol.custom_minimum_size.x = RC_MODE
 	mcol.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	mcol.add_theme_constant_override("separation", 0)
+	mcol.add_theme_constant_override("separation", 1)
 	mcol.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hb.add_child(mcol)
 	var mrow := HBoxContainer.new()
@@ -1468,25 +1530,40 @@ func _room_card(lan: bool, rname: String, players_n: int, where: String, mode: S
 	mrow.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	mcol.add_child(mrow)
 	mrow.add_child(ModeBadge.make(pm, 14))
-	var ml := _lbl(Lobby.play_name(pm), FS_S + 1, COL_TEXT)
+	var ml := _lbl(Lobby.play_name(pm), FS_M, COL_TEXT)
 	ml.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
 	ml.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	mrow.add_child(ml)
 	var kname := Lobby.type_name(Lobby.norm_type(kind))
-	if kname != "":
-		var kl := _lbl(kname, FS_S - 1, COL_DIM)
-		kl.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
-		kl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-		mcol.add_child(kl)
-	var wl := _lbl(where, FS_S + 1, COL_DIM) if lan else _num(where, FS_S + 1, COL_DIM)
-	wl.custom_minimum_size.x = RC_WHERE
+	var kl := _lbl(kname if kname != "" else " ", FS_S, COL_DIM)
+	kl.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	kl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	mcol.add_child(kl)
+	# Verbindung: Netz, Code oder Passwort (mit Schloss).
+	var wrow := HBoxContainer.new()
+	wrow.custom_minimum_size.x = RC_WHERE
+	wrow.add_theme_constant_override("separation", 6)
+	wrow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hb.add_child(wrow)
+	if locked:
+		wrow.add_child(_icon_rect("lock", COL_ACCENT, 12))
+	var wl := _lbl(where, FS_S, COL_TEXT if locked else COL_DIM) if (lan or locked) else _num(where, FS_S, COL_DIM)
+	wl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	wl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	wl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	hb.add_child(wl)
-	var cnt := _num(str(players_n), FS_M, COL_TEXT)
-	cnt.custom_minimum_size.x = RC_PLAYERS
-	cnt.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	hb.add_child(cnt)
+	wl.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	wrow.add_child(wl)
+	# Spielerzahl: belegt hell, Obergrenze gedeckt; voller Raum ganz gedeckt.
+	var full := max_n > 0 and players_n >= max_n
+	var prow := HBoxContainer.new()
+	prow.custom_minimum_size.x = RC_PLAYERS
+	prow.alignment = BoxContainer.ALIGNMENT_END
+	prow.add_theme_constant_override("separation", 3)
+	prow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hb.add_child(prow)
+	prow.add_child(_num(str(players_n), FS_M, COL_DIM if full else COL_TEXT))
+	if max_n > 0:
+		prow.add_child(_num("/ %d" % max_n, FS_S, COL_DIM))
 	card.tooltip_text = "%s  ·  %s" % [rname, tr("1 Spieler") if players_n == 1 else tr("%d Spieler") % players_n]
 	var jb := HBoxContainer.new()
 	jb.custom_minimum_size.x = RC_JOIN
@@ -1500,12 +1577,13 @@ func _room_card(lan: bool, rname: String, players_n: int, where: String, mode: S
 	var chev := _icon_rect("next", COL_DIM)
 	jb.add_child(chev)
 	hb.add_child(_hgap(0))
-	card.mouse_entered.connect(func():
-		join.add_theme_color_override("font_color", COL_ACCENT)
-		chev.modulate = COL_ACCENT)
-	card.mouse_exited.connect(func():
-		join.add_theme_color_override("font_color", COL_DIM)
-		chev.modulate = COL_DIM)
+	var lit := func(on: bool):
+		join.add_theme_color_override("font_color", COL_ACCENT if on else COL_DIM)
+		chev.modulate = COL_ACCENT if on else COL_DIM
+	card.mouse_entered.connect(lit.bind(true))
+	card.mouse_exited.connect(lit.bind(false))
+	card.focus_entered.connect(lit.bind(true))
+	card.focus_exited.connect(lit.bind(false))
 	return card
 
 
@@ -1524,7 +1602,7 @@ func _refresh_rooms() -> void:
 		lan_codes[str(r.get("code", ""))] = true
 		var target_ip := str(ip)
 		_rooms_list.add_child(_room_card(true, str(r.name), int(r.players), tr("Dein Netzwerk"),
-			str(r.get("mode", "mania")), str(r.get("kind", "")), func():
+			str(r.get("mode", "mania")), str(r.get("kind", "")), r, func():
 				if Lobby.join_lan(target_ip):
 					_show_room()))
 		count += 1
@@ -1544,7 +1622,7 @@ func _refresh_rooms() -> void:
 				where = tr("Passwort")
 			var rcode := str(o.get("code", ""))
 			_rooms_list.add_child(_room_card(false, str(o.name), int(o.players), where,
-				str(o.get("mode", "mania")), str(o.get("kind", "")), func():
+				str(o.get("mode", "mania")), str(o.get("kind", "")), o, func():
 					if wrong:
 						_status_label.text = Lobby.relay_error_text("version", "", { "host_v": ver })
 					elif locked or rcode == "":
@@ -1554,7 +1632,7 @@ func _refresh_rooms() -> void:
 						_show_room()))
 		else:
 			_rooms_list.add_child(_room_card(false, str(o.name), int(o.players), jcode,
-				str(o.get("mode", "mania")), str(o.get("kind", "")), func():
+				str(o.get("mode", "mania")), str(o.get("kind", "")), o, func():
 					if Lobby.join_code(jcode):
 						_show_room()))
 		count += 1
@@ -2512,9 +2590,7 @@ func _update_bg() -> void:
 		var last := GameSession.load_last_played()
 		if not last.is_empty() and str(last.get("bg_file", "")) != "":
 			tex = OszImporter.load_image_texture(str(last.osz_path), str(last.bg_file))
-	if tex != null:
-		_bg_rect.texture = UiTheme.blurred_texture(tex)
-		_bg_rect.visible = true
+	_bg_rect.set_texture(tex, 0.24, 100)
 
 
 ## Lokales Set leise vorhoeren (ab PreviewTime, mit Einblendung).
@@ -3401,12 +3477,23 @@ func _lobby_shots() -> void:
 	_refresh_rooms()
 	await shot.call("browser_empty")
 	var far := Time.get_ticks_msec() + 3600000
-	Lobby.lan_rooms = {"192.168.178.24": {"name": "Kenjis Raum", "players": 3, "code": "", "t": far}}
+	var demo_map := func(i: int) -> String:
+		if _library.mapsets.is_empty():
+			return ""
+		var dms: MapSet = _library.mapsets[(i * 7 + 3) % _library.mapsets.size()]
+		return "%s [%s]" % [dms.title, dms.version_name_at(0)]
+	Lobby.lan_rooms = {"192.168.178.24": {"name": "Kenjis Raum", "players": 3, "code": "", "t": far,
+		"map": demo_map.call(0), "kind": "free"}}
+	var cur_v: String = Lobby.UpdaterS.CURRENT_VERSION
 	Lobby.online_rooms = {
-		"7K3F9-A2QXM": {"name": "Freitagsrunde", "players": 6, "t": 0},
-		"Q2M8X-PL4KD": {"name": "Nur 7K-Maps, bitte keine Anfänger und keine SV", "players": 8, "t": 0},
-		"H4T2K-9ZWQE": {"name": "Aria's Raum", "players": 1, "t": 0},
-		"M3N7P-2RTXA": {"name": "Turnier-Training", "players": 4, "t": 0},
+		"K7M4QX": {"name": "Freitagsrunde", "players": 6, "max": 16, "relay": true, "code": "K7M4QX",
+			"version": cur_v, "map": demo_map.call(1), "mode": "mania", "kind": "teams", "t": 0},
+		"Q2M8XP": {"name": "Nur 7K-Maps, bitte keine Anfänger und keine SV", "players": 8, "max": 8, "relay": true,
+			"code": "Q2M8XP", "version": cur_v, "map": demo_map.call(2), "mode": "mania", "kind": "free", "t": 0},
+		"locked#3": {"name": "Aria's Raum", "players": 1, "max": 4, "relay": true, "code": "", "locked": true,
+			"version": cur_v, "map": "", "mode": "orbit", "kind": "free", "t": 0},
+		"M3N7P2": {"name": "Turnier-Training", "players": 4, "max": 16, "relay": true, "code": "M3N7P2",
+			"version": cur_v, "map": demo_map.call(4), "mode": "rally", "kind": "royale", "t": 0},
 	}
 	_refresh_rooms()
 	await shot.call("browser_rooms")
