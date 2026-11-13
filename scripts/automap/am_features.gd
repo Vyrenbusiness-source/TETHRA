@@ -33,7 +33,7 @@ const B_MID_END := 15
 const B_PM_START := 3     # Snare-Koerper: Baender 3..13 (150 Hz..2,7 kHz)
 const B_PM_END := 14
 const B_HI_START := 14    # Hi-Hat/Becken: Baender 14..19 (> 2,7 kHz)
-const AGG_K := 11          # Werte je Frame aus der HPSS-Stufe
+const AGG_K := 14          # Werte je Frame aus der HPSS-Stufe
 
 const DEFAULTS := {
 	"threads": 0,                # 0 = alle Kerne, 1 = ohne Thread-Pool
@@ -41,6 +41,8 @@ const DEFAULTS := {
 	"hop": 256,
 	"gamma": 20.0,               # Log-Kompression je Band: log(1 + gamma * S / P95 des Bands)
 	"floor_db": -36.0,            # Baender unter diesem Pegel (gegen das lauteste Band) gelten als leer
+	"mask_db": -35.0,            # Verdeckung: Pegel unter dem lautesten gehaltenen Band (Zeit-Median) zaehlt nicht
+	"mask_decay_db": 1.0,        # so schnell (dB je Frame) faellt die Verdeckung nach einem gehaltenen Ton
 	"median_time": 9,            # Frames (ungerade), harmonisch
 	"median_freq": 5,            # Baender (ungerade), perkussiv
 	"onset_shift_ms": 3.0,       # Ausgleich der Fensterlage (per Klick-Test bestimmt)
@@ -55,6 +57,10 @@ const DEFAULTS := {
 	"snare_ratio": 0.15,         # Hoehen-/Mitten-Leistung im Anschlag: darunter "other"
 	"hat_ratio": 12.0,           # darueber ist es ein Becken, kein Trommel-Anschlag
 	"kick_over_snare": 0.8,      # Kick schluckt gleichzeitigen Mitten-Anschlag ab diesem Verhaeltnis
+	"kick_ratio": 0.3,           # Kick nur, wenn die tiefe Leistung (< 150 Hz) mind. so stark steigt wie x Mitten
+	"hat_kick_ratio": 0.0001,    # Becken am Kick nur, wenn die Hoehen-Leistung mind. x Kick-Leistung steigt
+	"bass_ratio": 0.3,           # Bass nur, wenn die gehaltene Leistung < 260 Hz mind. x Mitten steigt (Stimme!)
+	"tonal_ratio": 0.01,         # Ton/Stimme nur, wenn die gehaltene Mitten-Leistung mind. x Bass steigt
 	"vocal_min": 0.38,           # Anteil gleitender Frames, ab dem die Linie als Stimme gilt
 	"glide_lo_st": 0.08, "glide_hi_st": 2.0,   # Halbtoene je Frame: "gleitet"
 	"vocal_lo_hz": 120.0, "vocal_hi_hz": 1100.0,
@@ -247,6 +253,7 @@ class _Hpss extends RefCounted:
 	var kf: int
 	var gamma: float
 	var floor_ref: float
+	var mask: PackedFloat32Array   # je Frame: Verdeckungs-Pegel aus dem Zeit-Median
 	var refs: Array = []           # je Band: P95 der Staerke
 	var hb: Array = []             # je Band: Zeit-Median
 	var out: Array = []
@@ -307,6 +314,10 @@ class _Hpss extends RefCounted:
 			var e_tot := 0.0
 			var w_pm := 0.0
 			var w_hi := 0.0
+			var w_lo := 0.0
+			var w_hl := 0.0
+			var w_hm := 0.0
+			var mk := mask[f]
 			for b in lnb:
 				var w0 := clampi(b - r, 0, lnb - wn)
 				var w := ls.slice(row + w0, row + w0 + wn)
@@ -317,13 +328,16 @@ class _Hpss extends RefCounted:
 				var h2 := hv * hv
 				var mh := h2 / (h2 + pv * pv + 1e-9)
 				var lg := gb[b]
-				var spv := sv * (1.0 - mh)
-				var lh := log(1.0 + lg * hv * mh)
+				var spv := maxf(sv * (1.0 - mh) - mk, 0.0)
+				var shv := maxf(hv * mh - mk, 0.0)
+				var lh := log(1.0 + lg * shv)
 				var lp := log(1.0 + lg * spv)
 				if b >= B_HI_START:
 					w_hi += spv * spv
 				elif b >= B_PM_START:
 					w_pm += spv * spv
+				else:
+					w_lo += spv * spv
 				var dh := lh - plh[b]
 				var dp := lp - plp[b]
 				plh[b] = lh
@@ -331,10 +345,12 @@ class _Hpss extends RefCounted:
 				e_tot += sv * sv
 				e_p += lp
 				if b < B_BASS_END:
+					w_hl += shv * shv
 					e_hl += lh
 					if dh > 0.0:
 						a_hl += dh
 				elif b < B_MID_END:
+					w_hm += shv * shv
 					e_hm += lh
 					if dh > 0.0:
 						a_hm += dh
@@ -364,6 +380,9 @@ class _Hpss extends RefCounted:
 				o[i + 8] = e_tot
 				o[i + 9] = w_pm
 				o[i + 10] = w_hi
+				o[i + 11] = w_lo
+				o[i + 12] = w_hl
+				o[i + 13] = w_hm
 		out[ci] = o
 
 
@@ -729,6 +748,23 @@ static func analyze(pcm: PackedFloat32Array, rate: int, params: Dictionary = {})
 		silent.sections = [{"start_ms": 0.0, "end_ms": duration_ms, "intensity": 0.0, "kind": "break", "kiai": false, "lead": "tonal"}]
 		return silent
 	hp.floor_ref = gref * pow(10.0, float(p.floor_db) / 20.0)
+	# Verdeckung: gehaltene Toene (Zeit-Median) lecken ueber die Fensterflanken in fast leere Baender;
+	# dort schwankt das Leck mit der Phase und erzeugte Schein-Anstiege. Was weiter als mask_db unter
+	# dem lautesten gehaltenen Band liegt, wird abgezogen. Steigt sofort, faellt langsam (keine Schein-
+	# Anstiege, wenn ein lauter Ton endet).
+	var mk_lin := pow(10.0, float(p.mask_db) / 20.0)
+	var mk_dec := pow(10.0, -absf(float(p.mask_decay_db)) / 20.0)
+	hp.mask.resize(frames)
+	var mk_prev := 0.0
+	var hcols: Array[PackedFloat32Array] = []
+	for b in nb:
+		hcols.append(hp.hb[b])
+	for f in frames:
+		var mx := 0.0
+		for b in nb:
+			mx = maxf(mx, hcols[b][f])
+		mk_prev = maxf(mx * mk_lin, mk_prev * mk_dec)
+		hp.mask[f] = mk_prev
 	hp.per = st.per
 	hp.out.resize(chunks)
 	_run_group(hp.agg, chunks, threads)
@@ -746,7 +782,10 @@ static func analyze(pcm: PackedFloat32Array, rate: int, params: Dictionary = {})
 	var e_tot := PackedFloat32Array()
 	var w_pm := PackedFloat32Array()
 	var w_hi := PackedFloat32Array()
-	for arr: PackedFloat32Array in [f_lowp, f_pm, f_ph, f_hl, f_hm, e_hl, e_hm, e_p, e_tot, w_pm, w_hi]:
+	var w_lo := PackedFloat32Array()
+	var w_hl := PackedFloat32Array()
+	var w_hm := PackedFloat32Array()
+	for arr: PackedFloat32Array in [f_lowp, f_pm, f_ph, f_hl, f_hm, e_hl, e_hm, e_p, e_tot, w_pm, w_hi, w_lo, w_hl, w_hm]:
 		arr.resize(frames)
 	for f in frames:
 		var i := f * AGG_K
@@ -761,6 +800,9 @@ static func analyze(pcm: PackedFloat32Array, rate: int, params: Dictionary = {})
 		e_tot[f] = agg[i + 8]
 		w_pm[f] = agg[i + 9]
 		w_hi[f] = agg[i + 10]
+		w_lo[f] = agg[i + 11]
+		w_hl[f] = agg[i + 12]
+		w_hm[f] = agg[i + 13]
 
 	# ---- 3. Stimme: Anteil gleitender Tonhoehe um jeden Frame
 	var glide := PackedFloat32Array()
@@ -797,6 +839,24 @@ static func analyze(pcm: PackedFloat32Array, rate: int, params: Dictionary = {})
 	var basses := _pick(f_hl, p.bass_abs, p.bass_rel, gap, true, mf)
 	var relax: float = p.vocal_relax
 	var harm := _pick(f_hm, float(p.mid_abs) * relax, float(p.mid_rel) * relax, gap, true, mf * relax)
+	# Kick nur, wenn die Leistung unter 150 Hz traegt: der Einsatz eines Tons in den Mitten (Stimme,
+	# Instrument) leckt ueber die Hauptkeule des Fensters auch nach unten.
+	var k_ratio: float = p.kick_ratio
+	var kicks_ok: Array = []
+	for e in kicks:
+		var f: int = e[2]
+		if _rise(w_lo, f, frames) >= k_ratio * _rise(w_pm, f, frames):
+			kicks_ok.append(e)
+	kicks = kicks_ok
+	# Bass nur, wenn die gehaltene Leistung unter 260 Hz den Anstieg traegt: der Grundton einer
+	# Stimme oder eines Instruments liegt oft ueber 150 Hz, die Leistung aber in den Mitten.
+	var b_ratio: float = p.bass_ratio
+	var bass_ok: Array = []
+	for e in basses:
+		var f: int = e[2]
+		if _rise(w_hl, f, frames, 4) >= b_ratio * _rise(w_hm, f, frames, 4):
+			bass_ok.append(e)
+	basses = bass_ok
 	_normalize(kicks)
 	_normalize(mids)
 	_normalize(hats)
@@ -826,8 +886,13 @@ static func analyze(pcm: PackedFloat32Array, rate: int, params: Dictionary = {})
 			snare_list.append(e)
 		events.append({"t_ms": maxf(0.0, float(e[0]) * frame_ms + shift), "strength": e[1], "kind": kind, "pitch": -1.0, "sustain_ms": 0.0})
 	var snare_idx := _frame_index(snare_list, frames)
+	var hk_ratio: float = p.hat_kick_ratio
 	for e in hats:
-		if _near(snare_idx, int(e[2]), 2) >= 0:
+		var f: int = e[2]
+		if _near(snare_idx, f, 2) >= 0:
+			continue
+		# Klick eines Kicks reicht bis in die Hoehen; ein Becken muss gegen den Kick hoerbar sein.
+		if _near(kick_idx, f, 2) >= 0 and _rise(w_hi, f, frames) < hk_ratio * _rise(w_lo, f, frames):
 			continue
 		events.append({"t_ms": maxf(0.0, float(e[0]) * frame_ms + shift), "strength": e[1], "kind": "hat", "pitch": -1.0, "sustain_ms": 0.0})
 
@@ -877,9 +942,13 @@ static func analyze(pcm: PackedFloat32Array, rate: int, params: Dictionary = {})
 
 	# Instrument / Stimme
 	var voc_min: float = p.vocal_min
+	var t_ratio: float = p.tonal_ratio
 	var kept: Array = []
 	for e in harm:
 		var f: int = e[2]
+		# Einsatz eines lauten Basstons streut kurz in die Mitten; ein Ton dort muss gegen den Bass zaehlen.
+		if _rise(w_hm, f, frames, 4) < t_ratio * _rise(w_hl, f, frames, 4):
+			continue
 		var is_voc := voc[f] >= voc_min
 		if not is_voc and float(e[3]) * relax < 1.0:
 			continue
@@ -909,6 +978,7 @@ static func analyze(pcm: PackedFloat32Array, rate: int, params: Dictionary = {})
 				"kind": "vocal" if is_voc else "tonal", "pitch": pos,
 				"sustain_ms": sus if sus >= sus_min else 0.0})
 	events.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.t_ms < b.t_ms)
+	events = _merge_onsets(events, 2.0 * frame_ms)
 
 	# ---- 5. Lautheit je Frame
 	var db := PackedFloat32Array()
@@ -926,8 +996,58 @@ static func analyze(pcm: PackedFloat32Array, rate: int, params: Dictionary = {})
 
 	# ---- 6. Abschnitte
 	var sections := _sections(p, frames, frame_ms, duration_ms, energy, e_p, e_hl, e_hm, voc, events)
-	return {"ok": true, "error": "", "duration_ms": duration_ms, "events": events, "energy": energy,
+	var res := {"ok": true, "error": "", "duration_ms": duration_ms, "events": events, "energy": energy,
 			"frame_ms": frame_ms, "sections": sections}
+	if p.get("debug", false):
+		res["debug"] = {"f_lowp": f_lowp, "f_pm": f_pm, "f_ph": f_ph, "f_hl": f_hl, "f_hm": f_hm, "voc": voc,
+				"spec": spec, "refs": hp.refs, "floor_ref": hp.floor_ref, "hb": hp.hb, "nb": nb}
+	return res
+
+
+## Anstieg einer Leistungs-Spur am Anschlag-Frame f: Hoechstwert in f..f+ahead gegen 2 Frames vorher, >= 0.
+static func _rise(w: PackedFloat32Array, f: int, frames: int, ahead: int = 1) -> float:
+	var fb := maxi(f - 2, 0)
+	var mx := w[f]
+	for g in range(f + 1, mini(f + ahead + 1, frames)):
+		mx = maxf(mx, w[g])
+	return maxf(mx - w[fb], 0.0)
+
+
+## Ein akustischer Einsatz = ein Ereignis je Ebene, die ihn wirklich traegt:
+## "other" (perkussiv ohne Trommel-Form) entfaellt, wenn derselbe Einsatz schon als Trommel,
+## Bass, Ton oder Stimme erkannt ist; ein kurzer Bass auf einem Kick ist der Ausklang des Kicks.
+static func _merge_onsets(events: Array, tol_ms: float) -> Array:
+	var n := events.size()
+	var drop := PackedByteArray()
+	drop.resize(n)
+	drop.fill(0)
+	for i in n:
+		var e: Dictionary = events[i]
+		var k: String = e.kind
+		if k != "other" and not (k == "bass" and float(e.sustain_ms) <= 0.0):
+			continue
+		var t: float = e.t_ms
+		var j := i - 1
+		while j >= 0 and t - float(events[j].t_ms) <= tol_ms:
+			if _merges_into(k, events[j].kind):
+				drop[i] = 1
+			j -= 1
+		j = i + 1
+		while j < n and float(events[j].t_ms) - t <= tol_ms:
+			if _merges_into(k, events[j].kind):
+				drop[i] = 1
+			j += 1
+	var res: Array = []
+	for i in n:
+		if drop[i] == 0:
+			res.append(events[i])
+	return res
+
+
+static func _merges_into(kind: String, other: String) -> bool:
+	if kind == "other":
+		return other != "other"
+	return other == "kick"
 
 
 ## Frames ab f, in denen der harmonische Pegel des Bands oben bleibt.
