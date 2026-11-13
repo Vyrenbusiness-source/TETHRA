@@ -3712,9 +3712,12 @@ func _update_break_overlay(t: float) -> void:
 		var cx := Playfield2D.overlay_center_x(_pf2d.screen_field_rect(), vw, 320.0)
 		if is_nan(cx):
 			_break_ov.position.x = 0.0
-			_break_ov.modulate.a *= clampf((_breaks[idx].y - core.preempt - t) / 250.0, 0.0, 1.0)
+			_break_ov.modulate.a *= BreakOverlay.clear_alpha(_breaks[idx].y - core.preempt, t)
 		else:
 			_break_ov.position.x = cx - vw * 0.5
+	else:
+		# 3D: der Ring liegt mitten auf der Bahn. Weg, bevor die erste Note anfliegt.
+		_break_ov.modulate.a *= BreakOverlay.clear_alpha(_breaks[idx].y - core.preempt, t)
 
 
 ## HUD-Spalte: vertikal um anchor_pos zentriert, Bloecke mit festem Abstand.

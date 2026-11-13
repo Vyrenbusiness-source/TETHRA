@@ -390,6 +390,11 @@ func _drive(sc: Node, o: Dictionary) -> Dictionary:
 				_info("break-ende", "300 ms vor der Note: overlay aktiv=%s alpha=%.2f" % [ov != null and ov.is_active(), a])
 				if bool(o.get("shots", false)):
 					await _shot("break")
+				if ov != null:
+					# Ring neben dem Feld (2D) darf bleiben; ueber dem Feld muss er weg sein.
+					var beside: bool = absf(float(ov.position.x)) > 1.0
+					_check(beside or float(ov.modulate.a) < 0.05, "break-ring-frei",
+						"300 ms vor der Note: neben dem Feld=%s Deckkraft %.2f" % [beside, float(ov.modulate.a)])
 			elif b_state == 2 and t >= BREAK_B + 450.0:
 				b_state = 3
 				_check(_miss(sc) == miss_brk, "break-erste-note", "Misses %d -> %d" % [miss_brk, _miss(sc)])
