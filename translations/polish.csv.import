@@ -1,0 +1,19 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+uid="uid://bf2e5hxg001mm"
+
+[deps]
+
+files=["res://translations/polish.de.translation", "res://translations/polish.en.translation"]
+
+source_file="res://translations/polish.csv"
+dest_files=["res://translations/polish.de.translation", "res://translations/polish.en.translation"]
+
+[params]
+
+compress=1
+delimiter=0
+unescape_keys=false
+unescape_translations=true

@@ -357,7 +357,7 @@ func _say(text: String, col: Color = UiTheme.TEXT) -> void:
 ## Pixelposition (im Ansichtsfeld) des Knicks von Note idx.
 func note_px(idx: int) -> Vector2:
 	var sc := view.size.y / 720.0
-	return view.size * 0.5 + (path.knots[path.note_knot[idx]].pos - path.camera(t_ms)) * sc + Vector2(0, -34)
+	return view.size * 0.5 + (path.knots[path.note_knot[idx]].pos - view._camera(t_ms)) * sc + Vector2(0, -34)
 
 
 ## Meldung am Ort plus Hinweis oben.

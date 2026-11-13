@@ -83,16 +83,13 @@ var _sim_done := false
 
 
 ## Ansicht des Spiels (QA Vorlauf). Die Spalten sind in _apply_mods schon getauscht, also
-## spiegelt die Ansicht nicht nochmal (TraceMods.view_mods), und die Kamera haelt die Knoten
-## der naechsten 600 ms im Bild (TraceRules.fair_camera).
+## spiegelt die Ansicht nicht nochmal (TraceMods.view_mods). Die Kamera, die die Knoten der
+## naechsten 600 ms im Bild haelt, sitzt in TraceView selbst (Tutorial und Clips gleich).
 class FairView extends TraceView:
 	func setup(p: TracePath, c: ManiaCore, colors: Array[Color]) -> void:
 		super.setup(p, c, colors)
 		mods = TraceMods.view_mods(mods)
 		_mirror = false
-
-	func _camera(t: float) -> Vector2:
-		return TraceRules.fair_camera(path, t, super._camera(t), TraceRules.view_half(size))
 
 
 func _ready() -> void:

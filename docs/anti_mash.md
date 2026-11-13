@@ -12,7 +12,7 @@ Umsetzung: Rebound in `scripts/rebound/rebound_anti_mash.gd` (duenne Schicht vor
 
 | Modus | Bot | vorher | nachher |
 |---|---|---|---|
-| Rebound | alle Tasten zu jeder Note | Acc 76.1% | Acc 25.9% |
+| Rebound | alle Tasten zu jeder Note | Acc 76.1% | Acc 27.6% |
 | Rally | alle Tasten zu jeder Note | Acc 80.4% (11 Misses) | Acc 0.8% (119 Misses) |
 | Orbit | A+B spammen, Cursor wie Autoplay | Acc 100.0% (0 Misses) | Acc 50.0% (20 Misses) |
 | Dirigent | A+B/Akzent spammen | Einsatz-Acc 100.0% (0 Misses) | Einsatz-Acc 66.7% (8 Misses) |

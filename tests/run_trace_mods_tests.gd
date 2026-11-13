@@ -91,7 +91,7 @@ func _qa_tests() -> void:
 			while t <= path.knots[n - 1].t:
 				while a < n and path.knots[a].t < t:
 					a += 1
-				var cam := TraceRules.fair_camera(path, t, view._camera(t), half)
+				var cam := view._camera(t)   # die Ansicht selbst (Spiel, Tutorial, Clips)
 				if prev != Vector2.INF:
 					jump = maxf(jump, cam.distance_to(prev))
 				prev = cam

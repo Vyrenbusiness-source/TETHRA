@@ -1,6 +1,6 @@
 keys,de,en
 DIRIGENT,DIRIGENT,DIRIGENT
-Pause,Pause,Rest
+DIRIGENT_REST,Pause,Rest
 Schlag verfehlt,Schlag verfehlt,Beat missed
 Taktwechsel: %s,Taktwechsel: %s,Time change: %s
 ab dem nächsten Takt,ab dem nächsten Takt,from the next bar
