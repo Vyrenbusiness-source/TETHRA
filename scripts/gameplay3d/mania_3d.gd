@@ -736,7 +736,11 @@ func _load_beatmap() -> bool:
 		var run_mods: Dictionary = GameSession.mods.duplicate()
 		if not GameSession.is_replay:
 			run_mods.merge(Settings.extra_mods(_2d), true)
-		SyncClock.play(stream, ManiaCore.start_lead_ms(_beatmap, scroll, run_mods))
+		# Mindestens 1 ms Vorlauf: ohne Vorlauf startet das Audio sofort hier im
+		# Laden, die restliche Ladezeit (BeatClock, Szene) frisst dann Songzeit
+		# und die ersten Noten stehen beim Start schon im Feld. Mit Vorlauf
+		# beginnt die Uhr erst mit dem ersten Frame bzw. dem Start-Countdown.
+		SyncClock.play(stream, maxf(ManiaCore.start_lead_ms(_beatmap, scroll, run_mods), 1.0))
 		_use_audio = true
 	return true
 
@@ -3914,7 +3918,7 @@ func _resume_with_countdown(step: float = 0.4) -> void:
 	lbl.queue_free()
 	_countdown_running = false
 	if _autoplay:
-		print("TMPDBG countdown-ende raw=%.0f first_note=%.0f preempt=%.0f" % [SyncClock.raw_time_ms(), _beatmap.hit_objects[0].time, core.preempt])
+		print("COUNTDOWN fertig")
 	get_tree().paused = false
 	SyncClock.resume()
 	Input.mouse_mode = Input.MOUSE_MODE_CONFINED_HIDDEN

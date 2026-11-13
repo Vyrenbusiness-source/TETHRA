@@ -18,6 +18,8 @@ var _clock: Node
 var _phase := 0
 var _frames := 0
 var _t_resume := 0
+var _v_start := 0.0
+var _t_start_usec := 0
 
 
 func _process(_delta: float) -> bool:
@@ -40,10 +42,22 @@ func _process(_delta: float) -> bool:
 		_ok(v < -LEAD + 250.0, "ohne Pause: Ladezeit frisst den Vorlauf nicht (%.0f ms)" % v)
 		_ok(v > -LEAD - 100.0, "ohne Pause: Vorlauf nicht laenger als verlangt (%.0f ms)" % v)
 		_t_resume = Time.get_ticks_msec()
+		_v_start = v
+		_t_start_usec = Time.get_ticks_usec()
 		_phase = 1
 	elif _phase == 1 and Time.get_ticks_msec() - _t_resume >= 200:
 		var v2: float = _clock.raw_time_ms()
 		_ok(v2 > -LEAD + 150.0 and v2 < -LEAD + 700.0, "Vorlauf laeuft danach in Echtzeit (%.0f ms)" % v2)
+		_phase = 2
+	elif _phase == 2 and _clock.raw_time_ms() >= 150.0:
+		# Sync: der Fix verschiebt nur den Beginn des Vorlaufs. Songzeit 0 bleibt
+		# der Audio-Start, die Uhr laeuft ueber den Wechsel Vorlauf -> Audio
+		# ohne Sprung in Echtzeit weiter (Trefferzeiten unveraendert).
+		var v3: float = _clock.raw_time_ms()
+		var want := _v_start + float(Time.get_ticks_usec() - _t_start_usec) / 1000.0
+		_ok(_clock.is_playing(), "nach dem Vorlauf spielt das Audio")
+		# Toleranz: Dummy-Audiotreiber mischt in groben Bloecken (30-90 ms gemessen).
+		_ok(absf(v3 - want) < 150.0, "Songzeit laeuft ueber den Audio-Start ohne Sprung (%.0f ms, erwartet %.0f)" % [v3, want])
 		_clock.stop()
 		return _done()
 	return false
