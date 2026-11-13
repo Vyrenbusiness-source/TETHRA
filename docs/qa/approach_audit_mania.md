@@ -7,71 +7,38 @@ Stand: Branch `warmd/qa-mania`, Basis v1.29.0.
 Fuer jede Note: zusammenhaengende Zeit direkt vor dem Treffer, in der sie im
 Sichtfenster liegt (`0 <= position(hit) - position(t) <= Anflugzeit`), exakt
 aus der Scroll-Tabelle (`ScrollMap.visible_lead`, gleiche Rechnung wie
-`mania_3d._note_z`, 2D und 3D teilen sie). Eine Note, die ein Ruecklauf kurz
-vor dem Treffer hinter die Linie oder ueber die Oberkante schiebt, zaehlt erst
-ab dem Wiedereintritt.
+`mania_3d._note_z`, 2D und 3D teilen sie).
 
 Stichprobe: jede 6. Datei aus `maps/` (241 Sets), je Set die leichteste und die
 dichteste Mania-Diff: 75 Diffs, 86 266 Noten (SV-Mod auf 73 Diffs, 2 haben
 starkes eigenes SV). Scroll Speed 5, 10, 15, 25, 40 (Anflug 2297 bis 287 ms).
 
-Schwelle "Fund": weniger als 450 ms, bei kuerzerem Anflug weniger als 50 % des
-Anflugs.
+### Kuerzeste Sichtzeit (ms)
 
-### Kuerzeste Sichtzeit (ms) und Noten unter 50 % / 450 ms
+| Lauf | Speed | Anflug | kuerzeste Sichtzeit | Stand |
+|---|---|---|---|---|
+| ohne Mod, Map ohne SV | alle | 287-2297 | = Anflug | unveraendert |
+| ohne Mod, Map mit eigenem SV (16 Diffs) | 25 | 459 | 360 | unveraendert, gewollt |
+| ohne Mod, Map mit eigenem SV | 40 | 287 | 194 | unveraendert, gewollt |
+| SV Normal | 15 / 25 / 40 | 766 / 459 / 287 | 253 / 124 / 78 | unveraendert, gewollt |
+| SV Stark | 5-15 / 25 / 40 | 2297-766 / 459 / 287 | 71 / 48 / 30 | unveraendert, gewollt |
 
-| Lauf | Speed | vorher min | vorher Funde | nachher min | nachher Funde |
-|---|---|---|---|---|---|
-| ohne Mod, Map ohne SV | alle | = Anflug | 0 | = Anflug | 0 |
-| ohne Mod, Map mit eigenem SV (16 Diffs) | 25 | 360 | 0 | 360 | 0 |
-| ohne Mod, Map mit eigenem SV | 40 | 194 | 0 | 194 | 0 |
-| SV Normal | 15 | 253 | 6 | 352 | 3 |
-| SV Normal | 25 | 124 | 47 | 184 | 27 |
-| SV Normal | 40 | 78 | 290 | 150 | 0 |
-| SV Stark | 5 | 71 | 592 | >= 600 | 0 |
-| SV Stark | 10 | 71 | 595 | 390 | 1 |
-| SV Stark | 15 | 71 | 899 | 253 | 168 |
-| SV Stark | 25 | 48 | 2522 | 152 | 590 |
-| SV Stark | 40 | 30 | 7174 | 150 | 0 |
+Ergebnis: ohne SV-Effekt hat jede Note bei jedem Scroll Speed ihre volle
+Anflugzeit. Kuerzer wird sie nur durch SV (Mod oder Map).
 
-"nachher Funde" sind Noten zwischen der neuen Untergrenze und 50 %: SV kuerzt
-die Sichtzeit absichtlich, die Untergrenze steht unten. SV-Anteil der Songzeit
-(Speed 25): Normal 61,1 % -> 60,9 %, Stark 72,9 % -> 67,7 %, Rueckwaerts-Phasen
-Stark 2645 -> 1326.
+### SV bleibt, wie es war (Nutzer-Vorgabe)
 
-## Gefundene Bugs
+Nutzer: "SV-Mod passt, der muss ja so sein." Kurze Sichtzeiten durch SV sind
+die Wirkung des Mods bzw. des Mappers. Ein Zwischenstand dieses Tasks
+(Commit `bb05c3e`) hatte das SV des Mods je Scroll Speed beruhigt (Bursts bei
+Speed 25/40 entfernt, Ruecklauf seltener). Das war kein Rechenfehler, es hat
+nur die Staerke geaendert: zurueckgenommen. `scripts/gameplay/sv_mod.gd` ist
+wieder identisch mit v1.29.0, `ManiaCore.build_scroll_map` und
+`set_scroll_scale` ebenso. Map-eigenes SV wurde nie angefasst.
 
-### 1. SV-Mod: Noten erst 30-124 ms vor dem Treffer im Bild
+## Gefundene Bugs (behoben, ohne SV-Staerke zu aendern)
 
-Ursache: `SvMod.generate` erzeugte ein SV fuer alle Scroll Speeds. Die
-Fairness-Pruefung (Test `_test_fair`) lief nur mit 600/1200/2400 ms Anflug; der
-Standard (Speed 25) hat 459 ms, Speed 40 hat 287 ms. Ein Burst, der bei 600 ms
-harmlos ist, holt bei 459 ms eine Note erst im Burst ins Bild. SV Stark: der
-Ruecklauf schob Noten bis 71 ms vor dem Treffer hinter die Linie (bei jedem
-Scroll Speed, auch 5).
-
-Fix (`scripts/gameplay/sv_mod.gd`, `scroll_map.gd`, `mania_core.gd`): das SV
-wird fuer die Anflugzeit des Spielers erzeugt (`timing_points_for(bm, view)`,
-`ManiaCore.build_scroll_map(bm, mods, preempt)`). Jede Note liegt vor dem
-Treffer ununterbrochen `SvMod.fair_need(view)` ms im Bild:
-`min(450, max(Anteil * view, min(150, 0.8 * view)))`, Anteil 0,40 Normal und
-0,33 Stark. Verletzt eine Note das, wird erst der Block direkt vor ihr ruhiger,
-dann das Fenster, zuletzt m = 1. Scroll Speed live (F3/F4, Pausenmenue):
-`ManiaCore.set_scroll_scale` erzeugt das SV neu.
-
-Folge: bei Speed 40 ist SV Stark deutlich ruhiger, bei Speed 25 fallen Bursts
-weg, nach denen eine Note in weniger als 152 ms faellig waere (synthetische
-Kiai-Map: 15 statt 44 von 64 Beats mit Burst in den Beat), ab Speed 15 bleibt
-der Beat-Tanz unveraendert (43 von 64).
-
-Test: `tests/run_sv_mod_tests.gd` `_test_lead` (rot vor dem Fix: 9 Faelle,
-schlechteste 16 %), `_test_live_speed`.
-
-Keine Regelaenderung: Wertung, Zeitfenster, Score-Faktor (SV x1,1) unveraendert,
-das SV ist nur Anzeige. Replay-rules bleibt, kein Server-min_version.
-`docs/qa/sv_mod.md` (nicht in diesem Task) nennt noch die alte Regel.
-
-### 2. Songstart mit Konstant-Mod: erste Note ohne volle Anflugzeit
+### 1. Songstart mit Konstant-Mod: erste Note ohne volle Anflugzeit
 
 Ursache: `mania_3d._load_beatmap` rechnete den Vorlauf mit dem SV der Map und
 vor dem Einmischen der Lauf-Mods. Mit Konstant (CS) fliegt die Note aber mit
@@ -82,7 +49,7 @@ ausserdem nur die erste Note, obwohl eine spaetere zuerst erscheinen kann.
 Fix: `ManiaCore.start_lead_ms(bm, scroll, mods)`: fruehestes Erscheinen aller
 Noten mit den Mods des Laufs, plus 600 ms. Test `_test_start_lead`.
 
-### 3. Intro-Skip bei Scroll Speed 1-5: erste Note steht schon im Feld
+### 2. Intro-Skip bei Scroll Speed 1-5: erste Note steht schon im Feld
 
 Ursache: `_do_skip` sprang fest auf 2200 ms vor die erste Note; Speed 5 hat
 2297 ms Anflug, Speed 1 hat 11 485 ms.
@@ -91,7 +58,7 @@ Fix: `ManiaCore.skip_target_ms`: Ziel ist das Erscheinen der ersten Note minus
 600 ms, hoechstens 2200 ms vor der Note. `_can_skip_intro` rechnet mit demselben
 Ziel. Test `_test_start_lead`.
 
-### 4. Replay in 2D: Hidden/FadeIn/Cover aus der Einstellung statt aus dem Lauf
+### 3. Replay in 2D: Hidden/FadeIn/Cover aus der Einstellung statt aus dem Lauf
 
 Ursache: `Playfield2D.cover_fraction` las `Settings.mod_vis_2d`. Ein
 Hidden-Replay lief ohne Abdeckung, wenn die Einstellung inzwischen anders stand
@@ -100,18 +67,63 @@ Hidden-Replay lief ohne Abdeckung, wenn die Einstellung inzwischen anders stand
 Fix: `Playfield2D.set_run_mods(GameSession.mods)` im Replay,
 `ManiaCore.vis_mods`. Test `_test_replay_vis`.
 
-## Geprueft, kein Fund
+Keine Regelaenderung: Wertung, Zeitfenster, Score-Faktoren unveraendert.
+Replay-rules bleibt, kein Server-min_version.
 
-- Ohne Mod, Map ohne SV: Sichtzeit = Anflugzeit, bei jedem Scroll Speed.
-- Map mit eigenem SV: kuerzeste Sichtzeit 78 % (Speed 25) bzw. 68 % (Speed 40)
-  des Anflugs, das ist das SV des Mappers (wie lazer), nicht veraendert.
-- 3D: `note_disc.gdshader` blendet ferne Noten nicht aus (`approach` ohne
-  Wirkung), sichtbar ab `Z_FAR - 0.5`. 2D: `z_to_y` legt `Z_FAR` an die
-  Oberkante, auch mit eigener HitPosition, Skin, Scroll nach oben.
-- Hidden/FadeIn/Cover (nur 2D): Abdeckung 16-40 % bzw. der gewaehlte
-  Cover-Anteil, das ist die Wirkung des Mods.
-- Pause/Resume: Uhr haelt, 3-2-1 vor dem Weiterspielen. Retry laedt die Szene
-  neu (Vorlauf neu gerechnet, Mods bleiben in `GameSession.mods`).
+## Noten ohne SV-Effekt: geprueft
+
+### 3D: fernes Ende (Shot)
+
+Shot 3D, Welt Frost, Scroll Speed Standard, Songzeit 30 s
+(`--mania --3d --autoplay --shot --shot-at=30000`): Noten und Hold-Strahlen
+sind bis zum Horizont zu sehen, nichts wird abgeschnitten.
+
+- Kamera-Far-Clip: Godot-Standard (4000), Spawn-Horizont `Z_FAR = -46`.
+- Kein Nebel: kein `fog_*`/`volumetric_fog` im Projekt.
+- `note_disc.gdshader` blendet ferne Noten nicht aus (`approach` ohne Wirkung).
+- Cull-Grenze: `in_view = z >= Z_FAR - 0.5`, Spawn bei Abstand = Anflugzeit,
+  also genau bei `Z_FAR`. Keine Note erscheint mitten auf der Strecke.
+
+Beobachtung (kein Fehler in der Rechnung, Optik nicht umgebaut): die
+Perspektive staucht das ferne Ende. Gerechnet mit der Standard-Kamera
+(y 1,78, z 6,8, Neigung -15,2 Grad, FOV 72, 720p): Horizont bei Bildzeile 256,
+Trefferlinie bei 577. Die erste Haelfte der Anflugzeit legt die Note 25 von
+321 Zeilen zurueck (11 bis 20 px breit), das letzte Viertel der Zeit 255
+Zeilen. Bei Scroll Speed 25 (459 ms) ist eine Note in 3D erst in den letzten
+rund 115 bis 230 ms gross im Bild. Das wirkt wie "kommt direkt", obwohl sie
+459 ms sichtbar ist. In 2D ist die Bewegung gleichmaessig. Abhilfe waere eine
+Design-Entscheidung (laengerer Anflug in 3D bei gleichem Scroll Speed oder
+flachere Kamera), hier nicht geaendert.
+
+Nicht per Shot geprueft: die anderen 12 Welten (im Code gibt es keine
+weltabhaengige Sichtgrenze, die Horizont-Glut liegt hinter `Z_FAR`).
+
+### Spawn, Zeitbasis, Pause
+
+- Spawn: `ManiaCore.update` spawnt jede Note, sobald ihr Abstand die
+  Anflugzeit erreicht; kein Limit je Frame, kein Pool.
+- Songstart: Vorlauf = Anflugzeit + 600 ms (`start_lead_ms`), dazu 3-2-1.
+- Nach Breaks: kein eigener Pfad, Noten spawnen nach Zeit wie ueberall.
+- Pause/Resume: Uhr haelt (`Smoother.hold`), 3-2-1 vor dem Weiterspielen,
+  Audio wird auf die gehaltene Zeit gespult, kein Sprung.
+- Zeitbasis: `SyncClock` ist monoton und geglaettet. Ein harter Sprung nach
+  vorn passiert nur, wenn die Audio-Uhr 40 ms lang mehr als 50 ms voraus ist
+  (Seek, Audio-Aussetzer). Nach so einem Aussetzer stehen Noten naeher an der
+  Linie, das ist die echte Songzeit. Im Lauf nicht aufgetreten.
+- Retry laedt die Szene neu (Vorlauf neu gerechnet, Mods bleiben in
+  `GameSession.mods`).
+- Scroll Speed live langsamer gestellt (F3/F4): Noten zwischen altem und
+  neuem Horizont erscheinen sofort, das ist die Folge der Aenderung.
+
+### 2D
+
+- `z_to_y` legt `Z_FAR` an die Oberkante, auch mit eigener HitPosition, Skin,
+  Scroll nach oben: Anflug = Oberkante bis Linie.
+- Hidden/FadeIn/Cover: Abdeckung 16-40 % bzw. der gewaehlte Cover-Anteil, das
+  ist die Wirkung des Mods.
+
+### Mods
+
 - Score-Faktor: NF x0,5, SV x1,1, Produkt (`_test_score` gruen). FI/HD/CO/CS
   ohne Faktor.
 - Replay speichert `GameSession.mods` vollstaendig, Wiedergabe mischt keine
@@ -123,13 +135,11 @@ Fix: `Playfield2D.set_run_mods(GameSession.mods)` im Replay,
   gelesen (Lobby setzt `GameSession.mods`), kein Lauf gegen einen Server.
 - Replay mit SV: die Stufe (Normal/Stark) kommt aus `SvMod.strength` der
   aktuellen Einstellung, nicht aus dem Replay. Wertung gleich, Bild anders.
-- Sichtzeit-Untergrenze 152 ms bei Speed 25 mit SV Stark liegt unter den
-  450 ms der Aufgabe: mehr geht nur mit ruhigerem SV (Entscheidung offen).
+- 3D-Perspektive (oben): Entscheidung des Nutzers, ob 3D mehr Anflug bekommt.
+- Fail, Songende und Replay-Wiedergabe nicht in einem Lauf geprueft.
 
 ## Laeufe
 
-- Autoplay im Fenster (Monitor 2, Dummy-Audio), je 45 s bis zum Test-Watchdog:
-  3D `--sv --scroll=40` und 2D `--sv --scroll=5`. Kein SCRIPT ERROR, kein
-  ERROR im Log. Nicht bis zum Songende gespielt (Watchdog), Fail, Pause und
-  Replay-Wiedergabe nicht im Lauf geprueft.
-- Headless: `run_sv_mod_tests.gd` 157 bestanden, `run_sv_tests.gd` 20 bestanden.
+- Autoplay im Fenster (Monitor 2, Dummy-Audio), je 45 s: 3D `--sv --scroll=40`
+  und 2D `--sv --scroll=5`; 3D-Shot bei 30 s. Kein SCRIPT ERROR, kein ERROR.
+- Headless: `run_sv_mod_tests.gd` 143 bestanden, `run_sv_tests.gd` 20 bestanden.
