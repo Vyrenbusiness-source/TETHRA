@@ -27,6 +27,10 @@ const EXIT_PEAK := 0.13
 ## Flugzeit, ab der der seitliche Schwung voll ist.
 const SWING_FULL_MS := 600.0
 const SWING_MIN := 0.25
+## Vorschau: Landungen bis so weit voraus zeigt die Ansicht als Geister-Bogen (QA Vorlauf).
+const PREVIEW_MS := 900.0
+## Zeit zwischen Uhr-Start und dem Fallbeginn des ersten Balls.
+const START_PAD_MS := 600.0
 
 enum Kind { HIDDEN, AIR, FALL, REST, EXIT }
 
@@ -42,6 +46,7 @@ class Seg extends RefCounted:
 	var x1 := 0.0
 	var hold := false
 	var first_free := false  ## folgt ein Folgeflug direkt (Luftflug) an free?
+	var chain_t0 := 0.0   ## Fallbeginn der lueckenlosen Flugkette, zu der dieser Flug gehoert
 	func dur() -> float:
 		return t1 - t0
 
@@ -121,6 +126,7 @@ static func from_notes(notes: Array, p_columns: int = 4, p_drop_ms: float = DROP
 				swing = 0
 				s.x0 = 0.0
 				s.x1 = 0.0
+			s.chain_t0 = s.t0 if s.fall or prev == null else prev.chain_t0
 			f.segs[c].append(s)
 			prev = s
 	return f
@@ -229,3 +235,42 @@ func last_time() -> float:
 		if not arr.is_empty():
 			m = maxf(m, (arr[arr.size() - 1] as Seg).free)
 	return m
+
+
+## Vorschau-Kette der Spalte c zur Zeit t: Indizes (x = erster, y = letzter; x > y = leer)
+## der Fluege, die noch nicht begonnen haben, aber lueckenlos an den laufenden Flug bzw. den
+## liegenden Hold anschliessen und binnen PREVIEW_MS landen. Ein Hereinfallen beendet die
+## Kette (der fallende Ball ist selbst drop_ms lang sichtbar).
+func preview_range(c: int, t: float) -> Vector2i:
+	var arr: Array = segs[c]
+	var k := first_landing_at_or_after(c, t)
+	if k < 0:
+		return Vector2i(0, -1)
+	var s := arr[k] as Seg
+	var first := k + 1
+	if t < s.t0:
+		if s.fall:
+			return Vector2i(0, -1)
+		first = k
+	var last := first - 1
+	while last + 1 < arr.size():
+		var n := arr[last + 1] as Seg
+		if n.fall or n.t1 - t > PREVIEW_MS:
+			break
+		last += 1
+	return Vector2i(first, last)
+
+
+## Zeit, ab der Flug k der Spalte c lesbar ist: Fallbeginn, eigener Flugbeginn oder die
+## Vorschau-Kette (PREVIEW_MS vor der Landung, fruehestens ab dem Fallbeginn der Kette).
+func readable_from(c: int, k: int) -> float:
+	var s := segs[c][k] as Seg
+	if s.fall:
+		return s.t0
+	return minf(s.t0, maxf(s.t1 - PREVIEW_MS, s.chain_t0))
+
+
+## Vorlauf der Uhr vor Zeit 0: mindestens der AudioLeadIn der Map und genug, dass der erste
+## Ball seine volle Fallzeit sichtbar ist (auch ohne Audio, Retry, Replay, Mehrspieler).
+static func lead_in_ms(first_t: float, p_drop_ms: float, audio_lead_ms: float) -> float:
+	return maxf(audio_lead_ms, p_drop_ms + START_PAD_MS - first_t)

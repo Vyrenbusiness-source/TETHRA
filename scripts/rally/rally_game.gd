@@ -169,9 +169,7 @@ func _load_beatmap() -> bool:
 	var stream := OszImporter.load_audio_stream(GameSession.osz_path, _beatmap)
 	if stream != null:
 		var lead := _beatmap.audio_lead_in()
-		var need := float(Settings.rally_flight_ms) + 900.0
-		if shots[0].t + lead < need:
-			lead = need - shots[0].t
+		lead = RallyChart.lead_in_ms(shots[0].t, float(Settings.rally_flight_ms), lead)
 		SyncClock.play(stream, lead)
 		_use_audio = true
 	return true
@@ -203,7 +201,7 @@ func _time_ms() -> float:
 		return SyncClock.judgement_time_ms()
 	if not _debug_running:
 		return 0.0
-	return float(Time.get_ticks_usec() - _debug_start_usec) / 1000.0 - 1000.0
+	return float(Time.get_ticks_usec() - _debug_start_usec) / 1000.0 - maxf(1000.0, RallyChart.lead_in_ms(shots[0].t, float(Settings.rally_flight_ms), 0.0))
 
 
 func _visual_ms() -> float:

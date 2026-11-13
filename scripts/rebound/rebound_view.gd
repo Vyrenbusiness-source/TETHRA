@@ -480,6 +480,24 @@ func _draw_target(l: Lay, c: int, b: Dictionary) -> void:
 					draw_arc(pos, 2.4 * _u, 0.0, TAU, 10, Color(gc, 0.34 * fade), 1.2 * _u, true)
 				else:
 					draw_circle(pos, 1.5 * _u, Color(gc, 0.24 * fade), true, -1.0, true)
+	# Vorschau-Kette (QA Vorlauf): weitere Landungen bis PREVIEW_MS voraus, auch flache Huepfer
+	# schneller Folgen und der Huepfer nach einem liegenden Hold. Ende des Bogens = Landepunkt.
+	var pr := flight.preview_range(c, t_ms)
+	for j in range(pr.x, pr.y + 1):
+		var n2 := arr[j] as ReboundFlight.Seg
+		if j == k + 1 and n2.peak > 0.07 and absf(n2.t0 - s.free) < 1.0:
+			continue
+		var gc2 := COL_HOLD if n2.hold else lane_color(c).lerp(Color.WHITE, 0.3)
+		var fade2 := clampf((ReboundFlight.PREVIEW_MS - (n2.t1 - t_ms)) / 200.0, 0.0, 1.0)
+		var dots2 := clampi(int(n2.dur() / 28.0), 4, 28)
+		for i in range(1, dots2 + 1):
+			var p2 := float(i) / float(dots2)
+			var h2 := 4.0 * n2.peak * p2 * (1.0 - p2)
+			var pos2 := Vector2(l.cx(c) + lerpf(n2.x0, n2.x1, p2) * l.a, l.y - l.ball_r - h2 * l.hpx)
+			if i == dots2:
+				draw_arc(pos2, 3.4 * _u, 0.0, TAU, 12, Color(gc2, 0.55 * fade2), 1.3 * _u, true)
+			else:
+				draw_circle(pos2, 1.5 * _u, Color(gc2, 0.24 * fade2), true, -1.0, true)
 
 
 func _draw_chords(l: Lay, balls: Array) -> void:
