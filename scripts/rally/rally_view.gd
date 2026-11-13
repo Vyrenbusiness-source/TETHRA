@@ -39,6 +39,9 @@ const TRAIL_MS := 100.0
 const FX_MS := 420.0
 const FX_RING_MS := 230.0
 const MISS_FLY_MS := 450.0
+## Abstand der Rueckwand hinter der Tischkante (m) und Bodenhoehe unter der Platte.
+const WALL_Z := 1.8
+const FLOOR_Y := -0.76
 
 var beat_ms := 500.0
 var shots: Array[RallyChart.Shot] = []
@@ -50,6 +53,7 @@ var key_labels := ["D", "F", "J"]
 var flight_ms := 800.0
 
 var _fx: Array = []
+var _cap: StyleBoxFlat
 var _hit_t: Dictionary = {}
 var _rel_t: Dictionary = {}
 var _u := 1.0
@@ -218,6 +222,10 @@ func _draw() -> void:
 	_draw_keys()
 
 
+func _blob(center: Vector2, half: Vector2, col: Color) -> void:
+	draw_texture_rect(ReboundView._radial("soft"), Rect2(center - half, half * 2.0), false, col)
+
+
 func _quad(a: Vector2, b: Vector2, c: Vector2, d: Vector2, col: Color) -> void:
 	draw_colored_polygon(PackedVector2Array([a, b, c, d]), col)
 
@@ -245,27 +253,50 @@ func _ground_ring(cx: float, cz: float, r: float, col: Color, width: float, fill
 func _draw_room() -> void:
 	var w := size.x
 	var h := size.y
-	# Halbtransparent: das Map-Bild (MapBackdrop des Game-Knotens) scheint nur leise durch.
-	draw_rect(Rect2(0, 0, w, h), Color(COL_ROOM, 0.84))
+	# Raum: Rueckwand und Boden, das Map-Bild scheint nur als Farbhauch durch.
+	var zw := LEN + WALL_Z
+	var hz: float = _pp(Vector3(0.0, FLOOR_Y, zw)).y
+	var wt := Color(0.046, 0.045, 0.044, 0.88)
+	var wb := Color(0.092, 0.089, 0.084, 0.92)
+	draw_polygon(PackedVector2Array([Vector2(0, 0), Vector2(w, 0), Vector2(w, hz), Vector2(0, hz)]),
+			PackedColorArray([wt, wt, wb, wb]))
+	# Wandfelder: feine senkrechte Fugen, perspektivisch richtig verteilt.
+	for i in range(-6, 7):
+		var fx := (float(i) + 0.5) * 1.25
+		var fa := _pp(Vector3(fx, FLOOR_Y, zw))
+		if fa.x < 0.0 or fa.x > w:
+			continue
+		draw_polyline_colors(PackedVector2Array([Vector2(roundf(fa.x) + 0.5, 0.0), Vector2(roundf(fa.x) + 0.5, hz)]),
+				PackedColorArray([Color(1, 1, 1, 0.0), Color(1, 1, 1, 0.07)]), 1.0)
+	var ft := Color(0.118, 0.113, 0.106, 0.96)
+	var fb := Color(0.040, 0.039, 0.038, 0.98)
+	draw_polygon(PackedVector2Array([Vector2(0, hz), Vector2(w, hz), Vector2(w, h), Vector2(0, h)]),
+			PackedColorArray([ft, ft, fb, fb]))
+	# Sockelleiste.
+	var sk := maxf(roundf(3.0 * _u), 2.0)
+	draw_rect(Rect2(0, roundf(hz) - sk, w, sk), Color(0.135, 0.130, 0.122))
+	draw_rect(Rect2(0, roundf(hz) - sk, w, 1.0), Color(1, 1, 1, 0.10))
+	# Leuchte ueber dem Tisch: schmale Schiene, leiser Lichtkegel auf die Platte.
 	var boost := 1.0 + 0.10 * _lvl
-	# Raumlicht: weicher Kegel ueber der Tischmitte (konzentrische Ellipsen, sehr leise).
-	var lc := _pp(_w(0.0, 0.0, 0.55))
-	for i in 40:
-		var f := float(i) / 39.0
-		var rx := w * (0.62 - 0.46 * f)
-		var ry := h * (0.58 - 0.42 * f)
-		draw_set_transform(lc + Vector2(0, -h * 0.10), 0.0, Vector2(1.0, ry / rx))
-		draw_circle(Vector2.ZERO, rx, Color(COL_LIGHT, 0.0040 * boost))
-	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
-	# Weicher Schatten unter dem Tisch.
-	var sc := _pp(_w(0.0, -0.76, 0.5))
-	for i in 5:
-		var f2 := float(i) / 4.0
-		draw_set_transform(sc, 0.0, Vector2(1.0, 0.16))
-		draw_circle(Vector2.ZERO, w * (0.42 - 0.07 * f2), Color(0, 0, 0, 0.07))
-	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	var lx := w * 0.5
+	var ly := roundf(h * 0.098)
+	var lw := h * 0.30
+	var c0 := Color(COL_LIGHT, 0.030 * boost)
+	var c1 := Color(COL_LIGHT, 0.0)
+	draw_polygon(PackedVector2Array([Vector2(lx - lw, ly), Vector2(lx + lw, ly), Vector2(lx + lw * 2.6, h * 0.86), Vector2(lx - lw * 2.6, h * 0.86)]),
+			PackedColorArray([c0, c0, c1, c1]))
+	var lh := maxf(roundf(5.0 * _u), 3.0)
+	for sgn in [-1.0, 1.0]:
+		var hx: float = roundf(lx + lw * 0.72 * sgn) + 0.5
+		draw_line(Vector2(hx, 0.0), Vector2(hx, ly - lh), Color(1, 1, 1, 0.13), 1.0)
+	draw_rect(Rect2(lx - lw, ly - lh, lw * 2.0, lh), Color(0.150, 0.146, 0.138))
+	draw_rect(Rect2(lx - lw, ly - lh, lw * 2.0, 1.0), Color(1, 1, 1, 0.14))
+	draw_rect(Rect2(lx - lw + lh, ly - maxf(roundf(2.0 * _u), 1.0), (lw - lh) * 2.0, maxf(roundf(2.0 * _u), 1.0)), Color(COL_LIGHT, 0.88))
+	# Weicher Schatten des Tisches am Boden.
+	var sc := _pp(_w(0.0, FLOOR_Y, 0.42))
+	_blob(sc, Vector2(w * 0.50, h * 0.17), Color(0, 0, 0, 0.72))
 	# Vignette: weich von den Seiten, keine harte Kante.
-	var vg := Color(0, 0, 0, 0.46)
+	var vg := Color(0, 0, 0, 0.36)
 	var v0 := Color(0, 0, 0, 0.0)
 	draw_polygon(PackedVector2Array([Vector2(0, 0), Vector2(w * 0.30, 0), Vector2(w * 0.30, h), Vector2(0, h)]),
 			PackedColorArray([vg, v0, v0, vg]))
@@ -301,15 +332,16 @@ func _draw_table() -> void:
 	# Zarge (Vorderkante mit Dicke) und seitliche Kanten.
 	var a := _pp(_w(-1, 0, 0))
 	var b := _pp(_w(1, 0, 0))
-	var a2 := _pp(_w(-1, -0.05, 0))
-	var b2 := _pp(_w(1, -0.05, 0))
-	_quad_g(a, b, b2, a2, COL_TABLE_DARK.lightened(0.06), COL_ROOM)
-	draw_line(a, b, Color(COL_LINE, 0.55), 1.8, true)
+	var a2 := _pp(_w(-0.985, -0.062, 0))
+	var b2 := _pp(_w(0.985, -0.062, 0))
+	_quad_g(a, b, b2, a2, COL_TABLE_DARK.lightened(0.10), COL_TABLE_DARK.darkened(0.55))
+	draw_line(a2, b2, Color(0, 0, 0, 0.55), 1.0 * _u, true)
+	draw_line(a, b, Color(COL_LINE, 0.62), 1.8 * _u, true)
 	var af := _pp(_w(-1, 0, 1))
 	var bf := _pp(_w(1, 0, 1))
-	draw_line(af, bf, Color(COL_LINE, 0.20), 1.0, true)
-	draw_line(a, af, Color(COL_LINE, 0.34), 1.4, true)
-	draw_line(b, bf, Color(COL_LINE, 0.34), 1.4, true)
+	draw_line(af, bf, Color(COL_LINE, 0.26), 1.0 * _u, true)
+	draw_line(a, af, Color(COL_LINE, 0.40), 1.4 * _u, true)
+	draw_line(b, bf, Color(COL_LINE, 0.40), 1.4 * _u, true)
 	# Mittellinie lang (Doppel-Linie des Tisches), sehr fein.
 	draw_line(_pp(_w(0, 0, 0)), _pp(_w(0, 0, 1)), Color(COL_LINE, 0.07), 1.0, true)
 
@@ -320,6 +352,9 @@ func _draw_net() -> void:
 	var b1 := _pp(_w(ex, 0.0, 0.5))
 	var t0 := _pp(Vector3(-ex * HALF_W, NET_H, 0.5 * LEN))
 	var t1 := _pp(Vector3(ex * HALF_W, NET_H, 0.5 * LEN))
+	# Schatten des Netzes auf der Platte (zur Spielerseite).
+	_quad_g(_pp(_w(-1, 0.001, 0.5)), _pp(_w(1, 0.001, 0.5)), _pp(_w(1, 0.001, 0.468)), _pp(_w(-1, 0.001, 0.468)),
+			Color(0, 0, 0, 0.30), Color(0, 0, 0, 0.0))
 	_quad(b0, b1, t1, t0, Color(0.78, 0.82, 0.88, 0.10))
 	var nv := 30
 	for i in range(1, nv):
@@ -328,11 +363,17 @@ func _draw_net() -> void:
 	for i in range(1, 5):
 		var g := float(i) / 5.0
 		draw_line(b0.lerp(t0, g), b1.lerp(t1, g), Color(0.85, 0.88, 0.92, 0.07), 1.0)
-	draw_line(t0, t1, Color(COL_LINE, 0.80), 2.0, true)
-	draw_line(t0 + Vector2(0, 2.0), t1 + Vector2(0, 2.0), Color(COL_LINE, 0.16), 1.0, true)
-	var pw := maxf(0.012 * _sc(_w(ex, 0, 0.5)), 2.0)
-	draw_line(b0, t0, Color(0.55, 0.58, 0.63, 0.9), pw, true)
-	draw_line(b1, t1, Color(0.55, 0.58, 0.63, 0.9), pw, true)
+	# Netzband oben: helles Band mit Schattenkante.
+	var tape := maxf(3.0 * _u, 2.0)
+	_quad(t0, t1, t1 + Vector2(0, tape), t0 + Vector2(0, tape), Color(COL_LINE, 0.86))
+	draw_line(t0 + Vector2(0, tape + 0.5), t1 + Vector2(0, tape + 0.5), Color(0, 0, 0, 0.35), 1.0)
+	# Pfosten: Metall mit Lichtkante links.
+	var pw := maxf(0.016 * _sc(_w(ex, 0, 0.5)), 3.0)
+	for pq in [[b0, t0], [b1, t1]]:
+		var pb: Vector2 = pq[0]
+		var pt: Vector2 = pq[1]
+		draw_line(pb + Vector2(0, pw * 0.5), pt - Vector2(0, pw * 0.4), Color(0.30, 0.31, 0.33), pw, true)
+		draw_line(pb + Vector2(-pw * 0.25, pw * 0.5), pt + Vector2(-pw * 0.25, -pw * 0.4), Color(0.72, 0.73, 0.75, 0.85), maxf(pw * 0.25, 1.0), true)
 
 
 # ---------------------------------------------------------------------------
@@ -376,12 +417,24 @@ func _draw_keys() -> void:
 		var lit: float = _lit[z]
 		var c := _pp(_w((_zx(z, 0.0) + _zx(z + 1, 0.0)) * 0.5, -0.034, 0.0))
 		var half := Vector2(size.y * 0.034, size.y * 0.024)
-		var rc := Rect2((c - half + Vector2(0, size.y * 0.012)).round(), (half * 2.0).round())
-		# Ruhige dunkle Platte, Zonenfarbe nur als Leiste unten und beim Druecken.
-		draw_rect(rc, Color(0.070, 0.070, 0.078, 0.94).lerp(Color(col.darkened(0.25), 1.0), 0.70 * lit), true)
-		draw_rect(rc, Color(COL_LINE, 0.14 + 0.30 * lit), false, 1.0)
+		var rc := Rect2((c - half + Vector2(0, size.y * 0.016)).round(), (half * 2.0).round())
+		# Tastenplatte: weicher Schatten, abgerundete dunkle Platte mit Lichtkante oben,
+		# Zonenfarbe nur als Leiste unten und beim Druecken.
+		if _cap == null:
+			_cap = StyleBoxFlat.new()
+			_cap.anti_aliasing = true
+		var rad := int(round(4.0 * _u))
+		_cap.set_corner_radius_all(rad)
+		_cap.set_border_width_all(0)
+		_cap.bg_color = Color(0, 0, 0, 0.45)
+		draw_style_box(_cap, Rect2(rc.position + Vector2(0, maxf(2.0 * _u, 1.0)), rc.size))
+		_cap.bg_color = Color(0.105, 0.102, 0.098).lerp(col.darkened(0.30), 0.78 * lit)
+		_cap.set_border_width_all(1)
+		_cap.border_color = Color(1, 1, 1, 0.13).lerp(Color(col, 0.9), lit)
+		draw_style_box(_cap, rc)
+		draw_rect(Rect2(rc.position.x + rad, rc.position.y + 1.0, rc.size.x - rad * 2.0, 1.0), Color(1, 1, 1, 0.10))
 		var bar := maxf(round(2.0 * _u), 2.0)
-		draw_rect(Rect2(rc.position.x, rc.end.y - bar, rc.size.x, bar), Color(col, 0.85 + 0.15 * lit), true)
+		draw_rect(Rect2(rc.position.x + rad, rc.end.y - bar - 1.0, rc.size.x - rad * 2.0, bar), Color(col, 0.85 + 0.15 * lit), true)
 		var txt: String = str(key_labels[z]) if z < key_labels.size() else ""
 		var ts := _key_font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
 		draw_string(_key_font, (rc.get_center() + Vector2(-ts.x * 0.5, fs * 0.34 - bar * 0.5)).round(), txt,
@@ -524,15 +577,15 @@ func _draw_shadows(balls: Array) -> void:
 			continue
 		var rad := float(b.rad)
 		var hgt := clampf(P.y / 0.7, 0.0, 1.0)
-		var al := float(b.a) * (0.34 - 0.20 * hgt)
+		var al := float(b.a) * (0.80 - 0.42 * hgt)
 		var cx := P.x * HALF_W
 		var cz := P.z * LEN
-		var r := rad * (0.95 + 0.45 * hgt)
-		var pts := PackedVector2Array()
-		for i in 20:
-			var an := TAU * float(i) / 20.0
-			pts.append(_pp(Vector3(cx + cos(an) * r, 0.002, cz + sin(an) * r)))
-		draw_colored_polygon(pts, Color(0, 0, 0, al))
+		var r := rad * (1.45 + 0.75 * hgt)
+		# Weicher Schatten auf der Platte: am Boden klein und dunkel, in der Hoehe weit und blass.
+		var ctr := _pp(Vector3(cx, 0.002, cz))
+		var ex: float = absf(_pp(Vector3(cx + r, 0.002, cz)).x - ctr.x)
+		var ey: float = absf(_pp(Vector3(cx, 0.002, cz + r)).y - ctr.y)
+		_blob(ctr, Vector2(ex, maxf(ey, 1.0)), Color(0, 0, 0, al))
 
 
 func _draw_ball(b: Dictionary) -> void:
@@ -572,10 +625,14 @@ func _draw_ball(b: Dictionary) -> void:
 		var rr := r * 1.70
 		draw_arc(p, rr, 0.0, TAU, 48, Color(c, 0.22), 2.0 * _u, true)
 		draw_arc(p, rr, -PI * 0.5, -PI * 0.5 + TAU * prog, 48, Color(c, 0.95), 3.0 * _u, true)
-	draw_circle(p, r, Color(c.darkened(0.16), al))
-	draw_circle(p + Vector2(-r * 0.14, -r * 0.18), r * 0.76, Color(c.lightened(0.08), al))
-	draw_circle(p + Vector2(-r * 0.32, -r * 0.36), r * 0.20, Color(1, 1, 1, 0.50 * al))
-	draw_arc(p, r, 0.0, TAU, 32, Color(0, 0, 0, 0.42 * al), 1.0, true)
+	# Kugel: dunkle Kontur, Koerper, Schattierung (Licht oben links), weiches Licht, Glanzpunkt.
+	var ri := maxf(r * 0.92, r - 2.0 * _u)
+	draw_circle(p, r, Color(c.darkened(0.70), al), true, -1.0, true)
+	draw_circle(p, ri, Color(c, al), true, -1.0, true)
+	draw_texture_rect(ReboundView._radial("shade"), Rect2(p - Vector2(ri, ri), Vector2(ri, ri) * 2.0), false, Color(1, 1, 1, al))
+	_blob(p + Vector2(-ri * 0.30, -ri * 0.36), Vector2(ri * 0.62, ri * 0.62), Color(1, 1, 1, 0.46 * al))
+	if ri > 5.0:
+		draw_circle(p + Vector2(-ri * 0.36, -ri * 0.44), ri * 0.105, Color(1, 1, 1, 0.85 * al), true, -1.0, true)
 
 
 # ---------------------------------------------------------------------------
@@ -603,17 +660,22 @@ func _blade(c: Vector2, rx: float, ry: float, ang: float, rubber: Color, edge: C
 	var grip := PackedVector2Array([
 		c + _rot(Vector2(-gw, top), ang), c + _rot(Vector2(gw, top), ang),
 		c + _rot(Vector2(gw * 1.15, top + handle), ang), c + _rot(Vector2(-gw * 1.15, top + handle), ang)])
-	draw_colored_polygon(grip, COL_WOOD.darkened(0.62))
-	draw_colored_polygon(outer, COL_WOOD.darkened(0.74))
+	draw_colored_polygon(grip, COL_WOOD.darkened(0.42))
+	draw_polyline(grip, Color(0, 0, 0, 0.55), 1.0 * _u, true)
+	draw_colored_polygon(outer, COL_WOOD.darkened(0.55))
+	var oc := outer.duplicate()
+	oc.append(outer[0])
+	draw_polyline(oc, Color(0, 0, 0, 0.60), 1.2 * _u, true)
 	draw_colored_polygon(inner, rubber)
+	_blob(c + _rot(Vector2(-rx * 0.22, -ry * 0.26), ang), Vector2(rx * 0.62, ry * 0.62), Color(1, 1, 1, 0.07))
 	var hl := PackedVector2Array()
 	for i in 14:
 		var a2 := PI * 1.08 + PI * 0.52 * float(i) / 13.0
 		hl.append(c + _rot(Vector2(cos(a2) * rx * 0.74, sin(a2) * ry * 0.74), ang))
-	draw_polyline(hl, Color(1, 1, 1, 0.10), 1.4, true)
+	draw_polyline(hl, Color(1, 1, 1, 0.16), 1.4 * _u, true)
 	var closed := inner.duplicate()
 	closed.append(inner[0])
-	draw_polyline(closed, Color(edge, 0.30), 1.2, true)
+	draw_polyline(closed, Color(edge, 0.42), 1.2 * _u, true)
 
 
 func _player_x() -> float:
@@ -651,6 +713,8 @@ func _draw_player() -> void:
 	var cm := _cam(wp)
 	var pxm := FOCAL * size.y / cm.z
 	var zc := zone_col(clampi(int(round((px + 1.0) * float(_n()) * 0.5 - 0.5)), 0, _n() - 1))
+	# Schatten des Schlaegers auf der Tischkante.
+	_blob(_pp(Vector3(px * HALF_W, 0.002, 0.03)), Vector2(0.085 * pxm, 0.018 * pxm), Color(0, 0, 0, 0.55))
 	_blade(Vector2(cm.x, cm.y), 0.066 * pxm, 0.062 * pxm, 0.10 - 0.25 * sv + 0.10 * wind,
 			Color(0.115, 0.105, 0.105).lerp(zc, 0.10), zc, 0.08 * pxm)
 

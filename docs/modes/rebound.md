@@ -22,14 +22,14 @@ Spalte. Nur osu!mania-4K-Maps (Notenfolge, Zeiten und Holds unveraendert, exakt 
   - Jack = schnelles Dribbeln (kleine Huepfer).
   - Hold: Ball bleibt **gequetscht** auf dem Fell liegen (Fell leuchtet, Ring fuellt sich)
     bis zum Hold-Ende, beim Loslassen startet er zur naechsten Note.
-- **Lesen:** Landepunkt-Ring auf dem Fell schrumpft bis zur Notenzeit; feiner **Geister-Bogen**
+- **Lesen:** Landepunkt-Ring auf dem Fell schrumpft bis zur Notenzeit; der Rest des laufenden Flugs ist als feine **Flugbahn-Linie** bis zum Landepunkt sichtbar; feiner **Geister-Bogen**
   zeigt den Huepfer danach (uebernaechste Note der Spalte). Ballschatten auf dem Fell wird
   zur Landung kleiner/dunkler. Akkorde: Baelle landen gleichzeitig, kurze Verbindungslinie.
 - **Hold-Ball (Optik):** vom ersten Moment des Flugs an Gold (in keiner Spaltenfarbe; Spalten
   sind kuehl Blau/Stahlblau), andere Form (dunkler Kern in Goldring, Mittelpunkt, Aussenring),
   duenner Faden ueber dem Ball (Laenge = Hold-Dauer, schmilzt beim Halten). Landering und
   Geister-Bogen sind doppelt/Ringe in Gold. Beim Halten: Fortschrittsring, Fell und Tastenplatte
-  leuchten Gold. Normale Baelle: flache Scheibe. Felle flach mit klarer Kante, grosse Tastenplatte.
+  leuchten Gold. Normale Baelle: Kugel mit Schattierung und Glanzpunkt. Trommeln mit Kessel, Metallreifen und hellem Fell auf einem Podest; Tastenplatten in der Frontblende. Rueckwand mit Hoehenmarken je Spalte (Massstab fuer den Bogen).
 - **WRONG KEY:** `ReboundView.on_wrong_key(col)` zeigt kurz (0,8 s) einen dezenten Hinweis
   ueber der Spalte (rein optisch).
 - **Gefuehl:** Squash & Stretch, Fell-Welle beim Treffer in Wertungsfarbe, Miss = Ball prallt
