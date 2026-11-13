@@ -161,6 +161,10 @@ func set_scroll_scale(scroll_scale: float) -> void:
 	preempt = preempt_for(scroll_scale)
 	if beatmap == null:
 		return
+	# SV-Mod: das SV ist fuer die Anflugzeit erzeugt (faire Sichtzeit) -> neu.
+	# Konstant (CS) hat die Tabelle ersetzt und bleibt.
+	if bool(mods.get("SV", false)) and not bool(mods.get("CS", false)):
+		scroll = build_scroll_map(beatmap, mods, preempt)
 	var objs := beatmap.hit_objects
 	for i in range(_next_spawn, mini(objs.size(), _spawn_times.size())):
 		_spawn_times[i] = scroll.spawn_time(objs[i].time, preempt)
@@ -170,7 +174,7 @@ func set_scroll_scale(scroll_scale: float) -> void:
 ## Baut die SV-Positionstabelle und die Spawn-Zeiten (einmal beim Laden).
 func _build_scroll() -> void:
 	var objs := beatmap.hit_objects
-	scroll = build_scroll_map(beatmap, mods)
+	scroll = build_scroll_map(beatmap, mods, preempt)
 	_spawn_times.resize(objs.size())
 	for i in objs.size():
 		_spawn_times[i] = scroll.spawn_time(objs[i].time, preempt)
@@ -226,7 +230,8 @@ static func session_mods() -> Dictionary:
 ## SV-Tabelle einer Map (lastTime = groesste Endzeit aller Objekte, lazer).
 ## p_mods null = GameSession.mods. Mit "SV" kommen die gruenen Linien aus
 ## SvMod (deterministisch je Map, Maps mit eigenem SV bleiben unveraendert).
-static func build_scroll_map(bm: Beatmap, p_mods = null) -> ScrollMap:
+## p_preempt: Anflugzeit des Spielers (SV-Mod: faire Sichtzeit, <= 0 Standard).
+static func build_scroll_map(bm: Beatmap, p_mods = null, p_preempt: float = 0.0) -> ScrollMap:
 	var m: Dictionary = p_mods if p_mods is Dictionary else session_mods()
 	var objs := bm.hit_objects
 	var last_time := 0.0
@@ -240,9 +245,65 @@ static func build_scroll_map(bm: Beatmap, p_mods = null) -> ScrollMap:
 	var sm := ScrollMap.new()
 	var tps: Array = bm.timing_points
 	if bool(m.get("SV", false)):
-		tps = SvMod.timing_points_for(bm)
+		tps = SvMod.timing_points_for(bm, p_preempt)
 	sm.build(tps, last_time)
 	return sm
+
+
+## Sicht-Mod eines Laufs aus seinem Mods-Dictionary (Replay): vis wie
+## Settings.VIS_* (0 keine, 1 FadeIn, 2 Hidden, 3 Cover), pct = Cover-Anteil
+## in Prozent, bottom = Cover von der Linie aus.
+static func vis_mods(p_mods: Dictionary) -> Dictionary:
+	var vis := 0
+	if bool(p_mods.get("FI", false)):
+		vis = 1
+	elif bool(p_mods.get("HD", false)):
+		vis = 2
+	elif bool(p_mods.get("CO", false)):
+		vis = 3
+	return {"vis": vis, "pct": clampi(int(p_mods.get("CO_pct", 50)), 0, 100),
+		"bottom": bool(p_mods.get("CO_bottom", false))}
+
+
+## Reaktionspuffer vor der ersten sichtbaren Note beim Songstart (ms).
+const START_BUFFER_MS := 600.0
+## Intro-Skip: mindestens so weit vor der ersten Note landen (ms).
+const SKIP_BEFORE_MS := 2200.0
+
+
+## Zeitpunkt, zu dem die erste Note ins Bild kommt. Rechnet mit den Mods des
+## Laufs: Konstant (CS) fliegt mit voller Anflugzeit an, auch wenn das SV der
+## Map die erste Note schneller holt; bei SV-Ruecklauf kann eine spaetere
+## Note zuerst erscheinen.
+static func first_spawn_ms(bm: Beatmap, scroll_scale: float, p_mods: Dictionary) -> float:
+	var pre := preempt_for(scroll_scale)
+	var first := INF
+	if bool(p_mods.get("CS", false)):
+		for o in bm.hit_objects:
+			first = minf(first, o.time - pre)
+		return first
+	var sm := build_scroll_map(bm, p_mods, pre)
+	for o in bm.hit_objects:
+		first = minf(first, sm.spawn_time(o.time, pre))
+	return first
+
+
+## Vorlauf (Stille vor dem Song, ms), damit JEDE Note ihre volle Anflugzeit
+## plus START_BUFFER_MS bekommt. Nie kleiner als AudioLeadIn der Map.
+static func start_lead_ms(bm: Beatmap, scroll_scale: float, p_mods: Dictionary) -> float:
+	var lead := bm.audio_lead_in()
+	if bm.hit_objects.is_empty():
+		return lead
+	return maxf(lead, START_BUFFER_MS - first_spawn_ms(bm, scroll_scale, p_mods))
+
+
+## Ziel des Intro-Skips: die erste Note behaelt ihre volle Anflugzeit plus
+## Puffer (frueher fest 2200 ms vor der Note: bei Scroll Speed 1-5 stand sie
+## nach dem Sprung schon mitten im Feld).
+static func skip_target_ms(bm: Beatmap, scroll_scale: float, p_mods: Dictionary) -> float:
+	var first_t: float = bm.hit_objects[0].time
+	return minf(first_t - SKIP_BEFORE_MS,
+			first_spawn_ms(bm, scroll_scale, p_mods) - START_BUFFER_MS)
 
 
 ## Combo-Anteil des Scores: ab 100er-Combo zaehlt eine Note voll.

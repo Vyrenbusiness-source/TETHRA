@@ -21,6 +21,8 @@ const SV_MAX := 10.0
 const DEFAULT_BL := 1000.0
 ## Meta-Schluessel fuer direkt gesetzte (auch negative) Multiplikatoren.
 const SV_META := &"sv_mult"
+## Toleranz hinter der Trefferlinie fuer visible_lead (Positions-Einheiten).
+const LEAD_EPS := 0.5
 
 ## Kontrollpunkt-Zeiten, kumulative Positionen und Multiplikatoren (parallel).
 var _times := PackedFloat64Array()
@@ -224,3 +226,27 @@ func spawn_time(hit_ms: float, view: float) -> float:
 	if _identity or _times.is_empty():
 		return hit_ms - view
 	return time_at(position(hit_ms) - view)
+
+
+## Zusammenhaengende Sichtzeit direkt vor dem Treffer (ms, hoechstens cap):
+## wie lange die Note mit Trefferzeit hit_ms ununterbrochen im Sichtfenster
+## lag (0 <= position(hit) - position(t) <= view). Kuerzer als die Anflugzeit,
+## wenn ein Burst sie spaet ins Bild holt oder ein Ruecklauf sie kurz vor dem
+## Treffer hinter die Linie bzw. ueber die Oberkante schiebt. Exakt: die
+## Position ist je Abschnitt linear, geprueft wird an den Kontrollpunkten.
+func visible_lead(hit_ms: float, view: float, cap: float) -> float:
+	if _identity or _times.is_empty():
+		return minf(view, cap)
+	var ph := position(hit_ms)
+	var k := _seg_by_time(hit_ms)
+	var floor_t := hit_ms - cap
+	while true:
+		var lo := floor_t if k == 0 else maxf(_times[k], floor_t)
+		var d := ph - (_pos[k] + (lo - _times[k]) * _mult[k])
+		if d > view or d < -LEAD_EPS:
+			var bound := view if d > view else -LEAD_EPS
+			return hit_ms - (_times[k] + (ph - _pos[k] - bound) / _mult[k])
+		if lo <= floor_t:
+			return cap
+		k -= 1
+	return cap
