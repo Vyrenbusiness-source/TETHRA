@@ -50,6 +50,10 @@ const NOVELTY_CAP := 4      # hoechstens 4 Mal zaehlen
 const PAGE_MAX := 6         # "Show more": hoechstens so viele Seiten
 const ONLINE_STAR_PAD := 0.15  # Online-Suche: Sterne-Bereich etwas weiter
 const LIKE_MAX := 22        # "like <Titel>": Titel hoechstens so lang
+const ONLINE_TTL := 43200   # Online-Antwort 12 h gueltig (eine Anfrage je Suche)
+const ONLINE_RETRY := 600   # nach einem Fehler fruehestens in 10 min wieder
+const ONLINE_PAGES := 2     # hoechstens 2 Mirror-Seiten je Suche
+const ONLINE_KEEP := 8      # so viele Suchen bleiben im Cache
 
 ## Stufen relativ zum Level P (Sterne): [lo, hi] und Ziel.
 const EASY_LO := -1.3
@@ -992,6 +996,56 @@ static func online_rank(q: Dictionary, t: Dictionary, results: Array, n: int = 6
 	for s in out:
 		s.erase("_score")
 	return out
+
+
+## Online-Antwort in den Cache legen: cache[key] = {t, pages, end, results}.
+## Frischer Eintrag: Seite anhaengen (ohne doppelte Sets); sonst ersetzen.
+## end = Mirror hat keine weitere Seite. Aelteste Suchen ueber ONLINE_KEEP fallen weg.
+static func online_cache_put(cache: Dictionary, key: String, results: Array, now: int, end: bool = false) -> void:
+	var ent = cache.get(key)
+	if ent is Dictionary and now - int(ent.get("t", 0)) < ONLINE_TTL:
+		var ids := {}
+		for r in ent.results:
+			ids[int(r.get("id", 0))] = true
+		for r in results:
+			if not ids.has(int(r.get("id", 0))):
+				ent.results.append(r)
+		ent["pages"] = int(ent.get("pages", 1)) + 1
+		ent["end"] = end
+	else:
+		cache[key] = {"t": now, "pages": 1, "end": end, "results": results.duplicate()}
+	while cache.size() > ONLINE_KEEP:
+		var oldest := ""
+		for k in cache:
+			if k != key and (oldest == "" or int(cache[k].get("t", 0)) < int(cache[oldest].get("t", 0))):
+				oldest = str(k)
+		if oldest == "":
+			break
+		cache.erase(oldest)
+
+
+## Gueltige Cache-Eintraege einer Suche ([] = nichts oder abgelaufen).
+static func online_cached(cache: Dictionary, key: String, now: int) -> Array:
+	var ent = cache.get(key)
+	if ent is Dictionary and now - int(ent.get("t", 0)) < ONLINE_TTL and ent.get("results") is Array:
+		return ent.results
+	return []
+
+
+## Welche Mirror-Seite jetzt zu holen ist (0-basiert), -1 = keine Anfrage.
+## Sparsam: frischer Cache reicht; eine zweite Seite nur, wenn weniger als want
+## Vorschlaege (have) uebrig sind; nach einem Fehler ONLINE_RETRY Pause.
+static func online_fetch_page(cache: Dictionary, key: String, now: int, have: int, want: int,
+		fail_at: int = 0) -> int:
+	if fail_at > 0 and now - fail_at < ONLINE_RETRY:
+		return -1
+	var ent = cache.get(key)
+	if not (ent is Dictionary) or now - int(ent.get("t", 0)) >= ONLINE_TTL:
+		return 0
+	var pages := int(ent.get("pages", 1))
+	if have < want and pages < ONLINE_PAGES and not bool(ent.get("end", false)):
+		return pages
+	return -1
 
 
 # --- Anbindung an ScoreStore ---

@@ -3,7 +3,8 @@ extends SceneTree
 ## Headless-Tests fuer den Empfehlungs-Kern (Recommender): Koennen je Modus
 ## aus synthetischen Profilen (Anfaenger, Mittel, Profi, Wenigspieler, nur
 ## Fehlschlaege), Stufen, Push (Top-pp), Regression echter Mittel-Spieler,
-## Stil-Vorlieben, Filter, Abwechslung, Determinismus.
+## Stil-Vorlieben, Filter, Abwechslung, Determinismus, Stilprofil, Gruende,
+## Seiten, Neuheit, Online-Kandidaten (nur Fake-Daten, nie echter Netzverkehr).
 ##   Godot..._console.exe --headless --audio-driver Dummy --path . --script res://tests/run_recommender_tests.gd
 
 var _passed := 0
@@ -27,6 +28,8 @@ func _initialize() -> void:
 	_test_reasons()
 	_test_paging_novelty()
 	_test_online()
+	_test_online_cache()
+	_test_online_parse()
 	print("=== Ergebnis: %d bestanden, %d fehlgeschlagen ===" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
 
@@ -613,3 +616,72 @@ func _test_online() -> void:
 	_ok(is_equal_approx(float(Recommender.online_rank(qs, t, res, 1)[0].stars), float(Recommender.online_rank(qs, t, res, 1)[0].osu_stars) - 1.0),
 		"Sterne in der Modus-Skala")
 	_ok(str(Recommender.online_rank(q3, t, res, 6)) == str(o3), "Online-Reihenfolge deterministisch")
+
+
+func _test_online_cache() -> void:
+	print("-- Online-Cache (sparsam)")
+	var cache := {}
+	var t0 := 1800000000
+	_ok(Recommender.online_fetch_page(cache, "k", t0, 0, 3) == 0, "ohne Cache: erste Seite holen")
+	Recommender.online_cache_put(cache, "k", _fake_online(), t0)
+	_ok(Recommender.online_cached(cache, "k", t0 + 60).size() == 12, "Antwort im Cache")
+	_ok(Recommender.online_fetch_page(cache, "k", t0 + 60, 5, 3) == -1, "genug Vorschlaege: keine Anfrage")
+	_ok(Recommender.online_fetch_page(cache, "k", t0 + 60, 1, 3) == 1, "zu wenige: einmal die zweite Seite")
+	var more := _fake_online()
+	more.append({"id": 2000, "title": "Neu", "artist": "N", "stars": 2.5, "star_list": [2.5]})
+	Recommender.online_cache_put(cache, "k", more, t0 + 120)
+	_ok(Recommender.online_cached(cache, "k", t0 + 130).size() == 13, "zweite Seite angehaengt, ohne doppelte Sets")
+	_ok(Recommender.online_fetch_page(cache, "k", t0 + 130, 0, 3) == -1, "nie mehr als %d Seiten" % Recommender.ONLINE_PAGES)
+	_ok(Recommender.online_cached(cache, "k", t0 + Recommender.ONLINE_TTL + 1).is_empty()
+		and Recommender.online_fetch_page(cache, "k", t0 + Recommender.ONLINE_TTL + 1, 0, 3) == 0,
+		"nach 12 h neu holen")
+	_ok(Recommender.online_fetch_page({}, "k", t0, 0, 3, t0 - 30) == -1, "nach Fehler (offline) Pause")
+	_ok(Recommender.online_fetch_page({}, "k", t0, 0, 3, t0 - Recommender.ONLINE_RETRY - 1) == 0, "nach der Pause wieder")
+	var short := {}
+	Recommender.online_cache_put(short, "s", _fake_online().slice(0, 2), t0, true)
+	_ok(Recommender.online_fetch_page(short, "s", t0 + 5, 0, 3) == -1, "Mirror hat keine weitere Seite: keine Anfrage")
+	for i in 12:
+		Recommender.online_cache_put(cache, "extra%d" % i, [], t0 + 200 + i)
+	_ok(cache.size() == Recommender.ONLINE_KEEP and cache.has("extra11") and not cache.has("extra0"),
+		"Cache bleibt klein (%d Suchen)" % cache.size())
+
+
+## Mirror-Antwort als Text (kein Netz): zwei 4K-Sets, ein Taiko-Set, ein unranked Set.
+func _fake_mirror_json() -> String:
+	var sets: Array = []
+	for i in 2:
+		sets.append({"id": 500 + i, "title": "Fake %d" % i, "artist": "FA %d" % i, "creator": "Kira",
+			"status": "ranked", "bpm": 180, "play_count": 5000, "genre": {"id": 10, "name": "Electronic"},
+			"covers": {"card": "https://example.invalid/c%d.jpg" % i}, "preview_url": "//example.invalid/p.mp3",
+			"beatmaps": [
+				{"mode_int": 3, "cs": 4, "difficulty_rating": 2.7 + i * 0.2, "total_length": 150},
+				{"mode_int": 3, "cs": 7, "difficulty_rating": 4.0, "total_length": 150}]})
+	sets.append({"id": 600, "title": "Taiko", "artist": "T", "status": "ranked",
+		"beatmaps": [{"mode_int": 1, "cs": 4, "difficulty_rating": 3.0}]})
+	sets.append({"id": 601, "title": "Pending", "artist": "P", "status": "pending",
+		"beatmaps": [{"mode_int": 3, "cs": 4, "difficulty_rating": 2.8}]})
+	return JSON.stringify(sets)
+
+
+func _test_online_parse() -> void:
+	print("-- Online-Antwort (Fake-Daten)")
+	var p: Dictionary = OnlineBrowser.quiet_parse(_fake_mirror_json(), 3)
+	_ok(bool(p.ok) and (p.results as Array).size() == 2 and int(p.raw) == 4, "nur ranked 4K-Sets (%d)" % (p.results as Array).size())
+	_ok(str(p.results[0].genre) == "electronic" and str(p.results[0].preview_url).begins_with("https://"),
+		"Genre-Name und Vorschau-Adresse")
+	var bad: Dictionary = OnlineBrowser.quiet_parse("<html>403</html>", 3)
+	_ok(not bool(bad.ok) and (bad.results as Array).is_empty(), "Fehlerseite: still verworfen")
+	_ok(not bool(OnlineBrowser.quiet_parse("", 3).ok), "leere Antwort: still verworfen")
+	_ok(OnlineBrowser.genre_name(10) == "electronic" and OnlineBrowser.genre_name(1) == "" and OnlineBrowser.genre_name(6) == "",
+		"Genre-Namen")
+	var urls: Array = OnlineBrowser.quiet_urls("electronic", 0, 50)
+	_ok(urls.size() == 3 and "mode=0" in str(urls[0]) and "offset=50" in str(urls[0]) and "osu.direct" in str(urls[0])
+		and "catboy" in str(urls[1]) and "osu.direct" in str(urls[2]), "Mirror-Kette wie im Online-Browser")
+	_ok("mode=3" in str(OnlineBrowser.quiet_urls("4k", 3)[1]), "4K-Suche")
+	# Antwort -> Vorschlaege, wie im Browser.
+	var pl := _style_player()
+	var sk := Recommender.skill("mania", _profile("mania", 2.6, 0.90))
+	var q := Recommender.online_query("mania", "challenge", sk, pl.t)
+	var out := Recommender.online_rank(q, pl.t, p.results, 3)
+	_ok(out.size() >= 1 and str(out[0].cover_url) != "" and "180 BPM" in str(out[0].reason),
+		"Fake-Antwort wird zum Vorschlag mit Grund (%s)" % (str(out[0].reason) if out.size() > 0 else "-"))
