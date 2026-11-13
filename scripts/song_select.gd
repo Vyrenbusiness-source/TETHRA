@@ -4128,14 +4128,17 @@ func _offer_own_songs() -> void:
 	UiTheme.style_button(go, true, 10)
 	go.pressed.connect(done.bind(true))
 	row.add_child(go)
-	_own_offer.anchor_left = 0.5
-	_own_offer.anchor_right = 0.5
+	# Unten rechts ueber der Liste: verdeckt weder die Aktionen links noch den Import-Hinweis.
+	_own_offer.anchor_left = 1.0
+	_own_offer.anchor_right = 1.0
 	_own_offer.anchor_top = 1.0
 	_own_offer.anchor_bottom = 1.0
-	_own_offer.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_own_offer.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 	_own_offer.grow_vertical = Control.GROW_DIRECTION_BEGIN
-	_own_offer.offset_bottom = -84
-	_own_offer.offset_top = -84
+	_own_offer.offset_left = -24
+	_own_offer.offset_right = -24
+	_own_offer.offset_bottom = -24
+	_own_offer.offset_top = -24
 	add_child(_own_offer)
 
 
