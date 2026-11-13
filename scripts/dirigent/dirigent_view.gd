@@ -1,17 +1,23 @@
 class_name DirigentView
 extends Control
 
-## Dirigent: Darstellung in einem _draw (ruhig, flach, gut lesbar).
-## - Taktfigur: der aktuelle Zielpunkt gross (Trefferkreis, Zahl, Anflugring = Zeit bis
-##   zum Schlag), der naechste klein nummeriert, die uebrigen Punkte nur als Marke.
-##   Kein Grund hinter der Figur, keine Verbindungslinien.
-## - Leuchtspur: nur der Ideal-Weg vom letzten zum Zielpunkt (Spitze = Soll-Hand).
-## - Hand: der Cursor mit kurzer Spur.
+## Dirigent: Darstellung in einem _draw (ruhig, flach, scharf; keine Deko, kein Glow).
+## Alle festen Masse skalieren mit der Fensterhoehe (_u), Text sitzt auf ganzen Pixeln.
+## - Taktfigur: der aktuelle Zielpunkt gross (Trefferkreis, Zahl, Anflugring laeuft
+##   gleichmaessig auf den Kreis zu = Zeit bis zum Schlag; auf dem Schlag wird der Kreis
+##   Bernstein), der naechste klein nummeriert, die uebrigen Punkte nur als Marke; der
+##   Figurenweg ist eine feine Linie.
+## - Leuchtspur: der schon gelaufene Ideal-Weg zum Zielpunkt (Spitze = Soll-Hand).
+## - Hand: Taktstock mit kurzer Spur; der naechste Einsatz laeuft als Form in
+##   Tastenfarbe auf einen festen Ring an der Spitze zu.
+## - Rueckmeldung: Schlag = ein Ring loest sich am Punkt (Mitte warm), verfehlt = kleines
+##   Kreuz; Einsatz = Ring in Stufenfarbe an Linie und Hand, dazu ein kurzer Strich
+##   unter der Leiste an der Stelle des Drucks (rechts der Linie = zu frueh).
 ## - Taktwechsel: die neue Figur steht einen Takt vorher als Schablone neben der
 ##   aktuellen, mit Beschriftung.
-## - Einsatz-Leiste unter der Figur (Taiko-artig): Marken laufen auf die Trefferlinie zu,
-##   Farbe + Form = Taste (Legende links in denselben Formen), Schlag-Ticks auf der
-##   Leiste zeigen das Raster (Off-Beat-Einsaetze sind so lesbar), Taktart klein dabei.
+## - Einsatz-Leiste unter der Figur (Taiko-artig): flacher Streifen mit Haarlinien,
+##   Marken laufen auf die Trefferlinie zu, Farbe + Form = Taste (Legende links in
+##   denselben Formen), Schlag-Ticks zeigen das Raster, Taktart klein dabei.
 ## Alles in Figur-Einheiten (DirigentChart); to_px / to_unit rechnen um.
 
 const KEY_A_COL := Color(0.949, 0.635, 0.227)     # Bernstein
@@ -48,7 +54,7 @@ var _trail: Array[Vector2] = []
 var _trail_t: Array[float] = []
 ## Rueckmeldungen am Punkt: [Zeit, Position (Einheiten), hit, Wert]
 var _beat_fx: Array = []
-## Rueckmeldungen an der Leiste: [Zeit, quality, mask]
+## Rueckmeldungen an der Leiste: [Zeit, quality, mask, dt]
 var _cue_fx: Array = []
 var _wrong_t := -1e9
 var _cue_first := 0
@@ -56,7 +62,6 @@ var _smooth_scale := 1.0
 var _meter_label := ""
 ## Letzter Einsatz je Taste (Zeit), laesst die Orchester-Seite aufleuchten.
 var _last_cue := [-99999.0, -99999.0]
-var _glass: StyleBoxFlat
 
 
 func _ready() -> void:
@@ -64,13 +69,6 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_font = get_theme_default_font() if get_theme_default_font() != null else ThemeDB.fallback_font
 	_head_font = UiTheme.heading_font(2)
-	_glass = StyleBoxFlat.new()
-	_glass.bg_color = Color(0.03, 0.028, 0.026, 0.74)
-	_glass.border_color = Color(INK, 0.13)
-	_glass.set_border_width_all(1)
-	_glass.set_corner_radius_all(12)
-	_glass.shadow_color = Color(0, 0, 0, 0.35)
-	_glass.shadow_size = 10
 
 
 func setup(p_chart: DirigentChart, p_core: DirigentCore) -> void:
@@ -131,7 +129,7 @@ func on_beat_judged(index: int, result: Dictionary) -> void:
 
 
 func on_cue_judged(index: int, result: Dictionary) -> void:
-	_cue_fx.append([t_ms, int(result.quality), int(result.mask)])
+	_cue_fx.append([t_ms, int(result.quality), int(result.mask), float(result.get("dt", 0.0))])
 	if int(result.quality) != 5:
 		for k in 2:
 			if DirigentChart.mask_has(int(result.mask), k):
@@ -148,7 +146,7 @@ func push_cursor(px: Vector2) -> void:
 	var now := Time.get_ticks_msec() / 1000.0
 	_trail.append(px)
 	_trail_t.append(now)
-	while _trail.size() > 1 and now - _trail_t[0] > 0.30:
+	while _trail.size() > 1 and now - _trail_t[0] > 0.22:
 		_trail.remove_at(0)
 		_trail_t.remove_at(0)
 
@@ -159,6 +157,21 @@ func push_cursor(px: Vector2) -> void:
 
 func _process(_delta: float) -> void:
 	queue_redraw()
+
+
+## Pixel je 720p-Einheit: alle festen Masse wachsen mit der Fensterhoehe.
+func _u() -> float:
+	return maxf(size.y / 720.0, 0.5)
+
+
+## Text mittig um c (waagrecht und senkrecht), auf ganze Pixel gesetzt (scharf).
+func _text_c(f: Font, c: Vector2, txt: String, px: int, col: Color, outline: bool = false) -> void:
+	var w := f.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, px).x
+	var p := Vector2(c.x - w * 0.5, c.y + (f.get_ascent(px) - f.get_descent(px)) * 0.5).round()
+	if outline:
+		draw_string_outline(f, p, txt, HORIZONTAL_ALIGNMENT_LEFT, -1, px, maxi(2, int(px * 0.24)),
+			Color(0, 0, 0, 0.6 * col.a))
+	draw_string(f, p, txt, HORIZONTAL_ALIGNMENT_LEFT, -1, px, col)
 
 
 func _draw() -> void:
@@ -189,107 +202,44 @@ func _draw() -> void:
 	_draw_bar()
 
 
-## Konzertsaal: Buehnenlicht von oben, weicher Lichtkreis auf der Figur, Orchester unten.
+## Ruhiger Grund: Rand und Boden dunkler, der Blick bleibt in der Mitte. Keine Deko.
 func _draw_backdrop() -> void:
 	var w := size.x
 	var h := size.y
-	var cx := w * 0.5
-	var lift := 1.0 + 0.35 * kiai + 0.10 * beat_env
-	# Lichtkegel: drei ineinander liegende Kegel ergeben weiche Kanten.
-	for j in 3:
-		var hw := h * (0.62 - 0.17 * j)
-		var top := h * (0.07 - 0.015 * j)
-		var pts := PackedVector2Array([Vector2(cx - top, 0), Vector2(cx + top, 0),
-			Vector2(cx + hw, h * 0.92), Vector2(cx - hw, h * 0.92)])
-		var a_top := 0.034 * lift
-		var cols := PackedColorArray([Color(GOLD, a_top), Color(GOLD, a_top), Color(GOLD, 0.0), Color(GOLD, 0.0)])
-		draw_polygon(pts, cols)
-	# Lichtpfuetze um die Figur.
-	var c := center_px()
-	draw_set_transform(c, 0.0, Vector2(1.0, 0.72))
-	for j in 7:
-		draw_circle(Vector2.ZERO, h * (0.62 - 0.065 * j), Color(GOLD, 0.009 * lift), true, -1.0, true)
-	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
-	# Rand und Boden dunkler: Blick bleibt in der Mitte.
 	var edge := Color(0.0, 0.0, 0.0, 0.0)
-	var shade := Color(0.02, 0.018, 0.016, 0.55)
-	draw_polygon(PackedVector2Array([Vector2(0, h * 0.62), Vector2(w, h * 0.62), Vector2(w, h), Vector2(0, h)]),
+	var shade := Color(0.02, 0.018, 0.016, 0.62)
+	draw_polygon(PackedVector2Array([Vector2(0, h * 0.60), Vector2(w, h * 0.60), Vector2(w, h), Vector2(0, h)]),
 		PackedColorArray([edge, edge, shade, shade]))
-	draw_polygon(PackedVector2Array([Vector2(0, 0), Vector2(w * 0.22, 0), Vector2(w * 0.22, h), Vector2(0, h)]),
+	draw_polygon(PackedVector2Array([Vector2(0, 0), Vector2(w * 0.24, 0), Vector2(w * 0.24, h), Vector2(0, h)]),
 		PackedColorArray([Color(shade, 0.5), edge, edge, Color(shade, 0.5)]))
-	draw_polygon(PackedVector2Array([Vector2(w * 0.78, 0), Vector2(w, 0), Vector2(w, h), Vector2(w * 0.78, h)]),
+	draw_polygon(PackedVector2Array([Vector2(w * 0.76, 0), Vector2(w, 0), Vector2(w, h), Vector2(w * 0.76, h)]),
 		PackedColorArray([edge, Color(shade, 0.5), Color(shade, 0.5), edge]))
-	_draw_orchestra()
 
 
-func _section_glow(key: int, row: int) -> float:
-	var age := t_ms - float(_last_cue[key]) - float(row) * 45.0
-	if age < 0.0 or age > 1400.0:
-		return 0.0
-	return minf(age / 40.0, 1.0) * exp(-age / 300.0)
-
-
-## Orchester: ROWS Reihen als Silhouetten-Boegen, links = Taste A, rechts = Taste B.
-func _draw_orchestra() -> void:
-	var w := size.x
-	var h := size.y
-	var cx := w * 0.5
-	var base_y := h * 1.0
-	var sil := Color(0.018, 0.017, 0.016)
-	for k in range(ROWS - 1, -1, -1):
-		var rx := w * (0.20 + 0.09 * k)
-		var ry := h * (0.17 + 0.026 * k)
-		var n := 13 + 3 * k
-		var hr := h * (0.0105 - 0.0011 * k)
-		for i in n:
-			var th := deg_to_rad(200.0 + 140.0 * float(i) / float(n - 1))
-			var p := Vector2(cx + cos(th) * rx, base_y - h * 0.02 + sin(th) * ry)
-			if absf(p.x - cx) < w * 0.085:
-				continue  # Gasse in der Mitte: dort steht der Dirigent, Wertung bleibt frei
-			var side := (p.x - cx) / (rx * 0.9)
-			var ga := _section_glow(0, k) * clampf(0.5 - side * 1.6, 0.0, 1.0)
-			var gb := _section_glow(1, k) * clampf(0.5 + side * 1.6, 0.0, 1.0)
-			var lit := Color(KEY_A_COL * ga + KEY_B_COL * gb, 1.0)
-			var g := minf(ga + gb, 1.0)
-			var body := p + Vector2(0, hr * 2.2)
-			if g > 0.02:
-				draw_circle(body, hr * 3.2, Color(lit, 0.10 * g), true, -1.0, true)
-			draw_circle(body, hr * 1.9, sil.lerp(Color(lit.r, lit.g, lit.b) * 0.42, g), true, -1.0, true)
-			draw_circle(p, hr, sil.lerp(Color(lit.r, lit.g, lit.b) * 0.6, g), true, -1.0, true)
-			# Feiner Rand oben: Silhouette bleibt auch ohne Einsatz lesbar.
-			draw_arc(body, hr * 1.9, deg_to_rad(200.0), deg_to_rad(340.0), 10, Color(INK, 0.07 + 0.35 * g), 1.0, true)
-
-
-## Ganzer Figurenweg als feine Linie; schon gelaufener Teil heller (Fortschritt).
+## Ganzer Figurenweg als eine feine, gleichmaessige Linie (Form der Figur).
 func _draw_path(bar_i: int) -> void:
 	if not show_guides:
 		return
 	var b: Dictionary = chart.bars[bar_i]
 	var first := int(b.i0)
 	var last := mini(first + int(b.count), chart.beats.size() - 1)
+	var col := Color(INK, 0.12)
+	var w := maxf(1.0, 1.2 * _u())
 	for id in range(first, last):
 		var t0 := float(chart.beats[id].t)
 		var t1 := float(chart.beats[id + 1].t)
 		if chart.is_gap(id) or t1 - t0 > 2500.0:
 			continue
-		var u_now := clampf((t_ms - t0) / maxf(t1 - t0, 1.0), 0.0, 1.0)
 		var a: Vector2 = chart.beats[id].pos
 		var e: Vector2 = chart.beats[id + 1].pos
-		var steps := 14
-		var prev := to_px(DirigentChart.path_point(a, e, 0.0))
-		for i in range(1, steps + 1):
-			var u := float(i) / float(steps)
-			var p := to_px(DirigentChart.path_point(a, e, u))
-			var done := u <= u_now
-			draw_line(prev, p, Color(GOLD, 0.30 if done else 0.09), 1.2, true)
-			prev = p
+		var pts := PackedVector2Array()
+		for i in 21:
+			pts.append(to_px(DirigentChart.path_point(a, e, float(i) / 20.0)))
+		draw_polyline(pts, col, w, true)
 
 
 func _draw_rest() -> void:
-	var c := center_px()
-	var txt := tr("Pause")
-	var w := _head_font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 22).x
-	draw_string(_head_font, c - Vector2(w * 0.5, 0), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 22, Color(INK, 0.5))
+	_text_c(_head_font, center_px(), tr("Pause"), int(round(22.0 * _u())), Color(INK, 0.5))
 
 
 func _fig_beats(bar_i: int) -> Array:
@@ -300,61 +250,55 @@ func _fig_beats(bar_i: int) -> Array:
 	return out
 
 
+## Hierarchie: Zielpunkt gross (Trefferkreis, Zahl, Anflugring), naechster Punkt
+## klein nummeriert, alle anderen nur als kleine Marke.
 func _draw_figure(bar_i: int, target: int) -> void:
 	var ids := _fig_beats(bar_i)
-	var r := core.HIT_R * unit_px() if core != null else 40.0
+	var u := _u()
+	var r := DirigentCore.HIT_R * unit_px()
 	var ri := DirigentCore.INNER_R * unit_px()
-	var font_px := int(clampf(size.y * 0.046, 22.0, 42.0))
-	var small_px := int(clampf(size.y * 0.022, 12.0, 20.0))
+	var font_px := int(round(34.0 * u))
+	var small_px := int(round(15.0 * u))
 	var nxt := target + 1
-	# Uebrige Punkte der Figur: nur kleine Marken (Form der Figur bleibt lesbar).
+	var has_next := nxt < chart.beats.size() and not chart.is_gap(target)
+	# Uebrige Punkte: kommende als kleiner Ring, vergangene als Punkt.
 	for id in ids:
-		if id == target or id == nxt:
+		if id == target or (has_next and id == nxt):
 			continue
-		var passed: bool = float(chart.beats[id].t) < t_ms
-		draw_circle(to_px(chart.beats[id].pos), 4.0, Color(INK, 0.14 if passed else 0.28), true, -1.0, true)
+		var q := to_px(chart.beats[id].pos)
+		if float(chart.beats[id].t) < t_ms:
+			draw_circle(q, 2.5 * u, Color(INK, 0.22), true, -1.0, true)
+		else:
+			draw_arc(q, 5.0 * u, 0.0, TAU, 24, Color(INK, 0.38), maxf(1.0, 1.4 * u), true)
 	# Naechster Punkt: klein, nummeriert.
-	if nxt < chart.beats.size() and not chart.is_gap(target):
+	if has_next:
 		var nb: Dictionary = chart.beats[nxt]
 		var np := to_px(nb.pos)
-		var nr := r * 0.42
-		draw_circle(np, nr, Color(INK, 0.05), true, -1.0, true)
-		draw_arc(np, nr, 0.0, TAU, 32, Color(INK, 0.38), 1.5, true)
-		var ns := str(int(nb.pt) + 1)
-		var nw := _head_font.get_string_size(ns, HORIZONTAL_ALIGNMENT_LEFT, -1, small_px).x
-		draw_string(_head_font, np + Vector2(-nw * 0.5, small_px * 0.36), ns, HORIZONTAL_ALIGNMENT_LEFT, -1,
-			small_px, Color(INK, 0.6))
-	# Aktueller Zielpunkt: gross.
+		var nr := r * 0.40
+		draw_circle(np, nr, Color(PLATE, 0.55), true, -1.0, true)
+		draw_arc(np, nr, 0.0, TAU, 40, Color(INK, 0.45), maxf(1.0, 1.5 * u), true)
+		_text_c(_head_font, np, str(int(nb.pt) + 1), small_px, Color(INK, 0.7))
+	# Zielpunkt.
 	var b: Dictionary = chart.beats[target]
 	var p := to_px(b.pos)
-	draw_arc(p, r, 0.0, TAU, 56, Color(INK, 0.38), 1.5, true)
-	draw_arc(p, ri, 0.0, TAU, 40, Color(INK, 0.24), 1.0, true)
-	_draw_pulse(p, target, b, r)
-	var num := str(int(b.pt) + 1)
-	var tw := _head_font.get_string_size(num, HORIZONTAL_ALIGNMENT_LEFT, -1, font_px).x
-	draw_string(_head_font, p + Vector2(-tw * 0.5, font_px * 0.36), num, HORIZONTAL_ALIGNMENT_LEFT, -1,
-		font_px, Color(INK, 0.95))
-
-
-## Zielpunkt: Anflugring schrumpft ueber die ganze Zeit seit dem letzten Schlag auf den
-## Trefferkreis zu (= Zeit bis zum Schlag), die Flaeche pulsiert kurz vor dem Schlag.
-func _draw_pulse(p: Vector2, id: int, b: Dictionary, r: float) -> void:
 	var dt := float(b.t) - t_ms
-	if dt < -120.0:
-		return
 	var lead := APPROACH_MS
-	if id > 0:
-		lead = clampf(float(b.t) - float(chart.beats[id - 1].t), 250.0, 1100.0)
+	if target > 0:
+		lead = clampf(float(b.t) - float(chart.beats[target - 1].t), 250.0, 1100.0)
 	var k := clampf(1.0 - dt / lead, 0.0, 1.0)
+	# near: 1 genau auf dem Schlag, 0 ab 140 ms davor/danach.
+	var near := clampf(1.0 - absf(dt) / 140.0, 0.0, 1.0)
+	near *= near
+	draw_circle(p, r, Color(PLATE, 0.50), true, -1.0, true)
+	draw_circle(p, r, Color(INK, 0.04 + 0.08 * near), true, -1.0, true)
+	draw_arc(p, ri, 0.0, TAU, 40, Color(INK, 0.16), maxf(1.0, 1.0 * u), true)
+	# Anflugring: laeuft gleichmaessig auf den Trefferkreis zu, deckungsgleich = Schlag.
 	if dt > 0.0:
-		var rr := r * (1.0 + (1.0 - k) * 1.6)
-		draw_arc(p, rr, 0.0, TAU, 64, Color(INK, 0.20 + 0.65 * k), 2.0 + 2.0 * k, true)
-	var pulse := 0.0
-	if dt > -100.0 and dt < 260.0:
-		pulse = clampf(1.0 - absf(dt) / 260.0, 0.0, 1.0)
-		pulse = pulse * pulse
-	draw_circle(p, r * (0.55 + 0.45 * pulse), Color(INK, 0.06 + 0.20 * pulse), true, -1.0, true)
-	draw_arc(p, r, 0.0, TAU, 56, Color(INK, 0.45 + 0.5 * pulse), 2.0 + 1.5 * pulse, true)
+		var a_in := clampf(k * 5.0, 0.0, 1.0)
+		draw_arc(p, r * (1.0 + (1.0 - k) * 1.15), 0.0, TAU, 72, Color(INK, a_in * (0.30 + 0.60 * k)),
+			(1.4 + 1.0 * k) * u, true)
+	draw_arc(p, r, 0.0, TAU, 72, Color(INK, 0.85).lerp(KEY_A_COL, near), (2.0 + 1.0 * near) * u, true)
+	_text_c(_head_font, p, str(int(b.pt) + 1), font_px, Color(INK, 0.95))
 
 
 func _dotted(a: Vector2, b: Vector2, col: Color) -> void:
@@ -362,15 +306,16 @@ func _dotted(a: Vector2, b: Vector2, col: Color) -> void:
 	var ln := d.length()
 	if ln < 1.0:
 		return
-	var step := 9.0
+	var u := _u()
+	var step := 7.0 * u
 	var n := int(ln / step)
 	var dir := d / ln
 	for i in range(0, n, 2):
-		draw_line(a + dir * (float(i) * step), a + dir * (minf(float(i + 1) * step, ln)), col, 1.5, true)
+		draw_line(a + dir * (float(i) * step), a + dir * (minf(float(i + 1) * step, ln)), col, maxf(1.0, 1.4 * u), true)
 
 
 ## Taktwechsel: einen Takt vorher steht die neue Figur als Schablone rechts.
-func _draw_announce(bar_i: int, target: int) -> void:
+func _draw_announce(bar_i: int, _target: int) -> void:
 	if bar_i + 1 >= chart.bars.size():
 		return
 	var cur_bar: Dictionary = chart.bars[bar_i]
@@ -379,83 +324,82 @@ func _draw_announce(bar_i: int, target: int) -> void:
 		return
 	if float(nb.t) - float(cur_bar.t) > BAR_LEAD_MS * 4.0:
 		return
+	var u := _u()
 	var pts := DirigentChart.figure_points(str(nb.kind), int(nb.n))
-	var sc := 0.32
-	var origin := Vector2(size.x * 0.5 + unit_px() * 1.18, size.y * 0.20)
+	var sc := 0.30
+	var origin := Vector2(size.x * 0.5 + unit_px() * 1.22, size.y * 0.20)
 	for k in pts.size():
 		var p := origin + pts[k] * sc * unit_px()
 		if k > 0:
-			_dotted(origin + pts[k - 1] * sc * unit_px(), p, Color(KEY_B_COL, 0.35))
-		draw_circle(p, 8.0, Color(KEY_B_COL, 0.28), true, -1.0, true)
-		draw_arc(p, 8.0, 0.0, TAU, 20, Color(KEY_B_COL, 0.8), 1.5, true)
-		draw_string(_font, p + Vector2(-4, 5), str(k + 1), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(INK, 0.9))
-	var txt := tr("Taktwechsel: %s") % nb.label
-	var tw := _head_font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 15).x
-	draw_string(_head_font, origin + Vector2(-tw * 0.5, unit_px() * sc + 40.0), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 15,
-		Color(KEY_B_COL, 0.95))
-	var sub := tr("ab dem nächsten Takt")
-	var sw := _font.get_string_size(sub, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x
-	draw_string(_font, origin + Vector2(-sw * 0.5, unit_px() * sc + 60.0), sub, HORIZONTAL_ALIGNMENT_LEFT, -1, 13,
-		Color(DIM, 0.95))
+			_dotted(origin + pts[k - 1] * sc * unit_px(), p, Color(INK, 0.28))
+	for k in pts.size():
+		var p := origin + pts[k] * sc * unit_px()
+		draw_circle(p, 9.0 * u, Color(PLATE, 0.9), true, -1.0, true)
+		draw_arc(p, 9.0 * u, 0.0, TAU, 24, Color(INK, 0.6), maxf(1.0, 1.4 * u), true)
+		_text_c(_head_font, p, str(k + 1), int(round(11.0 * u)), Color(INK, 0.9))
+	var base := origin + Vector2(0.0, unit_px() * sc + 34.0 * u)
+	_text_c(_head_font, base, tr("Taktwechsel: %s") % nb.label, int(round(15.0 * u)), Color(INK, 0.95), true)
+	_text_c(_font, base + Vector2(0.0, 20.0 * u), tr("ab dem nächsten Takt"), int(round(13.0 * u)), Color(DIM, 0.95), true)
 
 
-## Leuchtspur: Ideal-Weg vom letzten zum naechsten Punkt, Spitze = Soll-Hand.
+## Leuchtspur: der schon gelaufene Ideal-Weg zum naechsten Punkt, Spitze = Soll-Hand.
 func _draw_trace(cur: int, nxt: int) -> void:
 	if not show_guides or chart.beats.size() < 2:
 		return
-	var a_i := maxi(cur, 0)
-	if cur < 0:
+	if cur < 0 or cur == nxt or chart.is_gap(cur):
 		return
-	if a_i == nxt or chart.is_gap(a_i):
-		return
-	var a: Vector2 = chart.beats[a_i].pos
+	var a: Vector2 = chart.beats[cur].pos
 	var b: Vector2 = chart.beats[nxt].pos
-	var t0 := float(chart.beats[a_i].t)
+	var t0 := float(chart.beats[cur].t)
 	var t1 := float(chart.beats[nxt].t)
-	var u_now := clampf((t_ms - t0) / (t1 - t0), 0.0, 1.0)
-	var steps := 36
-	var prev := to_px(DirigentChart.path_point(a, b, 0.0))
-	for i in range(1, steps + 1):
-		var u := float(i) / float(steps)
-		var p := to_px(DirigentChart.path_point(a, b, u))
-		# Voraus schwach, schon gelaufen heller; kurz hinter der Spitze am hellsten.
-		var behind := u_now - u
-		var al := 0.10
-		if behind >= 0.0:
-			al = 0.10 + 0.55 * exp(-behind * 6.0)
-		draw_line(prev, p, Color(GOLD, al), 3.0 if behind >= 0.0 and behind < 0.2 else 1.6, true)
-		prev = p
+	var u_now := clampf((t_ms - t0) / maxf(t1 - t0, 1.0), 0.0, 1.0)
+	var u := _u()
+	var u_from := maxf(u_now - 0.45, 0.0)
+	if u_now - u_from > 0.01:
+		var pts := PackedVector2Array()
+		var cols := PackedColorArray()
+		for i in 19:
+			var f := float(i) / 18.0
+			pts.append(to_px(DirigentChart.path_point(a, b, lerpf(u_from, u_now, f))))
+			cols.append(Color(GOLD, 0.75 * f * f))
+		draw_polyline_colors(pts, cols, 2.2 * u, true)
 	var head := to_px(DirigentChart.path_point(a, b, u_now))
-	draw_circle(head, 7.0, Color(GOLD, 0.18), true, -1.0, true)
-	draw_circle(head, 3.5, Color(GOLD, 0.95), true, -1.0, true)
+	draw_circle(head, 5.0 * u, Color(0, 0, 0, 0.45), true, -1.0, true)
+	draw_circle(head, 3.4 * u, Color(GOLD, 1.0), true, -1.0, true)
 
 
+## Schlag-Rueckmeldung am Punkt: ein Ring loest sich kurz und weich (Mitte = warm,
+## sonst Creme); verfehlt = kleines Kreuz mit einem Wort, beides blendet ruhig aus.
 func _draw_beat_fx() -> void:
 	var keep: Array = []
+	var u := _u()
+	var r := DirigentCore.HIT_R * unit_px()
 	for fx in _beat_fx:
 		var age := t_ms - float(fx[0])
-		if age > 650.0 or age < -50.0:
+		var hit: bool = fx[2]
+		var life := 360.0 if hit else 650.0
+		if age > life or age < -50.0:
 			continue
 		keep.append(fx)
-		var k := clampf(age / 650.0, 0.0, 1.0)
+		var k := clampf(age / life, 0.0, 1.0)
 		var p := to_px(fx[1])
-		var hit: bool = fx[2]
-		var r := DirigentCore.HIT_R * unit_px()
 		if hit:
-			var col := HIT_COL.lerp(INK, float(fx[3]) - 0.88) if float(fx[3]) >= 0.88 else HIT_COL
+			var e := 1.0 - pow(1.0 - k, 3.0)
 			var fade := (1.0 - k) * (1.0 - k)
-			for j in 5:
-				draw_circle(p, r * (0.5 + 0.28 * float(j) + 0.35 * k), Color(col, 0.075 * fade), true, -1.0, true)
-			draw_arc(p, r * (1.0 + 0.2 * k), 0.0, TAU, 56, Color(col, 0.7 * fade), 2.0, true)
+			var best := float(fx[3]) >= 0.999
+			var col := GOLD if best else INK
+			draw_circle(p, r, Color(col, 0.10 * clampf(1.0 - k * 3.0, 0.0, 1.0)), true, -1.0, true)
+			draw_arc(p, r * (1.0 + 0.20 * e), 0.0, TAU, 72, Color(col, 0.85 * fade), (2.6 - 1.4 * k) * u, true)
+			if best:
+				draw_arc(p, DirigentCore.INNER_R * unit_px() * (1.0 + 0.35 * e), 0.0, TAU, 48,
+					Color(col, 0.6 * fade), 1.5 * u, true)
 		else:
-			var h := r * 0.38
-			var al := 0.8 * (1.0 - k)
-			draw_line(p - Vector2(h, h), p + Vector2(h, h), Color(GREY, al), 2.5, true)
-			draw_line(p - Vector2(h, -h), p + Vector2(h, -h), Color(GREY, al), 2.5, true)
-			var txt := tr("Schlag verfehlt")
-			var tw := _font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 15).x
-			draw_string(_font, p + Vector2(-tw * 0.5, -r - 12.0 - 10.0 * k), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 15,
-				Color(GREY, al))
+			var h := r * 0.26
+			var al := 0.85 * clampf(age / 40.0, 0.0, 1.0) * (1.0 - smoothstep(0.45, 1.0, k))
+			draw_line(p - Vector2(h, h), p + Vector2(h, h), Color(MISS_COL, al), 2.2 * u, true)
+			draw_line(p - Vector2(h, -h), p + Vector2(h, -h), Color(MISS_COL, al), 2.2 * u, true)
+			_text_c(_font, p + Vector2(0.0, -r - 12.0 * u), tr("Schlag verfehlt"), int(round(13.0 * u)),
+				Color(MISS_COL.lerp(INK, 0.35), al), true)
 	_beat_fx = keep
 
 
@@ -488,71 +432,55 @@ func _mask_text(mask: int) -> String:
 ## Form des Einsatzes um p mit Radius r: A = Kreis, B = Raute, beide = Kreis und Raute.
 func _ring_shape(p: Vector2, r: float, mask: int, col_a: float, w: float) -> void:
 	if mask != 2:
-		draw_arc(p, r, 0.0, TAU, 40, Color(KEY_A_COL, col_a), w, true)
+		draw_arc(p, r, 0.0, TAU, 48, Color(KEY_A_COL, col_a), w, true)
 	if mask != 1:
 		var d := r * (1.22 if mask == 2 else 1.4)
 		var pts := PackedVector2Array([p + Vector2(0, -d), p + Vector2(d, 0), p + Vector2(0, d), p + Vector2(-d, 0), p + Vector2(0, -d)])
 		draw_polyline(pts, Color(KEY_B_COL, col_a), w, true)
 
 
+## Naechster Einsatz an der Hand: eine Form in Tastenfarbe laeuft gleichmaessig auf
+## den festen Zielring zu (deckungsgleich = druecken), die Taste steht klein daneben.
 func _draw_cue_rings() -> void:
 	if chart.cues.is_empty():
 		return
 	while _cue_first < chart.cues.size() and float(chart.cues[_cue_first].t) < t_ms - 260.0:
 		_cue_first += 1
 	var up := _upcoming_cues()
+	if up.is_empty():
+		return
 	var p := cursor_px
-	var u := size.y / 720.0
-	for n in up.size():
-		var c: Dictionary = chart.cues[up[n]]
-		var mask := int(c.mask)
-		var k := clampf((float(c.t) - t_ms) / CUE_RING_MS, 0.0, 1.0)
-		if n == 0:
-			# Ring schrumpft vom grossen Radius auf den Stock-Kern; kurz vor dem Einsatz leuchtet er.
-			var r_end := 24.0 * u
-			var r := r_end + k * 70.0 * u
-			var a := clampf(1.0 - k * 0.55, 0.0, 1.0)
-			var near := clampf(1.0 - k * 4.0, 0.0, 1.0)
-			var col := KEY_A_COL if mask == 1 else (KEY_B_COL if mask == 2 else INK)
-			_ring_shape(p, r, mask, 0.22 * a, 9.0 * u)
-			_ring_shape(p, r, mask, a, 3.0 * u)
-			# Zielring am Stock (Einsatzzeit).
-			draw_arc(p, r_end, 0.0, TAU, 32, Color(INK, 0.30 + 0.5 * near), 1.6 * u + 1.0, true)
-			if near > 0.0:
-				draw_circle(p, r_end, Color(col, 0.18 * near), true, -1.0, true)
-			var txt := _mask_text(mask)
-			var fs := int(round(21.0 * u))
-			var tp := p + Vector2(r_end + 16.0 * u + (r - r_end) * 0.7, -r_end - 8.0 * u)
-			draw_string(_head_font, tp + Vector2(1, 1), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(0, 0, 0, 0.7))
-			draw_string(_head_font, tp, txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(col.lerp(INK, 0.25), a))
-		else:
-			# Uebernaechster Einsatz: kleine Marke links oben vom Ring, nur Vorschau.
-			var q := p + Vector2(-80.0 * u, -62.0 * u)
-			var al := 0.55 * clampf(1.0 - k * 0.6, 0.0, 1.0)
-			_ring_shape(q, 9.0 * u, mask, al, 2.2 * u)
-			var t2 := _mask_text(mask)
-			draw_string(_head_font, q + Vector2(14.0 * u, 5.0 * u), t2, HORIZONTAL_ALIGNMENT_LEFT, -1, int(round(13.0 * u)),
-				Color(INK, al))
+	var u := _u()
+	var c: Dictionary = chart.cues[up[0]]
+	var mask := int(c.mask)
+	var k := clampf((float(c.t) - t_ms) / CUE_RING_MS, 0.0, 1.0)
+	var r_end := 22.0 * u
+	var r := r_end + k * 62.0 * u
+	var a := clampf((1.0 - k) * 6.0, 0.0, 1.0) * (0.40 + 0.60 * (1.0 - k))
+	var near := clampf(1.0 - k * 5.0, 0.0, 1.0)
+	var col := KEY_A_COL if mask == 1 else (KEY_B_COL if mask == 2 else INK)
+	draw_arc(p, r_end, 0.0, TAU, 40, Color(INK, (0.30 + 0.50 * near) * minf(a * 2.0, 1.0)), maxf(1.0, 1.4 * u), true)
+	_ring_shape(p, r, mask, a, (2.0 + 1.0 * near) * u)
+	_text_c(_head_font, p + Vector2(r_end + 16.0 * u, -r_end - 6.0 * u), _mask_text(mask), int(round(15.0 * u)),
+		Color(col.lerp(INK, 0.3), minf(a * 1.6, 1.0)), true)
 
 
+## Hand: kurze, sich verjuengende Spur, Taktstock in fester Schraege, klare Spitze.
 func _draw_hand() -> void:
-	# Spur: kurz, verjuengt sich zum Ende, Spitze leuchtet.
+	var u := _u()
 	var n := _trail.size()
 	if n > 1:
 		for i in range(1, n):
 			var al := float(i) / float(n)
 			al = al * al
-			draw_line(_trail[i - 1], _trail[i], Color(GOLD, 0.05 + 0.18 * al), 1.0 + 9.0 * al, true)
-			draw_line(_trail[i - 1], _trail[i], Color(GOLD, 0.15 + 0.55 * al), 0.8 + 3.0 * al, true)
+			draw_line(_trail[i - 1], _trail[i], Color(GOLD, 0.50 * al), (0.8 + 2.6 * al) * u, true)
 	var p := cursor_px
-	# Taktstock: feste Schraege (kein Wackeln), Griff unten rechts.
 	var tail := p + Vector2(0.62, 0.78) * (size.y * 0.04)
-	draw_line(tail, p, Color(0, 0, 0, 0.45), 4.5, true)
-	draw_line(tail, p, Color(INK, 0.85), 2.2, true)
-	draw_circle(tail, 3.6, Color(INK, 0.9), true, -1.0, true)
-	draw_circle(p, 17.0, Color(GOLD, 0.10), true, -1.0, true)
-	draw_circle(p, 10.0, Color(GOLD, 0.20), true, -1.0, true)
-	draw_circle(p, 4.0, Color(1.0, 0.97, 0.9, 1.0), true, -1.0, true)
+	draw_line(tail, p, Color(0, 0, 0, 0.45), 4.2 * u, true)
+	draw_line(tail, p, Color(INK, 0.85), 2.0 * u, true)
+	draw_circle(tail, 3.2 * u, Color(INK, 0.9), true, -1.0, true)
+	draw_circle(p, 6.2 * u, Color(0, 0, 0, 0.55), true, -1.0, true)
+	draw_circle(p, 4.4 * u, Color(1.0, 0.97, 0.9, 1.0), true, -1.0, true)
 
 
 # ---------------------------------------------------------------------------
@@ -561,15 +489,21 @@ func _draw_hand() -> void:
 
 func _draw_bar() -> void:
 	var r := bar_rect()
+	var u := _u()
 	var line_x := _bar_line_x()
 	var mid_y := r.position.y + r.size.y * 0.5
 	var h := r.size.y
-	# Streifen: flach, mit feiner Kante.
-	draw_style_box(_glass, r.grow_individual(10.0, 4.0, 10.0, 4.0))
-	# Trefferfenster-Zone um die Linie (CORE-Breite im Zeitmass).
+	var px_ms := (r.end.x - line_x) / BAR_LEAD_MS
+	var hair := maxf(1.0, roundf(u))
+	# Streifen: flache dunkle Flaeche, oben und unten eine Haarlinie. Keine Karte.
+	var strip := r.grow_individual(12.0 * u, 0.0, 12.0 * u, 0.0)
+	draw_rect(strip, Color(0.03, 0.028, 0.026, 0.62), true)
+	draw_rect(Rect2(strip.position.x, strip.position.y, strip.size.x, hair), Color(INK, 0.16), true)
+	draw_rect(Rect2(strip.position.x, strip.end.y - hair, strip.size.x, hair), Color(INK, 0.16), true)
+	# Trefferfenster-Zone um die Linie (300er-Breite im Zeitmass).
 	if core != null:
-		var wpx := core.w300 / BAR_LEAD_MS * (r.end.x - line_x)
-		draw_rect(Rect2(line_x - wpx, r.position.y, wpx * 2.0, h), Color(INK, 0.05), true)
+		var wpx := core.w300 * px_ms
+		draw_rect(Rect2(line_x - wpx, r.position.y + hair, wpx * 2.0, h - hair * 2.0), Color(INK, 0.06), true)
 	# Schlag-Ticks: das Raster der Figur auf der Leiste (Off-Beat-Einsaetze lesbar).
 	var bi := maxi(chart.beat_at(t_ms), 0)
 	while bi < chart.beats.size():
@@ -577,98 +511,114 @@ func _draw_bar() -> void:
 		if tb - t_ms > BAR_LEAD_MS:
 			break
 		if tb >= t_ms - 60.0:
-			var bx := _cue_x(tb)
-			draw_line(Vector2(bx, r.position.y), Vector2(bx, r.position.y + h * 0.16), Color(INK, 0.40), 1.5, true)
-			draw_line(Vector2(bx, r.end.y - h * 0.16), Vector2(bx, r.end.y), Color(INK, 0.40), 1.5, true)
+			var bx := roundf(_cue_x(tb))
+			draw_rect(Rect2(bx, r.position.y, hair, h * 0.16), Color(INK, 0.34), true)
+			draw_rect(Rect2(bx, r.end.y - h * 0.16, hair, h * 0.16), Color(INK, 0.34), true)
 		bi += 1
-	# Trefferlinie (deutlich) mit Ring, Legende links in den Formen der Marken.
-	var held_a: bool = key_held[0]
-	var held_b: bool = key_held[1]
-	draw_line(Vector2(line_x, r.position.y - 10.0), Vector2(line_x, r.end.y + 10.0), Color(GOLD, 0.22), 12.0, true)
-	draw_line(Vector2(line_x, r.position.y - 10.0), Vector2(line_x, r.end.y + 10.0), Color(INK, 1.0), 3.5, true)
-	draw_arc(Vector2(line_x, mid_y), h * 0.44, 0.0, TAU, 40, Color(INK, 0.9), 2.8, true)
-	# Pfeilspitzen an Ober- und Unterkante zeigen auf die Linie.
-	var top_y := r.position.y - 10.0
-	var bot_y := r.end.y + 10.0
-	draw_colored_polygon(PackedVector2Array([Vector2(line_x - 8.0, top_y - 9.0), Vector2(line_x + 8.0, top_y - 9.0), Vector2(line_x, top_y)]), Color(GOLD, 0.95))
-	draw_colored_polygon(PackedVector2Array([Vector2(line_x - 8.0, bot_y + 9.0), Vector2(line_x, bot_y), Vector2(line_x + 8.0, bot_y + 9.0)]), Color(GOLD, 0.95))
-	_key_cap(Vector2(r.position.x + 30.0, mid_y), key_names[0], KEY_A_COL, held_a, 0)
-	_key_cap(Vector2(r.position.x + 78.0, mid_y), key_names[1], KEY_B_COL, held_b, 1)
+	# Legende links in den Formen der Marken.
+	var cap_a := Vector2(r.position.x + 26.0 * u, mid_y)
+	var cap_b := Vector2(r.position.x + 66.0 * u, mid_y)
+	_key_cap(cap_a, key_names[0], KEY_A_COL, key_held[0], 0)
+	_key_cap(cap_b, key_names[1], KEY_B_COL, key_held[1], 1)
+	var caps_end := cap_b.x + 20.0 * u
 	if _meter_label != "":
-		var mw := _head_font.get_string_size(_meter_label, HORIZONTAL_ALIGNMENT_LEFT, -1, 15).x
-		draw_string(_head_font, Vector2(r.end.x - mw, r.position.y - 9.0), _meter_label,
-			HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(DIM, 0.95))
-	# Marken.
-	if chart.cues.is_empty():
-		return
-	while _cue_first < chart.cues.size() and float(chart.cues[_cue_first].t) < t_ms - 260.0:
-		_cue_first += 1
-	var i := _cue_first
-	var rad := h * 0.31
-	while i < chart.cues.size():
-		var tc := float(chart.cues[i].t)
-		if tc - t_ms > BAR_LEAD_MS:
-			break
-		var done := core != null and core.is_cue_done(i)
-		var x := _cue_x(tc)
-		if not done or t_ms < tc + 120.0:
-			_draw_mark(Vector2(x, mid_y), rad, int(chart.cues[i].mask), done, clampf(1.0 - (tc - t_ms) / BAR_LEAD_MS * 0.25, 0.6, 1.0))
-		i += 1
-	# Rueckmeldung an der Linie.
+		var mpx := int(round(13.0 * u))
+		var mw := _head_font.get_string_size(_meter_label, HORIZONTAL_ALIGNMENT_LEFT, -1, mpx).x
+		draw_string(_head_font, Vector2(strip.end.x - mw, r.position.y - 8.0 * u).round(), _meter_label,
+			HORIZONTAL_ALIGNMENT_LEFT, -1, mpx, Color(DIM, 0.95))
+	# Marken (spaete zuerst: die naechste liegt oben).
+	var rad := h * 0.27
+	if not chart.cues.is_empty():
+		while _cue_first < chart.cues.size() and float(chart.cues[_cue_first].t) < t_ms - 260.0:
+			_cue_first += 1
+		var last := _cue_first
+		while last < chart.cues.size() and float(chart.cues[last].t) - t_ms <= BAR_LEAD_MS:
+			last += 1
+		for i in range(last - 1, _cue_first - 1, -1):
+			if core != null and core.is_cue_done(i):
+				continue
+			var tc := float(chart.cues[i].t)
+			var x := _cue_x(tc)
+			var al := clampf(1.0 - (tc - t_ms) / BAR_LEAD_MS * 0.3, 0.6, 1.0)
+			al *= clampf((BAR_LEAD_MS - (tc - t_ms)) / 140.0, 0.0, 1.0)
+			al *= clampf(1.0 - (t_ms - tc) / 140.0, 0.0, 1.0)
+			al *= clampf((x - rad - caps_end) / (12.0 * u), 0.0, 1.0)
+			if al > 0.01:
+				_draw_mark(Vector2(x, mid_y), rad, int(chart.cues[i].mask), false, al)
+	# Trefferlinie mit Zielring und zwei kleinen Zeigern (liegt ueber den Marken).
+	var lw := maxf(2.0, roundf(2.0 * u))
+	draw_rect(Rect2(roundf(line_x) - lw * 0.5, r.position.y - 6.0 * u, lw, h + 12.0 * u), Color(INK, 1.0), true)
+	draw_arc(Vector2(line_x, mid_y), rad * 1.28, 0.0, TAU, 48, Color(INK, 0.9), maxf(1.5, 2.0 * u), true)
+	var top_y := r.position.y - 7.0 * u
+	var bot_y := r.end.y + 7.0 * u
+	var tr_w := 5.0 * u
+	draw_colored_polygon(PackedVector2Array([Vector2(line_x - tr_w, top_y - tr_w * 1.3), Vector2(line_x + tr_w, top_y - tr_w * 1.3), Vector2(line_x, top_y)]), KEY_A_COL)
+	draw_colored_polygon(PackedVector2Array([Vector2(line_x - tr_w, bot_y + tr_w * 1.3), Vector2(line_x, bot_y), Vector2(line_x + tr_w, bot_y + tr_w * 1.3)]), KEY_A_COL)
+	# Rueckmeldung: Ring an der Linie und an der Hand in Stufenfarbe; ein kurzer
+	# Strich unter der Leiste zeigt, wo gedrueckt wurde (rechts der Linie = zu frueh).
 	var keep: Array = []
 	for fx in _cue_fx:
 		var age := t_ms - float(fx[0])
-		if age > 380.0 or age < -50.0:
+		if age > 520.0 or age < -50.0:
 			continue
 		keep.append(fx)
-		var k := clampf(age / 380.0, 0.0, 1.0)
-		var q := int(fx[1])
-		var col := MISS_COL if q == 5 else INK
-		draw_arc(Vector2(line_x, mid_y), rad * (1.2 + 1.2 * k), 0.0, TAU, 32, Color(col, 0.7 * (1.0 - k)), 2.0, true)
-		draw_arc(cursor_px, (22.0 + 38.0 * k) * size.y / 720.0, 0.0, TAU, 32, Color(col, 0.6 * (1.0 - k)), 2.5, true)
+		var q := clampi(int(fx[1]), 0, 5)
+		var col: Color = MISS_COL if q == 5 else JudgeDisplay.COLORS[q]
+		if age < 300.0:
+			var k := age / 300.0
+			var e := 1.0 - pow(1.0 - k, 3.0)
+			var fade := (1.0 - k) * (1.0 - k)
+			draw_arc(Vector2(line_x, mid_y), rad * (1.28 + 0.55 * e), 0.0, TAU, 48, Color(col, 0.85 * fade), (2.4 - 1.2 * k) * u, true)
+			if q != 5:
+				draw_arc(cursor_px, (22.0 + 20.0 * e) * u, 0.0, TAU, 48, Color(col, 0.75 * fade), (2.4 - 1.2 * k) * u, true)
+		if q != 5 and core != null:
+			var dt := clampf(float(fx[3]), -float(core.w50), float(core.w50))
+			var tx := roundf(line_x - dt * px_ms)
+			var ta := 1.0 - smoothstep(260.0, 520.0, age)
+			draw_rect(Rect2(tx - hair, r.end.y + 3.0 * u, hair * 2.0, 8.0 * u), Color(col, 0.95 * ta), true)
 	_cue_fx = keep
 	var wa := t_ms - _wrong_t
 	if wa >= 0.0 and wa < 600.0:
-		var wtxt := "WRONG KEY"
-		var wfs := int(round(r.size.y * 0.55))
-		var ww := _head_font.get_string_size(wtxt, HORIZONTAL_ALIGNMENT_LEFT, -1, wfs).x
-		draw_string(_head_font, Vector2(r.position.x + (r.size.x - ww) * 0.5, r.position.y - 22.0), wtxt,
-			HORIZONTAL_ALIGNMENT_LEFT, -1, wfs, Color(MISS_COL, 1.0 - wa / 600.0))
+		_text_c(_head_font, Vector2(r.position.x + r.size.x * 0.5, r.position.y - 16.0 * u), "WRONG KEY",
+			int(round(15.0 * u)), Color(MISS_COL, 1.0 - smoothstep(300.0, 600.0, wa)), true)
 
 
 ## Legende: dieselbe Form und Farbe wie die Marke (A = Kreis, B = Raute), Taste darin.
 func _key_cap(p: Vector2, txt: String, col: Color, held: bool, key: int) -> void:
-	var fill := Color(col, 0.95 if held else 0.22)
+	var u := _u()
+	var fill := Color(col, 0.95 if held else 0.16)
+	var w := maxf(1.2, 1.6 * u)
 	if key == 0:
-		draw_circle(p, 15.0, fill, true, -1.0, true)
-		draw_arc(p, 15.0, 0.0, TAU, 28, Color(col, 0.95), 1.8, true)
+		draw_circle(p, 14.0 * u, fill, true, -1.0, true)
+		draw_arc(p, 14.0 * u, 0.0, TAU, 32, Color(col, 0.95), w, true)
 	else:
-		var d := 18.0
+		var d := 17.0 * u
 		draw_colored_polygon(PackedVector2Array([p + Vector2(0, -d), p + Vector2(d, 0), p + Vector2(0, d), p + Vector2(-d, 0)]), fill)
 		draw_polyline(PackedVector2Array([p + Vector2(0, -d), p + Vector2(d, 0), p + Vector2(0, d), p + Vector2(-d, 0), p + Vector2(0, -d)]),
-			Color(col, 0.95), 1.8, true)
-	var tw := _head_font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 14).x
-	draw_string(_head_font, p + Vector2(-tw * 0.5, 5), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 14,
-		PLATE if held else Color(col.lerp(INK, 0.4), 1.0))
+			Color(col, 0.95), w, true)
+	_text_c(_head_font, p, txt, int(round(13.0 * u)), PLATE if held else Color(col.lerp(INK, 0.45), 1.0))
 
 
-## Marke: Kreis = A (Bernstein), Raute = B (Stahlblau), beide = zwei Haelften.
+## Marke: Kreis = A (Bernstein), Raute = B (Stahlblau), beide = A oben und B unten.
+## Dunkler Rand trennt dicht aufeinander folgende Marken sauber.
 func _draw_mark(p: Vector2, rad: float, mask: int, done: bool, a: float) -> void:
 	var al := a * (0.28 if done else 1.0)
+	var rim := maxf(1.5, rad * 0.14)
 	if mask == 1:
+		draw_circle(p, rad + rim, Color(PLATE, al), true, -1.0, true)
 		draw_circle(p, rad, Color(KEY_A_COL, al), true, -1.0, true)
-		draw_arc(p, rad, 0.0, TAU, 24, Color(INK, 0.5 * al), 1.2, true)
 	elif mask == 2:
-		_diamond(p, rad * 1.18, Color(KEY_B_COL, al))
+		_diamond(p, rad * 1.16, Color(KEY_B_COL, al), rim)
 	else:
-		# Akkord: beide Tasten, uebereinander (A oben, B unten).
-		var o := rad * 1.05
-		draw_circle(p + Vector2(0, -o), rad * 0.82, Color(KEY_A_COL, al), true, -1.0, true)
-		_diamond(p + Vector2(0, o), rad * 0.98, Color(KEY_B_COL, al))
-		draw_line(p + Vector2(-rad, 0), p + Vector2(rad, 0), Color(INK, 0.35 * al), 1.0, true)
+		var o := rad * 0.98
+		draw_circle(p + Vector2(0, -o), rad * 0.80 + rim, Color(PLATE, al), true, -1.0, true)
+		draw_circle(p + Vector2(0, -o), rad * 0.80, Color(KEY_A_COL, al), true, -1.0, true)
+		_diamond(p + Vector2(0, o), rad * 0.92, Color(KEY_B_COL, al), rim)
 
 
-func _diamond(p: Vector2, r: float, col: Color) -> void:
-	var pts := PackedVector2Array([p + Vector2(0, -r), p + Vector2(r, 0), p + Vector2(0, r), p + Vector2(-r, 0)])
-	draw_colored_polygon(pts, col)
-	draw_polyline(PackedVector2Array([pts[0], pts[1], pts[2], pts[3], pts[0]]), Color(INK, 0.5 * col.a), 1.2, true)
+func _diamond(p: Vector2, r: float, col: Color, rim: float = 0.0) -> void:
+	if rim > 0.0:
+		var ro := r + rim * 1.4
+		draw_colored_polygon(PackedVector2Array([p + Vector2(0, -ro), p + Vector2(ro, 0), p + Vector2(0, ro), p + Vector2(-ro, 0)]),
+			Color(PLATE, col.a))
+	draw_colored_polygon(PackedVector2Array([p + Vector2(0, -r), p + Vector2(r, 0), p + Vector2(0, r), p + Vector2(-r, 0)]), col)
