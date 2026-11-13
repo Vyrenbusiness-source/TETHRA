@@ -1622,6 +1622,16 @@ func _draw_histogram() -> void:
 # Animation
 # ---------------------------------------------------------------------------
 
+## Zwei Bilder warten (Container-Sortierung ist deferred). false, sobald der Knoten
+## den Baum verlassen hat (Retry/Replay im ersten Bild): dann gibt es kein get_tree() mehr.
+func _two_frames() -> bool:
+	for i in 2:
+		if not is_inside_tree():
+			return false
+		await get_tree().process_frame
+	return is_inside_tree()
+
+
 func _play_intro() -> void:
 	for c in _reveal:
 		c.modulate.a = 0.0
@@ -1629,9 +1639,7 @@ func _play_intro() -> void:
 	_rank_glow.modulate.a = 0.0
 	_left_panel.modulate.a = 0.0
 	# Zwei Frames: Container-Sortierung ist deferred, erst dann stimmen Positionen.
-	await get_tree().process_frame
-	await get_tree().process_frame
-	if not is_inside_tree():
+	if not await _two_frames():
 		return
 	# Gestaffeltes Einblenden aller Bloecke.
 	var tw := create_tween().set_parallel(true)
@@ -2082,9 +2090,7 @@ func _fill_card(card: PlayerStatsCard, id: int, other: int, side: String) -> voi
 func _play_lobby_intro() -> void:
 	for c in _reveal:
 		c.modulate.a = 0.0
-	await get_tree().process_frame
-	await get_tree().process_frame
-	if not is_inside_tree():
+	if not await _two_frames():
 		return
 	var tw := create_tween().set_parallel(true)
 	for i in _reveal.size():
