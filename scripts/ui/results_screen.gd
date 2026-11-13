@@ -2661,7 +2661,8 @@ func _campaign_setup() -> void:
 	var stage_id := str(inject.get("stage", GameSession.campaign.get("stage", "")))
 	if stage_id == "":
 		return
-	var cdata := Campaign.load_data()
+	var camp_all := Campaign.load_data()
+	var cdata := Campaign.for_mode(camp_all, Campaign.mode_of_stage(camp_all, stage_id))
 	var stage := Campaign.stage_by_id(cdata, stage_id)
 	if stage.is_empty():
 		return

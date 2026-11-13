@@ -16,6 +16,8 @@ const PLATE_H := 150.0
 const ROW_GAP := 40.0
 const BOARD_ROWS := 8
 
+var _all: Dictionary = {}
+var _mode := "mania"
 var _data: Dictionary = {}
 var _state: Dictionary = {}
 var _lib: MapLibrary
@@ -88,7 +90,8 @@ func _ready() -> void:
 	for a in OS.get_cmdline_args() + OS.get_cmdline_user_args():
 		if a.begins_with("--shot-campaign="):
 			_shot = a.trim_prefix("--shot-campaign=")
-	_data = Campaign.load_data()
+	_all = Campaign.load_data()
+	_data = Campaign.for_mode(_all, _mode)
 	_state = _demo_state() if _shot != "" else Campaign.load_state()
 	var bg := ColorRect.new()
 	bg.color = UiTheme.BG
@@ -106,10 +109,12 @@ func _ready() -> void:
 		Mirror.download_progress.connect(_on_dl_progress)
 		Mirror.download_done.connect(_on_dl_done)
 		Mirror.download_failed.connect(_on_dl_failed)
-	var cur := Campaign.current_stage_id(_data, _state)
-	_chapter = maxi(Campaign.chapter_index_of(_data, cur), 0) if cur != "" else 0
 	var back_to := str(GameSession.campaign_return)
 	GameSession.campaign_return = ""
+	var start_mode := Campaign.mode_of_stage(_all, back_to)
+	if start_mode == "":
+		start_mode = str(_state.get("mode", "mania"))
+	_enter_mode(start_mode)
 	if back_to != "" and Campaign.chapter_index_of(_data, back_to) >= 0:
 		_chapter = Campaign.chapter_index_of(_data, back_to)
 		_stage_id = back_to
@@ -118,7 +123,7 @@ func _ready() -> void:
 	resized.connect(_rebuild)
 	if DisplayServer.get_name() == "headless":
 		print("=== Campaign Headless OK (%d Kapitel, %d Fehler) ===" % [
-			Campaign.chapters(_data).size(), Campaign.validate(_data).size()])
+			Campaign.chapters(_data).size(), Campaign.validate(_all).size()])
 		get_tree().quit(0)
 	elif _shot != "":
 		_run_shots()
@@ -136,6 +141,28 @@ func _unhandled_input(event: InputEvent) -> void:
 		if event.keycode == KEY_ESCAPE:
 			get_viewport().set_input_as_handled()
 			_back()
+
+
+## Modus wechseln: eigene Kapitel, eigener Fortschritt (Stufen-IDs tragen den Modus).
+func _enter_mode(mode: String) -> void:
+	if Campaign.chapters(Campaign.for_mode(_all, mode)).is_empty():
+		mode = "mania"
+	_mode = mode
+	_data = Campaign.for_mode(_all, _mode)
+	var cur := Campaign.current_stage_id(_data, _state)
+	_chapter = maxi(Campaign.chapter_index_of(_data, cur), 0) if cur != "" else 0
+	_stage_id = ""
+	_view = "path"
+
+
+func _pick_mode(mode: String) -> void:
+	if mode == _mode:
+		return
+	_enter_mode(mode)
+	if _shot == "":
+		_state["mode"] = _mode
+		Campaign.save_state(_state)
+	_rebuild()
 
 
 func _back() -> void:
@@ -269,12 +296,34 @@ func _build_top() -> void:
 	var back := _button(tr("Zurück"), false, _back)
 	back.name = "Back"
 	_put(back, 48, 28, 104, 36)
+	# Modus-Wahl: je Modus eine eigene Kampagne. Ohne Kapitel = "bald".
+	var tx := 176.0
+	for m in ScoreStore.MODES:
+		var soon := Campaign.chapters(Campaign.for_mode(_all, m)).is_empty()
+		var tab := Button.new()
+		tab.name = "Mode" + m.capitalize()
+		tab.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+		tab.text = ScoreStore.mode_label(m)
+		tab.disabled = soon
+		tab.tooltip_text = tr("Kommt bald") if soon else ""
+		tab.add_theme_font_override("font", _head_font)
+		tab.add_theme_font_size_override("font_size", int(_px(14.0)))
+		tab.add_theme_color_override("font_color", UiTheme.TEXT if m == _mode else UiTheme.DIM)
+		tab.add_theme_color_override("font_hover_color", UiTheme.TEXT)
+		tab.add_theme_color_override("font_disabled_color", Color(UiTheme.DIM.r, UiTheme.DIM.g, UiTheme.DIM.b, 0.45))
+		for sb in ["normal", "hover", "pressed", "disabled"]:
+			tab.add_theme_stylebox_override(sb, StyleBoxEmpty.new())
+		tab.pressed.connect(_pick_mode.bind(m))
+		_put(tab, tx, 28, 84, 36)
+		if m == _mode:
+			_line(tx + 14.0, 62, 56, 2, UiTheme.ACCENT)
+		tx += 86.0
 	var total := _label("", 14.0, UiTheme.DIM)
 	total.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	total.text = "%s   ·   %s" % [
 		tr("%d / %d Sterne") % [Campaign.total_stars(_data, _state), Campaign.max_stars(_data)],
 		tr("%s Punkte") % UiTheme.fmt_score(Campaign.total_points(_data, _state))]
-	_put(total, 700, 28, 532, 36)
+	_put(total, 712, 28, 520, 36)
 
 
 # ------------------------------------------------------------------ Kapitelweg
@@ -291,7 +340,7 @@ func _plate_pos(i: int) -> Vector2:
 
 func _build_path() -> void:
 	var chs := Campaign.chapters(_data)
-	_put(_label(tr("Kampagne"), 34.0, UiTheme.TEXT, true), 48, 80, 600, 46)
+	_put(_label("%s  ·  %s" % [tr("Kampagne"), ScoreStore.mode_label(_mode)], 34.0, UiTheme.TEXT, true), 48, 80, 900, 46)
 	_put(_label(tr("%d Welten · %d Stufen · gleiche Maps für alle") % [chs.size(), Campaign.all_stages(_data).size()],
 		14.0, UiTheme.DIM), 48, 126, 700, 24)
 	# Weg: Linien zwischen den Kapiteln, Bernstein bis zum aktuellen Kapitel.
@@ -745,12 +794,12 @@ func _run_shots() -> void:
 	await get_tree().create_timer(1.2).timeout
 	await _save_shot("path")
 	_chapter = 2
-	_stage_id = "c03s2"
+	_stage_id = "mania-c03s2"
 	_view = "stages"
 	_rebuild()
 	await get_tree().create_timer(0.6).timeout
 	await _save_shot("stage")
-	var st := Campaign.stage_by_id(_data, "c03s3")
+	var st := Campaign.stage_by_id(_data, "mania-c03s3")
 	var rs := ResultsScreen.new()
 	add_child(rs)
 	rs.show_results({
@@ -760,7 +809,7 @@ func _run_shots() -> void:
 		"pp": 96.2, "new_best": true, "can_clip": false, "can_share": false,
 		"title": str(st.get("title", "")), "artist": str(st.get("artist", "")), "version": str(st.get("diff", "")),
 		"player": "VYREN", "date": "2026-11-13T21:10:00", "mode": str(st.get("mode", "")),
-		"campaign": {"stage": "c03s3", "state": _state},
+		"campaign": {"stage": "mania-c03s3", "state": _state},
 	})
 	await get_tree().create_timer(3.0).timeout
 	await _save_shot("result")

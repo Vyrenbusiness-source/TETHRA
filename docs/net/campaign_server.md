@@ -7,7 +7,7 @@ Der Client sendet bis dahin nichts Neues.
 ## 1. POST /score: neues optionales Feld
 
 ```json
-{ "mode": "mania", "beatmap_md5": "...", "score": 912345, "campaign": "v1/c03s2" }
+{ "mode": "mania", "beatmap_md5": "...", "score": 912345, "campaign": "v1/mania-c03s2" }
 ```
 
 - `campaign`: `<version>/<stufe>`. Fehlt bei freien Laeufen. Unbekannte Werte ignorieren.
@@ -24,12 +24,14 @@ Der Client sendet bis dahin nichts Neues.
 Antwort (zusaetzlich zu den bisherigen Feldern):
 
 ```json
-{ "campaign": { "stage": "c03s2", "stars": 2, "total_stars": 41, "total_points": 12345678, "rank": 17 } }
+{ "campaign": { "stage": "mania-c03s2", "stars": 2, "total_stars": 41, "total_points": 12345678, "rank": 17 } }
 ```
 
 ## 2. GET /campaign/leaderboard
 
-`GET /campaign/leaderboard?version=v1&limit=50&offset=0`
+`GET /campaign/leaderboard?version=v1&mode=mania&limit=50&offset=0`
+
+Je Modus eine eigene Rangliste (`mode` Pflicht). Der Modus steht auch vorn in der Stufen-ID.
 
 ```json
 { "version": "v1", "max_stars": 234, "entries": [
@@ -46,7 +48,7 @@ Sortierung: `stars` absteigend, dann `points` absteigend, dann `updated` aufstei
 `GET /campaign/progress?version=v1` mit Login:
 
 ```json
-{ "version": "v1", "stages": { "c01s1": { "met": [true, true, false], "score": 812345, "accuracy": 0.962, "grade": "A" } } }
+{ "version": "v1", "stages": { "mania-c01s1": { "met": [true, true, false], "score": 812345, "accuracy": 0.962, "grade": "A" } } }
 ```
 
 Der Client fuehrt das mit dem lokalen Stand zusammen (Ziele ODER, Score Maximum).

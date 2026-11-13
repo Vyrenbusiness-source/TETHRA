@@ -47,9 +47,10 @@ func _mini() -> Dictionary:
 
 
 func _test_data() -> void:
-	var d := Campaign.load_data()
-	_ok(not d.is_empty(), "data/campaign.json laedt")
-	var errs := Campaign.validate(d)
+	var all := Campaign.load_data()
+	_ok(not all.is_empty(), "data/campaign.json laedt")
+	var d := Campaign.for_mode(all, "mania")
+	var errs := Campaign.validate(all)
 	for e in errs:
 		print("  Datenfehler: " + e)
 	_ok(errs.is_empty(), "data/campaign.json ist gueltig")
@@ -57,6 +58,21 @@ func _test_data() -> void:
 	_ok(chs.size() == 13, "13 Kapitel")
 	_ok(Campaign.all_stages(d).size() == 78, "78 Stufen")
 	_ok(Campaign.max_stars(d) == 234, "234 Sterne maximal")
+	var only_mania := true
+	for s: Dictionary in Campaign.all_stages(d):
+		only_mania = only_mania and str(s.mode) == "mania"
+	_ok(only_mania, "Mania-Kampagne nur mit Mania-Stufen")
+	for m in ScoreStore.MODES:
+		_ok(all.campaigns.has(m), "Kampagne fuer %s vorhanden (oder bald)" % m)
+	_ok(Campaign.chapters(Campaign.for_mode(all, "nope")).is_empty(), "unbekannter Modus = keine Kapitel")
+	_ok(Campaign.mode_of_stage(all, "orbit-c01s2") == "orbit" and Campaign.mode_of_stage(all, "orbit-c99s1") == "", "mode_of_stage")
+	# Fortschritt je Modus getrennt.
+	var sep := Campaign.new_state()
+	Campaign.apply_run(sep, Campaign.stage_by_id(d, "mania-c01s1"), _run(0.99, "SS", 0))
+	var orbit := Campaign.for_mode(all, "orbit")
+	_ok(Campaign.total_stars(d, sep) == 3 and Campaign.total_stars(orbit, sep) == 0, "Sterne je Modus getrennt")
+	_ok(Campaign.stage_open(d, sep, "mania-c01s2") and not Campaign.stage_open(orbit, sep, "orbit-c01s2"), "Freischaltung je Modus getrennt")
+	_ok(Campaign.total_stars_all(all, sep) == 3 and Campaign.max_stars_all(all) >= 234 + 18, "Summe ueber alle Modi")
 	var worlds := {}
 	for c: Dictionary in chs:
 		worlds[str(c.world)] = true
@@ -81,10 +97,10 @@ func _test_data() -> void:
 				rising = rising and float(s.map_stars) + 0.05 >= prev
 				prev = float(s.map_stars)
 	_ok(rising, "Map-Sterne steigen je Kapitel")
-	_ok(Campaign.score_tag(d, "c03s2") == "v1/c03s2", "score_tag")
-	_ok(Campaign.next_stage_id(d, "c01s6") == "c02s1", "next_stage_id ueber Kapitelgrenze")
-	_ok(Campaign.next_stage_id(d, "c13s6") == "", "letzte Stufe hat keine Folge")
-	_ok(Campaign.chapter_index_of(d, "c05s3") == 4 and Campaign.stage_index_of(d, "c05s3") == 2, "Indizes")
+	_ok(Campaign.score_tag(d, "mania-c03s2") == "v1/mania-c03s2", "score_tag")
+	_ok(Campaign.next_stage_id(d, "mania-c01s6") == "mania-c02s1", "next_stage_id ueber Kapitelgrenze")
+	_ok(Campaign.next_stage_id(d, "mania-c13s6") == "", "letzte Stufe hat keine Folge")
+	_ok(Campaign.chapter_index_of(d, "mania-c05s3") == 4 and Campaign.stage_index_of(d, "mania-c05s3") == 2, "Indizes")
 	_ok(Campaign.stage_by_id(d, "nope").is_empty(), "unbekannte Stufe = {}")
 
 
@@ -212,23 +228,26 @@ func _test_maps() -> void:
 
 
 func _test_validate_errors() -> void:
-	_ok(Campaign.validate(_mini()).is_empty(), "Mini-Kampagne gueltig")
+	_ok(Campaign.validate_one(_mini()).is_empty(), "Mini-Kampagne gueltig")
+	var wrong: Dictionary = Campaign.load_data().duplicate(true)
+	wrong.campaigns.orbit.chapters[0].stages[0]["mode"] = "mania"
+	_ok(not Campaign.validate(wrong).is_empty(), "Stufe im falschen Modus geprueft")
 	_ok(not Campaign.validate({}).is_empty(), "leere Daten ungueltig")
 	var d := _mini()
 	d.chapters[0].stages[1]["md5"] = "kurz"
-	_ok(not Campaign.validate(d).is_empty(), "md5 geprueft")
+	_ok(not Campaign.validate_one(d).is_empty(), "md5 geprueft")
 	d = _mini()
 	d.chapters[0].stages[1]["mode"] = "nope"
-	_ok(not Campaign.validate(d).is_empty(), "Modus geprueft")
+	_ok(not Campaign.validate_one(d).is_empty(), "Modus geprueft")
 	d = _mini()
 	d.chapters[0].stages[2]["id"] = "c01s1"
-	_ok(not Campaign.validate(d).is_empty(), "doppelte ID geprueft")
+	_ok(not Campaign.validate_one(d).is_empty(), "doppelte ID geprueft")
 	d = _mini()
 	d.chapters[1].stages[0]["goals"] = [{"type": "pass"}]
-	_ok(not Campaign.validate(d).is_empty(), "Zahl der Ziele geprueft")
+	_ok(not Campaign.validate_one(d).is_empty(), "Zahl der Ziele geprueft")
 	d = _mini()
 	d.chapters[1].stages[0]["mods"] = ["NF"]
-	_ok(not Campaign.validate(d).is_empty(), "NF nicht erlaubt")
+	_ok(not Campaign.validate_one(d).is_empty(), "NF nicht erlaubt")
 	d = _mini()
 	d.chapters[1]["world"] = "nirgendwo"
-	_ok(not Campaign.validate(d).is_empty(), "Welt geprueft")
+	_ok(not Campaign.validate_one(d).is_empty(), "Welt geprueft")

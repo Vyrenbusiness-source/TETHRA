@@ -37,8 +37,69 @@ static func load_data(path: String = "") -> Dictionary:
 	return d
 
 
-## Formatpruefung: Liste der Fehler (leer = gueltig).
-static func validate(data: Dictionary) -> Array[String]:
+## Kampagne eines Modus aus den Gesamtdaten: {version, mode, chapters}. Alle
+## Funktionen unten arbeiten auf dieser Form. Unbekannter Modus = keine Kapitel ("bald").
+static func for_mode(all: Dictionary, mode: String) -> Dictionary:
+	var camps: Variant = all.get("campaigns", {})
+	var one: Variant = (camps as Dictionary).get(mode, {}) if camps is Dictionary else {}
+	var chs: Variant = (one as Dictionary).get("chapters", []) if one is Dictionary else []
+	return {"version": str(all.get("version", VERSION)), "mode": mode, "chapters": chs if chs is Array else []}
+
+
+## Modus, dem eine Stufe gehoert ("" = unbekannt). IDs beginnen mit "<modus>-".
+static func mode_of_stage(all: Dictionary, id: String) -> String:
+	var m := id.get_slice("-", 0)
+	return m if not stage_by_id(for_mode(all, m), id).is_empty() else ""
+
+
+static func total_stars_all(all: Dictionary, state: Dictionary) -> int:
+	var n := 0
+	for m in ScoreStore.MODES:
+		n += total_stars(for_mode(all, m), state)
+	return n
+
+
+static func max_stars_all(all: Dictionary) -> int:
+	var n := 0
+	for m in ScoreStore.MODES:
+		n += max_stars(for_mode(all, m))
+	return n
+
+
+## Formatpruefung der Gesamtdaten (alle Modi): Liste der Fehler (leer = gueltig).
+static func validate(all: Dictionary) -> Array[String]:
+	var errs: Array[String] = []
+	if str(all.get("version", "")) == "":
+		errs.append("version fehlt")
+	var camps: Variant = all.get("campaigns", null)
+	if not (camps is Dictionary) or (camps as Dictionary).is_empty():
+		errs.append("campaigns fehlt")
+		return errs
+	var seen := {}
+	var maps := {}
+	for mode: String in camps:
+		if not ScoreStore.MODES.has(mode):
+			errs.append("%s: unbekannter Modus" % mode)
+		var one := for_mode(all, mode)
+		if chapters(one).is_empty():
+			continue
+		errs.append_array(validate_one(one))
+		for s: Dictionary in all_stages(one):
+			var id := str(s.get("id", ""))
+			if seen.has(id) or not id.begins_with(mode + "-"):
+				errs.append("%s: ID doppelt oder ohne Modus-Vorsatz" % id)
+			seen[id] = true
+			if str(s.get("mode", "")) != mode:
+				errs.append("%s: Stufe gehoert nicht zum Modus" % id)
+			var md5 := str(s.get("md5", ""))
+			if md5 != "" and maps.has(md5):
+				errs.append("%s: Map doppelt" % id)
+			maps[md5] = true
+	return errs
+
+
+## Formatpruefung einer Modus-Kampagne (Form von for_mode).
+static func validate_one(data: Dictionary) -> Array[String]:
 	var errs: Array[String] = []
 	if str(data.get("version", "")) == "":
 		errs.append("version fehlt")

@@ -1716,8 +1716,8 @@ func _build_campaign_row(x0: float, y: float) -> float:
 	var ny := _add_row(b, x0, y)
 	b.name = "RowCampaign"
 	var data := Campaign.load_data()
-	var det := _label(tr("%d / %d Sterne") % [Campaign.total_stars(data, Campaign.load_state()),
-		Campaign.max_stars(data)], 13.0, UiTheme.DIM)
+	var det := _label(tr("%d / %d Sterne") % [Campaign.total_stars_all(data, Campaign.load_state()),
+		Campaign.max_stars_all(data)], 13.0, UiTheme.DIM)
 	det.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	det.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	det.clip_text = true

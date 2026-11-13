@@ -5,34 +5,39 @@ Alle Spieler spielen dieselben Maps, damit die Scores vergleichbar sind.
 
 ## Aufbau
 
-- 13 Kapitel, je Kapitel eine Welt (`WorldTheme`). Das Finale ist die Boss-Welt.
-- Je Kapitel 5 Stufen und 1 Boss-Stufe (schwerste Map des Kapitels) = 78 Stufen.
-- Jede Stufe: feste Map + Diff + Modus (+ Mod) und drei Ziele.
-- Ziel = 1 Stern, Zusatzziel = 2, Meisterziel = 3 (maximal 234 Sterne).
+- Je Modus eine eigene Kampagne (Auswahl oben in der Szene). Fortschritt und Sterne je Modus getrennt
+  (Stufen-IDs tragen den Modus: `mania-c03s2`).
+- Mania 4K: vollstaendig, 13 Kapitel, je Kapitel eine Welt (`WorldTheme`), Finale in der Boss-Welt.
+- Orbit, Rally, Dirigent, Trace, Rebound: Start mit je 1 Kapitel (6 Stufen, Band 1.0 - 1.8).
+  Ein Modus ohne Kapitel steht in der Auswahl als "Kommt bald".
+- Je Kapitel 5 Stufen und 1 Boss-Stufe (schwerste Map des Kapitels). Mania = 78 Stufen.
+- Jede Stufe: feste Map + Diff (+ Mod) und drei Ziele.
+- Ziel = 1 Stern, Zusatzziel = 2, Meisterziel = 3 (Mania maximal 234 Sterne).
   Zusatz- und Meisterziel zaehlen nur zusammen mit dem Hauptziel. Ein Fail erfuellt nie ein Ziel.
   Erfuellte Ziele bleiben erhalten (Sterne aus mehreren Laeufen addieren sich).
 - Freischaltung: naechste Stufe nach dem Hauptziel, naechstes Kapitel nach der Boss-Stufe.
 - Die Welt des Kapitels wird fuer die Stufe erzwungen (nur im Speicher, die Einstellung des
   Spielers bleibt). Mods legt die Stufe fest (NF gibt es in der Kampagne nicht).
 
-| Nr | Welt | Schwerpunkt | Gast (Stufe 3) | Sterne-Band (4K) | Mod |
-|----|------|-------------|----------------|------------------|-----|
-| 1 | galaxy | Mania | Trace | 1.0 - 1.6 | |
-| 2 | aurora | Trace | Mania | 1.3 - 1.9 | |
-| 3 | neon | Mania | Rebound | 1.7 - 2.3 | |
-| 4 | eclipse | Orbit | Mania | 1.5 - 2.1 | |
-| 5 | abyss | Rebound | Trace | 2.0 - 2.6 | |
-| 6 | fractal | Rally | Orbit | 2.0 - 2.6 | |
-| 7 | storm | Mania | Rally | 2.6 - 3.2 | SV |
-| 8 | obsidian | Dirigent | Mania | 2.2 - 2.8 | |
-| 9 | monolith | Orbit | Dirigent | 2.6 - 3.2 | |
-| 10 | rift | Trace | Rebound | 3.2 - 3.8 | |
-| 11 | nerve | Rebound | Orbit | 3.5 - 4.1 | |
-| 12 | singularity | Mania | Trace | 4.0 - 4.7 | |
-| 13 | boss | alle Modi, Finale Mania | | 4.3 - 5.2 | |
+Mania-Kapitel (Band = osu!mania-Sternwert der 4K-Diff):
 
-Das Band ist der osu!mania-Sternwert der 4K-Diff. Kapitel, die einen neuen Modus einfuehren,
-setzen das Band bewusst etwas tiefer als das Kapitel davor.
+| Nr | Welt | Band | Mod |
+|----|------|------|-----|
+| 1 | galaxy | 1.0 - 1.6 | |
+| 2 | aurora | 1.4 - 2.0 | |
+| 3 | neon | 1.8 - 2.4 | |
+| 4 | eclipse | 2.2 - 2.8 | |
+| 5 | abyss | 2.5 - 3.1 | |
+| 6 | fractal | 2.8 - 3.4 | |
+| 7 | storm | 2.6 - 3.2 | SV |
+| 8 | obsidian | 3.2 - 3.8 | |
+| 9 | monolith | 3.5 - 4.1 | |
+| 10 | rift | 3.8 - 4.4 | |
+| 11 | nerve | 4.1 - 4.7 | |
+| 12 | singularity | 4.4 - 5.0 | |
+| 13 | boss | 4.8 - 5.6 | |
+
+Andere Modi, Kapitel 1: Orbit eclipse, Rally fractal, Dirigent obsidian, Trace aurora, Rebound abyss.
 
 Ziel-Arten (`goals[].type`): `pass` (ohne Fail), `acc` (Genauigkeit ab Wert 0..1),
 `grade` (Rang oder besser), `miss` (hoechstens n Misses, 0 = kein Miss).
@@ -40,13 +45,14 @@ Die Schwellen steigen linear von Kapitel 1 bis 13.
 
 ## Map-Liste (`data/campaign.json`)
 
-Fest und fuer alle gleich. Je Stufe: `id` (`c03s2`), `boss`, `mode`, `mods`, `set_id`,
+Fest und fuer alle gleich, nach Modus gegliedert:
+`{version, campaigns: {mania: {chapters: [...]}, orbit: ...}}`. Je Stufe: `id` (`mania-c03s2`), `boss`, `mode`, `mods`, `set_id`,
 `beatmap_id`, `diff`, `md5` (der .osu), `artist`, `title`, `creator`, `map_stars`,
 `length_s`, `bpm`, `goals`.
 
 Auswahl: ranked osu!mania-Sets vom selben Mirror wie der Online-Browser
 (osu.direct, `sort=play_count:desc`, erste 1200 Sets), nur 4K-Diffs (alle Modi spielen 4K),
-Laenge 70 - 260 s (Kapitel 1 - 2 hoechstens 150 s), jedes Set nur einmal. Je Stufe die
+Laenge 70 - 260 s (Kapitel 1 - 2 hoechstens 150 s), jedes Set nur einmal (ueber alle Modi). Je Stufe die
 meistgespielte Map, deren Sterne zum Zielwert im Band passen. Aenderungen an der Liste =
 neue `version` (alte Scores bleiben der alten Version zugeordnet).
 
@@ -76,5 +82,5 @@ Lokal gefunden wird eine Map ueber die Set-ID im Dateinamen und den Diff-Namen.
 
 ## Offen
 
-- Sterne-Baender der Nicht-Mania-Modi sind geschaetzt (Mania-Sterne). Nach Spieltests anpassen.
+- Orbit, Rally, Dirigent, Trace, Rebound: Kapitel 2 bis 13 fehlen noch. Baender nach Spieltests festlegen.
 - Sudden Death gibt es als Mod noch nicht. Das Ziel "Kein Miss" ersetzt es.

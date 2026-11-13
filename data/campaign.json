@@ -1,2485 +1,3461 @@
 {
  "version": "v1",
- "chapters": [
-  {
-   "id": "c01",
-   "world": "galaxy",
-   "focus": "mania",
-   "stars": [
-    1.0,
-    1.6
-   ],
-   "stages": [
+ "campaigns": {
+  "mania": {
+   "chapters": [
     {
-     "id": "c01s1",
-     "boss": false,
-     "mode": "mania",
-     "mods": [],
-     "goals": [
-      {
-       "type": "pass"
-      },
-      {
-       "type": "acc",
-       "value": 0.85
-      },
-      {
-       "type": "acc",
-       "value": 0.93
-      }
+     "id": "mania-c01",
+     "world": "galaxy",
+     "focus": "mania",
+     "stars": [
+      1.0,
+      1.6
      ],
-     "set_id": 79038,
-     "beatmap_id": 233662,
-     "diff": "Entozer's 4K EZ",
-     "md5": "a4e891ba740e7262192825383ed26c95",
-     "artist": "ALTIMA",
-     "title": "Burst The Gravity (TV Size)",
-     "creator": "Zeroarg",
-     "map_stars": 0.99,
-     "length_s": 89,
-     "bpm": 148
+     "stages": [
+      {
+       "id": "mania-c01s1",
+       "boss": false,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "pass"
+        },
+        {
+         "type": "acc",
+         "value": 0.85
+        },
+        {
+         "type": "acc",
+         "value": 0.93
+        }
+       ],
+       "set_id": 79038,
+       "beatmap_id": 233662,
+       "diff": "Entozer's 4K EZ",
+       "md5": "a4e891ba740e7262192825383ed26c95",
+       "artist": "ALTIMA",
+       "title": "Burst The Gravity (TV Size)",
+       "creator": "Zeroarg",
+       "map_stars": 0.99,
+       "length_s": 89,
+       "bpm": 148
+      },
+      {
+       "id": "mania-c01s2",
+       "boss": false,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "acc",
+         "value": 0.8
+        },
+        {
+         "type": "acc",
+         "value": 0.9
+        },
+        {
+         "type": "miss",
+         "value": 12
+        }
+       ],
+       "set_id": 923488,
+       "beatmap_id": 1987895,
+       "diff": "[4K] Easy",
+       "md5": "7e83d6220f5df6f7ef03dec5bb1a6b42",
+       "artist": "HyuN",
+       "title": "Grin",
+       "creator": "IceDynamix",
+       "map_stars": 1.17,
+       "length_s": 149,
+       "bpm": 130
+      },
+      {
+       "id": "mania-c01s3",
+       "boss": false,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "grade",
+         "value": "C"
+        },
+        {
+         "type": "grade",
+         "value": "B"
+        },
+        {
+         "type": "grade",
+         "value": "A"
+        }
+       ],
+       "set_id": 476221,
+       "beatmap_id": 1017255,
+       "diff": "[4K] BASIC!!",
+       "md5": "e36258f4399670d3dbf7c20cc069484a",
+       "artist": "t+pazolite",
+       "title": "CENSORED!!",
+       "creator": "Kuo Kyoka",
+       "map_stars": 1.18,
+       "length_s": 114,
+       "bpm": 195
+      },
+      {
+       "id": "mania-c01s4",
+       "boss": false,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "acc",
+         "value": 0.85
+        },
+        {
+         "type": "miss",
+         "value": 10
+        },
+        {
+         "type": "acc",
+         "value": 0.95
+        }
+       ],
+       "set_id": 157896,
+       "beatmap_id": 395284,
+       "diff": "Zillah's 4K Normal",
+       "md5": "d42030fe0271493e39ecd0a4917c16ef",
+       "artist": "Meg & Dia",
+       "title": "Monster (DotEXE Remix)",
+       "creator": "nold_1702",
+       "map_stars": 1.4,
+       "length_s": 123,
+       "bpm": 140
+      },
+      {
+       "id": "mania-c01s5",
+       "boss": false,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "grade",
+         "value": "B"
+        },
+        {
+         "type": "acc",
+         "value": 0.92
+        },
+        {
+         "type": "miss",
+         "value": 5
+        }
+       ],
+       "set_id": 444632,
+       "beatmap_id": 957837,
+       "diff": "[4K] victorica's Normal",
+       "md5": "480f61f2b6b4cd189b03ad87b1f4552d",
+       "artist": "MYTH & ROID",
+       "title": "STYX HELIX",
+       "creator": "Tsukuyomi",
+       "map_stars": 1.51,
+       "length_s": 98,
+       "bpm": 123
+      },
+      {
+       "id": "mania-c01s6",
+       "boss": true,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "grade",
+         "value": "B"
+        },
+        {
+         "type": "grade",
+         "value": "A"
+        },
+        {
+         "type": "miss",
+         "value": 0
+        }
+       ],
+       "set_id": 476691,
+       "beatmap_id": 1024702,
+       "diff": "[4K] CS' Normal",
+       "md5": "88a497c7887777a8a72b8d73154b8e08",
+       "artist": "DJ OKAWARI",
+       "title": "Flower Dance",
+       "creator": "Narcissu",
+       "map_stars": 1.61,
+       "length_s": 241,
+       "bpm": 100
+      }
+     ]
     },
     {
-     "id": "c01s2",
-     "boss": false,
-     "mode": "mania",
-     "mods": [],
-     "goals": [
-      {
-       "type": "acc",
-       "value": 0.8
-      },
-      {
-       "type": "acc",
-       "value": 0.9
-      },
-      {
-       "type": "miss",
-       "value": 12
-      }
+     "id": "mania-c02",
+     "world": "aurora",
+     "focus": "mania",
+     "stars": [
+      1.4,
+      2.0
      ],
-     "set_id": 923488,
-     "beatmap_id": 1987895,
-     "diff": "[4K] Easy",
-     "md5": "7e83d6220f5df6f7ef03dec5bb1a6b42",
-     "artist": "HyuN",
-     "title": "Grin",
-     "creator": "IceDynamix",
-     "map_stars": 1.17,
-     "length_s": 149,
-     "bpm": 130
+     "stages": [
+      {
+       "id": "mania-c02s1",
+       "boss": false,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "pass"
+        },
+        {
+         "type": "acc",
+         "value": 0.857
+        },
+        {
+         "type": "acc",
+         "value": 0.933
+        }
+       ],
+       "set_id": 324288,
+       "beatmap_id": 720553,
+       "diff": "4K Lv.4",
+       "md5": "760fdde367efe3f09cb1e87fdc812225",
+       "artist": "xi",
+       "title": "ANiMA",
+       "creator": "Kuo Kyoka",
+       "map_stars": 1.46,
+       "length_s": 112,
+       "bpm": 184
+      },
+      {
+       "id": "mania-c02s2",
+       "boss": false,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "acc",
+         "value": 0.81
+        },
+        {
+         "type": "acc",
+         "value": 0.904
+        },
+        {
+         "type": "miss",
+         "value": 11
+        }
+       ],
+       "set_id": 200552,
+       "beatmap_id": 484223,
+       "diff": "[4K] Usagi's BASIC Lv.6",
+       "md5": "7e75f8615542d8aba8e8144d29185f96",
+       "artist": "BlackYooh vs. siromaru",
+       "title": "BLACK or WHITE?",
+       "creator": "DE-CADE",
+       "map_stars": 1.53,
+       "length_s": 116,
+       "bpm": 185
+      },
+      {
+       "id": "mania-c02s3",
+       "boss": false,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "grade",
+         "value": "C"
+        },
+        {
+         "type": "grade",
+         "value": "B"
+        },
+        {
+         "type": "grade",
+         "value": "A"
+        }
+       ],
+       "set_id": 159068,
+       "beatmap_id": 427175,
+       "diff": "4K NM",
+       "md5": "9e5fd4e68a2dcb13293f09aba7c906b9",
+       "artist": "AAA",
+       "title": "Wake up! (Anime ver.)",
+       "creator": "Atsuro",
+       "map_stars": 1.61,
+       "length_s": 148,
+       "bpm": 176
+      },
+      {
+       "id": "mania-c02s4",
+       "boss": false,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "acc",
+         "value": 0.857
+        },
+        {
+         "type": "miss",
+         "value": 10
+        },
+        {
+         "type": "acc",
+         "value": 0.952
+        }
+       ],
+       "set_id": 274111,
+       "beatmap_id": 745263,
+       "diff": "[4K] Feru's EZ",
+       "md5": "9f357ad07b62007e2ec3a5f57cb14b89",
+       "artist": "SON OF KICK",
+       "title": "Hours ft. Lady Leshurr & Paigey Cakey",
+       "creator": "Irreversible",
+       "map_stars": 1.76,
+       "length_s": 96,
+       "bpm": 132
+      },
+      {
+       "id": "mania-c02s5",
+       "boss": false,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "grade",
+         "value": "B"
+        },
+        {
+         "type": "acc",
+         "value": 0.923
+        },
+        {
+         "type": "miss",
+         "value": 5
+        }
+       ],
+       "set_id": 315435,
+       "beatmap_id": 746952,
+       "diff": "[4K] NM",
+       "md5": "aaf7fd96bacbc4d33081d799501badb8",
+       "artist": "UNDEAD CORPORATION",
+       "title": "The Empress scream off ver",
+       "creator": "TheZiemniax",
+       "map_stars": 1.9,
+       "length_s": 133,
+       "bpm": 270
+      },
+      {
+       "id": "mania-c02s6",
+       "boss": true,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "grade",
+         "value": "B"
+        },
+        {
+         "type": "grade",
+         "value": "A"
+        },
+        {
+         "type": "miss",
+         "value": 0
+        }
+       ],
+       "set_id": 332623,
+       "beatmap_id": 748486,
+       "diff": "[4K] Lv.7",
+       "md5": "9b8e393eeec1f47a96aea131e4fce816",
+       "artist": "Doma Umaru [CV.Tanaka Aimi]",
+       "title": "Kakushinteki*Metamaruphose!",
+       "creator": "Crystal",
+       "map_stars": 1.98,
+       "length_s": 88,
+       "bpm": 278
+      }
+     ]
     },
     {
-     "id": "c01s3",
-     "boss": false,
-     "mode": "trace",
-     "mods": [],
-     "goals": [
-      {
-       "type": "grade",
-       "value": "C"
-      },
-      {
-       "type": "grade",
-       "value": "B"
-      },
-      {
-       "type": "grade",
-       "value": "A"
-      }
+     "id": "mania-c03",
+     "world": "neon",
+     "focus": "mania",
+     "stars": [
+      1.8,
+      2.4
      ],
-     "set_id": 476221,
-     "beatmap_id": 1017255,
-     "diff": "[4K] BASIC!!",
-     "md5": "e36258f4399670d3dbf7c20cc069484a",
-     "artist": "t+pazolite",
-     "title": "CENSORED!!",
-     "creator": "Kuo Kyoka",
-     "map_stars": 1.18,
-     "length_s": 114,
-     "bpm": 195
+     "stages": [
+      {
+       "id": "mania-c03s1",
+       "boss": false,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "pass"
+        },
+        {
+         "type": "acc",
+         "value": 0.863
+        },
+        {
+         "type": "acc",
+         "value": 0.937
+        }
+       ],
+       "set_id": 155749,
+       "beatmap_id": 573749,
+       "diff": "4K Normal",
+       "md5": "8a00720d5f5e50e1504ecadb9e560999",
+       "artist": "xi",
+       "title": ".357 Magnum",
+       "creator": "Akali",
+       "map_stars": 1.84,
+       "length_s": 128,
+       "bpm": 178
+      },
+      {
+       "id": "mania-c03s2",
+       "boss": false,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "acc",
+         "value": 0.82
+        },
+        {
+         "type": "acc",
+         "value": 0.908
+        },
+        {
+         "type": "miss",
+         "value": 11
+        }
+       ],
+       "set_id": 206887,
+       "beatmap_id": 501512,
+       "diff": "[4K] Marirose's Normal",
+       "md5": "da6900a2532e56480b77f97034e1f745",
+       "artist": "TK from Ling tosite sigure",
+       "title": "unravel (TV edit)",
+       "creator": "Desperate-kun",
+       "map_stars": 1.95,
+       "length_s": 86,
+       "bpm": 135
+      },
+      {
+       "id": "mania-c03s3",
+       "boss": false,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "grade",
+         "value": "C"
+        },
+        {
+         "type": "grade",
+         "value": "B"
+        },
+        {
+         "type": "grade",
+         "value": "A"
+        }
+       ],
+       "set_id": 277421,
+       "beatmap_id": 671990,
+       "diff": "[4K] Harby's NM",
+       "md5": "22f65947e11ccac3d2ae2c3169641745",
+       "artist": "Lindsey Stirling",
+       "title": "Senbonzakura",
+       "creator": "MrSergio",
+       "map_stars": 2.09,
+       "length_s": 188,
+       "bpm": 154
+      },
+      {
+       "id": "mania-c03s4",
+       "boss": false,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "acc",
+         "value": 0.865
+        },
+        {
+         "type": "miss",
+         "value": 9
+        },
+        {
+         "type": "acc",
+         "value": 0.955
+        }
+       ],
+       "set_id": 134829,
+       "beatmap_id": 360801,
+       "diff": "4K BASIC",
+       "md5": "0430c73ea9a26caf7212d911ca090c47",
+       "artist": "Seiryu",
+       "title": "Water Horizon",
+       "creator": "Spy",
+       "map_stars": 2.1,
+       "length_s": 117,
+       "bpm": 191
+      },
+      {
+       "id": "mania-c03s5",
+       "boss": false,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "grade",
+         "value": "B"
+        },
+        {
+         "type": "acc",
+         "value": 0.927
+        },
+        {
+         "type": "miss",
+         "value": 4
+        }
+       ],
+       "set_id": 349208,
+       "beatmap_id": 770128,
+       "diff": "[4K] NOVICE",
+       "md5": "24d4ebbe6ad7c92f6d7247ac864fdc99",
+       "artist": "Camellia as \"Bang Riot\"",
+       "title": "Blastix Riotz",
+       "creator": "Fresh Chicken",
+       "map_stars": 2.23,
+       "length_s": 126,
+       "bpm": 256
+      },
+      {
+       "id": "mania-c03s6",
+       "boss": true,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "grade",
+         "value": "B"
+        },
+        {
+         "type": "grade",
+         "value": "A"
+        },
+        {
+         "type": "miss",
+         "value": 0
+        }
+       ],
+       "set_id": 971561,
+       "beatmap_id": 2034202,
+       "diff": "[4K] Normal",
+       "md5": "f7f23e1073b508593d98cb50097b0d7e",
+       "artist": "antiPLUR",
+       "title": "Runengon",
+       "creator": "Raveille",
+       "map_stars": 2.42,
+       "length_s": 196,
+       "bpm": 320
+      }
+     ]
     },
     {
-     "id": "c01s4",
-     "boss": false,
-     "mode": "mania",
-     "mods": [],
-     "goals": [
-      {
-       "type": "acc",
-       "value": 0.85
-      },
-      {
-       "type": "miss",
-       "value": 10
-      },
-      {
-       "type": "acc",
-       "value": 0.95
-      }
+     "id": "mania-c04",
+     "world": "eclipse",
+     "focus": "mania",
+     "stars": [
+      2.2,
+      2.8
      ],
-     "set_id": 157896,
-     "beatmap_id": 395284,
-     "diff": "Zillah's 4K Normal",
-     "md5": "d42030fe0271493e39ecd0a4917c16ef",
-     "artist": "Meg & Dia",
-     "title": "Monster (DotEXE Remix)",
-     "creator": "nold_1702",
-     "map_stars": 1.4,
-     "length_s": 123,
-     "bpm": 140
+     "stages": [
+      {
+       "id": "mania-c04s1",
+       "boss": false,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "pass"
+        },
+        {
+         "type": "acc",
+         "value": 0.87
+        },
+        {
+         "type": "acc",
+         "value": 0.94
+        }
+       ],
+       "set_id": 368064,
+       "beatmap_id": 822561,
+       "diff": "[4K] NM",
+       "md5": "411e4a1a377c6d0d1124bb64bb2df4fd",
+       "artist": "Pierce The Veil",
+       "title": "A Match Into Water",
+       "creator": "puxtu",
+       "map_stars": 2.25,
+       "length_s": 138,
+       "bpm": 196
+      },
+      {
+       "id": "mania-c04s2",
+       "boss": false,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "acc",
+         "value": 0.83
+        },
+        {
+         "type": "acc",
+         "value": 0.912
+        },
+        {
+         "type": "miss",
+         "value": 10
+        }
+       ],
+       "set_id": 123456,
+       "beatmap_id": 315291,
+       "diff": "4K ADV",
+       "md5": "03978a47cf4dadaead6944c556565cd1",
+       "artist": "Lite Show Magic",
+       "title": "Crack traxxxx",
+       "creator": "LeiN-",
+       "map_stars": 2.37,
+       "length_s": 116,
+       "bpm": 220
+      },
+      {
+       "id": "mania-c04s3",
+       "boss": false,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "grade",
+         "value": "C"
+        },
+        {
+         "type": "grade",
+         "value": "B"
+        },
+        {
+         "type": "grade",
+         "value": "A"
+        }
+       ],
+       "set_id": 140097,
+       "beatmap_id": 354715,
+       "diff": "[4K] S.Star's NOVICE Lv.9",
+       "md5": "aa816f0751b46649a851235ec11e6940",
+       "artist": "Camellia",
+       "title": "Bangin' Burst",
+       "creator": "Spy",
+       "map_stars": 2.42,
+       "length_s": 118,
+       "bpm": 234
+      },
+      {
+       "id": "mania-c04s4",
+       "boss": false,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "acc",
+         "value": 0.872
+        },
+        {
+         "type": "miss",
+         "value": 8
+        },
+        {
+         "type": "acc",
+         "value": 0.958
+        }
+       ],
+       "set_id": 240415,
+       "beatmap_id": 587017,
+       "diff": "[4K] puxtu's HD",
+       "md5": "4ad9690d3353070bef55f530f966c288",
+       "artist": "SiM",
+       "title": "EXiSTENCE (TV Edit)",
+       "creator": "Saut",
+       "map_stars": 2.59,
+       "length_s": 89,
+       "bpm": 188
+      },
+      {
+       "id": "mania-c04s5",
+       "boss": false,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "grade",
+         "value": "B"
+        },
+        {
+         "type": "acc",
+         "value": 0.93
+        },
+        {
+         "type": "miss",
+         "value": 4
+        }
+       ],
+       "set_id": 187154,
+       "beatmap_id": 467177,
+       "diff": "4K Hyper",
+       "md5": "cc520d2799948728c4ebc91123ef3477",
+       "artist": "Ryu* Vs. Sota",
+       "title": "Go Beyond!!",
+       "creator": "DE-CADE",
+       "map_stars": 2.71,
+       "length_s": 110,
+       "bpm": 200
+      },
+      {
+       "id": "mania-c04s6",
+       "boss": true,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "grade",
+         "value": "A"
+        },
+        {
+         "type": "grade",
+         "value": "S"
+        },
+        {
+         "type": "miss",
+         "value": 0
+        }
+       ],
+       "set_id": 407186,
+       "beatmap_id": 884692,
+       "diff": "4K Hard",
+       "md5": "156b648cb9f314218435fbbad9237ddc",
+       "artist": "S3RL feat Krystal",
+       "title": "R4V3 B0Y",
+       "creator": "Draftnell",
+       "map_stars": 2.77,
+       "length_s": 177,
+       "bpm": 175
+      }
+     ]
     },
     {
-     "id": "c01s5",
-     "boss": false,
-     "mode": "mania",
-     "mods": [],
-     "goals": [
-      {
-       "type": "grade",
-       "value": "B"
-      },
-      {
-       "type": "acc",
-       "value": 0.92
-      },
-      {
-       "type": "miss",
-       "value": 5
-      }
+     "id": "mania-c05",
+     "world": "abyss",
+     "focus": "mania",
+     "stars": [
+      2.5,
+      3.1
      ],
-     "set_id": 444632,
-     "beatmap_id": 957837,
-     "diff": "[4K] victorica's Normal",
-     "md5": "480f61f2b6b4cd189b03ad87b1f4552d",
-     "artist": "MYTH & ROID",
-     "title": "STYX HELIX",
-     "creator": "Tsukuyomi",
-     "map_stars": 1.51,
-     "length_s": 98,
-     "bpm": 123
+     "stages": [
+      {
+       "id": "mania-c05s1",
+       "boss": false,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "pass"
+        },
+        {
+         "type": "acc",
+         "value": 0.877
+        },
+        {
+         "type": "acc",
+         "value": 0.943
+        }
+       ],
+       "set_id": 573280,
+       "beatmap_id": 1243743,
+       "diff": "[4K] Soul's Hyper",
+       "md5": "79ae9d228feee43c8971efa1f72526a5",
+       "artist": "Kobaryo",
+       "title": "Dotabata Animation [feat. t+pazolite]",
+       "creator": "YaHao",
+       "map_stars": 2.49,
+       "length_s": 184,
+       "bpm": 260
+      },
+      {
+       "id": "mania-c05s2",
+       "boss": false,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "acc",
+         "value": 0.84
+        },
+        {
+         "type": "acc",
+         "value": 0.917
+        },
+        {
+         "type": "miss",
+         "value": 9
+        }
+       ],
+       "set_id": 386415,
+       "beatmap_id": 845162,
+       "diff": "[4K] Hard",
+       "md5": "e56750e65c171fbb705adf00c892bb9f",
+       "artist": "M2U",
+       "title": "Myosotis",
+       "creator": "ZZHBOY",
+       "map_stars": 2.57,
+       "length_s": 142,
+       "bpm": 160
+      },
+      {
+       "id": "mania-c05s3",
+       "boss": false,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "grade",
+         "value": "B"
+        },
+        {
+         "type": "grade",
+         "value": "A"
+        },
+        {
+         "type": "grade",
+         "value": "S"
+        }
+       ],
+       "set_id": 283841,
+       "beatmap_id": 644701,
+       "diff": "4K Hyper",
+       "md5": "f3766ccf3618c76afaec7373513c396b",
+       "artist": "S-C-U feat. Qrispy Joybox",
+       "title": "anemone",
+       "creator": "Julie",
+       "map_stars": 2.68,
+       "length_s": 96,
+       "bpm": 200
+      },
+      {
+       "id": "mania-c05s4",
+       "boss": false,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "acc",
+         "value": 0.88
+        },
+        {
+         "type": "miss",
+         "value": 8
+        },
+        {
+         "type": "acc",
+         "value": 0.96
+        }
+       ],
+       "set_id": 511480,
+       "beatmap_id": 1088933,
+       "diff": "[4K] Draftnell's ADVANCED",
+       "md5": "b708eba56eaa8265a35edc19249b5c92",
+       "artist": "t+pazolite",
+       "title": "Oshama Scramble!",
+       "creator": "[ A v a l o n ]",
+       "map_stars": 2.86,
+       "length_s": 116,
+       "bpm": 190
+      },
+      {
+       "id": "mania-c05s5",
+       "boss": false,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "grade",
+         "value": "B"
+        },
+        {
+         "type": "acc",
+         "value": 0.933
+        },
+        {
+         "type": "miss",
+         "value": 4
+        }
+       ],
+       "set_id": 310607,
+       "beatmap_id": 694150,
+       "diff": "[4K] ADVANCED Lv.12",
+       "md5": "956400d129308e59d887f6b631a78510",
+       "artist": "t+pazolite",
+       "title": "Electric \"Sister\" Bitch",
+       "creator": "Verniy_Chan",
+       "map_stars": 2.98,
+       "length_s": 109,
+       "bpm": 185
+      },
+      {
+       "id": "mania-c05s6",
+       "boss": true,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "grade",
+         "value": "A"
+        },
+        {
+         "type": "grade",
+         "value": "S"
+        },
+        {
+         "type": "miss",
+         "value": 0
+        }
+       ],
+       "set_id": 409025,
+       "beatmap_id": 888022,
+       "diff": "[4K] puxtu's HD",
+       "md5": "b6dcc2bc298741e8a137511b8de9676d",
+       "artist": "Sleeping With Sirens",
+       "title": "If You Can't Hang",
+       "creator": "pishifat",
+       "map_stars": 3.09,
+       "length_s": 247,
+       "bpm": 192
+      }
+     ]
     },
     {
-     "id": "c01s6",
-     "boss": true,
-     "mode": "mania",
-     "mods": [],
-     "goals": [
-      {
-       "type": "grade",
-       "value": "B"
-      },
-      {
-       "type": "grade",
-       "value": "A"
-      },
-      {
-       "type": "miss",
-       "value": 0
-      }
+     "id": "mania-c06",
+     "world": "fractal",
+     "focus": "mania",
+     "stars": [
+      2.8,
+      3.4
      ],
-     "set_id": 476691,
-     "beatmap_id": 1024702,
-     "diff": "[4K] CS' Normal",
-     "md5": "88a497c7887777a8a72b8d73154b8e08",
-     "artist": "DJ OKAWARI",
-     "title": "Flower Dance",
-     "creator": "Narcissu",
-     "map_stars": 1.61,
-     "length_s": 241,
-     "bpm": 100
+     "stages": [
+      {
+       "id": "mania-c06s1",
+       "boss": false,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "pass"
+        },
+        {
+         "type": "acc",
+         "value": 0.883
+        },
+        {
+         "type": "acc",
+         "value": 0.947
+        }
+       ],
+       "set_id": 310793,
+       "beatmap_id": 694476,
+       "diff": "[4K] HD",
+       "md5": "df714527eb4acf69f32ea39766b4ae46",
+       "artist": "KANA-BOON",
+       "title": "Silhouette",
+       "creator": "ExKagii-",
+       "map_stars": 2.75,
+       "length_s": 88,
+       "bpm": 183
+      },
+      {
+       "id": "mania-c06s2",
+       "boss": false,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "acc",
+         "value": 0.85
+        },
+        {
+         "type": "acc",
+         "value": 0.921
+        },
+        {
+         "type": "miss",
+         "value": 9
+        }
+       ],
+       "set_id": 340810,
+       "beatmap_id": 753768,
+       "diff": "[4K] Hard",
+       "md5": "67643c9373ad4f3205b4eaec818364d8",
+       "artist": "Seiryu",
+       "title": "BLUE DRAGON",
+       "creator": "ExUsagi",
+       "map_stars": 2.9,
+       "length_s": 173,
+       "bpm": 191
+      },
+      {
+       "id": "mania-c06s3",
+       "boss": false,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "grade",
+         "value": "B"
+        },
+        {
+         "type": "grade",
+         "value": "A"
+        },
+        {
+         "type": "grade",
+         "value": "S"
+        }
+       ],
+       "set_id": 245393,
+       "beatmap_id": 565453,
+       "diff": "[4K] HD",
+       "md5": "586ad3470c9e758f60f334bf32a585c8",
+       "artist": "Neru x Rib",
+       "title": "Jinsei wa Hoeru",
+       "creator": "puxtu",
+       "map_stars": 3.01,
+       "length_s": 188,
+       "bpm": 286
+      },
+      {
+       "id": "mania-c06s4",
+       "boss": false,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "acc",
+         "value": 0.887
+        },
+        {
+         "type": "miss",
+         "value": 8
+        },
+        {
+         "type": "acc",
+         "value": 0.962
+        }
+       ],
+       "set_id": 602861,
+       "beatmap_id": 1273380,
+       "diff": "[4K] Manga",
+       "md5": "c133d83c9f904a92a0c39ac3a16fe7a0",
+       "artist": "ClariS",
+       "title": "Hitorigoto -TV MIX-",
+       "creator": "Tofu1222",
+       "map_stars": 3.21,
+       "length_s": 89,
+       "bpm": 165
+      },
+      {
+       "id": "mania-c06s5",
+       "boss": false,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "grade",
+         "value": "B"
+        },
+        {
+         "type": "acc",
+         "value": 0.937
+        },
+        {
+         "type": "miss",
+         "value": 3
+        }
+       ],
+       "set_id": 347779,
+       "beatmap_id": 767310,
+       "diff": "[4K] Standard Lv.16",
+       "md5": "969bcd8ffe62c4f81546346b3138d6be",
+       "artist": "sakuzyo",
+       "title": "Altale",
+       "creator": "Kuo Kyoka",
+       "map_stars": 3.22,
+       "length_s": 150,
+       "bpm": 90
+      },
+      {
+       "id": "mania-c06s6",
+       "boss": true,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "grade",
+         "value": "A"
+        },
+        {
+         "type": "grade",
+         "value": "S"
+        },
+        {
+         "type": "miss",
+         "value": 0
+        }
+       ],
+       "set_id": 480298,
+       "beatmap_id": 1215685,
+       "diff": "[4K] puxtu's HD",
+       "md5": "200bebf9771a6123a2c8eaba1acadec5",
+       "artist": "Veil of Maya",
+       "title": "Mikasa",
+       "creator": "Bergy",
+       "map_stars": 3.4,
+       "length_s": 121,
+       "bpm": 220
+      }
+     ]
+    },
+    {
+     "id": "mania-c07",
+     "world": "storm",
+     "focus": "mania",
+     "stars": [
+      2.6,
+      3.2
+     ],
+     "stages": [
+      {
+       "id": "mania-c07s1",
+       "boss": false,
+       "mode": "mania",
+       "mods": [
+        "SV"
+       ],
+       "goals": [
+        {
+         "type": "pass"
+        },
+        {
+         "type": "acc",
+         "value": 0.89
+        },
+        {
+         "type": "acc",
+         "value": 0.95
+        }
+       ],
+       "set_id": 572809,
+       "beatmap_id": 1213896,
+       "diff": "[4K] Feru's Hard",
+       "md5": "3008932361c4ee335ef3b09d46186ea8",
+       "artist": "Tomita Miyu, Onishi Saori, Ohzora Naomi, Hanazawa Kana",
+       "title": "Gabriel Drop Kick",
+       "creator": "Okoratu",
+       "map_stars": 2.58,
+       "length_s": 87,
+       "bpm": 168
+      },
+      {
+       "id": "mania-c07s2",
+       "boss": false,
+       "mode": "mania",
+       "mods": [
+        "SV"
+       ],
+       "goals": [
+        {
+         "type": "acc",
+         "value": 0.86
+        },
+        {
+         "type": "acc",
+         "value": 0.925
+        },
+        {
+         "type": "miss",
+         "value": 8
+        }
+       ],
+       "set_id": 1019836,
+       "beatmap_id": 2133970,
+       "diff": "[4K] Ziel's Low Life",
+       "md5": "e88e6149d0f31fd72adbd64fe8166a60",
+       "artist": "Kamiyama Yoh",
+       "title": "YELLOW",
+       "creator": "Peter",
+       "map_stars": 2.73,
+       "length_s": 174,
+       "bpm": 118
+      },
+      {
+       "id": "mania-c07s3",
+       "boss": false,
+       "mode": "mania",
+       "mods": [
+        "SV"
+       ],
+       "goals": [
+        {
+         "type": "grade",
+         "value": "B"
+        },
+        {
+         "type": "grade",
+         "value": "A"
+        },
+        {
+         "type": "grade",
+         "value": "S"
+        }
+       ],
+       "set_id": 636272,
+       "beatmap_id": 1350695,
+       "diff": "4K Hard Lv.10",
+       "md5": "7ae3d3f237545370856bc7a988e5f7d1",
+       "artist": "M2U",
+       "title": "Marigold (feat. Guriri)",
+       "creator": "DE-CADE",
+       "map_stars": 2.85,
+       "length_s": 146,
+       "bpm": 160
+      },
+      {
+       "id": "mania-c07s4",
+       "boss": false,
+       "mode": "mania",
+       "mods": [
+        "SV"
+       ],
+       "goals": [
+        {
+         "type": "acc",
+         "value": 0.895
+        },
+        {
+         "type": "miss",
+         "value": 7
+        },
+        {
+         "type": "acc",
+         "value": 0.965
+        }
+       ],
+       "set_id": 363594,
+       "beatmap_id": 809751,
+       "diff": "[4K] Draw's Hard",
+       "md5": "efd1bc8227ed0be92d5b2997104ac552",
+       "artist": "THE ORAL CIGARETTES",
+       "title": "Kyouran Hey Kids!!",
+       "creator": "Lina Sintyadewi",
+       "map_stars": 2.9,
+       "length_s": 89,
+       "bpm": 284
+      },
+      {
+       "id": "mania-c07s5",
+       "boss": false,
+       "mode": "mania",
+       "mods": [
+        "SV"
+       ],
+       "goals": [
+        {
+         "type": "grade",
+         "value": "A"
+        },
+        {
+         "type": "acc",
+         "value": 0.94
+        },
+        {
+         "type": "miss",
+         "value": 3
+        }
+       ],
+       "set_id": 63089,
+       "beatmap_id": 193128,
+       "diff": "4K MX",
+       "md5": "383029a705f65cfca86b7e3cb9df2e51",
+       "artist": "fripSide",
+       "title": "only my railgun (TV Size)",
+       "creator": "DJPop",
+       "map_stars": 3.14,
+       "length_s": 91,
+       "bpm": 143
+      },
+      {
+       "id": "mania-c07s6",
+       "boss": true,
+       "mode": "mania",
+       "mods": [
+        "SV"
+       ],
+       "goals": [
+        {
+         "type": "grade",
+         "value": "A"
+        },
+        {
+         "type": "grade",
+         "value": "S"
+        },
+        {
+         "type": "miss",
+         "value": 0
+        }
+       ],
+       "set_id": 170446,
+       "beatmap_id": 517382,
+       "diff": "[4K] puxtu's HD",
+       "md5": "404dce0b45b3620f10d2a358e6ffcc70",
+       "artist": "Nanahoshi Kangengakudan feat. Hatsune Miku",
+       "title": "Rubik's Cube",
+       "creator": "Harbyter",
+       "map_stars": 3.24,
+       "length_s": 193,
+       "bpm": 174
+      }
+     ]
+    },
+    {
+     "id": "mania-c08",
+     "world": "obsidian",
+     "focus": "mania",
+     "stars": [
+      3.2,
+      3.8
+     ],
+     "stages": [
+      {
+       "id": "mania-c08s1",
+       "boss": false,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "pass"
+        },
+        {
+         "type": "acc",
+         "value": 0.897
+        },
+        {
+         "type": "acc",
+         "value": 0.953
+        }
+       ],
+       "set_id": 476565,
+       "beatmap_id": 1018885,
+       "diff": "[4K] ADVANCED",
+       "md5": "29b0e9e2dbf357fe00f1ae9fa296803a",
+       "artist": "Camellia",
+       "title": "Ultimate Ascension",
+       "creator": "Fresh Chicken",
+       "map_stars": 3.22,
+       "length_s": 120,
+       "bpm": 200
+      },
+      {
+       "id": "mania-c08s2",
+       "boss": false,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "acc",
+         "value": 0.87
+        },
+        {
+         "type": "acc",
+         "value": 0.929
+        },
+        {
+         "type": "miss",
+         "value": 7
+        }
+       ],
+       "set_id": 478161,
+       "beatmap_id": 1023088,
+       "diff": "[4K] Leah's Hard",
+       "md5": "0d3d19705c7dac306b65f6390f20a478",
+       "artist": "LeaF",
+       "title": "NANO DEATH!!!!!",
+       "creator": "nowsmart",
+       "map_stars": 3.28,
+       "length_s": 139,
+       "bpm": 240
+      },
+      {
+       "id": "mania-c08s3",
+       "boss": false,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "grade",
+         "value": "B"
+        },
+        {
+         "type": "grade",
+         "value": "A"
+        },
+        {
+         "type": "grade",
+         "value": "S"
+        }
+       ],
+       "set_id": 529574,
+       "beatmap_id": 1122856,
+       "diff": "Wonki's 4K Hyper",
+       "md5": "42180fb74fdeb12b0b8cb89dbf85e230",
+       "artist": "KRUX",
+       "title": "Illusion of Inflict",
+       "creator": "Reba",
+       "map_stars": 3.41,
+       "length_s": 135,
+       "bpm": 170
+      },
+      {
+       "id": "mania-c08s4",
+       "boss": false,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "acc",
+         "value": 0.902
+        },
+        {
+         "type": "miss",
+         "value": 6
+        },
+        {
+         "type": "acc",
+         "value": 0.968
+        }
+       ],
+       "set_id": 415886,
+       "beatmap_id": 901047,
+       "diff": "[4K] ADVANCED",
+       "md5": "134d1556fc2b190fd1f5ce241837aa62",
+       "artist": "Kaneko Chiharu",
+       "title": "Lachryma<Re:Queen'M>",
+       "creator": "Fresh Chicken",
+       "map_stars": 3.51,
+       "length_s": 119,
+       "bpm": 236
+      },
+      {
+       "id": "mania-c08s5",
+       "boss": false,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "grade",
+         "value": "A"
+        },
+        {
+         "type": "acc",
+         "value": 0.943
+        },
+        {
+         "type": "miss",
+         "value": 3
+        }
+       ],
+       "set_id": 468353,
+       "beatmap_id": 1002503,
+       "diff": "[4K] Hyper",
+       "md5": "41f1f94da2f6c04821274d9510903e27",
+       "artist": "Colorful Sounds Port",
+       "title": "ETERNAL DRAIN",
+       "creator": "Wh1teh",
+       "map_stars": 3.65,
+       "length_s": 119,
+       "bpm": 149
+      },
+      {
+       "id": "mania-c08s6",
+       "boss": true,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "grade",
+         "value": "A"
+        },
+        {
+         "type": "grade",
+         "value": "S"
+        },
+        {
+         "type": "miss",
+         "value": 0
+        }
+       ],
+       "set_id": 287052,
+       "beatmap_id": 649841,
+       "diff": "[4K] Spy's SPECIAL",
+       "md5": "2ec75d22d993bf9572bdd307541fc032",
+       "artist": "Qrispy Joybox",
+       "title": "licca",
+       "creator": "Minakami Yuki",
+       "map_stars": 3.83,
+       "length_s": 108,
+       "bpm": 196
+      }
+     ]
+    },
+    {
+     "id": "mania-c09",
+     "world": "monolith",
+     "focus": "mania",
+     "stars": [
+      3.5,
+      4.1
+     ],
+     "stages": [
+      {
+       "id": "mania-c09s1",
+       "boss": false,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "pass"
+        },
+        {
+         "type": "acc",
+         "value": 0.903
+        },
+        {
+         "type": "acc",
+         "value": 0.957
+        }
+       ],
+       "set_id": 587269,
+       "beatmap_id": 1244694,
+       "diff": "[4K] ADVANCED",
+       "md5": "d2044d46fa3e3e06cdaaccd54239504d",
+       "artist": "Kaneko Chiharu",
+       "title": "iLLness LiLin",
+       "creator": "Fresh Chicken",
+       "map_stars": 3.51,
+       "length_s": 118,
+       "bpm": 280
+      },
+      {
+       "id": "mania-c09s2",
+       "boss": false,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "acc",
+         "value": 0.88
+        },
+        {
+         "type": "acc",
+         "value": 0.933
+        },
+        {
+         "type": "miss",
+         "value": 7
+        }
+       ],
+       "set_id": 224299,
+       "beatmap_id": 540749,
+       "diff": "[4K] nowsmart's SC",
+       "md5": "bf4e9f3853ebaabb7f841792e13d6885",
+       "artist": "Martin Garrix",
+       "title": "Animals",
+       "creator": "DrawdeX",
+       "map_stars": 3.63,
+       "length_s": 116,
+       "bpm": 128
+      },
+      {
+       "id": "mania-c09s3",
+       "boss": false,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "grade",
+         "value": "B"
+        },
+        {
+         "type": "grade",
+         "value": "A"
+        },
+        {
+         "type": "grade",
+         "value": "S"
+        }
+       ],
+       "set_id": 919633,
+       "beatmap_id": 2069131,
+       "diff": "[4K] mint's Hard",
+       "md5": "604438d7d9818174966d43a763f9dc6b",
+       "artist": "xi",
+       "title": "Blue Zenith",
+       "creator": "riunosk",
+       "map_stars": 3.7,
+       "length_s": 248,
+       "bpm": 200
+      },
+      {
+       "id": "mania-c09s4",
+       "boss": false,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "acc",
+         "value": 0.91
+        },
+        {
+         "type": "miss",
+         "value": 6
+        },
+        {
+         "type": "acc",
+         "value": 0.97
+        }
+       ],
+       "set_id": 359196,
+       "beatmap_id": 789905,
+       "diff": "[4K] Shirou's EXHAUST",
+       "md5": "21a586a33adc429915d0310f9a5962cf",
+       "artist": "penoreri",
+       "title": "Preserved Valkyria",
+       "creator": "_FrEsH_ChICkEn_",
+       "map_stars": 3.87,
+       "length_s": 119,
+       "bpm": 220
+      },
+      {
+       "id": "mania-c09s5",
+       "boss": false,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "grade",
+         "value": "A"
+        },
+        {
+         "type": "acc",
+         "value": 0.947
+        },
+        {
+         "type": "miss",
+         "value": 2
+        }
+       ],
+       "set_id": 349561,
+       "beatmap_id": 770840,
+       "diff": "[4K] Another Lv.11",
+       "md5": "332aa4b144c4dee015f04ec337217448",
+       "artist": "L.E.D.-G + Qrispy Joybox + ARM feat. Nanahira",
+       "title": "Dokkin Summer Adventure",
+       "creator": "Rinzler",
+       "map_stars": 3.95,
+       "length_s": 119,
+       "bpm": 180
+      },
+      {
+       "id": "mania-c09s6",
+       "boss": true,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "grade",
+         "value": "A"
+        },
+        {
+         "type": "grade",
+         "value": "S"
+        },
+        {
+         "type": "miss",
+         "value": 0
+        }
+       ],
+       "set_id": 261911,
+       "beatmap_id": 667736,
+       "diff": "Tokii's 4K MX",
+       "md5": "b7c4d6e317f4ac0951ad5531b0006f80",
+       "artist": "MitiS & MaHi",
+       "title": "Blu (Speed Up Ver.)",
+       "creator": "Ashasaki",
+       "map_stars": 4.05,
+       "length_s": 126,
+       "bpm": 168
+      }
+     ]
+    },
+    {
+     "id": "mania-c10",
+     "world": "rift",
+     "focus": "mania",
+     "stars": [
+      3.8,
+      4.4
+     ],
+     "stages": [
+      {
+       "id": "mania-c10s1",
+       "boss": false,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "pass"
+        },
+        {
+         "type": "acc",
+         "value": 0.91
+        },
+        {
+         "type": "acc",
+         "value": 0.96
+        }
+       ],
+       "set_id": 174550,
+       "beatmap_id": 450103,
+       "diff": "[4K] EXH",
+       "md5": "ae23a2c68281b92b62b7568b725789aa",
+       "artist": "orangentle / Yu_Asahina",
+       "title": "HAELEQUIN",
+       "creator": "Chocoliti",
+       "map_stars": 3.85,
+       "length_s": 112,
+       "bpm": 172
+      },
+      {
+       "id": "mania-c10s2",
+       "boss": false,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "acc",
+         "value": 0.89
+        },
+        {
+         "type": "acc",
+         "value": 0.938
+        },
+        {
+         "type": "miss",
+         "value": 6
+        }
+       ],
+       "set_id": 326079,
+       "beatmap_id": 724148,
+       "diff": "[4K] DECADE's EXHAUST",
+       "md5": "6e8e883618aa645ab0ff3cd2677dda0f",
+       "artist": "TeamGrimoire+amaneko",
+       "title": "croiX",
+       "creator": "Takane6",
+       "map_stars": 3.93,
+       "length_s": 112,
+       "bpm": 195
+      },
+      {
+       "id": "mania-c10s3",
+       "boss": false,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "grade",
+         "value": "B"
+        },
+        {
+         "type": "grade",
+         "value": "A"
+        },
+        {
+         "type": "grade",
+         "value": "S"
+        }
+       ],
+       "set_id": 195940,
+       "beatmap_id": 551163,
+       "diff": "Fullerene's 4K Another",
+       "md5": "4cbe5a06def5385f4780feb59562508c",
+       "artist": "MiddleIsland",
+       "title": "Achromat",
+       "creator": "iJinjin",
+       "map_stars": 4.03,
+       "length_s": 170,
+       "bpm": 165
+      },
+      {
+       "id": "mania-c10s4",
+       "boss": false,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "acc",
+         "value": 0.917
+        },
+        {
+         "type": "miss",
+         "value": 6
+        },
+        {
+         "type": "acc",
+         "value": 0.972
+        }
+       ],
+       "set_id": 376340,
+       "beatmap_id": 823920,
+       "diff": "[4K] Another",
+       "md5": "34124e11b4e179f05b2bff2f7505212f",
+       "artist": "Seiryu",
+       "title": "Critical Crystal",
+       "creator": "SanadaYukimura",
+       "map_stars": 4.15,
+       "length_s": 112,
+       "bpm": 191
+      },
+      {
+       "id": "mania-c10s5",
+       "boss": false,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "grade",
+         "value": "A"
+        },
+        {
+         "type": "acc",
+         "value": 0.95
+        },
+        {
+         "type": "miss",
+         "value": 2
+        }
+       ],
+       "set_id": 208095,
+       "beatmap_id": 490119,
+       "diff": "victorica's 4K MX",
+       "md5": "a203f12619c4418dac40a28d997e6cd1",
+       "artist": "Sharlo & yealina",
+       "title": "Kakushigoto",
+       "creator": "Sharlo",
+       "map_stars": 4.32,
+       "length_s": 235,
+       "bpm": 200
+      },
+      {
+       "id": "mania-c10s6",
+       "boss": true,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "grade",
+         "value": "A"
+        },
+        {
+         "type": "grade",
+         "value": "S"
+        },
+        {
+         "type": "miss",
+         "value": 0
+        }
+       ],
+       "set_id": 174381,
+       "beatmap_id": 421063,
+       "diff": "[4K] MX",
+       "md5": "09148888003d0062461f0b50683710e5",
+       "artist": "Yuyoyuppe",
+       "title": "AiAe",
+       "creator": "Fullerene-",
+       "map_stars": 4.4,
+       "length_s": 237,
+       "bpm": 180
+      }
+     ]
+    },
+    {
+     "id": "mania-c11",
+     "world": "nerve",
+     "focus": "mania",
+     "stars": [
+      4.1,
+      4.7
+     ],
+     "stages": [
+      {
+       "id": "mania-c11s1",
+       "boss": false,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "pass"
+        },
+        {
+         "type": "acc",
+         "value": 0.917
+        },
+        {
+         "type": "acc",
+         "value": 0.963
+        }
+       ],
+       "set_id": 285795,
+       "beatmap_id": 646643,
+       "diff": "[4K] MEGA's EXHAUST",
+       "md5": "7da9e740ef03aeaefa816ede8cb77876",
+       "artist": "sawawa",
+       "title": "Cirno Break",
+       "creator": "Verniy_Chan",
+       "map_stars": 4.13,
+       "length_s": 116,
+       "bpm": 196
+      },
+      {
+       "id": "mania-c11s2",
+       "boss": false,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "acc",
+         "value": 0.9
+        },
+        {
+         "type": "acc",
+         "value": 0.942
+        },
+        {
+         "type": "miss",
+         "value": 5
+        }
+       ],
+       "set_id": 381397,
+       "beatmap_id": 862667,
+       "diff": "[4K] 1's Another",
+       "md5": "3e6a096971718f68024b5502b8dbdd11",
+       "artist": "ginkiha",
+       "title": "Anemoi",
+       "creator": "[ A v a l o n ]",
+       "map_stars": 4.19,
+       "length_s": 150,
+       "bpm": 186
+      },
+      {
+       "id": "mania-c11s3",
+       "boss": false,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "grade",
+         "value": "B"
+        },
+        {
+         "type": "grade",
+         "value": "A"
+        },
+        {
+         "type": "grade",
+         "value": "S"
+        }
+       ],
+       "set_id": 175684,
+       "beatmap_id": 434381,
+       "diff": "[4K] Mee's SC",
+       "md5": "2a1b5cd8e9fe7c7c9ee9676aa354dbe1",
+       "artist": "Neru",
+       "title": "Lost One no Goukoku",
+       "creator": "puxtu",
+       "map_stars": 4.37,
+       "length_s": 213,
+       "bpm": 162
+      },
+      {
+       "id": "mania-c11s4",
+       "boss": false,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "acc",
+         "value": 0.925
+        },
+        {
+         "type": "miss",
+         "value": 5
+        },
+        {
+         "type": "acc",
+         "value": 0.975
+        }
+       ],
+       "set_id": 228853,
+       "beatmap_id": 532798,
+       "diff": "[4K] Insane",
+       "md5": "79fea69ecfd457bfa6cb8e401235cb64",
+       "artist": "Hypernite Industries",
+       "title": "Speedcore 300",
+       "creator": "nowsmart",
+       "map_stars": 4.52,
+       "length_s": 129,
+       "bpm": 300
+      },
+      {
+       "id": "mania-c11s5",
+       "boss": false,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "grade",
+         "value": "A"
+        },
+        {
+         "type": "acc",
+         "value": 0.953
+        },
+        {
+         "type": "miss",
+         "value": 2
+        }
+       ],
+       "set_id": 127305,
+       "beatmap_id": 364220,
+       "diff": "Momo's 4K Insane",
+       "md5": "361878d60f71dcf36c3c7e15e4d0096d",
+       "artist": "S.S.H.",
+       "title": "Intersect Thunderbolt-Remix",
+       "creator": "ljqandylee",
+       "map_stars": 4.54,
+       "length_s": 126,
+       "bpm": 250
+      },
+      {
+       "id": "mania-c11s6",
+       "boss": true,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "grade",
+         "value": "A"
+        },
+        {
+         "type": "grade",
+         "value": "S"
+        },
+        {
+         "type": "miss",
+         "value": 0
+        }
+       ],
+       "set_id": 356253,
+       "beatmap_id": 784054,
+       "diff": "[4K] GRAVITY",
+       "md5": "4e1ce8e3d1d1cc8c1bc68ffa84dccdde",
+       "artist": "ginkiha",
+       "title": "Borealis",
+       "creator": "[ A v a l o n ]",
+       "map_stars": 4.71,
+       "length_s": 111,
+       "bpm": 196
+      }
+     ]
+    },
+    {
+     "id": "mania-c12",
+     "world": "singularity",
+     "focus": "mania",
+     "stars": [
+      4.4,
+      5.0
+     ],
+     "stages": [
+      {
+       "id": "mania-c12s1",
+       "boss": false,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "pass"
+        },
+        {
+         "type": "acc",
+         "value": 0.923
+        },
+        {
+         "type": "acc",
+         "value": 0.967
+        }
+       ],
+       "set_id": 366126,
+       "beatmap_id": 988474,
+       "diff": "[4K] Another",
+       "md5": "48f81719b532afdaa2bc7c0e69ce1176",
+       "artist": "Morimori Atsushi",
+       "title": "PUPA",
+       "creator": "Valentrixe",
+       "map_stars": 4.37,
+       "length_s": 125,
+       "bpm": 202
+      },
+      {
+       "id": "mania-c12s2",
+       "boss": false,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "acc",
+         "value": 0.91
+        },
+        {
+         "type": "acc",
+         "value": 0.946
+        },
+        {
+         "type": "miss",
+         "value": 5
+        }
+       ],
+       "set_id": 298006,
+       "beatmap_id": 668856,
+       "diff": "[4K] EXHAUST",
+       "md5": "347e951fa1af3967f12d96d65a257fef",
+       "artist": "Yooh",
+       "title": "LegenD.",
+       "creator": "_FrEsH_ChICkEn_",
+       "map_stars": 4.55,
+       "length_s": 120,
+       "bpm": 205
+      },
+      {
+       "id": "mania-c12s3",
+       "boss": false,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "grade",
+         "value": "B"
+        },
+        {
+         "type": "grade",
+         "value": "A"
+        },
+        {
+         "type": "grade",
+         "value": "S"
+        }
+       ],
+       "set_id": 347453,
+       "beatmap_id": 766727,
+       "diff": "[4K] Brutal [Lv.15]",
+       "md5": "18aaddca1d6d4a3986e4d189f7cdb5c9",
+       "artist": "Igorrr & Ruby My Dear",
+       "title": "Figue Folle",
+       "creator": "Parachor",
+       "map_stars": 4.63,
+       "length_s": 222,
+       "bpm": 188
+      },
+      {
+       "id": "mania-c12s4",
+       "boss": false,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "acc",
+         "value": 0.932
+        },
+        {
+         "type": "miss",
+         "value": 4
+        },
+        {
+         "type": "acc",
+         "value": 0.978
+        }
+       ],
+       "set_id": 176446,
+       "beatmap_id": 429550,
+       "diff": "[4K] MX",
+       "md5": "1e4fa63fb68ed3d25f7c893f33706803",
+       "artist": "High Speed Music Team Sharpnel",
+       "title": "M.A.M.A.",
+       "creator": "arcwinolivirus",
+       "map_stars": 4.77,
+       "length_s": 140,
+       "bpm": 175
+      },
+      {
+       "id": "mania-c12s5",
+       "boss": false,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "grade",
+         "value": "A"
+        },
+        {
+         "type": "acc",
+         "value": 0.957
+        },
+        {
+         "type": "miss",
+         "value": 1
+        }
+       ],
+       "set_id": 808872,
+       "beatmap_id": 2031389,
+       "diff": "[4K] Lyz's Another",
+       "md5": "d63e9d316eb8cd955d07ce7f27e9be01",
+       "artist": "Kobaryo",
+       "title": "Perfect Neglect",
+       "creator": "Slowless",
+       "map_stars": 4.83,
+       "length_s": 140,
+       "bpm": 230
+      },
+      {
+       "id": "mania-c12s6",
+       "boss": true,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "grade",
+         "value": "A"
+        },
+        {
+         "type": "grade",
+         "value": "S"
+        },
+        {
+         "type": "miss",
+         "value": 0
+        }
+       ],
+       "set_id": 581729,
+       "beatmap_id": 1231252,
+       "diff": "[4K] Ultimate",
+       "md5": "9a6d90f6f4a01adf91b1313c47759821",
+       "artist": "jioyi",
+       "title": "cyanine",
+       "creator": "Rivals_7",
+       "map_stars": 4.98,
+       "length_s": 187,
+       "bpm": 182
+      }
+     ]
+    },
+    {
+     "id": "mania-c13",
+     "world": "boss",
+     "focus": "mania",
+     "stars": [
+      4.8,
+      5.6
+     ],
+     "stages": [
+      {
+       "id": "mania-c13s1",
+       "boss": false,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "pass"
+        },
+        {
+         "type": "acc",
+         "value": 0.93
+        },
+        {
+         "type": "acc",
+         "value": 0.97
+        }
+       ],
+       "set_id": 1377628,
+       "beatmap_id": 2847100,
+       "diff": "[4K] Beyond",
+       "md5": "ac049bf0c8c532e8ecad96472f33208d",
+       "artist": "Risshuu feat. Choko",
+       "title": "Take",
+       "creator": "LNP-",
+       "map_stars": 4.77,
+       "length_s": 140,
+       "bpm": 183
+      },
+      {
+       "id": "mania-c13s2",
+       "boss": false,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "acc",
+         "value": 0.92
+        },
+        {
+         "type": "acc",
+         "value": 0.95
+        },
+        {
+         "type": "miss",
+         "value": 4
+        }
+       ],
+       "set_id": 577563,
+       "beatmap_id": 1242032,
+       "diff": "[4K] GRAVITY",
+       "md5": "3160b79016c9ea030bf19c1edb5864b0",
+       "artist": "t+pazolite",
+       "title": "Angelic Jelly",
+       "creator": "Dellvangel",
+       "map_stars": 5.01,
+       "length_s": 116,
+       "bpm": 200
+      },
+      {
+       "id": "mania-c13s3",
+       "boss": false,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "grade",
+         "value": "B"
+        },
+        {
+         "type": "grade",
+         "value": "A"
+        },
+        {
+         "type": "grade",
+         "value": "S"
+        }
+       ],
+       "set_id": 351320,
+       "beatmap_id": 774837,
+       "diff": "[4K] Extra",
+       "md5": "951bf652daa965012eb83c1095026224",
+       "artist": "xi",
+       "title": "over the top",
+       "creator": "Zan -",
+       "map_stars": 5.14,
+       "length_s": 121,
+       "bpm": 202
+      },
+      {
+       "id": "mania-c13s4",
+       "boss": false,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "acc",
+         "value": 0.94
+        },
+        {
+         "type": "miss",
+         "value": 4
+        },
+        {
+         "type": "acc",
+         "value": 0.98
+        }
+       ],
+       "set_id": 555076,
+       "beatmap_id": 1174927,
+       "diff": "[4K] Trigger",
+       "md5": "b439d384761e6a5b85f7ec11c7c3c5f3",
+       "artist": "Dustvoxx",
+       "title": "Trigger (Zekk Remix)",
+       "creator": "Wonki",
+       "map_stars": 5.22,
+       "length_s": 250,
+       "bpm": 200
+      },
+      {
+       "id": "mania-c13s5",
+       "boss": false,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "grade",
+         "value": "A"
+        },
+        {
+         "type": "acc",
+         "value": 0.96
+        },
+        {
+         "type": "miss",
+         "value": 1
+        }
+       ],
+       "set_id": 939798,
+       "beatmap_id": 2330017,
+       "diff": "[4K] SHD",
+       "md5": "54233b60901ffd904f9f18b2da94b09c",
+       "artist": "Chroma",
+       "title": "Dark Sheep",
+       "creator": "Feylos",
+       "map_stars": 5.4,
+       "length_s": 237,
+       "bpm": 177
+      },
+      {
+       "id": "mania-c13s6",
+       "boss": true,
+       "mode": "mania",
+       "mods": [],
+       "goals": [
+        {
+         "type": "grade",
+         "value": "A"
+        },
+        {
+         "type": "grade",
+         "value": "S"
+        },
+        {
+         "type": "miss",
+         "value": 0
+        }
+       ],
+       "set_id": 885596,
+       "beatmap_id": 1850934,
+       "diff": "[4K] Black Another",
+       "md5": "7d061589f56e537c9713f865a1603ca5",
+       "artist": "Lime",
+       "title": "Chronomia",
+       "creator": "Insp1r3",
+       "map_stars": 5.65,
+       "length_s": 144,
+       "bpm": 227
+      }
+     ]
     }
    ]
   },
-  {
-   "id": "c02",
-   "world": "aurora",
-   "focus": "trace",
-   "stars": [
-    1.3,
-    1.9
-   ],
-   "stages": [
+  "orbit": {
+   "chapters": [
     {
-     "id": "c02s1",
-     "boss": false,
-     "mode": "trace",
-     "mods": [],
-     "goals": [
-      {
-       "type": "pass"
-      },
-      {
-       "type": "acc",
-       "value": 0.857
-      },
-      {
-       "type": "acc",
-       "value": 0.933
-      }
+     "id": "orbit-c01",
+     "world": "eclipse",
+     "focus": "orbit",
+     "stars": [
+      1.0,
+      1.8
      ],
-     "set_id": 310607,
-     "beatmap_id": 710980,
-     "diff": "[4K] BASIC Lv.6",
-     "md5": "c7f1246f8bbad618fd5347de407b2b28",
-     "artist": "t+pazolite",
-     "title": "Electric \"Sister\" Bitch",
-     "creator": "Verniy_Chan",
-     "map_stars": 1.27,
-     "length_s": 109,
-     "bpm": 185
-    },
-    {
-     "id": "c02s2",
-     "boss": false,
-     "mode": "trace",
-     "mods": [],
-     "goals": [
+     "stages": [
       {
-       "type": "acc",
-       "value": 0.81
+       "id": "orbit-c01s1",
+       "boss": false,
+       "mode": "orbit",
+       "mods": [],
+       "goals": [
+        {
+         "type": "pass"
+        },
+        {
+         "type": "acc",
+         "value": 0.85
+        },
+        {
+         "type": "acc",
+         "value": 0.93
+        }
+       ],
+       "set_id": 489950,
+       "beatmap_id": 1055379,
+       "diff": "[4K] Beginner",
+       "md5": "e57242d76483a5784a6a2e7b6407d6dc",
+       "artist": "Dollscythe",
+       "title": "Flashes",
+       "creator": "ZZHBOY",
+       "map_stars": 1.04,
+       "length_s": 103,
+       "bpm": 180
       },
       {
-       "type": "acc",
-       "value": 0.904
+       "id": "orbit-c01s2",
+       "boss": false,
+       "mode": "orbit",
+       "mods": [],
+       "goals": [
+        {
+         "type": "acc",
+         "value": 0.8
+        },
+        {
+         "type": "acc",
+         "value": 0.9
+        },
+        {
+         "type": "miss",
+         "value": 12
+        }
+       ],
+       "set_id": 468213,
+       "beatmap_id": 1001516,
+       "diff": "[4K] BANGKE's EZ",
+       "md5": "139c2d895fdf653b3fbbf23adfc62906",
+       "artist": "Marshmello",
+       "title": "Alone",
+       "creator": "erlinadewi-",
+       "map_stars": 1.21,
+       "length_s": 136,
+       "bpm": 142
       },
       {
-       "type": "miss",
-       "value": 11
+       "id": "orbit-c01s3",
+       "boss": false,
+       "mode": "orbit",
+       "mods": [],
+       "goals": [
+        {
+         "type": "grade",
+         "value": "C"
+        },
+        {
+         "type": "grade",
+         "value": "B"
+        },
+        {
+         "type": "grade",
+         "value": "A"
+        }
+       ],
+       "set_id": 293235,
+       "beatmap_id": 671311,
+       "diff": "[4K] BASIC",
+       "md5": "68f3d1dafa953b9f336d333e4ad428a6",
+       "artist": "C-Show",
+       "title": "Invitation from Mr.C",
+       "creator": "_FrEsH_ChICkEn_",
+       "map_stars": 1.32,
+       "length_s": 109,
+       "bpm": 230
+      },
+      {
+       "id": "orbit-c01s4",
+       "boss": false,
+       "mode": "orbit",
+       "mods": [],
+       "goals": [
+        {
+         "type": "acc",
+         "value": 0.85
+        },
+        {
+         "type": "miss",
+         "value": 10
+        },
+        {
+         "type": "acc",
+         "value": 0.95
+        }
+       ],
+       "set_id": 574578,
+       "beatmap_id": 1217045,
+       "diff": "[4K] BASIC",
+       "md5": "5438f4c0bace033ac9c3ea3ba77a147e",
+       "artist": "kamome sano Electric Orchestra",
+       "title": "HE4VEN ~Tengoku e Youkoso~",
+       "creator": "Fresh Chicken",
+       "map_stars": 1.48,
+       "length_s": 120,
+       "bpm": 256
+      },
+      {
+       "id": "orbit-c01s5",
+       "boss": false,
+       "mode": "orbit",
+       "mods": [],
+       "goals": [
+        {
+         "type": "grade",
+         "value": "B"
+        },
+        {
+         "type": "acc",
+         "value": 0.92
+        },
+        {
+         "type": "miss",
+         "value": 5
+        }
+       ],
+       "set_id": 2182334,
+       "beatmap_id": 4610967,
+       "diff": "[4K] EASY",
+       "md5": "2bdb25f5f6b1c6e9ec50bc5ec148859b",
+       "artist": "ANGUISH, POCHTISCHASTLIV & ily",
+       "title": "Glaza (Sped Up Ver.)",
+       "creator": "Flade",
+       "map_stars": 1.63,
+       "length_s": 90,
+       "bpm": 210
+      },
+      {
+       "id": "orbit-c01s6",
+       "boss": true,
+       "mode": "orbit",
+       "mods": [],
+       "goals": [
+        {
+         "type": "grade",
+         "value": "B"
+        },
+        {
+         "type": "grade",
+         "value": "A"
+        },
+        {
+         "type": "miss",
+         "value": 0
+        }
+       ],
+       "set_id": 126752,
+       "beatmap_id": 352168,
+       "diff": "S.Star's 4K NM",
+       "md5": "18a53acead46d4893e3cdca033027f9e",
+       "artist": "Yun*chi",
+       "title": "Your song*",
+       "creator": "victorica_db",
+       "map_stars": 1.77,
+       "length_s": 102,
+       "bpm": 130
       }
-     ],
-     "set_id": 324288,
-     "beatmap_id": 720553,
-     "diff": "4K Lv.4",
-     "md5": "760fdde367efe3f09cb1e87fdc812225",
-     "artist": "xi",
-     "title": "ANiMA",
-     "creator": "Kuo Kyoka",
-     "map_stars": 1.46,
-     "length_s": 112,
-     "bpm": 184
-    },
-    {
-     "id": "c02s3",
-     "boss": false,
-     "mode": "mania",
-     "mods": [],
-     "goals": [
-      {
-       "type": "grade",
-       "value": "C"
-      },
-      {
-       "type": "grade",
-       "value": "B"
-      },
-      {
-       "type": "grade",
-       "value": "A"
-      }
-     ],
-     "set_id": 200552,
-     "beatmap_id": 484223,
-     "diff": "[4K] Usagi's BASIC Lv.6",
-     "md5": "7e75f8615542d8aba8e8144d29185f96",
-     "artist": "BlackYooh vs. siromaru",
-     "title": "BLACK or WHITE?",
-     "creator": "DE-CADE",
-     "map_stars": 1.53,
-     "length_s": 116,
-     "bpm": 185
-    },
-    {
-     "id": "c02s4",
-     "boss": false,
-     "mode": "trace",
-     "mods": [],
-     "goals": [
-      {
-       "type": "acc",
-       "value": 0.857
-      },
-      {
-       "type": "miss",
-       "value": 10
-      },
-      {
-       "type": "acc",
-       "value": 0.952
-      }
-     ],
-     "set_id": 159068,
-     "beatmap_id": 427175,
-     "diff": "4K NM",
-     "md5": "9e5fd4e68a2dcb13293f09aba7c906b9",
-     "artist": "AAA",
-     "title": "Wake up! (Anime ver.)",
-     "creator": "Atsuro",
-     "map_stars": 1.61,
-     "length_s": 148,
-     "bpm": 176
-    },
-    {
-     "id": "c02s5",
-     "boss": false,
-     "mode": "trace",
-     "mods": [],
-     "goals": [
-      {
-       "type": "grade",
-       "value": "B"
-      },
-      {
-       "type": "acc",
-       "value": 0.923
-      },
-      {
-       "type": "miss",
-       "value": 5
-      }
-     ],
-     "set_id": 274111,
-     "beatmap_id": 745263,
-     "diff": "[4K] Feru's EZ",
-     "md5": "9f357ad07b62007e2ec3a5f57cb14b89",
-     "artist": "SON OF KICK",
-     "title": "Hours ft. Lady Leshurr & Paigey Cakey",
-     "creator": "Irreversible",
-     "map_stars": 1.76,
-     "length_s": 96,
-     "bpm": 132
-    },
-    {
-     "id": "c02s6",
-     "boss": true,
-     "mode": "trace",
-     "mods": [],
-     "goals": [
-      {
-       "type": "grade",
-       "value": "B"
-      },
-      {
-       "type": "grade",
-       "value": "A"
-      },
-      {
-       "type": "miss",
-       "value": 0
-      }
-     ],
-     "set_id": 206887,
-     "beatmap_id": 501512,
-     "diff": "[4K] Marirose's Normal",
-     "md5": "da6900a2532e56480b77f97034e1f745",
-     "artist": "TK from Ling tosite sigure",
-     "title": "unravel (TV edit)",
-     "creator": "Desperate-kun",
-     "map_stars": 1.95,
-     "length_s": 86,
-     "bpm": 135
+     ]
     }
    ]
   },
-  {
-   "id": "c03",
-   "world": "neon",
-   "focus": "mania",
-   "stars": [
-    1.7,
-    2.3
-   ],
-   "stages": [
+  "rally": {
+   "chapters": [
     {
-     "id": "c03s1",
-     "boss": false,
-     "mode": "mania",
-     "mods": [],
-     "goals": [
-      {
-       "type": "pass"
-      },
-      {
-       "type": "acc",
-       "value": 0.863
-      },
-      {
-       "type": "acc",
-       "value": 0.937
-      }
+     "id": "rally-c01",
+     "world": "fractal",
+     "focus": "rally",
+     "stars": [
+      1.0,
+      1.8
      ],
-     "set_id": 123456,
-     "beatmap_id": 315293,
-     "diff": "4K NOV",
-     "md5": "95edfcd2295b42b8ce69158ec367a1cb",
-     "artist": "Lite Show Magic",
-     "title": "Crack traxxxx",
-     "creator": "LeiN-",
-     "map_stars": 1.7,
-     "length_s": 116,
-     "bpm": 220
-    },
-    {
-     "id": "c03s2",
-     "boss": false,
-     "mode": "mania",
-     "mods": [],
-     "goals": [
+     "stages": [
       {
-       "type": "acc",
-       "value": 0.82
+       "id": "rally-c01s1",
+       "boss": false,
+       "mode": "rally",
+       "mods": [],
+       "goals": [
+        {
+         "type": "pass"
+        },
+        {
+         "type": "acc",
+         "value": 0.85
+        },
+        {
+         "type": "acc",
+         "value": 0.93
+        }
+       ],
+       "set_id": 2367084,
+       "beatmap_id": 5105802,
+       "diff": "[4K] Beginner",
+       "md5": "e0fdb1fae2c39cafc31a7ab9b924c283",
+       "artist": "Mrs. GREEN APPLE",
+       "title": "Ao to Natsu (katagiri Bootleg) (Sped Up & Cut Ver.)",
+       "creator": "frawog",
+       "map_stars": 1.05,
+       "length_s": 94,
+       "bpm": 240
       },
       {
-       "type": "acc",
-       "value": 0.908
+       "id": "rally-c01s2",
+       "boss": false,
+       "mode": "rally",
+       "mods": [],
+       "goals": [
+        {
+         "type": "acc",
+         "value": 0.8
+        },
+        {
+         "type": "acc",
+         "value": 0.9
+        },
+        {
+         "type": "miss",
+         "value": 12
+        }
+       ],
+       "set_id": 2314502,
+       "beatmap_id": 4962026,
+       "diff": "[4K] ayase's easy",
+       "md5": "1512de5842e64f45a51a7dc61f996c36",
+       "artist": "Zachz Winner",
+       "title": "blu",
+       "creator": "Bloxi",
+       "map_stars": 1.16,
+       "length_s": 75,
+       "bpm": 155
       },
       {
-       "type": "miss",
-       "value": 11
+       "id": "rally-c01s3",
+       "boss": false,
+       "mode": "rally",
+       "mods": [],
+       "goals": [
+        {
+         "type": "grade",
+         "value": "C"
+        },
+        {
+         "type": "grade",
+         "value": "B"
+        },
+        {
+         "type": "grade",
+         "value": "A"
+        }
+       ],
+       "set_id": 474900,
+       "beatmap_id": 1014632,
+       "diff": "4K Beginner",
+       "md5": "3834aab85f35cbd80565fc9f2acbfe7c",
+       "artist": "xi",
+       "title": "Glorious Crown",
+       "creator": "Kuo Kyoka",
+       "map_stars": 1.27,
+       "length_s": 118,
+       "bpm": 226
+      },
+      {
+       "id": "rally-c01s4",
+       "boss": false,
+       "mode": "rally",
+       "mods": [],
+       "goals": [
+        {
+         "type": "acc",
+         "value": 0.85
+        },
+        {
+         "type": "miss",
+         "value": 10
+        },
+        {
+         "type": "acc",
+         "value": 0.95
+        }
+       ],
+       "set_id": 1276702,
+       "beatmap_id": 2652438,
+       "diff": "4K Easy",
+       "md5": "26ba83492c4f4b6da5151bbeabb659b6",
+       "artist": "Eve",
+       "title": "Kaikai Kitan (TV Size)",
+       "creator": "Syadow-",
+       "map_stars": 1.46,
+       "length_s": 88,
+       "bpm": 185
+      },
+      {
+       "id": "rally-c01s5",
+       "boss": false,
+       "mode": "rally",
+       "mods": [],
+       "goals": [
+        {
+         "type": "grade",
+         "value": "B"
+        },
+        {
+         "type": "acc",
+         "value": 0.92
+        },
+        {
+         "type": "miss",
+         "value": 5
+        }
+       ],
+       "set_id": 136986,
+       "beatmap_id": 389984,
+       "diff": "4K HD",
+       "md5": "cd3910121fbf72bca362bd91b6f44b0e",
+       "artist": "Lia",
+       "title": "My Soul, Your Beats! (TV Size)",
+       "creator": "DJPop",
+       "map_stars": 1.59,
+       "length_s": 88,
+       "bpm": 145
+      },
+      {
+       "id": "rally-c01s6",
+       "boss": true,
+       "mode": "rally",
+       "mods": [],
+       "goals": [
+        {
+         "type": "grade",
+         "value": "B"
+        },
+        {
+         "type": "grade",
+         "value": "A"
+        },
+        {
+         "type": "miss",
+         "value": 0
+        }
+       ],
+       "set_id": 129383,
+       "beatmap_id": 331962,
+       "diff": "AEM's 4K Normal",
+       "md5": "9821f61d995b038283b50cde151be28e",
+       "artist": "Harada Hitomi, Kayano Ai & Ogura Yui",
+       "title": "Maware! Setsugekka (TV Size)",
+       "creator": "Chocoliti",
+       "map_stars": 1.83,
+       "length_s": 89,
+       "bpm": 160
       }
-     ],
-     "set_id": 155749,
-     "beatmap_id": 573749,
-     "diff": "4K Normal",
-     "md5": "8a00720d5f5e50e1504ecadb9e560999",
-     "artist": "xi",
-     "title": ".357 Magnum",
-     "creator": "Akali",
-     "map_stars": 1.84,
-     "length_s": 128,
-     "bpm": 178
-    },
-    {
-     "id": "c03s3",
-     "boss": false,
-     "mode": "rebound",
-     "mods": [],
-     "goals": [
-      {
-       "type": "grade",
-       "value": "C"
-      },
-      {
-       "type": "grade",
-       "value": "B"
-      },
-      {
-       "type": "grade",
-       "value": "A"
-      }
-     ],
-     "set_id": 332623,
-     "beatmap_id": 748486,
-     "diff": "[4K] Lv.7",
-     "md5": "9b8e393eeec1f47a96aea131e4fce816",
-     "artist": "Doma Umaru [CV.Tanaka Aimi]",
-     "title": "Kakushinteki*Metamaruphose!",
-     "creator": "Crystal",
-     "map_stars": 1.98,
-     "length_s": 88,
-     "bpm": 278
-    },
-    {
-     "id": "c03s4",
-     "boss": false,
-     "mode": "mania",
-     "mods": [],
-     "goals": [
-      {
-       "type": "acc",
-       "value": 0.865
-      },
-      {
-       "type": "miss",
-       "value": 9
-      },
-      {
-       "type": "acc",
-       "value": 0.955
-      }
-     ],
-     "set_id": 277421,
-     "beatmap_id": 671990,
-     "diff": "[4K] Harby's NM",
-     "md5": "22f65947e11ccac3d2ae2c3169641745",
-     "artist": "Lindsey Stirling",
-     "title": "Senbonzakura",
-     "creator": "MrSergio",
-     "map_stars": 2.09,
-     "length_s": 188,
-     "bpm": 154
-    },
-    {
-     "id": "c03s5",
-     "boss": false,
-     "mode": "mania",
-     "mods": [],
-     "goals": [
-      {
-       "type": "grade",
-       "value": "B"
-      },
-      {
-       "type": "acc",
-       "value": 0.927
-      },
-      {
-       "type": "miss",
-       "value": 4
-      }
-     ],
-     "set_id": 349208,
-     "beatmap_id": 770128,
-     "diff": "[4K] NOVICE",
-     "md5": "24d4ebbe6ad7c92f6d7247ac864fdc99",
-     "artist": "Camellia as \"Bang Riot\"",
-     "title": "Blastix Riotz",
-     "creator": "Fresh Chicken",
-     "map_stars": 2.23,
-     "length_s": 126,
-     "bpm": 256
-    },
-    {
-     "id": "c03s6",
-     "boss": true,
-     "mode": "mania",
-     "mods": [],
-     "goals": [
-      {
-       "type": "grade",
-       "value": "B"
-      },
-      {
-       "type": "grade",
-       "value": "A"
-      },
-      {
-       "type": "miss",
-       "value": 0
-      }
-     ],
-     "set_id": 368064,
-     "beatmap_id": 822561,
-     "diff": "[4K] NM",
-     "md5": "411e4a1a377c6d0d1124bb64bb2df4fd",
-     "artist": "Pierce The Veil",
-     "title": "A Match Into Water",
-     "creator": "puxtu",
-     "map_stars": 2.25,
-     "length_s": 138,
-     "bpm": 196
+     ]
     }
    ]
   },
-  {
-   "id": "c04",
-   "world": "eclipse",
-   "focus": "orbit",
-   "stars": [
-    1.5,
-    2.1
-   ],
-   "stages": [
+  "dirigent": {
+   "chapters": [
     {
-     "id": "c04s1",
-     "boss": false,
-     "mode": "orbit",
-     "mods": [],
-     "goals": [
-      {
-       "type": "pass"
-      },
-      {
-       "type": "acc",
-       "value": 0.87
-      },
-      {
-       "type": "acc",
-       "value": 0.94
-      }
+     "id": "dirigent-c01",
+     "world": "obsidian",
+     "focus": "dirigent",
+     "stars": [
+      1.0,
+      1.8
      ],
-     "set_id": 187154,
-     "beatmap_id": 451886,
-     "diff": "Shana's 4K Beginner",
-     "md5": "3a58fc6390a9053c673df7a7c0eb9057",
-     "artist": "Ryu* Vs. Sota",
-     "title": "Go Beyond!!",
-     "creator": "DE-CADE",
-     "map_stars": 1.44,
-     "length_s": 110,
-     "bpm": 200
-    },
-    {
-     "id": "c04s2",
-     "boss": false,
-     "mode": "orbit",
-     "mods": [],
-     "goals": [
+     "stages": [
       {
-       "type": "acc",
-       "value": 0.83
+       "id": "dirigent-c01s1",
+       "boss": false,
+       "mode": "dirigent",
+       "mods": [],
+       "goals": [
+        {
+         "type": "pass"
+        },
+        {
+         "type": "acc",
+         "value": 0.85
+        },
+        {
+         "type": "acc",
+         "value": 0.93
+        }
+       ],
+       "set_id": 108577,
+       "beatmap_id": 286735,
+       "diff": "Woodyzak's 4K EZ",
+       "md5": "43b2ad12e6848c8050efa11aea2e2fdc",
+       "artist": "fripSide",
+       "title": "eternal reality - TV size -",
+       "creator": "17VA",
+       "map_stars": 0.98,
+       "length_s": 82,
+       "bpm": 145
       },
       {
-       "type": "acc",
-       "value": 0.912
+       "id": "dirigent-c01s2",
+       "boss": false,
+       "mode": "dirigent",
+       "mods": [],
+       "goals": [
+        {
+         "type": "acc",
+         "value": 0.8
+        },
+        {
+         "type": "acc",
+         "value": 0.9
+        },
+        {
+         "type": "miss",
+         "value": 12
+        }
+       ],
+       "set_id": 499781,
+       "beatmap_id": 1063554,
+       "diff": "4K Easy",
+       "md5": "9e33133508ef431f319dedc15981d056",
+       "artist": "Shiena Nishizawa",
+       "title": "The Asterisk War",
+       "creator": "arcwinolivirus",
+       "map_stars": 1.2,
+       "length_s": 84,
+       "bpm": 143
       },
       {
-       "type": "miss",
-       "value": 10
+       "id": "dirigent-c01s3",
+       "boss": false,
+       "mode": "dirigent",
+       "mods": [],
+       "goals": [
+        {
+         "type": "grade",
+         "value": "C"
+        },
+        {
+         "type": "grade",
+         "value": "B"
+        },
+        {
+         "type": "grade",
+         "value": "A"
+        }
+       ],
+       "set_id": 623951,
+       "beatmap_id": 1317017,
+       "diff": "[4K] Kantan",
+       "md5": "9f40de67b560523a76be6cae194ca169",
+       "artist": "Kaneko Chiharu",
+       "title": "Kai Dan",
+       "creator": "Tofu1222",
+       "map_stars": 1.34,
+       "length_s": 127,
+       "bpm": 270
+      },
+      {
+       "id": "dirigent-c01s4",
+       "boss": false,
+       "mode": "dirigent",
+       "mods": [],
+       "goals": [
+        {
+         "type": "acc",
+         "value": 0.85
+        },
+        {
+         "type": "miss",
+         "value": 10
+        },
+        {
+         "type": "acc",
+         "value": 0.95
+        }
+       ],
+       "set_id": 543830,
+       "beatmap_id": 1180131,
+       "diff": "[4K] EZ",
+       "md5": "ad23e7e792f9ca825e6679228973b04c",
+       "artist": "O2i3",
+       "title": "TSLove",
+       "creator": "Ilham",
+       "map_stars": 1.48,
+       "length_s": 94,
+       "bpm": 185
+      },
+      {
+       "id": "dirigent-c01s5",
+       "boss": false,
+       "mode": "dirigent",
+       "mods": [],
+       "goals": [
+        {
+         "type": "grade",
+         "value": "B"
+        },
+        {
+         "type": "acc",
+         "value": 0.92
+        },
+        {
+         "type": "miss",
+         "value": 5
+        }
+       ],
+       "set_id": 198978,
+       "beatmap_id": 474123,
+       "diff": "[4K] NM",
+       "md5": "5beaafcd697e80835814b34050241655",
+       "artist": "Katarzyna Laska",
+       "title": "No Ordinary Girl",
+       "creator": "Tidek",
+       "map_stars": 1.65,
+       "length_s": 76,
+       "bpm": 156
+      },
+      {
+       "id": "dirigent-c01s6",
+       "boss": true,
+       "mode": "dirigent",
+       "mods": [],
+       "goals": [
+        {
+         "type": "grade",
+         "value": "B"
+        },
+        {
+         "type": "grade",
+         "value": "A"
+        },
+        {
+         "type": "miss",
+         "value": 0
+        }
+       ],
+       "set_id": 478273,
+       "beatmap_id": 1021524,
+       "diff": "[4K] KK's Normal",
+       "md5": "b1295b525e92c2d4f8f545f6c0d510a4",
+       "artist": "MYTH & ROID",
+       "title": "Paradisus-Paradoxum",
+       "creator": "[ S a k u r a ]",
+       "map_stars": 1.79,
+       "length_s": 89,
+       "bpm": 201
       }
-     ],
-     "set_id": 298006,
-     "beatmap_id": 668855,
-     "diff": "[4K] BASIC",
-     "md5": "57a1bc129c5499f6f84a2128cf4bef65",
-     "artist": "Yooh",
-     "title": "LegenD.",
-     "creator": "_FrEsH_ChICkEn_",
-     "map_stars": 1.62,
-     "length_s": 118,
-     "bpm": 205
-    },
-    {
-     "id": "c04s3",
-     "boss": false,
-     "mode": "mania",
-     "mods": [],
-     "goals": [
-      {
-       "type": "grade",
-       "value": "C"
-      },
-      {
-       "type": "grade",
-       "value": "B"
-      },
-      {
-       "type": "grade",
-       "value": "A"
-      }
-     ],
-     "set_id": 340810,
-     "beatmap_id": 753859,
-     "diff": "[4K] KK's Normal",
-     "md5": "ba6fa2e61cff801e6da7ec32da863f16",
-     "artist": "Seiryu",
-     "title": "BLUE DRAGON",
-     "creator": "ExUsagi",
-     "map_stars": 1.78,
-     "length_s": 173,
-     "bpm": 191
-    },
-    {
-     "id": "c04s4",
-     "boss": false,
-     "mode": "orbit",
-     "mods": [],
-     "goals": [
-      {
-       "type": "acc",
-       "value": 0.872
-      },
-      {
-       "type": "miss",
-       "value": 8
-      },
-      {
-       "type": "acc",
-       "value": 0.958
-      }
-     ],
-     "set_id": 315435,
-     "beatmap_id": 746952,
-     "diff": "[4K] NM",
-     "md5": "aaf7fd96bacbc4d33081d799501badb8",
-     "artist": "UNDEAD CORPORATION",
-     "title": "The Empress scream off ver",
-     "creator": "TheZiemniax",
-     "map_stars": 1.9,
-     "length_s": 133,
-     "bpm": 270
-    },
-    {
-     "id": "c04s5",
-     "boss": false,
-     "mode": "orbit",
-     "mods": [],
-     "goals": [
-      {
-       "type": "grade",
-       "value": "B"
-      },
-      {
-       "type": "acc",
-       "value": 0.93
-      },
-      {
-       "type": "miss",
-       "value": 4
-      }
-     ],
-     "set_id": 347779,
-     "beatmap_id": 767308,
-     "diff": "[4K] Beginner Lv.8",
-     "md5": "04ac86c364c8d35a3a40501c1dd29ffb",
-     "artist": "sakuzyo",
-     "title": "Altale",
-     "creator": "Kuo Kyoka",
-     "map_stars": 1.94,
-     "length_s": 150,
-     "bpm": 90
-    },
-    {
-     "id": "c04s6",
-     "boss": true,
-     "mode": "orbit",
-     "mods": [],
-     "goals": [
-      {
-       "type": "grade",
-       "value": "A"
-      },
-      {
-       "type": "grade",
-       "value": "S"
-      },
-      {
-       "type": "miss",
-       "value": 0
-      }
-     ],
-     "set_id": 134829,
-     "beatmap_id": 360801,
-     "diff": "4K BASIC",
-     "md5": "0430c73ea9a26caf7212d911ca090c47",
-     "artist": "Seiryu",
-     "title": "Water Horizon",
-     "creator": "Spy",
-     "map_stars": 2.1,
-     "length_s": 117,
-     "bpm": 191
+     ]
     }
    ]
   },
-  {
-   "id": "c05",
-   "world": "abyss",
-   "focus": "rebound",
-   "stars": [
-    2.0,
-    2.6
-   ],
-   "stages": [
+  "trace": {
+   "chapters": [
     {
-     "id": "c05s1",
-     "boss": false,
-     "mode": "rebound",
-     "mods": [],
-     "goals": [
-      {
-       "type": "pass"
-      },
-      {
-       "type": "acc",
-       "value": 0.877
-      },
-      {
-       "type": "acc",
-       "value": 0.943
-      }
+     "id": "trace-c01",
+     "world": "aurora",
+     "focus": "trace",
+     "stars": [
+      1.0,
+      1.8
      ],
-     "set_id": 176446,
-     "beatmap_id": 429551,
-     "diff": "[4K] NM",
-     "md5": "5535edbba875a185d1896cedd4405bcb",
-     "artist": "High Speed Music Team Sharpnel",
-     "title": "M.A.M.A.",
-     "creator": "arcwinolivirus",
-     "map_stars": 2.04,
-     "length_s": 139,
-     "bpm": 175
-    },
-    {
-     "id": "c05s2",
-     "boss": false,
-     "mode": "rebound",
-     "mods": [],
-     "goals": [
+     "stages": [
       {
-       "type": "acc",
-       "value": 0.84
+       "id": "trace-c01s1",
+       "boss": false,
+       "mode": "trace",
+       "mods": [],
+       "goals": [
+        {
+         "type": "pass"
+        },
+        {
+         "type": "acc",
+         "value": 0.85
+        },
+        {
+         "type": "acc",
+         "value": 0.93
+        }
+       ],
+       "set_id": 586805,
+       "beatmap_id": 1443041,
+       "diff": "[4K] Beginner",
+       "md5": "ae718e690dab284634d1305190addc17",
+       "artist": "EARPHONES",
+       "title": "Arakajime Ushinawareta Bokura no Ballad",
+       "creator": "Feerum",
+       "map_stars": 0.95,
+       "length_s": 86,
+       "bpm": 198
       },
       {
-       "type": "acc",
-       "value": 0.917
+       "id": "trace-c01s2",
+       "boss": false,
+       "mode": "trace",
+       "mods": [],
+       "goals": [
+        {
+         "type": "acc",
+         "value": 0.8
+        },
+        {
+         "type": "acc",
+         "value": 0.9
+        },
+        {
+         "type": "miss",
+         "value": 12
+        }
+       ],
+       "set_id": 350207,
+       "beatmap_id": 772340,
+       "diff": "[4K] Easy",
+       "md5": "e6300e7b1e18bab59643338f04dac526",
+       "artist": "RAN",
+       "title": "Dekat di Hati (REDSHiFT Remix)",
+       "creator": "[ A v a l o n ]",
+       "map_stars": 1.13,
+       "length_s": 145,
+       "bpm": 130
       },
       {
-       "type": "miss",
-       "value": 9
+       "id": "trace-c01s3",
+       "boss": false,
+       "mode": "trace",
+       "mods": [],
+       "goals": [
+        {
+         "type": "grade",
+         "value": "C"
+        },
+        {
+         "type": "grade",
+         "value": "B"
+        },
+        {
+         "type": "grade",
+         "value": "A"
+        }
+       ],
+       "set_id": 480769,
+       "beatmap_id": 1107352,
+       "diff": "[4K] LIGHT",
+       "md5": "efb95b19a158cba5f5f12eedfb069608",
+       "artist": "SOUND HOLIC feat. Nana Takahashi",
+       "title": "Wakusei*Lollipop",
+       "creator": "Adot",
+       "map_stars": 1.37,
+       "length_s": 106,
+       "bpm": 180
+      },
+      {
+       "id": "trace-c01s4",
+       "boss": false,
+       "mode": "trace",
+       "mods": [],
+       "goals": [
+        {
+         "type": "acc",
+         "value": 0.85
+        },
+        {
+         "type": "miss",
+         "value": 10
+        },
+        {
+         "type": "acc",
+         "value": 0.95
+        }
+       ],
+       "set_id": 375365,
+       "beatmap_id": 822081,
+       "diff": "[4K] Beginner",
+       "md5": "417321d9ff52a0e0f6af24b462f47b11",
+       "artist": "THE ORAL CIGARETTES",
+       "title": "Kyouran Hey Kids!!",
+       "creator": "hikikuman",
+       "map_stars": 1.43,
+       "length_s": 90,
+       "bpm": 142
+      },
+      {
+       "id": "trace-c01s5",
+       "boss": false,
+       "mode": "trace",
+       "mods": [],
+       "goals": [
+        {
+         "type": "grade",
+         "value": "B"
+        },
+        {
+         "type": "acc",
+         "value": 0.92
+        },
+        {
+         "type": "miss",
+         "value": 5
+        }
+       ],
+       "set_id": 363919,
+       "beatmap_id": 798952,
+       "diff": "[4K] Usagi's BASIC",
+       "md5": "2ad83b607f3554492a0db4afca396586",
+       "artist": "P*Light",
+       "title": "2 MINUTES FIGHTERS",
+       "creator": "SpectorDG",
+       "map_stars": 1.65,
+       "length_s": 117,
+       "bpm": 203
+      },
+      {
+       "id": "trace-c01s6",
+       "boss": true,
+       "mode": "trace",
+       "mods": [],
+       "goals": [
+        {
+         "type": "grade",
+         "value": "B"
+        },
+        {
+         "type": "grade",
+         "value": "A"
+        },
+        {
+         "type": "miss",
+         "value": 0
+        }
+       ],
+       "set_id": 699794,
+       "beatmap_id": 1566509,
+       "diff": "[4K] error's Normal",
+       "md5": "2d8d7f7898acf609472f0849f6994047",
+       "artist": "Blend A",
+       "title": "Bon Appetit S (TV Size)",
+       "creator": "CrumpetFiddler",
+       "map_stars": 1.86,
+       "length_s": 89,
+       "bpm": 152
       }
-     ],
-     "set_id": 511480,
-     "beatmap_id": 1095964,
-     "diff": "[4K] Ria's NORMAL",
-     "md5": "f2742703c2e6c5a2269b5495c205a9e6",
-     "artist": "t+pazolite",
-     "title": "Oshama Scramble!",
-     "creator": "[ A v a l o n ]",
-     "map_stars": 2.1,
-     "length_s": 116,
-     "bpm": 190
-    },
-    {
-     "id": "c05s3",
-     "boss": false,
-     "mode": "trace",
-     "mods": [],
-     "goals": [
-      {
-       "type": "grade",
-       "value": "B"
-      },
-      {
-       "type": "grade",
-       "value": "A"
-      },
-      {
-       "type": "grade",
-       "value": "S"
-      }
-     ],
-     "set_id": 749557,
-     "beatmap_id": 1604005,
-     "diff": "[4K] Rave's Normal",
-     "md5": "1ea1dcd7e00b56ef5cb48c19180fa2b5",
-     "artist": "Roselia",
-     "title": "This game",
-     "creator": "-Aqua",
-     "map_stars": 2.24,
-     "length_s": 120,
-     "bpm": 147
-    },
-    {
-     "id": "c05s4",
-     "boss": false,
-     "mode": "rebound",
-     "mods": [],
-     "goals": [
-      {
-       "type": "acc",
-       "value": 0.88
-      },
-      {
-       "type": "miss",
-       "value": 8
-      },
-      {
-       "type": "acc",
-       "value": 0.96
-      }
-     ],
-     "set_id": 971561,
-     "beatmap_id": 2034202,
-     "diff": "[4K] Normal",
-     "md5": "f7f23e1073b508593d98cb50097b0d7e",
-     "artist": "antiPLUR",
-     "title": "Runengon",
-     "creator": "Raveille",
-     "map_stars": 2.42,
-     "length_s": 196,
-     "bpm": 320
-    },
-    {
-     "id": "c05s5",
-     "boss": false,
-     "mode": "rebound",
-     "mods": [],
-     "goals": [
-      {
-       "type": "grade",
-       "value": "B"
-      },
-      {
-       "type": "acc",
-       "value": 0.933
-      },
-      {
-       "type": "miss",
-       "value": 4
-      }
-     ],
-     "set_id": 140097,
-     "beatmap_id": 354715,
-     "diff": "[4K] S.Star's NOVICE Lv.9",
-     "md5": "aa816f0751b46649a851235ec11e6940",
-     "artist": "Camellia",
-     "title": "Bangin' Burst",
-     "creator": "Spy",
-     "map_stars": 2.42,
-     "length_s": 118,
-     "bpm": 234
-    },
-    {
-     "id": "c05s6",
-     "boss": true,
-     "mode": "rebound",
-     "mods": [],
-     "goals": [
-      {
-       "type": "grade",
-       "value": "A"
-      },
-      {
-       "type": "grade",
-       "value": "S"
-      },
-      {
-       "type": "miss",
-       "value": 0
-      }
-     ],
-     "set_id": 240415,
-     "beatmap_id": 587017,
-     "diff": "[4K] puxtu's HD",
-     "md5": "4ad9690d3353070bef55f530f966c288",
-     "artist": "SiM",
-     "title": "EXiSTENCE (TV Edit)",
-     "creator": "Saut",
-     "map_stars": 2.59,
-     "length_s": 89,
-     "bpm": 188
+     ]
     }
    ]
   },
-  {
-   "id": "c06",
-   "world": "fractal",
-   "focus": "rally",
-   "stars": [
-    2.0,
-    2.6
-   ],
-   "stages": [
+  "rebound": {
+   "chapters": [
     {
-     "id": "c06s1",
-     "boss": false,
-     "mode": "rally",
-     "mods": [],
-     "goals": [
+     "id": "rebound-c01",
+     "world": "abyss",
+     "focus": "rebound",
+     "stars": [
+      1.0,
+      1.8
+     ],
+     "stages": [
       {
-       "type": "pass"
+       "id": "rebound-c01s1",
+       "boss": false,
+       "mode": "rebound",
+       "mods": [],
+       "goals": [
+        {
+         "type": "pass"
+        },
+        {
+         "type": "acc",
+         "value": 0.85
+        },
+        {
+         "type": "acc",
+         "value": 0.93
+        }
+       ],
+       "set_id": 65847,
+       "beatmap_id": 226023,
+       "diff": "4K NM",
+       "md5": "25c527905593eeb06b082483bad302d3",
+       "artist": "nayuta",
+       "title": "Toki wo Kizamu Uta",
+       "creator": "Hanyuu",
+       "map_stars": 1.05,
+       "length_s": 148,
+       "bpm": 139
       },
       {
-       "type": "acc",
-       "value": 0.883
+       "id": "rebound-c01s2",
+       "boss": false,
+       "mode": "rebound",
+       "mods": [],
+       "goals": [
+        {
+         "type": "acc",
+         "value": 0.8
+        },
+        {
+         "type": "acc",
+         "value": 0.9
+        },
+        {
+         "type": "miss",
+         "value": 12
+        }
+       ],
+       "set_id": 252357,
+       "beatmap_id": 613083,
+       "diff": "[4K] Beginner \"Baozi\"",
+       "md5": "6f2d5c301e6bd39495f82b77117df983",
+       "artist": "Memme",
+       "title": "Chinese Restaurant",
+       "creator": "ajeemaniz",
+       "map_stars": 1.19,
+       "length_s": 107,
+       "bpm": 175
       },
       {
-       "type": "acc",
-       "value": 0.947
+       "id": "rebound-c01s3",
+       "boss": false,
+       "mode": "rebound",
+       "mods": [],
+       "goals": [
+        {
+         "type": "grade",
+         "value": "C"
+        },
+        {
+         "type": "grade",
+         "value": "B"
+        },
+        {
+         "type": "grade",
+         "value": "A"
+        }
+       ],
+       "set_id": 569903,
+       "beatmap_id": 1214565,
+       "diff": "[4K] Beginner",
+       "md5": "fcecf757a1a26737383abfeabfbeff5a",
+       "artist": "Hommarju",
+       "title": "Rock It",
+       "creator": "Tofu1222",
+       "map_stars": 1.29,
+       "length_s": 116,
+       "bpm": 170
+      },
+      {
+       "id": "rebound-c01s4",
+       "boss": false,
+       "mode": "rebound",
+       "mods": [],
+       "goals": [
+        {
+         "type": "acc",
+         "value": 0.85
+        },
+        {
+         "type": "miss",
+         "value": 10
+        },
+        {
+         "type": "acc",
+         "value": 0.95
+        }
+       ],
+       "set_id": 838465,
+       "beatmap_id": 1756367,
+       "diff": "[4K] Easy",
+       "md5": "ce73e04a1b77e5a22b6f084001f31894",
+       "artist": "Umeboshi Chazuke",
+       "title": "Bison Charge",
+       "creator": "_Asha",
+       "map_stars": 1.49,
+       "length_s": 103,
+       "bpm": 243
+      },
+      {
+       "id": "rebound-c01s5",
+       "boss": false,
+       "mode": "rebound",
+       "mods": [],
+       "goals": [
+        {
+         "type": "grade",
+         "value": "B"
+        },
+        {
+         "type": "acc",
+         "value": 0.92
+        },
+        {
+         "type": "miss",
+         "value": 5
+        }
+       ],
+       "set_id": 1127488,
+       "beatmap_id": 2355632,
+       "diff": "[4K] Easy",
+       "md5": "7946a4d2ed768eaca851da5d74d06456",
+       "artist": "LeaF",
+       "title": "Armageddon",
+       "creator": "FAMoss",
+       "map_stars": 1.58,
+       "length_s": 138,
+       "bpm": 210
+      },
+      {
+       "id": "rebound-c01s6",
+       "boss": true,
+       "mode": "rebound",
+       "mods": [],
+       "goals": [
+        {
+         "type": "grade",
+         "value": "B"
+        },
+        {
+         "type": "grade",
+         "value": "A"
+        },
+        {
+         "type": "miss",
+         "value": 0
+        }
+       ],
+       "set_id": 962923,
+       "beatmap_id": 2017375,
+       "diff": "[4K] Beginning",
+       "md5": "d2623fa06343df6178925a49081e85fe",
+       "artist": "USAO",
+       "title": "Cyaegha",
+       "creator": "Draftnell",
+       "map_stars": 1.8,
+       "length_s": 137,
+       "bpm": 200
       }
-     ],
-     "set_id": 602861,
-     "beatmap_id": 1273381,
-     "diff": "[4K] Normal",
-     "md5": "2731b8f214fcb9eb01400aabe2b233ce",
-     "artist": "ClariS",
-     "title": "Hitorigoto -TV MIX-",
-     "creator": "Tofu1222",
-     "map_stars": 2.01,
-     "length_s": 89,
-     "bpm": 165
-    },
-    {
-     "id": "c06s2",
-     "boss": false,
-     "mode": "rally",
-     "mods": [],
-     "goals": [
-      {
-       "type": "acc",
-       "value": 0.85
-      },
-      {
-       "type": "acc",
-       "value": 0.921
-      },
-      {
-       "type": "miss",
-       "value": 9
-      }
-     ],
-     "set_id": 478161,
-     "beatmap_id": 1023090,
-     "diff": "[4K] ajee's Normal",
-     "md5": "e2d20029cb2e3f87168ccbdf1344bfc2",
-     "artist": "LeaF",
-     "title": "NANO DEATH!!!!!",
-     "creator": "nowsmart",
-     "map_stars": 2.11,
-     "length_s": 139,
-     "bpm": 240
-    },
-    {
-     "id": "c06s3",
-     "boss": false,
-     "mode": "orbit",
-     "mods": [],
-     "goals": [
-      {
-       "type": "grade",
-       "value": "B"
-      },
-      {
-       "type": "grade",
-       "value": "A"
-      },
-      {
-       "type": "grade",
-       "value": "S"
-      }
-     ],
-     "set_id": 415886,
-     "beatmap_id": 901051,
-     "diff": "[4K] NOVICE",
-     "md5": "a7477e4fbf9eea0fef01ff1eb332f258",
-     "artist": "Kaneko Chiharu",
-     "title": "Lachryma<Re:Queen'M>",
-     "creator": "Fresh Chicken",
-     "map_stars": 2.23,
-     "length_s": 119,
-     "bpm": 236
-    },
-    {
-     "id": "c06s4",
-     "boss": false,
-     "mode": "rally",
-     "mods": [],
-     "goals": [
-      {
-       "type": "acc",
-       "value": 0.887
-      },
-      {
-       "type": "miss",
-       "value": 8
-      },
-      {
-       "type": "acc",
-       "value": 0.962
-      }
-     ],
-     "set_id": 1179815,
-     "beatmap_id": 2460197,
-     "diff": "[4K] Past | Convergence",
-     "md5": "f01f3ad4cecd2d4be6b06b79116babf4",
-     "artist": "t+pazolite",
-     "title": "Tempestissimo",
-     "creator": "Kuo Kyoka",
-     "map_stars": 2.41,
-     "length_s": 137,
-     "bpm": 231
-    },
-    {
-     "id": "c06s5",
-     "boss": false,
-     "mode": "rally",
-     "mods": [],
-     "goals": [
-      {
-       "type": "grade",
-       "value": "B"
-      },
-      {
-       "type": "acc",
-       "value": 0.937
-      },
-      {
-       "type": "miss",
-       "value": 3
-      }
-     ],
-     "set_id": 287052,
-     "beatmap_id": 649842,
-     "diff": "[4K] Spy's MEDIUM",
-     "md5": "8a0eb15ec972516f30d86e90081d3023",
-     "artist": "Qrispy Joybox",
-     "title": "licca",
-     "creator": "Minakami Yuki",
-     "map_stars": 2.44,
-     "length_s": 108,
-     "bpm": 196
-    },
-    {
-     "id": "c06s6",
-     "boss": true,
-     "mode": "rally",
-     "mods": [],
-     "goals": [
-      {
-       "type": "grade",
-       "value": "A"
-      },
-      {
-       "type": "grade",
-       "value": "S"
-      },
-      {
-       "type": "miss",
-       "value": 0
-      }
-     ],
-     "set_id": 175684,
-     "beatmap_id": 423468,
-     "diff": "[4K] HD",
-     "md5": "b15101bce303d45ba845a87d19887046",
-     "artist": "Neru",
-     "title": "Lost One no Goukoku",
-     "creator": "puxtu",
-     "map_stars": 2.58,
-     "length_s": 213,
-     "bpm": 162
-    }
-   ]
-  },
-  {
-   "id": "c07",
-   "world": "storm",
-   "focus": "mania",
-   "stars": [
-    2.6,
-    3.2
-   ],
-   "stages": [
-    {
-     "id": "c07s1",
-     "boss": false,
-     "mode": "mania",
-     "mods": [
-      "SV"
-     ],
-     "goals": [
-      {
-       "type": "pass"
-      },
-      {
-       "type": "acc",
-       "value": 0.89
-      },
-      {
-       "type": "acc",
-       "value": 0.95
-      }
-     ],
-     "set_id": 386415,
-     "beatmap_id": 845162,
-     "diff": "[4K] Hard",
-     "md5": "e56750e65c171fbb705adf00c892bb9f",
-     "artist": "M2U",
-     "title": "Myosotis",
-     "creator": "ZZHBOY",
-     "map_stars": 2.57,
-     "length_s": 142,
-     "bpm": 160
-    },
-    {
-     "id": "c07s2",
-     "boss": false,
-     "mode": "mania",
-     "mods": [
-      "SV"
-     ],
-     "goals": [
-      {
-       "type": "acc",
-       "value": 0.86
-      },
-      {
-       "type": "acc",
-       "value": 0.925
-      },
-      {
-       "type": "miss",
-       "value": 8
-      }
-     ],
-     "set_id": 283841,
-     "beatmap_id": 644701,
-     "diff": "4K Hyper",
-     "md5": "f3766ccf3618c76afaec7373513c396b",
-     "artist": "S-C-U feat. Qrispy Joybox",
-     "title": "anemone",
-     "creator": "Julie",
-     "map_stars": 2.68,
-     "length_s": 96,
-     "bpm": 200
-    },
-    {
-     "id": "c07s3",
-     "boss": false,
-     "mode": "rally",
-     "mods": [],
-     "goals": [
-      {
-       "type": "grade",
-       "value": "B"
-      },
-      {
-       "type": "grade",
-       "value": "A"
-      },
-      {
-       "type": "grade",
-       "value": "S"
-      }
-     ],
-     "set_id": 636272,
-     "beatmap_id": 1350695,
-     "diff": "4K Hard Lv.10",
-     "md5": "7ae3d3f237545370856bc7a988e5f7d1",
-     "artist": "M2U",
-     "title": "Marigold (feat. Guriri)",
-     "creator": "DE-CADE",
-     "map_stars": 2.85,
-     "length_s": 146,
-     "bpm": 160
-    },
-    {
-     "id": "c07s4",
-     "boss": false,
-     "mode": "mania",
-     "mods": [
-      "SV"
-     ],
-     "goals": [
-      {
-       "type": "acc",
-       "value": 0.895
-      },
-      {
-       "type": "miss",
-       "value": 7
-      },
-      {
-       "type": "acc",
-       "value": 0.965
-      }
-     ],
-     "set_id": 363594,
-     "beatmap_id": 809751,
-     "diff": "[4K] Draw's Hard",
-     "md5": "efd1bc8227ed0be92d5b2997104ac552",
-     "artist": "THE ORAL CIGARETTES",
-     "title": "Kyouran Hey Kids!!",
-     "creator": "Lina Sintyadewi",
-     "map_stars": 2.9,
-     "length_s": 89,
-     "bpm": 284
-    },
-    {
-     "id": "c07s5",
-     "boss": false,
-     "mode": "mania",
-     "mods": [
-      "SV"
-     ],
-     "goals": [
-      {
-       "type": "grade",
-       "value": "A"
-      },
-      {
-       "type": "acc",
-       "value": 0.94
-      },
-      {
-       "type": "miss",
-       "value": 3
-      }
-     ],
-     "set_id": 63089,
-     "beatmap_id": 193128,
-     "diff": "4K MX",
-     "md5": "383029a705f65cfca86b7e3cb9df2e51",
-     "artist": "fripSide",
-     "title": "only my railgun (TV Size)",
-     "creator": "DJPop",
-     "map_stars": 3.14,
-     "length_s": 91,
-     "bpm": 143
-    },
-    {
-     "id": "c07s6",
-     "boss": true,
-     "mode": "mania",
-     "mods": [
-      "SV"
-     ],
-     "goals": [
-      {
-       "type": "grade",
-       "value": "A"
-      },
-      {
-       "type": "grade",
-       "value": "S"
-      },
-      {
-       "type": "miss",
-       "value": 0
-      }
-     ],
-     "set_id": 170446,
-     "beatmap_id": 517382,
-     "diff": "[4K] puxtu's HD",
-     "md5": "404dce0b45b3620f10d2a358e6ffcc70",
-     "artist": "Nanahoshi Kangengakudan feat. Hatsune Miku",
-     "title": "Rubik's Cube",
-     "creator": "Harbyter",
-     "map_stars": 3.24,
-     "length_s": 193,
-     "bpm": 174
-    }
-   ]
-  },
-  {
-   "id": "c08",
-   "world": "obsidian",
-   "focus": "dirigent",
-   "stars": [
-    2.2,
-    2.8
-   ],
-   "stages": [
-    {
-     "id": "c08s1",
-     "boss": false,
-     "mode": "dirigent",
-     "mods": [],
-     "goals": [
-      {
-       "type": "pass"
-      },
-      {
-       "type": "acc",
-       "value": 0.897
-      },
-      {
-       "type": "acc",
-       "value": 0.953
-      }
-     ],
-     "set_id": 468353,
-     "beatmap_id": 1002504,
-     "diff": "[4K] Normal",
-     "md5": "a7826f173a578890dc4cf30660b5b5f9",
-     "artist": "Colorful Sounds Port",
-     "title": "ETERNAL DRAIN",
-     "creator": "Wh1teh",
-     "map_stars": 2.18,
-     "length_s": 119,
-     "bpm": 149
-    },
-    {
-     "id": "c08s2",
-     "boss": false,
-     "mode": "dirigent",
-     "mods": [],
-     "goals": [
-      {
-       "type": "acc",
-       "value": 0.87
-      },
-      {
-       "type": "acc",
-       "value": 0.929
-      },
-      {
-       "type": "miss",
-       "value": 7
-      }
-     ],
-     "set_id": 808872,
-     "beatmap_id": 1723097,
-     "diff": "[4K] Normal",
-     "md5": "5f43a459b303be8595184442fa17c9ef",
-     "artist": "Kobaryo",
-     "title": "Perfect Neglect",
-     "creator": "Slowless",
-     "map_stars": 2.26,
-     "length_s": 140,
-     "bpm": 230
-    },
-    {
-     "id": "c08s3",
-     "boss": false,
-     "mode": "mania",
-     "mods": [],
-     "goals": [
-      {
-       "type": "grade",
-       "value": "B"
-      },
-      {
-       "type": "grade",
-       "value": "A"
-      },
-      {
-       "type": "grade",
-       "value": "S"
-      }
-     ],
-     "set_id": 573280,
-     "beatmap_id": 1243743,
-     "diff": "[4K] Soul's Hyper",
-     "md5": "79ae9d228feee43c8971efa1f72526a5",
-     "artist": "Kobaryo",
-     "title": "Dotabata Animation [feat. t+pazolite]",
-     "creator": "YaHao",
-     "map_stars": 2.49,
-     "length_s": 184,
-     "bpm": 260
-    },
-    {
-     "id": "c08s4",
-     "boss": false,
-     "mode": "dirigent",
-     "mods": [],
-     "goals": [
-      {
-       "type": "acc",
-       "value": 0.902
-      },
-      {
-       "type": "miss",
-       "value": 6
-      },
-      {
-       "type": "acc",
-       "value": 0.968
-      }
-     ],
-     "set_id": 572809,
-     "beatmap_id": 1213896,
-     "diff": "[4K] Feru's Hard",
-     "md5": "3008932361c4ee335ef3b09d46186ea8",
-     "artist": "Tomita Miyu, Onishi Saori, Ohzora Naomi, Hanazawa Kana",
-     "title": "Gabriel Drop Kick",
-     "creator": "Okoratu",
-     "map_stars": 2.58,
-     "length_s": 87,
-     "bpm": 168
-    },
-    {
-     "id": "c08s5",
-     "boss": false,
-     "mode": "dirigent",
-     "mods": [],
-     "goals": [
-      {
-       "type": "grade",
-       "value": "A"
-      },
-      {
-       "type": "acc",
-       "value": 0.943
-      },
-      {
-       "type": "miss",
-       "value": 3
-      }
-     ],
-     "set_id": 1019836,
-     "beatmap_id": 2133970,
-     "diff": "[4K] Ziel's Low Life",
-     "md5": "e88e6149d0f31fd72adbd64fe8166a60",
-     "artist": "Kamiyama Yoh",
-     "title": "YELLOW",
-     "creator": "Peter",
-     "map_stars": 2.73,
-     "length_s": 174,
-     "bpm": 118
-    },
-    {
-     "id": "c08s6",
-     "boss": true,
-     "mode": "dirigent",
-     "mods": [],
-     "goals": [
-      {
-       "type": "grade",
-       "value": "A"
-      },
-      {
-       "type": "grade",
-       "value": "S"
-      },
-      {
-       "type": "miss",
-       "value": 0
-      }
-     ],
-     "set_id": 407186,
-     "beatmap_id": 884692,
-     "diff": "4K Hard",
-     "md5": "156b648cb9f314218435fbbad9237ddc",
-     "artist": "S3RL feat Krystal",
-     "title": "R4V3 B0Y",
-     "creator": "Draftnell",
-     "map_stars": 2.77,
-     "length_s": 177,
-     "bpm": 175
-    }
-   ]
-  },
-  {
-   "id": "c09",
-   "world": "monolith",
-   "focus": "orbit",
-   "stars": [
-    2.6,
-    3.2
-   ],
-   "stages": [
-    {
-     "id": "c09s1",
-     "boss": false,
-     "mode": "orbit",
-     "mods": [],
-     "goals": [
-      {
-       "type": "pass"
-      },
-      {
-       "type": "acc",
-       "value": 0.903
-      },
-      {
-       "type": "acc",
-       "value": 0.957
-      }
-     ],
-     "set_id": 1377628,
-     "beatmap_id": 2847103,
-     "diff": "[4K] Present",
-     "md5": "148f50a52f14b2f02cd4cf3e8566d22f",
-     "artist": "Risshuu feat. Choko",
-     "title": "Take",
-     "creator": "LNP-",
-     "map_stars": 2.61,
-     "length_s": 140,
-     "bpm": 183
-    },
-    {
-     "id": "c09s2",
-     "boss": false,
-     "mode": "orbit",
-     "mods": [],
-     "goals": [
-      {
-       "type": "acc",
-       "value": 0.88
-      },
-      {
-       "type": "acc",
-       "value": 0.933
-      },
-      {
-       "type": "miss",
-       "value": 7
-      }
-     ],
-     "set_id": 310793,
-     "beatmap_id": 694476,
-     "diff": "[4K] HD",
-     "md5": "df714527eb4acf69f32ea39766b4ae46",
-     "artist": "KANA-BOON",
-     "title": "Silhouette",
-     "creator": "ExKagii-",
-     "map_stars": 2.75,
-     "length_s": 88,
-     "bpm": 183
-    },
-    {
-     "id": "c09s3",
-     "boss": false,
-     "mode": "dirigent",
-     "mods": [],
-     "goals": [
-      {
-       "type": "grade",
-       "value": "B"
-      },
-      {
-       "type": "grade",
-       "value": "A"
-      },
-      {
-       "type": "grade",
-       "value": "S"
-      }
-     ],
-     "set_id": 174381,
-     "beatmap_id": 421065,
-     "diff": "[4K] HD",
-     "md5": "d327237259c2ab7a72d9ccf562c041e2",
-     "artist": "Yuyoyuppe",
-     "title": "AiAe",
-     "creator": "Fullerene-",
-     "map_stars": 2.89,
-     "length_s": 237,
-     "bpm": 180
-    },
-    {
-     "id": "c09s4",
-     "boss": false,
-     "mode": "orbit",
-     "mods": [],
-     "goals": [
-      {
-       "type": "acc",
-       "value": 0.91
-      },
-      {
-       "type": "miss",
-       "value": 6
-      },
-      {
-       "type": "acc",
-       "value": 0.97
-      }
-     ],
-     "set_id": 245393,
-     "beatmap_id": 565453,
-     "diff": "[4K] HD",
-     "md5": "586ad3470c9e758f60f334bf32a585c8",
-     "artist": "Neru x Rib",
-     "title": "Jinsei wa Hoeru",
-     "creator": "puxtu",
-     "map_stars": 3.01,
-     "length_s": 188,
-     "bpm": 286
-    },
-    {
-     "id": "c09s5",
-     "boss": false,
-     "mode": "orbit",
-     "mods": [],
-     "goals": [
-      {
-       "type": "grade",
-       "value": "A"
-      },
-      {
-       "type": "acc",
-       "value": 0.947
-      },
-      {
-       "type": "miss",
-       "value": 2
-      }
-     ],
-     "set_id": 409025,
-     "beatmap_id": 888022,
-     "diff": "[4K] puxtu's HD",
-     "md5": "b6dcc2bc298741e8a137511b8de9676d",
-     "artist": "Sleeping With Sirens",
-     "title": "If You Can't Hang",
-     "creator": "pishifat",
-     "map_stars": 3.09,
-     "length_s": 247,
-     "bpm": 192
-    },
-    {
-     "id": "c09s6",
-     "boss": true,
-     "mode": "orbit",
-     "mods": [],
-     "goals": [
-      {
-       "type": "grade",
-       "value": "A"
-      },
-      {
-       "type": "grade",
-       "value": "S"
-      },
-      {
-       "type": "miss",
-       "value": 0
-      }
-     ],
-     "set_id": 476565,
-     "beatmap_id": 1018885,
-     "diff": "[4K] ADVANCED",
-     "md5": "29b0e9e2dbf357fe00f1ae9fa296803a",
-     "artist": "Camellia",
-     "title": "Ultimate Ascension",
-     "creator": "Fresh Chicken",
-     "map_stars": 3.22,
-     "length_s": 120,
-     "bpm": 200
-    }
-   ]
-  },
-  {
-   "id": "c10",
-   "world": "rift",
-   "focus": "trace",
-   "stars": [
-    3.2,
-    3.8
-   ],
-   "stages": [
-    {
-     "id": "c10s1",
-     "boss": false,
-     "mode": "trace",
-     "mods": [],
-     "goals": [
-      {
-       "type": "pass"
-      },
-      {
-       "type": "acc",
-       "value": 0.91
-      },
-      {
-       "type": "acc",
-       "value": 0.96
-      }
-     ],
-     "set_id": 224299,
-     "beatmap_id": 523602,
-     "diff": "[4K] MX",
-     "md5": "c4e4042b5ed36f43e30acf498e94a7c0",
-     "artist": "Martin Garrix",
-     "title": "Animals",
-     "creator": "DrawdeX",
-     "map_stars": 3.19,
-     "length_s": 116,
-     "bpm": 128
-    },
-    {
-     "id": "c10s2",
-     "boss": false,
-     "mode": "trace",
-     "mods": [],
-     "goals": [
-      {
-       "type": "acc",
-       "value": 0.89
-      },
-      {
-       "type": "acc",
-       "value": 0.938
-      },
-      {
-       "type": "miss",
-       "value": 6
-      }
-     ],
-     "set_id": 208095,
-     "beatmap_id": 495898,
-     "diff": "Ic's 4K HD",
-     "md5": "ea805db0fc79f718ca09efa8117379f9",
-     "artist": "Sharlo & yealina",
-     "title": "Kakushigoto",
-     "creator": "Sharlo",
-     "map_stars": 3.38,
-     "length_s": 235,
-     "bpm": 200
-    },
-    {
-     "id": "c10s3",
-     "boss": false,
-     "mode": "rebound",
-     "mods": [],
-     "goals": [
-      {
-       "type": "grade",
-       "value": "B"
-      },
-      {
-       "type": "grade",
-       "value": "A"
-      },
-      {
-       "type": "grade",
-       "value": "S"
-      }
-     ],
-     "set_id": 480298,
-     "beatmap_id": 1215685,
-     "diff": "[4K] puxtu's HD",
-     "md5": "200bebf9771a6123a2c8eaba1acadec5",
-     "artist": "Veil of Maya",
-     "title": "Mikasa",
-     "creator": "Bergy",
-     "map_stars": 3.4,
-     "length_s": 121,
-     "bpm": 220
-    },
-    {
-     "id": "c10s4",
-     "boss": false,
-     "mode": "trace",
-     "mods": [],
-     "goals": [
-      {
-       "type": "acc",
-       "value": 0.917
-      },
-      {
-       "type": "miss",
-       "value": 6
-      },
-      {
-       "type": "acc",
-       "value": 0.972
-      }
-     ],
-     "set_id": 587269,
-     "beatmap_id": 1244694,
-     "diff": "[4K] ADVANCED",
-     "md5": "d2044d46fa3e3e06cdaaccd54239504d",
-     "artist": "Kaneko Chiharu",
-     "title": "iLLness LiLin",
-     "creator": "Fresh Chicken",
-     "map_stars": 3.51,
-     "length_s": 118,
-     "bpm": 280
-    },
-    {
-     "id": "c10s5",
-     "boss": false,
-     "mode": "trace",
-     "mods": [],
-     "goals": [
-      {
-       "type": "grade",
-       "value": "A"
-      },
-      {
-       "type": "acc",
-       "value": 0.95
-      },
-      {
-       "type": "miss",
-       "value": 2
-      }
-     ],
-     "set_id": 919633,
-     "beatmap_id": 2069131,
-     "diff": "[4K] mint's Hard",
-     "md5": "604438d7d9818174966d43a763f9dc6b",
-     "artist": "xi",
-     "title": "Blue Zenith",
-     "creator": "riunosk",
-     "map_stars": 3.7,
-     "length_s": 248,
-     "bpm": 200
-    },
-    {
-     "id": "c10s6",
-     "boss": true,
-     "mode": "trace",
-     "mods": [],
-     "goals": [
-      {
-       "type": "grade",
-       "value": "A"
-      },
-      {
-       "type": "grade",
-       "value": "S"
-      },
-      {
-       "type": "miss",
-       "value": 0
-      }
-     ],
-     "set_id": 174550,
-     "beatmap_id": 450103,
-     "diff": "[4K] EXH",
-     "md5": "ae23a2c68281b92b62b7568b725789aa",
-     "artist": "orangentle / Yu_Asahina",
-     "title": "HAELEQUIN",
-     "creator": "Chocoliti",
-     "map_stars": 3.85,
-     "length_s": 112,
-     "bpm": 172
-    }
-   ]
-  },
-  {
-   "id": "c11",
-   "world": "nerve",
-   "focus": "rebound",
-   "stars": [
-    3.5,
-    4.1
-   ],
-   "stages": [
-    {
-     "id": "c11s1",
-     "boss": false,
-     "mode": "rebound",
-     "mods": [],
-     "goals": [
-      {
-       "type": "pass"
-      },
-      {
-       "type": "acc",
-       "value": 0.917
-      },
-      {
-       "type": "acc",
-       "value": 0.963
-      }
-     ],
-     "set_id": 195940,
-     "beatmap_id": 528184,
-     "diff": "Tidek's 4K Insane",
-     "md5": "e5d26c49684aa220cc7d5d1b08a96489",
-     "artist": "MiddleIsland",
-     "title": "Achromat",
-     "creator": "iJinjin",
-     "map_stars": 3.45,
-     "length_s": 170,
-     "bpm": 165
-    },
-    {
-     "id": "c11s2",
-     "boss": false,
-     "mode": "rebound",
-     "mods": [],
-     "goals": [
-      {
-       "type": "acc",
-       "value": 0.9
-      },
-      {
-       "type": "acc",
-       "value": 0.942
-      },
-      {
-       "type": "miss",
-       "value": 5
-      }
-     ],
-     "set_id": 167880,
-     "beatmap_id": 407642,
-     "diff": "4K MX",
-     "md5": "0511bb5e4e8070ddc016075ce67d63bc",
-     "artist": "BABYMETAL",
-     "title": "MEGITSUNE",
-     "creator": "arcwinolivirus",
-     "map_stars": 3.58,
-     "length_s": 244,
-     "bpm": 142
-    },
-    {
-     "id": "c11s3",
-     "boss": false,
-     "mode": "orbit",
-     "mods": [],
-     "goals": [
-      {
-       "type": "grade",
-       "value": "B"
-      },
-      {
-       "type": "grade",
-       "value": "A"
-      },
-      {
-       "type": "grade",
-       "value": "S"
-      }
-     ],
-     "set_id": 288794,
-     "beatmap_id": 652299,
-     "diff": "[4K] Poi",
-     "md5": "7b93bc3ee72ce2984fe3bd4f71232bbc",
-     "artist": "AKINO from bless4",
-     "title": "MIIRO",
-     "creator": "[ S a k u r a ]",
-     "map_stars": 3.72,
-     "length_s": 251,
-     "bpm": 195
-    },
-    {
-     "id": "c11s4",
-     "boss": false,
-     "mode": "rebound",
-     "mods": [],
-     "goals": [
-      {
-       "type": "acc",
-       "value": 0.925
-      },
-      {
-       "type": "miss",
-       "value": 5
-      },
-      {
-       "type": "acc",
-       "value": 0.975
-      }
-     ],
-     "set_id": 359196,
-     "beatmap_id": 789905,
-     "diff": "[4K] Shirou's EXHAUST",
-     "md5": "21a586a33adc429915d0310f9a5962cf",
-     "artist": "penoreri",
-     "title": "Preserved Valkyria",
-     "creator": "_FrEsH_ChICkEn_",
-     "map_stars": 3.87,
-     "length_s": 119,
-     "bpm": 220
-    },
-    {
-     "id": "c11s5",
-     "boss": false,
-     "mode": "rebound",
-     "mods": [],
-     "goals": [
-      {
-       "type": "grade",
-       "value": "A"
-      },
-      {
-       "type": "acc",
-       "value": 0.953
-      },
-      {
-       "type": "miss",
-       "value": 2
-      }
-     ],
-     "set_id": 349561,
-     "beatmap_id": 770840,
-     "diff": "[4K] Another Lv.11",
-     "md5": "332aa4b144c4dee015f04ec337217448",
-     "artist": "L.E.D.-G + Qrispy Joybox + ARM feat. Nanahira",
-     "title": "Dokkin Summer Adventure",
-     "creator": "Rinzler",
-     "map_stars": 3.95,
-     "length_s": 119,
-     "bpm": 180
-    },
-    {
-     "id": "c11s6",
-     "boss": true,
-     "mode": "rebound",
-     "mods": [],
-     "goals": [
-      {
-       "type": "grade",
-       "value": "A"
-      },
-      {
-       "type": "grade",
-       "value": "S"
-      },
-      {
-       "type": "miss",
-       "value": 0
-      }
-     ],
-     "set_id": 261911,
-     "beatmap_id": 667736,
-     "diff": "Tokii's 4K MX",
-     "md5": "b7c4d6e317f4ac0951ad5531b0006f80",
-     "artist": "MitiS & MaHi",
-     "title": "Blu (Speed Up Ver.)",
-     "creator": "Ashasaki",
-     "map_stars": 4.05,
-     "length_s": 126,
-     "bpm": 168
-    }
-   ]
-  },
-  {
-   "id": "c12",
-   "world": "singularity",
-   "focus": "mania",
-   "stars": [
-    4.0,
-    4.7
-   ],
-   "stages": [
-    {
-     "id": "c12s1",
-     "boss": false,
-     "mode": "mania",
-     "mods": [],
-     "goals": [
-      {
-       "type": "pass"
-      },
-      {
-       "type": "acc",
-       "value": 0.923
-      },
-      {
-       "type": "acc",
-       "value": 0.967
-      }
-     ],
-     "set_id": 351320,
-     "beatmap_id": 774224,
-     "diff": "[4K] Another",
-     "md5": "fa264f690d5e21a4b94abfb6359d92e4",
-     "artist": "xi",
-     "title": "over the top",
-     "creator": "Zan -",
-     "map_stars": 3.98,
-     "length_s": 121,
-     "bpm": 202
-    },
-    {
-     "id": "c12s2",
-     "boss": false,
-     "mode": "mania",
-     "mods": [],
-     "goals": [
-      {
-       "type": "acc",
-       "value": 0.91
-      },
-      {
-       "type": "acc",
-       "value": 0.946
-      },
-      {
-       "type": "miss",
-       "value": 5
-      }
-     ],
-     "set_id": 376340,
-     "beatmap_id": 823920,
-     "diff": "[4K] Another",
-     "md5": "34124e11b4e179f05b2bff2f7505212f",
-     "artist": "Seiryu",
-     "title": "Critical Crystal",
-     "creator": "SanadaYukimura",
-     "map_stars": 4.15,
-     "length_s": 112,
-     "bpm": 191
-    },
-    {
-     "id": "c12s3",
-     "boss": false,
-     "mode": "trace",
-     "mods": [],
-     "goals": [
-      {
-       "type": "grade",
-       "value": "B"
-      },
-      {
-       "type": "grade",
-       "value": "A"
-      },
-      {
-       "type": "grade",
-       "value": "S"
-      }
-     ],
-     "set_id": 529574,
-     "beatmap_id": 1122857,
-     "diff": "Lude's 4K Another",
-     "md5": "d029a1372077c208cb3ac496a9114131",
-     "artist": "KRUX",
-     "title": "Illusion of Inflict",
-     "creator": "Reba",
-     "map_stars": 4.3,
-     "length_s": 135,
-     "bpm": 170
-    },
-    {
-     "id": "c12s4",
-     "boss": false,
-     "mode": "mania",
-     "mods": [],
-     "goals": [
-      {
-       "type": "acc",
-       "value": 0.932
-      },
-      {
-       "type": "miss",
-       "value": 4
-      },
-      {
-       "type": "acc",
-       "value": 0.978
-      }
-     ],
-     "set_id": 366126,
-     "beatmap_id": 988474,
-     "diff": "[4K] Another",
-     "md5": "48f81719b532afdaa2bc7c0e69ce1176",
-     "artist": "Morimori Atsushi",
-     "title": "PUPA",
-     "creator": "Valentrixe",
-     "map_stars": 4.37,
-     "length_s": 125,
-     "bpm": 202
-    },
-    {
-     "id": "c12s5",
-     "boss": false,
-     "mode": "mania",
-     "mods": [],
-     "goals": [
-      {
-       "type": "grade",
-       "value": "A"
-      },
-      {
-       "type": "acc",
-       "value": 0.957
-      },
-      {
-       "type": "miss",
-       "value": 1
-      }
-     ],
-     "set_id": 127305,
-     "beatmap_id": 364220,
-     "diff": "Momo's 4K Insane",
-     "md5": "361878d60f71dcf36c3c7e15e4d0096d",
-     "artist": "S.S.H.",
-     "title": "Intersect Thunderbolt-Remix",
-     "creator": "ljqandylee",
-     "map_stars": 4.54,
-     "length_s": 126,
-     "bpm": 250
-    },
-    {
-     "id": "c12s6",
-     "boss": true,
-     "mode": "mania",
-     "mods": [],
-     "goals": [
-      {
-       "type": "grade",
-       "value": "A"
-      },
-      {
-       "type": "grade",
-       "value": "S"
-      },
-      {
-       "type": "miss",
-       "value": 0
-      }
-     ],
-     "set_id": 356253,
-     "beatmap_id": 784054,
-     "diff": "[4K] GRAVITY",
-     "md5": "4e1ce8e3d1d1cc8c1bc68ffa84dccdde",
-     "artist": "ginkiha",
-     "title": "Borealis",
-     "creator": "[ A v a l o n ]",
-     "map_stars": 4.71,
-     "length_s": 111,
-     "bpm": 196
-    }
-   ]
-  },
-  {
-   "id": "c13",
-   "world": "boss",
-   "focus": "mania",
-   "stars": [
-    4.3,
-    5.2
-   ],
-   "stages": [
-    {
-     "id": "c13s1",
-     "boss": false,
-     "mode": "trace",
-     "mods": [],
-     "goals": [
-      {
-       "type": "pass"
-      },
-      {
-       "type": "acc",
-       "value": 0.93
-      },
-      {
-       "type": "acc",
-       "value": 0.97
-      }
-     ],
-     "set_id": 429664,
-     "beatmap_id": 927052,
-     "diff": "[4K] Rinzler's EXHAUST",
-     "md5": "bf1b6f2dbee1bca90519664ced63877e",
-     "artist": "Camellia feat. Nanahira",
-     "title": "Conveyor Sokudo Max!? Shainin*Kaiten Zushi\"Sushi & Peace\"",
-     "creator": "Adot",
-     "map_stars": 4.25,
-     "length_s": 110,
-     "bpm": 210
-    },
-    {
-     "id": "c13s2",
-     "boss": false,
-     "mode": "orbit",
-     "mods": [],
-     "goals": [
-      {
-       "type": "acc",
-       "value": 0.92
-      },
-      {
-       "type": "acc",
-       "value": 0.95
-      },
-      {
-       "type": "miss",
-       "value": 4
-      }
-     ],
-     "set_id": 326079,
-     "beatmap_id": 724151,
-     "diff": "[4K] Shin's INFINITE",
-     "md5": "aa5ef8d65467ff56cc28c1930ed69f49",
-     "artist": "TeamGrimoire+amaneko",
-     "title": "croiX",
-     "creator": "Takane6",
-     "map_stars": 4.49,
-     "length_s": 112,
-     "bpm": 195
-    },
-    {
-     "id": "c13s3",
-     "boss": false,
-     "mode": "rebound",
-     "mods": [],
-     "goals": [
-      {
-       "type": "grade",
-       "value": "B"
-      },
-      {
-       "type": "grade",
-       "value": "A"
-      },
-      {
-       "type": "grade",
-       "value": "S"
-      }
-     ],
-     "set_id": 347453,
-     "beatmap_id": 766727,
-     "diff": "[4K] Brutal [Lv.15]",
-     "md5": "18aaddca1d6d4a3986e4d189f7cdb5c9",
-     "artist": "Igorrr & Ruby My Dear",
-     "title": "Figue Folle",
-     "creator": "Parachor",
-     "map_stars": 4.63,
-     "length_s": 222,
-     "bpm": 188
-    },
-    {
-     "id": "c13s4",
-     "boss": false,
-     "mode": "dirigent",
-     "mods": [],
-     "goals": [
-      {
-       "type": "acc",
-       "value": 0.94
-      },
-      {
-       "type": "miss",
-       "value": 4
-      },
-      {
-       "type": "acc",
-       "value": 0.98
-      }
-     ],
-     "set_id": 474900,
-     "beatmap_id": 1014639,
-     "diff": "Chicken's 4K Extra",
-     "md5": "12eba314819bf2827a2be944e9d45df7",
-     "artist": "xi",
-     "title": "Glorious Crown",
-     "creator": "Kuo Kyoka",
-     "map_stars": 4.87,
-     "length_s": 118,
-     "bpm": 226
-    },
-    {
-     "id": "c13s5",
-     "boss": false,
-     "mode": "rally",
-     "mods": [],
-     "goals": [
-      {
-       "type": "grade",
-       "value": "A"
-      },
-      {
-       "type": "acc",
-       "value": 0.96
-      },
-      {
-       "type": "miss",
-       "value": 1
-      }
-     ],
-     "set_id": 581729,
-     "beatmap_id": 1231252,
-     "diff": "[4K] Ultimate",
-     "md5": "9a6d90f6f4a01adf91b1313c47759821",
-     "artist": "jioyi",
-     "title": "cyanine",
-     "creator": "Rivals_7",
-     "map_stars": 4.98,
-     "length_s": 187,
-     "bpm": 182
-    },
-    {
-     "id": "c13s6",
-     "boss": true,
-     "mode": "mania",
-     "mods": [],
-     "goals": [
-      {
-       "type": "grade",
-       "value": "A"
-      },
-      {
-       "type": "grade",
-       "value": "S"
-      },
-      {
-       "type": "miss",
-       "value": 0
-      }
-     ],
-     "set_id": 555076,
-     "beatmap_id": 1174927,
-     "diff": "[4K] Trigger",
-     "md5": "b439d384761e6a5b85f7ec11c7c3c5f3",
-     "artist": "Dustvoxx",
-     "title": "Trigger (Zekk Remix)",
-     "creator": "Wonki",
-     "map_stars": 5.22,
-     "length_s": 250,
-     "bpm": 200
+     ]
     }
    ]
   }
- ]
+ }
 }
