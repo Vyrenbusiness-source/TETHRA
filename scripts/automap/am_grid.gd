@@ -31,10 +31,13 @@ const DEFAULTS := {
 	"pulse_min_ms": 200.0,      # Suchbereich des groben Pulses (Autokorrelation)
 	"pulse_max_ms": 1000.0,
 	"n_pulses": 4,              # Kandidaten des groben Pulses (lokale ACF-Maxima)
-	"prior_bpm": 160.0,         # Tempo-Vorwissen (Log-Normal um diesen Wert)
-	"prior_sigma_oct": 0.6,
-	"w_half": 0.5,              # Gewicht Halbe/Viertel des Schlags in der Stuetzung
-	"w_quarter": 0.25,
+	"prior_bpm": 130.0,         # Tempo-Vorwissen (Log-Normal um diesen Wert), abgestimmt (grid.md)
+	"prior_sigma_oct": 0.7,
+	"w_half": 0.5,              # Gewicht Halbe/Viertel/Drittel des Schlags in der Stuetzung
+	"w_quarter": 0.0,
+	"w_third": -0.25,           # Triolen-Kohaerenz spricht gegen das Tempo (eher x1,5 / x0,667)
+	"snap_rel": 0.0015,         # ganzzahlige BPM pruefen, wenn so nah (relativ) ...
+	"snap_coh": 0.92,           # ... und ihre Kohaerenz mindestens dieser Anteil der gemessenen ist
 	"w_low": 0.0,               # Gewicht Bass-Periodizitaet auf dem Schlag
 	"fill_pow": 1.5,            # Strafe fuer leere Schlaege
 	"ref_pull": 2.0,            # Folgesegmente bleiben nah am Tempo des Hauptsegments
@@ -46,11 +49,15 @@ const DEFAULTS := {
 	"snap_drift_ms": 12.0,      # ganzzahlige BPM, wenn die Abweichung ueber das Segment kleiner ist
 	"flip_low_ratio": 1.4,      # Schlag um eine Halbe verschieben, wenn der Bass dort so viel staerker ist
 	"phase_mode": "peak",       # "peak" oder "half" (halber Anstieg des gefalteten Profils)
+	"phase_q_ratio": 1.0,       # anderes Teilraster-Viertel als Schlag, wenn sein Akzent so viel staerker ist (0 = aus)
 	"meter3_ratio": 1.25,       # 3er-Takt nur, wenn so viel deutlicher als 4er
-	"db_w_low": 1.0,            # Gewichte Taktanfang: Bass-Akzent, Akzent, Harmoniewechsel, Abschnittswechsel
-	"db_w_acc": 0.5,
-	"db_w_hc": 1.0,
-	"db_w_nov": 1.0,
+	"db_w_low": 0.5,            # Gewichte Taktanfang: Bass-Akzent, Akzent, Harmoniewechsel, Abschnittswechsel
+	"db_w_acc": 0.0,
+	"db_w_hc": 0.5,
+	"db_w_nov": 2.0,
+	"db_w_sec": 0.0,            # Abschnittswechsel ueber 16 Schlaege
+	"db_w_first": 2.0,          # Bonus fuer den Schlag des ersten deutlichen Anschlags ...
+	"db_first_mode": 2,       # ... 0 = erster Anschlag, 1 = erster ab Median-Staerke, 2 = erster Bass ab Median
 	"debug": false,
 }
 
@@ -448,6 +455,11 @@ static func _res(ts: PackedFloat64Array, ws: PackedFloat64Array, T: float) -> Ve
 	return Vector2(sqrt(sc * sc + ss * ss), fposmod(atan2(ss, sc) / TAU * T, T))
 
 
+## Kohaerenz des Rasters X ueber Schlag, Halbe und Viertel.
+static func _coh(ts: PackedFloat64Array, ws: PackedFloat64Array, X: float) -> float:
+	return _res(ts, ws, X).x + _res(ts, ws, X / 2.0).x + _res(ts, ws, X / 4.0).x
+
+
 static func _scan(ts: PackedFloat64Array, ws: PackedFloat64Array, tc: float, rel: float, step: float, harms: Array) -> float:
 	var best := -1.0
 	var bt := tc
@@ -667,7 +679,8 @@ static func _fold(F: Dictionary, lo: float, hi: float, pd: float, phase: float) 
 # ---------------------------------------------------------------------------
 
 static func _score(h: Dictionary, ref_bpm: float, P: Dictionary) -> float:
-	var sup: float = float(h.r1) + float(P.w_half) * float(h.r2) + float(P.w_quarter) * float(h.r4) + float(P.w_low) * float(h.rl1)
+	var sup: float = float(h.r1) + float(P.w_half) * float(h.r2) + float(P.w_quarter) * float(h.r4) + float(P.w_low) * float(h.rl1) + float(P.w_third) * float(h.r3)
+	sup = maxf(sup, 1e-9)
 	var oct: float = log(float(h.bpm) / float(P.prior_bpm)) / log(2.0) / float(P.prior_sigma_oct)
 	var s: float = sup * pow(float(h.fill), float(P.fill_pow)) * exp(-0.5 * oct * oct)
 	if ref_bpm > 0.0:
@@ -687,7 +700,7 @@ static func _meter(F: Dictionary, X: float, phase: float, lo: float, hi: float, 
 	var nb := k1 - k0 + 1
 	if nb < 16:
 		return {"meter": 4, "db": phase + k0 * X, "q": 0.0, "db4": [], "db3": []}
-	var feats: Array = [PackedFloat64Array(), PackedFloat64Array(), PackedFloat64Array(), PackedFloat64Array()]
+	var feats: Array = [PackedFloat64Array(), PackedFloat64Array(), PackedFloat64Array(), PackedFloat64Array(), PackedFloat64Array()]
 	for a in feats:
 		a.resize(nb)
 	var zr := PackedFloat64Array()
@@ -716,13 +729,23 @@ static func _meter(F: Dictionary, X: float, phase: float, lo: float, hi: float, 
 		var a := en[j] + en[j + 1] + en[j + 2] + en[j + 3]
 		var b := en[j - 1] + en[j - 2] + en[j - 3] + en[j - 4]
 		feats[3][j] = absf(a - b) / (a + b + 1e-6)
-	var wts := [float(P.db_w_low), float(P.db_w_acc), float(P.db_w_hc), float(P.db_w_nov)]
+	# Abschnittswechsel ueber 16 Schlaege (Abschnitte beginnen auf dem Taktanfang), quadriert.
+	var cen := PackedFloat64Array()
+	cen.resize(nb + 1)
+	for j in nb:
+		cen[j + 1] = cen[j] + en[j]
+	for j in range(16, nb - 16):
+		var a := cen[j + 16] - cen[j]
+		var b := cen[j] - cen[j - 16]
+		var r := (a - b) / (a + b + 1e-6)
+		feats[4][j] = r * r
+	var wts := [float(P.db_w_low), float(P.db_w_acc), float(P.db_w_hc), float(P.db_w_nov), float(P.db_w_sec)]
 	var res := {}
 	for m in [4, 3]:
 		var rows: Array = []
 		for p in m:
-			rows.append([0.0, 0.0, 0.0, 0.0])
-		for fi in 4:
+			rows.append([0.0, 0.0, 0.0, 0.0, 0.0])
+		for fi in 5:
 			var arr: PackedFloat64Array = feats[fi]
 			var mean := 0.0
 			for v in arr:
@@ -744,14 +767,43 @@ static func _meter(F: Dictionary, X: float, phase: float, lo: float, hi: float, 
 				if cnts[p] > 0.0:
 					rows[p][fi] = (sums[p] / cnts[p] - mean) / (sd / sqrt(cnts[p]))
 		res[m] = rows
-	var out := {"db4": res[4], "db3": res[3]}
+	# Erster deutlicher Anschlag im Segment (alle / ab Median-Staerke / Bass ab Median):
+	# Songs beginnen meist auf einem Taktanfang.
+	var pt: PackedFloat64Array = F.pt
+	var pw: PackedFloat64Array = F.pw
+	var plw: PackedFloat64Array = F.plw
+	var i0 := pt.bsearch(lo)
+	var i1 := pt.bsearch(hi)
+	var firsts := [phase + k0 * X, phase + k0 * X, phase + k0 * X]
+	if i1 > i0:
+		var sw := pw.slice(i0, i1)
+		sw.sort()
+		var sl := plw.slice(i0, i1)
+		sl.sort()
+		var mw: float = sw[sw.size() / 2]
+		var ml: float = sl[sl.size() / 2]
+		firsts[0] = pt[i0]
+		for i in range(i1 - 1, i0 - 1, -1):
+			if pw[i] >= mw:
+				firsts[1] = pt[i]
+			if plw[i] >= ml:
+				firsts[2] = pt[i]
+	var pf := {}
+	for m in [4, 3]:
+		pf[m] = []
+		for t in firsts:
+			pf[m].append(posmod(int(roundf((float(t) - phase) / X)), m))
+	var out := {"db4": res[4], "db3": res[3], "pf4": pf[4]}
+	var fm := clampi(int(P.db_first_mode), 0, 2)
 	var best := {}
 	for m in [4, 3]:
 		var bp := 0
 		var bv := -INF
 		for p in m:
 			var d := 0.0
-			for fi in 4:
+			if p == int(pf[m][fm]):
+				d += float(P.db_w_first)
+			for fi in 5:
 				d += float(wts[fi]) * float(res[m][p][fi])
 			if d > bv:
 				bv = d
@@ -845,9 +897,21 @@ static func _fit_segment(F: Dictionary, lo: float, hi: float, tcs: Array, ref_bp
 		pd = fit.T
 		off = fit.off
 	X = pd * h_use
+	# Regression gegen Scan: die Periode mit der hoeheren Kohaerenz ueber das ganze Segment.
+	var c_fit := _coh(ts, ws, X)
+	var c_scan := _coh(ts, ws, float(win.X))
+	if c_scan > c_fit:
+		X = float(win.X)
+		pd = X / h_use
+		off = _phase_fix(pt, pw, i0, i1, pd, off)
+		c_fit = c_scan
 	var snapped := false
 	var bpm_i := roundf(60000.0 / X)
-	if bpm_i > 0.0 and absf(X - 60000.0 / bpm_i) * ((hi - lo) / X) <= float(P.snap_drift_ms):
+	var xi := 60000.0 / maxf(bpm_i, 1.0)
+	var near_int := absf(X - xi) * ((hi - lo) / X) <= float(P.snap_drift_ms)
+	if not near_int and absf(xi / X - 1.0) <= float(P.snap_rel):
+		near_int = _coh(ts, ws, xi) >= float(P.snap_coh) * c_fit
+	if bpm_i > 0.0 and near_int:
 		X = 60000.0 / bpm_i
 		pd = X / h_use
 		off = _phase_fix(pt, pw, i0, i1, pd, off)
@@ -864,6 +928,16 @@ static func _fit_segment(F: Dictionary, lo: float, hi: float, tcs: Array, ref_bp
 	var fd := _fold(F, lo, hi, pd, phase)
 	var half_delta := fd.y - fd.x
 	phase += fd.x if String(P.phase_mode) == "peak" else fd.y
+	# Schlag unter den Vierteln: das Viertel mit dem staerksten mittleren Akzent.
+	var q_shift := 0
+	if float(P.phase_q_ratio) > 0.0:
+		var a_best := _accent(F, X, phase, lo, hi).x * float(P.phase_q_ratio)
+		for j in range(1, 4):
+			var aj := _accent(F, X, phase + j * X / 4.0, lo, hi).x
+			if aj > a_best:
+				a_best = aj
+				q_shift = j
+		phase += q_shift * X / 4.0
 	var mt := _meter(F, X, phase, lo, hi, P)
 	var alts: Array = []
 	for i in range(1, hyps.size()):

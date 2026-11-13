@@ -355,10 +355,11 @@ func _measure(maps_dir: String, count: int, args: PackedStringArray) -> void:
 				rec.off, rec.drift, str(rec.db_ok), rec.nseg, rec.conf, t_trk])
 		if dump != null:
 			_dump(dump, rec, grid, tr)
+		if only != "" or rec.cat == "multi":
+			print("  map: ", tr.segs.map(func(s): return "%.2f@%.0f-%.0f m%d" % [60000.0 / float(s.bl), float(s.t), float(s.end), int(s.meter)]))
+			print("  det: ", grid.segments.map(func(s): return "%.3f@%.0f m%d db%.0f" % [s.bpm, s.start_ms, s.meter, s.downbeat_ms]))
 		if only != "":
 			var dbg: Dictionary = grid.get("debug", {})
-			print("  map: ", tr.segs.map(func(s): return "%.1f@%.1f m%d" % [60000.0 / float(s.bl), float(s.t), int(s.meter)]))
-			print("  det: ", grid.segments.map(func(s): return "%.3f@%.1f m%d db%.1f" % [s.bpm, s.start_ms, s.meter, s.downbeat_ms]))
 			for k in dbg:
 				if k != "hyps":
 					print("  %s: %s" % [k, str(dbg[k])])
@@ -470,6 +471,8 @@ func _dump(f: FileAccess, rec: Dictionary, grid: Dictionary, _tr: Dictionary) ->
 		for row in mt.db4:
 			for v in row:
 				line += "\t%.2f" % v
+		for v in mt.get("pf4", []):
+			line += "\t%d" % v
 		f.store_line(line)
 	f.flush()
 
