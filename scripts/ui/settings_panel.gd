@@ -340,7 +340,7 @@ func _build_sidebar(parent: Control) -> void:
 func _build_content(parent: Control) -> void:
 	var m := MarginContainer.new()
 	m.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	m.add_theme_constant_override("margin_left", PAD + 4)
+	m.add_theme_constant_override("margin_left", PAD)
 	m.add_theme_constant_override("margin_right", PAD)
 	m.add_theme_constant_override("margin_top", 18)
 	m.add_theme_constant_override("margin_bottom", 0)
@@ -354,8 +354,12 @@ func _build_content(parent: Control) -> void:
 	col.add_child(head)
 	var tcol := VBoxContainer.new()
 	tcol.add_theme_constant_override("separation", 0)
-	tcol.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	head.add_child(tcol)
+	# Seitentitel steht auf der Kante der Zeilentexte (ROW_PAD), ein Raster.
+	var tm := MarginContainer.new()
+	tm.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	tm.add_theme_constant_override("margin_left", ROW_PAD)
+	tm.add_child(tcol)
+	head.add_child(tm)
 	_title = Label.new()
 	_title.add_theme_font_override("font", UiTheme.heading_font(0))
 	_title.add_theme_font_size_override("font_size", 28)
