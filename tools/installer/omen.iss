@@ -3,7 +3,7 @@
 ; Installiert pro Nutzer (ohne Admin) nach %LOCALAPPDATA%\Programs\OMEN,
 ; damit der eingebaute Updater OMEN.pck neben der exe ersetzen darf.
 ;
-; Das Spiel hiess bis v1.35.0 TETHRA. Die AppId ist dieselbe geblieben: dieses Setup
+; Das Spiel hiess bis v1.36.0 TETHRA. Die AppId ist dieselbe geblieben: dieses Setup
 ; aktualisiert eine bestehende TETHRA-Installation an ihrem Ort (Ordner bleibt, auch
 ; wenn er "TETHRA" heisst), loescht TETHRA.exe/TETHRA.pck und die alten Verknuepfungen
 ; und benennt ein vorhandenes TETHRA_worlds.pck um, statt 820 MB neu zu kopieren.
@@ -60,7 +60,7 @@ de.GameRunning=Das Spiel läuft noch. Bitte schließen und dann erneut auf Insta
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 
 [InstallDelete]
-; Reste der Installation unter dem alten Namen (bis v1.35.0).
+; Reste der Installation unter dem alten Namen (bis v1.36.0).
 Type: files; Name: "{app}\TETHRA.exe"
 Type: files; Name: "{app}\TETHRA.pck"
 Type: files; Name: "{app}\TETHRA.pck.new"

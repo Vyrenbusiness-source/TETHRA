@@ -10,7 +10,7 @@ const WorldPackScript := preload("res://scripts/net/world_pack.gd")
 ## NIE angefasst.
 ##
 ## Zwei Pakete: OMEN.pck (Spiel, klein) und OMEN_worlds.pck (Welten-Assets,
-## gross, aendert sich selten). Das Spiel hiess bis v1.35.0 TETHRA: solche
+## gross, aendert sich selten). Das Spiel hiess bis v1.36.0 TETHRA: solche
 ## Installationen (TETHRA.exe + TETHRA.pck) behalten ihre Dateinamen, siehe
 ## main_pack_name() und MAIN_ASSETS. Das Welten-Paket wird nur geladen, wenn es lokal
 ## fehlt oder sich die Signatur (SHA-256-Digest bzw. Groesse+Zeitstempel des
@@ -19,7 +19,7 @@ const WorldPackScript := preload("res://scripts/net/world_pack.gd")
 ##
 ## Release-Ablauf (Entwickler): CURRENT_VERSION hochzaehlen, beide PCKs bauen,
 ## `gh release create vX.Y.Z release/OMEN.pck release/TETHRA.pck` (TETHRA.pck =
-## Kopie von OMEN.pck: v1.35.0 und aelter suchen genau diesen Asset-Namen).
+## Kopie von OMEN.pck: v1.36.0 und aelter suchen genau diesen Asset-Namen).
 
 const CURRENT_VERSION := "1.36.0"
 const REPO := "Vyrenbusiness-source/OMEN"
@@ -48,7 +48,7 @@ const NOTES_MAX_LINES := 6
 ## Grosse PCK (100+ MB): kein Gesamt-Timeout, stattdessen Stillstands-Wache.
 const STALL_SECONDS := 45.0
 ## Asset-Namen im Release, neuer Name zuerst. "TETHRA*.pck" = historische Kennung:
-## Releases bis v1.35.0 (und der Tag "worlds") tragen nur diese Namen.
+## Releases bis v1.36.0 (und der Tag "worlds") tragen nur diese Namen.
 const MAIN_ASSETS := ["OMEN.pck", "TETHRA.pck"]
 const WORLDS_ASSETS := ["OMEN_worlds.pck", "TETHRA_worlds.pck"]
 ## Range-Stueckgroesse und Reserve fuer den Platzcheck.
@@ -218,7 +218,7 @@ func _check_dist(i: int) -> void:
 
 ## Download-Auftrag aus dist/latest.json:
 ## {version, size, sha256, parts:[{name, size}], notes}. {} wenn unbrauchbar.
-## Die Teilnamen kommen aus latest.json (so auch in v1.35.0), main_file ist der
+## Die Teilnamen kommen aus latest.json (so auch in v1.36.0), main_file ist der
 ## lokale Zielname neben der Exe.
 static func dist_job(d: Dictionary, base: String, exe_dir: String, main_file: String) -> Dictionary:
 	var parts: Array = d.get("parts", [])
@@ -536,7 +536,7 @@ func _file_size(path: String) -> int:
 ## Fertig geladene Updates neben der Exe (.new, gueltiges PCK).
 func _ready_files() -> Array[String]:
 	var out: Array[String] = []
-	# Beide Welten-Namen: ein von v1.35.0 geladenes TETHRA_worlds.pck.new zaehlt mit.
+	# Beide Welten-Namen: ein von v1.36.0 geladenes TETHRA_worlds.pck.new zaehlt mit.
 	var names: Array = [_main_file]
 	names.append_array(WORLDS_ASSETS)
 	for a in names:

@@ -679,7 +679,7 @@ static func _load_builtin(p_name: String) -> ManiaSkin:
 	s.skin_name = p_name
 	s._dir = dir
 	for sec in parse_ini(text):
-		# Abschnitt [OMEN]; [TETHRA] = alter Name (Skins aus Versionen bis v1.35.0).
+		# Abschnitt [OMEN]; [TETHRA] = alter Name (Skins aus Versionen bis v1.36.0).
 		if String(sec.get("_section", "")).to_lower() in ["omen", "tethra"]:
 			for fn in String(sec.get("files", "")).split(",", false):
 				s._files[fn.strip_edges().to_lower() + "@2x"] = fn.strip_edges() + "@2x.png"

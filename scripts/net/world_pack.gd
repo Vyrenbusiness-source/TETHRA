@@ -6,7 +6,7 @@ extends Node
 ## WorldTheme.is_available() findet das Verzeichnis nicht und faellt auf galaxy zurueck.
 ## Muss VOR allen anderen Autoloads stehen, die Welt-Assets laden koennten.
 
-## Neuer Name zuerst. "TETHRA_worlds.pck" = historische Kennung (Installationen bis v1.35.0).
+## Neuer Name zuerst. "TETHRA_worlds.pck" = historische Kennung (Installationen bis v1.36.0).
 const FILES := ["OMEN_worlds.pck", "TETHRA_worlds.pck"]
 const MIN_SIZE := 1024
 

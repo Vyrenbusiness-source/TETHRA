@@ -16,7 +16,7 @@ const CODE_ALPHABET := "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
 ## Oeffentliches Raum-Verzeichnis (ntfy.sh-Topic als kostenloses Rendezvous):
 ## Hosts OHNE Passwort announcen Code+Name+Spielerzahl, Browser pollen die
 ## Liste — offene Raeume erscheinen weltweit automatisch.
-## "tethra-rooms-v1" = historische Kennung (das Spiel hiess bis v1.35.0 TETHRA): aeltere
+## "tethra-rooms-v1" = historische Kennung (das Spiel hiess bis v1.36.0 TETHRA): aeltere
 ## Versionen lesen und schreiben dasselbe Topic, deshalb bleibt der Name.
 const ROOMS_URL := "https://ntfy.sh/tethra-rooms-v1"
 ## Tatsaechliche Ports: Standard, oder --mp-port=<n> (Tests; LAN-Ansage auf n+1).

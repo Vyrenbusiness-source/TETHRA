@@ -70,6 +70,12 @@ func _links() -> void:
 	_ok(basic.title == "Hallo Welt" and basic.md5 == "abc", "Link nur mit Pflichtfeldern")
 	_ok(ChatApi.parse_map_link("https://example.com/x").is_empty(), "fremder Link ignoriert")
 	_ok(ChatApi.parse_map_link("https://butzebot.com/tethra/map/abc").is_empty(), "ohne set -> keine Karte")
+	# Server-Name kuenftig "omen": beide Pfade sind Karten, auch relativ (Bot).
+	var om := ChatApi.parse_map_link("https://butzebot.com/omen/map/abc?set=9&b=8&t=Neu")
+	_ok(om.set_id == 9 and om.md5 == "abc" and om.title == "Neu", "/omen/map-Link als Karte")
+	var om_rel := ChatApi.parse_map_link("[X by Y](/omen/map/def?set=4&b=2)")
+	_ok(om_rel.set_id == 4 and om_rel.md5 == "def" and str(om_rel.link) == "/omen/map/def?set=4&b=2", "relativer /omen/map-Link")
+	_ok(ChatApi.parse_map_link("https://butzebot.com/omenx/map/abc?set=9").is_empty(), "/omenx/ ist kein Map-Link")
 
 
 func _scores() -> void:
@@ -78,6 +84,9 @@ func _scores() -> void:
 	var p := ChatApi.parse_score_link("Mein Lauf " + l + " !")
 	_ok(p.score_id == "77" and p.text.begins_with("Mein Lauf"), "Score-Link erkannt")
 	_ok(ChatApi.parse_score_link("nichts").is_empty(), "kein Score-Link")
+	var po := ChatApi.parse_score_link("neu https://butzebot.com/omen/score/88 da")
+	_ok(po.get("score_id", "") == "88" and str(po.link).ends_with("/omen/score/88"), "/omen/score-Link erkannt")
+	_ok(ChatApi.parse_score_link("https://evil.example/omen/score/1").is_empty(), "fremder Host -> kein Score-Link")
 	var s := ChatApi.parse_score(JSON.stringify({"player": "Mira", "map": {"beatmap_md5": "m", "beatmapset_id": 5,
 		"beatmap_id": 6, "title": "T", "difficulty": "D"}, "score": 1000, "accuracy": 98.5, "grade": "S",
 		"max_combo": 300, "pp": 120.5, "mods": ["NF"], "mode": "mania", "has_replay": true}))

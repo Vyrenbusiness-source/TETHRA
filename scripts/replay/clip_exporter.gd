@@ -78,7 +78,7 @@ var _len_s: float = 0.0
 
 
 ## Zielordner: Editor/Dev -> user://clips, Release -> Dokumente/OMEN Clips.
-## Gibt es schon "TETHRA Clips" (Name bis v1.35.0), bleibt es bei dem Ordner:
+## Gibt es schon "TETHRA Clips" (Name bis v1.36.0), bleibt es bei dem Ordner:
 ## die Clips des Nutzers liegen dort.
 static func clips_dir() -> String:
 	var d: String
