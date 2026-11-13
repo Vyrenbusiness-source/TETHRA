@@ -1428,7 +1428,7 @@ func _movie_hold(_target: float) -> bool:
 		if a.begins_with("--movie-len="):
 			print("MOVIE_START frame=%d" % Engine.get_process_frames())
 			if not await _sleep(a.trim_prefix("--movie-len=").to_float()):
-				return
+				return true
 			get_tree().quit(0)
 			return true
 	return false
