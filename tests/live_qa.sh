@@ -65,9 +65,11 @@ run orbit fail "fail,nfidle"
 run rally flow "flow,retry" $BOT
 run rally mods "mod:,mod:NF" $BOT --auto-miss=6
 run rally fail "fail,nfidle"
-run dirigent flow "flow,retry" $BOT
-run dirigent mods "mod:,mod:NF" $BOT --auto-miss=6
-run dirigent fail "fail,nfidle"
+# Dirigent zaehlt vor: Fixture 6 s spaeter, damit der Intro-Skip ausloest.
+run dirigent flow "flow" $BOT --qa-shift=6000
+run dirigent retry "retry" $BOT --qa-shift=6000
+run dirigent mods "mod:,mod:NF" $BOT --auto-miss=6 --qa-shift=6000
+run dirigent fail "fail,nfidle" --qa-shift=6000
 
 echo "LIVE-QA $([ $rc -eq 0 ] && echo OK || echo FAIL) (logs: $OUT)"
 exit $rc

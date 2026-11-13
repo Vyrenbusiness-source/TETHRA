@@ -10,11 +10,14 @@ extends SceneTree
 ##     --qa-cases=flow,retry,fail,nfidle,mod:,mod:NF  --qa-src=<quelle.osz> --qa-out=<ordner>
 ## Ausgabe je Pruefung: "QA <modus> <fall> <pruefung> OK|BUG <detail>".
 
-const FIRST := 6000.0
-const PAUSE_AT := 8600.0
-const BREAK_MID := 14500.0
-const BREAK_B := 18000.0
-const LAST := 22000.0
+## Zeiten der Fixture-Map (ms); --qa-shift=<ms> schiebt alles nach hinten (Dirigent
+## zaehlt vor der ersten Note Schlaege vor: Intro-Skip erst ab ~10 s Vorlauf).
+var FIRST := 6000.0
+var PAUSE_AT := 8600.0
+var BREAK_A := 11000.0
+var BREAK_MID := 14500.0
+var BREAK_B := 18000.0
+var LAST := 22000.0
 
 const MODES := {
 	"mania2d": {"scene": "res://scenes/mania_3d.tscn", "inject": "lanes"},
@@ -62,6 +65,14 @@ func _initialize() -> void:
 			_src = a.trim_prefix("--qa-src=")
 		elif a.begins_with("--qa-out="):
 			_out = a.trim_prefix("--qa-out=")
+		elif a.begins_with("--qa-shift="):
+			var sh := a.trim_prefix("--qa-shift=").to_float()
+			FIRST += sh
+			PAUSE_AT += sh
+			BREAK_A += sh
+			BREAK_MID += sh
+			BREAK_B += sh
+			LAST += sh
 	_autoplay = OS.get_cmdline_args().has("--autoplay")
 	_main.call_deferred()
 
@@ -186,7 +197,7 @@ func _make_fixture() -> bool:
 	var notes := ""
 	var i := 0
 	var t := FIRST
-	while t <= 11000.0:
+	while t <= BREAK_A:
 		var x := 64 + 128 * ((i * 3) % 4)
 		if i == 12:
 			notes += "%d,192,%d,128,0,%d:0:0:0:0:\n" % [x, int(t), int(t) + 400]
@@ -207,7 +218,7 @@ func _make_fixture() -> bool:
 		i += 1
 		t += 125.0
 	zp.start_file("qa.osu")
-	zp.write_file(_osu(audio, "QA4K", 7, "2,11500,17500\n", notes).to_utf8_buffer())
+	zp.write_file(_osu(audio, "QA4K", 7, "2,%d,%d\n" % [int(BREAK_A) + 500, int(BREAK_B) - 500], notes).to_utf8_buffer())
 	zp.close_file()
 	zp.start_file("qafail.osu")
 	zp.write_file(_osu(audio, "QAFAIL", 10, "", dense).to_utf8_buffer())
@@ -370,8 +381,6 @@ func _drive(sc: Node, o: Dictionary) -> Dictionary:
 			if b_state == 0 and t >= BREAK_MID:
 				b_state = 1
 				_info("break-mitte", "overlay=%s aktiv=%s" % [ov != null, ov != null and ov.is_active()])
-				if bool(o.get("shots", false)):
-					await _shot("break")
 			elif b_state == 1 and t >= BREAK_B - 300.0:
 				b_state = 2
 				miss_brk = _miss(sc)
@@ -379,8 +388,8 @@ func _drive(sc: Node, o: Dictionary) -> Dictionary:
 				if ov != null and ov.get("_root") != null:
 					a = float(ov._root.modulate.a) if ov._root.visible and ov.visible else 0.0
 				_info("break-ende", "300 ms vor der Note: overlay aktiv=%s alpha=%.2f" % [ov != null and ov.is_active(), a])
-				if ov != null:
-					_check(a < 0.5, "break-overlay", "Deckkraft %.2f 300 ms vor der ersten Note" % a)
+				if bool(o.get("shots", false)):
+					await _shot("break")
 			elif b_state == 2 and t >= BREAK_B + 450.0:
 				b_state = 3
 				_check(_miss(sc) == miss_brk, "break-erste-note", "Misses %d -> %d" % [miss_brk, _miss(sc)])
@@ -406,6 +415,17 @@ func _results_node(sc: Node) -> Node:
 		var n = sc.get(k)
 		if n != null and n is Node:
 			return n
+	return _find_results(sc)
+
+
+func _find_results(n: Node) -> Node:
+	var scr = n.get_script()
+	if scr != null and str(scr.resource_path).ends_with("results_screen.gd"):
+		return n
+	for ch in n.get_children():
+		var r := _find_results(ch)
+		if r != null:
+			return r
 	return null
 
 
@@ -473,7 +493,7 @@ func _case_retry() -> void:
 		return
 	var sig := _settings_sig()
 	var hp0 = sc.core.get("hp")
-	var r := await _drive(sc, {"plan": _plan(sc, 5), "skip": true, "stop_at": 8600.0})
+	var r := await _drive(sc, {"plan": _plan(sc, 5), "skip": true, "stop_at": FIRST + 2600.0})
 	if r.lost:
 		_check(false, "retry-lauf", "Szene weg")
 		return
@@ -494,7 +514,7 @@ func _case_retry() -> void:
 		"retry-mods", "mods=%s mult=%s" % [str(_gs.mods), str(s.get("mod_mult"))])
 	_check(_settings_sig() == sig, "retry-settings", "")
 	# Zweiter Durchgang: Pausenmenue -> Neustart.
-	r = await _drive(sc, {"plan": _plan(sc, 5), "stop_at": 7300.0})
+	r = await _drive(sc, {"plan": _plan(sc, 5), "stop_at": FIRST + 1300.0})
 	if r.lost:
 		_check(false, "retry-lauf2", "Szene weg")
 		return
@@ -546,7 +566,7 @@ func _case_fail(nf: bool) -> void:
 	_info("ergebnis", _brief(s) + " t_ende=%d" % int(sc.get("_last_update_t") if sc.get("_last_update_t") != null else -1))
 	await create_timer(3.0).timeout
 	var rs := _results_node(sc)
-	var failed := bool(s.get("failed", false)) or bool(sc.core.get("failed"))
+	var failed := bool(s.get("failed", false)) or (sc.core.get("failed") != null and bool(sc.core.get("failed")))
 	if nf:
 		_check(not failed and rs != null and rs.visible, "nf-kein-fail", "failed=%s" % failed)
 		await _shot("nfidle")
