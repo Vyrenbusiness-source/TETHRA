@@ -179,3 +179,10 @@ Released: Trace ausgebaut (eigene Pfeiltasten, Wrong turn, Bild der Runde, Mods 
 Server: min_version 1.28.0, Orbit/Trace-Scores < 1.28.0 raus, Relay neu, Daily-Vorschlag (docs/server_daily.md).
 Offen/Ideen: Orbit-Pips-Aenderung durch laps_eff (weniger Runden) vom Nutzer bestaetigen lassen; Orbit-Accent-Screenshot nie mit Zielen erwischt; Rally/Orbit/Dirigent-HUD ohne --nohud im Trailer; Lizenzdatei fuers Repo fehlt (nicht "open source" schreiben).
 warmd v0.4.48 (~/.local/bin; in alten Shells `export PATH="$HOME/.local/bin:$PATH"`).
+
+## Stand 2026-11-13 Mittag (v1.29.0 released)
+Released: neuer Look fuer Orbit/Rally/Dirigent/Rebound (Buehne, Objekte mit Tiefe, Frueh/Spaet-Marke), Hauptmenue neu (Modus-Kacheln mit gezeichneten Spielszenen statt Icons), MapBackdrop ruhiger Verlauf, ein Ergebnis-Bildschirm fuer alle Modi (ResultsScreen + Details-Reiter je Modus, skaliert), Lobby/Pause/Browser poliert, Gameplay-Abstimmung (docs/modes/gameplay_tune.md): Replay-Regeln Orbit 5, Rally 4, Dirigent 3, Rebound 3.
+README-Videos laufen ueber GitHub Pages (docs/watch.html?v=<name>, Pages aus main:/docs).
+Server: min_version 1.29.0, Scores < 1.29.0 der vier Modi raus, Relay neu (Artifact aktualisiert).
+Offen: menschlicher Spieltest der neuen Regeln; Settings-Seite unveraendert (nur angesehen); Lobby/Fail-Bilder Dirigent+Trace/1440p nie selbst geprueft; docs/anti_mash.md nennt Rebound-Spam 25,9 % (jetzt 27,6 %); Uebersetzungs-Keys fuer "Picture"/"In den Chat senden" im Ergebnis fehlen (UiTheme.is_german()).
+Agents liefen mit model=fable (Opus/Sonnet-Subagents: API 403 Cloudflare).
