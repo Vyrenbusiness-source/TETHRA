@@ -4001,7 +4001,9 @@ func _show_results(is_fail: bool) -> void:
 				GameSession.osz_path, GameSession.osu_filename,
 				_beatmap.hit_objects.size())
 			if max_pp > 0.0:
-				pp = maxf(pp, max_pp * pow(acc, 6.0) * 0.8)
+				# 0,55 x echte SS-pp = der bisherige Floor (0,8 x die bis v1.32.0
+				# um ~31 % zu niedrige Max-pp); bleibt so unter rosu ab ~85 % Acc.
+				pp = maxf(pp, max_pp * pow(acc, 6.0) * 0.55)
 	s["pp"] = pp
 	# Multiplayer: letzten Live-Stand + Finale (mit pp) an alle melden.
 	if Lobby.active and Lobby.in_game:

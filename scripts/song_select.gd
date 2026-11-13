@@ -4907,7 +4907,7 @@ static func rec_runs(runs: Array, stars: Dictionary) -> Array:
 static func rec_fill_max_pp(cands: Array, runs: Array) -> void:
 	var rng := Recommender.star_range(Recommender.skill("mania", runs), Recommender.LEVEL_PUSH)
 	var cfg := ConfigFile.new()  # einmal laden (max_pp_cached liest je Aufruf neu)
-	if cfg.load(StarService.CACHE_PATH) != OK or not cfg.has_section("maxpp"):
+	if cfg.load(StarService.CACHE_PATH) != OK or not cfg.has_section(StarService.MAXPP_SECTION):
 		return
 	var base := {}
 	var asked := 0
@@ -4922,7 +4922,7 @@ static func rec_fill_max_pp(cands: Array, runs: Array) -> void:
 		if not base.has(osz):
 			base[osz] = StarService._cache_key(osz)
 		var key := "%s|%s" % [base[osz], c.get("inner", "")]
-		var v := float(cfg.get_value("maxpp", key, -1.0))
+		var v := float(cfg.get_value(StarService.MAXPP_SECTION, key, -1.0))
 		if v >= 0.0:
 			c["max_pp"] = v
 

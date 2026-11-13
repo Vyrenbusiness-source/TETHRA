@@ -9,6 +9,9 @@ extends RefCounted
 const CACHE_PATH := "user://stars.cfg"
 const ROSU_VERSION := "rosu-pp-py 4.0.2"
 
+## Cache-Section der SS-pp; neuer Name verwirft die falschen Werte bis v1.32.0.
+const MAXPP_SECTION := "maxpp_v2"
+
 
 ## Batch-Vorberechnung fuer einen ganzen Maps-Ordner: EIN python-Aufruf statt
 ## einem pro Mapset (90 Mapsets = ~45s Freeze vermieden). Fuellt den Cache.
@@ -95,7 +98,7 @@ static func pp_for_mania(osz_path: String, inner_osu: String, nmax: int,
 
 
 ## Max-pp (SS, 100%% acc, Full Combo) einer Diff — nur aus rosu-pp,
-## gecacht in user://stars.cfg (Section "maxpp"). -1 = nicht berechenbar.
+## gecacht in user://stars.cfg (Section MAXPP_SECTION). -1 = nicht berechenbar.
 static func max_pp_for(osz_path: String, inner_osu: String, note_count: int) -> float:
 	var base_key := _cache_key(osz_path)
 	if base_key == "" or inner_osu == "":
@@ -103,14 +106,17 @@ static func max_pp_for(osz_path: String, inner_osu: String, note_count: int) -> 
 	var key := "%s|%s" % [base_key, inner_osu]
 	var cfg := ConfigFile.new()
 	cfg.load(CACHE_PATH)
-	if cfg.has_section_key("maxpp", key):
-		return float(cfg.get_value("maxpp", key, -1.0))
+	if cfg.has_section_key(StarService.MAXPP_SECTION, key):
+		return float(cfg.get_value(StarService.MAXPP_SECTION, key, -1.0))
 	var info: Dictionary = stars_for(osz_path).get(inner_osu, {})
 	var combo := int(info.get("max_combo", 0))
-	var result := pp_for(osz_path, inner_osu, note_count, 0, 0, 0, combo)
+	# Mania-SS = alle Noten MAX (n_geki). Mit n300 statt n_geki rechnet rosu-pp
+	# eine Custom-Acc unter 100 % und liefert ~31 % zu wenig (Bug bis v1.32.0).
+	# Nur fuer Mania-Diffs (Browser, Ergebnis, Empfehlungen).
+	var result := pp_for_mania(osz_path, inner_osu, note_count, 0, 0, 0, 0, 0, combo)
 	var pp := float(result.get("pp", -1.0)) if not result.is_empty() else -1.0
 	cfg.load(CACHE_PATH)
-	cfg.set_value("maxpp", key, pp)
+	cfg.set_value(StarService.MAXPP_SECTION, key, pp)
 	cfg.save(CACHE_PATH)
 	return pp
 
@@ -123,9 +129,9 @@ static func max_pp_cached(osz_path: String, inner_osu: String) -> float:
 	var cfg := ConfigFile.new()
 	cfg.load(CACHE_PATH)
 	var key := "%s|%s" % [base_key, inner_osu]
-	if not cfg.has_section_key("maxpp", key):
+	if not cfg.has_section_key(StarService.MAXPP_SECTION, key):
 		return -1000.0
-	return float(cfg.get_value("maxpp", key, -1.0))
+	return float(cfg.get_value(StarService.MAXPP_SECTION, key, -1.0))
 
 
 ## Trace-Sterne einer Diff (TraceStars), gecacht in user://stars.cfg (Section
