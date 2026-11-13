@@ -75,6 +75,7 @@ var online: OnlineApi
 ## Start aus dem Song-Browser; die Kapitel-Welt ist nur Thema der Kampagnen-Ansicht.
 var campaign: Dictionary = {}
 var campaign_return: String = ""
+const CAMPAIGN_HUD := "res://scripts/campaign/campaign_hud.gd"
 
 
 func campaign_active() -> bool:
@@ -105,17 +106,8 @@ func _campaign_attach_hud(game_id: int) -> void:
 	var game := instance_from_id(game_id) as Node
 	if game == null or not game.is_inside_tree() or not campaign_active():
 		return
-	var all := Campaign.load_data()
-	var sid := str(campaign.get("stage", ""))
-	var data := Campaign.for_mode(all, Campaign.mode_of_stage(all, sid))
-	var st := Campaign.stage_by_id(data, sid)
-	var ci := Campaign.chapter_index_of(data, sid)
-	if st.is_empty() or ci < 0:
-		return
-	var head := "%s  ·  %s  ·  %s" % [Campaign.tr_("Kampagne"),
-		Campaign.world_label(str((Campaign.chapters(data)[ci] as Dictionary).get("world", ""))),
-		Campaign.stage_label(st, Campaign.stage_index_of(data, sid))]
-	CampaignHud.attach(game, st, head)
+	# Zur Laufzeit laden: GameSession kompiliert so auch in Tests ohne Autoloads (HUD -> Lobby).
+	load(CAMPAIGN_HUD).call("attach_stage", game, str(campaign.get("stage", "")))
 
 
 ## Harness --shot-campaign-run=<Praefix>: echter Stufenlauf (Kampagnen-Szene startet die

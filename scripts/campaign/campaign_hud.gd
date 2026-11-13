@@ -21,6 +21,20 @@ var _last: Array = []
 var _t := 0.0
 
 
+## Ziele der Stufe stage_id an die Spielszene haengen (null, wenn die Stufe fehlt).
+static func attach_stage(game: Node, stage_id: String) -> CampaignHud:
+	var all := Campaign.load_data()
+	var data := Campaign.for_mode(all, Campaign.mode_of_stage(all, stage_id))
+	var st := Campaign.stage_by_id(data, stage_id)
+	var ci := Campaign.chapter_index_of(data, stage_id)
+	if st.is_empty() or ci < 0:
+		return null
+	var head := "%s  ·  %s  ·  %s" % [Campaign.tr_("Kampagne"),
+		Campaign.world_label(str((Campaign.chapters(data)[ci] as Dictionary).get("world", ""))),
+		Campaign.stage_label(st, Campaign.stage_index_of(data, stage_id))]
+	return attach(game, st, head)
+
+
 static func attach(game: Node, p_stage: Dictionary, p_head: String) -> CampaignHud:
 	var h := CampaignHud.new()
 	h.name = "CampaignHud"
@@ -48,7 +62,7 @@ func _exit_tree() -> void:
 
 
 func _on_node_added(n: Node) -> void:
-	if n is ResultsScreen:
+	if n.get_script() != null and (n.get_script() as Script).resource_path == "res://scripts/ui/results_screen.gd":
 		visible = false
 
 
