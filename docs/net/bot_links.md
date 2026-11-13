@@ -22,6 +22,10 @@ relativ oder mit `https://butzebot.com` davor, nackt oder als Markdown-Link:
 | `/tethra/map/<md5>?set=<id>&b=<beatmap_id>&t=<Titel>&a=<Künstler>&v=<Diff>&s=<Sterne>` | Spieler ("Map teilen") |
 | `/tethra/songs?detail=<slug>&difficulty=<slug>&set=<id>` | Bot |
 | `/omen/songs?detail=<slug>&difficulty=<slug>&set=<id>` | alte Bot-Nachrichten |
+| `/omen/map/<md5>?set=<id>&...` | künftiger Server-Name (siehe Punkt 2) |
+
+Score-Links `https://butzebot.com/tethra/score/<id>` und `.../omen/score/<id>` werden beide
+erkannt (ab der ersten Version unter dem Namen OMEN; v1.36.0 kennt nur `/tethra/score/`).
 
 Bei den `songs`-Links rät der Client: Titel und Künstler aus dem Linktext
 (`Titel by Künstler`), Diff-Name und Sterne aus der Folgezeile
@@ -48,8 +52,11 @@ Ohne `set=` gibt es keine Karte.
    - Beispiel:
      `https://butzebot.com/tethra/map/0123456789abcdef0123456789abcdef?set=1766740&b=3620000&t=End%20Time&a=Cres&v=%5B4K%5D%20Hyper&s=3.39`
 
-2. **Kein `/omen/...` mehr.** Neue Nachrichten nur mit `/tethra/...`. Alte Nachrichten
-   müssen nicht umgeschrieben werden, der Client liest sie weiter.
+2. **Vorerst `/tethra/...`.** Der Server soll später wieder `omen` heißen. Der Client
+   erkennt Map-Links unter `/tethra/` und `/omen/` schon heute (auch v1.36.0), Score-Links
+   unter `/omen/` erst ab der ersten OMEN-Version. Neue Nachrichten deshalb weiter mit
+   `/tethra/...`, bis kaum noch v1.36.0-Clients online sind. Alte Nachrichten müssen nicht
+   umgeschrieben werden, der Client liest beide Formen.
 
 3. **Keine leeren Zeilen mit Etikett.** `Filters:` nur senden, wenn Filter gesetzt
    sind (`Filters: 4K, Rice`). Dasselbe gilt für jede andere Zeile "Name:" ohne Wert.
