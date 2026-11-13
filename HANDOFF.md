@@ -196,3 +196,13 @@ Agents liefen mit model=fable (Opus/Sonnet-Subagents: API 403 Cloudflare).
 - Social Preview docs/media/social_preview.png muss der Nutzer in den GitHub-Settings hochladen.
 - warmd-Luecke: zweiter `warmd split` waehrend ein Batch laeuft -> beim Ende des zweiten Batches wurde der noch laufende Task des ersten (mania-2d-popin) zu frueh gemergt ("OK batch ended"). In warmd beheben.
 - ISCC aus Git Bash: /D-Schalter werden zu Pfaden umgeschrieben -> ISCC ueber PowerShell aufrufen.
+
+## Stand 2026-11-13 Nacht (v1.32.0 released, Limit-Stopp)
+- v1.32.0 released: Countdown-Ring verdeckt keine Noten in Mania 3D/Orbit, Escape nach Chat, Ergebnis-Skriptfehler; Live-QA aller Modi (docs/qa/live_qa.md, tests/live_qa.sh).
+- Server-Artifact aktuell bis v1.32.0 (min_version bleibt 1.30.0, nur Relay neu). Kumpel-Text wurde dem Nutzer gegeben.
+- warmd v0.4.49: wartende Agents (Hintergrundlauf) zaehlen nicht mehr als fertig, kein vorzeitiger Merge. Restluecke: per SendMessage fortgesetzter, schon fertig eingetragener Agent wird nicht wieder offen; batch-resume nimmt alte Worktrees als offen (andere Ursache).
+- GESTOPPT (Limit), Worktree-Commits "WIP (Limit-Stopp)", Task-Dateien unter .warmd/tasks/:
+  - tutorials-v2 (.warmd/tasks122.txt): Tutorials aller Modi an Regeln Orbit 5/Rally 4/Dirigent 4/Rebound 3 + Anti-Mash + neuen Look anpassen, en+de.
+  - mp-all-modes (.warmd/tasks122.txt): --mp-bot fuer Mania (lief gerade verbose), Rebound im Smoke, Relay-Smoke alle 6 Modi, ObjectDB-Leak beim Beenden.
+  Fortsetzen: Agent je Task mit model=fable (Opus/Sonnet-Subagents hatten API 403), Prompt "Read .warmd/tasks/<task>.md, git log im Worktree, weiter ab WIP". Batch-Marker fehlt evtl. -> nach Ende von Hand mergen: WARMD_BASE=1 warmd merge warmd/<task>.
+- Nutzer-Vorgaben neu: Regeln immer aenderbar (memory feedback-rules-change); SV-Mod/Map-SV bleiben wie sie sind; Social Preview docs/media/social_preview.png selbst hochladen.
