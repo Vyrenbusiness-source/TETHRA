@@ -216,3 +216,66 @@ Gewollt, kein Fund: FadeIn (Noten ab 15 % sichtbar, 83 %), Cover 50 % von oben
 - Pause/Resume, Retry, Intro-Skip: brauchen Eingaben, per Autoplay nicht
   ausgeloest. Im Code: Pause haelt die Uhr, das 3-2-1 ist nur Text.
 - Echte Eingaben (Misses, fruehes Druecken): Autoplay trifft alles.
+
+## SV am Songanfang
+
+Bug (Nutzer): "sath4 - <3#006" [Recollectia, w/ [-SVzzZ-]] (mirror_2141771,
+4788 Timing-Points, erste Note 498 ms): die ersten Noten stehen beim Start
+schon mitten im Feld.
+
+Ursache: nicht das SV. `SyncClock.play()` laeuft in `_ready`, danach laedt die
+Szene weiter (`BeatClock.setup` 1,2 s bei 4788 Timing-Points). Die Vorlaufuhr
+lief in dieser Zeit schon, der Vorlauf (1538 ms) war beim 3-2-1 verbraucht.
+Maps ohne SV haben wenige Timing-Points und laden schnell, darum fiel es nur
+bei SV-Maps auf.
+
+Fix: der Vorlauf beginnt mit dem ersten Tick nach `play()` (erster Frame oder
+`pause()` des Start-Countdowns), `scripts/audio/sync_clock.gd`. Mania startet
+immer mit mindestens 1 ms Vorlauf, damit auch Maps ohne noetigen Vorlauf nicht
+waehrend des Ladens Songzeit verlieren (`mania_3d.gd` `_load_beatmap`).
+SV-Darstellung, Trefferzeiten und Audio-Start (Songzeit 0) unveraendert.
+Test: `tests/run_sv_start_tests.gd`.
+
+Repro (2D, Autoplay, `--debug-popin`): vorher finds=9, min_vis_ratio=0.37,
+Note 0 erst 528 ms vor dem Treffer. Nachher finds=0, min_vis_ratio=1.00, Uhr
+am Ende des Countdowns bei -1538 ms.
+
+Stichprobe: 20 SV-Maps (4K, meiste SV-Wechsel, erste Note vor 3 s), 2D,
+Autoplay, bis 1,3 s nach der ersten Note. "Uhr" = Songzeit am Ende des
+Countdowns, muss dem Vorlauf entsprechen.
+
+| Map | Diff | Timing-Points | Ladezeit ms | Vorlauf ms | Uhr ms | finds | min_vis |
+|---|---|---|---|---|---|---|---|
+| 2280366 rejection - Calling | Hard | 4805 | 1441 | 1842 | -1838 | 0 | 0.96 |
+| mirror_2141771 | Recollectia, w/ [-SVzzZ-] | 4788 | 1569 | 1538 | -1536 | 0 | 1.00 |
+| mirror_2096660 | Insanity | 3134 | 693 | 1990 | -1981 | 0 | 0.99 |
+| mirror_2449429 | TUTORIAL? | 2615 | 651 | 1209 | -1207 | 0 | 0.99 |
+| mirror_2485116 | HAHA | 2120 | 371 | 1926 | -1925 | 0 | 0.99 |
+| mirror_2426813 | Insane | 1638 | 388 | 1055 | -1053 | 0 | 1.00 |
+| mirror_2264736 | Clarity | 1425 | 423 | 106 | -105 | 0 | 1.00 |
+| mirror_2398569 | Insane | 476 | 405 | 1794 | -1793 | 0 | 0.99 |
+| mirror_2563907 | Expert | 303 | 261 | 1241 | -1239 | 0 | 1.00 |
+| mirror_2586880 | #UnnamedCrush (SV) [Swid] | 258 | 1808 | 0 | 2 | 0 | 0.99 |
+| mirror_2495730 | Supernova // Insane | 199 | 335 | 2021 | -2019 | 0 | 0.99 |
+| 381334 aaaa - Bokutachi no Tabi to Epilogue | Final Voyage | 239 | 413 | 1712 | -1710 | 0 | 0.99 |
+| mirror_2541848 | INSANE://MEMORIES_OF_YOUTH | 130 | 559 | 661 | -659 | 0 | 0.97 |
+| 171880 xi - Happy End of the World | Fullerene's 4K Catastrophic Shift | 196 | 869 | 1825 | -1824 | 0 | 1.00 |
+| 2289293 Tsukasa Kaminose - ruin of opals | Iridescence | 160 | 332 | 986 | -985 | 0 | 1.00 |
+| mirror_2563643 | Chocho Chocho | 85 | 406 | 1351 | -1349 | 0 | 0.98 |
+| mirror_1178589 | Bakarina | 75 | 306 | 1636 | -1635 | 0 | 0.99 |
+| mirror_2564470 | Neon's Easy | 147 | 353 | 1905 | -1904 | 0 | 0.99 |
+| mirror_2278487 | Normal | 161 | 239 | 2014 | -2013 | 0 | 1.00 |
+| mirror_240415 | puxtu's HD | 63 | 265 | 2000 | -1999 | 0 | 1.00 |
+
+UnnamedCrush braucht keinen Vorlauf (erste Note 2670 ms). Vor dem
+1-ms-Mindestvorlauf stand die Uhr am Ende des Countdowns schon bei 477 ms.
+
+### Offen
+
+- mirror_2323003 [Lunatic || Extra] (4517 Timing-Points): `start_lead_ms`
+  liefert 107021 ms Vorlauf (fruehester Spawn -106421 ms, SV-Stillstand am
+  Anfang). Der Song beginnt erst nach 107 s Stille. Schon vor diesem Fix so,
+  nicht geaendert: eine Obergrenze fuer den Vorlauf aendert, wie das SV am
+  Anfang aussieht (Nutzer-Entscheidung).
+- 3D nicht erneut gemessen (`--debug-popin` misst nur das 2D-Feld). Uhr und
+  Vorlauf sind fuer 2D und 3D derselbe Code.
