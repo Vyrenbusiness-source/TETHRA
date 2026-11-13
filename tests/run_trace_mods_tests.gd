@@ -49,5 +49,62 @@ func _initialize() -> void:
 	_check(TraceMods.from_session().is_empty() or true, "from_session laeuft")
 	# Determinismus
 	_check(TraceMods.path_alpha(321.0, hd) == TraceMods.path_alpha(321.0, hd), "deterministisch")
+	_qa_tests()
 	print("Trace-Mods: %d ok, %d fail" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
+
+
+## QA: Mirror genau einmal, SV ohne Faktor, Kamera haelt kommende Knoten im Bild.
+func _qa_tests() -> void:
+	var vm := TraceMods.view_mods({"MR": true, "HD": true})
+	_check(not vm.has("MR") and bool(vm.get("HD", false)), "view_mods: MR raus, HD bleibt")
+	var sm := TraceMods.strip_foreign({"SV": true, "NF": true, "HD": true})
+	_check(not sm.has("SV") and sm.has("NF") and sm.has("HD"), "strip_foreign: SV raus")
+	_check(is_equal_approx(ManiaCore.mod_multiplier(sm) * TraceMods.mod_multiplier(sm), 0.5 * 1.06), "SV ohne Faktor in Trace")
+	_check(is_equal_approx(TraceRules.lead_in_ms(300.0, 0.0), 1600.0), "Lead-In kurzer Start")
+	_check(is_equal_approx(TraceRules.lead_in_ms(300.0, 3000.0), 3000.0), "AudioLeadIn bleibt")
+	_check(is_equal_approx(TraceRules.lead_in_ms(9000.0, 0.0), 0.0), "spaete erste Note: kein Zusatz")
+	# Mirror: Note in Spalte 0 liegt nach map_column in Spalte 3 (rechte Taste). Die Ansicht
+	# zeigt dann mit view_mods den Pfeil nach rechts und die Taste der Spalte 3.
+	var times := PackedFloat64Array()
+	var cols := PackedInt32Array()
+	var seed := 7
+	for i in 240:
+		seed = (seed * 1103515245 + 12345) & 0x7fffffff
+		times.append(2000.0 + 250.0 * float(i))
+		cols.append((seed >> 8) % 4)
+	for speed in [300.0, 520.0, 900.0]:
+		var path := TracePath.build(times, cols, times, speed)
+		for vs in [Vector2(1920, 1080), Vector2(1024, 768)]:
+			var view := TraceView.new()
+			view.size = vs
+			view.path = path
+			var half := TraceRules.view_half(vs)
+			var n := path.knots.size()
+			var last_off := PackedFloat64Array()
+			last_off.resize(n)
+			last_off.fill(-1.0e12)
+			var t: float = path.knots[0].t - 1300.0
+			var a := 0
+			var jump := 0.0
+			var prev := Vector2.INF
+			while t <= path.knots[n - 1].t:
+				while a < n and path.knots[a].t < t:
+					a += 1
+				var cam := TraceRules.fair_camera(path, t, view._camera(t), half)
+				if prev != Vector2.INF:
+					jump = maxf(jump, cam.distance_to(prev))
+				prev = cam
+				var j := a
+				while j < n and path.knots[j].t <= t + 1200.0:
+					var d: Vector2 = path.knots[j].pos - cam
+					if absf(d.x) > half.x - 40.0 or absf(d.y) > half.y - 40.0:
+						last_off[j] = t
+					j += 1
+				t += 20.0
+			var worst := 1.0e9
+			for j in n:
+				worst = minf(worst, path.knots[j].t - (last_off[j] + 20.0))
+			_check(worst >= 450.0, "Knoten >= 450 ms im Bild, Tempo %d, %dx%d (war %.0f)" % [int(speed), int(vs.x), int(vs.y), worst])
+			_check(jump <= 60.0, "Kamera ohne Sprung, Tempo %d (max %.0f px je 20 ms)" % [int(speed), jump])
+			view.free()

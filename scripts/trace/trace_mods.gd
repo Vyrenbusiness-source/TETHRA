@@ -82,3 +82,20 @@ static func mod_list(mods: Dictionary) -> Array:
 		if has(mods, k):
 			out.append(k)
 	return out
+
+
+## Mods fuer die Ansicht, nachdem das Spiel die Notenspalten schon mit map_column getauscht
+## hat: ohne MR. Der Weg laeuft dann von selbst gespiegelt; spiegelte die Ansicht nochmal,
+## zeigten Pfeil und Tastenbuchstabe wieder die ungespiegelte Seite (falsche Taste).
+static func view_mods(mods: Dictionary) -> Dictionary:
+	var out := mods.duplicate()
+	out.erase("MR")
+	return out
+
+
+## Mods ohne die, die in Trace nichts bewirken: SV (Mania-Scroll) zaehlt hier nicht,
+## weder als Score-Faktor noch als Badge (ein Mehrspieler-Raum kann es setzen).
+static func strip_foreign(mods: Dictionary) -> Dictionary:
+	var out := mods.duplicate()
+	out.erase("SV")
+	return out
