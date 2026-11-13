@@ -3,29 +3,56 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>TETHRA</title>
+<title>TETHRA gameplay videos: free rhythm game for Windows</title>
+<meta name="description" content="Watch TETHRA gameplay with sound: the trailer and all six modes of the free rhythm game for Windows (Mania 4K, Orbit, Rally, Dirigent, Trace, Rebound) and the SV mod.">
+<link rel="canonical" href="https://vyrenbusiness-source.github.io/TETHRA/watch.html">
+<link rel="icon" href="brand/icon_klein.svg" type="image/svg+xml">
+<meta name="theme-color" content="#121314">
+<meta property="og:type" content="video.other">
+<meta property="og:site_name" content="TETHRA">
+<meta property="og:title" content="TETHRA gameplay videos">
+<meta property="og:description" content="Trailer and gameplay of all six modes of TETHRA, a free rhythm game for Windows.">
+<meta property="og:url" content="https://vyrenbusiness-source.github.io/TETHRA/watch.html">
+<meta property="og:image" content="https://vyrenbusiness-source.github.io/TETHRA/media/og_image.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://vyrenbusiness-source.github.io/TETHRA/media/og_image.png">
 <style>
   html, body { margin: 0; height: 100%; background: #121314; color: #e9e4d8; font: 15px/1.4 system-ui, sans-serif; }
   main { min-height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 16px; box-sizing: border-box; }
-  video { max-width: 100%; max-height: 82vh; background: #000; border-radius: 4px; }
+  h1 { margin: 0; font-size: 15px; font-weight: 600; }
+  video { max-width: 100%; max-height: 78vh; background: #000; border-radius: 4px; }
   a { color: #e89b3c; text-decoration: none; }
   a:hover { text-decoration: underline; }
+  nav { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 14px; }
 </style>
 </head>
 <body>
 <main>
+  <h1 id="h">TETHRA trailer</h1>
   <video id="v" controls autoplay playsinline></video>
-  <div><a href="https://github.com/Vyrenbusiness-source/TETHRA">TETHRA on GitHub</a> · <a id="dl" href="#">Download video</a></div>
+  <nav aria-label="Videos">
+    <a href="?v=trailer">Trailer</a>
+    <a href="?v=mania">Mania</a>
+    <a href="?v=orbit">Orbit</a>
+    <a href="?v=rally">Rally</a>
+    <a href="?v=dirigent">Dirigent</a>
+    <a href="?v=trace">Trace</a>
+    <a href="?v=rebound">Rebound</a>
+    <a href="?v=sv_mod">SV mod</a>
+  </nav>
+  <div><a href="./">Download TETHRA, free for Windows</a> · <a href="https://github.com/Vyrenbusiness-source/TETHRA">TETHRA on GitHub</a> · <a id="dl" href="media/trailer.mp4">Download video</a></div>
 </main>
 <script>
   // ?v=<name> plays media/<name>.mp4; only known names are accepted.
   var names = ["trailer", "mania", "orbit", "rally", "dirigent", "trace", "rebound", "sv_mod"];
+  var labels = { trailer: "trailer", mania: "Mania gameplay", orbit: "Orbit gameplay", rally: "Rally gameplay", dirigent: "Dirigent gameplay", trace: "Trace gameplay", rebound: "Rebound gameplay", sv_mod: "SV mod" };
   var name = new URLSearchParams(location.search).get("v");
   if (names.indexOf(name) < 0) name = "trailer";
   var src = "media/" + name + ".mp4";
   document.getElementById("v").src = src;
   document.getElementById("dl").href = src;
-  document.title = "TETHRA · " + name;
+  document.getElementById("h").textContent = "TETHRA " + labels[name];
+  document.title = "TETHRA " + labels[name] + ": free rhythm game for Windows";
 </script>
 </body>
 </html>

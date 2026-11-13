@@ -1,49 +1,62 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/media/logo_wordmark.png">
-    <img src="docs/media/logo.svg" alt="TETHRA" width="420">
+    <img src="docs/media/logo.svg" alt="TETHRA, a free rhythm game for Windows" width="420">
   </picture>
 </p>
 
 <p align="center">
-  <b>A free rhythm game for Windows. Play osu!mania 4K maps in 3D or 2D, turn any map into an SV map, or play Orbit, Rally, Dirigent, Trace and Rebound, five rhythm modes of their own.</b>
+  <b>TETHRA is a free rhythm game for Windows that plays osu! maps: osu!mania 4K (VSRG) in 3D worlds or on the classic 2D field, with your osu! skins.</b><br>
+  Six modes in one music game: Mania, Orbit, Rally, Dirigent, Trace and Rebound. An SV mod for any map, map downloads in the game, replays, leaderboards, multiplayer and tournaments.
 </p>
 
 <p align="center">
-  <a href="https://github.com/Vyrenbusiness-source/TETHRA/releases/download/worlds/TETHRA_Setup.exe"><img src="https://img.shields.io/badge/Download%20for%20Windows-TETHRA__Setup.exe-E9A23B?style=for-the-badge&labelColor=1B1A18" alt="Download TETHRA_Setup.exe for Windows" height="48"></a>
+  <a href="https://github.com/Vyrenbusiness-source/TETHRA/releases/download/worlds/TETHRA_Setup.exe"><img src="https://img.shields.io/badge/Download%20for%20Windows-TETHRA__Setup.exe-E9A23B?style=for-the-badge&labelColor=1B1A18" alt="Download TETHRA for Windows, free rhythm game installer TETHRA_Setup.exe" height="48"></a>
 </p>
 
 <p align="center">
-  <sub>One installer, everything included: game, 13 worlds, sample maps. No osu! or Godot needed. Updates install themselves.</sub>
+  <sub>One installer, everything included: game, 13 worlds, sample maps. No osu! or Godot needed. Updates install themselves.<br>
+  <a href="https://vyrenbusiness-source.github.io/TETHRA/">Website</a> · <a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=trailer">Trailer</a> · <a href="#how-to-install-tethra-on-windows">How to install</a> · <a href="#faq">FAQ</a></sub>
 </p>
 
 <p align="center">
-  <a href="https://github.com/Vyrenbusiness-source/TETHRA/releases/latest"><img src="https://img.shields.io/github/v/release/Vyrenbusiness-source/TETHRA?label=version&color=E9A23B" alt="Version"></a>
-  <a href="https://github.com/Vyrenbusiness-source/TETHRA/releases"><img src="https://img.shields.io/github/downloads/Vyrenbusiness-source/TETHRA/total?label=downloads&color=E9A23B" alt="Downloads"></a>
-  <img src="https://img.shields.io/badge/platform-Windows-555?logo=windows&logoColor=white" alt="Windows">
+  <a href="https://github.com/Vyrenbusiness-source/TETHRA/releases/latest"><img src="https://img.shields.io/github/v/release/Vyrenbusiness-source/TETHRA?label=version&color=E9A23B" alt="Latest TETHRA version"></a>
+  <a href="https://github.com/Vyrenbusiness-source/TETHRA/releases"><img src="https://img.shields.io/github/downloads/Vyrenbusiness-source/TETHRA/total?label=downloads&color=E9A23B" alt="Total downloads"></a>
+  <img src="https://img.shields.io/badge/platform-Windows-555?logo=windows&logoColor=white" alt="Platform: Windows">
 </p>
 
 <p align="center">
-  <a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=trailer"><img src="docs/media/trailer_thumb.webp" alt="TETHRA trailer: six modes, one game" width="100%"></a><br>
+  <a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=trailer"><img src="docs/media/trailer_thumb.webp" alt="TETHRA trailer: a free rhythm game with six modes, from osu!mania 4K to Orbit, Rally, Dirigent, Trace and Rebound" width="100%"></a><br>
   <sub><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=trailer"><b>▶ Watch the trailer</b></a> (79 s, all six modes)</sub>
 </p>
 
 <p align="center">
-  <img src="docs/media/play_3d_hero.webp" alt="TETHRA in 3D: four lanes flying through a world that pulses with the beat" width="100%">
+  <img src="docs/media/play_3d_hero.webp" alt="TETHRA 4K rhythm game in 3D: four osu!mania lanes flying through a world that pulses with the beat" width="100%">
 </p>
 
-## Six modes
+## Features
+
+- **Free rhythm game for Windows.** One installer, no osu! needed, automatic updates.
+- **Plays osu! maps.** osu!mania 4K and osu!standard maps as `.osz`, a whole osu! `Songs` folder, or ranked maps from the in-game browser.
+- **4K VSRG in 3D or 2D.** 13 worlds that move with the music, or the classic 2D field with osu! skins (`.osk`) and scroll speed 1–40.
+- **Six modes.** Mania, Orbit, Rally, Dirigent, Trace and Rebound, each with its own star rating, scores, replays and tutorial.
+- **SV mod.** Turns any map into an SV map, built from the map's own beat grid.
+- **Multiplayer and tournaments.** Rooms by code in all six modes: free, teams, battle royale, picks and bans.
+- **Online, if you want it.** Leaderboards, web profiles, chat and replay sharing. Everything else works offline.
+- **Your own music.** Drop an audio file and play it as an Orbit map.
+
+## Six rhythm game modes
 
 <table>
   <tr>
-    <td width="33%" align="center"><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=mania"><img src="docs/media/mania_anim.webp" alt="Mania gameplay" width="100%"></a><br><b>Mania</b><br><sub>osu!mania 4K in 3D worlds or the classic 2D field.<br><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=mania">▶ Watch with sound</a></sub></td>
-    <td width="33%" align="center"><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=orbit"><img src="docs/media/orbit_anim.webp" alt="Orbit gameplay" width="100%"></a><br><b>Orbit</b><br><sub>Aim at targets, count the satellite laps, hit on the beat.<br><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=orbit">▶ Watch with sound</a></sub></td>
-    <td width="33%" align="center"><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=rally"><img src="docs/media/rally_anim.webp" alt="Rally gameplay" width="100%"></a><br><b>Rally</b><br><sub>Table tennis in the rhythm of the map.<br><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=rally">▶ Watch with sound</a></sub></td>
+    <td width="33%" align="center"><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=mania"><img src="docs/media/mania_anim.webp" alt="Mania gameplay: osu!mania 4K notes in a 3D world" width="100%"></a><br><b>Mania</b><br><sub>osu!mania 4K in 3D worlds or the classic 2D field.<br><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=mania">▶ Watch with sound</a></sub></td>
+    <td width="33%" align="center"><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=orbit"><img src="docs/media/orbit_anim.webp" alt="Orbit gameplay: aim at targets on the beat" width="100%"></a><br><b>Orbit</b><br><sub>Aim at targets, count the satellite laps, hit on the beat.<br><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=orbit">▶ Watch with sound</a></sub></td>
+    <td width="33%" align="center"><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=rally"><img src="docs/media/rally_anim.webp" alt="Rally gameplay: table tennis rhythm mode" width="100%"></a><br><b>Rally</b><br><sub>Table tennis in the rhythm of the map.<br><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=rally">▶ Watch with sound</a></sub></td>
   </tr>
   <tr>
-    <td width="33%" align="center"><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=dirigent"><img src="docs/media/dirigent_anim.webp" alt="Dirigent gameplay" width="100%"></a><br><b>Dirigent</b><br><sub>Conduct the beat with the cursor, play the cues with two keys.<br><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=dirigent">▶ Watch with sound</a></sub></td>
-    <td width="33%" align="center"><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=trace"><img src="docs/media/trace_anim.webp" alt="Trace gameplay" width="100%"></a><br><b>Trace</b><br><sub>A glowing thread draws the map as you play it.<br><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=trace">▶ Watch with sound</a></sub></td>
-    <td width="33%" align="center"><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=rebound"><img src="docs/media/rebound_anim.webp" alt="Rebound gameplay" width="100%"></a><br><b>Rebound</b><br><sub>Four balls bounce on four drums and land on your notes.<br><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=rebound">▶ Watch with sound</a></sub></td>
+    <td width="33%" align="center"><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=dirigent"><img src="docs/media/dirigent_anim.webp" alt="Dirigent gameplay: conduct the beat with the cursor" width="100%"></a><br><b>Dirigent</b><br><sub>Conduct the beat with the cursor, play the cues with two keys.<br><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=dirigent">▶ Watch with sound</a></sub></td>
+    <td width="33%" align="center"><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=trace"><img src="docs/media/trace_anim.webp" alt="Trace gameplay: a glowing thread draws the 4K map" width="100%"></a><br><b>Trace</b><br><sub>A glowing thread draws the map as you play it.<br><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=trace">▶ Watch with sound</a></sub></td>
+    <td width="33%" align="center"><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=rebound"><img src="docs/media/rebound_anim.webp" alt="Rebound gameplay: balls bounce on drums to the beat" width="100%"></a><br><b>Rebound</b><br><sub>Four balls bounce on four drums and land on your notes.<br><a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=rebound">▶ Watch with sound</a></sub></td>
   </tr>
 </table>
 
@@ -67,7 +80,7 @@ Mods: Hidden, Fade-In and Precision (tighter windows). Your best Orbit runs add 
 </p>
 
 <p align="center">
-  <a href="docs/media/ui_orbit_results.webp"><img src="docs/media/ui_orbit_results.webp" alt="Orbit result screen" width="420"></a><br>
+  <a href="docs/media/ui_orbit_results.webp"><img src="docs/media/ui_orbit_results.webp" alt="Orbit result screen with every hit on the timeline" width="420"></a><br>
   <sub>Result: every hit on the timeline with timing. Grades CORE to MISS.</sub>
 </p>
 
@@ -147,46 +160,46 @@ Every mode has a short interactive tutorial. The game offers it the first time y
   <a href="docs/media/ui_menu.webp"><img src="docs/media/ui_menu.webp" alt="Main menu with the six modes" width="640"></a>
 </p>
 
-## Any map becomes an SV map
+## SV mod: any map becomes an SV map
 
 Switch on **SV** in the song browser. The mod writes scroll changes from the map's own beat grid: notes bounce on every beat in the chorus, surge, hold, run backwards for a moment and jump on strong beats. They still arrive exactly on time. Two levels: Normal and Strong.
 
 <p align="center">
-  <a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=sv_mod"><img src="docs/media/sv_mod_anim.webp" alt="SV mod in the chorus of The Cyber Grind" width="360"></a><br>
+  <a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=sv_mod"><img src="docs/media/sv_mod_anim.webp" alt="SV mod: scroll velocity changes on a 4K map without its own SV, in the chorus of The Cyber Grind" width="360"></a><br>
   <sub>meganeko – The Cyber Grind, a map without its own SV. <a href="https://vyrenbusiness-source.github.io/TETHRA/watch.html?v=sv_mod"><b>▶ Watch with sound</b></a></sub>
 </p>
 
-## 3D worlds and the classic 2D field
+## osu!mania 4K in 3D worlds or on the classic 2D field
 
 <p align="center">
-  <a href="docs/media/play_3d_worlds.webp"><img src="docs/media/play_3d_worlds.webp" alt="The 13 worlds of TETHRA" width="100%"></a><br>
+  <a href="docs/media/play_3d_worlds.webp"><img src="docs/media/play_3d_worlds.webp" alt="The 13 3D worlds of the TETHRA rhythm game" width="100%"></a><br>
   <sub>13 worlds that move with the music: Galaxy, Boss, Aurora, Neon, Eclipse, Abyss, Fractal, Obsidian, Storm, Singularity, Monolith, Rift, Nerve.</sub>
 </p>
 
 <table>
   <tr>
-    <td width="50%"><a href="docs/media/play_2d.webp"><img src="docs/media/play_2d.webp" alt="2D playfield"></a><br><sub>2D with the options you know from osu!mania: scroll speed 1–40, direction, hit position, column spacing, Hidden / Fade-In / Cover.</sub></td>
-    <td width="50%"><a href="docs/media/play_2d_skins.webp"><img src="docs/media/play_2d_skins.webp" alt="osu! skins in 2D"></a><br><sub>Import your osu! skins (.osk), or use one of 3 built-in skins in your own note colours.</sub></td>
+    <td width="50%"><a href="docs/media/play_2d.webp"><img src="docs/media/play_2d.webp" alt="Classic 2D 4K playfield with osu!mania options"></a><br><sub>2D with the options you know from osu!mania: scroll speed 1–40, direction, hit position, column spacing, Hidden / Fade-In / Cover.</sub></td>
+    <td width="50%"><a href="docs/media/play_2d_skins.webp"><img src="docs/media/play_2d_skins.webp" alt="Imported osu! skins on the 2D 4K playfield"></a><br><sub>Import your osu! skins (.osk), or use one of 3 built-in skins in your own note colours.</sub></td>
   </tr>
 </table>
 
-## Maps, scores and friends
+## osu! maps, scores, multiplayer and tournaments
 
 <table>
   <tr>
-    <td width="50%"><a href="docs/media/ui_browser.webp"><img src="docs/media/ui_browser.webp" alt="Song browser"></a><br><sub>Song browser per mode (Mania, Orbit, Rally, Dirigent, Trace, Rebound), each with its own star rating; pp for Mania, collections, star ranges, SV, played / unplayed and rank filters, and sorting.</sub></td>
-    <td width="50%"><a href="docs/media/ui_online.webp"><img src="docs/media/ui_online.webp" alt="Online map browser"></a><br><sub>Search and download ranked maps in the game, for Mania and for Orbit.</sub></td>
+    <td width="50%"><a href="docs/media/ui_browser.webp"><img src="docs/media/ui_browser.webp" alt="Song browser with star ratings, filters and collections"></a><br><sub>Song browser per mode (Mania, Orbit, Rally, Dirigent, Trace, Rebound), each with its own star rating; pp for Mania, collections, star ranges, SV, played / unplayed and rank filters, and sorting.</sub></td>
+    <td width="50%"><a href="docs/media/ui_online.webp"><img src="docs/media/ui_online.webp" alt="Online browser to search and download ranked osu! maps in the game"></a><br><sub>Search and download ranked maps in the game, for Mania and for Orbit.</sub></td>
   </tr>
   <tr>
-    <td width="50%"><a href="docs/media/ui_results.webp"><img src="docs/media/ui_results.webp" alt="Results"></a><br><sub>Results with judgements, UR, early/late, hit error and accuracy over time. Replays and video clips.</sub></td>
-    <td width="50%"><a href="docs/media/ui_orbit_fail.webp"><img src="docs/media/ui_orbit_fail.webp" alt="Failed Orbit run"></a><br><sub>A failed run still shows every hit and miss on the timeline. In Mania the fail screen also names the likely cause (a lag spike, early releases, a burst of misses).</sub></td>
+    <td width="50%"><a href="docs/media/ui_results.webp"><img src="docs/media/ui_results.webp" alt="Result screen shared by all six modes: judgements, accuracy, UR and hit error"></a><br><sub>One result screen for all six modes, with judgements, UR, early/late, hit error and accuracy over time. Replays and video clips.</sub></td>
+    <td width="50%"><a href="docs/media/ui_orbit_fail.webp"><img src="docs/media/ui_orbit_fail.webp" alt="Failed Orbit run with every hit and miss on the timeline"></a><br><sub>A failed run still shows every hit and miss on the timeline. In Mania the fail screen also names the likely cause (a lag spike, early releases, a burst of misses).</sub></td>
   </tr>
   <tr>
-    <td width="50%"><a href="docs/media/ui_lobby.webp"><img src="docs/media/ui_lobby.webp" alt="Multiplayer room"></a><br><sub>Multiplayer by room code: free, teams, battle royale, in all four modes.</sub></td>
-    <td width="50%"><a href="docs/media/ui_tournament_pick.webp"><img src="docs/media/ui_tournament_pick.webp" alt="Tournament picks and bans"></a><br><sub>Tournaments with picks, bans and auto-pick filters.</sub></td>
+    <td width="50%"><a href="docs/media/ui_lobby.webp"><img src="docs/media/ui_lobby.webp" alt="Multiplayer room for the rhythm game, joined by room code"></a><br><sub>Multiplayer by room code: free, teams, battle royale, in all six modes.</sub></td>
+    <td width="50%"><a href="docs/media/ui_tournament_pick.webp"><img src="docs/media/ui_tournament_pick.webp" alt="Rhythm game tournament with map picks and bans"></a><br><sub>Tournaments with picks, bans and auto-pick filters.</sub></td>
   </tr>
   <tr>
-    <td width="50%"><a href="docs/media/ui_tournament_end.webp"><img src="docs/media/ui_tournament_end.webp" alt="Tournament end screen"></a><br><sub>Tournament standings with every player's stats.</sub></td>
+    <td width="50%"><a href="docs/media/ui_tournament_end.webp"><img src="docs/media/ui_tournament_end.webp" alt="Tournament standings with player stats"></a><br><sub>Tournament standings with every player's stats.</sub></td>
     <td width="50%"><a href="docs/media/ui_chat.webp"><img src="docs/media/ui_chat.webp" alt="Chat overlay with a map card and a score card"></a><br><sub>Chat: press <code>F</code> anywhere. Maps and scores arrive as cards you can preview, download or replay.</sub></td>
   </tr>
 </table>
@@ -197,7 +210,7 @@ Sign in or register in the game (or on [butzebot.com](https://butzebot.com/tethr
 
 <table>
   <tr>
-    <td width="50%"><a href="docs/media/ui_login.webp"><img src="docs/media/ui_login.webp" alt="Sign-in dialog"></a></td>
+    <td width="50%"><a href="docs/media/ui_login.webp"><img src="docs/media/ui_login.webp" alt="Sign-in dialog for the optional TETHRA online account"></a></td>
     <td valign="top">
       <ul>
         <li><b>Leaderboards</b> per map and mode (Mania, Orbit). Your best runs count.</li>
@@ -210,11 +223,11 @@ Sign in or register in the game (or on [butzebot.com](https://butzebot.com/tethr
   </tr>
 </table>
 
-## Your own music
+## Play your own music
 
 Drop an `.mp3`, `.ogg` or `.wav` onto the song browser, or pick it with **Import**. TETHRA finds the tempo and beats and builds an Orbit map in about a second. It is playable in Orbit only. It needs FFmpeg next to the game or on your PATH. Import also takes `.osz` files and a whole osu! `Songs` folder (4K Mania and osu!standard maps).
 
-## Install
+## How to install TETHRA on Windows
 
 1. Download **[TETHRA_Setup.exe](https://github.com/Vyrenbusiness-source/TETHRA/releases/download/worlds/TETHRA_Setup.exe)** (about 430 MB).
 2. Run it. If Windows shows "Windows protected your PC", click **More info**, then **Run anyway**. The game is not code-signed.
@@ -226,7 +239,17 @@ The `TETHRA.pck` files on the [release pages](https://github.com/Vyrenbusiness-s
 
 ## FAQ
 
-**Do I need osu!?** No. TETHRA plays `.osz` files on its own and downloads maps in the game.
+**Is TETHRA free?** Yes. The download is free, and the online account is optional.
+
+**Do I need osu!?** No. TETHRA is a game of its own. It plays `.osz` files and downloads maps in the game.
+
+**Can I use my osu! maps?** Yes. Import `.osz` files or a whole osu! `Songs` folder. 4K osu!mania maps and osu!standard maps are supported.
+
+**Can I use my osu! skins?** Yes, in the 2D field. Import your osu! skins as `.osk`, or use one of the 3 built-in skins.
+
+**Is it an osu!mania alternative?** For 4K, yes: the same maps and keys, star rating and pp, plus 3D worlds, an SV mod and five more modes. Only 4K maps are supported.
+
+**Does it work offline?** Yes. Only leaderboards, chat, map downloads and server multiplayer need a connection.
 
 **Which maps?** osu!mania 4K for Mania (3D and 2D), Trace and Rebound, osu!standard and 4K for Orbit, Rally and Dirigent.
 
@@ -239,6 +262,10 @@ The `TETHRA.pck` files on the [release pages](https://github.com/Vyrenbusiness-s
 1. Install [Godot 4.7](https://godotengine.org/download).
 2. Clone this repository and open `project.godot`, or run `godot --path .`
 3. Export a pack: `godot --headless --path . --export-pack "Windows" TETHRA.pck`
+
+## Find TETHRA
+
+TETHRA is a free 4K rhythm game (VSRG) for Windows PC, built with Godot. Website: [vyrenbusiness-source.github.io/TETHRA](https://vyrenbusiness-source.github.io/TETHRA/). Download: [TETHRA_Setup.exe](https://github.com/Vyrenbusiness-source/TETHRA/releases/download/worlds/TETHRA_Setup.exe). Found a bug? [Open an issue](https://github.com/Vyrenbusiness-source/TETHRA/issues).
 
 ## Credits
 

@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://vyrenbusiness-source.github.io/TETHRA/sitemap.xml
