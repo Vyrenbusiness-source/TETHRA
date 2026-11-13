@@ -69,6 +69,42 @@ var _perf_frames: Array = []
 ## Online-Scores / Website-Anbindung (scripts/net/online_api.gd).
 var online: OnlineApi
 
+## Kampagne (scripts/campaign/campaign.gd): laufende Stufe {"stage": id, "world": name}
+## oder {}. Die Welt des Kapitels wird nur im Speicher erzwungen und beim Verlassen
+## der Spielszene zurueckgesetzt. campaign_return: Stufe, bei der die Kampagnen-Szene oeffnet.
+var campaign: Dictionary = {}
+var campaign_return: String = ""
+var _campaign_world_prev := -1
+
+
+func campaign_active() -> bool:
+	return str(campaign.get("stage", "")) != ""
+
+
+func start_campaign(stage_id: String, world: String) -> void:
+	end_campaign()
+	campaign = {"stage": stage_id, "world": world}
+	var wi := Settings.WORLD_ORDER.find(world)
+	if wi >= 0:
+		_campaign_world_prev = Settings.world_theme
+		Settings.world_theme = wi + 1
+
+
+func end_campaign() -> void:
+	if _campaign_world_prev >= 0:
+		Settings.world_theme = _campaign_world_prev
+	_campaign_world_prev = -1
+	campaign = {}
+
+
+## Kampagne endet, sobald eine Szene folgt, die keine Spielszene ist (Browser, Menue, Kampagne).
+func _campaign_on_scene_changed() -> void:
+	if not campaign_active():
+		return
+	var sc := get_tree().current_scene
+	if sc == null or not ScoreStore.MODE_SCENES.values().has(sc.scene_file_path):
+		end_campaign()
+
 
 func _ready() -> void:
 	online = OnlineApi.new()
@@ -78,6 +114,7 @@ func _ready() -> void:
 	set_process(false)
 	_arm_test_watchdog()
 	_arm_playtime()
+	get_tree().scene_changed.connect(_campaign_on_scene_changed)
 	perf_enabled = OS.get_cmdline_args().has("--perf") or OS.get_cmdline_user_args().has("--perf")
 	if perf_enabled:
 		perf_since("Engine-Start -> Autoload GameSession", 0)
