@@ -1114,11 +1114,11 @@ func _run_shot(dir: String) -> void:
 	api.online.token = "shot"
 	api.online.user_id = "1"
 	api.messages["c1"] = [
-		{"id": "m1", "sender_id": "2", "content": "Hast du die schon gespielt?", "created_at": "2026-11-08T14:03:00Z", "reply_to": {}},
+		{"id": "m1", "sender_id": "2", "content": tr("Have you played this one yet?"), "created_at": "2026-11-08T14:03:00Z", "reply_to": {}},
 		{"id": "m2", "sender_id": "2", "content": ChatApi.map_link(meta), "created_at": "2026-11-08T14:03:10Z", "reply_to": {}},
-		{"id": "m3", "sender_id": "1", "content": "Nein, lade ich gleich.", "created_at": "2026-11-08T14:05:00Z",
-			"reply_to": {"id": "m1", "sender_name": "Mira", "content": "Hast du die schon gespielt?"}},
-		{"id": "m4", "sender_id": "2", "content": "Mein Lauf dazu: " + ChatApi.score_link("77"), "created_at": "2026-11-08T14:06:00Z", "reply_to": {}},
+		{"id": "m3", "sender_id": "1", "content": tr("No, downloading it now."), "created_at": "2026-11-08T14:05:00Z",
+			"reply_to": {"id": "m1", "sender_name": "Mira", "content": tr("Have you played this one yet?")}},
+		{"id": "m4", "sender_id": "2", "content": tr("My run on it:") + " " + ChatApi.score_link("77"), "created_at": "2026-11-08T14:06:00Z", "reply_to": {}},
 		{"id": "m5", "sender_id": "1", "content": ChatApi.score_link("78"), "created_at": "2026-11-08T14:07:00Z", "reply_to": {}},
 		{"id": "m6", "sender_id": "2", "content": ChatApi.score_link("79"), "created_at": "2026-11-08T14:08:00Z", "reply_to": {}},
 	]

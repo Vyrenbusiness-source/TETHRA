@@ -360,7 +360,7 @@ static func beat_lead_ms(ch: DirigentChart, i: int, rest_lead: float = REST_LEAD
 
 
 func _draw_rest() -> void:
-	_text_c(_head_font, center_px(), tr("Pause"), int(round(22.0 * _u())), Color(INK, 0.5))
+	_text_c(_head_font, center_px(), tr("DIRIGENT_REST"), int(round(22.0 * _u())), Color(INK, 0.5))
 
 
 func _fig_beats(bar_i: int) -> Array:

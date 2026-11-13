@@ -475,9 +475,9 @@ func _build_legend() -> void:
 	var ka := UiTheme.key_short(Settings.orbit_key_inner)
 	var kb := UiTheme.key_short(Settings.orbit_key_outer)
 	var items := [
-		[OrbitNote.KEY_A, tr("Taste %s") % ka],
-		[OrbitNote.KEY_B, tr("Taste %s") % kb],
-		[OrbitNote.KEY_ACCENT, tr("beide")],
+		[OrbitNote.KEY_A, tr("Key %s") % ka],
+		[OrbitNote.KEY_B, tr("Key %s") % kb],
+		[OrbitNote.KEY_ACCENT, tr("both")],
 	]
 	for it in items:
 		var item := HBoxContainer.new()
@@ -499,7 +499,7 @@ func _build_legend() -> void:
 		_shadow(l)
 		item.add_child(l)
 	var keys := Label.new()
-	keys.text = tr("Zielen und drücken, wenn der Satellit oben ankommt (auch Maus links/rechts)")
+	keys.text = tr("Aim and press when the satellite arrives at the top (left/right mouse works too)")
 	_hud_fonts.append([keys, 15])
 	keys.add_theme_color_override("font_color", UiTheme.DIM.lerp(UiTheme.TEXT, 0.5))
 	_shadow(keys)

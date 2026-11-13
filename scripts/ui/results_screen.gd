@@ -677,7 +677,7 @@ func _build_left_panel(parent: Control) -> void:
 	# Trace: Bild der Runde als eigener Reiter (eine dritte Spalte passt nicht ins Raster).
 	var with_picture := _picture_source() != null
 	if with_picture:
-		tab_titles.append("Bild" if UiTheme.is_german() else "Picture")
+		tab_titles.append(tr("Picture"))
 	if not tab_titles.is_empty():
 		top.add_child(_tab_button(tr("Übersicht"), 0))
 		for i in tab_titles.size():
@@ -1183,11 +1183,10 @@ func _build_picture_page() -> Control:
 	col.add_theme_constant_override("separation", 12)
 	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	page.add_child(col)
-	var german := UiTheme.is_german()
-	col.add_child(_caption("BILD DER RUNDE" if german else "PICTURE OF THE RUN"))
+	col.add_child(_caption(tr("PICTURE OF THE RUN")))
 	var note := Label.new()
 	note.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
-	note.text = "Deine Linie dieser Runde als Bild, quadratisch und im Teilen-Format." if german 		else "Your line from this run as an image, square and in share format."
+	note.text = tr("Your line from this run as an image, square and in share format.")
 	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	note.add_theme_font_size_override("font_size", 14)
 	note.add_theme_color_override("font_color", CAPTION)
@@ -1200,7 +1199,7 @@ func _build_picture_page() -> Control:
 	save_b.name = "SavePictureButton"
 	save_b.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	col.add_child(save_b)
-	var send_b := _button("In den Chat senden" if german else "Send to chat", false, _on_send_picture)
+	var send_b := _button(tr("Send to chat"), false, _on_send_picture)
 	send_b.name = "SendPictureButton"
 	send_b.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	send_b.visible = GameSession.chat != null

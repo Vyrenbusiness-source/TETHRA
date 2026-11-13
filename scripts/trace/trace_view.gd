@@ -154,7 +154,13 @@ static func _hash(a: int, b: int) -> float:
 
 ## Ruhige Kamera: gewichtetes Mittel des Ziels ueber ~1 s, ohne Zustand (Seek/Replay-sicher).
 ## Haarnadeln lassen das Ziel springen, das lange Fenster glaettet das aus.
+## Darueber TraceRules.fair_camera: Kopf und die Knoten der naechsten 600 ms bleiben im Bild.
+## Gilt fuer jede Ansicht (Spiel, Tutorial, Clips), nicht nur fuer das Spiel.
 func _camera(t: float) -> Vector2:
+	return TraceRules.fair_camera(path, t, _calm_camera(t), TraceRules.view_half(size))
+
+
+func _calm_camera(t: float) -> Vector2:
 	var acc := Vector2.ZERO
 	var wsum := 0.0
 	for i in 22:
