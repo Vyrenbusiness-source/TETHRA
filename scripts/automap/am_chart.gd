@@ -31,16 +31,17 @@ const DEFAULTS := {
 	"support_weight": 0.45,       # uebrige Ebenen, wenn sie nicht fuehren
 	"dens_gain": 0.4,             # Dichte folgt Intensitaet (mal gelerntes Kiai-Verhaeltnis)
 	"snap_quarter_bias_ms": 6.0,  # 1/4 gewinnt gegen 1/8 bei fast gleichem Abstand
-	"easy_half_share": 0.09,      # Easy: Anteil 1/2-Noten ("selten")
+	"easy_half_share": 0.11,      # Easy: Anteil 1/2-Noten ("selten")
 	"hold_share_scale": 1.0,
 	"motif_min_rows": 3,          # ab so vielen Zeilen je Takt gilt ein Takt als Motiv
-	"pitch_weight": 1.2,          # Tonhoehe -> Spaltenrichtung
+	"pitch_weight": 2.0,          # Tonhoehe -> Spaltenrichtung
 	"pitch_step": 0.04,
 	"role_weight": 1.5,           # feste Spalten fuer Kick/Snare je Abschnitt
 	"balance_weight": 6.0,
 	"ngram_weight": 1.0,          # haeufige 4er/8er-Muster der Menschen-Maps
 	"sharpness": 1.3,
-	"chord_boost_max": 1.5,       # hoechstens so viel mehr Akkorde, wenn die Sterne nicht reichen
+	"chord_boost_max": 0.3,       # hoechstens so viel mehr Akkorde, wenn die Sterne nicht reichen
+	"easy_hold_max_beats": 2.0,   # Easy: Hold hoechstens so lang, Zeilen darin entfallen
 }
 
 ## Spielbarkeits-Regeln je Profil (Spec-Tabelle). Einheiten: 1/24 Schlag (24 = 1/1, 12 = 1/2,
@@ -51,11 +52,11 @@ const RULES := {
 	"Normal": {"units": [12], "rare": 0, "chord": 2, "chord_unit": 24, "c3_unit": 24, "jack": 0,
 			"gap": 0.5, "bal_lo": 0.40, "bal_hi": 0.60, "hold_unit": 12, "overlap": 1, "hold_min": 1.0, "burst": 0},
 	"Hard": {"units": [6], "rare": 0, "chord": 2, "chord_unit": 6, "c3_unit": 24, "jack": 2,
-			"gap": 0.25, "bal_lo": 0.42, "bal_hi": 0.58, "hold_unit": 6, "overlap": 2, "hold_min": 0.5, "burst": 0},
+			"gap": 0.25, "bal_lo": 0.42, "bal_hi": 0.58, "hold_unit": 6, "overlap": 2, "hold_min": 0.25, "burst": 0},
 	"Insane": {"units": [6, 3], "rare": 0, "chord": 3, "chord_unit": 6, "c3_unit": 24, "jack": 3,
-			"gap": 0.25, "bal_lo": 0.42, "bal_hi": 0.58, "hold_unit": 6, "overlap": 2, "hold_min": 0.5, "burst": 8},
+			"gap": 0.25, "bal_lo": 0.42, "bal_hi": 0.58, "hold_unit": 6, "overlap": 2, "hold_min": 0.25, "burst": 8},
 	"Expert": {"units": [6, 3, 4], "rare": 0, "chord": 3, "chord_unit": 1, "c3_unit": 6, "jack": 4,
-			"gap": 0.125, "bal_lo": 0.42, "bal_hi": 0.58, "hold_unit": 3, "overlap": 2, "hold_min": 0.5, "burst": 0},
+			"gap": 0.125, "bal_lo": 0.42, "bal_hi": 0.58, "hold_unit": 3, "overlap": 2, "hold_min": 0.25, "burst": 0},
 }
 const EASY_HALF_MAX := 0.20       # lint: Easy hoechstens so viele 1/2-Noten
 const NORMAL_OVERLAP_MAX := 0.10  # lint: Normal hoechstens so viele Noten waehrend eines Holds
@@ -85,6 +86,7 @@ const S_PC := 17       # mittlere Spalte der vorigen Zeile
 const S_HIST := 18     # letzte 8 Masken (je 4 Bit)
 const S_MAXJ := 19
 const S_OVL := 20
+const S_BLOCK := 21    # Normal: keine Zeile vor diesem Schlag (laufender Hold ohne Ueberlappung)
 
 static var _pat_cache: Dictionary = {}
 static var _pat_mutex := Mutex.new()
@@ -333,7 +335,7 @@ static func pattern_stats(notes: Array, grid: Dictionary) -> Dictionary:
 	uni.resize(16)
 	uni.fill(0)
 	var out := {"notes": notes.size(), "rows": 0, "sizes": [0, 0, 0, 0, 0], "uni": uni, "big": big,
-			"gaps": [0, 0, 0, 0], "holds": 0, "hold_beats": 0.0, "left": 0, "right": 0,
+			"gaps": [0, 0, 0, 0], "holds": 0, "hold_rows": 0, "hold_beats": 0.0, "left": 0, "right": 0,
 			"moves": [0, 0, 0, 0], "jack_runs": [0, 0, 0, 0, 0, 0, 0, 0, 0], "jack_notes": 0,
 			"g4": {}, "g8": {}, "dur_s": 0.0, "nps_peak": 0.0}
 	var G := _grid(grid)
@@ -361,6 +363,7 @@ static func pattern_stats(notes: Array, grid: Dictionary) -> Dictionary:
 		var t: float = notes[i]["t_ms"]
 		var bp := _g_bp(G, t)
 		var mask := 0
+		var row_holds := 0
 		var j := i
 		while j < n and absf(float(notes[j]["t_ms"]) - t) <= 2.0:
 			var nt: Dictionary = notes[j]
@@ -368,6 +371,7 @@ static func pattern_stats(notes: Array, grid: Dictionary) -> Dictionary:
 			mask |= 1 << col
 			if float(nt["end_ms"]) > t:
 				out["holds"] = int(out["holds"]) + 1
+				row_holds += 1
 				out["hold_beats"] = float(out["hold_beats"]) + (_g_bp(G, float(nt["end_ms"])) - bp)
 			if col < 2:
 				out["left"] = int(out["left"]) + 1
@@ -382,6 +386,8 @@ static func pattern_stats(notes: Array, grid: Dictionary) -> Dictionary:
 				run[col] = 1
 			last[col] = bp
 			j += 1
+		if row_holds > 0:
+			out["hold_rows"] = int(out["hold_rows"]) + 1
 		while float(notes[w0]["t_ms"]) < t - 1000.0:
 			w0 += 1
 		peak = maxi(peak, j - w0)
@@ -642,10 +648,10 @@ static func _prep(features: Dictionary, G: Dictionary, P: Dictionary) -> Diction
 			if ws > float(row[3]):
 				row[3] = ws
 				row[6] = kbit
-				if pitch >= 0.0:
-					row[7] = pitch
-			elif float(row[7]) < 0.0 and pitch >= 0.0:
+			# Tonhoehe der staerksten Ebene mit Tonhoehe (unabhaengig von der Reihenfolge)
+			if pitch >= 0.0 and ws > float(row[12]):
 				row[7] = pitch
+				row[12] = ws
 			row[4] = maxf(float(row[4]), strength)
 			row[5] = int(row[5]) | kbit
 			row[8] = maxf(float(row[8]), sus)
@@ -654,7 +660,7 @@ static func _prep(features: Dictionary, G: Dictionary, P: Dictionary) -> Diction
 		else:
 			slot[skey] = raw.size()
 			raw.append([ts, si, tick, ws, strength, kbit, kbit, pitch, sus, sc, intensity,
-					1 if (kind == "hat" and strength >= 0.75) else 0])
+					1 if (kind == "hat" and strength >= 0.75) else 0, ws if pitch >= 0.0 else -1.0])
 	raw.sort_custom(func(a: Array, b: Array) -> bool: return float(a[0]) < float(b[0]))
 	# Zeilen, die ueber eine Segmentgrenze hinweg zu dicht liegen, zusammenlegen
 	var rows: Array = []
@@ -742,6 +748,37 @@ static func _prep(features: Dictionary, G: Dictionary, P: Dictionary) -> Diction
 	C["tib"] = c_tib
 	C["sec"] = c_sec
 	C["inten"] = c_inten
+	# Wiederholung: Takte mit gleicher Musik (Rhythmus, Instrument, Staerke, Tonhoehen-Verlauf,
+	# gehaltene Toene, Intensitaet) bekommen dieselben Entscheidungen wie ihr erstes Vorkommen.
+	var tmpl := PackedInt32Array()
+	tmpl.resize(n)
+	tmpl.fill(-1)
+	var first := {}
+	var i := 0
+	while i < n:
+		var j := i
+		while j < n and c_bar[j] == c_bar[i]:
+			j += 1
+		if j - i >= int(P["motif_min_rows"]):
+			var parts := PackedStringArray()
+			var p0 := -1.0
+			for q in range(i, j):
+				var pb := 99
+				if c_pitch[q] >= 0.0:
+					if p0 < 0.0:
+						p0 = c_pitch[q]
+					pb = int(round((c_pitch[q] - p0) * 6.0))
+				parts.append("%d:%d:%d:%d:%d:%d" % [c_tib[q], c_kinds[q], int(round(float(rows[q][4]) * 4.0)), pb,
+						int(round(c_susb[q] * 2.0)), int(round(c_inten[q] * 4.0))])
+			var sig := ",".join(parts)
+			if first.has(sig):
+				var f0: int = first[sig]
+				for q in range(i, j):
+					tmpl[q] = f0 + (q - i)
+			else:
+				first[sig] = i
+		i = j
+	C["tmpl"] = tmpl
 	return C
 
 
@@ -779,7 +816,8 @@ static func _pat_ready(src: Dictionary) -> Dictionary:
 		var b: Dictionary = bands.get(prof, {}) if bands.get(prof) is Dictionary else {}
 		var pat := {"chord_share": float(b.get("chord_share", fallback_chords[pi])),
 				"chord3_share": float(b.get("chord3_share", 0.02 if pi >= 3 else 0.0)),
-				"hold_share": float(b.get("hold_share_p90", 0.15)),
+				"hold_share": float(b.get("hold_share_mean", 0.15)),
+				"holds_per_row": clampf(float(b.get("holds_per_row", 1.0)), 1.0, 2.0),
 				"kiai_ratio": clampf(float(b.get("kiai_ratio", 1.3)), 1.0, 2.5),
 				"jack_cap": int(b.get("jack_cap", 8))}
 		var uni := PackedFloat32Array()
@@ -863,7 +901,7 @@ static func _tune(C: Dictionary, G: Dictionary, profile: String, parent: Diction
 	var seed_base := hash("%d|%d|%s|%d" % [n, int(C["t"][0]), profile, int(P["seed"])])
 	var X := {"profile": profile, "R": R, "pat": pat, "P": P, "order_score": order_score, "rare": rare,
 			"order_acc": order_acc, "sus_rows": sus_rows, "psizes": psizes, "has_parent": has_parent,
-			"seed": seed_base, "na": allowed.size()}
+			"seed": seed_base, "na": allowed.size(), "pflags": pflags}
 	var band: Array = P["star_bands"].get(profile, [0.0, 99.0])
 	var lo_b: float = band[0]
 	var hi_b: float = band[1]
@@ -958,9 +996,14 @@ static func _make(C: Dictionary, G: Dictionary, X: Dictionary, d: float, seed_ad
 		flags[order_score[i]] = 1
 	var boost := maxf(d - 1.0, 0.0)
 	if rare.size() > 0:
-		var kr := mini(rare.size(), int(floor(float(P["easy_half_share"]) * (1.0 + boost) * float(k))))
+		var kr := mini(rare.size(), int(floor(minf(float(P["easy_half_share"]) * (1.0 + boost), 0.22) * float(k))))
 		for i in kr:
 			flags[rare[i]] = 1
+	var tmpl: PackedInt32Array = C["tmpl"]
+	var pflags: PackedByteArray = X["pflags"]
+	for r in n:
+		if tmpl[r] >= 0:
+			flags[r] = flags[tmpl[r]] if (not X["has_parent"] or pflags[r] == 1) else 0
 	var burst: int = R["burst"]
 	if burst > 0:
 		var gaps := 0
@@ -1003,12 +1046,27 @@ static func _make(C: Dictionary, G: Dictionary, X: Dictionary, d: float, seed_ad
 				sizes[r] = 2
 				got += 1
 		got = 0
+		var qof := {}
+		for q in ns:
+			qof[sel[q]] = q
 		for r: int in order_acc:
 			if got >= n3:
 				break
 			if sizes[r] == 2 and posmod(tick[r], c3) == 0 and (not has_parent or psizes[r] >= 3):
+				# 3er-Akkord nur zwischen Einzelnoten (sonst erzwungene Jacks)
+				var q: int = qof[r]
+				if q > 0 and bp[r] - bp[sel[q - 1]] <= 0.26 and sizes[sel[q - 1]] >= 2:
+					continue
+				if q + 1 < ns and bp[sel[q + 1]] - bp[r] <= 0.26 and sizes[sel[q + 1]] >= 2:
+					continue
 				sizes[r] = 3
 				got += 1
+		for r: int in sel:
+			if tmpl[r] >= 0:
+				var sz: int = sizes[tmpl[r]] if flags[tmpl[r]] == 1 else 1
+				if has_parent:
+					sz = mini(sz, psizes[r])
+				sizes[r] = sz
 		if X["profile"] == "Expert" and ns > 0 and sizes[sel[ns - 1]] == 3:
 			sizes[sel[ns - 1]] = 4
 	# gehaltene Toene -> Holds (hoechstens der Anteil, den Menschen im Band setzen)
@@ -1022,13 +1080,16 @@ static func _make(C: Dictionary, G: Dictionary, X: Dictionary, d: float, seed_ad
 		if flags[r] == 1:
 			holdf[r] = 1
 			goth += 1
+	for r: int in sel:
+		if tmpl[r] >= 0:
+			holdf[r] = holdf[tmpl[r]] if flags[tmpl[r]] == 1 else 0
 	var rng := RandomNumberGenerator.new()
 	rng.seed = int(X["seed"]) + seed_add * 7919
 	var Y := {"sel": sel, "holdf": holdf, "rng": rng, "R": R, "pat": pat, "P": P,
 			"jack_cap": mini(int(R["jack"]), maxi(int(pat["jack_cap"]), 1)) if int(R["jack"]) > 0 else 0,
 			"ovl_budget": int(0.06 * float(ns)), "seed_i": int(X["seed"]) & 3,
 			"ep": exp(float(P["pitch_weight"])), "erole": exp(float(P["role_weight"]))}
-	var S: Array = [-1e9, -1e9, -1e9, -1e9, 0, 0, 0, 0, -1e9, -1e9, -1e9, -1e9, 0, 0, 0, -1e9, -1.0, 1.5, 0, 0, 0]
+	var S: Array = [-1e9, -1e9, -1e9, -1e9, 0, 0, 0, 0, -1e9, -1e9, -1e9, -1e9, 0, 0, 0, -1e9, -1.0, 1.5, 0, 0, 0, -1e9]
 	var notes: Array = []
 	var memo := {}
 	var motif_min: int = P["motif_min_rows"]
@@ -1053,24 +1114,58 @@ static func _make(C: Dictionary, G: Dictionary, X: Dictionary, d: float, seed_ad
 					bal += int(NLR[m])
 				var dev := float(int(S[S_L]) - int(S[S_R])) / float(int(S[S_L]) + int(S[S_R]) + 6)
 				var first_mirror := absf(dev) > 0.03 and dev * float(bal) > 0.0
-				for attempt in 2:
-					var mirror := (attempt == 1) != first_mirror
+				# erst ganz gleich (oder gespiegelt); geht das nicht, Zeile fuer Zeile so nah wie moeglich
+				# (beide Richtungen probieren, die mit mehr Treffern gewinnt)
+				var best_hit := -1
+				var best_S: Array = []
+				var best_notes: Array = []
+				var best_flags := PackedByteArray()
+				var best_sizes := PackedByteArray()
+				var n0 := notes.size()
+				for attempt in 4:
+					var mirror := (attempt % 2 == 1) != first_mirror
+					var partial := attempt >= 2
 					var S2 := S.duplicate()
-					var n0 := notes.size()
+					var tmp_notes: Array = []
+					var fl := flags.duplicate()
+					var sz := sizes.duplicate()
 					var ok := true
+					var hit := 0
 					for q in range(i, j):
 						var m: int = masks[q - i]
 						if mirror:
 							m = MIRROR[m]
-						if _do_row(S2, C, G, Y, q, POP[m], m, notes) != m:
+						var got := _do_row(S2, C, G, Y, q, POP[m], m, tmp_notes)
+						if got == m:
+							hit += 1
+							if m == 0:
+								fl[sel[q]] = 0
+								sz[sel[q]] = 0
+						elif partial:
+							got = _do_row(S2, C, G, Y, q, POP[m], 0, tmp_notes)
+							if got <= 0:
+								fl[sel[q]] = 0
+								sz[sel[q]] = 0
+						else:
 							ok = false
 							break
-					if ok:
-						S = S2
-						reused += 1
-						done = true
+					if ok and hit > best_hit:
+						best_hit = hit
+						best_S = S2
+						best_notes = tmp_notes
+						best_flags = fl
+						best_sizes = sz
+					if ok and not partial:
 						break
-					notes.resize(n0)
+				if best_hit >= 0:
+					S = best_S
+					notes.append_array(best_notes)
+					flags = best_flags
+					sizes = best_sizes
+					if best_hit * 5 >= (j - i) * 4:
+						reused += 1
+					done = true
+				notes.resize(n0 + best_notes.size())
 		if not done:
 			var placed := PackedInt32Array()
 			var clean := true
@@ -1079,9 +1174,9 @@ static func _make(C: Dictionary, G: Dictionary, X: Dictionary, d: float, seed_ad
 				var m := _do_row(S, C, G, Y, q, sizes[r], 0, notes)
 				placed.append(m)
 				if m == 0:
+					# entfallene Zeile (z. B. waehrend eines Holds) gehoert zum Motiv
 					flags[r] = 0
 					sizes[r] = 0
-					clean = false
 				else:
 					if POP[m] != sizes[r]:
 						clean = false
@@ -1125,6 +1220,8 @@ static func _do_row(S: Array, C: Dictionary, G: Dictionary, Y: Dictionary, q: in
 	var relgap := minf(gap_rule, 0.5)
 	var jack_max: int = Y["jack_cap"]
 	var overlap: int = R["overlap"]
+	if bp < float(S[S_BLOCK]) - EPS:
+		return -1 if forced > 0 else 0
 	var free := 0
 	var active := 0
 	for c in 4:
@@ -1168,8 +1265,14 @@ static func _do_row(S: Array, C: Dictionary, G: Dictionary, Y: Dictionary, q: in
 		var hu: int = R["hold_unit"]
 		end_ms = _g_snap(G, c_t[r] + c_sus[r], hu, 0)
 		end_bp = _g_bp(G, end_ms)
-		var limited := overlap == 0
-		if overlap == 1:
+		var limited := false
+		if overlap == 0:
+			# Easy: Hold behaelt seine Laenge (gedeckelt), Zeilen waehrend des Holds entfallen
+			var cap_bp := bp + float(Y["P"]["easy_hold_max_beats"])
+			if end_bp > cap_bp + EPS:
+				end_ms = _g_snap(G, _g_ms(G, cap_bp) + 0.01, hu, -1)
+				end_bp = _g_bp(G, end_ms)
+		elif overlap == 1:
 			var cnt := 0
 			var qq := q + 1
 			while qq < sel.size() and c_bp[sel[qq]] < end_bp - EPS:
@@ -1178,7 +1281,13 @@ static func _do_row(S: Array, C: Dictionary, G: Dictionary, Y: Dictionary, q: in
 			if c_susb[r] >= 2.0 and int(S[S_OVL]) + cnt <= int(Y["ovl_budget"]):
 				S[S_OVL] = int(S[S_OVL]) + cnt
 			else:
-				limited = true
+				# wie Easy: Hold behaelt seine Laenge (gedeckelt), Zeilen darin entfallen
+				var cap_n := bp + float(Y["P"]["easy_hold_max_beats"])
+				if end_bp > cap_n + EPS:
+					end_ms = _g_snap(G, _g_ms(G, cap_n) + 0.01, hu, -1)
+					end_bp = _g_bp(G, end_ms)
+				if end_bp - bp >= float(R["hold_min"]) - EPS:
+					S[S_BLOCK] = end_bp
 		if limited and q + 1 < sel.size():
 			var limit: float = c_bp[sel[q + 1]] - 0.5
 			if end_bp > limit + EPS:
@@ -1191,12 +1300,22 @@ static func _do_row(S: Array, C: Dictionary, G: Dictionary, Y: Dictionary, q: in
 				if (mask >> c) & 1 == 1 and absi(c - want) < bestd:
 					bestd = absi(c - want)
 					hold_col = c
+	# mehrere Holds in einer Akkord-Zeile, so oft wie bei den Menschen (Hard und schwerer)
+	var hold_cols := 0
+	if hold_col >= 0:
+		hold_cols = 1 << hold_col
+		if overlap == 2 and POP[mask] >= 2 and active == 0:
+			var extra: float = float(Y["pat"]["holds_per_row"]) - 1.0
+			var hrng: RandomNumberGenerator = Y["rng"]
+			for c in 4:
+				if (mask >> c) & 1 == 1 and c != hold_col and hrng.randf() < extra:
+					hold_cols |= 1 << c
 	var c_tt: PackedFloat64Array = C["t"]
 	var t: float = c_tt[r]
 	for c in 4:
 		if (mask >> c) & 1 == 0:
 			continue
-		var is_hold := c == hold_col
+		var is_hold := (hold_cols >> c) & 1 == 1
 		notes.append({"t_ms": t, "col": c, "end_ms": end_ms if is_hold else -1.0})
 		var dl: float = bp - float(S[S_LAST + c])
 		var run: int = int(S[S_RUN + c]) + 1 if dl <= 0.25 + EPS else 1

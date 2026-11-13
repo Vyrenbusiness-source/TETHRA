@@ -306,22 +306,29 @@ func _test_pitch_direction() -> void:
 	var by_t := {}
 	for e: Dictionary in ev:
 		by_t[int(round(float(e["t_ms"]) - 23.0))] = float(e["pitch"])
+	# je Zeile die mittlere Spalte (Akkorde zaehlen als ihre Mitte)
+	var rows: Array = []
+	for nt: Dictionary in notes:
+		var k := int(round(float(nt["t_ms"])))
+		if not rows.is_empty() and rows[rows.size() - 1][0] == k:
+			rows[rows.size() - 1][1] += float(nt["col"])
+			rows[rows.size() - 1][2] += 1.0
+		else:
+			rows.append([k, float(nt["col"]), 1.0])
 	var agree := 0
 	var oppose := 0
 	var total := 0
-	for i in range(1, notes.size()):
-		var a: Dictionary = notes[i - 1]
-		var b: Dictionary = notes[i]
-		var ka := int(round(float(a["t_ms"])))
-		var kb := int(round(float(b["t_ms"])))
-		if ka == kb or not by_t.has(ka) or not by_t.has(kb):
+	for i in range(1, rows.size()):
+		var ka: int = rows[i - 1][0]
+		var kb: int = rows[i][0]
+		if not by_t.has(ka) or not by_t.has(kb):
 			continue
 		var dp: float = float(by_t[kb]) - float(by_t[ka])
-		var dc := int(b["col"]) - int(a["col"])
+		var dc: float = rows[i][1] / rows[i][2] - rows[i - 1][1] / rows[i - 1][2]
 		total += 1
-		if dp * float(dc) > 0.0:
+		if dp * dc > 0.0:
 			agree += 1
-		elif dp * float(dc) < 0.0:
+		elif dp * dc < 0.0:
 			oppose += 1
 	_check(AmChart.lint(notes, grid, "Normal").is_empty(), "Melodie: lint = 0")
 	_check(total > 100 and agree >= oppose * 3 and agree * 10 >= total * 6,
@@ -492,14 +499,14 @@ func _agg_new() -> Dictionary:
 	uni.resize(16)
 	uni.fill(0)
 	return {"maps": 0, "notes": 0, "rows": 0, "sizes": [0, 0, 0, 0, 0], "uni": uni, "big": big, "gaps": [0, 0, 0, 0],
-			"holds": 0, "hold_beats": 0.0, "left": 0, "right": 0, "moves": [0, 0, 0, 0],
+			"holds": 0, "hold_rows": 0, "hold_beats": 0.0, "left": 0, "right": 0, "moves": [0, 0, 0, 0],
 			"jack_runs": [0, 0, 0, 0, 0, 0, 0, 0, 0], "jack_notes": 0, "g4": {}, "g8": {},
 			"hold_shares": [], "nps": [], "peaks": [], "kiai": []}
 
 
 func _agg_add(a: Dictionary, st: Dictionary) -> void:
 	a["maps"] += 1
-	for key: String in ["notes", "rows", "holds", "hold_beats", "left", "right", "jack_notes"]:
+	for key: String in ["notes", "rows", "holds", "hold_rows", "hold_beats", "left", "right", "jack_notes"]:
 		a[key] += st[key]
 	for key: String in ["sizes", "uni", "gaps", "moves", "jack_runs"]:
 		for i in a[key].size():
@@ -858,6 +865,9 @@ func _measure(maps_dir: String, n_sets: int, learn: bool) -> void:
 	var r_cap_out := [0, 0, 0, 0, 0]    # ausserhalb und als capped gemeldet
 	var r_miss := [0, 0, 0, 0, 0]       # ausserhalb, aber nicht gemeldet
 	var r_n := [0, 0, 0, 0, 0]
+	var r_low := [0, 0, 0, 0, 0]       # unter dem Band
+	var r_low_src := [0, 0, 0, 0, 0]   # davon: schon die Vorlage (schwerste Menschen-Diff) liegt unter dem Band
+	var r_high := [0, 0, 0, 0, 0]      # ueber dem Band
 	var r_err: Array = [[], [], [], [], []]
 	var r_stars: Array = [[], [], [], [], []]
 	for m: Dictionary in meta:
@@ -873,6 +883,12 @@ func _measure(maps_dir: String, n_sets: int, learn: bool) -> void:
 			r_n[pi] += 1
 			r_stars[pi].append(sr)
 			r_err[pi].append(absf(sr - float(m["est"][pi])))
+			if sr < float(band[0]):
+				r_low[pi] += 1
+				if float(m["src"]) > 0.0 and float(m["src"]) < float(band[0]):
+					r_low_src[pi] += 1
+			elif sr > float(band[1]):
+				r_high[pi] += 1
 			if sr >= float(band[0]) and sr <= float(band[1]):
 				r_in[pi] += 1
 			elif m["capped"][pi]:
@@ -923,14 +939,14 @@ func _measure(maps_dir: String, n_sets: int, learn: bool) -> void:
 	print(line_sim)
 	print(line_top)
 	print("\n## Sterne-Trefferquote je Profil (%d Sets)\n" % picked.size())
-	print("| Profil | Band | rosu im Band | ausserhalb, als capped gemeldet | ausserhalb, nicht gemeldet | rosu Median | Schaetzung im Band | Fehler Schaetzung gegen rosu (Mittel) | lint-Verstoesse |")
-	print("|---|---|---|---|---|---|---|---|---|")
+	print("| Profil | Band | rosu im Band | unter Band (davon Vorlage schon unter Band) | ueber Band | ausserhalb, als capped gemeldet | ausserhalb, nicht gemeldet | rosu Median | Schaetzung im Band | Fehler Schaetzung gegen rosu (Mittel) | lint-Verstoesse |")
+	print("|---|---|---|---|---|---|---|---|---|---|---|")
 	for pi in 5:
 		var prof: String = AmChart.PROFILES[pi]
 		var band: Array = AmChart.DEFAULTS["star_bands"][prof]
 		var nn := float(maxi(r_n[pi], 1))
-		print("| %s | %.1f-%.1f | %d / %d (%s) | %d | %d | %.2f | %d / %d | %.3f | %d |" % [prof, band[0], band[1], r_in[pi], r_n[pi],
-				_pct(float(r_in[pi]) / nn), r_cap_out[pi], r_miss[pi], _quant(r_stars[pi], 0.5), est_in[pi],
+		print("| %s | %.1f-%.1f | %d / %d (%s) | %d (%d) | %d | %d | %d | %.2f | %d / %d | %.3f | %d |" % [prof, band[0], band[1], r_in[pi], r_n[pi],
+				_pct(float(r_in[pi]) / nn), r_low[pi], r_low_src[pi], r_high[pi], r_cap_out[pi], r_miss[pi], _quant(r_stars[pi], 0.5), est_in[pi],
 				est_in[pi] + est_cap[pi], _mean(r_err[pi]), lint_n[pi]])
 	print("\n## Weitere Messwerte\n")
 	print("| | Wert |\n|---|---|")
@@ -996,6 +1012,7 @@ func _write_patterns(human: Array, fa: float, fb: float, mae: float, nf: int, n_
 				"chord_share": snappedf(s["chord"], 0.0001), "chord3_share": snappedf(s["chord3"], 0.0001),
 				"hold_share_mean": snappedf(s["hold"], 0.0001), "hold_share_p90": snappedf(_quant(a["hold_shares"], 0.9), 0.0001),
 				"hold_beats_mean": snappedf(s["hold_beats"], 0.001),
+				"holds_per_row": snappedf(float(a["holds"]) / float(maxi(int(a["hold_rows"]), 1)), 0.001),
 				"kiai_ratio": snappedf(_quant(a["kiai"], 0.5) if not a["kiai"].is_empty() else 1.3, 0.001),
 				"nps_avg": snappedf(s["nps"], 0.001), "nps_peak": snappedf(s["peak"], 0.001),
 				"balance_left": snappedf(s["left"], 0.0001), "jack_share": snappedf(s["jack"], 0.0001),
