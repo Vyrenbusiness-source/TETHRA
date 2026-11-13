@@ -266,7 +266,8 @@ func _test_record_and_report() -> void:
 	# halbes Tempo
 	var half: Dictionary = B.song_record("half.osz", _truth(), _product(1000.0), 3000.0, 20000.0)
 	_ok(not half.tempo_exact and not half.tempo_alt and half.diag_factor == 2.0 and not half.has("offset_ms"), "halbes Tempo")
-	_near(half.prof.Hard.prec, 1.0, "halbes Tempo: jede erzeugte Note liegt auf einer Menschen-Note")
+	# 40 erzeugte Noten bis 39 s, die Menschen-Map endet bei 19,5 s: nur 20 liegen auf Menschen-Noten
+	_near(half.prof.Hard.prec, 0.5, "halbes Tempo: Noten nach dem Ende der Menschen-Map zaehlen als falsch")
 	_near(half.prof.Hard.rec, 0.5, "halbes Tempo: halbe Menschen-Noten")
 	# Erzeugung fehlgeschlagen zaehlt als falsch, nicht als fehlend
 	var fail: Dictionary = B.song_record("fail.osz", _truth(), {"ok": false, "error": "kaputt", "caps": caps}, 100.0, 20000.0)
@@ -276,7 +277,7 @@ func _test_record_and_report() -> void:
 	_near(ag.tempo_exact, 3.0 / 5.0, "aggregate: 3 von 5 exakt")
 	_ok(ag.n_fail == 1 and ag.n_exact == 3, "aggregate Zaehler")
 	_near(ag.off_med, 9.0, "aggregate Offset-Median")
-	_near(ag.per.Hard.prec, (1.0 + 1.0 + 0.0 + 1.0 + 0.0) / 5.0, "aggregate Praezision, Fehlschlag = 0")
+	_near(ag.per.Hard.prec, (1.0 + 1.0 + 0.0 + 0.5 + 0.0) / 5.0, "aggregate Praezision, Fehlschlag = 0")
 	_ok(B.objective(ag) < 0.9, "Zielgroesse sinkt")
 	# JSON hin und zurueck liefert dieselben Zahlen
 	var back = JSON.parse_string(JSON.stringify({"recs": all}))

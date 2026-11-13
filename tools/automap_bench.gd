@@ -1569,7 +1569,12 @@ func _cli_bench(args: PackedStringArray) -> int:
 		info["Sterne"] = "nicht berechnet (%s)" % ("--no-stars" if mods.caps.cols else "Mapper ohne Spalten")
 	info["Laufzeit"] = "%.0f s für %d Sets" % [(Time.get_ticks_msec() - t_start) / 1000.0, count]
 	if limit > 0 or only_set != "":
-		info["Achtung"] = "Teil-Lauf (--limit %d, --set %s): Zahlen gelten nur für diesen Ausschnitt" % [limit, only_set]
+		var part: Array = []
+		if limit > 0:
+			part.append("--limit %d" % limit)
+		if only_set != "":
+			part.append("--set " + only_set)
+		info["Achtung"] = "Teil-Lauf (%s): Zahlen gelten nur für diesen Ausschnitt" % ", ".join(part)
 	save_results(mods.name, {"caps": mods.caps, "recs": recs, "info": info})
 	print("Bericht: ", write_report(_arg(args, "--out", REPORT_PATH)))
 	var a := aggregate(recs, "test")
