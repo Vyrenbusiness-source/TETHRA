@@ -1398,8 +1398,8 @@ const COLL_EN := {
 	"  ·  %d in anderem Modus": "  ·  %d in another mode",
 	"Noch keine Sammlung. Lege oben mit \"+ Neu\" eine an oder nutze \"+ Sammlung\" im Info-Panel.":
 		"No collections yet. Create one with \"+ New\" above, or use \"+ Collection\" in the info panel.",
-	"\"%s\" ist noch leer. Map auswählen, dann \"+ Sammlung\" im Info-Panel.":
-		"\"%s\" is empty. Pick a map, then use \"+ Collection\" in the info panel.",
+	"\"%s\" ist noch leer. Unter \"Heruntergeladen\" eine Map wählen, dann \"+ Sammlung\" im Info-Panel.":
+		"\"%s\" is empty. Pick a map under \"Downloaded\", then use \"+ Collection\" in the info panel.",
 	"Die Maps in \"%s\" sind in diesem Modus nicht spielbar.":
 		"The maps in \"%s\" cannot be played in this mode.",
 	"Kein Treffer für die Suche in \"%s\".": "No search match in \"%s\".",
@@ -1474,7 +1474,7 @@ func _collection_empty_text() -> String:
 			return tr("Die Maps in \"%s\" sind in diesem Modus nicht spielbar.") % _active_collection
 		"missing":
 			return tr("Die Maps in \"%s\" liegen nicht mehr im maps-Ordner.") % _active_collection
-	return tr("\"%s\" ist noch leer. Map auswählen, dann \"+ Sammlung\" im Info-Panel.") % _active_collection
+	return tr("\"%s\" ist noch leer. Unter \"Heruntergeladen\" eine Map wählen, dann \"+ Sammlung\" im Info-Panel.") % _active_collection
 
 
 func _coll_action(text: String, tip: String, on_press: Callable) -> Button:
