@@ -41,6 +41,18 @@ Alte Fassung (Seitenansicht, A/B) ist ersetzt: sie war langweilig (nichts zu les
   macht ihn zum Miss. Richtige Taste zuerst, falsche danach: Treffer bleibt. Druck ohne Ball
   in irgendeinem Fenster = nichts. Replays: meta rules = 3 (rules 2 wird abgelehnt). Messwerte: docs/anti_mash.md.
 
+- **Regeln v4 (2026-11-13, spielbar fuer einen Finger je Zone):**
+  - *Zonen-Abstand:* keine Zone zweimal in weniger als `SAME_ZONE_MS` = 130 ms (bei 3 Zonen
+    lagen Spalte 2 und 3 der Map beide in der Mitte). Der Ball weicht in die naechste freie
+    Zone aus (Gleichstand: die laenger unbenutzte, dann die niedrigere), ein Schmetterball mit
+    belegter Zone wird ein normaler Ball in seiner freien Zone, ohne freie Zone entfaellt der
+    Ball (`RallyChart.spread_jacks`). Zeiten bleiben exakt; bei 4 Zonen bleibt die Folge einer
+    4K-Map, solange keine Spalte schneller als 130 ms wiederholt.
+  - *Nachzuegler:* war der vorige Ball der Zone ein Miss (oder ein Schmetterball mit nur einer
+    Taste) und liegt der Druck im Miss-Fenster um dessen Zeit, ist der Druck frei: keine
+    falsche Taste, und er frisst den naechsten Ball der Zone nicht (`RallyCore._graced`).
+  - Replays: meta rules = 4 (rules 3 wird abgelehnt). Messwerte: docs/modes/gameplay_tune.md.
+
 ## Schnittstelle Chart -> Ansicht
 `RallyChart.Shot`: `t` (Notenzeit ms), `zones: PackedInt32Array` (1 oder 2 Zonen 0..3),
 `smash: bool`, `charge: bool`, `end` (ms, Aufladen), `launch` (= t - flight_ms),

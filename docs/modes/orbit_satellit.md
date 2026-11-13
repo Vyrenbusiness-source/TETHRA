@@ -18,7 +18,14 @@ druecken**. Der Takt ist sichtbar und zaehlbar ("drei, zwei, eins, jetzt").
 - Taiko: Don/Ka ohne Zielen. Orbit: Don/Ka-artige Tasten + Zielen.
 - jubeat/maimai/Lanota/Cytus: feste Felder bzw. Scan-Linie/Kreisrand, kein Zielen mit Maus.
 
-## Regeln (v4, ab Client 1.28.0)
+## Regeln (v5, 2026-11-13; v4 ab Client 1.28.0)
+- **Wechselschlag (Regeln 5):** folgt ein Ziel in weniger als `FAST_KEY_MS` = 180 ms auf das
+  Ende des vorigen, nimmt es die andere Taste (auch Halten; auch Mania gleiche Spalte). Ein
+  Akzent mit einem Nachbarn naeher als 180 ms wird ein einfaches Ziel (A, im Strom die
+  Wechseltaste). Zeiten, Orte und Zahl der Ziele bleiben (`OrbitConverter.playable_keys`, nach
+  der Sichtbarkeits-Auswahl). Grund: osu!standard-Stroeme mit einem Klang lagen ganz auf einer
+  Taste (ein Finger, bis 12 Druecke/s). Ab 180 ms gilt die Taste aus dem Klang wie bisher.
+  Replays tragen `orbit_rules = 5`, aeltere werden abgelehnt. Messwerte: docs/modes/gameplay_tune.md.
 - **Anti-Mash (Regeln 4):** Falsche Taste auf das offene Ziel (Cursor im Trefferradius,
   50er-Fenster, kein Ziel fuer diese Taste) = "WRONG KEY": Ziel sofort Miss. Akzent zaehlt nur
   mit beiden Tasten, ein A-/B-Ziel nur mit seiner Taste. Richtige Taste zuerst, falsche danach:
@@ -103,7 +110,7 @@ func laps_left(t_ms) -> int
   sonst A; Finish = Akzent); Slider = Halten mit Pfad (HitSlider-Kurve, gekuerzt auf
   max. 2 Beats Dauer bei leichten Maps); Spinner = Akzent in der Mitte.
 - **Mania 4K**: Positionen erzeugt (deterministisch): Spalten 1-2 = A, 3-4 = B, Akkord ueber
-  beide Seiten = Akzent; Positionsfluss: naechstes Ziel in Richtung je Spalte (links/rechts,
+  beide Seiten = Akzent (Regeln 5: Wechselschlag unter 180 ms, s. o.); Positionsfluss: naechstes Ziel in Richtung je Spalte (links/rechts,
   oben/unten), Abstand ~ Zeitabstand (gekappt), bleibt im Feld, kein Ueberlappen mit noch
   sichtbaren Zielen; Holds = Halten mit kurzem geraden/gebogenen Pfad in Flussrichtung.
 - **Lesbarkeit**: Mindestabstand 75 ms (sonst zusammenfassen), hoechstens 6 Ziele zugleich
@@ -166,3 +173,6 @@ func laps_left(t_ms) -> int
   Scores ab Client 1.28.0 (Regeln v4) sind mit aelteren nicht 1:1 vergleichbar. Wer trennen
   will: Client-Version >= 1.28.0 = Regeln v4. Replays tragen `orbit_rules = 4`.
 - QA (Bot-Acc je Sterne-Band vorher/nachher): docs/modes/orbit_satellit_qa.md.
+- Regeln v5 (Wechselschlag): Felder, Fenster und Score-Formel unveraendert, nur die Tasten der
+  Ziele in schnellen Folgen. Replays tragen `orbit_rules = 5`; `min_version` fuer Orbit auf die
+  Client-Version setzen, die Regeln v5 ausliefert.
