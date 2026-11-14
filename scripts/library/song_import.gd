@@ -15,6 +15,8 @@ extends RefCounted
 
 signal progress(done: int, total: int, phase: String)
 signal finished(result: Dictionary)
+## Eigene Musik wird gerade zur Map: Datei, Stufe (AutoMapper4K.STAGE_*), Anteil 0..1.
+signal stage(song: String, stage_name: String, frac: float)
 
 const AUDIO_EXTS := ["mp3", "ogg", "wav"]
 ## Videos machen ein Set schnell 50 MB+ schwer und werden nie abgespielt.
@@ -22,6 +24,9 @@ const SKIP_EXTS := ["mp4", "avi", "flv", "mkv", "webm", "wmv", "m4v", "mov"]
 
 const PHASE_COPY := "copy"
 const PHASE_ANALYSE := "analyse"
+const PHASE_GENERATE := "generate"
+const OWN_SONGS_DIR := "own songs"
+const OWN_INDEX_PATH := "user://automap_songs.json"
 
 ## Bibliotheks-Cache nach dem Packen im Thread vorbauen (Parsen, Sterne,
 ## Cover), damit der Scan im Hauptthread nur noch den Cache liest.
@@ -31,6 +36,12 @@ var prebuild_library := true
 var done := 0
 var total := 0
 var phase := PHASE_COPY
+## Optionen fuer AutoMapper4K.generate (tempo_factor, offset_ms, profiles ...).
+var audio_opts: Dictionary = {}
+## Letzter Stand der Erzeugung (fuer ein spaeter geoeffnetes Fenster).
+var stage_song := ""
+var stage_name := ""
+var stage_frac := 0.0
 
 var _thread: Thread = null
 var _cancel := false
@@ -307,15 +318,70 @@ static func classify(paths: PackedStringArray) -> Dictionary:
 	return out
 
 
-## TODO(audio-map): eigene Musik -> Orbit-Map. Der Generator kommt aus Task
-## audio-map (AudioMapper.generate(audio_path, maps_dir)); bis zur Verdrahtung
-## liefert diese Funktion bewusst nur "kommt bald". Rueckgabe:
-## { ok: bool, osz_path: String, error: String }
-static func import_audio(path: String) -> Dictionary:
+## Eigene Musik -> 4K-Set mit allen Profilen (AutoMapper4K). Blockierend.
+## Rueckgabe wie AutoMapper4K.generate: { ok, osz_path, error, ... }
+static func import_audio(path: String, opts: Dictionary = {}) -> Dictionary:
 	if not is_audio(path):
 		return {"ok": false, "osz_path": "", "error": "nicht unterstuetzt"}
-	# Eigene Musik -> erzeugte Orbit-Map (osu!standard, nur im Orbit-Modus). Blockierend.
-	return AudioMapper.generate(path, _maps_dir_default())
+	return AutoMapper4K.generate(path, _maps_dir_default(), opts)
+
+
+## Erzeugtes Set aus eigener Musik? Bleibt unranked (kein Online-Score).
+static func is_auto_set(osz_path: String) -> bool:
+	return AmWriter.is_auto_set(osz_path)
+
+
+# ---------------------------------------------------------------------------
+# Ordner "own songs" (neben der Exe bzw. im Projektordner)
+# ---------------------------------------------------------------------------
+
+static func own_songs_dir() -> String:
+	for base in [OS.get_executable_path().get_base_dir(), ProjectSettings.globalize_path("res://")]:
+		var p := String(base).replace("\\", "/").path_join(OWN_SONGS_DIR)
+		if DirAccess.dir_exists_absolute(p):
+			return p
+	return ""
+
+
+static func _own_key(path: String) -> String:
+	var size := 0
+	var f := FileAccess.open(path, FileAccess.READ)
+	if f != null:
+		size = f.get_length()
+	return "%s|%d" % [path.get_file(), size]
+
+
+static func _own_index(index_path: String) -> Dictionary:
+	if not FileAccess.file_exists(index_path):
+		return {}
+	var v = JSON.parse_string(FileAccess.get_file_as_string(index_path))
+	return v if v is Dictionary else {}
+
+
+## Musikdateien im Ordner, die noch nie angeboten/erzeugt wurden. Sortiert.
+static func pending_own_songs(dir: String, index_path: String = OWN_INDEX_PATH) -> Array[String]:
+	var out: Array[String] = []
+	var d := DirAccess.open(dir) if dir != "" else null
+	if d == null:
+		return out
+	var idx := _own_index(index_path)
+	var files := d.get_files()
+	files.sort()
+	for f in files:
+		var p := dir.path_join(f)
+		if is_audio(p) and not idx.has(_own_key(p)):
+			out.append(p)
+	return out
+
+
+## Dateien als erledigt merken (erzeugt oder abgelehnt): nie wieder anbieten.
+static func mark_own_songs(paths: Array, index_path: String = OWN_INDEX_PATH) -> void:
+	var idx := _own_index(index_path)
+	for p in paths:
+		idx[_own_key(String(p))] = true
+	var f := FileAccess.open(index_path, FileAccess.WRITE)
+	if f != null:
+		f.store_string(JSON.stringify(idx))
 
 
 static func _maps_dir_default() -> String:
@@ -330,7 +396,7 @@ static func _maps_dir_default() -> String:
 ## Ergebnis: { imported: [osz-Pfade], dup: int, skipped: int (Modus),
 ##             failed: int, total: int, cancelled: bool }
 func run(folders: Array, osz_files: Array, maps_dir: String, audio_files: Array = []) -> Dictionary:
-	var res := {"imported": [], "dup": 0, "skipped": 0, "failed": 0, "generated": 0,
+	var res := {"imported": [], "dup": 0, "skipped": 0, "failed": 0, "generated": 0, "auto": [], "errors": [],
 		"total": folders.size() + osz_files.size() + audio_files.size(), "cancelled": false}
 	total = int(res.total)
 	done = 0
@@ -373,16 +439,26 @@ func run(folders: Array, osz_files: Array, maps_dir: String, audio_files: Array 
 			else:
 				res.failed += 1
 		_step()
-	# Eigene Musik: Orbit-Map erzeugen (dekodieren + Takt-Analyse, dauert Sekunden je Song).
+	# Eigene Musik: 4K-Set erzeugen (dekodieren, Takt, Noten: Sekunden je Song).
 	for f in audio_files:
 		if _cancel:
 			break
-		var r := AudioMapper.generate(String(f), maps_dir)
+		phase = PHASE_GENERATE
+		var src := String(f)
+		var o := audio_opts.duplicate()
+		o["progress"] = _on_stage.bind(src.get_file().get_basename())
+		o["cancelled"] = func(): return _cancel
+		# Sterne rechnet der Bibliotheks-Vorbau unten, nicht doppelt.
+		o["stars"] = false
+		_on_stage(AutoMapper4K.STAGE_DECODE, 0.0, src.get_file().get_basename())
+		var r := AutoMapper4K.generate(src, maps_dir, o)
 		if bool(r.get("ok", false)):
 			res.imported.append(str(r.osz_path))
 			res.generated += 1
-		else:
+			res.auto.append(r)
+		elif str(r.get("error", "")) != AutoMapper4K.ERR_CANCELLED:
 			res.failed += 1
+			res.errors.append(str(r.get("error", "")))
 		_step()
 	res.cancelled = _cancel
 	if prebuild_library and not _cancel and not res.imported.is_empty():
@@ -396,6 +472,16 @@ func run(folders: Array, osz_files: Array, maps_dir: String, audio_files: Array 
 			done = i
 			_emit_progress())
 	return res
+
+
+func _on_stage(p_stage: String, frac: float, song: String) -> void:
+	stage_song = song
+	stage_name = p_stage
+	stage_frac = frac
+	if _thread != null:
+		emit_signal.call_deferred("stage", song, p_stage, frac)
+	else:
+		stage.emit(song, p_stage, frac)
 
 
 func _step() -> void:
