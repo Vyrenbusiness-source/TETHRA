@@ -362,6 +362,11 @@ func _measure(maps_dir: String, count: int, args: PackedStringArray) -> void:
 		idx += 1
 		if only != "" and not Array(only.split(",")).any(func(o): return name.contains(o)):
 			continue
+		# Eigene Erzeugnisse des Auto-Mappers (wie im Pruefstand): ihre rote Linie ist unser Gitter.
+		# Die Nummer zaehlt trotzdem mit, damit die Haelften A/B gleich bleiben.
+		if name.get_basename().ends_with("(OMEN Auto)"):
+			skipped.append(name + ": eigenes Erzeugnis (OMEN Auto)")
+			continue
 		var osz := maps_dir.path_join(name)
 		var imp := OszImporter.import(osz)
 		if not imp.ok:
