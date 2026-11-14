@@ -248,3 +248,11 @@ Laufende/gestoppte Agents (Worktrees unter .warmd-worktrees/rhyg, alle mit WARMD
 Fortsetzen: je Worktree `git log main..HEAD` + `.git/warmd-handoff/<task>.md` falls vorhanden; Agent mit model=opus "Read .warmd/tasks/<task>.md (bzw. mania-variants.md), continue".
 Server-Artifact v15 aktuell (Relay mit OMEN.pck neu starten, Probe /panel-api/omen/auth/me). Neue Server-Felder kommen mit Varianten (SD/PF/MN, Tastenzahl, Turbo/Marathon-Schluessel) -> ins Artifact.
 Offen Nutzer: Social Preview mit OMEN erzeugen (docs/media/social_preview.png, og_image.png, ui_menu.webp) und der Nutzer laedt hoch; Trailer bleibt.
+
+## Stand 2026-11-14 ~13:20 (v1.41.0 released)
+Heute released: v1.38.0 Kampagne neu, v1.39.0 Skip-Pruefung (99 % Acc) + Einstufung + Tutorials v2 + OMEN-Bilder + Menue-Punkt-Fix, v1.40.0 SD/PF/Minen, v1.41.0 Auto-Mapper 4K (Musik reinziehen -> 5 Diffs), Marathon (DJ-Uebergaenge), Uebungsmodus, Turbo, Minen-Rangliste, MP alle Modi abgesichert. Setup/dist jeweils aktuell, Server-Artifact v18.
+warmd v0.4.50-52: untracked Dateien ohne Volllauf, Klassen-Cache in .warmd-worktrees, project.godot-Listen-Konflikte loest warmd merge selbst.
+Laufend (Opus, Worktrees .warmd-worktrees/rhyg/<task>, alle mit WARMD_BASE=1):
+- am3-grid / am3-sections / am3-chart: Auto-Mapper Runde 3 (Oktave/Gegenschlag/Tempowechsel; Liedform/Kiai/Dichtekurve; gelernte Notenauswahl/Dichte/Sterne). Basis 300f1a3. Stand Kette: Tempo 89 %, Taktanfang 88 %, Menschen-Noten getroffen 61 %, Dichte 0,54, Kiai 0,27 (docs/automap/chain.md, report.md). Danach zusammenfuehren, Pruefstand, 3 eigene Songs neu (own songs/ -> maps/), release.
+- mv-keys: 5K-7K.
+Offen/klein: song_select.gd _bg_finished get_tree() null nach Verlassen; Relay-Smoke vor mp-all-modes rot (jetzt gemergt, pruefen); Turbo-Spiellauf meldet 1-3 Leaks; Hit-Error-Leiste bei Rate != 1 in Songzeit; Social Preview vom Nutzer hochladen.
