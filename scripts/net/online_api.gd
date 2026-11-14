@@ -409,9 +409,16 @@ static func meta_from_beatmap(bm: Beatmap, osz_path: String, osu_filename: Strin
 		"length_ms": int(bm.duration_ms()),
 		"total_notes": bm.hit_objects.size(),
 		"stars": stars,
-		"ranked": true,
+		"ranked": not AmWriter.is_auto_set(osz_path),
 		"osz_path": osz_path,
 	}
+
+
+## Set vom Auto-Mapper (eigene Musik): Creator "OMEN Auto" oder Dateiname
+## "... (OMEN Auto).osz". Solche Sets sind unranked und erzeugen nie Online-Scores.
+static func is_auto_map(meta: Dictionary) -> bool:
+	return str(meta.get("creator", "")) == AmWriter.CREATOR \
+		or AmWriter.is_auto_set(str(meta.get("osz_path", "")))
 
 
 static func _md5_bytes(bytes: PackedByteArray) -> String:
@@ -515,6 +522,8 @@ static func classify_submit(code: int, text: String) -> Dictionary:
 func submit(result: Dictionary, meta: Dictionary, mode: String = "mania") -> bool:
 	if not enabled() or not logged_in() or str(meta.get("md5", "")) == "":
 		return false
+	if is_auto_map(meta):
+		return false  # aus eigener Musik erzeugt: immer unranked, nie online
 	var body := build_body(result, meta, mode)
 	var osz := str(meta.get("osz_path", ""))
 	var ver := str(meta.get("difficulty", ""))
@@ -697,7 +706,7 @@ static func backfill_candidates(entries: Array, done_keys: Array, osz_files: Dic
 		var f := str(e.get("osz_file", "")).get_file()
 		var v := str(e.get("version", ""))
 		var key := backfill_key(f, v)
-		if done_keys.has(key) or seen.has(key) or not osz_files.has(f):
+		if done_keys.has(key) or seen.has(key) or not osz_files.has(f) or AmWriter.is_auto_set(f):
 			continue
 		seen[key] = true
 		out.append({"key": key, "osz_file": f, "osz_path": str(osz_files[f]),
@@ -1245,11 +1254,26 @@ func leaderboard(mode: String, md5: String, beatmap_id: int, done: Callable) -> 
 		done.call(r.ok, r.entries, r.message))
 
 
+## Eigene Rangliste (board, z. B. "mania_mn" fuer Minen): wie leaderboard() plus
+## &board=<board>. done: Callable(ok, entries, message, known); known = die Antwort
+## traegt "board": <board> (Server kennt die Liste), sonst nichts anzeigen.
+func leaderboard_board(mode: String, board: String, md5: String, done: Callable) -> void:
+	if not enabled():
+		done.call(false, [], "disabled", false)
+		return
+	var q := "/leaderboard?mode=%s&board=%s&md5=%s&limit=%d" % [
+		mode.uri_encode(), board.uri_encode(), md5.uri_encode(), LEADERBOARD_LIMIT]
+	_send("GET", q, null, func(code: int, text: String):
+		var r := parse_leaderboard(code, text)
+		done.call(r.ok, r.entries, r.message, str(r.board) == board))
+
+
 static func parse_leaderboard(code: int, text: String) -> Dictionary:
-	var out := {"ok": false, "entries": [], "message": ""}
+	var out := {"ok": false, "entries": [], "message": "", "board": ""}
 	var d: Variant = JSON.parse_string(text)
 	if code >= 200 and code < 300 and d is Dictionary and d.get("entries") is Array:
 		out.ok = true
+		out.board = str(d.get("board", ""))   # eigene Liste (RuleMods: "mania_mn"), alt: ""
 		for e in d.entries:
 			if e is Dictionary:
 				out.entries.append({

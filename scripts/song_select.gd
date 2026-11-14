@@ -317,6 +317,7 @@ func _ready() -> void:
 	_career_start.call_deferred()
 	GameSession.perf_since("Browser: %d Karten bauen" % _filtered.size(), t_ui)
 	get_window().files_dropped.connect(_on_files_dropped)
+	_offer_own_songs.call_deferred()
 	t_ui = Time.get_ticks_usec()
 	_select_initial()
 	_recs_refresh.call_deferred()
@@ -334,6 +335,10 @@ func _ready() -> void:
 				_rule_mods[k] = k in a.trim_prefix("--rule-mods=").to_upper().split(",")
 			if RuleMods.is_rule(_rule_mods):
 				_nf_enabled = false
+				_update_nf_button()
+			_sync_rule_mod_buttons()
+			if _selected_set != null:
+				_update_info_panel()   # Minen-Liste unter BESTE SCORES
 	if DisplayServer.get_name() == "headless":
 		_headless_report()
 	elif GameSession.perf_enabled:
@@ -393,6 +398,8 @@ func _ready() -> void:
 			if a.begins_with("--skin2d="):
 				Settings.skin_2d = a.trim_prefix("--skin2d=")
 		add_child.call_deferred(SettingsPanel.new())
+	elif OS.get_cmdline_args().has("--rules-harness"):
+		RuleModsHarness.run_browser(self)   # Harness: Regel-Mods per Klick, Minen-Liste, Replay
 	elif OS.get_cmdline_args().has("--shot"):
 		_capture_screenshot_and_quit()
 
@@ -1120,6 +1127,7 @@ func _build_info_panel() -> void:
 		var rb := _make_rule_mod_button(k)
 		mods_row.add_child(rb)
 		_rule_mod_btns[k] = rb
+	TempoBrowserRow.build(self, mods_row)  # mv-tempo: Turbo, Tonhoehe, Ueben
 	_apply_mod_visibility()
 	_apply_play_state()
 
@@ -2826,6 +2834,9 @@ func _update_info_panel() -> void:
 	# Orbit-Modus (nur 4K-Diffs): nur Orbit-Scores, getrennt von Mania.
 	var orbit := _play_mode != "mania" and int(m.get("mode", 0)) in [0, 3]
 	var score_mode := _pm() if orbit else ""
+	# Mods-Schalter "Mines" an: eigene Liste "mania_mn" (RuleMods), Kopf zeigt "Mines".
+	if _play_mode == "mania":
+		score_mode = RuleMods.board_mode(score_mode, _rule_mods)
 	_style_lb_mode_tag(score_mode)
 	_online_gen += 1
 	if _lb_online:
@@ -2837,7 +2848,7 @@ func _update_info_panel() -> void:
 		_selected_set.version_name_at(_selected_diff), 5, score_mode)
 	if tops.is_empty():
 		var empty := Label.new()
-		empty.text = tr("Noch kein %s-Score — spiel die Map!") % ScoreStore.mode_label(score_mode)
+		empty.text = RuleMods.board_text("empty") if RuleMods.is_mines_board(score_mode) 				else tr("Noch kein %s-Score — spiel die Map!") % ScoreStore.mode_label(score_mode)
 		empty.add_theme_font_size_override("font_size", 13)
 		empty.add_theme_color_override("font_color", COL_DIM)
 		_lb_box.add_child(empty)
@@ -3060,6 +3071,9 @@ func _show_online_scores(m: Dictionary, score_mode: String) -> void:
 		return
 	_lb_hint(tr("Lade Rangliste …"))
 	var gen := _online_gen
+	if RuleMods.is_mines_board(score_mode):
+		_show_online_mines(api, md5, gen)
+		return
 	api.leaderboard(ScoreStore.mode_name(score_mode), md5, 0, func(ok: bool, entries: Array, msg: String):
 		if gen != _online_gen or not is_inside_tree():
 			return
@@ -3073,6 +3087,29 @@ func _show_online_scores(m: Dictionary, score_mode: String) -> void:
 			var oe: Dictionary = entries[i] if entries[i] is Dictionary else {}
 			if str(oe.get("mode", "")) == "":
 				oe["mode"] = ScoreStore.mode_name(score_mode)
+			_lb_box.add_child(_online_row(oe)))
+
+
+## Online-Minen-Liste ("mania_mn"): nur zeigen, wenn der Server "board" kennt; sonst
+## ein ruhiger Hinweis statt der normalen Mania-Liste (die er ohne board liefert).
+func _show_online_mines(api: OnlineApi, md5: String, gen: int) -> void:
+	var board := RuleMods.MINES_SCORE_MODE
+	api.leaderboard_board("mania", board, md5, func(ok: bool, entries: Array, msg: String, known: bool):
+		if gen != _online_gen or not is_inside_tree():
+			return
+		for c in _lb_box.get_children():
+			c.queue_free()
+		if ok and not known:
+			_lb_hint(RuleMods.board_text("online_soon"))
+			return
+		if not ok:
+			_lb_hint(tr("Rangliste nicht erreichbar.") + (" (%s)" % msg if msg != "" else ""))
+		elif entries.is_empty():
+			_lb_hint(RuleMods.board_text("empty"))
+		for i in mini(entries.size(), 10):
+			var oe: Dictionary = entries[i] if entries[i] is Dictionary else {}
+			oe["mode"] = "mania"
+			oe["pp"] = 0.0   # Minen: keine pp
 			_lb_box.add_child(_online_row(oe)))
 
 
@@ -3532,7 +3569,7 @@ func _style_lb_mode_tag(score_mode: String) -> void:
 	if _lb_mode_tag == null:
 		return
 	var col := UiTheme.ACCENT2 if score_mode == ScoreStore.MODE_ORBIT else COL_ACCENT
-	_lb_mode_tag.text = ScoreStore.mode_label(score_mode).to_upper()
+	_lb_mode_tag.text = RuleMods.board_tag(score_mode).to_upper()   # Minen: "MANIA 4K · MINES"
 	_lb_mode_tag.add_theme_color_override("font_color", col.lerp(COL_TEXT, 0.25))
 	var box := _lb_mode_tag.get_parent() as PanelContainer
 	var sb := StyleBoxFlat.new()
@@ -3545,7 +3582,7 @@ func _style_lb_mode_tag(score_mode: String) -> void:
 	sb.content_margin_top = 1
 	sb.content_margin_bottom = 1
 	box.add_theme_stylebox_override("panel", sb)
-	box.tooltip_text = tr("Nur Scores im Modus %s") % ScoreStore.mode_label(score_mode)
+	box.tooltip_text = RuleMods.board_text("tip") if RuleMods.is_mines_board(score_mode) 			else tr("Nur Scores im Modus %s") % ScoreStore.mode_label(score_mode)
 
 
 ## SV-Stufe: zwei Mini-Schalter Normal | Stark (Standard Stark) neben dem SV-Mod.
@@ -3670,6 +3707,8 @@ func _on_rule_mod_toggled(key: String, on: bool) -> void:
 	if on and RuleMods.clears_nf(key) and _nf_enabled:
 		_on_nf_toggled(false)
 	_sync_rule_mod_buttons()
+	if key == RuleMods.MN and _selected_set != null:
+		_update_info_panel()   # BESTE SCORES: Minen-Liste bzw. normale Liste
 	if _state_ready:
 		_save_browser_state()
 
@@ -3715,6 +3754,7 @@ func _apply_mod_visibility() -> void:
 		(_trace_mod_btns[k] as CheckButton).visible = _play_mode == "trace"
 		(_trace_mod_btns[k] as CheckButton).set_pressed_no_signal(bool(_trace_mods[k]))
 	_sync_rule_mod_buttons()
+	TempoBrowserRow.set_visible(_play_mode == "mania")
 
 
 func _on_sv_toggled(pressed: bool) -> void:
@@ -3746,7 +3786,7 @@ func _base_mods() -> Dictionary:
 		for k in OrbitCore.ORBIT_MODS:
 			m[k] = bool(_orbit_mods.get(k, false))
 		return m
-	return {"NF": _nf_enabled, "SV": _sv_enabled}
+	return TempoBrowserRow.add_mods({"NF": _nf_enabled, "SV": _sv_enabled})
 
 
 func _on_nf_toggled(pressed: bool) -> void:
@@ -3851,16 +3891,31 @@ func _update_max_pp(m: Dictionary) -> void:
 	var osz := _selected_set.osz_path
 	var notes := int(m.get("notes", 0))
 	_maxpp_thread = Thread.new()
-	_maxpp_thread.start(func():
-		var v := StarService.max_pp_for(osz, inner, notes)
-		_on_maxpp_done.call_deferred(osz, inner, v))
+	# Der Thread kennt nur die Instanz-ID: der Browser kann frei werden, waehrend er rechnet
+	# (Start direkt nach der Auswahl, --mania/--rule-mods-Shots). Frueher griff das Lambda
+	# auf das freigegebene self zu ("_on_maxpp_done" auf 'previously freed').
+	_maxpp_thread.start(Callable(get_script(), "_maxpp_job").bind(
+			get_script(), get_instance_id(), osz, inner, notes))
+
+
+## Thread-Teil der Max-pp-Rechnung: statisch, ohne Zugriff auf den Browser.
+static func _maxpp_job(script: Script, owner_id: int, osz: String, inner: String, notes: int) -> void:
+	var v := StarService.max_pp_for(osz, inner, notes)
+	Callable(script, "_maxpp_deliver").call_deferred(owner_id, osz, inner, v)
+
+
+## Hauptthread: Ergebnis nur an einen noch lebenden Browser geben.
+static func _maxpp_deliver(owner_id: int, osz: String, inner: String, v: float) -> void:
+	var o: Object = instance_from_id(owner_id)
+	if o != null and is_instance_valid(o) and o.has_method("_on_maxpp_done"):
+		o.call("_on_maxpp_done", osz, inner, v)
 
 
 func _on_maxpp_done(osz: String, inner: String, v: float) -> void:
 	if _maxpp_thread != null:
 		_maxpp_thread.wait_to_finish()
 		_maxpp_thread = null
-	if _selected_set == null:
+	if _selected_set == null or not is_inside_tree():
 		return
 	if _play_mode != "mania":
 		_maxpp_label.text = ""
@@ -3968,6 +4023,8 @@ func _stop_preview_soft() -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if not (event is InputEventKey) or not event.pressed:
+		return
+	if _automap_check != null:
 		return
 	if event.keycode == KEY_ESCAPE:
 		if _import_overlay != null:
@@ -4095,9 +4152,6 @@ var _import_pending_notes: Array[String] = []
 func _import_paths(paths: PackedStringArray) -> void:
 	var c := SongImport.classify(paths)
 	var notes: Array[String] = []
-	if not c.audio.is_empty():
-		# Eigene Musik wird zur Orbit-Map (nur im Orbit-Modus spielbar).
-		notes.append(tr("Eigene Musik ist im Orbit-Modus spielbar"))
 	if not c.unsupported.is_empty():
 		if c.unsupported.size() == 1:
 			notes.append(tr("Nicht unterstützt: %s") % String(c.unsupported[0]).get_file())
@@ -4112,13 +4166,15 @@ func _import_paths(paths: PackedStringArray) -> void:
 		_import_pending_notes = notes
 
 
-func _start_import_job(folders: Array, osz_files: Array, audio_files: Array = []) -> bool:
+func _start_import_job(folders: Array, osz_files: Array, audio_files: Array = [], audio_opts: Dictionary = {}) -> bool:
 	if _import_job != null and _import_job.is_running():
 		_show_import_notice(tr("Import läuft schon"), false)
 		return false
 	_import_pending_notes = []
 	_import_job = SongImport.new()
+	_import_job.audio_opts = audio_opts
 	_import_job.progress.connect(_on_import_progress)
+	_import_job.stage.connect(_on_import_stage)
 	_import_job.finished.connect(_on_import_finished)
 	_import_job.start(folders, osz_files, _library.maps_dir, audio_files)
 	_set_import_busy(true)
@@ -4140,6 +4196,106 @@ func _on_import_progress(done: int, total: int, phase: String) -> void:
 		_import_prog_bar.value = done
 	else:
 		_show_import_notice(txt, true, 0.0)
+
+
+# ---------------------------------------------------------------------------
+# Eigene Musik -> 4K-Set (AutoMapper4K): Fortschritt, "Takt pruefen",
+# Ordner "own songs". Texte: translations/automap.csv.
+# ---------------------------------------------------------------------------
+
+const AUTOMAP_STAGES := {
+	"decode": "Decoding audio", "grid": "Finding the beat", "features": "Listening to the music",
+	"chart": "Placing notes", "write": "Writing the set", "done": "Writing the set",
+}
+
+var _automap_check: AutomapCheck = null
+var _own_offer: PanelContainer = null
+
+
+## Fortschritt der Erzeugung: Song, Stufe und Prozent.
+func _on_import_stage(song: String, stage_name: String, frac: float) -> void:
+	var txt := "%s  ·  %s  %d %%" % [song, tr(str(AUTOMAP_STAGES.get(stage_name, stage_name))), int(round(frac * 100.0))]
+	if _import_prog_label != null:
+		_import_prog_label.text = txt
+		_import_prog_bar.max_value = 1.0
+		_import_prog_bar.value = frac
+	else:
+		_show_import_notice(txt, true, 0.0)
+
+
+## Schritt "Takt pruefen" fuer ein gerade erzeugtes Set (nur eigene Musik).
+func _open_automap_check(info: Dictionary) -> void:
+	if _automap_check != null:
+		_automap_check.queue_free()
+	if _import_overlay != null:
+		_close_import_panel()
+	_preview.stop()
+	_automap_check = AutomapCheck.open(self, info)
+	_automap_check.closed.connect(func():
+		_automap_check = null
+		_play_preview())
+	_automap_check.regenerate.connect(func(opts: Dictionary):
+		_automap_check.queue_free()
+		_automap_check = null
+		_start_import_job([], [], [str(info.get("audio_path", ""))], opts))
+
+
+## Einmalig beim Start: Musik im Ordner "own songs" anbieten, die noch nie
+## angeboten wurde. Antwort (erzeugen oder nicht) wird gemerkt.
+func _offer_own_songs() -> void:
+	var pending := SongImport.pending_own_songs(SongImport.own_songs_dir())
+	if pending.is_empty() or _own_offer != null:
+		return
+	_own_offer = PanelContainer.new()
+	var sb := UiTheme.solid_box(UiTheme.SURFACE, 10)
+	sb.set_border_width_all(1)
+	sb.border_color = Color(COL_ACCENT, 0.55)
+	sb.content_margin_left = 18
+	sb.content_margin_right = 12
+	sb.content_margin_top = 10
+	sb.content_margin_bottom = 10
+	_own_offer.add_theme_stylebox_override("panel", sb)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 14)
+	_own_offer.add_child(row)
+	var text := tr("%d songs in “own songs” have no map yet") % pending.size()
+	if pending.size() == 1:
+		text = tr("1 song in “own songs” has no map yet")
+	var l := _add_label(row, text, 14, COL_TEXT)
+	l.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	l.autowrap_mode = TextServer.AUTOWRAP_OFF
+	var done := func(create: bool):
+		SongImport.mark_own_songs(pending)
+		_own_offer.queue_free()
+		_own_offer = null
+		if create:
+			_start_import_job([], [], pending)
+	var later := Button.new()
+	later.text = tr("Not now")
+	later.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	later.custom_minimum_size = Vector2(0, 34)
+	UiTheme.style_ghost_button(later, 10)
+	later.pressed.connect(done.bind(false))
+	row.add_child(later)
+	var go := Button.new()
+	go.text = tr("Create 4K maps")
+	go.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	go.custom_minimum_size = Vector2(0, 34)
+	UiTheme.style_button(go, true, 10)
+	go.pressed.connect(done.bind(true))
+	row.add_child(go)
+	# Unten rechts ueber der Liste: verdeckt weder die Aktionen links noch den Import-Hinweis.
+	_own_offer.anchor_left = 1.0
+	_own_offer.anchor_right = 1.0
+	_own_offer.anchor_top = 1.0
+	_own_offer.anchor_bottom = 1.0
+	_own_offer.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	_own_offer.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	_own_offer.offset_left = -24
+	_own_offer.offset_right = -24
+	_own_offer.offset_bottom = -24
+	_own_offer.offset_top = -24
+	add_child(_own_offer)
 
 
 func _on_import_finished(res: Dictionary) -> void:
@@ -4167,6 +4323,10 @@ func _on_import_finished(res: Dictionary) -> void:
 		parts.append(tr("%d ohne 4K oder Standard") % int(res.skipped))
 	if int(res.get("failed", 0)) > 0:
 		parts.append(tr("%d fehlgeschlagen") % int(res.failed))
+	for e in res.get("errors", []):
+		if str(e) == AutoMapper4K.ERR_NO_FFMPEG:
+			parts.append(tr("ffmpeg is missing, so music cannot be analysed"))
+			break
 	if orbit_only > 0 and _mania_like():
 		parts.append(tr("%d nur im Orbit-Modus") % orbit_only)
 	parts.append_array(_import_pending_notes)
@@ -4184,6 +4344,9 @@ func _on_import_finished(res: Dictionary) -> void:
 			if ms.osz_path == last:
 				_select_set(ms, _easiest(ms))
 				break
+	var auto: Array = res.get("auto", [])
+	if not auto.is_empty() and not bool(res.get("cancelled", false)):
+		_open_automap_check(auto[auto.size() - 1])
 
 
 func _set_import_busy(busy: bool) -> void:

@@ -200,6 +200,8 @@ var user_offset_ms: float = 0.0
 var _state: int = State.STOPPED
 var _player: AudioStreamPlayer
 var _lead_in_ms: float = 0.0
+## Startposition des Audios nach dem Vorlauf (play(..., from_ms), sonst 0).
+var _from_ms: float = 0.0
 ## Vorlaufuhr fuer die Lead-In-Phase (nur hier ist Wanduhr-Zeit erlaubt, weil
 ## das Audio noch nicht spielt und keine Audio-Position existiert).
 var _lead_in_elapsed_ms: float = 0.0
@@ -238,6 +240,14 @@ const FADE_MS := 12.0
 enum FadeAction { NONE, PAUSE, STOP }
 ## Lautheits-Gain des Songs = volume_db im Normalbetrieb.
 var _gain_db: float = 0.0
+## Abspieltempo (Rate 0,5..2,0; 1 = normal). Songzeit bleibt Songzeit: die
+## Uhr laeuft mit rate x Echtzeit. Ausgabe-, Effekt-Latenz und Kalibrierungs-
+## Offset sind ECHTZEIT und gehen deshalb mal Rate in die Songzeit ein.
+var _tempo := 1.0
+## true = Tonhoehe bleibt (Time-Stretch ueber TEMPO_BUS), false = Nightcore-Klang.
+var _keep_pitch := false
+## Latenz des Time-Stretch-Effekts in ms Echtzeit (0 ohne Effekt).
+var _fx_latency_ms := 0.0
 var _fade_active: bool = false
 var _fade_from: float = 1.0
 var _fade_to: float = 1.0
@@ -248,6 +258,19 @@ var _fade_reached: bool = false
 
 ## Bus fuer Song + Vorschau (send -> Master). Master bleibt fuer Hitsounds/UI.
 const MUSIC_BUS := &"Music"
+## Tempo ohne Tonhoehe (Time-Stretch): Song laeuft ueber diesen Bus (send ->
+## Music) mit gegenlaeufigem AudioEffectPitchShift. Siehe set_rate().
+const TEMPO_BUS := &"MusicTempo"
+## FFT-Groesse des Time-Stretch (AudioEffectPitchShift.FFT_SIZE_*) und
+## Oversampling. Gemessen (tests/run_mv_tempo_tests.gd): Latenz siehe
+## TEMPO_FX_LATENCY_FRAMES, Tonhoehe exakt, leichte Verwischung bei Transienten.
+const TEMPO_FFT := AudioEffectPitchShift.FFT_SIZE_2048
+const TEMPO_OVERSAMPLING := 4
+## Verzoegerung des Effekts in Samples: gemessen (tests/run_mv_tempo_tests.gd,
+## Energie-Schwerpunkt eines Ton-Stosses) 42-44 ms bei 0,5x bis 2,0x, also eine
+## FFT-Laenge. Bei Effekt-Tonhoehe genau 1 schaltet Godot den Effekt ab (0 ms):
+## tempo_fx_pitch() haelt ihn deshalb immer knapp daneben an.
+const TEMPO_FX_LATENCY_FRAMES := 2048
 ## Feste Effekt-Indizes auf dem Music-Bus (VOR der Mastering-Kette aus Settings).
 const FX_SPECTRUM := 0
 const FX_CAPTURE := 1
@@ -381,12 +404,15 @@ func _now_usec() -> int:
 	return Time.get_ticks_usec()
 
 
-## Song mit optionaler Lead-In-Stille starten.
-func play(stream: AudioStream, lead_in_ms: float = 0.0) -> void:
+## Song mit optionaler Lead-In-Stille starten. from_ms > 0 (Uebungs-Schleife):
+## Audio startet dort, die Vorlaufuhr laeuft von from_ms - lead_in bis from_ms.
+func play(stream: AudioStream, lead_in_ms: float = 0.0, from_ms: float = 0.0) -> void:
 	if stream == null:
 		push_warning("SyncClock.play: kein AudioStream uebergeben.")
 		return
 	_player.stream = stream
+	# Jeder Song startet mit Tempo 1 (Uebung/Turbo setzen ihre Rate danach).
+	_apply_tempo(1.0, false)
 	# Lautheits-Normalisierung: nur volume_db, unbekannter Song = 0 dB.
 	_gain_db = SongLoudness.gain_db_for_osz(GameSession.osz_path)
 	_cancel_fade()
@@ -394,6 +420,7 @@ func play(stream: AudioStream, lead_in_ms: float = 0.0) -> void:
 	_player.stream_paused = false
 	_paused = false
 	_lead_in_ms = maxf(lead_in_ms, 0.0)
+	_from_ms = maxf(from_ms, 0.0)
 	_lead_in_elapsed_ms = 0.0
 	_lead_armed = true
 	_finished_emitted = false
@@ -404,7 +431,7 @@ func play(stream: AudioStream, lead_in_ms: float = 0.0) -> void:
 	if _lead_in_ms > 0.0:
 		_state = State.LEAD_IN
 	else:
-		_start_audio(0.0)
+		_start_audio(_from_ms)
 
 
 ## Audio ab from_ms starten; die Uhr laeuft nahtlos weiter. Kommt sie aus
@@ -480,7 +507,7 @@ func _catch_up_audio(now_usec: int) -> void:
 	if _raw_time_ms(now_usec) >= held - Smoother.MAX_DEV_MS:
 		return
 	# Roh = Position + Zeit seit Mix - Latenz  ->  Position fuer Roh = held.
-	var target := held + _latency_ms - AudioServer.get_time_since_last_mix() * 1000.0
+	var target := held + (_latency_ms + _fx_latency_ms - AudioServer.get_time_since_last_mix() * 1000.0) * _rate()
 	if target > 0.0:
 		_player.seek(target / 1000.0)
 
@@ -494,7 +521,7 @@ func seek_ms(target_ms: float) -> void:
 		return
 	var cur := song_time_ms()
 	_refresh_latency()
-	if ms - _latency_ms <= cur:
+	if ms - _latency_ms * _tempo <= cur:
 		return
 	if _state == State.PLAYING:
 		_player.seek(ms / 1000.0)
@@ -507,6 +534,11 @@ func seek_ms(target_ms: float) -> void:
 	# Roh-Zeit direkt nach dem Seek (Position + Zeit seit Mix) ist mit dem
 	# naechsten Mix-Block stetig -> darauf setzen, nie unter den alten Wert.
 	_smoother.reset(maxf(_raw_time_ms(now), cur), now)
+
+
+## Gerade gespielter Song-Stream (Uebungs-Schleife startet ihn neu).
+func current_stream() -> AudioStream:
+	return _player.stream if _player != null else null
 
 
 func is_paused() -> bool:
@@ -545,8 +577,8 @@ func _raw_time_ms(now_usec: int) -> float:
 		State.LEAD_IN:
 			var e := _lead_in_elapsed_ms
 			if not _paused and not _lead_armed:
-				e += float(now_usec - _last_tick_usec) / 1000.0
-			return e - _lead_in_ms - _latency_ms
+				e += float(now_usec - _last_tick_usec) / 1000.0 * _tempo
+			return _from_ms + e - _lead_in_ms - _latency_ms * _tempo
 		State.PLAYING:
 			if _movie:
 				# Film-Uhr (MovieClock): Film-Zeit + Versatz zur Audio-Position,
@@ -564,13 +596,108 @@ func _raw_time_ms(now_usec: int) -> float:
 				since_mix = AudioServer.get_time_since_last_mix()
 				if since_mix >= m0:
 					break
-			return (pos + since_mix) * 1000.0 - _latency_ms
+			# Zeit seit Mix und Latenz sind Echtzeit: mal Rate in Songzeit.
+			var r := _rate()
+			return pos * 1000.0 + (since_mix * 1000.0 - _latency_ms - _fx_latency_ms) * r
 		_:
 			return 0.0
 
 
 func _rate() -> float:
 	return _player.pitch_scale * AudioServer.playback_speed_scale
+
+
+# --- Tempo (Rate-Grundlage fuer Uebung/Turbo) --------------------------------
+
+const RATE_MIN := 0.5
+const RATE_MAX := 2.0
+
+
+## Abspieltempo setzen, auch mitten im Song: die Songzeit springt nicht (die
+## Uhr wird erst zum alten Tempo bis JETZT fortgeschrieben, dann laeuft sie
+## mit dem neuen weiter; die Roh-Abweichung durch Puffer/Latenz wird weich
+## nachgefuehrt). keep_pitch = Tonhoehe halten (Time-Stretch); ein Wechsel
+## von keep_pitch aendert die Effekt-Latenz und gehoert an den Songstart.
+func set_rate(rate: float, keep_pitch: bool = false) -> void:
+	rate = clampf(rate, RATE_MIN, RATE_MAX)
+	if is_equal_approx(rate, _tempo) and keep_pitch == _keep_pitch:
+		return
+	if _state == State.STOPPED:
+		_apply_tempo(rate, keep_pitch)
+		return
+	var now := _now_usec()
+	if _movie:
+		var cur := song_time_ms()
+		_apply_tempo(rate, keep_pitch)
+		_movie_clock.anchor(cur, float(now) / 1000.0, _rate())
+		return
+	if _state == State.LEAD_IN:
+		if not _paused:
+			_advance_lead_in(now)
+		_apply_tempo(rate, keep_pitch)
+		if _smoother.is_valid():
+			_smoother.settle()
+		return
+	# Uhr bis jetzt mit altem Tempo fortschreiben, dann umschalten.
+	song_time_ms()
+	_apply_tempo(rate, keep_pitch)
+	if _smoother.is_valid():
+		_smoother.settle()
+
+
+## Aktuelles Abspieltempo (1 = normal).
+func get_rate() -> float:
+	return _tempo
+
+
+func keeps_pitch() -> bool:
+	return _keep_pitch
+
+
+## Latenz des Time-Stretch-Effekts in ms Echtzeit (0 = kein Effekt aktiv).
+func tempo_fx_latency_ms() -> float:
+	return _fx_latency_ms
+
+
+## Tonhoehe des Time-Stretch-Effekts fuer eine Rate: gegenlaeufig (1/Rate), bei
+## 1,0x um 0,17 Cent daneben, damit der Effekt aktiv bleibt und seine Latenz
+## nicht beim ersten Turbo-Schritt um 43 ms springt (hoerbarer Ruck).
+static func tempo_fx_pitch(rate: float) -> float:
+	var p := 1.0 / rate
+	return 0.9999 if absf(p - 1.0) < 0.0001 else p
+
+
+static func ensure_tempo_bus() -> int:
+	var idx := AudioServer.get_bus_index(TEMPO_BUS)
+	if idx < 0:
+		ensure_music_bus()
+		idx = AudioServer.bus_count
+		AudioServer.add_bus(idx)
+		AudioServer.set_bus_name(idx, TEMPO_BUS)
+		AudioServer.set_bus_send(idx, MUSIC_BUS)
+		var ps := AudioEffectPitchShift.new()
+		ps.fft_size = TEMPO_FFT
+		ps.oversampling = TEMPO_OVERSAMPLING
+		AudioServer.add_bus_effect(idx, ps, 0)
+	return idx
+
+
+func _apply_tempo(rate: float, keep_pitch: bool) -> void:
+	_tempo = rate
+	_keep_pitch = keep_pitch
+	if _player == null:
+		return
+	_player.pitch_scale = rate
+	if keep_pitch:
+		var idx := ensure_tempo_bus()
+		var ps := AudioServer.get_bus_effect(idx, 0) as AudioEffectPitchShift
+		if ps != null:
+			ps.pitch_scale = tempo_fx_pitch(rate)
+		_player.bus = TEMPO_BUS
+		_fx_latency_ms = float(TEMPO_FX_LATENCY_FRAMES) / AudioServer.get_mix_rate() * 1000.0
+	else:
+		_player.bus = MUSIC_BUS
+		_fx_latency_ms = 0.0
 
 
 func _refresh_latency() -> void:
@@ -582,13 +709,13 @@ func _refresh_latency() -> void:
 ## Judgement-Zeit = Song-Zeit + Kalibrierungs-Offset (Abschnitt 5).
 ## Diese Uhr wird fuer alle Timing-Vergleiche verwendet.
 func judgement_time_ms() -> float:
-	return song_time_ms() + user_offset_ms
+	return song_time_ms() + user_offset_ms * _tempo
 
 
 ## Zeit fuer alles Sichtbare im Takt (BeatClock, Pulse, FX): song_time_ms +
 ## Settings.visual_offset_ms (Bildschirm-Latenz, Default 0). Siehe Kopf.
 func visual_time_ms() -> float:
-	return song_time_ms() + visual_offset_ms()
+	return song_time_ms() + visual_offset_ms() * _tempo
 
 
 ## Settings.visual_offset_ms, falls es das Feld gibt, sonst 0. Im Movie-
@@ -622,7 +749,7 @@ func _process(delta: float) -> void:
 	if _lead_in_elapsed_ms >= _lead_in_ms:
 		# Ueberhang (bis zu einem Frame) als Startposition: die Audio-Uhr setzt
 		# genau dort fort, wo die Vorlaufuhr steht — kein Rueckwaertssprung.
-		_start_audio(_lead_in_elapsed_ms - _lead_in_ms)
+		_start_audio(_from_ms + _lead_in_elapsed_ms - _lead_in_ms)
 
 
 func _advance_lead_in(now_usec: int) -> void:
@@ -631,7 +758,7 @@ func _advance_lead_in(now_usec: int) -> void:
 		_lead_armed = false
 		_last_tick_usec = now_usec
 		return
-	_lead_in_elapsed_ms += float(now_usec - _last_tick_usec) / 1000.0
+	_lead_in_elapsed_ms += float(now_usec - _last_tick_usec) / 1000.0 * _tempo
 	_last_tick_usec = now_usec
 
 

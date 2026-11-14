@@ -87,6 +87,11 @@ var _judged_count := 0
 
 var _hp_miss_damage := 0.08
 
+## Tempo (mv-tempo, RateTrack): Rate-Verlauf des Laufs, null = 1,0x. Fenster
+## einer Note = Basisfenster x rate_at(Notenzeit), also in Echtzeit gleich breit.
+var rate_track: RateTrack = null
+var _win_rate := 1.0
+
 # --- Fail-Diagnose (nur Beobachtung, aendert die Wertung nie) ---
 const DIAG_LOG_MAX := 30
 const DIAG_HP_WINDOW_MS := 10000.0
@@ -347,10 +352,12 @@ func update(t_ms: float) -> void:
 		# Hold ueber das spaete OK-Fenster des Endes gehalten: wie Loslassen am
 		# Fensterrand werten (osu!mania stable: Kopf- + End-Fehler).
 		var h: int = _active_hold[c]
+		_rate_for(h)
 		if h >= 0 and t_ms >= objs[h].end_time() + w100:
 			_finish_hold(c, hold_quality(_hold_head_err[c], w100))
 		# Im Koerper losgelassen und bis zum Ende des OK-Fensters nicht wieder gedrueckt: Miss.
 		var bh: int = _broken_hold[c]
+		_rate_for(bh)
 		if bh >= 0 and t_ms > objs[bh].end_time() + w100:
 			_active_hold[c] = bh
 			_broken_hold[c] = -1
@@ -372,6 +379,7 @@ func _expire_lane(c: int, t_ms: float) -> void:
 		if _judged.has(idx):
 			_lane_head[c] += 1
 			continue
+		_rate_for(idx)
 		if t_ms > objs[idx].time + w50 and _active_hold[c] != idx:
 			_miss(idx)
 			continue
@@ -391,6 +399,7 @@ func key_down(c: int, t_ms: float) -> void:
 		_mine_hits(mines.key_down(c, t_ms))
 	# Erneuter Druck auf einen im Koerper losgelassenen Hold (zaehlt hoechstens MEH).
 	var bh: int = _broken_hold[c]
+	_rate_for(bh)
 	if bh >= 0 and t_ms <= objs[bh].end_time() + w100:
 		_active_hold[c] = bh
 		_broken_hold[c] = -1
@@ -402,6 +411,7 @@ func key_down(c: int, t_ms: float) -> void:
 		lane_pressed.emit(c, false)
 		return
 	var idx: int = _lane_notes[c][_lane_head[c]]
+	_rate_for(idx)
 	var obj := objs[idx] as ManiaNote
 	var dt := t_ms - obj.time
 	if dt < -w_miss:
@@ -439,6 +449,7 @@ func key_up(c: int, t_ms: float) -> void:
 	var h: int = _active_hold[c]
 	if h < 0:
 		return
+	_rate_for(h)
 	_now = maxf(_now, t_ms)
 	var end := beatmap.hit_objects[h].end_time()
 	if t_ms < end - w50:
@@ -656,6 +667,44 @@ func stats() -> Dictionary:
 	}
 	RuleMods.extend_stats(self, d)
 	return d
+
+
+## Tempo (mv-tempo): Fenster fuer Note idx auf Basis x rate_at(Notenzeit)
+## stellen. Ohne rate_track keine Wirkung (alte Laeufe/Replays unveraendert).
+func _rate_for(idx: int) -> void:
+	if rate_track == null or idx < 0:
+		return
+	var r := rate_track.rate_at(beatmap.hit_objects[idx].time)
+	if r == _win_rate:
+		return
+	_win_rate = r
+	var od := beatmap.od()
+	w_max = DifficultyCalc.mania_window_max(od) * r
+	w300 = DifficultyCalc.mania_window_300(od) * r
+	w200 = DifficultyCalc.mania_window_200(od) * r
+	w100 = DifficultyCalc.mania_window_100(od) * r
+	w50 = DifficultyCalc.mania_window_50(od) * r
+	w_miss = DifficultyCalc.mania_window_miss(od) * r
+
+
+## Uebungsmodus (mv-tempo): nur Noten mit a_ms <= Zeit < b_ms zaehlen. Alle
+## anderen gelten als erledigt (keine Wertung, kein Spawn); Score/Acc beziehen
+## sich nur auf den Abschnitt. Direkt nach setup() aufrufen. Rueckgabe: Notenzahl.
+func restrict_range(a_ms: float, b_ms: float) -> int:
+	var objs := beatmap.hit_objects
+	var first := objs.size()
+	var n := 0
+	for i in objs.size():
+		if objs[i].time >= a_ms and objs[i].time < b_ms:
+			first = mini(first, i)
+			n += 1
+		else:
+			_judged[i] = {"skip": true}
+			_judged_count += 1
+			_spawn_times[i] = INF
+	_next_spawn = first
+	_total_notes = maxi(n, 1)
+	return n
 
 
 func is_judged(index: int) -> bool:
