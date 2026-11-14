@@ -33,7 +33,9 @@ func setup(run: MarathonRun, host: Node) -> void:
 	_run = run
 	_host = host
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	position = Vector2(X, Y)
+	# Replay: mania_3d zeigt "▶ REPLAY" bei y = 44, darunter einreihen.
+	var gs := MarathonRun.autoload("GameSession")
+	position = Vector2(X, Y + (30.0 if gs != null and bool(gs.is_replay) else 0.0))
 	size = Vector2(W, 80)
 	_cap = _label(11, UiTheme.DIM)
 	_cap.add_theme_font_override("font", UiTheme.heading_font(2))

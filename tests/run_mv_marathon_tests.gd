@@ -28,6 +28,7 @@ func _initialize() -> void:
 	_test_timeline_hard_cut()
 	_test_timeline_half_time()
 	_test_intro_outro()
+	_test_no_silence()
 	_test_merge()
 	_test_shared_hp_combo()
 	_test_json_roundtrip()
@@ -194,6 +195,36 @@ func _test_timeline_half_time() -> void:
 	_ok(bool(b.tempo_ok) and float(b.m) == 0.5, "Halbtakt erkannt (m = 1/2)")
 	_ok(_is_downbeat(MarathonPlan.reds_of(maps[1]), MarathonPlan.song_at(b, float(b.mid_in))),
 			"Halbtakt: Mitte = Taktgrenze von B")
+
+
+func _test_no_silence() -> void:
+	# A endet 1,2 s nach der letzten Note (Cut-Version), B's erste Note gleich am
+	# Songanfang: auf dem Takt-Raster bliebe Stille -> Schlag auf Schlag.
+	var a := _map(144.0, 0.0, 0, 129)  # letzte Note bei 53750 ms
+	var b := _map(146.7, 60.0, 0, 80)
+	var segs := MarathonPlan.build_timeline([a, b], [55000.0, 60000.0])
+	var sb: Dictionary = segs[1]
+	var b_start := MarathonPlan.global_at(sb, 0.0)
+	var a_end := MarathonPlan.global_at(segs[0], 55000.0)
+	_ok(b_start <= a_end - MarathonPlan.MIN_OVERLAP_MS + 0.01, "keine Stille: B beginnt vor dem Ende von A (%.0f / %.0f)" % [b_start, a_end])
+	_ok(str(sb.align) == "beat", "Schlag auf Schlag statt Takt auf Takt")
+	var nr: Array = []
+	var mg := MarathonPlan.merge([a, b], segs, "M", nr)
+	var last_a := 0.0
+	for k in range(int(nr[0][0]), int(nr[0][1])):
+		last_a = maxf(last_a, mg.hit_objects[k].end_time())
+	var beat_a := 60000.0 / 144.0
+	_ok(mg.hit_objects[int(nr[1][0])].time - last_a >= beat_a - 0.01, "auch dann Luecke >= 1 Schlag")
+	# Schlaege deckungsgleich.
+	var g := float(sb.mid_in)
+	var sa := MarathonPlan.song_at(segs[0], g)
+	_ok(absf(fposmod(sa, beat_a)) < 0.01 or absf(fposmod(sa, beat_a) - beat_a) < 0.01, "Mitte liegt auf A's Schlag")
+	var bl_b := 60000.0 / 146.7
+	var s_b := MarathonPlan.song_at(sb, g) - 60.0
+	_ok(absf(fposmod(s_b, bl_b)) < 0.01 or absf(fposmod(s_b, bl_b) - bl_b) < 0.01, "Mitte liegt auf B's Schlag")
+	# Mit genug Outro bleibt es Takt auf Takt.
+	var segs2 := MarathonPlan.build_timeline([a, b], [70000.0, 60000.0])
+	_ok(str(segs2[1].align) == "bar", "mit Outro: Takt auf Takt")
 
 
 func _test_intro_outro() -> void:

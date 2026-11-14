@@ -39,6 +39,8 @@ const OUTRO_BARS := 2.0
 ## Mindestluecke zwischen letzter Note von A und erster Note von B (zusaetzlich
 ## zu einem Schlag).
 const MIN_GAP_MS := 250.0
+## B's Song soll mindestens so lange vor dem Ende von A's Song beginnen (keine Stille).
+const MIN_OVERLAP_MS := 200.0
 ## Bass-Absenkung des jeweils "anderen" Decks in dB (EQ-artiger Tausch).
 const BASS_CUT_DB := -26.0
 
@@ -306,6 +308,21 @@ static func downbeat_floor(reds: Array, s: float) -> float:
 	return float(r.t) + floorf((s - float(r.t)) / bar + 1e-7) * bar
 
 
+## Letzter Schlag <= s bzw. erster Schlag >= s (Raster der geltenden roten Linie).
+static func beat_floor(reds: Array, s: float) -> float:
+	var r: Dictionary = reds[red_index(reds, s)]
+	return float(r.t) + floorf((s - float(r.t)) / float(r.bl) + 1e-7) * float(r.bl)
+
+
+static func beat_ceil(reds: Array, s: float) -> float:
+	var i := red_index(reds, s)
+	var r: Dictionary = reds[i]
+	var v := float(r.t) + ceilf((s - float(r.t)) / float(r.bl) - 1e-7) * float(r.bl)
+	if i + 1 < reds.size() and v > float(reds[i + 1].t) and s <= float(reds[i + 1].t):
+		v = float(reds[i + 1].t)
+	return v
+
+
 ## Erste Taktgrenze >= s (eine neue rote Linie beginnt einen neuen Takt).
 static func downbeat_ceil(reds: Array, s: float) -> float:
 	var i := red_index(reds, s)
@@ -422,6 +439,8 @@ static func bass_db_at(seg: Dictionary, g: float) -> float:
 ##   mid_in                     Uebergangsmitte von vorn (Takt-Raster wechselt hier)
 ##   note_from                  B-Noten frueher als das fallen weg (Fairness)
 ##   m, tempo_ok, beat_in       Tempo-Passung zum Vorgaenger, A-Schlag (global)
+##   align                      "bar" (Takt auf Takt) oder "beat" (Schlag auf Schlag,
+##                              nur wenn sonst Stille zwischen den Songs bliebe)
 static func build_timeline(maps: Array, audio_ms: Array = []) -> Array:
 	var segs: Array = []
 	if maps.is_empty():
@@ -467,6 +486,23 @@ static func build_timeline(maps: Array, audio_ms: Array = []) -> Array:
 		var g_last := global_at(a, last_a)
 		var mid_s := downbeat_ceil(ra, song_at(a, g_last + maxf(gap - off_b, 0.5 * beat_a)))
 		var g_mid := global_at(a, mid_s)
+		var align := "bar"
+		# Endet A's Song, bevor B's Song beginnt (A ohne Outro, B ohne Intro), bliebe
+		# auf dem Takt-Raster eine Stille: dann Schlag auf Schlag (B's Schlag der
+		# ersten Note auf A's Schlag), B kommt damit frueher.
+		var a_end := INF
+		if i - 1 < audio_ms.size() and float(audio_ms[i - 1]) > 0.0:
+			a_end = global_at(a, float(audio_ms[i - 1]))
+		if g_mid - anchor / rho > a_end - MIN_OVERLAP_MS:
+			var anchor2 := beat_floor(rb, first_b)
+			var off_b2 := (first_b - anchor2) / rho
+			var mid_s2 := beat_ceil(ra, song_at(a, g_last + maxf(gap - off_b2, 0.5 * beat_a)))
+			var g_mid2 := global_at(a, mid_s2)
+			if g_mid2 - anchor2 / rho < g_mid - anchor / rho:
+				anchor = anchor2
+				mid_s = mid_s2
+				g_mid = g_mid2
+				align = "beat"
 		var g_x0: float
 		var g_x1: float
 		var g_r0: float
@@ -486,7 +522,7 @@ static func build_timeline(maps: Array, audio_ms: Array = []) -> Array:
 			"fade_in": [g_x0, g_mid], "fade_out": [],
 			"bass_in": [g_mid - 0.5 * beat_a, g_mid + 0.5 * beat_a], "bass_out": [],
 			"mid_in": g_mid, "note_from": -INF,
-			"m": float(tm.m), "tempo_ok": ok, "beat_in": beat_a,
+			"m": float(tm.m), "tempo_ok": ok, "beat_in": beat_a, "align": align,
 		}
 		if not ok:
 			b["bass_in"] = []
@@ -665,6 +701,14 @@ static func _merge_timing(out: Beatmap, bm: Beatmap, segs: Array, i: int) -> voi
 		var st := _state_at(table, s_from)
 		_emit_red(out, g_from, float(st.bl) / rate_at(seg, g_from), int(st.meter), bool(st.kiai),
 				float(st.sv) * base / float(st.bl))
+		if str(seg.get("align", "bar")) == "beat":
+			# Schlag auf Schlag: Taktstriche ab B's naechster Taktgrenze wieder in B's Phase.
+			var s_db := downbeat_ceil(reds, s_from)
+			var g_db := global_at(seg, s_db)
+			if g_db > g_from + 1.0 and g_db < g_to and g_db < float(seg.r0):
+				var st_db := _state_at(table, s_db)
+				_emit_red(out, g_db, float(st_db.bl) / rate_at(seg, g_db), int(st_db.meter),
+						bool(st_db.kiai), float(st_db.sv) * base / float(st_db.bl))
 	# Originalpunkte im Bereich.
 	for tp in bm.timing_points:
 		if i > 0 and tp.time <= s_from + 1e-6:
