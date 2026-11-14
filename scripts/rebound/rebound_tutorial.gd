@@ -48,6 +48,7 @@ var finished := false
 var bm: Beatmap
 var flight: ReboundFlight
 var core: ManiaCore
+const AntiMash := preload("res://scripts/rebound/rebound_anti_mash.gd")
 var view: ReboundView
 var trial_stats: Dictionary = {}
 ## Textmeldungen am Ort: [Zeit, Position (px im Ansicht-Feld), Text, Farbe].
@@ -255,6 +256,17 @@ func _label(size_px: int, col: Color) -> Label:
 	return l
 
 
+## Kopftext setzen. Die Hoehe kommt aus der Schrift (Breite des Kopfs), denn das
+## Label meldet im VBox umbrochene Zeilen nicht: sonst ueberdeckt die zweite Zeile
+## die Fortschritts-Striche.
+func _set_body(text: String) -> void:
+	_body_lbl.text = text
+	var font := _body_lbl.get_theme_font("font")
+	var fs := _body_lbl.get_theme_font_size("font_size")
+	var h := font.get_multiline_string_size(text, HORIZONTAL_ALIGNMENT_CENTER, 760.0, fs).y
+	_body_lbl.custom_minimum_size.y = ceilf(h)
+
+
 # ---------------------------------------------------------------------------
 # Texte
 # ---------------------------------------------------------------------------
@@ -275,11 +287,11 @@ func title_for(s: int) -> String:
 
 func body_for(s: int) -> String:
 	match s:
-		LAND: return tr("Four balls bounce over four drums, one key each: %s, %s, %s, %s from left to right. Press the key of a drum just as its ball lands on it. The ring on the drum closes at that moment.") % [key_label(0), key_label(1), key_label(2), key_label(3)]
+		LAND: return tr("Four balls bounce over four drums. Press a drum's key just as its ball lands; the ring closes then. Keys, left to right: %s  %s  %s  %s") % [key_label(0), key_label(1), key_label(2), key_label(3)]
 		JUMP: return tr("The height of the arc is the waiting time: a high arc means a long pause, a low hop means the next landing is close. The faint ghost arc shows the hop after the next landing.")
 		JACK: return tr("Small quick hops on one drum are dribbling: press the same key again and again, once per landing.")
 		HOLD: return tr("A ball that stays squashed on its drum is a hold: press as it lands, keep holding the key while the drum glows, let go when the ring is full.")
-	return tr("Everything together. You get a score at the end.")
+	return tr("Everything together. Don't mash: a wrong key is a miss. You get a score at the end.")
 
 
 func goal_for(s: int) -> String:
@@ -310,7 +322,7 @@ func reason_hint(code: String, col: int = 0) -> String:
 	match code:
 		"early": return tr("Too early: wait until the ball lands on the drum.")
 		"late": return tr("Too late: press at the moment the ball lands.")
-		"key": return tr("Wrong key: this ball lands on the drum of %s.") % key_label(col)
+		"key": return tr("Wrong key = miss. This ball lands on the drum of %s.") % key_label(col)
 		"chord": return tr("Two balls land together: press both keys together.")
 		"hold": return tr("Let go too early: keep holding until the ring is full.")
 		"none": return tr("No key pressed: press the drum key as the ball lands.")
@@ -320,7 +332,7 @@ func reason_hint(code: String, col: int = 0) -> String:
 func _update_texts() -> void:
 	_step_lbl.text = tr("Step %d of %d") % [step + 1, STEP_COUNT]
 	_title_lbl.text = title_for(step)
-	_body_lbl.text = body_for(step)
+	_set_body(body_for(step))
 	if _say_t == -INF:
 		_feedback.text = goal_for(step)
 		_feedback.add_theme_color_override("font_color", UiTheme.DIM)
@@ -649,6 +661,7 @@ func press_lane(col: int, down: bool, at: float = -1.0) -> void:
 	_held[col] = down
 	if down:
 		_presses.append([t, col])
+		AntiMash.wrong_key_check(core, col, t)   # wie im Spiel: falsche Taste = Miss
 		core.key_down(col, t)
 		for i in range(_late.size() - 1, -1, -1):
 			var n := bm.hit_objects[int(_late[i][0])] as ManiaNote
@@ -687,7 +700,7 @@ func _show_result(completed: bool) -> void:
 	_bar.visible = false
 	_step_lbl.text = tr("Mini song")
 	_title_lbl.text = tr("Mini song done") if completed else tr("Mini song")
-	_body_lbl.text = tr("That was Rebound. Change the keys in the settings.")
+	_set_body(tr("That was Rebound. Change the keys in the settings."))
 	_pip_row.visible = false
 	_feedback.text = ""
 	var box := VBoxContainer.new()

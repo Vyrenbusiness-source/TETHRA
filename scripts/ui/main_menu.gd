@@ -66,6 +66,8 @@ const BROWSER_SCENE := "res://scenes/song_select.tscn"
 ## Logo (Quelle: docs/media/logo.svg, hier ohne Kachel und mit heller Schrift
 ## fuer den dunklen Menue-Hintergrund). Pfade gleich wie in logo.svg halten.
 const LOGO_SIZE := Vector2(461, 88)
+## Breite der viewBox von LOGO_SVG (inkl. 4 Einheiten Rand je Seite); Basis fuer Punkt und Einzug.
+const LOGO_VB_W := 725.8
 const LOGO_SVG := """<svg xmlns="http://www.w3.org/2000/svg" viewBox="-4 -4 725.8 139" width="461" height="88">
 <g transform="translate(-8 -34.5)">
 <path d="M97.82 73.82L126.98 115.94A28 28 0 1 0 126.98 84.06L97.82 126.18A46 46 0 1 1 97.82 73.82Z" fill="none" stroke="#ECE6DA" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
@@ -1498,12 +1500,12 @@ func _build_logo(x0: float, st: Dictionary) -> void:
 	stage.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	stage.tex = _svg_tex("logo", LOGO_SVG, _px(w) / LOGO_SIZE.x)
 	_ui.add_child(stage)
-	var inset := 4.0 / 944.0 * w
+	var inset := 4.0 / LOGO_VB_W * w
 	_place(stage, x0 - inset, float(st.logo_y), w, h)
 	if stage.tex != null:
 		var ts := stage.tex.get_size()
-		stage.dot = Vector2((107.95 + 4.0) / 944.0 * ts.x, (65.5 + 4.0) / 139.0 * ts.y)
-		stage.dot_r = 13.0 / 944.0 * ts.x
+		stage.dot = Vector2((107.95 + 4.0) / LOGO_VB_W * ts.x, (65.5 + 4.0) / 139.0 * ts.y)
+		stage.dot_r = 13.0 / LOGO_VB_W * ts.x
 	_logo = stage
 	_logo_stage = stage
 	_intro.append(stage)
@@ -1670,6 +1672,13 @@ func _build_buttons(x0: float, y0: float) -> void:
 	y = _add_row(_btn_mp, x0, y)
 
 	y = _build_daily_row(x0, y)
+
+	# Marathon: oeffnet den Song-Browser (Mania) mit der Marathon-Auswahl.
+	var mara := _menu_button("MARATHON", false)
+	mara.pressed.connect(func():
+		GameSession.set_meta(&"open_marathon", true)
+		_play_mode_entry("mania"))
+	y = _add_row(mara, x0, y)
 
 	var tut := _menu_button("TUTORIAL", false)
 	tut.pressed.connect(_start_tour)

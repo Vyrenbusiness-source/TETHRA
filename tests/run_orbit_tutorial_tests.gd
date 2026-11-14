@@ -217,6 +217,13 @@ func _test_reasons(tut: Control) -> void:
 	_tap(tut, 1 - n.key)
 	_check(str(tut.fb_reason) == "key", "andere Taste erkannt (%s)" % tut.fb_reason)
 	_check(int(tut.success) == 0, "andere Taste zaehlt nicht")
+	_check(tut.core.is_judged(0), "Anti-Mash wie im Spiel: falsche Taste macht das Ziel zum Miss")
+	var miss_txt := str(tut.reason_short("key"))
+	var at_miss := func(e): return str(e.k) == "text" and Vector2(e.p) == n.pos and str(e.s) == miss_txt
+	_check(tut.fx.any(at_miss), "falsche Taste: Text am verfehlten Ziel")
+	tut.enter_step(2)
+	n = tut.notes[0]
+	_run_until(tut, func(): return tut.t_ms >= n.time_ms - 5.0)
 	_move(tut, n.pos + Vector2(0.25, 0.0))
 	_tap(tut, n.key)
 	_check(str(tut.fb_reason) == "aim", "daneben erkannt (%s)" % tut.fb_reason)
