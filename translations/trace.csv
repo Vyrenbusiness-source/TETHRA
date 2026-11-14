@@ -19,9 +19,9 @@ Mini song,Mini-Song,Mini song
 Mini song done,Mini-Song geschafft,Mini song done
 "The thread grows by itself. Every bend has an arrow: press the key of that direction just as the glowing head reaches the bend. Left %s, down %s, up %s, right %s.","Der Faden wächst von allein. Jeder Knick hat einen Pfeil: Drücke die Taste dieser Richtung, genau wenn der leuchtende Kopf den Knick erreicht. Links %s, runter %s, hoch %s, rechts %s.","The thread grows by itself. Every bend has an arrow: press the key of that direction just as the glowing head reaches the bend. Left %s, down %s, up %s, right %s."
 "The distance between bends is the rhythm: a long stretch means wait, a short one means hurry. The same direction twice is a knot on a straight line: press the same key again.","Der Abstand zwischen den Knicken ist der Rhythmus: Eine lange Strecke heißt warten, eine kurze heißt beeilen. Zweimal dieselbe Richtung ist ein Knoten auf gerader Strecke: Drücke dieselbe Taste noch einmal.","The distance between bends is the rhythm: a long stretch means wait, a short one means hurry. The same direction twice is a knot on a straight line: press the same key again."
-"A thick glowing stretch is a hold: press at the bend, keep holding the key until the stretch ends, then let go.","Eine dicke leuchtende Strecke ist ein Hold: Drücke am Knick, halte die Taste, bis die Strecke endet, und lass dann los.","A thick glowing stretch is a hold: press at the bend, keep holding the key until the stretch ends, then let go."
+"A thick glowing stretch is a hold: press at the bend, keep holding the key until the stretch ends, then let go.","Dicke leuchtende Strecke = Hold: am Knick drücken, bis zu ihrem Ende halten, dann loslassen.","A thick glowing stretch is a hold: press at the bend, keep holding the key until the stretch ends, then let go."
 Two arrows at one bend are a chord: press both keys together. Left + up bends up-left. Opposite arrows (left + right) make a cross knot and the thread goes straight on.,"Zwei Pfeile an einem Knick sind ein Akkord: Drücke beide Tasten zusammen. Links + hoch knickt nach links oben. Gegenpfeile (links + rechts) ergeben einen Kreuzknoten, der Faden läuft geradeaus weiter.",Two arrows at one bend are a chord: press both keys together. Left + up bends up-left. Opposite arrows (left + right) make a cross knot and the thread goes straight on.
-Everything together. You get a score at the end.,Alles zusammen. Am Ende gibt es eine Wertung.,Everything together. You get a score at the end.
+Everything together. Don't mash: a wrong key is a miss. You get a score at the end.,Alles zusammen. Nicht wild drücken: falsche Taste = Miss. Am Ende gibt es eine Wertung.,Everything together. Don't mash: a wrong key is a miss. You get a score at the end.
 %d bends hit,%d Knicke getroffen,%d bends hit
 %d holds kept,%d Holds gehalten,%d holds kept
 %d chord keys hit,%d Akkord-Tasten getroffen,%d chord keys hit
@@ -35,7 +35,7 @@ no key,keine Taste,no key
 missed,verfehlt,missed
 Too early: wait until the head reaches the bend.,"Zu früh: warte, bis der Kopf den Knick erreicht.",Too early: wait until the head reaches the bend.
 Too late: press when the head reaches the bend.,"Zu spät: drücke, wenn der Kopf den Knick erreicht.",Too late: press when the head reaches the bend.
-"Wrong key: this bend points %s, press %s.","Falsche Taste: dieser Knick zeigt nach %s, drücke %s.","Wrong key: this bend points %s, press %s."
+"Wrong key = miss. This bend points %s, press %s.","Falsche Taste = Miss. Dieser Knick zeigt nach %s, drück %s.","Wrong key = miss. This bend points %s, press %s."
 Chord: press both keys together.,Akkord: drücke beide Tasten zusammen.,Chord: press both keys together.
 Let go too early: keep holding until the thick stretch ends.,"Zu früh losgelassen: halte, bis die dicke Strecke endet.",Let go too early: keep holding until the thick stretch ends.
 No key pressed: press the arrow key as the head arrives.,"Keine Taste gedrückt: drücke die Pfeiltaste, wenn der Kopf ankommt.",No key pressed: press the arrow key as the head arrives.

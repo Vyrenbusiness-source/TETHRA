@@ -81,6 +81,7 @@ func circle_d() -> float:
 
 func begin_frame() -> void:
 	_items.clear()
+	_mines.clear()
 
 
 func add_note(col: int, z_head: float, color: Color, state: int = STATE_NORMAL,
@@ -91,6 +92,30 @@ func add_note(col: int, z_head: float, color: Color, state: int = STATE_NORMAL,
 func add_hold(col: int, z_head: float, z_tail: float, color: Color, state: int = STATE_NORMAL,
 		id: int = -1, left_ms: float = 0.0) -> void:
 	_items.append([col, z_head, z_tail, color, state, true, id, left_ms])
+
+
+## Mod "MN": Mine in Spalte col bei z (gleiche Z-Rechnung wie Noten), a = Deckkraft.
+var _mines: Array = []
+
+
+func add_mine(col: int, z: float, a: float) -> void:
+	_mines.append([col, z, a])
+
+
+## Minen ueber den Noten zeichnen (eigene Form, auch mit Skins), mit Hidden/Cover-Maske.
+func _draw_mines() -> void:
+	var fr := field_rect()
+	for m in _mines:
+		var c: int = m[0]
+		if c < 0 or c >= columns:
+			continue
+		var x := _bx(fr, c)
+		var w := col_width()
+		if skin != null:
+			x = fr.position.x + _skin_unit() * _sk_col_off(c)
+			w = _skin_unit() * skin.col_units(c)
+		var y := z_to_y(float(m[1]))
+		MineDraw2D.draw(self, x + w * 0.5, y, w, float(m[2]) * mask_alpha(y))
 
 
 func set_lanes(held: Array, flash: Array, flash_col: Array) -> void:
@@ -297,6 +322,7 @@ func _draw() -> void:
 			_draw_osu()
 		else:
 			_draw_skinned()
+		_draw_mines()
 		return
 	var vs := _vs()
 	var fr := field_rect()
@@ -366,6 +392,7 @@ func _draw() -> void:
 			_draw_bar(Rect2(x0, yh - nh * 0.5, w, nh), c)
 		if dbg_popin:
 			_dbg_mark(it, Rect2(x0, yh - nh * 0.5, w, nh), c.a)
+	_draw_mines()
 	if not keys_under:
 		_draw_receptors(fr, cw, ly, nh, vs)
 

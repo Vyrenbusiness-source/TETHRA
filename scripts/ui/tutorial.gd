@@ -418,7 +418,7 @@ func _start_practice() -> void:
 				str(m.get("osu_filename", "")), ms.stars_at(i))
 			get_tree().change_scene_to_file("res://scenes/mania_3d.tscn")
 			return
-	_hint.text = "Übungs-Map nicht gefunden — lege \"844183 tatatat - e.osz\" in den maps-Ordner."
+	_hint.text = tr("Übungs-Map nicht gefunden — lege \"844183 tatatat - e.osz\" in den maps-Ordner.")
 
 
 func _back() -> void:

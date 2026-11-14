@@ -69,12 +69,15 @@ var _perf_frames: Array = []
 ## Online-Scores / Website-Anbindung (scripts/net/online_api.gd).
 var online: OnlineApi
 
-## Kampagne (scripts/campaign/campaign.gd): laufende Stufe {"stage": id} oder {}.
-## campaign_return: Stufe, bei der die Kampagnen-Szene oeffnet.
+## Kampagne (scripts/campaign/campaign.gd): laufende Stufe {"stage": id} oder {}. Skip-Pruefung:
+## zusaetzlich "trial" (Kapitel-Index, von dem aus geprueft wird) und "placement" (Einstufung).
+## campaign_return: Stufe, bei der die Kampagnen-Szene oeffnet. campaign_return_trial:
+## {"chapter", "placement"} = dort mit gewaehlter Skip-Pruefung oeffnen.
 ## Eine Stufe spielt mit den Einstellungen des Spielers (2D/3D, Welt, Skin ...) wie ein
 ## Start aus dem Song-Browser; die Kapitel-Welt ist nur Thema der Kampagnen-Ansicht.
 var campaign: Dictionary = {}
 var campaign_return: String = ""
+var campaign_return_trial: Dictionary = {}
 const CAMPAIGN_HUD := "res://scripts/campaign/campaign_hud.gd"
 
 
@@ -82,8 +85,9 @@ func campaign_active() -> bool:
 	return str(campaign.get("stage", "")) != ""
 
 
-func start_campaign(stage_id: String) -> void:
+func start_campaign(stage_id: String, extra: Dictionary = {}) -> void:
 	campaign = {"stage": stage_id}
+	campaign.merge(extra)
 
 
 func end_campaign() -> void:
@@ -107,7 +111,7 @@ func _campaign_attach_hud(game_id: int) -> void:
 	if game == null or not game.is_inside_tree() or not campaign_active():
 		return
 	# Zur Laufzeit laden: GameSession kompiliert so auch in Tests ohne Autoloads (HUD -> Lobby).
-	load(CAMPAIGN_HUD).call("attach_stage", game, str(campaign.get("stage", "")))
+	load(CAMPAIGN_HUD).call("attach_stage", game, str(campaign.get("stage", "")), campaign.has("trial"))
 
 
 ## Harness --shot-campaign-run=<Praefix>: echter Stufenlauf (Kampagnen-Szene startet die
@@ -405,6 +409,10 @@ func _arm_test_watchdog() -> void:
 	# Live-QA (tests/live_qa.gd): mehrere Runden in einem Prozess, aussen timeout 150.
 	if all.has("--live-qa") or campaign_run_prefix() != "":
 		limit = 145.0
+	# Marathon-Pruefung (mehrere Maps am Stueck, aussen timeout): bis 15 min.
+	for a in all:
+		if a.begins_with("--marathon-harness="):
+			limit = 900.0
 	# Movie-Aufnahmen (--write-movie) begrenzt Godot selbst per --quit-after;
 	# die Watchdog-Zeit laeuft dort in Echtzeit und wuerde lange Aufnahmen kappen.
 	if limit <= 0.0 or all.has("--clip") or Engine.get_write_movie_path() != "":

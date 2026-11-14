@@ -467,6 +467,7 @@ static func build_body(result: Dictionary, meta: Dictionary, mode: String = "man
 	if mode == "dirigent":
 		body["beats_hit"] = int(result.get("beats_hit", 0))
 		body["beats_total"] = int(result.get("beats_total", 0))
+	RuleMods.extend_body(body, result)
 	return body
 
 
