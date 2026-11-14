@@ -22,12 +22,13 @@ func _initialize() -> void:
 	DirAccess.make_dir_recursive_absolute(songs)
 	DirAccess.make_dir_recursive_absolute(maps)
 
-	# Fake-Songs-Ordner: std, 4K, 7K, Taiko, gemischt (4K + 7K), Duplikat.
+	# Fake-Songs-Ordner: std, 4K, 8K, Taiko, gemischt (4K + 8K), Duplikat. 5K-7K sind spielbar
+	# (ManiaKeys, mv-keys); 8K bleibt der Fall "Tastenzahl nicht unterstuetzt".
 	_make_set(songs.path_join("101 Artist A - Std Song"), 101, [[0, 4, "Normal"]], true)
 	_make_set(songs.path_join("102 Artist B - Mania Four"), 102, [[3, 4, "4K Hard"]])
-	_make_set(songs.path_join("103 Artist C - Mania Seven"), 103, [[3, 7, "7K"]])
+	_make_set(songs.path_join("103 Artist C - Mania Seven"), 103, [[3, 8, "8K"]])
 	_make_set(songs.path_join("104 Artist D - Taiko"), 104, [[1, 5, "Oni"]])
-	_make_set(songs.path_join("105 Artist E - Mixed"), 105, [[3, 4, "4K"], [3, 7, "7K"]])
+	_make_set(songs.path_join("105 Artist E - Mixed"), 105, [[3, 4, "4K"], [3, 8, "8K"]])
 	_make_set(songs.path_join("106 Artist F - Already Here"), 106, [[3, 4, "4K"]])
 	_make_set(songs.path_join("Artist G - No Id"), 0, [[0, 4, "Easy"]])
 	DirAccess.make_dir_recursive_absolute(songs.path_join("empty folder"))
@@ -40,7 +41,8 @@ func _initialize() -> void:
 	_ok(int(h.mode) == 3 and int(h.keys) == 4 and int(h.set_id) == 7, "osu_header liest Mode/Keys/Set-ID")
 	_ok(SongImport.header_usable({"mode": 0, "keys": 9}), "std nutzbar")
 	_ok(SongImport.header_usable({"mode": 3, "keys": 4}), "4K nutzbar")
-	_ok(not SongImport.header_usable({"mode": 3, "keys": 7}), "7K uebersprungen")
+	_ok(SongImport.header_usable({"mode": 3, "keys": 7}), "7K nutzbar (5K-7K)")
+	_ok(not SongImport.header_usable({"mode": 3, "keys": 8}), "8K uebersprungen")
 	_ok(not SongImport.header_usable({"mode": 1, "keys": 5}), "Taiko uebersprungen")
 	_ok(not SongImport.header_usable({"mode": 2, "keys": 4}), "Catch uebersprungen")
 
@@ -74,7 +76,7 @@ func _initialize() -> void:
 	_ok(steps[0] == 7, "Fortschritt pro Ordner gemeldet: %d" % steps[0])
 	_ok(FileAccess.file_exists(maps.path_join("101 Artist A - Std Song.osz")), "Dateiname = Ordnername.osz")
 
-	# --- ZIP lesbar, 7K-Diff nicht mit eingepackt, Video draussen ---
+	# --- ZIP lesbar, 8K-Diff nicht mit eingepackt, Video draussen ---
 	var mixed := OszImporter._import_uncached(maps.path_join("105 Artist E - Mixed.osz"))
 	_ok(mixed.ok and mixed.difficulties.size() == 1, "gemischtes Set: nur 4K-Diff im .osz")
 	if mixed.ok and not mixed.difficulties.is_empty():
