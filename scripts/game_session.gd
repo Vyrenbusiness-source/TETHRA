@@ -406,6 +406,9 @@ func _arm_test_watchdog() -> void:
 	# Turnier, ueber 60 s): mehrere Runden in einem Prozess, aussen timeout 150.
 	if all.has("--live-qa") or all.has("--mp-bot") or campaign_run_prefix() != "":
 		limit = 145.0
+	# Relay im Smoke (override.cfg da): gleich lang; ein echter Relay-Server bleibt ohne Limit.
+	if limit > 0.0 and all.has("--mp-relay"):
+		limit = maxf(limit, 145.0)
 	# Movie-Aufnahmen (--write-movie) begrenzt Godot selbst per --quit-after;
 	# die Watchdog-Zeit laeuft dort in Echtzeit und wuerde lange Aufnahmen kappen.
 	if limit <= 0.0 or all.has("--clip") or Engine.get_write_movie_path() != "":
