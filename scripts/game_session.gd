@@ -143,6 +143,9 @@ func _campaign_on_scene_changed() -> void:
 		end_campaign()
 
 
+## Wartezeit beim Beenden, bis der Audio-Thread gestoppte Playbacks geloescht hat.
+const EXIT_AUDIO_DRAIN_MS := 120
+
 func _ready() -> void:
 	online = OnlineApi.new()
 	online.name = "OnlineApi"
@@ -406,13 +409,17 @@ func _arm_test_watchdog() -> void:
 	# Projekt): ebenfalls hart begrenzen, damit nie ein Fenster offen bleibt.
 	if limit <= 0.0 and FileAccess.file_exists("res://override.cfg"):
 		limit = 60.0
-	# Live-QA (tests/live_qa.gd): mehrere Runden in einem Prozess, aussen timeout 150.
-	if all.has("--live-qa") or campaign_run_prefix() != "":
+	# Live-QA (tests/live_qa.gd) und MP-Smoke (--mp-bot, tools/mp_mode_smoke.sh: Runde +
+	# Turnier, ueber 60 s): mehrere Runden in einem Prozess, aussen timeout 150.
+	if all.has("--live-qa") or all.has("--mp-bot") or campaign_run_prefix() != "":
 		limit = 145.0
 	# Marathon-Pruefung (mehrere Maps am Stueck, aussen timeout): bis 15 min.
 	for a in all:
 		if a.begins_with("--marathon-harness="):
 			limit = 900.0
+	# Relay im Smoke (override.cfg da): gleich lang; ein echter Relay-Server bleibt ohne Limit.
+	if limit > 0.0 and all.has("--mp-relay"):
+		limit = maxf(limit, 145.0)
 	# Movie-Aufnahmen (--write-movie) begrenzt Godot selbst per --quit-after;
 	# die Watchdog-Zeit laeuft dort in Echtzeit und wuerde lange Aufnahmen kappen.
 	if limit <= 0.0 or all.has("--clip") or Engine.get_write_movie_path() != "":
@@ -494,3 +501,21 @@ func _playtime_flush() -> void:
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_CLOSE_REQUEST or what == NOTIFICATION_PREDELETE:
 		_playtime_flush()
+
+
+## Programmende (Root verlaesst den Baum; GameSession vor SyncClock, umgekehrte
+## Autoload-Reihenfolge): alle noch laufenden Player stoppen und kurz warten. Der
+## AudioServer loescht gestoppte Playbacks erst in den naechsten Misch-Schritten
+## (Audio-Thread, ~12 ms je Schritt); quit() direkt nach stop() liess sonst
+## AudioStreamPlayback + Stream liegen ("2 ObjectDB instances were leaked at exit").
+func _exit_tree() -> void:
+	var tree := get_tree()
+	if tree == null or tree.root == null:
+		return
+	for n in tree.root.find_children("*", "AudioStreamPlayer", true, false):
+		(n as AudioStreamPlayer).stop()
+	for n in tree.root.find_children("*", "AudioStreamPlayer2D", true, false):
+		(n as AudioStreamPlayer2D).stop()
+	for n in tree.root.find_children("*", "AudioStreamPlayer3D", true, false):
+		(n as AudioStreamPlayer3D).stop()
+	OS.delay_msec(EXIT_AUDIO_DRAIN_MS)
