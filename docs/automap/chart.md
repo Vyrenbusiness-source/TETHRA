@@ -229,10 +229,8 @@ timeout 5400 Godot_v4.7-stable_win64_console.exe --headless --audio-driver Dummy
 ... -- --eval --cache <ordner> [--set test|tune] [--chart k=v,...] [--no-model] [--rank] [--low]
 ```
 
-Nach dem Merge von am3-sections (neue Ereignisse und `bar_density`) muss das Modell neu gelernt werden
-(`--dump` mit dem neuen AmFeatures, dann `--fit`): Das gemessene Modell kennt die neue Ereignis-Lage nicht.
-Probe mit dem Stand von am3-sections (00d0be6, Abstimm-Menge, eigener Cache): neu gelernt und Kopplung 0,5
-Hard auf Menschen-Note 71,4 %, getroffen 63,8 %, Dichte 0,646 (ohne Kopplung 72,1 / 63,4 / 0,639).
+Aendert sich AmFeatures (Ereignisse, `bar_density`), muss das Modell neu gelernt werden (`--dump` mit dem neuen
+AmFeatures, dann `--fit`). `select.json` ist mit dem Stand nach dem Merge von am3-sections (53dd608) gelernt.
 
 ### Gemessen: Pruefstand, Pruef-Menge, echte Kette mit Audio
 
@@ -250,7 +248,25 @@ der Abstimm-Menge (Werkzeug `--eval --set tune`); die Pruef-Menge wurde nur am E
 | Regelverletzungen (lint) | 0 | 0 in 420 | 0 in 420 |
 | Dauer 95. Perzentil (4 min) | <= 15 s | 5,5 s | 5,7 s |
 
-Je Profil nachher (auf Menschen-Note / getroffen / Dichte): Easy 70,1 / 58,1 / 0,459, Normal 75,1 / 65,0 / 0,587,
+Nach dem Merge von am3-sections (53dd608: `bar_density`, Versatz je Art) und main, Modell neu gelernt, Gitter als
+`params.grid` an AmFeatures (AutoMapper4K), gleicher Pruefstand:
+
+| Kennzahl | Ziel | vorher (300f1a3) | nachher ohne am3-sections | nachher mit am3-sections |
+|---|---|---|---|---|
+| auf Menschen-Note, Hard | >= 85 % | 76,5 % | 77,9 % | 77,6 % (Notenzahl/Mensch 0,86) |
+| Menschen-Noten getroffen, Hard | >= 75 % | 61,1 % | 65,8 % | 67,1 % |
+| Dichte-Korrelation | >= 0,8 | 0,544 | 0,641 | 0,660 |
+| Holds | >= 60 % | 52,8 % | 52,8 % | 53,0 % |
+| Sterne Easy / Normal / Hard / Insane / Expert | >= 90 % | 90,5 / 75,0 / 92,9 / 79,8 / 69,0 | 91,7 / 81,0 / 97,6 / 95,2 / 88,1 | 91,7 / 82,1 / 97,6 / 96,4 / 85,7 |
+| lint | 0 | 0 | 0 | 0 |
+| Dauer 95. Perzentil (Maximum) | <= 15 s | 5,5 s (6,2) | 5,7 s (6,2) | 5,9 s (6,8) |
+
+Mit am3-sections je Profil (auf Menschen-Note / getroffen / Dichte): Easy 69,7 / 58,0 / 0,471, Normal 74,5 / 66,4 /
+0,604, Hard 77,6 / 67,1 / 0,721, Insane 75,0 / 64,1 / 0,759, Expert 72,8 / 64,9 / 0,809. Kopplung an `bar_density`
+(Abstimm-Menge): ohne 72,1 / 63,4 / 0,639, mit 0,5/0,5 71,4 / 63,8 / 0,646, nur bar_density (mix 1) 70,8 / 63,9 /
+0,647; gewaehlt 0,5/0,5.
+
+Ohne am3-sections je Profil (auf Menschen-Note / getroffen / Dichte): Easy 70,1 / 58,1 / 0,459, Normal 75,1 / 65,0 / 0,587,
 Hard 77,9 / 65,8 / 0,698, Insane 74,9 / 63,4 / 0,739, Expert 72,4 / 63,9 / 0,789.
 
 ### Grenzen (gemessen, Abstimm-Menge)
