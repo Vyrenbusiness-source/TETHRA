@@ -408,7 +408,7 @@ func _start_practice() -> void:
 			continue
 		for i in ms.difficulty_count():
 			var m := ms.meta_at(i)
-			if int(m.get("mode", 0)) != 3:
+			if not MapSet.mode_shows(m, "mania@4"):  # Tutorial: nur 4K (Set hat auch 5K-7K)
 				continue
 			GameSession.tutorial = true
 			GameSession.mods = { "NF": true }
@@ -418,7 +418,7 @@ func _start_practice() -> void:
 				str(m.get("osu_filename", "")), ms.stars_at(i))
 			get_tree().change_scene_to_file("res://scenes/mania_3d.tscn")
 			return
-	_hint.text = "Übungs-Map nicht gefunden — lege \"844183 tatatat - e.osz\" in den maps-Ordner."
+	_hint.text = tr("Übungs-Map nicht gefunden — lege \"844183 tatatat - e.osz\" in den maps-Ordner.")
 
 
 func _back() -> void:

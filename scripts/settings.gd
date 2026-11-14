@@ -53,6 +53,10 @@ var key_hook1: int = KEY_Z
 var key_hook2: int = KEY_X
 ## Mania-4K: eine Taste pro Spalte.
 var key_lanes: Array[int] = [KEY_D, KEY_F, KEY_J, KEY_K]
+## Mania 5K-7K (echte Maps): eigene Belegung je Tastenzahl, Standard wie osu!
+## (ManiaKeys.DEFAULTS). Schluessel 5/6/7 -> Array[int].
+var key_lanes_k: Dictionary = {5: ManiaKeys.default_keys(5), 6: ManiaKeys.default_keys(6),
+		7: ManiaKeys.default_keys(7)}
 ## Orbit-Modus: Taste A / Taste B (Namen aus der Bahnen-Zeit: inner = A,
 ## outer = B; zusaetzlich immer Maus links = A, Maus rechts = B).
 var orbit_key_inner: int = KEY_Z
@@ -499,6 +503,11 @@ func load_settings(path: String = PATH) -> void:
 	key_hook2 = int(cfg.get_value("keys", "hook2", KEY_X))
 	for i in 4:
 		key_lanes[i] = int(cfg.get_value("keys", "lane%d" % i, key_lanes[i]))
+	for n in key_lanes_k:
+		var ks: Array[int] = ManiaKeys.default_keys(n)
+		for i in n:
+			ks[i] = int(cfg.get_value("keys", "k%d_%d" % [n, i], ks[i]))
+		key_lanes_k[n] = ks
 	var rk3 := [KEY_F, KEY_J, KEY_K]
 	for i in 3:
 		rally_keys_3[i] = int(cfg.get_value("keys", "rally3_%d" % i, rk3[i]))
@@ -579,6 +588,9 @@ func save(path: String = PATH) -> void:
 	cfg.set_value("keys", "hook2", key_hook2)
 	for i in 4:
 		cfg.set_value("keys", "lane%d" % i, key_lanes[i])
+	for n in key_lanes_k:
+		for i in n:
+			cfg.set_value("keys", "k%d_%d" % [n, i], key_lanes_k[n][i])
 	for i in 3:
 		cfg.set_value("keys", "rally3_%d" % i, rally_keys_3[i])
 	for i in 4:
@@ -1221,6 +1233,22 @@ func rally_zone_for_key(keycode: int, n: int = -1) -> int:
 func lane_for_key(keycode: int) -> int:
 	for i in 4:
 		if key_lanes[i] == keycode:
+			return i
+	return -1
+
+
+## Mania-Tasten fuer eine Spaltenzahl (4 = key_lanes, 5-7 = key_lanes_k).
+func mania_keys(columns: int) -> Array[int]:
+	if columns != 4 and key_lanes_k.has(columns):
+		return key_lanes_k[columns]
+	return key_lanes
+
+
+## Mania-Spalte (0..columns-1) der Taste bei dieser Spaltenzahl, sonst -1.
+func mania_lane_for_key(keycode: int, columns: int) -> int:
+	var ks := mania_keys(columns)
+	for i in mini(ks.size(), columns):
+		if ks[i] == keycode:
 			return i
 	return -1
 

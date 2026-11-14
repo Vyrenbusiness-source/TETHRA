@@ -151,6 +151,8 @@ func _test_reasons(tut: Control) -> void:
 	_check(str(tut.last_reason) == "key", "falsche Taste: Grund (%s)" % tut.last_reason)
 	_check(tut.fx.size() > 0 and str(tut.fx[-1][2]) == tut.reason_short("key"), "falsche Taste: Text am Ort")
 	_check(int(tut.success) == 0, "falsche Taste zaehlt nicht")
+	_check(tut.core._judged.has(0) and int(tut.core._judged[0].get("quality", -1)) == ManiaCore.Quality.MISS,
+			"Anti-Mash wie im Spiel: falsche Taste macht die Note zum Miss")
 	# Zu frueh (im Fenster vor der Note).
 	tut.enter_step(0)
 	_to_note(tut, 0, -160.0)

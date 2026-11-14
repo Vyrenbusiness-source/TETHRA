@@ -1,0 +1,19 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+uid="uid://0bwo1iby5h0q"
+
+[deps]
+
+files=["res://translations/tempo.de.translation", "res://translations/tempo.en.translation"]
+
+source_file="res://translations/tempo.csv"
+dest_files=["res://translations/tempo.de.translation", "res://translations/tempo.en.translation"]
+
+[params]
+
+compress=1
+delimiter=0
+unescape_keys=false
+unescape_translations=true

@@ -449,6 +449,8 @@ func mod_badge_texts() -> Array:
 	var out: Array = []
 	for m in active_mods():
 		out.append(ScoreStore.mods_label({ "mods": [m], "sv_level": lv }))
+	# Regel-Mods: "SD", "PF", "Mines" (RuleMods).
+	out.append_array(RuleMods.badge_texts(_data.get("mods", GameSession.mods)))
 	# Modus-eigene Mods (Orbit: HD, PR ...) als fertige Texte.
 	for m in _data.get("mod_texts", []):
 		if str(m) != "" and not out.has(str(m)):
@@ -475,7 +477,7 @@ func _mode_badge() -> Control:
 	(icon.get_child(0) as CanvasItem).modulate = col.lerp(Color.WHITE, 0.55)
 	row.add_child(icon)
 	var l := Label.new()
-	l.text = ScoreStore.mode_label(score_mode()).to_upper()
+	l.text = ScoreStore.mode_label(score_mode(), int(_stats.get("keys", 4))).to_upper()
 	l.add_theme_font_override("font", UiTheme.heading_font(2))
 	l.add_theme_font_size_override("font_size", 13)
 	l.add_theme_color_override("font_color", col.lerp(Color.WHITE, 0.55))
@@ -746,6 +748,12 @@ func _build_left_panel(parent: Control) -> void:
 				(cell.get_child(0) as Label).text = str(tier_names[i])
 	over.add_child(jd)
 	_reveal.append(jd)
+	var mines_txt := RuleMods.mines_line(_stats)   # Mod "MN": Minen gesamt / ausgeloest
+	if mines_txt != "":
+		var ml := _plain(mines_txt, 14, CAPTION)
+		ml.name = "MinesLine"
+		over.add_child(ml)
+		_reveal.append(ml)
 	if st.has("ur"):
 		var tm: Control = card._timing(st, {})
 		# Modus-Kennzahlen an der Stelle des Hold-Feldes ([Titel, Wert, Hinweis]).
@@ -1045,7 +1053,7 @@ func _build_rank_area(parent: Control) -> void:
 	if is_fail:
 		tag.text = "NICHT GESCHAFFT"
 		tag.add_theme_color_override("font_color", FAIL_COLOR)
-	elif int(_stats.get("n_miss", 0)) == 0:
+	elif int(_stats.get("n_miss", 0)) == 0 and int(_stats.get("mine_hits", 0)) == 0:   # Minen brechen FC
 		tag.text = "FULL COMBO"
 		tag.add_theme_color_override("font_color", UiTheme.ACCENT)
 	else:
@@ -1117,7 +1125,9 @@ func _build_buttons(group: Control) -> void:
 		retry.name = "RetryButton"
 		bar.add_child(retry)
 	if _camp_next != "":
-		var nx := _button("Nächste Stufe", true, _campaign_leave.bind(_camp_next), "Enter")
+		var nx_t := "Nächste Prüfung" if _camp_next.begins_with("trial:") else (
+			"Zum neuen Kapitel" if int(_camp.get("trial", -1)) >= 0 else "Nächste Stufe")
+		var nx := _button(nx_t, true, _campaign_leave.bind(_camp_next), "Enter")
 		nx.name = "NextStageButton"
 		bar.add_child(nx)
 	_reveal.append(bar)
@@ -1269,7 +1279,7 @@ func _badges() -> Array:
 		out.append(["NEUER REKORD", Color(1.0, 0.83, 0.25)])
 	if not is_fail and str(_stats.get("grade", "")) == "SS":
 		out.append(["SS", UiTheme.ACCENT2])
-	if not is_fail and int(_stats.get("n_miss", 1)) == 0:
+	if not is_fail and RuleMods.clean_run(_stats):   # FC: kein Miss, keine Mine
 		out.append(["FC", UiTheme.ACCENT])
 	if bool(_data.get("unranked", false)):
 		out.append(["UNGEWERTET", UiTheme.DIM])
@@ -1789,7 +1799,7 @@ func _build_lobby_area(parent: Control) -> void:
 	_lobby_col.add_child(_place_tag)
 	_reveal.append(_place_tag)
 	var is_fail := bool(_data.get("is_fail", false))
-	var fc := int(_stats.get("n_miss", 0)) == 0 and not is_fail
+	var fc := int(_stats.get("n_miss", 0)) == 0 and int(_stats.get("mine_hits", 0)) == 0 and not is_fail
 	if is_fail or fc:
 		var tag := Label.new()
 		tag.text = "NICHT GESCHAFFT" if is_fail else "FULL COMBO"
@@ -2433,6 +2443,11 @@ func _build_details(jlog: Array) -> VBoxContainer:
 		v.add_child(_best_row(prev))
 		v.add_child(_hline())
 
+	var mcells := RuleMods.mines_cells(_stats)   # Mod "MN": Minen gesamt, ausgeloest, ausgewichen
+	if not mcells.is_empty():
+		v.add_child(_mines_row(mcells))
+		v.add_child(_hline())
+
 	v.add_child(_caption_tr("Treffer pro Spur"))
 	var lanes := HBoxContainer.new()
 	lanes.add_theme_constant_override("separation", 24)
@@ -2463,6 +2478,27 @@ func _build_details(jlog: Array) -> VBoxContainer:
 	chart.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	v.add_child(chart)
 	return v
+
+
+## "MINEN  Minen gesamt 42 · ausgeloest 3 · ausgewichen 39" (Details, nur mit Mod "MN").
+func _mines_row(cells: Array) -> Control:
+	var row := HBoxContainer.new()
+	row.name = "MinesRow"
+	row.add_theme_constant_override("separation", 18)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var cap := _caption(RuleMods.label(RuleMods.MN).to_upper())
+	cap.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	row.add_child(cap)
+	for c in cells:
+		var cell := HBoxContainer.new()
+		cell.add_theme_constant_override("separation", 6)
+		cell.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var t := _plain(str(c[0]), 13, CAPTION)
+		t.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		cell.add_child(t)
+		cell.add_child(_plain(str(c[1]), 15, UiTheme.TEXT, true))
+		row.add_child(cell)
+	return row
 
 
 ## "BISHERIGER BESTWERT  911.204 · 95,41 % · 398× · 212,4 pp      03.11.2026".
@@ -2660,6 +2696,10 @@ func _campaign_setup() -> void:
 		return
 	var inject: Dictionary = _data.get("campaign", {})
 	var stage_id := str(inject.get("stage", GameSession.campaign.get("stage", "")))
+	var src: Dictionary = inject if inject.has("stage") else GameSession.campaign
+	var trial := int(src.get("trial", -1))
+	var placement := bool(src.get("placement", false))
+	var mods: Dictionary = (inject.get("mods", GameSession.mods) as Dictionary).duplicate()
 	if stage_id == "":
 		return
 	var camp_all := Campaign.load_data()
@@ -2667,8 +2707,12 @@ func _campaign_setup() -> void:
 	var stage := Campaign.stage_by_id(cdata, stage_id)
 	if stage.is_empty():
 		return
+	# Konstant (CS) steht nicht in GameSession.mods, sondern in den Einstellungen (Mania).
+	if not inject.has("mods") and str(stage.get("mode", "")) == "mania" and Settings.mod_constant:
+		mods["CS"] = true
 	var run := _stats.duplicate()
 	run["failed"] = bool(_stats.get("failed", false)) or bool(_data.get("is_fail", false))
+	run["unranked"] = bool(_stats.get("unranked", false)) or bool(_data.get("unranked", false))
 	var preview := inject.has("state")
 	var state: Dictionary = inject.state if preview else Campaign.load_state()
 	var out: Dictionary
@@ -2677,6 +2721,15 @@ func _campaign_setup() -> void:
 	if bool(_data.get("is_replay", false)) or auto_real:
 		var met := Campaign.goals_met(stage, run)
 		out = {"met_run": met, "stars_run": Campaign.count_true(met), "gained": 0, "cleared_now": false}
+		if trial >= 0:
+			out["trial_reason"] = Campaign.trial_miss_reason(run, mods)
+			out["trial_passed"] = str(out.trial_reason) == ""
+			out["trial_from"] = trial
+			out["trial_to"] = Campaign.trial_target(cdata, trial)
+	elif trial >= 0:
+		out = Campaign.apply_trial(state, cdata, trial, run, mods)
+		if not preview:
+			Campaign.save_state(state)
 	else:
 		out = Campaign.apply_run(state, stage, run)
 		if not preview:
@@ -2684,7 +2737,16 @@ func _campaign_setup() -> void:
 	var ci := Campaign.chapter_index_of(cdata, stage_id)
 	_camp = {"stage_id": stage_id, "stage": stage, "out": out, "chapter": ci, "preview": preview,
 		"index": Campaign.stage_index_of(cdata, stage_id),
-		"world": str((Campaign.chapters(cdata)[ci] as Dictionary).get("world", ""))}
+		"world": str((Campaign.chapters(cdata)[ci] as Dictionary).get("world", "")),
+		"trial": trial, "placement": placement, "accuracy": float(run.get("accuracy", 0.0)),
+		"skip_to": Campaign.skip_to(state, Campaign.data_mode(cdata)),
+		"highest": Campaign.highest_open(cdata, state)}
+	if trial >= 0:
+		# Bestanden: Einstufung -> naechste Pruefung, sonst weiter zur neuen Front.
+		if bool(out.get("trial_passed", false)):
+			var pn := Campaign.placement_next(cdata, trial) if placement else -1
+			_camp_next = ("trial:%d" % pn) if pn >= 0 else Campaign.current_stage_id(cdata, state)
+		return
 	var nx := Campaign.next_stage_id(cdata, stage_id)
 	if nx != "" and Campaign.stage_cleared(state, stage_id) and Campaign.has_map(Campaign.stage_by_id(cdata, nx)):
 		_camp_next = nx
@@ -2713,8 +2775,51 @@ func _campaign_run_shot() -> void:
 func _campaign_leave(target: String) -> void:
 	if bool(_camp.get("preview", false)):
 		return
-	GameSession.campaign_return = target if target != "" else str(_camp.get("stage_id", ""))
+	GameSession.campaign_return_trial = {}
+	var trial := int(_camp.get("trial", -1))
+	var passed := bool((_camp.get("out", {}) as Dictionary).get("trial_passed", false))
+	if target == "" and trial >= 0 and passed:
+		# Bestanden und Esc (auch Abbruch der Einstufung): zur neuen Front, nicht zur Pruefung.
+		var all0 := Campaign.load_data()
+		var cd0 := Campaign.for_mode(all0, Campaign.mode_of_stage(all0, str(_camp.get("stage_id", ""))))
+		var front := Campaign.current_stage_id(cd0, Campaign.load_state())
+		GameSession.campaign_return = front if front != "" else str(_camp.get("stage_id", ""))
+	elif target.begins_with("trial:") or (target == "" and trial >= 0):
+		# Zur Pruefung zurueck (Esc) oder zur naechsten der Einstufung (Enter).
+		var ci := int(target.trim_prefix("trial:")) if target != "" else trial
+		var all := Campaign.load_data()
+		var cdata := Campaign.for_mode(all, Campaign.mode_of_stage(all, str(_camp.get("stage_id", ""))))
+		var ch: Dictionary = Campaign.chapters(cdata)[ci]
+		GameSession.campaign_return = str(((ch.stages as Array)[0] as Dictionary).id)
+		GameSession.campaign_return_trial = {"chapter": ci,
+			"placement": bool(_camp.get("placement", false)) and target != ""}
+	else:
+		GameSession.campaign_return = target if target != "" else str(_camp.get("stage_id", ""))
 	SceneFader.go(Campaign.SCENE)
+
+
+## Text der Skip-Pruefung im Ergebnis: Grenze, erreichte Genauigkeit, Ausgang.
+func _trial_texts() -> Array:
+	var out: Dictionary = _camp.out
+	var req := tr("Skip-Prüfung: %s Accuracy") % Campaign.pct_text(Campaign.TRIAL_ACC)
+	var got := tr("erreicht %s") % Campaign.trial_acc_text(float(_camp.get("accuracy", 0.0)))
+	var verdict := ""
+	if bool(out.get("trial_passed", false)):
+		var a := int(out.get("trial_from", 0)) + 2
+		var b := int(out.get("trial_to", 0)) + 1
+		verdict = (tr("Kapitel %d freigeschaltet") % b) if a >= b else (tr("Kapitel %d bis %d freigeschaltet") % [a, b])
+		if not bool(out.get("skip_new", true)):
+			verdict = tr("Bestanden")
+	else:
+		verdict = tr("Nicht bestanden: %s") % str(out.get("trial_reason", ""))
+	# Nebeninfo ruhig daneben: Ende der Einstufung, Sterne der Boss-Stufe.
+	var extra: Array[String] = []
+	if bool(_camp.get("placement", false)) and not str(_camp_next).begins_with("trial:"):
+		extra.append(tr("Einstufung beendet: Kapitel %d") % (int(_camp.get("highest", 0)) + 1))
+	var gained := int(out.get("gained", 0))
+	if gained > 0:
+		extra.append(tr("+1 Stern") if gained == 1 else tr("+%d Sterne") % gained)
+	return [req, got, verdict, "  ·  ".join(extra)]
 
 
 ## Erfuellter Stern blendet kurz nacheinander ein (Deckkraft und leichte Groesse, kein Wackeln).
@@ -2726,6 +2831,38 @@ func _campaign_pop(star: Control, i: int) -> void:
 	var tw := star.create_tween().set_parallel(true)
 	tw.tween_property(star, "modulate:a", 1.0, 0.2).set_delay(delay)
 	tw.tween_property(star, "scale", Vector2.ONE, 0.3).set_delay(delay) 		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+
+
+## Skip-Pruefung: Grenze, erreicht, Ausgang (ersetzt die Ziel-Sterne).
+func _build_trial_row(row: HBoxContainer, box: Control) -> void:
+	var t := _trial_texts()
+	var ok := bool((_camp.out as Dictionary).get("trial_passed", false))
+	for i in 2:
+		var l := Label.new()
+		l.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+		l.text = str(t[i])
+		l.add_theme_font_size_override("font_size", 14)
+		l.add_theme_color_override("font_color", UiTheme.TEXT if i == 1 else MUTED)
+		row.add_child(l)
+	var spacer := Control.new()
+	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(spacer)
+	var verdict := Label.new()
+	verdict.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	verdict.text = str(t[2])
+	verdict.add_theme_font_override("font", UiTheme.heading_font(0))
+	verdict.add_theme_font_size_override("font_size", 15)
+	verdict.add_theme_color_override("font_color", UiTheme.GOOD if ok else FAIL_COLOR)
+	row.add_child(verdict)
+	if str(t[3]) != "":
+		var ex := Label.new()
+		ex.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+		ex.text = "·  " + str(t[3])
+		ex.add_theme_font_size_override("font_size", 14)
+		ex.add_theme_color_override("font_color", UiTheme.TEXT)
+		row.add_child(ex)
+	_reveal.append(box)
 
 
 ## Ruhige Zeile ueber den Knoepfen: Kapitel und Stufe, die drei Ziele, Ergebnis.
@@ -2749,11 +2886,16 @@ func _build_campaign(group: Control) -> void:
 	head.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
 	head.text = "%s  ·  %s  ·  %s" % [tr("Kampagne"), Campaign.world_label(str(_camp.world)),
 		Campaign.stage_label(stage, int(_camp.index))]
+	if int(_camp.get("trial", -1)) >= 0:
+		head.text = "%s  ·  %s" % [tr("Kampagne"), tr("Einstufung") if bool(_camp.get("placement", false)) else tr("Skip-Prüfung")]
 	head.add_theme_font_override("font", UiTheme.heading_font(0))
 	head.add_theme_font_size_override("font_size", 15)
 	head.add_theme_color_override("font_color", UiTheme.TEXT)
 	row.add_child(head)
 	var goals: Array = stage.get("goals", [])
+	if int(_camp.get("trial", -1)) >= 0:
+		_build_trial_row(row, box)
+		return
 	for i in goals.size():
 		var g := HBoxContainer.new()
 		g.add_theme_constant_override("separation", 8)

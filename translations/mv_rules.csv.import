@@ -1,0 +1,19 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+uid="uid://bgycvaks5g4ob"
+
+[deps]
+
+files=["res://translations/mv_rules.de.translation", "res://translations/mv_rules.en.translation"]
+
+source_file="res://translations/mv_rules.csv"
+dest_files=["res://translations/mv_rules.de.translation", "res://translations/mv_rules.en.translation"]
+
+[params]
+
+compress=1
+delimiter=0
+unescape_keys=false
+unescape_translations=true

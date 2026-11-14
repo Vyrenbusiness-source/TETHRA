@@ -27,6 +27,23 @@ Antwort (zusaetzlich zu den bisherigen Feldern):
 { "campaign": { "stage": "mania-c03s2", "stars": 2, "total_stars": 41, "total_points": 12345678, "rank": 17 } }
 ```
 
+### Skip-Pruefung
+
+```json
+{ "mode": "mania", "beatmap_md5": "...", "accuracy": 0.9934, "mods": ["SV"],
+  "campaign": "v1/mania-c03s6", "campaign_trial": "mania-c01" }
+```
+
+- `campaign_trial`: Kapitel, von dem aus die Skip-Pruefung gespielt wurde (`<modus>-cNN`).
+  `campaign` ist die Boss-Stufe der Pruefung; Sterne zaehlen wie bei jedem Lauf nur dort.
+- Bestanden, wenn der Server selbst nachrechnet: `accuracy >= 0.99`, nicht `failed`, nicht `unranked`,
+  keine erleichternden Mods (`NF`, `CS`), Boss-Stufe passt zu `campaign_trial` (Regel wie
+  `Campaign.trial_target`).
+- Je Spieler und Modus speichern: `skip_to` (hoechstes freigeschaltetes Kapitel, sinkt nie).
+- Gesamtrangliste: nur echte Sterne (Uebersprungenes zaehlt nichts). `chapter` in der Antwort
+  darf das per Sprung erreichte Kapitel zeigen, zusaetzlich `skipped: true`.
+- Antwort: `"campaign": {..., "trial_passed": true, "skip_to": 2}`.
+
 ## 2. GET /campaign/leaderboard
 
 `GET /campaign/leaderboard?version=v1&mode=mania&limit=50&offset=0`
@@ -48,7 +65,8 @@ Sortierung: `stars` absteigend, dann `points` absteigend, dann `updated` aufstei
 `GET /campaign/progress?version=v1` mit Login:
 
 ```json
-{ "version": "v1", "stages": { "mania-c01s1": { "met": [true, true, false], "score": 812345, "accuracy": 0.962, "grade": "A" } } }
+{ "version": "v1", "stages": { "mania-c01s1": { "met": [true, true, false], "score": 812345, "accuracy": 0.962, "grade": "A" } },
+  "skips": { "mania": { "to": 2, "from": 0, "stage": "mania-c03s6", "accuracy": 0.9934 } } }
 ```
 
 Der Client fuehrt das mit dem lokalen Stand zusammen (Ziele ODER, Score Maximum).

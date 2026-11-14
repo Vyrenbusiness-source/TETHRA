@@ -69,12 +69,15 @@ var _perf_frames: Array = []
 ## Online-Scores / Website-Anbindung (scripts/net/online_api.gd).
 var online: OnlineApi
 
-## Kampagne (scripts/campaign/campaign.gd): laufende Stufe {"stage": id} oder {}.
-## campaign_return: Stufe, bei der die Kampagnen-Szene oeffnet.
+## Kampagne (scripts/campaign/campaign.gd): laufende Stufe {"stage": id} oder {}. Skip-Pruefung:
+## zusaetzlich "trial" (Kapitel-Index, von dem aus geprueft wird) und "placement" (Einstufung).
+## campaign_return: Stufe, bei der die Kampagnen-Szene oeffnet. campaign_return_trial:
+## {"chapter", "placement"} = dort mit gewaehlter Skip-Pruefung oeffnen.
 ## Eine Stufe spielt mit den Einstellungen des Spielers (2D/3D, Welt, Skin ...) wie ein
 ## Start aus dem Song-Browser; die Kapitel-Welt ist nur Thema der Kampagnen-Ansicht.
 var campaign: Dictionary = {}
 var campaign_return: String = ""
+var campaign_return_trial: Dictionary = {}
 const CAMPAIGN_HUD := "res://scripts/campaign/campaign_hud.gd"
 
 
@@ -82,8 +85,9 @@ func campaign_active() -> bool:
 	return str(campaign.get("stage", "")) != ""
 
 
-func start_campaign(stage_id: String) -> void:
+func start_campaign(stage_id: String, extra: Dictionary = {}) -> void:
 	campaign = {"stage": stage_id}
+	campaign.merge(extra)
 
 
 func end_campaign() -> void:
@@ -107,7 +111,7 @@ func _campaign_attach_hud(game_id: int) -> void:
 	if game == null or not game.is_inside_tree() or not campaign_active():
 		return
 	# Zur Laufzeit laden: GameSession kompiliert so auch in Tests ohne Autoloads (HUD -> Lobby).
-	load(CAMPAIGN_HUD).call("attach_stage", game, str(campaign.get("stage", "")))
+	load(CAMPAIGN_HUD).call("attach_stage", game, str(campaign.get("stage", "")), campaign.has("trial"))
 
 
 ## Harness --shot-campaign-run=<Praefix>: echter Stufenlauf (Kampagnen-Szene startet die
@@ -138,6 +142,9 @@ func _campaign_on_scene_changed() -> void:
 	if sc == null or not ScoreStore.MODE_SCENES.values().has(sc.scene_file_path):
 		end_campaign()
 
+
+## Wartezeit beim Beenden, bis der Audio-Thread gestoppte Playbacks geloescht hat.
+const EXIT_AUDIO_DRAIN_MS := 120
 
 func _ready() -> void:
 	online = OnlineApi.new()
@@ -402,9 +409,17 @@ func _arm_test_watchdog() -> void:
 	# Projekt): ebenfalls hart begrenzen, damit nie ein Fenster offen bleibt.
 	if limit <= 0.0 and FileAccess.file_exists("res://override.cfg"):
 		limit = 60.0
-	# Live-QA (tests/live_qa.gd): mehrere Runden in einem Prozess, aussen timeout 150.
-	if all.has("--live-qa") or campaign_run_prefix() != "":
+	# Live-QA (tests/live_qa.gd) und MP-Smoke (--mp-bot, tools/mp_mode_smoke.sh: Runde +
+	# Turnier, ueber 60 s): mehrere Runden in einem Prozess, aussen timeout 150.
+	if all.has("--live-qa") or all.has("--mp-bot") or campaign_run_prefix() != "":
 		limit = 145.0
+	# Marathon-Pruefung (mehrere Maps am Stueck, aussen timeout): bis 15 min.
+	for a in all:
+		if a.begins_with("--marathon-harness="):
+			limit = 900.0
+	# Relay im Smoke (override.cfg da): gleich lang; ein echter Relay-Server bleibt ohne Limit.
+	if limit > 0.0 and all.has("--mp-relay"):
+		limit = maxf(limit, 145.0)
 	# Movie-Aufnahmen (--write-movie) begrenzt Godot selbst per --quit-after;
 	# die Watchdog-Zeit laeuft dort in Echtzeit und wuerde lange Aufnahmen kappen.
 	if limit <= 0.0 or all.has("--clip") or Engine.get_write_movie_path() != "":
@@ -486,3 +501,21 @@ func _playtime_flush() -> void:
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_CLOSE_REQUEST or what == NOTIFICATION_PREDELETE:
 		_playtime_flush()
+
+
+## Programmende (Root verlaesst den Baum; GameSession vor SyncClock, umgekehrte
+## Autoload-Reihenfolge): alle noch laufenden Player stoppen und kurz warten. Der
+## AudioServer loescht gestoppte Playbacks erst in den naechsten Misch-Schritten
+## (Audio-Thread, ~12 ms je Schritt); quit() direkt nach stop() liess sonst
+## AudioStreamPlayback + Stream liegen ("2 ObjectDB instances were leaked at exit").
+func _exit_tree() -> void:
+	var tree := get_tree()
+	if tree == null or tree.root == null:
+		return
+	for n in tree.root.find_children("*", "AudioStreamPlayer", true, false):
+		(n as AudioStreamPlayer).stop()
+	for n in tree.root.find_children("*", "AudioStreamPlayer2D", true, false):
+		(n as AudioStreamPlayer2D).stop()
+	for n in tree.root.find_children("*", "AudioStreamPlayer3D", true, false):
+		(n as AudioStreamPlayer3D).stop()
+	OS.delay_msec(EXIT_AUDIO_DRAIN_MS)

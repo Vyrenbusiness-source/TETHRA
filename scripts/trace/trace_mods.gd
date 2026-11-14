@@ -10,7 +10,7 @@ extends RefCounted
 ## (Produkt), TraceMods.mod_list(mods) haengt MR/HD/SS an die Badge-Liste.
 
 const MODS := ["MR", "HD", "SS"]
-const MOD_ORDER := ["MR", "HD", "SS", "NF"]
+const MOD_ORDER := ["MR", "HD", "SS", "NF", "SD", "PF"]
 const MOD_MULT := {"MR": 1.0, "HD": 1.06, "SS": 1.08}
 const SHORT_SIGHT_MS := 500.0
 ## Hidden: Anteil des Vorlaufs ab Kopf, der voll sichtbar bleibt / ab dem nichts mehr zu sehen ist.

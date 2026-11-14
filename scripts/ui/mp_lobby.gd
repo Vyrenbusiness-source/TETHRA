@@ -255,6 +255,8 @@ func _ready() -> void:
 		_lobby_shots()
 	if OS.get_cmdline_args().has("--shot-mp"):
 		_capture_shot()
+	if OS.get_cmdline_args().has("--shot-rule-lobby"):
+		RuleModsHarness.run_lobby(self)   # Harness: SD/PF/Minen als Raum-Mods per Klick
 	if OS.get_cmdline_args().has("--shot-picker") or OS.get_cmdline_user_args().has("--shot-picker"):
 		_picker_shots()
 	# Headless-Smoke: zwei Prozesse verbinden sich ueber localhost.
@@ -271,12 +273,19 @@ func _ready() -> void:
 		Lobby.join_online(_arg_value("--mp-relay-code="))
 		_mp_relay(false)
 	elif OS.get_cmdline_args().has("--mp-orbit-host"):
+		# --mp-via-relay: derselbe Ablauf ueber den Relay (tools/mp_relay_smoke.sh MODE=<modus>).
 		if not Lobby.active:
-			Lobby.host_room()
+			if OS.get_cmdline_args().has("--mp-via-relay"):
+				Lobby.host_online("Relay-Smoke")
+			else:
+				Lobby.host_room()
 		_mp_orbit(true)
 	elif OS.get_cmdline_args().has("--mp-orbit-client"):
 		if not Lobby.active:
-			Lobby.join_lan("127.0.0.1")
+			if OS.get_cmdline_args().has("--mp-via-relay"):
+				Lobby.join_online(_arg_value("--mp-relay-code="))
+			else:
+				Lobby.join_lan("127.0.0.1")
 		_mp_orbit(false)
 	elif OS.get_cmdline_args().has("--mp-auto-host"):
 		if not Lobby.active:
@@ -444,6 +453,17 @@ func _mp_relay(host: bool) -> void:
 		if int(id) != me:
 			other = int(id)
 	print("MPRELAY %s players=%d me=%d other=%d crown=%d" % [tag, Lobby.players.size(), me, other, Lobby.crown_id])
+	# Raum-Mods ueber den Relay: Host schaltet Sudden Death + Minen, beide sehen dieselben
+	# Mods samt Minen-Version (RuleMods.lobby_norm), die Runde baut daraus GameSession.mods.
+	if host:
+		Lobby.pick_mods(RuleMods.lobby_toggle(RuleMods.lobby_toggle(Lobby.mods, RuleMods.SD), RuleMods.MN))
+	if not await wait_for.call(func(): return RuleMods.has(Lobby.mods, RuleMods.SD) \
+			and RuleMods.has(Lobby.mods, RuleMods.MN), 10.0):
+		fail.call("Raum-Mods fehlen: %s" % str(Lobby.mods))
+		return
+	var round_mods := RuleMods.for_mode(Lobby.mods, "mania")
+	print("MPRELAY %s mods=%s v=%d nf=%s" % [tag, Lobby.mods_text(Lobby.mods),
+		int(round_mods.get(RuleMods.MN_VERSION_KEY, -1)), str(bool(round_mods.get("NF", false)))])
 	Lobby.in_game = true
 	var mine := 1111 if host else 2222
 	var theirs := 2222 if host else 1111
@@ -485,6 +505,9 @@ func _mp_orbit(host: bool) -> void:
 	# --mp-mode=<orbit|rally|dirigent|trace|rebound> (Standard orbit): Raum-Modus der Smoke-Runde.
 	var pmode := Lobby.norm_play(_arg_value("--mp-mode=")) if _arg_value("--mp-mode=") != "" else "orbit"
 	var pview := Lobby.play_name(pmode)
+	# Mania meldet die Darstellung (2D/3D) statt des Modusnamens.
+	var view_ok := func(v: String) -> bool:
+		return v == pview or (pmode == "mania" and v in ["2D", "3D"])
 	var step := func(msg: String): print("MPORBIT %s s%d %s" % [tag, _mpo_stage, msg])
 	var fail := func(msg: String):
 		print("MPORBIT %s s%d FAIL %s" % [tag, _mpo_stage, msg])
@@ -496,7 +519,12 @@ func _mp_orbit(host: bool) -> void:
 			w += 0.1
 		return cond.call()
 	var me := multiplayer.get_unique_id()
-	if not await wait_for.call(func(): return Lobby.players.size() >= 2 and Lobby.players.has(multiplayer.get_unique_id()), 20.0):
+	if host and _mpo_stage == 0 and OS.get_cmdline_args().has("--mp-via-relay"):
+		if not await wait_for.call(func(): return Lobby.room_code != "", 15.0):
+			fail.call("kein Raum-Code")
+			return
+		print("MPRELAY code=%s" % Lobby.room_code)
+	if not await wait_for.call(func(): return Lobby.players.size() >= 2 and Lobby.players.has(multiplayer.get_unique_id()), 30.0):
 		fail.call("players")
 		return
 	me = multiplayer.get_unique_id()
@@ -538,6 +566,16 @@ func _mp_orbit(host: bool) -> void:
 			fail.call("finals")
 			return
 		dump.call("room finals")
+		# Platzierung: Reihenfolge der Rangliste = absteigende Endergebnisse.
+		var rk: Array = []
+		var sorted_ok := true
+		var prev := 1 << 62
+		for e in Lobby.ranked_players():
+			var fs := int((e.get("final", {}) as Dictionary).get("score", -1))
+			sorted_ok = sorted_ok and fs <= prev and int(e.score) == fs
+			prev = fs
+			rk.append("%d.%s=%d" % [rk.size() + 1, str(e.name), fs])
+		step.call("ranking ok=%s [%s] mods=[%s]" % [sorted_ok, ", ".join(rk), Lobby.mods_text(Lobby.mods)])
 		if pmode == "trace":
 			_refresh_room()
 			step.call("versus pictures n=%d" % _versus_count())
@@ -557,7 +595,7 @@ func _mp_orbit(host: bool) -> void:
 			elif not await wait_for.call(func(): return Lobby.play_mode == pmode and not Lobby.sel_map.is_empty(), 20.0):
 				fail.call("mode/map sync")
 				return
-			if not await wait_for.call(func(): return Lobby.all_ready() and Lobby.view_of(other) == pview, 20.0):
+			if not await wait_for.call(func(): return Lobby.all_ready() and view_ok.call(Lobby.view_of(other)), 20.0):
 				fail.call("all_ready/view (ready=%s view=%s)" % [Lobby.all_ready(), Lobby.view_of(other)])
 				return
 			step.call("all ready, views %s/%s" % [Lobby.view_of(me), Lobby.view_of(other)])
@@ -1878,12 +1916,23 @@ func _build_room() -> void:
 			"Kein Abbruch bei leerer Lebensleiste" if k == "NF" else "Jede Map mit Tempowechseln")
 		var key: String = k
 		mb.toggled.connect(func(_on: bool):
-			var nm: Dictionary = Lobby.mods.duplicate()
-			nm[key] = not bool(nm.get(key, false))
-			Lobby.pick_mods(nm)
+			Lobby.pick_mods(RuleMods.lobby_toggle(Lobby.mods, key))   # NF schliesst SD/PF aus
 			_refresh_room())
 		mrow.add_child(mb)
 		_mod_btns[k] = mb
+	# Regel-Mods (Sudden Death, Perfect, Minen): zweite Zeile, nur in Modi, wo sie wirken.
+	var rrow := HBoxContainer.new()
+	rrow.add_theme_constant_override("separation", 8)
+	mapcol.add_child(_gap(8))
+	mapcol.add_child(rrow)
+	for k in RuleMods.KEYS:
+		var rb := _mod_toggle(RuleMods.lobby_label(k), RuleMods.tip(k))
+		var rkey: String = k
+		rb.toggled.connect(func(_on: bool):
+			Lobby.pick_mods(RuleMods.lobby_toggle(Lobby.mods, rkey))
+			_refresh_room())
+		rrow.add_child(rb)
+		_mod_btns[k] = rb
 
 	cols.add_child(_hgap(M))
 	var vr := _vsep()
@@ -2233,8 +2282,12 @@ func _refresh_room() -> void:
 		var mb: CheckButton = _mod_btns[k]
 		mb.set_pressed_no_signal(bool(Lobby.mods.get(k, false)))
 		mb.disabled = not is_crown
-		mb.tooltip_text = (tr("Kein Abbruch bei leerer Lebensleiste") if k == "NF" else tr("Jede Map mit Tempowechseln")) \
-			+ ("" if is_crown else "\n" + tr("Nur der Kronenträger schaltet Mods."))
+		var base_tip: String = RuleMods.tip(k) if k in RuleMods.KEYS else \
+			(tr("Kein Abbruch bei leerer Lebensleiste") if k == "NF" else tr("Jede Map mit Tempowechseln"))
+		mb.tooltip_text = base_tip + ("" if is_crown else "\n" + tr("Nur der Kronenträger schaltet Mods."))
+		if k in RuleMods.KEYS:
+			mb.visible = RuleMods.available(k, Lobby.play_mode)
+			mb.get_parent().visible = RuleMods.available(RuleMods.SD, Lobby.play_mode)
 	var in_tour := Lobby.tournament != null
 	for pm in _play_btns:
 		var pb: Button = _play_btns[pm]

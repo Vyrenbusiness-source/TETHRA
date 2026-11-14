@@ -661,6 +661,8 @@ func _run_autoplay(t: float) -> void:
 	while _auto_idx < objs.size() and objs[_auto_idx].time <= t:
 		var n := objs[_auto_idx] as ManiaNote
 		_auto_idx += 1
+		if _auto_idx - 1 == RuleModsHarness.auto_skip():
+			continue   # Shots: --auto-skip=<n> laesst Note n aus (Sudden Death/Perfect)
 		var c := n.column
 		if c < 0 or c > 3:
 			continue
@@ -962,7 +964,7 @@ func _build_results(is_fail: bool, s: Dictionary, new_best: bool) -> void:
 	rs.back_pressed.connect(_back_to_browser)
 	rs.replay_pressed.connect(_on_results_replay)
 	var data := {
-		"is_fail": is_fail, "fail_reason": "", "s": s, "pp": -1.0, "unranked": false,
+		"is_fail": is_fail, "fail_reason": RuleMods.fail_reason(core) if is_fail else "", "s": s, "pp": -1.0, "unranked": false,
 		"new_best": new_best, "title": _beatmap.title(), "artist": _beatmap.artist(),
 		"version": _beatmap.version_name(), "cover_path": "", "offsets": _hit_offsets,
 		"player": Settings.profile_name, "date": Time.get_datetime_string_from_system(),
@@ -978,7 +980,8 @@ func _build_results(is_fail: bool, s: Dictionary, new_best: bool) -> void:
 	if _prev_best != null:
 		data["previous_best"] = _prev_best
 	if is_fail:
-		data["fail_ms"] = maxf(_time_ms(), 0.0)
+		# Letzte Wertungszeit wie Rebound: die Uhr steht hier schon (SyncClock.stop -> 0:00).
+		data["fail_ms"] = maxf(_last_update_t, 0.0)
 	var cover := OszImporter.load_background_texture(GameSession.osz_path, _beatmap)
 	if cover != null:
 		data["cover"] = cover
@@ -1095,7 +1098,7 @@ func _shot_target(v: String, def: float) -> float:
 ## Wertung/Autoplay ohne Audio bis t vorspulen (deterministisch, 8-ms-Schritte).
 func _sim_to(target: float) -> void:
 	var t := -2000.0
-	while t < target and not _sim_done:
+	while t < target and not _sim_done and not (core.failed and not core.no_fail):   # Fail (SD/PF) endet hier
 		t += 8.0
 		if _autoplay:
 			_run_autoplay(t)
@@ -1104,7 +1107,7 @@ func _sim_to(target: float) -> void:
 
 
 func _capture_shot() -> void:
-	core.no_fail = true
+	core.no_fail = not _args().has("--shot-fail")   # --shot-fail: echter Fail (SD/PF)
 	var target := _first_ms() + 1200.0
 	var at_arg := ""
 	for a in _args():

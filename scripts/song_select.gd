@@ -111,6 +111,9 @@ var _orbit_mod_btns := {}
 ## Trace-Mods (TraceMods.MODS): nur im Trace-Modus sichtbar, neben No-Fail.
 var _trace_mods := {"MR": false, "HD": false, "SS": false}
 var _trace_mod_btns := {}
+## Regel-Mods (RuleMods.KEYS: SD, PF, MN), sichtbar je RuleMods.MODES. Browser-Zustand.
+var _rule_mods := {"SD": false, "PF": false, "MN": false}
+var _rule_mod_btns := {}
 const TRACE_MOD_TIPS := {
 	"MR": "Mirror: links und rechts getauscht (Score x1,0)",
 	"HD": "Hidden: der Weg blendet zum Kopf hin aus (Score x1,06)",
@@ -180,6 +183,9 @@ var _score_index := {}
 var _mtime_cache := {}
 var _star_chips: Array[Button] = []
 var _sv_filter := false
+## Tasten-Filter (nur Mania): 0 = alle (4K-7K), sonst nur diese Tastenzahl.
+var _key_filter := 0
+var _keys_btn: OptionButton
 ## Filter/Sortierung/Sammlung/Suche bleiben ueber Map-Ende und Neustart erhalten.
 const BROWSER_STATE_PATH := "user://browser_state.cfg"
 var _state_ready := false
@@ -211,6 +217,7 @@ var _career_state := {}
 var _career_items: Array = []        # aktuelle Vorschlaege (Reihenfolge wie im Panel)
 var _career_dirty := false           # Panel-Neuaufbau steht aus (entprellt)
 var _share_btn: Button
+var _marathon_btn: Button
 var _saved_search := ""
 var _sv_chip: Button
 # Max-pp (SS) der ausgewaehlten Diff — rosu-pp im Hintergrund-Thread.
@@ -247,6 +254,7 @@ const STAR_FILTERS := [
 ]
 func _ready() -> void:
 	_perf_ready_t = Time.get_ticks_usec()
+	MarathonRun.end()  # zurueck im Browser: kein Marathon mehr aktiv
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_library = MapLibrary.new()
 	_library.scan()
@@ -266,6 +274,10 @@ func _ready() -> void:
 	for a in OS.get_cmdline_args():
 		if a.begins_with("--mode=") and PLAY_MODES.has(a.trim_prefix("--mode=")):
 			_play_mode = a.trim_prefix("--mode=")  # Debug/Shots: Modus vorwaehlen (nie gespeichert)
+	for a in OS.get_cmdline_args():
+		# Debug/Shots: --keys=7 = Tasten-Filter vorwaehlen (nie gespeichert, da Testlauf).
+		if a.begins_with("--keys=") and ManiaKeys.supported(int(a.trim_prefix("--keys="))):
+			_key_filter = int(a.trim_prefix("--keys="))
 	for a in OS.get_cmdline_args():
 		# Debug/Shots: --filter=sort=3,best=1,grades=S+A fuer den aktiven Modus (nie gespeichert).
 		if a.begins_with("--filter="):
@@ -322,6 +334,18 @@ func _ready() -> void:
 
 	if OS.get_cmdline_args().has("--sv"):
 		_on_sv_toggled(true)  # Debug/Shots: SV-Mod vorwaehlen
+	for a in OS.get_cmdline_args():
+		if a.begins_with("--rule-mods="):
+			# Debug/Shots: --rule-mods=SD,MN nur fuer diesen Lauf (nie gespeichert).
+			_state_ready = false
+			for k in RuleMods.KEYS:
+				_rule_mods[k] = k in a.trim_prefix("--rule-mods=").to_upper().split(",")
+			if RuleMods.is_rule(_rule_mods):
+				_nf_enabled = false
+				_update_nf_button()
+			_sync_rule_mod_buttons()
+			if _selected_set != null:
+				_update_info_panel()   # Minen-Liste unter BESTE SCORES
 	if DisplayServer.get_name() == "headless":
 		_headless_report()
 	elif GameSession.perf_enabled:
@@ -364,6 +388,10 @@ func _ready() -> void:
 	elif OS.get_cmdline_args().has("--shot-online"):
 		# Harness: Online-Tab (Raster, Genre, Download, Fehler) als PNGs.
 		_shot_online.call_deferred()
+	elif GameSession.has_meta(&"open_marathon") or MarathonPanel.shot_dir() != "":
+		# Hauptmenue "Marathon" bzw. Harness: Marathon-Auswahl gleich oeffnen.
+		GameSession.remove_meta(&"open_marathon")
+		_open_marathon.call_deferred()
 	elif OS.get_cmdline_args().has("--shot-import"):
 		# Harness: Import-Fenster mit Fortschritt und Drop-Hinweis als PNGs.
 		_shot_import.call_deferred()
@@ -377,6 +405,8 @@ func _ready() -> void:
 			if a.begins_with("--skin2d="):
 				Settings.skin_2d = a.trim_prefix("--skin2d=")
 		add_child.call_deferred(SettingsPanel.new())
+	elif OS.get_cmdline_args().has("--rules-harness"):
+		RuleModsHarness.run_browser(self)   # Harness: Regel-Mods per Klick, Minen-Liste, Replay
 	elif OS.get_cmdline_args().has("--shot"):
 		_capture_screenshot_and_quit()
 
@@ -735,6 +765,8 @@ func _build_header() -> void:
 		_refresh_filter(_search.text))
 	filter_row.add_child(_sv_chip)
 	_restyle_star_chips()
+	_keys_btn = _make_keys_filter()
+	filter_row.add_child(_keys_btn)
 	_sort_btn = OptionButton.new()
 	for si in SORT_NAMES.size():
 		_sort_btn.add_item(tr(SORT_NAMES[si]), si)
@@ -1100,6 +1132,11 @@ func _build_info_panel() -> void:
 		var tb := _make_trace_mod_button(k)
 		mods_row.add_child(tb)
 		_trace_mod_btns[k] = tb
+	for k in RuleMods.KEYS:
+		var rb := _make_rule_mod_button(k)
+		mods_row.add_child(rb)
+		_rule_mod_btns[k] = rb
+	TempoBrowserRow.build(self, mods_row)  # mv-tempo: Turbo, Tonhoehe, Ueben
 	_apply_mod_visibility()
 	_apply_play_state()
 
@@ -1122,6 +1159,18 @@ func _build_info_panel() -> void:
 	UiTheme.style_ghost_button(_share_btn, 10)
 	_share_btn.pressed.connect(_share_selected_map)
 	mods_row.add_child(_share_btn)
+
+	# Marathon (scripts/marathon): mehrere Maps am Stueck, nur Mania.
+	_marathon_btn = Button.new()
+	_marathon_btn.text = tr("Marathon")
+	_marathon_btn.tooltip_text = tr("Several maps in a row, one HP bar, one combo")
+	_marathon_btn.custom_minimum_size = Vector2(0, 40)
+	_marathon_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_marathon_btn.add_theme_font_size_override("font_size", 14)
+	UiTheme.style_ghost_button(_marathon_btn, 10)
+	_marathon_btn.pressed.connect(_open_marathon)
+	_marathon_btn.visible = _play_mode == "mania"
+	mods_row.add_child(_marathon_btn)
 
 	var sep := ColorRect.new()
 	sep.custom_minimum_size = Vector2(0, 1)
@@ -1490,7 +1539,7 @@ static func collection_mode_hint(mode: String) -> String:
 static func playable_modes(ms: MapSet) -> Array:
 	var out: Array = []
 	for m in PLAY_MODES:
-		if not ms.visible_diffs("mania" if ScoreStore.is_mania_like(m) else "orbit").is_empty():
+		if not ms.visible_diffs(view_mode_of(m)).is_empty():
 			out.append(m)
 	return out
 
@@ -1902,6 +1951,8 @@ func _load_browser_state() -> bool:
 	if cfg.load(BROWSER_STATE_PATH) == OK:
 		_star_filter = clampi(int(cfg.get_value("browser", "star_filter", 0)), 0, STAR_FILTERS.size() - 1)
 		_sv_filter = bool(cfg.get_value("browser", "sv_filter", false))
+		var kf := int(cfg.get_value("browser", "key_filter", 0))
+		_key_filter = kf if ManiaKeys.supported(kf) else 0
 		var old_sort := clampi(int(cfg.get_value("browser", "sort_mode", 0)), 0, SORT_NAMES.size() - 1)
 		var mfs = cfg.get_value("browser", "mode_filters", {})
 		for m in PLAY_MODES:
@@ -1926,6 +1977,10 @@ func _load_browser_state() -> bool:
 		if tmd is Dictionary:
 			for k in TraceMods.MODS:
 				_trace_mods[k] = bool(tmd.get(k, false))
+		var rmd = cfg.get_value("browser", "rule_mods", {})
+		if rmd is Dictionary:
+			for k in RuleMods.KEYS:
+				_rule_mods[k] = bool(rmd.get(k, false))
 	return true
 
 
@@ -1933,6 +1988,7 @@ func _save_browser_state() -> void:
 	var cfg := ConfigFile.new()
 	cfg.set_value("browser", "star_filter", _star_filter)
 	cfg.set_value("browser", "sv_filter", _sv_filter)
+	cfg.set_value("browser", "key_filter", _key_filter)
 	cfg.set_value("browser", "sort_mode", _sort_mode())
 	var mfs := {}
 	for m in PLAY_MODES:
@@ -1945,6 +2001,7 @@ func _save_browser_state() -> void:
 	cfg.set_value("browser", "sv_level", SvMod.level_name())
 	cfg.set_value("browser", "orbit_mods", _orbit_mods.duplicate())
 	cfg.set_value("browser", "trace_mods", _trace_mods.duplicate())
+	cfg.set_value("browser", "rule_mods", _rule_mods.duplicate())
 	cfg.set_value("browser", "recs", rec_sanitize(_rec))
 	cfg.save(BROWSER_STATE_PATH)
 
@@ -2615,6 +2672,10 @@ func _make_card(ms: MapSet) -> Button:
 	# SV-Badge: Set enthaelt mindestens eine Diff mit echter SV.
 	if ms.has_sv():
 		hb.add_child(_sv_badge())
+	# Tasten-Badge ("7K"): nur wenn das Set mehr als 4K-Diffs zeigt.
+	var kb := _keys_badge(ms)
+	if kb != null:
+		hb.add_child(kb)
 
 	# Orbit/Frei: dezente Marke "Empfohlen", wenn die Map zur Karriere-Stufe passt.
 	var rec := Label.new()
@@ -2789,6 +2850,9 @@ func _update_info_panel() -> void:
 	# Orbit-Modus (nur 4K-Diffs): nur Orbit-Scores, getrennt von Mania.
 	var orbit := _play_mode != "mania" and int(m.get("mode", 0)) in [0, 3]
 	var score_mode := _pm() if orbit else ""
+	# Mods-Schalter "Mines" an: eigene Liste "mania_mn" (RuleMods), Kopf zeigt "Mines".
+	if _play_mode == "mania":
+		score_mode = RuleMods.board_mode(score_mode, _rule_mods)
 	_style_lb_mode_tag(score_mode)
 	_online_gen += 1
 	if _lb_online:
@@ -2800,7 +2864,7 @@ func _update_info_panel() -> void:
 		_selected_set.version_name_at(_selected_diff), 5, score_mode)
 	if tops.is_empty():
 		var empty := Label.new()
-		empty.text = tr("Noch kein %s-Score — spiel die Map!") % ScoreStore.mode_label(score_mode)
+		empty.text = RuleMods.board_text("empty") if RuleMods.is_mines_board(score_mode) 				else tr("Noch kein %s-Score — spiel die Map!") % _score_label(score_mode)
 		empty.add_theme_font_size_override("font_size", 13)
 		empty.add_theme_color_override("font_color", COL_DIM)
 		_lb_box.add_child(empty)
@@ -3004,6 +3068,13 @@ func _lb_hint(text: String) -> void:
 	_lb_box.add_child(l)
 
 
+## Online-Modus der Rangliste: Mania je Tastenzahl ("mania", "mania7k"), sonst der Modus.
+static func online_mode_of(meta: Dictionary, score_mode: String) -> String:
+	if score_mode == "":
+		return ManiaKeys.online_mode(maxi(ManiaKeys.keys_of_meta(meta), 4))
+	return ScoreStore.mode_name(score_mode)
+
+
 ## Online-Rangliste der gewaehlten Diff (asynchron). Ohne Key/Login: klarer Hinweis.
 func _show_online_scores(m: Dictionary, score_mode: String) -> void:
 	var api: OnlineApi = GameSession.online
@@ -3023,7 +3094,10 @@ func _show_online_scores(m: Dictionary, score_mode: String) -> void:
 		return
 	_lb_hint(tr("Lade Rangliste …"))
 	var gen := _online_gen
-	api.leaderboard(ScoreStore.mode_name(score_mode), md5, 0, func(ok: bool, entries: Array, msg: String):
+	if RuleMods.is_mines_board(score_mode):
+		_show_online_mines(api, md5, gen)
+		return
+	api.leaderboard(online_mode_of(m, score_mode), md5, 0, func(ok: bool, entries: Array, msg: String):
 		if gen != _online_gen or not is_inside_tree():
 			return
 		for c in _lb_box.get_children():
@@ -3036,6 +3110,29 @@ func _show_online_scores(m: Dictionary, score_mode: String) -> void:
 			var oe: Dictionary = entries[i] if entries[i] is Dictionary else {}
 			if str(oe.get("mode", "")) == "":
 				oe["mode"] = ScoreStore.mode_name(score_mode)
+			_lb_box.add_child(_online_row(oe)))
+
+
+## Online-Minen-Liste ("mania_mn"): nur zeigen, wenn der Server "board" kennt; sonst
+## ein ruhiger Hinweis statt der normalen Mania-Liste (die er ohne board liefert).
+func _show_online_mines(api: OnlineApi, md5: String, gen: int) -> void:
+	var board := RuleMods.MINES_SCORE_MODE
+	api.leaderboard_board("mania", board, md5, func(ok: bool, entries: Array, msg: String, known: bool):
+		if gen != _online_gen or not is_inside_tree():
+			return
+		for c in _lb_box.get_children():
+			c.queue_free()
+		if ok and not known:
+			_lb_hint(RuleMods.board_text("online_soon"))
+			return
+		if not ok:
+			_lb_hint(tr("Rangliste nicht erreichbar.") + (" (%s)" % msg if msg != "" else ""))
+		elif entries.is_empty():
+			_lb_hint(RuleMods.board_text("empty"))
+		for i in mini(entries.size(), 10):
+			var oe: Dictionary = entries[i] if entries[i] is Dictionary else {}
+			oe["mode"] = "mania"
+			oe["pp"] = 0.0   # Minen: keine pp
 			_lb_box.add_child(_online_row(oe)))
 
 
@@ -3157,7 +3254,8 @@ func _fill_missing_pp(tops: Array, score_mode: String) -> void:
 		return
 	var map_key := ScoreStore.map_id(_selected_set.osz_path, _selected_set.version_name_at(_selected_diff))
 	var gen := _online_gen
-	api.leaderboard(ScoreStore.mode_name(score_mode), md5, 0, func(ok: bool, entries: Array, _msg: String):
+	var omode := online_mode_of(_selected_set.meta_at(_selected_diff), score_mode)
+	api.leaderboard(omode, md5, 0, func(ok: bool, entries: Array, _msg: String):
 		if not ok:
 			_pp_fill_tried.erase(key)  # Server nicht erreichbar: später erneut
 			return
@@ -3267,7 +3365,7 @@ func _score_row(rank: int, e: Dictionary) -> Control:
 ## Modus-Umschalter Mania 4K | Orbit | Rally / Dirigent | Trace | Rebound als 3x2-Raster
 ## (gleiche Toggle-Optik wie die Filter-Chips).
 const MODE_TIPS := {
-	"mania": "Klassisch: vier Spuren",
+	"mania": "Classic: 4 to 7 lanes (4K to 7K maps)",
 	"orbit": "Zielen mit Maus/Tablet, Ring per Taste (osu!standard- und 4K-Maps)",
 	"rally": "Tischtennis im Takt: Schläge auf die Noten, zwei Tasten",
 	"dirigent": "Taktfigur mit der Maus führen, Einsätze per Taste",
@@ -3284,7 +3382,7 @@ func _build_mode_switch() -> Control:
 	grid.custom_minimum_size = Vector2(0, 58)
 	_mode_btns.clear()
 	for m in PLAY_MODES:
-		var b := _make_toggle(ScoreStore.mode_label("" if m == "mania" else m), 13, 6)
+		var b := _make_toggle("Mania" if m == "mania" else ScoreStore.mode_label(m), 13, 6)  # Mania = 4K-7K
 		b.custom_minimum_size = Vector2(0, 27)
 		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		b.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -3298,9 +3396,74 @@ func _build_mode_switch() -> Control:
 
 
 ## Sichtbarkeits-Modus fuer MapSet: Orbit/Rally/Dirigent zeigen 4K und osu!standard,
-## Mania/Trace/Rebound nur Mania-4K.
+## Trace/Rebound nur Mania-4K, Mania 4K-7K (mit Tasten-Filter nur diese Tastenzahl).
 func _vm() -> String:
-	return "mania" if _mania_like() else "orbit"
+	if _play_mode == "mania" and _key_filter > 0:
+		return "mania@%d" % _key_filter
+	return view_mode_of(_play_mode)
+
+
+## Sicht-Modus (MapSet.mode_shows) eines Spielmodus ohne Tasten-Filter.
+static func view_mode_of(m: String) -> String:
+	if m == "mania":
+		return "mania"
+	return "mania@4" if ScoreStore.is_mania_like(m) else "orbit"
+
+
+## Tasten-Filter: Auswahl "Alle Tasten / 4K ... 7K" im Stil der Sortierung.
+func _make_keys_filter() -> OptionButton:
+	var b := OptionButton.new()
+	b.add_item(tr("All keys"), 0)
+	for k in ManiaKeys.SUPPORTED:
+		b.add_item(ManiaKeys.label(k), k)
+	b.select(maxi(b.get_item_index(_key_filter), 0))
+	b.tooltip_text = tr("Only maps with this many keys (Mania)")
+	b.fit_to_longest_item = true
+	b.custom_minimum_size = Vector2(0, FILTER_H)
+	b.add_theme_font_size_override("font_size", 13)
+	b.add_theme_stylebox_override("normal", _toggle_box(false, 10))
+	b.add_theme_stylebox_override("hover", _toggle_box(false, 10, true))
+	b.add_theme_stylebox_override("pressed", _toggle_box(false, 10, true))
+	b.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	b.add_theme_color_override("font_color", COL_TEXT)
+	b.item_selected.connect(func(i):
+		_key_filter = b.get_item_id(i)
+		_refresh_filter(_search.text))
+	b.visible = _play_mode == "mania"
+	return b
+
+
+## Kachel-Marke der Tastenzahlen ("7K", "4K 7K"); null bei reinen 4K-Sets.
+func _keys_badge(ms: MapSet) -> Control:
+	var ks: Array[int] = []
+	for i in ms.visible_diffs(_vm()):
+		var k := ManiaKeys.keys_of_meta(ms.meta_at(i))
+		if k > 0 and not ks.has(k):
+			ks.append(k)
+	ks.sort()
+	if ks.is_empty() or (ks.size() == 1 and ks[0] == 4):
+		return null
+	var parts: PackedStringArray = []
+	for k in ks:
+		parts.append(ManiaKeys.label(k))
+	var pc := PanelContainer.new()
+	pc.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	var bb := UiTheme.solid_box(Color(0.10, 0.11, 0.13, 0.92), 8)
+	bb.border_color = Color(COL_ACCENT, 0.75)
+	bb.set_border_width_all(1)
+	bb.content_margin_left = 7
+	bb.content_margin_right = 7
+	bb.content_margin_top = 2
+	bb.content_margin_bottom = 2
+	pc.add_theme_stylebox_override("panel", bb)
+	pc.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var l := Label.new()
+	l.text = " ".join(parts)
+	l.add_theme_font_size_override("font_size", 12)
+	l.add_theme_color_override("font_color", COL_ACCENT)
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	pc.add_child(l)
+	return pc
 
 
 ## Aktiver Modus wertet wie Mania 4K auf Mania-Maps (Mania, Trace, Rebound).
@@ -3347,6 +3510,8 @@ func _set_play_mode(mode: String) -> void:
 	if not PLAY_MODES.has(mode) or mode == _play_mode:
 		return
 	_play_mode = mode
+	if _keys_btn != null:
+		_keys_btn.visible = mode == "mania"  # andere Modi bleiben 4K-only
 	_bg_drop_other_modes()
 	_restyle_mode_switch()
 	_apply_play_state()
@@ -3495,7 +3660,8 @@ func _style_lb_mode_tag(score_mode: String) -> void:
 	if _lb_mode_tag == null:
 		return
 	var col := UiTheme.ACCENT2 if score_mode == ScoreStore.MODE_ORBIT else COL_ACCENT
-	_lb_mode_tag.text = ScoreStore.mode_label(score_mode).to_upper()
+	_lb_mode_tag.text = (RuleMods.board_tag(score_mode).replace("Mania 4K", _score_label(""))
+			if RuleMods.is_mines_board(score_mode) else _score_label(score_mode)).to_upper()   # Minen: "MANIA 7K · MINES"
 	_lb_mode_tag.add_theme_color_override("font_color", col.lerp(COL_TEXT, 0.25))
 	var box := _lb_mode_tag.get_parent() as PanelContainer
 	var sb := StyleBoxFlat.new()
@@ -3508,7 +3674,15 @@ func _style_lb_mode_tag(score_mode: String) -> void:
 	sb.content_margin_top = 1
 	sb.content_margin_bottom = 1
 	box.add_theme_stylebox_override("panel", sb)
-	box.tooltip_text = tr("Nur Scores im Modus %s") % ScoreStore.mode_label(score_mode)
+	box.tooltip_text = RuleMods.board_text("tip") if RuleMods.is_mines_board(score_mode) 			else tr("Nur Scores im Modus %s") % _score_label(score_mode)
+
+
+## Modus-Name der Rangliste: Mania mit der Tastenzahl der gewaehlten Diff ("Mania 7K").
+func _score_label(score_mode: String) -> String:
+	var keys := 4
+	if score_mode == "" and _selected_set != null and _selected_diff >= 0:
+		keys = maxi(ManiaKeys.keys_of_meta(_selected_set.meta_at(_selected_diff)), 4)
+	return ScoreStore.mode_label(score_mode, keys)
 
 
 ## SV-Stufe: zwei Mini-Schalter Normal | Stark (Standard Stark) neben dem SV-Mod.
@@ -3615,6 +3789,37 @@ func _make_trace_mod_button(key: String) -> CheckButton:
 	return b
 
 
+## Regel-Mod-Schalter (SD/PF/MN) im Stil der NF/SV-Schalter.
+func _make_rule_mod_button(key: String) -> CheckButton:
+	var b := _make_orbit_mod_button(key)
+	b.text = RuleMods.label(key)
+	b.tooltip_text = RuleMods.tip(key)
+	b.button_pressed = bool(_rule_mods.get(key, false))
+	for c in b.toggled.get_connections():
+		b.toggled.disconnect(c["callable"])
+	b.toggled.connect(func(on: bool): _on_rule_mod_toggled(key, on))
+	return b
+
+
+## SD und PF schliessen einander und No-Fail aus.
+func _on_rule_mod_toggled(key: String, on: bool) -> void:
+	_rule_mods = RuleMods.toggle(_rule_mods, key, on)
+	if on and RuleMods.clears_nf(key) and _nf_enabled:
+		_on_nf_toggled(false)
+	_sync_rule_mod_buttons()
+	if key == RuleMods.MN and _selected_set != null:
+		_update_info_panel()   # BESTE SCORES: Minen-Liste bzw. normale Liste
+	if _state_ready:
+		_save_browser_state()
+
+
+func _sync_rule_mod_buttons() -> void:
+	for k in _rule_mod_btns:
+		var b := _rule_mod_btns[k] as CheckButton
+		b.visible = RuleMods.available(k, _play_mode)
+		b.set_pressed_no_signal(bool(_rule_mods.get(k, false)))
+
+
 func _on_trace_mod_toggled(key: String, on: bool) -> void:
 	_trace_mods[key] = on
 	if _state_ready:
@@ -3640,12 +3845,16 @@ func _apply_mod_visibility() -> void:
 		_sv_btn.visible = _play_mode == "mania"
 	if _sv_level_box != null:
 		_sv_level_box.visible = _play_mode == "mania"
+	if _marathon_btn != null:
+		_marathon_btn.visible = _play_mode == "mania"
 	for k in _orbit_mod_btns:
 		(_orbit_mod_btns[k] as CheckButton).visible = orbit
 		(_orbit_mod_btns[k] as CheckButton).set_pressed_no_signal(bool(_orbit_mods[k]))
 	for k in _trace_mod_btns:
 		(_trace_mod_btns[k] as CheckButton).visible = _play_mode == "trace"
 		(_trace_mod_btns[k] as CheckButton).set_pressed_no_signal(bool(_trace_mods[k]))
+	_sync_rule_mod_buttons()
+	TempoBrowserRow.set_visible(_play_mode == "mania")
 
 
 func _on_sv_toggled(pressed: bool) -> void:
@@ -3657,9 +3866,14 @@ func _on_sv_toggled(pressed: bool) -> void:
 	_restyle_sv_level()
 
 
-## Mods fuer den naechsten Start (Schnittstelle GameSession.mods).
-## Orbit: NF + Orbit-Mods (SV wirkt im Orbit nicht und zaehlt dort nicht).
+## Mods fuer den naechsten Start (Schnittstelle GameSession.mods): Grund-Mods des
+## Modus plus Regel-Mods (SD/PF/MN, RuleMods.apply).
 func _current_mods() -> Dictionary:
+	return RuleMods.apply(_base_mods(), _rule_mods, _play_mode)
+
+
+## Orbit: NF + Orbit-Mods (SV wirkt im Orbit nicht und zaehlt dort nicht).
+func _base_mods() -> Dictionary:
 	if _play_mode == "trace":
 		var tm := {"NF": _nf_enabled}
 		for k in TraceMods.MODS:
@@ -3672,7 +3886,7 @@ func _current_mods() -> Dictionary:
 		for k in OrbitCore.ORBIT_MODS:
 			m[k] = bool(_orbit_mods.get(k, false))
 		return m
-	return {"NF": _nf_enabled, "SV": _sv_enabled}
+	return TempoBrowserRow.add_mods({"NF": _nf_enabled, "SV": _sv_enabled})
 
 
 func _on_nf_toggled(pressed: bool) -> void:
@@ -3680,6 +3894,9 @@ func _on_nf_toggled(pressed: bool) -> void:
 	Settings.mod_nf = pressed
 	Settings.save()
 	_update_nf_button()
+	if pressed:
+		_rule_mods = RuleMods.on_no_fail(_rule_mods)
+		_sync_rule_mod_buttons()
 
 
 func _update_nf_button() -> void:
@@ -3727,6 +3944,30 @@ func _watch_replay() -> void:
 	_change_to_game(ScoreStore.mode_scene(_play_mode) if (orbit or rg) else "res://scenes/mania_3d.tscn")
 
 
+## Marathon-Auswahl (MarathonPanel): Start bzw. Replay ueber die Spielszene.
+func _open_marathon() -> void:
+	if _library == null or get_node_or_null("MarathonPanel") != null:
+		return
+	var p := MarathonPanel.new()
+	p.name = "MarathonPanel"
+	add_child(p)
+	var has_sel := _selected_set != null
+	p.setup(_library.mapsets, _selected_set.osz_path if has_sel else "",
+		_selected_set.stars_at(_selected_diff) if has_sel else 3.0, CollectionStore.list_for("mania"))
+	p.start_requested.connect(func(plan: Dictionary) -> void:
+		GameSession.mods = _current_mods()
+		GameSession.is_replay = false
+		GameSession.replay_events = []
+		GameSession.replay_mode = "mania"
+		MarathonRun.begin(plan)
+		_preview.stop()
+		_change_to_game("res://scenes/mania_3d.tscn"))
+	p.replay_requested.connect(func(data: Dictionary) -> void:
+		if MarathonRun.start_replay(data):
+			_preview.stop()
+			_change_to_game("res://scenes/mania_3d.tscn"))
+
+
 ## Max-pp (SS) der aktuellen Diff anzeigen; Berechnung laeuft im Thread,
 ## damit der Browser nie ruckelt. Ergebnis wird dauerhaft gecacht.
 func _update_max_pp(m: Dictionary) -> void:
@@ -3750,16 +3991,31 @@ func _update_max_pp(m: Dictionary) -> void:
 	var osz := _selected_set.osz_path
 	var notes := int(m.get("notes", 0))
 	_maxpp_thread = Thread.new()
-	_maxpp_thread.start(func():
-		var v := StarService.max_pp_for(osz, inner, notes)
-		_on_maxpp_done.call_deferred(osz, inner, v))
+	# Der Thread kennt nur die Instanz-ID: der Browser kann frei werden, waehrend er rechnet
+	# (Start direkt nach der Auswahl, --mania/--rule-mods-Shots). Frueher griff das Lambda
+	# auf das freigegebene self zu ("_on_maxpp_done" auf 'previously freed').
+	_maxpp_thread.start(Callable(get_script(), "_maxpp_job").bind(
+			get_script(), get_instance_id(), osz, inner, notes))
+
+
+## Thread-Teil der Max-pp-Rechnung: statisch, ohne Zugriff auf den Browser.
+static func _maxpp_job(script: Script, owner_id: int, osz: String, inner: String, notes: int) -> void:
+	var v := StarService.max_pp_for(osz, inner, notes)
+	Callable(script, "_maxpp_deliver").call_deferred(owner_id, osz, inner, v)
+
+
+## Hauptthread: Ergebnis nur an einen noch lebenden Browser geben.
+static func _maxpp_deliver(owner_id: int, osz: String, inner: String, v: float) -> void:
+	var o: Object = instance_from_id(owner_id)
+	if o != null and is_instance_valid(o) and o.has_method("_on_maxpp_done"):
+		o.call("_on_maxpp_done", osz, inner, v)
 
 
 func _on_maxpp_done(osz: String, inner: String, v: float) -> void:
 	if _maxpp_thread != null:
 		_maxpp_thread.wait_to_finish()
 		_maxpp_thread = null
-	if _selected_set == null:
+	if _selected_set == null or not is_inside_tree():
 		return
 	if _play_mode != "mania":
 		_maxpp_label.text = ""
@@ -4285,7 +4541,7 @@ func _open_import_panel() -> void:
 	var osu_dir := SongImport.find_stable_songs_dir()
 	var osu_sub := tr("Gefunden: %s") % osu_dir if osu_dir != "" else tr("osu! nicht gefunden. Du wählst den Songs-Ordner selbst.")
 	_import_osu_btn = _import_row(actions, "Aus osu! übernehmen",
-		osu_sub + "\n" + tr("Nur 4K-Mania und osu!standard, schon vorhandene Maps bleiben, wie sie sind."))
+		osu_sub + "\n" + tr("Only 4K to 7K mania and osu!standard. Maps you already have stay as they are."))
 	_import_osu_btn.pressed.connect(_import_from_osu)
 	_import_osu_note = _add_label(actions, "", 13, UiTheme.BAD)
 	_import_osu_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -5905,7 +6161,9 @@ func _recs_job() -> Dictionary:
 	for ms in _library.mapsets:
 		var file := ms.osz_path.get_file()
 		var info: Dictionary = idx.get(file, {})
-		for i in ms.visible_diffs(_vm()):
+		# Vorschlaege: Mania-Koennen stammt aus 4K-Laeufen -> ohne Tasten-Filter nur 4K.
+		var rec_vm := "mania@4" if _vm() == "mania" else _vm()
+		for i in ms.visible_diffs(rec_vm):
 			var osu_mode := int(ms.meta_at(i).get("mode", 0))
 			if not Recommender.playable(mode, osu_mode) or not _orbit_diff_ok(ms, i):
 				continue

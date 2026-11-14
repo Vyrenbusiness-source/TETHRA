@@ -156,6 +156,15 @@ var _ember_mat: ShaderMaterial
 var _recorded: Array = []
 ## --autoplay (nur Screenshots/Debug): trifft jede Note exakt, speichert nichts.
 var _autoplay := false
+## MP-Smoke (--mp-bot, tools/mp_mode_smoke.sh): Autoplay auch im Raum, Abbruch nach
+## --mp-cut=<s> ab der ersten Note, --auto-miss=<n> laesst jede n-te Note aus.
+var _mp_bot := false
+var _mp_cut_ms := -1.0
+var _mp_skip_voted := false
+var _mp_live_seen: Dictionary = {}
+var _auto_miss := 0
+## --auto-skip=<n> (nur Shots, z. B. Sudden-Death-Fail): Autoplay laesst Note n aus.
+var _auto_skip := -1
 var _auto_idx := 0
 var _auto_release: Array[float] = []
 var _replay_idx := 0
@@ -408,8 +417,12 @@ var _note_k_2d := 1.0   ## Settings.note_size_2d (CLI --note2d=150)
 var _bg_mat_2d: ShaderMaterial
 var _pf2d: Playfield2D
 var _fail_reason := ""
+var _end_ms := 0.0  ## Songzeit beim Ende/Fail (Fail-Marker im Ergebnisbild)
 var _parked_nodes: Array = []
 var _missed_2d: Array = []  ## verpasste Einzelnoten fallen grau weiter: [time, col]
+## mv-tempo: Uebungsmodus oder Turbo (TempoMode), sonst null.
+var _tempo_mode: TempoMode = null
+var _mine_view: MineView = null  ## Mod "MN" (RuleMods): Minen-Darstellung 2D/3D
 
 
 func _ready() -> void:
@@ -431,17 +444,29 @@ func _ready() -> void:
 	if not GameSession.is_replay:
 		GameSession.mods.merge(Settings.extra_mods(_2d), true)
 	core.setup(_beatmap, -1.0, scroll)
+	_apply_key_layout()  # 5K-7K: Bahnen/Feldbreite nach Spaltenzahl (ManiaKeys)
 	if bool(GameSession.mods.get("CS", false)):
 		_apply_constant_speed(scroll)
 	_clock.setup(_beatmap.timing_points)
-	_autoplay = OS.get_cmdline_args().has("--autoplay") 			and not GameSession.is_replay and not Lobby.in_round()
+	_mp_bot = Lobby.in_round() and OS.get_cmdline_args().has("--mp-bot") 			and not GameSession.is_replay
+	_autoplay = (OS.get_cmdline_args().has("--autoplay") and not GameSession.is_replay 			and not Lobby.in_round()) or _mp_bot
+	if _mp_bot:
+		for a in OS.get_cmdline_args():
+			if a.begins_with("--mp-cut="):
+				_mp_cut_ms = maxf(0.0, a.trim_prefix("--mp-cut=").to_float()) * 1000.0
+			elif a.begins_with("--auto-miss="):
+				_auto_miss = maxi(0, a.trim_prefix("--auto-miss=").to_int())
 	_auto_release.resize(core.columns)
 	_auto_release.fill(-1.0)
+	for a in OS.get_cmdline_args():
+		if a.begins_with("--auto-skip="):
+			_auto_skip = a.trim_prefix("--auto-skip=").to_int()
 	core.note_spawned.connect(_on_note_spawned)
 	core.note_judged.connect(_on_note_judged)
 	core.hold_started.connect(_on_hold_started)
 	core.lane_pressed.connect(_on_lane_pressed)
 	core.finished.connect(func(_s): _show_results(false))
+	_tempo_mode = TempoMode.attach(self)
 
 	_glow_shader = load("res://shaders/glow_dot.gdshader")
 	_ring_shader = load("res://shaders/hit_ring.gdshader")
@@ -459,10 +484,13 @@ func _ready() -> void:
 	_sparks = HitSparks.new()
 	_world.add_child(_sparks)
 	_sparks.setup(RAIL_X, Z_LINE, ROAD_Y, _theme_col)
+	_setup_mines()
 	_skill_fx = SkillFx.new()
 	_world.add_child(_skill_fx)
 	_skill_fx.setup(RAIL_X, Z_LINE, Z_FAR, ROAD_Y, _theme_col, _theme_kiai)
 	_build_hud()
+	if MarathonRun.is_active():
+		MarathonRun.current.attach(self, core, _hud)
 	if not _2d:
 		_build_screen_fx()
 	# Kapitel-Punkte unten entfernt (QA: unklar, doppelt zum Song-Fortschritt).
@@ -486,9 +514,11 @@ func _ready() -> void:
 	if not _use_audio:
 		_debug_start_usec = Time.get_ticks_usec()
 		_debug_running = true
+	if _mp_bot:
+		print("MPORBIT start: %d Noten, autoplay=%s" % [_beatmap.hit_objects.size(), _autoplay])
 	if DisplayServer.get_name() != "headless":
 		Input.mouse_mode = Input.MOUSE_MODE_CONFINED_HIDDEN
-	else:
+	elif not _mp_bot:
 		_run_smoke_test()
 		return
 	if OS.get_cmdline_args().has("--shot-results"):
@@ -527,12 +557,33 @@ func _ready() -> void:
 		_capture_results_shot()
 	elif OS.get_cmdline_args().has("--shot"):
 		_capture_after_first_note()
+	elif _tempo_mode != null and _tempo_mode.take_start():
+		pass
 	else:
 		# START-COUNTDOWN: exakt 3 Sekunden (3-2-1, je 1s) bevor es losgeht —
 		# Finger auf die Tasten, kein kalter Einstieg.
 		get_tree().paused = true
 		SyncClock.pause()
 		_resume_with_countdown(1.0)
+
+
+## Mehr Tasten (ManiaKeys, 5K-7K): Bahnen enger, Noten etwas kleiner, Strecke
+## breiter. 4K bleibt unveraendert. Laeuft nach core.setup (Spaltenzahl bekannt).
+func _apply_key_layout() -> void:
+	var n := core.columns
+	_lane_held.resize(maxi(n, 4))
+	if n == 4 or n < 1:
+		return
+	RAIL_X.clear()
+	for x in ManiaKeys.rail_x(n):
+		RAIL_X.append(x * _lane_k)
+	_note_k *= ManiaKeys.note_scale(n)
+	_lane_k *= ManiaKeys.field_scale(n)
+
+
+## Taste -> Spalte fuer die Spaltenzahl dieser Map (4K: key_lanes, 5K-7K eigene).
+func _lane_of_key(code: int) -> int:
+	return Settings.mania_lane_for_key(code, core.columns)
 
 
 ## Spurbreite aus den Settings (oder --lane=<prozent>) -> RAIL_X, _note_k.
@@ -609,8 +660,9 @@ func _build_playfield_2d() -> void:
 	add_child(pf_layer)
 	_pf2d = Playfield2D.new()
 	var keys := PackedStringArray()
+	var lane_keys := Settings.mania_keys(core.columns)
 	for i in core.columns:
-		keys.append(_short_key_name(Settings.key_lanes[i]) if i < Settings.key_lanes.size() else "")
+		keys.append(_short_key_name(lane_keys[i]) if i < lane_keys.size() else "")
 	_pf2d.setup(core.columns, _lane_k_2d, Z_LINE, Z_FAR, keys, _lane_color(0), _note_style_2d,
 			_note_k_2d)
 	_pf2d.skin = _load_skin_2d()
@@ -625,7 +677,7 @@ func _load_skin_2d() -> ManiaSkin:
 	for a in OS.get_cmdline_args() + OS.get_cmdline_user_args():
 		if a.begins_with("--skin2d="):
 			nm = a.trim_prefix("--skin2d=")
-	return ManiaSkin.load_skin(nm) if nm != "" else null
+	return ManiaSkin.load_skin(nm, ManiaSkin.SKINS_DIR, core.columns) if nm != "" else null
 
 
 ## Pausenmenue hat 2D-Werte geaendert: sofort anwenden (ohne Neustart).
@@ -656,7 +708,9 @@ func _update_playfield_2d(t: float) -> void:
 			_pf2d.add_note(obj.column, zh, c, Playfield2D.STATE_NORMAL, index, obj.time - t)
 	for rb in _released_beams:
 		_pf2d.add_hold(int(rb.col), _note_z(float(rb.head), t), _note_z(float(rb.end), t),
-				NoteColors.color_for(int(rb.col), true, true, CLEAN_HOLD), Playfield2D.STATE_DEAD)
+				NoteColors.color_for(int(rb.col), true, true, CLEAN_HOLD, 0, core.columns), Playfield2D.STATE_DEAD)
+	if _mine_view != null:
+		_mine_view.feed_2d(_pf2d)
 	for mi in range(_missed_2d.size() - 1, -1, -1):
 		var z := _note_z(float(_missed_2d[mi][0]), t)
 		if z > Z_LINE + 12.0:
@@ -707,6 +761,11 @@ func _dbg_popin_hit(n: Node, p: Vector2, alpha: float) -> String:
 
 
 func _load_beatmap() -> bool:
+	# Marathon (scripts/marathon): zusammengefuegte Map + eigene Wiedergabe.
+	if MarathonRun.active_for_scene():
+		_beatmap = MarathonRun.current.scene_beatmap(_2d)
+		_use_audio = _beatmap != null
+		return _beatmap != null
 	if not GameSession.has_selection():
 		return false
 	var imp := OszImporter.import(GameSession.osz_path)
@@ -1030,7 +1089,8 @@ func _build_world() -> void:
 		_pad_judge_col.append(_pad_color(i))
 
 		var label := Label3D.new()
-		label.text = _short_key_name(Settings.key_lanes[i])
+		var lane_keys := Settings.mania_keys(core.columns)
+		label.text = _short_key_name(lane_keys[i]) if i < lane_keys.size() else ""
 		# Hohe Font-Aufloesung bei gleicher Weltgroesse — kein Pixelbrei.
 		label.font_size = 128
 		label.pixel_size = 0.0019
@@ -1099,9 +1159,10 @@ func _short_key_name(code: int) -> String:
 
 
 func _pad_color(i: int) -> Color:
-	if _fx_level() <= 0.0:
-		return CLEAN_PAD
-	return _lane_color(i)
+	var c := CLEAN_PAD if _fx_level() <= 0.0 else _lane_color(i)
+	if ManiaKeys.is_center(i, core.columns):
+		c = c.lerp(ManiaKeys.CENTER_COLOR, 0.6)  # 5K/7K: Mittelspalte wie osu! hervorgehoben
+	return c
 
 
 func _lane_color(i: int) -> Color:
@@ -1572,6 +1633,31 @@ func _apply_constant_speed(scroll_scale: float) -> void:
 	core.set_scroll_scale(scroll_scale)
 
 
+## Mod "MN": Minen-Ansicht anlegen (nur wenn der Lauf Minen hat).
+func _setup_mines() -> void:
+	if core.mines == null:
+		return
+	_mine_view = MineView.new()
+	_world.add_child(_mine_view)
+	_mine_view.setup(core, _note_z, RAIL_X, ROAD_Y, Z_LINE, Z_FAR, _note_k, _2d)
+	core.mine_hit.connect(_on_mine_hit)
+
+
+## Mine ausgeloest: wie ein Miss anzeigen (Ton, Urteil, Pad, HP-Leiste), keine Acc.
+func _on_mine_hit(_index: int, col: int) -> void:
+	_play_miss()
+	if col < _pad_dark.size():
+		_pad_dark[col] = 1.0
+	if _pf2d != null:
+		_pf2d.on_judge(ManiaCore.Quality.MISS, col)
+	if _judge_disp != null:
+		_judge_disp.show_judge(ManiaCore.Quality.MISS, 0.0)
+	if _hp_bar != null:
+		_hp_bar.flash_miss()
+	_last_milestone = 0
+	_update_hud()
+
+
 ## Mod-Anzeige fuer das HUD, z. B. "SV Stark · NF · Hidden · Konstant"; "" = keine.
 static func mods_hud_text(m: Dictionary) -> String:
 	var parts: Array = []
@@ -1587,6 +1673,7 @@ static func mods_hud_text(m: Dictionary) -> String:
 		parts.append("%s %d%%" % [TranslationServer.translate("Cover"), int(m.get("CO_pct", 50))])
 	if bool(m.get("CS", false)):
 		parts.append(TranslationServer.translate("Konstant"))
+	parts.append_array(RuleMods.hud_parts(m))
 	return "  ·  ".join(parts)
 
 
@@ -1618,10 +1705,12 @@ func _on_note_spawned(index: int) -> void:
 	var has_snap := snap.a > 0.0
 	if has_snap and not obj.is_hold:
 		col = snap
+	if not obj.is_hold:
+		col = ManiaKeys.auto_tint(col, obj.column, core.columns)  # 5K-7K: Spaltenmuster wie osu!
 	# Eigene Notenfarben (Modus lanes/snap) ersetzen Map-/Welt-/Snap-Farbe komplett.
 	if NoteColors.is_custom(_2d):
 		var dv := _snap_divs[index] if index < _snap_divs.size() else 0
-		col = NoteColors.color_for(obj.column, obj.is_hold, _2d, col, dv)
+		col = NoteColors.color_for(obj.column, obj.is_hold, _2d, col, dv, core.columns)
 		has_snap = false
 
 	var root := Node3D.new()
@@ -2028,7 +2117,7 @@ func _input(event: InputEvent) -> void:
 	if _ended or GameSession.is_replay or _autoplay:
 		return
 	if event is InputEventKey and not event.echo:
-		var lane := Settings.lane_for_key(event.keycode)
+		var lane := _lane_of_key(event.keycode)
 		if lane >= 0:
 			var t := _time_ms()
 			_recorded.append({ "t": t, "lane": lane, "down": event.pressed })
@@ -2052,6 +2141,8 @@ func _run_autoplay(t: float) -> void:
 	while _auto_idx < objs.size() and objs[_auto_idx].time <= t:
 		var n := objs[_auto_idx] as ManiaNote
 		_auto_idx += 1
+		if (_auto_miss > 0 and _auto_idx % _auto_miss == 0) or _auto_idx - 1 == _auto_skip:
+			continue
 		var c := n.column
 		if c < 0 or c >= _auto_release.size():
 			continue
@@ -2063,10 +2154,28 @@ func _run_autoplay(t: float) -> void:
 		_auto_release[c] = n.end_time() if n.is_hold else n.time + 40.0
 
 
+## MP-Smoke: Intro-Skip mitstimmen, Live-Score der anderen merken, nach --mp-cut enden.
+func _mp_bot_tick(t: float) -> void:
+	if not _mp_skip_voted and _can_skip_intro():
+		_mp_skip_voted = true
+		Lobby.vote_skip()
+	var me := multiplayer.get_unique_id()
+	for id in Lobby.players:
+		var p: Dictionary = Lobby.players[id]
+		if int(id) == me or not (p.get("final", {}) as Dictionary).is_empty():
+			continue
+		_mp_live_seen[int(id)] = maxi(int(_mp_live_seen.get(int(id), 0)), int(p.get("score", 0)))
+	if _mp_cut_ms >= 0.0 and t >= _mp_cut_ms + float(_beatmap.hit_objects[0].time):
+		print("MPMANIA cut at %d ms" % int(t))
+		_show_results(core.failed)
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	if not (event is InputEventKey) or not event.pressed:
 		return
 	if event.keycode == KEY_ESCAPE:
+		if _tempo_mode != null and not _ended and _tempo_mode.on_escape():
+			return
 		if _ended:
 			_back_to_browser()
 		elif not _countdown_running:
@@ -2074,13 +2183,13 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	# R = Map sofort neu starten (im Spiel UND auf dem Results-Screen),
 	# ausser R ist als Lane-Taste belegt.
-	if event.keycode == KEY_R and Settings.lane_for_key(KEY_R) == -1 			and not Lobby.in_round():
+	if event.keycode == KEY_R and _lane_of_key(KEY_R) == -1 			and not Lobby.in_round():
 		_restart()
 		return
 	# Intro-Skip: Leertaste springt lange Vorlaeufe bis kurz vor die erste
 	# Note (nur wenn Space keine Lane-Taste ist).
 	if event.keycode == KEY_SPACE and not _ended \
-			and Settings.lane_for_key(KEY_SPACE) == -1 and _can_skip_intro():
+			and _lane_of_key(KEY_SPACE) == -1 and _can_skip_intro():
 		if Lobby.in_round():
 			Lobby.vote_skip()  # Multiplayer: springt erst, wenn ALLE druecken
 		else:
@@ -2173,6 +2282,8 @@ func _process(delta: float) -> void:
 		while _replay_idx < evs.size() and float(evs[_replay_idx].t) <= t:
 			var ev: Dictionary = evs[_replay_idx]
 			_replay_idx += 1
+			if int(ev.lane) < 0 or int(ev.lane) >= core.columns:
+				continue  # Replay passt nicht zur Spaltenzahl (ManiaKeys): Ereignis ignorieren
 			_lane_held[int(ev.lane)] = bool(ev.down)
 			if bool(ev.down):
 				core.key_down(int(ev.lane), float(ev.t))
@@ -2181,6 +2292,12 @@ func _process(delta: float) -> void:
 	if _autoplay:
 		_run_autoplay(t)
 	core.update(t)
+	if _tempo_mode != null:
+		_tempo_mode.tick(t)
+	if _mp_bot and not _ended:
+		_mp_bot_tick(t)
+		if _ended:
+			return
 	# Tutorial: vor jedem neuen Element anhalten und erklaeren.
 	if GameSession.tutorial and not _ended and not _countdown_running \
 			and _tut_idx < _tut_steps.size() and t >= float(_tut_steps[_tut_idx].t):
@@ -2245,6 +2362,8 @@ func _process(delta: float) -> void:
 			continue
 		if rbeam != null:
 			rbeam.set_span(_note_z(float(rb.head), t), z_end, RAIL_X[int(rb.col)], ROAD_Y + 0.28)
+	if _mine_view != null:
+		_mine_view.update(t)
 	if _pf2d != null:
 		_update_playfield_2d(t)
 
@@ -3701,7 +3820,7 @@ func _update_break_overlay(t: float) -> void:
 			_break_ov.hide_break()
 			_break_cur = -1
 		return
-	var can_skip: bool = _breaks[idx].x <= 0.0 and _can_skip_intro() 		and Settings.lane_for_key(KEY_SPACE) == -1 and not _ended
+	var can_skip: bool = _breaks[idx].x <= 0.0 and _can_skip_intro() 		and _lane_of_key(KEY_SPACE) == -1 and not _ended
 	if idx != _break_cur or can_skip != _break_skip:
 		var beat_ms := 60000.0 / _clock.bpm if _clock.bpm > 1.0 else 500.0
 		_break_ov.show_break(_breaks[idx].x, _breaks[idx].y, beat_ms, can_skip)
@@ -3952,6 +4071,43 @@ func _restart() -> void:
 	get_tree().reload_current_scene()
 
 
+## mv-tempo (Uebungs-Schleife): Lauf mit neuem Core von vorn, ohne die Szene
+## neu zu laden. Sichtbare Noten weg, Lauf-Zustand zurueck, Signale neu.
+func tempo_restart_run(new_core: ManiaCore, first_idx: int) -> void:
+	for idx in _notes:
+		var e: Dictionary = _notes[idx]
+		if e.get("beam") != null and is_instance_valid(e.beam):
+			(e.beam as Node).queue_free()
+		if is_instance_valid(e.root):
+			(e.root as Node).queue_free()
+	_notes.clear()
+	for rb in _released_beams:
+		if rb.get("beam") != null and is_instance_valid(rb.beam):
+			(rb.beam as Node).queue_free()
+	_released_beams.clear()
+	_missed_2d.clear()
+	_recorded.clear()
+	_judge_log.clear()
+	_hit_offsets.clear()
+	_hold_head_dt.clear()
+	_acc_trace.clear()
+	_hold_ok = 0
+	_hold_drop = 0
+	_dt_n = 0
+	_dt_sum = 0.0
+	_dt_sqsum = 0.0
+	_last_milestone = 0
+	_auto_idx = maxi(first_idx, 0)
+	_auto_release.fill(-1.0)
+	_lane_held.fill(false)
+	core = new_core
+	core.note_spawned.connect(_on_note_spawned)
+	core.note_judged.connect(_on_note_judged)
+	core.hold_started.connect(_on_hold_started)
+	core.lane_pressed.connect(_on_lane_pressed)
+	_update_hud()
+
+
 func _back_to_browser() -> void:
 	if _mp_demo and _mp_demo_shots < 4:
 		return
@@ -3961,6 +4117,7 @@ func _back_to_browser() -> void:
 	GameSession.is_replay = false
 	GameSession.replay_events = []
 	SyncClock.stop()
+	MarathonRun.end()
 	# Multiplayer: zurueck in den Raum statt in den Song-Browser.
 	if Lobby.in_round():
 		get_tree().change_scene_to_file("res://scenes/mp_lobby.tscn")
@@ -3973,12 +4130,13 @@ func _show_results(is_fail: bool) -> void:
 		return
 	_ended = true
 	_fail_reason = ""
+	_end_ms = maxf(_time_ms(), 0.0)   # vor SyncClock.stop(): danach liefert die Uhr 0
 	if is_fail:
 		_fail_reason = _write_fail_diag()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	SyncClock.stop()
 	# Full Combo: kleiner Meteorschauer am Himmel hinter dem Endscreen.
-	if not is_fail and core.n_miss == 0 and _fx_level() > 0.0 \
+	if not is_fail and core.n_miss == 0 and core.n_mine_hit == 0 and _fx_level() > 0.0 \
 			and DisplayServer.get_name() != "headless":
 		for shower_i in 8:
 			var st := get_tree().create_timer(0.3 * float(shower_i) + 0.4, true)
@@ -3986,6 +4144,14 @@ func _show_results(is_fail: bool) -> void:
 				if is_inside_tree():
 					_spawn_shooting_star(977 + shower_i * 37))
 	var s := core.stats()
+	s["keys"] = core.columns  # 4K-7K: eigene Ranglisten je Tastenzahl (ScoreStore/Online)
+	if MarathonRun.is_active():
+		# Marathon: eigene Rangliste je Laenge, kein pp, nichts an ScoreStore/Server.
+		s["unranked"] = false
+		s["pp"] = -1.0
+		var m_info := MarathonRun.current.finish_scene(s, is_fail, _recorded, _autoplay)
+		_build_results(is_fail, s, -1.0, false, bool(m_info.get("is_new_best", false)))
+		return
 	var unranked := false  # Mania ist immer ranked (Scroll rein visuell)
 	s["unranked"] = unranked
 	var pp := -1.0
@@ -4008,6 +4174,8 @@ func _show_results(is_fail: bool) -> void:
 				# 0,55 x echte SS-pp = der bisherige Floor (0,8 x die bis v1.32.0
 				# um ~31 % zu niedrige Max-pp); bleibt so unter rosu ab ~85 % Acc.
 				pp = maxf(pp, max_pp * pow(acc, 6.0) * 0.55)
+	if RuleMods.no_pp(core.mods):
+		pp = -1.0   # Minen: keine pp (eigene Rangliste)
 	s["pp"] = pp
 	# Multiplayer: letzten Live-Stand + Finale (mit pp) an alle melden.
 	if Lobby.in_round():
@@ -4015,31 +4183,53 @@ func _show_results(is_fail: bool) -> void:
 		Lobby.send_final(PlayerStatsCard.pack(s, _hit_offsets, _acc_trace,
 			_hold_ok, _hold_drop, is_fail))
 	var new_best := false
-	if GameSession.is_replay or GameSession.tutorial or _autoplay:
+	if _tempo_mode != null and _tempo_mode.owns_results(s, is_fail):
+		pp = -1.0  # Turbo: eigene lokale Liste, kein ScoreStore/Online/pp
+		unranked = true
+	elif GameSession.is_replay or GameSession.tutorial or _autoplay:
 		# Replay-Ansicht/Tutorial/Autoplay: NICHTS werten oder speichern.
 		pp = -1.0
 	else:
-		var save := ScoreStore.submit(GameSession.osz_path, _beatmap.version_name(), s)
+		var save := ScoreStore.submit(GameSession.osz_path, _beatmap.version_name(), s,
+				RuleMods.score_mode(core.mods))
 		new_best = bool(save.get("is_new_best", false))
 		_prev_best = save.get("previous", {})
 		ScoreStore.log_play(GameSession.osz_path, _beatmap.version_name(),
-			"%s - %s" % [_beatmap.artist(), _beatmap.title()], s)
+			"%s - %s" % [_beatmap.artist(), _beatmap.title()], s, RuleMods.score_mode(core.mods))
+		# Uebungsmodus: Miss-Stellen dieses Laufs als Sprungmarken merken.
+		PracticeStore.record_run(GameSession.osz_path, _beatmap.version_name(),
+			PracticeStore.misses_from_judge_log(_judge_log))
 		ReplayStore.save(GameSession.osz_path, _beatmap.version_name(), _recorded, {
 			"score": int(s.score), "grade": str(s.grade),
 			"accuracy": float(s.accuracy), "date": Time.get_datetime_string_from_system(),
-			"mods": GameSession.mods.duplicate(),  # Replay laeuft mit denselben Mods
+			"mods": RuleMods.replay_mods(GameSession.mods, core.mods),  # Replay laeuft mit denselben Mods
+			"keys": core.columns,  # Tastenzahl der Map (4K-7K), Replay-Marke
 		})
 		if not is_fail:
 			_submit_online(s)
 	_build_results(is_fail, s, pp, unranked, new_best)
+	if is_fail and OS.get_cmdline_args().has("--shot-on-fail"):
+		_capture_results_shot()   # Shot-Harness: echter Fail (z. B. Sudden Death) als PNG
+	if _mp_bot:
+		print("MPORBIT final score=%d acc=%.4f combo=%d failed=%s live_seen=%s" % [
+			int(s.score), float(s.accuracy), int(s.get("max_combo", 0)), str(is_fail), str(_mp_live_seen)])
+		var back_s := 1.5
+		for a in OS.get_cmdline_args():
+			if a.begins_with("--mp-back="):
+				back_s = clampf(a.trim_prefix("--mp-back=").to_float(), 0.0, 60.0)
+		await get_tree().create_timer(back_s, true).timeout
+		if is_inside_tree():
+			_back_to_browser()
 
 
 ## Fail-Diagnose: Grund (eine Zeile) bestimmen und user://logs/fail_<datum>.txt
 ## schreiben. Nur Beobachtung, die Wertung bleibt unveraendert.
 func _write_fail_diag() -> String:
 	var t_fail := _time_ms()
-	var reason := ManiaCore.fail_reason_text(
-			ManiaCore.analyze_fail(core.diag_log, core.diag_spikes, t_fail))
+	var reason := RuleMods.fail_reason(core)   # Sudden Death / Perfect: Regel als Grund
+	if reason == "":
+		reason = ManiaCore.fail_reason_text(
+				ManiaCore.analyze_fail(core.diag_log, core.diag_spikes, t_fail))
 	DirAccess.make_dir_recursive_absolute("user://logs")
 	var stamp := Time.get_datetime_string_from_system().replace(":", "-").replace("T", "_")
 	var f := FileAccess.open("user://logs/fail_%s.txt" % stamp, FileAccess.WRITE)
@@ -4091,7 +4281,7 @@ func _submit_online(s: Dictionary) -> void:
 		GameSession.osu_filename, GameSession.stars)
 	var res := s.duplicate()
 	res["date"] = Time.get_datetime_string_from_system(true)
-	api.submit(res, meta, "mania")
+	api.submit(res, meta, ManiaKeys.online_mode(core.columns))
 
 
 ## Results-Screen: eigenstaendige Komponente ResultsScreen (scripts/ui/
@@ -4131,6 +4321,7 @@ func _build_results(is_fail: bool, s: Dictionary, pp: float, unranked: bool, new
 		"notes_total": _beatmap.hit_objects.size(),
 		# Spur/Abschnitt je Urteil (Details im Ergebnisbild).
 		"judge_log": _judge_log,
+		"mod_texts": s.get("mod_texts", []),
 	}
 	if _prev_best != null:
 		data["previous_best"] = _prev_best
@@ -4139,7 +4330,7 @@ func _build_results(is_fail: bool, s: Dictionary, pp: float, unranked: bool, new
 	if not _beatmap.hit_objects.is_empty():
 		data["length_ms"] = float(_beatmap.hit_objects.back().end_time())
 	if is_fail:
-		data["fail_ms"] = maxf(_time_ms(), 0.0)
+		data["fail_ms"] = _end_ms
 	if Lobby.in_round():
 		var me := multiplayer.get_unique_id()
 		data["my_id"] = me
@@ -4147,6 +4338,8 @@ func _build_results(is_fail: bool, s: Dictionary, pp: float, unranked: bool, new
 			data["final"] = Lobby.players[me].get("final", {})
 	if cover != null:
 		data["cover"] = cover
+	if MarathonRun.is_active():
+		MarathonRun.current.results_data(data)
 	rs.show_results(data)
 	# Rank-Reveal-Sound synchron zum Zoom-Pop der Komponente (~0.35 s).
 	var grade := "F" if is_fail else str(s.get("grade", "D"))

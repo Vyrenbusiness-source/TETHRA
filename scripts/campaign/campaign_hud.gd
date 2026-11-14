@@ -12,17 +12,20 @@ const BASE_H := 720.0
 
 var stage: Dictionary = {}
 var head := ""
+## Skip-Pruefung: zusaetzliche Zeile "99 % Accuracy" mit aktuellem Stand.
+var trial := false
 var _game: Node
 var _box: VBoxContainer
 var _stars: Array[CampaignStars] = []
 var _texts: Array[Label] = []
 var _values: Array[Label] = []
 var _last: Array = []
+var _trial_val: Label
 var _t := 0.0
 
 
 ## Ziele der Stufe stage_id an die Spielszene haengen (null, wenn die Stufe fehlt).
-static func attach_stage(game: Node, stage_id: String) -> CampaignHud:
+static func attach_stage(game: Node, stage_id: String, trial: bool = false) -> CampaignHud:
 	var all := Campaign.load_data()
 	var data := Campaign.for_mode(all, Campaign.mode_of_stage(all, stage_id))
 	var st := Campaign.stage_by_id(data, stage_id)
@@ -32,14 +35,18 @@ static func attach_stage(game: Node, stage_id: String) -> CampaignHud:
 	var head := "%s  ·  %s  ·  %s" % [Campaign.tr_("Kampagne"),
 		Campaign.world_label(str((Campaign.chapters(data)[ci] as Dictionary).get("world", ""))),
 		Campaign.stage_label(st, Campaign.stage_index_of(data, stage_id))]
-	return attach(game, st, head)
+	if trial:
+		head = "%s  ·  %s" % [Campaign.tr_("Kampagne"), Campaign.tr_("Skip-Prüfung")]
+	return attach(game, st, head, trial)
 
 
-static func attach(game: Node, p_stage: Dictionary, p_head: String) -> CampaignHud:
+static func attach(game: Node, p_stage: Dictionary, p_head: String, p_trial: bool = false) -> CampaignHud:
 	var h := CampaignHud.new()
 	h.name = "CampaignHud"
 	h.stage = p_stage
 	h.head = p_head
+	# Vor add_child setzen: _ready baut sofort (Skip-Pruefungs-Zeile fehlte sonst).
+	h.trial = p_trial
 	h._game = game
 	game.add_child(h)
 	return h
@@ -84,6 +91,20 @@ func _build() -> void:
 	add_child(_box)
 	var title := _label(head, 12.0 * s, UiTheme.DIM, true)
 	_box.add_child(title)
+	_trial_val = null
+	if trial:
+		# Skip-Pruefung: die Grenze zuerst, die Ziele zaehlen weiter fuer die Sterne der Boss-Stufe.
+		var tr_row := HBoxContainer.new()
+		tr_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		tr_row.add_theme_constant_override("separation", int(roundf(8.0 * s)))
+		# Kopfzeile sagt schon "Skip-Pruefung"; hier nur die Grenze.
+		tr_row.add_child(_label(Campaign.tr_("Genauigkeit ≥ %s") % Campaign.pct_text(Campaign.TRIAL_ACC),
+			13.0 * s, UiTheme.ACCENT2, true))
+		_trial_val = _label("", 13.0 * s, UiTheme.DIM)
+		_trial_val.custom_minimum_size.x = roundf(54.0 * s)
+		_trial_val.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		tr_row.add_child(_trial_val)
+		_box.add_child(tr_row)
 	var goals: Array = stage.get("goals", [])
 	for i in goals.size():
 		var row := HBoxContainer.new()
@@ -105,7 +126,11 @@ func _build() -> void:
 	_box.reset_size()
 	# Links unter den Werten der Szene (Mania: Rang/Genauigkeit, Orbit: Punkte/Genauigkeit):
 	# dort ist in allen Modi Hintergrund, die Strecke beginnt weiter rechts.
-	_box.position = Vector2(roundf(24.0 * s), roundf(BASE_H * 0.6 * s))
+	# Orbit: Seitenflaeche nur ~16 % breit. Breitere Box kleiner skalieren statt ins Spielfeld.
+	var side := 0.16 if str(stage.get("mode", "")) == "orbit" else 0.26
+	var maxw := get_viewport().get_visible_rect().size.x * side - 30.0 * s
+	_box.scale = Vector2.ONE * minf(1.0, maxw / maxf(_box.size.x, 1.0))
+	_box.position = Vector2(roundf(24.0 * s), roundf(BASE_H * 0.62 * s))
 	_update()
 
 
@@ -143,6 +168,11 @@ func _stats() -> Dictionary:
 
 func _update() -> void:
 	var st := _stats()
+	if _trial_val != null and not st.is_empty():
+		var acc := float(st.get("accuracy", 0.0))
+		_trial_val.text = Campaign.trial_acc_text(acc)
+		_trial_val.add_theme_color_override("font_color", UiTheme.BAD if bool(st.get("failed", false))
+			else (UiTheme.ACCENT if acc + 0.000001 >= Campaign.TRIAL_ACC else UiTheme.DIM))
 	var goals: Array = stage.get("goals", [])
 	var live := Campaign.goals_live(stage, st) if not st.is_empty() else []
 	for i in mini(goals.size(), _stars.size()):

@@ -10,7 +10,11 @@ const DEV_MAPS_DIR := "C:/Users/Gexanx/Desktop/rhyg/maps"
 const CACHE_PATH := "user://library.cfg"
 ## Version der "unbrauchbar"-Markierung: hochzaehlen, wenn der Importer neue
 ## Modi/Keycounts unterstuetzt, damit alte Skip-Eintraege neu geprueft werden.
-const SKIP_VERSION := 1
+const SKIP_VERSION := 2
+## Version der Tastenzahl-Erfassung: Cache-Eintraege ohne "kv" >= KEYS_VERSION
+## stammen aus der 4K-only-Zeit. Sie werden leicht geprueft (nur .osu-Kopfzeilen);
+## enthaelt das Set 5K-7K-Diffs, wird es einmal voll neu analysiert.
+const KEYS_VERSION := 1
 ## Version der SV-Erkennung: hochzaehlen -> alle Cache-Eintraege werden einmal
 ## im Hintergrund nachgerechnet (start_sv_backfill).
 const SV_VERSION := 2
@@ -89,6 +93,7 @@ func scan() -> int:
 	# {"skip": SKIP_VERSION} im Cache — sonst wuerden sie bei JEDEM Oeffnen neu
 	# geparst und loesten jedes Mal den python-Sternelauf aus.
 	var fresh: Array[String] = []
+	var dirty_kv := false
 	for fname in files:
 		if not fname.to_lower().ends_with(".osz"):
 			continue
@@ -98,6 +103,13 @@ func scan() -> int:
 		if cached is Dictionary:
 			if int(cached.get("skip", 0)) == SKIP_VERSION:
 				continue
+			if not cached.has("skip") and int(cached.get("kv", 0)) < KEYS_VERSION:
+				if has_new_key_diffs(path, cached):
+					fresh.append(path)
+					continue
+				cached["kv"] = KEYS_VERSION
+				cfg.set_value("sets", key, cached)
+				dirty_kv = true
 			if not cached.has("skip"):
 				var ms := MapSet.from_dict(path, cached)
 				if ms.difficulty_count() > 0:
@@ -108,7 +120,7 @@ func scan() -> int:
 		fresh.append(path)
 	OszImporter._perf("Library: %d Sets aus Cache" % mapsets.size(), t0, maps_dir)
 
-	var dirty := false
+	var dirty := dirty_kv
 	if not fresh.is_empty():
 		t0 = Time.get_ticks_usec()
 		# Nur fuer NEUE Dateien Stars im Batch vorberechnen.
@@ -139,6 +151,48 @@ static func _cache_key(osz_path: String) -> String:
 	return "%s|%d" % [osz_path.get_file(), size]
 
 
+## Alter Cache-Eintrag (4K-only-Zeit): hat die .osz eine 5K-7K-Diff, die im
+## Eintrag fehlt? Liest nur die Kopfzeilen der .osu-Dateien (kein Voll-Parse).
+static func has_new_key_diffs(osz_path: String, cached: Dictionary) -> bool:
+	var known := {}
+	for d in cached.get("diffs", []):
+		if d is Dictionary:
+			known[str(d.get("osu_filename", ""))] = true
+	var zr := ZIPReader.new()
+	if zr.open(osz_path) != OK:
+		return false
+	var found := false
+	for fn in zr.get_files():
+		var name := String(fn)
+		if not name.to_lower().ends_with(".osu") or known.has(name):
+			continue
+		var k := osu_key_count(zr.read_file(name).get_string_from_utf8())
+		if k > 4 and ManiaKeys.supported(k):
+			found = true
+			break
+	zr.close()
+	return found
+
+
+## Tastenzahl einer .osu (Text): CircleSize bei Mode 3, sonst 0.
+static func osu_key_count(text: String) -> int:
+	var mode := 0
+	var cs := 4.0
+	var sec := ""
+	for raw in text.split("\n"):
+		var line := raw.strip_edges()
+		if line.begins_with("["):
+			if sec == "[Difficulty]":
+				break
+			sec = line
+			continue
+		if sec == "[General]" and line.begins_with("Mode:"):
+			mode = int(line.get_slice(":", 1).strip_edges())
+		elif sec == "[Difficulty]" and line.begins_with("CircleSize:"):
+			cs = float(line.get_slice(":", 1).strip_edges())
+	return int(round(cs)) if mode == 3 else 0
+
+
 ## Einmalige Voll-Analyse einer .osz: parsen, Metadaten extrahieren,
 ## Thumbnail auf Disk legen.
 func _build_mapset_full(osz_path: String) -> MapSet:
@@ -151,8 +205,8 @@ func _build_mapset_full(osz_path: String) -> MapSet:
 	var entries: Array = []
 	for d in imp.difficulties:
 		var bm: Beatmap = d.beatmap
-		# Standard (0) immer; Mania nur als 4K.
-		if bm.is_mania() and bm.column_count() != 4:
+		# Standard (0) immer; Mania als 4K bis 7K (ManiaKeys.SUPPORTED).
+		if bm.is_mania() and not ManiaKeys.supported(bm.column_count()):
 			continue
 		var fname: String = d.osu_filename
 		var s := -1.0
