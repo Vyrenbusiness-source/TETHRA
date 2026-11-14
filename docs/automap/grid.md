@@ -64,7 +64,17 @@ in beiden Spalten herausgerechnet.
 Erkanntes Tempo, Offset, Taktanfang und Segmente sind in allen 271 Sets gleich wie vorher; geaendert
 haben sich nur die gemeldeten Alternativen (mirror_2541937: 342 BPM jetzt als Alternative x2).
 
-RUNDE3_BENCH
+Prüfstand (`tools/automap_bench.gd --mapper new --set test --no-stars`, Prüf-Menge, ganzer Ablauf
+ueber `AutoMapper4K.generate`), "vorher" = `docs/automap/report.md` (Stand 300f1a3):
+
+| Kennzahl (Prüf-Menge) | Ziel | vorher | nachher |
+|---|---|---|---|
+| Tempo exakt, Maps mit einem Tempo | ≥ 95 % | 88,9 % (n=63) | 88,9 % (n=63) |
+| exakt oder gemeldete Alternative | ≥ 99 % | 98,4 % | 100,0 % |
+| Offset Median / 95. Perzentil | ≤ 4 / ≤ 12 ms | 3,1 / 52,3 ms (n=56) | 3,1 / 52,3 ms (n=56) |
+| Drift 95. Perzentil | ≤ 10 ms | 0,3 ms | 0,3 ms |
+| Tempowechsel | ≥ 80 % | 0,0 % (n=6) | 0,0 % (n=6) |
+| Taktanfang | ≥ 85 % | 87,5 % | 87,5 % |
 
 ### 1. Oktave (Tempo exakt)
 
