@@ -266,8 +266,8 @@ Hard 77,9 / 65,8 / 0,698, Insane 74,9 / 63,4 / 0,739, Expert 72,4 / 63,9 / 0,789
   Summe der Modell-Wahrscheinlichkeiten je 2-s-Fenster erreicht 0,73 (Hard) / 0,68 (Easy); Easy/Normal liegen
   darunter, weil Holds dort Zeilen sperren und die Fenster nur 4-8 Noten haben.
 - **Holds**: gehaltene Toene aus AmFeatures sagen Menschen-Holds kaum voraus (AUC 0,56-0,65). Weniger, sicherere
-  Holds (Schwelle `hold_min_p` 0,3) heben die Ueberlappung auf 55 %, kosten aber Sterne (Expert im Band 87 -> 35 %)
-  und Noten-Treffer (-3 Punkte), weil Holds viel Sternwert tragen; Holds nach `hold_any` (ohne Ton) bringen den
+  Holds (Schwelle `hold_min_p` 0,25) heben die Ueberlappung auf 53,2 %, kosten aber Sterne (Expert im Band 87 -> 75 %)
+  und Noten-Treffer (Hard auf Menschen-Note -2,8 Punkte), weil Holds viel Sternwert tragen; Holds nach `hold_any` (ohne Ton) bringen den
   Hold-Anteil auf Menschen-Niveau (Hard 19 % statt 8 %), die Ueberlappung aber nur +0,7 Punkte. Beides aus.
 - **Sterne Normal** (81 %): die unter dem Band liegen fast alle knapp darunter (1,9-2,1) oder haben ein falsches
   Tempo (x0,5); Normal-Regeln (1/2-Raster, 1/4 hoechstens 15,9 %, Laeufe bis 7, keine Jacks) begrenzen dort. Mehr
