@@ -53,10 +53,10 @@ static func _osu(keys: int, mode: int = 3) -> String:
 
 func _test_defaults() -> void:
 	print("- Standard-Tasten wie osu!")
-	_check(ManiaKeys.default_keys(4) == [KEY_D, KEY_F, KEY_J, KEY_K] as Array[int], "4K D F J K")
-	_check(ManiaKeys.default_keys(5) == [KEY_D, KEY_F, KEY_SPACE, KEY_J, KEY_K] as Array[int], "5K D F Space J K")
-	_check(ManiaKeys.default_keys(6) == [KEY_S, KEY_D, KEY_F, KEY_J, KEY_K, KEY_L] as Array[int], "6K S D F J K L")
-	_check(ManiaKeys.default_keys(7) == [KEY_S, KEY_D, KEY_F, KEY_SPACE, KEY_J, KEY_K, KEY_L] as Array[int],
+	_check(ManiaKeys.default_keys(4) == ([KEY_D, KEY_F, KEY_J, KEY_K] as Array[int]), "4K D F J K")
+	_check(ManiaKeys.default_keys(5) == ([KEY_D, KEY_F, KEY_SPACE, KEY_J, KEY_K] as Array[int]), "5K D F Space J K")
+	_check(ManiaKeys.default_keys(6) == ([KEY_S, KEY_D, KEY_F, KEY_J, KEY_K, KEY_L] as Array[int]), "6K S D F J K L")
+	_check(ManiaKeys.default_keys(7) == ([KEY_S, KEY_D, KEY_F, KEY_SPACE, KEY_J, KEY_K, KEY_L] as Array[int]),
 		"7K S D F Space J K L")
 	var a := ManiaKeys.default_keys(7)
 	a[0] = KEY_A
@@ -129,7 +129,7 @@ func _test_parser_and_core() -> void:
 		_check(core.columns == k, "%dK ManiaCore.columns" % k)
 		# Jede Spalte genau zur Notenzeit druecken: alles MAX, kein Miss.
 		for c in k:
-			var t := 1000.0 + c * 200.0
+			var t: float = 1000.0 + c * 200.0
 			core.key_down(c, t)
 			core.key_up(c, t + 30.0)
 			core.update(t + 40.0)
@@ -171,7 +171,7 @@ func _test_map_set_filter() -> void:
 	var ms := MapSet.from_dict("x.osz", {"title": "t", "diffs": [
 		{"mode": 3, "cs": 7.0, "osu_filename": "a.osu"}, {"mode": 3, "cs": 4.0, "osu_filename": "b.osu"},
 		{"mode": 3, "cs": 7.0, "osu_filename": "c.osu"}]})
-	_check(ms.key_counts() == [4, 7] as Array[int], "key_counts 4K 7K")
+	_check(ms.key_counts() == ([4, 7] as Array[int]), "key_counts 4K 7K")
 	_check(_ss().view_mode_of("mania") == "mania" and _ss().view_mode_of("trace") == "mania@4"
 		and _ss().view_mode_of("orbit") == "orbit", "Sicht-Modus je Spielmodus")
 	_check(_ss().online_mode_of({"mode": 3, "cs": 7.0}, "") == "mania7k", "Rangliste 7K = mania7k")
@@ -213,7 +213,7 @@ func _test_settings() -> void:
 	st2.load_settings(path)
 	_check(st2.mania_keys(7)[0] == KEY_A and st2.mania_keys(7)[1] == KEY_D, "7K-Belegung gespeichert/geladen")
 	_check(st2.mania_keys(5) == ManiaKeys.default_keys(5), "5K bleibt Standard")
-	_check(st2.key_lanes == [KEY_D, KEY_F, KEY_J, KEY_K] as Array[int], "4K unberuehrt")
+	_check(st2.key_lanes == ([KEY_D, KEY_F, KEY_J, KEY_K] as Array[int]), "4K unberuehrt")
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 	st.free()
 	st2.free()
