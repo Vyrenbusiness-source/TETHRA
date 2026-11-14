@@ -69,8 +69,26 @@ static func analyze(pcm: PackedFloat32Array, rate: int, params: Dictionary = {})
 #                   "kind": String,       # "intro" | "verse" | "build" | "chorus" | "break" | "outro"
 #                   "kiai": bool,
 #                   "lead": String } ]    # führende Ebene: "drums" | "bass" | "tonal" | "vocal"; lückenlos über den Song
+#   "bar_density": [ { "start_ms": float, "end_ms": float,   # ein Takt (akustisch = Taktanfang des Gitters + OSU_LEAD)
+#                      "density": float } ]                  # erwartete Notendichte, >= 0, Zeit-Mittel über den Song = 1
 # }
 ```
+
+Ergänzung 2026-11-14 (am3-sections, abwärtskompatibel):
+
+- **Eingabe `params.grid`** (optional): das Ergebnis von `AmGrid.track` (bzw. `adjusted_grid`). Damit liegen
+  Abschnitte und `bar_density` auf genau den Takten, die auch die roten Linien bekommen. Ohne `params.grid`
+  ruft `analyze` selbst `AmGrid.track(pcm, rate, params.grid_params)` (kostet die Gitter-Zeit ein zweites Mal);
+  `form_track_grid = 0` nimmt stattdessen feste 2-s-Blöcke. Die Pipeline sollte das Gitter übergeben.
+- **`sections`** beginnen und enden auf Taktanfängen (akustisch, wie `bar_density.start_ms`); `AmWriter.kiai_ranges`
+  zieht OSU_LEAD ab und landet damit genau auf dem Taktanfang. Kiai kommt aus der Liedform (Selbstähnlichkeit der
+  Takte, Wiederholung und Energie je 4-Takt-Block), nicht mehr aus einer Lautheits-Schwelle je Abschnitt.
+- **`bar_density`** (neu): eine Zeile je Takt, lückenlos von 0 bis `duration_ms`. `density` ist relativ: 1 = mittlere
+  Dichte des Songs, 2 = doppelt so dicht, 0 = keine Noten erwartet. Gelernt auf der Abstimm-Menge gegen die Notendichte
+  der Menschen-Maps (alle Profile, 2-s-Fenster; Messung `docs/automap/form.md`). Gedacht für AmChart: Noten im Takt
+  etwa `nps_profil * dauer_s * density`. Fehlt das Feld (alte Merkmale), gilt überall 1.
+- Versatz der Anschläge je Art (`shift_snare_ms`, `shift_hat_ms`, `shift_other_ms`, dazu wie bisher `shift_low_ms`,
+  `shift_harm_ms`); der frühere gemeinsame Wert `onset_shift_ms` wirkt nicht mehr.
 
 Nutzer-Vorgabe: **Auf alles wird geachtet** — Schlagzeug (Kick, Snare, Becken/Hi-Hat), Bass und tiefe
 Parts (808, Sub, Basslinie), Instrumente (Melodie, Akkorde, Synths) und Stimme (Gesang, Rap-Silben).
