@@ -2815,7 +2815,7 @@ func _update_info_panel() -> void:
 		_selected_set.version_name_at(_selected_diff), 5, score_mode)
 	if tops.is_empty():
 		var empty := Label.new()
-		empty.text = tr("Noch kein %s-Score — spiel die Map!") % ScoreStore.mode_label(score_mode)
+		empty.text = tr("Noch kein %s-Score — spiel die Map!") % _score_label(score_mode)
 		empty.add_theme_font_size_override("font_size", 13)
 		empty.add_theme_color_override("font_color", COL_DIM)
 		_lb_box.add_child(empty)
@@ -3290,7 +3290,7 @@ func _score_row(rank: int, e: Dictionary) -> Control:
 ## Modus-Umschalter Mania 4K | Orbit | Rally / Dirigent | Trace | Rebound als 3x2-Raster
 ## (gleiche Toggle-Optik wie die Filter-Chips).
 const MODE_TIPS := {
-	"mania": "Klassisch: vier Spuren",
+	"mania": "Classic: 4 to 7 lanes (4K to 7K maps)",
 	"orbit": "Zielen mit Maus/Tablet, Ring per Taste (osu!standard- und 4K-Maps)",
 	"rally": "Tischtennis im Takt: Schläge auf die Noten, zwei Tasten",
 	"dirigent": "Taktfigur mit der Maus führen, Einsätze per Taste",
@@ -3307,7 +3307,7 @@ func _build_mode_switch() -> Control:
 	grid.custom_minimum_size = Vector2(0, 58)
 	_mode_btns.clear()
 	for m in PLAY_MODES:
-		var b := _make_toggle(ScoreStore.mode_label("" if m == "mania" else m), 13, 6)
+		var b := _make_toggle("Mania" if m == "mania" else ScoreStore.mode_label(m), 13, 6)  # Mania = 4K-7K
 		b.custom_minimum_size = Vector2(0, 27)
 		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		b.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -3585,7 +3585,7 @@ func _style_lb_mode_tag(score_mode: String) -> void:
 	if _lb_mode_tag == null:
 		return
 	var col := UiTheme.ACCENT2 if score_mode == ScoreStore.MODE_ORBIT else COL_ACCENT
-	_lb_mode_tag.text = ScoreStore.mode_label(score_mode).to_upper()
+	_lb_mode_tag.text = _score_label(score_mode).to_upper()
 	_lb_mode_tag.add_theme_color_override("font_color", col.lerp(COL_TEXT, 0.25))
 	var box := _lb_mode_tag.get_parent() as PanelContainer
 	var sb := StyleBoxFlat.new()
@@ -3598,7 +3598,15 @@ func _style_lb_mode_tag(score_mode: String) -> void:
 	sb.content_margin_top = 1
 	sb.content_margin_bottom = 1
 	box.add_theme_stylebox_override("panel", sb)
-	box.tooltip_text = tr("Nur Scores im Modus %s") % ScoreStore.mode_label(score_mode)
+	box.tooltip_text = tr("Nur Scores im Modus %s") % _score_label(score_mode)
+
+
+## Modus-Name der Rangliste: Mania mit der Tastenzahl der gewaehlten Diff ("Mania 7K").
+func _score_label(score_mode: String) -> String:
+	var keys := 4
+	if score_mode == "" and _selected_set != null and _selected_diff >= 0:
+		keys = maxi(ManiaKeys.keys_of_meta(_selected_set.meta_at(_selected_diff)), 4)
+	return ScoreStore.mode_label(score_mode, keys)
 
 
 ## SV-Stufe: zwei Mini-Schalter Normal | Stark (Standard Stark) neben dem SV-Mod.
@@ -4267,7 +4275,7 @@ func _open_import_panel() -> void:
 	var osu_dir := SongImport.find_stable_songs_dir()
 	var osu_sub := tr("Gefunden: %s") % osu_dir if osu_dir != "" else tr("osu! nicht gefunden. Du wählst den Songs-Ordner selbst.")
 	_import_osu_btn = _import_row(actions, "Aus osu! übernehmen",
-		osu_sub + "\n" + tr("Nur 4K-Mania und osu!standard, schon vorhandene Maps bleiben, wie sie sind."))
+		osu_sub + "\n" + tr("Only 4K to 7K mania and osu!standard. Maps you already have stay as they are."))
 	_import_osu_btn.pressed.connect(_import_from_osu)
 	_import_osu_note = _add_label(actions, "", 13, UiTheme.BAD)
 	_import_osu_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART

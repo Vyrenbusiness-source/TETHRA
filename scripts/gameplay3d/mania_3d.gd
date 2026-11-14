@@ -1641,7 +1641,7 @@ func _on_note_spawned(index: int) -> void:
 	var has_snap := snap.a > 0.0
 	if has_snap and not obj.is_hold:
 		col = snap
-	elif not obj.is_hold:
+	if not obj.is_hold:
 		col = ManiaKeys.auto_tint(col, obj.column, core.columns)  # 5K-7K: Spaltenmuster wie osu!
 	# Eigene Notenfarben (Modus lanes/snap) ersetzen Map-/Welt-/Snap-Farbe komplett.
 	if NoteColors.is_custom(_2d):
