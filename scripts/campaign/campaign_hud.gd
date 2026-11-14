@@ -97,7 +97,8 @@ func _build() -> void:
 		var tr_row := HBoxContainer.new()
 		tr_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		tr_row.add_theme_constant_override("separation", int(roundf(8.0 * s)))
-		tr_row.add_child(_label(Campaign.tr_("Skip-Prüfung: %s Accuracy") % Campaign.pct_text(Campaign.TRIAL_ACC),
+		# Kopfzeile sagt schon "Skip-Pruefung"; hier nur die Grenze.
+		tr_row.add_child(_label(Campaign.tr_("Genauigkeit ≥ %s") % Campaign.pct_text(Campaign.TRIAL_ACC),
 			13.0 * s, UiTheme.ACCENT2, true))
 		_trial_val = _label("", 13.0 * s, UiTheme.DIM)
 		_trial_val.custom_minimum_size.x = roundf(54.0 * s)
@@ -126,7 +127,8 @@ func _build() -> void:
 	# Links unter den Werten der Szene (Mania: Rang/Genauigkeit, Orbit: Punkte/Genauigkeit):
 	# dort ist in allen Modi Hintergrund, die Strecke beginnt weiter rechts.
 	# Orbit: Seitenflaeche nur ~16 % breit. Breitere Box kleiner skalieren statt ins Spielfeld.
-	var maxw := get_viewport().get_visible_rect().size.x * 0.16 - 30.0 * s
+	var side := 0.16 if str(stage.get("mode", "")) == "orbit" else 0.26
+	var maxw := get_viewport().get_visible_rect().size.x * side - 30.0 * s
 	_box.scale = Vector2.ONE * minf(1.0, maxw / maxf(_box.size.x, 1.0))
 	_box.position = Vector2(roundf(24.0 * s), roundf(BASE_H * 0.62 * s))
 	_update()
