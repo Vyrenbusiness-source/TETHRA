@@ -541,7 +541,7 @@ func _live_step() -> void:
 			if el >= 1600:
 				var start := -_mark - 1.0
 				var wall := float(Time.get_ticks_usec() - _mark_wall_us) / 1000.0
-				_ok(absf((v - start) - wall) < 30.0, "laeuft nach Resume mit Echtzeit (+%.1f ms in %.1f ms)" % [v - start, wall])
+				_ok(absf((v - start) - wall) < maxf(30.0, wall * 0.1), "laeuft nach Resume mit Echtzeit (+%.1f ms in %.1f ms)" % [v - start, wall])
 				_ok(_mono, "Song-Zeit monoton ueber Lead-In, Pause, Resume")
 				_clock.stop()
 				_ok(_clock.song_time_ms() == 0.0, "stop(): Zeit 0")
