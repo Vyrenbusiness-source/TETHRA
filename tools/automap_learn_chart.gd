@@ -199,7 +199,14 @@ static func _examples(song: Dictionary, P: Dictionary) -> Dictionary:
 		# Gitter daneben (Tempo/Versatz): Zeilen treffen kaum Menschen-Noten -> nichts lernen
 		if float(hit) < 0.35 * float(mini(n, ht.size())):
 			continue
-		out[p] = {"x": X, "y": y, "yc": yc, "yh": yh, "susb": C["susb"], "hl": hl}
+		var hrows := 0
+		var last := -1e9
+		for ti in ht:
+			if ti - last > 2.0:
+				hrows += 1
+			last = ti
+		out[p] = {"x": X, "y": y, "yc": yc, "yh": yh, "susb": C["susb"], "hl": hl,
+				"n_rows": n, "n_pos": hit, "n_hrows": hrows, "n_hnotes": ht.size()}
 	return out
 
 
@@ -299,6 +306,17 @@ func _fit(args: PackedStringArray, cache: String) -> int:
 	var log_lines: Array = []
 	for p in AmChart.PROFILES:
 		var m := {}
+		var tot := [0, 0, 0, 0]
+		for e in ex.tune:
+			if e.has(p):
+				tot[0] += int(e[p].n_rows)
+				tot[1] += int(e[p].n_pos)
+				tot[2] += int(e[p].n_hrows)
+				tot[3] += int(e[p].n_hnotes)
+		print("%s: Kandidat-Zeilen %d, davon auf Menschen-Zeile %d (%.1f %%), Menschen-Zeilen %d (gedeckt %.1f %%), Menschen-Noten %d" % [
+				p, tot[0], tot[1], 100.0 * tot[1] / maxf(tot[0], 1), tot[2], 100.0 * tot[1] / maxf(tot[2], 1), tot[3]])
+		if args.has("--stats"):
+			continue
 		for task in ["note", "chord", "hold"]:
 			var dt := {"tune": [], "test": []}
 			for sp in dt:
@@ -380,6 +398,7 @@ func _eval(args: PackedStringArray, cache: String) -> int:
 	var recs: Array = []
 	var t0 := Time.get_ticks_msec()
 	var songs := _load(cache, split)
+	var diag := {}
 	for s in songs:
 		var prod := _product(s, cp, mods)
 		var rec := B.song_record(s.file, s.truth, prod, 0.0, float(s.dur_ms))
@@ -387,8 +406,28 @@ func _eval(args: PackedStringArray, cache: String) -> int:
 		for p in prod.charts:
 			if prod.charts[p].ok:
 				st[p] = AmChart.estimate_stars(prod.charts[p].notes) * float(pats.star_a) + float(pats.star_b)
+				var band: Array = B.STAR_BANDS[p]
+				if float(st[p]) < float(band[0]):
+					var key: String = "low_" + str(p)
+					if not diag.has(key):
+						diag[key] = [0, 0, 0.0]
+					diag[key][0] += 1
+					var dd := float(prod.charts[p].stats.get("density", 0.0))
+					if dd >= 1.9:
+						diag[key][1] += 1
+					diag[key][2] += dd
+					if args.has("--low"):
+						var hs := []
+						for hd in s.truth.diffs4k:
+							hs.append(snappedf(float(hd.stars), 0.01))
+						print("    unter Band %s %s: %.2f Sterne, d %.2f, BPM erzeugt %.0f / Map %s, Tempo exakt %s, Menschen-Sterne %s" % [p, B._short(s.file),
+								float(st[p]), dd, 60000.0 / float(s.grid.segments[0].beat_ms), str(snappedf(float(rec.get("bpm", 0.0)), 0.1)),
+								str(rec.get("tempo_exact", "-")), str(hs)])
 		rec["stars"] = st
 		recs.append(rec)
+		_diag_add(diag, s, prod)
+		if args.has("--rank"):
+			_rank_add(diag, s, prod, cp)
 	var a := B.aggregate(recs, split)
 	print("Sets %d, %.0f s" % [songs.size(), (Time.get_ticks_msec() - t0) / 1000.0])
 	for row in B.target_rows(a, mods.caps):
@@ -398,11 +437,93 @@ func _eval(args: PackedStringArray, cache: String) -> int:
 	for p in AmChart.PROFILES:
 		var pa: Dictionary = a.get("per", {}).get(p, {})
 		print("  %s: %s" % [p, JSON.stringify(_short_prof(pa))])
+	for p in AmChart.PROFILES:
+		if diag.has("low_" + p):
+			var lw: Array = diag["low_" + p]
+			print("  %s unter dem Band: %d, davon d >= 1,9: %d, mittleres d %.2f" % [p, lw[0], lw[1], lw[2] / maxf(lw[0], 1)])
+		if diag.has("rank_" + p):
+			var rk: Array = diag["rank_" + p]
+			print("  %s Rangfolge: beste %d von %d Kandidaten, davon auf Menschen-Zeile %.1f %%" % [p, rk[0], rk[2], 100.0 * rk[1] / maxf(rk[0], 1)])
+		if diag.has(p):
+			var d: Dictionary = diag[p]
+			print("  %s Zeilen: erzeugt %d, auf Menschen-Zeile %.1f %%, Akkord-Zeilen erzeugt %.1f %% / Mensch %.1f %%, Noten je Zeile erzeugt %.2f / Mensch %.2f, Zeilen-Treffer mit Akkord-Fehler %.1f %%" % [
+					p, d.g_rows, 100.0 * d.g_hit / maxf(d.g_rows, 1), 100.0 * d.g_ch / maxf(d.g_rows, 1), 100.0 * d.h_ch / maxf(d.h_rows, 1),
+					float(d.g_notes) / maxf(d.g_rows, 1), float(d.h_notes) / maxf(d.h_rows, 1), 100.0 * d.size_mis / maxf(d.g_hit, 1)])
 	if args.has("--json"):
 		var fo := FileAccess.open(B._arg(args, "--json"), FileAccess.WRITE)
 		fo.store_string(JSON.stringify(recs))
 		fo.close()
 	return 0
+
+
+## Zeilen (gleiche Zeit) aus sortierten Zeiten: [[t, Anzahl], ...]
+static func _rows(times: Array) -> Array:
+	var out: Array = []
+	for t in times:
+		if not out.is_empty() and float(t) - float(out[-1][0]) <= 2.0:
+			out[-1][1] += 1
+		else:
+			out.append([float(t), 1])
+	return out
+
+
+static func _diag_add(diag: Dictionary, s: Dictionary, prod: Dictionary) -> void:
+	if not prod.ok:
+		return
+	for p in AmChart.PROFILES:
+		var hi := B.pick_human_diff(s.truth.diffs4k, p)
+		if hi < 0 or not prod.charts[p].ok:
+			continue
+		if not diag.has(p):
+			diag[p] = {"g_rows": 0, "g_hit": 0, "g_ch": 0, "h_rows": 0, "h_ch": 0, "g_notes": 0, "h_notes": 0, "size_mis": 0}
+		var d: Dictionary = diag[p]
+		var gr := _rows(B._times(prod.charts[p].notes))
+		var hr := _rows(s.truth.diffs4k[hi].times)
+		d.g_rows += gr.size()
+		d.h_rows += hr.size()
+		var j := 0
+		for g in gr:
+			d.g_notes += int(g[1])
+			if int(g[1]) >= 2:
+				d.g_ch += 1
+			while j < hr.size() and float(hr[j][0]) < float(g[0]) - TOL:
+				j += 1
+			if j < hr.size() and absf(float(hr[j][0]) - float(g[0])) <= TOL:
+				d.g_hit += 1
+				if int(hr[j][1]) != int(g[1]):
+					d.size_mis += 1
+		for h in hr:
+			d.h_notes += int(h[1])
+			if int(h[1]) >= 2:
+				d.h_ch += 1
+
+
+## Obere Grenze der Rangfolge: Trefferquote der besten K Zeilen nach Modell (K = erzeugte Zeilen),
+## gegen die Zeilen, die der Setzer wirklich gesetzt hat.
+static func _rank_add(diag: Dictionary, s: Dictionary, prod: Dictionary, cp: Dictionary) -> void:
+	if not prod.ok:
+		return
+	var P := AmChart._params(cp)
+	var ex := _examples(s, P)
+	var model := AmChart._select_model(P)
+	for p in ex:
+		if not model.has(p) or not prod.charts[p].ok:
+			continue
+		var E: Dictionary = ex[p]
+		var z := AmChart._logits(E.x, model[p]["note"])
+		var gr := _rows(B._times(prod.charts[p].notes))
+		var idx: Array = range(z.size())
+		idx.sort_custom(func(a, b): return z[a] > z[b])
+		var k := mini(gr.size(), idx.size())
+		var hit := 0
+		for i in k:
+			hit += int((E.y as PackedByteArray)[idx[i]])
+		var key: String = "rank_" + str(p)
+		if not diag.has(key):
+			diag[key] = [0, 0, 0]
+		diag[key][0] += k
+		diag[key][1] += hit
+		diag[key][2] += int(E.n_rows)
 
 
 static func _short_prof(pa: Dictionary) -> Dictionary:
@@ -433,7 +554,10 @@ static func _product(s: Dictionary, cp: Dictionary, mods: Dictionary) -> Diction
 	var all := AmChart.build_all(feat, grid, cp, "Easy")
 	for p in AmChart.PROFILES:
 		var ch: Dictionary = all[p]
-		prod.charts[p] = {"ok": bool(ch.ok), "error": str(ch.error), "notes": ch.notes}
-		prod.lint[p] = AmChart.lint(ch.notes, grid, p).size() if ch.ok else -1
+		prod.charts[p] = {"ok": bool(ch.ok), "error": str(ch.error), "notes": ch.notes, "stats": ch.get("stats", {})}
+		var lv: Array = AmChart.lint(ch.notes, grid, p) if ch.ok else []
+		prod.lint[p] = lv.size() if ch.ok else -1
+		for m in lv:
+			print("    lint %s %s: %s" % [p, B._short(s.file), m])
 	prod.ok = true
 	return prod

@@ -53,7 +53,15 @@ const DEFAULTS := {
 	"w_kick": 1.0, "w_snare": 1.0, "w_hat": 1.0, "w_bass": 1.0, "w_tonal": 1.0, "w_vocal": 1.0, "w_other": 1.0,
 	# Auswahl nach dem gelernten Modell (data/automap/select.json); false = Handgewichte oben
 	"select_model": true,
-	"dens_quota": 0.0,            # 0..1: Notenzahl je Takt nach der Summe der Modell-Wahrscheinlichkeiten
+	"hold_len_scale": 0.0,        # Hold-Laenge = gehaltener Ton mal diesem Wert (0 = gelernt in Easy/Normal, sonst 1)
+	"hold_len_max_beats": 0.0,    # hoechstens so viele Schlaege (0 = ohne Grenze)
+	"hold_min_p": 0.0,            # Hold nur bei gelernter Hold-Wahrscheinlichkeit (Note vorausgesetzt) ab diesem Wert
+	"fill_max": 0.3,              # Zwischen-Zeilen bei d = 2 hoechstens dieser Anteil der Zeilen (0 = aus)
+	"fill_energy": 0.8,           # nur wo die Lautheit >= diesem Anteil des Medians der Ereignis-Zeilen
+	"fill_gap_beats": 1.0,        # nur zwischen Ereignis-Zeilen, die hoechstens so weit auseinander liegen
+	"rare_model": true,           # seltene Teilung nach dem Modell statt nach festem Anteil
+	"nest_from": "Hard",         # Bezugsprofil der Verschachtelung ("Expert" = von oben nach unten wie bisher)
+	"dens_quota": 0.0,           # 0..1: Notenzahl je Takt nach der Summe der Modell-Wahrscheinlichkeiten
 	"select": {},                 # Tests: Modell direkt uebergeben (Form wie select.json)
 }
 
@@ -135,7 +143,7 @@ const ROW_FEATURES := ["bias",
 		"n_kinds", "sustain", "sustain_half", "intensity", "event_density", "loudness", "kiai",
 		"sec_intro", "sec_verse", "sec_build", "sec_chorus", "sec_break", "sec_outro",
 		"hat_accent", "has_pitch", "tempo", "tempo_quarter", "tempo_fine", "tempo_half",
-		"dominance", "gap_prev", "gap_next", "expected_density"]
+		"dominance", "gap_prev", "gap_next", "expected_density", "fill"]
 
 static var _pat_cache: Dictionary = {}
 static var _sel_cache: Dictionary = {}
@@ -180,6 +188,32 @@ static func build_all(features: Dictionary, grid: Dictionary, params: Dictionary
 	if not model.is_empty():
 		C["X"] = row_features(C)
 	C["model"] = model
+	var nest := PROFILES.find(String(P["nest_from"]))
+	if nest < 0:
+		nest = PROFILES.size() - 1
+	if nest < PROFILES.size() - 1:
+		# Von der Mitte aus: das Bezugsprofil waehlt frei nach seinem Modell, schwerere Profile enthalten
+		# alle seine Stellen (und waehlen dazu), leichtere sind eine Auswahl daraus.
+		var res_by := {}
+		var ref := _tune(C, G, PROFILES[nest], {}, P, pats)
+		res_by[nest] = ref
+		var sup := {"force": ref["flags"]}
+		for pi in range(nest + 1, PROFILES.size()):
+			var r2 := _tune(C, G, PROFILES[pi], {}, P, pats, sup)
+			res_by[pi] = r2
+			sup = {"force": r2["flags"]}
+		# Stellen, die ein schwereres Profil nicht setzen konnte (Spalten belegt), fallen in den leichteren weg
+		for pi in range(PROFILES.size() - 1, nest, -1):
+			_drop_missing(C, res_by[pi - 1], res_by[pi]["flags"])
+		var parent2 := {"flags": ref["flags"], "sizes": ref["sizes"]}
+		for pi in range(nest - 1, -1, -1):
+			var r3 := _tune(C, G, PROFILES[pi], parent2, P, pats)
+			res_by[pi] = r3
+			parent2 = {"flags": r3["flags"], "sizes": r3["sizes"]}
+		for pi in range(PROFILES.size() - 1, stop - 1, -1):
+			var prof2: String = PROFILES[pi]
+			out[prof2] = {"ok": true, "error": "", "profile": prof2, "notes": res_by[pi]["notes"], "stats": res_by[pi]["stats"]}
+		return out
 	var parent := {}
 	for pi in range(PROFILES.size() - 1, stop - 1, -1):
 		var prof: String = PROFILES[pi]
@@ -187,6 +221,26 @@ static func build_all(features: Dictionary, grid: Dictionary, params: Dictionary
 		parent = {"flags": res["flags"], "sizes": res["sizes"]}
 		out[prof] = {"ok": true, "error": "", "profile": prof, "notes": res["notes"], "stats": res["stats"]}
 	return out
+
+
+## Entfernt aus res (leichteres Profil) die Zeilen, die das schwerere Profil (flags_hi) nicht hat.
+static func _drop_missing(C: Dictionary, res: Dictionary, flags_hi: PackedByteArray) -> void:
+	var flags: PackedByteArray = res["flags"]
+	var c_t: PackedFloat64Array = C["t"]
+	var gone := {}
+	for r in flags.size():
+		if flags[r] == 1 and flags_hi[r] == 0:
+			flags[r] = 0
+			gone[int(round(c_t[r] * 8.0))] = true
+	if gone.is_empty():
+		return
+	res["flags"] = flags
+	var keep: Array = []
+	for nt: Dictionary in res["notes"]:
+		if not gone.has(int(round(float(nt["t_ms"]) * 8.0))):
+			keep.append(nt)
+	res["notes"] = keep
+	res["stats"]["dropped_for_nesting"] = gone.size()
 
 
 ## Regelverstoesse (leer = spielbar nach Spec-Tabelle).
@@ -795,6 +849,7 @@ static func _prep(features: Dictionary, G: Dictionary, P: Dictionary) -> Diction
 			continue
 		rows.append(row)
 		prev_bp = bp
+	rows = _add_fill_rows(rows, features, G, P)
 	var n := rows.size()
 	var C := {"n": n, "t": PackedFloat64Array(), "bp": PackedFloat64Array(), "tick": PackedInt32Array(),
 			"score": PackedFloat64Array(), "acc": PackedFloat64Array(), "sus": PackedFloat64Array(),
@@ -826,6 +881,8 @@ static func _prep(features: Dictionary, G: Dictionary, P: Dictionary) -> Diction
 	var c_beat := PackedFloat64Array()
 	var c_hat := PackedByteArray()
 	var c_en := PackedFloat64Array()
+	var c_fill := PackedByteArray()
+	c_fill.resize(n)
 	c_skind.resize(n)
 	c_kiai.resize(n)
 	c_ws.resize(n)
@@ -841,6 +898,7 @@ static func _prep(features: Dictionary, G: Dictionary, P: Dictionary) -> Diction
 		for k in 14:
 			c_ks[i * 14 + k] = ks[k]
 		c_skind[i] = int(row[14])
+		c_fill[i] = 1 if (row.size() > 17 and int(row[17]) == 1) else 0
 		c_kiai[i] = int(row[15])
 		c_ws[i] = float(row[3])
 		c_beat[i] = beat[int(row[1])]
@@ -946,10 +1004,14 @@ static func _prep(features: Dictionary, G: Dictionary, P: Dictionary) -> Diction
 		var j := i
 		while j < n and c_bar[j] == c_bar[i]:
 			j += 1
-		if j - i >= int(P["motif_min_rows"]):
+		var L := PackedInt32Array()      # Zwischen-Zeilen gehoeren nicht zum Motiv
+		for q in range(i, j):
+			if c_fill[q] == 0:
+				L.append(q)
+		if L.size() >= int(P["motif_min_rows"]):
 			var parts := PackedStringArray()
 			var p0 := -1.0
-			for q in range(i, j):
+			for q in L:
 				var pb := 99
 				if c_pitch[q] >= 0.0:
 					if p0 < 0.0:
@@ -959,14 +1021,71 @@ static func _prep(features: Dictionary, G: Dictionary, P: Dictionary) -> Diction
 						int(round(c_susb[q] * 2.0)), int(round(c_inten[q] * 4.0))])
 			var sig := ",".join(parts)
 			if first.has(sig):
-				var f0: int = first[sig]
-				for q in range(i, j):
-					tmpl[q] = f0 + (q - i)
+				var F: PackedInt32Array = first[sig]
+				for k in L.size():
+					tmpl[L[k]] = F[k]
 			else:
-				first[sig] = i
+				first[sig] = L
 		i = j
 	C["tmpl"] = tmpl
+	C["fill"] = c_fill
 	return C
+
+
+## Zwischen-Zeilen fuer zu leichte Profile (nur wenn die Sterne mit allen Ereignissen nicht reichen):
+## 1/4-Gitterpunkte ohne eigenes Ereignis zwischen zwei Ereignis-Zeilen, die hoechstens fill_gap_beats
+## auseinander liegen (keine Pause), und nur, wo die Musik laut ist (Lautheit >= fill_energy x Median
+## der Ereignis-Zeilen). Markiert mit Feld 17 = 1; der Setzer nimmt sie erst nach allen Ereignissen.
+static func _add_fill_rows(rows: Array, features: Dictionary, G: Dictionary, P: Dictionary) -> Array:
+	if float(P["fill_max"]) <= 0.0 or rows.size() < 2:
+		return rows
+	var energy = features.get("energy", PackedFloat32Array())
+	var frame_ms := float(features.get("frame_ms", 0.0))
+	var ne: int = energy.size() if (energy is PackedFloat32Array or energy is Array) else 0
+	if ne == 0 or frame_ms <= 0.0:
+		return rows
+	var lead: float = P["osu_lead_ms"]
+	var start: PackedFloat64Array = G["start"]
+	var beat: PackedFloat64Array = G["beat"]
+	var bp0: PackedFloat64Array = G["bp0"]
+	var en_at := func(t_map: float) -> float:
+		var fi := int(round((t_map + lead) / frame_ms))
+		var e := 0.0
+		for d in range(-3, 4):
+			e = maxf(e, float(energy[clampi(fi + d, 0, ne - 1)]))
+		return e
+	var ens: Array = []
+	for row: Array in rows:
+		ens.append(en_at.call(float(row[0])))
+	ens.sort()
+	var thr: float = float(ens[ens.size() >> 1]) * float(P["fill_energy"])
+	var gap_max: float = P["fill_gap_beats"]
+	var out: Array = []
+	for q in rows.size():
+		var a: Array = rows[q]
+		out.append(a)
+		if q + 1 >= rows.size():
+			break
+		var b: Array = rows[q + 1]
+		var si: int = a[1]
+		if int(b[1]) != si:
+			continue
+		var bpa := bp0[si] + float(a[2]) / 24.0
+		var bpb := bp0[si] + float(b[2]) / 24.0
+		if bpb - bpa > gap_max + EPS:
+			continue
+		var tick := (int(floor(float(a[2]) / 6.0)) + 1) * 6
+		while true:
+			var bp := bp0[si] + float(tick) / 24.0
+			if bp > bpb - 0.2:
+				break
+			if bp - bpa >= 0.2:
+				var ts := start[si] + float(tick) * beat[si] / 24.0
+				if float(en_at.call(ts)) >= thr:
+					out.append([ts, si, tick, 0.0, 0.0, 0, 0, -1.0, 0.0, a[9], a[10], 0, -1.0,
+							PackedFloat32Array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]), a[14], a[15], ts + lead, 1])
+			tick += 6
+	return out
 
 
 ## Erwartete Notendichte je Zeile, log2 gegen den Song-Median, auf [-2, 2] begrenzt.
@@ -1033,6 +1152,7 @@ static func row_features(C: Dictionary) -> Array:
 	var beat_ms: PackedFloat64Array = C["beat_ms"]
 	var ws: PackedFloat64Array = C["ws"]
 	var xd: PackedFloat64Array = C["exp_dens"]
+	var fl: PackedByteArray = C["fill"]
 	# Lautheit gegen den Song-Median
 	var srt := en.duplicate()
 	srt.sort()
@@ -1088,6 +1208,7 @@ static func row_features(C: Dictionary) -> Array:
 		x[42] = minf(bp[r] - bp[r - 1], 2.0) / 2.0 if r > 0 else 1.0
 		x[43] = minf(bp[r + 1] - bp[r], 2.0) / 2.0 if r + 1 < n else 1.0
 		x[44] = xd[r]
+		x[45] = float(fl[r])
 		out[r] = x
 	return out
 
@@ -1143,6 +1264,8 @@ static func _model_ready(src: Dictionary) -> Dictionary:
 			for f in ROW_FEATURES.size():
 				w[f] = float(wd.get(ROW_FEATURES[f], 0.0))
 			m[task] = w
+		if profs[p].get("hold_len") is Dictionary:
+			m["hold_len"] = profs[p]["hold_len"]
 		out[p] = m
 	return out
 
@@ -1229,7 +1352,7 @@ static func _pat_ready(src: Dictionary) -> Dictionary:
 # Nachregelung je Profil
 # ---------------------------------------------------------------------------
 
-static func _tune(C: Dictionary, G: Dictionary, profile: String, parent: Dictionary, P: Dictionary, pats: Dictionary) -> Dictionary:
+static func _tune(C: Dictionary, G: Dictionary, profile: String, parent: Dictionary, P: Dictionary, pats: Dictionary, sup: Dictionary = {}) -> Dictionary:
 	var R: Dictionary = RULES[profile]
 	var pat: Dictionary = pats["bands"][profile]
 	var n: int = C["n"]
@@ -1248,6 +1371,8 @@ static func _tune(C: Dictionary, G: Dictionary, profile: String, parent: Diction
 	var ldens: PackedFloat64Array = C["ldens"]
 	var allowed: Array = []
 	var rare: Array = []
+	var fills: Array = []
+	var c_fill: PackedByteArray = C["fill"]
 	var sus_rows: Array = []
 	var eff := PackedFloat64Array()
 	eff.resize(n)
@@ -1264,6 +1389,10 @@ static func _tune(C: Dictionary, G: Dictionary, profile: String, parent: Diction
 			eff[r] = score[r] + dg * (inten[r] - 0.5) + dl * ldens[r] + (float(P["sus_bonus"]) if susb[r] >= float(R["hold_min"]) - EPS else 0.0)
 		if has_parent and pflags[r] == 0:
 			continue
+		if c_fill[r] == 1:
+			if _unit_ok(tick[r], units):
+				fills.append(r)
+			continue
 		if _unit_ok(tick[r], units):
 			allowed.append(r)
 			if susb[r] >= float(R["hold_min"]) - EPS:
@@ -1272,8 +1401,17 @@ static func _tune(C: Dictionary, G: Dictionary, profile: String, parent: Diction
 			rare.append(r)
 	var by_score := func(a: int, b: int) -> bool:
 		return eff[a] > eff[b] if eff[a] != eff[b] else a < b
+	var rare_model := use_model and bool(P["rare_model"]) and not rare.is_empty()
+	var is_rare := PackedByteArray()
+	if rare_model:
+		# seltene Teilung konkurriert mit den uebrigen Zeilen nach dem Modell (Anteil nach oben begrenzt)
+		is_rare.resize(n)
+		for r: int in rare:
+			is_rare[r] = 1
+		allowed.append_array(rare)
 	var order_score := allowed.duplicate()
 	order_score.sort_custom(by_score)
+	fills.sort_custom(by_score)
 	rare.sort_custom(by_score)
 	var order_acc := allowed.duplicate()
 	if M.has("chord"):
@@ -1285,6 +1423,15 @@ static func _tune(C: Dictionary, G: Dictionary, profile: String, parent: Diction
 	if M.has("hold"):
 		var zh := _logits(C["X"], M["hold"])
 		sus_rows.sort_custom(func(a: int, b: int) -> bool: return zh[a] > zh[b] if zh[a] != zh[b] else a < b)
+		# nur gehaltene Toene, auf denen Menschen wahrscheinlich einen Hold setzen
+		var hmin: float = P["hold_min_p"]
+		if hmin > 0.0:
+			var zmin := log(hmin / maxf(1.0 - hmin, 1e-6))
+			var keep_h: Array = []
+			for r: int in sus_rows:
+				if zh[r] >= zmin:
+					keep_h.append(r)
+			sus_rows = keep_h
 	else:
 		sus_rows.sort_custom(by_score)
 	var star_a: float = P["star_scale"]
@@ -1295,7 +1442,21 @@ static func _tune(C: Dictionary, G: Dictionary, profile: String, parent: Diction
 	var seed_base := hash("%d|%d|%s|%d" % [n, int(C["t"][0]), profile, int(P["seed"])])
 	var X := {"profile": profile, "R": R, "pat": pat, "P": P, "order_score": order_score, "rare": rare,
 			"order_acc": order_acc, "sus_rows": sus_rows, "psizes": psizes, "has_parent": has_parent,
-			"seed": seed_base, "na": allowed.size(), "pflags": pflags}
+			"seed": seed_base, "na": allowed.size(), "pflags": pflags, "fills": fills}
+	if rare_model:
+		X["is_rare"] = is_rare
+	# Hold-Laenge (select.json hold_len: Mensch gegen gehaltenen Ton); params ueberschreiben
+	var hlm: Dictionary = M.get("hold_len", {})
+	var hls: float = P["hold_len_scale"]
+	var hlx: float = P["hold_len_max_beats"]
+	# Gelernt nur in Easy/Normal: dort sperrt ein Hold die Zeilen darunter (kuerzer = mehr Noten wie beim
+	# Menschen); in Hard und schwerer aendert die Laenge die Ueberlappung nicht, kuerzer kostet nur Sterne.
+	var learned := clampf(float(hlm.get("ratio_med", 1.0)), 0.25, 1.0) if (not hlm.is_empty() and int(R["overlap"]) < 2) else 1.0
+	X["hl_scale"] = hls if hls > 0.0 else learned
+	X["hl_max"] = hlx if hlx > 0.0 else 1e9
+	if sup.has("force"):
+		# Stellen des leichteren Bezugsprofils sind Pflicht (schwerere Profile enthalten sie)
+		X["force"] = sup["force"]
 	if use_model and float(P["dens_quota"]) > 0.0:
 		# Dichte je Takt: erwartete Menschen-Noten = Summe der Modell-Wahrscheinlichkeiten im Takt
 		var c_bar: PackedInt32Array = C["bar"]
@@ -1516,7 +1677,37 @@ static func _make1(C: Dictionary, G: Dictionary, X: Dictionary, d: float, seed_a
 		for i in k:
 			flags[order_score[i]] = 1
 	var boost := maxf(d - 1.0, 0.0)
-	if rare.size() > 0:
+	if X.has("is_rare"):
+		# seltene Teilung nach dem Modell gewaehlt: Anteil hoechstens knapp unter der Obergrenze,
+		# mit d > 1 (Sterne reichen nicht) bis dorthin aufgefuellt
+		var isr: PackedByteArray = X["is_rare"]
+		var n_main := 0
+		var n_rare := 0
+		for r in n:
+			if flags[r] == 1:
+				if isr[r] == 1:
+					n_rare += 1
+				else:
+					n_main += 1
+		var fmax := float(R["rare_max"]) * 0.9 * sr
+		var cap := int(floor(fmax / maxf(1.0 - fmax, 0.05) * float(n_main)))
+		if boost > 0.0:
+			var fb := minf(float(R["rare_share"]) + boost * maxf(float(R["rare_max"]) * 0.9 - float(R["rare_share"]), 0.0), float(R["rare_max"]) * 0.9) * sr
+			var want := mini(cap, int(floor(fb / maxf(1.0 - fb, 0.05) * float(n_main))))
+			for r: int in rare:
+				if n_rare >= want:
+					break
+				if flags[r] == 0:
+					flags[r] = 1
+					n_rare += 1
+		if n_rare > cap:
+			for i in range(rare.size() - 1, -1, -1):
+				if n_rare <= cap:
+					break
+				if flags[rare[i]] == 1:
+					flags[rare[i]] = 0
+					n_rare -= 1
+	elif rare.size() > 0:
 		# seltene Teilung (Easy 1/2, Normal 1/4, Hard 1/8): bis d = 1 der Anteil der Menschen-Maps,
 		# darueber bis knapp unter die Obergrenze der Spielbarkeits-Regel (mehr Noten statt Akkorde)
 		var rs: float = R["rare_share"]
@@ -1525,25 +1716,56 @@ static func _make1(C: Dictionary, G: Dictionary, X: Dictionary, d: float, seed_a
 		var kr := mini(rare.size(), int(floor(f / maxf(1.0 - f, 0.05) * float(k))))
 		for i in kr:
 			flags[rare[i]] = 1
+	var fills: Array = X["fills"]
+	if boost > 0.0 and not fills.is_empty():
+		# Sterne reichen mit allen Ereignissen nicht: Zwischen-Zeilen in lauten, dichten Stellen
+		var kf := mini(fills.size(), int(floor(boost * float(P["fill_max"]) * float(k))))
+		for i in kf:
+			flags[fills[i]] = 1
 	var tmpl: PackedInt32Array = C["tmpl"]
 	var pflags: PackedByteArray = X["pflags"]
 	for r in n:
 		if tmpl[r] >= 0:
 			flags[r] = flags[tmpl[r]] if (not X["has_parent"] or pflags[r] == 1) else 0
+	var has_force: bool = X.has("force")
+	var force: PackedByteArray = X.get("force", PackedByteArray())
+	if has_force:
+		for r in n:
+			if force[r] == 1:
+				flags[r] = 1
 	var burst: int = R["burst"]
 	if burst > 0:
 		var gaps := 0
 		var pb := -1e9
+		var keep_u: int = R["burst_keep"]
+		var chain: Array = []
 		for r in n:
 			if flags[r] == 0:
 				continue
 			if bp[r] - pb <= float(R["burst_gap"]):
-				if posmod(tick[r], int(R["burst_keep"])) != 0 and gaps + 1 >= burst:
-					flags[r] = 0
-					continue
+				if posmod(tick[r], keep_u) != 0 and gaps + 1 >= burst:
+					if not (has_force and force[r] == 1):
+						flags[r] = 0
+						continue
+					# Pflicht-Zeile: stattdessen die letzte freie Zeile der Folge entfernen (teilt die Folge)
+					var cut := -1
+					for ci in range(chain.size() - 1, 0, -1):
+						var q: int = chain[ci]
+						if posmod(tick[q], keep_u) != 0 and force[q] == 0:
+							cut = ci
+							break
+					if cut > 0:
+						flags[chain[cut]] = 0
+						chain = chain.slice(cut + 1)
+						gaps = chain.size()
+						chain.append(r)
+						pb = bp[r]
+						continue
 				gaps += 1
+				chain.append(r)
 			else:
 				gaps = 0
+				chain = [r]
 			pb = bp[r]
 	var sel := PackedInt32Array()
 	var sizes := PackedByteArray()
@@ -1624,7 +1846,8 @@ static func _make1(C: Dictionary, G: Dictionary, X: Dictionary, d: float, seed_a
 	var Y := {"sel": sel, "holdf": holdf, "rng": rng, "R": R, "pat": pat, "P": P,
 			"jack_cap": mini(int(R["jack"]), maxi(int(pat["jack_cap"]), 1)) if int(R["jack"]) > 0 else 0,
 			"ovl_budget": int(0.6 * float(R["ovl_max"]) * float(ns) * so), "seed_i": int(X["seed"]) & 3, "avoid": 0,
-			"ep": exp(float(P["pitch_weight"])), "erole": exp(float(P["role_weight"]))}
+			"ep": exp(float(P["pitch_weight"])), "erole": exp(float(P["role_weight"])),
+			"hl_scale": X.get("hl_scale", 1.0), "hl_max": X.get("hl_max", 1e9)}
 	var S: Array = [-1e9, -1e9, -1e9, -1e9, 0, 0, 0, 0, -1e9, -1e9, -1e9, -1e9, 0, 0, 0, -1e9, -1.0, 1.5, 0, 0, 0, -1e9,
 			-1.0, 1, 0, 0, 0, 0, 0, 0]
 	var notes: Array = []
@@ -1846,7 +2069,11 @@ static func _do_row(S: Array, C: Dictionary, G: Dictionary, Y: Dictionary, q: in
 		var c_sus: PackedFloat64Array = C["sus"]
 		var c_susb: PackedFloat64Array = C["susb"]
 		var hu: int = R["hold_unit"]
-		end_ms = _g_snap(G, c_t[r] + c_sus[r], hu, 0)
+		# Laenge wie bei den Menschen: gehaltener Ton mal gelerntem Verhaeltnis, hoechstens hl_max Schlaege
+		var bms: float = (C["beat_ms"] as PackedFloat64Array)[r]
+		var sus_eff := minf(c_sus[r] * float(Y["hl_scale"]), float(Y["hl_max"]) * bms)
+		sus_eff = maxf(sus_eff, float(R["hold_min"]) * bms)
+		end_ms = _g_snap(G, c_t[r] + sus_eff, hu, 0)
 		end_bp = _g_bp(G, end_ms)
 		var limited := false
 		if overlap == 0:
