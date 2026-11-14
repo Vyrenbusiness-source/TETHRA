@@ -1053,7 +1053,7 @@ func _build_rank_area(parent: Control) -> void:
 	if is_fail:
 		tag.text = "NICHT GESCHAFFT"
 		tag.add_theme_color_override("font_color", FAIL_COLOR)
-	elif int(_stats.get("n_miss", 0)) == 0:
+	elif int(_stats.get("n_miss", 0)) == 0 and int(_stats.get("mine_hits", 0)) == 0:   # Minen brechen FC
 		tag.text = "FULL COMBO"
 		tag.add_theme_color_override("font_color", UiTheme.ACCENT)
 	else:
@@ -1799,7 +1799,7 @@ func _build_lobby_area(parent: Control) -> void:
 	_lobby_col.add_child(_place_tag)
 	_reveal.append(_place_tag)
 	var is_fail := bool(_data.get("is_fail", false))
-	var fc := int(_stats.get("n_miss", 0)) == 0 and not is_fail
+	var fc := int(_stats.get("n_miss", 0)) == 0 and int(_stats.get("mine_hits", 0)) == 0 and not is_fail
 	if is_fail or fc:
 		var tag := Label.new()
 		tag.text = "NICHT GESCHAFFT" if is_fail else "FULL COMBO"

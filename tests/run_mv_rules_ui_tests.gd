@@ -50,6 +50,7 @@ func _run() -> void:
 	await _test_maxpp_delivers()
 	await _test_results_mines()
 	_test_lobby_room_mods()
+	_test_trace_fail_time()
 	print("=== Ergebnis: %d bestanden, %d fehlgeschlagen ===" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
 
@@ -130,6 +131,7 @@ func _test_results_mines() -> void:
 	_ok(texts.has("SD") and texts.has(RuleMods.label("MN")), "Kennzeichen SD + Mines: %s" % str(texts))
 	var badges: Array = rs.call("_badges")
 	_ok(not badges.any(func(b): return str(b[0]) == "FC"), "kein FC mit 3 Minen-Treffern")
+	_ok(not _has_text(rs, "FULL COMBO"), "Rang-Zeile: kein FULL COMBO mit Minen-Treffern")
 	rs.queue_free()
 	await process_frame
 	rs = _results(_stats(-1, 0, 0), {"PF": true})
@@ -140,8 +142,25 @@ func _test_results_mines() -> void:
 	_ok(texts == ["PF"], "Kennzeichen PF: %s" % str(texts))
 	badges = rs.call("_badges")
 	_ok(badges.any(func(b): return str(b[0]) == "FC"), "FC ohne Miss und ohne Minen")
+	_ok(_has_text(rs, "FULL COMBO"), "Rang-Zeile: FULL COMBO ohne Minen")
 	rs.queue_free()
 	await process_frame
+
+
+## Trace (Sudden Death/Perfect-Fail): Fail-Marker zeigte 0:00, weil fail_ms nach
+## SyncClock.stop() aus der Uhr kam. Jetzt die letzte Wertungszeit wie in Rebound.
+func _test_trace_fail_time() -> void:
+	print("- Trace: Fail-Zeit")
+	var src := FileAccess.get_file_as_string("res://scripts/trace/trace_game.gd")
+	_ok(not src.contains('data["fail_ms"] = maxf(_time_ms()'), "fail_ms nicht aus der gestoppten Uhr")
+	_ok(src.contains('data["fail_ms"] = maxf(_last_update_t, 0.0)'), "fail_ms = letzte Wertungszeit")
+
+
+func _has_text(n: Node, t: String) -> bool:
+	for l in n.find_children("*", "Label", true, false):
+		if (l as Label).text == t:
+			return true
+	return false
 
 
 ## Lobby: Raum-Mods kommen beim Client (cl_state) samt Minen-Version an; Mod-Liste der

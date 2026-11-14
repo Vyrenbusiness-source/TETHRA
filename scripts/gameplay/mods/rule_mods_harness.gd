@@ -57,6 +57,7 @@ static func _shot(tree: SceneTree, tag: String, wait_s: float = 0.6) -> void:
 ## Echter Klick (Bewegung, Druck, Loslassen) in die Mitte eines Knopfes.
 static func click(target: Control) -> void:
 	var vp := target.get_viewport()
+	var tree := target.get_tree()   # vor dem Klick: der Knopf kann danach weg sein (Replay)
 	var pos := target.get_global_rect().get_center()
 	var mv := InputEventMouseMotion.new()
 	mv.position = pos
@@ -69,7 +70,7 @@ static func click(target: Control) -> void:
 		ev.position = pos
 		ev.global_position = pos
 		vp.push_input(ev)
-		await target.get_tree().process_frame
+		await tree.process_frame
 
 
 ## Fake-Server fuer die Online-Liste: board = "" (alter Server) oder "mania_mn".
@@ -153,7 +154,7 @@ static func run_browser(ss: Control) -> void:
 		tree.quit(1)
 		return
 	await click(rb)
-	await tree.create_timer(float(_arg("--rules-replay-at", "6"))).timeout
+	await tree.create_timer(float(_arg("--rules-replay-at", "4"))).timeout
 	var game := tree.current_scene
 	_check(game != null and game.get("core") != null and GameSession.is_replay, "Replay laeuft im Spiel")
 	var core: ManiaCore = game.get("core") if game != null else null
@@ -174,7 +175,7 @@ static func run_browser(ss: Control) -> void:
 		var st: Dictionary = rs.get("_stats")
 		print("RULESHARNESS replay score=%d mines=%d mine_hits=%d n_miss=%d" % [int(st.get("score", 0)),
 			int(st.get("mines", -1)), int(st.get("mine_hits", -1)), int(st.get("n_miss", -1))])
-		await _shot(tree, "results", 2.8)
+		await _shot(tree, "results", 2.2)
 		rs.call("show_page", 1)
 		await _shot(tree, "details", 0.6)
 	print("RULESHARNESS DONE fails=%d" % _fails)

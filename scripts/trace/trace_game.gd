@@ -980,7 +980,8 @@ func _build_results(is_fail: bool, s: Dictionary, new_best: bool) -> void:
 	if _prev_best != null:
 		data["previous_best"] = _prev_best
 	if is_fail:
-		data["fail_ms"] = maxf(_time_ms(), 0.0)
+		# Letzte Wertungszeit wie Rebound: die Uhr steht hier schon (SyncClock.stop -> 0:00).
+		data["fail_ms"] = maxf(_last_update_t, 0.0)
 	var cover := OszImporter.load_background_texture(GameSession.osz_path, _beatmap)
 	if cover != null:
 		data["cover"] = cover
@@ -1097,7 +1098,7 @@ func _shot_target(v: String, def: float) -> float:
 ## Wertung/Autoplay ohne Audio bis t vorspulen (deterministisch, 8-ms-Schritte).
 func _sim_to(target: float) -> void:
 	var t := -2000.0
-	while t < target and not _sim_done:
+	while t < target and not _sim_done and not (core.failed and not core.no_fail):   # Fail (SD/PF) endet hier
 		t += 8.0
 		if _autoplay:
 			_run_autoplay(t)
