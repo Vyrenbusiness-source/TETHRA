@@ -324,6 +324,14 @@ func _ready() -> void:
 
 	if OS.get_cmdline_args().has("--sv"):
 		_on_sv_toggled(true)  # Debug/Shots: SV-Mod vorwaehlen
+	for a in OS.get_cmdline_args():
+		if a.begins_with("--rule-mods="):
+			# Debug/Shots: --rule-mods=SD,MN nur fuer diesen Lauf (nie gespeichert).
+			_state_ready = false
+			for k in RuleMods.KEYS:
+				_rule_mods[k] = k in a.trim_prefix("--rule-mods=").to_upper().split(",")
+			if RuleMods.is_rule(_rule_mods):
+				_nf_enabled = false
 	if DisplayServer.get_name() == "headless":
 		_headless_report()
 	elif GameSession.perf_enabled:

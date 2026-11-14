@@ -452,9 +452,13 @@ func _test_body_fields() -> void:
 	var res := {"score": 1000, "mods": ["MN"], "mines": 12, "mine_hits": 2, "pp": 55.0}
 	var body := OnlineApi.build_body(res, {"md5": "x"}, "mania")
 	_ok(float(body.pp) == 0.0 and str(body.get("board", "")) == "mania_mn" and int(body.mines) == 12
-		and int(body.mine_hits) == 2 and (body.mods as Array).has("MN"), "POST /score mit MN: pp 0, board, Zaehler")
+		and int(body.mine_hits) == 2 and (body.mods as Array).has("MN") and not bool(body.ranked),
+		"POST /score mit MN: pp 0, board, Zaehler, ranked false")
 	var b2 := OnlineApi.build_body({"score": 1, "mods": ["SD"], "pp": 12.0}, {"md5": "x"}, "mania")
-	_ok(float(b2.pp) == 12.0 and not b2.has("board"), "POST /score mit SD: pp normal, kein board")
+	_ok(float(b2.pp) == 12.0 and not b2.has("board") and bool(b2.ranked), "POST /score mit SD: pp normal, ranked, kein board")
+	var rm := RuleMods.replay_mods({"MN": true}, {"MN": true, "MN_v": 1})
+	_ok(int(rm.get("MN_v", 0)) == 1 and RuleMods.replay_mods({"SD": true}, {"SD": true}) == {"SD": true},
+		"Replay-Mods: MN_v aus dem Lauf, sonst unveraendert")
 
 
 func _test_trace_mods_badges() -> void:
@@ -493,8 +497,8 @@ func _test_real_maps() -> void:
 			_autoplay(core, bm, 8.0)
 			var ratio := float(mines.size()) / float(bm.hit_objects.size())
 			max_ratio = maxf(max_ratio, ratio)
-			_ok(v == "" and core.n_mine_hit == 0, "%s [%s]: %d Noten, %d Minen (%.1f %%), Autoplay-Treffer %d %s" % [
+			_ok(v == "" and core.n_mine_hit == 0, "%s [%s]: %d Noten, %d Minen (%.1f %%, erste %s ms), Autoplay-Treffer %d %s" % [
 				str(f).left(28), bm.version_name().left(20), bm.hit_objects.size(), mines.size(),
-				ratio * 100.0, core.n_mine_hit, v])
+				ratio * 100.0, str(mines.slice(0, 1).map(func(m): return int(m[0]))), core.n_mine_hit, v])
 			done += 1
 	_ok(done == 0 or max_ratio < 0.25, "Minen-Anteil hoechstens 25 %% der Noten (max %.1f %%)" % (max_ratio * 100.0))

@@ -156,6 +156,8 @@ var _ember_mat: ShaderMaterial
 var _recorded: Array = []
 ## --autoplay (nur Screenshots/Debug): trifft jede Note exakt, speichert nichts.
 var _autoplay := false
+## --auto-skip=<n> (nur Shots, z. B. Sudden-Death-Fail): Autoplay laesst Note n aus.
+var _auto_skip := -1
 var _auto_idx := 0
 var _auto_release: Array[float] = []
 var _replay_idx := 0
@@ -438,6 +440,9 @@ func _ready() -> void:
 	_autoplay = OS.get_cmdline_args().has("--autoplay") 			and not GameSession.is_replay and not Lobby.in_round()
 	_auto_release.resize(core.columns)
 	_auto_release.fill(-1.0)
+	for a in OS.get_cmdline_args():
+		if a.begins_with("--auto-skip="):
+			_auto_skip = a.trim_prefix("--auto-skip=").to_int()
 	core.note_spawned.connect(_on_note_spawned)
 	core.note_judged.connect(_on_note_judged)
 	core.hold_started.connect(_on_hold_started)
@@ -2082,6 +2087,8 @@ func _run_autoplay(t: float) -> void:
 	while _auto_idx < objs.size() and objs[_auto_idx].time <= t:
 		var n := objs[_auto_idx] as ManiaNote
 		_auto_idx += 1
+		if _auto_idx - 1 == _auto_skip:
+			continue
 		var c := n.column
 		if c < 0 or c >= _auto_release.size():
 			continue
@@ -4062,11 +4069,13 @@ func _show_results(is_fail: bool) -> void:
 		ReplayStore.save(GameSession.osz_path, _beatmap.version_name(), _recorded, {
 			"score": int(s.score), "grade": str(s.grade),
 			"accuracy": float(s.accuracy), "date": Time.get_datetime_string_from_system(),
-			"mods": GameSession.mods.duplicate(),  # Replay laeuft mit denselben Mods
+			"mods": RuleMods.replay_mods(GameSession.mods, core.mods),  # Replay laeuft mit denselben Mods
 		})
 		if not is_fail:
 			_submit_online(s)
 	_build_results(is_fail, s, pp, unranked, new_best)
+	if is_fail and OS.get_cmdline_args().has("--shot-on-fail"):
+		_capture_results_shot()   # Shot-Harness: echter Fail (z. B. Sudden Death) als PNG
 
 
 ## Fail-Diagnose: Grund (eine Zeile) bestimmen und user://logs/fail_<datum>.txt

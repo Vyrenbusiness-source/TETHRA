@@ -163,12 +163,23 @@ static func extend_stats(core: ManiaCore, d: Dictionary) -> void:
 		d["fail_rule"] = core.fail_rule
 
 
+## Mods fuers Replay: Start-Mods plus die Konverter-Version der Minen aus dem Lauf
+## (falls der Start ohne MN_v kam), damit das Replay dieselben Minen baut.
+static func replay_mods(session_mods: Dictionary, core_mods: Dictionary) -> Dictionary:
+	var out := session_mods.duplicate()
+	if has(core_mods, MN) and not out.has(MN_VERSION_KEY):
+		out[MN_VERSION_KEY] = int(core_mods.get(MN_VERSION_KEY, MineGen.VERSION))
+	return out
+
+
 ## Zusatzfelder fuer POST /score (OnlineApi.build_body): Minen-Zaehler, pp 0.
 static func extend_body(body: Dictionary, result: Dictionary) -> void:
 	var mods: Array = body.get("mods", [])
 	if not mods.has(MN):
 		return
 	body["pp"] = 0.0
+	# Bis der Server "board" kennt: nicht in die normale Mania-Liste (er rechnet pp selbst).
+	body["ranked"] = false
 	body["board"] = MINES_SCORE_MODE
 	body["mines"] = int(result.get("mines", 0))
 	body["mine_hits"] = int(result.get("mine_hits", 0))
