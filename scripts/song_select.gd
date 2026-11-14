@@ -4289,6 +4289,8 @@ func _import_progress_text(done: int, total: int, phase: String) -> String:
 
 
 func _on_import_progress(done: int, total: int, phase: String) -> void:
+	if not is_inside_tree():
+		return  # Signal kam verzoegert nach dem Verlassen des Browsers
 	var txt := _import_progress_text(done, total, phase)
 	if _import_prog_label != null:
 		_import_prog_label.text = txt
@@ -4314,6 +4316,8 @@ var _own_offer: PanelContainer = null
 
 ## Fortschritt der Erzeugung: Song, Stufe und Prozent.
 func _on_import_stage(song: String, stage_name: String, frac: float) -> void:
+	if not is_inside_tree():
+		return
 	var txt := "%s  ·  %s  %d %%" % [song, tr(str(AUTOMAP_STAGES.get(stage_name, stage_name))), int(round(frac * 100.0))]
 	if _import_prog_label != null:
 		_import_prog_label.text = txt
@@ -4399,6 +4403,10 @@ func _offer_own_songs() -> void:
 
 
 func _on_import_finished(res: Dictionary) -> void:
+	# finished kommt per call_deferred aus dem Import-Thread: nach Szenenwechsel ist
+	# der Browser schon aus dem Baum (Notice/Tween/Auswahl brauchen get_tree()).
+	if not is_inside_tree():
+		return
 	var imported: Array = res.get("imported", [])
 	var last := ""
 	var orbit_only := 0
@@ -4743,6 +4751,8 @@ func _on_online_closed() -> void:
 ## Download fertig: Bibliothek neu scannen, damit die Map sofort im Tab
 ## "Heruntergeladen" steht; Einzel-Downloads direkt anwaehlen (Pack nicht).
 func _on_online_downloaded(_set_id: int, osz_path: String, select: bool) -> void:
+	if not is_inside_tree():
+		return  # Browser verlassen: der naechste scannt ohnehin neu
 	_library.scan()
 	_refresh_filter(_search.text)
 	if _career_on():
@@ -5410,6 +5420,10 @@ func _bg_finished(item: Dictionary, st: float) -> void:
 			orbit_stars_store(item.key, st)
 	else:
 		_bg_failed[item.key] = true
+	# Browser schon verlassen (Szenenwechsel: aus dem Baum, noch nicht frei): Ergebnis
+	# ist gespeichert, sonst nichts mehr anstossen (get_tree() waere null).
+	if not is_inside_tree():
+		return
 	if st >= 0.0 and mode == _star_src():
 		_mode_stars_arrived(str(item.osz))
 	if _play_mode == "orbit":
@@ -5550,8 +5564,12 @@ func _orbit_stars_done(key: String, st: float) -> void:
 	if st >= 0.0:
 		orbit_stars_store(key, st)
 		_os_cache_get()[key] = st
+		if not is_inside_tree():
+			return  # Browser verlassen: gespeichert, keinen neuen Thread starten
 		if _selected_set != null and _mode_star_key(_selected_set, _selected_diff) == key:
 			_mode_stars_arrived(_selected_set.osz_path)
+	if not is_inside_tree():
+		return
 	if key == _os_want:
 		if st >= 0.0 and _play_mode != "mania":
 			_star_label.text = ScoreStore.mode_label(_stars_mode()) + " " + _stars_text(st)
