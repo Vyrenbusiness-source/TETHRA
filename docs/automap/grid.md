@@ -37,6 +37,91 @@ Alle Stellgroessen stehen in `AmGrid.DEFAULTS` und lassen sich ueber `params` bz
 (Python nur zur Auswertung im Scratchpad, nicht im Spiel), immer mit Kontrolle Haelfte A gegen
 Haelfte B: Gewichte auf A gelernt und auf B geprueft und umgekehrt.
 
+## Runde 3: Oktave, Gegenschlag, Tempowechsel
+
+Ziel der Runde: Tempo exakt ≥ 95 %, Offset p95 ≤ 12 ms, Tempowechsel ≥ 80 %. Alle Versuche in
+Python im Scratchpad auf dem Cache des Messskripts (Onset-Fluss, dezimiertes Signal, Rohaudio
+11025 Hz), Haelfte A/B = gerade/ungerade Nummer in `maps/` (274 Sets, 232 mit einem Tempo, 20 mit
+Tempowechsel). Gelernt auf einer Haelfte, geprueft auf der anderen. Uebernommen wurde nur, was auf
+beiden Haelften nicht schadet.
+
+RUNDE3_TABELLE
+
+### 1. Oktave (Tempo exakt)
+
+Bei 20 der 27 falschen Sets ist es eine Oktave (11 x2, 9 x0,5), d. h. die Familie stimmt, nur die
+Ebene nicht. Gemessen je Hypothese (Gewinner, x2, x0,5), Phase wie `_best_phase`:
+
+- **Snare-Lage / Kick-Snare-Muster**: Baender Kick 35-110 Hz, Mitte 250-2000 Hz, Hoehen
+  3-5,2 kHz (Rohaudio) bzw. 250-1000 Hz aus dem dezimierten Signal und die Baender von
+  `envelope()`. Je Band Periode 2 und 4 Schlaege auf den Schlaegen (Betrag der DFT-Komponente),
+  Schlag gegen Gegenschlag, Gegenlauf Kick/Snare (Kick auf 1/3, Snare auf 2/4). Bedingtes Logit
+  ueber die Hypothesen mit dem bisherigen Score als Basis: Basis A 93/105, B 93/104; alle Merkmale
+  A->B 89/104, B->A 85/105; nur Band-Merkmale A->B 96/104, B->A 84/105; einzeln (Snare-Periode
+  Hoehen, Mitte, Kick) jeweils -2 bis +1 Sets. Die gelernten Gewichte wechseln zwischen A und B das
+  Vorzeichen. Paarweise Klassifikatoren (Random Forest, Gradient Boosting, Logit) auf allen
+  Merkmalen: bester Fall B->A 2 richtig und 1 falsch umgestellt (von 10 richtigen Alternativen),
+  A->B 5 richtig und 8 falsch.
+- **"Snare nur alle 4 Schlaege"** (Hoehen-Band, Periode 4 deutlich ueber Periode 2): 11 Sets, davon
+  2 mit halbem Map-Tempo (216 -> 108, 220 -> 110), 9 mit dem erkannten Tempo (u. a. 120, 180, 192
+  BPM: Halftime-Feel, gemappt im schnellen Tempo). Als Regel nicht tragfaehig.
+- **Tempo-Vorwissen aus den Maps** (Kern-Dichte der Map-BPM in log2, Breite 0,1-0,5 Oktaven, Gewicht
+  0,25-2, statt Log-Normal um 130): Basis A 94/110, B 111/122; auf A gewaehlt -> B 101-105; auf B
+  gewaehlt -> A 89-94.
+- **Notendichte je Schlag** (Anschlaege je Schlag als Merkmal): A->B -2, B->A -1 (Runde 2: ebenso).
+- **Warum**: Fehlerrate je erkanntem Tempo (232 Sets): erkannt 210-225 BPM: 4 von 15 Maps nehmen die
+  Haelfte; erkannt 90-105 BPM: 3 von 6 Maps nehmen das Doppelte. In beiden Bereichen waehlen die
+  Mapper gleich klingender Songs beide Ebenen; kein Merkmal des Signals trennt sie.
+
+Uebernommen: `bpm_max` 330 -> 360. Vorher fehlte bei 342-BPM-Maps (erkannt 171) die Alternative x2
+ganz, weil 342 ausserhalb der Hypothesen lag. Die neuen Hypothesen ueber 330 BPM gewinnen nie
+(Tempo-Vorwissen), sie erscheinen nur als Alternative.
+
+### 2. Gegenschlag (Offset p95)
+
+186 Sets mit richtigem Tempo und Rohaudio, davon 6 um einen halben Schlag versetzt. Verglichen:
+Merkmal an der Phase der Map gegen Phase + 1/2 Schlag.
+
+- Schlag gegen Gegenschlag je Band (log-Verhaeltnis der Anschlaege): Mitte (200-2500 Hz) bei 94 %
+  der Sets an der Map-Phase staerker, Hoehen 94 %, Bass 70 %; in den 6 versetzten Sets uneinheitlich
+  (-0,30 bis +0,19). Als Umschalt-Regel mit Schwelle m (umschalten, wenn der Gegenschlag um m
+  staerker ist): Mitte m = 0: 4 behoben, 10 neu falsch; m = 0,1: 1 / 3; m = 0,2: 0 / 1; Mitte+Hoehen
+  m = 0,2: 1 / 1; kein Band und keine Summe mit mehr behobenen als neu falschen Sets.
+- Kick auf 1/3, Snare auf 2/4 (Wechsel der Staerke von Schlag zu Schlag, an beiden Phasen):
+  an der Map-Phase nur bei 51-56 % der Sets ausgepraegter als am Gegenschlag, also kein Signal.
+
+Nicht uebernommen. Untergrenze wie in Runde 2: ohne die halben Versaetze liegt p95 bei 14-18 ms,
+die Streuung der Mapper-Offsets selbst.
+
+### 3. Tempowechsel
+
+- **Zweiteilung mit eigener Periode und Phase je Seite** (Regression wie `_regress`, Gewinn der
+  Ausrichtung durch die Teilung): Sets mit einem Tempo Median 0,0012, 95. Perzentil 0,0066,
+  Maximum 0,036; echte Wechsel 0,0001-0,013. Keine Schwelle trennt.
+- **Phasen-Rest des Hauptrasters je 4-s-Fenster** (ausgerichtete Phasensumme): Sets mit einem
+  Tempo haben Laeufe von 11-17 Fenstern (22-34 s) mit negativer Summe; die Anschlaege auf den
+  Schlaegen sind zu verrauscht fuer eine lokale Phase (wie Runde 2).
+- **Fremde 8-s-Fenster ohne Familien-Bezug** (Puls nicht auf einem Familien-Lag, Familie schwaecher
+  als Anteil r des Pulses, mindestens n Fenster): 0 faelschlich geteilte Sets nur bei Einstellungen,
+  die keinen zusaetzlichen Wechsel finden (r ≤ 0,7, oder n ≥ 5); ab r = 0,8 / n = 2 werden 5 Sets
+  geteilt, bei r = 0,95 / n = 2 31.
+- **Pruefung der Laeufe** (Kohaerenz des eigenen Rasters gegen das Hauptraster ueber den Lauf):
+  Schwelle 2,0 laesst nur die Laeufe in mirror_2559592 (170) und mirror_2643833 (155 statt 77,5)
+  durch, auf A und B kein Set mit einem Tempo. Beide Sets waeren danach trotzdem nicht erfuellt
+  (Grenzen 177,5/185 nicht getroffen bzw. Tempo 155 statt 77,5). Nicht eingebaut.
+
+Offen bleibt ein Beat-Tracker mit besserem Onset-Mass (z. B. gelernte Schlag-Aktivierung); auf
+den Anschlaegen dieses Moduls ist weder die lokale Phase noch das lokale Tempo stabil genug.
+
+### Prüfstand (tools/automap_bench.gd): Grenzen der Zeile Tempowechsel
+
+Von den 6 gewerteten Prüf-Sets sind 3 keine Tempowechsel: mirror_2572994 hat nur 3/4-Linien mit
+2,6 ms Rundungsversatz (Toleranz des Prüfstands 2 ms), mirror_2541848 Phasenspruenge von 28 ms bei
+gleichem Tempo, 315435 einen Phasensprung von 27 ms nach 3,5 s. mirror_2586880 hat eine letzte Note
+bei 100 001 999 ms, daher dort Drift 290 ms und Offset +168,8 ms (das Messskript hier: 23,8 ms).
+
+RUNDE3_IMMER
+
 ## Runde 2: Vorher / Nachher je Haelfte
 
 Ein Messprozess, Varianten ueber `--variants` (gleiche Sets, gleiche Wahrheit). Sets mit einem

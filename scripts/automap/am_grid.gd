@@ -27,7 +27,7 @@ const DEFAULTS := {
 	"hop_ms": 5.0,              # Frame-Laenge des Onset-Flusses
 	"lead_ms": OSU_LEAD_MS,     # Abzug akustisch -> Map-Zeit
 	"bpm_min": 60.0,            # Grenzen der Tempo-Hypothesen
-	"bpm_max": 330.0,
+	"bpm_max": 360.0,           # ueber 330: Oktave von 171-180-BPM-Songs als Alternative (grid.md, Runde 3)
 	"pulse_min_ms": 200.0,      # Suchbereich des groben Pulses (Autokorrelation)
 	"pulse_max_ms": 1000.0,
 	"n_pulses": 4,              # Kandidaten des groben Pulses (lokale ACF-Maxima)
