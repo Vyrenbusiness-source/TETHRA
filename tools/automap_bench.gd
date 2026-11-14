@@ -1419,7 +1419,8 @@ static func _arg(args: PackedStringArray, key: String, def: String = "") -> Stri
 static func list_osz(maps_dir: String) -> Array:
 	var files: Array = []
 	for f in DirAccess.get_files_at(maps_dir):
-		if f.to_lower().ends_with(".osz"):
+		# erzeugte Sets (eigene Musik) sind keine Wahrheit
+		if f.to_lower().ends_with(".osz") and not f.get_basename().ends_with("(OMEN Auto)"):
 			files.append(f)
 	files.sort()
 	return files
@@ -1539,7 +1540,8 @@ func _cli_bench(args: PackedStringArray) -> int:
 		var star_name: String = String(f).sha256_text().substr(0, 16) + ".osz"
 		if audio != "":
 			if use_generate:
-				var res: Dictionary = mods.mapper.generate(audio, gen_dir, {"with_orbit": false})
+				# Sterne einmal am Ende fuer alle (_fill_stars), nicht je Song ein starcalc-Prozess
+				var res: Dictionary = mods.mapper.generate(audio, gen_dir, {"with_orbit": false, "stars": false})
 				if res.get("ok", false):
 					prod = product_from_osz(str(res.osz_path), res, mods)
 					if want_stars:
