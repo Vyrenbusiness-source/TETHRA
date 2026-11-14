@@ -111,7 +111,10 @@ func _mk_label(font: Font, fsize: int, col: Color, txt: String) -> Label:
 	return l
 
 
-func show_break(start_ms: float, end_ms: float, beat_ms: float, can_skip: bool) -> void:
+## skip_text: Hinweis mit der Skip-Taste ("" = Standard "Leertaste: ..."); Mania nennt
+## Enter, wenn die Leertaste eine Spurtaste ist (5K/7K).
+func show_break(start_ms: float, end_ms: float, beat_ms: float, can_skip: bool,
+		skip_text: String = "") -> void:
 	_start_ms = start_ms
 	_end_ms = end_ms
 	_beat_ms = maxf(beat_ms, 50.0)
@@ -121,6 +124,7 @@ func show_break(start_ms: float, end_ms: float, beat_ms: float, can_skip: bool) 
 	_last_sub = -999
 	_title.text = "INTRO" if start_ms <= 0.0 else "PAUSE"
 	_hint.visible = can_skip
+	_hint.text = skip_text if skip_text != "" else "Leertaste: Intro überspringen"
 	visible = true
 	modulate.a = 0.0
 	update(start_ms)
