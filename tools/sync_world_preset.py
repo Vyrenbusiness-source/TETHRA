@@ -32,7 +32,7 @@ def main():
         '\n[preset.1]\n\nname="Worlds"\nplatform="Windows Desktop"\nrunnable=false\n'
         'advanced_options=false\ndedicated_server=false\ncustom_features=""\n'
         'export_filter="resources"\nexport_files=PackedStringArray(%s)\n'
-        'include_filter=""\nexclude_filter=""\nexport_path="release/TETHRA_worlds.pck"\n'
+        'include_filter=""\nexclude_filter=""\nexport_path="release/OMEN_worlds.pck"\n'
         'patches=PackedStringArray()\nencryption_include_filters=""\nencryption_exclude_filters=""\n'
         'seed=0\nencrypt_pck=false\nencrypt_directory=false\nscript_export_mode=2\n\n' % files
     )

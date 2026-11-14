@@ -10,7 +10,7 @@ var _failed := 0
 
 
 func _initialize() -> void:
-	print("=== TETHRA Dirigent-Tests ===")
+	print("=== OMEN Dirigent-Tests ===")
 	_test_figures()
 	_test_half_bars()
 	_test_meter_change()

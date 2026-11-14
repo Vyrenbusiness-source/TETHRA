@@ -132,9 +132,9 @@ func _ready() -> void:
 	if GameSession.is_replay and not _replay:
 		GameSession.is_replay = false   # Mania-Events passen nicht zu Orbit
 		GameSession.replay_events = []
-	_mp_bot = Lobby.active and Lobby.in_game and OS.get_cmdline_args().has("--mp-bot")
+	_mp_bot = Lobby.in_round() and OS.get_cmdline_args().has("--mp-bot")
 	# --mp-bot spielt selbst (ohne --autoplay: dessen 45-s-Watchdog wuerde den Smoke kappen).
-	_autoplay = ((OS.get_cmdline_args().has("--autoplay") and not Lobby.active) or _mp_bot) and not _replay
+	_autoplay = ((OS.get_cmdline_args().has("--autoplay") and not Lobby.in_round()) or _mp_bot) and not _replay
 	var jitter := 0.0
 	var aim := 0.0
 	var seed := 1
@@ -181,7 +181,7 @@ func _ready() -> void:
 	if _replay_old:
 		_show_old_replay()
 		return
-	if Lobby.active and Lobby.in_game:
+	if Lobby.in_round():
 		Lobby.skip_now.connect(_do_skip)
 	if not _use_audio:
 		_debug_start_usec = Time.get_ticks_usec()
@@ -753,12 +753,12 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif not _countdown_running:
 			_toggle_pause(true)
 		return
-	if event.keycode == KEY_R and Settings.orbit_ring_for_key(KEY_R) == -1 and not Lobby.active:
+	if event.keycode == KEY_R and Settings.orbit_ring_for_key(KEY_R) == -1 and not Lobby.in_round():
 		_restart()
 		return
 	if event.keycode == KEY_SPACE and not _ended and Settings.orbit_ring_for_key(KEY_SPACE) == -1 \
 			and _can_skip_intro():
-		if Lobby.active and Lobby.in_game:
+		if Lobby.in_round():
 			Lobby.vote_skip()  # Multiplayer: springt erst, wenn ALLE druecken
 		else:
 			_do_skip()
@@ -935,7 +935,7 @@ func _process(delta: float) -> void:
 	_judge_disp.beat(env)
 	_bg.update_world(delta, _beat, _intensity.value_at(t))
 	# Multiplayer: Live-Stand 4x pro Sekunde.
-	if Lobby.active and Lobby.in_game:
+	if Lobby.in_round():
 		_mp_send_cd -= delta
 		if _mp_send_cd <= 0.0:
 			_mp_send_cd = 0.25
@@ -1192,7 +1192,7 @@ func _back_to_browser() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	SyncClock.stop()
 	# Multiplayer: zurueck in den Raum statt in den Song-Browser.
-	if Lobby.active:
+	if Lobby.in_round():
 		get_tree().change_scene_to_file("res://scenes/mp_lobby.tscn")
 	else:
 		get_tree().change_scene_to_file("res://scenes/song_select.tscn")
@@ -1221,7 +1221,7 @@ func _show_results(is_fail: bool) -> void:
 		if not is_fail:
 			_submit_online(s)
 	# Multiplayer: letzten Live-Stand + Finale an alle melden.
-	if Lobby.active and Lobby.in_game:
+	if Lobby.in_round():
 		Lobby.send_score(int(s.score), int(core.combo), float(s.accuracy))
 		Lobby.send_final(PlayerStatsCard.pack(s, _hit_offsets, _acc_trace, 0, 0, s.failed))
 	# Eigener Orbit-Endscreen (Karte der Treffer, Stufen, Timing).
@@ -1251,8 +1251,8 @@ func _show_results(is_fail: bool) -> void:
 		"title": _beatmap.title(),
 		"artist": _beatmap.artist(),
 		"version": _beatmap.version_name(),
-		"allow_retry": not Lobby.active,
-		"can_replay": not Lobby.active and (_replay or has_log),
+		"allow_retry": not Lobby.in_round(),
+		"can_replay": not Lobby.in_round() and (_replay or has_log),
 		"is_replay": _replay,
 		"can_clip": _replay or has_log,
 	})

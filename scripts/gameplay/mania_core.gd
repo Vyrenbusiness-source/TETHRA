@@ -1,7 +1,7 @@
 class_name ManiaCore
 extends RefCounted
 
-## TETHRA-Mania (4K): 4 Spalten, eine Taste pro Spalte, Timing-Fenster aus OD
+## OMEN-Mania (4K): 4 Spalten, eine Taste pro Spalte, Timing-Fenster aus OD
 ## (Mania-Formeln). Hold-Notes (LN): beim Head druecken und bis zum Ende
 ## halten — fruehes Loslassen ist ein Miss ("DROP"). Jede Note/LN zaehlt
 ## als EIN Acc-Objekt (konsistent mit dem Standard-Modus).
@@ -262,6 +262,8 @@ static func vis_mods(p_mods: Dictionary) -> Dictionary:
 
 ## Reaktionspuffer vor der ersten sichtbaren Note beim Songstart (ms).
 const START_BUFFER_MS := 600.0
+## Hoechster Zusatz-Vorlauf, den SV am Songanfang erzwingen darf (ms).
+const MAX_SV_LEAD_EXTRA_MS := 5000.0
 ## Intro-Skip: mindestens so weit vor der ersten Note landen (ms).
 const SKIP_BEFORE_MS := 2200.0
 
@@ -289,7 +291,13 @@ static func start_lead_ms(bm: Beatmap, scroll_scale: float, p_mods: Dictionary) 
 	var lead := bm.audio_lead_in()
 	if bm.hit_objects.is_empty():
 		return lead
-	return maxf(lead, START_BUFFER_MS - first_spawn_ms(bm, scroll_scale, p_mods))
+	var need := START_BUFFER_MS - first_spawn_ms(bm, scroll_scale, p_mods)
+	# Deckel: extrem langsames SV am Anfang zieht den fruehesten Spawn beliebig
+	# weit vor den Song (Map mit 107 s Stille). Mehr als die normale Anflugzeit
+	# der ersten Note plus MAX_SV_LEAD_EXTRA_MS wird nicht gewartet; solche
+	# Noten stehen beim Start dann schon (fast still) im Feld.
+	var base: float = maxf(START_BUFFER_MS - (bm.hit_objects[0].time - preempt_for(scroll_scale)), 0.0)
+	return maxf(lead, minf(need, base + MAX_SV_LEAD_EXTRA_MS))
 
 
 ## Ziel des Intro-Skips: die erste Note behaelt ihre volle Anflugzeit plus
@@ -747,7 +755,7 @@ static func fail_reason_text(r: Dictionary) -> String:
 func diag_text(title: String, t_fail: float) -> String:
 	var r := ManiaCore.analyze_fail(diag_log, diag_spikes, t_fail)
 	var out: Array[String] = []
-	out.append("TETHRA Fail-Diagnose")
+	out.append("OMEN Fail-Diagnose")
 	out.append("map: %s" % title)
 	out.append("zeit: %.0f ms   hp: %.3f   combo-max: %d" % [t_fail, hp, max_combo])
 	out.append("grund: %s" % (ManiaCore.fail_reason_text(r) if r.kind != "none" else "-"))

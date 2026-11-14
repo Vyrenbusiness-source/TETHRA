@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""TETHRA Welt-Thema "Monolith": endlose Reihen schwebender schwarzer Monolithen im Nichts.
+"""OMEN Welt-Thema "Monolith": endlose Reihen schwebender schwarzer Monolithen im Nichts.
 
 Erzeugt in assets_game/themes/monolith/ drei Texturen (4096x2048, WebP):
   sky_monolith.webp        Panorama (equirektangular): schwarzes Nichts, kalter Dunst am

@@ -25,7 +25,7 @@ def _load_beatmap(data: bytes):
 
 
 def _is_osu_mode(bm) -> bool:
-    """Standard und Mania werden unterstuetzt (TETHRA-Modi)."""
+    """Standard und Mania werden unterstuetzt (OMEN-Modi)."""
     try:
         return bm.mode in (rosu.GameMode.Osu, rosu.GameMode.Mania)
     except Exception:

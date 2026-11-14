@@ -1,6 +1,6 @@
 extends Node3D
 
-## TETHRA 4K: RAUMSCHIFF-INTERCEPT.
+## OMEN 4K: RAUMSCHIFF-INTERCEPT.
 ## Du fliegst ein Schiff ueber einen Energie-Highway im All. Vier Schienen
 ## laufen auf dich zu; Drohnen-Orbs gleiten mit KONSTANTER Geschwindigkeit
 ## heran und kreuzen exakt zur Hit-Time die ABFANGLINIE vor deinem Schiff —
@@ -441,8 +441,8 @@ func _ready() -> void:
 	if bool(GameSession.mods.get("CS", false)):
 		_apply_constant_speed(scroll)
 	_clock.setup(_beatmap.timing_points)
-	_mp_bot = Lobby.active and Lobby.in_game and OS.get_cmdline_args().has("--mp-bot") 			and not GameSession.is_replay
-	_autoplay = (OS.get_cmdline_args().has("--autoplay") and not GameSession.is_replay 			and not Lobby.active) or _mp_bot
+	_mp_bot = Lobby.in_round() and OS.get_cmdline_args().has("--mp-bot") 			and not GameSession.is_replay
+	_autoplay = (OS.get_cmdline_args().has("--autoplay") and not GameSession.is_replay 			and not Lobby.in_round()) or _mp_bot
 	if _mp_bot:
 		for a in OS.get_cmdline_args():
 			if a.begins_with("--mp-cut="):
@@ -752,7 +752,11 @@ func _load_beatmap() -> bool:
 		var run_mods: Dictionary = GameSession.mods.duplicate()
 		if not GameSession.is_replay:
 			run_mods.merge(Settings.extra_mods(_2d), true)
-		SyncClock.play(stream, ManiaCore.start_lead_ms(_beatmap, scroll, run_mods))
+		# Mindestens 1 ms Vorlauf: ohne Vorlauf startet das Audio sofort hier im
+		# Laden, die restliche Ladezeit (BeatClock, Szene) frisst dann Songzeit
+		# und die ersten Noten stehen beim Start schon im Feld. Mit Vorlauf
+		# beginnt die Uhr erst mit dem ersten Frame bzw. dem Start-Countdown.
+		SyncClock.play(stream, maxf(ManiaCore.start_lead_ms(_beatmap, scroll, run_mods), 1.0))
 		_use_audio = true
 	return true
 
@@ -2104,14 +2108,14 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	# R = Map sofort neu starten (im Spiel UND auf dem Results-Screen),
 	# ausser R ist als Lane-Taste belegt.
-	if event.keycode == KEY_R and Settings.lane_for_key(KEY_R) == -1 			and not Lobby.active:
+	if event.keycode == KEY_R and Settings.lane_for_key(KEY_R) == -1 			and not Lobby.in_round():
 		_restart()
 		return
 	# Intro-Skip: Leertaste springt lange Vorlaeufe bis kurz vor die erste
 	# Note (nur wenn Space keine Lane-Taste ist).
 	if event.keycode == KEY_SPACE and not _ended \
 			and Settings.lane_for_key(KEY_SPACE) == -1 and _can_skip_intro():
-		if Lobby.active and Lobby.in_game:
+		if Lobby.in_round():
 			Lobby.vote_skip()  # Multiplayer: springt erst, wenn ALLE druecken
 		else:
 			_do_skip()
@@ -2750,7 +2754,7 @@ func _process(delta: float) -> void:
 func _process_tail(t: float, delta: float) -> void:
 	_update_break_overlay(t)
 	# Multiplayer: eigenen Live-Score ~4x pro Sekunde teilen.
-	if Lobby.active and Lobby.in_game and not _ended:
+	if Lobby.in_round() and not _ended:
 		_mp_send_t -= delta
 		if _mp_send_t <= 0.0:
 			_mp_send_t = 0.25
@@ -3635,7 +3639,7 @@ func _build_hud() -> void:
 
 	# MULTIPLAYER: Live-Scoreboard links (wie osu!mania) — sortiert nach
 	# Score, eigener Eintrag hervorgehoben; Ueberholen sieht man sofort.
-	if Lobby.active and Lobby.in_game:
+	if Lobby.in_round():
 		_mp_board = Control.new()
 		_mp_board.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		_mp_board.offset_left = 18
@@ -3996,7 +4000,7 @@ func _back_to_browser() -> void:
 	GameSession.replay_events = []
 	SyncClock.stop()
 	# Multiplayer: zurueck in den Raum statt in den Song-Browser.
-	if Lobby.active:
+	if Lobby.in_round():
 		get_tree().change_scene_to_file("res://scenes/mp_lobby.tscn")
 	else:
 		get_tree().change_scene_to_file("res://scenes/song_select.tscn")
@@ -4029,7 +4033,7 @@ func _show_results(is_fail: bool) -> void:
 			s.n_max, s.n300, s.n200, s.n100, s.n50, s.n_miss, s.max_combo)
 		if pp_res.has("pp"):
 			pp = float(pp_res.pp)
-		# TETHRA-pp-Floor: Die offizielle Mania-Formel vergibt unter ~80%
+		# OMEN-pp-Floor: Die offizielle Mania-Formel vergibt unter ~80%
 		# (Custom-)Accuracy exakt 0 pp — fuer die Solo-Progression gibt es
 		# stattdessen einen Acc-basierten Mindestwert, verankert an der
 		# ECHTEN rosu-SS-pp dieser Diff (nie mehr als rosu bei guter Acc).
@@ -4039,10 +4043,12 @@ func _show_results(is_fail: bool) -> void:
 				GameSession.osz_path, GameSession.osu_filename,
 				_beatmap.hit_objects.size())
 			if max_pp > 0.0:
-				pp = maxf(pp, max_pp * pow(acc, 6.0) * 0.8)
+				# 0,55 x echte SS-pp = der bisherige Floor (0,8 x die bis v1.32.0
+				# um ~31 % zu niedrige Max-pp); bleibt so unter rosu ab ~85 % Acc.
+				pp = maxf(pp, max_pp * pow(acc, 6.0) * 0.55)
 	s["pp"] = pp
 	# Multiplayer: letzten Live-Stand + Finale (mit pp) an alle melden.
-	if Lobby.active and Lobby.in_game:
+	if Lobby.in_round():
 		Lobby.send_score(core.score, core.combo, core.accuracy())
 		Lobby.send_final(PlayerStatsCard.pack(s, _hit_offsets, _acc_trace,
 			_hold_ok, _hold_drop, is_fail))
@@ -4095,7 +4101,7 @@ func _write_fail_diag() -> String:
 ## Waehrend des Spiels ruhen Updater-Download und Mirror-Abschluss (Datei-/Zip-
 ## Arbeit im Hauptthread = Ruckler). Im Multiplayer bleibt alles aktiv.
 func _park_background_net() -> void:
-	if Lobby.active:
+	if Lobby.in_round():
 		return
 	for n in [Updater, Mirror]:
 		if n != null and n.process_mode != Node.PROCESS_MODE_DISABLED:
@@ -4162,10 +4168,10 @@ func _build_results(is_fail: bool, s: Dictionary, pp: float, unranked: bool, new
 		"offsets": _hit_offsets,
 		"player": Settings.profile_name,
 		"date": Time.get_datetime_string_from_system(),
-		"allow_retry": not Lobby.active,
+		"allow_retry": not Lobby.in_round(),
 		"can_replay": GameSession.is_replay or _recorded.size() > 0,
 		"is_replay": GameSession.is_replay,
-		"lobby": Lobby.active,
+		"lobby": Lobby.in_round(),
 		# Fuer Acc-Verlauf, Holds und Fail-Marker im Ergebnisbild.
 		"trace": _acc_trace,
 		"h_ok": _hold_ok,
@@ -4182,7 +4188,7 @@ func _build_results(is_fail: bool, s: Dictionary, pp: float, unranked: bool, new
 		data["length_ms"] = float(_beatmap.hit_objects.back().end_time())
 	if is_fail:
 		data["fail_ms"] = maxf(_time_ms(), 0.0)
-	if Lobby.active:
+	if Lobby.in_round():
 		var me := multiplayer.get_unique_id()
 		data["my_id"] = me
 		if Lobby.players.has(me):
@@ -4198,7 +4204,7 @@ func _build_results(is_fail: bool, s: Dictionary, pp: float, unranked: bool, new
 
 	# MULTIPLAYER-Endscreen: Rangliste + Stats-Karten im ResultsScreen
 	# (traeufeln live ein, wenn andere fertig werden).
-	if Lobby.active:
+	if Lobby.in_round():
 		Lobby.scores_changed.connect(_refresh_mp_ranking)
 		Lobby.players_changed.connect(_refresh_mp_ranking)
 		_refresh_mp_ranking()

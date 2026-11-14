@@ -28,11 +28,11 @@ func _init() -> void:
 	# Ausweich-Quelle dist/latest.json
 	var sha := "a".repeat(64)
 	var dj: Dictionary = U.dist_job({"version": "1.2.3", "size": 30, "sha256": sha,
-		"parts": [{"name": "TETHRA.pck.000", "size": 20}, {"name": "TETHRA.pck.001", "size": 10}]}, "https://x/", "C:/g")
+		"parts": [{"name": "TETHRA.pck.000", "size": 20}, {"name": "TETHRA.pck.001", "size": 10}]}, "https://x/", "C:/g", "TETHRA.pck")
 	_check(dj.get("urls", []) == ["https://x/TETHRA.pck.000", "https://x/TETHRA.pck.001"] and int(dj.size) == 30 			and str(dj.sig) == "sha256:" + sha and str(dj.new).ends_with("TETHRA.pck.new"), "dist: Auftrag aus latest.json")
-	_check(U.dist_job({"version": "1", "size": 31, "sha256": sha, "parts": [{"name": "a", "size": 30}]}, "b/", "c").is_empty(),
+	_check(U.dist_job({"version": "1", "size": 31, "sha256": sha, "parts": [{"name": "a", "size": 30}]}, "b/", "c", "OMEN.pck").is_empty(),
 		"dist: Teilsumme falsch -> verworfen")
-	_check(U.dist_job({"version": "1", "size": 30, "sha256": "x", "parts": [{"name": "a", "size": 30}]}, "b/", "c").is_empty(),
+	_check(U.dist_job({"version": "1", "size": 30, "sha256": "x", "parts": [{"name": "a", "size": 30}]}, "b/", "c", "OMEN.pck").is_empty(),
 		"dist: ohne SHA-256 -> verworfen")
 	_check(U.dist_part_at([20, 10], 0) == 0 and U.dist_part_at([20, 10], 20) == 1 and U.dist_part_at([20, 10], 7) == -1,
 		"dist: Fortsetzen nur an Teilgrenzen")
@@ -90,15 +90,100 @@ func _init() -> void:
 	var tmpf := "user://test_tmp/same.bin"
 	DirAccess.make_dir_recursive_absolute("user://test_tmp")
 	var ff := FileAccess.open(tmpf, FileAccess.WRITE)
-	ff.store_string("TETHRA")
+	ff.store_string("OMEN")
 	ff.close()
 	var hx := FileAccess.get_sha256(tmpf)
 	_check(U.same_as_local("sha256:" + hx, tmpf) and not U.same_as_local("sha256:00", tmpf)
 			and not U.same_as_local("", tmpf), "Digest-Vergleich gegen lokale Datei (kein Endlos-Update)")
 	DirAccess.remove_absolute(tmpf)
+	_rename_checks(U)
 	# WorldPack ohne Datei
 	var W: GDScript = load("res://scripts/net/world_pack.gd")
 	_check(not W.is_valid_file("res://nicht_da.pck"), "WorldPack: fehlende Datei ungueltig")
 	_check(not W.mount(), "WorldPack: fehlt -> kein Mount, kein Fehler")
 	u.free()
 	quit(1 if _fails > 0 else 0)
+
+
+## Umbenennung TETHRA -> OMEN: bestehende Installationen (TETHRA.exe + TETHRA.pck)
+## aktualisieren sich weiter, neue heissen OMEN.exe + OMEN.pck.
+func _rename_checks(U: GDScript) -> void:
+	_check(U.REPO == "Vyrenbusiness-source/OMEN" and U.UA == "User-Agent: OMEN-Updater", "Repo und User-Agent heissen OMEN")
+	# Paketname = Name der laufenden Exe
+	_check(U.main_pack_name("C:/g/TETHRA.exe") == "TETHRA.pck", "TETHRA.exe -> TETHRA.pck")
+	_check(U.main_pack_name("C:/g/OMEN.exe") == "OMEN.pck", "OMEN.exe -> OMEN.pck")
+	_check(U.main_pack_name("C:/Spiele/v1.2/OMEN.exe") == "OMEN.pck", "Punkt im Ordnernamen stoert nicht")
+	# Asset-Auswahl: neuer Name zuerst, alter als Ausweich
+	var a_old := {"name": "TETHRA.pck", "browser_download_url": "https://x/TETHRA.pck", "size": 5, "id": 1, "digest": "sha256:aa"}
+	var a_new := {"name": "OMEN.pck", "browser_download_url": "https://x/OMEN.pck", "size": 5, "id": 2, "digest": "sha256:aa"}
+	var a_other := {"name": "OMEN_Setup.exe", "browser_download_url": "https://x/s", "size": 9, "id": 3}
+	_check(str(U.pick_asset([a_old, a_other, a_new], U.MAIN_ASSETS).name) == "OMEN.pck", "Asset: OMEN.pck hat Vorrang (Reihenfolge egal)")
+	_check(str(U.pick_asset([a_other, a_old], U.MAIN_ASSETS).name) == "TETHRA.pck", "Asset: sonst TETHRA.pck")
+	_check(U.pick_asset([a_other], U.MAIN_ASSETS).is_empty() and U.pick_asset([], U.MAIN_ASSETS).is_empty(), "Asset: keins da -> leer")
+	var w_old := {"name": "TETHRA_worlds.pck", "browser_download_url": "https://x/w1", "size": 7, "id": 4}
+	var w_new := {"name": "OMEN_worlds.pck", "browser_download_url": "https://x/w2", "size": 7, "id": 5}
+	_check(str(U.pick_asset([w_old, a_old], U.WORLDS_ASSETS).name) == "TETHRA_worlds.pck"
+			and str(U.pick_asset([w_old, w_new], U.WORLDS_ASSETS).name) == "OMEN_worlds.pck", "Welten-Asset: beide Namen, OMEN zuerst")
+	# Alte Installation: Asset OMEN.pck wird als TETHRA.pck neben TETHRA.exe abgelegt.
+	var j: Dictionary = U.asset_job([a_old, a_new], U.MAIN_ASSETS, "C:/g", U.main_pack_name("C:/g/TETHRA.exe"))
+	_check(str(j.url) == "https://x/OMEN.pck" and str(j.final) == "C:/g/TETHRA.pck" and str(j.new) == "C:/g/TETHRA.pck.new"
+			and str(j.asset) == "TETHRA.pck", "alte Installation: laedt OMEN.pck, ersetzt TETHRA.pck")
+	var j2: Dictionary = U.asset_job([a_old], U.MAIN_ASSETS, "C:/g", U.main_pack_name("C:/g/OMEN.exe"))
+	_check(str(j2.url) == "https://x/TETHRA.pck" and str(j2.final) == "C:/g/OMEN.pck", "neue Installation: Release nur mit TETHRA.pck -> ersetzt OMEN.pck")
+	_check(U.asset_job([a_other], U.MAIN_ASSETS, "C:/g", "OMEN.pck").is_empty(), "kein Paket im Release -> kein Auftrag")
+	# dist: Teilnamen kommen aus latest.json, Ziel ist das Paket der Exe
+	var sha := "b".repeat(64)
+	var d := {"version": "1.36.0", "size": 30, "sha256": sha,
+		"parts": [{"name": "TETHRA.pck.000", "size": 20}, {"name": "TETHRA.pck.001", "size": 10}]}
+	var dn: Dictionary = U.dist_job(d, "https://x/", "C:/g", "OMEN.pck")
+	_check(dn.get("urls", []) == ["https://x/TETHRA.pck.000", "https://x/TETHRA.pck.001"]
+			and str(dn.final) == "C:/g/OMEN.pck" and str(dn.asset) == "OMEN.pck", "dist: alte Teilnamen, Ziel OMEN.pck")
+	var d2 := d.duplicate(true)
+	d2["parts"] = [{"name": "OMEN.pck.000", "size": 30}]
+	_check(U.dist_job(d2, "https://x/", "C:/g", "TETHRA.pck").get("urls", []) == ["https://x/OMEN.pck.000"],
+			"dist: Teilnamen frei waehlbar (aus latest.json)")
+	_check(str(U.DIST_BASES[0]) == "https://raw.githubusercontent.com/Vyrenbusiness-source/OMEN/dist/"
+			and str(U.DIST_BASES[1]) == "https://cdn.jsdelivr.net/gh/Vyrenbusiness-source/OMEN@dist/", "dist-URLs auf dem neuen Repo")
+	# Batch: startet die Exe, die laeuft; nie umbenennen
+	var bo: String = U.build_bat("C:/g/OMEN.exe", "C:/g", ["OMEN.pck", "OMEN_worlds.pck"])
+	_check(bo.contains("move /y \"OMEN.pck.new\" \"OMEN.pck\"") and bo.contains("\"%~dp0OMEN.exe\"")
+			and not bo.contains("TETHRA"), "Batch neue Installation: nur OMEN-Dateien")
+	var bt: String = U.build_bat("C:/g/TETHRA.exe", "C:/g", ["TETHRA.pck"])
+	_check(bt.contains("move /y \"TETHRA.pck.new\" \"TETHRA.pck\"") and bt.contains("\"%~dp0TETHRA.exe\"")
+			and not bt.contains("OMEN"), "Batch alte Installation: TETHRA.exe bleibt, keine Umbenennung")
+	# Nutzerdaten bleiben am alten Ort (Scores, Replays, Einstellungen, Login).
+	_check(str(ProjectSettings.get_setting("application/config/name")) == "OMEN", "Projektname OMEN")
+	_check(OS.get_user_data_dir().replace("\\", "/").ends_with("/Godot/app_userdata/TETHRA"),
+			"user:// zeigt weiter auf Godot/app_userdata/TETHRA ('%s')" % OS.get_user_data_dir())
+	# Clip-Ordner: vorhandener alter Ordner bleibt, sonst neuer Name
+	var CE: GDScript = load("res://scripts/replay/clip_exporter.gd")
+	var docs := OS.get_temp_dir().path_join("omen_clipdir_test_%d" % Time.get_ticks_usec())
+	DirAccess.make_dir_recursive_absolute(docs)
+	_check(CE.clips_dir_in(docs) == docs.path_join("OMEN Clips"), "Clips: neu -> OMEN Clips")
+	DirAccess.make_dir_recursive_absolute(docs.path_join("TETHRA Clips"))
+	_check(CE.clips_dir_in(docs) == docs.path_join("TETHRA Clips"), "Clips: alter Ordner wird weiterverwendet")
+	DirAccess.remove_absolute(docs.path_join("TETHRA Clips"))
+	DirAccess.remove_absolute(docs)
+	# Welten-Paket lokal: beide Namen
+	var W: GDScript = load("res://scripts/net/world_pack.gd")
+	var dir := OS.get_temp_dir().path_join("omen_worldpack_test_%d" % Time.get_ticks_usec())
+	DirAccess.make_dir_recursive_absolute(dir)
+	_check(W.local_name(dir) == "OMEN_worlds.pck", "Welten lokal: nichts da -> neuer Name")
+	_touch(dir.path_join("TETHRA_worlds.pck"))
+	_check(W.local_name(dir) == "TETHRA_worlds.pck", "Welten lokal: altes Paket wird weiterverwendet")
+	_check(W.is_valid_file(dir.path_join(W.local_name(dir))), "Welten lokal: altes Paket gilt als gueltig")
+	_touch(dir.path_join("OMEN_worlds.pck"))
+	_check(W.local_name(dir) == "OMEN_worlds.pck", "Welten lokal: beide da -> neuer Name")
+	for n in ["TETHRA_worlds.pck", "OMEN_worlds.pck"]:
+		DirAccess.remove_absolute(dir.path_join(n))
+	DirAccess.remove_absolute(dir)
+
+
+func _touch(path: String) -> void:
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	f.store_string("GDPC")
+	f.store_buffer(PackedByteArray([0]).duplicate())
+	var pad := PackedByteArray()
+	pad.resize(2048)
+	f.store_buffer(pad)
+	f.close()

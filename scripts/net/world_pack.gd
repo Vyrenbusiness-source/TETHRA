@@ -1,11 +1,13 @@
 extends Node
 
-## Autoload "WorldPack": haengt beim Start das Welten-Paket ein (TETHRA_worlds.pck
-## neben der Exe, enthaelt assets_game/themes/). Fehlt es, bleibt alles wie es ist:
+## Autoload "WorldPack": haengt beim Start das Welten-Paket ein (OMEN_worlds.pck
+## neben der Exe, enthaelt assets_game/themes/; bestehende Installationen haben es
+## als TETHRA_worlds.pck, das zaehlt genauso). Fehlt es, bleibt alles wie es ist:
 ## WorldTheme.is_available() findet das Verzeichnis nicht und faellt auf galaxy zurueck.
 ## Muss VOR allen anderen Autoloads stehen, die Welt-Assets laden koennten.
 
-const FILE := "TETHRA_worlds.pck"
+## Neuer Name zuerst. "TETHRA_worlds.pck" = historische Kennung (Installationen bis v1.36.0).
+const FILES := ["OMEN_worlds.pck", "TETHRA_worlds.pck"]
 const MIN_SIZE := 1024
 
 static var mounted := false
@@ -15,9 +17,19 @@ func _init() -> void:
 	mounted = mount()
 
 
+## Dateiname des Welten-Pakets in dir: das vorhandene (neuer Name hat Vorrang),
+## sonst der neue Name (dorthin laedt der Updater ein fehlendes Paket).
+static func local_name(dir: String) -> String:
+	for n in FILES:
+		if FileAccess.file_exists(dir.path_join(n)):
+			return n
+	return FILES[0]
+
+
 ## Pfad des Welten-Pakets neben der Exe.
 static func pack_path() -> String:
-	return OS.get_executable_path().get_base_dir().path_join(FILE)
+	var dir := OS.get_executable_path().get_base_dir()
+	return dir.path_join(local_name(dir))
 
 
 ## Ist das Paket als Datei da (und gross genug, um eins zu sein)?

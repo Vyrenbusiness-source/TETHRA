@@ -4,6 +4,7 @@
 # Build-Artefakte (gehen als GitHub-Release-Assets raus, nicht ins Repo)
 /release/
 TETHRA_v1.zip
+OMEN_v1.zip
 *.pck
 
 # Beatmaps (3.5 GB — niemals ins Repo)
@@ -16,6 +17,10 @@ Godot_v*.exe.zip
 # Sonstiges
 *.tmp
 tethra_update.bat
+omen_update.bat
 assets/
 override.cfg
 __pycache__/
+
+# Musik des Nutzers (urheberrechtlich geschuetzt, nie committen)
+own songs/

@@ -9,7 +9,7 @@ var _failed := 0
 
 
 func _initialize() -> void:
-	print("=== TETHRA SV-Filter-Tests ===")
+	print("=== OMEN SV-Filter-Tests ===")
 	_test_detect()
 	_test_text()
 	_test_item()

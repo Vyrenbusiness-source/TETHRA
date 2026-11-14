@@ -1,5 +1,7 @@
 extends Node
 
+const WorldPackScript := preload("res://scripts/net/world_pack.gd")
+
 ## Auto-Updater (Autoload "Updater"): prueft beim Start und danach alle 10 min
 ## die neueste Version auf GitHub-Releases, laedt sie im Hintergrund und bietet
 ## per Toast den Neustart an (Auto-Neustart nach 8 s, nie mitten im Song). Der
@@ -7,22 +9,26 @@ extends Node
 ## .pck offen). Accounts/Scores/Settings (user://) und der maps-Ordner werden
 ## NIE angefasst.
 ##
-## Zwei Pakete: TETHRA.pck (Spiel, klein) und TETHRA_worlds.pck (Welten-Assets,
-## gross, aendert sich selten). Das Welten-Paket wird nur geladen, wenn es lokal
+## Zwei Pakete: OMEN.pck (Spiel, klein) und OMEN_worlds.pck (Welten-Assets,
+## gross, aendert sich selten). Das Spiel hiess bis v1.36.0 TETHRA: solche
+## Installationen (TETHRA.exe + TETHRA.pck) behalten ihre Dateinamen, siehe
+## main_pack_name() und MAIN_ASSETS. Das Welten-Paket wird nur geladen, wenn es lokal
 ## fehlt oder sich die Signatur (SHA-256-Digest bzw. Groesse+Zeitstempel des
 ## GitHub-Assets) geaendert hat. Download in 32-MB-Range-Stuecken in eine
 ## .part-Datei: Abbruch/Neustart setzt dort fort. Vorher Platzcheck.
 ##
 ## Release-Ablauf (Entwickler): CURRENT_VERSION hochzaehlen, beide PCKs bauen,
-## `gh release create vX.Y.Z release/TETHRA.pck release/TETHRA_worlds.pck`.
+## `gh release create vX.Y.Z release/OMEN.pck release/TETHRA.pck` (TETHRA.pck =
+## Kopie von OMEN.pck: v1.36.0 und aelter suchen genau diesen Asset-Namen).
 
-const CURRENT_VERSION := "1.32.0"
-const REPO := "Vyrenbusiness-source/TETHRA"
+const CURRENT_VERSION := "1.38.0"
+const REPO := "Vyrenbusiness-source/OMEN"
 const API_LATEST := "https://api.github.com/repos/" + REPO + "/releases/latest"
 ## Welten-Paket liegt in einem festen Release (Tag "worlds"), damit normale
-## Releases nur das kleine TETHRA.pck brauchen. Fallback: Asset im latest-Release.
+## Releases nur das kleine OMEN.pck brauchen. Fallback: Asset im latest-Release.
 const API_WORLDS := "https://api.github.com/repos/" + REPO + "/releases/tags/worlds"
-const HEADERS := ["User-Agent: TETHRA-Updater", "Accept: application/vnd.github+json"]
+const UA := "User-Agent: OMEN-Updater"
+const HEADERS := [UA, "Accept: application/vnd.github+json"]
 ## Ausweich-Quelle, wenn GitHub-API oder Release-Downloads haengen (kommt vor:
 ## Timeouts fuer nicht angemeldete Nutzer): Branch "dist" mit latest.json und dem
 ## Spiel-Paket in Teilen (< 20 MB, damit auch jsDelivr sie ausliefert).
@@ -41,8 +47,10 @@ const CFG_PATH := "user://updater.cfg"
 const NOTES_MAX_LINES := 6
 ## Grosse PCK (100+ MB): kein Gesamt-Timeout, stattdessen Stillstands-Wache.
 const STALL_SECONDS := 45.0
-const MAIN_ASSET := "TETHRA.pck"
-const WORLDS_ASSET := "TETHRA_worlds.pck"
+## Asset-Namen im Release, neuer Name zuerst. "TETHRA*.pck" = historische Kennung:
+## Releases bis v1.36.0 (und der Tag "worlds") tragen nur diese Namen.
+const MAIN_ASSETS := ["OMEN.pck", "TETHRA.pck"]
+const WORLDS_ASSETS := ["OMEN_worlds.pck", "TETHRA_worlds.pck"]
 ## Range-Stueckgroesse und Reserve fuer den Platzcheck.
 const CHUNK_BYTES := 32 * 1024 * 1024
 const SPACE_MARGIN := 64 * 1024 * 1024
@@ -55,6 +63,10 @@ var latest_version := ""
 var _req: HTTPRequest
 var _dl: HTTPRequest
 var _exe_dir := ""
+## Lokale Dateinamen neben der Exe: Spiel-Paket = Paket der laufenden Exe
+## (TETHRA.exe -> TETHRA.pck, OMEN.exe -> OMEN.pck), Welten-Paket = das vorhandene.
+var _main_file := ""
+var _worlds_file := ""
 ## Offene Downloads: {asset, url, size, final, new, part, sig}.
 var _jobs: Array[Dictionary] = []
 var _job_i := 0
@@ -76,9 +88,11 @@ var _dist_i := 0
 func _ready() -> void:
 	if DisplayServer.get_name() == "headless":
 		return
-	# Nur im Release aktiv: dort liegt TETHRA.pck neben der Exe.
+	# Nur im Release aktiv: dort liegt das Paket der Exe (<Exe-Name>.pck) daneben.
 	_exe_dir = OS.get_executable_path().get_base_dir()
-	if not FileAccess.file_exists(_exe_dir.path_join(MAIN_ASSET)):
+	_main_file = main_pack_name(OS.get_executable_path())
+	_worlds_file = WorldPackScript.local_name(_exe_dir)
+	if not FileAccess.file_exists(_exe_dir.path_join(_main_file)):
 		return
 	_commit_worlds_sig()
 	# Liegt schon ein fertiges Update vom letzten Lauf da? Sofort anwenden.
@@ -156,13 +170,13 @@ func _on_latest(result: int, code: int, _h: PackedStringArray, body: PackedByteA
 	var jobs: Array[Dictionary] = []
 	var assets: Array = data.get("assets", [])
 	if latest_version != "" and _is_newer(latest_version, CURRENT_VERSION):
-		var m := _make_job(assets, MAIN_ASSET)
+		var m := _make_job(assets, MAIN_ASSETS, _main_file)
 		# Schutz gegen Endlos-Updates: ist das Release-Paket byte-gleich mit dem
 		# lokalen (Digest), gibt es nichts zu laden — auch wenn die Versionsnummer
 		# im Paket nicht stimmt (so entstand der Neustart-Loop in v1.12.2).
-		if not m.is_empty() and not same_as_local(str(m["sig"]), _exe_dir.path_join(MAIN_ASSET)):
+		if not m.is_empty() and not same_as_local(str(m["sig"]), _exe_dir.path_join(_main_file)):
 			jobs.append(m)
-	var w := _make_job(assets, WORLDS_ASSET)
+	var w := _make_job(assets, WORLDS_ASSETS, _worlds_file)
 	if w.is_empty():
 		_fetch_worlds_release(jobs)
 		return
@@ -182,7 +196,7 @@ func _check_dist(i: int) -> void:
 		var d: Variant = null
 		if res == HTTPRequest.RESULT_SUCCESS and code == 200:
 			d = JSON.parse_string(b.get_string_from_utf8())
-		var job := dist_job(d, str(DIST_BASES[i]), _exe_dir) if d is Dictionary else {}
+		var job := dist_job(d, str(DIST_BASES[i]), _exe_dir, _main_file) if d is Dictionary else {}
 		if job.is_empty() and not (d is Dictionary):
 			_check_dist(i + 1)
 			return
@@ -197,14 +211,16 @@ func _check_dist(i: int) -> void:
 			return
 		_start_jobs(jobs))
 	if req.request(str(DIST_BASES[i]) + "latest.json?v=" + str(Time.get_unix_time_from_system() / 300),
-			PackedStringArray(["User-Agent: TETHRA-Updater"])) != OK:
+			PackedStringArray([UA])) != OK:
 		req.queue_free()
 		_check_dist(i + 1)
 
 
 ## Download-Auftrag aus dist/latest.json:
 ## {version, size, sha256, parts:[{name, size}], notes}. {} wenn unbrauchbar.
-static func dist_job(d: Dictionary, base: String, exe_dir: String) -> Dictionary:
+## Die Teilnamen kommen aus latest.json (so auch in v1.36.0), main_file ist der
+## lokale Zielname neben der Exe.
+static func dist_job(d: Dictionary, base: String, exe_dir: String, main_file: String) -> Dictionary:
 	var parts: Array = d.get("parts", [])
 	var sha := str(d.get("sha256", "")).to_lower()
 	var size := int(d.get("size", 0))
@@ -221,8 +237,8 @@ static func dist_job(d: Dictionary, base: String, exe_dir: String) -> Dictionary
 		sum += int(p.size)
 	if sum != size:
 		return {}
-	var fin := exe_dir.path_join(MAIN_ASSET)
-	return {"asset": MAIN_ASSET, "url": "", "urls": urls, "sizes": sizes, "size": size,
+	var fin := exe_dir.path_join(main_file)
+	return {"asset": main_file, "url": "", "urls": urls, "sizes": sizes, "size": size,
 		"final": fin, "new": fin + ".new", "part": "%s.dist-%s.part" % [fin, sha.left(12)],
 		"sig": "sha256:" + sha}
 
@@ -254,7 +270,7 @@ func _fetch_worlds_release(jobs: Array[Dictionary]) -> void:
 		if res == HTTPRequest.RESULT_SUCCESS and code == 200:
 			var d: Variant = JSON.parse_string(b.get_string_from_utf8())
 			if d is Dictionary:
-				w = _make_job(d.get("assets", []), WORLDS_ASSET)
+				w = _make_job(d.get("assets", []), WORLDS_ASSETS, _worlds_file)
 		_finish_check(jobs, w))
 	if req.request(API_WORLDS, HEADERS) != OK:
 		req.queue_free()
@@ -264,9 +280,9 @@ func _fetch_worlds_release(jobs: Array[Dictionary]) -> void:
 func _finish_check(jobs: Array[Dictionary], w: Dictionary) -> void:
 	# Welten-Paket von Hand neben die Exe gelegt (gleiche Groesse wie im Release),
 	# aber nie per Updater geladen: als aktuell uebernehmen statt 820 MB neu zu laden.
-	if not w.is_empty() and _stored_worlds_sig() == "" 			and _file_size(_exe_dir.path_join(WORLDS_ASSET)) == int(w["size"]):
+	if not w.is_empty() and _stored_worlds_sig() == "" 			and _file_size(_exe_dir.path_join(_worlds_file)) == int(w["size"]):
 		_store_worlds_sig(str(w["sig"]))
-	if not w.is_empty() and worlds_needs_update(FileAccess.file_exists(_exe_dir.path_join(WORLDS_ASSET)),
+	if not w.is_empty() and worlds_needs_update(FileAccess.file_exists(_exe_dir.path_join(_worlds_file)),
 			_stored_worlds_sig(), str(w["sig"])):
 		jobs.append(w)
 	if jobs.is_empty():
@@ -275,17 +291,39 @@ func _finish_check(jobs: Array[Dictionary], w: Dictionary) -> void:
 	_start_jobs(jobs)
 
 
-func _make_job(assets: Array, asset: String) -> Dictionary:
-	for a in assets:
-		if a is Dictionary and str(a.get("name", "")) == asset:
-			var url := str(a.get("browser_download_url", ""))
-			var size := int(a.get("size", 0))
-			if url == "":
-				return {}
-			var fin := _exe_dir.path_join(asset)
-			return {"asset": asset, "url": url, "size": size, "final": fin,
-				"new": fin + ".new", "part": "%s.%s.part" % [fin, str(a.get("id", 0))],
-				"sig": asset_sig(a)}
+## Auftrag fuer das erste Release-Asset aus names (Reihenfolge = Vorrang);
+## geladen wird es unter dem lokalen Namen local_file. "asset" = lokaler Name.
+func _make_job(assets: Array, names: Array, local_file: String) -> Dictionary:
+	return asset_job(assets, names, _exe_dir, local_file)
+
+
+static func asset_job(assets: Array, names: Array, exe_dir: String, local_file: String) -> Dictionary:
+	var a := pick_asset(assets, names)
+	if a.is_empty():
+		return {}
+	var url := str(a.get("browser_download_url", ""))
+	var size := int(a.get("size", 0))
+	if url == "":
+		return {}
+	var fin := exe_dir.path_join(local_file)
+	return {"asset": local_file, "url": url, "size": size, "final": fin,
+		"new": fin + ".new", "part": "%s.%s.part" % [fin, str(a.get("id", 0))],
+		"sig": asset_sig(a)}
+
+
+## Paket der laufenden Exe: Godot laedt <Exe-Name>.pck. Bestehende Installationen
+## heissen TETHRA.exe und behalten TETHRA.pck; die Exe wird nie umbenannt.
+static func main_pack_name(exe_path: String) -> String:
+	return exe_path.get_file().get_basename() + ".pck"
+
+
+## Erstes Asset, dessen Name in names steht; names ist nach Vorrang sortiert
+## (OMEN.pck vor TETHRA.pck). {} = keins da.
+static func pick_asset(assets: Array, names: Array) -> Dictionary:
+	for n in names:
+		for a in assets:
+			if a is Dictionary and str(a.get("name", "")) == str(n):
+				return a
 	return {}
 
 
@@ -324,7 +362,7 @@ func _store_worlds_sig(sig: String) -> void:
 ## Anzeigetext: echtes Spiel-Update oder nur das (einmalige) Welten-Paket?
 func _progress_title() -> String:
 	for j in _jobs:
-		if str(j["asset"]) == MAIN_ASSET:
+		if str(j["asset"]) == _main_file:
 			return tr("Update v%s wird geladen…") % latest_version
 	return tr("Welten werden geladen (einmalig, %d MB)…") % int(round(float(_total_bytes) / 1048576.0))
 
@@ -332,7 +370,7 @@ func _progress_title() -> String:
 ## "Update vX bereit" nur bei echtem Spiel-Update, sonst "Welten bereit".
 func _ready_title() -> String:
 	for a in _ready_files():
-		if a == MAIN_ASSET:
+		if a == _main_file:
 			return ""
 	return "Welten bereit"
 
@@ -348,8 +386,8 @@ func _commit_worlds_sig() -> void:
 	var cfg := ConfigFile.new()
 	cfg.load(CFG_PATH)
 	var pend := str(cfg.get_value("updater", "worlds_sig_pending", ""))
-	if pend != "" and FileAccess.file_exists(_exe_dir.path_join(WORLDS_ASSET)) \
-			and not FileAccess.file_exists(_exe_dir.path_join(WORLDS_ASSET + ".new")):
+	if pend != "" and FileAccess.file_exists(_exe_dir.path_join(_worlds_file)) \
+			and not FileAccess.file_exists(_exe_dir.path_join(_worlds_file + ".new")):
 		cfg.set_value("updater", "worlds_sig", pend)
 		cfg.set_value("updater", "worlds_sig_pending", "")
 		cfg.save(CFG_PATH)
@@ -407,7 +445,7 @@ func _next_chunk() -> void:
 	add_child(_dl)
 	_dl.request_completed.connect(_on_chunk_done)
 	var url := str(j["url"])
-	var hdr: PackedStringArray = ["User-Agent: TETHRA-Updater", range_header(_job_offset, CHUNK_BYTES, size)]
+	var hdr: PackedStringArray = [UA, range_header(_job_offset, CHUNK_BYTES, size)]
 	if j.has("urls"):
 		# dist: ganze Teile nacheinander, Fortsetzen an Teilgrenzen.
 		var k := dist_part_at(j["sizes"], _job_offset)
@@ -416,7 +454,7 @@ func _next_chunk() -> void:
 			_job_offset = 0
 			k = 0
 		url = str(j["urls"][k])
-		hdr = PackedStringArray(["User-Agent: TETHRA-Updater"])
+		hdr = PackedStringArray([UA])
 	if _dl.request(url, hdr) != OK:
 		_dl.queue_free()
 		_dl = null
@@ -462,7 +500,7 @@ func _finish_job() -> void:
 	if DirAccess.rename_absolute(part, str(j["new"])) != OK:
 		_download_failed()
 		return
-	if str(j["asset"]) == WORLDS_ASSET:
+	if str(j["asset"]) != _main_file:
 		var cfg := ConfigFile.new()
 		cfg.load(CFG_PATH)
 		cfg.set_value("updater", "worlds_sig_pending", str(j["sig"]))
@@ -498,9 +536,12 @@ func _file_size(path: String) -> int:
 ## Fertig geladene Updates neben der Exe (.new, gueltiges PCK).
 func _ready_files() -> Array[String]:
 	var out: Array[String] = []
-	for a in [MAIN_ASSET, WORLDS_ASSET]:
+	# Beide Welten-Namen: ein von v1.36.0 geladenes TETHRA_worlds.pck.new zaehlt mit.
+	var names: Array = [_main_file]
+	names.append_array(WORLDS_ASSETS)
+	for a in names:
 		var n: String = _exe_dir.path_join(a) + ".new"
-		if FileAccess.file_exists(n) and _is_pck(n):
+		if not out.has(a) and FileAccess.file_exists(n) and _is_pck(n):
 			out.append(a)
 	return out
 
@@ -511,7 +552,7 @@ func _download_failed() -> void:
 	var from_github := false
 	for j in _jobs:
 		from_github = from_github or not j.has("urls")
-	_prefer_dist = from_github and str(_jobs[_job_i]["asset"]) == MAIN_ASSET if _job_i < _jobs.size() else _prefer_dist
+	_prefer_dist = from_github and str(_jobs[_job_i]["asset"]) == _main_file if _job_i < _jobs.size() else _prefer_dist
 	status = "error"
 	state_changed.emit("Update fehlgeschlagen — wird später erneut versucht.", -1.0)
 	if _toast != null:
@@ -707,7 +748,7 @@ func _apply_and_restart() -> void:
 	_note_apply_try()
 	_remember_notes()
 	var assets := _ready_files()
-	var bat_path := _exe_dir.path_join("tethra_update.bat")
+	var bat_path := _exe_dir.path_join("omen_update.bat")
 	var bat := build_bat(OS.get_executable_path(), _exe_dir, assets, OS.get_process_id(),
 			OS.get_cmdline_args())
 	var f := FileAccess.open(bat_path, FileAccess.WRITE)
@@ -723,7 +764,7 @@ func _apply_and_restart() -> void:
 ## Tausch klappte mehrfach nicht: nicht weiter neu starten, Nutzer informieren.
 func _apply_failed() -> void:
 	status = "error"
-	var msg := "Update ließ sich nicht installieren. TETHRA schließen und neu starten — sonst neu von GitHub laden."
+	var msg := "Update ließ sich nicht installieren. OMEN schließen und neu starten — sonst neu von GitHub laden."
 	state_changed.emit(msg, -1.0)
 	if _toast != null:
 		_toast.show_error(msg)

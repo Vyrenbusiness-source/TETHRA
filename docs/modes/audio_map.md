@@ -29,7 +29,7 @@ Dauer: ca. 1 s pro Song (3-6 Minuten).
    aussen (Radius 180, Ring B), Rest innen (Radius 90, Ring A). Damit liefert
    `OrbitConverter.convert_std` (POLAR) fluessige Winkel (Test: <= 0,3 Grad/ms).
    Gemessen: Leicht ca. 1,4, Normal 2,6, Schwer 5,2 Ziele/s.
-6. Ausgabe: `<Kuenstler> - <Titel> (TETHRA Auto).osz` mit `.osu` (Mode 0, ein
+6. Ausgabe: `<Kuenstler> - <Titel> (OMEN Auto).osz` mit `.osu` (Mode 0, ein
    roter Timing-Point) und dem unveraenderten Audio als `audio.<ext>`.
    Kuenstler/Titel aus den Tags (`ffmpeg -f ffmetadata`), sonst aus
    "Kuenstler - Titel" im Dateinamen, sonst Titel = Dateiname, Kuenstler = Unknown.

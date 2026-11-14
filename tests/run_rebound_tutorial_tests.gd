@@ -39,7 +39,7 @@ func _settings() -> Node:
 
 
 func _run() -> void:
-	print("=== TETHRA Rebound-Tutorial-Tests ===")
+	print("=== OMEN Rebound-Tutorial-Tests ===")
 	var S: GDScript = load(SCRIPT)
 	var old_seen: String = S.seen_path
 	DirAccess.make_dir_recursive_absolute("user://test_tmp")

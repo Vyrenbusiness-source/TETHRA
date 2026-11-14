@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""TETHRA Welt-Thema "Fraktal": schwarzer Raum voller Obsidian-Splitter.
+"""OMEN Welt-Thema "Fraktal": schwarzer Raum voller Obsidian-Splitter.
 
 Erzeugt zwei equirektangulare Panoramen (Standard 4096x2048):
   assets_game/themes/fractal/fractal_sky.webp         fern, RGB

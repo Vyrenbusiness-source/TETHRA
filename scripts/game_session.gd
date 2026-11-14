@@ -69,6 +69,75 @@ var _perf_frames: Array = []
 ## Online-Scores / Website-Anbindung (scripts/net/online_api.gd).
 var online: OnlineApi
 
+## Kampagne (scripts/campaign/campaign.gd): laufende Stufe {"stage": id} oder {}.
+## campaign_return: Stufe, bei der die Kampagnen-Szene oeffnet.
+## Eine Stufe spielt mit den Einstellungen des Spielers (2D/3D, Welt, Skin ...) wie ein
+## Start aus dem Song-Browser; die Kapitel-Welt ist nur Thema der Kampagnen-Ansicht.
+var campaign: Dictionary = {}
+var campaign_return: String = ""
+const CAMPAIGN_HUD := "res://scripts/campaign/campaign_hud.gd"
+
+
+func campaign_active() -> bool:
+	return str(campaign.get("stage", "")) != ""
+
+
+func start_campaign(stage_id: String) -> void:
+	campaign = {"stage": stage_id}
+
+
+func end_campaign() -> void:
+	campaign = {}
+
+
+## Spielszene einer Stufe betritt den Baum (auch beim Neustart): Ziele ins HUD,
+## Harness: Bild der Stufe.
+func _campaign_on_node_added(n: Node) -> void:
+	if not campaign_active() or n.get_parent() != get_tree().root:
+		return
+	if not ScoreStore.MODE_SCENES.values().has(n.scene_file_path):
+		return
+	_campaign_attach_hud.call_deferred(n.get_instance_id())
+	if campaign_run_prefix() != "":
+		_campaign_run_game_shot(n)
+
+
+func _campaign_attach_hud(game_id: int) -> void:
+	var game := instance_from_id(game_id) as Node
+	if game == null or not game.is_inside_tree() or not campaign_active():
+		return
+	# Zur Laufzeit laden: GameSession kompiliert so auch in Tests ohne Autoloads (HUD -> Lobby).
+	load(CAMPAIGN_HUD).call("attach_stage", game, str(campaign.get("stage", "")))
+
+
+## Harness --shot-campaign-run=<Praefix>: echter Stufenlauf (Kampagnen-Szene startet die
+## Stufe, --autoplay spielt, Ergebnis traegt ein). Bilder <Praefix>_stage.png, _game.png,
+## _result.png. Nur mit --campaign-path=<Datei>, nie gegen den echten Stand.
+static func campaign_run_prefix() -> String:
+	for a in OS.get_cmdline_args() + OS.get_cmdline_user_args():
+		if a.begins_with("--shot-campaign-run="):
+			return a.trim_prefix("--shot-campaign-run=")
+	return ""
+
+
+func _campaign_run_game_shot(game: Node) -> void:
+	var prefix := campaign_run_prefix()
+	await get_tree().create_timer(14.0, true).timeout
+	await RenderingServer.frame_post_draw
+	if not is_instance_valid(game) or not game.is_inside_tree():
+		return
+	get_viewport().get_texture().get_image().save_png(prefix + "_game.png")
+	print("CAMPAIGN-RUN Spiel: Welt-Einstellung %d" % int(get_node("/root/Settings").world_theme))
+
+
+## Kampagne endet, sobald eine Szene folgt, die keine Spielszene ist (Browser, Menue, Kampagne).
+func _campaign_on_scene_changed() -> void:
+	if not campaign_active():
+		return
+	var sc := get_tree().current_scene
+	if sc == null or not ScoreStore.MODE_SCENES.values().has(sc.scene_file_path):
+		end_campaign()
+
 
 func _ready() -> void:
 	online = OnlineApi.new()
@@ -78,6 +147,8 @@ func _ready() -> void:
 	set_process(false)
 	_arm_test_watchdog()
 	_arm_playtime()
+	get_tree().scene_changed.connect(_campaign_on_scene_changed)
+	get_tree().node_added.connect(_campaign_on_node_added)
 	perf_enabled = OS.get_cmdline_args().has("--perf") or OS.get_cmdline_user_args().has("--perf")
 	if perf_enabled:
 		perf_since("Engine-Start -> Autoload GameSession", 0)
@@ -332,7 +403,7 @@ func _arm_test_watchdog() -> void:
 	if limit <= 0.0 and FileAccess.file_exists("res://override.cfg"):
 		limit = 60.0
 	# Live-QA (tests/live_qa.gd): mehrere Runden in einem Prozess, aussen timeout 150.
-	if all.has("--live-qa"):
+	if all.has("--live-qa") or campaign_run_prefix() != "":
 		limit = 145.0
 	# Movie-Aufnahmen (--write-movie) begrenzt Godot selbst per --quit-after;
 	# die Watchdog-Zeit laeuft dort in Echtzeit und wuerde lange Aufnahmen kappen.

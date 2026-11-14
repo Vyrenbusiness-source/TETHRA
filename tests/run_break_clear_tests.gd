@@ -21,7 +21,7 @@ func _check(cond: bool, label: String) -> void:
 
 
 func _run() -> void:
-	print("=== TETHRA Break-Ring gibt das Feld frei ===")
+	print("=== OMEN Break-Ring gibt das Feld frei ===")
 	var ov: GDScript = load("res://scripts/ui/break_overlay.gd")
 	var has := false
 	for m in ov.get_script_method_list():

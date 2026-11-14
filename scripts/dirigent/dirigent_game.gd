@@ -84,9 +84,9 @@ func _ready() -> void:
 	if GameSession.is_replay and not _replay:
 		GameSession.is_replay = false   # fremde Replay-Events passen nicht
 		GameSession.replay_events = []
-	_mp_bot = Lobby.active and Lobby.in_game and args.has("--mp-bot")
+	_mp_bot = Lobby.in_round() and args.has("--mp-bot")
 	# --mp-bot spielt selbst (ohne --autoplay: dessen Watchdog wuerde den Smoke kappen).
-	_autoplay = ((args.has("--autoplay") and not Lobby.active) or _mp_bot) and not _replay
+	_autoplay = ((args.has("--autoplay") and not Lobby.in_round()) or _mp_bot) and not _replay
 	var jitter := 4.0
 	var aim := 0.7
 	var seed_v := 1
@@ -136,7 +136,7 @@ func _ready() -> void:
 			chart.beats.size(), chart.cues.size(), chart.stars()])
 		get_tree().quit(0)
 		return
-	if Lobby.active and Lobby.in_game:
+	if Lobby.in_round():
 		Lobby.skip_now.connect(_do_skip)
 	Input.mouse_mode = Input.MOUSE_MODE_CONFINED_HIDDEN
 	if not _use_audio:
@@ -512,12 +512,12 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif not _countdown_running:
 			_toggle_pause(true)
 		return
-	if event.keycode == KEY_R and Settings.dirigent_key_for(KEY_R) == -1 and not Lobby.active:
+	if event.keycode == KEY_R and Settings.dirigent_key_for(KEY_R) == -1 and not Lobby.in_round():
 		_restart()
 		return
 	if event.keycode == KEY_SPACE and not _ended and Settings.dirigent_key_for(KEY_SPACE) == -1 \
 			and _can_skip_intro():
-		if Lobby.active and Lobby.in_game:
+		if Lobby.in_round():
 			Lobby.vote_skip()
 		else:
 			_do_skip()
@@ -562,7 +562,7 @@ func _process(delta: float) -> void:
 		_view.cursor_px = _view.to_px(core.cursor_pos())
 		_view.push_cursor(_view.cursor_px)
 	_view.kiai = lerpf(_view.kiai, 1.0 if _beatmap.is_kiai(t) else 0.0, clampf(delta * 4.0, 0.0, 1.0))
-	if Lobby.active and Lobby.in_game:
+	if Lobby.in_round():
 		_mp_send_cd -= delta
 		if _mp_send_cd <= 0.0:
 			_mp_send_cd = 0.25
@@ -724,7 +724,7 @@ func _back_to_browser() -> void:
 	get_tree().paused = false
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	SyncClock.stop()
-	if Lobby.active:
+	if Lobby.in_round():
 		get_tree().change_scene_to_file("res://scenes/mp_lobby.tscn")
 	else:
 		get_tree().change_scene_to_file("res://scenes/song_select.tscn")
@@ -749,7 +749,7 @@ func _show_results() -> void:
 			"%s - %s" % [_beatmap.artist(), _beatmap.title()], s, MODE)
 		_save_replay(s, new_best)
 		_submit_online(s)
-	if Lobby.active and Lobby.in_game:
+	if Lobby.in_round():
 		Lobby.send_score(int(s.score), core.max_combo, float(s.accuracy))
 		Lobby.send_final(PlayerStatsCard.pack(s, _hit_offsets, _acc_trace, 0, 0, false))
 	_view.visible = false
@@ -776,8 +776,8 @@ func _show_results() -> void:
 		"title": _beatmap.title(),
 		"artist": _beatmap.artist(),
 		"version": _beatmap.version_name(),
-		"allow_retry": not Lobby.active,
-		"can_replay": not Lobby.active and (_replay or has_log),
+		"allow_retry": not Lobby.in_round(),
+		"can_replay": not Lobby.in_round() and (_replay or has_log),
 		"is_replay": _replay,
 	})
 	if _args().has("--shot-results"):

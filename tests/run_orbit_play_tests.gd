@@ -30,7 +30,7 @@ func _check(cond: bool, label: String) -> void:
 
 
 func _run() -> void:
-	print("=== TETHRA Orbit-Play-Tests (Satelliten) ===")
+	print("=== OMEN Orbit-Play-Tests (Satelliten) ===")
 	OrbitGameScript = load("res://scripts/orbit/orbit_game.gd")
 	_test_score_modes()
 	_test_settings()

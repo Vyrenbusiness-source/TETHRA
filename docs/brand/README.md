@@ -1,6 +1,6 @@
-# TETHRA Marke
+# OMEN Marke
 
-Gewaehlt: Entwurf 3 "Bahn" (Entwuerfe in `drafts/`). Erzeugt mit `python tools/render_logo_drafts.py --final` (schreibt auch icon.svg/png, Boot-Splash, `tools/installer/tethra.ico`, README-Logo, Social Preview und `LOGO_SVG` in `scripts/ui/main_menu.gd`).
+Gewaehlt: Entwurf 3 "Bahn" (Entwuerfe in `drafts/`). Erzeugt mit `python tools/render_logo_drafts.py --final` (schreibt auch icon.svg/png, Boot-Splash, `tools/installer/omen.ico`, README-Logo, Social Preview und `LOGO_SVG` in `scripts/ui/main_menu.gd`).
 
 - `logo*.svg` Bildmarke, `wordmark*.svg` Wortmarke, `lockup*.svg` Marke + Wortmarke, `icon*.svg` Kachel (ab 64 px).
 - Fassungen: ohne Suffix = fuer dunklen Grund, `_hell` = fuer hellen Grund, `_mono` = einfarbig (`#121110`).

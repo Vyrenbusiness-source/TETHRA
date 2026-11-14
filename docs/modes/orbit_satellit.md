@@ -124,7 +124,7 @@ func laps_left(t_ms) -> int
   Kalibrieren gegen die Bibliothek: Median ~4, leichte Diffs < 2,5.
 
 ## Optik (clean wie osu!, Anti-KI-Look)
-- Stil TETHRA Graphit + Bernstein (scripts/ui/ui_theme.gd), kein Glow, keine Deko.
+- Stil OMEN Graphit + Bernstein (scripts/ui/ui_theme.gd), kein Glow, keine Deko.
 - **Buehne** (nur im Spiel, `OrbitView.show_stage`): Graphit-Flaeche ueber die volle Hoehe,
   Feld plus 9 % Feldhoehe Rand je Seite (`stage_rect()`), senkrechter Verlauf, weicher
   Schatten nach aussen, feine Lichtkanten (im Kiai leicht bernstein), feines Raster aus

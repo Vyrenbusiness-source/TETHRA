@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""TETHRA Welt-Thema "Bosskampf": rotes Inferno-Panorama (offline, numpy+PIL).
+"""OMEN Welt-Thema "Bosskampf": rotes Inferno-Panorama (offline, numpy+PIL).
 
 Erzeugt in assets_game/themes/boss/ drei equirektangulare Texturen (4096x2048):
   sky_boss.webp         Himmel: blutrot bis schwarz, gluehender Horizont (ferne

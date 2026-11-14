@@ -7,11 +7,31 @@ extends Node
 ## Fuer Tests: `transport` ersetzt das Netz (Fake-Antworten), cfg_path/queue_path
 ## zeigen auf Testdateien.
 
-const BASE_URL := "https://butzebot.com/panel-api/tethra"
+## Server-Name auf butzebot.com: steckt im API-Pfad (/panel-api/<name>), im Header-Praefix
+## (x-<name>-api-key, x-<name>-user-token) und in den Website-Links (/<name>/...). Alle Stellen
+## im Client bauen darauf auf (api_base, headers_for, SITE_BASE).
+## "tethra" = historische Kennung (das Spiel hiess bis v1.36.0 TETHRA). Der Server soll wieder
+## "omen" heissen und bietet das zuerst ZUSAETZLICH an: probe_server() fragt einmal pro Start
+## /panel-api/omen/auth/me und schaltet alle API-Anfragen um, sobald die Route antwortet.
+## Absichtlich kein Rueckfall pro Anfrage bei 404: viele Endpunkte melden 404 als echte Antwort
+## (kein Avatar, Map/Score unbekannt, 404 drop beim Submit), ein 404 sagt dort nicht, ob es den
+## Pfad gibt, und jede solche Anfrage liefe doppelt (Submits inklusive).
+const SITE := "https://butzebot.com"
+const SERVER_OLD := "tethra"
+const SERVER_NEW := "omen"
+const PROBE_PATH := "/auth/me"
+const PROBE_TIMEOUT_S := 8.0
+## Website-, Chat- und Relay-Links (/tethra/player, /map, /score, /register, /mp) bleiben beim
+## alten Namen, bis der Server-Betreiber die /omen/-Seiten bestaetigt: v1.36.0 erkennt Score-Links
+## nur mit /tethra/, Relay-Raeume muessen fuer alte und neue Clients am selben Pfad liegen.
+## Umstellen = nur diese Zeile.
+const LINK_NAME := SERVER_OLD
+const SITE_BASE := SITE + "/" + LINK_NAME
+const BASE_URL := SITE + "/panel-api/" + SERVER_OLD
 const API_KEY := "70bab2e56a48e488abad5285057e6bca10815e6101f2cddc"  # nicht geheim (Open Source), Schutz = Spieler-Token + Server-Regeln
-const PROFILE_URL := "https://butzebot.com/tethra/player/"
+const PROFILE_URL := SITE_BASE + "/player/"
 ## Registrierung NUR auf der Website (im Spiel nur Login).
-const REGISTER_URL := "https://butzebot.com/tethra/register"
+const REGISTER_URL := SITE_BASE + "/register"
 const CFG_PATH := "user://online.cfg"
 const QUEUE_PATH := "user://online_queue.json"
 const TIMEOUT_S := 15.0
@@ -43,6 +63,8 @@ signal backfill_changed
 signal avatar_changed
 
 var api_key := API_KEY
+## Aktueller Server-Name ("tethra" oder "omen"), siehe probe_server().
+var server_name := SERVER_OLD
 var base_url := BASE_URL
 var cfg_path := CFG_PATH
 var queue_path := QUEUE_PATH
@@ -89,11 +111,107 @@ var _bf := {"running": false, "total": 0, "done": 0, "sent": 0, "skipped": 0,
 
 func _ready() -> void:
 	load_auth()
+	load_server()
 	load_cached_avatar()
 	load_queue()
 	set_process(true)
-	if enabled() and logged_in():
-		call_deferred("check_auth")
+	call_deferred("_connect_server")
+
+
+## Start: erst den Server-Namen pruefen (nur im echten Spiel), dann die Anmeldung.
+func _connect_server() -> void:
+	if not enabled():
+		return
+	var auth := func(_server: String) -> void:
+		if logged_in():
+			check_auth()
+	if DisplayServer.get_name() == "headless" or transport.is_valid():
+		auth.call(server_name)
+		return
+	probe_server(auth)
+
+
+# --- Server-Name (tethra -> omen) ---------------------------------------------
+
+static func api_base(server: String) -> String:
+	return SITE + "/panel-api/" + server
+
+
+## Header fuer server. Unter "omen" gehen die x-tethra-* Header zusaetzlich mit: der Server darf
+## die neue Route zuerst als Alias mit den alten Header-Namen betreiben.
+static func headers_for(server: String, key: String, tok: String) -> PackedStringArray:
+	var h := PackedStringArray(["Content-Type: application/json"])
+	var names := [server] if server == SERVER_OLD else [server, SERVER_OLD]
+	for n in names:
+		h.append("x-%s-api-key: %s" % [n, key])
+		h.append("x-%s-user-token: %s" % [n, tok])
+	return h
+
+
+## Antwort auf GET /panel-api/omen/auth/me -> SERVER_NEW, SERVER_OLD oder "" (unklar: bleibt).
+## 404 = Route gibt es (noch) nicht. 2xx = da. 401/403 ohne Anmeldung = da (Token fehlt nur);
+## mit Anmeldung bleibt es bei tethra, damit ein dort abgelehnter Token nie zum Abmelden fuehrt.
+## Netzfehler, 429, 5xx, Nicht-JSON (z. B. HTML-Fehlerseite): unklar.
+static func probe_result(code: int, text: String, has_token: bool) -> String:
+	if code == 404:
+		return SERVER_OLD
+	if code <= 0 or code == 429 or code >= 500 or not (JSON.parse_string(text) is Dictionary):
+		return ""
+	if code >= 200 and code < 300:
+		return SERVER_NEW
+	if code == 401 or code == 403:
+		return SERVER_OLD if has_token else SERVER_NEW
+	return ""
+
+
+func use_server(server: String) -> void:
+	if server != SERVER_OLD and server != SERVER_NEW:
+		return
+	# Eigene base_url (Tests, lokaler Server) bleibt unangetastet.
+	if base_url == api_base(server_name):
+		base_url = api_base(server)
+	server_name = server
+
+
+## Gemerkter Server-Name vom letzten Start (online.cfg [server] name).
+func load_server() -> void:
+	var cfg := ConfigFile.new()
+	if cfg.load(cfg_path) == OK:
+		use_server(str(cfg.get_value("server", "name", SERVER_OLD)))
+
+
+func _save_server() -> void:
+	var cfg := ConfigFile.new()
+	cfg.load(cfg_path)
+	cfg.set_value("server", "name", server_name)
+	cfg.save(cfg_path)
+
+
+## Einmal pro Start: bietet butzebot.com schon /panel-api/omen an? Dann laufen alle API-Anfragen
+## dorthin, sonst bleibt es bei tethra. Ergebnis wird gemerkt (naechster Start beginnt damit).
+## done: Callable(server_name).
+func probe_server(done: Callable = Callable()) -> void:
+	var url := api_base(SERVER_NEW) + PROBE_PATH
+	var hdr := headers_for(SERVER_NEW, api_key, token)
+	var fin := func(code: int, text: String) -> void:
+		var r := probe_result(code, text, logged_in())
+		if r != "":
+			use_server(r)
+			_save_server()
+		if done.is_valid():
+			done.call(server_name)
+	if transport.is_valid():
+		transport.call("GET", url, hdr, "", fin)
+		return
+	var req := HTTPRequest.new()
+	req.timeout = PROBE_TIMEOUT_S
+	add_child(req)
+	req.request_completed.connect(func(_res: int, code: int, _h: PackedStringArray, data: PackedByteArray):
+		req.queue_free()
+		fin.call(code, data.get_string_from_utf8()))
+	if req.request(url, hdr) != OK:
+		req.queue_free()
+		fin.call(0, "")
 
 
 func _process(delta: float) -> void:
@@ -120,6 +238,7 @@ func queue_size() -> int:
 	return _queue.size()
 
 
+## Website-Profil (Pfad unter LINK_NAME, siehe oben).
 static func profile_url(player: String) -> String:
 	return PROFILE_URL + player.uri_encode()
 
@@ -1152,11 +1271,7 @@ static func parse_leaderboard(code: int, text: String) -> Dictionary:
 # --- Transport ---------------------------------------------------------------
 
 func headers() -> PackedStringArray:
-	return PackedStringArray([
-		"Content-Type: application/json",
-		"x-tethra-api-key: " + api_key,
-		"x-tethra-user-token: " + token,
-	])
+	return headers_for(server_name, api_key, token)
 
 
 func _call(cb: Callable, a: Variant, b: Variant) -> void:

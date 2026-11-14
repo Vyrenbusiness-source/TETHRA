@@ -84,6 +84,14 @@ func _init() -> void:
 	_check(is_equal_approx(ScoreStore.profile_pp(), pp_before) and ScoreStore.best_plays(10).size() == bp_before \
 			and ScoreStore.total_plays() == tp_before and int(ScoreStore.best("77 Song.osz", "Hard").score) == 1000, "Profil/pp/Bestwert unveraendert")
 	_check(ScoreStore.submit_others(mk, "Dee", [fe.merged({ "score": -1 }, true)]) == 0, "ungueltig abgewiesen")
+	# pp vom Server nachtragen: Live-Endergebnis kam ohne pp (-1).
+	var mk2 := ScoreStore.map_id_for_set(78, "Hard")
+	ScoreStore.submit_others(mk2, "Eve", [fe.merged({ "score": 4000, "pp": -1.0 }, true), fe.merged({ "score": 3500, "pp": -1.0 }, true)])
+	var online := [{ "player": "Eve", "score": 4000, "pp": 123.4 }, { "player": "Bob", "score": 4000, "pp": 77.0 }, { "player": "Eve", "score": 3500, "pp": 0.0 }]
+	_check(ScoreStore.fill_others_pp(mk2, online) == 1, "pp nur bei gleichem Spieler + Score nachgetragen")
+	var eve := ScoreStore.top_scores_all("78 Song.osz", "Hard", 10)
+	_check(eve.size() == 2 and is_equal_approx(float(eve[0].pp), 123.4) and float(eve[1].pp) < 0.0, "nachgetragene pp gespeichert, Rest bleibt offen")
+	_check(ScoreStore.fill_others_pp(mk2, online) == 0, "zweiter Abgleich aendert nichts")
 
 	_test_modes()
 	_test_four_modes()

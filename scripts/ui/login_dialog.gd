@@ -76,7 +76,7 @@ static func error_text(msg: String) -> String:
 		t = "Server nicht erreichbar. Prüfe die Internetverbindung oder versuch es später."
 	elif m.contains("verif") or m.contains("confirm") or m.contains("bestätig") \
 			or m.contains("not_activated") or m.contains("not activated"):
-		t = "E-Mail noch nicht bestätigt. Öffne den Link in der Mail von TETHRA und melde dich dann an."
+		t = "E-Mail noch nicht bestätigt. Öffne den Link in der Mail von OMEN und melde dich dann an."
 	elif m.contains("credential") or m.contains("password") or m.contains("passwort") \
 			or m == "http 401" or m.contains("unauthorized"):
 		t = "Benutzername oder Passwort falsch."

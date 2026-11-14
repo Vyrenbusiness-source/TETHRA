@@ -9,7 +9,7 @@ var _failed := 0
 
 
 func _initialize() -> void:
-	print("=== TETHRA OSZ-Tests ===")
+	print("=== OMEN OSZ-Tests ===")
 	var src := Image.create(8, 8, false, Image.FORMAT_RGBA8)
 	src.fill(Color(0.2, 0.6, 0.9))
 	var png := src.save_png_to_buffer()

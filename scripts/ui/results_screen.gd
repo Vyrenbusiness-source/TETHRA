@@ -252,6 +252,7 @@ func show_results(data: Dictionary) -> void:
 	_pages.clear()
 	_tabs.clear()
 	_page = 0
+	_campaign_setup()
 	_fit()
 	_cover_tex = _load_cover()
 	_build_background()
@@ -262,11 +263,13 @@ func show_results(data: Dictionary) -> void:
 	else:
 		_build_left_panel(_main_row)
 		_build_rank_area(_main_row)
+	_build_campaign(group)
 	_build_buttons(group)
 	_shown = true
+	_campaign_run_shot()
 	if bool(data.get("lobby", false)):
 		_play_lobby_intro()
-		if Lobby.active:
+		if Lobby.in_round():
 			for sig in [Lobby.scores_changed, Lobby.players_changed]:
 				if not sig.is_connected(_auto_board):
 					sig.connect(_auto_board)
@@ -282,7 +285,7 @@ func show_results(data: Dictionary) -> void:
 ## Multiplayer: Rangliste und Platzierung direkt aus der Lobby (alle Modi gleich,
 ## auch wenn das Spiel set_board nicht selbst aufruft).
 func _auto_board() -> void:
-	if not _shown or not is_inside_tree() or not Lobby.active or not bool(_data.get("lobby", false)):
+	if not _shown or not is_inside_tree() or not Lobby.in_round() or not bool(_data.get("lobby", false)):
 		return
 	var ranked: Array = Lobby.ranked_players()
 	var my_id := multiplayer.get_unique_id()
@@ -368,7 +371,7 @@ static func mode_data(src: Dictionary, mp: MultiplayerAPI) -> Dictionary:
 		var c := session_cover()
 		if c != null:
 			d["cover"] = c
-	if Lobby.active and mp != null:
+	if Lobby.in_round() and mp != null:
 		var me := mp.get_unique_id()
 		d["lobby"] = true
 		d["my_id"] = me
@@ -1050,13 +1053,13 @@ func _build_rank_area(parent: Control) -> void:
 		tag.add_theme_color_override("font_color", UiTheme.TEXT.lerp(CAPTION, 0.4))
 	# Multiplayer: statt "GESCHAFFT" zaehlt die Platzierung (FULL COMBO /
 	# NICHT GESCHAFFT bleiben als Zusatz sichtbar).
-	if Lobby.active and tag.text == "GESCHAFFT":
+	if Lobby.in_round() and tag.text == "GESCHAFFT":
 		tag.queue_free()
 	else:
 		col.add_child(tag)
 		_reveal.append(tag)
 	_add_fail_reason(col, 20)
-	if Lobby.active:
+	if Lobby.in_round():
 		_place_tag = Label.new()
 		_place_tag.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		_place_tag.add_theme_font_override("font", UiTheme.heading_font(7))
@@ -1084,7 +1087,7 @@ func _build_buttons(group: Control) -> void:
 	group.add_child(bar)
 	var is_replay := bool(_data.get("is_replay", false))
 	var lobby := bool(_data.get("lobby", false))
-	var back := _button((("Zur Siegerehrung" if Lobby.tournament.phase == Tournament.Phase.END else "Zum Zwischenstand")
+	var back: Button = _button("Zur Kampagne", false, _campaign_leave.bind(""), "Esc") if not _camp.is_empty() else _button((("Zur Siegerehrung" if Lobby.tournament.phase == Tournament.Phase.END else "Zum Zwischenstand")
 		if Lobby.tournament != null else "Zur Lobby")
 		if lobby else "Zum Song-Browser", false,
 		back_pressed.emit, "Esc")
@@ -1109,10 +1112,14 @@ func _build_buttons(group: Control) -> void:
 		rp.name = "ReplayButton"
 		bar.add_child(rp)
 	if bool(_data.get("allow_retry", not lobby)):
-		var retry := _button("Nochmal ansehen" if is_replay else "Nochmal", true,
+		var retry := _button("Nochmal ansehen" if is_replay else "Nochmal", _camp_next == "",
 			retry_pressed.emit, "R")
 		retry.name = "RetryButton"
 		bar.add_child(retry)
+	if _camp_next != "":
+		var nx := _button("Nächste Stufe", true, _campaign_leave.bind(_camp_next), "Enter")
+		nx.name = "NextStageButton"
+		bar.add_child(nx)
 	_reveal.append(bar)
 
 
@@ -1723,7 +1730,13 @@ func _unhandled_input(event: InputEvent) -> void:
 			retry_pressed.emit()
 		elif event.keycode == KEY_ESCAPE:
 			get_viewport().set_input_as_handled()
-			back_pressed.emit()
+			if _camp.is_empty():
+				back_pressed.emit()
+			else:
+				_campaign_leave("")
+		elif event.keycode in [KEY_ENTER, KEY_KP_ENTER] and _camp_next != "":
+			get_viewport().set_input_as_handled()
+			_campaign_leave(_camp_next)
 		elif event.keycode == KEY_TAB and _pages.size() > 1:
 			get_viewport().set_input_as_handled()
 			show_page((_page + 1) % _pages.size())
@@ -2626,3 +2639,152 @@ class _SectionChart extends Control:
 			var mean := float(d.mean)
 			var mt := "—" if is_nan(mean) else ResultsScreen.signed_ms(mean)
 			draw_string(font, Vector2(x, y_off), mt, HORIZONTAL_ALIGNMENT_CENTER, cw, fs, cap)
+
+
+# ---------------------------------------------------------------------------
+# Kampagne: Ziel der Stufe, Sterne, "Naechste Stufe" (GameSession.campaign)
+# ---------------------------------------------------------------------------
+
+## Laufende Stufe {stage_id, stage, out, chapter, index, world, preview} oder {}.
+var _camp: Dictionary = {}
+## Folge-Stufe, wenn sie jetzt offen ist ("" = kein Knopf).
+var _camp_next := ""
+
+
+## Lauf in den Kampagnen-Stand eintragen (Replays und Lobby nie). data.campaign
+## {"stage", "state"} ist die Harness-Form: Stand nur im Speicher, nichts wird gespeichert.
+func _campaign_setup() -> void:
+	_camp = {}
+	_camp_next = ""
+	if bool(_data.get("lobby", false)):
+		return
+	var inject: Dictionary = _data.get("campaign", {})
+	var stage_id := str(inject.get("stage", GameSession.campaign.get("stage", "")))
+	if stage_id == "":
+		return
+	var camp_all := Campaign.load_data()
+	var cdata := Campaign.for_mode(camp_all, Campaign.mode_of_stage(camp_all, stage_id))
+	var stage := Campaign.stage_by_id(cdata, stage_id)
+	if stage.is_empty():
+		return
+	var run := _stats.duplicate()
+	run["failed"] = bool(_stats.get("failed", false)) or bool(_data.get("is_fail", false))
+	var preview := inject.has("state")
+	var state: Dictionary = inject.state if preview else Campaign.load_state()
+	var out: Dictionary
+	# Autoplay (Testflag) zaehlt wie ein Replay nie fuer den echten Stand, nur fuer eine Testdatei.
+	var auto_real := OS.get_cmdline_args().has("--autoplay") and Campaign.default_path() == Campaign.PATH
+	if bool(_data.get("is_replay", false)) or auto_real:
+		var met := Campaign.goals_met(stage, run)
+		out = {"met_run": met, "stars_run": Campaign.count_true(met), "gained": 0, "cleared_now": false}
+	else:
+		out = Campaign.apply_run(state, stage, run)
+		if not preview:
+			Campaign.save_state(state)
+	var ci := Campaign.chapter_index_of(cdata, stage_id)
+	_camp = {"stage_id": stage_id, "stage": stage, "out": out, "chapter": ci, "preview": preview,
+		"index": Campaign.stage_index_of(cdata, stage_id),
+		"world": str((Campaign.chapters(cdata)[ci] as Dictionary).get("world", ""))}
+	var nx := Campaign.next_stage_id(cdata, stage_id)
+	if nx != "" and Campaign.stage_cleared(state, stage_id) and Campaign.has_map(Campaign.stage_by_id(cdata, nx)):
+		_camp_next = nx
+
+
+## Harness --shot-campaign-run (GameSession.campaign_run_prefix): Ergebnis des echten
+## Stufenlaufs abfotografieren, Eintrag melden, beenden.
+func _campaign_run_shot() -> void:
+	var prefix := GameSession.campaign_run_prefix()
+	if prefix == "" or _camp.is_empty() or bool(_camp.get("preview", false)):
+		return
+	await get_tree().create_timer(3.4, true).timeout
+	await RenderingServer.frame_post_draw
+	if not is_inside_tree():
+		return
+	get_viewport().get_texture().get_image().save_png(prefix + "_result.png")
+	var sid := str(_camp.get("stage_id", ""))
+	var saved := Campaign.load_state()
+	print("CAMPAIGN-RUN Ergebnis: Stufe %s, Sterne im Lauf %d, gespeichert %s, naechste '%s', Welt-Einstellung %d" % [
+		sid, int((_camp.out as Dictionary).get("stars_run", 0)),
+		str(Campaign.entry(saved, sid)), _camp_next, Settings.world_theme])
+	get_tree().quit(0)
+
+
+## Zurueck in die Kampagnen-Szene; target = Stufe, die dort gewaehlt ist ("" = diese).
+func _campaign_leave(target: String) -> void:
+	if bool(_camp.get("preview", false)):
+		return
+	GameSession.campaign_return = target if target != "" else str(_camp.get("stage_id", ""))
+	SceneFader.go(Campaign.SCENE)
+
+
+## Erfuellter Stern blendet kurz nacheinander ein (Deckkraft und leichte Groesse, kein Wackeln).
+func _campaign_pop(star: Control, i: int) -> void:
+	star.modulate.a = 0.0
+	star.pivot_offset = star.size * 0.5
+	star.scale = Vector2(0.6, 0.6)
+	var delay := 0.75 + 0.18 * i
+	var tw := star.create_tween().set_parallel(true)
+	tw.tween_property(star, "modulate:a", 1.0, 0.2).set_delay(delay)
+	tw.tween_property(star, "scale", Vector2.ONE, 0.3).set_delay(delay) 		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+
+
+## Ruhige Zeile ueber den Knoepfen: Kapitel und Stufe, die drei Ziele, Ergebnis.
+func _build_campaign(group: Control) -> void:
+	if _camp.is_empty():
+		return
+	var stage: Dictionary = _camp.stage
+	var out: Dictionary = _camp.out
+	var met: Array = out.met_run
+	var box := VBoxContainer.new()
+	box.name = "CampaignRow"
+	box.add_theme_constant_override("separation", 12)
+	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	group.add_child(box)
+	box.add_child(UiTheme.hairline())
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 28)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.add_child(row)
+	var head := Label.new()
+	head.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	head.text = "%s  ·  %s  ·  %s" % [tr("Kampagne"), Campaign.world_label(str(_camp.world)),
+		Campaign.stage_label(stage, int(_camp.index))]
+	head.add_theme_font_override("font", UiTheme.heading_font(0))
+	head.add_theme_font_size_override("font_size", 15)
+	head.add_theme_color_override("font_color", UiTheme.TEXT)
+	row.add_child(head)
+	var goals: Array = stage.get("goals", [])
+	for i in goals.size():
+		var g := HBoxContainer.new()
+		g.add_theme_constant_override("separation", 8)
+		g.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var star := CampaignStars.make([met[i]], 14.0)
+		star.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		g.add_child(star)
+		if bool(met[i]):
+			_campaign_pop(star, i)
+		var gl := Label.new()
+		gl.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+		gl.text = Campaign.goal_text(goals[i])
+		gl.add_theme_font_size_override("font_size", 14)
+		gl.add_theme_color_override("font_color", UiTheme.TEXT if bool(met[i]) else MUTED)
+		g.add_child(gl)
+		row.add_child(g)
+	var spacer := Control.new()
+	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(spacer)
+	var ok := bool(met[0])
+	var verdict := Label.new()
+	verdict.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	verdict.text = tr("Ziel erreicht") if ok else tr("Ziel verfehlt")
+	var gained := int(out.get("gained", 0))
+	if gained == 1:
+		verdict.text += "  ·  " + tr("+1 Stern")
+	elif gained > 1:
+		verdict.text += "  ·  " + (tr("+%d Sterne") % gained)
+	verdict.add_theme_font_override("font", UiTheme.heading_font(0))
+	verdict.add_theme_font_size_override("font_size", 15)
+	verdict.add_theme_color_override("font_color", UiTheme.GOOD if ok else FAIL_COLOR)
+	row.add_child(verdict)
+	_reveal.append(box)

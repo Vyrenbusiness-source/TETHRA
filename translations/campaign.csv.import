@@ -1,0 +1,19 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+uid="uid://b1h8ns6gdgge"
+
+[deps]
+
+files=["res://translations/campaign.de.translation", "res://translations/campaign.en.translation"]
+
+source_file="res://translations/campaign.csv"
+dest_files=["res://translations/campaign.de.translation", "res://translations/campaign.en.translation"]
+
+[params]
+
+compress=1
+delimiter=0
+unescape_keys=false
+unescape_translations=true

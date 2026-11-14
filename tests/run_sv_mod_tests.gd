@@ -10,7 +10,7 @@ var _failed := 0
 
 
 func _initialize() -> void:
-	print("=== TETHRA SV-Mod-Tests ===")
+	print("=== OMEN SV-Mod-Tests ===")
 	var bm := _synthetic()
 	_test_determinism(bm)
 	_test_bounds(bm)

@@ -1,6 +1,6 @@
 extends Control
 
-## TETHRA Hauptmenue: Logo-Buehne, links Spielen + Liste (Multiplayer, Daily
+## OMEN Hauptmenue: Logo-Buehne, links Spielen + Liste (Multiplayer, Daily
 ## Trace, Tutorial, Einstellungen, Beenden), rechts die sechs Modi als Raster.
 ## Am Rand: Profil mit Online-Punkt, "Laeuft gerade", Update-Hinweis, Version.
 ## Hintergrund: entsaettigtes Cover der letzten Map, Puls exakt auf dem Beat.
@@ -65,20 +65,18 @@ const BROWSER_SCENE := "res://scenes/song_select.tscn"
 
 ## Logo (Quelle: docs/media/logo.svg, hier ohne Kachel und mit heller Schrift
 ## fuer den dunklen Menue-Hintergrund). Pfade gleich wie in logo.svg halten.
-const LOGO_SIZE := Vector2(600, 88)
-const LOGO_SVG := """<svg xmlns="http://www.w3.org/2000/svg" viewBox="-4 -4 944 139" width="600" height="88">
+const LOGO_SIZE := Vector2(461, 88)
+const LOGO_SVG := """<svg xmlns="http://www.w3.org/2000/svg" viewBox="-4 -4 725.8 139" width="461" height="88">
 <g transform="translate(-8 -34.5)">
 <path d="M97.82 73.82L126.98 115.94A28 28 0 1 0 126.98 84.06L97.82 126.18A46 46 0 1 1 97.82 73.82Z" fill="none" stroke="#ECE6DA" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
 <circle cx="115.95" cy="100" r="13" fill="#F2A23A"/>
 </g>
-<g transform="translate(59 -59.5)">
-<path d="M169.5 66H235.5M202.5 66V184" fill="none" stroke="#ECE6DA" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
-<path d="M354.5 66H288.5V184H354.5M288.5 125H344.6" fill="none" stroke="#ECE6DA" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
-<path d="M407.5 66H473.5M440.5 66V184" fill="none" stroke="#ECE6DA" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
-<path d="M526.5 66V184M592.5 66V184M526.5 125H592.5" fill="none" stroke="#ECE6DA" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
-<path d="M645.5 184V66H680.82A30.68 30.68 0 0 1 680.82 127.36H645.5M673.22 127.36L711.5 184" fill="none" stroke="#ECE6DA" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
-<path d="M764.5 184L797.5 66L830.5 184M777.7 141.52H817.3" fill="none" stroke="#ECE6DA" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
-<circle cx="867" cy="176" r="10" fill="#F2A23A"/>
+<g transform="translate(-50.1 -59.5)">
+<path d="M278.6 99A33 33 0 0 1 344.6 99V151A33 33 0 0 1 278.6 151Z" fill="none" stroke="#ECE6DA" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M397.6 184V66L440.5 139.16L483.4 66V184" fill="none" stroke="#ECE6DA" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M602.4 66H536.4V184H602.4M536.4 125H592.5" fill="none" stroke="#ECE6DA" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M655.4 184V66L721.4 184V66" fill="none" stroke="#ECE6DA" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="757.9" cy="176" r="10" fill="#F2A23A"/>
 </g>
 </svg>"""
 static var _browser_scene: PackedScene = null
@@ -641,10 +639,10 @@ const COL_GAP := 48.0
 const TILE_W := 232.0
 const TILE_H := 140.0
 const TILE_GAP := 12.0
-const PLAY_H := 60.0
-const ROW_H := 44.0
+const PLAY_H := 58.0
+const ROW_H := 37.0
 const EDGE := 32.0
-const BLOCK_H := TILE_H * 2.0 + TILE_GAP  # 292 = PLAY_H + 12 + 5 * ROW_H
+const BLOCK_H := TILE_H * 2.0 + TILE_GAP  # 292 = PLAY_H + 12 + 6 * ROW_H
 
 ## Symbole der Modi (Quelle: assets_game/icons/modes/<modus>.svg, gleiche Pfade).
 ## Hier als Text, damit sie in der Zielgroesse scharf gerastert werden.
@@ -1512,7 +1510,7 @@ func _build_logo(x0: float, st: Dictionary) -> void:
 
 	# Unterzeile (Katakana, Systemfont mit CJK-Glyphen), daneben laeuft die
 	# Haarlinie bis zur rechten Rasterkante: sie traegt den Block darunter.
-	var sub := _label("テトラ・リズムの彼方へ", 15.0, UiTheme.DIM)
+	var sub := _label("オーメン・リズムの彼方へ", 15.0, UiTheme.DIM)
 	var jp_font := SystemFont.new()
 	jp_font.font_names = PackedStringArray(["Yu Gothic UI", "Meiryo", "MS Gothic", "Noto Sans CJK JP"])
 	sub.add_theme_font_override("font", jp_font)
@@ -1665,6 +1663,8 @@ func _build_buttons(x0: float, y0: float) -> void:
 	_intro.append(_btn_play)
 	var y := y0 + PLAY_H + 12.0
 
+	y = _build_campaign_row(x0, y)
+
 	_btn_mp = _menu_button("MULTIPLAYER", false)
 	_btn_mp.pressed.connect(_leave.bind("res://scenes/mp_lobby.tscn"))
 	y = _add_row(_btn_mp, x0, y)
@@ -1705,6 +1705,23 @@ func _add_row(b: Button, x0: float, y: float) -> float:
 	b.focus_exited.connect(upd)
 	_intro.append(b)
 	return y + ROW_H
+
+
+## --- Kampagne: Weg durch die Welten, feste Maps fuer alle (Campaign) ---
+func _build_campaign_row(x0: float, y: float) -> float:
+	var b := _menu_button("KAMPAGNE", false)
+	b.pressed.connect(_leave.bind(Campaign.SCENE))
+	var ny := _add_row(b, x0, y)
+	b.name = "RowCampaign"
+	var data := Campaign.load_data()
+	var det := _label(tr("%d / %d Sterne") % [Campaign.total_stars_all(data, Campaign.load_state()),
+		Campaign.max_stars_all(data)], 13.0, UiTheme.DIM)
+	det.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	det.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	det.clip_text = true
+	b.add_child(det)
+	_place(det, 132.0, 0.0, COL_W - 132.0 - 20.0, ROW_H)
+	return ny
 
 
 ## --- Daily Trace: eine Map pro Tag fuer alle, Serie, Tages-Bild (TraceDaily) ---
@@ -2022,7 +2039,7 @@ func _build_footer(d: Vector2) -> void:
 	_upd_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_ui.add_child(_upd_label)
 	_place(_upd_label, EDGE, d.y - 24.0 - 20.0, 600.0, 20.0)
-	var ver := _label("TETHRA  ·  v" + Updater.CURRENT_VERSION, 13.0, UiTheme.DIM)
+	var ver := _label("OMEN  ·  v" + Updater.CURRENT_VERSION, 13.0, UiTheme.DIM)
 	ver.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	ver.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_ui.add_child(ver)

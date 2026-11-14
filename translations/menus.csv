@@ -1,5 +1,5 @@
 keys,de,en
-TETHRA,TETHRA,TETHRA
+OMEN,OMEN,OMEN
 Lautstaerke   %d %%,Lautstaerke   %d %%,Volume   %d%%
 Leertaste,Leertaste,Space
 Rück,Rück,Bksp
@@ -195,7 +195,7 @@ Finde neue Maps und bringe eigene ins Spiel.,Finde neue Maps und bringe eigene i
 Spiele mit Freunden im selben Raum.,Spiele mit Freunden im selben Raum.,Play with friends in the same room.
 Starte die Übungs-Map und probiere alles direkt aus.,Starte die Übungs-Map und probiere alles direkt aus.,Start the practice map and try everything right away.
 Leer,Leer,Space
-Willkommen bei TETHRA,Willkommen bei TETHRA,Welcome to TETHRA
+Willkommen bei OMEN,Willkommen bei OMEN,Welcome to OMEN
 "4 Spuren, 4 Ringe. Drohnen fliegen auf dich zu —
 drücke die Taste der Spur [b]genau beim Berühren des Rings[/b].
 
@@ -340,7 +340,7 @@ Ab Combo 50/100/150 belohnen dich Effekte: Rand-Glühen, Overdrive-Blitz und meh
 
 At combo 50/100/150 effects reward you: edge glow, overdrive flash and more (strength under Settings › Effect intensity)."
 Star-Rating und Schwierigkeit,Star-Rating und Schwierigkeit,Star rating and difficulty
-"Jede Schwierigkeit (Diff) einer Map hat ein [b]Star-Rating[/b], z.B. ★ 2,20. Es wird mit [b]rosu-pp[/b] berechnet — derselben offiziellen Bibliothek, die auch osu-Tools nutzen. TETHRA erfindet keine eigenen Werte.
+"Jede Schwierigkeit (Diff) einer Map hat ein [b]Star-Rating[/b], z.B. ★ 2,20. Es wird mit [b]rosu-pp[/b] berechnet — derselben offiziellen Bibliothek, die auch osu-Tools nutzen. OMEN erfindet keine eigenen Werte.
 
 [b]Grobe Orientierung:[/b]
 unter 2★ — Einsteiger
@@ -350,7 +350,7 @@ unter 2★ — Einsteiger
 
 Im Song-Browser sind die Karten nach Sternen [b]farbcodiert[/b], und oben rechts kannst du nach Sternbereichen [b]filtern[/b] und nach Sternen [b]sortieren[/b].
 
-Im Info-Panel links siehst du außerdem [b]""Max N pp bei SS""[/b] — die maximale pp-Ausbeute der gewählten Diff.","Jede Schwierigkeit (Diff) einer Map hat ein [b]Star-Rating[/b], z.B. ★ 2,20. Es wird mit [b]rosu-pp[/b] berechnet — derselben offiziellen Bibliothek, die auch osu-Tools nutzen. TETHRA erfindet keine eigenen Werte.
+Im Info-Panel links siehst du außerdem [b]""Max N pp bei SS""[/b] — die maximale pp-Ausbeute der gewählten Diff.","Jede Schwierigkeit (Diff) einer Map hat ein [b]Star-Rating[/b], z.B. ★ 2,20. Es wird mit [b]rosu-pp[/b] berechnet — derselben offiziellen Bibliothek, die auch osu-Tools nutzen. OMEN erfindet keine eigenen Werte.
 
 [b]Grobe Orientierung:[/b]
 unter 2★ — Einsteiger
@@ -360,7 +360,7 @@ unter 2★ — Einsteiger
 
 Im Song-Browser sind die Karten nach Sternen [b]farbcodiert[/b], und oben rechts kannst du nach Sternbereichen [b]filtern[/b] und nach Sternen [b]sortieren[/b].
 
-Im Info-Panel links siehst du außerdem [b]""Max N pp bei SS""[/b] — die maximale pp-Ausbeute der gewählten Diff.","Every difficulty (diff) of a map has a [b]star rating[/b], e.g. ★ 2.20. It is calculated with [b]rosu-pp[/b] — the same official library osu tools use. TETHRA makes up no values of its own.
+Im Info-Panel links siehst du außerdem [b]""Max N pp bei SS""[/b] — die maximale pp-Ausbeute der gewählten Diff.","Every difficulty (diff) of a map has a [b]star rating[/b], e.g. ★ 2.20. It is calculated with [b]rosu-pp[/b] — the same official library osu tools use. OMEN makes up no values of its own.
 
 [b]Rough guide:[/b]
 below 2★ — beginner
@@ -374,19 +374,19 @@ The info panel on the left also shows [b]""Max N pp at SS""[/b] — the most pp 
 Performance Points (pp),Performance Points (pp),Performance Points (pp)
 "pp messen, wie stark ein einzelner Play war — abhängig von [b]Star-Rating[/b] und [b]Accuracy[/b].
 
-Die Berechnung läuft über rosu-pp (offizielle Mania-Formel). Wichtig zu wissen: [b]Richtig viele pp gibt es erst ab ~80 % Accuracy[/b] — darüber steigt die Kurve steil an. Darunter sorgt ein TETHRA-Mindestwert dafür, dass trotzdem jeder Play etwas zählt.
+Die Berechnung läuft über rosu-pp (offizielle Mania-Formel). Wichtig zu wissen: [b]Richtig viele pp gibt es erst ab ~80 % Accuracy[/b] — darüber steigt die Kurve steil an. Darunter sorgt ein OMEN-Mindestwert dafür, dass trotzdem jeder Play etwas zählt.
 
 [b]Dein Profil-pp[/b] (Hauptmenü, Profilkarte): Deine besten Scores werden sortiert und gewichtet aufsummiert — der beste zählt voll, der zweite mit 95 %, der dritte mit 90,25 % usw. (wie bei osu). Nur der [b]beste Score pro Diff[/b] zählt.
 
 Kurz: Lieber eine Map sauber auf 95 %+ spielen als zehn Maps auf 70 %.","pp messen, wie stark ein einzelner Play war — abhängig von [b]Star-Rating[/b] und [b]Accuracy[/b].
 
-Die Berechnung läuft über rosu-pp (offizielle Mania-Formel). Wichtig zu wissen: [b]Richtig viele pp gibt es erst ab ~80 % Accuracy[/b] — darüber steigt die Kurve steil an. Darunter sorgt ein TETHRA-Mindestwert dafür, dass trotzdem jeder Play etwas zählt.
+Die Berechnung läuft über rosu-pp (offizielle Mania-Formel). Wichtig zu wissen: [b]Richtig viele pp gibt es erst ab ~80 % Accuracy[/b] — darüber steigt die Kurve steil an. Darunter sorgt ein OMEN-Mindestwert dafür, dass trotzdem jeder Play etwas zählt.
 
 [b]Dein Profil-pp[/b] (Hauptmenü, Profilkarte): Deine besten Scores werden sortiert und gewichtet aufsummiert — der beste zählt voll, der zweite mit 95 %, der dritte mit 90,25 % usw. (wie bei osu). Nur der [b]beste Score pro Diff[/b] zählt.
 
 Kurz: Lieber eine Map sauber auf 95 %+ spielen als zehn Maps auf 70 %.","pp measure how strong a single play was — based on [b]star rating[/b] and [b]accuracy[/b].
 
-They are calculated with rosu-pp (official mania formula). Good to know: [b]you only get lots of pp from ~80% accuracy[/b] — above that the curve rises steeply. Below it, a TETHRA minimum makes sure every play still counts a little.
+They are calculated with rosu-pp (official mania formula). Good to know: [b]you only get lots of pp from ~80% accuracy[/b] — above that the curve rises steeply. Below it, a OMEN minimum makes sure every play still counts a little.
 
 [b]Your profile pp[/b] (main menu, profile card): your best scores are sorted and added up weighted — the best counts fully, the second 95%, the third 90.25% and so on (like osu). Only your [b]best score per diff[/b] counts.
 
@@ -439,19 +439,19 @@ Hitsounds: %s (%d%%)  ·  FPS: %s  ·  Fullscreen: %s
 Maps bekommen,Maps bekommen,Getting maps
 "[b]1) Online-Browser:[/b] Im Song-Browser oben auf [b]""⤓ Online""[/b]. Du siehst sofort Vorschläge — nur [b]Ranked 4K-Mania[/b]-Maps. Klick auf eine Karte = [b]Anhören[/b], ""⤓ Download"" lädt sie direkt in deine Bibliothek. Filter nach Sternen inklusive.
 
-[b]2) Eigene Dateien:[/b] Jede osu!mania-[b].osz[/b]-Datei einfach in den [b]maps[/b]-Ordner legen (neben der TETHRA.exe) — oder per Drag&Drop ins Spielfenster ziehen.
+[b]2) Eigene Dateien:[/b] Jede osu!mania-[b].osz[/b]-Datei einfach in den [b]maps[/b]-Ordner legen (neben der Spiel-Exe) — oder per Drag&Drop ins Spielfenster ziehen.
 
 [b]3) Collections:[/b] Im Info-Panel [b]""+ Sammlung""[/b] — packe Maps in eigene Listen (z.B. ""Training"", ""Favoriten"") und filtere im Browser über den Collections-Tab.
 
 Hinweis: Nur [b]4K[/b]-Diffs (4 Spalten) sind spielbar — andere werden automatisch ausgeblendet.","[b]1) Online-Browser:[/b] Im Song-Browser oben auf [b]""⤓ Online""[/b]. Du siehst sofort Vorschläge — nur [b]Ranked 4K-Mania[/b]-Maps. Klick auf eine Karte = [b]Anhören[/b], ""⤓ Download"" lädt sie direkt in deine Bibliothek. Filter nach Sternen inklusive.
 
-[b]2) Eigene Dateien:[/b] Jede osu!mania-[b].osz[/b]-Datei einfach in den [b]maps[/b]-Ordner legen (neben der TETHRA.exe) — oder per Drag&Drop ins Spielfenster ziehen.
+[b]2) Eigene Dateien:[/b] Jede osu!mania-[b].osz[/b]-Datei einfach in den [b]maps[/b]-Ordner legen (neben der Spiel-Exe) — oder per Drag&Drop ins Spielfenster ziehen.
 
 [b]3) Collections:[/b] Im Info-Panel [b]""+ Sammlung""[/b] — packe Maps in eigene Listen (z.B. ""Training"", ""Favoriten"") und filtere im Browser über den Collections-Tab.
 
 Hinweis: Nur [b]4K[/b]-Diffs (4 Spalten) sind spielbar — andere werden automatisch ausgeblendet.","[b]1) Online browser:[/b] In song select, click [b]""⤓ Online""[/b] at the top. You see suggestions right away — only [b]ranked 4K mania[/b] maps. Click a card = [b]listen[/b], ""⤓ Download"" puts it straight into your library. Star filters included.
 
-[b]2) Your own files:[/b] Put any osu!mania [b].osz[/b] file into the [b]maps[/b] folder (next to TETHRA.exe) — or drag & drop it onto the game window.
+[b]2) Your own files:[/b] Put any osu!mania [b].osz[/b] file into the [b]maps[/b] folder (next to the game's exe) — or drag & drop it onto the game window.
 
 [b]3) Collections:[/b] In the info panel, click [b]""+ Collection""[/b] — put maps into your own lists (e.g. ""Training"", ""Favorites"") and filter by them in the browser's Collections tab.
 
@@ -556,7 +556,7 @@ Wird später erneut versucht.,Wird später erneut versucht.,Will retry later.
 Update v%s bereit — wird nach dem Song angeboten.,Update v%s bereit — wird nach dem Song angeboten.,Update v%s ready — offered after the song.
 Update v%s bereit.,Update v%s bereit.,Update v%s ready.
 Verbesserungen und Fehlerbehebungen.,Verbesserungen und Fehlerbehebungen.,Improvements and bug fixes.
-Update ließ sich nicht installieren. TETHRA schließen und neu starten — sonst neu von GitHub laden.,Update ließ sich nicht installieren. TETHRA schließen und neu starten — sonst neu von GitHub laden.,The update could not be installed. Close and restart TETHRA — otherwise download it again from GitHub.
+Update ließ sich nicht installieren. OMEN schließen und neu starten — sonst neu von GitHub laden.,Update ließ sich nicht installieren. OMEN schließen und neu starten — sonst neu von GitHub laden.,The update could not be installed. Close and restart OMEN — otherwise download it again from GitHub.
 Importieren…,Importieren…,Import…
 Aus osu!,Aus osu!,From osu!
 Skin aus deiner osu!-Installation übernehmen,Skin aus deiner osu!-Installation übernehmen,Use a skin from your osu! install
@@ -577,3 +577,4 @@ Lädt …,Lädt …,Loading …
 Neon,Neon,Neon
 Obsidian,Obsidian,Obsidian
 Monolith,Monolith,Monolith
+Geschätzt aus Accuracy (Multiplayer-Score ohne pp),Geschätzt aus Accuracy (Multiplayer-Score ohne pp),Estimated from accuracy (multiplayer score without pp)

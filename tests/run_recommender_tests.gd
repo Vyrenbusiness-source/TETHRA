@@ -3,7 +3,8 @@ extends SceneTree
 ## Headless-Tests fuer den Empfehlungs-Kern (Recommender): Koennen je Modus
 ## aus synthetischen Profilen (Anfaenger, Mittel, Profi, Wenigspieler, nur
 ## Fehlschlaege), Stufen, Push (Top-pp), Regression echter Mittel-Spieler,
-## Stil-Vorlieben, Filter, Abwechslung, Determinismus.
+## Stil-Vorlieben, Filter, Abwechslung, Determinismus, Stilprofil, Gruende,
+## Seiten, Neuheit, Online-Kandidaten (nur Fake-Daten, nie echter Netzverkehr).
 ##   Godot..._console.exe --headless --audio-driver Dummy --path . --script res://tests/run_recommender_tests.gd
 
 var _passed := 0
@@ -12,7 +13,7 @@ const NOW := 1800000000  # feste Testzeit (Unix)
 
 
 func _initialize() -> void:
-	print("=== TETHRA Recommender-Tests ===")
+	print("=== OMEN Recommender-Tests ===")
 	_test_skill_levels()
 	_test_profiles()
 	_test_mid_player_regression()
@@ -23,6 +24,12 @@ func _initialize() -> void:
 	_test_variety()
 	_test_empty_and_playable()
 	_test_determinism()
+	_test_profile()
+	_test_reasons()
+	_test_paging_novelty()
+	_test_online()
+	_test_online_cache()
+	_test_online_parse()
 	print("=== Ergebnis: %d bestanden, %d fehlgeschlagen ===" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
 
@@ -399,3 +406,282 @@ func _test_determinism() -> void:
 		var c := Recommender.suggest("mania", lv, rc, 6, rev, NOW)
 		_ok(a == b, "%s: gleiche Eingabe -> gleiche Liste" % lv)
 		_ok(a == c, "%s: Reihenfolge der Eingabe egal" % lv)
+
+
+# --- Stilprofil, Gruende, Seiten, Online ---
+
+## Profil eines Spielers: 8 oft gespielte Jumpstream-Maps (175-185 BPM, Mapper
+## "Kira", Electronic, SV) und 4 andere (Long Notes, 120 BPM).
+func _style_player() -> Dictionary:
+	var js: Array = []
+	var ln: Array = []
+	for i in 64:
+		js.append([i * 110.0, i % 4, false])
+		js.append([i * 110.0, (i + 2) % 4, false])
+		ln.append([i * 300.0, i % 4, true])
+	var sjs := Recommender.mania_style(js)
+	var sl := Recommender.mania_style(ln)
+	var feats := {}
+	var runs: Array = []
+	var plays := {}
+	for i in 8:
+		var k := "liked%d|d" % i
+		feats[k] = {"artist": "Artist %d" % i, "title": "Night Drive" if i == 0 else "Liked %d" % i,
+			"mapper": "Kira", "genre": "electronic", "language": "japanese", "tags": ["dnb", "kira"],
+			"bpm": 175.0 + i * 1.5, "length": 150.0, "style": sjs, "sv": true}
+		plays[k] = 6 if i == 0 else 3
+		runs.append({"set": "liked%d" % i, "diff": "d", "stars": 2.8 + i * 0.05, "accuracy": 0.94, "grade": "A",
+			"date": _date(86400 * 3 + i * 600)})
+	for i in 4:
+		var k2 := "other%d|d" % i
+		feats[k2] = {"artist": "Other %d" % i, "title": "Other %d" % i, "mapper": "Zed %d" % i,
+			"genre": "rock", "bpm": 120.0, "length": 90.0, "style": sl, "sv": false}
+		runs.append({"set": "other%d" % i, "diff": "d", "stars": 2.2, "accuracy": 0.88, "grade": "B",
+			"date": _date(86400 * 3 + 9000 + i * 600)})
+	return {"t": Recommender.taste(runs, feats, plays), "runs": runs, "sjs": sjs, "sl": sl}
+
+
+func _test_profile() -> void:
+	print("-- Stilprofil")
+	var p := _style_player()
+	var t: Dictionary = p.t
+	_ok(float(t.bpm_lo) >= 170.0 and float(t.bpm_hi) <= 190.0 and float(t.bpm_lo) <= float(t.bpm_hi),
+		"BPM-Bereich aus den gespielten Maps (%.0f-%.0f)" % [t.bpm_lo, t.bpm_hi])
+	_ok(float(t.stars_lo) >= 2.2 and float(t.stars_hi) <= 3.2 and float(t.stars_lo) < float(t.stars_hi),
+		"Sterne-Bereich (%.2f-%.2f)" % [t.stars_lo, t.stars_hi])
+	_ok(float(t.sv) > 0.6, "SV-Anteil (%.2f)" % t.sv)
+	_ok(Recommender.top_key(t.mappers, t.total, 0.25) == "kira", "Lieblings-Mapper erkannt")
+	_ok(Recommender.top_key(t.genres, t.total, 0.3) == "electronic", "Genre erkannt")
+	_ok(Recommender.top_key(t.languages, t.total, 0.4) == "japanese", "Sprache erkannt")
+	_ok(str(t.examples.jumpstream[1]) == "Night Drive", "Beispiel-Map = meistgespielte des Musters")
+	_ok(Recommender.top_patterns(t)[0] == "Jumpstream", "staerkstes Muster zuerst")
+	var txt := Recommender.profile_text(t)
+	_ok(txt.begins_with("Your style: ") and "Jumpstream" in txt and "BPM" in txt and "SV" in txt,
+		"Profil-Text kurz und konkret (%s)" % txt)
+	_ok(txt.split(", ").size() <= 4, "Profil-Text hoechstens 4 Teile")
+	var all_parts := Recommender.profile_parts(t)
+	_ok(all_parts.has("Electronic") and all_parts.has("Japanese") and all_parts.has("mapped by kira"),
+		"lange Fassung nennt Genre, Sprache, Mapper")
+	_ok(Recommender.profile_text({}) == "" and Recommender.profile_parts({}).is_empty(), "ohne Daten kein Profil")
+	var g := Recommender.genre_from_tags("drum and bass dnb japanese vocaloid", "")
+	_ok(g.genre == "electronic" and g.language == "japanese", "Genre/Sprache aus Tags")
+	g = Recommender.genre_from_tags("featured artist", "Touhou Project")
+	_ok(g.genre == "video game", "Genre aus der Quelle")
+	g = Recommender.genre_from_tags("something", "")
+	_ok(g.genre == "" and g.language == "", "unbekannte Tags: kein Genre")
+	_ok(Recommender.taste(p.runs, {}).is_empty(), "ohne Merkmale kein Profil")
+	# Je Modus eigenes Profil: Laeufe eines anderen Modus aendern es nicht.
+	var t2: Dictionary = _style_player().t
+	_ok(str(t2) == str(t), "Profil deterministisch")
+
+
+func _test_reasons() -> void:
+	print("-- Gruende")
+	var p := _style_player()
+	var t: Dictionary = p.t
+	var fit := {"set": "new1", "diff": "d", "stars": 3.0, "osu_mode": 3, "artist": "New", "mapper": "Kira",
+		"genre": "electronic", "bpm": 180.0, "length": 150.0, "style": p.sjs, "sv": true}
+	var m := Recommender.style_match(t, fit)
+	_ok(str(m.reason).begins_with("fits: "), "Grund beginnt mit 'fits:' (%s)" % m.reason)
+	_ok("180 BPM" in str(m.reason) and "Jumpstream" in str(m.reason), "Grund nennt BPM und Muster")
+	_ok("like Night Drive" in str(m.reason), "Grund nennt eine Beispiel-Map")
+	_ok((m.fits as Array).size() <= 3, "hoechstens 3 Teile")
+	var own := fit.duplicate()
+	own["set"] = "liked0"
+	_ok(not ("like Night Drive" in str(Recommender.style_match(t, own).reason)), "Map nicht mit sich selbst verglichen")
+	var off := {"set": "new2", "diff": "d", "stars": 3.0, "osu_mode": 3, "artist": "X", "mapper": "Y",
+		"genre": "folk", "bpm": 110.0, "length": 40.0, "style": p.sl, "sv": false}
+	var mo := Recommender.style_match(t, off)
+	_ok(str(mo.reason) == "" and float(mo.bonus) < float(m.bonus) - 0.3, "unpassende Map: kein Grund, weniger Bonus")
+	var by_mapper := {"set": "new3", "diff": "d", "stars": 3.0, "osu_mode": 3, "artist": "New", "mapper": "kira",
+		"bpm": 150.0, "length": 150.0, "style": p.sjs}
+	_ok("mapped by kira" in str(Recommender.style_match(t, by_mapper).reason), "Grund nennt den Mapper")
+	var long_t: Dictionary = t.duplicate(true)
+	long_t.examples["jumpstream"] = [9.0, "A Very Long Song Title That Never Ends At All", "zz"]
+	var lr := str(Recommender.style_match(long_t, fit).reason)
+	_ok(lr.length() < 70 and "…" in lr, "langer Titel gekuerzt (%s)" % lr)
+	var out := Recommender.suggest("mania", "challenge", [off, fit], 2, p.runs, NOW, t)
+	_ok(out.size() >= 1 and out[0].set == "new1" and str(out[0].style_reason).begins_with("fits: "),
+		"Vorschlag traegt den Grund")
+
+
+func _test_paging_novelty() -> void:
+	print("-- Seiten und Neuheit")
+	var runs := _profile("mania", 3.0, 0.90)
+	var cands: Array = []
+	for i in 40:
+		cands.append({"set": "p%02d" % i, "diff": "d", "stars": 3.0 + (i % 7) * 0.1, "osu_mode": 3,
+			"artist": "Artist %d" % i})
+	var all := Recommender.suggest("mania", "challenge", cands, 5 * Recommender.PAGE_MAX, runs, NOW)
+	_ok(all.size() == 30, "30 Vorschlaege fuer 6 Seiten (%d)" % all.size())
+	_ok(Recommender.page_count(all.size(), 5) == 6 and Recommender.page_count(7, 5) == 2
+		and Recommender.page_count(0, 5) == 1 and Recommender.page_count(999, 5) == Recommender.PAGE_MAX,
+		"Seitenzahl")
+	var p0 := Recommender.page_slice(all, 0, 5)
+	var p1 := Recommender.page_slice(all, 1, 5)
+	var overlap := 0
+	for a in p0:
+		if _has(p1, a):
+			overlap += 1
+	_ok(p0.size() == 5 and p1.size() == 5 and overlap == 0, "Seite 2 zeigt andere Maps als Seite 1")
+	_ok(str(Recommender.page_slice(all, 6, 5)) == str(p0), "nach der letzten Seite wieder die erste")
+	_ok(Recommender.page_slice(all.slice(0, 7), 1, 5).size() == 2, "letzte Seite darf kuerzer sein")
+	_ok(Recommender.page_slice([], 0, 5).is_empty(), "leere Liste: leere Seite")
+	var first5 := Recommender.suggest("mania", "challenge", cands, 5, runs, NOW)
+	_ok(str(first5) == str(p0), "Seite 1 = die besten 5")
+	# Neuheit: oft gezeigte, nie gespielte Maps ruecken nach hinten.
+	var seen := {}
+	for it in first5:
+		seen["%s|%s" % [it.set, it.diff]] = 4
+	var fresh := Recommender.suggest("mania", "challenge", cands, 5, runs, NOW, {}, seen)
+	var again := 0
+	for it in fresh:
+		if _has(first5, it):
+			again += 1
+	_ok(fresh.size() == 5 and again <= 1, "nach 4 Mal Zeigen kommen andere Maps (%d gleich)" % again)
+	var once := {}
+	once["%s|%s" % [first5[0].set, first5[0].diff]] = 1
+	var mild := Recommender.suggest("mania", "challenge", cands, 30, runs, NOW, {}, once)
+	_ok(_has(mild, first5[0]), "einmal gezeigt: Map bleibt im Angebot")
+	_ok(str(Recommender.suggest("mania", "challenge", cands, 5, runs, NOW, {}, seen)) == str(fresh),
+		"Neuheit deterministisch")
+	var huge := {}
+	huge["%s|%s" % [first5[0].set, first5[0].diff]] = 999
+	var capped := {}
+	capped["%s|%s" % [first5[0].set, first5[0].diff]] = Recommender.NOVELTY_CAP
+	_ok(str(Recommender.suggest("mania", "challenge", cands, 30, runs, NOW, {}, huge))
+		== str(Recommender.suggest("mania", "challenge", cands, 30, runs, NOW, {}, capped)), "Neuheit gedeckelt")
+
+
+## Fake-Antwort des Mirrors (kein Netz): Eintraege wie BeatmapMirror.parse_item.
+func _fake_online() -> Array:
+	var out: Array = []
+	for i in 12:
+		out.append({"id": 1000 + i, "title": "Online %d" % i, "artist": "OA %d" % (i % 9),
+			"creator": "Kira" if i == 3 else "M%d" % i, "stars": 2.0 + i * 0.3,
+			"star_list": [1.2 + i * 0.1, 2.0 + i * 0.3], "bpm": 180.0 if i == 3 else 140.0,
+			"length_s": 150, "plays": 1000 * (i + 1), "genre": "electronic" if i == 3 else "rock",
+			"sv": i == 3, "cover_url": "https://example.invalid/%d.jpg" % i, "preview_url": ""})
+	return out
+
+
+func _test_online() -> void:
+	print("-- Online-Kandidaten")
+	var p := _style_player()
+	var t: Dictionary = p.t
+	var runs := _profile("mania", 2.8, 0.90)
+	var sk := Recommender.skill("mania", runs)
+	var q := Recommender.online_query("mania", "challenge", sk, t)
+	var rng := Recommender.star_range(sk, "challenge")
+	_ok(int(q.osu_mode) == 3 and float(q.lo) < rng.x and float(q.hi) > rng.y,
+		"Mania: 4K, Sterne-Bereich des Levels (%.2f-%.2f)" % [q.lo, q.hi])
+	_ok(str(q.genre) == "electronic", "Suche kennt das Lieblings-Genre")
+	var qo := Recommender.online_query("orbit", "challenge", Recommender.skill("orbit", _profile("orbit", 2.0, 0.9)), {}, 1.5)
+	_ok(int(qo.osu_mode) == 0, "Orbit: osu!standard")
+	_ok(float(qo.shift) == 1.5 and float(qo.target) > 3.0, "Orbit: Modus-Sterne auf osu!-Sterne verschoben")
+	for m in ["rally", "dirigent", "trace", "rebound"]:
+		_ok(int(Recommender.online_query(m, "easy", Recommender.skill(m, []), {}).osu_mode) == 3, "%s: 4K" % m)
+	_ok(str(q.key) == str(Recommender.online_query("mania", "challenge", sk, t).key) and str(q.key) != str(qo.key),
+		"Cache-Schluessel stabil und je Suche eigen")
+	var res := _fake_online()
+	var out := Recommender.online_rank(q, t, res, 6)
+	_ok(not out.is_empty() and out.size() <= 6, "Kandidaten gefunden (%d)" % out.size())
+	var in_range := true
+	var artists := {}
+	var dup_artist := false
+	for o in out:
+		if float(o.osu_stars) < float(q.lo) - 0.001 or float(o.osu_stars) > float(q.hi) + 0.001:
+			in_range = false
+		if artists.has(o.artist):
+			dup_artist = true
+		artists[o.artist] = true
+	_ok(in_range, "nur Diffs im Sterne-Bereich")
+	_ok(not dup_artist, "eine Map je Kuenstler")
+	var q3 := q.duplicate()
+	q3["lo"] = 2.6
+	q3["hi"] = 3.2
+	q3["target"] = 2.9
+	var o3 := Recommender.online_rank(q3, t, res, 6)
+	_ok(o3.size() >= 2 and int(o3[0].id) == 1003, "passende Map (BPM, Mapper, Genre) zuerst")
+	_ok(str(o3[0].reason).begins_with("fits: ") and "180 BPM" in str(o3[0].reason), "Online-Grund aus dem Profil (%s)" % o3[0].reason)
+	_ok(str(o3[o3.size() - 1].reason) != "", "jeder Online-Vorschlag hat einen Grund")
+	_ok(o3[0].has("cover_url") and o3[0].has("preview_url") and float(o3[0].stars) > 0.0, "Daten fuer Cover, Vorhoeren, Sterne")
+	var seen := {"online:1003": 4}
+	var o4 := Recommender.online_rank(q3, t, res, 6, seen)
+	_ok(int(o4[0].id) != 1003 or o4.size() == 1, "oft gezeigter Online-Vorschlag rueckt nach hinten")
+	_ok(Recommender.online_rank(q, t, [], 6).is_empty(), "keine Antwort (offline): keine Gruppe")
+	_ok(Recommender.online_rank(q3, {}, res, 6).size() >= 2, "ohne Profil: nur nach Sternen")
+	var qs := q3.duplicate()
+	qs["shift"] = 1.0
+	_ok(is_equal_approx(float(Recommender.online_rank(qs, t, res, 1)[0].stars), float(Recommender.online_rank(qs, t, res, 1)[0].osu_stars) - 1.0),
+		"Sterne in der Modus-Skala")
+	_ok(str(Recommender.online_rank(q3, t, res, 6)) == str(o3), "Online-Reihenfolge deterministisch")
+
+
+func _test_online_cache() -> void:
+	print("-- Online-Cache (sparsam)")
+	var cache := {}
+	var t0 := 1800000000
+	_ok(Recommender.online_fetch_page(cache, "k", t0, 0, 3) == 0, "ohne Cache: erste Seite holen")
+	Recommender.online_cache_put(cache, "k", _fake_online(), t0)
+	_ok(Recommender.online_cached(cache, "k", t0 + 60).size() == 12, "Antwort im Cache")
+	_ok(Recommender.online_fetch_page(cache, "k", t0 + 60, 5, 3) == -1, "genug Vorschlaege: keine Anfrage")
+	_ok(Recommender.online_fetch_page(cache, "k", t0 + 60, 1, 3) == 1, "zu wenige: einmal die zweite Seite")
+	var more := _fake_online()
+	more.append({"id": 2000, "title": "Neu", "artist": "N", "stars": 2.5, "star_list": [2.5]})
+	Recommender.online_cache_put(cache, "k", more, t0 + 120)
+	_ok(Recommender.online_cached(cache, "k", t0 + 130).size() == 13, "zweite Seite angehaengt, ohne doppelte Sets")
+	_ok(Recommender.online_fetch_page(cache, "k", t0 + 130, 0, 3) == -1, "nie mehr als %d Seiten" % Recommender.ONLINE_PAGES)
+	_ok(Recommender.online_cached(cache, "k", t0 + Recommender.ONLINE_TTL + 1).is_empty()
+		and Recommender.online_fetch_page(cache, "k", t0 + Recommender.ONLINE_TTL + 1, 0, 3) == 0,
+		"nach 12 h neu holen")
+	_ok(Recommender.online_fetch_page({}, "k", t0, 0, 3, t0 - 30) == -1, "nach Fehler (offline) Pause")
+	_ok(Recommender.online_fetch_page({}, "k", t0, 0, 3, t0 - Recommender.ONLINE_RETRY - 1) == 0, "nach der Pause wieder")
+	var short := {}
+	Recommender.online_cache_put(short, "s", _fake_online().slice(0, 2), t0, true)
+	_ok(Recommender.online_fetch_page(short, "s", t0 + 5, 0, 3) == -1, "Mirror hat keine weitere Seite: keine Anfrage")
+	for i in 12:
+		Recommender.online_cache_put(cache, "extra%d" % i, [], t0 + 200 + i)
+	_ok(cache.size() == Recommender.ONLINE_KEEP and cache.has("extra11") and not cache.has("extra0"),
+		"Cache bleibt klein (%d Suchen)" % cache.size())
+
+
+## Mirror-Antwort als Text (kein Netz): zwei 4K-Sets, ein Taiko-Set, ein unranked Set.
+func _fake_mirror_json() -> String:
+	var sets: Array = []
+	for i in 2:
+		sets.append({"id": 500 + i, "title": "Fake %d" % i, "artist": "FA %d" % i, "creator": "Kira",
+			"status": "ranked", "bpm": 180, "play_count": 5000, "genre": {"id": 10, "name": "Electronic"},
+			"covers": {"card": "https://example.invalid/c%d.jpg" % i}, "preview_url": "//example.invalid/p.mp3",
+			"beatmaps": [
+				{"mode_int": 3, "cs": 4, "difficulty_rating": 2.7 + i * 0.2, "total_length": 150},
+				{"mode_int": 3, "cs": 7, "difficulty_rating": 4.0, "total_length": 150}]})
+	sets.append({"id": 600, "title": "Taiko", "artist": "T", "status": "ranked",
+		"beatmaps": [{"mode_int": 1, "cs": 4, "difficulty_rating": 3.0}]})
+	sets.append({"id": 601, "title": "Pending", "artist": "P", "status": "pending",
+		"beatmaps": [{"mode_int": 3, "cs": 4, "difficulty_rating": 2.8}]})
+	return JSON.stringify(sets)
+
+
+func _test_online_parse() -> void:
+	print("-- Online-Antwort (Fake-Daten)")
+	var p: Dictionary = OnlineBrowser.quiet_parse(_fake_mirror_json(), 3)
+	_ok(bool(p.ok) and (p.results as Array).size() == 2 and int(p.raw) == 4, "nur ranked 4K-Sets (%d)" % (p.results as Array).size())
+	_ok(str(p.results[0].genre) == "electronic" and str(p.results[0].preview_url).begins_with("https://"),
+		"Genre-Name und Vorschau-Adresse")
+	var bad: Dictionary = OnlineBrowser.quiet_parse("<html>403</html>", 3)
+	_ok(not bool(bad.ok) and (bad.results as Array).is_empty(), "Fehlerseite: still verworfen")
+	_ok(not bool(OnlineBrowser.quiet_parse("", 3).ok), "leere Antwort: still verworfen")
+	_ok(OnlineBrowser.genre_name(10) == "electronic" and OnlineBrowser.genre_name(1) == "" and OnlineBrowser.genre_name(6) == "",
+		"Genre-Namen")
+	var urls: Array = OnlineBrowser.quiet_urls("electronic", 0, 50)
+	_ok(urls.size() == 3 and "mode=0" in str(urls[0]) and "offset=50" in str(urls[0]) and "osu.direct" in str(urls[0])
+		and "catboy" in str(urls[1]) and "osu.direct" in str(urls[2]), "Mirror-Kette wie im Online-Browser")
+	_ok("mode=3" in str(OnlineBrowser.quiet_urls("4k", 3)[1]), "4K-Suche")
+	# Antwort -> Vorschlaege, wie im Browser.
+	var pl := _style_player()
+	var sk := Recommender.skill("mania", _profile("mania", 2.6, 0.90))
+	var q := Recommender.online_query("mania", "challenge", sk, pl.t)
+	var out := Recommender.online_rank(q, pl.t, p.results, 3)
+	_ok(out.size() >= 1 and str(out[0].cover_url) != "" and "180 BPM" in str(out[0].reason),
+		"Fake-Antwort wird zum Vorschlag mit Grund (%s)" % (str(out[0].reason) if out.size() > 0 else "-"))

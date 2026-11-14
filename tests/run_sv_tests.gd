@@ -9,7 +9,7 @@ var _failed := 0
 
 
 func _initialize() -> void:
-	print("=== TETHRA SV-Tests ===")
+	print("=== OMEN SV-Tests ===")
 	_test_constant_linear()
 	_test_sv_double()
 	_test_bpm_change()

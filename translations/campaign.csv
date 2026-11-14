@@ -1,0 +1,79 @@
+keys,de,en
+KAMPAGNE,KAMPAGNE,CAMPAIGN
+Kampagne,Kampagne,Campaign
+Zurück,Zurück,Back
+%d Welten · %d Stufen · gleiche Maps für alle,%d Welten · %d Stufen · gleiche Maps für alle,%d worlds · %d stages · same maps for everyone
+%d / %d Sterne,%d / %d Sterne,%d / %d stars
+%s Punkte,%s Punkte,%s points
+Kapitel %d,Kapitel %d,Chapter %d
+Schwerpunkt %s,Schwerpunkt %s,Focus %s
+Schwierigkeit %s bis %s,Schwierigkeit %s bis %s,Difficulty %s to %s
+Schwierigkeit %s,Schwierigkeit %s,Difficulty %s
+Kapitel öffnen,Kapitel öffnen,Open chapter
+Gesperrt,Gesperrt,Locked
+Geschafft,Geschafft,Cleared
+Erst den Boss von Kapitel %d schaffen,Erst den Boss von Kapitel %d schaffen,Beat the boss of chapter %d first
+Stufe %d,Stufe %d,Stage %d
+Boss,Boss,Boss
+Ziele,Ziele,Goals
+Ziel,Ziel,Goal
+Zusatzziel,Zusatzziel,Bonus goal
+Meisterziel,Meisterziel,Master goal
+Bestwert,Bestwert,Best
+Noch nicht gespielt,Noch nicht gespielt,Not played yet
+Rangliste,Rangliste,Leaderboard
+Rangliste wird geladen …,Rangliste wird geladen …,Loading leaderboard …
+Noch keine Scores,Noch keine Scores,No scores yet
+Rangliste nicht erreichbar,Rangliste nicht erreichbar,Leaderboard not available
+Stufe starten,Stufe starten,Start stage
+Erst die Stufe davor schaffen,Erst die Stufe davor schaffen,Clear the stage before first
+Map wird geladen …,Map wird geladen …,Downloading map …
+Map fehlt. Download fehlgeschlagen.,Map fehlt. Download fehlgeschlagen.,Map missing. Download failed.
+Maps laden %d / %d  ·  %d %%,Maps laden %d / %d  ·  %d %%,Downloading maps %d / %d  ·  %d %%
+%d Maps konnten nicht geladen werden. Kapitel neu öffnen.,%d Maps konnten nicht geladen werden. Kapitel neu öffnen.,%d maps could not be downloaded. Reopen the chapter.
+Map von %s,Map von %s,Mapped by %s
+Mod %s,Mod %s,Mod %s
+Ohne Fail beenden,Ohne Fail beenden,Finish without failing
+Genauigkeit ab %s,Genauigkeit ab %s,Accuracy %s or higher
+Rang %s,Rang %s,Grade %s
+Rang %s oder besser,Rang %s oder besser,Grade %s or better
+Kein Miss,Kein Miss,No misses
+Höchstens %d Misses,Höchstens %d Misses,At most %d misses
+Ziel erreicht,Ziel erreicht,Goal reached
+Ziel verfehlt,Ziel verfehlt,Goal missed
+Zur Kampagne,Zur Kampagne,To campaign
+Nächste Stufe,Nächste Stufe,Next stage
++%d Sterne,+%d Sterne,+%d stars
++1 Stern,+1 Stern,+1 star
+Kapitel geschafft,Kapitel geschafft,Chapter cleared
+%d / %d,%d / %d,%d / %d
+Galaxie,Galaxie,Galaxy
+Bosskampf,Bosskampf,Boss fight
+Frost,Frost,Frost
+Neon,Neon,Neon
+Eklipse,Eklipse,Eclipse
+Abgrund,Abgrund,Abyss
+Fraktal,Fraktal,Fractal
+Singularität,Singularität,Singularity
+Sturm,Sturm,Storm
+Obsidian,Obsidian,Obsidian
+Monolith,Monolith,Monolith
+Riss,Riss,Rift
+Nerv,Nerv,Nerve
+%d von %d Stufen geschafft,%d von %d Stufen geschafft,%d of %d stages cleared
+Danach: Kapitel %d,Danach: Kapitel %d,Next: chapter %d
+Offen,Offen,Open
+Boss dieses Kapitels schaffen,Boss dieses Kapitels schaffen,Beat this chapter's boss
+Schwierigkeit,Schwierigkeit,Difficulty
+Länge,Länge,Length
+erfüllt,erfüllt,done
+Dein Bestwert,Dein Bestwert,Your best
+1 Lauf,1 Lauf,1 run
+%d Läufe,%d Läufe,%d runs
+Erst %s schaffen,Erst %s schaffen,Clear %s first
+1 Miss,1 Miss,1 miss
+%d Misses,%d Misses,%d misses
+Ohne Fail,Ohne Fail,No fail
+Genauigkeit ≥ %s,Genauigkeit ≥ %s,Accuracy ≥ %s
+Rang ≥ %s,Rang ≥ %s,Grade ≥ %s
+≤ %d Misses,≤ %d Misses,≤ %d misses

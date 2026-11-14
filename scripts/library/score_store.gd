@@ -994,6 +994,31 @@ static func submit_others(map_key: String, player: String, entries: Array, mode:
 	return added
 
 
+## Traegt pp fuer Fremd-Scores ohne pp nach (Live-Endergebnis im Multiplayer
+## kommt ohne pp). entries: Online-Rangliste der Map ({player, score, pp}).
+## Nur exakte Treffer (gleicher Spieler + Score). Liefert die Zahl der Nachtraege.
+static func fill_others_pp(map_key: String, entries: Array, mode: String = "") -> int:
+	if map_key == "" or entries.is_empty():
+		return 0
+	var cfg := ConfigFile.new()
+	if _load(cfg) != OK:
+		return 0
+	var list: Array = cfg.get_value(_sec("others", mode), map_key, [])
+	var filled := 0
+	for o in list:
+		if not (o is Dictionary) or float(o.get("pp", -1.0)) > 0.0:
+			continue
+		for e in entries:
+			if e is Dictionary and float(e.get("pp", 0.0)) > 0.0 					and str(e.get("player", "")) == str(o.get("player", "")) 					and int(e.get("score", -1)) == int(o.get("score", -2)):
+				o["pp"] = float(e.pp)
+				filled += 1
+				break
+	if filled > 0:
+		cfg.set_value(_sec("others", mode), map_key, list)
+		cfg.save(PATH)
+	return filled
+
+
 ## Eigene + fremde Scores einer Map gemischt (beste zuerst, max. n).
 ## Jeder Eintrag hat "player", "is_self" und "mode". Eigene und fremde
 ## Scores kommen nur aus den Sektionen des Modus (Mania "others", Orbit

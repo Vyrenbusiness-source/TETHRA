@@ -21,7 +21,7 @@ func _check(cond: bool, label: String) -> void:
 
 
 func _run() -> void:
-	print("=== TETHRA Ergebnisbild-Intro-Tests ===")
+	print("=== OMEN Ergebnisbild-Intro-Tests ===")
 	var rs: Control = load("res://scripts/ui/results_screen.gd").new()
 	_check(rs.has_method("_two_frames"), "ResultsScreen._two_frames fehlt")
 	if rs.has_method("_two_frames"):
