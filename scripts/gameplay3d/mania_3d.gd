@@ -410,6 +410,7 @@ var _note_k_2d := 1.0   ## Settings.note_size_2d (CLI --note2d=150)
 var _bg_mat_2d: ShaderMaterial
 var _pf2d: Playfield2D
 var _fail_reason := ""
+var _end_ms := 0.0  ## Songzeit beim Ende/Fail (Fail-Marker im Ergebnisbild)
 var _parked_nodes: Array = []
 var _missed_2d: Array = []  ## verpasste Einzelnoten fallen grau weiter: [time, col]
 var _mine_view: MineView = null  ## Mod "MN" (RuleMods): Minen-Darstellung 2D/3D
@@ -4012,6 +4013,7 @@ func _show_results(is_fail: bool) -> void:
 		return
 	_ended = true
 	_fail_reason = ""
+	_end_ms = maxf(_time_ms(), 0.0)   # vor SyncClock.stop(): danach liefert die Uhr 0
 	if is_fail:
 		_fail_reason = _write_fail_diag()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -4185,7 +4187,7 @@ func _build_results(is_fail: bool, s: Dictionary, pp: float, unranked: bool, new
 	if not _beatmap.hit_objects.is_empty():
 		data["length_ms"] = float(_beatmap.hit_objects.back().end_time())
 	if is_fail:
-		data["fail_ms"] = maxf(_time_ms(), 0.0)
+		data["fail_ms"] = _end_ms
 	if Lobby.in_round():
 		var me := multiplayer.get_unique_id()
 		data["my_id"] = me

@@ -231,6 +231,11 @@ func _test_fail_reason_text() -> void:
 	var core := _core(bm, {"SD": true})
 	core.update(2000.0)
 	_ok(RuleMods.fail_reason(core) == "Sudden Death: Miss", "Fail-Grund: '%s'" % RuleMods.fail_reason(core))
+	# Englisch: andere Tabellen uebersetzen "Miss" als "miss" -> Grund bleibt "Miss".
+	var loc := TranslationServer.get_locale()
+	TranslationServer.set_locale("en")
+	_ok(RuleMods.fail_reason(core) == "Sudden Death: Miss", "Fail-Grund englisch: '%s'" % RuleMods.fail_reason(core))
+	TranslationServer.set_locale(loc)
 	var c2 := _core(bm, {})
 	c2.update(3000.0)
 	_ok(RuleMods.fail_reason(c2) == "", "ohne Regel kein Regel-Grund")

@@ -128,7 +128,9 @@ static func fail_reason(core: ManiaCore) -> String:
 		return ""
 	_ensure_translations()
 	var name := "Sudden Death" if core.fail_rule == SD else "Perfect"
-	return "%s: %s" % [name, TranslationServer.translate(core.fail_what)]
+	# Nur "Mine" uebersetzen: "Miss" wird anderswo als "miss" uebersetzt, Zahlen bleiben.
+	var what: String = TranslationServer.translate(core.fail_what) if core.fail_what == "Mine" else core.fail_what
+	return "%s: %s" % [name, what]
 
 
 ## HUD-Teile ("Sudden Death", "Perfect", "Mines") in fester Reihenfolge.
