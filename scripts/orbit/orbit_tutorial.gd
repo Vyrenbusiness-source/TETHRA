@@ -106,6 +106,8 @@ var _moved := false
 var _held := [[false, false], [false, false]]
 var _press_signal := ""
 var _half_accent_t := -INF
+## Index des zuletzt verfehlten Ziels (Anti-Mash: Grund dort anzeigen).
+var _miss_idx := -1
 ## Effekte im Feld: {k: hit|miss|text, p: Feld, t, col, s}
 var fx: Array = []
 var _bot_idx := 0
@@ -896,6 +898,7 @@ func _on_judged(index: int, res: Dictionary) -> void:
 			code = "release" if str(res.get("drop_reason", "")) == "release" else "lost"
 		elif n.key == OrbitNote.KEY_ACCENT and t_ms - _half_accent_t < 400.0:
 			code = "both"
+		_miss_idx = index
 		_fail(code, p, n.key)
 	else:
 		_round_hits += 1
@@ -922,10 +925,12 @@ func _on_hold_started(index: int, _q: int) -> void:
 
 
 func _on_press_missed(pos: Vector2, _key: int, reason: String) -> void:
-	if reason == "wrong":   # Anti-Mash: Ziel ist schon Miss, Grund bleibt die Taste
-		reason = "key"
-	_press_signal = reason
 	var n := next_open()
+	if reason == "wrong":   # Anti-Mash: das Ziel ist eben Miss geworden, Grund am Ziel nennen
+		reason = "key"
+		if _miss_idx >= 0 and _miss_idx < notes.size():
+			n = notes[_miss_idx]
+	_press_signal = reason
 	_fail(reason, n.pos if n != null and reason != "aim" else pos, n.key if n != null else 0)
 
 
