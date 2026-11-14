@@ -45,11 +45,15 @@ const DEFAULTS := {
 	"mask_decay_db": 1.0,        # so schnell (dB je Frame) faellt die Verdeckung nach einem gehaltenen Ton
 	"median_time": 9,            # Frames (ungerade), harmonisch
 	"median_freq": 5,            # Baender (ungerade), perkussiv
-	# Lage der Anschlagzeit gegen den Fluss-Gipfel. Absolut per Klick-Test (onset_shift_ms), die
-	# Gruppen relativ dazu gegen die Menschen-Maps abgestimmt (docs/automap/features.md): der Gipfel
-	# liegt bei Kick/Bass 14..18 ms und bei Ton/Stimme 6..10 ms spaeter als bei Snare/Hat. Ein
-	# Zurueckgehen an den Beginn des Anstiegs aenderte daran nichts (fester Versatz).
-	"onset_shift_ms": 3.0,       # Snare/Hat/other
+	# Lage der Anschlagzeit gegen den Fluss-Gipfel, je Art gegen die Menschen-Maps abgestimmt
+	# (docs/automap/features.md, Abschnitt Vorlauf je Art): der Gipfel liegt bei Kick/Bass 14..18 ms
+	# und bei Ton/Stimme 6..10 ms spaeter als bei Snare/Hat. Ein Zurueckgehen an den Beginn des
+	# Anstiegs aenderte daran nichts (fester Versatz). Frueher ein gemeinsamer Wert onset_shift_ms
+	# fuer Snare/Hat/other (3, abgestimmt 6); Snare und other lagen damit 6..9 ms spaet. onset_shift_ms
+	# wirkt nicht mehr.
+	"shift_snare_ms": -6.5,
+	"shift_hat_ms": -2.0,
+	"shift_other_ms": -6.0,
 	"shift_low_ms": -13.0,       # Kick/Bass
 	"shift_harm_ms": -5.0,       # Instrument/Stimme
 	"kick_min": 0.25,            # schwaechere Kicks (perkussive Staerke, normiert) lagen in der Messung auf Zufallsniveau
@@ -84,6 +88,7 @@ const DEFAULTS := {
 	"section_novelty": 0.22,
 	"kiai_abs": 0.5, "kiai_margin": 0.15,   # beste Variante der Messung ueber 155 Sets
 	"break_max": 0.3,
+	"form_track_grid": 1.0,      # ohne params.grid: Taktgitter selbst ueber AmGrid.track holen (0 = feste 2-s-Bloecke)
 	"lead_drums_eps": 4.0, "lead_bass_eps": 2.5, "lead_tonal_eps": 3.0, "lead_vocal_frac": 0.6,
 }
 
@@ -453,6 +458,65 @@ class _BassPitch extends RefCounted:
 				hz = (best + dlt) * bin
 			res[i - i0] = hz
 		out[ci] = res
+
+
+## Tonklassen (Chroma) fuer die Liedform: lange FFT (4096 bei 22050 Hz, 5,4 Hz je Bin), ohne Ueberlappung.
+## Je Frame 12 Werte (C..H), Betrag der Bins 60 Hz..2,1 kHz auf die naechste Tonklasse summiert.
+class _Chroma extends RefCounted:
+	var pcm: PackedFloat32Array
+	var n: int
+	var frames: int
+	var per: int
+	var fft: _Fft
+	var win: PackedFloat32Array
+	var pc: PackedFloat32Array
+	var psn: PackedFloat32Array
+	var bin_pc: PackedInt32Array
+	var k0: int
+	var k1: int
+	var out: Array = []
+
+	func run(ci: int) -> void:
+		var f0 := ci * per
+		var f1 := mini(frames, f0 + per)
+		var m := n >> 1
+		var re := PackedFloat32Array()
+		re.resize(m)
+		var im := PackedFloat32Array()
+		im.resize(m)
+		var o := PackedFloat32Array()
+		o.resize(maxi(f1 - f0, 0) * 12)
+		o.fill(0.0)
+		var lp := pcm
+		var np := lp.size()
+		var lrev := fft.rev
+		var lwin := win
+		var lpc := pc
+		var lps := psn
+		var lbp := bin_pc
+		for f in range(f0, f1):
+			var base := f * n
+			for k in m:
+				var j := lrev[k]
+				var k2 := base + (k << 1)
+				re[j] = (lp[k2] * lwin[k << 1]) if k2 < np else 0.0
+				im[j] = (lp[k2 + 1] * lwin[(k << 1) + 1]) if k2 + 1 < np else 0.0
+			fft.run(re, im)
+			var o0 := (f - f0) * 12
+			for k in range(k0, k1):
+				var kk := m - k
+				var ar := re[k]
+				var ai := im[k]
+				var br := re[kk]
+				var bi := -im[kk]
+				var orr := ai - bi
+				var oi := br - ar
+				var c := lpc[k]
+				var s := lps[k]
+				var xr := ar + br + c * orr + s * oi
+				var xi := ai + bi + c * oi - s * orr
+				o[o0 + lbp[k]] += sqrt(xr * xr + xi * xi) * 0.5
+		out[ci] = o
 
 
 # --------------------------------------------------------------------------- Datei
@@ -879,7 +943,9 @@ static func analyze(pcm: PackedFloat32Array, rate: int, params: Dictionary = {})
 	_normalize(hats)
 	_normalize(basses)
 	var kick_idx := _frame_index(kicks, frames)
-	var shift: float = p.onset_shift_ms
+	var sh_snare: float = p.shift_snare_ms
+	var sh_hat: float = p.shift_hat_ms
+	var sh_other: float = p.shift_other_ms
 	var shift_low: float = p.shift_low_ms
 	var events: Array = []
 	for e in kicks:
@@ -902,7 +968,8 @@ static func analyze(pcm: PackedFloat32Array, rate: int, params: Dictionary = {})
 		var kind := "snare" if d_hi >= sn_ratio * d_pm else "other"
 		if kind == "snare":
 			snare_list.append(e)
-		events.append({"t_ms": maxf(0.0, float(e[0]) * frame_ms + shift), "strength": e[1], "kind": kind, "pitch": -1.0, "sustain_ms": 0.0})
+		events.append({"t_ms": maxf(0.0, float(e[0]) * frame_ms + (sh_snare if kind == "snare" else sh_other)), "strength": e[1],
+				"kind": kind, "pitch": -1.0, "sustain_ms": 0.0})
 	var snare_idx := _frame_index(snare_list, frames)
 	var hk_ratio: float = p.hat_kick_ratio
 	for e in hats:
@@ -912,7 +979,7 @@ static func analyze(pcm: PackedFloat32Array, rate: int, params: Dictionary = {})
 		# Klick eines Kicks reicht bis in die Hoehen; ein Becken muss gegen den Kick hoerbar sein.
 		if _near(kick_idx, f, 2) >= 0 and _rise(w_hi, f, frames) < hk_ratio * _rise(w_lo, f, frames):
 			continue
-		events.append({"t_ms": maxf(0.0, float(e[0]) * frame_ms + shift), "strength": e[1], "kind": "hat", "pitch": -1.0, "sustain_ms": 0.0})
+		events.append({"t_ms": maxf(0.0, float(e[0]) * frame_ms + sh_hat), "strength": e[1], "kind": "hat", "pitch": -1.0, "sustain_ms": 0.0})
 
 	var sus_min: float = p.sustain_min_ms
 	var sus_keep: float = p.sustain_keep
@@ -1004,10 +1071,21 @@ static func analyze(pcm: PackedFloat32Array, rate: int, params: Dictionary = {})
 		var c := db[mini(f + 1, frames - 1)]
 		energy[f] = clampf(((a + db[f] + c) / 3.0 - (top - rng)) / rng, 0.0, 1.0)
 
-	# ---- 6. Abschnitte
+	# ---- 6. Takte und Liedform
+	var grid: Dictionary = p.grid if p.get("grid") is Dictionary else {}
+	if (grid.get("segments", []) as Array).is_empty() and float(p.form_track_grid) > 0.0:
+		grid = AmGrid.track(pcm, rate, p.grid_params if p.get("grid_params") is Dictionary else {})
+	var bars := bar_starts(grid if grid.get("ok", true) else {}, duration_ms)
+	var chroma := _chroma(pcm, rate, threads, cores)
+	var bf := _bar_feats(bars, duration_ms, frames, frame_ms, spec, nb, energy, e_p, e_hl, e_hm, voc, float(p.vocal_min), chroma, events)
+
+	# ---- 7. Abschnitte
 	var sections := _sections(p, frames, frame_ms, duration_ms, energy, e_p, e_hl, e_hm, voc, events)
 	var res := {"ok": true, "error": "", "duration_ms": duration_ms, "events": events, "energy": energy,
 			"frame_ms": frame_ms, "sections": sections}
+	if p.get("debug_form", false):
+		bf["bars"] = bars
+		res["form_debug"] = bf
 	if p.get("debug", false):
 		res["debug"] = {"f_kick": f_kick, "f_bass": f_bass, "f_mid": f_mid, "f_hi": f_hi, "voc": voc,
 				"spec": spec, "refs": hp.refs, "floor_ref": hp.floor_ref, "hb": hp.hb, "nb": nb}
@@ -1284,3 +1362,360 @@ static func _sections(p: Dictionary, frames: int, frame_ms: float, duration_ms: 
 		else:
 			s.kind = "verse"
 	return secs
+
+
+# --------------------------------------------------------------------------- Liedform
+
+## Chroma je langem Frame: {"c": PackedFloat32Array (frames * 12), "frame_ms": float, "frames": int}.
+static func _chroma(pcm: PackedFloat32Array, rate: int, threads: int, cores: int) -> Dictionary:
+	var n := 4096
+	var m := n >> 1
+	var ch := _Chroma.new()
+	ch.pcm = pcm
+	ch.n = n
+	@warning_ignore("integer_division")
+	ch.frames = maxi(1, (pcm.size() + n - 1) / n)
+	ch.fft = _Fft.new(m)
+	ch.win.resize(n)
+	for i in n:
+		ch.win[i] = 0.5 - 0.5 * cos(TAU * i / n)
+	ch.pc.resize(m + 1)
+	ch.psn.resize(m + 1)
+	for k in m + 1:
+		ch.pc[k] = cos(TAU * k / n)
+		ch.psn[k] = sin(TAU * k / n)
+	var bin_hz := float(rate) / n
+	ch.k0 = maxi(2, int(ceil(60.0 / bin_hz)))
+	ch.k1 = mini(m - 1, int(floor(2100.0 / bin_hz)))
+	ch.bin_pc.resize(m)
+	ch.bin_pc.fill(0)
+	for k in range(ch.k0, ch.k1):
+		var midi := 69.0 + 12.0 * log(k * bin_hz / 440.0) / log(2.0)
+		ch.bin_pc[k] = posmod(int(round(midi)), 12)
+	var chunks := clampi(cores * 2, 1, ch.frames)
+	ch.per = int(ceil(float(ch.frames) / chunks))
+	ch.out.resize(chunks)
+	_run_group(ch.run, chunks, threads)
+	var c := PackedFloat32Array()
+	for ci in chunks:
+		c.append_array(ch.out[ci])
+	return {"c": c, "frame_ms": n * 1000.0 / rate, "frames": ch.frames}
+
+
+## Taktanfaenge in akustischer Zeit (Gitter in Map-Zeit + lead_ms), aufsteigend, erster = 0.
+## Ohne Gitter: feste Bloecke von fallback_ms.
+static func bar_starts(grid: Dictionary, duration_ms: float, lead_ms: float = AmGrid.OSU_LEAD_MS,
+		fallback_ms: float = 2000.0) -> PackedFloat64Array:
+	var out := PackedFloat64Array()
+	out.append(0.0)
+	var segs: Array = grid.get("segments", []) if grid.get("segments") is Array else []
+	if segs.is_empty():
+		var t := fallback_ms
+		while t < duration_ms - 0.5 * fallback_ms:
+			out.append(t)
+			t += fallback_ms
+		return out
+	for si in segs.size():
+		var s: Dictionary = segs[si]
+		var beat := maxf(float(s.get("beat_ms", 500.0)), 50.0)
+		var bar := beat * maxi(int(s.get("meter", 4)), 1)
+		while bar < 1000.0:
+			bar *= 2.0   # sehr schnelles Gitter: Doppeltakte, sonst wird die Liedform zu fein
+		var d := float(s.get("downbeat_ms", s.get("start_ms", 0.0))) + lead_ms
+		var a := -INF if si == 0 else float(s.get("start_ms", 0.0)) + lead_ms
+		var b := duration_ms if si + 1 == segs.size() else float(segs[si + 1].get("start_ms", duration_ms)) + lead_ms
+		if si > 0 and a > out[out.size() - 1] + 0.25 * bar:
+			out.append(a)   # neue rote Linie = neuer Takt
+		var k := ceilf(((maxf(a, 0.0)) - d) / bar - 1e-6)
+		var t := d + k * bar
+		while t < b - 1.0:
+			if t > out[out.size() - 1] + 0.25 * bar and t < duration_ms - 0.25 * bar:
+				out.append(t)
+			t += bar
+	return out
+
+
+## Merkmale je Takt. Liefert Arrays gleicher Laenge (Taktzahl).
+static func _bar_feats(bars: PackedFloat64Array, duration_ms: float, frames: int, frame_ms: float, spec: PackedFloat32Array,
+		nb: int, energy: PackedFloat32Array, e_p: PackedFloat32Array, e_hl: PackedFloat32Array, e_hm: PackedFloat32Array,
+		voc: PackedFloat32Array, voc_min: float, chroma: Dictionary, events: Array) -> Dictionary:
+	var nbar := bars.size()
+	var loud := PackedFloat32Array()
+	var ep := PackedFloat32Array()
+	var ehl := PackedFloat32Array()
+	var ehm := PackedFloat32Array()
+	var vf := PackedFloat32Array()
+	var tim := PackedFloat32Array()   # nbar * nb, log-Pegel je Band
+	var chm := PackedFloat32Array()   # nbar * 12, auf Summe 1
+	var cnt := PackedFloat32Array()   # nbar * 7, Ereignisse je Sekunde je Art
+	var stg := PackedFloat32Array()   # nbar * 7, Staerke-Summe je Sekunde je Art
+	for arr: PackedFloat32Array in [loud, ep, ehl, ehm, vf]:
+		arr.resize(nbar)
+	tim.resize(nbar * nb)
+	chm.resize(nbar * 12)
+	chm.fill(0.0)
+	cnt.resize(nbar * 7)
+	cnt.fill(0.0)
+	stg.resize(nbar * 7)
+	stg.fill(0.0)
+	var hm_sum := 0.0
+	for f in frames:
+		hm_sum += e_hm[f]
+	var hm_mean := hm_sum / maxi(frames, 1)
+	var cc: PackedFloat32Array = chroma.c
+	var cfm: float = chroma.frame_ms
+	var cfr: int = chroma.frames
+	var acc := PackedFloat32Array()
+	acc.resize(nb)
+	for i in nbar:
+		var t0 := bars[i]
+		var t1 := bars[i + 1] if i + 1 < nbar else duration_ms
+		var f0 := clampi(int(t0 / frame_ms), 0, frames - 1)
+		var f1 := clampi(int(t1 / frame_ms), f0 + 1, frames)
+		var s0 := 0.0
+		var s1 := 0.0
+		var s2 := 0.0
+		var s3 := 0.0
+		var vc := 0
+		acc.fill(0.0)
+		for f in range(f0, f1):
+			s0 += energy[f]
+			s1 += e_p[f]
+			s2 += e_hl[f]
+			s3 += e_hm[f]
+			if voc[f] >= voc_min and e_hm[f] >= 0.5 * hm_mean:
+				vc += 1
+			var o := f * nb
+			for b in nb:
+				acc[b] += spec[o + b] * spec[o + b]
+		var c := float(f1 - f0)
+		loud[i] = s0 / c
+		ep[i] = s1 / c
+		ehl[i] = s2 / c
+		ehm[i] = s3 / c
+		vf[i] = vc / c
+		for b in nb:
+			tim[i * nb + b] = log(acc[b] / c + 1e-10)
+		var g0 := clampi(int(round(t0 / cfm)), 0, cfr - 1)
+		var g1 := clampi(int(round(t1 / cfm)), g0 + 1, cfr)
+		var tot := 1e-9
+		for g in range(g0, g1):
+			for q in 12:
+				var v := sqrt(cc[g * 12 + q])
+				chm[i * 12 + q] += v
+				tot += v
+		for q in 12:
+			chm[i * 12 + q] /= tot
+	var ki := 0
+	for e: Dictionary in events:
+		var t: float = e.t_ms
+		while ki + 1 < nbar and bars[ki + 1] <= t:
+			ki += 1
+		var k := KINDS.find(e.kind)
+		cnt[ki * 7 + k] += 1.0
+		stg[ki * 7 + k] += float(e.strength)
+	for i in nbar:
+		var t1 := bars[i + 1] if i + 1 < nbar else duration_ms
+		var sec := maxf((t1 - bars[i]) / 1000.0, 0.05)
+		for k in 7:
+			cnt[i * 7 + k] /= sec
+			stg[i * 7 + k] /= sec
+	return {"n": nbar, "nb": nb, "loud": loud, "ep": ep, "ehl": ehl, "ehm": ehm, "voc": vf, "timbre": tim, "chroma": chm,
+			"cnt": cnt, "str": stg}
+
+
+static func _zs(x: PackedFloat32Array) -> PackedFloat32Array:
+	var n := x.size()
+	var m := 0.0
+	for v in x:
+		m += v
+	m /= maxi(n, 1)
+	var q := 0.0
+	for v in x:
+		q += (v - m) * (v - m)
+	var sd := sqrt(q / maxi(n, 1)) + 1e-6
+	var o := PackedFloat32Array()
+	o.resize(n)
+	for i in n:
+		o[i] = (x[i] - m) / sd
+	return o
+
+
+## Rang je Wert (0 = kleinster, 1 = groesster), gleiche Werte nach Reihenfolge.
+static func _rank(x: PackedFloat32Array) -> PackedFloat32Array:
+	var n := x.size()
+	var idx: Array = range(n)
+	idx.sort_custom(func(a: int, b: int) -> bool: return x[a] < x[b] or (x[a] == x[b] and a < b))
+	var o := PackedFloat32Array()
+	o.resize(n)
+	for k in n:
+		o[idx[k]] = float(k) / maxi(n - 1, 1)
+	return o
+
+
+## Grundreihen je Takt fuer Liedform und Dichte (Reihenfolge = FORM_BASE).
+const FORM_BASE: Array[String] = ["loud", "lep", "lhl", "lhm", "voc", "ev", "st", "perc", "kick", "snare", "hat"]
+
+static func _form_base(bf: Dictionary) -> Array[PackedFloat32Array]:
+	var n: int = bf.n
+	var out: Array[PackedFloat32Array] = []
+	for k in FORM_BASE.size():
+		var a := PackedFloat32Array()
+		a.resize(n)
+		out.append(a)
+	var cnt: PackedFloat32Array = bf.cnt
+	var stg: PackedFloat32Array = bf.str
+	for i in n:
+		out[0][i] = bf.loud[i]
+		out[1][i] = log(1.0 + bf.ep[i] * 1000.0)
+		out[2][i] = log(1.0 + bf.ehl[i] * 1000.0)
+		out[3][i] = log(1.0 + bf.ehm[i] * 1000.0)
+		out[4][i] = bf.voc[i]
+		var ce := 0.0
+		var se := 0.0
+		for k in 7:
+			ce += cnt[i * 7 + k]
+			se += stg[i * 7 + k]
+		out[5][i] = ce
+		out[6][i] = se
+		out[7][i] = stg[i * 7 + 0] + stg[i * 7 + 1] + stg[i * 7 + 2] + stg[i * 7 + 6]
+		out[8][i] = stg[i * 7 + 0]
+		out[9][i] = stg[i * 7 + 1]
+		out[10][i] = stg[i * 7 + 2]
+	return out
+
+
+## Selbstaehnlichkeit der Takte: wc * Kosinus(Chroma) + (1 - wc) * Kosinus(Klangfarbe, je Band z-normiert).
+static func _ssm(bf: Dictionary, wc: float) -> PackedFloat32Array:
+	var n: int = bf.n
+	var nb: int = bf.nb
+	var ch := PackedFloat32Array()
+	ch.resize(n * 12)
+	var chm: PackedFloat32Array = bf.chroma
+	for i in n:
+		var q := 0.0
+		for c in 12:
+			var v := sqrt(maxf(chm[i * 12 + c], 0.0))
+			ch[i * 12 + c] = v
+			q += v * v
+		q = sqrt(q) + 1e-9
+		for c in 12:
+			ch[i * 12 + c] /= q
+	var tim: PackedFloat32Array = bf.timbre
+	var tb := PackedFloat32Array()
+	tb.resize(n * nb)
+	for b in nb:
+		var m := 0.0
+		for i in n:
+			m += tim[i * nb + b]
+		m /= n
+		var s := 0.0
+		for i in n:
+			s += (tim[i * nb + b] - m) * (tim[i * nb + b] - m)
+		s = sqrt(s / n) + 1e-6
+		for i in n:
+			tb[i * nb + b] = (tim[i * nb + b] - m) / s
+	for i in n:
+		var q := 0.0
+		for b in nb:
+			q += tb[i * nb + b] * tb[i * nb + b]
+		q = sqrt(q) + 1e-9
+		for b in nb:
+			tb[i * nb + b] /= q
+	var S := PackedFloat32Array()
+	S.resize(n * n)
+	for i in n:
+		for j in range(i, n):
+			var a := 0.0
+			for c in 12:
+				a += ch[i * 12 + c] * ch[j * 12 + c]
+			var t := 0.0
+			for b in nb:
+				t += tb[i * nb + b] * tb[j * nb + b]
+			var v := wc * a + (1.0 - wc) * t
+			S[i * n + j] = v
+			S[j * n + i] = v
+	return S
+
+
+## Neuheit je Takt: Schachbrett-Kern (Gauss, halbe Breite w) entlang der Diagonale, Rand wiederholt.
+static func _novelty(S: PackedFloat32Array, n: int, w: int) -> PackedFloat32Array:
+	var g := PackedFloat32Array()
+	g.resize(2 * w)
+	for a in 2 * w:
+		var x := (a - w + 0.5) / (w * 0.5)
+		g[a] = exp(-0.5 * x * x) * (-1.0 if a < w else 1.0)
+	var nov := PackedFloat32Array()
+	nov.resize(n)
+	var ix := PackedInt32Array()
+	ix.resize(2 * w)
+	for i in n:
+		for a in 2 * w:
+			ix[a] = clampi(i - w + a, 0, n - 1)
+		var acc := 0.0
+		for a in 2 * w:
+			var ra := ix[a] * n
+			var ga := g[a]
+			for b in 2 * w:
+				acc += ga * g[b] * S[ra + ix[b]]
+		nov[i] = acc
+	return nov
+
+
+## Abschnittsgrenzen (Takt-Indizes, mit 0 und n): Gipfel der Neuheit, auf das Phrasen-Raster (je `phrase`
+## Takte, Phase mit der groessten Neuheitssumme) gelegt, gierig nach Staerke mit Mindestlaenge.
+static func _cuts(nov: PackedFloat32Array, phrase: int, min_len: int, thr: float) -> PackedInt32Array:
+	var n := nov.size()
+	var sorted := nov.duplicate()
+	sorted.sort()
+	var ref := 1.0
+	if n > 2:
+		# wie numpy.percentile (linear) bei 95 %
+		var pos := 0.95 * (n - 1)
+		var lo := int(floor(pos))
+		var hi := mini(lo + 1, n - 1)
+		ref = sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo)
+	var nv := PackedFloat32Array()
+	nv.resize(n)
+	for i in n:
+		nv[i] = nov[i] / (ref + 1e-9)
+	var cand: Array[int] = []
+	for i in range(1, n - 1):
+		if nv[i] >= nv[i - 1] and nv[i] > nv[i + 1] and nv[i] > thr:
+			cand.append(i)
+	if phrase > 1 and not cand.is_empty():
+		var best := 0
+		var best_s := -INF
+		for q in phrase:
+			var s := 0.0
+			var i := q
+			while i < n:
+				s += nv[i]
+				i += phrase
+			if s > best_s:
+				best_s = s
+				best = q
+		var snapped := {}
+		@warning_ignore("integer_division")
+		var kmax := (n - 1 - best) / phrase
+		for c in cand:
+			# naechster Rasterpunkt, bei Gleichstand der fruehere
+			var k := clampi(int(ceil(float(c - best) / phrase - 0.5)), 0, kmax)
+			var j := best + k * phrase
+			if j > 0 and j < n:
+				snapped[j] = true
+		cand.clear()
+		for j in snapped:
+			cand.append(j)
+	cand.sort_custom(func(a: int, b: int) -> bool: return nv[a] > nv[b] or (nv[a] == nv[b] and a < b))
+	var cuts: Array[int] = [0, n]
+	for c in cand:
+		var ok := true
+		for x in cuts:
+			if absi(c - x) < min_len:
+				ok = false
+				break
+		if ok:
+			cuts.append(c)
+	cuts.sort()
+	return PackedInt32Array(cuts)
