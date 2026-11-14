@@ -183,6 +183,9 @@ var _score_index := {}
 var _mtime_cache := {}
 var _star_chips: Array[Button] = []
 var _sv_filter := false
+## Tasten-Filter (nur Mania): 0 = alle (4K-7K), sonst nur diese Tastenzahl.
+var _key_filter := 0
+var _keys_btn: OptionButton
 ## Filter/Sortierung/Sammlung/Suche bleiben ueber Map-Ende und Neustart erhalten.
 const BROWSER_STATE_PATH := "user://browser_state.cfg"
 var _state_ready := false
@@ -271,6 +274,10 @@ func _ready() -> void:
 	for a in OS.get_cmdline_args():
 		if a.begins_with("--mode=") and PLAY_MODES.has(a.trim_prefix("--mode=")):
 			_play_mode = a.trim_prefix("--mode=")  # Debug/Shots: Modus vorwaehlen (nie gespeichert)
+	for a in OS.get_cmdline_args():
+		# Debug/Shots: --keys=7 = Tasten-Filter vorwaehlen (nie gespeichert, da Testlauf).
+		if a.begins_with("--keys=") and ManiaKeys.supported(int(a.trim_prefix("--keys="))):
+			_key_filter = int(a.trim_prefix("--keys="))
 	for a in OS.get_cmdline_args():
 		# Debug/Shots: --filter=sort=3,best=1,grades=S+A fuer den aktiven Modus (nie gespeichert).
 		if a.begins_with("--filter="):
@@ -758,6 +765,8 @@ func _build_header() -> void:
 		_refresh_filter(_search.text))
 	filter_row.add_child(_sv_chip)
 	_restyle_star_chips()
+	_keys_btn = _make_keys_filter()
+	filter_row.add_child(_keys_btn)
 	_sort_btn = OptionButton.new()
 	for si in SORT_NAMES.size():
 		_sort_btn.add_item(tr(SORT_NAMES[si]), si)
@@ -1530,7 +1539,7 @@ static func collection_mode_hint(mode: String) -> String:
 static func playable_modes(ms: MapSet) -> Array:
 	var out: Array = []
 	for m in PLAY_MODES:
-		if not ms.visible_diffs("mania" if ScoreStore.is_mania_like(m) else "orbit").is_empty():
+		if not ms.visible_diffs(view_mode_of(m)).is_empty():
 			out.append(m)
 	return out
 
@@ -1942,6 +1951,8 @@ func _load_browser_state() -> bool:
 	if cfg.load(BROWSER_STATE_PATH) == OK:
 		_star_filter = clampi(int(cfg.get_value("browser", "star_filter", 0)), 0, STAR_FILTERS.size() - 1)
 		_sv_filter = bool(cfg.get_value("browser", "sv_filter", false))
+		var kf := int(cfg.get_value("browser", "key_filter", 0))
+		_key_filter = kf if ManiaKeys.supported(kf) else 0
 		var old_sort := clampi(int(cfg.get_value("browser", "sort_mode", 0)), 0, SORT_NAMES.size() - 1)
 		var mfs = cfg.get_value("browser", "mode_filters", {})
 		for m in PLAY_MODES:
@@ -1977,6 +1988,7 @@ func _save_browser_state() -> void:
 	var cfg := ConfigFile.new()
 	cfg.set_value("browser", "star_filter", _star_filter)
 	cfg.set_value("browser", "sv_filter", _sv_filter)
+	cfg.set_value("browser", "key_filter", _key_filter)
 	cfg.set_value("browser", "sort_mode", _sort_mode())
 	var mfs := {}
 	for m in PLAY_MODES:
@@ -2660,6 +2672,10 @@ func _make_card(ms: MapSet) -> Button:
 	# SV-Badge: Set enthaelt mindestens eine Diff mit echter SV.
 	if ms.has_sv():
 		hb.add_child(_sv_badge())
+	# Tasten-Badge ("7K"): nur wenn das Set mehr als 4K-Diffs zeigt.
+	var kb := _keys_badge(ms)
+	if kb != null:
+		hb.add_child(kb)
 
 	# Orbit/Frei: dezente Marke "Empfohlen", wenn die Map zur Karriere-Stufe passt.
 	var rec := Label.new()
@@ -2848,7 +2864,7 @@ func _update_info_panel() -> void:
 		_selected_set.version_name_at(_selected_diff), 5, score_mode)
 	if tops.is_empty():
 		var empty := Label.new()
-		empty.text = RuleMods.board_text("empty") if RuleMods.is_mines_board(score_mode) 				else tr("Noch kein %s-Score — spiel die Map!") % ScoreStore.mode_label(score_mode)
+		empty.text = RuleMods.board_text("empty") if RuleMods.is_mines_board(score_mode) 				else tr("Noch kein %s-Score — spiel die Map!") % _score_label(score_mode)
 		empty.add_theme_font_size_override("font_size", 13)
 		empty.add_theme_color_override("font_color", COL_DIM)
 		_lb_box.add_child(empty)
@@ -3052,6 +3068,13 @@ func _lb_hint(text: String) -> void:
 	_lb_box.add_child(l)
 
 
+## Online-Modus der Rangliste: Mania je Tastenzahl ("mania", "mania7k"), sonst der Modus.
+static func online_mode_of(meta: Dictionary, score_mode: String) -> String:
+	if score_mode == "":
+		return ManiaKeys.online_mode(maxi(ManiaKeys.keys_of_meta(meta), 4))
+	return ScoreStore.mode_name(score_mode)
+
+
 ## Online-Rangliste der gewaehlten Diff (asynchron). Ohne Key/Login: klarer Hinweis.
 func _show_online_scores(m: Dictionary, score_mode: String) -> void:
 	var api: OnlineApi = GameSession.online
@@ -3074,7 +3097,7 @@ func _show_online_scores(m: Dictionary, score_mode: String) -> void:
 	if RuleMods.is_mines_board(score_mode):
 		_show_online_mines(api, md5, gen)
 		return
-	api.leaderboard(ScoreStore.mode_name(score_mode), md5, 0, func(ok: bool, entries: Array, msg: String):
+	api.leaderboard(online_mode_of(m, score_mode), md5, 0, func(ok: bool, entries: Array, msg: String):
 		if gen != _online_gen or not is_inside_tree():
 			return
 		for c in _lb_box.get_children():
@@ -3231,7 +3254,8 @@ func _fill_missing_pp(tops: Array, score_mode: String) -> void:
 		return
 	var map_key := ScoreStore.map_id(_selected_set.osz_path, _selected_set.version_name_at(_selected_diff))
 	var gen := _online_gen
-	api.leaderboard(ScoreStore.mode_name(score_mode), md5, 0, func(ok: bool, entries: Array, _msg: String):
+	var omode := online_mode_of(_selected_set.meta_at(_selected_diff), score_mode)
+	api.leaderboard(omode, md5, 0, func(ok: bool, entries: Array, _msg: String):
 		if not ok:
 			_pp_fill_tried.erase(key)  # Server nicht erreichbar: später erneut
 			return
@@ -3341,7 +3365,7 @@ func _score_row(rank: int, e: Dictionary) -> Control:
 ## Modus-Umschalter Mania 4K | Orbit | Rally / Dirigent | Trace | Rebound als 3x2-Raster
 ## (gleiche Toggle-Optik wie die Filter-Chips).
 const MODE_TIPS := {
-	"mania": "Klassisch: vier Spuren",
+	"mania": "Classic: 4 to 7 lanes (4K to 7K maps)",
 	"orbit": "Zielen mit Maus/Tablet, Ring per Taste (osu!standard- und 4K-Maps)",
 	"rally": "Tischtennis im Takt: Schläge auf die Noten, zwei Tasten",
 	"dirigent": "Taktfigur mit der Maus führen, Einsätze per Taste",
@@ -3358,7 +3382,7 @@ func _build_mode_switch() -> Control:
 	grid.custom_minimum_size = Vector2(0, 58)
 	_mode_btns.clear()
 	for m in PLAY_MODES:
-		var b := _make_toggle(ScoreStore.mode_label("" if m == "mania" else m), 13, 6)
+		var b := _make_toggle("Mania" if m == "mania" else ScoreStore.mode_label(m), 13, 6)  # Mania = 4K-7K
 		b.custom_minimum_size = Vector2(0, 27)
 		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		b.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -3372,9 +3396,74 @@ func _build_mode_switch() -> Control:
 
 
 ## Sichtbarkeits-Modus fuer MapSet: Orbit/Rally/Dirigent zeigen 4K und osu!standard,
-## Mania/Trace/Rebound nur Mania-4K.
+## Trace/Rebound nur Mania-4K, Mania 4K-7K (mit Tasten-Filter nur diese Tastenzahl).
 func _vm() -> String:
-	return "mania" if _mania_like() else "orbit"
+	if _play_mode == "mania" and _key_filter > 0:
+		return "mania@%d" % _key_filter
+	return view_mode_of(_play_mode)
+
+
+## Sicht-Modus (MapSet.mode_shows) eines Spielmodus ohne Tasten-Filter.
+static func view_mode_of(m: String) -> String:
+	if m == "mania":
+		return "mania"
+	return "mania@4" if ScoreStore.is_mania_like(m) else "orbit"
+
+
+## Tasten-Filter: Auswahl "Alle Tasten / 4K ... 7K" im Stil der Sortierung.
+func _make_keys_filter() -> OptionButton:
+	var b := OptionButton.new()
+	b.add_item(tr("All keys"), 0)
+	for k in ManiaKeys.SUPPORTED:
+		b.add_item(ManiaKeys.label(k), k)
+	b.select(maxi(b.get_item_index(_key_filter), 0))
+	b.tooltip_text = tr("Only maps with this many keys (Mania)")
+	b.fit_to_longest_item = true
+	b.custom_minimum_size = Vector2(0, FILTER_H)
+	b.add_theme_font_size_override("font_size", 13)
+	b.add_theme_stylebox_override("normal", _toggle_box(false, 10))
+	b.add_theme_stylebox_override("hover", _toggle_box(false, 10, true))
+	b.add_theme_stylebox_override("pressed", _toggle_box(false, 10, true))
+	b.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	b.add_theme_color_override("font_color", COL_TEXT)
+	b.item_selected.connect(func(i):
+		_key_filter = b.get_item_id(i)
+		_refresh_filter(_search.text))
+	b.visible = _play_mode == "mania"
+	return b
+
+
+## Kachel-Marke der Tastenzahlen ("7K", "4K 7K"); null bei reinen 4K-Sets.
+func _keys_badge(ms: MapSet) -> Control:
+	var ks: Array[int] = []
+	for i in ms.visible_diffs(_vm()):
+		var k := ManiaKeys.keys_of_meta(ms.meta_at(i))
+		if k > 0 and not ks.has(k):
+			ks.append(k)
+	ks.sort()
+	if ks.is_empty() or (ks.size() == 1 and ks[0] == 4):
+		return null
+	var parts: PackedStringArray = []
+	for k in ks:
+		parts.append(ManiaKeys.label(k))
+	var pc := PanelContainer.new()
+	pc.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	var bb := UiTheme.solid_box(Color(0.10, 0.11, 0.13, 0.92), 8)
+	bb.border_color = Color(COL_ACCENT, 0.75)
+	bb.set_border_width_all(1)
+	bb.content_margin_left = 7
+	bb.content_margin_right = 7
+	bb.content_margin_top = 2
+	bb.content_margin_bottom = 2
+	pc.add_theme_stylebox_override("panel", bb)
+	pc.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var l := Label.new()
+	l.text = " ".join(parts)
+	l.add_theme_font_size_override("font_size", 12)
+	l.add_theme_color_override("font_color", COL_ACCENT)
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	pc.add_child(l)
+	return pc
 
 
 ## Aktiver Modus wertet wie Mania 4K auf Mania-Maps (Mania, Trace, Rebound).
@@ -3421,6 +3510,8 @@ func _set_play_mode(mode: String) -> void:
 	if not PLAY_MODES.has(mode) or mode == _play_mode:
 		return
 	_play_mode = mode
+	if _keys_btn != null:
+		_keys_btn.visible = mode == "mania"  # andere Modi bleiben 4K-only
 	_bg_drop_other_modes()
 	_restyle_mode_switch()
 	_apply_play_state()
@@ -3569,7 +3660,8 @@ func _style_lb_mode_tag(score_mode: String) -> void:
 	if _lb_mode_tag == null:
 		return
 	var col := UiTheme.ACCENT2 if score_mode == ScoreStore.MODE_ORBIT else COL_ACCENT
-	_lb_mode_tag.text = RuleMods.board_tag(score_mode).to_upper()   # Minen: "MANIA 4K · MINES"
+	_lb_mode_tag.text = (RuleMods.board_tag(score_mode).replace("Mania 4K", _score_label(""))
+			if RuleMods.is_mines_board(score_mode) else _score_label(score_mode)).to_upper()   # Minen: "MANIA 7K · MINES"
 	_lb_mode_tag.add_theme_color_override("font_color", col.lerp(COL_TEXT, 0.25))
 	var box := _lb_mode_tag.get_parent() as PanelContainer
 	var sb := StyleBoxFlat.new()
@@ -3582,7 +3674,15 @@ func _style_lb_mode_tag(score_mode: String) -> void:
 	sb.content_margin_top = 1
 	sb.content_margin_bottom = 1
 	box.add_theme_stylebox_override("panel", sb)
-	box.tooltip_text = RuleMods.board_text("tip") if RuleMods.is_mines_board(score_mode) 			else tr("Nur Scores im Modus %s") % ScoreStore.mode_label(score_mode)
+	box.tooltip_text = RuleMods.board_text("tip") if RuleMods.is_mines_board(score_mode) 			else tr("Nur Scores im Modus %s") % _score_label(score_mode)
+
+
+## Modus-Name der Rangliste: Mania mit der Tastenzahl der gewaehlten Diff ("Mania 7K").
+func _score_label(score_mode: String) -> String:
+	var keys := 4
+	if score_mode == "" and _selected_set != null and _selected_diff >= 0:
+		keys = maxi(ManiaKeys.keys_of_meta(_selected_set.meta_at(_selected_diff)), 4)
+	return ScoreStore.mode_label(score_mode, keys)
 
 
 ## SV-Stufe: zwei Mini-Schalter Normal | Stark (Standard Stark) neben dem SV-Mod.
@@ -4441,7 +4541,7 @@ func _open_import_panel() -> void:
 	var osu_dir := SongImport.find_stable_songs_dir()
 	var osu_sub := tr("Gefunden: %s") % osu_dir if osu_dir != "" else tr("osu! nicht gefunden. Du wählst den Songs-Ordner selbst.")
 	_import_osu_btn = _import_row(actions, "Aus osu! übernehmen",
-		osu_sub + "\n" + tr("Nur 4K-Mania und osu!standard, schon vorhandene Maps bleiben, wie sie sind."))
+		osu_sub + "\n" + tr("Only 4K to 7K mania and osu!standard. Maps you already have stay as they are."))
 	_import_osu_btn.pressed.connect(_import_from_osu)
 	_import_osu_note = _add_label(actions, "", 13, UiTheme.BAD)
 	_import_osu_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -6061,7 +6161,9 @@ func _recs_job() -> Dictionary:
 	for ms in _library.mapsets:
 		var file := ms.osz_path.get_file()
 		var info: Dictionary = idx.get(file, {})
-		for i in ms.visible_diffs(_vm()):
+		# Vorschlaege: Mania-Koennen stammt aus 4K-Laeufen -> ohne Tasten-Filter nur 4K.
+		var rec_vm := "mania@4" if _vm() == "mania" else _vm()
+		for i in ms.visible_diffs(rec_vm):
 			var osu_mode := int(ms.meta_at(i).get("mode", 0))
 			if not Recommender.playable(mode, osu_mode) or not _orbit_diff_ok(ms, i):
 				continue

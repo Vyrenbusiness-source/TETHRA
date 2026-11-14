@@ -463,10 +463,13 @@ static func build_body(result: Dictionary, meta: Dictionary, mode: String = "man
 		"client_version": client_version(),
 		"date": str(result.get("date", Time.get_datetime_string_from_system(true))),
 	}
-	if mode != "mania":
+	if not ManiaKeys.is_mania_online(mode):
 		body["stars"] = float(result.get("stars", meta.get("stars", 0.0)))
 	else:
 		body["pp"] = maxf(float(result.get("pp", 0.0)), 0.0)
+		# 5K-7K: eigener Modus "mania<n>k" plus Feld "keys" (4K-Body bleibt unveraendert).
+		if mode != "mania":
+			body["keys"] = ManiaKeys.keys_of_online_mode(mode)
 	# Dirigent: Takt-Anteil zusaetzlich (Counts zaehlen nur die Einsaetze).
 	if mode == "dirigent":
 		body["beats_hit"] = int(result.get("beats_hit", 0))
@@ -536,7 +539,8 @@ func submit(result: Dictionary, meta: Dictionary, mode: String = "mania") -> boo
 		"reg": build_register_body(meta, mode),
 		"registered": false,
 		# Lokaler Eintrag, an den die Server-ID (online_id) kommt.
-		"local": {"osz_file": osz.get_file(), "version": ver, "mode": mode, "score": score},
+		"local": {"osz_file": osz.get_file(), "version": ver,
+			"mode": "mania" if ManiaKeys.is_mania_online(mode) else mode, "score": score},
 	}
 	_queue.append(entry)
 	while _queue.size() > QUEUE_MAX:
@@ -567,7 +571,7 @@ func _on_score_reply(entry: Dictionary, code: int, text: String) -> void:
 	if kind == "ok":
 		_store_online_id(entry.get("local", {}), str(r.score_id))
 		var md5 := str(entry.reg.get("beatmap_md5", ""))
-		if str(entry.body.get("mode", "")) == "mania" and str(r.pp_source) == "client" 				and md5 != "" and not _registered_md5.has(md5):
+		if ManiaKeys.is_mania_online(str(entry.body.get("mode", ""))) and str(r.pp_source) == "client" 				and md5 != "" and not _registered_md5.has(md5):
 			_register_map(entry.reg, func(): _finish_entry("ok"))
 		else:
 			_finish_entry("ok")
@@ -1037,7 +1041,7 @@ const REPLAY_MODES := ["mania", "orbit"]
 ## Rally/Dirigent/Trace/Rebound: immer "", bis der Server ihre Replays annimmt.
 func replay_content_for(osz_path: String, version: String, mode: String, score: int,
 		date_local: String = "") -> String:
-	if osz_path == "" or not mode in REPLAY_MODES:
+	if osz_path == "" or not (mode in REPLAY_MODES or ManiaKeys.is_mania_online(mode)):
 		return ""
 	var rmode := ReplayStore.MODE_ORBIT_LAST if mode == "orbit" else "mania"
 	var text := _replay_text(osz_path, version, rmode)

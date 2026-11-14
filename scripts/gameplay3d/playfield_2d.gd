@@ -336,6 +336,9 @@ func _draw() -> void:
 		var x := _bx(fr, c)
 		if gap > 0.0:
 			draw_rect(Rect2(x, 0.0, cw, vs.y), Color(0.012, 0.014, 0.02, Settings.field_dim_2d))
+		if ManiaKeys.is_center(c, columns):
+			# 5K/7K: Mittelspalte leicht bernstein hinterlegt (Orientierung wie osu!).
+			draw_rect(Rect2(x, 0.0, cw, ly), Color(ManiaKeys.CENTER_COLOR, 0.06))
 		if c < _held.size() and bool(_held[c]) and Settings.lane_glow:
 			var g := Rect2(x, 0.0, cw, ly)
 			draw_rect(g, Color(lane_color.r, lane_color.g, lane_color.b, 0.07))
@@ -395,6 +398,11 @@ func _draw() -> void:
 
 
 ## Receptors + Tastenbeschriftung (eingebauter Look).
+## Receptor-Farbe der Spalte: Mittelspalte (5K/7K) bernstein, sonst lane_color.
+func col_tint(c: int) -> Color:
+	return lane_color.lerp(ManiaKeys.CENTER_COLOR, 0.65) if ManiaKeys.is_center(c, columns) else lane_color
+
+
 func _draw_receptors(fr: Rect2, cw: float, ly: float, nh: float, vs: Vector2) -> void:
 	# Keine durchgehende Abfanglinie: nur die Receptors markieren die Trefferposition.
 	var rh := vs.y * RECEPTOR_H_FRAC
@@ -406,7 +414,7 @@ func _draw_receptors(fr: Rect2, cw: float, ly: float, nh: float, vs: Vector2) ->
 		var on := c < _held.size() and bool(_held[c])
 		var fl := clampf(float(_flash[c]) if c < _flash.size() and Settings.hit_lighting_2d else 0.0, 0.0, 1.0)
 		var fc: Color = _flash_col[c] if c < _flash_col.size() else lane_color
-		var base := lane_color.lerp(fc, fl * 0.6)
+		var base := col_tint(c).lerp(fc, fl * 0.6)
 		var fill_a := 0.14 + (0.45 if on else 0.0) + fl * 0.25
 		if circle:
 			var d := circle_d()

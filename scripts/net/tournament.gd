@@ -562,7 +562,7 @@ static func local_candidates(lib: MapLibrary, lo: float, hi: float, f: Dictionar
 		return out
 	for ms in lib.mapsets:
 		for i in ms.difficulty_count():
-			if int(ms.meta_at(i).get("mode", 0)) != 3:
+			if not MapSet.mode_shows(ms.meta_at(i), "mania@4"):  # Turniere bleiben 4K
 				continue
 			var st: float = ms.stars_at(i)
 			if st < lo - 0.0001 or st > hi + 0.0001:

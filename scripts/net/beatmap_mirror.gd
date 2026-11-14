@@ -91,6 +91,10 @@ var _search_on_backup := false
 var search_url_override := ""
 ## SV-Filter: hängt "sv" an die Suche an und markiert Treffer (Feld "sv").
 var sv_mode := false
+## Tastenzahl der Mania-Suche: 4 (Standard, wie bisher), 5-7 oder 0 = alle (4K-7K).
+## Gefiltert wird clientseitig an cs (= Spaltenzahl) jeder Diff.
+var key_mode := 4
+var _search_keys := 4
 ## Aktive Downloads: set_id -> {req, dest, idx, last}.
 var _downloads: Dictionary = {}
 ## SV-Pruefung: Cache (Abschnitt v<SV_VERSION>, Schluessel beatmap_id -> bool),
@@ -223,6 +227,7 @@ func search(query: String, offset: int = 0, sort: int = Sort.RELEVANCE,
 		status: int = STATUS_RANKED, mode: int = MODE_MANIA) -> void:
 	var q := query.strip_edges()
 	_search_mode = mode
+	_search_keys = key_mode
 	# SV gibt es nur in Mania.
 	if sv_mode and mode == MODE_MANIA and not is_sv_text(q):
 		q = (q + " sv").strip_edges()
@@ -280,7 +285,7 @@ func _on_search_completed(result: int, code: int, _headers: PackedStringArray, b
 	var results: Array = []
 	for item in data:
 		if item is Dictionary:
-			var r := parse_item(item, _search_mode)
+			var r := parse_item(item, _search_mode, _search_keys)
 			if not r.is_empty():
 				results.append(r)
 	search_done.emit(results, data.size(), _search_offset)
@@ -293,11 +298,11 @@ static func _num(v: Variant, fallback: float = 0.0) -> float:
 ## Mirror-Eintrag -> schlanker Ergebnis-Datensatz; leer, wenn das Set keine
 ## Diff des Modus hat (Mania: 4K, sonst osu!standard) oder weder
 ## ranked/approved noch loved ist.
-static func parse_item(item: Dictionary, mode: int = MODE_MANIA) -> Dictionary:
+static func parse_item(item: Dictionary, mode: int = MODE_MANIA, keys: int = 4) -> Dictionary:
 	var status := str(item.get("status", ""))
 	if not (status in ["ranked", "approved", "loved"]):
 		return {}
-	var std := mania4k_difficulty(item) if mode == MODE_MANIA else std_difficulty(item)
+	var std := mania_difficulty(item, keys) if mode == MODE_MANIA else std_difficulty(item)
 	if std.is_empty():
 		return {}
 	var covers: Variant = item.get("covers", {})
@@ -328,6 +333,7 @@ static func parse_item(item: Dictionary, mode: int = MODE_MANIA) -> Dictionary:
 		"sv_id": sv_check_id(item) if mode == MODE_MANIA else 0,
 		"mode": mode,
 		"objects": int(std.get("objects", 0)),
+		"keys": std.get("keys", []),
 	}
 
 
@@ -362,17 +368,28 @@ static func is_sv_item(item: Dictionary) -> bool:
 ## Bei Mania ist cs = Spaltenzahl -> nur cs == 4 zaehlt. Liefert dazu
 ## count, star_list (alle 4K-Sterne) und max_len (laengste 4K-Diff, s).
 static func mania4k_difficulty(item: Dictionary) -> Dictionary:
+	return mania_difficulty(item, 4)
+
+
+## Wie mania4k_difficulty fuer eine Tastenzahl (cs = Spaltenzahl): keys 4-7 = nur
+## diese, 0 = alle spielbaren (ManiaKeys.SUPPORTED). Dazu "keys" = vorkommende
+## Tastenzahlen (aufsteigend) fuer die Kachel ("7K").
+static func mania_difficulty(item: Dictionary, keys: int) -> Dictionary:
 	var best := {}
 	var count := 0
 	var max_len := 0
 	var star_list: Array = []
+	var key_list: Array = []
 	for bm in item.get("beatmaps", []):
 		if not (bm is Dictionary):
 			continue
 		if int(bm.get("mode_int", -1)) != 3:
 			continue
-		if int(round(_num(bm.get("cs", 0.0)))) != 4:
+		var k := int(round(_num(bm.get("cs", 0.0))))
+		if (keys > 0 and k != keys) or not ManiaKeys.supported(k):
 			continue
+		if not key_list.has(k):
+			key_list.append(k)
 		count += 1
 		star_list.append(_num(bm.get("difficulty_rating", 0.0)))
 		max_len = maxi(max_len, int(_num(bm.get("total_length", 0))))
@@ -384,6 +401,8 @@ static func mania4k_difficulty(item: Dictionary) -> Dictionary:
 	best["count"] = count
 	best["star_list"] = star_list
 	best["max_len"] = max_len
+	key_list.sort()
+	best["keys"] = key_list
 	return best
 
 

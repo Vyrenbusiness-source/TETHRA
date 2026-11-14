@@ -61,14 +61,32 @@ func has_sv() -> bool:
 
 
 ## Spielmodus-Filter im Song-Browser: 4K-Mania-Diffs (Mode 3) gibt es in
-## beiden Modi, osu!standard-Diffs (Mode 0) NUR im Orbit-Modus (Orbit leitet
+## allen Modi, osu!standard-Diffs (Mode 0) NUR im Orbit-Modus (Orbit leitet
 ## seine Ziele aus den Positionen ab, Mania kann sie nicht spielen).
-## play_mode: "mania" | "orbit".
+## 5K-7K-Diffs (ManiaKeys) nur in Mania selbst.
+## play_mode: "mania" (4K-7K) | "mania@<n>" (nur nK, Tasten-Filter; Trace/Rebound:
+## "mania@4") | "orbit" (Standard + 4K).
 static func mode_shows(meta: Dictionary, play_mode: String) -> bool:
 	var m := int(meta.get("mode", 0))
 	if m == 3:
-		return true
+		var k := ManiaKeys.keys_of_meta(meta)
+		if play_mode == "mania":
+			return ManiaKeys.supported(k)
+		if play_mode.begins_with("mania@"):
+			return k == int(play_mode.trim_prefix("mania@"))
+		return k == 4
 	return m == 0 and play_mode == "orbit"
+
+
+## Tastenzahlen der Mania-Diffs dieses Sets (aufsteigend, ohne Doppelte).
+func key_counts() -> Array[int]:
+	var out: Array[int] = []
+	for d in diffs:
+		var k := ManiaKeys.keys_of_meta(d)
+		if k > 0 and not out.has(k):
+			out.append(k)
+	out.sort()
+	return out
 
 
 func diff_visible(index: int, play_mode: String) -> bool:
@@ -245,7 +263,7 @@ func to_dict() -> Dictionary:
 	return {
 		"title": title, "artist": artist, "creator": creator,
 		"background_file": background_file, "diffs": diffs,
-		"sv": sv, "sv_ver": sv_ver,
+		"sv": sv, "sv_ver": sv_ver, "kv": MapLibrary.KEYS_VERSION,
 	}
 
 

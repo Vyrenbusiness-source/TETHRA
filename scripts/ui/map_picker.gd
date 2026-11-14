@@ -261,7 +261,8 @@ static func build_entries(mapsets: Array, scores: Dictionary, extra: Dictionary)
 		var grade := ""
 		for i in ms.difficulty_count():
 			var m: Dictionary = ms.meta_at(i)
-			if int(m.get("mode", 0)) != 3:
+			# Multiplayer bleibt 4K-only (5K-7K nur solo, ManiaKeys).
+			if not MapSet.mode_shows(m, "mania@4"):
 				continue
 			var ver: String = ms.version_name_at(i)
 			var key := "%s|%s" % [file, ver]

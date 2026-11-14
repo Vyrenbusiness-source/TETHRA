@@ -408,7 +408,7 @@ func _start_practice() -> void:
 			continue
 		for i in ms.difficulty_count():
 			var m := ms.meta_at(i)
-			if int(m.get("mode", 0)) != 3:
+			if not MapSet.mode_shows(m, "mania@4"):  # Tutorial: nur 4K (Set hat auch 5K-7K)
 				continue
 			GameSession.tutorial = true
 			GameSession.mods = { "NF": true }

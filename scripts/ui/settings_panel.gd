@@ -53,6 +53,10 @@ const CAP_RALLY4 := 40  ## 40..43 = Rally-Tasten (4 Zonen)
 const CAP_DIRIGENT := 50   ## 50/51 = Dirigent A/B
 const CAP_TRACE := 60   ## 60..63 = Trace-Tasten (links, runter, hoch, rechts)
 const CAP_LANES := 3    ## 3..6 = Mania-Spuren 1-4 (auch Trace, Rebound)
+## Mania 5K/6K/7K: 70.., 80.., 90.. (eigene Belegung je Tastenzahl, Settings.key_lanes_k)
+const CAP_K5 := 70
+const CAP_K6 := 80
+const CAP_K7 := 90
 const COL_CONFLICT := Color(1.0, 0.42, 0.38)
 
 var _mode := MODE_3D
@@ -860,6 +864,21 @@ func _page_keys(pg: VBoxContainer) -> void:
 	_conflict_label(g, CAP_LANES)
 	_hint_label(g, "Anklicken, dann Taste drücken (Esc bricht ab)")
 	_hint_label(g, "Rebound uses these keys too. Trace has its own keys below.")
+	# Mania 5K-7K (echte Maps mit mehr Spalten): je Tastenzahl eigene Belegung.
+	for n in [5, 6, 7]:
+		var krow := HBoxContainer.new()
+		krow.add_theme_constant_override("separation", 4)
+		for i in n:
+			var kb := _key_button(_cap_k_base(n) + i)
+			kb.clip_text = false  # 7 schmale Knoepfe: Buchstabe nie abschneiden, Leertaste ganz zeigen
+			krow.add_child(kb)
+		var nk: int = n
+		var kr := _row(g, tr("Keys %s") % ManiaKeys.label(n), krow,
+			tr("Mania maps with %d columns. Click, then press a key (Esc cancels).") % n)
+		kr.set_meta("reset", func():
+			Settings.key_lanes_k[nk] = ManiaKeys.default_keys(nk)
+			_refresh_labels())
+		_conflict_label(g, _cap_k_base(n))
 	g = _group(pg, "Rally")
 	_choice(g, "Rally: Zonen", ["3 Zonen", "4 Zonen"],
 		func(s): return 1 if s.rally_zones == 4 else 0,
@@ -1822,8 +1841,28 @@ func _refresh_labels() -> void:
 		_dirigent_btns[k].tooltip_text = tr("Maus rechts") if k == 1 else tr("Maus links")
 
 
+## Aufnahme-Basis der Mania-Belegung mit n Tasten (5-7).
+static func _cap_k_base(n: int) -> int:
+	return CAP_K5 if n == 5 else (CAP_K6 if n == 6 else CAP_K7)
+
+
+## Tastenzahl einer 5K-7K-Basis, sonst 0.
+static func _cap_k_of(base: int) -> int:
+	match base:
+		CAP_K5: return 5
+		CAP_K6: return 6
+		CAP_K7: return 7
+	return 0
+
+
 ## Erster Aufnahme-Code der Belegung (Modus), zu der which gehoert.
 static func _cap_base(which: int) -> int:
+	if which >= CAP_K7:
+		return CAP_K7
+	if which >= CAP_K6:
+		return CAP_K6
+	if which >= CAP_K5:
+		return CAP_K5
 	if which >= CAP_TRACE:
 		return CAP_TRACE
 	if which >= CAP_DIRIGENT:
@@ -1841,12 +1880,14 @@ static func _cap_count(base: int) -> int:
 	match base:
 		CAP_RALLY: return 3
 		CAP_ORBIT, CAP_DIRIGENT: return 2
+		CAP_K5, CAP_K6, CAP_K7: return _cap_k_of(base)
 	return 4
 
 
 func _cap_get(which: int) -> int:
 	var i := which - _cap_base(which)
 	match _cap_base(which):
+		CAP_K5, CAP_K6, CAP_K7: return Settings.mania_keys(_cap_k_of(_cap_base(which)))[i]
 		CAP_TRACE: return Settings.trace_keys[i]
 		CAP_DIRIGENT: return Settings.dirigent_key_a if i == 0 else Settings.dirigent_key_b
 		CAP_RALLY4: return Settings.rally_keys_4[i]
@@ -1863,6 +1904,7 @@ func _cap_set(which: int, code: int) -> void:
 				Settings.dirigent_key_a = code
 			else:
 				Settings.dirigent_key_b = code
+		CAP_K5, CAP_K6, CAP_K7: Settings.mania_keys(_cap_k_of(_cap_base(which)))[i] = code
 		CAP_TRACE: Settings.trace_keys[i] = code
 		CAP_RALLY4: Settings.rally_keys_4[i] = code
 		CAP_RALLY: Settings.rally_keys_3[i] = code
