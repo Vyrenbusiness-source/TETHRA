@@ -29,7 +29,7 @@ MODS=${MODS:-}
 RELAY=${RELAY:-0}
 PORT=${PORT:-11110}
 CUT=${CUT:-8}
-LIMIT=${LIMIT:-300}
+LIMIT=${LIMIT:-150}
 MAPS_SRC=${MAPS_SRC:-/c/Users/Gexanx/Desktop/rhyg/maps}
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/mp_mode.XXXXXX")
 mkdir -p "$WORK/maps" "$WORK/host" "$WORK/client" "$WORK/relay"

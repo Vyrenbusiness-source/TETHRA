@@ -72,6 +72,20 @@ func _init() -> void:
 	var r: Array = L.ranked_players()
 	_check(int(r[0].id) == 3 and int(r[1].id) == 2 and int(r[2].id) == 1,
 		"Ranking: Score, dann Genauigkeit")
+	# Endergebnis zaehlt fuer die Platzierung, nicht der letzte Live-Wert; ein Live-Paket
+	# nach dem Finale (unreliable, anderer Kanal) aendert nichts mehr.
+	L.players = { 0: L._new_player("Remote"), 1: L._new_player("Ich") }
+	L.in_game = true
+	L.players[0].score = 9000
+	L.players[1].score = 7000
+	L.send_final(_fin(8000))
+	L.cl_final(_fin(9500))
+	L.cl_score(100, 1, 0.5)
+	r = L.ranked_players()
+	_check(int(L.players[1].score) == 8000 and int(L.players[0].score) == 9500
+		and is_equal_approx(float(L.players[0].acc), 0.9) and int(r[0].id) == 0,
+		"Platzierung nach Endergebnis, spaetes Live-Paket ignoriert (%s)" % str(L.players))
+	L.in_game = false
 
 	# Skip-Abstimmung: Disconnect eines Nicht-Voters loest Skip aus
 	var skipped := [false]

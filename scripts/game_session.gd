@@ -402,8 +402,9 @@ func _arm_test_watchdog() -> void:
 	# Projekt): ebenfalls hart begrenzen, damit nie ein Fenster offen bleibt.
 	if limit <= 0.0 and FileAccess.file_exists("res://override.cfg"):
 		limit = 60.0
-	# Live-QA (tests/live_qa.gd): mehrere Runden in einem Prozess, aussen timeout 150.
-	if all.has("--live-qa") or campaign_run_prefix() != "":
+	# Live-QA (tests/live_qa.gd) und MP-Smoke (--mp-bot, tools/mp_mode_smoke.sh: Runde +
+	# Turnier, ueber 60 s): mehrere Runden in einem Prozess, aussen timeout 150.
+	if all.has("--live-qa") or all.has("--mp-bot") or campaign_run_prefix() != "":
 		limit = 145.0
 	# Movie-Aufnahmen (--write-movie) begrenzt Godot selbst per --quit-after;
 	# die Watchdog-Zeit laeuft dort in Echtzeit und wuerde lange Aufnahmen kappen.
