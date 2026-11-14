@@ -254,6 +254,17 @@ func _label(size_px: int, col: Color) -> Label:
 	return l
 
 
+## Kopftext setzen. Die Hoehe kommt aus der Schrift (Breite des Kopfs), denn das
+## Label meldet im VBox umbrochene Zeilen nicht: sonst ueberdeckt die zweite Zeile
+## die Fortschritts-Striche.
+func _set_body(text: String) -> void:
+	_body_lbl.text = text
+	var font := _body_lbl.get_theme_font("font")
+	var fs := _body_lbl.get_theme_font_size("font_size")
+	var h := font.get_multiline_string_size(text, HORIZONTAL_ALIGNMENT_CENTER, 760.0, fs).y
+	_body_lbl.custom_minimum_size.y = ceilf(h)
+
+
 # ---------------------------------------------------------------------------
 # Texte
 # ---------------------------------------------------------------------------
@@ -286,7 +297,7 @@ func body_for(s: int) -> String:
 		RHYTHM: return tr("The distance between bends is the rhythm: a long stretch means wait, a short one means hurry. The same direction twice is a knot on a straight line: press the same key again.")
 		HOLD: return tr("A thick glowing stretch is a hold: press at the bend, keep holding the key until the stretch ends, then let go.")
 		CHORD: return tr("Two arrows at one bend are a chord: press both keys together. Left + up bends up-left. Opposite arrows (left + right) make a cross knot and the thread goes straight on.")
-	return tr("Everything together. You get a score at the end.")
+	return tr("Everything together. Don't mash: a wrong key is a miss. You get a score at the end.")
 
 
 func goal_for(s: int) -> String:
@@ -317,7 +328,7 @@ func reason_hint(code: String, col: int = 0) -> String:
 	match code:
 		"early": return tr("Too early: wait until the head reaches the bend.")
 		"late": return tr("Too late: press when the head reaches the bend.")
-		"key": return tr("Wrong key: this bend points %s, press %s.") % [dir_name(col), key_label(col)]
+		"key": return tr("Wrong key = miss. This bend points %s, press %s.") % [dir_name(col), key_label(col)]
 		"chord": return tr("Chord: press both keys together.")
 		"hold": return tr("Let go too early: keep holding until the thick stretch ends.")
 		"none": return tr("No key pressed: press the arrow key as the head arrives.")
@@ -327,7 +338,7 @@ func reason_hint(code: String, col: int = 0) -> String:
 func _update_texts() -> void:
 	_step_lbl.text = tr("Step %d of %d") % [step + 1, STEP_COUNT]
 	_title_lbl.text = title_for(step)
-	_body_lbl.text = body_for(step)
+	_set_body(body_for(step))
 	if _say_t == -INF:
 		_feedback.text = goal_for(step)
 		_feedback.add_theme_color_override("font_color", UiTheme.DIM)
@@ -656,7 +667,7 @@ func press_lane(col: int, down: bool, at: float = -1.0) -> void:
 	_held[col] = down
 	if down:
 		_presses.append([t, col])
-		core.key_down(col, t)
+		TraceRules.press(core, col, t)   # wie im Spiel: falscher Knick = Miss, sonst key_down
 		for i in range(_late.size() - 1, -1, -1):
 			var n := bm.hit_objects[int(_late[i][0])] as ManiaNote
 			if n.column == col and t - float(n.time) <= LATE_MS + core.w50:
@@ -694,7 +705,7 @@ func _show_result(completed: bool) -> void:
 	_bar.visible = false
 	_step_lbl.text = tr("Mini song")
 	_title_lbl.text = tr("Mini song done") if completed else tr("Mini song")
-	_body_lbl.text = tr("That was Trace. Change the keys in the settings.")
+	_set_body(tr("That was Trace. Change the keys in the settings."))
 	_pip_row.visible = false
 	_feedback.text = ""
 	var box := VBoxContainer.new()
