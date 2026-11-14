@@ -80,6 +80,11 @@ func _test_pattern_colors() -> void:
 	_check(not ManiaKeys.is_center(2, 6) and not ManiaKeys.is_center(3, 6), "6K hat keine Mitte")
 	_check(ManiaKeys.palette_index(0, 7) == 0 and ManiaKeys.palette_index(6, 7) == 3, "7K aussen = Farben 0/3")
 	_check(ManiaKeys.palette_index(1, 7) == 1 and ManiaKeys.palette_index(5, 7) == 2, "7K innen = Farben 1/2")
+	var w := Color(0.9, 0.9, 0.9)
+	_check(ManiaKeys.auto_tint(w, 1, 4) == w and ManiaKeys.auto_tint(w, 2, 4) == w, "auto: 4K unveraendert")
+	_check(ManiaKeys.auto_tint(w, 0, 7) == w, "auto 7K: aussen unveraendert")
+	_check(ManiaKeys.auto_tint(w, 1, 7).b > ManiaKeys.auto_tint(w, 1, 7).r, "auto 7K: innen blaeulich")
+	_check(ManiaKeys.auto_tint(w, 3, 7).r > ManiaKeys.auto_tint(w, 3, 7).b, "auto 7K: Mitte bernstein")
 
 
 func _test_rails() -> void:

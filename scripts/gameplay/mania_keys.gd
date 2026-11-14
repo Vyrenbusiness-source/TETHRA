@@ -31,6 +31,8 @@ const EDGE_X_4K := 3.6
 
 ## Mittlere Spalte (ungerade Tastenzahl ab 5K): bernsteinfarben wie die Mitte in osu!.
 const CENTER_COLOR := Color("f2b544")
+## Innere Spalten ("2" im osu!-Muster) im Farbmodus "auto": ruhiges Hellblau.
+const INNER_COLOR := Color("8fb4ff")
 
 
 static func supported(keys: int) -> bool:
@@ -114,6 +116,17 @@ static func palette_index(col: int, keys: int) -> int:
 		return 0 if outer else 1
 	return 3 if outer else 2
 
+
+## Notenfarbe im Modus "auto" (Map-/Weltfarbe) ab 5K: Spalten nach osu!-Muster
+## leicht einfaerben (aussen unveraendert, innen hellblau, Mitte bernstein), damit
+## man 7 Spalten auf einen Blick trennt. 4K und Holds bleiben unveraendert.
+static func auto_tint(c: Color, col: int, keys: int) -> Color:
+	if keys <= 4 or not supported(keys):
+		return c
+	match pattern(col, keys):
+		"S": return c.lerp(CENTER_COLOR, 0.6)
+		"2": return c.lerp(INNER_COLOR, 0.5)
+	return c
 
 # ------------------------------------------------------------------ 3D-Bahnen
 
