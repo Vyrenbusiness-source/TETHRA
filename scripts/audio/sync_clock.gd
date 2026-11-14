@@ -266,8 +266,14 @@ const TEMPO_BUS := &"MusicTempo"
 ## TEMPO_FX_LATENCY_FRAMES, Tonhoehe exakt, leichte Verwischung bei Transienten.
 const TEMPO_FFT := AudioEffectPitchShift.FFT_SIZE_2048
 const TEMPO_OVERSAMPLING := 4
-## Eingangs-Latenz des Effekts in Samples (smbPitchShift: fft - fft/oversampling).
-const TEMPO_FX_LATENCY_FRAMES := 2048 - 2048 / 4
+## Verzoegerung des Effekts in Samples: gemessen (tests/run_mv_tempo_tests.gd,
+## Energie-Schwerpunkt eines Ton-Stosses) 42-44 ms bei 0,5x bis 2,0x, also eine
+## FFT-Laenge. Bei Effekt-Tonhoehe genau 1 schaltet Godot den Effekt ab (0 ms):
+## tempo_fx_pitch() haelt ihn deshalb immer knapp daneben an.
+const TEMPO_FX_LATENCY_FRAMES := 2048
+## Der Effekt hebt den Pegel an (gemessen +2,4 dB bei 1,5x, 440-Hz-Ton): der
+## Tempo-Bus gleicht das aus, damit Tonhoehe-halten nicht lauter klingt.
+const TEMPO_FX_GAIN_DB := -2.4
 ## Feste Effekt-Indizes auf dem Music-Bus (VOR der Mastering-Kette aus Settings).
 const FX_SPECTRUM := 0
 const FX_CAPTURE := 1
@@ -656,6 +662,14 @@ func tempo_fx_latency_ms() -> float:
 	return _fx_latency_ms
 
 
+## Tonhoehe des Time-Stretch-Effekts fuer eine Rate: gegenlaeufig (1/Rate), bei
+## 1,0x um 0,17 Cent daneben, damit der Effekt aktiv bleibt und seine Latenz
+## nicht beim ersten Turbo-Schritt um 43 ms springt (hoerbarer Ruck).
+static func tempo_fx_pitch(rate: float) -> float:
+	var p := 1.0 / rate
+	return 0.9999 if absf(p - 1.0) < 0.0001 else p
+
+
 static func ensure_tempo_bus() -> int:
 	var idx := AudioServer.get_bus_index(TEMPO_BUS)
 	if idx < 0:
@@ -664,6 +678,7 @@ static func ensure_tempo_bus() -> int:
 		AudioServer.add_bus(idx)
 		AudioServer.set_bus_name(idx, TEMPO_BUS)
 		AudioServer.set_bus_send(idx, MUSIC_BUS)
+		AudioServer.set_bus_volume_db(idx, TEMPO_FX_GAIN_DB)
 		var ps := AudioEffectPitchShift.new()
 		ps.fft_size = TEMPO_FFT
 		ps.oversampling = TEMPO_OVERSAMPLING
@@ -681,7 +696,7 @@ func _apply_tempo(rate: float, keep_pitch: bool) -> void:
 		var idx := ensure_tempo_bus()
 		var ps := AudioServer.get_bus_effect(idx, 0) as AudioEffectPitchShift
 		if ps != null:
-			ps.pitch_scale = 1.0 / rate
+			ps.pitch_scale = tempo_fx_pitch(rate)
 		_player.bus = TEMPO_BUS
 		_fx_latency_ms = float(TEMPO_FX_LATENCY_FRAMES) / AudioServer.get_mix_rate() * 1000.0
 	else:

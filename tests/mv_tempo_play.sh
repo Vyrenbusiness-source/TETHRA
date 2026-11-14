@@ -4,7 +4,7 @@
 # Eigenes APPDATA: Nutzer-Einstellungen/Scores bleiben unberuehrt.
 #   tests/mv_tempo_play.sh            beide Laeufe
 #   tests/mv_tempo_play.sh bot|keys   nur einer
-#   OUT=<ordner> GODOT=<exe> MAPS_SRC=<ordner> tests/mv_tempo_play.sh
+#   OUT=<ordner> GODOT=<exe> MAPS_SRC=<ordner> TEMPO_EXTRA=--verbose tests/mv_tempo_play.sh
 set -u
 cd "$(dirname "$0")/.."
 G=${GODOT:-/c/Users/Gexanx/Desktop/rhyg/Godot_v4.7-stable_win64_console.exe}
@@ -33,7 +33,7 @@ run() {  # run <name> <faelle> [extra-flags...]
 	APPDATA=$(cygpath -w "$OUT/appdata_$name" 2>/dev/null || echo "$OUT/appdata_$name") \
 		timeout 150 "$G" --path . --position -1920,0 --audio-driver Dummy \
 		--script res://tests/mv_tempo_play.gd --live-qa --tempo-cases="$cases" \
-		--qa-src="$SRC_W" --qa-out="$OUT_W" "$@" > "$log" 2>&1
+		--qa-src="$SRC_W" --qa-out="$OUT_W" --maps-dir="$OUT_W" ${TEMPO_EXTRA:-} "$@" > "$log" 2>&1
 	local r=$?
 	grep -E "^QA |^PRACTICE " "$log" | sed "s/^/  /"
 	local errs
@@ -47,7 +47,7 @@ run() {  # run <name> <faelle> [extra-flags...]
 }
 
 run bot "practice3d,practice2d,turbo3d" --autoplay
-run keys "turbo2d"
+run keys "browser,turbo2d"
 
 echo "MV-TEMPO-PLAY $([ $rc -eq 0 ] && echo OK || echo FAIL) (logs + Bilder: $OUT)"
 exit $rc

@@ -49,10 +49,15 @@ func _main() -> void:
 			await _case_practice(c == "practice3d")
 		elif c.begins_with("turbo"):
 			await _case_turbo()
+		elif c == "browser":
+			await _case_browser()
 		_reset_session()
 		PracticeSession.clear()
 	paused = false
 	_clock.stop()
+	# Laufende Effekt-Sounds (Ergebnis-Jingle) ausklingen lassen: sonst meldet
+	# Godot beim Beenden eine noch spielende WAV als Leck.
+	await create_timer(2.0).timeout
 	print("QA DONE tempo ok=%d bug=%d" % [_ok, _bug])
 	quit(1 if _bug > 0 else 0)
 
@@ -216,6 +221,7 @@ func _case_turbo() -> void:
 	var seen_rates := {}
 	var max_step := 0.0
 	var prev := -INF
+	var prev_us := 0
 	while is_instance_valid(sc) and not bool(sc.get("_ended")) and Time.get_ticks_msec() - w < 70000:
 		await process_frame
 		if paused:
@@ -223,9 +229,13 @@ func _case_turbo() -> void:
 		var t: float = sc._time_ms()
 		if bool(sc.get("_ended")):
 			break
+		# Sprung = Songzeit-Schritt minus Rate x Wanduhr-Schritt (Bild-Haenger
+		# durch Screenshots zaehlen so nicht als Sprung).
+		var us := Time.get_ticks_usec()
 		if prev > -INF:
-			max_step = maxf(max_step, absf(t - prev))
+			max_step = maxf(max_step, absf((t - prev) - _clock.get_rate() * float(us - prev_us) / 1000.0))
 		prev = t
+		prev_us = us
 		seen_rates[snappedf(_clock.get_rate(), 0.05)] = true
 		while pi < plan.size() and float(plan[pi].t) <= t:
 			_key(_keycode(int(plan[pi].lane)), bool(plan[pi].down))
@@ -246,7 +256,7 @@ func _case_turbo() -> void:
 	_info("verlauf", "Raten %s, Abschnitte %d sauber %d Rueckfall %d, Verlauf %s" % [
 		str(rates), tm.rule.secs.size(), tm.rule.clean, tm.rule.fallbacks, str(tm.rule.track.to_array())])
 	_check(rates.size() >= 2 and float(rates.back()) > 1.0, "tempo-steigt", str(rates))
-	_check(max_step < 60.0, "kein-sprung", "groesster Schritt je Bild %.1f ms" % max_step)
+	_check(max_step < 25.0, "kein-sprung", "groesste Abweichung je Bild %.1f ms" % max_step)
 	if not _autoplay:
 		_check(tm.rule.fallbacks >= 1, "rueckfall-bei-miss", "Misses %d" % int(s1.n_miss))
 	await create_timer(2.5).timeout
@@ -277,3 +287,45 @@ func _plan_turbo(sc: Node) -> Array:
 	var p: Array = ReboundReplay.bot_plan(sc.get("_beatmap"), 3, 12.0, 70)
 	p.sort_custom(func(a, b): return float(a.t) < float(b.t))
 	return p
+
+
+# --- Song-Browser -------------------------------------------------------------
+
+## Turbo, Tonhoehe und Ueben in der Mods-Zeile (nur Mania). Bibliothek = --maps-dir
+## (nur die Fixture-Maps), nie die echte.
+func _case_browser() -> void:
+	paused = false
+	change_scene_to_file("res://scenes/song_select.tscn")
+	var w := Time.get_ticks_msec()
+	var btns: Array = []
+	while Time.get_ticks_msec() - w < 20000:
+		await process_frame
+		var sc := current_scene
+		if sc == null or not sc.scene_file_path.ends_with("song_select.tscn"):
+			continue
+		# Knoepfe ueber ihre Texte suchen (TempoBrowserRow nennt GameSession: hier
+		# nicht direkt referenzieren, siehe Kopf).
+		btns = []
+		for t in ["Turbo", tr("Keep pitch"), tr("Practice")]:
+			var n := _find_button(sc, t)
+			if n != null:
+				btns.append(n)
+		if btns.size() == 3 and sc.get("_selected_set") != null:
+			break
+	await create_timer(1.5).timeout
+	var vis := 0
+	for b in btns:
+		if is_instance_valid(b) and (b as Control).is_visible_in_tree():
+			vis += 1
+	_check(vis == 3, "browser-knoepfe", "%d von %d sichtbar" % [vis, btns.size()])
+	await _shot("browser")
+
+
+func _find_button(n: Node, text: String) -> Button:
+	if n is Button and (n as Button).text == text:
+		return n
+	for ch in n.get_children():
+		var r := _find_button(ch, text)
+		if r != null:
+			return r
+	return null
