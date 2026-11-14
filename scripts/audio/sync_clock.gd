@@ -271,9 +271,6 @@ const TEMPO_OVERSAMPLING := 4
 ## FFT-Laenge. Bei Effekt-Tonhoehe genau 1 schaltet Godot den Effekt ab (0 ms):
 ## tempo_fx_pitch() haelt ihn deshalb immer knapp daneben an.
 const TEMPO_FX_LATENCY_FRAMES := 2048
-## Der Effekt hebt den Pegel an (gemessen +2,4 dB bei 1,5x, 440-Hz-Ton): der
-## Tempo-Bus gleicht das aus, damit Tonhoehe-halten nicht lauter klingt.
-const TEMPO_FX_GAIN_DB := -2.4
 ## Feste Effekt-Indizes auf dem Music-Bus (VOR der Mastering-Kette aus Settings).
 const FX_SPECTRUM := 0
 const FX_CAPTURE := 1
@@ -678,7 +675,6 @@ static func ensure_tempo_bus() -> int:
 		AudioServer.add_bus(idx)
 		AudioServer.set_bus_name(idx, TEMPO_BUS)
 		AudioServer.set_bus_send(idx, MUSIC_BUS)
-		AudioServer.set_bus_volume_db(idx, TEMPO_FX_GAIN_DB)
 		var ps := AudioEffectPitchShift.new()
 		ps.fft_size = TEMPO_FFT
 		ps.oversampling = TEMPO_OVERSAMPLING
