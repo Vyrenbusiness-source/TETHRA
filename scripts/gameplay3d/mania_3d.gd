@@ -1819,6 +1819,11 @@ func _on_note_spawned(index: int) -> void:
 
 
 func _on_note_judged(index: int, result: Dictionary) -> void:
+	# Uebung/Turbo: Anzeige (Hit-Error-Leiste, UR, FRUEH/SPAET, Timing im Ergebnis)
+	# in Echtzeit-ms; core behaelt sein Songzeit-dt (Kopie, nicht das Original).
+	if core.rate_track != null and result.has("dt"):
+		result = result.duplicate()
+		result["dt"] = core.real_dt(index, float(result.dt))
 	var q: int = result.quality
 	if q == ManiaCore.Quality.MISS:
 		_play_miss()
@@ -1956,7 +1961,7 @@ func _trigger_overdrive() -> void:
 func _on_hold_started(index: int, quality: int) -> void:
 	_play_hit(1.0)
 	# Hold-Kopf zaehlt fuer UR-Leiste und Trefferfehler wie eine normale Note.
-	var head_dt := core.hold_head_dt(index)
+	var head_dt := core.real_dt(index, core.hold_head_dt(index))  # Echtzeit-ms
 	_ur_tick({"dt": head_dt, "quality": quality})
 	_hit_offsets.append(head_dt)
 	_hold_head_dt[index] = head_dt

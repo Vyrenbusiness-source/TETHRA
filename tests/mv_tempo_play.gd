@@ -272,6 +272,7 @@ func _case_turbo() -> void:
 		max_change, max_step, int(max_at)])
 	if not _autoplay:
 		_check(tm.rule.fallbacks >= 1, "rueckfall-bei-miss", "Misses %d" % int(s1.n_miss))
+		_check_real_offsets(sc)
 	await create_timer(2.5).timeout
 	var rs := _results_node(sc)
 	_check(rs != null and rs.visible, "ergebnisbild", "")
@@ -294,6 +295,30 @@ func _case_turbo() -> void:
 		var d := _same_stats(s1, sc2.core.stats())
 		_check(d == "", "replay-wertung", d if d != "" else _brief(sc2.core.stats()))
 	await create_timer(1.0).timeout
+
+
+## Hit-Error-Leiste/UR in Echtzeit-ms: Summe |Offset| = Summe |core-dt| / Rate zur
+## Notenzeit (core-dt ist Songzeit). Hold-Koepfe stehen nur in _hit_offsets
+## (das Hold-Ende ersetzt den Eintrag in core._judged): hoechstens ein 50er-Fenster je Hold.
+func _check_real_offsets(sc: Node) -> void:
+	var core = sc.get("core")
+	var exp_sum := 0.0
+	var song_sum := 0.0
+	for idx in core._judged:
+		var r: Dictionary = core._judged[idx]
+		if r.has("dt") and not bool(r.get("pending", false)):
+			exp_sum += absf(core.real_dt(idx, float(r.dt)))
+			song_sum += absf(float(r.dt))
+	var got := 0.0
+	for o in sc.get("_hit_offsets"):
+		got += absf(float(o))
+	var holds := 0
+	for o in sc.get("_beatmap").hit_objects:
+		if o.is_hold:
+			holds += 1
+	var tol := 1.0 + 0.01 * exp_sum + float(holds) * float(core.w50) / maxf(float(core._win_rate), 0.5)
+	_check(absf(got - exp_sum) <= tol, "fehler-echtzeit", "Summe |Offset| %.0f ms, erwartet echt %.0f (+-%.0f), Songzeit %.0f" % [
+		got, exp_sum, tol, song_sum])
 
 
 func _plan_turbo(sc: Node) -> Array:

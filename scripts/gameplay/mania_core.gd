@@ -687,6 +687,17 @@ func _rate_for(idx: int) -> void:
 	w_miss = DifficultyCalc.mania_window_miss(od) * r
 
 
+## Zeitfehler einer Note in ECHTZEIT-ms (Anzeige: Hit-Error-Leiste, UR, Timing).
+## dt ist Songzeit; bei Rate r vergehen in 1 ms Echtzeit r ms Songzeit, also
+## dt / rate_at(Notenzeit) (gleiche Rate wie fuer die Fenster, siehe RateTrack).
+## Ohne rate_track unveraendert. Die Wertung selbst bleibt in Songzeit.
+func real_dt(idx: int, dt: float) -> float:
+	if rate_track == null or idx < 0 or idx >= beatmap.hit_objects.size():
+		return dt
+	var r := rate_track.rate_at(beatmap.hit_objects[idx].time)
+	return dt / r if r > 0.0 else dt
+
+
 ## Uebungsmodus (mv-tempo): nur Noten mit a_ms <= Zeit < b_ms zaehlen. Alle
 ## anderen gelten als erledigt (keine Wertung, kein Spawn); Score/Acc beziehen
 ## sich nur auf den Abschnitt. Direkt nach setup() aufrufen. Rueckgabe: Notenzahl.
