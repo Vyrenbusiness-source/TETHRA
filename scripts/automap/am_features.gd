@@ -14,7 +14,12 @@ extends RefCounted
 ##   4. Tonhoehe: Bass ueber eine zweite, lange FFT nur an den Bass-Anschlaegen
 ##      (10,8 Hz je Bin), Instrument/Stimme ueber die staerkste Spektrallinie.
 ##   5. Gehaltene Toene: harmonischer Pegel im Band des Tons bleibt nach dem Anschlag oben.
-##   6. Lautheit je Frame, Abschnitte ueber Neuheit (0,5-s-Bloecke), Art/Kiai/lead je Abschnitt.
+##   6. Lautheit je Frame. Takte aus dem Gitter (params.grid, sonst AmGrid.track), Merkmale je Takt (Chroma aus
+##      einer langen FFT, Klangfarbe aus den 20 Baendern, Pegel, Ereignisse je Art).
+##   7. Liedform: Selbstaehnlichkeit der Takte, Neuheit (Schachbrett-Kern), 4-Takt-Bloecke auf der Phase mit der
+##      groessten Neuheit; Kiai je Block (logistisch, auf Menschen-Maps gelernt: Energie-Rang, Wiederholung,
+##      Aehnlichkeit mit den lautesten Bloecken, Kontrast zu den Nachbarn); erwartete Notendichte je Takt
+##      (linear, gelernt); Abschnitte an Kiai-Wechseln und starken Neuheiten, Art/Intensitaet/lead je Abschnitt.
 ##
 ## Die teuren Schritte (FFT, Mediane) laufen ueber den WorkerThreadPool; mit
 ## params.threads = 1 laeuft alles im aufrufenden Thread.
