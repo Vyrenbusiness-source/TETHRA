@@ -44,7 +44,7 @@ func setup(sets: Array, anchor: String, stars: float, collections: Array) -> voi
 	_stars = snappedf(stars if stars > 0.0 else 3.0, 0.1)
 	_seed = int(Time.get_unix_time_from_system()) % 100000
 	_collections = collections
-	set_anchors_preset(Control.PRESET_FULL_RECT)
+	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	if shot_dir() != "":
 		_seed = 7
@@ -82,8 +82,9 @@ func _build() -> void:
 	_len_btns.clear()
 	var collections := _collections
 	var back := UiTheme.modal_backdrop(self)
+	back.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	var center := CenterContainer.new()
-	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	back.add_child(center)
 	var panel := PanelContainer.new()
 	panel.custom_minimum_size = Vector2(W, 0)

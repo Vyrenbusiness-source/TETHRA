@@ -19,7 +19,7 @@ LENGTH,LÄNGE,LENGTH
 Shuffle,Neu mischen,Shuffle
 Start marathon,Marathon starten,Start marathon
 Not enough 4K maps at ★ %s ± %s (found %d). Try other stars or the whole library.,Zu wenige 4K-Maps bei ★ %s ± %s (gefunden: %d). Andere Sterne oder die ganze Bibliothek probieren.,Not enough 4K maps at ★ %s ± %s (found %d). Try other stars or the whole library.
-%d maps · about %d min · local ranking per length, not sent online,%d Maps · etwa %d Min. · lokale Rangliste je Länge, wird nicht online gesendet,%d maps · about %d min · local ranking per length; not sent online
+"%d maps · about %d min · local ranking per length, not sent online","%d Maps · etwa %d Min. · lokale Rangliste je Länge, wird nicht online gesendet","%d maps · about %d min · local ranking per length, not sent online"
 %s BPM,%s BPM,%s BPM
 "mix on the beat, tempo %s %%","Mix auf dem Takt, Tempo %s %%","mix on the beat, tempo %s %%"
 double time,Doppeltakt,double time
