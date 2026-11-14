@@ -2717,6 +2717,17 @@ func _campaign_leave(target: String) -> void:
 	SceneFader.go(Campaign.SCENE)
 
 
+## Erfuellter Stern blendet kurz nacheinander ein (Deckkraft und leichte Groesse, kein Wackeln).
+func _campaign_pop(star: Control, i: int) -> void:
+	star.modulate.a = 0.0
+	star.pivot_offset = star.size * 0.5
+	star.scale = Vector2(0.6, 0.6)
+	var delay := 0.75 + 0.18 * i
+	var tw := star.create_tween().set_parallel(true)
+	tw.tween_property(star, "modulate:a", 1.0, 0.2).set_delay(delay)
+	tw.tween_property(star, "scale", Vector2.ONE, 0.3).set_delay(delay) 		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+
+
 ## Ruhige Zeile ueber den Knoepfen: Kapitel und Stufe, die drei Ziele, Ergebnis.
 func _build_campaign(group: Control) -> void:
 	if _camp.is_empty():
@@ -2750,6 +2761,8 @@ func _build_campaign(group: Control) -> void:
 		var star := CampaignStars.make([met[i]], 14.0)
 		star.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		g.add_child(star)
+		if bool(met[i]):
+			_campaign_pop(star, i)
 		var gl := Label.new()
 		gl.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
 		gl.text = Campaign.goal_text(goals[i])
