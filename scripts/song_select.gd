@@ -2343,7 +2343,10 @@ func _begin_game_preload() -> void:
 	for p in paths:
 		if _game_res.has(p) or _game_req.has(p) or not ResourceLoader.exists(p):
 			continue
-		if AsyncLoad.request(p, "", true) == OK:
+		# Ohne Sub-Threads: parallele Unter-Ladevorgaenge gemeinsamer Abhaengigkeiten
+		# (mania_3d/gameplay_3d/orbit) liessen in Godot 4.7 interne Lade-Token liegen
+		# (2-3 "ObjectDB instances leaked at exit", RefCounted, Referenzzahl 0).
+		if AsyncLoad.request(p, "", false) == OK:
 			_game_req.append(p)
 	_game_preload_t = Time.get_ticks_usec()
 
