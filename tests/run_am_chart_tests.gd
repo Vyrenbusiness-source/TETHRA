@@ -40,9 +40,10 @@ func _initialize() -> void:
 	_test_roles()
 	_test_tempo_change()
 	_test_lint_detects()
+	_test_select_model()
 	_test_stars_and_stats()
 	# Ein Laufzeitfehler bricht eine Testfunktion ab, ohne _check aufzurufen: darum mitzaehlen.
-	if _sections != 7 or _passed < 60:
+	if _sections != 8 or _passed < 60:
 		print("  FAIL nur %d Abschnitte / %d Pruefungen gelaufen (Skriptfehler?)" % [_sections, _passed])
 		_failed += 1
 	print("=== %s ===" % ("ALLE OK (%d)" % _passed if _failed == 0 else "%d FEHLER" % _failed))
@@ -395,7 +396,7 @@ func _test_roles() -> void:
 		ev2.append(_ev(800.0 + float(i) * beat, "hat", 0.8))
 		ev2.append(_ev(800.0 + (float(i) + 0.5) * beat, "kick", 0.8))
 	var f2 := {"events": ev2, "sections": feats["sections"]}
-	var low := {"star_bands": {"Normal": [0.5, 1.0]}, "star_tol": 0.1}
+	var low := {"star_bands": {"Normal": [0.5, 1.0]}, "star_tol": 0.1, "select_model": false}   # Handgewichte (ohne Auswahl-Modell)
 	var kick_share := func(p: Dictionary) -> float:
 		var r := AmChart.build(f2, grid, "Normal", p)
 		var nk := 0
@@ -424,7 +425,7 @@ func _test_roles() -> void:
 			if float(nt["t_ms"]) < 800.0 + 80.0 * beat - 1.0:
 				nd += 1
 		return float(nd) / maxf(float((r["notes"] as Array).size()), 1.0)
-	var hard_low := {"star_bands": {"Hard": [1.0, 1.6]}, "star_tol": 0.1}
+	var hard_low := {"star_bands": {"Hard": [1.0, 1.6]}, "star_tol": 0.1, "select_model": false}
 	var d0: float = dense_share.call(hard_low)
 	var hl := hard_low.duplicate(true)
 	hl["dens_local_gain"] = 0.8
@@ -513,6 +514,59 @@ func _test_lint_detects() -> void:
 		burst.append(_n(float(i) * 50.0, [0, 2, 1, 3][i % 4]))
 	_check(not AmChart.lint(burst, grid, "Insane").is_empty(), "zu lange 1/8-Folge in Insane")
 	_sections += 1  # nur erreicht ohne Laufzeitfehler
+
+## Auswahl-Modell (select.json): Merkmale je Zeile und Wirkung der Gewichte auf die Auswahl.
+func _test_select_model() -> void:
+	print("-- Auswahl-Modell")
+	var s := _synthetic()
+	var P := AmChart._params({})
+	var G := AmChart._grid(s["grid"])
+	var C := AmChart._prep(s["features"], G, P)
+	var X: Array = AmChart.row_features(C)
+	var dim: int = AmChart.ROW_FEATURES.size()
+	var ok_dim := X.size() == int(C["n"])
+	var ok_pos := true
+	for x: PackedFloat32Array in X:
+		ok_dim = ok_dim and x.size() == dim
+		var pos := 0.0
+		for f in range(15, 22):
+			pos += x[f]
+		ok_pos = ok_pos and is_equal_approx(pos, 1.0)
+	_check(ok_dim, "row_features: eine Zeile je Gitterpunkt, %d Merkmale" % dim)
+	_check(ok_pos, "row_features: genau eine Lage im Takt je Zeile")
+	# Zeit -> Art (synthetisch: Kick auf 1 und 3, Snare auf 2 und 4)
+	var bar: float = s["bar"]
+	var beat: float = s["beat"]
+	var start: float = s["start"]
+	var counts := []
+	for favor: String in ["snare", "kick"]:
+		var other := "kick" if favor == "snare" else "snare"
+		var w := {"bias": -1.0, "s_" + favor: 6.0, "s_" + other: -6.0}
+		var model := {"profiles": {}}
+		for p: String in AmChart.PROFILES:
+			model["profiles"][p] = {"note": w}
+		var res := AmChart.build_all(s["features"], s["grid"], {"select": model}, "Easy")
+		var n_fav := 0
+		var n_oth := 0
+		for nt: Dictionary in res["Easy"]["notes"]:
+			var t := float(nt["t_ms"])
+			var b := int(floor((t - start) / bar))
+			if b < 8 or b >= 44:
+				continue    # nur Takte mit Schlagzeug (Vers, Aufbau, Refrain)
+			var q := int(round((t - start - float(b) * bar) / beat))
+			if absf(t - (start + float(b) * bar + float(q) * beat)) > 2.0:
+				continue
+			var is_snare := q % 2 == 1
+			if (favor == "snare") == is_snare:
+				n_fav += 1
+			else:
+				n_oth += 1
+		counts.append([n_fav, n_oth])
+		_check(n_fav > n_oth, "Modell bevorzugt %s: Easy-Noten auf %s %d, auf %s %d" % [favor, favor, n_fav, other, n_oth])
+	var off := AmChart.build_all(s["features"], s["grid"], {"select_model": false}, "Easy")
+	_check(bool(off["Easy"]["ok"]) and not (off["Easy"]["notes"] as Array).is_empty(), "select_model = false: Handgewichte laufen weiter")
+	_sections += 1  # nur erreicht ohne Laufzeitfehler
+
 
 func _test_stars_and_stats() -> void:
 	print("-- Sterne und Statistik")

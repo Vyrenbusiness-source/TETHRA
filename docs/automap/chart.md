@@ -165,3 +165,126 @@ Nicht erreicht:
   2,5 % (Mensch feiner als 1/4: 8,1 %; die Vorlage hat dort oft 1/6 oder 1/16, die Hard nicht nutzt).
 - **Akkorde auf dem Schlag** haeufiger als bei Menschen (Hard 86 % gegen 70 %): 3er nur auf dem Schlag,
   2er in Easy/Normal nur auf dem Schlag.
+
+## Runde 3 (am3-chart, 2026-11-14): gelernte Notenauswahl
+
+Vorher waehlte der Setzer die Zeilen nach Handgewichten (Art, Taktlage, Staerke, abgestimmt in am-integrate).
+Jetzt entscheidet ein kleines, gelerntes Modell, welche eingerasteten Ereignisse Menschen als Note setzen.
+
+### Modell (`data/automap/select.json`)
+
+- Je Profil drei logistische Regressionen ueber dieselben 51 Merkmale einer Gitter-Zeile
+  (`AmChart.ROW_FEATURES`, berechnet in `AmChart.row_features`):
+  - **note**: setzt ein Mensch hier eine Note? (Ziel: Note der Menschen-Diff in +-15 ms; Menschen-Diff je
+    Profil wie im Pruefstand gewaehlt, `pick_human_diff`)
+  - **chord**: hat die Menschen-Zeile hier >= 2 Noten? (nur Zeilen mit Menschen-Note) -> Reihenfolge der Akkorde
+  - **hold**: beginnt der Mensch hier einen Hold? (nur Zeilen mit Note und gehaltenem Ton) -> Reihenfolge der Holds
+  - dazu `hold_any` (Hold ohne gemessenen Ton, standardmaessig aus) und `hold_len` (Hold-Laenge Mensch gegen
+    gehaltenen Ton).
+- Merkmale: Staerke je Art (7), dieselbe nur wenn die Art zur fuehrenden Ebene des Abschnitts gehoert (7), Lage im
+  Takt (Taktanfang, Schlag, 1/2, 1/4, 1/8, Triole, feiner), Zahl der Arten, gehaltener Ton, Abschnitt (Art,
+  Intensitaet, Kiai), oertliche Ereignis-Dichte, Lautheit gegen den Song-Median, erwartete Dichte
+  (`features.bar_density`, sonst Lautheit in +-1 s), Tempo und Tempo x Lage, Vorrang gegen die Nachbarschaft,
+  Abstand zu den Nachbar-Zeilen, Nachbarn auf +-1/4 und +-1/2, Anteil der Art im Song, Zwischen-Zeile.
+- Gelernt mit Adagrad und L2 (6 Durchgaenge), **nur Abstimm-Menge** (187 Sets); Sets, deren Gitter kaum
+  Menschen-Noten trifft (< 35 %), fliessen nicht ein. Gewichte stehen als Tabelle Merkmal -> Gewicht in der Datei
+  (lesbar, keine Black Box). Beispiel Hard: Snare +2,1, Hat +1,6, Kick +0,2; Taktanfang +1,8, Schlag +1,6,
+  1/2 +1,2, 1/4 -0,1, 1/8 -2,3; Lautheit +1,7; erwartete Dichte +0,8; 1/4 bei hohem Tempo -0,9.
+- Trennschaerfe auf der Pruef-Menge (AUC): note 0,93 / 0,94 / 0,94 / 0,92 / 0,90 (Easy..Expert), chord
+  0,72-0,86, hold 0,56-0,65 (gehaltene Toene aus AmFeatures sagen Menschen-Holds kaum voraus).
+- `select_model = false` schaltet auf die alten Handgewichte zurueck (Tests der Handgewichte laufen so).
+
+### Setzer
+
+- **Verschachtelung ab Hard** (`nest_from`): Hard waehlt frei nach seinem Modell, Insane und Expert enthalten
+  alle Hard-Stellen und waehlen dazu, Normal und Easy sind eine Auswahl aus Hard. Vorher wurde von Expert nach
+  unten gewaehlt; Hard musste dann nehmen, was Expert/Insane gewaehlt hatten. Stellen, die ein schwereres Profil
+  nicht setzen kann (Spalten belegt), fallen im leichteren weg (Auswahl-Eigenschaft bleibt: 0 Verstoesse).
+- **Seltene Teilung** (Easy 1/2, Normal 1/4, Hard 1/8) konkurriert nach dem Modell mit den uebrigen Zeilen
+  (`rare_model`), statt mit festem Anteil eingemischt zu werden; Obergrenze wie bisher knapp unter lint.
+- **Sterne ueber Dichte**: reichen die Ereignisse fuer das Sterne-Band nicht (Dichte d > 1), kommen erst
+  Zwischen-Zeilen dazu: 1/4-Gitterpunkte ohne Ereignis zwischen zwei Ereignis-Zeilen hoechstens 1 Schlag
+  auseinander und nur, wo die Musik laut ist (>= 0,8 x Median; `fill_max`, `fill_energy`, `fill_gap_beats`).
+  Pausen bleiben Pausen. Weniger Akkorde (`chord_scale` < 1) wurde gemessen und verworfen (alle Ziele schlechter).
+- **Dichte je Takt** (`_select_quota`): ist `features.bar_density` (AmFeatures, am3-sections) da, bekommt jeder
+  Takt die Notenzahl (1 - a) x Schwelle + a x lambda x Gewicht, Gewicht = (Summe der Modell-Wahrscheinlichkeiten)^0,5 x
+  (bar_density x Taktlaenge)^0,5, a = `dens_quota_bar` = 0,5. Ohne das Feld (heutiger Stand von main) gilt die
+  gemeinsame Schwelle des Modells (`dens_quota` = 0; mit nur der Modell-Summe brachte die Kopplung +0,003).
+- **Hold-Laenge** in Easy/Normal (dort sperrt ein Hold die Zeilen darunter): gehaltener Ton x gelerntes Verhaeltnis
+  (Easy 0,96, Normal 0,66). In Hard und schwerer aendert die Laenge die Ueberlappung nicht (gemessen 0,35x: 50,5
+  statt 49,8 %), kostet aber Sterne (Expert im Band 68 -> 40 %); dort bleibt sie.
+- Tonhoehen-Gewicht 2,0 -> 2,5: Akkord-Zeilen liegen nach dem Modell ueber den ganzen Song verteilt (vorher bei
+  gleicher Staerke am Songanfang); mit 2,0 fiel der Test "Spalte folgt der Tonhoehe" knapp durch (165 gleich /
+  58 gegen), mit 2,5 167 / 45. Spalten aendern keine der Ziel-Kennzahlen ausser den Sternen (kaum).
+
+### Werkzeug
+
+```
+# Kette einmal rechnen und je Set ablegen (ein Prozess, etwa 10 min fuer 271 Sets)
+timeout 5400 Godot_v4.7-stable_win64_console.exe --headless --audio-driver Dummy --path . \
+    --script res://tools/automap_learn_chart.gd -- --dump --maps <maps> --cache <ordner>
+# Modell lernen (nur Abstimm-Menge), schreibt data/automap/select.json (etwa 1 min)
+... -- --fit --cache <ordner> [--epochs 6] [--stats] [--dry]
+# Setzer auf den abgelegten Eingaben messen (ohne Audio, Sterne = estimate_stars, etwa 30 s Pruef-Menge)
+... -- --eval --cache <ordner> [--set test|tune] [--chart k=v,...] [--no-model] [--rank] [--low]
+```
+
+Aendert sich AmFeatures (Ereignisse, `bar_density`), muss das Modell neu gelernt werden (`--dump` mit dem neuen
+AmFeatures, dann `--fit`). `select.json` ist mit dem Stand nach dem Merge von am3-sections (53dd608) gelernt.
+
+### Gemessen: Pruefstand, Pruef-Menge, echte Kette mit Audio
+
+`tools/automap_bench.gd -- --mapper new --set test` (84 Sets, AutoMapper4K.generate, rosu-Sterne). Vorher = Stand
+300f1a3 (`docs/automap/report.md`, gleiche Module ausser AmChart). Abstimmung (Modell und alle Stellgroessen) nur auf
+der Abstimm-Menge (Werkzeug `--eval --set tune`); die Pruef-Menge wurde nur am Ende gemessen.
+
+| Kennzahl | Ziel | vorher | nachher |
+|---|---|---|---|
+| erzeugte Noten auf Menschen-Note, Hard | >= 85 % | 76,5 % (Notenzahl/Mensch 0,80) | 77,9 % (0,84) |
+| Menschen-Noten getroffen, Hard | >= 75 % | 61,1 % | 65,8 % |
+| Dichte-Korrelation, alle Profile | >= 0,8 | 0,544 | 0,641 |
+| Holds ueberlappen Menschen-Holds | >= 60 % | 52,8 % | 52,8 % |
+| Sterne im Band Easy / Normal / Hard / Insane / Expert | >= 90 % | 90,5 / 75,0 / 92,9 / 79,8 / 69,0 % | 91,7 / 81,0 / 97,6 / 95,2 / 88,1 % |
+| Regelverletzungen (lint) | 0 | 0 in 420 | 0 in 420 |
+| Dauer 95. Perzentil (4 min) | <= 15 s | 5,5 s | 5,7 s |
+
+Nach dem Merge von am3-sections (53dd608: `bar_density`, Versatz je Art) und main, Modell neu gelernt, Gitter als
+`params.grid` an AmFeatures (AutoMapper4K), gleicher Pruefstand:
+
+| Kennzahl | Ziel | vorher (300f1a3) | nachher ohne am3-sections | nachher mit am3-sections |
+|---|---|---|---|---|
+| auf Menschen-Note, Hard | >= 85 % | 76,5 % | 77,9 % | 77,6 % (Notenzahl/Mensch 0,86) |
+| Menschen-Noten getroffen, Hard | >= 75 % | 61,1 % | 65,8 % | 67,1 % |
+| Dichte-Korrelation | >= 0,8 | 0,544 | 0,641 | 0,660 |
+| Holds | >= 60 % | 52,8 % | 52,8 % | 53,0 % |
+| Sterne Easy / Normal / Hard / Insane / Expert | >= 90 % | 90,5 / 75,0 / 92,9 / 79,8 / 69,0 | 91,7 / 81,0 / 97,6 / 95,2 / 88,1 | 91,7 / 82,1 / 97,6 / 96,4 / 85,7 |
+| lint | 0 | 0 | 0 | 0 |
+| Dauer 95. Perzentil (Maximum) | <= 15 s | 5,5 s (6,2) | 5,7 s (6,2) | 5,9 s (6,8) |
+
+Mit am3-sections je Profil (auf Menschen-Note / getroffen / Dichte): Easy 69,7 / 58,0 / 0,471, Normal 74,5 / 66,4 /
+0,604, Hard 77,6 / 67,1 / 0,721, Insane 75,0 / 64,1 / 0,759, Expert 72,8 / 64,9 / 0,809. Kopplung an `bar_density`
+(Abstimm-Menge): ohne 72,1 / 63,4 / 0,639, mit 0,5/0,5 71,4 / 63,8 / 0,646, nur bar_density (mix 1) 70,8 / 63,9 /
+0,647; gewaehlt 0,5/0,5.
+
+Ohne am3-sections je Profil (auf Menschen-Note / getroffen / Dichte): Easy 70,1 / 58,1 / 0,459, Normal 75,1 / 65,0 / 0,587,
+Hard 77,9 / 65,8 / 0,698, Insane 74,9 / 63,4 / 0,739, Expert 72,4 / 63,9 / 0,789.
+
+### Grenzen (gemessen, Abstimm-Menge)
+
+- **Kandidaten**: nur 81 % der Menschen-Zeilen in Hard haben ueberhaupt ein eingerastetes Ereignis (Easy 93 %,
+  Expert 65 %). Bei gleicher Notenzahl wie heute (0,84-0,89 x Mensch) laesst das mit perfekter Auswahl hoechstens
+  etwa 87 % Zeilen-Treffer zu; 85 % auf Noten und 75 % getroffen zugleich verlangen mehr Ereignisse (AmFeatures).
+- **Auswahl ist am Modell-Limit**: Hard setzt genau die besten Zeilen nach Modell (81,5 % auf Menschen-Zeile bei
+  Sets mit passendem Gitter, beste K nach Modell 82,1 %). Der Rest der Luecke zu den Noten-Zielen: Akkord-Groesse
+  (36 % der getroffenen Zeilen haben eine andere Notenzahl als beim Menschen; Akkord-Modell AUC 0,86) und Sets mit
+  falschem Gitter (Tempo/Versatz, AmGrid).
+- **Dichte**: zwei Menschen-Diffs desselben Sets korrelieren selbst nur mit 0,79 (docs/automap/form.md). Die
+  Summe der Modell-Wahrscheinlichkeiten je 2-s-Fenster erreicht 0,73 (Hard) / 0,68 (Easy); Easy/Normal liegen
+  darunter, weil Holds dort Zeilen sperren und die Fenster nur 4-8 Noten haben.
+- **Holds**: gehaltene Toene aus AmFeatures sagen Menschen-Holds kaum voraus (AUC 0,56-0,65). Weniger, sicherere
+  Holds (Schwelle `hold_min_p` 0,25) heben die Ueberlappung auf 53,2 %, kosten aber Sterne (Expert im Band 87 -> 75 %)
+  und Noten-Treffer (Hard auf Menschen-Note -2,8 Punkte), weil Holds viel Sternwert tragen; Holds nach `hold_any` (ohne Ton) bringen den
+  Hold-Anteil auf Menschen-Niveau (Hard 19 % statt 8 %), die Ueberlappung aber nur +0,7 Punkte. Beides aus.
+- **Sterne Normal** (81 %): die unter dem Band liegen fast alle knapp darunter (1,9-2,1) oder haben ein falsches
+  Tempo (x0,5); Normal-Regeln (1/2-Raster, 1/4 hoechstens 15,9 %, Laeufe bis 7, keine Jacks) begrenzen dort. Mehr
+  Zwischen-Zeilen aendern daran nichts (gemessen `fill_gap_beats` 2, `fill_max` 0,6).
