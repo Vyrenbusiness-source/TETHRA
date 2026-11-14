@@ -256,3 +256,9 @@ Laufend (Opus, Worktrees .warmd-worktrees/rhyg/<task>, alle mit WARMD_BASE=1):
 - am3-grid / am3-sections / am3-chart: Auto-Mapper Runde 3 (Oktave/Gegenschlag/Tempowechsel; Liedform/Kiai/Dichtekurve; gelernte Notenauswahl/Dichte/Sterne). Basis 300f1a3. Stand Kette: Tempo 89 %, Taktanfang 88 %, Menschen-Noten getroffen 61 %, Dichte 0,54, Kiai 0,27 (docs/automap/chain.md, report.md). Danach zusammenfuehren, Pruefstand, 3 eigene Songs neu (own songs/ -> maps/), release.
 - mv-keys: 5K-7K.
 Offen/klein: song_select.gd _bg_finished get_tree() null nach Verlassen; Relay-Smoke vor mp-all-modes rot (jetzt gemergt, pruefen); Turbo-Spiellauf meldet 1-3 Leaks; Hit-Error-Leiste bei Rate != 1 in Songzeit; Social Preview vom Nutzer hochladen.
+
+## Stand 2026-11-14 ~14:45 (v1.43.0 released, RAM knapp 3,5 GB)
+- v1.42.0 5K-7K (Server: mode mania5k/6k/7k + keys), v1.43.0 Auto-Mapper Runde 3 (data/automap/select.json gelernte Auswahl, bar_density, Liedform; Pruef-Menge: Menschen-Noten 67 %, Dichte 0,66, Sterne N/I/X 82/96/86 %, Tempo 89 %, Taktanfang 88 %). 3 eigene Songs neu in maps/ (14:36).
+- Laeuft: fix-small2 (song_select _bg_finished, Hit-Error bei Rate, Turbo-Leaks, Tutorial 4K-Text, Skip-Taste bei Space-Spalte, Relay-Smoke).
+- Naechste Ideen: 5K-7K in Multiplayer/Turnier/Marathon; Auto-Mapper Runde 4 (Holds: sustain sagt Menschen-Holds kaum voraus AUC 0,6; Tempo-Oktave; select.json nach AmFeatures-Aenderung neu lernen: tools/automap_learn_chart.gd --dump/--fit); Clip-Export fuer Marathon; Marathon im MP; Hit-Error Echtzeit.
+- Lastempfindliche Tests (run_clock_tests Echtzeit, mv_tempo Drift/Pegel) melden unter Last SKIP bzw. weite Grenzen.
