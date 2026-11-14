@@ -136,16 +136,27 @@ Standard).
 | Spielbarkeit | keine Regelverletzung (unten) | 0 |
 | Dauer | ganzer Ablauf je Song (4 min), alle Profile | ≤ 15 s |
 
-Spielbarkeits-Regeln je Profil (prüft `AmChart.lint(notes, grid, profile) -> Array[String]`):
+Spielbarkeits-Regeln je Profil (prüft `AmChart.lint(notes, grid, profile) -> Array[String]`).
+Seit 2026-11-13 gelten die Statistiken der Menschen-Maps je Sterne-Band als Regel (Entscheidung:
+Maps sollen wie von Hand gemappt wirken). Quelle: `data/automap/patterns.json`, gemessen von
+`tests/run_am_chart_tests.gd -- --measure maps 110 --learn` über 238 Sets / 989 4K-Diffs aus `maps/`
+(Bänder nach rosu-Sternen). Werte in Klammern: Menschen-Mittel im Band; Obergrenze = Mittel × 1,25.
+Anteile beziehen sich auf Zeilen (gleichzeitige Noten = eine Zeile), „Hold und Note“ auf Noten.
 
 | | Easy | Normal | Hard | Insane | Expert |
 |---|---|---|---|---|---|
-| feinste Teilung | 1/1, selten 1/2 | 1/2 | 1/4 | 1/4, kurz 1/8 | 1/4, 1/6, 1/8 |
-| Akkorde (gleichzeitig) | keine | 2 auf Akzent | 2 | 2, 3 auf starken Akzent | bis 3, 4 nur Schlussakkord |
+| feinste Teilung | 1/2 (Zeilen auf 1/2 ≤ 33,6 %; 26,9 %) | 1/4 in kurzen Läufen (Zeilen auf 1/4 ≤ 15,9 %; 12,7 %); 1/4-Lauf ≤ 7 Zeilen (90. Perzentil) | 1/4, selten 1/8 (Zeilen auf 1/8 ≤ 10,1 %; feiner als 1/4: 8,1 %); ≤ 2 1/8-Abstände in Folge | 1/4, kurz 1/8 (≤ 8 1/8-Abstände in Folge) | 1/4, 1/6, 1/8 |
+| Akkorde (gleichzeitig) | 2 auf dem Schlag; Akkord-Zeilen ≤ 22,9 % (18,3 %, davon 89 % auf dem Schlag) | 2 auf dem Schlag, 3 selten auf dem Schlag (≤ 2,0 %; 1,6 %); Akkord-Zeilen ≤ 41,1 % (32,9 %) | 2 auf 1/4, 3 auf dem Schlag (≤ 6,5 %; 5,2 %); Akkord-Zeilen ≤ 46,2 % (36,9 %) | 2 auf 1/4, 3 auf dem Schlag (≤ 11,3 %; 9,0 %); Akkord-Zeilen ≤ 49,5 % (39,6 %) | 2, 3 auf 1/4 (≤ 13,2 %; 10,6 %), 4 nur Schlussakkord; Akkord-Zeilen ≤ 51,3 % (41,0 %) |
 | Jack (gleiche Spalte in Folge, 1/4) | 0 | 0 | ≤ 2 | ≤ 3 | ≤ 4 |
-| Hold und Note gleichzeitig | nein | selten | ja | ja | ja |
+| Hold und Note gleichzeitig | selten (≤ 3,75 % der Noten; 3,0 %) | selten (≤ 8,6 %; 6,9 %) | ja | ja | ja |
+| Hold-Ende auf | 1/2 | 1/4 | 1/4 | 1/4 | 1/8 |
 | Mindestabstand gleiche Spalte | 1/1 | 1/2 | 1/4 | 1/4 | 1/8 |
 | Hand-Balance (links/rechts) | 40–60 % | 40–60 % | 42–58 % | 42–58 % | 42–58 % |
+
+Der Setzer zielt auf die Menschen-Mittel (seltene Teilung, Akkord-, 3er-, Hold- und Jack-Anteil
+aus `patterns.json`) und bleibt unter den Obergrenzen. Vorher galt eine feste Tabelle (Easy nur 1/1,
+selten 1/2, keine Akkorde; Normal nur 1/2; Hard nur 2er-Akkorde); sie reichte bei langsamen Songs
+nicht für die Sterne-Bänder und wich von den Menschen-Maps ab.
 
 Musikalische Regeln für alle Profile: Tonhöhe steigt -> Spalte wandert nach rechts (und umgekehrt);
 wiederholte Motive bekommen dasselbe Muster; Kick/Snare bekommen feste, erkennbare Rollen innerhalb
