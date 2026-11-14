@@ -63,6 +63,8 @@ fail=0
 case "$ROOMS" in *"\"code\":\"$CODE\""*) ;; *) echo "FAIL: /rooms ohne Raum $CODE"; fail=1;; esac
 for side in host client; do
 	grep -Eq "MPRELAY [A-Z]+ players=2 " "$WORK/$side.log" || { echo "FAIL $side: 2 Spieler"; fail=1; }
+	# Raum-Mods Sudden Death + Minen (mit Minen-Version, ohne No-Fail) kommen ueber den Relay an.
+	grep -Eq "MPRELAY [A-Z]+ mods=SD MN v=[0-9]+ nf=false" "$WORK/$side.log" || { echo "FAIL $side: Raum-Mods SD/MN"; fail=1; }
 	grep -Eq "MPRELAY [A-Z]+ live score" "$WORK/$side.log" || { echo "FAIL $side: Live-Score"; fail=1; }
 	grep -Eq "MPRELAY [A-Z]+ final score" "$WORK/$side.log" || { echo "FAIL $side: Endergebnis"; fail=1; }
 	grep -Eq "MPRELAY [A-Z]+ DONE" "$WORK/$side.log" || { echo "FAIL $side: nicht fertig"; fail=1; }

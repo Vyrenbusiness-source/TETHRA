@@ -342,6 +342,10 @@ func _ready() -> void:
 				_rule_mods[k] = k in a.trim_prefix("--rule-mods=").to_upper().split(",")
 			if RuleMods.is_rule(_rule_mods):
 				_nf_enabled = false
+				_update_nf_button()
+			_sync_rule_mod_buttons()
+			if _selected_set != null:
+				_update_info_panel()   # Minen-Liste unter BESTE SCORES
 	if DisplayServer.get_name() == "headless":
 		_headless_report()
 	elif GameSession.perf_enabled:
@@ -401,6 +405,8 @@ func _ready() -> void:
 			if a.begins_with("--skin2d="):
 				Settings.skin_2d = a.trim_prefix("--skin2d=")
 		add_child.call_deferred(SettingsPanel.new())
+	elif OS.get_cmdline_args().has("--rules-harness"):
+		RuleModsHarness.run_browser(self)   # Harness: Regel-Mods per Klick, Minen-Liste, Replay
 	elif OS.get_cmdline_args().has("--shot"):
 		_capture_screenshot_and_quit()
 
@@ -2844,6 +2850,9 @@ func _update_info_panel() -> void:
 	# Orbit-Modus (nur 4K-Diffs): nur Orbit-Scores, getrennt von Mania.
 	var orbit := _play_mode != "mania" and int(m.get("mode", 0)) in [0, 3]
 	var score_mode := _pm() if orbit else ""
+	# Mods-Schalter "Mines" an: eigene Liste "mania_mn" (RuleMods), Kopf zeigt "Mines".
+	if _play_mode == "mania":
+		score_mode = RuleMods.board_mode(score_mode, _rule_mods)
 	_style_lb_mode_tag(score_mode)
 	_online_gen += 1
 	if _lb_online:
@@ -2855,7 +2864,7 @@ func _update_info_panel() -> void:
 		_selected_set.version_name_at(_selected_diff), 5, score_mode)
 	if tops.is_empty():
 		var empty := Label.new()
-		empty.text = tr("Noch kein %s-Score — spiel die Map!") % _score_label(score_mode)
+		empty.text = RuleMods.board_text("empty") if RuleMods.is_mines_board(score_mode) 				else tr("Noch kein %s-Score — spiel die Map!") % _score_label(score_mode)
 		empty.add_theme_font_size_override("font_size", 13)
 		empty.add_theme_color_override("font_color", COL_DIM)
 		_lb_box.add_child(empty)
@@ -3085,6 +3094,9 @@ func _show_online_scores(m: Dictionary, score_mode: String) -> void:
 		return
 	_lb_hint(tr("Lade Rangliste …"))
 	var gen := _online_gen
+	if RuleMods.is_mines_board(score_mode):
+		_show_online_mines(api, md5, gen)
+		return
 	api.leaderboard(online_mode_of(m, score_mode), md5, 0, func(ok: bool, entries: Array, msg: String):
 		if gen != _online_gen or not is_inside_tree():
 			return
@@ -3098,6 +3110,29 @@ func _show_online_scores(m: Dictionary, score_mode: String) -> void:
 			var oe: Dictionary = entries[i] if entries[i] is Dictionary else {}
 			if str(oe.get("mode", "")) == "":
 				oe["mode"] = ScoreStore.mode_name(score_mode)
+			_lb_box.add_child(_online_row(oe)))
+
+
+## Online-Minen-Liste ("mania_mn"): nur zeigen, wenn der Server "board" kennt; sonst
+## ein ruhiger Hinweis statt der normalen Mania-Liste (die er ohne board liefert).
+func _show_online_mines(api: OnlineApi, md5: String, gen: int) -> void:
+	var board := RuleMods.MINES_SCORE_MODE
+	api.leaderboard_board("mania", board, md5, func(ok: bool, entries: Array, msg: String, known: bool):
+		if gen != _online_gen or not is_inside_tree():
+			return
+		for c in _lb_box.get_children():
+			c.queue_free()
+		if ok and not known:
+			_lb_hint(RuleMods.board_text("online_soon"))
+			return
+		if not ok:
+			_lb_hint(tr("Rangliste nicht erreichbar.") + (" (%s)" % msg if msg != "" else ""))
+		elif entries.is_empty():
+			_lb_hint(RuleMods.board_text("empty"))
+		for i in mini(entries.size(), 10):
+			var oe: Dictionary = entries[i] if entries[i] is Dictionary else {}
+			oe["mode"] = "mania"
+			oe["pp"] = 0.0   # Minen: keine pp
 			_lb_box.add_child(_online_row(oe)))
 
 
@@ -3625,7 +3660,8 @@ func _style_lb_mode_tag(score_mode: String) -> void:
 	if _lb_mode_tag == null:
 		return
 	var col := UiTheme.ACCENT2 if score_mode == ScoreStore.MODE_ORBIT else COL_ACCENT
-	_lb_mode_tag.text = _score_label(score_mode).to_upper()
+	_lb_mode_tag.text = (RuleMods.board_tag(score_mode).replace("Mania 4K", _score_label(""))
+			if RuleMods.is_mines_board(score_mode) else _score_label(score_mode)).to_upper()   # Minen: "MANIA 7K · MINES"
 	_lb_mode_tag.add_theme_color_override("font_color", col.lerp(COL_TEXT, 0.25))
 	var box := _lb_mode_tag.get_parent() as PanelContainer
 	var sb := StyleBoxFlat.new()
@@ -3638,7 +3674,7 @@ func _style_lb_mode_tag(score_mode: String) -> void:
 	sb.content_margin_top = 1
 	sb.content_margin_bottom = 1
 	box.add_theme_stylebox_override("panel", sb)
-	box.tooltip_text = tr("Nur Scores im Modus %s") % _score_label(score_mode)
+	box.tooltip_text = RuleMods.board_text("tip") if RuleMods.is_mines_board(score_mode) 			else tr("Nur Scores im Modus %s") % _score_label(score_mode)
 
 
 ## Modus-Name der Rangliste: Mania mit der Tastenzahl der gewaehlten Diff ("Mania 7K").
@@ -3771,6 +3807,8 @@ func _on_rule_mod_toggled(key: String, on: bool) -> void:
 	if on and RuleMods.clears_nf(key) and _nf_enabled:
 		_on_nf_toggled(false)
 	_sync_rule_mod_buttons()
+	if key == RuleMods.MN and _selected_set != null:
+		_update_info_panel()   # BESTE SCORES: Minen-Liste bzw. normale Liste
 	if _state_ready:
 		_save_browser_state()
 
@@ -3953,16 +3991,31 @@ func _update_max_pp(m: Dictionary) -> void:
 	var osz := _selected_set.osz_path
 	var notes := int(m.get("notes", 0))
 	_maxpp_thread = Thread.new()
-	_maxpp_thread.start(func():
-		var v := StarService.max_pp_for(osz, inner, notes)
-		_on_maxpp_done.call_deferred(osz, inner, v))
+	# Der Thread kennt nur die Instanz-ID: der Browser kann frei werden, waehrend er rechnet
+	# (Start direkt nach der Auswahl, --mania/--rule-mods-Shots). Frueher griff das Lambda
+	# auf das freigegebene self zu ("_on_maxpp_done" auf 'previously freed').
+	_maxpp_thread.start(Callable(get_script(), "_maxpp_job").bind(
+			get_script(), get_instance_id(), osz, inner, notes))
+
+
+## Thread-Teil der Max-pp-Rechnung: statisch, ohne Zugriff auf den Browser.
+static func _maxpp_job(script: Script, owner_id: int, osz: String, inner: String, notes: int) -> void:
+	var v := StarService.max_pp_for(osz, inner, notes)
+	Callable(script, "_maxpp_deliver").call_deferred(owner_id, osz, inner, v)
+
+
+## Hauptthread: Ergebnis nur an einen noch lebenden Browser geben.
+static func _maxpp_deliver(owner_id: int, osz: String, inner: String, v: float) -> void:
+	var o: Object = instance_from_id(owner_id)
+	if o != null and is_instance_valid(o) and o.has_method("_on_maxpp_done"):
+		o.call("_on_maxpp_done", osz, inner, v)
 
 
 func _on_maxpp_done(osz: String, inner: String, v: float) -> void:
 	if _maxpp_thread != null:
 		_maxpp_thread.wait_to_finish()
 		_maxpp_thread = null
-	if _selected_set == null:
+	if _selected_set == null or not is_inside_tree():
 		return
 	if _play_mode != "mania":
 		_maxpp_label.text = ""
