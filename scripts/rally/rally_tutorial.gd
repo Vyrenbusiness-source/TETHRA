@@ -261,6 +261,17 @@ func _label(size_px: int, col: Color) -> Label:
 	return l
 
 
+## Kopftext setzen. Die Hoehe kommt aus der Schrift (Breite des Kopfs), denn das
+## Label meldet im VBox umbrochene Zeilen nicht: sonst ueberdeckt die zweite Zeile
+## die Fortschritts-Striche.
+func _set_body(text: String) -> void:
+	_body_lbl.text = text
+	var font := _body_lbl.get_theme_font("font")
+	var fs := _body_lbl.get_theme_font_size("font_size")
+	var h := font.get_multiline_string_size(text, HORIZONTAL_ALIGNMENT_CENTER, 760.0, fs).y
+	_body_lbl.custom_minimum_size.y = ceilf(h)
+
+
 # ---------------------------------------------------------------------------
 # Texte
 # ---------------------------------------------------------------------------
@@ -293,7 +304,7 @@ func title_for(s: int) -> String:
 
 func body_for(s: int) -> String:
 	match s:
-		LAND: return tr("The ball bounces on your half of the table. The zone it lands in is your key: press that zone key just as the ball reaches the racket line at the front. Keys, left to right: %s. (3 or 4 zones: settings.)") % keys_text()
+		LAND: return tr("The zone the ball lands in is your key: press it just as the ball reaches the racket line. Keys, left to right: %s") % keys_text()
 		ARC: return tr("The arc tells you how long to wait. A high lob is slow: wait for it. A flat ball is fast and the next one follows right behind. Press at the racket line every time.")
 		SMASH: return tr("A ball with a white outline spans two zones: press both zone keys together (%s).") % keys_text()
 		HOLD: return tr("A ball with a bar is a charge: press on arrival, keep holding the key until the bar ends, then let go.")
@@ -334,7 +345,7 @@ func reason_hint(code: String, zone: int = 0) -> String:
 func _update_texts() -> void:
 	_step_lbl.text = tr("Step %d of %d") % [step + 1, STEP_COUNT]
 	_title_lbl.text = title_for(step)
-	_body_lbl.text = body_for(step)
+	_set_body(body_for(step))
 	if _say_t == -INF:
 		_feedback.text = goal_for(step)
 		_feedback.add_theme_color_override("font_color", UiTheme.DIM)
@@ -679,7 +690,7 @@ func _show_result(completed: bool) -> void:
 	_bar.visible = false
 	_step_lbl.text = tr("Mini song")
 	_title_lbl.text = tr("Mini song done") if completed else tr("Mini song")
-	_body_lbl.text = tr("That was Rally. Change zones and keys in the settings.")
+	_set_body(tr("That was Rally. Change zones and keys in the settings."))
 	_pip_row.visible = false
 	_feedback.text = ""
 	var box := VBoxContainer.new()

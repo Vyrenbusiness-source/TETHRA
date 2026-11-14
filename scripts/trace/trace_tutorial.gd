@@ -254,6 +254,17 @@ func _label(size_px: int, col: Color) -> Label:
 	return l
 
 
+## Kopftext setzen. Die Hoehe kommt aus der Schrift (Breite des Kopfs), denn das
+## Label meldet im VBox umbrochene Zeilen nicht: sonst ueberdeckt die zweite Zeile
+## die Fortschritts-Striche.
+func _set_body(text: String) -> void:
+	_body_lbl.text = text
+	var font := _body_lbl.get_theme_font("font")
+	var fs := _body_lbl.get_theme_font_size("font_size")
+	var h := font.get_multiline_string_size(text, HORIZONTAL_ALIGNMENT_CENTER, 760.0, fs).y
+	_body_lbl.custom_minimum_size.y = ceilf(h)
+
+
 # ---------------------------------------------------------------------------
 # Texte
 # ---------------------------------------------------------------------------
@@ -327,7 +338,7 @@ func reason_hint(code: String, col: int = 0) -> String:
 func _update_texts() -> void:
 	_step_lbl.text = tr("Step %d of %d") % [step + 1, STEP_COUNT]
 	_title_lbl.text = title_for(step)
-	_body_lbl.text = body_for(step)
+	_set_body(body_for(step))
 	if _say_t == -INF:
 		_feedback.text = goal_for(step)
 		_feedback.add_theme_color_override("font_color", UiTheme.DIM)
@@ -694,7 +705,7 @@ func _show_result(completed: bool) -> void:
 	_bar.visible = false
 	_step_lbl.text = tr("Mini song")
 	_title_lbl.text = tr("Mini song done") if completed else tr("Mini song")
-	_body_lbl.text = tr("That was Trace. Change the keys in the settings.")
+	_set_body(tr("That was Trace. Change the keys in the settings."))
 	_pip_row.visible = false
 	_feedback.text = ""
 	var box := VBoxContainer.new()

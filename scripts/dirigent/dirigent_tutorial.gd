@@ -36,7 +36,7 @@ const LATE_MS := 450.0
 const HIST_MS := 500.0
 ## Toleranz der Hand beim Einsatz im Schritt "Beides" (Vielfaches von HIT_R).
 const AIM_TOL := 1.8
-const TOP_PAD := 56.0
+const TOP_PAD := 134.0
 const BOT_LEAD_MS := 6.0
 const BOT_TAP_MS := 40.0
 const BOT_OFFSET := Vector2(0.02, 0.015)
@@ -266,6 +266,17 @@ func _label(size_px: int, col: Color) -> Label:
 	return l
 
 
+## Kopftext setzen. Die Hoehe kommt aus der Schrift (Breite des Kopfs), denn das
+## Label meldet im VBox umbrochene Zeilen nicht: sonst ueberdeckt die zweite Zeile
+## die Fortschritts-Striche.
+func _set_body(text: String) -> void:
+	_body_lbl.text = text
+	var font := _body_lbl.get_theme_font("font")
+	var fs := _body_lbl.get_theme_font_size("font_size")
+	var h := font.get_multiline_string_size(text, HORIZONTAL_ALIGNMENT_CENTER, 760.0, fs).y
+	_body_lbl.custom_minimum_size.y = ceilf(h)
+
+
 func _build_sound() -> void:
 	_tick_player = AudioStreamPlayer.new()
 	_tick_player.stream = _tick_stream()
@@ -317,7 +328,7 @@ func title_for(s: int) -> String:
 func body_for(s: int) -> String:
 	match s:
 		FOLLOW: return tr("The baton follows your mouse. Move it onto the glowing dot, then on to the next number: 1, 2, 3, 4.")
-		RING: return tr("The ring shrinks onto the dot and tells you when: be on the dot just as the ring closes. This figure has 3 dots.")
+		RING: return tr("The ring shrinks onto the dot: be on it just as the ring closes. This figure has 3 dots.")
 		CUES: return tr("Marks run along the bar to the line. Circle: %s (left click). Diamond: %s (right click). Both parts: both keys together. Wrong key = miss.") % [key_label(0), key_label(1)]
 		BOTH: return tr("Guide the baton and press the keys at the same moment. The ticks on the bar are the beats; marks between two ticks are off-beat.")
 	return tr("Eight bars, everything together. You get a score at the end.")
@@ -366,7 +377,7 @@ func reason_hint(code: String, key: int = 0) -> String:
 func _update_texts() -> void:
 	_step_lbl.text = tr("Step %d of %d") % [step + 1, STEP_COUNT]
 	_title_lbl.text = title_for(step)
-	_body_lbl.text = body_for(step)
+	_set_body(body_for(step))
 	if _say_t == -INF:
 		_feedback.text = goal_for(step)
 		_feedback.add_theme_color_override("font_color", UiTheme.DIM)
@@ -754,7 +765,7 @@ func _show_result(completed: bool) -> void:
 	_bar.visible = false
 	_step_lbl.text = tr("Mini song")
 	_title_lbl.text = tr("Mini song done") if completed else tr("Mini song")
-	_body_lbl.text = tr("That was Dirigent. Change the keys in the settings under Controls.")
+	_set_body(tr("That was Dirigent. Change the keys in the settings under Controls."))
 	_pip_row.visible = false
 	_feedback.text = ""
 	var box := VBoxContainer.new()

@@ -186,7 +186,7 @@ Leg den Cursor auf das Ziel und bleib kurz drauf.,Leg den Cursor auf das Ziel un
 Kühle Scheibe: %s.  Warmes Quadrat: %s.  Falsche Taste = Miss.,Kühle Scheibe: %s.  Warmes Quadrat: %s.  Falsche Taste = Miss.,Cool disc: %s.  Warm square: %s.  Wrong key = miss.
 Scheibe mit weißem Ring: %s und %s zugleich.,Scheibe mit weißem Ring: %s und %s zugleich.,Disc with a white ring: %s and %s together.
 "Drücken, halten und mit dem Cursor der Kugel folgen. Erst am Ende loslassen.","Drücken, halten und mit dem Cursor der Kugel folgen. Erst am Ende loslassen.","Press, hold and follow the ball with the cursor. Let go only at the end."
-"Weite Sprünge, dann eine schnelle Folge: dicht folgende Ziele wechseln die Taste, A, B, A, B.","Weite Sprünge, dann eine schnelle Folge: dicht folgende Ziele wechseln die Taste, A, B, A, B.","Wide jumps, then a fast stream: close targets alternate the keys, A, B, A, B."
+"Weite Sprünge, dann eine schnelle Folge: dicht folgende Ziele wechseln die Taste, %s %s %s %s.","Weite Sprünge, dann eine schnelle Folge: dicht folgende Ziele wechseln die Taste, %s %s %s %s.","Wide jumps, then a fast stream: close targets alternate the keys, %s %s %s %s."
 "Alles zusammen, mit Wertung.","Alles zusammen, mit Wertung.","Everything together, with a score."
 3 Ziele,3 Ziele,3 targets
 %d Treffer,%d Treffer,%d hits

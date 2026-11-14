@@ -512,7 +512,7 @@ func body_for(s: int) -> String:
 		KEYS: return tr("Kühle Scheibe: %s.  Warmes Quadrat: %s.  Falsche Taste = Miss.") % [key_label(0), key_label(1)]
 		ACCENT: return tr("Scheibe mit weißem Ring: %s und %s zugleich.") % [key_label(0), key_label(1)]
 		HOLD: return tr("Drücken, halten und mit dem Cursor der Kugel folgen. Erst am Ende loslassen.")
-		SKILL: return tr("Weite Sprünge, dann eine schnelle Folge: dicht folgende Ziele wechseln die Taste, A, B, A, B.")
+		SKILL: return tr("Weite Sprünge, dann eine schnelle Folge: dicht folgende Ziele wechseln die Taste, %s %s %s %s.") % [key_label(0), key_label(1), key_label(0), key_label(1)]
 	return tr("Alles zusammen, mit Wertung.")
 
 
