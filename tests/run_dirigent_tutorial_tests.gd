@@ -49,6 +49,8 @@ func _run() -> void:
 	_test_charts(S)
 	var tut: Control = load(SCENE).instantiate()
 	tut.manual_clock = true
+	# Headless ist das Fenster winzig (64 px); der Kopf (TOP_PAD) braucht Platz ueber der Buehne.
+	root.size = Vector2i(1280, 720)
 	root.add_child(tut)
 	_check(S.is_seen(), "Start merkt gesehen")
 	_check(tut.view.unit_px() > 1.0, "Ansicht hat eine Groesse")
