@@ -717,7 +717,7 @@ static func _builtin_widths(s: ManiaSkin, text: String) -> void:
 	for i in s.keys:
 		var src := 0 if ManiaKeys.pattern(i, s.keys) != "2" else 1
 		for pre in ["note_", "head_", "body_", "tail_", "key_", "keyd_"]:
-			var k4 := pre + str(src)
+			var k4: String = pre + str(src)
 			var base4 := pick_name_4k(m4, k4)
 			if base4 != "":
 				s._names[pre + str(i)] = base4

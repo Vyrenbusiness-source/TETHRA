@@ -2196,6 +2196,8 @@ func _process(delta: float) -> void:
 		while _replay_idx < evs.size() and float(evs[_replay_idx].t) <= t:
 			var ev: Dictionary = evs[_replay_idx]
 			_replay_idx += 1
+			if int(ev.lane) < 0 or int(ev.lane) >= core.columns:
+				continue  # Replay passt nicht zur Spaltenzahl (ManiaKeys): Ereignis ignorieren
 			_lane_held[int(ev.lane)] = bool(ev.down)
 			if bool(ev.down):
 				core.key_down(int(ev.lane), float(ev.t))
