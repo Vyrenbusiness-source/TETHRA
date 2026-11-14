@@ -471,6 +471,8 @@ func _ready() -> void:
 	_world.add_child(_skill_fx)
 	_skill_fx.setup(RAIL_X, Z_LINE, Z_FAR, ROAD_Y, _theme_col, _theme_kiai)
 	_build_hud()
+	if MarathonRun.is_active():
+		MarathonRun.current.attach(self, core, _hud)
 	if not _2d:
 		_build_screen_fx()
 	# Kapitel-Punkte unten entfernt (QA: unklar, doppelt zum Song-Fortschritt).
@@ -717,6 +719,11 @@ func _dbg_popin_hit(n: Node, p: Vector2, alpha: float) -> String:
 
 
 func _load_beatmap() -> bool:
+	# Marathon (scripts/marathon): zusammengefuegte Map + eigene Wiedergabe.
+	if MarathonRun.active_for_scene():
+		_beatmap = MarathonRun.current.scene_beatmap(_2d)
+		_use_audio = _beatmap != null
+		return _beatmap != null
 	if not GameSession.has_selection():
 		return false
 	var imp := OszImporter.import(GameSession.osz_path)
@@ -4001,6 +4008,7 @@ func _back_to_browser() -> void:
 	GameSession.is_replay = false
 	GameSession.replay_events = []
 	SyncClock.stop()
+	MarathonRun.end()
 	# Multiplayer: zurueck in den Raum statt in den Song-Browser.
 	if Lobby.in_round():
 		get_tree().change_scene_to_file("res://scenes/mp_lobby.tscn")
@@ -4027,6 +4035,13 @@ func _show_results(is_fail: bool) -> void:
 				if is_inside_tree():
 					_spawn_shooting_star(977 + shower_i * 37))
 	var s := core.stats()
+	if MarathonRun.is_active():
+		# Marathon: eigene Rangliste je Laenge, kein pp, nichts an ScoreStore/Server.
+		s["unranked"] = false
+		s["pp"] = -1.0
+		var m_info := MarathonRun.current.finish_scene(s, is_fail, _recorded, _autoplay)
+		_build_results(is_fail, s, -1.0, false, bool(m_info.get("is_new_best", false)))
+		return
 	var unranked := false  # Mania ist immer ranked (Scroll rein visuell)
 	s["unranked"] = unranked
 	var pp := -1.0
@@ -4195,6 +4210,8 @@ func _build_results(is_fail: bool, s: Dictionary, pp: float, unranked: bool, new
 			data["final"] = Lobby.players[me].get("final", {})
 	if cover != null:
 		data["cover"] = cover
+	if MarathonRun.is_active():
+		MarathonRun.current.results_data(data)
 	rs.show_results(data)
 	# Rank-Reveal-Sound synchron zum Zoom-Pop der Komponente (~0.35 s).
 	var grade := "F" if is_fail else str(s.get("grade", "D"))
