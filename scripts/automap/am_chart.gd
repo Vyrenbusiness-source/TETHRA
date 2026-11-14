@@ -30,6 +30,8 @@ const DEFAULTS := {
 	"support_drum_weight": 0.7,   # Kick/Snare, wenn das Schlagzeug nicht fuehrt
 	"support_weight": 0.45,       # uebrige Ebenen, wenn sie nicht fuehren
 	"dens_gain": 0.4,             # Dichte folgt Intensitaet (mal gelerntes Kiai-Verhaeltnis)
+	"dens_local_gain": 0.0,       # Dichte folgt der oertlichen Ereignis-Dichte (log2 gegen den Song-Median)
+	"dens_win_ms": 1000.0,        # halbe Fensterbreite dafuer
 	"snap_quarter_bias_ms": 6.0,  # 1/4 gewinnt gegen 1/8 bei fast gleichem Abstand
 	"hold_share_scale": 1.0,
 	"motif_min_rows": 3,          # ab so vielen Zeilen je Takt gilt ein Takt als Motiv
@@ -46,7 +48,13 @@ const DEFAULTS := {
 	"figure_weight": 1.0,         # Treppe/Triller/Roll aus Tonhoehe und Hi-Hat-Laeufen
 	"jack_weight": 2.0,           # Jacks auf den Anteil der Menschen-Maps des Bands halten
 	"easy_hold_max_beats": 2.0,   # Easy/Normal: Hold ohne Ueberlappung hoechstens so lang, Zeilen darin entfallen
+	# Gewicht je Ereignis-Art in der Auswahl (mal Staerke und Ebenen-Gewicht). AmFeatures normiert die
+	# Staerke je Ebene auf ihr 95. Perzentil; ohne diese Faktoren zaehlt eine Hi-Hat so viel wie ein Kick.
+	"w_kick": 1.0, "w_snare": 1.0, "w_hat": 1.0, "w_bass": 1.0, "w_tonal": 1.0, "w_vocal": 1.0, "w_other": 1.0,
 }
+
+## Bereiche fuer tools/automap_tune.gd, wo 0,5x..1,5x des Standards nicht passt (Standard 0).
+const TUNE_RANGES := {"dens_local_gain": [0.0, 0.8]}
 
 ## Spielbarkeits-Regeln je Profil (Spec-Tabelle). Einheiten: 1/24 Schlag (24 = 1/1, 12 = 1/2,
 ## 6 = 1/4, 3 = 1/8, 4 = 1/6). chord_unit/c3_unit: Akkorde mit 2 bzw. 3 Noten nur auf dieser Teilung.
@@ -644,6 +652,9 @@ static func _prep(features: Dictionary, G: Dictionary, P: Dictionary) -> Diction
 	var bias_ms: float = P["snap_quarter_bias_ms"]
 	var wdrum: float = P["support_drum_weight"]
 	var wsup: float = P["support_weight"]
+	var wkind := {}
+	for k: String in KIND_BITS:
+		wkind[k] = float(P.get("w_" + k, 1.0))
 	# 1. Durchgang: je Schlag entscheiden, ob gerade (1/8) oder triolisch (1/6) geteilt wird
 	var ne := events.size()
 	var e_seg := PackedInt32Array()
@@ -705,7 +716,7 @@ static func _prep(features: Dictionary, G: Dictionary, P: Dictionary) -> Diction
 		elif layer == "drums" and kind != "hat":
 			lw = wdrum
 		var strength: float = clampf(float(ev.get("strength", 0.5)), 0.0, 1.0)
-		var ws := strength * lw
+		var ws := strength * lw * float(wkind.get(kind, 1.0))
 		var pitch: float = ev.get("pitch", -1.0)
 		var sus: float = ev.get("sustain_ms", 0.0)
 		var kbit: int = KIND_BITS.get(kind, 64)
@@ -815,6 +826,29 @@ static func _prep(features: Dictionary, G: Dictionary, P: Dictionary) -> Diction
 	C["tib"] = c_tib
 	C["sec"] = c_sec
 	C["inten"] = c_inten
+	# Oertliche Dichte der Musik: Summe der Gewichte der Zeilen in +-dens_win_ms, gegen den Median des
+	# Songs, log2, auf [-1, 1] begrenzt. Die Abschnitts-Intensitaet allein folgt der Dichte der
+	# Menschen-Maps schlechter als die eingerasteten Ereignisse selbst (tools/automap_chain_diag.gd).
+	var ld := PackedFloat64Array()
+	ld.resize(n)
+	var half: float = P["dens_win_ms"]
+	var lo := 0
+	var hi := 0
+	var acc_w := 0.0
+	for r in n:
+		while hi < n and c_t[hi] <= c_t[r] + half:
+			acc_w += float(rows[hi][3])
+			hi += 1
+		while lo < n and c_t[lo] < c_t[r] - half:
+			acc_w -= float(rows[lo][3])
+			lo += 1
+		ld[r] = maxf(acc_w, 1e-6)
+	var srt := ld.duplicate()
+	srt.sort()
+	var med := maxf(srt[n >> 1], 1e-6) if n > 0 else 1.0
+	for r in n:
+		ld[r] = clampf(log(ld[r] / med) / log(2.0), -1.0, 1.0)
+	C["ldens"] = ld
 	# Wiederholung: Takte mit gleicher Musik (Rhythmus, Instrument, Staerke, Tonhoehen-Verlauf,
 	# gehaltene Toene, Intensitaet) bekommen dieselben Entscheidungen wie ihr erstes Vorkommen.
 	var tmpl := PackedInt32Array()
@@ -946,13 +980,15 @@ static func _tune(C: Dictionary, G: Dictionary, profile: String, parent: Diction
 	var units: Array = R["units"]
 	var rare_unit: int = R["rare"]
 	var dg: float = float(P["dens_gain"]) * float(pat["kiai_ratio"])
+	var dl: float = P["dens_local_gain"]
+	var ldens: PackedFloat64Array = C["ldens"]
 	var allowed: Array = []
 	var rare: Array = []
 	var sus_rows: Array = []
 	var eff := PackedFloat64Array()
 	eff.resize(n)
 	for r in n:
-		eff[r] = score[r] + dg * (inten[r] - 0.5) + (float(P["sus_bonus"]) if susb[r] >= float(R["hold_min"]) - EPS else 0.0)
+		eff[r] = score[r] + dg * (inten[r] - 0.5) + dl * ldens[r] + (float(P["sus_bonus"]) if susb[r] >= float(R["hold_min"]) - EPS else 0.0)
 		if has_parent and pflags[r] == 0:
 			continue
 		if _unit_ok(tick[r], units):

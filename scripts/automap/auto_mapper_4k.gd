@@ -70,13 +70,21 @@ static func generate(audio_path: String, maps_dir: String, opts: Dictionary = {}
 		return _fail(ERR_CANCELLED)
 
 	var charts: Array = []
+	# Ein Durchgang fuer alle Profile: build() rechnet je Aufruf alle schwereren Profile mit
+	# (leichtere sind eine Auswahl der schwereren), fuenf Aufrufe waeren 15 Profil-Laeufe.
+	_report(progress, STAGE_CHART, 0.0)
+	var easiest := ""
+	for p in AmChart.PROFILES:
+		if profiles.has(p):
+			easiest = str(p)
+			break
+	var all: Dictionary = AmChart.build_all(features, grid, params.get("chart", {}), easiest) if easiest != "" else {}
 	for i in profiles.size():
-		_report(progress, STAGE_CHART, float(i) / profiles.size())
-		var c: Dictionary = AmChart.build(features, grid, str(profiles[i]), params.get("chart", {}))
+		var c: Dictionary = all.get(str(profiles[i]), {})
 		if bool(c.get("ok", false)) and not (c.get("notes", []) as Array).is_empty():
 			charts.append(c)
-		if _stop(cancelled):
-			return _fail(ERR_CANCELLED)
+	if _stop(cancelled):
+		return _fail(ERR_CANCELLED)
 	if charts.is_empty():
 		return _fail("no notes found. Is the file music?")
 

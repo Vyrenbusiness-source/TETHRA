@@ -388,6 +388,48 @@ func _test_roles() -> void:
 	_check(kick.find(km) != snare.find(sm), "Kick und Snare in verschiedenen Spalten")
 	var dviol := AmChart.lint(res["notes"], grid, "Easy")
 	_check(dviol.is_empty(), "Schlagzeug: lint = 0%s" % ("" if dviol.is_empty() else " (" + dviol[0] + ")"))
+	# Gewicht je Ereignis-Art (w_<art>): Hi-Hat auf dem Schlag, Kick dazwischen, gleiche Staerke.
+	# Ohne Gewichte gewinnt die Taktposition (Hat), mit w_hat klein gewinnt der Kick.
+	var ev2: Array = []
+	for i in 160:
+		ev2.append(_ev(800.0 + float(i) * beat, "hat", 0.8))
+		ev2.append(_ev(800.0 + (float(i) + 0.5) * beat, "kick", 0.8))
+	var f2 := {"events": ev2, "sections": feats["sections"]}
+	var low := {"star_bands": {"Normal": [0.5, 1.0]}, "star_tol": 0.1}
+	var kick_share := func(p: Dictionary) -> float:
+		var r := AmChart.build(f2, grid, "Normal", p)
+		var nk := 0
+		for nt: Dictionary in r["notes"]:
+			if absf(fposmod(float(nt["t_ms"]) - 800.0, beat) - beat * 0.5) < 2.0:
+				nk += 1
+		return float(nk) / maxf(float((r["notes"] as Array).size()), 1.0)
+	var k_def: float = kick_share.call(low)
+	var lw := low.duplicate(true)
+	lw["w_hat"] = 0.1
+	lw["w_kick"] = 1.5
+	var k_w: float = kick_share.call(lw)
+	_check(k_w >= 0.8 and k_w > k_def + 0.3, "w_hat/w_kick: Kick-Anteil %.2f (ohne Gewichte %.2f)" % [k_w, k_def])
+	# dens_local_gain: erste Haelfte dicht (1/4), zweite duenn (Schlaege), gleiche Intensitaet.
+	# Mit dem Term landet ein groesserer Teil der Noten im dichten Teil.
+	var ev3: Array = []
+	for i in 320:
+		ev3.append(_ev(800.0 + float(i) * beat * 0.25, "snare" if i % 4 == 0 else "hat", 0.6))
+	for i in 80:
+		ev3.append(_ev(800.0 + 80.0 * beat + float(i) * beat, "snare", 0.6))
+	var f3 := {"events": ev3, "sections": feats["sections"]}
+	var dense_share := func(p: Dictionary) -> float:
+		var r := AmChart.build(f3, grid, "Hard", p)
+		var nd := 0
+		for nt: Dictionary in r["notes"]:
+			if float(nt["t_ms"]) < 800.0 + 80.0 * beat - 1.0:
+				nd += 1
+		return float(nd) / maxf(float((r["notes"] as Array).size()), 1.0)
+	var hard_low := {"star_bands": {"Hard": [1.0, 1.6]}, "star_tol": 0.1}
+	var d0: float = dense_share.call(hard_low)
+	var hl := hard_low.duplicate(true)
+	hl["dens_local_gain"] = 0.8
+	var d1: float = dense_share.call(hl)
+	_check(d1 > d0 + 0.05, "dens_local_gain: Anteil im dichten Teil %.2f (ohne %.2f)" % [d1, d0])
 	_sections += 1  # nur erreicht ohne Laufzeitfehler
 
 func _test_tempo_change() -> void:

@@ -8,7 +8,8 @@ extends SceneTree
 ##       --script res://tools/automap_bench.gd -- --maps <maps-ordner> [--mapper auto|old|new]
 ##       [--limit N] [--set tune|test] [--stages] [--no-stars] [--resume] [--report-only]
 ## Hoerprobe (Klick je Note und je Schlag ueber den Song, Ausgabe user://automap_check/<name>.ogg):
-##   ... --script res://tools/automap_bench.gd -- --click <audio|-> <osz> [Diff-Teilname] [--lead ms]
+##   ... --script res://tools/automap_bench.gd -- --click <audio|-> <osz> [Diff-Teilname] [--lead ms] [--onsets]
+##   --onsets: zusaetzlich Abstand Klick -> Anschlag im Audio (Median / 95. Perzentil) fuer Noten und Schlaege
 ##
 ## --mapper auto: neue Module (AmGrid, AmFeatures, AmChart, AutoMapper4K), sobald ihre Skripte da
 ## sind, sonst der alte AudioMapper ueber einen Adapter (Ausgangswert "alt").
@@ -189,15 +190,25 @@ static func product_from_stages(mods: Dictionary, pcm: PackedFloat32Array, rate:
 	for alt in grid.get("alternatives", []):
 		prod.alternatives.append(float(alt.factor) if alt is Dictionary else float(alt))
 	prod.confidence = float(grid.get("confidence", -1.0))
+	# Kiai wie im geschriebenen Set (AmWriter: Map-Zeit, auf Taktanfaenge gelegt)
 	var kiai: Array = []
-	for sec in feat.get("sections", []):
-		if sec.get("kiai", false):
-			kiai.append([float(sec.start_ms) + shift, float(sec.end_ms) + shift])
+	for k in AmWriter.kiai_ranges(feat, grid):
+		kiai.append([float(k[0]) + shift, float(k[1]) + shift])
 	prod.kiai = merge_intervals(kiai)
 	t = Time.get_ticks_msec()
 	var has_lint := _has_static(mods.chart, "lint")
+	# build_all rechnet alle Profile in einem Durchgang (build() je Profil wiederholt die schwereren)
+	var all := {}
+	if _has_static(mods.chart, "build_all"):
+		var easiest := ""
+		for p in PROFILES:
+			if profiles.has(p):
+				easiest = p
+				break
+		if easiest != "":
+			all = mods.chart.build_all(feat, grid, cp, easiest)
 	for p in profiles:
-		var ch: Dictionary = mods.chart.build(feat, grid, p, cp)
+		var ch: Dictionary = all[p] if all.has(p) else mods.chart.build(feat, grid, p, cp)
 		var notes: Array = []
 		for n in ch.get("notes", []):
 			var e := float(n.get("end_ms", -1.0))
@@ -1300,7 +1311,8 @@ timeout 7200 ./Godot_v4.7-stable_win64_console.exe --headless --audio-driver Dum
 # Abstimmung (sucht params, schreibt data/automap/params.json, Protokoll vorher/nachher auf der Prüf-Menge)
 timeout 7200 ./Godot_v4.7-stable_win64_console.exe --headless --audio-driver Dummy --path . --script res://tools/automap_tune.gd -- --maps <maps-ordner> [--songs 16] [--test-songs 8] [--passes 2] [--points 5] [--knobs grid.x:0.1:0.9,...]
 # Hörprobe: Klick je Note (Tonhöhe je Spalte) und je Schlag über dem Song -> user://automap_check/<name>.ogg
-timeout 600 ./Godot_v4.7-stable_win64_console.exe --headless --audio-driver Dummy --path . --script res://tools/automap_bench.gd -- --click <audio-datei oder -> <set.osz> [Diff-Teilname]
+#   --onsets: Abstand Klick -> Anschlag im Audio (Median / 95. Perzentil)
+timeout 600 ./Godot_v4.7-stable_win64_console.exe --headless --audio-driver Dummy --path . --script res://tools/automap_bench.gd -- --click <audio-datei oder -> <set.osz> [Diff-Teilname] [--onsets]
 # Tests der Kennzahlen
 timeout 300 ./Godot_v4.7-stable_win64_console.exe --headless --audio-driver Dummy --path . --script res://tests/run_am_bench_tests.gd
 ```
@@ -1710,7 +1722,7 @@ static func write_wav(path: String, pcm: PackedFloat32Array, rate: int) -> bool:
 func _cli_click(args: PackedStringArray) -> int:
 	var i := args.find("--click")
 	if i + 2 >= args.size():
-		print("Aufruf: --click <audio-datei oder -> <set.osz> [Diff-Teilname] [--lead ms]")
+		print("Aufruf: --click <audio-datei oder -> <set.osz> [Diff-Teilname] [--lead ms] [--onsets]")
 		return 2
 	var audio := args[i + 1]
 	var osz := args[i + 2]
@@ -1761,11 +1773,59 @@ func _cli_click(args: PackedStringArray) -> int:
 			"[0:a]aresample=44100,volume=0.7[a];[1:a]volume=1.0[b];[a][b]amix=inputs=2:duration=first:normalize=0[o]",
 			"-map", "[o]", "-c:a", "libvorbis", "-q:a", "5", out], log, true)
 	DirAccess.remove_absolute(wav)
-	if tmp_audio != "":
-		DirAccess.remove_absolute(tmp_audio)
+	var audio_for_onsets := audio
 	if code != 0:
+		if tmp_audio != "":
+			DirAccess.remove_absolute(tmp_audio)
 		print("ffmpeg fehlgeschlagen: ", log)
 		return 1
 	print("Hoerprobe: %s  (Diff %s, %d Noten, %d rote Linien, %.1f BPM)" % [out, bm.version_name(), notes.size(), reds.size(),
 			60000.0 / float(reds[0].beat_ms) if not reds.is_empty() else 0.0])
+	if args.has("--onsets"):
+		print(onset_report(audio_for_onsets, notes, beats_from_reds(reds, end_ms), lead))
+	if tmp_audio != "":
+		DirAccess.remove_absolute(tmp_audio)
 	return 0
+
+
+## Objektiver Abstand Klick -> Anschlag im Audio. Anschlaege = AmFeatures-Ereignisse (akustisch),
+## in Map-Zeit umgerechnet (minus AmGrid.OSU_LEAD_MS); Klick = Notenzeit (+ --lead). Je Note der
+## naechste Anschlag; gewertet werden Noten mit einem Anschlag in +-60 ms (sonst Fuellnote).
+static func onset_report(audio: String, notes: Array, beats: Array, lead: float) -> String:
+	var dec: Dictionary = AmFeatures.decode(audio)
+	if not dec.get("ok", false):
+		return "Anschlaege: Audio nicht dekodierbar"
+	var feat: Dictionary = AmFeatures.analyze(dec.pcm, int(dec.rate))
+	var ev := PackedFloat64Array()
+	for e in feat.get("events", []):
+		ev.append(float(e.t_ms) - AmGrid.OSU_LEAD_MS)
+	ev.sort()
+	var out := ""
+	for pair in [["Noten", notes.map(func(n): return float(n[0]) - lead)], ["Schlaege", beats.map(func(b): return float(b[0]) - lead)]]:
+		var d_abs: Array = []
+		var signed: Array = []
+		var n15 := 0
+		var n_all := 0
+		var seen := {}
+		for t in pair[1]:
+			var key := int(roundf(float(t)))
+			if seen.has(key):
+				continue   # Akkord = ein Klick
+			seen[key] = true
+			n_all += 1
+			var j := ev.bsearch(float(t))
+			var best := INF
+			for k in [j - 1, j]:
+				if k >= 0 and k < ev.size() and absf(ev[k] - float(t)) < absf(best):
+					best = ev[k] - float(t)
+			if absf(best) <= 60.0:
+				d_abs.append(absf(best))
+				signed.append(-best)   # + = Klick spaeter als Anschlag
+				if absf(best) <= 15.0:
+					n15 += 1
+		out += "Klick-zu-Anschlag (%s): %d Zeitpunkte, mit Anschlag in +-60 ms %d; |Abstand| Median %.1f ms, 95. Perzentil %.1f ms; Vorzeichen-Median %+.1f ms (+ = Klick spaet); Anteil in +-15 ms %.1f %%
+" % [
+				pair[0], n_all, d_abs.size(), median(d_abs) if not d_abs.is_empty() else NAN,
+				percentile(d_abs, 95.0) if not d_abs.is_empty() else NAN, median(signed) if not signed.is_empty() else NAN,
+				100.0 * n15 / maxi(n_all, 1)]
+	return out

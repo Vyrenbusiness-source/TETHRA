@@ -177,6 +177,16 @@ func _test_timing() -> void:
 	_near(float(r3[2].t), 10800.0, 0.01, "Zusatzlinie am Taktanfang")
 	var k := AmWriter.kiai_ranges(_features())
 	_ok(k.size() == 2, "beruehrende Kiai-Abschnitte zusammengelegt (%d)" % k.size())
+	# Mit Gitter: Map-Zeit (minus OSU_LEAD) und auf den naechsten Taktanfang des Segments
+	var ks := AmWriter.kiai_ranges(_features(), _grid2())
+	_ok(ks.size() == 2, "Kiai mit Gitter: zwei Abschnitte (%d)" % ks.size())
+	if ks.size() == 2:
+		_near(float(ks[0][0]), 8500.0, 0.01, "Kiai-Beginn auf Taktanfang (4/4, 2000 ms)")
+		_near(float(ks[0][1]), 24100.0, 0.01, "Kiai-Ende auf Taktanfang im 3/4-Segment")
+		_near(float(ks[1][0]), 32500.0, 0.01, "zweiter Kiai-Beginn auf Taktanfang")
+		_near(float(ks[1][1]), 37300.0, 0.01, "zweites Kiai-Ende auf Taktanfang")
+	_ok(AmWriter.kiai_ranges({"sections": [{"start_ms": 1000.0, "end_ms": 1400.0, "kiai": true}]}, _grid2()).is_empty(),
+			"Kiai kuerzer als ein Takt entfaellt")
 	_ok(AmWriter.preview_time(_features()) == 16500, "PreviewTime am staerksten Refrain")
 	_ok(AmWriter.preview_time({"duration_ms": 10000.0, "sections": []}) == 3000, "PreviewTime ohne Abschnitte: 30 %")
 
@@ -253,10 +263,10 @@ func _test_writer() -> void:
 		_ok(green == 4, prof + ": gruene Linien nur fuer Kiai an/aus (%d)" % green)
 		_ok(bm.kiai_intervals.size() == 2, prof + ": 2 Kiai-Abschnitte (%d)" % bm.kiai_intervals.size())
 		if bm.kiai_intervals.size() == 2:
-			_near(float(bm.kiai_intervals[0].start), 8500.0, 0.01, prof + ": Kiai 1 Beginn")
-			_near(float(bm.kiai_intervals[0].end), 24500.0, 0.01, prof + ": Kiai 1 Ende")
-			_near(float(bm.kiai_intervals[1].start), 32100.0, 0.01, prof + ": Kiai 2 Beginn")
-			_near(float(bm.kiai_intervals[1].end), 36900.0, 0.01, prof + ": Kiai 2 Ende")
+			_near(float(bm.kiai_intervals[0].start), 8500.0, 0.01, prof + ": Kiai 1 Beginn (Taktanfang)")
+			_near(float(bm.kiai_intervals[0].end), 24100.0, 0.01, prof + ": Kiai 1 Ende (Taktanfang)")
+			_near(float(bm.kiai_intervals[1].start), 32500.0, 0.01, prof + ": Kiai 2 Beginn (Taktanfang)")
+			_near(float(bm.kiai_intervals[1].end), 37300.0, 0.01, prof + ": Kiai 2 Ende (Taktanfang)")
 		var src_notes: Array = c.notes
 		_ok(bm.hit_objects.size() == src_notes.size(), prof + ": Notenzahl %d/%d" % [bm.hit_objects.size(), src_notes.size()])
 		var same := bm.hit_objects.size() == src_notes.size()

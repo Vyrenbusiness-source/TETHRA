@@ -384,13 +384,19 @@ static func red_points(grid: Dictionary) -> Array:
 
 
 ## Kiai-Abschnitte aus den Features, beruehrende zusammengelegt: [[start, end]].
-static func kiai_ranges(features: Dictionary) -> Array:
+## Mit grid: Abschnittsgrenzen (akustisch) in Map-Zeit (minus AmGrid.OSU_LEAD_MS) und auf den
+## naechsten Taktanfang gelegt, wie Menschen Kiai setzen; Abschnitte unter einem Takt entfallen.
+static func kiai_ranges(features: Dictionary, grid: Dictionary = {}) -> Array:
 	var out: Array = []
+	var snap := not (grid.get("segments", []) as Array).is_empty()
 	for s in features.get("sections", []):
 		if not bool(s.get("kiai", false)):
 			continue
 		var a := float(s.start_ms)
 		var b := float(s.end_ms)
+		if snap:
+			a = bar_snap(grid, a - AmGrid.OSU_LEAD_MS)
+			b = bar_snap(grid, b - AmGrid.OSU_LEAD_MS)
 		if b <= a:
 			continue
 		if not out.is_empty() and a <= float(out[-1][1]) + 1.0:
@@ -400,9 +406,24 @@ static func kiai_ranges(features: Dictionary) -> Array:
 	return out
 
 
+## Naechster Taktanfang zu t (Map-Zeit) im Segment, in dem t liegt.
+static func bar_snap(grid: Dictionary, t: float) -> float:
+	var segs: Array = grid.get("segments", [])
+	if segs.is_empty():
+		return t
+	var si := 0
+	for i in segs.size():
+		if float(segs[i].start_ms) <= t + 1.0:
+			si = i
+	var s: Dictionary = segs[si]
+	var bar := maxf(float(s.get("beat_ms", 500.0)), 1.0) * maxi(int(s.get("meter", 4)), 1)
+	var d := float(s.get("downbeat_ms", s.get("start_ms", 0.0)))
+	return maxf(d + roundf((t - d) / bar) * bar, 0.0)
+
+
 ## Zeilen fuer [TimingPoints]: rote Linien, gruene nur fuer Kiai an/aus.
 static func timing_lines(grid: Dictionary, features: Dictionary) -> Array[String]:
-	var kiai := kiai_ranges(features)
+	var kiai := kiai_ranges(features, grid)
 	var rows: Array = []   # [t, order, text-ohne-effects, red]
 	for r in red_points(grid):
 		rows.append({"t": float(r.t), "red": true, "beat": float(r.beat), "meter": int(r.meter)})
