@@ -59,8 +59,11 @@ const DEFAULTS := {
 	"fill_max": 0.3,              # Zwischen-Zeilen bei d = 2 hoechstens dieser Anteil der Zeilen (0 = aus)
 	"fill_energy": 0.8,           # nur wo die Lautheit >= diesem Anteil des Medians der Ereignis-Zeilen
 	"fill_gap_beats": 1.0,        # nur zwischen Ereignis-Zeilen, die hoechstens so weit auseinander liegen
+	"chord_scale": 1.0,           # Akkord-Anteil mal diesem Wert (Menschen-Anteil des Bands = 1)
 	"rare_model": true,           # seltene Teilung nach dem Modell statt nach festem Anteil
 	"nest_from": "Hard",         # Bezugsprofil der Verschachtelung ("Expert" = von oben nach unten wie bisher)
+	"dens_quota_bar": 1.0,        # wie dens_quota, wenn features.bar_density vorhanden ist
+	"dens_bar_mix": 0.5,          # Anteil von bar_density an der Takt-Dichte (Rest: Summe der Modell-Wahrscheinlichkeiten)
 	"dens_quota": 0.0,           # 0..1: Notenzahl je Takt nach der Summe der Modell-Wahrscheinlichkeiten
 	"select": {},                 # Tests: Modell direkt uebergeben (Form wie select.json)
 }
@@ -143,7 +146,8 @@ const ROW_FEATURES := ["bias",
 		"n_kinds", "sustain", "sustain_half", "intensity", "event_density", "loudness", "kiai",
 		"sec_intro", "sec_verse", "sec_build", "sec_chorus", "sec_break", "sec_outro",
 		"hat_accent", "has_pitch", "tempo", "tempo_quarter", "tempo_fine", "tempo_half",
-		"dominance", "gap_prev", "gap_next", "expected_density", "fill"]
+		"dominance", "gap_prev", "gap_next", "expected_density", "fill",
+		"ctx_quarter", "ctx_half", "kind_share", "rows_local", "beat_row"]
 
 static var _pat_cache: Dictionary = {}
 static var _sel_cache: Dictionary = {}
@@ -919,6 +923,7 @@ static func _prep(features: Dictionary, G: Dictionary, P: Dictionary) -> Diction
 	C["hat_strong"] = c_hat
 	C["en"] = c_en
 	C["exp_dens"] = _expected_density(features, rows, lead)
+	C["bar_dens"] = _bar_density_at(features, rows, lead)
 	for i in n:
 		var row: Array = rows[i]
 		var si: int = row[1]
@@ -1089,23 +1094,15 @@ static func _add_fill_rows(rows: Array, features: Dictionary, G: Dictionary, P: 
 
 
 ## Erwartete Notendichte je Zeile, log2 gegen den Song-Median, auf [-2, 2] begrenzt.
-## Quelle: features.note_density ([{start_ms, end_ms, nps}], akustische Zeit; AmFeatures), sonst eigene
-## Schaetzung: mittlere Lautheit (features.energy) in +-1 s um die Zeile.
+## Quelle: features.bar_density ([{start_ms, end_ms, density}] je Takt, akustische Zeit, Mittel 1; AmFeatures),
+## sonst eigene Schaetzung: mittlere Lautheit (features.energy) in +-1 s um die Zeile.
 static func _expected_density(features: Dictionary, rows: Array, lead: float) -> PackedFloat64Array:
 	var n := rows.size()
 	var out := PackedFloat64Array()
 	out.resize(n)
-	var nd = features.get("note_density")
-	var vals := PackedFloat64Array()
-	vals.resize(n)
-	if nd is Array and not (nd as Array).is_empty() and nd[0] is Dictionary:
-		var k := 0
-		for i in n:
-			var t := float(rows[i][0]) + lead
-			while k + 1 < nd.size() and float(nd[k].get("end_ms", 0.0)) <= t:
-				k += 1
-			vals[i] = maxf(float(nd[k].get("nps", 0.0)), 0.0)
-	else:
+	var vals := _bar_density_at(features, rows, lead)
+	if vals.is_empty():
+		vals.resize(n)
 		var energy = features.get("energy", PackedFloat32Array())
 		var frame_ms := float(features.get("frame_ms", 0.0))
 		var ne: int = energy.size() if (energy is PackedFloat32Array or energy is Array) else 0
@@ -1128,6 +1125,22 @@ static func _expected_density(features: Dictionary, rows: Array, lead: float) ->
 	for i in n:
 		out[i] = clampf(log(maxf(vals[i], 1e-6) / med) / log(2.0), -2.0, 2.0)
 	return out
+
+
+## features.bar_density je Zeile (erwartete Dichte des Takts, relativ); leer, wenn das Feld fehlt.
+static func _bar_density_at(features: Dictionary, rows: Array, lead: float) -> PackedFloat64Array:
+	var vals := PackedFloat64Array()
+	var bd = features.get("bar_density")
+	if not (bd is Array) or (bd as Array).is_empty() or not (bd[0] is Dictionary):
+		return vals
+	vals.resize(rows.size())
+	var k := 0
+	for i in rows.size():
+		var t := float(rows[i][0]) + lead
+		while k + 1 < bd.size() and float(bd[k].get("end_ms", 0.0)) <= t:
+			k += 1
+		vals[i] = maxf(float(bd[k].get("density", 1.0)), 0.0)
+	return vals
 
 
 ## Merkmale je Zeile fuer das Auswahl-Modell (Reihenfolge = ROW_FEATURES). Rueckgabe: Array von
@@ -1158,8 +1171,22 @@ static func row_features(C: Dictionary) -> Array:
 	srt.sort()
 	var en_med := maxf(srt[n >> 1], 1e-6) if n > 0 else 1.0
 	var dim := ROW_FEATURES.size()
+	# Nachbarn im Gitter (Schlag x 24), Anteil der Zeilen je Art im Song
+	var at := {}
+	var kcount := {}
+	var nreal := 0
+	for r in n:
+		at[int(round(bp[r] * 24.0))] = r
+		if fl[r] == 0:
+			nreal += 1
+			var kb: int = C["kind"][r]
+			kcount[kb] = int(kcount.get(kb, 0)) + 1
+	var c_kind: PackedInt32Array = C["kind"]
 	var lo := 0
 	var hi := 0
+	var lo1 := 0
+	var hi1 := 0
+	var cnt1 := 0
 	for r in n:
 		var x := PackedFloat32Array()
 		x.resize(dim)
@@ -1209,6 +1236,29 @@ static func row_features(C: Dictionary) -> Array:
 		x[43] = minf(bp[r + 1] - bp[r], 2.0) / 2.0 if r + 1 < n else 1.0
 		x[44] = xd[r]
 		x[45] = float(fl[r])
+		var key := int(round(bp[r] * 24.0))
+		var cq := 0.0
+		var ch := 0.0
+		for dk in [-6, 6]:
+			if at.has(key + dk):
+				cq = maxf(cq, ws[at[key + dk]])
+		for dk in [-12, 12]:
+			if at.has(key + dk):
+				ch = maxf(ch, ws[at[key + dk]])
+		x[46] = minf(cq, 2.0) / 2.0
+		x[47] = minf(ch, 2.0) / 2.0
+		x[48] = float(kcount.get(c_kind[r], 0)) / float(maxi(nreal, 1)) if fl[r] == 0 else 0.0
+		while hi1 < n and bp[hi1] <= bp[r] + 1.0 + EPS:
+			if fl[hi1] == 0:
+				cnt1 += 1
+			hi1 += 1
+		while lo1 < n and bp[lo1] < bp[r] - 1.0 - EPS:
+			if fl[lo1] == 0:
+				cnt1 -= 1
+			lo1 += 1
+		x[49] = minf(float(cnt1), 16.0) / 8.0
+		var bkey := int(floor(bp[r] + EPS)) * 24
+		x[50] = minf(ws[at[bkey]], 2.0) / 2.0 if (bkey != key and at.has(bkey)) else 0.0
 		out[r] = x
 	return out
 
@@ -1255,7 +1305,7 @@ static func _model_ready(src: Dictionary) -> Dictionary:
 		return out
 	for p in profs:
 		var m := {}
-		for task in ["note", "chord", "hold"]:
+		for task in ["note", "chord", "hold", "hold_any"]:
 			var wd = profs[p].get(task)
 			if not (wd is Dictionary):
 				continue
@@ -1457,8 +1507,15 @@ static func _tune(C: Dictionary, G: Dictionary, profile: String, parent: Diction
 	if sup.has("force"):
 		# Stellen des leichteren Bezugsprofils sind Pflicht (schwerere Profile enthalten sie)
 		X["force"] = sup["force"]
-	if use_model and float(P["dens_quota"]) > 0.0:
-		# Dichte je Takt: erwartete Menschen-Noten = Summe der Modell-Wahrscheinlichkeiten im Takt
+	var bar_dens: PackedFloat64Array = C["bar_dens"]
+	var has_bd := not bar_dens.is_empty()
+	var q_alpha: float = float(P["dens_quota_bar"]) if has_bd else float(P["dens_quota"])
+	if use_model and q_alpha > 0.0:
+		# Dichte je Takt: erwartete Menschen-Noten = Summe der Modell-Wahrscheinlichkeiten im Takt, mit
+		# features.bar_density (AmFeatures) gemischt: Gewicht = Summe_p^(1 - mix) * (Dichte * Taktlaenge)^mix
+		X["q_alpha"] = q_alpha
+		var mix: float = float(P["dens_bar_mix"]) if has_bd else 0.0
+		var c_bmsq: PackedFloat64Array = C["beat_ms"]
 		var c_bar: PackedInt32Array = C["bar"]
 		var groups := {}
 		for r: int in order_score:
@@ -1476,6 +1533,9 @@ static func _tune(C: Dictionary, G: Dictionary, profile: String, parent: Diction
 			var sp := 0.0
 			for r in g:
 				sp += 1.0 / (1.0 + exp(-clampf(z_note[r], -30.0, 30.0)))
+			if mix > 0.0:
+				var bw := bar_dens[g[0]] * c_bmsq[g[0]] * 4.0 / 1000.0
+				sp = pow(maxf(sp, 1e-6), 1.0 - mix) * pow(maxf(bw, 1e-6), mix)
 			glist.append(g)
 			gsum.append(sp)
 		X["groups"] = glist
@@ -1672,7 +1732,7 @@ static func _make1(C: Dictionary, G: Dictionary, X: Dictionary, d: float, seed_a
 	flags.resize(n)
 	var k := clampi(int(ceil(clampf(d, 0.0, 1.0) * float(na))), mini(na, 4), na)
 	if X.has("groups"):
-		_select_quota(X, k, flags, float(P["dens_quota"]))
+		_select_quota(X, k, flags, float(X["q_alpha"]))
 	else:
 		for i in k:
 			flags[order_score[i]] = 1
@@ -1788,8 +1848,9 @@ static func _make1(C: Dictionary, G: Dictionary, X: Dictionary, d: float, seed_a
 	if maxc >= 2:
 		var mult := 1.0 + boost * float(P["chord_boost_max"])
 		var order_acc: Array = X["order_acc"]
-		var n2 := int(round(minf(float(pat["chord_share"]) * mult, float(R["chord_max"]) * 0.9) * float(ns) * s2))
-		var n3 := int(round(minf(float(pat["chord3_share"]) * mult, float(R["c3_max"]) * 0.85) * float(ns) * s3)) if maxc >= 3 else 0
+		var csc: float = P["chord_scale"]
+		var n2 := int(round(minf(float(pat["chord_share"]) * mult * csc, float(R["chord_max"]) * 0.9) * float(ns) * s2))
+		var n3 := int(round(minf(float(pat["chord3_share"]) * mult * csc, float(R["c3_max"]) * 0.85) * float(ns) * s3)) if maxc >= 3 else 0
 		var cu: int = R["chord_unit"]
 		var c3: int = R["c3_unit"]
 		var got := 0

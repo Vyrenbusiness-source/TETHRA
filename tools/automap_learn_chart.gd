@@ -68,6 +68,8 @@ func _main(args: PackedStringArray) -> int:
 		return _fit(args, cache)
 	if args.has("--eval"):
 		return _eval(args, cache)
+	if args.has("--debug"):
+		return _debug(args, cache)
 	print("--dump | --fit | --eval")
 	return 2
 
@@ -107,7 +109,10 @@ func _dump(args: PackedStringArray, cache: String) -> int:
 		if not dec.get("ok", false):
 			continue
 		var grid: Dictionary = AmGrid.track(dec.pcm, int(dec.rate), params.grid)
-		var feat: Dictionary = AmFeatures.analyze(dec.pcm, int(dec.rate), params.features)
+		# Gitter mitgeben (AmFeatures ab am3-sections legt Abschnitte und bar_density auf dessen Takte)
+		var fp: Dictionary = params.features.duplicate(true)
+		fp["grid"] = grid
+		var feat: Dictionary = AmFeatures.analyze(dec.pcm, int(dec.rate), fp)
 		var fa := FileAccess.open(out, FileAccess.WRITE)
 		if fa == null:
 			continue
@@ -317,7 +322,7 @@ func _fit(args: PackedStringArray, cache: String) -> int:
 				p, tot[0], tot[1], 100.0 * tot[1] / maxf(tot[0], 1), tot[2], 100.0 * tot[1] / maxf(tot[2], 1), tot[3]])
 		if args.has("--stats"):
 			continue
-		for task in ["note", "chord", "hold"]:
+		for task in ["note", "chord", "hold", "hold_any"]:
 			var dt := {"tune": [], "test": []}
 			for sp in dt:
 				for e in ex[sp]:
@@ -328,7 +333,7 @@ func _fit(args: PackedStringArray, cache: String) -> int:
 					var yarr: PackedByteArray = E.y
 					if task == "chord":
 						yarr = E.yc
-					elif task == "hold":
+					elif task == "hold" or task == "hold_any":
 						yarr = E.yh
 					var susb: PackedFloat64Array = E.susb
 					for r in (E.y as PackedByteArray).size():
@@ -337,6 +342,8 @@ func _fit(args: PackedStringArray, cache: String) -> int:
 						elif task == "chord" and E.y[r] == 1:
 							rows.append(r)
 						elif task == "hold" and E.y[r] == 1 and susb[r] >= 0.24:
+							rows.append(r)
+						elif task == "hold_any" and E.y[r] == 1:
 							rows.append(r)
 					dt[sp].append([E.x, yarr, rows])
 			var w := _train(dt.tune, dim, epochs, l2, lr)
@@ -407,6 +414,11 @@ func _eval(args: PackedStringArray, cache: String) -> int:
 			if prod.charts[p].ok:
 				st[p] = AmChart.estimate_stars(prod.charts[p].notes) * float(pats.star_a) + float(pats.star_b)
 				var band: Array = B.STAR_BANDS[p]
+				var dkey: String = "d_" + str(p)
+				if not diag.has(dkey):
+					diag[dkey] = [0, 0, 0]
+				var d0 := float(prod.charts[p].stats.get("density", 0.0))
+				diag[dkey][0 if d0 < 0.999 else (1 if d0 < 1.001 else 2)] += 1
 				if float(st[p]) < float(band[0]):
 					var key: String = "low_" + str(p)
 					if not diag.has(key):
@@ -438,6 +450,8 @@ func _eval(args: PackedStringArray, cache: String) -> int:
 		var pa: Dictionary = a.get("per", {}).get(p, {})
 		print("  %s: %s" % [p, JSON.stringify(_short_prof(pa))])
 	for p in AmChart.PROFILES:
+		if diag.has("d_" + p):
+			print("  %s Dichte d: < 1: %d, = 1: %d, > 1: %d" % [p, diag["d_" + p][0], diag["d_" + p][1], diag["d_" + p][2]])
 		if diag.has("low_" + p):
 			var lw: Array = diag["low_" + p]
 			print("  %s unter dem Band: %d, davon d >= 1,9: %d, mittleres d %.2f" % [p, lw[0], lw[1], lw[2] / maxf(lw[0], 1)])
@@ -446,9 +460,10 @@ func _eval(args: PackedStringArray, cache: String) -> int:
 			print("  %s Rangfolge: beste %d von %d Kandidaten, davon auf Menschen-Zeile %.1f %%" % [p, rk[0], rk[2], 100.0 * rk[1] / maxf(rk[0], 1)])
 		if diag.has(p):
 			var d: Dictionary = diag[p]
-			print("  %s Zeilen: erzeugt %d, auf Menschen-Zeile %.1f %%, Akkord-Zeilen erzeugt %.1f %% / Mensch %.1f %%, Noten je Zeile erzeugt %.2f / Mensch %.2f, Zeilen-Treffer mit Akkord-Fehler %.1f %%" % [
+			print("  %s Zeilen: erzeugt %d, auf Menschen-Zeile %.1f %%, Akkord-Zeilen erzeugt %.1f %% / Mensch %.1f %%, Noten je Zeile erzeugt %.2f / Mensch %.2f, Zeilen-Treffer mit Akkord-Fehler %.1f %%, Holds je Note erzeugt %.1f %% / Mensch %.1f %%" % [
 					p, d.g_rows, 100.0 * d.g_hit / maxf(d.g_rows, 1), 100.0 * d.g_ch / maxf(d.g_rows, 1), 100.0 * d.h_ch / maxf(d.h_rows, 1),
-					float(d.g_notes) / maxf(d.g_rows, 1), float(d.h_notes) / maxf(d.h_rows, 1), 100.0 * d.size_mis / maxf(d.g_hit, 1)])
+					float(d.g_notes) / maxf(d.g_rows, 1), float(d.h_notes) / maxf(d.h_rows, 1), 100.0 * d.size_mis / maxf(d.g_hit, 1),
+					100.0 * d.g_holds / maxf(d.g_notes, 1), 100.0 * d.h_holds / maxf(d.h_notes, 1)])
 	if args.has("--json"):
 		var fo := FileAccess.open(B._arg(args, "--json"), FileAccess.WRITE)
 		fo.store_string(JSON.stringify(recs))
@@ -475,8 +490,13 @@ static func _diag_add(diag: Dictionary, s: Dictionary, prod: Dictionary) -> void
 		if hi < 0 or not prod.charts[p].ok:
 			continue
 		if not diag.has(p):
-			diag[p] = {"g_rows": 0, "g_hit": 0, "g_ch": 0, "h_rows": 0, "h_ch": 0, "g_notes": 0, "h_notes": 0, "size_mis": 0}
+			diag[p] = {"g_rows": 0, "g_hit": 0, "g_ch": 0, "h_rows": 0, "h_ch": 0, "g_notes": 0, "h_notes": 0, "size_mis": 0,
+					"g_holds": 0, "h_holds": 0}
 		var d: Dictionary = diag[p]
+		for nt in prod.charts[p].notes:
+			if float(nt.end_ms) > float(nt.t_ms):
+				d.g_holds += 1
+		d.h_holds += (s.truth.diffs4k[hi].holds as Array).size()
 		var gr := _rows(B._times(prod.charts[p].notes))
 		var hr := _rows(s.truth.diffs4k[hi].times)
 		d.g_rows += gr.size()
@@ -512,7 +532,12 @@ static func _rank_add(diag: Dictionary, s: Dictionary, prod: Dictionary, cp: Dic
 		var E: Dictionary = ex[p]
 		var z := AmChart._logits(E.x, model[p]["note"])
 		var gr := _rows(B._times(prod.charts[p].notes))
-		var idx: Array = range(z.size())
+		var idx: Array = []
+		for r in z.size():
+			var xr: PackedFloat32Array = E.x[r]
+			# nur Zeilen, die der Setzer in diesem Profil nehmen darf (keine Triolen/Feineres, keine Zwischen-Zeilen)
+			if xr[45] == 0.0 and (p == "Expert" or (xr[20] == 0.0 and xr[21] == 0.0)):
+				idx.append(r)
 		idx.sort_custom(func(a, b): return z[a] > z[b])
 		var k := mini(gr.size(), idx.size())
 		var hit := 0
@@ -561,3 +586,97 @@ static func _product(s: Dictionary, cp: Dictionary, mods: Dictionary) -> Diction
 			print("    lint %s %s: %s" % [p, B._short(s.file), m])
 	prod.ok = true
 	return prod
+
+
+## Hard frei gewaehlt: gesetzte Zeilen gegen die besten K nach Modell (K = gesetzte Zeilen), aufgeschluesselt.
+func _debug(args: PackedStringArray, cache: String) -> int:
+	var params := _params()
+	var cp: Dictionary = params.chart.duplicate(true)
+	var extra := _kv(B._arg(args, "--chart", ""))
+	for k in extra:
+		cp[k] = extra[k]
+	var P := AmChart._params(cp)
+	var prof := B._arg(args, "--profile", "Hard")
+	var pats := AmChart._patterns(P)
+	var tot := {"k": 0, "set_hit": 0, "top_hit": 0, "only_set": 0, "only_set_hit": 0, "only_top": 0, "only_top_hit": 0,
+			"os_tmpl": 0, "os_rare": 0, "os_fill": 0, "ot_rare": 0, "ot_tmpl": 0, "ot_burst": 0}
+	for s in _load(cache, B._arg(args, "--set", "tune")):
+		var ex := _examples(s, P)
+		if not ex.has(prof):
+			continue
+		var G := AmChart._grid(s.grid)
+		var C := AmChart._prep(s.features, G, P)
+		C["X"] = AmChart.row_features(C)
+		C["model"] = AmChart._select_model(P)
+		var res := AmChart._tune(C, G, prof, {}, P, pats)
+		var fl: PackedByteArray = res["flags"]
+		var y: PackedByteArray = ex[prof].y
+		var z := AmChart._logits(C["X"], C["model"][prof]["note"])
+		var tick: PackedInt32Array = C["tick"]
+		var fill: PackedByteArray = C["fill"]
+		var tmpl: PackedInt32Array = C["tmpl"]
+		var idx: Array = []
+		for r in z.size():
+			if fill[r] == 0 and posmod(tick[r], 3) == 0:
+				idx.append(r)
+		idx.sort_custom(func(a, b): return z[a] > z[b])
+		var k := 0
+		for r in fl.size():
+			k += int(fl[r])
+		var top := PackedByteArray()
+		top.resize(fl.size())
+		for i in mini(k, idx.size()):
+			top[idx[i]] = 1
+		tot.k += k
+		# Dichte (2-s-Fenster) gegen den Menschen: gesetzt, Summe p, alle Kandidaten
+		var hd: Dictionary = s.truth.diffs4k[B.pick_human_diff(s.truth.diffs4k, prof)]
+		var ct: PackedFloat64Array = C["t"]
+		var t_end := float(hd.times[-1]) + 2000.0
+		var nw := int(t_end / B.DENS_WIN_MS) + 1
+		var wsel := []
+		var wp := []
+		var wall := []
+		var wnotes := []
+		for a in [wsel, wp, wall, wnotes]:
+			a.resize(nw)
+			a.fill(0.0)
+		for r in fl.size():
+			var w := int(ct[r] / B.DENS_WIN_MS)
+			if w < 0 or w >= nw:
+				continue
+			if fl[r] == 1:
+				wsel[w] += 1.0
+			if fill[r] == 0 and posmod(tick[r], 3) == 0:
+				wp[w] += 1.0 / (1.0 + exp(-z[r]))
+				wall[w] += 1.0
+		for nt in res["notes"]:
+			var w := int(float(nt.t_ms) / B.DENS_WIN_MS)
+			if w >= 0 and w < nw:
+				wnotes[w] += 1.0
+		var hum := B.density_curve(hd.times, t_end)
+		for key in ["c_rows", "c_p", "c_all", "c_notes"]:
+			if not tot.has(key):
+				tot[key] = 0.0
+		tot.c_rows += B.pearson(hum, wsel.slice(0, hum.size()))
+		tot.c_p += B.pearson(hum, wp.slice(0, hum.size()))
+		tot.c_all += B.pearson(hum, wall.slice(0, hum.size()))
+		tot.c_notes += B.pearson(hum, wnotes.slice(0, hum.size()))
+		tot["n_songs"] = int(tot.get("n_songs", 0)) + 1
+		for r in fl.size():
+			if fl[r] == 1:
+				tot.set_hit += int(y[r])
+			if top[r] == 1:
+				tot.top_hit += int(y[r])
+			if fl[r] == 1 and top[r] == 0:
+				tot.only_set += 1
+				tot.only_set_hit += int(y[r])
+				tot.os_tmpl += int(tmpl[r] >= 0)
+				tot.os_rare += int(posmod(tick[r], 6) != 0)
+				tot.os_fill += int(fill[r])
+			if top[r] == 1 and fl[r] == 0:
+				tot.only_top += 1
+				tot.only_top_hit += int(y[r])
+				tot.ot_rare += int(posmod(tick[r], 6) != 0)
+				tot.ot_tmpl += int(tmpl[r] >= 0)
+	print(JSON.stringify(tot))
+	return 0
