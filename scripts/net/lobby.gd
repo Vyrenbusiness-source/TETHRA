@@ -1147,7 +1147,9 @@ func send_score(score: int, combo: int, acc: float, miss: int = -1) -> void:
 func cl_score(score: int, combo: int, acc: float, miss: int = -1) -> void:
 	acc = clampf(acc, 0.0, 1.0)
 	var id := multiplayer.get_remote_sender_id()
-	if players.has(id):
+	# Nach dem Endergebnis zaehlt nur noch dieses (Live-Pakete sind unreliable und
+	# koennen nach cl_final ankommen).
+	if players.has(id) and (players[id].get("final", {}) as Dictionary).is_empty():
 		players[id].score = score
 		players[id].combo = combo
 		players[id].acc = acc
@@ -1203,6 +1205,7 @@ func send_final(stats: Dictionary) -> void:
 	stats = PlayerStatsCard.sanitize(stats)
 	if players.has(me):
 		players[me].final = stats
+		_apply_final_to_live(me, stats)
 	rpc("cl_final", stats)
 	scores_changed.emit()
 	_tour_check_round()
@@ -1215,10 +1218,18 @@ func cl_final(stats: Dictionary) -> void:
 	stats = PlayerStatsCard.sanitize(stats)  # fremdes Paket klemmen
 	if players.has(id):
 		players[id].final = stats
+		_apply_final_to_live(id, stats)
 		_store_final(id, stats)
 		scores_changed.emit()
 		_tour_check_round()
 		_mode_check_round()
+
+
+## Platzierung (ranked_players) und Live-Board folgen dem Endergebnis, nicht dem
+## letzten Live-Wert vor dem Ende.
+func _apply_final_to_live(id: int, stats: Dictionary) -> void:
+	players[id].score = int(stats.get("score", players[id].score))
+	players[id].acc = clampf(float(stats.get("acc", players[id].acc)), 0.0, 1.0)
 
 
 ## Endergebnis eines Mitspielers als fremden Score speichern (nicht bei Fail).
