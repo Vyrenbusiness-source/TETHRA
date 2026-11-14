@@ -358,7 +358,9 @@ func finish(s: Dictionary, is_fail: bool, recorded: Array, store: bool) -> Dicti
 		var meta := {
 			"mode": "marathon", "marathon": plan.duplicate(true),
 			"score": entry.score, "grade": entry.grade, "accuracy": entry.accuracy,
-			"date": date, "mods": gs.mods.duplicate() if gs != null else {},
+			"date": date,
+			# Wie Einzel-Replays: Start-Mods + Minen-Version des Laufs (gleiche Minen).
+			"mods": RuleMods.replay_mods(gs.mods, _core.mods if _core != null else {}) if gs != null else {},
 		}
 		if MarathonStore.save_replay(rid, recorded, meta):
 			info.replay_id = rid
