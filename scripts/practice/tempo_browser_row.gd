@@ -78,4 +78,8 @@ static func _start_practice(browser: Control) -> void:
 	var s := PracticeSession.begin()
 	s.keep_pitch = TempoPrefs.keep_pitch()
 	browser.call("_on_play_pressed")
+	# Ueben = nur die Noten: ohne Turbo und ohne Regel-Mods (SD/PF brechen ab,
+	# Minen-Ansicht haengt am ersten Core). Szenenwechsel ist verzoegert.
 	GameSession.mods.erase("TB")
+	for k in RuleMods.KEYS:
+		GameSession.mods.erase(k)

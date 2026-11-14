@@ -12,6 +12,8 @@ signal hold_started(index: int, quality: int)
 signal lane_pressed(column: int, hit: bool)
 signal hp_changed(hp: float)
 signal finished(stats: Dictionary)
+## Mod "MN": Mine index (ManiaMines) in Spalte column ausgeloest (zaehlt als Miss, nicht zur Acc).
+signal mine_hit(index: int, column: int)
 
 ## Volle osu!mania-Staffel: MAX(320er/rainbow), PERFECT(300), GOOD(200),
 ## OK(100), MEH(50), MISS — Fenster und Acc exakt wie im Original (Stable).
@@ -75,6 +77,12 @@ var mods: Dictionary = {}
 ## Score-Multiplikator der Mods (SV x1.10, NF x0.5, kombiniert = Produkt).
 var mod_mult := 1.0
 var _finished_emitted := false
+## Regel-Mods (RuleMods): Abbruch durch SD/PF ("SD"/"PF", "" = keiner) und die Wertung
+## dazu ("Miss", "200", "Mine" ...); Minen des Laufs (null ohne "MN") und ihre Treffer.
+var fail_rule := ""
+var fail_what := ""
+var mines: ManiaMines = null
+var n_mine_hit := 0
 var _judged_count := 0
 
 var _hp_miss_damage := 0.08
@@ -148,6 +156,7 @@ func setup(p_beatmap: Beatmap, _ar_override: float = -1.0, scroll_scale: float =
 		var obj := beatmap.hit_objects[i]
 		if obj is ManiaNote:
 			_lane_notes[(obj as ManiaNote).column].append(i)
+	RuleMods.setup_core(self)
 	_build_scroll()
 
 
@@ -197,7 +206,7 @@ func _monotone_spawns(from: int) -> void:
 ## Score-Multiplikator je Mod (kombinierbar: Produkt aller aktiven Mods).
 const MOD_MULT := {"NF": 0.5, "SV": 1.1}
 ## Anzeige-Reihenfolge der Mod-Badges.
-const MOD_ORDER := ["SV", "NF"]
+const MOD_ORDER := ["SV", "NF", "SD", "PF", "MN"]
 
 
 ## Score-Multiplikator fuer ein Mod-Dictionary (z.B. SV+NF = 1.1 * 0.5).
@@ -353,7 +362,10 @@ func update(t_ms: float) -> void:
 			_active_hold[c] = bh
 			_broken_hold[c] = -1
 			_finish_hold(c, Quality.MISS)
-	if _judged_count >= objs.size() and _next_spawn >= objs.size() and not _finished_emitted:
+	if mines != null:
+		_mine_hits(mines.update(t_ms))
+	if _judged_count >= objs.size() and _next_spawn >= objs.size() and not _finished_emitted \
+			and (mines == null or mines.done()):
 		_finished_emitted = true
 		finished.emit(stats())
 
@@ -383,6 +395,8 @@ func key_down(c: int, t_ms: float) -> void:
 		return
 	var objs := beatmap.hit_objects
 	_now = maxf(_now, t_ms)
+	if mines != null:
+		_mine_hits(mines.key_down(c, t_ms))
 	# Erneuter Druck auf einen im Koerper losgelassenen Hold (zaehlt hoechstens MEH).
 	var bh: int = _broken_hold[c]
 	_rate_for(bh)
@@ -430,6 +444,8 @@ func key_down(c: int, t_ms: float) -> void:
 func key_up(c: int, t_ms: float) -> void:
 	if c < 0 or c >= columns:
 		return
+	if mines != null:
+		_mine_hits(mines.key_up(c, t_ms))
 	var h: int = _active_hold[c]
 	if h < 0:
 		return
@@ -486,6 +502,7 @@ func _finish_hold(c: int, q_in: int) -> void:
 		}
 		_judged[idx] = dropped
 		_judged_count += 1
+		_check_rule(Quality.MISS)
 		_diag_note("DROP", (obj as ManiaNote).column)
 		note_judged.emit(idx, dropped)
 		return
@@ -495,6 +512,7 @@ func _finish_hold(c: int, q_in: int) -> void:
 	_add_score(q)
 	hp = minf(hp + _hp_heal[q], 1.0)
 	hp_changed.emit(hp)
+	_check_rule(q)
 	_diag_note(QUALITY_TAG[q], (obj as ManiaNote).column)
 	var result := {
 		"quality": q, "column": (obj as ManiaNote).column,
@@ -554,6 +572,7 @@ func _apply_hit(idx: int, q: int, dt: float) -> void:
 	_add_score(q)
 	hp = minf(hp + _hp_heal[q], 1.0)
 	hp_changed.emit(hp)
+	_check_rule(q)
 	_diag_note(QUALITY_TAG[q], (obj as ManiaNote).column)
 	var result := {
 		"quality": q, "dt": dt, "late": dt > 0.0,
@@ -573,6 +592,7 @@ func _miss(idx: int, kind: String = "FULL") -> void:
 	hp_changed.emit(hp)
 	if hp <= 0.0 and not no_fail:
 		failed = true
+	_check_rule(Quality.MISS)
 	_diag_note(kind, (obj as ManiaNote).column)
 	var result := {
 		"quality": Quality.MISS, "column": (obj as ManiaNote).column,
@@ -581,6 +601,34 @@ func _miss(idx: int, kind: String = "FULL") -> void:
 	_judged[idx] = result
 	_judged_count += 1
 	note_judged.emit(idx, result)
+
+
+## Regel-Mods SD/PF: Wertung q bricht den Lauf ab (nicht mit No Fail/Tutorial).
+func _check_rule(q: int, kind: String = "") -> void:
+	if fail_rule != "" or no_fail:
+		return
+	var r := RuleMods.breaks(mods, q)
+	if r != "":
+		fail_rule = r
+		fail_what = RuleMods.what_tag(q, kind)
+		failed = true
+
+
+## Mod "MN": ausgeloeste Minen werten. Miss ohne Acc-Objekt: Kombo bricht, HP sinkt,
+## der ScoreV1-Bonuszaehler faellt wie bei einem Miss (Basis-Score bleibt).
+func _mine_hits(list: Array[int]) -> void:
+	for i in list:
+		var col: int = mines.cols[i]
+		n_mine_hit += 1
+		combo = 0
+		_bonus = clampf(_bonus + BONUS_DELTA[Quality.MISS], 0.0, 100.0)
+		hp = maxf(hp - _hp_miss_damage, 0.0)
+		hp_changed.emit(hp)
+		if hp <= 0.0 and not no_fail:
+			failed = true
+		_check_rule(Quality.MISS, "MINE")
+		_diag_note("MINE", col)
+		mine_hit.emit(i, col)
 
 
 func accuracy() -> float:
@@ -610,13 +658,15 @@ func grade() -> String:
 
 
 func stats() -> Dictionary:
-	return {
+	var d := {
 		"n_max": n_max, "n300": n300, "n200": n200, "n100": n100,
 		"n50": n50, "n_miss": n_miss,
 		"max_combo": max_combo, "accuracy": accuracy(), "grade": grade(),
 		"failed": failed, "score": score,
 		"mods": mod_list(mods), "mod_mult": mod_mult,
 	}
+	RuleMods.extend_stats(self, d)
+	return d
 
 
 ## Tempo (mv-tempo): Fenster fuer Note idx auf Basis x rate_at(Notenzeit)
@@ -718,7 +768,7 @@ static func analyze_fail(log: Array, spikes: Array, t_fail: float) -> Dictionary
 	for e in log:
 		if float(e.t) < t_fail - DIAG_HP_WINDOW_MS:
 			continue
-		if str(e.kind) in ["FULL", "DROP", "EARLY"]:
+		if str(e.kind) in ["FULL", "DROP", "EARLY", "MINE"]:
 			misses.append(e)
 	var n_drop := 0
 	var n_early := 0

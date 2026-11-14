@@ -35,6 +35,8 @@ func _setup() -> void:
 	core.rate_track = rule.track
 	if not replay:
 		core.note_judged.connect(_on_judged)
+		# Mod Minen (mv-rules): eine beruehrte Mine zaehlt wie ein Miss.
+		core.mine_hit.connect(_on_mine_hit)
 	SyncClock.set_rate(rule.track.rate_at(SyncClock.judgement_time_ms()), keep_pitch)
 	_build_hud()
 
@@ -44,6 +46,12 @@ func _on_judged(index: int, result: Dictionary) -> void:
 		return
 	var bm: Beatmap = host.get("_beatmap")
 	rule.on_miss(bm.hit_objects[index].time, SyncClock.judgement_time_ms())
+
+
+func _on_mine_hit(index: int, _column: int) -> void:
+	var core: ManiaCore = host.get("core")
+	if core.mines != null and index >= 0 and index < core.mines.times.size():
+		rule.on_miss(core.mines.times[index], SyncClock.judgement_time_ms())
 
 
 func tick(t: float) -> void:

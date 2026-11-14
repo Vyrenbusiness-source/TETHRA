@@ -760,6 +760,7 @@ func _show_results(is_fail: bool) -> void:
 		data["previous_best"] = prev_best
 	if is_fail:
 		data["fail_ms"] = maxf(_last_update_t, 0.0)
+		data["fail_reason"] = RuleMods.fail_reason(core)   # Sudden Death / Perfect
 	var cover := OszImporter.load_background_texture(GameSession.osz_path, _beatmap)
 	if cover != null:
 		data["cover"] = cover
