@@ -219,14 +219,27 @@ static func is_custom(mode_2d: bool) -> bool:
 	return mode(mode_2d) != "auto"
 
 
-static func lane_color(mode_2d: bool, lane: int) -> Color:
-	return _set_of(mode_2d).lanes[posmod(lane, LANES)]
+## keys = Spaltenzahl der Map (5K-7K: osu!-Muster ueber die 4 Spaltenfarben,
+## Mittelspalte bernstein, siehe ManiaKeys.palette_index).
+static func lane_color(mode_2d: bool, lane: int, keys: int = 4) -> Color:
+	var pi := _palette(lane, keys)
+	if pi < 0:
+		return _clamp_col(ManiaKeys.CENTER_COLOR)
+	return _set_of(mode_2d).lanes[pi]
 
 
-static func hold_color(mode_2d: bool, lane: int) -> Color:
+static func hold_color(mode_2d: bool, lane: int, keys: int = 4) -> Color:
 	var s := _set_of(mode_2d)
-	var i := posmod(lane, LANES)
+	var i := _palette(lane, keys)
+	if i < 0:
+		return hold_of(_clamp_col(ManiaKeys.CENTER_COLOR))
 	return hold_of(s.lanes[i]) if s.hold_auto else s.holds[i]
+
+
+static func _palette(lane: int, keys: int) -> int:
+	if keys == 4 or keys < 1:
+		return posmod(lane, LANES)
+	return ManiaKeys.palette_index(clampi(lane, 0, keys - 1), keys)
 
 
 static func set_lane_color(mode_2d: bool, lane: int, c: Color) -> void:
@@ -285,10 +298,10 @@ static func snap_color(divisor: int) -> Color:
 ## Notenfarbe. map_color = Farbe, die das Spiel heute nehmen wuerde (bei "auto"
 ## kommt sie unveraendert zurueck). snap_div = Takt-Teiler der Note (nur "snap").
 static func color_for(lane: int, is_hold: bool, mode_2d: bool, map_color: Color,
-		snap_div: int = 0) -> Color:
+		snap_div: int = 0, keys: int = 4) -> Color:
 	match mode(mode_2d):
 		"lanes":
-			return hold_color(mode_2d, lane) if is_hold else lane_color(mode_2d, lane)
+			return hold_color(mode_2d, lane, keys) if is_hold else lane_color(mode_2d, lane, keys)
 		"snap":
 			if snap_div <= 0:
 				return map_color

@@ -110,15 +110,15 @@ static func mode_name(mode: String) -> String:
 	return MODE_MANIA if mode == "" else mode
 
 
-## Anzeige-Name eines Modus ("Mania 4K" / "Orbit").
-static func mode_label(mode: String) -> String:
+## Anzeige-Name eines Modus ("Mania 4K" / "Orbit"); Mania mit keys: "Mania 7K".
+static func mode_label(mode: String, keys: int = 4) -> String:
 	match mode:
 		MODE_ORBIT: return "Orbit"
 		MODE_RALLY: return "Rally"
 		MODE_DIRIGENT: return "Dirigent"
 		MODE_TRACE: return "Trace"
 		MODE_REBOUND: return "Rebound"
-	return "Mania 4K"
+	return "Mania %s" % ManiaKeys.label(keys if ManiaKeys.supported(keys) else 4)
 
 
 ## SV-Stufe eines Scores (nur mit Mod "SV"): Feld "sv_level".
@@ -163,6 +163,9 @@ static func mods_label(e: Dictionary) -> String:
 ## Felder "mode" und (mit SV) "sv_level" an einen neuen Eintrag haengen.
 static func _tag(entry: Dictionary, result: Dictionary, mode: String) -> Dictionary:
 	entry["mode"] = mode_name(mode)
+	# Mania 5K-7K: Tastenzahl am Eintrag (fehlt = 4K); eigene pp-Wertung je Tastenzahl.
+	if int(result.get("keys", 4)) != 4:
+		entry["keys"] = int(result.keys)
 	if (entry.get("mods", []) as Array).has("SV"):
 		entry["sv_level"] = _sv_level_for(result)
 	return entry
@@ -677,8 +680,9 @@ static func recent_plays(n: int = 8, mode: String = "") -> Array:
 
 ## Profil-pp wie osu: Bestwerte aller Maps nach pp sortiert, gewichtet
 ## mit 0.95^i aufsummiert. NUR Mania (Sektion "scores"): andere Modi
-## veraendern die pp nie.
-static func profile_pp() -> float:
+## veraendern die pp nie. keys: nur Scores dieser Tastenzahl (Standard 4K;
+## 5K-7K haben eigene Wertungen, ManiaKeys.keys_of_entry).
+static func profile_pp(keys: int = 4) -> float:
 	var cfg := ConfigFile.new()
 	if _load(cfg) != OK:
 		return 0.0
@@ -687,7 +691,7 @@ static func profile_pp() -> float:
 	var pps: Array[float] = []
 	for key in cfg.get_section_keys("scores"):
 		var e = cfg.get_value("scores", key, {})
-		if e is Dictionary and float(e.get("pp", -1.0)) > 0.0 and not bool(e.get("unranked", false)):
+		if e is Dictionary and float(e.get("pp", -1.0)) > 0.0 and not bool(e.get("unranked", false)) 				and ManiaKeys.keys_of_entry(e) == keys:
 			pps.append(float(e.pp))
 	pps.sort()
 	pps.reverse()

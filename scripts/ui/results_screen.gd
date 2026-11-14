@@ -475,7 +475,7 @@ func _mode_badge() -> Control:
 	(icon.get_child(0) as CanvasItem).modulate = col.lerp(Color.WHITE, 0.55)
 	row.add_child(icon)
 	var l := Label.new()
-	l.text = ScoreStore.mode_label(score_mode()).to_upper()
+	l.text = ScoreStore.mode_label(score_mode(), int(_stats.get("keys", 4))).to_upper()
 	l.add_theme_font_override("font", UiTheme.heading_font(2))
 	l.add_theme_font_size_override("font_size", 13)
 	l.add_theme_color_override("font_color", col.lerp(Color.WHITE, 0.55))

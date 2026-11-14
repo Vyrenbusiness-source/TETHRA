@@ -431,6 +431,7 @@ func _ready() -> void:
 	if not GameSession.is_replay:
 		GameSession.mods.merge(Settings.extra_mods(_2d), true)
 	core.setup(_beatmap, -1.0, scroll)
+	_apply_key_layout()  # 5K-7K: Bahnen/Feldbreite nach Spaltenzahl (ManiaKeys)
 	if bool(GameSession.mods.get("CS", false)):
 		_apply_constant_speed(scroll)
 	_clock.setup(_beatmap.timing_points)
@@ -535,6 +536,25 @@ func _ready() -> void:
 		_resume_with_countdown(1.0)
 
 
+## Mehr Tasten (ManiaKeys, 5K-7K): Bahnen enger, Noten etwas kleiner, Strecke
+## breiter. 4K bleibt unveraendert. Laeuft nach core.setup (Spaltenzahl bekannt).
+func _apply_key_layout() -> void:
+	var n := core.columns
+	_lane_held.resize(maxi(n, 4))
+	if n == 4 or n < 1:
+		return
+	RAIL_X.clear()
+	for x in ManiaKeys.rail_x(n):
+		RAIL_X.append(x * _lane_k)
+	_note_k *= ManiaKeys.note_scale(n)
+	_lane_k *= ManiaKeys.field_scale(n)
+
+
+## Taste -> Spalte fuer die Spaltenzahl dieser Map (4K: key_lanes, 5K-7K eigene).
+func _lane_of_key(code: int) -> int:
+	return Settings.mania_lane_for_key(code, core.columns)
+
+
 ## Spurbreite aus den Settings (oder --lane=<prozent>) -> RAIL_X, _note_k.
 func _setup_lane_spacing() -> void:
 	var k := Settings.lane_spacing
@@ -609,8 +629,9 @@ func _build_playfield_2d() -> void:
 	add_child(pf_layer)
 	_pf2d = Playfield2D.new()
 	var keys := PackedStringArray()
+	var lane_keys := Settings.mania_keys(core.columns)
 	for i in core.columns:
-		keys.append(_short_key_name(Settings.key_lanes[i]) if i < Settings.key_lanes.size() else "")
+		keys.append(_short_key_name(lane_keys[i]) if i < lane_keys.size() else "")
 	_pf2d.setup(core.columns, _lane_k_2d, Z_LINE, Z_FAR, keys, _lane_color(0), _note_style_2d,
 			_note_k_2d)
 	_pf2d.skin = _load_skin_2d()
@@ -625,7 +646,7 @@ func _load_skin_2d() -> ManiaSkin:
 	for a in OS.get_cmdline_args() + OS.get_cmdline_user_args():
 		if a.begins_with("--skin2d="):
 			nm = a.trim_prefix("--skin2d=")
-	return ManiaSkin.load_skin(nm) if nm != "" else null
+	return ManiaSkin.load_skin(nm, ManiaSkin.SKINS_DIR, core.columns) if nm != "" else null
 
 
 ## Pausenmenue hat 2D-Werte geaendert: sofort anwenden (ohne Neustart).
@@ -656,7 +677,7 @@ func _update_playfield_2d(t: float) -> void:
 			_pf2d.add_note(obj.column, zh, c, Playfield2D.STATE_NORMAL, index, obj.time - t)
 	for rb in _released_beams:
 		_pf2d.add_hold(int(rb.col), _note_z(float(rb.head), t), _note_z(float(rb.end), t),
-				NoteColors.color_for(int(rb.col), true, true, CLEAN_HOLD), Playfield2D.STATE_DEAD)
+				NoteColors.color_for(int(rb.col), true, true, CLEAN_HOLD, 0, core.columns), Playfield2D.STATE_DEAD)
 	for mi in range(_missed_2d.size() - 1, -1, -1):
 		var z := _note_z(float(_missed_2d[mi][0]), t)
 		if z > Z_LINE + 12.0:
@@ -1030,7 +1051,8 @@ func _build_world() -> void:
 		_pad_judge_col.append(_pad_color(i))
 
 		var label := Label3D.new()
-		label.text = _short_key_name(Settings.key_lanes[i])
+		var lane_keys := Settings.mania_keys(core.columns)
+		label.text = _short_key_name(lane_keys[i]) if i < lane_keys.size() else ""
 		# Hohe Font-Aufloesung bei gleicher Weltgroesse — kein Pixelbrei.
 		label.font_size = 128
 		label.pixel_size = 0.0019
@@ -1099,9 +1121,10 @@ func _short_key_name(code: int) -> String:
 
 
 func _pad_color(i: int) -> Color:
-	if _fx_level() <= 0.0:
-		return CLEAN_PAD
-	return _lane_color(i)
+	var c := CLEAN_PAD if _fx_level() <= 0.0 else _lane_color(i)
+	if ManiaKeys.is_center(i, core.columns):
+		c = c.lerp(ManiaKeys.CENTER_COLOR, 0.6)  # 5K/7K: Mittelspalte wie osu! hervorgehoben
+	return c
 
 
 func _lane_color(i: int) -> Color:
@@ -1621,7 +1644,7 @@ func _on_note_spawned(index: int) -> void:
 	# Eigene Notenfarben (Modus lanes/snap) ersetzen Map-/Welt-/Snap-Farbe komplett.
 	if NoteColors.is_custom(_2d):
 		var dv := _snap_divs[index] if index < _snap_divs.size() else 0
-		col = NoteColors.color_for(obj.column, obj.is_hold, _2d, col, dv)
+		col = NoteColors.color_for(obj.column, obj.is_hold, _2d, col, dv, core.columns)
 		has_snap = false
 
 	var root := Node3D.new()
@@ -2028,7 +2051,7 @@ func _input(event: InputEvent) -> void:
 	if _ended or GameSession.is_replay or _autoplay:
 		return
 	if event is InputEventKey and not event.echo:
-		var lane := Settings.lane_for_key(event.keycode)
+		var lane := _lane_of_key(event.keycode)
 		if lane >= 0:
 			var t := _time_ms()
 			_recorded.append({ "t": t, "lane": lane, "down": event.pressed })
@@ -2074,13 +2097,13 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	# R = Map sofort neu starten (im Spiel UND auf dem Results-Screen),
 	# ausser R ist als Lane-Taste belegt.
-	if event.keycode == KEY_R and Settings.lane_for_key(KEY_R) == -1 			and not Lobby.in_round():
+	if event.keycode == KEY_R and _lane_of_key(KEY_R) == -1 			and not Lobby.in_round():
 		_restart()
 		return
 	# Intro-Skip: Leertaste springt lange Vorlaeufe bis kurz vor die erste
 	# Note (nur wenn Space keine Lane-Taste ist).
 	if event.keycode == KEY_SPACE and not _ended \
-			and Settings.lane_for_key(KEY_SPACE) == -1 and _can_skip_intro():
+			and _lane_of_key(KEY_SPACE) == -1 and _can_skip_intro():
 		if Lobby.in_round():
 			Lobby.vote_skip()  # Multiplayer: springt erst, wenn ALLE druecken
 		else:
@@ -3701,7 +3724,7 @@ func _update_break_overlay(t: float) -> void:
 			_break_ov.hide_break()
 			_break_cur = -1
 		return
-	var can_skip: bool = _breaks[idx].x <= 0.0 and _can_skip_intro() 		and Settings.lane_for_key(KEY_SPACE) == -1 and not _ended
+	var can_skip: bool = _breaks[idx].x <= 0.0 and _can_skip_intro() 		and _lane_of_key(KEY_SPACE) == -1 and not _ended
 	if idx != _break_cur or can_skip != _break_skip:
 		var beat_ms := 60000.0 / _clock.bpm if _clock.bpm > 1.0 else 500.0
 		_break_ov.show_break(_breaks[idx].x, _breaks[idx].y, beat_ms, can_skip)
@@ -3986,6 +4009,7 @@ func _show_results(is_fail: bool) -> void:
 				if is_inside_tree():
 					_spawn_shooting_star(977 + shower_i * 37))
 	var s := core.stats()
+	s["keys"] = core.columns  # 4K-7K: eigene Ranglisten je Tastenzahl (ScoreStore/Online)
 	var unranked := false  # Mania ist immer ranked (Scroll rein visuell)
 	s["unranked"] = unranked
 	var pp := -1.0
@@ -4028,6 +4052,7 @@ func _show_results(is_fail: bool) -> void:
 			"score": int(s.score), "grade": str(s.grade),
 			"accuracy": float(s.accuracy), "date": Time.get_datetime_string_from_system(),
 			"mods": GameSession.mods.duplicate(),  # Replay laeuft mit denselben Mods
+			"keys": core.columns,  # Tastenzahl der Map (4K-7K), Replay-Marke
 		})
 		if not is_fail:
 			_submit_online(s)
@@ -4091,7 +4116,7 @@ func _submit_online(s: Dictionary) -> void:
 		GameSession.osu_filename, GameSession.stars)
 	var res := s.duplicate()
 	res["date"] = Time.get_datetime_string_from_system(true)
-	api.submit(res, meta, "mania")
+	api.submit(res, meta, ManiaKeys.online_mode(core.columns))
 
 
 ## Results-Screen: eigenstaendige Komponente ResultsScreen (scripts/ui/

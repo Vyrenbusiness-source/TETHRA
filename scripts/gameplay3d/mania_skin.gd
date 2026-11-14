@@ -214,6 +214,11 @@ static func parse(text: String, p_keys: int = 4) -> ManiaSkin:
 		s._alts["note_%d" % i] = [n]
 		s._alts["key_%d" % i] = [k]
 		s._alts["keyd_%d" % i] = [k + "D"]
+		if pn == "S":
+			# Mittelspalte (5K/7K): Skins ohne mania-noteS nehmen die aeusseren Bilder.
+			for pair in [["head_", "mania-note1H"], ["body_", "mania-note1L"], ["tail_", "mania-note1T"],
+					["note_", "mania-note1"], ["key_", "mania-key1"], ["keyd_", "mania-key1D"]]:
+				(s._alts[String(pair[0]) + str(i)] as Array).append(pair[1])
 	s._names["stage_left"] = String(m.get("stageleft", "mania-stage-left"))
 	s._names["stage_right"] = String(m.get("stageright", "mania-stage-right"))
 	s._names["stage_hint"] = String(m.get("stagehint", "mania-stage-hint"))
@@ -669,13 +674,15 @@ static func _remove_tree(path: String) -> void:
 	DirAccess.remove_absolute(path)
 
 
-static func _load_builtin(p_name: String) -> ManiaSkin:
+static func _load_builtin(p_name: String, p_keys: int = 4) -> ManiaSkin:
 	var dir := BUILTIN_DIR + "/" + p_name.trim_prefix(BUILTIN_PREFIX)
 	var f := FileAccess.open(dir + "/skin.ini", FileAccess.READ)
 	if f == null:
 		return null
 	var text := f.get_as_text()
-	var s := parse(text, 4)
+	var s := parse(text, p_keys)
+	if p_keys != 4 and not s.has_mania_block:
+		_builtin_widths(s, text)
 	s.skin_name = p_name
 	s._dir = dir
 	for sec in parse_ini(text):
@@ -689,10 +696,56 @@ static func _load_builtin(p_name: String) -> ManiaSkin:
 	return s
 
 
+## Eingebaute Skins haben nur einen 4K-Block: fuer 5K-7K dessen Spaltenbreite,
+## Linien und Layout uebernehmen (gleicher Look, mehr Spalten).
+static func _builtin_widths(s: ManiaSkin, text: String) -> void:
+	var m4 := pick_mania_block(parse_ini(text), 4)
+	if m4.is_empty():
+		return
+	var w4 := _list(String(m4.get("columnwidth", "")), 4, DEFAULT_COLUMN_WIDTH)
+	s.column_width = _list("", s.keys, maxf(1.0, float(w4[0])))
+	var lw4 := _list(String(m4.get("columnlinewidth", "")), 5, 2.0)
+	s.column_line_width = _list("", s.keys + 1, float(lw4[0]))
+	s.hit_position = clampf(String(m4.get("hitposition", str(DEFAULT_HIT_POSITION))).to_float(), 240.0, 480.0)
+	s.light_position = String(m4.get("lightposition", "413")).to_float()
+	s.judgement_line = String(m4.get("judgementline", "1")).strip_edges() != "0"
+	if m4.has("notebodystyle"):
+		s.note_body_style = clampi(int(String(m4["notebodystyle"])), 0, 2)
+	s.has_mania_block = true
+	# Bildnamen: die 4K-Belegung je Muster ("1"/"2"; Mitte "S" nimmt die "1"-Bilder,
+	# bei eigenen NoteImage-Zeilen die der passenden 4K-Spalte).
+	for i in s.keys:
+		var src := 0 if ManiaKeys.pattern(i, s.keys) != "2" else 1
+		for pre in ["note_", "head_", "body_", "tail_", "key_", "keyd_"]:
+			var k4 := pre + str(src)
+			var base4 := pick_name_4k(m4, k4)
+			if base4 != "":
+				s._names[pre + str(i)] = base4
+
+
+## Bildname einer 4K-Spalte aus dem [Mania]-Block (NoteImage0, KeyImage1D ...), "" = Standard.
+static func pick_name_4k(m4: Dictionary, key: String) -> String:
+	var col := key_col(key)
+	var pre := key.substr(0, key.rfind("_") + 1)
+	match pre:
+		"note_": return String(m4.get("noteimage%d" % col, ""))
+		"head_": return String(m4.get("noteimage%dh" % col, ""))
+		"body_": return String(m4.get("noteimage%dl" % col, ""))
+		"tail_": return String(m4.get("noteimage%dt" % col, ""))
+		"key_": return String(m4.get("keyimage%d" % col, ""))
+		"keyd_": return String(m4.get("keyimage%dd" % col, ""))
+	return ""
+
+
 ## Farbe der Spalte im Modus "auto" (Palette des Generators); weiss ohne Palette.
+## Mehr Spalten als die Palette (4K-Palette bei 5K-7K): nach osu!-Muster, Mitte
+## bernstein (ManiaKeys.CENTER_COLOR).
 func auto_color(col: int) -> Color:
 	if auto_colors.is_empty():
 		return Color(1, 1, 1)
+	if keys != auto_colors.size() and auto_colors.size() == 4:
+		var pi := ManiaKeys.palette_index(col, keys)
+		return ManiaKeys.CENTER_COLOR if pi < 0 else auto_colors[pi]
 	return auto_colors[clampi(col, 0, auto_colors.size() - 1)]
 
 
@@ -708,7 +761,7 @@ func tints(col: int, c: Color, is_hold: bool) -> Array:
 		return [c, c]
 	var head := c
 	if NoteColors.mode(true) == "lanes":
-		head = NoteColors.lane_color(true, col)
+		head = NoteColors.lane_color(true, col, keys)
 	else:
 		var k := 1.0 - NoteColors.HOLD_DARKEN
 		head = Color(minf(c.r / k, 1.0), minf(c.g / k, 1.0), minf(c.b / k, 1.0), 1.0)
@@ -737,9 +790,9 @@ static func tint_texture(t: Texture2D, c: Color) -> Texture2D:
 	return ImageTexture.create_from_image(img)
 
 
-static func load_skin(p_name: String, root: String = SKINS_DIR) -> ManiaSkin:
+static func load_skin(p_name: String, root: String = SKINS_DIR, p_keys: int = 4) -> ManiaSkin:
 	if is_builtin(p_name):
-		return _load_builtin(p_name)
+		return _load_builtin(p_name, p_keys)
 	if p_name.is_empty() or p_name != safe_name(p_name):
 		return null
 	var dir := root + "/" + p_name
@@ -749,7 +802,7 @@ static func load_skin(p_name: String, root: String = SKINS_DIR) -> ManiaSkin:
 	var f := FileAccess.open(dir + "/skin.ini", FileAccess.READ)
 	if f != null and f.get_length() <= MAX_FILE_BYTES:
 		text = f.get_as_text()
-	var s := parse(text, 4)
+	var s := parse(text, p_keys)
 	s.skin_name = p_name
 	s._dir = dir
 	for rel in _list_files(dir, ""):

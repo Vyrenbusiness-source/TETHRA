@@ -79,6 +79,10 @@ var genre_id := 0
 var sort_mode := BeatmapMirror.Sort.RELEVANCE
 var status_mode := BeatmapMirror.STATUS_RANKED
 var sv_filter := false
+## Tastenzahl der Mania-Suche: 4 (Standard), 5-7 oder 0 = alle 4K-7K.
+var key_mode := 4
+var _key_chips: Array[Button] = []
+var _key_row: HFlowContainer
 ## Suchmodus: BeatmapMirror.MODE_MANIA (4K) oder MODE_STD (Orbit). Folgt beim
 ## Oeffnen dem Spielmodus des Song-Browsers (Elternknoten), umschaltbar.
 var mode := BeatmapMirror.MODE_MANIA
@@ -133,6 +137,7 @@ var _star_chips: Array[Button] = []
 var _sort_chips: Array[Button] = []
 var _status_chips: Array[Button] = []
 var _sv_chip: Button
+const KEY_CHOICES := [4, 5, 6, 7, 0]
 var _src_label: Label
 var _mode_btns: Array[Button] = []
 var _mode_switch: Control
@@ -382,6 +387,14 @@ func _build() -> void:
 	_status_chips.append(_chip(frow, "Ranked", func(): _set_status(BeatmapMirror.STATUS_RANKED)))
 	_status_chips.append(_chip(frow, "Loved", func(): _set_status(BeatmapMirror.STATUS_LOVED)))
 
+	# Tastenzahl (nur Mania): 4K wie bisher, 5K-7K oder alle.
+	_key_row = _filter_row(vb, tr("Keys"))
+	for k in KEY_CHOICES:
+		var kc := _chip(_key_row, ManiaKeys.label(k) if k > 0 else tr("All"), func(): _set_keys(k))
+		kc.tooltip_text = tr("Only maps with this many keys (Mania)")
+		_key_chips.append(kc)
+	_key_row.visible = mode == BeatmapMirror.MODE_MANIA and not pick_mode
+
 	_build_pack_row(vb)
 
 	_status = Label.new()
@@ -461,7 +474,7 @@ func _build_mode_switch() -> Control:
 	var hb := HBoxContainer.new()
 	hb.add_theme_constant_override("separation", 2)
 	shell.add_child(hb)
-	var defs := [["Mania 4K", BeatmapMirror.MODE_MANIA], ["Orbit", BeatmapMirror.MODE_STD]]
+	var defs := [["Mania", BeatmapMirror.MODE_MANIA], ["Orbit", BeatmapMirror.MODE_STD]]
 	for d in defs:
 		var m: int = d[1]
 		var b := Button.new()
@@ -498,6 +511,9 @@ func _style_mode_buttons() -> void:
 func _source_text() -> String:
 	if mode == BeatmapMirror.MODE_STD:
 		return tr("Orbit  ·  osu!standard-Maps  ·  catboy.best  ·  installierte Maps ausgeblendet")
+	if _search_keys() != 4:
+		return tr("Mania %s  ·  catboy.best  ·  installed maps hidden") % (
+			ManiaKeys.label(_search_keys()) if _search_keys() > 0 else "4K–7K")
 	return tr("4K-Mania  ·  catboy.best  ·  installierte Maps ausgeblendet")
 
 
@@ -515,6 +531,8 @@ func _set_mode(m: int) -> void:
 		_src_label.text = _source_text()
 	if _sv_chip != null:
 		_sv_chip.visible = mode == BeatmapMirror.MODE_MANIA
+	if _key_row != null:
+		_key_row.visible = mode == BeatmapMirror.MODE_MANIA and not pick_mode
 	_restyle_chips()
 	if _pack_active:
 		_pack_active = false
@@ -523,7 +541,9 @@ func _set_mode(m: int) -> void:
 
 ## Ersatzsuche, wenn eine leere Relevanz-Suche nichts liefert.
 func _fallback_query() -> String:
-	return "4k" if mode == BeatmapMirror.MODE_MANIA else "a"
+	if mode != BeatmapMirror.MODE_MANIA:
+		return "a"
+	return "%dk" % maxi(_search_keys(), 4)
 
 
 func _filter_row(parent: Node, caption: String) -> HFlowContainer:
@@ -576,6 +596,8 @@ func _restyle_chips() -> void:
 	_apply_chip(_status_chips[0], status_mode == BeatmapMirror.STATUS_RANKED)
 	_apply_chip(_status_chips[1], status_mode == BeatmapMirror.STATUS_LOVED)
 	_apply_chip(_sv_chip, sv_filter)
+	for i in _key_chips.size():
+		_apply_chip(_key_chips[i], int(KEY_CHOICES[i]) == key_mode)
 
 
 func _build_pack_row(vb: VBoxContainer) -> void:
@@ -680,6 +702,29 @@ func _set_sv(on: bool) -> void:
 	_run_search()
 
 
+## Tastenzahl der Suche (Mania). Turnier-Auswahl (pick_mode) bleibt immer 4K.
+func _set_keys(k: int) -> void:
+	if k == key_mode:
+		return
+	key_mode = k
+	if _src_label != null:
+		_src_label.text = _source_text()
+	_restyle_chips()
+	_run_search()
+
+
+func _search_keys() -> int:
+	return 4 if pick_mode or mode != BeatmapMirror.MODE_MANIA else key_mode
+
+
+## Mirror-Suche mit der Tastenzahl dieses Browsers (Mirror ist ein Autoload:
+## key_mode gilt nur fuer diese eine Anfrage, danach wieder 4K).
+func _msearch(q: String, offset: int) -> void:
+	_mirror.key_mode = _search_keys()
+	_mirror.search(q, offset, sort_mode, status_mode, mode)
+	_mirror.key_mode = 4
+
+
 func _set_sort(i: int) -> void:
 	if i == sort_mode:
 		return
@@ -726,14 +771,14 @@ func _run_search() -> void:
 	_clear_grid()
 	_show_skeleton()
 	_say((tr("Suche „%s“ …") % q) if q != "" else tr("Lade Maps …"))
-	_mirror.search(q, 0, sort_mode, status_mode, mode)
+	_msearch(q, 0)
 
 
 func _request_page() -> void:
 	_loading = true
 	_offset += BeatmapMirror.PAGE_SIZE
 	_footer.text = "Lade weitere Maps …"
-	_mirror.search(_query, _offset, sort_mode, status_mode, mode)
+	_msearch(_query, _offset)
 
 
 func _on_search_failed(message: String) -> void:
@@ -746,7 +791,7 @@ func _on_search_failed(message: String) -> void:
 			get_tree().create_timer(1.5, true).timeout.connect(func():
 				if _pack_active:
 					_loading = true
-					_mirror.search(_query, _offset, sort_mode, status_mode, mode))
+					_msearch(_query, _offset))
 		else:
 			_pack_active = false
 			_say(tr("Pack abgebrochen: Mirror nicht erreichbar."))
@@ -755,7 +800,7 @@ func _on_search_failed(message: String) -> void:
 		_suggest_fallback = false
 		_query = _fallback_query()
 		_loading = true
-		_mirror.search(_fallback_query(), 0, sort_mode, status_mode, mode)
+		_msearch(_fallback_query(), 0)
 		return
 	if _offset > 0:
 		# Folgeseite: Liste bleibt, nur Fusszeile meldet den Fehler.
@@ -784,7 +829,7 @@ func _on_search_done(results: Array, raw_count: int, offset: int) -> void:
 			_suggest_fallback = false
 			_query = _fallback_query()
 			_loading = true
-			_mirror.search(_fallback_query(), 0, sort_mode, status_mode, mode)
+			_msearch(_fallback_query(), 0)
 			return
 		_suggest_fallback = false
 		_results = page
@@ -887,7 +932,7 @@ func _update_status() -> void:
 				"Mit diesen Filtern gibt es hier nichts Neues. Filter lockern oder anders suchen.",
 				"Filter zurücksetzen", _reset_filters)
 		elif _results.is_empty():
-			_show_state("Keine Treffer", "Der Mirror kennt dazu keine Orbit-Maps." if mode == BeatmapMirror.MODE_STD else "Der Mirror kennt dazu keine 4K-Mania-Maps.", "", Callable())
+			_show_state("Keine Treffer", "Der Mirror kennt dazu keine Orbit-Maps." if mode == BeatmapMirror.MODE_STD else ("Der Mirror kennt dazu keine 4K-Mania-Maps." if _search_keys() == 4 else tr("The mirror has no Mania maps with this key count for that.")), "", Callable())
 		else:
 			_show_state("Alles schon installiert", "Alle Treffer dieser Suche sind bereits in deiner Bibliothek.", "", Callable())
 	elif n > 0:
@@ -1085,6 +1130,17 @@ static func fmt_length(sec: int) -> String:
 	return "%d:%02d" % [sec / 60, sec % 60]
 
 
+## Tasten-Marke einer Karte ("7K", "4K 7K"); "" bei reinen 4K-Sets.
+static func keys_text(r: Dictionary) -> String:
+	var ks: Array = r.get("keys", [])
+	if ks.is_empty() or (ks.size() == 1 and int(ks[0]) == 4):
+		return ""
+	var parts: PackedStringArray = []
+	for k in ks:
+		parts.append(ManiaKeys.label(int(k)))
+	return " ".join(parts)
+
+
 ## Meta-Zeile einer Karte: "Elektronisch · 200 BPM · 1:28 · 1.962 Plays".
 static func meta_line(r: Dictionary) -> String:
 	var parts: Array[String] = []
@@ -1175,6 +1231,9 @@ func _make_card(r: Dictionary) -> Control:
 	var loved := str(r.get("status", "")) == "loved"
 	pills.add_child(_pill("LOVED" if loved else "RANKED",
 		Color(UiTheme.ACCENT2 if loved else ACCENT, 0.92), UiTheme.ON_ACCENT, 11))
+	var kt := keys_text(r)
+	if kt != "":
+		pills.add_child(_pill(kt, Color(0, 0, 0, 0.62), ACCENT, 11))
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -1481,7 +1540,7 @@ func _pack_fill() -> void:
 		# Den Mirror nicht mit Request-Bursts fluten (drosselt sonst).
 		get_tree().create_timer(0.45, true).timeout.connect(func():
 			if _pack_active:
-				_mirror.search(_query, _offset, sort_mode, status_mode, mode)
+				_msearch(_query, _offset)
 			else:
 				_loading = false)
 	_update_pack_status()

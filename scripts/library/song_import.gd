@@ -9,9 +9,9 @@ extends RefCounted
 ## Ordner-Drop) laeuft ein Import-Job im Thread: start() -> progress(...)
 ## im Hauptthread -> finished(result). Abbrechen per cancel().
 ##
-## Regel: uebernommen werden nur Sets mit mindestens einer 4K-Mania-Diff
-## (Mode 3, CircleSize 4) oder osu!standard-Diff (Mode 0). Taiko, Catch,
-## 5K/7K usw. werden uebersprungen bzw. nicht mit eingepackt.
+## Regel: uebernommen werden nur Sets mit mindestens einer 4K-7K-Mania-Diff
+## (Mode 3, CircleSize 4 bis 7) oder osu!standard-Diff (Mode 0). Taiko, Catch,
+## 8K+ usw. werden uebersprungen bzw. nicht mit eingepackt.
 
 signal progress(done: int, total: int, phase: String)
 signal finished(result: Dictionary)
@@ -131,12 +131,12 @@ static func osu_header(text: String) -> Dictionary:
 	return h
 
 
-## Diff spielbar in OMEN? osu!standard immer, Mania nur als 4K.
+## Diff spielbar in OMEN? osu!standard immer, Mania als 4K bis 7K (ManiaKeys).
 static func header_usable(h: Dictionary) -> bool:
 	var m := int(h.get("mode", -1))
 	if m == 0:
 		return true
-	return m == 3 and int(h.get("keys", 0)) == 4
+	return m == 3 and ManiaKeys.supported(int(h.get("keys", 0)))
 
 
 ## Ueberblick ueber einen Map-Ordner:
