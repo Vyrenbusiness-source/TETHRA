@@ -21,7 +21,7 @@ const WorldPackScript := preload("res://scripts/net/world_pack.gd")
 ## `gh release create vX.Y.Z release/OMEN.pck release/TETHRA.pck` (TETHRA.pck =
 ## Kopie von OMEN.pck: v1.36.0 und aelter suchen genau diesen Asset-Namen).
 
-const CURRENT_VERSION := "1.40.0"
+const CURRENT_VERSION := "1.41.0"
 const REPO := "Vyrenbusiness-source/OMEN"
 const API_LATEST := "https://api.github.com/repos/" + REPO + "/releases/latest"
 ## Welten-Paket liegt in einem festen Release (Tag "worlds"), damit normale
