@@ -468,6 +468,9 @@ func _test_lint_detects() -> void:
 	for i in 24:
 		ok_notes.append(_n(float(i) * 400.0, [0, 2, 1, 3][i % 4]))
 	_check(AmChart.lint(ok_notes, grid, "Easy").is_empty(), "saubere Easy-Folge: 0")
+	# overlap_count zaehlt wie lint: Note in anderer Spalte waehrend eines Holds, nicht am Hold-Beginn
+	var ovn := AmChart.overlap_count([_n(0.0, 0, 1200.0), _n(0.0, 1), _n(400.0, 2), _n(800.0, 3), _n(800.0, 1), _n(1600.0, 2)])
+	_check(ovn == 3, "overlap_count: 3 Noten im Hold (%d)" % ovn)
 	_check(not AmChart.lint([_n(0.0, 0), _n(137.0, 1)], grid, "Hard").is_empty(), "neben dem Gitter")
 	_check(not AmChart.lint([_n(0.0, 0), _n(50.0, 1)], grid, "Normal").is_empty(), "1/8 in Normal")
 	_check(AmChart.lint([_n(0.0, 0), _n(100.0, 1), _n(400.0, 2)], grid, "Normal").is_empty(), "kurzes 1/4 in Normal erlaubt")

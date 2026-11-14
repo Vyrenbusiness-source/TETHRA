@@ -1,5 +1,19 @@
 {
-	"grid": {},
-	"features": {},
-	"chart": {}
+	"chart": {
+		"dens_gain": 0.266666666666667,
+		"support_drum_weight": 0.8,
+		"support_weight": 0.2,
+		"w_hat": 1.1,
+		"w_kick": 0.433333333333333,
+		"w_metric": 1.5,
+		"w_other": 1.2,
+		"w_snare": 2.0,
+		"w_strength": 0.5,
+		"w_vocal": 1.5
+	},
+	"features": {
+		"kiai_margin": 0.133333333333333,
+		"onset_shift_ms": 6.0
+	},
+	"grid": {}
 }

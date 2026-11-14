@@ -1097,9 +1097,10 @@ static func _make(C: Dictionary, G: Dictionary, X: Dictionary, d: float, seed_ad
 	var s2 := 1.0
 	var s3 := 1.0
 	var sr := 1.0
+	var so := 1.0
 	var res := {}
 	for attempt in 4:
-		res = _make1(C, G, X, d, seed_add, s2, s3, sr)
+		res = _make1(C, G, X, d, seed_add, s2, s3, sr, so)
 		var rows := maxi(int(res["rows"]), 1)
 		var sh2 := float(res["chords"]) / float(rows)
 		var sh3 := float(res["c3"]) / float(rows)
@@ -1110,8 +1111,17 @@ static func _make(C: Dictionary, G: Dictionary, X: Dictionary, d: float, seed_ad
 		var shr := float(res["rare_rows"]) / float(rows)
 		var limr := float(R["rare_max"]) * 0.95
 		var okr := int(R["rare"]) == 0 or shr <= limr or int(res["rare_rows"]) <= 2
-		if ok2 and ok3 and okr:
+		# Hold und Note gleichzeitig (Easy/Normal): gezaehlt wie lint (Noten, auch aus kopierten Takten)
+		var oko := true
+		var nn: int = (res["notes"] as Array).size()
+		var ov := 0
+		if int(R["overlap"]) == 1:
+			ov = overlap_count(res["notes"])
+			oko = ov <= maxi(2, int(float(R["ovl_max"]) * nn * 0.95))
+		if ok2 and ok3 and okr and oko:
 			break
+		if not oko:
+			so *= float(R["ovl_max"]) * nn * 0.9 / float(ov)
 		if not okr:
 			sr *= limr / shr * 0.97
 		if not ok2:
@@ -1121,7 +1131,25 @@ static func _make(C: Dictionary, G: Dictionary, X: Dictionary, d: float, seed_ad
 	return res
 
 
-static func _make1(C: Dictionary, G: Dictionary, X: Dictionary, d: float, seed_add: int, s2: float, s3: float, sr: float) -> Dictionary:
+## Noten, die waehrend eines Holds einer anderen Spalte beginnen (wie AmChart.lint zaehlt).
+static func overlap_count(notes: Array) -> int:
+	var hs := [-1e18, -1e18, -1e18, -1e18]
+	var he := [-1e18, -1e18, -1e18, -1e18]
+	var n := 0
+	for nt: Dictionary in notes:
+		var t := float(nt["t_ms"])
+		var col := int(nt["col"])
+		for c in 4:
+			if c != col and float(he[c]) > t + 2.0 and float(hs[c]) < t - 2.0:
+				n += 1
+		var e := float(nt.get("end_ms", -1.0))
+		if e > t:
+			hs[col] = t
+			he[col] = e
+	return n
+
+
+static func _make1(C: Dictionary, G: Dictionary, X: Dictionary, d: float, seed_add: int, s2: float, s3: float, sr: float, so: float = 1.0) -> Dictionary:
 	var n: int = C["n"]
 	var R: Dictionary = X["R"]
 	var P: Dictionary = X["P"]
@@ -1245,7 +1273,7 @@ static func _make1(C: Dictionary, G: Dictionary, X: Dictionary, d: float, seed_a
 	rng.seed = int(X["seed"]) + seed_add * 7919
 	var Y := {"sel": sel, "holdf": holdf, "rng": rng, "R": R, "pat": pat, "P": P,
 			"jack_cap": mini(int(R["jack"]), maxi(int(pat["jack_cap"]), 1)) if int(R["jack"]) > 0 else 0,
-			"ovl_budget": int(0.6 * float(R["ovl_max"]) * float(ns)), "seed_i": int(X["seed"]) & 3, "avoid": 0,
+			"ovl_budget": int(0.6 * float(R["ovl_max"]) * float(ns) * so), "seed_i": int(X["seed"]) & 3, "avoid": 0,
 			"ep": exp(float(P["pitch_weight"])), "erole": exp(float(P["role_weight"]))}
 	var S: Array = [-1e9, -1e9, -1e9, -1e9, 0, 0, 0, 0, -1e9, -1e9, -1e9, -1e9, 0, 0, 0, -1e9, -1.0, 1.5, 0, 0, 0, -1e9,
 			-1.0, 1, 0, 0, 0, 0, 0, 0]
