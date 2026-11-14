@@ -1,0 +1,16 @@
+{
+ "version": "1.43.1",
+ "size": 23119256,
+ "sha256": "e18ec1e522a1bdec561962f879c224a74547cf50b0e583107746aab34e8a8af4",
+ "notes": "Fixes: song browser crash, real-time hit error, leaks, 5K/7K intro skip.",
+ "parts": [
+  {
+   "name": "TETHRA.pck.000",
+   "size": 15728640
+  },
+  {
+   "name": "TETHRA.pck.001",
+   "size": 7390616
+  }
+ ]
+}
