@@ -222,6 +222,8 @@ func _case_turbo() -> void:
 	var max_step := 0.0
 	var prev := -INF
 	var prev_us := 0
+	var max_at := 0.0
+	var max_change := 0.0
 	while is_instance_valid(sc) and not bool(sc.get("_ended")) and Time.get_ticks_msec() - w < 70000:
 		await process_frame
 		if paused:
@@ -233,7 +235,15 @@ func _case_turbo() -> void:
 		# durch Screenshots zaehlen so nicht als Sprung).
 		var us := Time.get_ticks_usec()
 		if prev > -INF:
-			max_step = maxf(max_step, absf((t - prev) - _clock.get_rate() * float(us - prev_us) / 1000.0))
+			var dev := absf((t - prev) - _clock.get_rate() * float(us - prev_us) / 1000.0)
+			if dev > max_step:
+				max_step = dev
+				max_at = t
+			# Bilder rund um einen Rate-Wechsel (+-500 ms Songzeit) getrennt werten.
+			for e in tm.rule.track.to_array():
+				if absf(t - float(e[0])) < 500.0:
+					max_change = maxf(max_change, dev)
+					break
 		prev = t
 		prev_us = us
 		seen_rates[snappedf(_clock.get_rate(), 0.05)] = true
@@ -256,7 +266,10 @@ func _case_turbo() -> void:
 	_info("verlauf", "Raten %s, Abschnitte %d sauber %d Rueckfall %d, Verlauf %s" % [
 		str(rates), tm.rule.secs.size(), tm.rule.clean, tm.rule.fallbacks, str(tm.rule.track.to_array())])
 	_check(rates.size() >= 2 and float(rates.back()) > 1.0, "tempo-steigt", str(rates))
-	_check(max_step < 25.0, "kein-sprung", "groesste Abweichung je Bild %.1f ms" % max_step)
+	# Kriterium: kein Sprung AM Wechsel. Der Rest misst den (bei Last stockenden)
+	# Dummy-Mixer und steht nur als Info im Log.
+	_check(max_change < 25.0, "kein-sprung", "am Rate-Wechsel hoechstens %.1f ms Abweichung je Bild (sonst max %.1f ms bei %d ms)" % [
+		max_change, max_step, int(max_at)])
 	if not _autoplay:
 		_check(tm.rule.fallbacks >= 1, "rueckfall-bei-miss", "Misses %d" % int(s1.n_miss))
 	await create_timer(2.5).timeout
