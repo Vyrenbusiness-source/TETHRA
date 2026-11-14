@@ -11,6 +11,9 @@ extends SceneTree
 var _passed := 0
 var _failed := 0
 var _clock: Node
+## Autoload-Skripte als Klassen (Autoload-Namen gibt es im Runner beim Kompilieren nicht).
+var _GS: GDScript
+var _SC: GDScript
 
 const OSU_HEAD := "osu file format v14\n\n[General]\nMode: 3\n\n[Difficulty]\nHPDrainRate: 5\nCircleSize: 4\nOverallDifficulty: 5\nApproachRate: 5\nSliderMultiplier: 1.4\n\n[TimingPoints]\n%s\n\n[HitObjects]\n%s"
 
@@ -23,6 +26,8 @@ func _main() -> void:
 	print("=== OMEN mv-tempo-Tests ===")
 	await process_frame
 	_clock = root.get_node_or_null("SyncClock")
+	_GS = load("res://scripts/game_session.gd")
+	_SC = load("res://scripts/audio/sync_clock.gd")
 	_test_rate_track()
 	_test_windows_scale()
 	_test_windows_unchanged_without_track()
@@ -329,7 +334,7 @@ func _test_turbo_replay_exact() -> void:
 				live.key_up(int(ev.lane), float(ev.t))
 		live.update(t)
 		rule.tick(t, live.is_judged)
-	var stored := JSON.parse_string(JSON.stringify(rule.track.to_array()))
+	var stored: Variant = JSON.parse_string(JSON.stringify(rule.track.to_array()))
 	_ok(rule.track.size() > 3, "Verlauf hat Wechsel (%d Eintraege)" % rule.track.size())
 	# Replay: Verlauf aus den Mods, Frames 33 ms.
 	var rep := _core(bm)
@@ -405,9 +410,9 @@ func _test_smoother_rate() -> void:
 
 func _test_old_replay_mods() -> void:
 	print("- Alte Replays: ohne TB keine Tempo-Variante")
-	var m := GameSession._replay_mods({"meta": {"mods": {"SV": true}}})
+	var m: Dictionary = _GS._replay_mods({"meta": {"mods": {"SV": true}}})
 	_ok(not m.has("TB") and not m.has("TB_track"), "alte Mods ohne Turbo-Felder")
-	var m2 := GameSession._replay_mods({"meta": {"mods": {"TB": true, "TB_track": [[-1e15, 1.0], [5000, 1.05]], "TB_pitch": false}}})
+	var m2: Dictionary = _GS._replay_mods({"meta": {"mods": {"TB": true, "TB_track": [[-1e15, 1.0], [5000, 1.05]], "TB_pitch": false}}})
 	var tr := RateTrack.from_array(m2.get("TB_track"))
 	_ok(bool(m2.TB) and tr != null and is_equal_approx(tr.rate_at(6000.0), 1.05), "Turbo-Replay traegt den Verlauf")
 
@@ -522,8 +527,8 @@ func _test_timestretch_measure() -> void:
 	AudioServer.add_bus(probe)
 	AudioServer.set_bus_name(probe, "TempoProbe")
 	var ps := AudioEffectPitchShift.new()
-	ps.fft_size = SyncClock.TEMPO_FFT
-	ps.oversampling = SyncClock.TEMPO_OVERSAMPLING
+	ps.fft_size = _SC.TEMPO_FFT
+	ps.oversampling = _SC.TEMPO_OVERSAMPLING
 	AudioServer.add_bus_effect(probe, ps, 0)
 	var cap := AudioEffectCapture.new()
 	cap.buffer_length = 4.0
@@ -536,8 +541,7 @@ func _test_timestretch_measure() -> void:
 	var onsets := []
 	for on in [false, true]:
 		AudioServer.set_bus_effect_enabled(probe, 0, on)
-		var ci := AudioServer.get_bus_effect_instance(probe, 1) as AudioEffectCaptureInstance
-		ci.clear_buffer()
+		cap.clear_buffer()
 		var w := _tone(1.2, 0.0, 500.0)
 		p.stream = w
 		p.pitch_scale = 1.0
@@ -545,7 +549,7 @@ func _test_timestretch_measure() -> void:
 		p.play()
 		await _wait_ms(1300.0)
 		p.stop()
-		var frames := ci.get_frames(ci.get_frames_available())
+		var frames: PackedVector2Array = cap.get_frames(cap.get_frames_available())
 		var first := -1
 		var cnt := 0
 		for i in frames.size():
@@ -559,20 +563,19 @@ func _test_timestretch_measure() -> void:
 		onsets.append(first)
 	var lat_ms := float(int(onsets[1]) - int(onsets[0])) / mix * 1000.0
 	print("  MEASURE timestretch_latency fft=%d os=%d measured=%.1f ms expected=%.1f ms" % [
-		SyncClock.TEMPO_FFT, SyncClock.TEMPO_OVERSAMPLING, lat_ms,
-		float(SyncClock.TEMPO_FX_LATENCY_FRAMES) / mix * 1000.0])
+		_SC.TEMPO_FFT, _SC.TEMPO_OVERSAMPLING, lat_ms,
+		float(_SC.TEMPO_FX_LATENCY_FRAMES) / mix * 1000.0])
 	_ok(onsets[0] >= 0 and onsets[1] >= 0, "Klick im Capture gefunden")
 	# 2) Tonhoehe: 440 Hz bei Rate 1,5 + Ausgleich 1/1,5 -> 440 Hz.
 	AudioServer.set_bus_effect_enabled(probe, 0, true)
-	var ci2 := AudioServer.get_bus_effect_instance(probe, 1) as AudioEffectCaptureInstance
 	p.stream = _tone(3.0, 440.0)
 	p.pitch_scale = 1.5
 	ps.pitch_scale = 1.0 / 1.5
 	p.play()
 	await _wait_ms(500.0)
-	ci2.clear_buffer()
+	cap.clear_buffer()
 	await _wait_ms(800.0)
-	var fr := ci2.get_frames(ci2.get_frames_available())
+	var fr: PackedVector2Array = cap.get_frames(cap.get_frames_available())
 	p.stop()
 	var zc := 0
 	var rms := 0.0

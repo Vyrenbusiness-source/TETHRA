@@ -128,10 +128,13 @@ func _update_hud(r: float, delta: float) -> void:
 	if _tint > 0.0:
 		_tint = maxf(_tint - delta / 0.6, 0.0)
 		_value.add_theme_color_override("font_color", UiTheme.TEXT.lerp(_tint_col, _tint))
-	_sub.text = TranslationServer.translate("Section %d / %d") % [
-			mini(rule.sections_done() + 1, rule.secs.size()), rule.secs.size()] \
-			+ "  ·  " + TranslationServer.translate("best %s") % RateTrack.pct_text(
-			rule.peak_rate(SyncClock.judgement_time_ms()))
+	# Abschnitt nach Songzeit (gilt auch im Replay, dort entscheidet rule nichts).
+	var t := SyncClock.judgement_time_ms()
+	var k := rule.section_of(t)
+	if k < 0:
+		k = 0 if rule.secs.is_empty() or t < float(rule.secs[0].a) else rule.secs.size() - 1
+	_sub.text = TranslationServer.translate("Section %d / %d") % [k + 1, rule.secs.size()] \
+			+ "  ·  " + TranslationServer.translate("best %s") % RateTrack.pct_text(rule.peak_rate(t))
 
 
 func _show_summary(peak: float, rank: int, bm: Beatmap) -> void:
@@ -149,10 +152,31 @@ func _show_summary(peak: float, rank: int, bm: Beatmap) -> void:
 	_info.add_theme_font_size_override("font_size", 18)
 	_info.add_theme_color_override("font_color", UiTheme.ACCENT)
 	var parts := [TranslationServer.translate("Turbo"),
-		TranslationServer.translate("Top tempo %s") % RateTrack.pct_text(peak),
-		TranslationServer.translate("%d clean sections") % rule.clean]
+		TranslationServer.translate("Top tempo %s") % RateTrack.pct_text(peak)]
+	if not replay:  # im Replay wertet rule keine Abschnitte aus
+		parts.append(TranslationServer.translate("%d clean sections") % rule.clean)
 	if rank > 0:
 		parts.append(TranslationServer.translate("local rank %d of %d") % [rank,
 				TurboStore.list_for(GameSession.osz_path, bm.version_name()).size()])
 	_info.text = "  ·  ".join(parts)
 	lay.add_child(_info)
+	# Lokale Turbo-Rangliste (beste 3): Hoechsttempo, dann Score.
+	var top := TurboStore.list_for(GameSession.osz_path, bm.version_name())
+	if top.is_empty():
+		return
+	var rows := PackedStringArray()
+	for i in mini(top.size(), 3):
+		var e: Dictionary = top[i]
+		rows.append("%d.  %s  %s" % [i + 1, RateTrack.pct_text(float(e.get("peak", 1.0))),
+				UiTheme.fmt_score(int(e.get("score", 0)))])
+	var lst := Label.new()
+	lst.anchor_left = 0.5
+	lst.anchor_right = 0.5
+	lst.offset_left = -400
+	lst.offset_right = 400
+	lst.offset_top = 40
+	lst.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lst.add_theme_font_size_override("font_size", 13)
+	lst.add_theme_color_override("font_color", UiTheme.DIM)
+	lst.text = TranslationServer.translate("Turbo ranking") + "   " + "     ".join(rows)
+	lay.add_child(lst)
