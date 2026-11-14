@@ -139,6 +139,9 @@ func _campaign_on_scene_changed() -> void:
 		end_campaign()
 
 
+## Wartezeit beim Beenden, bis der Audio-Thread gestoppte Playbacks geloescht hat.
+const EXIT_AUDIO_DRAIN_MS := 120
+
 func _ready() -> void:
 	online = OnlineApi.new()
 	online.name = "OnlineApi"
@@ -490,3 +493,21 @@ func _playtime_flush() -> void:
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_CLOSE_REQUEST or what == NOTIFICATION_PREDELETE:
 		_playtime_flush()
+
+
+## Programmende (Root verlaesst den Baum; GameSession vor SyncClock, umgekehrte
+## Autoload-Reihenfolge): alle noch laufenden Player stoppen und kurz warten. Der
+## AudioServer loescht gestoppte Playbacks erst in den naechsten Misch-Schritten
+## (Audio-Thread, ~12 ms je Schritt); quit() direkt nach stop() liess sonst
+## AudioStreamPlayback + Stream liegen ("2 ObjectDB instances were leaked at exit").
+func _exit_tree() -> void:
+	var tree := get_tree()
+	if tree == null or tree.root == null:
+		return
+	for n in tree.root.find_children("*", "AudioStreamPlayer", true, false):
+		(n as AudioStreamPlayer).stop()
+	for n in tree.root.find_children("*", "AudioStreamPlayer2D", true, false):
+		(n as AudioStreamPlayer2D).stop()
+	for n in tree.root.find_children("*", "AudioStreamPlayer3D", true, false):
+		(n as AudioStreamPlayer3D).stop()
+	OS.delay_msec(EXIT_AUDIO_DRAIN_MS)
