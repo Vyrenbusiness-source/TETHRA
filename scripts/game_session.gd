@@ -69,56 +69,45 @@ var _perf_frames: Array = []
 ## Online-Scores / Website-Anbindung (scripts/net/online_api.gd).
 var online: OnlineApi
 
-## Kampagne (scripts/campaign/campaign.gd): laufende Stufe {"stage": id, "world": name}
-## oder {}. campaign_return: Stufe, bei der die Kampagnen-Szene oeffnet.
-## Welt des Kapitels: Settings.world_theme traegt sie nur, waehrend die Spielszene sich
-## aufbaut (Eintritt in den Baum bis ready, ein synchroner Abschnitt ohne Eingaben).
-## Davor und danach steht dort die eigene Wahl des Spielers. So kann kein
-## Settings.save() mitten in der Stufe die Kapitel-Welt in settings.cfg schreiben.
+## Kampagne (scripts/campaign/campaign.gd): laufende Stufe {"stage": id} oder {}.
+## campaign_return: Stufe, bei der die Kampagnen-Szene oeffnet.
+## Eine Stufe spielt mit den Einstellungen des Spielers (2D/3D, Welt, Skin ...) wie ein
+## Start aus dem Song-Browser; die Kapitel-Welt ist nur Thema der Kampagnen-Ansicht.
 var campaign: Dictionary = {}
 var campaign_return: String = ""
-var _campaign_world_prev := -1
+const CAMPAIGN_HUD := "res://scripts/campaign/campaign_hud.gd"
 
 
 func campaign_active() -> bool:
 	return str(campaign.get("stage", "")) != ""
 
 
-func start_campaign(stage_id: String, world: String) -> void:
-	end_campaign()
-	campaign = {"stage": stage_id, "world": world}
+func start_campaign(stage_id: String) -> void:
+	campaign = {"stage": stage_id}
 
 
 func end_campaign() -> void:
-	_campaign_world_release()
 	campaign = {}
 
 
-## Spielszene betritt den Baum (auch beim Neustart der Stufe): Welt bis zu ihrem ready setzen.
+## Spielszene einer Stufe betritt den Baum (auch beim Neustart): Ziele ins HUD,
+## Harness: Bild der Stufe.
 func _campaign_on_node_added(n: Node) -> void:
 	if not campaign_active() or n.get_parent() != get_tree().root:
 		return
 	if not ScoreStore.MODE_SCENES.values().has(n.scene_file_path):
 		return
+	_campaign_attach_hud.call_deferred(n.get_instance_id())
 	if campaign_run_prefix() != "":
 		_campaign_run_game_shot(n)
-	# Autoload ueber den Baum: dieses Skript laden auch Tests ohne Autoloads.
-	var st := get_node_or_null("/root/Settings")
-	if st == null:
-		return
-	var wi: int = st.WORLD_ORDER.find(str(campaign.get("world", "")))
-	if wi < 0 or _campaign_world_prev >= 0:
-		return
-	_campaign_world_prev = int(st.world_theme)
-	st.world_theme = wi + 1
-	n.ready.connect(_campaign_world_release, CONNECT_ONE_SHOT)
 
 
-func _campaign_world_release() -> void:
-	var st := get_node_or_null("/root/Settings")
-	if _campaign_world_prev >= 0 and st != null:
-		st.world_theme = _campaign_world_prev
-	_campaign_world_prev = -1
+func _campaign_attach_hud(game_id: int) -> void:
+	var game := instance_from_id(game_id) as Node
+	if game == null or not game.is_inside_tree() or not campaign_active():
+		return
+	# Zur Laufzeit laden: GameSession kompiliert so auch in Tests ohne Autoloads (HUD -> Lobby).
+	load(CAMPAIGN_HUD).call("attach_stage", game, str(campaign.get("stage", "")))
 
 
 ## Harness --shot-campaign-run=<Praefix>: echter Stufenlauf (Kampagnen-Szene startet die
