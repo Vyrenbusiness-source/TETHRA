@@ -445,6 +445,9 @@ static func trial_miss_reason(run: Dictionary, mods: Dictionary) -> String:
 	for m in EASY_MODS:
 		if bool(mods.get(m, false)):
 			return tr_("Mod %s zählt nicht") % m
+	# Ungewertete Laeufe (z. B. eigene AR in Orbit) erleichtern die Wertung ebenfalls.
+	if bool(run.get("unranked", false)):
+		return tr_("Ungewertet zählt nicht")
 	var acc := float(run.get("accuracy", 0.0))
 	if acc + 0.000001 < TRIAL_ACC:
 		return tr_("%s fehlen") % acc_text(TRIAL_ACC - acc)

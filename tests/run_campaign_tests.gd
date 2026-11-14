@@ -456,6 +456,10 @@ func _test_trial() -> void:
 	_ok(not Campaign.trial_passed(_run(0.995, "S", 0, 1, true), {}), "Fail besteht nie")
 	_ok(not Campaign.trial_passed(_run(0.995, "S", 0), {"CS": true}), "Konstant zaehlt nicht")
 	_ok(not Campaign.trial_passed(_run(0.995, "S", 0), {"NF": true}), "No Fail zaehlt nicht")
+	var unr := _run(0.995, "S", 0)
+	unr["unranked"] = true
+	_ok(not Campaign.trial_passed(unr, {}), "Ungewertet zaehlt nicht")
+	_ok(not Campaign.trial_passed(_run(0.9899, "S", 0), {}), "98,99 % besteht nicht")
 	_ok(Campaign.trial_passed(_run(0.99, "S", 3), {"SV": true, "HD": true}), "genau 99 % mit schwereren Mods besteht")
 	# Bestanden
 	out = Campaign.apply_trial(state, d, 0, _run(0.993, "S", 2), {})

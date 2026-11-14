@@ -2665,7 +2665,7 @@ func _campaign_setup() -> void:
 	var src: Dictionary = inject if inject.has("stage") else GameSession.campaign
 	var trial := int(src.get("trial", -1))
 	var placement := bool(src.get("placement", false))
-	var mods: Dictionary = inject.get("mods", GameSession.mods)
+	var mods: Dictionary = (inject.get("mods", GameSession.mods) as Dictionary).duplicate()
 	if stage_id == "":
 		return
 	var camp_all := Campaign.load_data()
@@ -2673,8 +2673,12 @@ func _campaign_setup() -> void:
 	var stage := Campaign.stage_by_id(cdata, stage_id)
 	if stage.is_empty():
 		return
+	# Konstant (CS) steht nicht in GameSession.mods, sondern in den Einstellungen (Mania).
+	if not inject.has("mods") and str(stage.get("mode", "")) == "mania" and Settings.mod_constant:
+		mods["CS"] = true
 	var run := _stats.duplicate()
 	run["failed"] = bool(_stats.get("failed", false)) or bool(_data.get("is_fail", false))
+	run["unranked"] = bool(_stats.get("unranked", false)) or bool(_data.get("unranked", false))
 	var preview := inject.has("state")
 	var state: Dictionary = inject.state if preview else Campaign.load_state()
 	var out: Dictionary
