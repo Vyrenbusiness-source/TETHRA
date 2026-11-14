@@ -17,6 +17,7 @@ var _step := 0
 var _last_v := -INF
 var _mono := true
 var _mark := 0.0
+var _mark_wall_us := 0
 var _gain := 0.0
 var _seek_checked := false
 var _dev_sum := 0.0
@@ -536,9 +537,11 @@ func _live_step() -> void:
 				_ok(is_equal_approx(player.volume_db, _gain),
 						"Rampe nach Resume fertig (volume_db %.2f)" % player.volume_db)
 				_mark = -v - 1.0  # Startwert merken (negativ kodiert)
+				_mark_wall_us = Time.get_ticks_usec()  # echte Zeit dazu (Frames kommen unter Last spaet)
 			if el >= 1600:
 				var start := -_mark - 1.0
-				_ok(absf((v - start) - 500.0) < 30.0, "laeuft nach Resume mit Echtzeit (+%.1f ms in 500 ms)" % (v - start))
+				var wall := float(Time.get_ticks_usec() - _mark_wall_us) / 1000.0
+				_ok(absf((v - start) - wall) < 30.0, "laeuft nach Resume mit Echtzeit (+%.1f ms in %.1f ms)" % [v - start, wall])
 				_ok(_mono, "Song-Zeit monoton ueber Lead-In, Pause, Resume")
 				_clock.stop()
 				_ok(_clock.song_time_ms() == 0.0, "stop(): Zeit 0")
