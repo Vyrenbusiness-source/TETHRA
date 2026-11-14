@@ -24,6 +24,7 @@ var _stream: AudioStream
 var _bm: Beatmap
 var _end_ms := 1.0
 var _version := ""
+var _sec_notes := 0
 
 
 func _setup() -> void:
@@ -48,7 +49,7 @@ func _setup() -> void:
 	add_child(_layer)
 	_bar = Label.new()
 	_bar.offset_left = 24
-	_bar.offset_top = 18
+	_bar.offset_top = 56  # unter Titel- und Mods-Zeile der Spielszene
 	_bar.add_theme_font_override("font", UiTheme.heading_font(0))
 	_bar.add_theme_font_size_override("font_size", 16)
 	_bar.add_theme_color_override("font_color", UiTheme.TEXT)
@@ -112,6 +113,7 @@ func start_loop(countdown: bool = false) -> void:
 	var c := ManiaCore.new()
 	c.setup(_bm, -1.0, _scroll)
 	var n := c.restrict_range(ses.a_ms, ses.b_ms)
+	_sec_notes = n
 	if n == 0:
 		open_panel()
 		return
@@ -190,6 +192,13 @@ func _process(delta: float) -> void:
 			_toast.visible = false
 	if looping:
 		_update_bar()
+		# Notenzaehler der Spielszene auf den Abschnitt beziehen (laeuft nach
+		# deren _process, ueberschreibt also nur die Anzeige).
+		var core: ManiaCore = host.get("core")
+		var nl = host.get("_notes_label")
+		if nl is Label:
+			var judged := core.n_max + core.n300 + core.n200 + core.n100 + core.n50 + core.n_miss
+			(nl as Label).text = "%s / %s" % [PauseMenu.fmt_int(judged), PauseMenu.fmt_int(_sec_notes)]
 
 
 func _update_bar() -> void:

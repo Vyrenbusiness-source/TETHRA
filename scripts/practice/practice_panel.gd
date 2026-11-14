@@ -31,7 +31,8 @@ func build(p_ses: PracticeSession, bm: Beatmap, end_ms: float, p_title: String) 
 	ses = p_ses
 	song_ms = end_ms
 	title_text = p_title
-	set_anchors_preset(Control.PRESET_FULL_RECT)
+	# Schon im Baum: Anker UND Offsets setzen (sonst bleibt die Groesse 0).
+	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	var back := UiTheme.modal_backdrop(self)
@@ -263,11 +264,16 @@ func _unhandled_key_input(ev: InputEvent) -> void:
 		return
 	var k := ev as InputEventKey
 	var step := 250.0 if k.shift_pressed else 2000.0
+	# Start/Zurueck wechseln die Ansicht oder die Szene: Eingabe vorher verbrauchen.
 	match k.keycode:
 		KEY_ENTER, KEY_KP_ENTER:
+			get_viewport().set_input_as_handled()
 			start_pressed.emit()
+			return
 		KEY_ESCAPE:
+			get_viewport().set_input_as_handled()
 			back_pressed.emit()
+			return
 		KEY_LEFT:
 			timeline.set_cursor(timeline.cursor_ms - step)
 		KEY_RIGHT:

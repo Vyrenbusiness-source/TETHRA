@@ -5,6 +5,8 @@ extends "res://tests/live_qa.gd"
 ## "warmd check" (braucht ein Fenster); Aufruf ueber tests/mv_tempo_play.sh:
 ##   --tempo-cases=practice3d,practice2d,turbo3d   (mit --autoplay: Bot trifft alles)
 ##   --tempo-cases=turbo2d                          (echte Tasten, Misses, Replay-Vergleich)
+## Keine Klassen mit Autoload-Bezug (PracticeController, TurboController) hier
+## nennen: der Runner kompiliert sie sonst vor den Autoloads und sie bleiben kaputt.
 ## Ausgabe je Pruefung: "QA tempo <fall> <pruefung> OK|BUG <detail>".
 
 ## Fixture: 160 BPM (Takt 1,5 s), Noten 3..45 s alle 250 ms, Kiai 12..18 s.
@@ -122,8 +124,9 @@ func _start_scene(mods: Dictionary) -> Node:
 
 func _case_practice(long_run: bool) -> void:
 	# Fehlerstellen aus "frueheren Laeufen" (eigener APPDATA, nie Nutzerdaten).
-	PracticeStore.record_run(_osz, "TEMPO", [7250.0, 7500.0, 8000.0, 26000.0])
-	PracticeStore.record_run(_osz, "TEMPO", [7500.0, 26250.0, 26500.0, 40000.0])
+	if PracticeStore.load_data(_osz, "TEMPO").runs.is_empty():
+		PracticeStore.record_run(_osz, "TEMPO", [7250.0, 7500.0, 8000.0, 26000.0])
+		PracticeStore.record_run(_osz, "TEMPO", [7500.0, 26250.0, 26500.0, 40000.0])
 	var ses := PracticeSession.begin()
 	ses.set_range(6000.0, 11000.0)
 	ses.set_rates(0.8, 1.0, 0.10 if long_run else 0.05)
@@ -131,14 +134,14 @@ func _case_practice(long_run: bool) -> void:
 	if sc == null:
 		return
 	var tm = sc.get("_tempo_mode")
-	if not _check(tm is PracticeController, "uebung-haken", str(tm)):
+	if not _check(tm != null and tm.has_method("start_loop"), "uebung-haken", str(tm)):
 		return
 	await _frames(20)
 	var panel = tm.panel
 	_check(paused and panel.visible, "einstellbild", "paused=%s panel=%s" % [paused, panel.visible])
 	var marks: Array = PracticeStore.error_marks(PracticeStore.load_data(_osz, "TEMPO").runs)
-	_check(marks.size() == 2, "fehlerstellen", "%d Marken: %s" % [marks.size(), str(marks)])
-	await _shot("panel")
+	_check(marks.size() >= 2, "fehlerstellen", "%d Marken: %s" % [marks.size(), str(marks)])
+	await _shot(_case + "_panel")
 	# Sprungmarke: Klick-Ersatz ueber den Knopf der ersten Fehlerstelle.
 	var mk_btn: Button = null
 	for ch in panel._marks_row.get_children():
@@ -174,7 +177,7 @@ func _case_practice(long_run: bool) -> void:
 		if not shot_done and ses.loops == loops_goal - 1 and t > 8500.0:
 			shot_done = true
 			_info("schleife", "t=%d rate=%.2f uhr=%.2f n300+=%d" % [int(t), ses.rate, _clock.get_rate(), int(core.n_max + core.n300)])
-			await _shot("loop")
+			await _shot(_case + "_loop")
 	_check(ses.loops >= loops_goal, "schleifen", "%d Schleifen, sauber %d, Tempo jetzt %s" % [ses.loops, ses.clean_loops, RateTrack.pct_text(ses.rate)])
 	_check(outside == 0, "nur-abschnitt", "%d Noten ausserhalb A..B sichtbar" % outside)
 	_check(max_t_ms < 11000.0 + 1200.0, "schleife-endet", "hoechste Songzeit %d" % int(max_t_ms))
@@ -187,7 +190,7 @@ func _case_practice(long_run: bool) -> void:
 	await _tap(KEY_ESCAPE)
 	await _frames(6)
 	_check(paused and tm.panel.visible and not tm.looping, "esc-einstellbild", "")
-	await _shot("panel_after")
+	await _shot(_case + "_panel_after")
 	await _tap(KEY_ESCAPE)
 	await _frames(10)
 
@@ -195,11 +198,13 @@ func _case_practice(long_run: bool) -> void:
 # --- Turbo ------------------------------------------------------------------
 
 func _case_turbo() -> void:
+	# Bot-Lauf mit Time-Stretch (Tonhoehe halten), Tasten-Lauf mit Nightcore-Klang.
+	TempoPrefs.set_keep_pitch(_autoplay)
 	var sc := await _start_scene({"TB": true})
 	if sc == null:
 		return
 	var tm = sc.get("_tempo_mode")
-	if not _check(tm is TurboController, "turbo-haken", str(tm)):
+	if not _check(tm != null and tm.get("rule") != null, "turbo-haken", str(tm)):
 		return
 	var w := Time.get_ticks_msec()
 	while (paused or bool(sc.get("_countdown_running"))) and Time.get_ticks_msec() - w < 8000:
@@ -216,6 +221,8 @@ func _case_turbo() -> void:
 		if paused:
 			continue
 		var t: float = sc._time_ms()
+		if bool(sc.get("_ended")):
+			break
 		if prev > -INF:
 			max_step = maxf(max_step, absf(t - prev))
 		prev = t
@@ -226,7 +233,9 @@ func _case_turbo() -> void:
 		if not shot_done and t > 33000.0:
 			shot_done = true
 			_info("tempo", "t=%d rate=%.2f anzeige=%s" % [int(t), _clock.get_rate(), tm._value.text])
-			await _shot("turbo_live")
+			_check(bool(_clock.keeps_pitch()) == _autoplay, "tonhoehe", "keep_pitch=%s Effekt-Latenz %.1f ms" % [
+				_clock.keeps_pitch(), _clock.tempo_fx_latency_ms()])
+			await _shot(_case + "_turbo_live")
 	for lane in 4:
 		_key(_keycode(lane), false)
 	if not _check(is_instance_valid(sc) and bool(sc.get("_ended")), "songende", ""):
@@ -244,7 +253,7 @@ func _case_turbo() -> void:
 	var rs := _results_node(sc)
 	_check(rs != null and rs.visible, "ergebnisbild", "")
 	_check(tm._info != null and tm._info.text.contains("%"), "ergebnis-tempo", tm._info.text if tm._info != null else "")
-	await _shot("turbo_results")
+	await _shot(_case + "_turbo_results")
 	if _autoplay:
 		return
 	var lst := TurboStore.list_for(_osz, "TEMPO")

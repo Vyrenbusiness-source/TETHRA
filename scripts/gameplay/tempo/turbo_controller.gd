@@ -58,9 +58,15 @@ func tick(t: float) -> void:
 
 func owns_results(s: Dictionary, is_fail: bool) -> bool:
 	var bm: Beatmap = host.get("_beatmap")
+	var core: ManiaCore = host.get("core")
+	# SyncClock steht hier schon (stop() vor den Ergebnissen): Zeit aus dem Core.
+	var now_ms: float = core._now
+	# Der letzte Abschnitt wird im selben Bild fertig wie der Lauf: noch zaehlen.
+	if not replay and not is_fail:
+		rule.tick(now_ms, core.is_judged)
 	var end_ms: float = bm.duration_ms()
 	if is_fail:
-		end_ms = minf(end_ms, SyncClock.judgement_time_ms())
+		end_ms = minf(end_ms, now_ms)
 	var peak := rule.peak_rate(end_ms)
 	GameSession.mods["TB"] = true
 	GameSession.mods["TB_track"] = rule.track.to_array()
@@ -93,23 +99,33 @@ func _build_hud() -> void:
 	_layer = CanvasLayer.new()
 	_layer.layer = 2
 	add_child(_layer)
+	# Linke HUD-Spalte (Rang/Genauigkeit sitzen bei 0,085 / 0,42) darunter, im
+	# selben Stil: kleine gedimmte Beschriftung, ruhige Zahl, mittig.
 	_box = VBoxContainer.new()
-	_box.add_theme_constant_override("separation", 0)
+	_box.add_theme_constant_override("separation", -2)
 	_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_box.anchor_top = 0.38
-	_box.anchor_bottom = 0.38
-	_box.offset_left = 36
-	_box.offset_right = 236
+	_box.anchor_left = 0.085
+	_box.anchor_right = 0.085
+	_box.anchor_top = 0.6
+	_box.anchor_bottom = 0.6
+	_box.offset_left = -120
+	_box.offset_right = 120
 	_layer.add_child(_box)
-	var cap := UiTheme.section_label(TranslationServer.translate("Tempo"))
+	var cap := Label.new()
+	cap.text = TranslationServer.translate("Tempo").to_upper()
+	cap.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	cap.add_theme_font_size_override("font_size", 13)
+	cap.add_theme_color_override("font_color", UiTheme.DIM)
 	_box.add_child(cap)
 	_value = Label.new()
+	_value.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_value.add_theme_font_override("font", UiTheme.heading_font(0))
-	_value.add_theme_font_size_override("font_size", 44)
+	_value.add_theme_font_size_override("font_size", 28)
 	_value.add_theme_color_override("font_color", UiTheme.TEXT)
 	_box.add_child(_value)
 	_sub = Label.new()
-	_sub.add_theme_font_size_override("font_size", 13)
+	_sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_sub.add_theme_font_size_override("font_size", 12)
 	_sub.add_theme_color_override("font_color", UiTheme.DIM)
 	_box.add_child(_sub)
 	_update_hud(rule.track.rate_at(SyncClock.judgement_time_ms()), 0.0)

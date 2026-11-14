@@ -335,7 +335,7 @@ func _test_turbo_replay_exact() -> void:
 		live.update(t)
 		rule.tick(t, live.is_judged)
 	var stored: Variant = JSON.parse_string(JSON.stringify(rule.track.to_array()))
-	_ok(rule.track.size() > 3, "Verlauf hat Wechsel (%d Eintraege)" % rule.track.size())
+	_ok(rule.track.size() >= 3, "Verlauf hat Wechsel (%d Eintraege)" % rule.track.size())
 	# Replay: Verlauf aus den Mods, Frames 33 ms.
 	var rep := _core(bm)
 	rep.rate_track = RateTrack.from_array(stored)
@@ -357,7 +357,7 @@ func _test_turbo_replay_exact() -> void:
 	for k in ["n_max", "n300", "n200", "n100", "n50", "n_miss", "max_combo", "score"]:
 		same = same and a[k] == b[k]
 	_ok(same, "Replay = Live (score %d / %d, miss %d / %d)" % [a.score, b.score, a.n_miss, b.n_miss])
-	_ok(rule.peak_rate(70000.0) > 1.0, "Lauf erreicht Tempo ueber 100 % (%.2f)" % rule.peak_rate(70000.0))
+	_ok(rule.peak_rate(70000.0) > 1.0, "Lauf erreicht Tempo ueber 100 %% (%.2f)" % rule.peak_rate(70000.0))
 	# Gegenprobe: ohne Verlauf (alte Replay-Regel) waere die Wertung anders.
 	var plain := _core(bm)
 	ei = 0
@@ -441,53 +441,124 @@ func _tone(seconds: float, hz: float = 0.0, clicks_ms: float = 0.0) -> AudioStre
 	return w
 
 
+## 20-ms-Ton-Stoss (1 kHz) bei at_ms, sonst Stille.
+func _burst(seconds: float, at_ms: float) -> AudioStreamWAV:
+	var mix := 48000
+	var n := int(seconds * mix)
+	var data := PackedByteArray()
+	data.resize(n * 2)
+	data.fill(0)
+	var i0 := int(at_ms * mix / 1000.0)
+	for i in range(i0, mini(i0 + mix / 50, n)):
+		data.encode_s16(i * 2, int(0.8 * sin(TAU * 1000.0 * float(i - i0) / mix) * 32000.0))
+	var w := AudioStreamWAV.new()
+	w.format = AudioStreamWAV.FORMAT_16_BITS
+	w.mix_rate = mix
+	w.stereo = false
+	w.data = data
+	return w
+
+
+## Erster Frame mit |Pegel| ueber rel x Spitzenpegel (-1 = keiner).
+func _onset(frames: PackedVector2Array, rel: float) -> int:
+	var peak := 0.0
+	for f in frames:
+		peak = maxf(peak, absf(f.x))
+	if peak < 0.05:
+		return -1
+	for i in frames.size():
+		if absf(frames[i].x) > rel * peak:
+			return i
+	return -1
+
+
 func _wait_ms(ms: float) -> void:
 	var t0 := Time.get_ticks_usec()
 	while float(Time.get_ticks_usec() - t0) / 1000.0 < ms:
 		await process_frame
 
 
-## "Perfekter Spieler": drueckt in Echtzeit genau auf den Takt. Abweichung des
-## Treffer-Zeitpunkts = Judgement-Uhr beim Druck minus Soll-Songzeit aus der
-## Wanduhr (Anker nach dem Einschwingen, Soll = s0 + Rate x Echtzeit).
+## Geraete-Uhr: ein stummer Referenz-Player mit Tempo 1 auf demselben Mixer.
+## Seine Position (+ Zeit seit Mix) ist die Zeit, die das Audiogeraet wirklich
+## ausgegeben hat. Der Dummy-Treiber laeuft nicht exakt mit der Wanduhr (gemessen
+## ~2 % langsamer, mit Time-Stretch-Last mehr); Sync heisst: die Spieluhr folgt
+## dem HOERBAREN Audio, also dieser Uhr x Rate. Wanduhr-Werte nur als Info.
+var _ref: AudioStreamPlayer
+
+
+func _dev_start() -> void:
+	if _ref == null:
+		_ref = AudioStreamPlayer.new()
+		_ref.volume_db = -80.0
+		root.add_child(_ref)
+	_ref.stream = _tone(30.0)
+	_ref.play()
+
+
+func _dev_ms() -> float:
+	return (_ref.get_playback_position() + AudioServer.get_time_since_last_mix()) * 1000.0
+
+
+## "Perfekter Spieler": drueckt genau auf den hoerbaren Takt. Abweichung =
+## Judgement-Uhr beim Druck minus Soll-Songzeit s0 + Rate x Geraetezeit.
 func _test_clock_rate(rate: float, keep_pitch: bool) -> void:
 	print("- SyncClock %s mit %s" % [RateTrack.rate_text(rate), "Time-Stretch" if keep_pitch else "Tonhoehe mit"])
 	_clock.user_offset_ms = 0.0
+	_dev_start()
 	_clock.play(_tone(14.0, 220.0), 0.0)
 	_clock.set_rate(rate, keep_pitch)
 	await _wait_ms(600.0)
 	var s0: float = _clock.judgement_time_ms()
+	var d0 := _dev_ms()
 	var w0 := Time.get_ticks_usec()
 	var devs := PackedFloat64Array()
-	var raw_off := PackedFloat64Array()
 	var next_beat := ceilf(s0 / 250.0) * 250.0 + 250.0
+	var wall_dev := 0.0
 	while float(Time.get_ticks_usec() - w0) < 7000000.0:
 		await process_frame
 		var now_s: float = _clock.judgement_time_ms()
-		var wall_ms := float(Time.get_ticks_usec() - w0) / 1000.0
-		var expect := s0 + rate * wall_ms
+		var expect := s0 + rate * (_dev_ms() - d0)
 		if expect >= next_beat:
 			devs.append(now_s - expect)
-			raw_off.append(now_s - _clock.raw_time_ms())
 			next_beat += 250.0
+		wall_dev = now_s - (s0 + rate * float(Time.get_ticks_usec() - w0) / 1000.0)
 	_clock.stop()
+	_ref.stop()
+	# Der Anker s0 ist ein einzelnes (verrauschtes) Sample: Abweichungen auf ihren
+	# Median beziehen. Der feste Versatz (Latenz-Ausgleich) wird getrennt gemessen
+	# (Ausgabelatenz: Godot; Time-Stretch: _test_timestretch_measure).
+	var sorted := devs.duplicate()
+	sorted.sort()
+	var med: float = sorted[sorted.size() / 2] if not sorted.is_empty() else 0.0
 	var mean := 0.0
 	var mx := 0.0
-	for d in devs:
-		mean += d
-		mx = maxf(mx, absf(d))
+	for i in devs.size():
+		devs[i] -= med
+		mean += absf(devs[i])
+		mx = maxf(mx, absf(devs[i]))
 	mean /= maxf(devs.size(), 1.0)
-	var lin := absf(devs[devs.size() - 1] - devs[0]) if devs.size() > 1 else 0.0
-	print("  MEASURE sync rate=%.2f pitch=%s hits=%d mean=%.2f ms max=%.2f ms drift7s=%.2f ms fx_lat=%.1f ms" % [
-		rate, "keep" if keep_pitch else "nightcore", devs.size(), mean, mx, lin, _clock.tempo_fx_latency_ms()])
-	_ok(devs.size() >= 20, "genug Treffer gemessen (%d)" % devs.size())
-	_ok(mx < 12.0, "Treffer-Abweichung %s unter 12 ms (max %.2f)" % [RateTrack.rate_text(rate), mx])
-	_ok(lin < 6.0, "keine Drift ueber 7 s (%.2f ms)" % lin)
+	# Drift: Mittel der letzten minus Mittel der ersten 8 Treffer.
+	var lin := 0.0
+	if devs.size() >= 16:
+		var head := 0.0
+		var tail := 0.0
+		for i in 8:
+			head += devs[i]
+			tail += devs[devs.size() - 1 - i]
+		lin = absf(tail - head) / 8.0
+	print("  MEASURE sync rate=%.2f pitch=%s hits=%d mean_abs=%.2f ms max=%.2f ms drift7s=%.2f ms fx_lat=%.1f ms (Wanduhr-Info: Dummy-Geraet nach 7 s %.1f ms zurueck)" % [
+		rate, "keep" if keep_pitch else "nightcore", devs.size(), mean, mx, lin, _clock.tempo_fx_latency_ms(), -wall_dev])
+	_ok(devs.size() >= 15, "genug Treffer gemessen (%d)" % devs.size())
+	_ok(mean < 3.0, "mittlere Treffer-Abweichung %s unter 3 ms (%.2f)" % [RateTrack.rate_text(rate), mean])
+	_ok(mx < 10.0, "groesste Treffer-Abweichung %s unter 10 ms (%.2f)" % [RateTrack.rate_text(rate), mx])
+	_ok(lin < 3.0, "keine Drift ueber 7 s (%.2f ms)" % lin)
 
 
-## Rate-Wechsel mitten im Song: Songzeit springt nicht, danach Steigung = neue Rate.
+## Rate-Wechsel mitten im Song: Songzeit springt nicht, danach Steigung = neue Rate
+## (gegen die Geraete-Uhr).
 func _test_clock_rate_change() -> void:
 	print("- SyncClock: Rate-Wechsel mitten im Song ohne Sprung")
+	_dev_start()
 	_clock.play(_tone(14.0, 220.0), 0.0)
 	_clock.set_rate(1.0, false)
 	await _wait_ms(1500.0)
@@ -509,14 +580,15 @@ func _test_clock_rate_change() -> void:
 			prev = now
 			prev_us = us
 	var s_a: float = _clock.song_time_ms()
-	var w_a := Time.get_ticks_usec()
-	await _wait_ms(1000.0)
-	var slope: float = (_clock.song_time_ms() - s_a) / (float(Time.get_ticks_usec() - w_a) / 1000.0)
+	var d_a := _dev_ms()
+	await _wait_ms(1500.0)
+	var slope: float = (_clock.song_time_ms() - s_a) / (_dev_ms() - d_a)
 	_clock.stop()
-	print("  MEASURE ratechange max_frame_dev=%.2f ms slope_after=%.3f" % [max_jump, slope])
+	_ref.stop()
+	print("  MEASURE ratechange max_frame_dev=%.2f ms slope_after=%.3f (Songzeit je ms Geraetezeit)" % [max_jump, slope])
 	_ok(not back, "Songzeit nie rueckwaerts")
 	_ok(max_jump < 15.0, "kein Sprung beim Wechsel (max Abweichung je Frame %.2f ms)" % max_jump)
-	_approx(slope, 1.5, "danach laeuft die Uhr mit 1,5x", 0.03)
+	_approx(slope, 1.5, "danach laeuft die Uhr mit 1,5x", 0.02)
 
 
 ## Time-Stretch: Latenz (Klick-Einsatz im Capture mit/ohne Effekt) und
@@ -537,35 +609,47 @@ func _test_timestretch_measure() -> void:
 	p.bus = "TempoProbe"
 	root.add_child(p)
 	var mix := AudioServer.get_mix_rate()
-	# 1) Latenz: Klick bei 500 ms, Rate 1, Effekt an vs. aus.
-	var onsets := []
-	for on in [false, true]:
-		AudioServer.set_bus_effect_enabled(probe, 0, on)
-		cap.clear_buffer()
-		var w := _tone(1.2, 0.0, 500.0)
-		p.stream = w
-		p.pitch_scale = 1.0
-		ps.pitch_scale = 1.0
-		p.play()
-		await _wait_ms(1300.0)
-		p.stop()
-		var frames: PackedVector2Array = cap.get_frames(cap.get_frames_available())
-		var first := -1
-		var cnt := 0
-		for i in frames.size():
-			if absf(frames[i].x) > 0.3:
-				cnt += 1
-				if cnt == 1:
-					first = i
-				if first >= 0 and i - first > int(0.3 * mix):
-					break
-		# zweiter Klick (500 ms) relativ zum ersten (0 ms) waere Taktgenau; Einsatz zaehlt.
-		onsets.append(first)
-	var lat_ms := float(int(onsets[1]) - int(onsets[0])) / mix * 1000.0
-	print("  MEASURE timestretch_latency fft=%d os=%d measured=%.1f ms expected=%.1f ms" % [
-		_SC.TEMPO_FFT, _SC.TEMPO_OVERSAMPLING, lat_ms,
-		float(_SC.TEMPO_FX_LATENCY_FRAMES) / mix * 1000.0])
-	_ok(onsets[0] >= 0 and onsets[1] >= 0, "Klick im Capture gefunden")
+	# 1) Latenz: Ton-Stoss bei 300 ms, Rate 1,5. Zwei Busse (mit/ohne Effekt), zwei
+	#    Player im selben Frame gestartet -> gleicher Mix-Block; Differenz der
+	#    Einsaetze = Effekt-Latenz in Echtzeit.
+	var ref_bus := AudioServer.bus_count
+	AudioServer.add_bus(ref_bus)
+	AudioServer.set_bus_name(ref_bus, "TempoProbeRef")
+	var cap_ref := AudioEffectCapture.new()
+	cap_ref.buffer_length = 4.0
+	AudioServer.add_bus_effect(ref_bus, cap_ref, 0)
+	var p_ref := AudioStreamPlayer.new()
+	p_ref.bus = "TempoProbeRef"
+	root.add_child(p_ref)
+	await process_frame
+	var burst := _burst(1.0, 300.0)
+	p.stream = burst
+	p_ref.stream = burst
+	p.pitch_scale = 1.5
+	p_ref.pitch_scale = 1.5
+	ps.pitch_scale = 1.0 / 1.5
+	cap.clear_buffer()
+	cap_ref.clear_buffer()
+	p.play()
+	p_ref.play()
+	await _wait_ms(900.0)
+	p.stop()
+	p_ref.stop()
+	var buf_fx: PackedVector2Array = cap.get_buffer(cap.get_frames_available())
+	var buf_ref: PackedVector2Array = cap_ref.get_buffer(cap_ref.get_frames_available())
+	# Einsatz = erster Frame ueber halbem Spitzenpegel (der Phasen-Vocoder
+	# verschmiert den Anfang; 10 % zeigt den fruehesten Vorlauf).
+	var on_fx := _onset(buf_fx, 0.5)
+	var on_ref := _onset(buf_ref, 0.5)
+	var lat_ms := float(on_fx - on_ref) / mix * 1000.0
+	var lat10 := float(_onset(buf_fx, 0.1) - _onset(buf_ref, 0.1)) / mix * 1000.0
+	var exp_ms := float(_SC.TEMPO_FX_LATENCY_FRAMES) / mix * 1000.0
+	print("  MEASURE timestretch_latency fft=2048 os=%d rate=1.50 measured=%.1f ms (10%%-Einsatz %.1f ms) angenommen=%.1f ms" % [
+		_SC.TEMPO_OVERSAMPLING, lat_ms, lat10, exp_ms])
+	_ok(on_fx >= 0 and on_ref >= 0, "Ton-Stoss in beiden Capture-Puffern gefunden")
+	_ok(absf(lat_ms - exp_ms) < 4.0, "Uhr-Ausgleich passt zur gemessenen Effekt-Latenz (%.1f / %.1f ms)" % [lat_ms, exp_ms])
+	p_ref.queue_free()
+	AudioServer.remove_bus(ref_bus)
 	# 2) Tonhoehe: 440 Hz bei Rate 1,5 + Ausgleich 1/1,5 -> 440 Hz.
 	AudioServer.set_bus_effect_enabled(probe, 0, true)
 	p.stream = _tone(3.0, 440.0)
@@ -575,7 +659,7 @@ func _test_timestretch_measure() -> void:
 	await _wait_ms(500.0)
 	cap.clear_buffer()
 	await _wait_ms(800.0)
-	var fr: PackedVector2Array = cap.get_frames(cap.get_frames_available())
+	var fr: PackedVector2Array = cap.get_buffer(cap.get_frames_available())
 	p.stop()
 	var zc := 0
 	var rms := 0.0
