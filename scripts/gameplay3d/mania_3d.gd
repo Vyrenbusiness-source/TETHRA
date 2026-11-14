@@ -413,6 +413,8 @@ var _fail_reason := ""
 var _end_ms := 0.0  ## Songzeit beim Ende/Fail (Fail-Marker im Ergebnisbild)
 var _parked_nodes: Array = []
 var _missed_2d: Array = []  ## verpasste Einzelnoten fallen grau weiter: [time, col]
+## mv-tempo: Uebungsmodus oder Turbo (TempoMode), sonst null.
+var _tempo_mode: TempoMode = null
 var _mine_view: MineView = null  ## Mod "MN" (RuleMods): Minen-Darstellung 2D/3D
 
 
@@ -449,6 +451,7 @@ func _ready() -> void:
 	core.hold_started.connect(_on_hold_started)
 	core.lane_pressed.connect(_on_lane_pressed)
 	core.finished.connect(func(_s): _show_results(false))
+	_tempo_mode = TempoMode.attach(self)
 
 	_glow_shader = load("res://shaders/glow_dot.gdshader")
 	_ring_shader = load("res://shaders/hit_ring.gdshader")
@@ -537,6 +540,8 @@ func _ready() -> void:
 		_capture_results_shot()
 	elif OS.get_cmdline_args().has("--shot"):
 		_capture_after_first_note()
+	elif _tempo_mode != null and _tempo_mode.take_start():
+		pass
 	else:
 		# START-COUNTDOWN: exakt 3 Sekunden (3-2-1, je 1s) bevor es losgeht —
 		# Finger auf die Tasten, kein kalter Einstieg.
@@ -2112,6 +2117,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	if not (event is InputEventKey) or not event.pressed:
 		return
 	if event.keycode == KEY_ESCAPE:
+		if _tempo_mode != null and not _ended and _tempo_mode.on_escape():
+			return
 		if _ended:
 			_back_to_browser()
 		elif not _countdown_running:
@@ -2226,6 +2233,8 @@ func _process(delta: float) -> void:
 	if _autoplay:
 		_run_autoplay(t)
 	core.update(t)
+	if _tempo_mode != null:
+		_tempo_mode.tick(t)
 	# Tutorial: vor jedem neuen Element anhalten und erklaeren.
 	if GameSession.tutorial and not _ended and not _countdown_running \
 			and _tut_idx < _tut_steps.size() and t >= float(_tut_steps[_tut_idx].t):
@@ -3999,6 +4008,43 @@ func _restart() -> void:
 	get_tree().reload_current_scene()
 
 
+## mv-tempo (Uebungs-Schleife): Lauf mit neuem Core von vorn, ohne die Szene
+## neu zu laden. Sichtbare Noten weg, Lauf-Zustand zurueck, Signale neu.
+func tempo_restart_run(new_core: ManiaCore, first_idx: int) -> void:
+	for idx in _notes:
+		var e: Dictionary = _notes[idx]
+		if e.get("beam") != null and is_instance_valid(e.beam):
+			(e.beam as Node).queue_free()
+		if is_instance_valid(e.root):
+			(e.root as Node).queue_free()
+	_notes.clear()
+	for rb in _released_beams:
+		if rb.get("beam") != null and is_instance_valid(rb.beam):
+			(rb.beam as Node).queue_free()
+	_released_beams.clear()
+	_missed_2d.clear()
+	_recorded.clear()
+	_judge_log.clear()
+	_hit_offsets.clear()
+	_hold_head_dt.clear()
+	_acc_trace.clear()
+	_hold_ok = 0
+	_hold_drop = 0
+	_dt_n = 0
+	_dt_sum = 0.0
+	_dt_sqsum = 0.0
+	_last_milestone = 0
+	_auto_idx = maxi(first_idx, 0)
+	_auto_release.fill(-1.0)
+	_lane_held.fill(false)
+	core = new_core
+	core.note_spawned.connect(_on_note_spawned)
+	core.note_judged.connect(_on_note_judged)
+	core.hold_started.connect(_on_hold_started)
+	core.lane_pressed.connect(_on_lane_pressed)
+	_update_hud()
+
+
 func _back_to_browser() -> void:
 	if _mp_demo and _mp_demo_shots < 4:
 		return
@@ -4073,7 +4119,10 @@ func _show_results(is_fail: bool) -> void:
 		Lobby.send_final(PlayerStatsCard.pack(s, _hit_offsets, _acc_trace,
 			_hold_ok, _hold_drop, is_fail))
 	var new_best := false
-	if GameSession.is_replay or GameSession.tutorial or _autoplay:
+	if _tempo_mode != null and _tempo_mode.owns_results(s, is_fail):
+		pp = -1.0  # Turbo: eigene lokale Liste, kein ScoreStore/Online/pp
+		unranked = true
+	elif GameSession.is_replay or GameSession.tutorial or _autoplay:
 		# Replay-Ansicht/Tutorial/Autoplay: NICHTS werten oder speichern.
 		pp = -1.0
 	else:
@@ -4083,6 +4132,9 @@ func _show_results(is_fail: bool) -> void:
 		_prev_best = save.get("previous", {})
 		ScoreStore.log_play(GameSession.osz_path, _beatmap.version_name(),
 			"%s - %s" % [_beatmap.artist(), _beatmap.title()], s, RuleMods.score_mode(core.mods))
+		# Uebungsmodus: Miss-Stellen dieses Laufs als Sprungmarken merken.
+		PracticeStore.record_run(GameSession.osz_path, _beatmap.version_name(),
+			PracticeStore.misses_from_judge_log(_judge_log))
 		ReplayStore.save(GameSession.osz_path, _beatmap.version_name(), _recorded, {
 			"score": int(s.score), "grade": str(s.grade),
 			"accuracy": float(s.accuracy), "date": Time.get_datetime_string_from_system(),
@@ -4194,6 +4246,7 @@ func _build_results(is_fail: bool, s: Dictionary, pp: float, unranked: bool, new
 		"notes_total": _beatmap.hit_objects.size(),
 		# Spur/Abschnitt je Urteil (Details im Ergebnisbild).
 		"judge_log": _judge_log,
+		"mod_texts": s.get("mod_texts", []),
 	}
 	if _prev_best != null:
 		data["previous_best"] = _prev_best

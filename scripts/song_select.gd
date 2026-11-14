@@ -1121,6 +1121,7 @@ func _build_info_panel() -> void:
 		var rb := _make_rule_mod_button(k)
 		mods_row.add_child(rb)
 		_rule_mod_btns[k] = rb
+	TempoBrowserRow.build(self, mods_row)  # mv-tempo: Turbo, Tonhoehe, Ueben
 	_apply_mod_visibility()
 	_apply_play_state()
 
@@ -3716,6 +3717,7 @@ func _apply_mod_visibility() -> void:
 		(_trace_mod_btns[k] as CheckButton).visible = _play_mode == "trace"
 		(_trace_mod_btns[k] as CheckButton).set_pressed_no_signal(bool(_trace_mods[k]))
 	_sync_rule_mod_buttons()
+	TempoBrowserRow.set_visible(_play_mode == "mania")
 
 
 func _on_sv_toggled(pressed: bool) -> void:
@@ -3747,7 +3749,7 @@ func _base_mods() -> Dictionary:
 		for k in OrbitCore.ORBIT_MODS:
 			m[k] = bool(_orbit_mods.get(k, false))
 		return m
-	return {"NF": _nf_enabled, "SV": _sv_enabled}
+	return TempoBrowserRow.add_mods({"NF": _nf_enabled, "SV": _sv_enabled})
 
 
 func _on_nf_toggled(pressed: bool) -> void:
