@@ -48,6 +48,7 @@ func _run() -> void:
 	print("=== OMEN Regel-Mods-UI-Tests ===")
 	await _test_maxpp_after_free()
 	await _test_maxpp_delivers()
+	await _test_callbacks_after_leave()
 	await _test_results_mines()
 	_test_lobby_room_mods()
 	_test_trace_fail_time()
@@ -88,6 +89,36 @@ func _test_maxpp_delivers() -> void:
 		await process_frame
 		frames += 1
 	_ok(ss.get("_maxpp_thread") == null, "Ergebnis angekommen, Thread eingesammelt (%d Bilder)" % frames)
+	ss.free()
+
+
+## Bug: Rueckläufer aus Threads/Signalen (call_deferred) kommen nach einem
+## Szenenwechsel an, wenn der Browser schon aus dem Baum ist, aber noch lebt:
+## _bg_finished griff auf get_tree() (null) zu, _orbit_stars_done startete einen
+## neuen Thread, _on_import_finished baute Hinweis/Auswahl.
+func _test_callbacks_after_leave() -> void:
+	print("- Thread-/Signal-Ruecklaeufer nach Verlassen des Browsers")
+	var SS: GDScript = load("res://scripts/song_select.gd")
+	var ss: Control = SS.new()
+	var log := ErrLog.new()
+	OS.add_logger(log)
+	ss.call("_bg_finished", {"key": "qa|leave", "osz": "", "mode": "orbit"}, -1.0)
+	ss.set("_play_mode", "orbit")
+	ss.call("_bg_finished", {"key": "qa|leave2", "osz": "", "mode": "orbit"}, -1.0)
+	ss.set("_os_want", "qa|other")
+	ss.set("_os_want_args", ["", "", "orbit"])
+	ss.call("_orbit_stars_done", "qa|leave", -1.0)
+	var started: bool = ss.get("_os_thread") != null
+	if started:
+		(ss.get("_os_thread") as Thread).wait_to_finish()
+		ss.set("_os_thread", null)
+	ss.call("_on_import_progress", 1, 2, "")
+	ss.call("_on_import_finished", {"imported": [], "failed": 1})
+	for i in 3:
+		await process_frame
+	OS.remove_logger(log)
+	_ok(log.n == 0, "kein Fehler ausserhalb des Baums (%d: %s)" % [log.n, log.last])
+	_ok(not started, "kein neuer Orbit-Sterne-Thread nach dem Verlassen")
 	ss.free()
 
 

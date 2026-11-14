@@ -25,7 +25,7 @@ Abgebrochen,Abgebrochen,Cancelled
 1 Map importiert,1 Map importiert,1 map imported
 %d Maps importiert,%d Maps importiert,%d maps imported
 %d schon vorhanden,%d schon vorhanden,%d already there
-%d ohne 4K oder Standard,%d ohne 4K oder Standard,%d without 4K or standard
+%d ohne 4K bis 7K oder Standard,%d ohne 4K bis 7K oder Standard,%d without 4K to 7K or standard
 %d fehlgeschlagen,%d fehlgeschlagen,%d failed
 %d nur im Orbit-Modus,%d nur im Orbit-Modus,%d only in Orbit mode
 Import läuft schon,Import läuft schon,An import is already running

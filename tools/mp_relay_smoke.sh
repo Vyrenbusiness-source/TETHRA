@@ -17,7 +17,7 @@ G=${GODOT:-/c/Users/Gexanx/Desktop/rhyg/Godot_v4.7-stable_win64_console.exe}
 PORT=${PORT:-47911}
 LIMIT=${LIMIT:-90}
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/mp_relay.XXXXXX")
-mkdir -p "$WORK/relay" "$WORK/host" "$WORK/client"
+mkdir -p "$WORK/relay" "$WORK/host" "$WORK/client" "$WORK/maps"
 URL="ws://127.0.0.1:$PORT/mp"
 wp() { cygpath -w "$1" 2>/dev/null || echo "$1"; }
 
@@ -29,7 +29,11 @@ for _ in $(seq 1 100); do
 	sleep 0.2
 done
 
-COMMON=(--headless --path . res://scenes/mp_lobby.tscn --relay-url="$URL")
+# Leerer Map-Ordner: ohne --maps-dir scannt mp_lobby die echte Bibliothek neben der
+# Exe (ohne Cache im eigenen APPDATA ~20 s), der Client kam dann erst nach dem
+# 20-s-Warten des Hosts an ("Raum nicht gefunden").
+MAPS_W=$(wp "$WORK/maps")
+COMMON=(--headless --path . res://scenes/mp_lobby.tscn --relay-url="$URL" --maps-dir="$MAPS_W" --mp-maps="$MAPS_W")
 APPDATA=$(wp "$WORK/host") timeout "$LIMIT" "$G" "${COMMON[@]}" --mp-relay-host \
 	> "$WORK/host.log" 2>&1 &
 HP=$!

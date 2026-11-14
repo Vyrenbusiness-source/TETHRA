@@ -32,6 +32,7 @@ func _main() -> void:
 	_test_windows_scale()
 	_test_windows_unchanged_without_track()
 	_test_window_per_note_time()
+	_test_real_dt()
 	_test_restrict_range()
 	_test_practice_session()
 	_test_practice_store()
@@ -157,6 +158,27 @@ func _test_window_per_note_time() -> void:
 	_ok(c.n200 == 1, "Note vor Wechsel: Fenster 1,0x")
 	c.key_down(0, 1490.0)
 	_ok(c.n300 == 1, "Note nach Wechsel: 90 ms Songzeit bei 2,0x = 45 ms -> 300")
+
+
+## Bug: Hit-Error-Leiste/UR zeigten bei Rate != 1 Songzeit-ms. Anzeige-dt =
+## Songzeit-dt / Rate zur Notenzeit (wie die Fenster).
+func _test_real_dt() -> void:
+	print("- Zeitfehler in Echtzeit-ms (Hit-Error-Leiste, UR)")
+	var bm := _bm("64,192,1000,1,0,0:0:0:0:
+64,192,1400,1,0,0:0:0:0:
+")
+	var c := _core(bm)
+	_approx(c.real_dt(0, 30.0), 30.0, "ohne Rate-Verlauf unveraendert")
+	var tr := RateTrack.constant(1.5)
+	tr.set_at(1200.0, 0.75)
+	c.rate_track = tr
+	_approx(c.real_dt(0, 30.0), 20.0, "1,5x: 30 ms Songzeit = 20 ms echt")
+	_approx(c.real_dt(1, -30.0), -40.0, "0,75x (Rate zur Notenzeit): -30 ms Songzeit = -40 ms echt")
+	# Wertung bleibt in Songzeit: das dt im Ergebnis ist unveraendert.
+	var got := []
+	c.note_judged.connect(func(_i, r): got.append(r))
+	c.key_down(0, 1030.0)
+	_ok(got.size() == 1 and is_equal_approx(float(got[0].get("dt", 0.0)), 30.0), "core-dt bleibt Songzeit")
 
 
 func _test_restrict_range() -> void:

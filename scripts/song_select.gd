@@ -2343,7 +2343,10 @@ func _begin_game_preload() -> void:
 	for p in paths:
 		if _game_res.has(p) or _game_req.has(p) or not ResourceLoader.exists(p):
 			continue
-		if ResourceLoader.load_threaded_request(p, "", true) == OK:
+		# Ohne Sub-Threads: parallele Unter-Ladevorgaenge gemeinsamer Abhaengigkeiten
+		# (mania_3d/gameplay_3d/orbit) liessen in Godot 4.7 interne Lade-Token liegen
+		# (2-3 "ObjectDB instances leaked at exit", RefCounted, Referenzzahl 0).
+		if AsyncLoad.request(p, "", false) == OK:
 			_game_req.append(p)
 	_game_preload_t = Time.get_ticks_usec()
 
@@ -2354,7 +2357,7 @@ func _game_preload_step() -> void:
 	for p in _game_req.duplicate():
 		var st := ResourceLoader.load_threaded_get_status(p)
 		if st == ResourceLoader.THREAD_LOAD_LOADED:
-			_game_res[p] = ResourceLoader.load_threaded_get(p)
+			_game_res[p] = AsyncLoad.fetch(p)
 			_game_req.erase(p)
 		elif st != ResourceLoader.THREAD_LOAD_IN_PROGRESS:
 			_game_req.erase(p)
@@ -2368,7 +2371,7 @@ func _game_preload_step() -> void:
 func _change_to_game(path: String) -> void:
 	if not _game_res.has(path) and _game_req.has(path):
 		_game_req.erase(path)
-		var r := ResourceLoader.load_threaded_get(path)
+		var r := AsyncLoad.fetch(path)
 		if r != null:
 			_game_res[path] = r
 	var ps := _game_res.get(path) as PackedScene
@@ -4289,6 +4292,8 @@ func _import_progress_text(done: int, total: int, phase: String) -> String:
 
 
 func _on_import_progress(done: int, total: int, phase: String) -> void:
+	if not is_inside_tree():
+		return  # Signal kam verzoegert nach dem Verlassen des Browsers
 	var txt := _import_progress_text(done, total, phase)
 	if _import_prog_label != null:
 		_import_prog_label.text = txt
@@ -4314,6 +4319,8 @@ var _own_offer: PanelContainer = null
 
 ## Fortschritt der Erzeugung: Song, Stufe und Prozent.
 func _on_import_stage(song: String, stage_name: String, frac: float) -> void:
+	if not is_inside_tree():
+		return
 	var txt := "%s  ·  %s  %d %%" % [song, tr(str(AUTOMAP_STAGES.get(stage_name, stage_name))), int(round(frac * 100.0))]
 	if _import_prog_label != null:
 		_import_prog_label.text = txt
@@ -4399,6 +4406,10 @@ func _offer_own_songs() -> void:
 
 
 func _on_import_finished(res: Dictionary) -> void:
+	# finished kommt per call_deferred aus dem Import-Thread: nach Szenenwechsel ist
+	# der Browser schon aus dem Baum (Notice/Tween/Auswahl brauchen get_tree()).
+	if not is_inside_tree():
+		return
 	var imported: Array = res.get("imported", [])
 	var last := ""
 	var orbit_only := 0
@@ -4420,7 +4431,7 @@ func _on_import_finished(res: Dictionary) -> void:
 	if int(res.get("dup", 0)) > 0:
 		parts.append(tr("%d schon vorhanden") % int(res.dup))
 	if int(res.get("skipped", 0)) > 0:
-		parts.append(tr("%d ohne 4K oder Standard") % int(res.skipped))
+		parts.append(tr("%d ohne 4K bis 7K oder Standard") % int(res.skipped))
 	if int(res.get("failed", 0)) > 0:
 		parts.append(tr("%d fehlgeschlagen") % int(res.failed))
 	for e in res.get("errors", []):
@@ -4743,6 +4754,8 @@ func _on_online_closed() -> void:
 ## Download fertig: Bibliothek neu scannen, damit die Map sofort im Tab
 ## "Heruntergeladen" steht; Einzel-Downloads direkt anwaehlen (Pack nicht).
 func _on_online_downloaded(_set_id: int, osz_path: String, select: bool) -> void:
+	if not is_inside_tree():
+		return  # Browser verlassen: der naechste scannt ohnehin neu
 	_library.scan()
 	_refresh_filter(_search.text)
 	if _career_on():
@@ -5410,6 +5423,10 @@ func _bg_finished(item: Dictionary, st: float) -> void:
 			orbit_stars_store(item.key, st)
 	else:
 		_bg_failed[item.key] = true
+	# Browser schon verlassen (Szenenwechsel: aus dem Baum, noch nicht frei): Ergebnis
+	# ist gespeichert, sonst nichts mehr anstossen (get_tree() waere null).
+	if not is_inside_tree():
+		return
 	if st >= 0.0 and mode == _star_src():
 		_mode_stars_arrived(str(item.osz))
 	if _play_mode == "orbit":
@@ -5550,8 +5567,12 @@ func _orbit_stars_done(key: String, st: float) -> void:
 	if st >= 0.0:
 		orbit_stars_store(key, st)
 		_os_cache_get()[key] = st
+		if not is_inside_tree():
+			return  # Browser verlassen: gespeichert, keinen neuen Thread starten
 		if _selected_set != null and _mode_star_key(_selected_set, _selected_diff) == key:
 			_mode_stars_arrived(_selected_set.osz_path)
+	if not is_inside_tree():
+		return
 	if key == _os_want:
 		if st >= 0.0 and _play_mode != "mania":
 			_star_label.text = ScoreStore.mode_label(_stars_mode()) + " " + _stars_text(st)

@@ -1819,6 +1819,11 @@ func _on_note_spawned(index: int) -> void:
 
 
 func _on_note_judged(index: int, result: Dictionary) -> void:
+	# Uebung/Turbo: Anzeige (Hit-Error-Leiste, UR, FRUEH/SPAET, Timing im Ergebnis)
+	# in Echtzeit-ms; core behaelt sein Songzeit-dt (Kopie, nicht das Original).
+	if core.rate_track != null and result.has("dt"):
+		result = result.duplicate()
+		result["dt"] = core.real_dt(index, float(result.dt))
 	var q: int = result.quality
 	if q == ManiaCore.Quality.MISS:
 		_play_miss()
@@ -1956,7 +1961,7 @@ func _trigger_overdrive() -> void:
 func _on_hold_started(index: int, quality: int) -> void:
 	_play_hit(1.0)
 	# Hold-Kopf zaehlt fuer UR-Leiste und Trefferfehler wie eine normale Note.
-	var head_dt := core.hold_head_dt(index)
+	var head_dt := core.real_dt(index, core.hold_head_dt(index))  # Echtzeit-ms
 	_ur_tick({"dt": head_dt, "quality": quality})
 	_hit_offsets.append(head_dt)
 	_hold_head_dt[index] = head_dt
@@ -2186,10 +2191,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event.keycode == KEY_R and _lane_of_key(KEY_R) == -1 			and not Lobby.in_round():
 		_restart()
 		return
-	# Intro-Skip: Leertaste springt lange Vorlaeufe bis kurz vor die erste
-	# Note (nur wenn Space keine Lane-Taste ist).
-	if event.keycode == KEY_SPACE and not _ended \
-			and _lane_of_key(KEY_SPACE) == -1 and _can_skip_intro():
+	# Intro-Skip: Leertaste (oder Enter, siehe _is_skip_key) springt lange
+	# Vorlaeufe bis kurz vor die erste Note.
+	if _is_skip_key(event.keycode) and not _ended and _can_skip_intro():
 		if Lobby.in_round():
 			Lobby.vote_skip()  # Multiplayer: springt erst, wenn ALLE druecken
 		else:
@@ -2257,6 +2261,24 @@ func _skip_target() -> float:
 		_skip_cache_preempt = core.preempt
 		_skip_cache = ManiaCore.skip_target_ms(_beatmap, ManiaCore.BASE_PREEMPT / core.preempt, core.mods)
 	return _skip_cache
+
+
+## Intro-Skip-Tasten: Leertaste und Enter (auch Ziffernblock, wie osu!), jeweils nur,
+## wenn sie keine Spurtaste ist. Bei 5K/7K liegt die Leertaste auf der Mittelspur:
+## dann bleibt Enter.
+func _is_skip_key(code: int) -> bool:
+	if code != KEY_SPACE and code != KEY_ENTER and code != KEY_KP_ENTER:
+		return false
+	return _lane_of_key(code) == -1
+
+
+## Hinweistext zur Skip-Taste ("" = keine freie Taste).
+func _skip_hint() -> String:
+	if _is_skip_key(KEY_SPACE):
+		return "Leertaste: Intro überspringen"
+	if _is_skip_key(KEY_ENTER):
+		return "Enter: Intro überspringen"
+	return ""
 
 
 func _can_skip_intro() -> bool:
@@ -3820,10 +3842,11 @@ func _update_break_overlay(t: float) -> void:
 			_break_ov.hide_break()
 			_break_cur = -1
 		return
-	var can_skip: bool = _breaks[idx].x <= 0.0 and _can_skip_intro() 		and _lane_of_key(KEY_SPACE) == -1 and not _ended
+	var skip_hint := _skip_hint()
+	var can_skip: bool = _breaks[idx].x <= 0.0 and _can_skip_intro() 		and skip_hint != "" and not _ended
 	if idx != _break_cur or can_skip != _break_skip:
 		var beat_ms := 60000.0 / _clock.bpm if _clock.bpm > 1.0 else 500.0
-		_break_ov.show_break(_breaks[idx].x, _breaks[idx].y, beat_ms, can_skip)
+		_break_ov.show_break(_breaks[idx].x, _breaks[idx].y, beat_ms, can_skip, skip_hint)
 		_break_cur = idx
 		_break_skip = can_skip
 	_break_ov.update(t)
