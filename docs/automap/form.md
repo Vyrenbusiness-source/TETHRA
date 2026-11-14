@@ -35,6 +35,14 @@ Gemessen auf denselben Sets und mit denselben Definitionen (A / P): Kiai IoU 0,2
 als Dichte 0,639 / 0,679. Versatz (Median, onset_shift_ms = 6): Snare +10,4, Hat +7,1, other +10,5 ms; Gipfel
 +11 / +7 / +12 ms; Kick +2,5, Bass +1,3, Ton +0,7, Stimme +0,9 ms.
 
+## Pruefstand end-to-end (tools/automap_bench.gd --mapper new, AmChart unveraendert, 2026-11-14)
+
+P / A vorher (300f1a3) -> nachher: Kiai IoU 0,266 / 0,294 -> 0,368 / 0,431. Dichte-Korrelation der erzeugten Maps
+0,544 / 0,523 -> 0,529 / 0,508 (AmChart nutzt bar_density noch nicht, nur die Intensitaet je Abschnitt). Hard auf
+Menschen-Note 76,5 % -> 76,3 %, Menschen-Noten getroffen 61,1 % -> 62,1 %. Dauer 95. Perzentil (4 min) 5,5 -> 9,2 s
+(Maximum 14,5 s; Rechner durch parallele Laeufe belastet, Laufzeit 1285 s statt 779 s): AutoMapper4K uebergibt das
+Gitter noch nicht an analyze, AmGrid.track laeuft darum zweimal.
+
 ## Verfahren
 
 - Takte: Taktanfaenge des Gitters (+ OSU_LEAD), unter 1 s Laenge zu Doppeltakten zusammengefasst; ohne Gitter 2-s-Bloecke.
