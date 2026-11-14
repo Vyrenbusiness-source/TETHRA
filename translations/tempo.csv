@@ -1,0 +1,36 @@
+keys,de,en
+Tempo,Tempo,Tempo
+Section %d / %d,Abschnitt %d / %d,Section %d / %d
+best %s,bisher %s,best %s
+Turbo,Turbo,Turbo
+Top tempo %s,Höchsttempo %s,Top tempo %s
+%d clean sections,%d fehlerfreie Abschnitte,%d clean sections
+local rank %d of %d,lokal Platz %d von %d,local rank %d of %d
+Practice,Üben,Practice
+unranked · no online scores,ungewertet · keine Online-Scores,unranked · no online scores
+"Drag on the timeline to mark a section. A / B: set edge at cursor, arrow keys: move cursor (Shift: fine).","Auf der Zeitleiste ziehen markiert einen Abschnitt. A / B: Kante an den Cursor, Pfeiltasten: Cursor bewegen (Umschalt: fein).","Drag on the timeline to mark a section. A / B: set edge at cursor, arrow keys: move cursor (Shift: fine)."
+Error spots from your last runs,Fehlerstellen deiner letzten Läufe,Error spots from your last runs
+Start,Start,Start
+Target,Ziel,Target
+Step,Schritt,Step
+Keep pitch,Tonhöhe halten,Keep pitch
+"On: time-stretch, the song keeps its key. Off: faster songs sound higher (nightcore).","An: Time-Stretch, der Song bleibt in seiner Tonart. Aus: schnellere Songs klingen höher (Nightcore).","On: time-stretch, the song keeps its key. Off: faster songs sound higher (nightcore)."
+Start loop,Schleife starten,Start loop
+Song select,Song-Auswahl,Song select
+"None yet: play the map normally or loop a section, misses show up here.","Noch keine: spiel die Map normal oder übe einen Abschnitt, Misses erscheinen hier.","None yet: play the map normally or loop a section, misses show up here."
+Jump: section around this spot,Springen: Abschnitt um diese Stelle,Jump: section around this spot
+Length,Länge,Length
+Cursor,Cursor,Cursor
+This section: not played yet.,Dieser Abschnitt: noch nicht gespielt.,This section: not played yet.
+"This section: %d loops, %d clean, best accuracy %s, fastest clean %s","Dieser Abschnitt: %d Schleifen, %d sauber, beste Genauigkeit %s, schnellste saubere %s","This section: %d loops, %d clean, best accuracy %s, fastest clean %s"
+Clean,Sauber,Clean
+next loop %s,nächste Schleife %s,next loop %s
+Clean at %s,Sauber bei %s,Clean at %s
+%d misses,%d Misses,%d misses
+again at %s,nochmal bei %s,again at %s
+Loop,Schleife,Loop
+clean,sauber,clean
+misses,Misses,misses
+Tempo rises 5 % after every clean section and falls back on a miss. Own local ranking.,Das Tempo steigt nach jedem fehlerfreien Abschnitt um 5 % und fällt bei einem Miss zurück. Eigene lokale Rangliste.,Tempo rises 5 % after every clean section and falls back on a miss. Own local ranking.
+"Turbo and practice: on = time-stretch, the song keeps its key; off = nightcore sound.","Turbo und Üben: an = Time-Stretch, der Song bleibt in seiner Tonart; aus = Nightcore-Klang.","Turbo and practice: on = time-stretch, the song keeps its key; off = nightcore sound."
+"Loop a section, raise the tempo step by step, jump to your error spots. Unranked.","Abschnitt in Schleife spielen, Tempo stufenweise anheben, zu Fehlerstellen springen. Ungewertet.","Loop a section, raise the tempo step by step, jump to your error spots. Unranked."
