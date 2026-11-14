@@ -248,6 +248,7 @@ const STAR_FILTERS := [
 ]
 func _ready() -> void:
 	_perf_ready_t = Time.get_ticks_usec()
+	MarathonRun.end()  # zurueck im Browser: kein Marathon mehr aktiv
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_library = MapLibrary.new()
 	_library.scan()

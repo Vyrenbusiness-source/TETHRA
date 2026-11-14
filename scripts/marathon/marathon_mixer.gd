@@ -169,17 +169,16 @@ func _process(delta: float) -> void:
 		_was_running = false
 		return
 	_was_running = true
-	# Positionen aus demselben Mix lesen (faellt ein Mix dazwischen: neu lesen).
+	# Positionen aus demselben Mix lesen: Audio-Thread kurz sperren, sonst kann
+	# ein laufender Mix den Master schon weitergeschoben haben, ein Deck noch nicht
+	# (ein Mix-Block = ~11,6 ms Scheinfehler).
 	var gm := 0.0
 	var pos: Array[float] = [0.0, 0.0]
-	for attempt in 3:
-		var m0 := AudioServer.get_time_since_last_mix()
-		gm = master.get_playback_position() * 1000.0
-		for d in 2:
-			pos[d] = (_decks[d].player as AudioStreamPlayer).get_playback_position() * 1000.0
-		var m1 := AudioServer.get_time_since_last_mix()
-		if m1 >= m0:
-			break
+	AudioServer.lock()
+	gm = master.get_playback_position() * 1000.0
+	for d in 2:
+		pos[d] = (_decks[d].player as AudioStreamPlayer).get_playback_position() * 1000.0
+	AudioServer.unlock()
 	for i in segs.size():
 		var seg: Dictionary = segs[i]
 		var d: int = deck_of(i)

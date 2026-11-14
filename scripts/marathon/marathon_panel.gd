@@ -117,6 +117,9 @@ func _build() -> void:
 	for c in collections:
 		_src_opt.add_item(str(c))
 		_src_opt.set_item_metadata(_src_opt.item_count - 1, str(c))
+	for k in _src_opt.item_count:
+		if str(_src_opt.get_item_metadata(k)) == _source:
+			_src_opt.select(k)
 	_src_opt.item_selected.connect(func(i: int):
 		_source = str(_src_opt.get_item_metadata(i))
 		_rebuild())
