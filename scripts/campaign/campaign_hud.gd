@@ -35,16 +35,18 @@ static func attach_stage(game: Node, stage_id: String, trial: bool = false) -> C
 	var head := "%s  ·  %s  ·  %s" % [Campaign.tr_("Kampagne"),
 		Campaign.world_label(str((Campaign.chapters(data)[ci] as Dictionary).get("world", ""))),
 		Campaign.stage_label(st, Campaign.stage_index_of(data, stage_id))]
-	var h := attach(game, st, head)
-	h.trial = trial
-	return h
+	if trial:
+		head = "%s  ·  %s" % [Campaign.tr_("Kampagne"), Campaign.tr_("Skip-Prüfung")]
+	return attach(game, st, head, trial)
 
 
-static func attach(game: Node, p_stage: Dictionary, p_head: String) -> CampaignHud:
+static func attach(game: Node, p_stage: Dictionary, p_head: String, p_trial: bool = false) -> CampaignHud:
 	var h := CampaignHud.new()
 	h.name = "CampaignHud"
 	h.stage = p_stage
 	h.head = p_head
+	# Vor add_child setzen: _ready baut sofort (Skip-Pruefungs-Zeile fehlte sonst).
+	h.trial = p_trial
 	h._game = game
 	game.add_child(h)
 	return h
@@ -123,7 +125,10 @@ func _build() -> void:
 	_box.reset_size()
 	# Links unter den Werten der Szene (Mania: Rang/Genauigkeit, Orbit: Punkte/Genauigkeit):
 	# dort ist in allen Modi Hintergrund, die Strecke beginnt weiter rechts.
-	_box.position = Vector2(roundf(24.0 * s), roundf(BASE_H * 0.6 * s))
+	# Orbit: Seitenflaeche nur ~16 % breit. Breitere Box kleiner skalieren statt ins Spielfeld.
+	var maxw := get_viewport().get_visible_rect().size.x * 0.16 - 30.0 * s
+	_box.scale = Vector2.ONE * minf(1.0, maxw / maxf(_box.size.x, 1.0))
+	_box.position = Vector2(roundf(24.0 * s), roundf(BASE_H * 0.62 * s))
 	_update()
 
 

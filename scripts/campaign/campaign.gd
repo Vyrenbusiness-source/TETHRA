@@ -620,11 +620,11 @@ static func chapter_open(data: Dictionary, state: Dictionary, ci: int) -> bool:
 	return chapter_done(chs[ci - 1], state)
 
 
-## Kapitel per Skip-Pruefung offen, aber noch nicht selbst geschafft.
+## Kapitel nur per Skip-Pruefung offen (Boss davor nicht geschafft) und selbst noch nicht geschafft.
 static func chapter_skipped(data: Dictionary, state: Dictionary, ci: int) -> bool:
 	var chs := chapters(data)
 	return ci > 0 and ci < chs.size() and ci <= skip_to(state, data_mode(data)) \
-		and not chapter_done(chs[ci], state)
+		and not chapter_done(chs[ci - 1], state) and not chapter_done(chs[ci], state)
 
 
 static func chapter_done(ch: Dictionary, state: Dictionary) -> bool:

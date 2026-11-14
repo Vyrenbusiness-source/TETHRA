@@ -476,6 +476,12 @@ func _test_trial() -> void:
 	Campaign.apply_run(state, Campaign.stage_by_id(d, "mania-c02s4"), _run(0.95, "A", 0))
 	_ok(Campaign.stage_stars(state, "mania-c02s4") == 3, "Nachholen gibt die Sterne")
 	_ok(not Campaign.trial_available(d, state, 0), "Pruefung erledigt, Ziel offen")
+	# Pruefung aus einem regulaer offenen Kapitel: das Ausgangskapitel gilt nicht als uebersprungen.
+	var st2 := Campaign.new_state()
+	for s: Dictionary in (d.chapters[0] as Dictionary).stages:
+		Campaign.apply_run(st2, s, _run(0.95, "A", 0))
+	Campaign.apply_trial(st2, d, 1, _run(0.995, "S", 0), {})
+	_ok(not Campaign.chapter_skipped(d, st2, 1) and Campaign.chapter_skipped(d, st2, 2), "nur Kapitel ohne geschafften Boss davor gelten als uebersprungen")
 	var lock := Campaign.chapter_lock_reason(d, state, 5)
 	_ok(lock.contains("Skip") and lock.contains("5"), "Sperrgrund nennt die Skip-Pruefung")
 	_ok(not Campaign.chapter_lock_reason(_mini_n(13), Campaign.new_state(), 6).contains("Skip"), "Sperrgrund ohne erreichbare Pruefung")

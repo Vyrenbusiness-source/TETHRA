@@ -30,7 +30,7 @@ const ROW_GAP := 40.0
 const BOARD_ROWS := 7
 const ROW_H := 58.0
 const BOSS_H := 72.0
-const TRIAL_H := 56.0
+const TRIAL_H := 62.0
 const TRIAL := "trial"
 const PREVIEW_URL := "https://b.ppy.sh/preview/%d.mp3"
 const LEFT_W := 500.0
@@ -931,7 +931,10 @@ func _build_stages() -> void:
 		164, 84, 300, 20)
 	_put(_label(Campaign.world_label(str(ch.world)), 22.0, UiTheme.TEXT, true), 164, 104, 260, 36)
 	if Campaign.chapter_skipped(_data, _state, _chapter):
-		_put(_label(tr("Übersprungen"), 12.0, UiTheme.ACCENT2, true), 48 + LEFT_W - 240, 90, 100, 16)
+		# Ueber der Sternzahl, rechtsbuendig (links steht die Kapitel-Zeile).
+		var skl := _label(tr("Übersprungen"), 12.0, UiTheme.ACCENT2, true)
+		skl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		_put(skl, 48 + LEFT_W - 140, 88, 120, 16)
 	var cs := _label("%d / %d" % [Campaign.chapter_stars(ch, _state), Campaign.chapter_max_stars(ch)], 15.0, UiTheme.TEXT, true)
 	cs.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_put(cs, 48 + LEFT_W - 140, 110, 120, 24)
@@ -1057,9 +1060,9 @@ func _build_trial_row(y: float, wcol: Color) -> StageRow:
 	var tx := 32.0 + cw + 14.0
 	var tw := LEFT_W - tx - 70.0
 	_put(_label(tr("Skip-Prüfung: %s Accuracy") % Campaign.pct_text(Campaign.TRIAL_ACC), 12.0, UiTheme.ACCENT2, true),
-		tx, 6, tw + 60, 16, row)
-	_put(_label(str(st.get("title", "")), 15.0, UiTheme.TEXT), tx, 21, tw, 20, row)
-	_put(_label(tr("Springt bis Kapitel %d") % (to + 1), 13.0, UiTheme.DIM), tx, 39, tw, 16, row)
+		tx, 7, tw + 60, 16, row)
+	_put(_label(str(st.get("title", "")), 15.0, UiTheme.TEXT), tx, 23, tw, 20, row)
+	_put(_label(tr("Springt bis Kapitel %d") % (to + 1), 13.0, UiTheme.DIM), tx, 42, tw, 16, row)
 	var stars := _stars(Campaign.met_of(_state, str(st.get("id", ""))), 13.0, 0, 0, row)
 	stars.position = Vector2(_px(LEFT_W - 14.0) - stars.width(), (_px(TRIAL_H) - stars.size.y) * 0.5)
 	_rows[TRIAL] = row
