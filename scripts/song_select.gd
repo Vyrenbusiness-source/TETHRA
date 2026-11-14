@@ -391,6 +391,8 @@ func _ready() -> void:
 			if a.begins_with("--skin2d="):
 				Settings.skin_2d = a.trim_prefix("--skin2d=")
 		add_child.call_deferred(SettingsPanel.new())
+	elif OS.get_cmdline_args().has("--rules-harness"):
+		RuleModsHarness.run_browser(self)   # Harness: Regel-Mods per Klick, Minen-Liste, Replay
 	elif OS.get_cmdline_args().has("--shot"):
 		_capture_screenshot_and_quit()
 

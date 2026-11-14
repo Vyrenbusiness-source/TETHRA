@@ -255,6 +255,8 @@ func _ready() -> void:
 		_lobby_shots()
 	if OS.get_cmdline_args().has("--shot-mp"):
 		_capture_shot()
+	if OS.get_cmdline_args().has("--shot-rule-lobby"):
+		RuleModsHarness.run_lobby(self)   # Harness: SD/PF/Minen als Raum-Mods per Klick
 	if OS.get_cmdline_args().has("--shot-picker") or OS.get_cmdline_user_args().has("--shot-picker"):
 		_picker_shots()
 	# Headless-Smoke: zwei Prozesse verbinden sich ueber localhost.

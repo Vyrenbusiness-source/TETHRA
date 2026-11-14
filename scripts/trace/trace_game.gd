@@ -661,6 +661,8 @@ func _run_autoplay(t: float) -> void:
 	while _auto_idx < objs.size() and objs[_auto_idx].time <= t:
 		var n := objs[_auto_idx] as ManiaNote
 		_auto_idx += 1
+		if _auto_idx - 1 == RuleModsHarness.auto_skip():
+			continue   # Shots: --auto-skip=<n> laesst Note n aus (Sudden Death/Perfect)
 		var c := n.column
 		if c < 0 or c > 3:
 			continue
@@ -1104,7 +1106,7 @@ func _sim_to(target: float) -> void:
 
 
 func _capture_shot() -> void:
-	core.no_fail = true
+	core.no_fail = not _args().has("--shot-fail")   # --shot-fail: echter Fail (SD/PF)
 	var target := _first_ms() + 1200.0
 	var at_arg := ""
 	for a in _args():
