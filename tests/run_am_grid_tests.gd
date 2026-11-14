@@ -150,6 +150,9 @@ func _test_synth() -> void:
 		_ok(absf(_wrap(sg.downbeat_ms + lead - cfg[1], 4.0 * T)) < 6.0, "%s: Taktanfang" % cfg[0])
 		_ok(sg.start_ms + lead < cfg[1] + 6.0 and sg.start_ms >= 0.0, "%s: start_ms am ersten Schlag (%.1f)" % [cfg[0], sg.start_ms])
 		_ok(g.confidence > 0.0 and g.confidence <= 1.0 and g.alternatives.size() > 0, "%s: Vertrauen und Alternativen" % cfg[0])
+		# Auch ueber 330 BPM gibt es die Oktave als Alternative (342-BPM-Maps, erkannt 171).
+		var has_x2: bool = g.alternatives.any(func(a): return absf(float(a.factor) - 2.0) < 0.01)
+		_ok(cfg[0] < 170.0 or has_x2, "%s: Alternative x2 (%.0f BPM) gemeldet" % [cfg[0], 2.0 * cfg[0]])
 	# 3/4.
 	var s3 := _pcm(60.0)
 	_beats(s3, 140.0, 200.0, 59000.0, 3, 0, false)
@@ -358,6 +361,11 @@ func _measure(maps_dir: String, count: int, args: PackedStringArray) -> void:
 		pos += step
 		idx += 1
 		if only != "" and not Array(only.split(",")).any(func(o): return name.contains(o)):
+			continue
+		# Eigene Erzeugnisse des Auto-Mappers (wie im Pruefstand): ihre rote Linie ist unser Gitter.
+		# Die Nummer zaehlt trotzdem mit, damit die Haelften A/B gleich bleiben.
+		if name.get_basename().ends_with("(OMEN Auto)"):
+			skipped.append(name + ": eigenes Erzeugnis (OMEN Auto)")
 			continue
 		var osz := maps_dir.path_join(name)
 		var imp := OszImporter.import(osz)
