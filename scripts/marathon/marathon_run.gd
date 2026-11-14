@@ -85,11 +85,17 @@ static func plan_from_cmdline() -> Dictionary:
 			start_replay(data)
 			return {}
 		if a.begins_with("--marathon-maps="):
+			# <osz>|<version>|<sterne>;...  (Sterne optional)
 			var maps: Array = []
+			var st_sum := 0.0
 			for part in a.trim_prefix("--marathon-maps=").split(";", false):
 				var kv := part.split("|")
-				maps.append({"osz": kv[0], "version": kv[1] if kv.size() > 1 else ""})
-			return new_plan(maps, MarathonPlan.length_key(MarathonPlan.KIND_COUNT, 3), 1, "cmdline", 0.0)
+				var st := kv[2].to_float() if kv.size() > 2 else 0.0
+				st_sum += st
+				maps.append({"osz": kv[0], "version": kv[1] if kv.size() > 1 else "", "stars": st})
+			var n := maxi(maps.size(), 1)
+			var key := MarathonPlan.length_key(MarathonPlan.KIND_COUNT, n) 					if MarathonPlan.COUNTS.has(n) else "n3"
+			return new_plan(maps, key, 1, "cmdline", snappedf(st_sum / float(n), 0.01))
 	return {}
 
 
@@ -181,7 +187,8 @@ func load_maps() -> bool:
 	# Titelzeile im Spiel: "Marathon — 3 Maps · ★ 3,4".
 	merged.metadata["Artist"] = TranslationServer.translate("Marathon")
 	merged.metadata["Title"] = length_label()
-	merged.metadata["Version"] = "★ %s" % UiTheme.fmt_num(float(plan.get("target_stars", 0.0)), 2)
+	var ts := float(plan.get("target_stars", 0.0))
+	merged.metadata["Version"] = "★ %s" % UiTheme.fmt_num(ts, 1) if ts > 0.0 else "4K"
 	_reset_per_map()
 	return merged != null and not merged.hit_objects.is_empty()
 
@@ -214,7 +221,9 @@ func scene_beatmap(is_2d: bool) -> Beatmap:
 
 ## Song-Uhr starten: stumme Master-Spur ueber die ganze Laenge (Decks folgen ihr).
 func start_audio(lead_ms: float) -> void:
-	autoload("SyncClock").play(MarathonMixer.silent_master(MarathonPlan.timeline_end(segs) + 4000.0), lead_ms)
+	var len_ms := MarathonPlan.timeline_end(segs) + 4000.0
+	var master := MarathonMixer.click_master(len_ms) if MarathonHarness.wanted() 			else MarathonMixer.silent_master(len_ms)
+	autoload("SyncClock").play(master, lead_ms)
 
 
 ## Spielszene ist aufgebaut: Mixer, Anzeige, Wertung je Map anhaengen.
@@ -367,8 +376,9 @@ func results_data(data: Dictionary) -> void:
 		titles.append(str(m.get("title", "")))
 	data["title"] = TranslationServer.translate("Marathon")
 	data["artist"] = "  ›  ".join(titles)
-	data["version"] = "%s · ★ %s" % [length_label(),
-		UiTheme.fmt_num(float(plan.get("target_stars", 0.0)), 2)]
+	var ts := float(plan.get("target_stars", 0.0))
+	data["version"] = "%s · ★ %s" % [length_label(), UiTheme.fmt_num(ts, 1)] if ts > 0.0 else length_label()
+	data["can_clip"] = false  # Clip-Export kennt nur Einzel-Replays
 	var rank := int(result_info.get("rank", 0))
 	data["hero_extra"] = [
 		[TranslationServer.translate("MAPS"), "%d/%d" % [int(result_info.get("maps_done", 0)), n]],

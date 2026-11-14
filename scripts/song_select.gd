@@ -211,6 +211,7 @@ var _career_state := {}
 var _career_items: Array = []        # aktuelle Vorschlaege (Reihenfolge wie im Panel)
 var _career_dirty := false           # Panel-Neuaufbau steht aus (entprellt)
 var _share_btn: Button
+var _marathon_btn: Button
 var _saved_search := ""
 var _sv_chip: Button
 # Max-pp (SS) der ausgewaehlten Diff — rosu-pp im Hintergrund-Thread.
@@ -363,6 +364,10 @@ func _ready() -> void:
 	elif OS.get_cmdline_args().has("--shot-online"):
 		# Harness: Online-Tab (Raster, Genre, Download, Fehler) als PNGs.
 		_shot_online.call_deferred()
+	elif GameSession.has_meta(&"open_marathon") or MarathonPanel.shot_dir() != "":
+		# Hauptmenue "Marathon" bzw. Harness: Marathon-Auswahl gleich oeffnen.
+		GameSession.remove_meta(&"open_marathon")
+		_open_marathon.call_deferred()
 	elif OS.get_cmdline_args().has("--shot-import"):
 		# Harness: Import-Fenster mit Fortschritt und Drop-Hinweis als PNGs.
 		_shot_import.call_deferred()
@@ -1121,6 +1126,18 @@ func _build_info_panel() -> void:
 	UiTheme.style_ghost_button(_share_btn, 10)
 	_share_btn.pressed.connect(_share_selected_map)
 	mods_row.add_child(_share_btn)
+
+	# Marathon (scripts/marathon): mehrere Maps am Stueck, nur Mania.
+	_marathon_btn = Button.new()
+	_marathon_btn.text = tr("Marathon")
+	_marathon_btn.tooltip_text = tr("Several maps in a row, one HP bar, one combo")
+	_marathon_btn.custom_minimum_size = Vector2(0, 40)
+	_marathon_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_marathon_btn.add_theme_font_size_override("font_size", 14)
+	UiTheme.style_ghost_button(_marathon_btn, 10)
+	_marathon_btn.pressed.connect(_open_marathon)
+	_marathon_btn.visible = _play_mode == "mania"
+	mods_row.add_child(_marathon_btn)
 
 	var sep := ColorRect.new()
 	sep.custom_minimum_size = Vector2(0, 1)
@@ -3639,6 +3656,8 @@ func _apply_mod_visibility() -> void:
 		_sv_btn.visible = _play_mode == "mania"
 	if _sv_level_box != null:
 		_sv_level_box.visible = _play_mode == "mania"
+	if _marathon_btn != null:
+		_marathon_btn.visible = _play_mode == "mania"
 	for k in _orbit_mod_btns:
 		(_orbit_mod_btns[k] as CheckButton).visible = orbit
 		(_orbit_mod_btns[k] as CheckButton).set_pressed_no_signal(bool(_orbit_mods[k]))
@@ -3724,6 +3743,30 @@ func _watch_replay() -> void:
 	GameSession.replay_end_ms = float(data.get("meta", {}).get("end_ms", -1.0))
 	_preview.stop()
 	_change_to_game(ScoreStore.mode_scene(_play_mode) if (orbit or rg) else "res://scenes/mania_3d.tscn")
+
+
+## Marathon-Auswahl (MarathonPanel): Start bzw. Replay ueber die Spielszene.
+func _open_marathon() -> void:
+	if _library == null or get_node_or_null("MarathonPanel") != null:
+		return
+	var p := MarathonPanel.new()
+	p.name = "MarathonPanel"
+	add_child(p)
+	var has_sel := _selected_set != null
+	p.setup(_library.mapsets, _selected_set.osz_path if has_sel else "",
+		_selected_set.stars_at(_selected_diff) if has_sel else 3.0, CollectionStore.list_for("mania"))
+	p.start_requested.connect(func(plan: Dictionary) -> void:
+		GameSession.mods = _current_mods()
+		GameSession.is_replay = false
+		GameSession.replay_events = []
+		GameSession.replay_mode = "mania"
+		MarathonRun.begin(plan)
+		_preview.stop()
+		_change_to_game("res://scenes/mania_3d.tscn"))
+	p.replay_requested.connect(func(data: Dictionary) -> void:
+		if MarathonRun.start_replay(data):
+			_preview.stop()
+			_change_to_game("res://scenes/mania_3d.tscn"))
 
 
 ## Max-pp (SS) der aktuellen Diff anzeigen; Berechnung laeuft im Thread,

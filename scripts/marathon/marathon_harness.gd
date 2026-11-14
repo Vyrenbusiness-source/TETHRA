@@ -170,6 +170,8 @@ func _finish() -> void:
 		"replay": _is_replay(), "result": _run.result_info,
 		"view": "2d" if bool(_host.get("_2d")) else "3d",
 		"timeline_end": MarathonPlan.timeline_end(segs),
+		"click_ms": MarathonMixer.CLICK_MS,
+		"err_signed": _signed_stats(),
 	}
 	var name := "report_replay.json" if _is_replay() else "report.json"
 	var f := FileAccess.open("%s/%s" % [_dir, name], FileAccess.WRITE)
@@ -190,6 +192,20 @@ func _finish() -> void:
 	_remove_rec()
 	print("MARATHON-HARNESS DONE")
 	get_tree().quit(0)
+
+
+## Verteilung der vorzeichenbehafteten Deck-Abweichung (alle Messungen).
+func _signed_stats() -> Dictionary:
+	if _run.mixer == null or _run.mixer.err_all.is_empty():
+		return {}
+	var a: Array = Array(_run.mixer.err_all)
+	a.sort()
+	var hist := {}
+	for v in a:
+		var b := str(int(round(float(v))))
+		hist[b] = int(hist.get(b, 0)) + 1
+	return {"n": a.size(), "p05": _pct(a, 0.05), "p50": _pct(a, 0.5), "p95": _pct(a, 0.95),
+		"mean": _mean(a), "hist_ms": hist}
 
 
 func _is_replay() -> bool:

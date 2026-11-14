@@ -25,6 +25,7 @@ var _next: Label
 var _bar: Control
 var _cur := -1
 var _next_a := 0.0
+var _next_pending := ""  ## neuer Text, sobald die alte Vorschau ausgeblendet ist
 var _t := 0.0
 
 
@@ -78,17 +79,21 @@ func _process(delta: float) -> void:
 	var i := _run.map_at(_t)
 	if i != _cur:
 		_refresh(i)
-	# Naechste Map: weich ein- und ausblenden um die Uebergangsmitte.
+	# Naechste Map: vor der Uebergangsmitte weich einblenden, nach dem Wechsel
+	# mit dem alten Text ausblenden (erst dann den neuen Text setzen).
 	var want := 0.0
 	var n := _run.segs.size()
 	if i + 1 < n:
 		var mid := float(_run.segs[i + 1].mid_in)
 		if _t >= mid - NEXT_BEFORE_MS:
 			want = 1.0
-	if i > 0:
-		var mid0 := float(_run.segs[i].mid_in)
-		if _t < mid0 + NEXT_AFTER_MS:
-			want = 1.0
+	if i > 0 and _t < float(_run.segs[i].mid_in) + NEXT_AFTER_MS:
+		want = 0.0 if _next_pending != "" else want
+	if _next_pending != "":
+		want = 0.0
+		if _next_a <= 0.001:
+			_next.text = _next_pending
+			_next_pending = ""
 	_next_a = move_toward(_next_a, want, delta * FADE_PER_S)
 	_next.modulate.a = _next_a * 0.9
 	_bar.queue_redraw()
@@ -100,10 +105,13 @@ func _refresh(i: int) -> void:
 	_cap.text = "%s  ·  %s" % [tr("MARATHON"), tr("MAP %d / %d") % [i + 1, n]]
 	var m := _run.map_info(i)
 	_title.text = "%s — %s" % [str(m.get("artist", "")), str(m.get("title", ""))]
+	var txt := tr("Last map")
 	if i + 1 < n:
-		_next.text = "%s  %s" % [tr("NEXT"), str(_run.map_info(i + 1).get("title", ""))]
-	elif i > 0:
-		_next.text = tr("Last map")
+		txt = "%s  %s" % [tr("NEXT"), str(_run.map_info(i + 1).get("title", ""))]
+	if _next_a > 0.001:
+		_next_pending = txt
+	else:
+		_next.text = txt
 
 
 ## Leiste: je Map ein Abschnitt (Breite = Anteil an der Gesamtzeit), gespielte
@@ -153,10 +161,11 @@ static func results_table(run: MarathonRun) -> Control:
 		var m := run.map_info(i)
 		var played := int(pm.judged) > 0
 		var done := int(pm.judged) >= int(pm.notes)
-		var acc := UiTheme.fmt_pct(MarathonRun.map_accuracy(pm)) if played else "–"
+		var acc := UiTheme.fmt_pct(MarathonRun.map_accuracy(pm) * 100.0) if played else "–"
+		var st := float(m.get("stars", 0.0))
 		box.add_child(_row([
 			"%d  %s" % [i + 1, str(m.get("title", ""))],
-			UiTheme.fmt_num(float(m.get("stars", 0.0)), 2),
+			UiTheme.fmt_num(st, 2) if st > 0.0 else "–",
 			acc,
 			"%s×" % UiTheme.fmt_score(int(pm.max_combo)) if played else "–",
 			UiTheme.fmt_score(int(pm.n_miss)) if played else "–",

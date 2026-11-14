@@ -1,0 +1,29 @@
+keys,de,en
+MARATHON,MARATHON,MARATHON
+Marathon,Marathon,Marathon
+MAP %d / %d,MAP %d / %d,MAP %d / %d
+NEXT,NÄCHSTE,NEXT
+Last map,Letzte Map,Last map
+MAP,MAP,MAP
+STARS,STERNE,STARS
+MAPS,MAPS,MAPS
+RANK,PLATZ,RANK
+Maps,Maps,Maps
+%d maps,%d Maps,%d maps
+%d min,%d Min.,%d min
+"Several maps in a row, one HP bar, one combo. Each song comes in on the beat of the last one.","Mehrere Maps am Stück, eine HP-Leiste, eine Kombo. Jeder Song setzt auf dem Takt des vorigen ein.","Several maps in a row, one HP bar, one combo. Each song comes in on the beat of the last one."
+"Several maps in a row, one HP bar, one combo","Mehrere Maps am Stück, eine HP-Leiste, eine Kombo","Several maps in a row, one HP bar, one combo"
+SOURCE,QUELLE,SOURCE
+Whole library,Ganze Bibliothek,Whole library
+LENGTH,LÄNGE,LENGTH
+Shuffle,Neu mischen,Shuffle
+Start marathon,Marathon starten,Start marathon
+Not enough 4K maps at ★ %s ± %s (found %d). Try other stars or the whole library.,Zu wenige 4K-Maps bei ★ %s ± %s (gefunden: %d). Andere Sterne oder die ganze Bibliothek probieren.,Not enough 4K maps at ★ %s ± %s (found %d). Try other stars or the whole library.
+%d maps · about %d min · local ranking per length, not sent online,%d Maps · etwa %d Min. · lokale Rangliste je Länge, wird nicht online gesendet,%d maps · about %d min · local ranking per length; not sent online
+%s BPM,%s BPM,%s BPM
+"mix on the beat, tempo %s %%","Mix auf dem Takt, Tempo %s %%","mix on the beat, tempo %s %%"
+double time,Doppeltakt,double time
+half time,Halbtakt,half time
+cut on the beat (tempo too far apart),Schnitt auf dem Takt (Tempo zu verschieden),cut on the beat (tempo too far apart)
+BEST RUNS · %s,BESTE LÄUFE · %s,BEST RUNS · %s
+No runs at this length yet.,Noch keine Läufe in dieser Länge.,No runs at this length yet.

@@ -39,6 +39,7 @@ var seeks := 0
 var max_locked_err_ms := 0.0
 var err_log: Array = []  ## [g, deck, err] im eingerasteten Zustand (Harness)
 var log_errors := false
+var err_all: PackedFloat32Array = PackedFloat32Array()  ## jede Messung (Harness)
 
 var _decks: Array = []
 var _was_running := false
@@ -54,6 +55,38 @@ static func silent_master(length_ms: float) -> AudioStreamWAV:
 	var data := PackedByteArray()
 	data.resize(n)
 	data.fill(0)
+	w.data = data
+	return w
+
+
+## Pruef-Master (nur Harness): wie silent_master, aber mit leisen Klicks (3 kHz,
+## 3 ms, Hann-Fenster) alle CLICK_MS globaler Zeit, 16 Bit, 44,1 kHz. Der
+## Mitschnitt zeigt so die Uhr selbst; tools/marathon_sync_check.py misst die
+## Decks dagegen (Musik gegen Notenuhr).
+const CLICK_MS := 500.0
+const CLICK_RATE := 44100
+
+
+static func click_master(length_ms: float) -> AudioStreamWAV:
+	var w := AudioStreamWAV.new()
+	w.format = AudioStreamWAV.FORMAT_16_BITS
+	w.stereo = false
+	w.mix_rate = CLICK_RATE
+	var n := int(ceil(maxf(length_ms, 1000.0) / 1000.0 * CLICK_RATE))
+	var data := PackedByteArray()
+	data.resize(n * 2)
+	data.fill(0)
+	var len_s := int(0.003 * CLICK_RATE)
+	var k := 0
+	while true:
+		var start := int(round(float(k) * CLICK_MS / 1000.0 * CLICK_RATE))
+		if start + len_s >= n:
+			break
+		for j in len_s:
+			var win := 0.5 - 0.5 * cos(TAU * float(j) / float(len_s))
+			var v := 0.25 * win * sin(TAU * 3000.0 * float(j) / float(CLICK_RATE))
+			data.encode_s16((start + j) * 2, int(v * 32767.0))
+		k += 1
 	w.data = data
 	return w
 
@@ -215,6 +248,8 @@ func _sync_deck(deck: Dictionary, seg: Dictionary, gm: float, pos_ms: float, del
 		max_locked_err_ms = maxf(max_locked_err_ms, absf(err))
 		if log_errors and audible:
 			err_log.append([gm, i % 2, err])
+	if log_errors:
+		err_all.append(err)
 	var corr := clampf(err / PLL_TAU_MS, -PLL_MAX, PLL_MAX)
 	_apply_rate(p, rate * (1.0 - corr))
 

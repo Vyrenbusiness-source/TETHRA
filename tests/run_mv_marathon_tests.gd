@@ -240,6 +240,8 @@ func _test_merge() -> void:
 		var beat_a := float(segs[i].beat_in)
 		_ok(first_b - last_a >= beat_a - 0.01, "Uebergang %d: Luecke %.0f ms >= 1 Schlag (%.0f)" % [i, first_b - last_a, beat_a])
 		_ok(first_b - last_a >= MarathonPlan.MIN_GAP_MS - 0.01, "Uebergang %d: Luecke >= MIN_GAP" % i)
+		_ok(first_b - last_a <= 5.5 * beat_a, "Uebergang %d: Luecke hoechstens gut ein Takt (%.1f Schlaege)" % [i, (first_b - last_a) / beat_a])
+		_ok(nr[i][1] - nr[i][0] == maps[i].hit_objects.size(), "Uebergang %d: keine Note von B gekappt" % i)
 		# Rote Linie an der Mitte mit dem angeglichenen Schlag.
 		var found := false
 		for tp in mg.timing_points:

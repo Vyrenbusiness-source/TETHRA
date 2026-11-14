@@ -10,14 +10,15 @@ extends RefCounted
 ##   g in [g0, r0]: s = s_in + (g - g0) * rho          (Tempo an Vorgaenger angeglichen)
 ##   g in [r0, r1]: Rate laeuft linear von rho auf 1   (sanft zurueck aufs Original)
 ##   g > r1       : s laeuft mit Rate 1
-## Uebergang A -> B ("DJ-Mix"): Mitte = erster Takt von A, der mindestens einen
-## halben Schlag nach A's letzter Note liegt. Ueberblendung 4 Takte von A um die
+## Uebergang A -> B ("DJ-Mix"): Mitte = erste Taktgrenze von A, mit der B's erste
+## Note (in ihrem Takt) mindestens einen Schlag nach A's letzter Note kommt. Ueberblendung 4 Takte von A um die
 ## Mitte; B's Taktgrenze liegt auf A's Taktgrenze (Mitte), Tempo von B per Rate
 ## auf A angeglichen (auch 2:1 / 1:2). Bass-Tausch genau auf der Mitte. Passt das
 ## Tempo nicht (> MAX_RATE_DEV), wird hart auf dem Takt geschnitten (1 Schlag
 ## Blende), weiterhin Taktgrenze auf Taktgrenze.
 ## Noten: alle Noten von A enden vor Mitte - 1/2 Schlag, B's erste Note kommt
-## fruehestens Mitte + 1/2 Schlag -> Luecke >= ein Schlag (gap_ms).
+## mindestens einen Schlag (MIN_GAP_MS) nach A's letzter -> faire Luecke von
+## 1 Schlag bis etwa 1 Takt.
 ##
 ## Replay: die Zeitachse (timeline) wird im Replay gespeichert und beim Abspielen
 ## unveraendert benutzt -> exakt nachspielbar, auch wenn sich diese Regeln aendern.
@@ -138,13 +139,14 @@ static func candidates_from_sets(sets: Array, target_stars: float, strict: bool 
 	return out
 
 
-## Pool fuer die Auswahl: Sterne im Fenster, Laenge reicht, Tempo bekannt.
+## Pool fuer die Auswahl: Sterne im Fenster, Laenge reicht. Tempo darf fehlen
+## (Bibliothek kennt es nicht immer): die Auswahl liest es danach aus der Map.
 static func filter_pool(cands: Array, target_stars: float) -> Array:
 	var out: Array = []
 	for c in cands:
 		if absf(float(c.get("stars", 0.0)) - target_stars) > STAR_TOL + 1e-6:
 			continue
-		if float(c.get("duration_ms", 0.0)) < MIN_MAP_MS or float(c.get("bpm", 0.0)) <= 0.0:
+		if float(c.get("duration_ms", 0.0)) < MIN_MAP_MS:
 			continue
 		out.append(c)
 	return out
@@ -153,9 +155,11 @@ static func filter_pool(cands: Array, target_stars: float) -> Array:
 ## Uebergangs-Kosten A -> B: Tempo-Abweichung (normiert) + Energiesprung.
 static func pair_cost(a: Dictionary, b: Dictionary) -> float:
 	var tm := tempo_match(float(a.get("bpm", 0.0)), float(b.get("bpm", 0.0)))
-	var t := float(tm.dev) / log(1.0 + MAX_RATE_DEV)
-	if not bool(tm.ok):
-		t = 3.0 + t
+	var t := 1.5  # Tempo unbekannt: neutral
+	if is_finite(float(tm.dev)):
+		t = float(tm.dev) / log(1.0 + MAX_RATE_DEV)
+		if not bool(tm.ok):
+			t = 3.0 + minf(t, 20.0)
 	var ea := energy(a)
 	var eb := energy(b)
 	var e := absf(ea - eb) / maxf(maxf(ea, eb), 0.1)
@@ -448,15 +452,21 @@ static func build_timeline(maps: Array, audio_ms: Array = []) -> Array:
 		var last_a := last_end_ms(bm_a)
 		var beat_a := beat_at(ra, last_a)
 		var bar_a := bar_at(ra, last_a)
-		var mid_s := downbeat_ceil(ra, last_a + 0.5 * beat_a)
-		var g_mid := global_at(a, mid_s)
 		var first_b := first_note_ms(bm_b)
 		var beat_b := beat_at(rb, first_b)
 		var tm := tempo_match(60000.0 / beat_a, 60000.0 / beat_b)
 		var ok := bool(tm.ok)
 		var rho: float = float(tm.rate) if ok else 1.0
-		# B's Taktgrenze, die auf der Mitte liegt: letzte vor (erste Note - 1/2 A-Schlag).
-		var anchor := downbeat_floor(rb, first_b - 0.5 * beat_a * rho)
+		# B's Taktgrenze, die auf der Mitte liegt: der Takt von B's erster Note.
+		var anchor := downbeat_floor(rb, first_b)
+		var off_b := (first_b - anchor) / rho
+		# Mitte = erste Taktgrenze von A, mit der B's erste Note mindestens einen
+		# Schlag (MIN_GAP_MS) nach A's letzter Note kommt und A's Noten einen
+		# halben Schlag vor der Mitte enden: Luecke zwischen 1 Schlag und ~1 Takt.
+		var gap := maxf(beat_a, MIN_GAP_MS)
+		var g_last := global_at(a, last_a)
+		var mid_s := downbeat_ceil(ra, song_at(a, g_last + maxf(gap - off_b, 0.5 * beat_a)))
+		var g_mid := global_at(a, mid_s)
 		var g_x0: float
 		var g_x1: float
 		var g_r0: float
@@ -496,8 +506,7 @@ static func build_timeline(maps: Array, audio_ms: Array = []) -> Array:
 		b["r1"] = g_r0 + dur
 		# Fairness: erste Note von B mindestens einen Schlag (und MIN_GAP_MS)
 		# nach dem Ende der letzten Note von A.
-		var gap := maxf(beat_a, MIN_GAP_MS)
-		b["note_from"] = global_at(a, last_a) + gap - 0.001
+		b["note_from"] = g_last + gap - 0.001
 		a["fade_out"] = [g_mid, g_x1]
 		a["bass_out"] = [g_mid - 0.5 * beat_a, g_mid + 0.5 * beat_a] if ok else []
 		a["play_to"] = g_x1
