@@ -9,8 +9,9 @@ extends Control
 ##   ruhiger Platzhalter in Kapitel-Farbe. Eins je Frame, damit nichts ruckelt.
 ## - Gewaehlte Stufe: grosses Bild (OszImporter.prepare im Hintergrund, wie der
 ##   Song-Browser), weichgezeichnet als Hintergrund, Vorschau des Songs laeuft an.
-## Bedienung: Maus; Pfeile waehlen, Enter oeffnet/startet (zweiter Klick auf die gewaehlte
-## Stufe startet auch), Esc zurueck.
+## Bedienung: Maus waehlt, Start-Knopf startet; Pfeile waehlen, Enter oeffnet/startet, Esc zurueck.
+## Skip-Pruefung: oben im Kapitel eine optionale Zeile (Boss eines spaeteren Kapitels, 99 %
+## Accuracy). Einstufung: im leeren Modus Pruefungen hintereinander (Campaign.placement_*).
 ##
 ## Harness: --shot-campaign=<Praefix> speichert <Praefix>_path.png, _path_locked.png,
 ## _stage.png, _locked.png und _result.png mit Demo-Stand (ohne Schreiben, Maps aus
@@ -27,8 +28,11 @@ const PLATE_IMG_H := 86.0
 const PLATE_H := 150.0
 const ROW_GAP := 40.0
 const BOARD_ROWS := 7
-const ROW_H := 64.0
-const BOSS_H := 80.0
+const ROW_H := 58.0
+const BOSS_H := 72.0
+const TRIAL_H := 56.0
+const TRIAL := "trial"
+const PREVIEW_URL := "https://b.ppy.sh/preview/%d.mp3"
 const LEFT_W := 500.0
 const RX := 588.0
 const COVER_URL := "https://assets.ppy.sh/beatmaps/%d/covers/card@2x.jpg"
@@ -53,7 +57,12 @@ var _stage_id := ""
 var _hover_chapter := -1
 var _shot := ""
 var _head_font: FontVariation
-var _sel_frame := -1
+## Einstufung laeuft (Pruefungen hintereinander, solange 99 % kommen).
+var _placement := false
+var _preview_req: HTTPRequest
+var _preview_set := 0
+## Welt -> Nodes, die das Weltbild bekommen, sobald es fertig ist.
+var _world_targets: Array = []
 
 var _info: Control
 var _info_btn: Button
@@ -88,10 +97,17 @@ static var _thumbs: Dictionary = {}
 static var _covers: Dictionary = {}
 ## Schluessel -> weichgezeichnete Textur fuer den Hintergrund.
 static var _blurs: Dictionary = {}
+## Online-Vorschau je Set-ID (b.ppy.sh), nur fuer noch nicht geladene Maps.
+static var _previews: Dictionary = {}
+## Weltbilder entstehen im WorkerThreadPool (kein Ruck beim ersten Oeffnen des Kapitelwegs).
+static var _thumb_mutex := Mutex.new()
+static var _thumb_imgs: Dictionary = {}
+static var _thumb_tasks: Dictionary = {}
 
 
 ## Bild "cover"-artig in ein Rechteck (mittig beschnitten) oder ruhiger Platzhalter.
-static func draw_cover(ci: CanvasItem, tex: Texture2D, r: Rect2, col: Color, u: float) -> void:
+## gray: gesperrt -> Bild stark zurueckgenommen (auch grelle Cover bleiben ruhig).
+static func draw_cover(ci: CanvasItem, tex: Texture2D, r: Rect2, col: Color, u: float, gray := false) -> void:
 	if tex != null:
 		var ts := tex.get_size()
 		var want := r.size.x / maxf(r.size.y, 1.0)
@@ -100,7 +116,10 @@ static func draw_cover(ci: CanvasItem, tex: Texture2D, r: Rect2, col: Color, u: 
 		if rh > ts.y:
 			rh = ts.y
 			rw = rh * want
-		ci.draw_texture_rect_region(tex, r, Rect2((ts.x - rw) * 0.5, (ts.y - rh) * 0.5, rw, rh))
+		ci.draw_texture_rect_region(tex, r, Rect2((ts.x - rw) * 0.5, (ts.y - rh) * 0.5, rw, rh),
+			Color(0.42, 0.41, 0.40) if gray else Color.WHITE)
+		if gray:
+			ci.draw_rect(r, Color(UiTheme.BG.r, UiTheme.BG.g, UiTheme.BG.b, 0.55))
 		return
 	ci.draw_rect(r, col)
 	for i in 3:
@@ -113,13 +132,14 @@ class Cover extends Control:
 	var tex: Texture2D
 	var col := Color(0.16, 0.20, 0.26)
 	var dim := 0.0
+	var gray := false
 	var scrim := 0.0
 	var u := 1.0
 	var edge := true
 
 	func _draw() -> void:
 		var r := Rect2(Vector2.ZERO, size)
-		CampaignScreen.draw_cover(self, tex, r, col, u)
+		CampaignScreen.draw_cover(self, tex, r, col, u, gray)
 		if scrim > 0.0:
 			# Verlauf fuer Text auf dem Bild: oben frei, zur Mitte halb, unten fast deckend.
 			var top := size.y * (1.0 - scrim)
@@ -183,17 +203,30 @@ class StageRow extends Button:
 	var u := 1.0
 	var node_x := 14.0
 	var cover_rect := Rect2()
+	## Skip-Pruefung: abseits vom Weg, feine Kante, Doppelpfeil statt Wegpunkt.
+	var trial := false
 
 	func _draw() -> void:
 		var h := size.y
+		var mark := UiTheme.ACCENT2 if trial else UiTheme.ACCENT
 		if selected:
 			draw_rect(Rect2(Vector2.ZERO, size), UiTheme.SURFACE)
-			draw_rect(Rect2(0, 0, 3.0 * u, h), UiTheme.ACCENT)
+			draw_rect(Rect2(0, 0, 3.0 * u, h), mark)
 		elif is_hovered() or has_focus():
 			draw_rect(Rect2(Vector2.ZERO, size), Color(UiTheme.RAISED.r, UiTheme.RAISED.g, UiTheme.RAISED.b, 0.6))
 		var x := node_x * u
 		var cy := h * 0.5
 		var lw := maxf(2.0 * u, 1.0)
+		if trial:
+			if not selected:
+				draw_rect(Rect2(Vector2.ZERO, size), Color(UiTheme.ACCENT2.r, UiTheme.ACCENT2.g, UiTheme.ACCENT2.b, 0.28), false, 1.0)
+			for k in 2:
+				var ox := x - 5.0 * u + k * 6.0 * u
+				draw_polyline(PackedVector2Array([Vector2(ox, cy - 5.0 * u), Vector2(ox + 4.0 * u, cy), Vector2(ox, cy + 5.0 * u)]),
+					UiTheme.ACCENT2, lw, true)
+			CampaignScreen.draw_cover(self, tex, cover_rect, col, u)
+			draw_rect(cover_rect, UiTheme.LINE, false, 1.0)
+			return
 		var off := Color(UiTheme.TEXT.r, UiTheme.TEXT.g, UiTheme.TEXT.b, 0.14)
 		if not first:
 			draw_rect(Rect2(x - lw * 0.5, 0, lw, cy), UiTheme.ACCENT if prev_cleared else off)
@@ -217,9 +250,7 @@ class StageRow extends Button:
 		else:
 			draw_circle(c, 6.0 * u, UiTheme.BG)
 			draw_arc(c, 6.0 * u, 0, TAU, 24, UiTheme.ACCENT, lw, true)
-		CampaignScreen.draw_cover(self, tex, cover_rect, col, u)
-		if locked:
-			draw_rect(cover_rect, Color(UiTheme.BG.r, UiTheme.BG.g, UiTheme.BG.b, 0.66))
+		CampaignScreen.draw_cover(self, tex, cover_rect, col, u, locked)
 		draw_rect(cover_rect, UiTheme.LINE, false, 1.0)
 
 
@@ -259,6 +290,10 @@ func _ready() -> void:
 	_preview = AudioStreamPlayer.new()
 	_preview.bus = "Music"
 	add_child(_preview)
+	_preview_req = HTTPRequest.new()
+	_preview_req.timeout = 12.0
+	add_child(_preview_req)
+	_preview_req.request_completed.connect(_on_preview_bytes)
 	if DisplayServer.get_name() != "headless":
 		_lib = MapLibrary.new()
 		_lib.scan()
@@ -270,6 +305,8 @@ func _ready() -> void:
 			Mirror.download_failed.connect(_on_dl_failed)
 	var back_to := str(GameSession.campaign_return)
 	GameSession.campaign_return = ""
+	var back_trial: Dictionary = GameSession.campaign_return_trial
+	GameSession.campaign_return_trial = {}
 	var start_mode := Campaign.mode_of_stage(_all, back_to)
 	if start_mode == "":
 		start_mode = str(_state.get("mode", "mania"))
@@ -278,6 +315,11 @@ func _ready() -> void:
 		_chapter = Campaign.chapter_index_of(_data, back_to)
 		_stage_id = back_to
 		_view = "stages"
+		if back_trial.has("chapter") and Campaign.trial_available(_data, _state, int(back_trial.chapter)):
+			_chapter = int(back_trial.chapter)
+			_stage_id = TRIAL
+			_placement = bool(back_trial.get("placement", false))
+	_request_world_thumbs()
 	_rebuild()
 	resized.connect(_rebuild)
 	if DisplayServer.get_name() == "headless":
@@ -297,6 +339,16 @@ func _exit_tree() -> void:
 		Mirror.download_progress.disconnect(_on_dl_progress)
 		Mirror.download_done.disconnect(_on_dl_done)
 		Mirror.download_failed.disconnect(_on_dl_failed)
+
+
+## Enter auf einer Stufen-Zeile startet (vor der GUI, die Enter sonst als Klick nimmt).
+func _input(event: InputEvent) -> void:
+	if _view != "stages" or not (event is InputEventKey) or not event.pressed or event.echo:
+		return
+	if (event as InputEventKey).keycode in [KEY_ENTER, KEY_KP_ENTER]:
+		if get_viewport().gui_get_focus_owner() is StageRow:
+			get_viewport().set_input_as_handled()
+			_start_stage()
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -330,6 +382,7 @@ func _pick_mode(mode: String) -> void:
 
 
 func _back() -> void:
+	_placement = false
 	if _view == "stages":
 		_view = "path"
 		_stop_preview()
@@ -416,11 +469,70 @@ func _world_color(world: String) -> Color:
 	return Color.from_hsv(c.h, minf(c.s, 0.55), 0.26)
 
 
-## Kleines Vorschaubild der Welt aus dem Panorama (einmal je Welt, verkleinert). null = keins.
+## Fertiges Weltbild (null = noch nicht da; _request_world_thumbs baut es im Hintergrund).
 static func world_thumb(world: String) -> Texture2D:
+	return _thumbs.get(world)
+
+
+## Weltbild fuer node: sofort, sonst sobald der Hintergrund-Task fertig ist.
+func _want_world(world: String, node: Node) -> Texture2D:
 	if _thumbs.has(world):
 		return _thumbs[world]
-	var out: Texture2D = null
+	_world_targets.append([world, node])
+	_request_world_thumbs()
+	return null
+
+
+## Alle Weltbilder des Modus im WorkerThreadPool bauen (je Welt ein Task).
+func _request_world_thumbs() -> void:
+	for ch: Dictionary in Campaign.chapters(_data):
+		var w := str(ch.get("world", ""))
+		_thumb_mutex.lock()
+		var busy := _thumbs.has(w) or _thumb_tasks.has(w) or _thumb_imgs.has(w)
+		if not busy:
+			_thumb_tasks[w] = WorkerThreadPool.add_task(CampaignScreen._thumb_task.bind(w), false, "Weltbild")
+		_thumb_mutex.unlock()
+
+
+static func _thumb_task(world: String) -> void:
+	var img := _world_image(world)
+	_thumb_mutex.lock()
+	_thumb_imgs[world] = img
+	_thumb_mutex.unlock()
+
+
+## Fertige Weltbilder abholen (Hauptthread): Textur bauen und verteilen.
+func _poll_world_thumbs() -> void:
+	_thumb_mutex.lock()
+	var done: Dictionary = _thumb_imgs.duplicate()
+	_thumb_imgs.clear()
+	var ids: Array = []
+	for w in done:
+		if _thumb_tasks.has(w):
+			ids.append(_thumb_tasks[w])
+			_thumb_tasks.erase(w)
+	_thumb_mutex.unlock()
+	for id in ids:
+		WorkerThreadPool.wait_for_task_completion(id)
+	for w: String in done:
+		var img: Image = done[w]
+		var tex: Texture2D = ImageTexture.create_from_image(img) if img != null else null
+		_thumbs[w] = tex
+		if tex == null:
+			continue
+		for e: Array in _world_targets:
+			if str(e[0]) == w and is_instance_valid(e[1]) and not (e[1] as Node).is_queued_for_deletion():
+				(e[1] as Node).set("tex", tex)
+				(e[1] as CanvasItem).queue_redraw()
+		var chs := Campaign.chapters(_data)
+		if _view == "path" and _hover_chapter >= 0 and _hover_chapter < chs.size() \
+				and str((chs[_hover_chapter] as Dictionary).world) == w:
+			_set_backdrop("world:" + w, tex)
+
+
+## Ausschnitt des Panoramas, verkleinert (laeuft im Hintergrund). null = keins.
+static func _world_image(world: String) -> Image:
+	var out: Image = null
 	var dir := WorldTheme.asset_dir(world)
 	var cands: Array[String] = ["%s/%s_sky.webp" % [dir, world], "%s/sky_%s.webp" % [dir, world]]
 	if world == WorldTheme.GALAXY:
@@ -439,9 +551,8 @@ static func world_thumb(world: String) -> Texture2D:
 		@warning_ignore("integer_division")
 		var region := img.get_region(Rect2i((img.get_width() - w) / 2, int(img.get_height() * 0.44) - h / 2, w, h))
 		region.resize(640, 320, Image.INTERPOLATE_LANCZOS)
-		out = ImageTexture.create_from_image(region)
+		out = region
 		break
-	_thumbs[world] = out
 	return out
 
 
@@ -462,6 +573,7 @@ func _rebuild() -> void:
 	_board_box = null
 	_rows.clear()
 	_cover_targets.clear()
+	_world_targets.clear()
 	_thumb_queue.clear()
 	_build_top()
 	if _view == "stages":
@@ -499,13 +611,14 @@ func _build_top() -> void:
 		tx += 86.0
 	var stars := _label("%d / %d" % [Campaign.total_stars(_data, _state), Campaign.max_stars(_data)], 15.0, UiTheme.TEXT, true)
 	stars.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	_put(stars, 1032, 28, 200, 20)
+	# Etwas tiefer: oben rechts liegt der globale Chat-Knopf (GameSession).
+	_put(stars, 1032, 44, 200, 20)
 	var pts := _label(tr("%s Punkte") % UiTheme.fmt_score(Campaign.total_points(_data, _state)), 12.0, UiTheme.DIM)
 	pts.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	_put(pts, 932, 48, 300, 18)
+	_put(pts, 932, 63, 300, 16)
 	var w := stars.get_theme_font("font").get_string_size(stars.text, HORIZONTAL_ALIGNMENT_LEFT, -1,
 		stars.get_theme_font_size("font_size")).x / _s
-	_stars([true], 13.0, 1232.0 - w - 19.0, 31.0)
+	_stars([true], 13.0, 1232.0 - w - 19.0, 47.0)
 
 
 # ------------------------------------------------------------------ Cover
@@ -543,7 +656,7 @@ func _give_cover(id: int, tex: Texture2D) -> void:
 				continue
 			n.set("tex", tex)
 			(n as CanvasItem).queue_redraw()
-	if _view == "stages" and id == int(Campaign.stage_by_id(_data, _stage_id).get("set_id", -1)):
+	if _view == "stages" and id == int(_sel_stage().get("set_id", -1)):
 		_set_backdrop("set%d" % id, tex)
 
 
@@ -555,6 +668,8 @@ func _on_cover_ready(set_id: int, tex: Texture2D) -> void:
 ## Ein lokales Thumbnail je Frame (beim ersten Mal aus dem Zip), dann Vorbereitung der
 ## gewaehlten Stufe abholen.
 func _process(_delta: float) -> void:
+	if not _thumb_tasks.is_empty():
+		_poll_world_thumbs()
 	if not _thumb_queue.is_empty():
 		var ms: MapSet = _thumb_queue.pop_front()
 		var id := Campaign.set_id_of_file(ms.osz_path)
@@ -609,6 +724,21 @@ func _build_path() -> void:
 	_put(_label("%s  ·  %s" % [tr("Kampagne"), ScoreStore.mode_label(_mode)], 28.0, UiTheme.TEXT, true), 48, 82, 900, 42)
 	_put(_label(tr("%d Welten · %d Stufen · gleiche Maps für alle") % [chs.size(), Campaign.all_stages(_data).size()],
 		13.0, UiTheme.DIM), 48, 124, 700, 24)
+	if Campaign.placement_available(_data, _state):
+		# Leerer Modus: Einstufung ueber Skip-Pruefungen statt leichter Kapitel.
+		var pb := Button.new()
+		pb.name = "Placement"
+		pb.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+		pb.text = tr("Einstufen")
+		pb.focus_mode = Control.FOCUS_NONE
+		UiTheme.style_ghost_button(pb, 4)
+		pb.add_theme_font_size_override("font_size", int(_px(15.0)))
+		pb.pressed.connect(_start_placement)
+		_put(pb, 1032, 86, 200, 40)
+		var pl := _label(tr("Prüfungen mit %s Accuracy überspringen leichte Kapitel") % Campaign.pct_text(Campaign.TRIAL_ACC),
+			12.0, UiTheme.DIM)
+		pl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		_put(pl, 732, 130, 500, 18)
 	# Weg: Linien zwischen den Kapiteln, Bernstein bis zum aktuellen Kapitel.
 	for i in range(1, chs.size()):
 		var a := _plate_pos(i - 1)
@@ -635,7 +765,7 @@ func _build_path() -> void:
 		p.locked = not open
 		p.current = i == cur_ch
 		p.steps = _steps(ch)
-		p.tex = _thumbs.get(str(ch.world))
+		p.tex = _want_world(str(ch.world), p)
 		for sb in ["normal", "hover", "pressed", "focus", "disabled"]:
 			p.add_theme_stylebox_override(sb, StyleBoxEmpty.new())
 		var pos := _plate_pos(i)
@@ -657,13 +787,16 @@ func _build_path() -> void:
 			var ok := _label(tr("Geschafft"), 12.0, UiTheme.GOOD)
 			ok.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 			_put(ok, PLATE_W - 84, PLATE_IMG_H + 31, 84, 20, p)
+		elif Campaign.chapter_skipped(_data, _state, i):
+			var sk := _label(tr("Übersprungen"), 12.0, UiTheme.ACCENT2)
+			sk.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+			_put(sk, PLATE_W - 96, PLATE_IMG_H + 31, 96, 20, p)
 		if i == _chapter:
 			focus_plate = p
 	_line(48, 566, BASE.x - 96, 1, UiTheme.LINE)
 	_show_info(_chapter)
 	if focus_plate != null and _shot == "":
 		focus_plate.grab_focus.call_deferred()
-	_fill_thumbs()
 
 
 ## Zeile unter dem Weg: Kapitel, Stand, die sechs Stufen mit Cover, Oeffnen.
@@ -690,7 +823,7 @@ func _show_info(i: int) -> void:
 	var state_t := ""
 	var state_c := UiTheme.DIM
 	if not open:
-		state_t = tr("Erst den Boss von Kapitel %d schaffen") % i
+		state_t = Campaign.chapter_lock_reason(_data, _state, i)
 	elif Campaign.chapter_done(ch, _state):
 		state_t = tr("%d / %d Sterne") % [Campaign.chapter_stars(ch, _state), Campaign.chapter_max_stars(ch)]
 		state_c = UiTheme.GOOD
@@ -698,6 +831,9 @@ func _show_info(i: int) -> void:
 		state_t = tr("%d von %d Stufen geschafft") % [Campaign.chapter_cleared_count(ch, _state), (ch.stages as Array).size()]
 		state_c = UiTheme.TEXT
 	_put(_label(state_t, 13.0, state_c), 48, 662, 380, 20, _info)
+	if Campaign.trial_available(_data, _state, i):
+		_put(_label(tr("Skip-Prüfung: %s Accuracy · bis Kapitel %d") % [Campaign.pct_text(Campaign.TRIAL_ACC),
+			Campaign.trial_target(_data, i) + 1], 12.0, UiTheme.ACCENT2, true), 48, 684, 380, 18, _info)
 	# Die Stufen des Kapitels als Cover-Reihe (Boss mit Bernstein-Kante).
 	var sts: Array = ch.get("stages", [])
 	var x := 432.0
@@ -707,7 +843,7 @@ func _show_info(i: int) -> void:
 		var sopen := Campaign.stage_open(_data, _state, id)
 		var boss := bool(st.get("boss", false))
 		var cv := _cover(x, 588, 88, 50, _world_color(str(ch.world)), _info)
-		cv.dim = 0.0 if sopen else 0.8
+		cv.gray = not sopen
 		cv.tex = _want_cover(st, cv)
 		if boss:
 			_line(x, 638, 88, 2, UiTheme.ACCENT if sopen else Color(UiTheme.ACCENT.r, UiTheme.ACCENT.g, UiTheme.ACCENT.b, 0.4), _info)
@@ -722,34 +858,28 @@ func _show_info(i: int) -> void:
 	_info_btn.focus_mode = Control.FOCUS_NONE
 	_info_btn.disabled = not open
 	_put(_info_btn, 1032, 590, 200, 46, _info)
-	var wt: Texture2D = world_thumb(str(ch.world)) if _thumbs.has(str(ch.world)) else null
+	var wt := world_thumb(str(ch.world))
 	if wt != null:
 		_set_backdrop("world:" + str(ch.world), wt)
-
-
-## Weltbilder nach dem ersten Bild einsetzen (ein Panorama je Frame).
-func _fill_thumbs() -> void:
-	var chs := Campaign.chapters(_data)
-	for i in chs.size():
-		var world := str((chs[i] as Dictionary).world)
-		if not _thumbs.has(world):
-			await get_tree().process_frame
-			if not is_inside_tree() or _view != "path":
-				return
-		var t := world_thumb(world)
-		var p := _root.get_node_or_null("Chapter%02d" % (i + 1)) as Plate
-		if p != null and t != null and not p.is_queued_for_deletion():
-			p.tex = t
-			p.queue_redraw()
-		if i == _hover_chapter and t != null:
-			_set_backdrop("world:" + world, t)
 
 
 func _open_chapter(i: int) -> void:
 	if not Campaign.chapter_open(_data, _state, i):
 		return
+	_placement = false
 	_chapter = i
 	_stage_id = ""
+	_view = "stages"
+	_rebuild()
+
+
+## Einstufung: Kapitel 1 mit gewaehlter Skip-Pruefung; jede bestandene fuehrt zur naechsten.
+func _start_placement() -> void:
+	if not Campaign.placement_available(_data, _state):
+		return
+	_chapter = 0
+	_stage_id = TRIAL
+	_placement = true
 	_view = "stages"
 	_rebuild()
 
@@ -759,6 +889,17 @@ func _open_chapter(i: int) -> void:
 func _chapter_dict() -> Dictionary:
 	var chs := Campaign.chapters(_data)
 	return chs[clampi(_chapter, 0, chs.size() - 1)] if not chs.is_empty() else {}
+
+
+## Gewaehlte Stufe: bei der Skip-Pruefung deren Boss-Stufe.
+func _sel_stage() -> Dictionary:
+	return Campaign.trial_stage(_data, _chapter) if _stage_id == TRIAL else Campaign.stage_by_id(_data, _stage_id)
+
+
+func _sel_open() -> bool:
+	if _stage_id == TRIAL:
+		return Campaign.trial_available(_data, _state, _chapter)
+	return Campaign.stage_open(_data, _state, _stage_id)
 
 
 func _local(stage: Dictionary) -> Dictionary:
@@ -771,7 +912,11 @@ func _local(stage: Dictionary) -> Dictionary:
 func _build_stages() -> void:
 	var ch := _chapter_dict()
 	var sts: Array = ch.get("stages", [])
-	if _stage_id == "" or Campaign.chapter_index_of(_data, _stage_id) != _chapter:
+	var has_trial := Campaign.trial_available(_data, _state, _chapter)
+	if _stage_id == TRIAL and not has_trial:
+		_stage_id = ""
+		_placement = false
+	if _stage_id != TRIAL and (_stage_id == "" or Campaign.chapter_index_of(_data, _stage_id) != _chapter):
 		_stage_id = str((sts[0] as Dictionary).id)
 		for s: Dictionary in sts:
 			if Campaign.stage_open(_data, _state, str(s.id)):
@@ -779,19 +924,24 @@ func _build_stages() -> void:
 	var wcol := _world_color(str(ch.world))
 	# Kopf: Weltbild, Kapitel, Name, Sterne.
 	var head := _cover(48, 84, 100, 56, wcol)
-	head.tex = world_thumb(str(ch.world))
+	head.tex = _want_world(str(ch.world), head)
 	var band: Array = ch.get("stars", [0, 0])
 	_put(_label("%s  ·  %s" % [tr("Kapitel %d") % (_chapter + 1),
 		tr("Schwierigkeit %s bis %s") % [_num(float(band[0]), 1), _num(float(band[1]), 1)]], 13.0, UiTheme.DIM),
 		164, 84, 300, 20)
 	_put(_label(Campaign.world_label(str(ch.world)), 22.0, UiTheme.TEXT, true), 164, 104, 260, 36)
+	if Campaign.chapter_skipped(_data, _state, _chapter):
+		_put(_label(tr("Übersprungen"), 12.0, UiTheme.ACCENT2, true), 48 + LEFT_W - 240, 90, 100, 16)
 	var cs := _label("%d / %d" % [Campaign.chapter_stars(ch, _state), Campaign.chapter_max_stars(ch)], 15.0, UiTheme.TEXT, true)
 	cs.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_put(cs, 48 + LEFT_W - 140, 110, 120, 24)
 	_stars([true], 13.0, 48 + LEFT_W - 14, 115)
-	# Weg der sechs Stufen.
 	var y := 156.0
 	var focus_row: StageRow = null
+	if has_trial:
+		focus_row = _build_trial_row(y, wcol)
+		y += TRIAL_H + 10.0
+	# Weg der sechs Stufen.
 	for i in sts.size():
 		var st: Dictionary = sts[i]
 		var id := str(st.id)
@@ -846,7 +996,7 @@ func _build_stages() -> void:
 			focus_row = row
 		y += h
 	_dl_label = _label("", 13.0, UiTheme.DIM)
-	_put(_dl_label, 48, y + 8.0, LEFT_W, 20)
+	_put(_dl_label, 48, y + 4.0, LEFT_W, 18)
 	_build_next_chapter()
 	_build_detail()
 	if focus_row != null and _shot == "":
@@ -874,26 +1024,58 @@ func _build_next_chapter() -> void:
 	b.pressed.connect(_open_chapter.bind(ni))
 	_put(b, 48, 618, LEFT_W, 56)
 	var cv := _cover(8, 8, 72, 40, _world_color(str(nch.world)), b)
-	cv.tex = world_thumb(str(nch.world))
+	cv.tex = _want_world(str(nch.world), cv)
 	cv.dim = 0.0 if open else 0.6
 	_put(_label(tr("Danach: Kapitel %d") % (ni + 1), 12.0, UiTheme.DIM), 94, 8, 300, 18, b)
 	_put(_label(Campaign.world_label(str(nch.world)), 15.0, UiTheme.TEXT if open else UiTheme.DIM, true), 94, 26, 200, 22, b)
 	var why := _label(tr("Offen") if open else tr("Boss dieses Kapitels schaffen"), 13.0, UiTheme.GOOD if open else UiTheme.DIM)
 	why.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	if not open and Campaign.trial_available(_data, _state, _chapter):
+		why.text = tr("Boss oder Skip-Prüfung schaffen")
 	_put(why, LEFT_W - 260, 26, 248, 22, b)
 
 
+## Skip-Pruefung als eigene Zeile ueber dem Weg (optional, ruhig in ACCENT2).
+func _build_trial_row(y: float, wcol: Color) -> StageRow:
+	var st := Campaign.trial_stage(_data, _chapter)
+	var to := Campaign.trial_target(_data, _chapter)
+	var row := StageRow.new()
+	row.name = "StageTrial"
+	row.trial = true
+	row.u = _s
+	row.col = wcol
+	row.selected = _stage_id == TRIAL
+	var cw := (TRIAL_H - 12.0) * 16.0 / 9.0
+	row.cover_rect = Rect2(_px(32.0), _px(6.0), _px(cw), _px(TRIAL_H - 12.0))
+	for sb in ["normal", "hover", "pressed", "focus", "disabled"]:
+		row.add_theme_stylebox_override(sb, StyleBoxEmpty.new())
+	_put(row, 48, y, LEFT_W, TRIAL_H)
+	row.tex = _want_cover(st, row)
+	row.action_mode = BaseButton.ACTION_MODE_BUTTON_PRESS
+	row.focus_entered.connect(_select_stage.bind(TRIAL))
+	row.pressed.connect(_select_stage.bind(TRIAL))
+	var tx := 32.0 + cw + 14.0
+	var tw := LEFT_W - tx - 70.0
+	_put(_label(tr("Skip-Prüfung: %s Accuracy") % Campaign.pct_text(Campaign.TRIAL_ACC), 12.0, UiTheme.ACCENT2, true),
+		tx, 6, tw + 60, 16, row)
+	_put(_label(str(st.get("title", "")), 15.0, UiTheme.TEXT), tx, 21, tw, 20, row)
+	_put(_label(tr("Springt bis Kapitel %d") % (to + 1), 13.0, UiTheme.DIM), tx, 39, tw, 16, row)
+	var stars := _stars(Campaign.met_of(_state, str(st.get("id", ""))), 13.0, 0, 0, row)
+	stars.position = Vector2(_px(LEFT_W - 14.0) - stars.width(), (_px(TRIAL_H) - stars.size.y) * 0.5)
+	_rows[TRIAL] = row
+	return row if row.selected else null
+
+
+## Maus waehlt nur; gestartet wird mit dem Start-Knopf oder Enter.
 func _row_pressed(id: String) -> void:
-	if id == _stage_id and Engine.get_process_frames() != _sel_frame:
-		_start_stage()
-	else:
-		_select_stage(id)
+	_select_stage(id)
 
 
 func _select_stage(id: String) -> void:
 	if id == _stage_id and is_instance_valid(_detail):
 		return
-	_sel_frame = Engine.get_process_frames()
+	if id != TRIAL:
+		_placement = false
 	_stage_id = id
 	for k: String in _rows:
 		var r: StageRow = _rows[k]
@@ -908,28 +1090,35 @@ func _build_detail() -> void:
 	if is_instance_valid(_detail):
 		_detail.queue_free()
 	_cover_targets = _cover_targets.filter(func(e: Array): return is_instance_valid(e[1]) and not (e[1] as Node).is_queued_for_deletion())
-	var st := Campaign.stage_by_id(_data, _stage_id)
+	var st := _sel_stage()
 	if st.is_empty():
 		return
+	var trial := _stage_id == TRIAL
 	_detail = Control.new()
 	_detail.name = "Detail"
 	_detail.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_put(_detail, 0, 0, BASE.x, BASE.y)
 	var x := RX
 	var w := BASE.x - 48.0 - x
-	var idx := Campaign.stage_index_of(_data, _stage_id)
-	var open := Campaign.stage_open(_data, _state, _stage_id)
+	var sid := str(st.get("id", ""))
+	var idx := Campaign.stage_index_of(_data, sid)
+	var open := _sel_open()
 	var boss := bool(st.get("boss", false))
 	# Bild
 	_hero = _cover(x, 84, w, 236, _world_color(str(_chapter_dict().get("world", ""))), _detail)
 	_hero.scrim = 0.74
-	_hero.dim = 0.0 if open else 0.45
+	_hero.gray = not open
 	var t := _want_cover(st, _hero)
 	_hero.tex = t
 	if t != null:
 		_set_backdrop("set%d" % int(st.get("set_id", 0)), t)
 	var kicker := "%s  ·  %s" % [Campaign.stage_label(st, idx), ScoreStore.mode_label(str(st.mode))]
-	_put(_label(kicker, 13.0, UiTheme.ACCENT if boss or open else UiTheme.DIM, true), x + 20, 84 + 236 - 92, w - 40, 20, _detail)
+	var kcol := UiTheme.ACCENT if boss or open else UiTheme.DIM
+	if trial:
+		kicker = "%s  ·  %s" % [tr("Einstufung") if _placement else tr("Skip-Prüfung"),
+			tr("Boss von Kapitel %d") % (Campaign.chapter_index_of(_data, sid) + 1)]
+		kcol = UiTheme.ACCENT2
+	_put(_label(kicker, 13.0, kcol, true), x + 20, 84 + 236 - 92, w - 40, 20, _detail)
 	_put(_label(str(st.get("title", "")), 28.0, UiTheme.TEXT, true), x + 20, 84 + 236 - 72, w - 40, 38, _detail)
 	_put(_label(str(st.get("artist", "")), 15.0, UiTheme.TEXT.darkened(0.08)), x + 20, 84 + 236 - 36, w - 40, 22, _detail)
 	# Zahlen: Schwierigkeit, Laenge, BPM, Diff und Mapper.
@@ -949,12 +1138,16 @@ func _build_detail() -> void:
 	_put(_label(diff_t, 15.0, UiTheme.TEXT), fx, 333, x + w - fx, 22, _detail)
 	_put(_label(tr("Map von %s") % str(st.get("creator", "")), 12.0, UiTheme.DIM), fx, 356, x + w - fx, 18, _detail)
 	_line(x, 386, w, 1, UiTheme.LINE, _detail)
-	# Ziele mit Stand
+	# Ziele mit Stand (Skip-Pruefung: ihre Regel statt der Ziele)
 	var gw := 316.0
-	_put(_label(tr("Ziele"), 13.0, UiTheme.DIM), x, 398, gw, 20, _detail)
-	var met := Campaign.met_of(_state, _stage_id)
-	var e := Campaign.entry(_state, _stage_id)
+	var met := Campaign.met_of(_state, sid)
+	var e := Campaign.entry(_state, sid)
 	var goals: Array = st.get("goals", [])
+	if trial:
+		_build_trial_rule(x, gw, sid)
+		goals = []
+	else:
+		_put(_label(tr("Ziele"), 13.0, UiTheme.DIM), x, 398, gw, 20, _detail)
 	for i in goals.size():
 		var gy := 422.0 + i * 28.0
 		_stars([met[i]], 14.0, x, gy + 6.0, _detail)
@@ -977,6 +1170,9 @@ func _build_detail() -> void:
 			tr("1 Lauf") if plays == 1 else tr("%d Läufe") % plays], 13.0, UiTheme.DIM), x + 150, 544, gw - 150, 26, _detail)
 	else:
 		_put(_label(tr("Noch nicht gespielt"), 15.0, UiTheme.DIM), x, 542, gw, 26, _detail)
+		var opens := _opens_text(st)
+		if opens != "" and not trial:
+			_put(_label(opens, 13.0, UiTheme.DIM), x, 568, gw, 20, _detail)
 	# Rangliste der Map
 	var bx := x + gw + 24.0
 	var bw := x + w - bx
@@ -986,7 +1182,10 @@ func _build_detail() -> void:
 	_put(_board_box, bx, 422, bw, BOARD_ROWS * 26.0, _detail)
 	_load_board(st)
 	# Start
-	_start_btn = _button(tr("Stufe starten"), true, _start_stage)
+	var start_t := tr("Stufe starten")
+	if trial:
+		start_t = tr("Einstufung starten") if _placement else tr("Prüfung starten")
+	_start_btn = _button(start_t, true, _start_stage)
 	_start_btn.name = "Start"
 	_start_btn.focus_mode = Control.FOCUS_NONE
 	_put(_start_btn, x, 626, 240, 48, _detail)
@@ -996,15 +1195,45 @@ func _build_detail() -> void:
 	_prepare_stage(st)
 
 
+## Was das Hauptziel freischaltet ("" = nichts mehr).
+func _opens_text(st: Dictionary) -> String:
+	var sid := str(st.get("id", ""))
+	if bool(st.get("boss", false)):
+		var ci := Campaign.chapter_index_of(_data, sid)
+		if ci + 1 < Campaign.chapters(_data).size() and not Campaign.chapter_open(_data, _state, ci + 1):
+			return tr("Das Ziel schaltet %s frei") % (tr("Kapitel %d") % (ci + 2))
+		return ""
+	var nx := Campaign.next_stage_id(_data, sid)
+	if nx == "" or Campaign.stage_open(_data, _state, nx):
+		return ""
+	return tr("Das Ziel schaltet %s frei") % Campaign.stage_label(Campaign.stage_by_id(_data, nx),
+		Campaign.stage_index_of(_data, nx))
+
+
+## Regel der Skip-Pruefung im Detail: Grenze, was nicht zaehlt, was frei wird, wohin die Sterne gehen.
+func _build_trial_rule(x: float, gw: float, sid: String) -> void:
+	var to := Campaign.trial_target(_data, _chapter)
+	var a := _chapter + 2
+	var b := to + 1
+	_put(_label(tr("Skip-Prüfung"), 13.0, UiTheme.ACCENT2), x, 398, gw, 20, _detail)
+	_put(_label(tr("%s Accuracy in einem Lauf") % Campaign.pct_text(Campaign.TRIAL_ACC), 15.0, UiTheme.TEXT), x, 420, gw, 24, _detail)
+	_put(_label(tr("Ohne Fail, ohne No Fail und Konstant"), 13.0, UiTheme.DIM), x, 442, gw, 18, _detail)
+	_put(_label((tr("Schaltet Kapitel %d frei") % b) if a >= b else (tr("Schaltet Kapitel %d bis %d frei") % [a, b]),
+		15.0, UiTheme.TEXT), x, 464, gw, 24, _detail)
+	_put(_label(tr("Sterne zählen zur Boss-Stufe von Kapitel %d") % (Campaign.chapter_index_of(_data, sid) + 1),
+		13.0, UiTheme.DIM), x, 486, gw, 18, _detail)
+
+
 ## Gewaehlte Stufe im Hintergrund vorbereiten (wie der Song-Browser): danach grosses Bild
-## und Vorschau des Songs.
+## und Vorschau des Songs. Noch nicht geladene Map: Online-Vorschau (b.ppy.sh).
 func _prepare_stage(st: Dictionary) -> void:
 	var loc := _local(st)
 	var ms: Variant = loc.get("set")
 	if not (ms is MapSet):
-		_stop_preview()
+		_online_preview(int(st.get("set_id", 0)))
 		return
 	var m := (ms as MapSet).meta_at(int(loc.index))
+	_preview_set = 0
 	_wait_osz = str(loc.osz_path)
 	_wait_stage = _stage_id
 	GameSession.preload_selection(_wait_osz, str(m.get("audio_filename", "")), (ms as MapSet).background_file,
@@ -1012,7 +1241,7 @@ func _prepare_stage(st: Dictionary) -> void:
 
 
 func _on_prepared(osz: String) -> void:
-	var st := Campaign.stage_by_id(_data, _stage_id)
+	var st := _sel_stage()
 	var loc := _local(st)
 	var ms: Variant = loc.get("set")
 	if not (ms is MapSet) or str(loc.osz_path) != osz:
@@ -1035,7 +1264,49 @@ func _on_prepared(osz: String) -> void:
 	if from < 0.0:
 		from = float(m.get("duration_ms", 0.0)) * 0.4
 	_preview_key = key
-	var gain := SongLoudness.gain_db_for(SongLoudness.make_key(osz, audio))
+	_play_stream(stream, from / 1000.0, SongLoudness.gain_db_for(SongLoudness.make_key(osz, audio)))
+
+
+## Online-Vorschau einer noch nicht geladenen Map (einmal laden, im Speicher halten).
+func _online_preview(set_id: int) -> void:
+	_wait_osz = ""
+	if set_id <= 0 or _shot != "" or DisplayServer.get_name() == "headless":
+		_stop_preview()
+		return
+	if _previews.has(set_id):
+		_preview_set = set_id
+		if _preview_key != "online%d" % set_id or not _preview.playing:
+			_preview_key = "online%d" % set_id
+			_play_stream(_previews[set_id], 0.0, 0.0)
+		return
+	_preview_set = set_id
+	_preview_req.cancel_request()
+	if _preview_req.request(PREVIEW_URL % set_id, BeatmapMirror.headers()) != OK:
+		_stop_preview()
+
+
+func _on_preview_bytes(result: int, code: int, _h: PackedStringArray, body: PackedByteArray) -> void:
+	if result != HTTPRequest.RESULT_SUCCESS or code != 200 or body.size() < 5:
+		return
+	# b.ppy.sh liefert trotz .mp3-Endung meist OGG Vorbis (wie im Online-Browser).
+	var stream: AudioStream = null
+	if body[0] == 0x4F and body[1] == 0x67 and body[2] == 0x67 and body[3] == 0x53:
+		stream = AudioStreamOggVorbis.load_from_buffer(body)
+	else:
+		var mp3 := AudioStreamMP3.new()
+		mp3.data = body
+		if mp3.get_length() > 0.0:
+			stream = mp3
+	if stream == null:
+		return
+	_previews[_preview_set] = stream
+	if _view == "stages" and int(_sel_stage().get("set_id", -1)) == _preview_set and _local(_sel_stage()).get("set") == null:
+		_preview_key = "online%d" % _preview_set
+		_play_stream(stream, 0.0, 0.0)
+
+
+## Vorschau weich wechseln: alte ausblenden, neue ab from_sec einblenden.
+func _play_stream(stream: AudioStream, from_sec: float, gain: float) -> void:
 	if _preview_tw != null and _preview_tw.is_valid():
 		_preview_tw.kill()
 	_preview_tw = create_tween()
@@ -1045,13 +1316,16 @@ func _on_prepared(osz: String) -> void:
 		_preview.stop()
 		_preview.stream = stream
 		_preview.volume_db = PREVIEW_SILENT_DB
-		_preview.play(from / 1000.0))
+		_preview.play(from_sec))
 	_preview_tw.tween_property(_preview, "volume_db", PREVIEW_DB + gain, PREVIEW_FADE_IN)
 
 
 func _stop_preview() -> void:
 	_preview_key = ""
 	_wait_osz = ""
+	_preview_set = 0
+	if _preview_req != null:
+		_preview_req.cancel_request()
 	if _preview == null or not _preview.playing:
 		return
 	if _preview_tw != null and _preview_tw.is_valid():
@@ -1064,10 +1338,18 @@ func _stop_preview() -> void:
 func _refresh_start() -> void:
 	if not is_instance_valid(_start_btn):
 		return
-	var st := Campaign.stage_by_id(_data, _stage_id)
-	var open := Campaign.stage_open(_data, _state, _stage_id)
+	var st := _sel_stage()
+	var open := _sel_open()
 	var have := not _local(st).is_empty()
 	_start_btn.disabled = not open or not have
+	if open and have and _stage_id == TRIAL:
+		if Settings.mod_constant:
+			_start_note.text = tr("Konstant ist an und zählt nicht für die Prüfung")
+		elif _placement:
+			_start_note.text = tr("Einstufung: weiter, solange %s kommen · Esc bricht ab") % Campaign.pct_text(Campaign.TRIAL_ACC)
+		else:
+			_start_note.text = ""
+		return
 	if not open:
 		_start_note.text = Campaign.lock_reason(_data, _state, _stage_id)
 	elif not have:
@@ -1086,15 +1368,35 @@ func _board_text(text: String) -> void:
 	_put(_label(text, 13.0, UiTheme.DIM), 0, 0, _board_box.size.x / _s, 24, _board_box)
 
 
+## Leere Rangliste: Hinweis und freie Plaetze als ruhige Linien (Platz 1 bis BOARD_ROWS).
+func _board_empty(text: String) -> void:
+	for c in _board_box.get_children():
+		c.queue_free()
+	var w := _board_box.size.x / _s
+	for i in BOARD_ROWS:
+		var y := i * 26.0
+		var rank := _label(str(i + 1), 13.0, Color(UiTheme.DIM.r, UiTheme.DIM.g, UiTheme.DIM.b, 0.45))
+		rank.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		_put(rank, 0, y, 18, 26, _board_box)
+		if i == 0:
+			_put(_label(text, 14.0, UiTheme.DIM), 26, y, w - 26, 26, _board_box)
+		else:
+			_line(26, y + 13.0, w - 26 - 30.0 * ((i * 7) % 4), 1, Color(UiTheme.TEXT.r, UiTheme.TEXT.g, UiTheme.TEXT.b, 0.07), _board_box)
+
+
 func _load_board(st: Dictionary) -> void:
 	_board_token += 1
 	var token := _board_token
 	if _shot != "":
-		_show_board(_demo_board())
+		var demo := _demo_board() if not bool(st.get("boss", false)) else []
+		if demo.is_empty():
+			_board_empty(tr("Noch keine Scores · der erste Platz ist frei"))
+		else:
+			_show_board(demo)
 		return
 	var online: OnlineApi = GameSession.online
 	if online == null or not online.enabled() or DisplayServer.get_name() == "headless":
-		_board_text(tr("Rangliste nicht erreichbar"))
+		_board_empty(tr("Rangliste nicht erreichbar"))
 		return
 	_board_text(tr("Rangliste wird geladen …"))
 	online.leaderboard(str(st.mode), str(st.get("md5", "")), int(st.get("beatmap_id", 0)),
@@ -1102,9 +1404,9 @@ func _load_board(st: Dictionary) -> void:
 			if token != _board_token or not is_instance_valid(_board_box):
 				return
 			if not ok:
-				_board_text(tr("Rangliste nicht erreichbar"))
+				_board_empty(tr("Rangliste nicht erreichbar"))
 			elif entries.is_empty():
-				_board_text(tr("Noch keine Scores"))
+				_board_empty(tr("Noch keine Scores · der erste Platz ist frei"))
 			else:
 				_show_board(entries))
 
@@ -1178,13 +1480,14 @@ func _avatar(who: String) -> Control:
 
 
 func _start_stage() -> void:
-	var st := Campaign.stage_by_id(_data, _stage_id)
+	var st := _sel_stage()
 	var loc := _local(st)
-	if st.is_empty() or loc.is_empty() or _shot != "" or not Campaign.stage_open(_data, _state, _stage_id):
+	if st.is_empty() or loc.is_empty() or _shot != "" or not _sel_open():
 		return
 	_stop_preview()
 	# Wie ein Start aus dem Song-Browser: eigene Mods, eigene Einstellungen (2D/3D, Welt ...).
-	GameSession.start_campaign(_stage_id)
+	var extra := {"trial": _chapter, "placement": _placement} if _stage_id == TRIAL else {}
+	GameSession.start_campaign(str(st.id), extra)
 	GameSession.mods = Campaign.start_mods(st, Campaign.player_mods(str(st.mode), Settings.mod_sv))
 	GameSession.is_replay = false
 	GameSession.replay_events = []
@@ -1205,6 +1508,10 @@ func _start_downloads() -> void:
 			return
 		_dl_chapter = _chapter
 		_dl_queue = Campaign.missing_sets(_chapter_dict(), _sets)
+		var tst := Campaign.trial_stage(_data, _chapter)
+		if Campaign.trial_available(_data, _state, _chapter) and _local(tst).is_empty() \
+				and not _dl_queue.has(int(tst.get("set_id", 0))) and int(tst.get("set_id", 0)) > 0:
+			_dl_queue.push_front(int(tst.set_id))
 		_dl_total = _dl_queue.size()
 		_dl_failed = 0
 		_next_download()
@@ -1245,8 +1552,8 @@ func _on_dl_done(set_id: int, _path: String) -> void:
 	_lib = MapLibrary.new()
 	_lib.scan()
 	_sets = _lib.mapsets
-	if _view == "stages" and int(Campaign.stage_by_id(_data, _stage_id).get("set_id", -1)) == set_id:
-		_prepare_stage(Campaign.stage_by_id(_data, _stage_id))
+	if _view == "stages" and int(_sel_stage().get("set_id", -1)) == set_id:
+		_prepare_stage(_sel_stage())
 	_next_download()
 
 
@@ -1289,11 +1596,14 @@ func _save_shot(suffix: String) -> void:
 
 
 ## Harness: Stufe waehlen (Vorgaenger in der Testdatei als geschafft eintragen).
+## --shot-campaign-trial: statt der Stufe die Skip-Pruefung ihres Kapitels starten.
 func _seed_run_state() -> String:
 	var target := "mania-c01s1"
 	for a in OS.get_cmdline_args() + OS.get_cmdline_user_args():
 		if a.begins_with("--shot-campaign-stage="):
 			target = a.trim_prefix("--shot-campaign-stage=")
+		elif a == "--shot-campaign-trial":
+			GameSession.campaign_return_trial = {"chapter": -1}
 	var data := Campaign.for_mode(_all, Campaign.mode_of_stage(_all, target))
 	for s: Dictionary in Campaign.all_stages(data):
 		if str(s.id) == target:
@@ -1302,6 +1612,8 @@ func _seed_run_state() -> String:
 			Campaign.apply_run(_state, s, {"failed": false, "accuracy": 0.97, "grade": "S",
 				"n_miss": 2, "score": 930000, "max_combo": 400})
 	Campaign.save_state(_state)
+	if GameSession.campaign_return_trial.has("chapter"):
+		GameSession.campaign_return_trial = {"chapter": Campaign.chapter_index_of(data, target), "placement": false}
 	return target
 
 
@@ -1309,9 +1621,9 @@ func _run_stage_shot(prefix: String) -> void:
 	await get_tree().create_timer(2.5).timeout
 	await RenderingServer.frame_post_draw
 	get_viewport().get_texture().get_image().save_png(prefix + "_stage.png")
-	var st := Campaign.stage_by_id(_data, _stage_id)
-	print("CAMPAIGN-RUN Stufe %s, offen %s, lokal %s, Welt-Einstellung %d, 2D %s, Mods %s" % [_stage_id,
-		str(Campaign.stage_open(_data, _state, _stage_id)), str(not _local(st).is_empty()), Settings.world_theme,
+	var st := _sel_stage()
+	print("CAMPAIGN-RUN Stufe %s (%s), offen %s, lokal %s, Welt-Einstellung %d, 2D %s, Mods %s" % [_stage_id,
+		str(st.get("id", "")), str(_sel_open()), str(not _local(st).is_empty()), Settings.world_theme,
 		str(Settings.playfield_2d), str(Campaign.start_mods(st, Campaign.player_mods(str(st.mode), Settings.mod_sv)))])
 	_start_stage()
 	if not GameSession.campaign_active():
@@ -1336,18 +1648,43 @@ func _run_shots() -> void:
 	_select_stage("mania-c04s6")
 	await get_tree().create_timer(1.6).timeout
 	await _save_shot("locked")
-	var st := Campaign.stage_by_id(_data, "mania-c04s3")
+	_select_stage(TRIAL)
+	await get_tree().create_timer(2.0).timeout
+	await _save_shot("trial")
+	await _shot_result("result", "mania-c04s3", 0.9712, {})
+	var boss := str(Campaign.trial_stage(_data, 3).id)
+	await _shot_result("result_trial", boss, 0.9934, {"trial": 3})
+	await _shot_result("result_trial_fail", boss, 0.9712, {"trial": 3, "placement": true})
+	# Leerer Modus: Einstufung anbieten.
+	_state = Campaign.new_state()
+	_view = "path"
+	_chapter = 0
+	_hover_chapter = -1
+	_rebuild()
+	await get_tree().create_timer(1.2).timeout
+	await _save_shot("placement")
+	_start_placement()
+	await get_tree().create_timer(2.0).timeout
+	await _save_shot("placement_trial")
+	get_tree().quit(0)
+
+
+func _shot_result(suffix: String, sid: String, acc: float, extra: Dictionary) -> void:
+	var st := Campaign.stage_by_id(_data, sid)
+	var camp := {"stage": sid, "state": _state.duplicate(true), "mods": {}}
+	camp.merge(extra)
 	var rs := ResultsScreen.new()
 	add_child(rs)
 	rs.show_results({
 		"is_fail": false,
 		"s": {"n_max": 612, "n300": 201, "n200": 38, "n100": 9, "n50": 2, "n_miss": 2,
-			"max_combo": 431, "accuracy": 0.9712, "grade": "S", "score": 941870, "failed": false},
+			"max_combo": 431, "accuracy": acc, "grade": "S", "score": 941870, "failed": false},
 		"pp": 96.2, "new_best": true, "can_clip": false, "can_share": false,
 		"title": str(st.get("title", "")), "artist": str(st.get("artist", "")), "version": str(st.get("diff", "")),
 		"player": "VYREN", "date": "2026-11-13T21:10:00", "mode": str(st.get("mode", "")),
-		"campaign": {"stage": "mania-c04s3", "state": _state},
+		"campaign": camp,
 	})
 	await get_tree().create_timer(3.0).timeout
-	await _save_shot("result")
-	get_tree().quit(0)
+	await _save_shot(suffix)
+	rs.queue_free()
+	await get_tree().process_frame

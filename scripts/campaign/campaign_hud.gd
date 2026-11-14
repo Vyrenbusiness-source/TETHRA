@@ -12,17 +12,20 @@ const BASE_H := 720.0
 
 var stage: Dictionary = {}
 var head := ""
+## Skip-Pruefung: zusaetzliche Zeile "99 % Accuracy" mit aktuellem Stand.
+var trial := false
 var _game: Node
 var _box: VBoxContainer
 var _stars: Array[CampaignStars] = []
 var _texts: Array[Label] = []
 var _values: Array[Label] = []
 var _last: Array = []
+var _trial_val: Label
 var _t := 0.0
 
 
 ## Ziele der Stufe stage_id an die Spielszene haengen (null, wenn die Stufe fehlt).
-static func attach_stage(game: Node, stage_id: String) -> CampaignHud:
+static func attach_stage(game: Node, stage_id: String, trial: bool = false) -> CampaignHud:
 	var all := Campaign.load_data()
 	var data := Campaign.for_mode(all, Campaign.mode_of_stage(all, stage_id))
 	var st := Campaign.stage_by_id(data, stage_id)
@@ -32,7 +35,9 @@ static func attach_stage(game: Node, stage_id: String) -> CampaignHud:
 	var head := "%s  ·  %s  ·  %s" % [Campaign.tr_("Kampagne"),
 		Campaign.world_label(str((Campaign.chapters(data)[ci] as Dictionary).get("world", ""))),
 		Campaign.stage_label(st, Campaign.stage_index_of(data, stage_id))]
-	return attach(game, st, head)
+	var h := attach(game, st, head)
+	h.trial = trial
+	return h
 
 
 static func attach(game: Node, p_stage: Dictionary, p_head: String) -> CampaignHud:
@@ -84,6 +89,19 @@ func _build() -> void:
 	add_child(_box)
 	var title := _label(head, 12.0 * s, UiTheme.DIM, true)
 	_box.add_child(title)
+	_trial_val = null
+	if trial:
+		# Skip-Pruefung: die Grenze zuerst, die Ziele zaehlen weiter fuer die Sterne der Boss-Stufe.
+		var tr_row := HBoxContainer.new()
+		tr_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		tr_row.add_theme_constant_override("separation", int(roundf(8.0 * s)))
+		tr_row.add_child(_label(Campaign.tr_("Skip-Prüfung: %s Accuracy") % Campaign.pct_text(Campaign.TRIAL_ACC),
+			13.0 * s, UiTheme.ACCENT2, true))
+		_trial_val = _label("", 13.0 * s, UiTheme.DIM)
+		_trial_val.custom_minimum_size.x = roundf(54.0 * s)
+		_trial_val.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		tr_row.add_child(_trial_val)
+		_box.add_child(tr_row)
 	var goals: Array = stage.get("goals", [])
 	for i in goals.size():
 		var row := HBoxContainer.new()
@@ -143,6 +161,11 @@ func _stats() -> Dictionary:
 
 func _update() -> void:
 	var st := _stats()
+	if _trial_val != null and not st.is_empty():
+		var acc := float(st.get("accuracy", 0.0))
+		_trial_val.text = Campaign.acc_text(acc)
+		_trial_val.add_theme_color_override("font_color", UiTheme.BAD if bool(st.get("failed", false))
+			else (UiTheme.ACCENT if acc + 0.000001 >= Campaign.TRIAL_ACC else UiTheme.DIM))
 	var goals: Array = stage.get("goals", [])
 	var live := Campaign.goals_live(stage, st) if not st.is_empty() else []
 	for i in mini(goals.size(), _stars.size()):

@@ -26,6 +26,8 @@ func _initialize() -> void:
 	_test_validate_errors()
 	_test_live()
 	_test_lock_reason()
+	_test_trial()
+	_test_placement()
 
 
 ## Autoloads (Settings, GameSession) stehen erst im ersten Frame im Baum.
@@ -421,3 +423,69 @@ func _test_lock_reason() -> void:
 	Campaign.apply_run(state, all[0], _run(0.5, "D", 40))
 	_ok(Campaign.lock_reason(d, state, "c01s2") == "", "nach dem Ziel offen")
 	_ok(Campaign.chapter_cleared_count(d.chapters[0], state) == 1, "eine Stufe geschafft")
+
+
+## Kampagne mit n Kapiteln (Modus mania, Ziele wie _mini).
+func _mini_n(n: int) -> Dictionary:
+	var chs: Array = []
+	for c in n:
+		var sts: Array = []
+		for k in Campaign.STAGES_PER_CHAPTER:
+			sts.append({"id": "mania-c%02ds%d" % [c + 1, k + 1], "boss": k == Campaign.STAGES_PER_CHAPTER - 1,
+				"mode": "mania", "mods": [], "set_id": 1000 + c * 10 + k, "beatmap_id": 1, "diff": "Easy",
+				"md5": "%032d" % (c * 10 + k), "goals": [{"type": "pass"}, {"type": "acc", "value": 0.9},
+				{"type": "miss", "value": 0}]})
+		chs.append({"id": "c%02d" % (c + 1), "world": "galaxy", "focus": "mania", "stars": [1.0, 2.0], "stages": sts})
+	return {"version": "t1", "mode": "mania", "chapters": chs}
+
+
+## Skip-Pruefung: Boss zwei Kapitel weiter, 99 % Genauigkeit, Sterne nur zur Boss-Stufe.
+func _test_trial() -> void:
+	var d := _mini_n(13)
+	_ok(Campaign.trial_target(d, 0) == 2 and Campaign.trial_target(d, 5) == 7, "Pruefung: zwei Kapitel weiter")
+	_ok(Campaign.trial_target(d, 8) == 12 and Campaign.trial_target(d, 11) == 12, "Pruefung: letztes Drittel -> letztes Kapitel")
+	_ok(Campaign.trial_target(d, 12) == -1 and Campaign.trial_target(_mini_n(1), 0) == -1, "Pruefung: keine im letzten Kapitel / bei einem Kapitel")
+	_ok(str(Campaign.trial_stage(d, 0).get("id", "")) == "mania-c03s6", "Pruefungs-Map = Boss von Kapitel 3")
+	var state := Campaign.new_state()
+	_ok(Campaign.trial_available(d, state, 0) and not Campaign.trial_available(d, state, 1), "Pruefung nur in offenem Kapitel")
+	# Nicht bestanden: 98,9 %, alle drei Ziele erfuellt -> Sterne zur Boss-Stufe, kein Sprung.
+	var out := Campaign.apply_trial(state, d, 0, _run(0.989, "S", 0), {"NF": false})
+	_ok(not bool(out.trial_passed) and str(out.trial_reason) != "", "unter 99 %: nicht bestanden, mit Grund")
+	_ok(Campaign.stage_stars(state, "mania-c03s6") == 3, "Sterne der Pruefung zaehlen zur Boss-Stufe")
+	_ok(not Campaign.chapter_open(d, state, 1) and Campaign.skip_to(state, "mania") == -1, "nicht bestanden: nichts frei")
+	_ok(not Campaign.trial_passed(_run(0.995, "S", 0, 1, true), {}), "Fail besteht nie")
+	_ok(not Campaign.trial_passed(_run(0.995, "S", 0), {"CS": true}), "Konstant zaehlt nicht")
+	_ok(not Campaign.trial_passed(_run(0.995, "S", 0), {"NF": true}), "No Fail zaehlt nicht")
+	_ok(Campaign.trial_passed(_run(0.99, "S", 3), {"SV": true, "HD": true}), "genau 99 % mit schwereren Mods besteht")
+	# Bestanden
+	out = Campaign.apply_trial(state, d, 0, _run(0.993, "S", 2), {})
+	_ok(bool(out.trial_passed) and bool(out.skip_new) and int(out.trial_to) == 2, "99,3 %: bestanden bis Kapitel 3")
+	_ok(Campaign.stage_stars(state, "mania-c03s6") == 3, "keine doppelten Sterne")
+	_ok(Campaign.chapter_open(d, state, 1) and Campaign.chapter_open(d, state, 2), "Kapitel 2 und 3 offen")
+	_ok(Campaign.chapter_skipped(d, state, 1) and not Campaign.chapter_skipped(d, state, 2), "Kapitel 2 uebersprungen, 3 per Boss geschafft")
+	_ok(Campaign.stage_open(d, state, "mania-c02s4") and Campaign.stage_open(d, state, "mania-c01s3"), "uebersprungene Stufen spielbar")
+	_ok(Campaign.stage_stars(state, "mania-c02s4") == 0 and Campaign.total_stars(d, state) == 3, "uebersprungen = keine Sterne")
+	_ok(Campaign.current_stage_id(d, state) == "mania-c04s1", "aktuelle Stufe nach dem Sprung")
+	Campaign.apply_run(state, Campaign.stage_by_id(d, "mania-c02s4"), _run(0.95, "A", 0))
+	_ok(Campaign.stage_stars(state, "mania-c02s4") == 3, "Nachholen gibt die Sterne")
+	_ok(not Campaign.trial_available(d, state, 0), "Pruefung erledigt, Ziel offen")
+	var lock := Campaign.chapter_lock_reason(d, state, 5)
+	_ok(lock.contains("Skip") and lock.contains("5"), "Sperrgrund nennt die Skip-Pruefung")
+	_ok(not Campaign.chapter_lock_reason(_mini_n(13), Campaign.new_state(), 6).contains("Skip"), "Sperrgrund ohne erreichbare Pruefung")
+	# Spaeteres Bestehen einer kleineren Pruefung senkt den Sprung nicht.
+	var before := Campaign.skip_to(state, "mania")
+	Campaign.apply_trial(state, d, 0, _run(1.0, "SS", 0), {})
+	_ok(Campaign.skip_to(state, "mania") == before, "Sprung sinkt nie")
+
+
+## Einstufung: nur im leeren Modus, Folge-Pruefung = Pruefung des Ziel-Kapitels.
+func _test_placement() -> void:
+	var d := _mini_n(13)
+	var state := Campaign.new_state()
+	_ok(Campaign.placement_available(d, state), "Einstufung im leeren Modus")
+	_ok(not Campaign.placement_available(_mini_n(1), state), "keine Einstufung ohne Pruefungen")
+	_ok(Campaign.placement_next(d, 0) == 2 and Campaign.placement_next(d, 8) == -1, "Folge-Pruefung, Ende am letzten Kapitel")
+	Campaign.apply_trial(state, d, 0, _run(0.995, "S", 0), {})
+	_ok(not Campaign.placement_available(d, state), "nach dem ersten Sprung keine Einstufung mehr")
+	Campaign.apply_trial(state, d, 2, _run(0.995, "S", 0), {})
+	_ok(Campaign.skip_to(state, "mania") == 4 and Campaign.chapter_open(d, state, 4), "zweite Pruefung: bis Kapitel 5")

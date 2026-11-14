@@ -368,12 +368,129 @@ static func lock_reason(data: Dictionary, state: Dictionary, id: String) -> Stri
 	if ci < 0:
 		return ""
 	if not chapter_open(data, state, ci):
-		return tr_("Erst den Boss von Kapitel %d schaffen") % ci
+		return chapter_lock_reason(data, state, ci)
 	var sts: Array = (chapters(data)[ci] as Dictionary).get("stages", [])
 	for i in range(1, sts.size()):
 		if str((sts[i] as Dictionary).get("id", "")) == id:
 			return tr_("Erst %s schaffen") % stage_label(sts[i - 1], i - 1)
 	return ""
+
+
+## Warum ein Kapitel gesperrt ist ("" = offen). Erreicht eine offene Skip-Pruefung es,
+## steht sie als zweiter Weg dabei.
+static func chapter_lock_reason(data: Dictionary, state: Dictionary, ci: int) -> String:
+	if chapter_open(data, state, ci):
+		return ""
+	for k in chapters(data).size():
+		if chapter_open(data, state, k) and trial_target(data, k) >= ci:
+			return tr_("Boss von Kapitel %d schaffen oder Skip-Prüfung bestehen") % ci
+	return tr_("Erst den Boss von Kapitel %d schaffen") % ci
+
+
+# ------------------------------------------------------------------ Skip-Pruefung
+
+## Bestanden mit mindestens 99 % Genauigkeit in einem Lauf, ohne Fail und ohne Mods, die die
+## Wertung erleichtern (No Fail, Konstant). Gilt fuer alle Modi auf deren Genauigkeit.
+const TRIAL_ACC := 0.99
+const EASY_MODS: Array[String] = ["NF", "CS"]
+
+
+## Modus einer Kampagne (Feld "mode", sonst aus der ersten Stufe).
+static func data_mode(data: Dictionary) -> String:
+	var m := str(data.get("mode", ""))
+	if m != "":
+		return m
+	var all := all_stages(data)
+	return str((all[0] as Dictionary).get("mode", "")) if not all.is_empty() else ""
+
+
+## Kapitel, dessen Boss die Skip-Pruefung von Kapitel ci ist: zwei Kapitel weiter, im
+## letzten Drittel das letzte Kapitel. -1 = keine (letztes Kapitel, Modus mit einem Kapitel).
+static func trial_target(data: Dictionary, ci: int) -> int:
+	var n := chapters(data).size()
+	if ci < 0 or ci >= n - 1:
+		return -1
+	if ci >= int(n * 2.0 / 3.0):
+		return n - 1
+	return mini(ci + 2, n - 1)
+
+
+## Boss-Stufe der Skip-Pruefung von Kapitel ci ({} = keine).
+static func trial_stage(data: Dictionary, ci: int) -> Dictionary:
+	var t := trial_target(data, ci)
+	if t < 0:
+		return {}
+	var sts: Array = (chapters(data)[t] as Dictionary).get("stages", [])
+	return sts[sts.size() - 1] if not sts.is_empty() else {}
+
+
+## Pruefung lohnt noch: Kapitel offen und Ziel-Kapitel noch zu.
+static func trial_available(data: Dictionary, state: Dictionary, ci: int) -> bool:
+	var t := trial_target(data, ci)
+	return t >= 0 and chapter_open(data, state, ci) and not chapter_open(data, state, t)
+
+
+## Hoechstes per Skip-Pruefung freigeschaltetes Kapitel (-1 = keins).
+static func skip_to(state: Dictionary, mode: String) -> int:
+	var sk: Variant = state.get("skips", {})
+	if not (sk is Dictionary) or not ((sk as Dictionary).get(mode) is Dictionary):
+		return -1
+	return int((sk[mode] as Dictionary).get("to", -1))
+
+
+## Was zum Bestehen fehlte ("" = bestanden).
+static func trial_miss_reason(run: Dictionary, mods: Dictionary) -> String:
+	if bool(run.get("failed", false)):
+		return tr_("Fail")
+	for m in EASY_MODS:
+		if bool(mods.get(m, false)):
+			return tr_("Mod %s zählt nicht") % m
+	var acc := float(run.get("accuracy", 0.0))
+	if acc + 0.000001 < TRIAL_ACC:
+		return tr_("%s fehlen") % acc_text(TRIAL_ACC - acc)
+	return ""
+
+
+static func trial_passed(run: Dictionary, mods: Dictionary) -> bool:
+	return trial_miss_reason(run, mods) == ""
+
+
+## Lauf der Skip-Pruefung von Kapitel ci eintragen. Er zaehlt wie ein normaler Lauf der
+## Boss-Stufe (Sterne dort, nie doppelt). Bestanden: Kapitel bis zum Ziel-Kapitel offen,
+## im Stand unter skips[modus] vermerkt (Gesamtrangliste zaehlt nur echte Sterne).
+## Liefert apply_run plus {trial_passed, trial_reason, trial_from, trial_to, skip_new}.
+static func apply_trial(state: Dictionary, data: Dictionary, ci: int, run: Dictionary, mods: Dictionary) -> Dictionary:
+	var stage := trial_stage(data, ci)
+	if stage.is_empty():
+		return {}
+	var mode := data_mode(data)
+	var before := skip_to(state, mode)
+	var out := apply_run(state, stage, run)
+	var reason := trial_miss_reason(run, mods)
+	var to := trial_target(data, ci)
+	out["trial_passed"] = reason == ""
+	out["trial_reason"] = reason
+	out["trial_from"] = ci
+	out["trial_to"] = to
+	out["skip_new"] = false
+	if reason == "" and to > before:
+		if not (state.get("skips") is Dictionary):
+			state["skips"] = {}
+		state["skips"][mode] = {"to": to, "from": ci, "stage": str(stage.get("id", "")),
+			"accuracy": float(run.get("accuracy", 0.0))}
+		out["skip_new"] = true
+	return out
+
+
+## Einstufung anbieten: Modus noch leer (kein Stern, kein Sprung) und Pruefungen vorhanden.
+static func placement_available(data: Dictionary, state: Dictionary) -> bool:
+	return total_stars(data, state) == 0 and skip_to(state, data_mode(data)) < 0 and trial_target(data, 0) >= 0
+
+
+## Naechste Pruefung der Einstufung nach bestandener Pruefung von Kapitel ci (-1 = Ende).
+static func placement_next(data: Dictionary, ci: int) -> int:
+	var t := trial_target(data, ci)
+	return t if t >= 0 and trial_target(data, t) >= 0 else -1
 
 
 ## Stufen eines Kapitels, deren Hauptziel geschafft ist.
@@ -401,7 +518,7 @@ static func stars_for(stage: Dictionary, run: Dictionary) -> int:
 # ------------------------------------------------------------------ Fortschritt
 
 static func new_state() -> Dictionary:
-	return {"version": VERSION, "stages": {}}
+	return {"version": VERSION, "stages": {}, "skips": {}}
 
 
 static func entry(state: Dictionary, id: String) -> Dictionary:
@@ -464,18 +581,28 @@ static func stage_open(data: Dictionary, state: Dictionary, id: String) -> bool:
 	var sts: Array = (chapters(data)[ci] as Dictionary).get("stages", [])
 	for i in sts.size():
 		if str((sts[i] as Dictionary).get("id", "")) == id:
-			return i == 0 or stage_cleared(state, str((sts[i - 1] as Dictionary).get("id", "")))
+			# Uebersprungene Kapitel: alle Stufen bleiben spielbar.
+			return i == 0 or ci <= skip_to(state, data_mode(data)) \
+				or stage_cleared(state, str((sts[i - 1] as Dictionary).get("id", "")))
 	return false
 
 
-## Kapitel offen: das erste immer, sonst wenn die Boss-Stufe davor geschafft ist.
+## Kapitel offen: das erste immer, sonst wenn die Boss-Stufe davor geschafft ist oder eine
+## Skip-Pruefung bis hierher bestanden ist.
 static func chapter_open(data: Dictionary, state: Dictionary, ci: int) -> bool:
 	var chs := chapters(data)
 	if ci < 0 or ci >= chs.size():
 		return false
-	if ci == 0:
+	if ci == 0 or ci <= skip_to(state, data_mode(data)):
 		return true
 	return chapter_done(chs[ci - 1], state)
+
+
+## Kapitel per Skip-Pruefung offen, aber noch nicht selbst geschafft.
+static func chapter_skipped(data: Dictionary, state: Dictionary, ci: int) -> bool:
+	var chs := chapters(data)
+	return ci > 0 and ci < chs.size() and ci <= skip_to(state, data_mode(data)) \
+		and not chapter_done(chs[ci], state)
 
 
 static func chapter_done(ch: Dictionary, state: Dictionary) -> bool:
@@ -495,7 +622,17 @@ static func chapter_max_stars(ch: Dictionary) -> int:
 
 
 ## Erste offene, noch nicht geschaffte Stufe ("" = alles geschafft).
+## Nach einer Skip-Pruefung: erste offene Stufe im hoechsten offenen Kapitel.
 static func current_stage_id(data: Dictionary, state: Dictionary) -> String:
+	var chs := chapters(data)
+	for ci in range(chs.size() - 1, -1, -1):
+		if not chapter_open(data, state, ci):
+			continue
+		for s: Dictionary in (chs[ci] as Dictionary).get("stages", []):
+			var id := str(s.get("id", ""))
+			if not stage_cleared(state, id) and stage_open(data, state, id):
+				return id
+		break
 	for s: Dictionary in all_stages(data):
 		var id := str(s.get("id", ""))
 		if not stage_cleared(state, id):
