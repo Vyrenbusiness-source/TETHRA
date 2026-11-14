@@ -28,7 +28,7 @@ func _process(_delta: float) -> bool:
 
 
 func _run() -> void:
-	print("=== TETHRA Mania-2D-Pop-in-Tests ===")
+	print("=== OMEN Mania-2D-Pop-in-Tests ===")
 	S = root.get_node("/root/Settings")
 	PF = load("res://scripts/gameplay3d/playfield_2d.gd")
 	var keep := [S.stage_scale_2d, S.scroll_up_2d, S.skin_values_2d, S.hit_position_2d, S.mod_vis_2d,

@@ -45,7 +45,7 @@ func _process(_delta: float) -> bool:
 
 func _run_all() -> void:
 	SC = load("res://scripts/audio/sync_clock.gd")
-	print("=== TETHRA Clock-Tests ===")
+	print("=== OMEN Clock-Tests ===")
 	_test_ideal()
 	_test_jitter()
 	_test_drift()

@@ -46,7 +46,7 @@ Gesperrte (Passwort-)Raeume erscheinen mit `code: ""`.
 ## Server starten (Linux)
 
 ```
-./Godot_v4.7-stable_linux.x86_64 --headless --main-pack TETHRA.pck --mp-relay --port 47900
+./Godot_v4.7-stable_linux.x86_64 --headless --main-pack OMEN.pck --mp-relay --port 47900
 ```
 
 Der Einstieg sitzt in `Lobby._ready` (Autoload); die Hauptszene wird dabei
@@ -57,7 +57,7 @@ PM2:
 
 ```
 pm2 start ./Godot_v4.7-stable_linux.x86_64 --name tethra-relay -- \
-  --headless --main-pack TETHRA.pck --mp-relay --port 47900
+  --headless --main-pack OMEN.pck --mp-relay --port 47900
 pm2 save
 ```
 

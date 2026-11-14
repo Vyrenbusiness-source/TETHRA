@@ -131,7 +131,7 @@ static func osu_header(text: String) -> Dictionary:
 	return h
 
 
-## Diff spielbar in TETHRA? osu!standard immer, Mania nur als 4K.
+## Diff spielbar in OMEN? osu!standard immer, Mania nur als 4K.
 static func header_usable(h: Dictionary) -> bool:
 	var m := int(h.get("mode", -1))
 	if m == 0:

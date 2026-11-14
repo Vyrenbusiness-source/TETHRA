@@ -118,7 +118,7 @@ static func override_path() -> String:
 ## Inhalt der override.cfg fuer den sicheren Modus (Godot 4.7: Keys geprueft).
 static func override_text() -> String:
 	return "\n".join([
-		"; TETHRA: Sicherer Grafikmodus (automatisch erzeugt, in den Einstellungen abschaltbar).",
+		"; OMEN: Sicherer Grafikmodus (automatisch erzeugt, in den Einstellungen abschaltbar).",
 		"[rendering]",
 		"",
 		"renderer/rendering_method=\"gl_compatibility\"",

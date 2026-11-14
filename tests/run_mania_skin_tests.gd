@@ -40,7 +40,7 @@ func _process(_d: float) -> bool:
 
 
 func _run() -> void:
-	print("=== TETHRA ManiaSkin-Tests ===")
+	print("=== OMEN ManiaSkin-Tests ===")
 	_test_parser()
 	_test_defaults()
 	_test_safe_rel()

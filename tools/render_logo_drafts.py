@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""TETHRA Logo-Entwuerfe: erzeugt SVGs (Handgeometrie, Wortmarke als Pfade),
+"""OMEN Logo: erzeugt SVGs (Handgeometrie, Wortmarke als Pfade),
 rendert PNGs per Chrome headless (nichts wird installiert) und baut overview.png.
 Aufruf: python tools/render_logo_drafts.py   (benoetigt Pillow + Chrome)"""
 import math, os, subprocess, sys, tempfile, shutil
@@ -11,7 +11,16 @@ INK_L, AMB_L, BG_L = "#1B1A18", "#C77D12", "#F4F0E8"
 CHROME = next((p for p in [r"C:\Program Files\Google\Chrome\Application\chrome.exe",
                            r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
                            r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"] if os.path.exists(p)), None)
-WORD = "TETHRA"
+WORD = "OMEN"
+# Die sechs Entwuerfe in docs/brand/drafts/ entstanden unter dem alten Namen des Spiels
+# und bleiben so (Verlauf); nur die Endfassung (--final) traegt den Namen OMEN.
+DRAFT_WORD = "TETHRA"
+# Breite je Zeichen als Vielfaches der Grundbreite (M braucht Platz fuer die Schraegen).
+WIDE = {"M": 1.3}
+
+
+def cw(ch, w):
+    return w * WIDE.get(ch, 1)
 
 
 def f(v):
@@ -21,6 +30,7 @@ def f(v):
 def glyph(ch, X, Y, w, h, style=""):
     """Mittellinien-Pfade: (haupt, detail). Detail = Querbalken von E/H/A."""
     m, d = "", ""
+    w = cw(ch, w)
     if ch == "T":
         m = f"M{f(X)} {f(Y)}H{f(X+w)}M{f(X+w/2)} {f(Y)}V{f(Y+h)}"
         if style == "serif":
@@ -47,15 +57,27 @@ def glyph(ch, X, Y, w, h, style=""):
         d = f"M{f(X+w*.2)} {f(Y+h*.64)}H{f(X+w*.8)}"
         if style == "serif":
             m += f"M{f(X-w*.15)} {f(Y+h)}H{f(X+w*.3)}M{f(X+w*.7)} {f(Y+h)}H{f(X+w*1.15)}"
+    elif ch == "O":
+        # Langloch: zwei Halbkreise und zwei Geraden, wie der Riemen der Bildmarke.
+        r = w / 2
+        m = (f"M{f(X)} {f(Y+r)}A{f(r)} {f(r)} 0 0 1 {f(X+w)} {f(Y+r)}V{f(Y+h-r)}"
+             f"A{f(r)} {f(r)} 0 0 1 {f(X)} {f(Y+h-r)}Z")
+    elif ch == "M":
+        m = f"M{f(X)} {f(Y+h)}V{f(Y)}L{f(X+w/2)} {f(Y+h*.62)}L{f(X+w)} {f(Y)}V{f(Y+h)}"
+    elif ch == "N":
+        m = f"M{f(X)} {f(Y+h)}V{f(Y)}L{f(X+w)} {f(Y+h)}V{f(Y)}"
     return m, d
 
 
-def layout(w, h, sw, gap, total=1000, H=250):
-    adv = w + sw + gap
-    tw = adv * len(WORD) - gap
-    x0 = (total - tw) / 2 + sw / 2
+def layout(w, h, sw, gap, total=1000, H=250, word=DRAFT_WORD):
+    tw = sum(cw(c, w) + sw + gap for c in word) - gap
+    x = (total - tw) / 2 + sw / 2
     y0 = (H - h) / 2
-    return [(c, x0 + i * adv, y0) for i, c in enumerate(WORD)], y0
+    out = []
+    for c in word:
+        out.append((c, x, y0))
+        x += cw(c, w) + sw + gap
+    return out, y0
 
 
 def svg(vw, vh, body):
@@ -172,7 +194,7 @@ def d5():  # Raster: Pixel-T, eine Note ausgerueckt
     ox = (1000 - (6 * lw + 5 * gw)) / 2
     oy = (250 - (7 * c + 6 * g)) / 2
     out = []
-    for i, ch in enumerate(WORD):
+    for i, ch in enumerate(DRAFT_WORD):
         for r, row in enumerate(BITS[ch]):
             for k, b in enumerate(row):
                 if b == "1":
@@ -306,7 +328,7 @@ def overview():
 
 # ======================= Endfassung: Entwurf 3 "Bahn" =======================
 # Aufruf: python tools/render_logo_drafts.py --final
-# Schreibt docs/brand/*, docs/media/*, icon.svg/png, Boot-Splash, tethra.ico und
+# Schreibt docs/brand/*, docs/media/*, icon.svg/png, Boot-Splash, omen.ico und
 # die LOGO_SVG-Konstante in scripts/ui/main_menu.gd.
 REPO = os.path.normpath(os.path.join(ROOT, "..", "..", ".."))
 BRAND = os.path.join(REPO, "docs", "brand")
@@ -335,14 +357,15 @@ def mark_parts(ink, amb):
     return stroke(d, 12, ink, "round", "round") + f'\n<circle cx="{f(xk)}" cy="100" r="13" fill="{amb}"/>', (8, 48, 184, 152)
 
 
-def word_parts(ink, amb):
+def word_parts(ink, amb, word=None):
+    word = word or WORD
     w, h, sw = 66, 118, 13
-    L, y0 = layout(w, h, sw, 40)
+    L, y0 = layout(w, h, sw, 40, word=word)
     out = []
     for c, x, y in L:
         m, dd = glyph(c, x, y, w, h)
         out.append(stroke(m + dd, sw, ink, "round", "round"))
-    xe = L[-1][1] + w + sw / 2 + 30
+    xe = L[-1][1] + cw(L[-1][0], w) + sw / 2 + 30
     out.append(f'<circle cx="{f(xe)}" cy="{f(y0+h-8)}" r="10" fill="{amb}"/>')
     return "\n".join(out), (L[0][1] - sw / 2, y0 - sw / 2, xe + 10, y0 + h + sw / 2)
 
@@ -352,13 +375,13 @@ def tight(vb, body, pad=0):
     x0 -= pad; y0 -= pad; x1 += pad; y1 += pad
     w, h = x1 - x0, y1 - y0
     return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{f(x0)} {f(y0)} {f(w)} {f(h)}" '
-            f'width="{f(w)}" height="{f(h)}">\n<title>TETHRA</title>\n{body}\n</svg>\n'), w, h
+            f'width="{f(w)}" height="{f(h)}">\n<title>{WORD}</title>\n{body}\n</svg>\n'), w, h
 
 
-def lockup_parts(ink, amb):
+def lockup_parts(ink, amb, word=None):
     """Marke links, Wortmarke rechts, Ursprung oben links. Rueckgabe (Koerper, Breite, Hoehe)."""
     m, (mx0, my0, mx1, my1) = mark_parts(ink, amb)
-    w_, (wx0, wy0, wx1, wy1) = word_parts(ink, amb)
+    w_, (wx0, wy0, wx1, wy1) = word_parts(ink, amb, word)
     gap = 46
     H = max(my1 - my0, wy1 - wy0)
     mw = mx1 - mx0
@@ -447,6 +470,9 @@ def final():
         wr(os.path.join(BRAND, f"icon_klein{sf}.svg"), small_icon(kind))
     body, lw, lh = lockup_parts(INK, AMB)
     LW, LH = lw + 8, lh + 8
+    # Massstab wie beim alten, laengeren Wortbild (6 Zeichen): die Zeichen bleiben
+    # ueberall gleich gross, das Logo wird nur schmaler. SC = Breite neu / Breite alt.
+    SC = LW / (lockup_parts(INK, AMB, DRAFT_WORD)[1] + 8)
     # README-Kopf: dunkle Tinte als SVG (heller Grund), helle Tinte als PNG (Dark Mode)
     wr(os.path.join(REPO, "docs", "media", "logo.svg"), open(os.path.join(BRAND, "lockup_hell.svg"), encoding="utf-8").read())
     chrome_png(os.path.join(BRAND, "lockup.svg"), os.path.join(REPO, "docs", "media", "logo_wordmark.png"),
@@ -463,7 +489,7 @@ def final():
         chrome_png(os.path.join(BRAND, "icon.svg"), tmp, sz, sz)
         pngs[sz] = ld(tmp)
     os.remove(tmp)
-    write_ico(os.path.join(REPO, "tools", "installer", "tethra.ico"), pngs)
+    write_ico(os.path.join(REPO, "tools", "installer", "omen.ico"), pngs)
     # Pruefblatt kleine Groessen (4x vergroessert, harte Pixel)
     sheet = Image.new("RGB", (240, 80), BG)
     x = 10
@@ -474,39 +500,44 @@ def final():
     # Boot-Splash
     ui = os.path.join(REPO, "assets_game", "ui")
     os.makedirs(ui, exist_ok=True)
-    chrome_png(os.path.join(BRAND, "lockup.svg"), tmp, 640, int(round(640 * LH / LW)))
+    bw = int(round(640 * SC))
+    chrome_png(os.path.join(BRAND, "lockup.svg"), tmp, bw, int(round(bw * LH / LW)))
     lg = ld(tmp)
     sp = Image.new("RGBA", (1280, 720), BG)
     sp.alpha_composite(lg, ((1280 - lg.width) // 2, (720 - lg.height) // 2))
     sp.convert("RGB").save(os.path.join(ui, "boot_splash.png"))
-    # Social Preview
-    chrome_png(os.path.join(BRAND, "lockup.svg"), tmp, 800, int(round(800 * LH / LW)))
-    lg = ld(tmp)
-    soc = Image.new("RGBA", (1280, 640), BG)
-    y0 = 200
-    soc.alpha_composite(lg, ((1280 - lg.width) // 2, y0))
-    d = ImageDraw.Draw(soc)
-    try:
-        ft = ImageFont.truetype(r"C:\Windows\Fonts\segoeui.ttf", 30)
-    except OSError:
-        ft = ImageFont.load_default()
-    txt = "Free rhythm game for Windows. osu!mania maps in 3D, 2D and Orbit."
-    d.text(((1280 - d.textlength(txt, font=ft)) / 2, y0 + lg.height + 50), txt, font=ft, fill=(157, 151, 141, 255))
-    soc.convert("RGB").save(os.path.join(REPO, "docs", "media", "social_preview.png"))
+    # Social Preview (schlichte Fassung): nur mit --social. docs/media/social_preview.png und
+    # og_image.png sind seit 950e841 von Hand gesetzt (Logo + Eclipse-Szene) und wuerden
+    # sonst ueberschrieben.
+    if "--social" in sys.argv:
+        bw = int(round(800 * SC))
+        chrome_png(os.path.join(BRAND, "lockup.svg"), tmp, bw, int(round(bw * LH / LW)))
+        lg = ld(tmp)
+        soc = Image.new("RGBA", (1280, 640), BG)
+        y0 = 200
+        soc.alpha_composite(lg, ((1280 - lg.width) // 2, y0))
+        d = ImageDraw.Draw(soc)
+        try:
+            ft = ImageFont.truetype(r"C:\Windows\Fonts\segoeui.ttf", 30)
+        except OSError:
+            ft = ImageFont.load_default()
+        txt = "Free rhythm game for Windows. osu!mania maps in 3D, 2D and Orbit."
+        d.text(((1280 - d.textlength(txt, font=ft)) / 2, y0 + lg.height + 50), txt, font=ft, fill=(157, 151, 141, 255))
+        soc.convert("RGB").save(os.path.join(REPO, "docs", "media", "social_preview.png"))
     os.remove(tmp)
     # Menue: LOGO_SVG
     mm = os.path.join(REPO, "scripts", "ui", "main_menu.gd")
     src = open(mm, encoding="utf-8").read()
-    k = 600 / LW
+    k = 600 * SC / LW
     mw_, mh_ = int(round(LW * k)), int(round(LH * k))
-    ms = tight((0, 0, lw, lh), body, 4)[0].replace("<title>TETHRA</title>\n", "").strip()
+    ms = tight((0, 0, lw, lh), body, 4)[0].replace(f"<title>{WORD}</title>\n", "").strip()
     ms = re.sub(r'width="[\d.]+" height="[\d.]+"', f'width="{mw_}" height="{mh_}"', ms, count=1)
     a = src.index("const LOGO_SIZE")
     b = src.index('</svg>"""', a) + len('</svg>"""')
     new = f'const LOGO_SIZE := Vector2({mw_}, {mh_})\nconst LOGO_SVG := """{ms}"""'
     with open(mm, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(src[:a] + new + src[b:])
-    print("final ok", LW, LH)
+    print("final ok", LW, LH, "README-Logo width=%d" % round(420 * SC))
 
 
 if __name__ == "__main__":

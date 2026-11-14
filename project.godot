@@ -10,7 +10,7 @@ config_version=5
 
 [application]
 
-config/name="TETHRA"
+config/name="OMEN"
 config/use_custom_user_dir=true
 config/custom_user_dir_name="Godot/app_userdata/TETHRA"
 config/description="3D-Tunnel-Rhythm-Game. Liest osu!-Beatmaps."

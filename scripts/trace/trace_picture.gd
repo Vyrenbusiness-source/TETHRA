@@ -265,7 +265,7 @@ static func _draw_signature(buf: PackedByteArray, w: int, h: int, band: int, mar
 	var d := str(meta.get("date", "")).substr(0, 10)
 	if d != "":
 		parts.append(d)
-	var right := "TETHRA · Trace"
+	var right := "OMEN · Trace"
 	var rw := _text_width(right, small)
 	_text(buf, w, h, right, w - margin - rw, base_y, small, DIM)
 	var max_w := w - 2 * margin - rw - 40

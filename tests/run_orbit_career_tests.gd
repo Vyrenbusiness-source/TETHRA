@@ -25,7 +25,7 @@ func _run(stars: float, acc: float, failed: bool = false, grade: String = "A") -
 
 
 func _init() -> void:
-	print("=== TETHRA Orbit-Karriere-Tests ===")
+	print("=== OMEN Orbit-Karriere-Tests ===")
 	_test_levels()
 	_test_ready()
 	_test_window()

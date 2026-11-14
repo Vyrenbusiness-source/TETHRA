@@ -26,7 +26,7 @@ func _process(_delta: float) -> bool:
 
 
 func _run() -> void:
-	print("=== TETHRA Mania-2D-Settings-Tests ===")
+	print("=== OMEN Mania-2D-Settings-Tests ===")
 	S = root.get_node("/root/Settings")
 	SettingsScript = S.get_script()
 	for n in SettingsScript.LAYOUT_2D_KEYS:

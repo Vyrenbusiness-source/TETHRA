@@ -9,7 +9,7 @@ var _failed := 0
 
 
 func _initialize() -> void:
-	print("=== TETHRA Gameplay-Tests (Tipp-Modus) ===")
+	print("=== OMEN Gameplay-Tests (Tipp-Modus) ===")
 	_test_spawn_timing()
 	_test_window_edges()
 	_test_aim_miss()

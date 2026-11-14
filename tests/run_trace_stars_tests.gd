@@ -10,7 +10,7 @@ var _failed := 0
 
 
 func _initialize() -> void:
-	print("=== TETHRA Trace-Sterne ===")
+	print("=== OMEN Trace-Sterne ===")
 	_test_synthetic()
 	_test_cache()
 	if "report" in OS.get_cmdline_user_args():

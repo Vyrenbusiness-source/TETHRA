@@ -5,7 +5,7 @@ Eigene Grafiken (keine fremden osu!-Skins). Noten, Hold-Koerper und Kappen sind
 NEUTRALE GRAUSTUFEN-Bilder (Schattierung/Kante bleiben als Helligkeit erhalten);
 Playfield2D toent sie beim Zeichnen mit der Notenfarbe (Multiplikation): Kopf und
 Kappe (T) mit der Notenfarbe, Hold-Koerper (L) mit der Hold-Farbe (Notenfarbe 28 % dunkler). Die
-Paletten dieses Generators stehen in der skin.ini ([TETHRA] AutoColors, je Spalte):
+Paletten dieses Generators stehen in der skin.ini ([OMEN] AutoColors, je Spalte):
 im Modus "auto" ergibt Grau x AutoColor den bisherigen Look. Tasten/Receptors und
 Buehnenraender bleiben farbig. Deterministisch, 4x
 Supersampling, @2x-Dateinamen, skin.ini im osu!-Format. Aufruf:
@@ -61,12 +61,12 @@ def hexc(c):
 
 
 def ini(name, lines, files, auto_colors):
-    body = ["[General]", "Name: " + name, "Author: TETHRA", "Version: 2.5", "", "[Mania]", "Keys: 4",
+    body = ["[General]", "Name: " + name, "Author: OMEN", "Version: 2.5", "", "[Mania]", "Keys: 4",
             "ColumnWidth: %d,%d,%d,%d" % ((UNITS,) * 4), "ColumnLineWidth: 0,0,0,0,0",
             "HitPosition: 402", "LightPosition: 413", "NoteBodyStyle: 0", "KeysUnderNotes: 0",
             "JudgementLine: 0"] + lines
     # Dateiliste fuer den Export (Verzeichnis-Listing im .pck ist unzuverlaessig).
-    body += ["", "[TETHRA]", "Files: " + ",".join(sorted(files)), "Tint: 1",
+    body += ["", "[OMEN]", "Files: " + ",".join(sorted(files)), "Tint: 1",
              "AutoColors: " + ",".join(hexc(c) for c in auto_colors), ""]
     return "\n".join(body)
 
