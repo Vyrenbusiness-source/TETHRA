@@ -186,7 +186,7 @@ func show_world(world: String) -> void:
 	_text("Lädt …")
 	_loading_t = 0.0
 	for p in _pending_paths():
-		ResourceLoader.load_threaded_request(p, "", true)
+		AsyncLoad.request(p, "", true)
 		_pending.append(p)
 	set_process(true)
 
@@ -285,7 +285,7 @@ func _poll_loading() -> void:
 	for sn in _pending_keys:
 		var p := _path_for(sn)
 		if p != "":
-			m.set_shader_parameter(sn, ResourceLoader.load_threaded_get(p))
+			m.set_shader_parameter(sn, AsyncLoad.fetch(p))
 	m.set_shader_parameter("readability", 0.7)
 	m.set_shader_parameter("star_speed", 0.0)
 	m.set_shader_parameter("palette_mix", 0.0)

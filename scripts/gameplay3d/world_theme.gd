@@ -127,13 +127,13 @@ static func prefetch(theme: String) -> void:
 		if fname.get_extension().to_lower() in ["webp", "png", "jpg", "exr", "hdr"]:
 			var path := dir.path_join(fname)
 			if ResourceLoader.exists(path) and ResourceLoader.load_threaded_get_status(path) == ResourceLoader.THREAD_LOAD_INVALID_RESOURCE:
-				ResourceLoader.load_threaded_request(path)
+				AsyncLoad.request(path)
 
 
 ## Resource holen: war sie vorgeladen, wartet das nur auf den Rest.
 static func get_cached(path: String) -> Resource:
 	if ResourceLoader.load_threaded_get_status(path) != ResourceLoader.THREAD_LOAD_INVALID_RESOURCE:
-		return ResourceLoader.load_threaded_get(path)
+		return AsyncLoad.fetch(path)
 	return load(path)
 
 

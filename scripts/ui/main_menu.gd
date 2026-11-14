@@ -94,21 +94,21 @@ func _begin_shader_warmup() -> void:
 	# laden + kompilieren; die Referenz haelt sie im ResourceCache, sodass
 	# SceneFader.go() -> change_scene_to_file() sie sofort bekommt.
 	if _browser_scene == null and not _browser_req:
-		_browser_req = ResourceLoader.load_threaded_request(BROWSER_SCENE, "PackedScene", true) == OK
+		_browser_req = AsyncLoad.request(BROWSER_SCENE, "PackedScene", true) == OK
 	if not _warm_shaders.is_empty():
 		return
 	_warm_t = Time.get_ticks_usec()
 	for n in WARMUP_SPATIAL + WARMUP_CANVAS:
 		var path := "res://shaders/%s.gdshader" % n
 		if ResourceLoader.exists(path):
-			ResourceLoader.load_threaded_request(path, "Shader")
+			AsyncLoad.request(path, "Shader")
 			_warm_pending.append(path)
 
 
 func _shader_warmup_step() -> void:
 	if _browser_req and ResourceLoader.load_threaded_get_status(BROWSER_SCENE) != ResourceLoader.THREAD_LOAD_IN_PROGRESS:
 		_browser_req = false
-		_browser_scene = ResourceLoader.load_threaded_get(BROWSER_SCENE) as PackedScene
+		_browser_scene = AsyncLoad.fetch(BROWSER_SCENE) as PackedScene
 	if _warm_vp != null:
 		_warm_frames += 1
 		if _warm_frames > WARMUP_FRAMES:
@@ -124,7 +124,7 @@ func _shader_warmup_step() -> void:
 			return
 	var shaders: Array[Shader] = []
 	for path in _warm_pending:
-		var sh := ResourceLoader.load_threaded_get(path) as Shader
+		var sh := AsyncLoad.fetch(path) as Shader
 		if sh != null:
 			shaders.append(sh)
 	_warm_pending.clear()

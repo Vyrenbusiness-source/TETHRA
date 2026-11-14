@@ -2343,7 +2343,7 @@ func _begin_game_preload() -> void:
 	for p in paths:
 		if _game_res.has(p) or _game_req.has(p) or not ResourceLoader.exists(p):
 			continue
-		if ResourceLoader.load_threaded_request(p, "", true) == OK:
+		if AsyncLoad.request(p, "", true) == OK:
 			_game_req.append(p)
 	_game_preload_t = Time.get_ticks_usec()
 
@@ -2354,7 +2354,7 @@ func _game_preload_step() -> void:
 	for p in _game_req.duplicate():
 		var st := ResourceLoader.load_threaded_get_status(p)
 		if st == ResourceLoader.THREAD_LOAD_LOADED:
-			_game_res[p] = ResourceLoader.load_threaded_get(p)
+			_game_res[p] = AsyncLoad.fetch(p)
 			_game_req.erase(p)
 		elif st != ResourceLoader.THREAD_LOAD_IN_PROGRESS:
 			_game_req.erase(p)
@@ -2368,7 +2368,7 @@ func _game_preload_step() -> void:
 func _change_to_game(path: String) -> void:
 	if not _game_res.has(path) and _game_req.has(path):
 		_game_req.erase(path)
-		var r := ResourceLoader.load_threaded_get(path)
+		var r := AsyncLoad.fetch(path)
 		if r != null:
 			_game_res[path] = r
 	var ps := _game_res.get(path) as PackedScene

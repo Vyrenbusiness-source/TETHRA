@@ -508,7 +508,10 @@ func _notification(what: int) -> void:
 ## AudioServer loescht gestoppte Playbacks erst in den naechsten Misch-Schritten
 ## (Audio-Thread, ~12 ms je Schritt); quit() direkt nach stop() liess sonst
 ## AudioStreamPlayback + Stream liegen ("2 ObjectDB instances were leaked at exit").
+## Nie abgeholte Hintergrund-Ladevorgaenge (Lade-Token, RefCounted) holt
+## AsyncLoad.drain() ab; sonst je offenem Pfad ein Leck (Turbo-/Live-QA-Laeufe).
 func _exit_tree() -> void:
+	AsyncLoad.drain()
 	var tree := get_tree()
 	if tree == null or tree.root == null:
 		return
