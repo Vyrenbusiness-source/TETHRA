@@ -36,6 +36,9 @@ func _initialize() -> void:
 	_test_score_mode_and_pp()
 	_test_body_fields()
 	_test_trace_mods_badges()
+	_test_lobby_mods()
+	_test_board_mode()
+	_test_result_lines()
 	_test_real_maps()
 	print("=== Ergebnis: %d bestanden, %d fehlgeschlagen ===" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
@@ -470,6 +473,74 @@ func _test_trace_mods_badges() -> void:
 	var l := TraceMods.mod_list({"MR": true, "SD": true})
 	_ok(l.has("SD"), "Trace-Badges zeigen SD: %s" % str(l))
 	_ok(TraceMods.strip_foreign({"PF": true, "SV": true}).has("PF"), "Trace behaelt PF")
+
+
+## Multiplayer: Raum-Mods SD/PF/MN wie SV/NF (Lobby._norm_mods = RuleMods.lobby_norm).
+func _test_lobby_mods() -> void:
+	print("- Lobby-Mods")
+	_ok(RuleMods.lobby_norm({}) == {"SV": false, "NF": false}, "ohne Mods: nur SV/NF aus (alte Raeume)")
+	var m := RuleMods.lobby_toggle({"SV": false, "NF": true}, "SD")
+	_ok(RuleMods.has(m, "SD") and not bool(m.NF), "SD an schaltet NF aus: %s" % str(m))
+	m = RuleMods.lobby_toggle(m, "PF")
+	_ok(RuleMods.has(m, "PF") and not m.has("SD"), "PF an schaltet SD aus: %s" % str(m))
+	m = RuleMods.lobby_toggle(m, "NF")
+	_ok(bool(m.NF) and not m.has("PF") and not m.has("SD"), "NF an schaltet SD/PF aus: %s" % str(m))
+	m = RuleMods.lobby_toggle(m, "MN")
+	_ok(RuleMods.has(m, "MN") and int(m.get("MN_v", 0)) == MineGen.VERSION and bool(m.NF),
+			"MN an: mit Konverter-Version, NF bleibt: %s" % str(m))
+	m = RuleMods.lobby_toggle(m, "MN")
+	_ok(not m.has("MN") and not m.has("MN_v"), "MN aus: kein MN_v mehr: %s" % str(m))
+	# Host-Version gewinnt (Client mit anderer Version baut die Minen des Hosts).
+	var host := RuleMods.lobby_norm({"MN": true, "MN_v": 7, "SD": true, "PF": true, "NF": true})
+	_ok(int(host.MN_v) == 7 and RuleMods.has(host, "PF") and not host.has("SD") and not bool(host.NF),
+			"lobby_norm: MN_v des Hosts, PF schlaegt SD, NF aus: %s" % str(host))
+	_ok(RuleMods.lobby_norm(host) == host, "lobby_norm idempotent (cl_state auf dem Client)")
+	# Runde: Modus filtert, was dort nicht wirkt.
+	var rm := RuleMods.for_mode({"SV": false, "NF": false, "SD": true, "MN": true, "MN_v": 1}, "trace")
+	_ok(RuleMods.has(rm, "SD") and not rm.has("MN") and not rm.has("MN_v"), "Trace-Runde: SD ja, MN nein: %s" % str(rm))
+	rm = RuleMods.for_mode({"SD": true, "MN": true, "MN_v": 1}, "orbit")
+	_ok(not rm.has("SD") and not rm.has("MN"), "Orbit-Runde: keine Regel-Mods: %s" % str(rm))
+	rm = RuleMods.for_mode({"PF": true, "MN": true, "MN_v": 1}, "mania")
+	_ok(RuleMods.has(rm, "PF") and RuleMods.has(rm, "MN") and int(rm.MN_v) == 1, "Mania-Runde: PF + MN mit MN_v")
+	_ok(RuleMods.keys_on({"SV": true, "MN": true, "MN_v": 1, "SD": true}) == ["SD", "MN"], "keys_on: SD, MN (ohne MN_v)")
+	# Gleiche Raum-Mods -> gleiche Minen bei Host und Client (Replay-/Relay-fest).
+	var bm := _dense_map()
+	var a := _core(bm, RuleMods.for_mode(host, "mania"))
+	var b := _core(bm, RuleMods.for_mode(RuleMods.lobby_norm(host.duplicate(true)), "mania"))
+	_ok(a.mines != null and b.mines != null and a.mines.times == b.mines.times and a.mines.cols == b.mines.cols,
+			"Host und Client bauen dieselben Minen")
+
+
+## Song-Browser: Liste unter BESTE SCORES je Auswahl.
+func _test_board_mode() -> void:
+	print("- Minen-Rangliste")
+	_ok(RuleMods.board_mode("mania", {"MN": true}) == "mania_mn", "Mania + MN -> mania_mn")
+	_ok(RuleMods.board_mode("mania", {"MN": false, "SD": true}) == "", "Mania + SD -> normale Liste")
+	_ok(RuleMods.board_mode("trace", {"MN": true}) == "trace", "Trace: MN wirkt nicht -> Trace-Liste")
+	_ok(RuleMods.board_mode("orbit", {}) == "orbit", "Orbit bleibt Orbit")
+	_ok(RuleMods.is_mines_board("mania_mn") and not RuleMods.is_mines_board(""), "is_mines_board")
+	_ok(RuleMods.board_tag("mania_mn").to_upper().contains("MINES") or RuleMods.board_tag("mania_mn").to_upper().contains("MINEN"),
+			"Kennzeichnung Mines: %s" % RuleMods.board_tag("mania_mn"))
+	# Server kennt "board" erst, wenn die Antwort es zurueckgibt.
+	_ok(not RuleMods.online_board_known({"entries": [{"player": "a"}]}), "Antwort ohne board: Server kennt Minen nicht")
+	_ok(RuleMods.online_board_known({"board": "mania_mn", "entries": []}), "Antwort mit board: eigene Liste")
+	var lb := OnlineApi.parse_leaderboard(200, JSON.stringify({"board": "mania_mn", "entries": [{"player": "x", "score": 5}]}))
+	_ok(bool(lb.ok) and str(lb.get("board", "")) == "mania_mn", "parse_leaderboard reicht board durch: %s" % str(lb.get("board", "")))
+	lb = OnlineApi.parse_leaderboard(200, JSON.stringify({"entries": []}))
+	_ok(str(lb.get("board", "")) == "", "alte Antwort: board leer")
+
+
+## Ergebnis-Bildschirm: Minen-Zeile und Mod-Kennzeichen.
+func _test_result_lines() -> void:
+	print("- Ergebnis-Zeilen")
+	_ok(RuleMods.mines_line({"mines": 42, "mine_hits": 3}) != "", "Minen-Zeile mit Minen")
+	_ok(RuleMods.mines_line({"n_miss": 0}) == "", "ohne Minen keine Zeile")
+	var line := RuleMods.mines_line({"mines": 1234, "mine_hits": 0})
+	_ok(line.contains(UiTheme.fmt_score(1234)) and line.contains("0"), "Zahlen ueber UiTheme: %s" % line)
+	_ok(RuleMods.badge_texts({"SD": true, "MN": true, "MN_v": 1}) == ["SD", RuleMods.label("MN")], "Badges SD + Mines")
+	_ok(RuleMods.badge_texts({"PF": true}) == ["PF"], "Badge PF")
+	_ok(not RuleMods.clean_run({"n_miss": 0, "mine_hits": 2}) and RuleMods.clean_run({"n_miss": 0, "mine_hits": 0})
+			and RuleMods.clean_run({"n_miss": 0}), "FC nur ohne Minen-Treffer")
 
 
 ## Echte 4K-Maps aus maps/ (falls vorhanden): Regeln, Anteil, Autoplay trifft keine Mine.

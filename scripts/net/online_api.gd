@@ -1254,11 +1254,26 @@ func leaderboard(mode: String, md5: String, beatmap_id: int, done: Callable) -> 
 		done.call(r.ok, r.entries, r.message))
 
 
+## Eigene Rangliste (board, z. B. "mania_mn" fuer Minen): wie leaderboard() plus
+## &board=<board>. done: Callable(ok, entries, message, known); known = die Antwort
+## traegt "board": <board> (Server kennt die Liste), sonst nichts anzeigen.
+func leaderboard_board(mode: String, board: String, md5: String, done: Callable) -> void:
+	if not enabled():
+		done.call(false, [], "disabled", false)
+		return
+	var q := "/leaderboard?mode=%s&board=%s&md5=%s&limit=%d" % [
+		mode.uri_encode(), board.uri_encode(), md5.uri_encode(), LEADERBOARD_LIMIT]
+	_send("GET", q, null, func(code: int, text: String):
+		var r := parse_leaderboard(code, text)
+		done.call(r.ok, r.entries, r.message, str(r.board) == board))
+
+
 static func parse_leaderboard(code: int, text: String) -> Dictionary:
-	var out := {"ok": false, "entries": [], "message": ""}
+	var out := {"ok": false, "entries": [], "message": "", "board": ""}
 	var d: Variant = JSON.parse_string(text)
 	if code >= 200 and code < 300 and d is Dictionary and d.get("entries") is Array:
 		out.ok = true
+		out.board = str(d.get("board", ""))   # eigene Liste (RuleMods: "mania_mn"), alt: ""
 		for e in d.entries:
 			if e is Dictionary:
 				out.entries.append({

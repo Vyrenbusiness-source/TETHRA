@@ -87,6 +87,61 @@ static func apply(base: Dictionary, sel: Dictionary, play_mode: String) -> Dicti
 	return normalize(out)
 
 
+## Mods fuer einen Spielmodus: Regel-Mods, die dort nicht wirken, fallen weg (MN nur in
+## Mania), dann normalize(). Lobby-Runden: Raum-Mods -> GameSession.mods.
+static func for_mode(mods: Dictionary, play_mode: String) -> Dictionary:
+	var out := mods.duplicate()
+	for k in KEYS:
+		if out.has(k) and not available(k, play_mode):
+			out.erase(k)
+	if not has(out, MN):
+		out.erase(MN_VERSION_KEY)
+	return normalize(out)
+
+
+## Lobby-Raum-Mods bereinigen: SV, NF immer als bool; SD/PF/MN nur, wenn an. PF schlaegt
+## SD, SD/PF schalten NF aus. MN traegt die Konverter-Version des Hosts ("MN_v"), damit
+## alle im Raum (und ihre Replays) dieselben Minen bauen.
+static func lobby_norm(m: Dictionary) -> Dictionary:
+	var out := {"SV": bool(m.get("SV", false)), "NF": bool(m.get("NF", false))}
+	for k in KEYS:
+		if bool(m.get(k, false)):
+			out[k] = true
+	if has(out, PF):
+		out.erase(SD)
+	if is_rule(out):
+		out["NF"] = false
+	if has(out, MN):
+		out[MN_VERSION_KEY] = int(m.get(MN_VERSION_KEY, MineGen.VERSION))
+	return out
+
+
+## Lobby-Schalter umlegen (SV, NF, SD, PF, MN): neue Raum-Mods. SD und PF schliessen
+## einander und No Fail aus; No Fail an schaltet SD/PF aus.
+static func lobby_toggle(mods: Dictionary, key: String) -> Dictionary:
+	var out := mods.duplicate()
+	var on := not bool(out.get(key, false))
+	out[key] = on
+	if on and key == "NF":
+		out.erase(SD)
+		out.erase(PF)
+	elif on and clears_nf(key):
+		out["NF"] = false
+		out.erase(PF if key == SD else SD)
+	if not on and key != "SV" and key != "NF":
+		out.erase(key)
+	return lobby_norm(out)
+
+
+## Kuerzel aktiver Regel-Mods in fester Reihenfolge (SD, PF, MN) fuer Texte/Listen.
+static func keys_on(mods: Dictionary) -> Array:
+	var out := []
+	for k in KEYS:
+		if has(mods, k):
+			out.append(k)
+	return out
+
+
 ## ManiaCore.setup-Haken: Mods bereinigen, NF aus bei SD/PF, Faktor neu, Minen bauen.
 static func setup_core(core: ManiaCore) -> void:
 	core.mods = normalize(core.mods)
@@ -187,6 +242,82 @@ static func extend_body(body: Dictionary, result: Dictionary) -> void:
 	body["mine_hits"] = int(result.get("mine_hits", 0))
 
 
+## Song-Browser: Score-Modus der Liste unter BESTE SCORES. mode_score = bisheriger
+## Modus der Liste ("" Mania, "orbit", "trace" ...); Minen nur in Mania.
+static func board_mode(mode_score: String, sel: Dictionary) -> String:
+	var m := "" if mode_score == "mania" else mode_score
+	if m == "" and bool(sel.get(MN, false)):
+		return MINES_SCORE_MODE
+	return m
+
+
+static func is_mines_board(score_mode: String) -> bool:
+	return score_mode == MINES_SCORE_MODE
+
+
+## Kennzeichnung der Minen-Liste im Ranglisten-Kopf ("Mania 4K · Mines").
+static func board_tag(score_mode: String) -> String:
+	_ensure_translations()
+	if is_mines_board(score_mode):
+		return "Mania 4K · " + TranslationServer.translate("Mines")
+	return ScoreStore.mode_label(score_mode)
+
+
+## Kennt der Server die eigene Liste? Nur wenn seine Antwort "board" zurueckgibt
+## (GET /leaderboard?...&board=mania_mn). Sonst kaeme die normale Mania-Liste.
+static func online_board_known(reply: Dictionary) -> bool:
+	return str(reply.get("board", "")) == MINES_SCORE_MODE
+
+
+## Hinweise der Minen-Liste (Englisch Quelle, Deutsch in mv_rules.csv).
+static func board_text(key: String) -> String:
+	_ensure_translations()
+	match key:
+		"empty":
+			return TranslationServer.translate("No Mines score yet. Play the map!")
+		"online_soon":
+			return TranslationServer.translate("Online leaderboard for Mines coming soon")
+		"tip":
+			return TranslationServer.translate("Only runs with Mines (own leaderboard, no pp)")
+	return ""
+
+
+## Ruhige Zeile fuer den Ueberblick im Ergebnis ("Minen 42 · ausgeloest 3"), "" ohne Minen.
+static func mines_line(stats: Dictionary) -> String:
+	if not stats.has("mines"):
+		return ""
+	_ensure_translations()
+	return "%s %s  ·  %s %s" % [TranslationServer.translate("Mines"), UiTheme.fmt_score(int(stats.get("mines", 0))),
+		TranslationServer.translate("triggered"), UiTheme.fmt_score(int(stats.get("mine_hits", 0)))]
+
+
+## Details-Reiter: [Titel, Wert] je Minen-Kennzahl (gesamt, ausgeloest, ausgewichen).
+static func mines_cells(stats: Dictionary) -> Array:
+	if not stats.has("mines"):
+		return []
+	_ensure_translations()
+	var total := int(stats.get("mines", 0))
+	var hits := int(stats.get("mine_hits", 0))
+	return [
+		[TranslationServer.translate("Mines total"), UiTheme.fmt_score(total)],
+		[TranslationServer.translate("triggered"), UiTheme.fmt_score(hits)],
+		[TranslationServer.translate("dodged"), UiTheme.fmt_score(maxi(total - hits, 0))],
+	]
+
+
+## Mod-Kennzeichen im Ergebnis-Kopf: "SD", "PF", "Mines".
+static func badge_texts(mods: Dictionary) -> Array:
+	var out := []
+	for k in keys_on(mods):
+		out.append(label(k))
+	return out
+
+
+## Full Combo nur ohne Miss UND ohne ausgeloeste Mine.
+static func clean_run(stats: Dictionary) -> bool:
+	return int(stats.get("n_miss", 1)) == 0 and int(stats.get("mine_hits", 0)) == 0
+
+
 ## Tooltip je Schalter (Englisch als Quelle, Deutsch in translations/mv_rules.csv).
 static func tip(key: String) -> String:
 	_ensure_translations()
@@ -208,6 +339,19 @@ static func label(key: String) -> String:
 			return "SD"
 		PF:
 			return "PF"
+		MN:
+			return TranslationServer.translate("Mines")
+	return key
+
+
+## Text auf dem Lobby-Schalter (ausgeschrieben wie "No-Fail").
+static func lobby_label(key: String) -> String:
+	_ensure_translations()
+	match key:
+		SD:
+			return "Sudden Death"
+		PF:
+			return "Perfect"
 		MN:
 			return TranslationServer.translate("Mines")
 	return key

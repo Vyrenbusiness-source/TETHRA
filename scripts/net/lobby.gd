@@ -893,19 +893,24 @@ static func _debug_mods() -> Dictionary:
 		if a.begins_with("--mp-mods="):
 			want = a.trim_prefix("--mp-mods=")
 	var list := want.to_upper().split(",", false)
-	return { "SV": "SV" in list, "NF": "NF" in list }
+	var d := { "SV": "SV" in list, "NF": "NF" in list }
+	for k in RuleMods.KEYS:   # Regel-Mods SD, PF, MN (RuleMods.lobby_norm)
+		d[k] = k in list
+	return _norm_mods(d)
 
 
+## SV/NF plus Regel-Mods SD, PF, MN (mit MN_v), siehe RuleMods.lobby_norm.
 static func _norm_mods(m: Dictionary) -> Dictionary:
-	return { "SV": bool(m.get("SV", false)), "NF": bool(m.get("NF", false)) }
+	return RuleMods.lobby_norm(m)
 
 
-## "SV NF" der aktiven Mods ("" wenn keine).
+## "SV NF" der aktiven Mods ("" wenn keine), Regel-Mods dahinter ("NF SD MN").
 static func mods_text(m: Dictionary) -> String:
 	var parts: Array = []
 	for k in ["SV", "NF"]:
 		if bool(m.get(k, false)):
 			parts.append(k)
+	parts.append_array(RuleMods.keys_on(m))
 	return " ".join(parts)
 
 
@@ -1056,7 +1061,7 @@ func _load_selection(path: String) -> bool:
 			GameSession.replay_events = []
 			GameSession.set_selection(path, i, d.beatmap.version_name(),
 				d.osu_filename, float(sel_map.get("stars", 0.0)))
-			GameSession.mods = mods.duplicate()
+			GameSession.mods = RuleMods.for_mode(mods, play_mode)   # MN nur in Mania
 			if OS.get_cmdline_args().has("--mp-bot"):
 				print("MPLOBBY round mods=[%s] host=%s" % [mods_text(mods), is_host])
 			return true
@@ -1069,7 +1074,7 @@ func _load_selection(path: String) -> bool:
 		GameSession.replay_events = []
 		GameSession.set_selection(path, best, d2.beatmap.version_name(),
 			d2.osu_filename, float(sel_map.get("stars", 0.0)))
-		GameSession.mods = mods.duplicate()
+		GameSession.mods = RuleMods.for_mode(mods, play_mode)
 		return true
 	return false
 
@@ -1250,7 +1255,7 @@ func _store_final(id: int, stats: Dictionary) -> int:
 func _mods_list() -> Array:
 	var out: Array = []
 	for k in mods:
-		if bool(mods[k]):
+		if mods[k] is bool and bool(mods[k]):   # "MN_v" (Zahl) ist kein Mod
 			out.append(str(k))
 	return out
 
