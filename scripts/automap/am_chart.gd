@@ -63,7 +63,7 @@ const DEFAULTS := {
 	"chord_scale": 1.0,           # Akkord-Anteil mal diesem Wert (Menschen-Anteil des Bands = 1)
 	"rare_model": true,           # seltene Teilung nach dem Modell statt nach festem Anteil
 	"nest_from": "Hard",         # Bezugsprofil der Verschachtelung ("Expert" = von oben nach unten wie bisher)
-	"dens_quota_bar": 1.0,        # wie dens_quota, wenn features.bar_density vorhanden ist
+	"dens_quota_bar": 0.5,        # wie dens_quota, wenn features.bar_density vorhanden ist (AmFeatures ab am3-sections)
 	"dens_bar_mix": 0.5,          # Anteil von bar_density an der Takt-Dichte (Rest: Summe der Modell-Wahrscheinlichkeiten)
 	"dens_quota": 0.0,           # 0..1: Notenzahl je Takt nach der Summe der Modell-Wahrscheinlichkeiten
 	"select": {},                 # Tests: Modell direkt uebergeben (Form wie select.json)
