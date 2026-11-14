@@ -869,7 +869,9 @@ func _page_keys(pg: VBoxContainer) -> void:
 		var krow := HBoxContainer.new()
 		krow.add_theme_constant_override("separation", 4)
 		for i in n:
-			krow.add_child(_key_button(_cap_k_base(n) + i))
+			var kb := _key_button(_cap_k_base(n) + i)
+			kb.clip_text = false  # 7 schmale Knoepfe: Buchstabe nie abschneiden, Leertaste ganz zeigen
+			krow.add_child(kb)
 		var nk: int = n
 		var kr := _row(g, tr("Keys %s") % ManiaKeys.label(n), krow,
 			tr("Mania maps with %d columns. Click, then press a key (Esc cancels).") % n)
