@@ -5,10 +5,10 @@ extends Control
 ## kurze Schritte mit echtem Mitspielen und klarer Erfolgsbedingung.
 ##   1 Zielen     Cursor auf das Ziel legen und kurz drauf bleiben
 ##   2 Satellit   Taste A druecken, wenn der Satellit oben ist (Pips zaehlen Runden)
-##   3 Tasten     A = kuehle Scheibe, B = warmes Quadrat
+##   3 Tasten     A = kuehle Scheibe, B = warmes Quadrat; falsche Taste = Miss (Anti-Mash)
 ##   4 Akzent     Scheibe mit weissem Ring = beide Tasten zugleich
 ##   5 Halten     Taste halten und der Kugel folgen
-##   6 Skill      weite Spruenge, dann ein kurzer Stream (Tasten abwechseln)
+##   6 Skill      weite Spruenge, dann eine schnelle Folge (Wechselschlag: A, B, A, B)
 ##   7 Probe      alles zusammen, mit Wertung
 ## Wertung ueber OrbitCore (wie im Spiel, NF an), Darstellung im eigenen Feld
 ## (Field) nach der Optik der Spezifikation. Tempo ab 60 BPM steigend (BPMS).
@@ -499,7 +499,7 @@ func title_for(s: int) -> String:
 		KEYS: return tr("Zwei Tasten")
 		ACCENT: return tr("Akzent")
 		HOLD: return tr("Halten")
-		SKILL: return tr("Sprung und Stream")
+		SKILL: return tr("Sprung und Folge")
 	return tr("Probe-Runde")
 
 
@@ -507,10 +507,10 @@ func body_for(s: int) -> String:
 	match s:
 		AIM: return tr("Leg den Cursor auf das Ziel und bleib kurz drauf.")
 		SAT: return tr("Der Satellit kreist einmal pro Schlag, die Punkte zählen die Runden. Steht er oben: %s drücken.") % key_label(0)
-		KEYS: return tr("Kühle Scheibe: %s.  Warmes Quadrat: %s.") % [key_label(0), key_label(1)]
+		KEYS: return tr("Kühle Scheibe: %s.  Warmes Quadrat: %s.  Falsche Taste = Miss.") % [key_label(0), key_label(1)]
 		ACCENT: return tr("Scheibe mit weißem Ring: %s und %s zugleich.") % [key_label(0), key_label(1)]
 		HOLD: return tr("Drücken, halten und mit dem Cursor der Kugel folgen. Erst am Ende loslassen.")
-		SKILL: return tr("Weite Sprünge, dann ein kurzer Stream: Tasten abwechseln.")
+		SKILL: return tr("Weite Sprünge, dann eine schnelle Folge: dicht folgende Ziele wechseln die Taste, A, B, A, B.")
 	return tr("Alles zusammen, mit Wertung.")
 
 
@@ -548,7 +548,7 @@ func legend_text(key: int) -> String:
 func reason_short(code: String) -> String:
 	match code:
 		"aim": return tr("daneben")
-		"key": return tr("andere Taste")
+		"key": return tr("falsche Taste")
 		"early": return tr("zu früh")
 		"lock": return tr("erst das vordere")
 		"both": return tr("beide Tasten")
@@ -560,7 +560,7 @@ func reason_short(code: String) -> String:
 func reason_hint(code: String, key: int) -> String:
 	match code:
 		"aim": return tr("Daneben: erst den Cursor auf das Ziel legen.")
-		"key": return tr("Andere Taste: dieses Ziel braucht %s.") % key_caption(key)
+		"key": return tr("Falsche Taste = Miss. Dieses Ziel braucht %s.") % key_caption(key)
 		"early": return tr("Zu früh: warte, bis der Satellit oben ist.")
 		"lock": return tr("Erst das vordere Ziel (das hellste).")
 		"both": return tr("Akzent: beide Tasten zugleich.")
@@ -656,7 +656,7 @@ func _start_round(t: float) -> void:
 	notes = pattern(step, t0, _beat_ms, _round)
 	_round += 1
 	core = OrbitCore.new()
-	core.anti_mash = false   # Lernmodus: falsche Taste zeigt nur den Hinweis, kein Miss
+	# Anti-Mash wie im Spiel: falsche Taste auf das offene Ziel = Miss (Hinweis "key").
 	core.setup(notes, OD, {"NF": true}, RADIUS)
 	core.note_judged.connect(_on_judged)
 	core.hold_started.connect(_on_hold_started)
@@ -922,6 +922,8 @@ func _on_hold_started(index: int, _q: int) -> void:
 
 
 func _on_press_missed(pos: Vector2, _key: int, reason: String) -> void:
+	if reason == "wrong":   # Anti-Mash: Ziel ist schon Miss, Grund bleibt die Taste
+		reason = "key"
 	_press_signal = reason
 	var n := next_open()
 	_fail(reason, n.pos if n != null and reason != "aim" else pos, n.key if n != null else 0)

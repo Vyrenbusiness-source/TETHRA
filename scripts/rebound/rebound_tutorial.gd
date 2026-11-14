@@ -48,6 +48,7 @@ var finished := false
 var bm: Beatmap
 var flight: ReboundFlight
 var core: ManiaCore
+const AntiMash := preload("res://scripts/rebound/rebound_anti_mash.gd")
 var view: ReboundView
 var trial_stats: Dictionary = {}
 ## Textmeldungen am Ort: [Zeit, Position (px im Ansicht-Feld), Text, Farbe].
@@ -279,7 +280,7 @@ func body_for(s: int) -> String:
 		JUMP: return tr("The height of the arc is the waiting time: a high arc means a long pause, a low hop means the next landing is close. The faint ghost arc shows the hop after the next landing.")
 		JACK: return tr("Small quick hops on one drum are dribbling: press the same key again and again, once per landing.")
 		HOLD: return tr("A ball that stays squashed on its drum is a hold: press as it lands, keep holding the key while the drum glows, let go when the ring is full.")
-	return tr("Everything together. You get a score at the end.")
+	return tr("Everything together. Don't mash: a wrong key is a miss. You get a score at the end.")
 
 
 func goal_for(s: int) -> String:
@@ -310,7 +311,7 @@ func reason_hint(code: String, col: int = 0) -> String:
 	match code:
 		"early": return tr("Too early: wait until the ball lands on the drum.")
 		"late": return tr("Too late: press at the moment the ball lands.")
-		"key": return tr("Wrong key: this ball lands on the drum of %s.") % key_label(col)
+		"key": return tr("Wrong key = miss. This ball lands on the drum of %s.") % key_label(col)
 		"chord": return tr("Two balls land together: press both keys together.")
 		"hold": return tr("Let go too early: keep holding until the ring is full.")
 		"none": return tr("No key pressed: press the drum key as the ball lands.")
@@ -649,6 +650,7 @@ func press_lane(col: int, down: bool, at: float = -1.0) -> void:
 	_held[col] = down
 	if down:
 		_presses.append([t, col])
+		AntiMash.wrong_key_check(core, col, t)   # wie im Spiel: falsche Taste = Miss
 		core.key_down(col, t)
 		for i in range(_late.size() - 1, -1, -1):
 			var n := bm.hit_objects[int(_late[i][0])] as ManiaNote

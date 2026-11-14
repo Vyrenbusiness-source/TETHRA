@@ -297,7 +297,7 @@ func body_for(s: int) -> String:
 		ARC: return tr("The arc tells you how long to wait. A high lob is slow: wait for it. A flat ball is fast and the next one follows right behind. Press at the racket line every time.")
 		SMASH: return tr("A ball with a white outline spans two zones: press both zone keys together (%s).") % keys_text()
 		HOLD: return tr("A ball with a bar is a charge: press on arrival, keep holding the key until the bar ends, then let go.")
-	return tr("Everything together. You get a score at the end.")
+	return tr("Everything together. Don't mash: a wrong key is a miss. You get a score at the end.")
 
 
 func goal_for(s: int) -> String:
@@ -324,7 +324,7 @@ func reason_hint(code: String, zone: int = 0) -> String:
 	match code:
 		"early": return tr("Too early: wait until the ball reaches the racket line.")
 		"late": return tr("Too late: press when the ball reaches the racket line.")
-		"zone": return tr("Wrong zone: press the key of the zone where the ball lands (%s).") % key_label(zone)
+		"zone": return tr("Wrong zone = miss. Press the key of the zone where the ball lands (%s).") % key_label(zone)
 		"smash": return tr("Smash: press both zone keys together.")
 		"hold": return tr("Let go too early: keep holding until the bar ends.")
 		"none": return tr("No key pressed: press the zone key as the ball arrives.")

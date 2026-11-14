@@ -225,8 +225,10 @@ func _test_key_reasons(tut: Control) -> void:
 	_tap(tut, 1)
 	_check(str(tut.last_reason) == "key", "falsche Taste erkannt (%s)" % tut.last_reason)
 	_check(int(tut.success) == 0, "falsche Taste zaehlt nicht")
-	_run_to(tut, float(c.t) + 20.0)
-	_tap(tut, 0)
+	_check(tut.core.is_cue_done(0), "Anti-Mash wie im Spiel: falsche Taste macht den Einsatz zum Miss")
+	var c1: Dictionary = tut.chart.cues[1]
+	_run_to(tut, float(c1.t) + 20.0)
+	_tap(tut, 0 if DirigentChart.mask_has(int(c1.mask), 0) else 1)
 	_check(int(tut.success) == 1, "richtige Taste zaehlt")
 	# zu frueh: Taste lange vor dem naechsten Mark.
 	tut.enter_step(2)

@@ -2,7 +2,7 @@ keys,de,en
 Skip step  (Tab),Schritt überspringen  (Tab),Skip step  (Tab)
 Quit  (Esc),Beenden  (Esc),Quit  (Esc)
 Mini song,Mini-Song,Mini song
-Everything together. You get a score at the end.,Alles zusammen. Am Ende gibt es eine Wertung.,Everything together. You get a score at the end.
+Everything together. Don't mash: a wrong key is a miss. You get a score at the end.,Alles zusammen. Nicht wild drücken: falsche Taste = Miss. Am Ende gibt es eine Wertung.,Everything together. Don't mash: a wrong key is a miss. You get a score at the end.
 %d holds kept,%d Holds gehalten,%d holds kept
 %d of %d notes,%d von %d Noten,%d of %d notes
 too early,zu früh,too early
@@ -38,7 +38,7 @@ Squashed: hold,Gequetscht: halten,Squashed: hold
 %d dribbles hit,%d Dribbel getroffen,%d dribbles hit
 Too early: wait until the ball lands on the drum.,"Zu früh: Warte, bis der Ball auf dem Fell landet.",Too early: wait until the ball lands on the drum.
 Too late: press at the moment the ball lands.,Zu spät: Drücke im Moment der Landung.,Too late: press at the moment the ball lands.
-Wrong key: this ball lands on the drum of %s.,Falsche Taste: Dieser Ball landet auf dem Fell von %s.,Wrong key: this ball lands on the drum of %s.
+Wrong key = miss. This ball lands on the drum of %s.,Falsche Taste = Miss. Dieser Ball landet auf dem Fell von %s.,Wrong key = miss. This ball lands on the drum of %s.
 Two balls land together: press both keys together.,Zwei Bälle landen zusammen: Drücke beide Tasten gleichzeitig.,Two balls land together: press both keys together.
 Let go too early: keep holding until the ring is full.,"Zu früh losgelassen: Halte, bis der Ring voll ist.",Let go too early: keep holding until the ring is full.
 No key pressed: press the drum key as the ball lands.,"Keine Taste gedrückt: Drücke die Fell-Taste, wenn der Ball landet.",No key pressed: press the drum key as the ball lands.

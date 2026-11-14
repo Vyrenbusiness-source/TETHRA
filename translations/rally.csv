@@ -47,7 +47,7 @@ Mini song done,Mini-Song geschafft,Mini song done
 The arc tells you how long to wait. A high lob is slow: wait for it. A flat ball is fast and the next one follows right behind. Press at the racket line every time.,"Der Bogen zeigt, wie lange du wartest. Ein hoher Lob ist langsam: warte auf ihn. Ein flacher Ball ist schnell, der nächste folgt gleich. Drücke immer an der Schlägerlinie.",The arc tells you how long to wait. A high lob is slow: wait for it. A flat ball is fast and the next one follows right behind. Press at the racket line every time.
 A ball with a white outline spans two zones: press both zone keys together (%s).,Ein Ball mit weißem Rand liegt über zwei Zonen: Drücke beide Zonentasten zusammen (%s).,A ball with a white outline spans two zones: press both zone keys together (%s).
 "A ball with a bar is a charge: press on arrival, keep holding the key until the bar ends, then let go.","Ein Ball mit Balken ist ein Aufladen: Drücke bei Ankunft, halte die Taste bis der Balken endet und lass dann los.","A ball with a bar is a charge: press on arrival, keep holding the key until the bar ends, then let go."
-Everything together. You get a score at the end.,Alles zusammen. Am Ende gibt es eine Wertung.,Everything together. You get a score at the end.
+Everything together. Don't mash: a wrong key is a miss. You get a score at the end.,Alles zusammen. Nicht wild drücken: falsche Taste = Miss. Am Ende gibt es eine Wertung.,Everything together. Don't mash: a wrong key is a miss. You get a score at the end.
 %d balls hit,%d Bälle getroffen,%d balls hit
 %d smashes,%d Smashs,%d smashes
 %d charges held,%d Aufladungen gehalten,%d charges held
@@ -61,7 +61,7 @@ no key,keine Taste,no key
 missed,verfehlt,missed
 Too early: wait until the ball reaches the racket line.,"Zu früh: warte, bis der Ball die Schlägerlinie erreicht.",Too early: wait until the ball reaches the racket line.
 Too late: press when the ball reaches the racket line.,"Zu spät: drücke, wenn der Ball die Schlägerlinie erreicht.",Too late: press when the ball reaches the racket line.
-Wrong zone: press the key of the zone where the ball lands (%s).,"Falsche Zone: drücke die Taste der Zone, in der der Ball landet (%s).",Wrong zone: press the key of the zone where the ball lands (%s).
+Wrong zone = miss. Press the key of the zone where the ball lands (%s).,"Falsche Zone = Miss. Drück die Taste der Zone, in der der Ball landet (%s).",Wrong zone = miss. Press the key of the zone where the ball lands (%s).
 Smash: press both zone keys together.,Smash: drücke beide Zonentasten zusammen.,Smash: press both zone keys together.
 Let go too early: keep holding until the bar ends.,"Zu früh losgelassen: halte, bis der Balken endet.",Let go too early: keep holding until the bar ends.
 No key pressed: press the zone key as the ball arrives.,"Keine Taste gedrückt: drücke die Zonentaste, wenn der Ball ankommt.",No key pressed: press the zone key as the ball arrives.
