@@ -410,6 +410,7 @@ var _pf2d: Playfield2D
 var _fail_reason := ""
 var _parked_nodes: Array = []
 var _missed_2d: Array = []  ## verpasste Einzelnoten fallen grau weiter: [time, col]
+var _mine_view: MineView = null  ## Mod "MN" (RuleMods): Minen-Darstellung 2D/3D
 
 
 func _ready() -> void:
@@ -459,6 +460,7 @@ func _ready() -> void:
 	_sparks = HitSparks.new()
 	_world.add_child(_sparks)
 	_sparks.setup(RAIL_X, Z_LINE, ROAD_Y, _theme_col)
+	_setup_mines()
 	_skill_fx = SkillFx.new()
 	_world.add_child(_skill_fx)
 	_skill_fx.setup(RAIL_X, Z_LINE, Z_FAR, ROAD_Y, _theme_col, _theme_kiai)
@@ -657,6 +659,8 @@ func _update_playfield_2d(t: float) -> void:
 	for rb in _released_beams:
 		_pf2d.add_hold(int(rb.col), _note_z(float(rb.head), t), _note_z(float(rb.end), t),
 				NoteColors.color_for(int(rb.col), true, true, CLEAN_HOLD), Playfield2D.STATE_DEAD)
+	if _mine_view != null:
+		_mine_view.feed_2d(_pf2d)
 	for mi in range(_missed_2d.size() - 1, -1, -1):
 		var z := _note_z(float(_missed_2d[mi][0]), t)
 		if z > Z_LINE + 12.0:
@@ -1572,6 +1576,31 @@ func _apply_constant_speed(scroll_scale: float) -> void:
 	core.set_scroll_scale(scroll_scale)
 
 
+## Mod "MN": Minen-Ansicht anlegen (nur wenn der Lauf Minen hat).
+func _setup_mines() -> void:
+	if core.mines == null:
+		return
+	_mine_view = MineView.new()
+	_world.add_child(_mine_view)
+	_mine_view.setup(core, _note_z, RAIL_X, ROAD_Y, Z_LINE, Z_FAR, _note_k, _2d)
+	core.mine_hit.connect(_on_mine_hit)
+
+
+## Mine ausgeloest: wie ein Miss anzeigen (Ton, Urteil, Pad, HP-Leiste), keine Acc.
+func _on_mine_hit(_index: int, col: int) -> void:
+	_play_miss()
+	if col < _pad_dark.size():
+		_pad_dark[col] = 1.0
+	if _pf2d != null:
+		_pf2d.on_judge(ManiaCore.Quality.MISS, col)
+	if _judge_disp != null:
+		_judge_disp.show_judge(ManiaCore.Quality.MISS, 0.0)
+	if _hp_bar != null:
+		_hp_bar.flash_miss()
+	_last_milestone = 0
+	_update_hud()
+
+
 ## Mod-Anzeige fuer das HUD, z. B. "SV Stark · NF · Hidden · Konstant"; "" = keine.
 static func mods_hud_text(m: Dictionary) -> String:
 	var parts: Array = []
@@ -1587,6 +1616,7 @@ static func mods_hud_text(m: Dictionary) -> String:
 		parts.append("%s %d%%" % [TranslationServer.translate("Cover"), int(m.get("CO_pct", 50))])
 	if bool(m.get("CS", false)):
 		parts.append(TranslationServer.translate("Konstant"))
+	parts.append_array(RuleMods.hud_parts(m))
 	return "  ·  ".join(parts)
 
 
@@ -2245,6 +2275,8 @@ func _process(delta: float) -> void:
 			continue
 		if rbeam != null:
 			rbeam.set_span(_note_z(float(rb.head), t), z_end, RAIL_X[int(rb.col)], ROAD_Y + 0.28)
+	if _mine_view != null:
+		_mine_view.update(t)
 	if _pf2d != null:
 		_update_playfield_2d(t)
 
@@ -3978,7 +4010,7 @@ func _show_results(is_fail: bool) -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	SyncClock.stop()
 	# Full Combo: kleiner Meteorschauer am Himmel hinter dem Endscreen.
-	if not is_fail and core.n_miss == 0 and _fx_level() > 0.0 \
+	if not is_fail and core.n_miss == 0 and core.n_mine_hit == 0 and _fx_level() > 0.0 \
 			and DisplayServer.get_name() != "headless":
 		for shower_i in 8:
 			var st := get_tree().create_timer(0.3 * float(shower_i) + 0.4, true)
@@ -4008,6 +4040,8 @@ func _show_results(is_fail: bool) -> void:
 				# 0,55 x echte SS-pp = der bisherige Floor (0,8 x die bis v1.32.0
 				# um ~31 % zu niedrige Max-pp); bleibt so unter rosu ab ~85 % Acc.
 				pp = maxf(pp, max_pp * pow(acc, 6.0) * 0.55)
+	if RuleMods.no_pp(core.mods):
+		pp = -1.0   # Minen: keine pp (eigene Rangliste)
 	s["pp"] = pp
 	# Multiplayer: letzten Live-Stand + Finale (mit pp) an alle melden.
 	if Lobby.in_round():
@@ -4019,11 +4053,12 @@ func _show_results(is_fail: bool) -> void:
 		# Replay-Ansicht/Tutorial/Autoplay: NICHTS werten oder speichern.
 		pp = -1.0
 	else:
-		var save := ScoreStore.submit(GameSession.osz_path, _beatmap.version_name(), s)
+		var save := ScoreStore.submit(GameSession.osz_path, _beatmap.version_name(), s,
+				RuleMods.score_mode(core.mods))
 		new_best = bool(save.get("is_new_best", false))
 		_prev_best = save.get("previous", {})
 		ScoreStore.log_play(GameSession.osz_path, _beatmap.version_name(),
-			"%s - %s" % [_beatmap.artist(), _beatmap.title()], s)
+			"%s - %s" % [_beatmap.artist(), _beatmap.title()], s, RuleMods.score_mode(core.mods))
 		ReplayStore.save(GameSession.osz_path, _beatmap.version_name(), _recorded, {
 			"score": int(s.score), "grade": str(s.grade),
 			"accuracy": float(s.accuracy), "date": Time.get_datetime_string_from_system(),
@@ -4038,8 +4073,10 @@ func _show_results(is_fail: bool) -> void:
 ## schreiben. Nur Beobachtung, die Wertung bleibt unveraendert.
 func _write_fail_diag() -> String:
 	var t_fail := _time_ms()
-	var reason := ManiaCore.fail_reason_text(
-			ManiaCore.analyze_fail(core.diag_log, core.diag_spikes, t_fail))
+	var reason := RuleMods.fail_reason(core)   # Sudden Death / Perfect: Regel als Grund
+	if reason == "":
+		reason = ManiaCore.fail_reason_text(
+				ManiaCore.analyze_fail(core.diag_log, core.diag_spikes, t_fail))
 	DirAccess.make_dir_recursive_absolute("user://logs")
 	var stamp := Time.get_datetime_string_from_system().replace(":", "-").replace("T", "_")
 	var f := FileAccess.open("user://logs/fail_%s.txt" % stamp, FileAccess.WRITE)

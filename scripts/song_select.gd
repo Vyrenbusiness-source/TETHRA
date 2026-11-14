@@ -111,6 +111,9 @@ var _orbit_mod_btns := {}
 ## Trace-Mods (TraceMods.MODS): nur im Trace-Modus sichtbar, neben No-Fail.
 var _trace_mods := {"MR": false, "HD": false, "SS": false}
 var _trace_mod_btns := {}
+## Regel-Mods (RuleMods.KEYS: SD, PF, MN), sichtbar je RuleMods.MODES. Browser-Zustand.
+var _rule_mods := {"SD": false, "PF": false, "MN": false}
+var _rule_mod_btns := {}
 const TRACE_MOD_TIPS := {
 	"MR": "Mirror: links und rechts getauscht (Score x1,0)",
 	"HD": "Hidden: der Weg blendet zum Kopf hin aus (Score x1,06)",
@@ -1099,6 +1102,10 @@ func _build_info_panel() -> void:
 		var tb := _make_trace_mod_button(k)
 		mods_row.add_child(tb)
 		_trace_mod_btns[k] = tb
+	for k in RuleMods.KEYS:
+		var rb := _make_rule_mod_button(k)
+		mods_row.add_child(rb)
+		_rule_mod_btns[k] = rb
 	_apply_mod_visibility()
 	_apply_play_state()
 
@@ -1925,6 +1932,10 @@ func _load_browser_state() -> bool:
 		if tmd is Dictionary:
 			for k in TraceMods.MODS:
 				_trace_mods[k] = bool(tmd.get(k, false))
+		var rmd = cfg.get_value("browser", "rule_mods", {})
+		if rmd is Dictionary:
+			for k in RuleMods.KEYS:
+				_rule_mods[k] = bool(rmd.get(k, false))
 	return true
 
 
@@ -1944,6 +1955,7 @@ func _save_browser_state() -> void:
 	cfg.set_value("browser", "sv_level", SvMod.level_name())
 	cfg.set_value("browser", "orbit_mods", _orbit_mods.duplicate())
 	cfg.set_value("browser", "trace_mods", _trace_mods.duplicate())
+	cfg.set_value("browser", "rule_mods", _rule_mods.duplicate())
 	cfg.set_value("browser", "recs", rec_sanitize(_rec))
 	cfg.save(BROWSER_STATE_PATH)
 
@@ -3614,6 +3626,35 @@ func _make_trace_mod_button(key: String) -> CheckButton:
 	return b
 
 
+## Regel-Mod-Schalter (SD/PF/MN) im Stil der NF/SV-Schalter.
+func _make_rule_mod_button(key: String) -> CheckButton:
+	var b := _make_orbit_mod_button(key)
+	b.text = RuleMods.label(key)
+	b.tooltip_text = RuleMods.tip(key)
+	b.button_pressed = bool(_rule_mods.get(key, false))
+	for c in b.toggled.get_connections():
+		b.toggled.disconnect(c["callable"])
+	b.toggled.connect(func(on: bool): _on_rule_mod_toggled(key, on))
+	return b
+
+
+## SD und PF schliessen einander und No-Fail aus.
+func _on_rule_mod_toggled(key: String, on: bool) -> void:
+	_rule_mods = RuleMods.toggle(_rule_mods, key, on)
+	if on and RuleMods.clears_nf(key) and _nf_enabled:
+		_on_nf_toggled(false)
+	_sync_rule_mod_buttons()
+	if _state_ready:
+		_save_browser_state()
+
+
+func _sync_rule_mod_buttons() -> void:
+	for k in _rule_mod_btns:
+		var b := _rule_mod_btns[k] as CheckButton
+		b.visible = RuleMods.available(k, _play_mode)
+		b.set_pressed_no_signal(bool(_rule_mods.get(k, false)))
+
+
 func _on_trace_mod_toggled(key: String, on: bool) -> void:
 	_trace_mods[key] = on
 	if _state_ready:
@@ -3645,6 +3686,7 @@ func _apply_mod_visibility() -> void:
 	for k in _trace_mod_btns:
 		(_trace_mod_btns[k] as CheckButton).visible = _play_mode == "trace"
 		(_trace_mod_btns[k] as CheckButton).set_pressed_no_signal(bool(_trace_mods[k]))
+	_sync_rule_mod_buttons()
 
 
 func _on_sv_toggled(pressed: bool) -> void:
@@ -3656,9 +3698,14 @@ func _on_sv_toggled(pressed: bool) -> void:
 	_restyle_sv_level()
 
 
-## Mods fuer den naechsten Start (Schnittstelle GameSession.mods).
-## Orbit: NF + Orbit-Mods (SV wirkt im Orbit nicht und zaehlt dort nicht).
+## Mods fuer den naechsten Start (Schnittstelle GameSession.mods): Grund-Mods des
+## Modus plus Regel-Mods (SD/PF/MN, RuleMods.apply).
 func _current_mods() -> Dictionary:
+	return RuleMods.apply(_base_mods(), _rule_mods, _play_mode)
+
+
+## Orbit: NF + Orbit-Mods (SV wirkt im Orbit nicht und zaehlt dort nicht).
+func _base_mods() -> Dictionary:
 	if _play_mode == "trace":
 		var tm := {"NF": _nf_enabled}
 		for k in TraceMods.MODS:
@@ -3679,6 +3726,9 @@ func _on_nf_toggled(pressed: bool) -> void:
 	Settings.mod_nf = pressed
 	Settings.save()
 	_update_nf_button()
+	if pressed:
+		_rule_mods = RuleMods.on_no_fail(_rule_mods)
+		_sync_rule_mod_buttons()
 
 
 func _update_nf_button() -> void:
