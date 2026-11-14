@@ -61,7 +61,10 @@ static func generate(audio_path: String, maps_dir: String, opts: Dictionary = {}
 		return _fail(ERR_CANCELLED)
 
 	_report(progress, STAGE_FEATURES, 0.0)
-	var features: Dictionary = AmFeatures.analyze(pcm, rate, params.get("features", {}))
+	# Gitter mitgeben: Abschnitte und bar_density liegen dann auf denselben Takten, AmGrid laeuft nicht doppelt
+	var fparams: Dictionary = (params.get("features", {}) as Dictionary).duplicate()
+	fparams["grid"] = grid
+	var features: Dictionary = AmFeatures.analyze(pcm, rate, fparams)
 	if not bool(features.get("ok", false)):
 		return _fail(str(features.get("error", "analysis failed")))
 	var wave := AmWriter.waveform(pcm)   # Vorschaubild, falls der Song kein Cover hat
