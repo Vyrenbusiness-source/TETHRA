@@ -271,12 +271,19 @@ func _ready() -> void:
 		Lobby.join_online(_arg_value("--mp-relay-code="))
 		_mp_relay(false)
 	elif OS.get_cmdline_args().has("--mp-orbit-host"):
+		# --mp-via-relay: derselbe Ablauf ueber den Relay (tools/mp_relay_smoke.sh MODE=<modus>).
 		if not Lobby.active:
-			Lobby.host_room()
+			if OS.get_cmdline_args().has("--mp-via-relay"):
+				Lobby.host_online("Relay-Smoke")
+			else:
+				Lobby.host_room()
 		_mp_orbit(true)
 	elif OS.get_cmdline_args().has("--mp-orbit-client"):
 		if not Lobby.active:
-			Lobby.join_lan("127.0.0.1")
+			if OS.get_cmdline_args().has("--mp-via-relay"):
+				Lobby.join_online(_arg_value("--mp-relay-code="))
+			else:
+				Lobby.join_lan("127.0.0.1")
 		_mp_orbit(false)
 	elif OS.get_cmdline_args().has("--mp-auto-host"):
 		if not Lobby.active:
@@ -485,6 +492,9 @@ func _mp_orbit(host: bool) -> void:
 	# --mp-mode=<orbit|rally|dirigent|trace|rebound> (Standard orbit): Raum-Modus der Smoke-Runde.
 	var pmode := Lobby.norm_play(_arg_value("--mp-mode=")) if _arg_value("--mp-mode=") != "" else "orbit"
 	var pview := Lobby.play_name(pmode)
+	# Mania meldet die Darstellung (2D/3D) statt des Modusnamens.
+	var view_ok := func(v: String) -> bool:
+		return v == pview or (pmode == "mania" and v in ["2D", "3D"])
 	var step := func(msg: String): print("MPORBIT %s s%d %s" % [tag, _mpo_stage, msg])
 	var fail := func(msg: String):
 		print("MPORBIT %s s%d FAIL %s" % [tag, _mpo_stage, msg])
@@ -496,7 +506,12 @@ func _mp_orbit(host: bool) -> void:
 			w += 0.1
 		return cond.call()
 	var me := multiplayer.get_unique_id()
-	if not await wait_for.call(func(): return Lobby.players.size() >= 2 and Lobby.players.has(multiplayer.get_unique_id()), 20.0):
+	if host and _mpo_stage == 0 and OS.get_cmdline_args().has("--mp-via-relay"):
+		if not await wait_for.call(func(): return Lobby.room_code != "", 15.0):
+			fail.call("kein Raum-Code")
+			return
+		print("MPRELAY code=%s" % Lobby.room_code)
+	if not await wait_for.call(func(): return Lobby.players.size() >= 2 and Lobby.players.has(multiplayer.get_unique_id()), 30.0):
 		fail.call("players")
 		return
 	me = multiplayer.get_unique_id()
@@ -538,6 +553,16 @@ func _mp_orbit(host: bool) -> void:
 			fail.call("finals")
 			return
 		dump.call("room finals")
+		# Platzierung: Reihenfolge der Rangliste = absteigende Endergebnisse.
+		var rk: Array = []
+		var sorted_ok := true
+		var prev := 1 << 62
+		for e in Lobby.ranked_players():
+			var fs := int((e.get("final", {}) as Dictionary).get("score", -1))
+			sorted_ok = sorted_ok and fs <= prev and int(e.score) == fs
+			prev = fs
+			rk.append("%d.%s=%d" % [rk.size() + 1, str(e.name), fs])
+		step.call("ranking ok=%s [%s] mods=[%s]" % [sorted_ok, ", ".join(rk), Lobby.mods_text(Lobby.mods)])
 		if pmode == "trace":
 			_refresh_room()
 			step.call("versus pictures n=%d" % _versus_count())
@@ -557,7 +582,7 @@ func _mp_orbit(host: bool) -> void:
 			elif not await wait_for.call(func(): return Lobby.play_mode == pmode and not Lobby.sel_map.is_empty(), 20.0):
 				fail.call("mode/map sync")
 				return
-			if not await wait_for.call(func(): return Lobby.all_ready() and Lobby.view_of(other) == pview, 20.0):
+			if not await wait_for.call(func(): return Lobby.all_ready() and view_ok.call(Lobby.view_of(other)), 20.0):
 				fail.call("all_ready/view (ready=%s view=%s)" % [Lobby.all_ready(), Lobby.view_of(other)])
 				return
 			step.call("all ready, views %s/%s" % [Lobby.view_of(me), Lobby.view_of(other)])
