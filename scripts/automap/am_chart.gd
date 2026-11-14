@@ -51,10 +51,14 @@ const DEFAULTS := {
 	# Gewicht je Ereignis-Art in der Auswahl (mal Staerke und Ebenen-Gewicht). AmFeatures normiert die
 	# Staerke je Ebene auf ihr 95. Perzentil; ohne diese Faktoren zaehlt eine Hi-Hat so viel wie ein Kick.
 	"w_kick": 1.0, "w_snare": 1.0, "w_hat": 1.0, "w_bass": 1.0, "w_tonal": 1.0, "w_vocal": 1.0, "w_other": 1.0,
+	# Auswahl nach dem gelernten Modell (data/automap/select.json); false = Handgewichte oben
+	"select_model": true,
+	"dens_quota": 0.0,            # 0..1: Notenzahl je Takt nach der Summe der Modell-Wahrscheinlichkeiten
+	"select": {},                 # Tests: Modell direkt uebergeben (Form wie select.json)
 }
 
 ## Bereiche fuer tools/automap_tune.gd, wo 0,5x..1,5x des Standards nicht passt (Standard 0).
-const TUNE_RANGES := {"dens_local_gain": [0.0, 0.8]}
+const TUNE_RANGES := {"dens_local_gain": [0.0, 0.8], "dens_quota": [0.0, 1.0]}
 
 ## Spielbarkeits-Regeln je Profil (Spec-Tabelle). Einheiten: 1/24 Schlag (24 = 1/1, 12 = 1/2,
 ## 6 = 1/4, 3 = 1/8, 4 = 1/6). chord_unit/c3_unit: Akkorde mit 2 bzw. 3 Noten nur auf dieser Teilung.
@@ -120,7 +124,21 @@ const S_CH := 27       # davon Akkorde
 const S_C3 := 28       # davon 3er/4er-Akkorde
 const S_RARE := 29     # davon auf der seltenen Teilung
 
+## Auswahl-Modell (data/automap/select.json): Merkmale je Gitter-Zeile, Reihenfolge fest.
+const SELECT_PATH := "res://data/automap/select.json"
+const KIND_ORDER := ["kick", "snare", "hat", "bass", "tonal", "vocal", "other"]
+const SECTION_KINDS := ["intro", "verse", "build", "chorus", "break", "outro"]
+const ROW_FEATURES := ["bias",
+		"s_kick", "s_snare", "s_hat", "s_bass", "s_tonal", "s_vocal", "s_other",
+		"lead_kick", "lead_snare", "lead_hat", "lead_bass", "lead_tonal", "lead_vocal", "lead_other",
+		"pos_bar", "pos_beat", "pos_half", "pos_quarter", "pos_eighth", "pos_triplet", "pos_fine",
+		"n_kinds", "sustain", "sustain_half", "intensity", "event_density", "loudness", "kiai",
+		"sec_intro", "sec_verse", "sec_build", "sec_chorus", "sec_break", "sec_outro",
+		"hat_accent", "has_pitch", "tempo", "tempo_quarter", "tempo_fine", "tempo_half",
+		"dominance", "gap_prev", "gap_next", "expected_density"]
+
 static var _pat_cache: Dictionary = {}
+static var _sel_cache: Dictionary = {}
 static var _pat_mutex := Mutex.new()
 
 
@@ -158,6 +176,10 @@ static func build_all(features: Dictionary, grid: Dictionary, params: Dictionary
 			out[p] = _fail(p, err)
 		return out
 	var pats := _patterns(P)
+	var model: Dictionary = _select_model(P) if bool(P["select_model"]) else {}
+	if not model.is_empty():
+		C["X"] = row_features(C)
+	C["model"] = model
 	var parent := {}
 	for pi in range(PROFILES.size() - 1, stop - 1, -1):
 		var prof: String = PROFILES[pi]
@@ -506,6 +528,7 @@ static func pattern_stats(notes: Array, grid: Dictionary) -> Dictionary:
 static func reload_patterns() -> void:
 	_pat_mutex.lock()
 	_pat_cache = {}
+	_sel_cache = {}
 	_pat_mutex.unlock()
 
 
@@ -689,9 +712,13 @@ static func _prep(features: Dictionary, G: Dictionary, P: Dictionary) -> Diction
 			sc += 1
 		var lead_layer := "drums"
 		var intensity := 0.5
+		var sec_kind := -1
+		var sec_kiai := 0
 		if nsec > 0:
 			lead_layer = String(sections[sc].get("lead", "drums"))
 			intensity = float(sections[sc].get("intensity", 0.5))
+			sec_kind = SECTION_KINDS.find(String(sections[sc].get("kind", "")))
+			sec_kiai = 1 if bool(sections[sc].get("kiai", false)) else 0
 		var si: int = e_seg[i]
 		var x: float = e_x[i]
 		var key := si * 1000000 + int(floor(x / 24.0)) + 500000
@@ -720,9 +747,18 @@ static func _prep(features: Dictionary, G: Dictionary, P: Dictionary) -> Diction
 		var pitch: float = ev.get("pitch", -1.0)
 		var sus: float = ev.get("sustain_ms", 0.0)
 		var kbit: int = KIND_BITS.get(kind, 64)
+		var kidx: int = KIND_ORDER.find(kind)
+		if kidx < 0:
+			kidx = 6
+		var is_lead := layer == lead_layer and layer != ""
 		var skey := si * 1000000 + tick + 500000
 		if slot.has(skey):
 			var row: Array = raw[slot[skey]]
+			var ks: PackedFloat32Array = row[13]
+			ks[kidx] = maxf(ks[kidx], strength)
+			if is_lead:
+				ks[7 + kidx] = maxf(ks[7 + kidx], strength)
+			row[13] = ks
 			if ws > float(row[3]):
 				row[3] = ws
 				row[6] = kbit
@@ -737,8 +773,14 @@ static func _prep(features: Dictionary, G: Dictionary, P: Dictionary) -> Diction
 				row[11] = 1
 		else:
 			slot[skey] = raw.size()
+			var ks0 := PackedFloat32Array()
+			ks0.resize(14)
+			ks0[kidx] = strength
+			if is_lead:
+				ks0[7 + kidx] = strength
 			raw.append([ts, si, tick, ws, strength, kbit, kbit, pitch, sus, sc, intensity,
-					1 if (kind == "hat" and strength >= 0.75) else 0, ws if pitch >= 0.0 else -1.0])
+					1 if (kind == "hat" and strength >= 0.75) else 0, ws if pitch >= 0.0 else -1.0,
+					ks0, sec_kind, sec_kiai, te])
 	raw.sort_custom(func(a: Array, b: Array) -> bool: return float(a[0]) < float(b[0]))
 	# Zeilen, die ueber eine Segmentgrenze hinweg zu dicht liegen, zusammenlegen
 	var rows: Array = []
@@ -775,6 +817,50 @@ static func _prep(features: Dictionary, G: Dictionary, P: Dictionary) -> Diction
 	var c_inten: PackedFloat64Array = C["inten"]
 	var wm: float = P["w_metric"]
 	var wst: float = P["w_strength"]
+	# Eingaben des Auswahl-Modells (row_features)
+	var c_ks := PackedFloat32Array()
+	c_ks.resize(n * 14)
+	var c_skind := PackedInt32Array()
+	var c_kiai := PackedByteArray()
+	var c_ws := PackedFloat64Array()
+	var c_beat := PackedFloat64Array()
+	var c_hat := PackedByteArray()
+	var c_en := PackedFloat64Array()
+	c_skind.resize(n)
+	c_kiai.resize(n)
+	c_ws.resize(n)
+	c_beat.resize(n)
+	c_hat.resize(n)
+	c_en.resize(n)
+	var energy = features.get("energy", PackedFloat32Array())
+	var frame_ms := float(features.get("frame_ms", 0.0))
+	var ne_en: int = energy.size() if (energy is PackedFloat32Array or energy is Array) else 0
+	for i in n:
+		var row: Array = rows[i]
+		var ks: PackedFloat32Array = row[13]
+		for k in 14:
+			c_ks[i * 14 + k] = ks[k]
+		c_skind[i] = int(row[14])
+		c_kiai[i] = int(row[15])
+		c_ws[i] = float(row[3])
+		c_beat[i] = beat[int(row[1])]
+		c_hat[i] = int(row[11])
+		var ev_en := 0.0
+		if ne_en > 0 and frame_ms > 0.0:
+			# Lautheit um den Anschlag (+-2 Frames, Maximum)
+			var fi := int(round((float(row[0]) + lead) / frame_ms))
+			for d in range(-2, 3):
+				var fj := clampi(fi + d, 0, ne_en - 1)
+				ev_en = maxf(ev_en, float(energy[fj]))
+		c_en[i] = ev_en
+	C["ks"] = c_ks
+	C["skind"] = c_skind
+	C["kiai"] = c_kiai
+	C["ws"] = c_ws
+	C["beat_ms"] = c_beat
+	C["hat_strong"] = c_hat
+	C["en"] = c_en
+	C["exp_dens"] = _expected_density(features, rows, lead)
 	for i in n:
 		var row: Array = rows[i]
 		var si: int = row[1]
@@ -883,6 +969,184 @@ static func _prep(features: Dictionary, G: Dictionary, P: Dictionary) -> Diction
 	return C
 
 
+## Erwartete Notendichte je Zeile, log2 gegen den Song-Median, auf [-2, 2] begrenzt.
+## Quelle: features.note_density ([{start_ms, end_ms, nps}], akustische Zeit; AmFeatures), sonst eigene
+## Schaetzung: mittlere Lautheit (features.energy) in +-1 s um die Zeile.
+static func _expected_density(features: Dictionary, rows: Array, lead: float) -> PackedFloat64Array:
+	var n := rows.size()
+	var out := PackedFloat64Array()
+	out.resize(n)
+	var nd = features.get("note_density")
+	var vals := PackedFloat64Array()
+	vals.resize(n)
+	if nd is Array and not (nd as Array).is_empty() and nd[0] is Dictionary:
+		var k := 0
+		for i in n:
+			var t := float(rows[i][0]) + lead
+			while k + 1 < nd.size() and float(nd[k].get("end_ms", 0.0)) <= t:
+				k += 1
+			vals[i] = maxf(float(nd[k].get("nps", 0.0)), 0.0)
+	else:
+		var energy = features.get("energy", PackedFloat32Array())
+		var frame_ms := float(features.get("frame_ms", 0.0))
+		var ne: int = energy.size() if (energy is PackedFloat32Array or energy is Array) else 0
+		if ne == 0 or frame_ms <= 0.0:
+			return out
+		# Praefixsummen der Lautheit
+		var pre := PackedFloat64Array()
+		pre.resize(ne + 1)
+		for f in ne:
+			pre[f + 1] = pre[f] + float(energy[f])
+		var half := int(round(1000.0 / frame_ms))
+		for i in n:
+			var fi := int(round((float(rows[i][0]) + lead) / frame_ms))
+			var a := clampi(fi - half, 0, ne)
+			var b := clampi(fi + half, 0, ne)
+			vals[i] = (pre[b] - pre[a]) / float(maxi(b - a, 1))
+	var srt := vals.duplicate()
+	srt.sort()
+	var med := maxf(srt[n >> 1], 1e-6) if n > 0 else 1.0
+	for i in n:
+		out[i] = clampf(log(maxf(vals[i], 1e-6) / med) / log(2.0), -2.0, 2.0)
+	return out
+
+
+## Merkmale je Zeile fuer das Auswahl-Modell (Reihenfolge = ROW_FEATURES). Rueckgabe: Array von
+## PackedFloat32Array (eine je Zeile).
+static func row_features(C: Dictionary) -> Array:
+	var n: int = C["n"]
+	var out: Array = []
+	out.resize(n)
+	var ks: PackedFloat32Array = C["ks"]
+	var tick: PackedInt32Array = C["tick"]
+	var tib: PackedInt32Array = C["tib"]
+	var bp: PackedFloat64Array = C["bp"]
+	var kinds: PackedInt32Array = C["kinds"]
+	var susb: PackedFloat64Array = C["susb"]
+	var inten: PackedFloat64Array = C["inten"]
+	var ld: PackedFloat64Array = C["ldens"]
+	var en: PackedFloat64Array = C["en"]
+	var kiai: PackedByteArray = C["kiai"]
+	var skind: PackedInt32Array = C["skind"]
+	var hat: PackedByteArray = C["hat_strong"]
+	var pitch: PackedFloat64Array = C["pitch"]
+	var beat_ms: PackedFloat64Array = C["beat_ms"]
+	var ws: PackedFloat64Array = C["ws"]
+	var xd: PackedFloat64Array = C["exp_dens"]
+	# Lautheit gegen den Song-Median
+	var srt := en.duplicate()
+	srt.sort()
+	var en_med := maxf(srt[n >> 1], 1e-6) if n > 0 else 1.0
+	var dim := ROW_FEATURES.size()
+	var lo := 0
+	var hi := 0
+	for r in n:
+		var x := PackedFloat32Array()
+		x.resize(dim)
+		x[0] = 1.0
+		for k in 14:
+			x[1 + k] = ks[r * 14 + k]
+		var m := 6
+		var tk := posmod(tick[r], 24)
+		if tk == 0:
+			m = 0 if tib[r] == 0 else 1
+		elif posmod(tick[r], 12) == 0:
+			m = 2
+		elif posmod(tick[r], 6) == 0:
+			m = 3
+		elif posmod(tick[r], 3) == 0:
+			m = 4
+		elif posmod(tick[r], 4) == 0:
+			m = 5
+		x[15 + m] = 1.0
+		var nk: int = POP[kinds[r] & 15] + POP[(kinds[r] >> 4) & 15]
+		x[22] = float(nk - 1)
+		x[23] = minf(susb[r], 4.0) / 4.0
+		x[24] = 1.0 if susb[r] >= 0.5 else 0.0
+		x[25] = inten[r] - 0.5
+		x[26] = ld[r]
+		x[27] = clampf(log(maxf(en[r], 1e-6) / en_med) / log(2.0), -3.0, 3.0) / 3.0
+		x[28] = float(kiai[r])
+		if skind[r] >= 0:
+			x[29 + skind[r]] = 1.0
+		x[35] = float(hat[r])
+		x[36] = 1.0 if pitch[r] >= 0.0 else 0.0
+		var bpmn := (60000.0 / maxf(beat_ms[r], 1.0) - 150.0) / 50.0
+		x[37] = bpmn
+		x[38] = bpmn if m == 3 else 0.0
+		x[39] = bpmn if (m == 4 or m == 5 or m == 6) else 0.0
+		x[40] = bpmn if m == 2 else 0.0
+		# Vorrang in +-1/2 Schlag: eigenes Gewicht gegen das staerkste der Nachbarschaft
+		while hi < n and bp[hi] <= bp[r] + 0.5 + EPS:
+			hi += 1
+		while lo < n and bp[lo] < bp[r] - 0.5 - EPS:
+			lo += 1
+		var mx := 1e-6
+		for q in range(lo, hi):
+			mx = maxf(mx, ws[q])
+		x[41] = ws[r] / mx
+		x[42] = minf(bp[r] - bp[r - 1], 2.0) / 2.0 if r > 0 else 1.0
+		x[43] = minf(bp[r + 1] - bp[r], 2.0) / 2.0 if r + 1 < n else 1.0
+		x[44] = xd[r]
+		out[r] = x
+	return out
+
+
+## Logit je Zeile fuer ein Modell (Gewichte nach ROW_FEATURES). X: row_features.
+static func _logits(X: Array, w: PackedFloat32Array) -> PackedFloat64Array:
+	var out := PackedFloat64Array()
+	out.resize(X.size())
+	var dim := w.size()
+	for r in X.size():
+		var x: PackedFloat32Array = X[r]
+		var z := 0.0
+		for f in dim:
+			var xv := x[f]
+			if xv != 0.0:
+				z += w[f] * xv
+		out[r] = z
+	return out
+
+
+## Auswahl-Modell aus data/automap/select.json (tools/automap_learn_chart.gd --fit):
+## {profil: {note|chord|hold: PackedFloat32Array}} oder {} ohne Datei.
+static func _select_model(P: Dictionary) -> Dictionary:
+	var src = P.get("select", {})
+	if src is Dictionary and not (src as Dictionary).is_empty():
+		return _model_ready(src)
+	_pat_mutex.lock()
+	if _sel_cache.is_empty():
+		var loaded := {}
+		if FileAccess.file_exists(SELECT_PATH):
+			var parsed = JSON.parse_string(FileAccess.get_file_as_string(SELECT_PATH))
+			if parsed is Dictionary:
+				loaded = parsed
+		_sel_cache = {"m": _model_ready(loaded)}
+	var out: Dictionary = _sel_cache["m"]
+	_pat_mutex.unlock()
+	return out
+
+
+static func _model_ready(src: Dictionary) -> Dictionary:
+	var out := {}
+	var profs = src.get("profiles", {})
+	if not (profs is Dictionary):
+		return out
+	for p in profs:
+		var m := {}
+		for task in ["note", "chord", "hold"]:
+			var wd = profs[p].get(task)
+			if not (wd is Dictionary):
+				continue
+			var w := PackedFloat32Array()
+			w.resize(ROW_FEATURES.size())
+			for f in ROW_FEATURES.size():
+				w[f] = float(wd.get(ROW_FEATURES[f], 0.0))
+			m[task] = w
+		out[p] = m
+	return out
+
+
 # ---------------------------------------------------------------------------
 # Mustertabellen
 # ---------------------------------------------------------------------------
@@ -987,8 +1251,17 @@ static func _tune(C: Dictionary, G: Dictionary, profile: String, parent: Diction
 	var sus_rows: Array = []
 	var eff := PackedFloat64Array()
 	eff.resize(n)
+	var M: Dictionary = (C.get("model", {}) as Dictionary).get(profile, {})
+	var use_model: bool = M.has("note")
+	var z_note := PackedFloat64Array()
+	if use_model:
+		z_note = _logits(C["X"], M["note"])
 	for r in n:
-		eff[r] = score[r] + dg * (inten[r] - 0.5) + dl * ldens[r] + (float(P["sus_bonus"]) if susb[r] >= float(R["hold_min"]) - EPS else 0.0)
+		if use_model:
+			# gelernte Wahrscheinlichkeit, dass ein Mensch hier eine Note setzt (Logit); Gleichstand ueber score
+			eff[r] = z_note[r] + 0.001 * score[r]
+		else:
+			eff[r] = score[r] + dg * (inten[r] - 0.5) + dl * ldens[r] + (float(P["sus_bonus"]) if susb[r] >= float(R["hold_min"]) - EPS else 0.0)
 		if has_parent and pflags[r] == 0:
 			continue
 		if _unit_ok(tick[r], units):
@@ -1003,9 +1276,17 @@ static func _tune(C: Dictionary, G: Dictionary, profile: String, parent: Diction
 	order_score.sort_custom(by_score)
 	rare.sort_custom(by_score)
 	var order_acc := allowed.duplicate()
-	order_acc.sort_custom(func(a: int, b: int) -> bool: return acc[a] > acc[b] if acc[a] != acc[b] else a < b)
+	if M.has("chord"):
+		var zc := _logits(C["X"], M["chord"])
+		order_acc.sort_custom(func(a: int, b: int) -> bool: return zc[a] > zc[b] if zc[a] != zc[b] else a < b)
+	else:
+		order_acc.sort_custom(func(a: int, b: int) -> bool: return acc[a] > acc[b] if acc[a] != acc[b] else a < b)
 	# Holds auf den staerksten gehaltenen Toenen (nicht den laengsten: Laengen wie bei den Menschen)
-	sus_rows.sort_custom(by_score)
+	if M.has("hold"):
+		var zh := _logits(C["X"], M["hold"])
+		sus_rows.sort_custom(func(a: int, b: int) -> bool: return zh[a] > zh[b] if zh[a] != zh[b] else a < b)
+	else:
+		sus_rows.sort_custom(by_score)
 	var star_a: float = P["star_scale"]
 	var star_b: float = P["star_offset"]
 	if star_a <= 0.0:
@@ -1015,6 +1296,29 @@ static func _tune(C: Dictionary, G: Dictionary, profile: String, parent: Diction
 	var X := {"profile": profile, "R": R, "pat": pat, "P": P, "order_score": order_score, "rare": rare,
 			"order_acc": order_acc, "sus_rows": sus_rows, "psizes": psizes, "has_parent": has_parent,
 			"seed": seed_base, "na": allowed.size(), "pflags": pflags}
+	if use_model and float(P["dens_quota"]) > 0.0:
+		# Dichte je Takt: erwartete Menschen-Noten = Summe der Modell-Wahrscheinlichkeiten im Takt
+		var c_bar: PackedInt32Array = C["bar"]
+		var groups := {}
+		for r: int in order_score:
+			if not groups.has(c_bar[r]):
+				groups[c_bar[r]] = PackedInt32Array()
+			var g: PackedInt32Array = groups[c_bar[r]]
+			g.append(r)
+			groups[c_bar[r]] = g
+		var keys: Array = groups.keys()
+		keys.sort()
+		var glist: Array = []
+		var gsum := PackedFloat64Array()
+		for key in keys:
+			var g: PackedInt32Array = groups[key]
+			var sp := 0.0
+			for r in g:
+				sp += 1.0 / (1.0 + exp(-clampf(z_note[r], -30.0, 30.0)))
+			glist.append(g)
+			gsum.append(sp)
+		X["groups"] = glist
+		X["gsum"] = gsum
 	var band: Array = P["star_bands"].get(profile, [0.0, 99.0])
 	var lo_b: float = band[0]
 	var hi_b: float = band[1]
@@ -1131,6 +1435,49 @@ static func _make(C: Dictionary, G: Dictionary, X: Dictionary, d: float, seed_ad
 	return res
 
 
+## Auswahl von k Zeilen, Dichte je Takt an die erwartete Dichte gekoppelt: Takt g bekommt
+## (1 - alpha) * (Zeilen ueber der gemeinsamen Schwelle) + alpha * min(Zeilen, lambda * Summe p),
+## lambda so, dass zusammen k herauskommt; im Takt die mit dem hoechsten Logit.
+static func _select_quota(X: Dictionary, k: int, flags: PackedByteArray, alpha: float) -> void:
+	var groups: Array = X["groups"]
+	var gsum: PackedFloat64Array = X["gsum"]
+	var order: Array = X["order_score"]
+	var ng := groups.size()
+	var gi := {}
+	for g in ng:
+		for r in (groups[g] as PackedInt32Array):
+			gi[r] = g
+	var thr := PackedFloat64Array()
+	thr.resize(ng)
+	for i in mini(k, order.size()):
+		thr[gi[order[i]]] += 1.0
+	var lo := 0.0
+	var hi := 1.0
+	var tot_sum := 0.0
+	for g in ng:
+		tot_sum += gsum[g]
+	if tot_sum > 0.0:
+		hi = float(k) / tot_sum * 8.0 + 1.0
+	for it in 40:
+		var lm := (lo + hi) * 0.5
+		var s := 0.0
+		for g in ng:
+			s += minf(float((groups[g] as PackedInt32Array).size()), lm * gsum[g])
+		if s < float(k):
+			lo = lm
+		else:
+			hi = lm
+	var lam := hi
+	var carry := 0.0
+	for g in ng:
+		var grp: PackedInt32Array = groups[g]
+		var want := (1.0 - alpha) * thr[g] + alpha * minf(float(grp.size()), lam * gsum[g]) + carry
+		var m := clampi(int(floor(want + 0.5)), 0, grp.size())
+		carry = want - float(m)
+		for i in m:
+			flags[grp[i]] = 1
+
+
 ## Noten, die waehrend eines Holds einer anderen Spalte beginnen (wie AmChart.lint zaehlt).
 static func overlap_count(notes: Array) -> int:
 	var hs := [-1e18, -1e18, -1e18, -1e18]
@@ -1163,8 +1510,11 @@ static func _make1(C: Dictionary, G: Dictionary, X: Dictionary, d: float, seed_a
 	var flags := PackedByteArray()
 	flags.resize(n)
 	var k := clampi(int(ceil(clampf(d, 0.0, 1.0) * float(na))), mini(na, 4), na)
-	for i in k:
-		flags[order_score[i]] = 1
+	if X.has("groups"):
+		_select_quota(X, k, flags, float(P["dens_quota"]))
+	else:
+		for i in k:
+			flags[order_score[i]] = 1
 	var boost := maxf(d - 1.0, 0.0)
 	if rare.size() > 0:
 		# seltene Teilung (Easy 1/2, Normal 1/4, Hard 1/8): bis d = 1 der Anteil der Menschen-Maps,
