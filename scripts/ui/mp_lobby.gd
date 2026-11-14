@@ -444,6 +444,17 @@ func _mp_relay(host: bool) -> void:
 		if int(id) != me:
 			other = int(id)
 	print("MPRELAY %s players=%d me=%d other=%d crown=%d" % [tag, Lobby.players.size(), me, other, Lobby.crown_id])
+	# Raum-Mods ueber den Relay: Host schaltet Sudden Death + Minen, beide sehen dieselben
+	# Mods samt Minen-Version (RuleMods.lobby_norm), die Runde baut daraus GameSession.mods.
+	if host:
+		Lobby.pick_mods(RuleMods.lobby_toggle(RuleMods.lobby_toggle(Lobby.mods, RuleMods.SD), RuleMods.MN))
+	if not await wait_for.call(func(): return RuleMods.has(Lobby.mods, RuleMods.SD) \
+			and RuleMods.has(Lobby.mods, RuleMods.MN), 10.0):
+		fail.call("Raum-Mods fehlen: %s" % str(Lobby.mods))
+		return
+	var round_mods := RuleMods.for_mode(Lobby.mods, "mania")
+	print("MPRELAY %s mods=%s v=%d nf=%s" % [tag, Lobby.mods_text(Lobby.mods),
+		int(round_mods.get(RuleMods.MN_VERSION_KEY, -1)), str(bool(round_mods.get("NF", false)))])
 	Lobby.in_game = true
 	var mine := 1111 if host else 2222
 	var theirs := 2222 if host else 1111
@@ -1878,12 +1889,23 @@ func _build_room() -> void:
 			"Kein Abbruch bei leerer Lebensleiste" if k == "NF" else "Jede Map mit Tempowechseln")
 		var key: String = k
 		mb.toggled.connect(func(_on: bool):
-			var nm: Dictionary = Lobby.mods.duplicate()
-			nm[key] = not bool(nm.get(key, false))
-			Lobby.pick_mods(nm)
+			Lobby.pick_mods(RuleMods.lobby_toggle(Lobby.mods, key))   # NF schliesst SD/PF aus
 			_refresh_room())
 		mrow.add_child(mb)
 		_mod_btns[k] = mb
+	# Regel-Mods (Sudden Death, Perfect, Minen): zweite Zeile, nur in Modi, wo sie wirken.
+	var rrow := HBoxContainer.new()
+	rrow.add_theme_constant_override("separation", 8)
+	mapcol.add_child(_gap(8))
+	mapcol.add_child(rrow)
+	for k in RuleMods.KEYS:
+		var rb := _mod_toggle(RuleMods.lobby_label(k), RuleMods.tip(k))
+		var rkey: String = k
+		rb.toggled.connect(func(_on: bool):
+			Lobby.pick_mods(RuleMods.lobby_toggle(Lobby.mods, rkey))
+			_refresh_room())
+		rrow.add_child(rb)
+		_mod_btns[k] = rb
 
 	cols.add_child(_hgap(M))
 	var vr := _vsep()
@@ -2233,8 +2255,12 @@ func _refresh_room() -> void:
 		var mb: CheckButton = _mod_btns[k]
 		mb.set_pressed_no_signal(bool(Lobby.mods.get(k, false)))
 		mb.disabled = not is_crown
-		mb.tooltip_text = (tr("Kein Abbruch bei leerer Lebensleiste") if k == "NF" else tr("Jede Map mit Tempowechseln")) \
-			+ ("" if is_crown else "\n" + tr("Nur der Kronenträger schaltet Mods."))
+		var base_tip: String = RuleMods.tip(k) if k in RuleMods.KEYS else \
+			(tr("Kein Abbruch bei leerer Lebensleiste") if k == "NF" else tr("Jede Map mit Tempowechseln"))
+		mb.tooltip_text = base_tip + ("" if is_crown else "\n" + tr("Nur der Kronenträger schaltet Mods."))
+		if k in RuleMods.KEYS:
+			mb.visible = RuleMods.available(k, Lobby.play_mode)
+			mb.get_parent().visible = RuleMods.available(RuleMods.SD, Lobby.play_mode)
 	var in_tour := Lobby.tournament != null
 	for pm in _play_btns:
 		var pb: Button = _play_btns[pm]

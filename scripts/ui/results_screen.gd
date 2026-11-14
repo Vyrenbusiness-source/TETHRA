@@ -449,6 +449,8 @@ func mod_badge_texts() -> Array:
 	var out: Array = []
 	for m in active_mods():
 		out.append(ScoreStore.mods_label({ "mods": [m], "sv_level": lv }))
+	# Regel-Mods: "SD", "PF", "Mines" (RuleMods).
+	out.append_array(RuleMods.badge_texts(_data.get("mods", GameSession.mods)))
 	# Modus-eigene Mods (Orbit: HD, PR ...) als fertige Texte.
 	for m in _data.get("mod_texts", []):
 		if str(m) != "" and not out.has(str(m)):
@@ -746,6 +748,12 @@ func _build_left_panel(parent: Control) -> void:
 				(cell.get_child(0) as Label).text = str(tier_names[i])
 	over.add_child(jd)
 	_reveal.append(jd)
+	var mines_txt := RuleMods.mines_line(_stats)   # Mod "MN": Minen gesamt / ausgeloest
+	if mines_txt != "":
+		var ml := _plain(mines_txt, 14, CAPTION)
+		ml.name = "MinesLine"
+		over.add_child(ml)
+		_reveal.append(ml)
 	if st.has("ur"):
 		var tm: Control = card._timing(st, {})
 		# Modus-Kennzahlen an der Stelle des Hold-Feldes ([Titel, Wert, Hinweis]).
@@ -1271,7 +1279,7 @@ func _badges() -> Array:
 		out.append(["NEUER REKORD", Color(1.0, 0.83, 0.25)])
 	if not is_fail and str(_stats.get("grade", "")) == "SS":
 		out.append(["SS", UiTheme.ACCENT2])
-	if not is_fail and int(_stats.get("n_miss", 1)) == 0:
+	if not is_fail and RuleMods.clean_run(_stats):   # FC: kein Miss, keine Mine
 		out.append(["FC", UiTheme.ACCENT])
 	if bool(_data.get("unranked", false)):
 		out.append(["UNGEWERTET", UiTheme.DIM])
@@ -2435,6 +2443,11 @@ func _build_details(jlog: Array) -> VBoxContainer:
 		v.add_child(_best_row(prev))
 		v.add_child(_hline())
 
+	var mcells := RuleMods.mines_cells(_stats)   # Mod "MN": Minen gesamt, ausgeloest, ausgewichen
+	if not mcells.is_empty():
+		v.add_child(_mines_row(mcells))
+		v.add_child(_hline())
+
 	v.add_child(_caption_tr("Treffer pro Spur"))
 	var lanes := HBoxContainer.new()
 	lanes.add_theme_constant_override("separation", 24)
@@ -2465,6 +2478,27 @@ func _build_details(jlog: Array) -> VBoxContainer:
 	chart.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	v.add_child(chart)
 	return v
+
+
+## "MINEN  Minen gesamt 42 · ausgeloest 3 · ausgewichen 39" (Details, nur mit Mod "MN").
+func _mines_row(cells: Array) -> Control:
+	var row := HBoxContainer.new()
+	row.name = "MinesRow"
+	row.add_theme_constant_override("separation", 18)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var cap := _caption(RuleMods.label(RuleMods.MN).to_upper())
+	cap.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	row.add_child(cap)
+	for c in cells:
+		var cell := HBoxContainer.new()
+		cell.add_theme_constant_override("separation", 6)
+		cell.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var t := _plain(str(c[0]), 13, CAPTION)
+		t.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		cell.add_child(t)
+		cell.add_child(_plain(str(c[1]), 15, UiTheme.TEXT, true))
+		row.add_child(cell)
+	return row
 
 
 ## "BISHERIGER BESTWERT  911.204 · 95,41 % · 398× · 212,4 pp      03.11.2026".
