@@ -7,6 +7,9 @@ extends SceneTree
 ##   ... --script res://tests/run_am_features_tests.gd -- --measure <maps-ordner> <anzahl> [ordner eigene songs]
 ##   optional: --set name=wert,name=wert (Parameter ueberschreiben), --no-report,
 ##   --dump <datei.json> (Noten und Ereignisse je Set fuer Auswertungen ausserhalb von Godot)
+## Liedform, Kiai, erwartete Dichte je Takt und Versatz je Art gegen die Menschen-Maps (Haelften A = Abstimm-,
+## P = Pruef-Menge wie der Pruefstand), ein Prozess, schreibt docs/automap/form.md:
+##   ... --script res://tests/run_am_features_tests.gd -- --form <maps-ordner> [anzahl] [--no-report]
 
 const RATE := 22050
 const KINDS: Array[String] = ["kick", "snare", "hat", "bass", "tonal", "vocal", "other"]
@@ -45,6 +48,14 @@ func _run() -> void:
 			var parts := kv.split("=")
 			if parts.size() == 2:
 				params[parts[0]] = float(parts[1])
+	var fi := args.find("--form")
+	if fi >= 0 and fi + 1 < args.size():
+		var cnt := 0
+		if fi + 2 < args.size() and args[fi + 2].is_valid_int():
+			cnt = int(args[fi + 2])
+		_measure_form(args[fi + 1], cnt, params, args.find("--no-report") < 0)
+		quit(0)
+		return
 	var mi := args.find("--measure")
 	if mi >= 0 and mi + 1 < args.size():
 		var own := ""
@@ -63,6 +74,8 @@ func _run() -> void:
 	_test_voice()
 	_test_mix()
 	_test_sections()
+	_test_form()
+	_test_shift()
 	_test_decode()
 	_test_speed()
 	print("=== Ergebnis: %d bestanden, %d fehlgeschlagen ===" % [_passed, _failed])
@@ -215,6 +228,25 @@ func _check_shape(an: Dictionary, label: String) -> void:
 				gapless = false
 	_ok(gapless, label + ": Abschnitte lueckenlos, Art und lead gueltig")
 	_ok(an.energy.size() > 0 and absf(an.energy.size() * float(an.frame_ms) - float(an.duration_ms)) < 2.0 * float(an.frame_ms) + 1.0, label + ": energy je Frame")
+	# bar_density: lueckenlos ueber den Song, Dichte >= 0, Zeit-Mittel 1; Abschnitte beginnen auf Takten
+	var bd: Array = an.get("bar_density", [])
+	var bd_ok := not bd.is_empty() and absf(float(bd[0].start_ms)) < 0.01 and absf(float(bd[-1].end_ms) - float(an.duration_ms)) < 0.01
+	var wsum := 0.0
+	var starts := {}
+	for i in bd.size():
+		var x: Dictionary = bd[i]
+		if float(x.density) < 0.0 or float(x.end_ms) <= float(x.start_ms):
+			bd_ok = false
+		if i > 0 and absf(float(x.start_ms) - float(bd[i - 1].end_ms)) > 0.01:
+			bd_ok = false
+		wsum += float(x.density) * (float(x.end_ms) - float(x.start_ms))
+		starts[snappedf(float(x.start_ms), 0.01)] = true
+	_ok(bd_ok and absf(wsum / maxf(float(an.duration_ms), 1.0) - 1.0) < 0.01, label + ": bar_density lueckenlos, >= 0, Mittel 1")
+	var on_bar := true
+	for sc: Dictionary in an.sections:
+		if not starts.has(snappedf(float(sc.start_ms), 0.01)):
+			on_bar = false
+	_ok(on_bar, label + ": Abschnitte beginnen auf Taktanfaengen")
 
 
 # --------------------------------------------------------------------------- Tests
@@ -527,6 +559,135 @@ func _test_sections() -> void:
 		if ts > 2000.0 and ts < 10000.0:
 			e_q = maxf(e_q, an.energy[f])
 	_ok(e_l > e_q + 0.2 and e_l <= 1.0, "abschnitte: energy lauter Teil > leiser Teil (%.2f gegen %.2f)" % [e_l, e_q])
+
+
+## Liedform: Intro, Strophe, Refrain, Strophe, Refrain, Outro (120 BPM, 2-s-Takte, Taktgitter als Eingabe).
+## Der Refrain ist lauter, dichter (Snare, Achtel-Hats) und hat eine eigene Melodie; er kehrt wieder.
+func _form_song() -> Dictionary:
+	var parts := [["intro", 4], ["verse", 8], ["chorus", 8], ["verse", 8], ["chorus", 8], ["outro", 4]]
+	var bars := 0
+	for pt in parts:
+		bars += int(pt[1])
+	var t0 := 0.25
+	var b := _buf(t0 + bars * 2.0 + 1.0)
+	var verse_hz: Array[float] = [261.6, 329.6, 392.0, 329.6]
+	var chorus_hz: Array[float] = [440.0, 554.4, 659.3, 740.0]
+	var ranges := {"intro": [], "verse": [], "chorus": [], "outro": []}
+	var bar := 0
+	for pt in parts:
+		var kind: String = pt[0]
+		var t_a := t0 + bar * 2.0
+		ranges[kind].append([t_a * 1000.0, (t_a + int(pt[1]) * 2.0) * 1000.0])
+		for k in int(pt[1]) * 4:
+			var t := t_a + k * 0.5
+			match kind:
+				"intro", "outro":
+					if k % 2 == 0:
+						_sine(b, t, 0.9, verse_hz[(k >> 1) % 4], 0.05)
+				"verse":
+					_kick(b, t, 0.45)
+					_noise(b, t + 0.25, 0.03, 0.08, true)
+					_sine(b, t, 0.45, verse_hz[k % 4], 0.08)
+				"chorus":
+					_kick(b, t, 0.9)
+					if k % 2 == 1:
+						_noise(b, t, 0.09, 0.45, false)
+					_noise(b, t + 0.25, 0.03, 0.25, true)
+					_noise(b, t, 0.03, 0.2, true)
+					_sine(b, t, 0.45, chorus_hz[k % 4], 0.2)
+					_sine(b, t, 0.45, chorus_hz[k % 4] * 0.5, 0.12)
+		bar += int(pt[1])
+	var grid := {"ok": true, "segments": [{"start_ms": t0 * 1000.0 - AmGrid.OSU_LEAD_MS, "beat_ms": 500.0, "meter": 4,
+			"downbeat_ms": t0 * 1000.0 - AmGrid.OSU_LEAD_MS}]}
+	return {"pcm": b, "grid": grid, "ranges": ranges}
+
+
+## Anteil der Zeit in den Bereichen iv, deren Abschnitt kiai == want_kiai hat.
+func _share(an: Dictionary, iv: Array, want_kiai: bool) -> float:
+	var on := 0.0
+	var tot := 0.0
+	for r in iv:
+		for sc: Dictionary in an.sections:
+			var lo := maxf(float(r[0]), float(sc.start_ms))
+			var hi := minf(float(r[1]), float(sc.end_ms))
+			if hi > lo:
+				tot += hi - lo
+				if bool(sc.kiai) == want_kiai:
+					on += hi - lo
+	return on / maxf(tot, 1.0)
+
+
+func _mean_density(an: Dictionary, iv: Array) -> float:
+	var s := 0.0
+	var tot := 0.0
+	for r in iv:
+		for x: Dictionary in an.bar_density:
+			var lo := maxf(float(r[0]), float(x.start_ms))
+			var hi := minf(float(r[1]), float(x.end_ms))
+			if hi > lo:
+				s += float(x.density) * (hi - lo)
+				tot += hi - lo
+	return s / maxf(tot, 1.0)
+
+
+func _test_form() -> void:
+	var song := _form_song()
+	var an := _an(song.pcm, {"grid": song.grid})
+	_check_shape(an, "liedform")
+	var line := ""
+	for sc: Dictionary in an.sections:
+		line += " [%.1f-%.1f %s %.2f%s]" % [float(sc.start_ms) / 1000.0, float(sc.end_ms) / 1000.0, sc.kind, sc.intensity, " kiai" if sc.kiai else ""]
+	print("  liedform:", line)
+	var rg: Dictionary = song.ranges
+	var k_ch := _share(an, rg.chorus, true)
+	var k_other := 1.0 - _share(an, rg.verse + rg.intro + rg.outro, false)
+	_ok(k_ch >= 0.75, "liedform: beide Refrains Kiai (Anteil %.2f, Ziel 0,75)" % k_ch)
+	_ok(k_other <= 0.2, "liedform: Strophen/Intro/Outro ohne Kiai (Kiai-Anteil %.2f, hoechstens 0,2)" % k_other)
+	# Grenzen auf dem gegebenen Gitter: jeder Abschnitt beginnt auf 250 ms + k * 2000 ms (oder 0)
+	var on_grid := true
+	for sc: Dictionary in an.sections:
+		var t: float = sc.start_ms
+		var r := fposmod(t - 250.0, 2000.0)
+		if t > 0.0 and r > 0.5 and r < 1999.5:
+			on_grid = false
+	_ok(on_grid, "liedform: Abschnitte beginnen auf den Taktanfaengen des Eingabe-Gitters")
+	var d_ch := _mean_density(an, rg.chorus)
+	var d_v := _mean_density(an, rg.verse)
+	var d_io := _mean_density(an, rg.intro + rg.outro)
+	_ok(d_ch > d_v and d_v > d_io, "liedform: erwartete Dichte Refrain > Strophe > Intro/Outro (%.2f / %.2f / %.2f)" % [d_ch, d_v, d_io])
+	_ok(an.sections[0].kind == "intro" and an.sections[-1].kind == "outro", "liedform: intro am Anfang, outro am Ende")
+	# ohne Gitter: AmGrid laeuft selbst, Ergebnis bleibt brauchbar
+	var an2 := _an(song.pcm)
+	_check_shape(an2, "liedform ohne Gitter")
+	var k2 := _share(an2, rg.chorus, true)
+	_ok(k2 >= 0.5, "liedform ohne Gitter: Refrains ueberwiegend Kiai (%.2f)" % k2)
+	var an3 := _an(song.pcm, {"form_track_grid": 0.0})
+	_check_shape(an3, "liedform feste Bloecke")
+
+
+## Versatz je Art: shift_snare_ms verschiebt nur Snares, shift_hat_ms nur Hats.
+func _test_shift() -> void:
+	var m := _mix(10.0)
+	var a := _an(m.pcm, {"shift_snare_ms": 0.0, "shift_hat_ms": 0.0, "shift_other_ms": 0.0})
+	var b := _an(m.pcm, {"shift_snare_ms": -6.0, "shift_hat_ms": 4.0, "shift_other_ms": 0.0})
+	var d := {"snare": [], "hat": [], "kick": []}
+	for kind: String in d:
+		var ta: Array = a.events.filter(func(e: Dictionary) -> bool: return e.kind == kind).map(func(e: Dictionary) -> float: return e.t_ms)
+		var tb: Array = b.events.filter(func(e: Dictionary) -> bool: return e.kind == kind).map(func(e: Dictionary) -> float: return e.t_ms)
+		if ta.size() == tb.size():
+			for i in ta.size():
+				d[kind].append(float(tb[i]) - float(ta[i]))
+	var med := func(v: Array) -> float:
+		if v.is_empty():
+			return NAN
+		var c := v.duplicate()
+		c.sort()
+		return c[c.size() >> 1]
+	var ms: float = med.call(d.snare)
+	var mh: float = med.call(d.hat)
+	var mk: float = med.call(d.kick)
+	_ok(absf(ms + 6.0) < 0.01 and absf(mh - 4.0) < 0.01 and absf(mk) < 0.01,
+			"versatz: je Art eigener Wert (Snare %.1f, Hat %.1f, Kick %.1f ms)" % [ms, mh, mk])
 
 
 func _write_wav(path: String, pcm: PackedFloat32Array) -> void:
@@ -865,10 +1026,6 @@ func _measure(maps_dir: String, count: int, own_dir: String, params: Dictionary,
 	var hold_sets := 0
 	var kiai_sets := 0
 	var kiai_iou_sum := 0.0
-	var kiai_var := [[0.5, 0.15], [0.5, 0.25], [0.6, 0.15], [0.6, 0.2], [0.6, 0.3], [0.7, 0.15], [0.7, 0.25], [0.8, 0.1], [0.45, 0.35], [0.55, 0.4]]
-	var kiai_var_sum := PackedFloat32Array()
-	kiai_var_sum.resize(kiai_var.size())
-	kiai_var_sum.fill(0.0)
 	var clap_n := 0
 	var clap_sn := 0
 	var plain_n := 0
@@ -947,19 +1104,10 @@ func _measure(maps_dir: String, count: int, own_dir: String, params: Dictionary,
 		if not kiai.is_empty():
 			kiai_sets += 1
 			var own_k: Array = []
-			var intens: Array = []
 			for sc in secs:
-				intens.append(sc[2])
 				if sc[3]:
 					own_k.append([sc[0], sc[1]])
 			kiai_iou_sum += _iou(own_k, kiai, s.dur)
-			for vi in kiai_var.size():
-				var fl := AmFeatures.kiai_flags(intens, kiai_var[vi][0], kiai_var[vi][1])
-				var vk: Array = []
-				for i in secs.size():
-					if fl[i]:
-						vk.append([secs[i][0], secs[i][1]])
-				kiai_var_sum[vi] += _iou(vk, kiai, s.dur)
 		for sc in secs:
 			lead_cnt[sc[4]] += (float(sc[1]) - float(sc[0]))
 			sec_cnt += 1
@@ -1001,10 +1149,6 @@ func _measure(maps_dir: String, count: int, own_dir: String, params: Dictionary,
 	for v in per_set:
 		if v >= 0.95:
 			set95 += 1
-	var best_vi := 0
-	for vi in kiai_var.size():
-		if kiai_var_sum[vi] > kiai_var_sum[best_vi]:
-			best_vi = vi
 	var ms_4min := ms_sum / (dur_sum / 240000.0)
 	var mins := dur_sum / 60000.0
 
@@ -1060,13 +1204,6 @@ func _measure(maps_dir: String, count: int, own_dir: String, params: Dictionary,
 	L.append("| Finish | %d | - | %.3f |" % [fin_n, float(fin_hat) / maxi(fin_n, 1)])
 	L.append("| Whistle | %d | - | %.3f |" % [whi_n, float(whi_hat) / maxi(whi_n, 1)])
 	L.append("| ohne Zusatz | %d | %.3f | %.3f |" % [plain_n, float(plain_sn) / maxi(plain_n, 1), float(plain_hat) / maxi(plain_n, 1)])
-	L.append("")
-	L.append("## Kiai-Schwellen (IoU-Mittel, aus denselben Abschnitten nachgerechnet)")
-	L.append("")
-	L.append("| kiai_abs | kiai_margin | IoU |")
-	L.append("|---|---|---|")
-	for vi in kiai_var.size():
-		L.append("| %.2f | %.2f | %.3f%s |" % [kiai_var[vi][0], kiai_var[vi][1], kiai_var_sum[vi] / maxi(kiai_sets, 1), " (beste)" if vi == best_vi else ""])
 	L.append("")
 	L.append("## Abschnitte und fuehrende Ebene (Anteil der Songzeit)")
 	L.append("")
@@ -1141,3 +1278,196 @@ func _measure(maps_dir: String, count: int, own_dir: String, params: Dictionary,
 		out.store_string(text + "\n")
 		out.close()
 		print("geschrieben: docs/automap/features.md")
+
+
+# --------------------------------------------------------------------------- Messung Liedform
+
+const BENCH := preload("res://tools/automap_bench.gd")
+const PROFILES := ["Easy", "Normal", "Hard", "Insane", "Expert"]
+
+
+## Erwartete Noten je 2-s-Fenster aus bar_density (akustisch; Map-Zeit = minus OSU_LEAD), Fenster ab 0 bis t_end.
+static func form_curve(bar_density: Array, t_end: float, win: float = 2000.0, lead: float = AmGrid.OSU_LEAD_MS) -> Array:
+	var n := maxi(int(ceil(t_end / win)), 1)
+	var c: Array = []
+	c.resize(n)
+	c.fill(0.0)
+	for x: Dictionary in bar_density:
+		var a := maxf(float(x.start_ms) - lead, 0.0)
+		var b := float(x.end_ms) - lead
+		var d := float(x.density)
+		if b <= a:
+			continue
+		var k := int(a / win)
+		while k < n and k * win < b:
+			var lo := maxf(a, k * win)
+			var hi := minf(b, (k + 1) * win)
+			if hi > lo:
+				c[k] += d * (hi - lo) / 1000.0
+			k += 1
+	return c
+
+
+## Versatz Ereignis (minus OSU_LEAD) gegen die naechste Note der vereinigten Diffs, |d| <= 40 ms, je Art.
+static func _kind_offsets(events: Array, union: PackedFloat64Array, out: Dictionary) -> void:
+	for e: Dictionary in events:
+		var t := float(e.t_ms) - AmGrid.OSU_LEAD_MS
+		var i := union.bsearch(t)
+		var best := INF
+		for j in [i - 1, i]:
+			if j >= 0 and j < union.size() and absf(t - union[j]) < absf(best):
+				best = t - union[j]
+		if absf(best) <= 40.0:
+			out[e.kind].append(best)
+
+
+## Gipfel einer Verteilung (1-ms-Klassen, 5 ms geglaettet), wie im Prototyp der Abstimmung.
+static func _mode_ms(v: Array) -> float:
+	if v.is_empty():
+		return NAN
+	var h := PackedFloat32Array()
+	h.resize(81)
+	h.fill(0.0)
+	for x in v:
+		var k := int(round(float(x))) + 40
+		if k >= 0 and k <= 80:
+			h[k] += 1.0
+	var best := 0
+	var bv := -1.0
+	for k in 81:
+		var s := 0.0
+		for j in range(k - 2, k + 3):
+			if j >= 0 and j <= 80:
+				s += h[j]
+		if s > bv:
+			bv = s
+			best = k
+	return best - 40.0
+
+
+func _measure_form(maps_dir: String, count: int, params: Dictionary, report: bool) -> void:
+	var files: Array = BENCH.list_osz(maps_dir)
+	StarService.prefetch_dir(maps_dir)
+	var tmp := ProjectSettings.globalize_path("user://am_features_measure")
+	DirAccess.make_dir_recursive_absolute(tmp)
+	var acc := {}
+	for sp: String in ["tune", "test"]:
+		var offs := {}
+		for k in KINDS:
+			offs[k] = []
+		acc[sp] = {"iou": [], "dens": [], "dens_hard": [], "sets": 0, "no_kiai": 0, "ms": [], "ms_grid": [], "offs": offs,
+				"kiai_share": [], "secs": 0}
+	var t_start := Time.get_ticks_msec()
+	var n_done := 0
+	for f in files:
+		if count > 0 and n_done >= count:
+			break
+		var osz: String = maps_dir.path_join(f)
+		var truth: Dictionary = BENCH.load_truth(osz, StarService.stars_for(osz))
+		if not truth.ok or (truth.diffs4k as Array).is_empty():
+			continue
+		var audio: String = BENCH.extract_file(osz, truth.audio_name, tmp.path_join("form_audio_tmp"))
+		if audio == "":
+			continue
+		var dec := AmFeatures.decode(audio)
+		DirAccess.remove_absolute(audio)
+		if not dec.ok:
+			continue
+		var t0 := Time.get_ticks_msec()
+		var grid := AmGrid.track(dec.pcm, dec.rate, {})
+		var ms_grid := Time.get_ticks_msec() - t0
+		if not grid.get("ok", false):
+			continue
+		var p2 := params.duplicate()
+		p2["grid"] = grid
+		t0 = Time.get_ticks_msec()
+		var an := AmFeatures.analyze(dec.pcm, dec.rate, p2)
+		var ms := Time.get_ticks_msec() - t0
+		if not an.ok:
+			continue
+		n_done += 1
+		var a: Dictionary = acc[BENCH.split_of(f)]
+		a.sets += 1
+		var to4 := 240000.0 / maxf(float(an.duration_ms), 30000.0)
+		a.ms.append(ms * to4)
+		a.ms_grid.append(ms_grid * to4)
+		a.secs += (an.sections as Array).size()
+		# Kiai wie im geschriebenen Set (AmWriter: Map-Zeit, auf Taktanfaenge gelegt), IoU wie der Pruefstand
+		var gen: Array = AmWriter.kiai_ranges(an, grid)
+		if gen.is_empty() and (truth.kiai as Array).is_empty():
+			a.no_kiai += 1
+		else:
+			var v = BENCH.interval_iou(gen, truth.kiai)
+			a.iou.append(0.0 if is_nan(v) else v)
+		var ks := 0.0
+		for iv in gen:
+			ks += float(iv[1]) - float(iv[0])
+		a.kiai_share.append(ks / maxf(float(an.duration_ms), 1.0))
+		# erwartete Dichte gegen die Vergleichs-Diff je Profil (Auswahl wie Pruefstand)
+		var last_ev := 0.0
+		if not (an.events as Array).is_empty():
+			last_ev = float(an.events[-1].t_ms) - AmGrid.OSU_LEAD_MS
+		for prof in PROFILES:
+			var hi: int = BENCH.pick_human_diff(truth.diffs4k, prof)
+			if hi < 0:
+				continue
+			var ht: Array = truth.diffs4k[hi].times
+			if ht.is_empty():
+				continue
+			var t_end := maxf(float(ht[-1]), last_ev) + 1.0
+			var r := BENCH.pearson(form_curve(an.bar_density, t_end), BENCH.density_curve(ht, t_end))
+			if not is_nan(r):
+				a.dens.append(r)
+				if prof == "Hard":
+					a.dens_hard.append(r)
+		var union := PackedFloat64Array()
+		for d in truth.diffs4k:
+			for t in d.times:
+				union.append(float(t))
+		union.sort()
+		_kind_offsets(an.events, union, a.offs)
+		print("%3d %s | %s | Kiai %s | %d Abschnitte | analyze %d ms, Gitter %d ms" % [n_done, f.left(40), BENCH.split_of(f),
+				"-" if a.iou.is_empty() else "%.2f" % float(a.iou[-1]), (an.sections as Array).size(), ms, ms_grid])
+	var L: Array[String] = []
+	L.append("# AmFeatures: Liedform, Kiai, erwartete Dichte je Takt (OMEN Auto-Mapper 4K)")
+	L.append("")
+	L.append("Erzeugt von `tests/run_am_features_tests.gd -- --form` in einem Prozess, %d Sets, %.0f s. Alle Zahlen gemessen." % [n_done, (Time.get_ticks_msec() - t_start) / 1000.0])
+	L.append("Haelften wie der Pruefstand (`automap_bench.gd split_of`): A = Abstimm-Menge (die Gewichte von Kiai und Dichte")
+	L.append("sind nur auf A gelernt), P = Pruef-Menge (nie gesehen). Parameter: DEFAULTS%s." % ("" if params.is_empty() else " mit " + str(params)))
+	L.append("")
+	L.append("| Kennzahl | Ziel | A | P |")
+	L.append("|---|---|---|---|")
+	var A: Dictionary = acc.tune
+	var P: Dictionary = acc.test
+	L.append("| Sets | - | %d | %d |" % [A.sets, P.sets])
+	L.append("| Kiai IoU (wie Pruefstand: Map oder Erzeugnis mit Kiai) | >= 0,6 | %.3f (n=%d) | %.3f (n=%d) |" % [BENCH.mean(A.iou), A.iou.size(), BENCH.mean(P.iou), P.iou.size()])
+	L.append("| Sets ohne Kiai auf beiden Seiten (zaehlen nicht) | - | %d | %d |" % [A.no_kiai, P.no_kiai])
+	L.append("| Kiai-Anteil der Songzeit, erzeugt (Median) | - | %.2f | %.2f |" % [BENCH.median(A.kiai_share), BENCH.median(P.kiai_share)])
+	L.append("| Korrelation erwartete Dichte (bar_density) gegen Mensch, 2-s-Fenster, alle Profile | >= 0,8 | %.3f (n=%d) | %.3f (n=%d) |" % [BENCH.mean(A.dens), A.dens.size(), BENCH.mean(P.dens), P.dens.size()])
+	L.append("| dasselbe nur Hard | - | %.3f (n=%d) | %.3f (n=%d) |" % [BENCH.mean(A.dens_hard), A.dens_hard.size(), BENCH.mean(P.dens_hard), P.dens_hard.size()])
+	L.append("| Abschnitte je Set (Mittel) | - | %.1f | %.1f |" % [float(A.secs) / maxi(A.sets, 1), float(P.secs) / maxi(P.sets, 1)])
+	L.append("| analyze mit Gitter als Eingabe, auf 4 min, 95. Perzentil | <= 8 s | %.1f s | %.1f s |" % [BENCH.percentile(A.ms, 95.0) / 1000.0, BENCH.percentile(P.ms, 95.0) / 1000.0])
+	var both_a: Array = []
+	var both_p: Array = []
+	for i in A.ms.size():
+		both_a.append(float(A.ms[i]) + float(A.ms_grid[i]))
+	for i in P.ms.size():
+		both_p.append(float(P.ms[i]) + float(P.ms_grid[i]))
+	L.append("| analyze ohne Gitter (ruft AmGrid.track selbst), auf 4 min, 95. Perzentil | <= 8 s | %.1f s | %.1f s |" % [BENCH.percentile(both_a, 95.0) / 1000.0, BENCH.percentile(both_p, 95.0) / 1000.0])
+	L.append("")
+	L.append("## Versatz je Art (Ereignis minus OSU_LEAD minus naechste Menschen-Note, alle Diffs vereinigt, |d| <= 40 ms)")
+	L.append("")
+	L.append("| Art | Median A | Median P | Gipfel A | Gipfel P | n (A+P) |")
+	L.append("|---|---|---|---|---|---|")
+	for k in KINDS:
+		var oa: Array = A.offs[k]
+		var op: Array = P.offs[k]
+		L.append("| %s | %+.1f ms | %+.1f ms | %+.0f ms | %+.0f ms | %d |" % [k, BENCH.median(oa), BENCH.median(op), _mode_ms(oa), _mode_ms(op), oa.size() + op.size()])
+	L.append("")
+	var text := "\n".join(L)
+	print(text)
+	if report:
+		var out := FileAccess.open("res://docs/automap/form.md", FileAccess.WRITE)
+		out.store_string(text + "\n")
+		out.close()
+		print("geschrieben: docs/automap/form.md")

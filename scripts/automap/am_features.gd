@@ -51,9 +51,9 @@ const DEFAULTS := {
 	# Anstiegs aenderte daran nichts (fester Versatz). Frueher ein gemeinsamer Wert onset_shift_ms
 	# fuer Snare/Hat/other (3, abgestimmt 6); Snare und other lagen damit 6..9 ms spaet. onset_shift_ms
 	# wirkt nicht mehr.
-	"shift_snare_ms": -6.5,
-	"shift_hat_ms": -2.0,
-	"shift_other_ms": -6.0,
+	"shift_snare_ms": -5.0,
+	"shift_hat_ms": -1.0,
+	"shift_other_ms": -5.0,
 	"shift_low_ms": -13.0,       # Kick/Bass
 	"shift_harm_ms": -5.0,       # Instrument/Stimme
 	"kick_min": 0.25,            # schwaechere Kicks (perkussive Staerke, normiert) lagen in der Messung auf Zufallsniveau
@@ -82,12 +82,14 @@ const DEFAULTS := {
 	"sustain_keep": 0.35,        # Pegel-Anteil, bis zu dem ein Ton als gehalten gilt
 	"sustain_max_ms": 8000.0,
 	"energy_range_db": 40.0,
-	"section_block_ms": 500.0,
-	"section_window_s": 4.0,
-	"section_min_s": 8.0,
-	"section_novelty": 0.22,
-	"kiai_abs": 0.5, "kiai_margin": 0.15,   # beste Variante der Messung ueber 155 Sets
-	"break_max": 0.3,
+	# Liedform (docs/automap/features.md, Abschnitt Liedform): Kiai je 4-Takt-Block ab dieser
+	# Wahrscheinlichkeit, Abschnittsgrenzen an Kiai-Wechseln und an Blockanfaengen mit Neuheit ab
+	# form_cut_nov (P95 = 1), Abstand mindestens form_min_bars Takte.
+	"form_kiai_thr": 0.25,
+	"form_dens_gain": 0.3,       # Dichte = max(0, 1 + gain * Modell), danach Mittel 1
+	"form_cut_nov": 0.5,
+	"form_min_bars": 8,
+	"break_max": 0.3,            # Intensitaet darunter: "break"
 	"form_track_grid": 1.0,      # ohne params.grid: Taktgitter selbst ueber AmGrid.track holen (0 = feste 2-s-Bloecke)
 	"lead_drums_eps": 4.0, "lead_bass_eps": 2.5, "lead_tonal_eps": 3.0, "lead_vocal_frac": 0.6,
 }
@@ -606,7 +608,7 @@ static func clean_name(s: String) -> String:
 
 static func _fail(msg: String) -> Dictionary:
 	return {"ok": false, "error": msg, "duration_ms": 0.0, "events": [], "energy": PackedFloat32Array(),
-			"frame_ms": 0.0, "sections": []}
+			"frame_ms": 0.0, "sections": [], "bar_density": []}
 
 
 static func _run_group(c: Callable, count: int, threads: int) -> void:
@@ -716,18 +718,6 @@ static func _band_of(hz: float, nb: int) -> int:
 	return nb - 1
 
 
-## Kiai je Abschnitt aus den Intensitaeten: ab max(kiai_abs, hoechste - kiai_margin).
-static func kiai_flags(intens: Array, kiai_abs: float, kiai_margin: float) -> Array:
-	var imax := 0.0
-	for v in intens:
-		imax = maxf(imax, float(v))
-	var thr := maxf(kiai_abs, imax - kiai_margin)
-	var res: Array = []
-	for v in intens:
-		res.append(float(v) >= thr)
-	return res
-
-
 static func analyze(pcm: PackedFloat32Array, rate: int, params: Dictionary = {}) -> Dictionary:
 	var p := DEFAULTS.duplicate()
 	p.merge(params, true)
@@ -817,6 +807,7 @@ static func analyze(pcm: PackedFloat32Array, rate: int, params: Dictionary = {})
 		en0.fill(0.0)
 		silent.energy = en0
 		silent.sections = [{"start_ms": 0.0, "end_ms": duration_ms, "intensity": 0.0, "kind": "break", "kiai": false, "lead": "tonal"}]
+		silent.bar_density = [{"start_ms": 0.0, "end_ms": duration_ms, "density": 0.0}]
 		return silent
 	hp.floor_ref = gref * pow(10.0, float(p.floor_db) / 20.0)
 	# Verdeckung: gehaltene Toene (Zeit-Median) lecken ueber die Fensterflanken in fast leere Baender;
@@ -1080,11 +1071,13 @@ static func analyze(pcm: PackedFloat32Array, rate: int, params: Dictionary = {})
 	var bf := _bar_feats(bars, duration_ms, frames, frame_ms, spec, nb, energy, e_p, e_hl, e_hm, voc, float(p.vocal_min), chroma, events)
 
 	# ---- 7. Abschnitte
-	var sections := _sections(p, frames, frame_ms, duration_ms, energy, e_p, e_hl, e_hm, voc, events)
+	bf["bars"] = bars
+	var form := _form(bf) if bars.size() >= 4 else {}
+	var built := _build_sections(p, bf, form, events, duration_ms)
 	var res := {"ok": true, "error": "", "duration_ms": duration_ms, "events": events, "energy": energy,
-			"frame_ms": frame_ms, "sections": sections}
+			"frame_ms": frame_ms, "sections": built.sections, "bar_density": built.bar_density}
 	if p.get("debug_form", false):
-		bf["bars"] = bars
+		bf["form"] = form
 		res["form_debug"] = bf
 	if p.get("debug", false):
 		res["debug"] = {"f_kick": f_kick, "f_bass": f_bass, "f_mid": f_mid, "f_hi": f_hi, "voc": voc,
@@ -1183,185 +1176,6 @@ static func _sustain(h: PackedFloat32Array, f: int, f_end: int, keep: float) -> 
 	while g < lim and h[g] >= thr:
 		g += 1
 	return float(g - f)
-
-
-static func _sections(p: Dictionary, frames: int, frame_ms: float, duration_ms: float, energy: PackedFloat32Array,
-		e_p: PackedFloat32Array, e_hl: PackedFloat32Array, e_hm: PackedFloat32Array, voc: PackedFloat32Array,
-		events: Array) -> Array:
-	var blk := maxi(1, int(round(float(p.section_block_ms) / frame_ms)))
-	var nblk := int(ceil(float(frames) / blk))
-	var feats: Array[PackedFloat32Array] = []
-	for k in 4:
-		var a := PackedFloat32Array()
-		a.resize(nblk)
-		a.fill(0.0)
-		feats.append(a)
-	var vfrac := PackedFloat32Array()
-	vfrac.resize(nblk)
-	var voc_min: float = p.vocal_min
-	var hm_sum := 0.0
-	for f in frames:
-		hm_sum += e_hm[f]
-	var hm_mean := hm_sum / frames
-	for i in nblk:
-		var a := i * blk
-		var b := mini(frames, a + blk)
-		var s0 := 0.0
-		var s1 := 0.0
-		var s2 := 0.0
-		var s3 := 0.0
-		var vc := 0
-		for f in range(a, b):
-			s0 += energy[f]
-			s1 += e_p[f]
-			s2 += e_hl[f]
-			s3 += e_hm[f]
-			if voc[f] >= voc_min and e_hm[f] >= 0.5 * hm_mean:
-				vc += 1
-		var c := float(b - a)
-		feats[0][i] = s0 / c
-		feats[1][i] = s1 / c
-		feats[2][i] = s2 / c
-		feats[3][i] = s3 / c
-		vfrac[i] = vc / c
-	var loud := feats[0].duplicate()
-	for k in range(1, 4):
-		var mx := 1e-9
-		for i in nblk:
-			mx = maxf(mx, feats[k][i])
-		for i in nblk:
-			feats[k][i] /= mx
-	# Ereignisse je Block und Art
-	var cnt: Array[PackedInt32Array] = []
-	for k in KINDS.size():
-		var a := PackedInt32Array()
-		a.resize(nblk)
-		a.fill(0)
-		cnt.append(a)
-	var blk_ms := blk * frame_ms
-	var all_cnt := PackedFloat32Array()
-	all_cnt.resize(nblk)
-	all_cnt.fill(0.0)
-	for e: Dictionary in events:
-		var bi := clampi(int(float(e.t_ms) / blk_ms), 0, nblk - 1)
-		cnt[KINDS.find(e.kind)][bi] += 1
-		all_cnt[bi] += 1.0
-	# Neuheit
-	var w := maxi(2, int(round(float(p.section_window_s) * 1000.0 / blk_ms)))
-	var min_len := maxi(2, int(round(float(p.section_min_s) * 1000.0 / blk_ms)))
-	var nov := PackedFloat32Array()
-	nov.resize(nblk)
-	nov.fill(0.0)
-	var wts: Array[float] = [2.0, 1.0, 1.0, 1.0]
-	for i in range(w, nblk - w + 1):
-		var d := 0.0
-		for k in 4:
-			var pa := 0.0
-			var pb := 0.0
-			for j in w:
-				pa += feats[k][i - 1 - j]
-				pb += feats[k][i + j] if i + j < nblk else feats[k][nblk - 1]
-			d += wts[k] * absf(pb - pa) / w
-		nov[i] = d
-	var cands: Array = []
-	var thr: float = p.section_novelty
-	for i in range(1, nblk - 1):
-		if nov[i] >= thr and nov[i] >= nov[i - 1] and nov[i] > nov[i + 1]:
-			cands.append([nov[i], i])
-	cands.sort_custom(func(a: Array, b: Array) -> bool: return a[0] > b[0])
-	var cuts: Array[int] = [0, nblk]
-	for c in cands:
-		var ci: int = c[1]
-		var ok := true
-		for x in cuts:
-			if absi(x - ci) < min_len:
-				ok = false
-				break
-		if ok:
-			cuts.append(ci)
-	cuts.sort()
-	var lo := _percentile(loud, 0.1)
-	var hi := maxf(_percentile(loud, 0.95), lo + 1e-3)
-	var dens_ref := maxf(_percentile(all_cnt, 0.95), 1.0)
-	var secs: Array = []
-	var intens: Array = []
-	var slopes: Array = []
-	for si in cuts.size() - 1:
-		var a := cuts[si]
-		var b := cuts[si + 1]
-		var ls := 0.0
-		var ds := 0.0
-		var h1 := 0.0
-		var h2 := 0.0
-		var vs := 0.0
-		var kc: Array[float] = []
-		kc.resize(KINDS.size())
-		kc.fill(0.0)
-		@warning_ignore("integer_division")
-		var mid := (a + b) / 2
-		for i in range(a, b):
-			ls += loud[i]
-			ds += all_cnt[i]
-			vs += vfrac[i]
-			if i < mid:
-				h1 += loud[i]
-			else:
-				h2 += loud[i]
-			for k in KINDS.size():
-				kc[k] += cnt[k][i]
-		var c := float(b - a)
-		var inten := clampf(0.7 * clampf((ls / c - lo) / (hi - lo), 0.0, 1.0) + 0.3 * clampf(ds / c / dens_ref, 0.0, 1.0), 0.0, 1.0)
-		var slope := 0.0
-		if mid > a and b > mid:
-			slope = h2 / (b - mid) - h1 / (mid - a)
-		var secs_s := c * blk_ms / 1000.0
-		var drums_eps := (kc[0] + kc[1] + kc[2] + kc[6]) / secs_s
-		var s_d := clampf(drums_eps / float(p.lead_drums_eps), 0.0, 1.0) * (0.6 + 0.4 * inten)
-		var s_b := clampf(kc[3] / secs_s / float(p.lead_bass_eps), 0.0, 1.0) * 0.7
-		var s_t := clampf(kc[4] / secs_s / float(p.lead_tonal_eps), 0.0, 1.0) * 0.75
-		var s_v := clampf(vs / c / float(p.lead_vocal_frac), 0.0, 1.0) * (1.1 - 0.4 * inten)
-		var lead := "tonal"
-		var best := 0.15
-		if s_t > best:
-			best = s_t
-		if s_b > best:
-			best = s_b
-			lead = "bass"
-		if s_d > best:
-			best = s_d
-			lead = "drums"
-		if s_v > best:
-			best = s_v
-			lead = "vocal"
-		intens.append(inten)
-		slopes.append(slope)
-		secs.append({"start_ms": a * blk_ms, "end_ms": minf(b * blk_ms, duration_ms), "intensity": inten,
-				"kind": "verse", "kiai": false, "lead": lead})
-	secs[0].start_ms = 0.0
-	secs[secs.size() - 1].end_ms = duration_ms
-	var kf := kiai_flags(intens, p.kiai_abs, p.kiai_margin)
-	var brk: float = p.break_max
-	var med_i := 0.5
-	if not intens.is_empty():
-		var tmp := PackedFloat32Array(intens)
-		med_i = _percentile(tmp, 0.5) + 1e-5
-	for si in secs.size():
-		var s: Dictionary = secs[si]
-		var it: float = intens[si]
-		s.kiai = kf[si]
-		if kf[si]:
-			s.kind = "chorus"
-		elif si == 0 and secs.size() > 1 and it < 0.5 and it <= med_i:
-			s.kind = "intro"
-		elif si == secs.size() - 1 and secs.size() > 1 and it < 0.5 and it <= med_i:
-			s.kind = "outro"
-		elif it < brk:
-			s.kind = "break"
-		elif si + 1 < secs.size() and kf[si + 1] and float(slopes[si]) > 0.04:
-			s.kind = "build"
-		else:
-			s.kind = "verse"
-	return secs
 
 
 # --------------------------------------------------------------------------- Liedform
@@ -1662,60 +1476,348 @@ static func _novelty(S: PackedFloat32Array, n: int, w: int) -> PackedFloat32Arra
 	return nov
 
 
-## Abschnittsgrenzen (Takt-Indizes, mit 0 und n): Gipfel der Neuheit, auf das Phrasen-Raster (je `phrase`
-## Takte, Phase mit der groessten Neuheitssumme) gelegt, gierig nach Staerke mit Mindestlaenge.
-static func _cuts(nov: PackedFloat32Array, phrase: int, min_len: int, thr: float) -> PackedInt32Array:
-	var n := nov.size()
-	var sorted := nov.duplicate()
-	sorted.sort()
-	var ref := 1.0
-	if n > 2:
-		# wie numpy.percentile (linear) bei 95 %
-		var pos := 0.95 * (n - 1)
-		var lo := int(floor(pos))
-		var hi := mini(lo + 1, n - 1)
-		ref = sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo)
-	var nv := PackedFloat32Array()
-	nv.resize(n)
+## Gelernte Gewichte (tools: Abstimm-Menge, siehe docs/automap/features.md, Abschnitt Liedform). Merkmale wie in _form().
+## Kiai je 4-Takt-Block: logistisch, 58 Merkmale + Achsenabschnitt (z-Normierung eingerechnet).
+const FORM_KIAI_W: Array[float] = [
+	-0.192321, 0.056085, -0.349731, 0.329677, 0.213824, 0.026931, 0.013917, -0.338880,
+	-0.713130, -0.322539, 3.020918, 0.619510, 0.408550, -1.198237, 0.671709, 0.444756,
+	-0.331293, -0.234163, 1.020117, -0.517632, -0.100775, -0.102727, -0.057284, 0.278157,
+	-0.101425, -0.006969, -0.023396, 0.010179, 0.207259, 0.216799, 0.055860, 0.132262,
+	-0.156276, -0.061938, -0.122524, -0.009955, -0.194159, 0.267748, 0.178529, 0.067201,
+	-0.006143, -0.057921, -0.108091, 0.032103, -0.139022, -0.018014, 0.070194, 0.088269,
+	0.071181, 0.099281, 1.340762, -0.436547, 1.251426, -1.152115, -1.563400, 0.573425,
+	1.392936, 0.724025, -6.280971,
+]
+const FORM_DENS_W: Array[float] = [
+	0.399333, 0.259675, -0.103797, -0.224619, -0.009043, 0.105991, 0.095414, 0.075709,
+	0.072159, -0.105553, -0.023610, -0.171936, -0.009698, 0.017213, 0.021243, 0.013404,
+	0.010721, -0.050951, 0.211202, -0.054867, -0.058556, -0.057464, 0.024820, -0.068620,
+	-0.015402, 0.130972, -0.006117, 0.031510, 0.306876, -0.337312, 0.027014, 0.042568,
+	0.011277, 0.098437, 0.175205, -0.083635, -0.144995, -0.027556, 0.054290, -0.010918,
+	-0.109314, 0.078269, 0.085151, 0.037268, 0.719426, -0.109597, 0.165768, 0.050770,
+	0.005751, -0.024684, -0.031004, -0.001606, -0.140838,
+]
+
+## Reihen (Index in FORM_BASE) fuer die Kiai-Merkmale, in dieser Reihenfolge.
+const FORM_KIAI_KEYS: Array[int] = [0, 1, 3, 2, 5, 8, 7, 9, 10, 4]
+
+
+## Quantil wie numpy.percentile (linear).
+static func _pctl_lin(x: PackedFloat32Array, q: float) -> float:
+	var n := x.size()
+	if n == 0:
+		return 0.0
+	var s := x.duplicate()
+	s.sort()
+	var pos := q * (n - 1)
+	var lo := int(floor(pos))
+	var hi := mini(lo + 1, n - 1)
+	return s[lo] + (s[hi] - s[lo]) * (pos - lo)
+
+
+## Gleitendes Mittel ueber k Takte (Fenster i - k/2 .. i + k - 1 - k/2, Rand wiederholt).
+static func _smooth(x: PackedFloat32Array, k: int) -> PackedFloat32Array:
+	var n := x.size()
+	var o := PackedFloat32Array()
+	o.resize(n)
+	@warning_ignore("integer_division")
+	var h := k / 2
 	for i in n:
-		nv[i] = nov[i] / (ref + 1e-9)
-	var cand: Array[int] = []
-	for i in range(1, n - 1):
-		if nv[i] >= nv[i - 1] and nv[i] > nv[i + 1] and nv[i] > thr:
-			cand.append(i)
-	if phrase > 1 and not cand.is_empty():
-		var best := 0
-		var best_s := -INF
-		for q in phrase:
-			var s := 0.0
-			var i := q
-			while i < n:
-				s += nv[i]
-				i += phrase
-			if s > best_s:
-				best_s = s
-				best = q
-		var snapped := {}
-		@warning_ignore("integer_division")
-		var kmax := (n - 1 - best) / phrase
+		var s := 0.0
+		for j in k:
+			s += x[clampi(i - h + j, 0, n - 1)]
+		o[i] = s / k
+	return o
+
+
+## Mittlere Aehnlichkeit zweier Bloecke entlang der Diagonale (gleiche Takt-Position).
+static func _blk_sim(S: PackedFloat32Array, n: int, a: int, c: int, length: int) -> float:
+	var s := 0.0
+	for k in length:
+		s += S[(a + k) * n + c + k]
+	return s / maxi(length, 1)
+
+
+## Liedform aus den Takt-Merkmalen. Liefert {"blocks": PackedInt32Array (Takt-Index je Blockanfang),
+## "kiai_p": PackedFloat32Array (je Block), "nov": PackedFloat32Array (je Takt, P95 = 1),
+## "density": PackedFloat32Array (je Takt, roh, >= 0)}.
+static func _form(bf: Dictionary) -> Dictionary:
+	var n: int = bf.n
+	var base := _form_base(bf)
+	var Z: Array[PackedFloat32Array] = []
+	var R: Array[PackedFloat32Array] = []
+	for a in base:
+		Z.append(_zs(a))
+		R.append(_rank(a))
+	var S := _ssm(bf, 0.5)
+	@warning_ignore("integer_division")
+	var w := maxi(2, mini(8, n / 4))
+	var nov := _novelty(S, n, w)
+	var ref := _pctl_lin(nov, 0.95) + 1e-9
+	for i in n:
+		nov[i] /= ref
+	# 4-Takt-Bloecke, Phase mit der groessten Neuheitssumme
+	var q := 0
+	var qs := -INF
+	for c in 4:
+		var s := 0.0
+		var i := c
+		while i < n:
+			s += nov[i]
+			i += 4
+		if s > qs:
+			qs = s
+			q = c
+	var starts := PackedInt32Array()
+	if q > 0:
+		starts.append(0)
+	var t := q
+	while t < n:
+		starts.append(t)
+		t += 4
+	var nbk := starts.size()
+	var bend := PackedInt32Array()
+	bend.resize(nbk)
+	for k in nbk:
+		bend[k] = starts[k + 1] if k + 1 < nbk else n
+	# Block-Mittel der z-Werte und Raenge
+	var nk := FORM_KIAI_KEYS.size()
+	var M := PackedFloat32Array()
+	M.resize(nbk * nk)
+	var RK := PackedFloat32Array()
+	RK.resize(nbk * nk)
+	for k in nbk:
+		var a := starts[k]
+		var b := bend[k]
+		for j in nk:
+			var zz: PackedFloat32Array = Z[FORM_KIAI_KEYS[j]]
+			var rr: PackedFloat32Array = R[FORM_KIAI_KEYS[j]]
+			var sz := 0.0
+			var sr := 0.0
+			for i in range(a, b):
+				sz += zz[i]
+				sr += rr[i]
+			M[k * nk + j] = sz / (b - a)
+			RK[k * nk + j] = sr / (b - a)
+	# Lautheit je Block (z loud + z lep), Rang, Aehnlichkeit mit den lautesten Bloecken
+	var lb := PackedFloat32Array()
+	lb.resize(nbk)
+	for k in nbk:
+		lb[k] = M[k * nk + 0] + M[k * nk + 1]
+	var lrk := _rank(lb)
+	var sim := PackedFloat32Array()
+	sim.resize(nbk)
+	for k in nbk:
+		var acc := 0.0
+		var cnt := 0
+		for j in nbk:
+			if j == k or lrk[j] < 0.75:
+				continue
+			acc += _blk_sim(S, n, starts[k], starts[j], mini(bend[k] - starts[k], bend[j] - starts[j]))
+			cnt += 1
+		sim[k] = acc / cnt if cnt > 0 else 0.0
+	var zsim := _zs(sim)
+	var kp := PackedFloat32Array()
+	kp.resize(nbk)
+	var W := FORM_KIAI_W
+	for k in nbk:
+		var a := starts[k]
+		var b := bend[k]
+		var x := FORM_KIAI_W[W.size() - 1]
+		var kp1 := k - 1 if k > 0 else k
+		var kn1 := k + 1 if k + 1 < nbk else k
+		var kp2 := k - 2 if k > 1 else kp1
+		for j in nk:
+			var m := M[k * nk + j]
+			x += W[j] * m
+			x += W[nk + j] * RK[k * nk + j]
+			x += W[2 * nk + j] * (m - M[kp1 * nk + j])
+			x += W[3 * nk + j] * (m - M[kn1 * nk + j])
+			x += W[4 * nk + j] * (m - M[kp2 * nk + j])
+		var best := 0.0
+		var L := b - a
+		for j in nbk:
+			if j != k and bend[j] - starts[j] == L:
+				best = maxf(best, _blk_sim(S, n, a, starts[j], L))
+		var o := 5 * nk
+		x += W[o] * best + W[o + 1] * nov[a] + W[o + 2] * float(a) / n + W[o + 3] * pow(float(a) / n, 2.0) + W[o + 4] * (1.0 - float(b) / n)
+		x += W[o + 5] * lrk[k] + W[o + 6] * sim[k] + W[o + 7] * zsim[k]
+		kp[k] = 1.0 / (1.0 + exp(-x))
+	# Dichte je Takt: lineares Modell ueber z-Werte, Glaettung 4/8, Block-Mittel, Kiai-p, Ereignisse je Art
+	var nbase := base.size()
+	var cnt_z: Array[PackedFloat32Array] = []
+	var cntv: PackedFloat32Array = bf.cnt
+	for kk in 7:
+		var c := PackedFloat32Array()
+		c.resize(n)
+		for i in n:
+			c[i] = cntv[i * 7 + kk]
+		cnt_z.append(_zs(c))
+	var s4: Array[PackedFloat32Array] = []
+	var s8: Array[PackedFloat32Array] = []
+	var bm: Array[PackedFloat32Array] = []
+	for j in nbase:
+		s4.append(_smooth(Z[j], 4))
+		s8.append(_smooth(Z[j], 8))
+		var g := PackedFloat32Array()
+		g.resize(n)
+		for k in nbk:
+			var sz := 0.0
+			for i in range(starts[k], bend[k]):
+				sz += Z[j][i]
+			for i in range(starts[k], bend[k]):
+				g[i] = sz / (bend[k] - starts[k])
+		bm.append(g)
+	var D := FORM_DENS_W
+	var dens := PackedFloat32Array()
+	dens.resize(n)
+	var bk := 0
+	for i in n:
+		while bk + 1 < nbk and starts[bk + 1] <= i:
+			bk += 1
+		var x := D[D.size() - 1]
+		for j in nbase:
+			x += D[j] * Z[j][i] + D[nbase + j] * s4[j][i] + D[2 * nbase + j] * s8[j][i] + D[3 * nbase + j] * bm[j][i]
+		x += D[4 * nbase] * kp[bk]
+		for kk in 7:
+			x += D[4 * nbase + 1 + kk] * cnt_z[kk][i]
+		dens[i] = x
+	return {"blocks": starts, "kiai_p": kp, "nov": nov, "density": dens}
+
+
+## Abschnitte (lueckenlos, Grenzen auf Taktanfaengen) und erwartete Notendichte je Takt.
+## form leer (unter 4 Takten): ein Abschnitt, Dichte 1.
+static func _build_sections(p: Dictionary, bf: Dictionary, form: Dictionary, events: Array, duration_ms: float) -> Dictionary:
+	var bars: PackedFloat64Array = bf.bars
+	var n: int = bf.n
+	var dens := PackedFloat32Array()
+	dens.resize(n)
+	dens.fill(1.0)
+	var bounds: Array[int] = [0, n]
+	var kiai_bar := PackedByteArray()
+	kiai_bar.resize(n)
+	kiai_bar.fill(0)
+	if not form.is_empty():
+		var gain: float = p.form_dens_gain
+		var raw: PackedFloat32Array = form.density
+		for i in n:
+			dens[i] = maxf(0.0, 1.0 + gain * raw[i])
+		var starts: PackedInt32Array = form.blocks
+		var kp: PackedFloat32Array = form.kiai_p
+		var thr: float = p.form_kiai_thr
+		var nov: PackedFloat32Array = form.nov
+		for k in starts.size():
+			var b := starts[k + 1] if k + 1 < starts.size() else n
+			if kp[k] > thr:
+				for i in range(starts[k], b):
+					kiai_bar[i] = 1
+		for k in range(1, starts.size()):
+			if kiai_bar[starts[k]] != kiai_bar[starts[k] - 1]:
+				bounds.append(starts[k])
+		var cand: Array[int] = []
+		for k in range(1, starts.size()):
+			if nov[starts[k]] >= float(p.form_cut_nov) and not bounds.has(starts[k]):
+				cand.append(starts[k])
+		cand.sort_custom(func(a: int, b: int) -> bool: return nov[a] > nov[b] or (nov[a] == nov[b] and a < b))
+		var min_bars: int = int(p.form_min_bars)
 		for c in cand:
-			# naechster Rasterpunkt, bei Gleichstand der fruehere
-			var k := clampi(int(ceil(float(c - best) / phrase - 0.5)), 0, kmax)
-			var j := best + k * phrase
-			if j > 0 and j < n:
-				snapped[j] = true
-		cand.clear()
-		for j in snapped:
-			cand.append(j)
-	cand.sort_custom(func(a: int, b: int) -> bool: return nv[a] > nv[b] or (nv[a] == nv[b] and a < b))
-	var cuts: Array[int] = [0, n]
-	for c in cand:
-		var ok := true
-		for x in cuts:
-			if absi(c - x) < min_len:
-				ok = false
-				break
-		if ok:
-			cuts.append(c)
-	cuts.sort()
-	return PackedInt32Array(cuts)
+			var ok := true
+			for x in bounds:
+				if absi(c - x) < min_bars:
+					ok = false
+					break
+			if ok:
+				bounds.append(c)
+		bounds.sort()
+	# Dichte auf Zeit-Mittel 1
+	var tot := 0.0
+	var tsum := 0.0
+	for i in n:
+		var t1 := bars[i + 1] if i + 1 < n else duration_ms
+		tot += dens[i] * (t1 - bars[i])
+		tsum += t1 - bars[i]
+	if tot > 1e-6:
+		for i in n:
+			dens[i] *= tsum / tot
+	var bar_density: Array = []
+	for i in n:
+		bar_density.append({"start_ms": bars[i], "end_ms": bars[i + 1] if i + 1 < n else duration_ms, "density": dens[i]})
+	# Ereignisse je Abschnitt und Art
+	var secs: Array = []
+	var ei := 0
+	var voc: PackedFloat32Array = bf.voc
+	for si in bounds.size() - 1:
+		var a := bounds[si]
+		var b := bounds[si + 1]
+		var t0 := bars[a]
+		var t1 := bars[b] if b < n else duration_ms
+		var kc: Array[float] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+		while ei < events.size() and float(events[ei].t_ms) < t1:
+			if float(events[ei].t_ms) >= t0:
+				kc[KINDS.find(events[ei].kind)] += 1.0
+			ei += 1
+		var dsum := 0.0
+		var vsum := 0.0
+		for i in range(a, b):
+			var e1 := bars[i + 1] if i + 1 < n else duration_ms
+			dsum += dens[i] * (e1 - bars[i])
+			vsum += voc[i] * (e1 - bars[i])
+		var span := maxf(t1 - t0, 1.0)
+		var inten := clampf(0.5 * dsum / span, 0.0, 1.0)
+		secs.append({"start_ms": t0, "end_ms": t1, "intensity": inten, "kind": "verse", "kiai": kiai_bar[a] == 1,
+				"lead": _lead_of(p, kc, vsum / span, span / 1000.0, inten)})
+	secs[0].start_ms = 0.0
+	secs[secs.size() - 1].end_ms = duration_ms
+	var brk: float = p.break_max
+	for si in secs.size():
+		var s: Dictionary = secs[si]
+		var it: float = s.intensity
+		var first_main := true
+		for sj in si:
+			if secs[sj].kiai or float(secs[sj].intensity) >= 0.45:
+				first_main = false
+		var last_main := true
+		for sj in range(si + 1, secs.size()):
+			if secs[sj].kiai or float(secs[sj].intensity) >= 0.45:
+				last_main = false
+		if s.kiai:
+			s.kind = "chorus"
+		elif si == 0 and secs.size() > 1 and it < 0.45:
+			s.kind = "intro"
+		elif si == secs.size() - 1 and secs.size() > 1 and it < 0.45:
+			s.kind = "outro"
+		elif it < brk:
+			s.kind = "break"
+		elif si + 1 < secs.size() and secs[si + 1].kiai:
+			s.kind = "build"
+		elif first_main and it < 0.45:
+			s.kind = "intro"
+		elif last_main and it < 0.45:
+			s.kind = "outro"
+		else:
+			s.kind = "verse"
+	return {"sections": secs, "bar_density": bar_density}
+
+
+## Fuehrende Ebene eines Abschnitts aus Ereignissen je Sekunde und Stimm-Anteil.
+static func _lead_of(p: Dictionary, kc: Array[float], vfrac: float, secs_s: float, inten: float) -> String:
+	var sec := maxf(secs_s, 0.05)
+	var drums_eps := (kc[0] + kc[1] + kc[2] + kc[6]) / sec
+	var s_d := clampf(drums_eps / float(p.lead_drums_eps), 0.0, 1.0) * (0.6 + 0.4 * inten)
+	var s_b := clampf(kc[3] / sec / float(p.lead_bass_eps), 0.0, 1.0) * 0.7
+	var s_t := clampf(kc[4] / sec / float(p.lead_tonal_eps), 0.0, 1.0) * 0.75
+	var s_v := clampf(vfrac / float(p.lead_vocal_frac), 0.0, 1.0) * (1.1 - 0.4 * inten)
+	var lead := "tonal"
+	var best := 0.15
+	if s_t > best:
+		best = s_t
+	if s_b > best:
+		best = s_b
+		lead = "bass"
+	if s_d > best:
+		best = s_d
+		lead = "drums"
+	if s_v > best:
+		best = s_v
+		lead = "vocal"
+	return lead
