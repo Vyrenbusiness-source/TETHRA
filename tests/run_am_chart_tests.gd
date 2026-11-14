@@ -396,7 +396,7 @@ func _test_roles() -> void:
 		ev2.append(_ev(800.0 + float(i) * beat, "hat", 0.8))
 		ev2.append(_ev(800.0 + (float(i) + 0.5) * beat, "kick", 0.8))
 	var f2 := {"events": ev2, "sections": feats["sections"]}
-	var low := {"star_bands": {"Normal": [0.5, 1.0]}, "star_tol": 0.1}
+	var low := {"star_bands": {"Normal": [0.5, 1.0]}, "star_tol": 0.1, "select_model": false}   # Handgewichte (ohne Auswahl-Modell)
 	var kick_share := func(p: Dictionary) -> float:
 		var r := AmChart.build(f2, grid, "Normal", p)
 		var nk := 0
@@ -425,7 +425,7 @@ func _test_roles() -> void:
 			if float(nt["t_ms"]) < 800.0 + 80.0 * beat - 1.0:
 				nd += 1
 		return float(nd) / maxf(float((r["notes"] as Array).size()), 1.0)
-	var hard_low := {"star_bands": {"Hard": [1.0, 1.6]}, "star_tol": 0.1}
+	var hard_low := {"star_bands": {"Hard": [1.0, 1.6]}, "star_tol": 0.1, "select_model": false}
 	var d0: float = dense_share.call(hard_low)
 	var hl := hard_low.duplicate(true)
 	hl["dens_local_gain"] = 0.8

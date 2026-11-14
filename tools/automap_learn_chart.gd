@@ -438,6 +438,15 @@ func _eval(args: PackedStringArray, cache: String) -> int:
 		rec["stars"] = st
 		recs.append(rec)
 		_diag_add(diag, s, prod)
+		# Auswahl-Eigenschaft: Stellen des leichteren Profils fehlen im schwereren
+		if prod.ok:
+			for pi in range(AmChart.PROFILES.size() - 1):
+				var lo_t := {}
+				for nt in prod.charts[AmChart.PROFILES[pi + 1]].notes:
+					lo_t[int(round(float(nt.t_ms)))] = true
+				for nt in prod.charts[AmChart.PROFILES[pi]].notes:
+					if not lo_t.has(int(round(float(nt.t_ms)))):
+						diag["subset_bad"] = int(diag.get("subset_bad", 0)) + 1
 		if args.has("--rank"):
 			_rank_add(diag, s, prod, cp)
 	var a := B.aggregate(recs, split)
@@ -449,6 +458,7 @@ func _eval(args: PackedStringArray, cache: String) -> int:
 	for p in AmChart.PROFILES:
 		var pa: Dictionary = a.get("per", {}).get(p, {})
 		print("  %s: %s" % [p, JSON.stringify(_short_prof(pa))])
+	print("  Stellen im leichteren Profil, die im schwereren fehlen: %d" % int(diag.get("subset_bad", 0)))
 	for p in AmChart.PROFILES:
 		if diag.has("d_" + p):
 			print("  %s Dichte d: < 1: %d, = 1: %d, > 1: %d" % [p, diag["d_" + p][0], diag["d_" + p][1], diag["d_" + p][2]])

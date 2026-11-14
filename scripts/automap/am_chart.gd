@@ -35,7 +35,7 @@ const DEFAULTS := {
 	"snap_quarter_bias_ms": 6.0,  # 1/4 gewinnt gegen 1/8 bei fast gleichem Abstand
 	"hold_share_scale": 1.0,
 	"motif_min_rows": 3,          # ab so vielen Zeilen je Takt gilt ein Takt als Motiv
-	"pitch_weight": 2.0,          # Tonhoehe -> Spaltenrichtung
+	"pitch_weight": 2.5,          # Tonhoehe -> Spaltenrichtung (2,0 -> 2,5: Akkord-Zeilen nach dem Modell)
 	"pitch_step": 0.04,
 	"role_weight": 1.5,           # feste Spalten fuer Kick/Snare je Abschnitt
 	"balance_weight": 6.0,
@@ -55,6 +55,7 @@ const DEFAULTS := {
 	"select_model": true,
 	"hold_len_scale": 0.0,        # Hold-Laenge = gehaltener Ton mal diesem Wert (0 = gelernt in Easy/Normal, sonst 1)
 	"hold_len_max_beats": 0.0,    # hoechstens so viele Schlaege (0 = ohne Grenze)
+	"hold_any_p": 0.0,            # > 0: Hold auch ohne gehaltenen Ton ab dieser Hold-Wahrscheinlichkeit (Modell hold_any)
 	"hold_min_p": 0.0,            # Hold nur bei gelernter Hold-Wahrscheinlichkeit (Note vorausgesetzt) ab diesem Wert
 	"fill_max": 0.3,              # Zwischen-Zeilen bei d = 2 hoechstens dieser Anteil der Zeilen (0 = aus)
 	"fill_energy": 0.8,           # nur wo die Lautheit >= diesem Anteil des Medians der Ereignis-Zeilen
@@ -1484,6 +1485,21 @@ static func _tune(C: Dictionary, G: Dictionary, profile: String, parent: Diction
 			sus_rows = keep_h
 	else:
 		sus_rows.sort_custom(by_score)
+	var hany: float = P["hold_any_p"]
+	var hl_any := {}
+	if hany > 0.0 and M.has("hold_any"):
+		# Holds auch ohne gemessenen gehaltenen Ton, wo das Modell (alle Menschen-Noten) einen Hold erwartet;
+		# Laenge dann wie bei den Menschen (Median des Bands)
+		var za := _logits(C["X"], M["hold_any"])
+		var zmin_a := log(hany / maxf(1.0 - hany, 1e-6))
+		var have := {}
+		for r: int in sus_rows:
+			have[r] = true
+		for r: int in allowed:
+			if not have.has(r) and za[r] >= zmin_a and _unit_ok(tick[r], units):
+				sus_rows.append(r)
+				hl_any[r] = true
+		sus_rows.sort_custom(func(a: int, b: int) -> bool: return za[a] > za[b] if za[a] != za[b] else a < b)
 	var star_a: float = P["star_scale"]
 	var star_b: float = P["star_offset"]
 	if star_a <= 0.0:
@@ -1495,6 +1511,7 @@ static func _tune(C: Dictionary, G: Dictionary, profile: String, parent: Diction
 			"seed": seed_base, "na": allowed.size(), "pflags": pflags, "fills": fills}
 	if rare_model:
 		X["is_rare"] = is_rare
+	X["hl_any"] = hl_any
 	# Hold-Laenge (select.json hold_len: Mensch gegen gehaltenen Ton); params ueberschreiben
 	var hlm: Dictionary = M.get("hold_len", {})
 	var hls: float = P["hold_len_scale"]
@@ -1504,6 +1521,7 @@ static func _tune(C: Dictionary, G: Dictionary, profile: String, parent: Diction
 	var learned := clampf(float(hlm.get("ratio_med", 1.0)), 0.25, 1.0) if (not hlm.is_empty() and int(R["overlap"]) < 2) else 1.0
 	X["hl_scale"] = hls if hls > 0.0 else learned
 	X["hl_max"] = hlx if hlx > 0.0 else 1e9
+	X["hl_med"] = float(hlm.get("len_med", 0.5))
 	if sup.has("force"):
 		# Stellen des leichteren Bezugsprofils sind Pflicht (schwerere Profile enthalten sie)
 		X["force"] = sup["force"]
@@ -1908,7 +1926,8 @@ static func _make1(C: Dictionary, G: Dictionary, X: Dictionary, d: float, seed_a
 			"jack_cap": mini(int(R["jack"]), maxi(int(pat["jack_cap"]), 1)) if int(R["jack"]) > 0 else 0,
 			"ovl_budget": int(0.6 * float(R["ovl_max"]) * float(ns) * so), "seed_i": int(X["seed"]) & 3, "avoid": 0,
 			"ep": exp(float(P["pitch_weight"])), "erole": exp(float(P["role_weight"])),
-			"hl_scale": X.get("hl_scale", 1.0), "hl_max": X.get("hl_max", 1e9)}
+			"hl_scale": X.get("hl_scale", 1.0), "hl_max": X.get("hl_max", 1e9), "hl_any": X.get("hl_any", {}),
+			"hl_med": X.get("hl_med", 0.5)}
 	var S: Array = [-1e9, -1e9, -1e9, -1e9, 0, 0, 0, 0, -1e9, -1e9, -1e9, -1e9, 0, 0, 0, -1e9, -1.0, 1.5, 0, 0, 0, -1e9,
 			-1.0, 1, 0, 0, 0, 0, 0, 0]
 	var notes: Array = []
@@ -2133,6 +2152,8 @@ static func _do_row(S: Array, C: Dictionary, G: Dictionary, Y: Dictionary, q: in
 		# Laenge wie bei den Menschen: gehaltener Ton mal gelerntem Verhaeltnis, hoechstens hl_max Schlaege
 		var bms: float = (C["beat_ms"] as PackedFloat64Array)[r]
 		var sus_eff := minf(c_sus[r] * float(Y["hl_scale"]), float(Y["hl_max"]) * bms)
+		if (Y["hl_any"] as Dictionary).has(r):
+			sus_eff = maxf(sus_eff, float(Y["hl_med"]) * bms)
 		sus_eff = maxf(sus_eff, float(R["hold_min"]) * bms)
 		end_ms = _g_snap(G, c_t[r] + sus_eff, hu, 0)
 		end_bp = _g_bp(G, end_ms)
