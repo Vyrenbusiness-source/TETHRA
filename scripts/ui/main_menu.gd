@@ -1673,6 +1673,13 @@ func _build_buttons(x0: float, y0: float) -> void:
 
 	y = _build_daily_row(x0, y)
 
+	# Marathon: oeffnet den Song-Browser (Mania) mit der Marathon-Auswahl.
+	var mara := _menu_button("MARATHON", false)
+	mara.pressed.connect(func():
+		GameSession.set_meta(&"open_marathon", true)
+		_play_mode_entry("mania"))
+	y = _add_row(mara, x0, y)
+
 	var tut := _menu_button("TUTORIAL", false)
 	tut.pressed.connect(_start_tour)
 	y = _add_row(tut, x0, y)
