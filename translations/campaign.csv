@@ -85,7 +85,6 @@ Kapitel %d freigeschaltet,Kapitel %d freigeschaltet,Chapter %d unlocked
 Kapitel %d bis %d freigeschaltet,Kapitel %d bis %d freigeschaltet,Chapters %d to %d unlocked
 Bestanden,Bestanden,Passed
 Nicht bestanden: %s,Nicht bestanden: %s,Not passed: %s
-Einstufung: bis Kapitel %d,Einstufung: bis Kapitel %d,Placement: up to chapter %d
 Einstufung,Einstufung,Placement
 Einstufen,Einstufen,Placement test
 Nächste Prüfung,Nächste Prüfung,Next trial
@@ -110,3 +109,5 @@ Konstant ist an und zählt nicht für die Prüfung,Konstant ist an und zählt ni
 Noch keine Scores · der erste Platz ist frei,Noch keine Scores · der erste Platz ist frei,No scores yet · first place is open
 Das Ziel schaltet %s frei,Das Ziel schaltet %s frei,The goal unlocks %s
 Ungewertet zählt nicht,Ungewertet zählt nicht,Unranked runs do not count
+Einstufung beendet: Kapitel %d,Einstufung beendet: Kapitel %d,Placement done: chapter %d
+Einstufung %d von %d,Einstufung %d von %d,Placement %d of %d

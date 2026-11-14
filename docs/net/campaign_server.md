@@ -36,8 +36,8 @@ Antwort (zusaetzlich zu den bisherigen Feldern):
 
 - `campaign_trial`: Kapitel, von dem aus die Skip-Pruefung gespielt wurde (`<modus>-cNN`).
   `campaign` ist die Boss-Stufe der Pruefung; Sterne zaehlen wie bei jedem Lauf nur dort.
-- Bestanden, wenn der Server selbst nachrechnet: `accuracy >= 0.99`, nicht `failed`, keine
-  erleichternden Mods (`NF`, `CS`), Boss-Stufe passt zu `campaign_trial` (Regel wie
+- Bestanden, wenn der Server selbst nachrechnet: `accuracy >= 0.99`, nicht `failed`, nicht `unranked`,
+  keine erleichternden Mods (`NF`, `CS`), Boss-Stufe passt zu `campaign_trial` (Regel wie
   `Campaign.trial_target`).
 - Je Spieler und Modus speichern: `skip_to` (hoechstes freigeschaltetes Kapitel, sinkt nie).
 - Gesamtrangliste: nur echte Sterne (Uebersprungenes zaehlt nichts). `chapter` in der Antwort

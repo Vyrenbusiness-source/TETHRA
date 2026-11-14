@@ -460,6 +460,9 @@ func _test_trial() -> void:
 	unr["unranked"] = true
 	_ok(not Campaign.trial_passed(unr, {}), "Ungewertet zaehlt nicht")
 	_ok(not Campaign.trial_passed(_run(0.9899, "S", 0), {}), "98,99 % besteht nicht")
+	_ok(Campaign.trial_miss_reason(_run(0.98996, "S", 0), {}).begins_with("0") and not Campaign.trial_miss_reason(_run(0.98996, "S", 0), {}).begins_with("0.00")
+		and not Campaign.trial_miss_reason(_run(0.98996, "S", 0), {}).begins_with("0,00"), "knapp darunter: nie 0,00 % fehlen")
+	_ok(not Campaign.trial_acc_text(0.98996).begins_with("99"), "knapp darunter wird nicht als 99 % angezeigt")
 	_ok(Campaign.trial_passed(_run(0.99, "S", 3), {"SV": true, "HD": true}), "genau 99 % mit schwereren Mods besteht")
 	# Bestanden
 	out = Campaign.apply_trial(state, d, 0, _run(0.993, "S", 2), {})
@@ -489,7 +492,10 @@ func _test_placement() -> void:
 	_ok(Campaign.placement_available(d, state), "Einstufung im leeren Modus")
 	_ok(not Campaign.placement_available(_mini_n(1), state), "keine Einstufung ohne Pruefungen")
 	_ok(Campaign.placement_next(d, 0) == 2 and Campaign.placement_next(d, 8) == -1, "Folge-Pruefung, Ende am letzten Kapitel")
+	_ok(Campaign.placement_chain(d) == [0, 2, 4, 6, 8] and Campaign.placement_chain(_mini_n(1)).is_empty(), "Einstufung: fuenf Pruefungen")
+	_ok(Campaign.highest_open(d, state) == 0, "leer: hoechstes offenes Kapitel 1")
 	Campaign.apply_trial(state, d, 0, _run(0.995, "S", 0), {})
 	_ok(not Campaign.placement_available(d, state), "nach dem ersten Sprung keine Einstufung mehr")
 	Campaign.apply_trial(state, d, 2, _run(0.995, "S", 0), {})
 	_ok(Campaign.skip_to(state, "mania") == 4 and Campaign.chapter_open(d, state, 4), "zweite Pruefung: bis Kapitel 5")
+	_ok(Campaign.highest_open(d, state) == 5, "nach zwei Pruefungen (Boss 5 geschafft): Kapitel 6 offen")

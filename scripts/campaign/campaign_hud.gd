@@ -163,7 +163,7 @@ func _update() -> void:
 	var st := _stats()
 	if _trial_val != null and not st.is_empty():
 		var acc := float(st.get("accuracy", 0.0))
-		_trial_val.text = Campaign.acc_text(acc)
+		_trial_val.text = Campaign.trial_acc_text(acc)
 		_trial_val.add_theme_color_override("font_color", UiTheme.BAD if bool(st.get("failed", false))
 			else (UiTheme.ACCENT if acc + 0.000001 >= Campaign.TRIAL_ACC else UiTheme.DIM))
 	var goals: Array = stage.get("goals", [])

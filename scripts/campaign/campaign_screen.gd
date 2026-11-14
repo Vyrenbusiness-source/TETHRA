@@ -117,9 +117,9 @@ static func draw_cover(ci: CanvasItem, tex: Texture2D, r: Rect2, col: Color, u: 
 			rh = ts.y
 			rw = rh * want
 		ci.draw_texture_rect_region(tex, r, Rect2((ts.x - rw) * 0.5, (ts.y - rh) * 0.5, rw, rh),
-			Color(0.42, 0.41, 0.40) if gray else Color.WHITE)
+			Color(0.34, 0.33, 0.32) if gray else Color.WHITE)
 		if gray:
-			ci.draw_rect(r, Color(UiTheme.BG.r, UiTheme.BG.g, UiTheme.BG.b, 0.55))
+			ci.draw_rect(r, Color(UiTheme.BG.r, UiTheme.BG.g, UiTheme.BG.b, 0.62))
 		return
 	ci.draw_rect(r, col)
 	for i in 3:
@@ -1115,7 +1115,11 @@ func _build_detail() -> void:
 	var kicker := "%s  ·  %s" % [Campaign.stage_label(st, idx), ScoreStore.mode_label(str(st.mode))]
 	var kcol := UiTheme.ACCENT if boss or open else UiTheme.DIM
 	if trial:
-		kicker = "%s  ·  %s" % [tr("Einstufung") if _placement else tr("Skip-Prüfung"),
+		var chain := Campaign.placement_chain(_data)
+		var what := tr("Skip-Prüfung")
+		if _placement and chain.has(_chapter):
+			what = tr("Einstufung %d von %d") % [chain.find(_chapter) + 1, chain.size()]
+		kicker = "%s  ·  %s" % [what,
 			tr("Boss von Kapitel %d") % (Campaign.chapter_index_of(_data, sid) + 1)]
 		kcol = UiTheme.ACCENT2
 	_put(_label(kicker, 13.0, kcol, true), x + 20, 84 + 236 - 92, w - 40, 20, _detail)
@@ -1655,6 +1659,18 @@ func _run_shots() -> void:
 	var boss := str(Campaign.trial_stage(_data, 3).id)
 	await _shot_result("result_trial", boss, 0.9934, {"trial": 3})
 	await _shot_result("result_trial_fail", boss, 0.9712, {"trial": 3, "placement": true})
+	# Bestandene Pruefung von Kapitel 4: Kapitel 5 uebersprungen, 6 per Boss offen.
+	Campaign.apply_trial(_state, _data, 3, {"failed": false, "accuracy": 0.9934, "grade": "S",
+		"n_miss": 2, "score": 941870, "max_combo": 431}, {})
+	_view = "path"
+	_chapter = 4
+	_rebuild()
+	_show_info(4)
+	await get_tree().create_timer(1.2).timeout
+	await _save_shot("path_skipped")
+	_open_chapter(4)
+	await get_tree().create_timer(2.0).timeout
+	await _save_shot("skipped")
 	# Leerer Modus: Einstufung anbieten.
 	_state = Campaign.new_state()
 	_view = "path"

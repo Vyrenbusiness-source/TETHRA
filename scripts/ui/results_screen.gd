@@ -2705,7 +2705,8 @@ func _campaign_setup() -> void:
 		"index": Campaign.stage_index_of(cdata, stage_id),
 		"world": str((Campaign.chapters(cdata)[ci] as Dictionary).get("world", "")),
 		"trial": trial, "placement": placement, "accuracy": float(run.get("accuracy", 0.0)),
-		"skip_to": Campaign.skip_to(state, Campaign.data_mode(cdata))}
+		"skip_to": Campaign.skip_to(state, Campaign.data_mode(cdata)),
+		"highest": Campaign.highest_open(cdata, state)}
 	if trial >= 0:
 		# Bestanden: Einstufung -> naechste Pruefung, sonst weiter zur neuen Front.
 		if bool(out.get("trial_passed", false)):
@@ -2742,7 +2743,14 @@ func _campaign_leave(target: String) -> void:
 		return
 	GameSession.campaign_return_trial = {}
 	var trial := int(_camp.get("trial", -1))
-	if target.begins_with("trial:") or (target == "" and trial >= 0):
+	var passed := bool((_camp.get("out", {}) as Dictionary).get("trial_passed", false))
+	if target == "" and trial >= 0 and passed:
+		# Bestanden und Esc (auch Abbruch der Einstufung): zur neuen Front, nicht zur Pruefung.
+		var all0 := Campaign.load_data()
+		var cd0 := Campaign.for_mode(all0, Campaign.mode_of_stage(all0, str(_camp.get("stage_id", ""))))
+		var front := Campaign.current_stage_id(cd0, Campaign.load_state())
+		GameSession.campaign_return = front if front != "" else str(_camp.get("stage_id", ""))
+	elif target.begins_with("trial:") or (target == "" and trial >= 0):
 		# Zur Pruefung zurueck (Esc) oder zur naechsten der Einstufung (Enter).
 		var ci := int(target.trim_prefix("trial:")) if target != "" else trial
 		var all := Campaign.load_data()
@@ -2760,7 +2768,7 @@ func _campaign_leave(target: String) -> void:
 func _trial_texts() -> Array:
 	var out: Dictionary = _camp.out
 	var req := tr("Skip-Prüfung: %s Accuracy") % Campaign.pct_text(Campaign.TRIAL_ACC)
-	var got := tr("erreicht %s") % Campaign.acc_text(float(_camp.get("accuracy", 0.0)))
+	var got := tr("erreicht %s") % Campaign.trial_acc_text(float(_camp.get("accuracy", 0.0)))
 	var verdict := ""
 	if bool(out.get("trial_passed", false)):
 		var a := int(out.get("trial_from", 0)) + 2
@@ -2770,12 +2778,14 @@ func _trial_texts() -> Array:
 			verdict = tr("Bestanden")
 	else:
 		verdict = tr("Nicht bestanden: %s") % str(out.get("trial_reason", ""))
-		if bool(_camp.get("placement", false)):
-			verdict += "  ·  " + tr("Einstufung: bis Kapitel %d") % (maxi(int(_camp.get("skip_to", -1)), 0) + 1)
+	# Nebeninfo ruhig daneben: Ende der Einstufung, Sterne der Boss-Stufe.
+	var extra: Array[String] = []
+	if bool(_camp.get("placement", false)) and not str(_camp_next).begins_with("trial:"):
+		extra.append(tr("Einstufung beendet: Kapitel %d") % (int(_camp.get("highest", 0)) + 1))
 	var gained := int(out.get("gained", 0))
 	if gained > 0:
-		verdict += "  ·  " + (tr("+1 Stern") if gained == 1 else tr("+%d Sterne") % gained)
-	return [req, got, verdict]
+		extra.append(tr("+1 Stern") if gained == 1 else tr("+%d Sterne") % gained)
+	return [req, got, verdict, "  ·  ".join(extra)]
 
 
 ## Erfuellter Stern blendet kurz nacheinander ein (Deckkraft und leichte Groesse, kein Wackeln).
@@ -2811,6 +2821,13 @@ func _build_trial_row(row: HBoxContainer, box: Control) -> void:
 	verdict.add_theme_font_size_override("font_size", 15)
 	verdict.add_theme_color_override("font_color", UiTheme.GOOD if ok else FAIL_COLOR)
 	row.add_child(verdict)
+	if str(t[3]) != "":
+		var ex := Label.new()
+		ex.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+		ex.text = "·  " + str(t[3])
+		ex.add_theme_font_size_override("font_size", 14)
+		ex.add_theme_color_override("font_color", UiTheme.TEXT)
+		row.add_child(ex)
 	_reveal.append(box)
 
 

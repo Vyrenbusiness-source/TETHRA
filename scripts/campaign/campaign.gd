@@ -450,7 +450,8 @@ static func trial_miss_reason(run: Dictionary, mods: Dictionary) -> String:
 		return tr_("Ungewertet zählt nicht")
 	var acc := float(run.get("accuracy", 0.0))
 	if acc + 0.000001 < TRIAL_ACC:
-		return tr_("%s fehlen") % acc_text(TRIAL_ACC - acc)
+		# Aufgerundet: nie "0,00 % fehlen" bei knapp darunter.
+		return tr_("%s fehlen") % acc_text(ceilf((TRIAL_ACC - acc) * 10000.0 - 0.0001) / 10000.0)
 	return ""
 
 
@@ -494,6 +495,24 @@ static func placement_available(data: Dictionary, state: Dictionary) -> bool:
 static func placement_next(data: Dictionary, ci: int) -> int:
 	var t := trial_target(data, ci)
 	return t if t >= 0 and trial_target(data, t) >= 0 else -1
+
+
+## Pruefungen der Einstufung in Reihenfolge (Kapitel-Indizes, von denen aus geprueft wird).
+static func placement_chain(data: Dictionary) -> Array[int]:
+	var out: Array[int] = []
+	var ci := 0 if trial_target(data, 0) >= 0 else -1
+	while ci >= 0 and not out.has(ci):
+		out.append(ci)
+		ci = placement_next(data, ci)
+	return out
+
+
+## Hoechstes offenes Kapitel (Index).
+static func highest_open(data: Dictionary, state: Dictionary) -> int:
+	for ci in range(chapters(data).size() - 1, -1, -1):
+		if chapter_open(data, state, ci):
+			return ci
+	return 0
 
 
 ## Stufen eines Kapitels, deren Hauptziel geschafft ist.
@@ -772,6 +791,11 @@ static func pct_text(v: float) -> String:
 
 
 ## Genauigkeit mit zwei Nachkommastellen ("97,12 %" / "97.12%").
+## Genauigkeit fuer die Skip-Pruefung: abgerundet, damit 98,996 % nie als "99,00 %" erscheint.
+static func trial_acc_text(v: float) -> String:
+	return acc_text(floorf(v * 10000.0 + 0.0001) / 10000.0)
+
+
 static func acc_text(v: float) -> String:
 	var t := "%.2f" % (v * 100.0)
 	if TranslationServer.get_locale().begins_with("de"):

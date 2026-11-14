@@ -30,7 +30,8 @@ Alle Spieler spielen dieselben Maps, damit die Scores vergleichbar sind.
   Modi mit nur einem Kapitel haben keine.
 - Bestanden mit mindestens 99 % Accuracy (`TRIAL_ACC`) in einem Lauf, ohne Fail und ohne Mods,
   die die Wertung erleichtern (`EASY_MODS`: NF, CS/Konstant). Gilt fuer jeden Modus auf seine
-  eigene Accuracy. Sonst passiert nichts; beliebig oft versuchbar, das Ergebnis nennt, was fehlte.
+  eigene Accuracy. Ungewertete Laeufe (`unranked`, z. B. eigene AR in Orbit) zaehlen auch nicht;
+  Konstant kommt bei Mania aus `Settings.mod_constant`. Sonst passiert nichts; beliebig oft versuchbar, das Ergebnis nennt, was fehlte.
 - Bestanden: alle Kapitel bis einschliesslich des Pruefungs-Kapitels sind offen, ihre Stufen alle
   spielbar. Weil der Lauf auch als Lauf der Boss-Stufe zaehlt, ist deren Hauptziel meist erfuellt
   und damit nach der normalen Regel auch das Kapitel danach offen.
@@ -39,8 +40,10 @@ Alle Spieler spielen dieselben Maps, damit die Scores vergleichbar sind.
   Gesamtzahl zaehlt nur echte Sterne. Ein spaeteres kleineres Bestehen senkt `to` nie.
 - Einstufung: Ist ein Modus leer (kein Stern, kein Sprung), bietet der Kapitelweg "Einstufen" an.
   Pruefung von Kapitel 1, bestanden -> Pruefung des erreichten Kapitels usw.
-  (`Campaign.placement_next`), bis eine nicht bestanden ist oder das letzte Kapitel erreicht ist.
-  Abbrechen: Esc / Zur Kampagne.
+  (`Campaign.placement_next`, Folge `placement_chain`, bei Mania 5 Pruefungen: Kapitel 1, 3, 5,
+  7, 9), bis eine nicht bestanden ist oder das letzte Kapitel erreicht ist. Die Ansicht zeigt
+  "Einstufung n von m". Ergebnis: hoechstes offenes Kapitel (`highest_open`), im Ergebnis
+  "Einstufung beendet: Kapitel n". Abbrechen: Esc / Zur Kampagne (bestanden: zur neuen Front).
 - Anzeige: Kapitelweg nennt "Skip-Pruefung: 99 % Accuracy · bis Kapitel n", uebersprungene
   Kapitel tragen "Uebersprungen" (ACCENT2, ruhiges Blaugrau); Sperrgrund nennt die Pruefung als
   zweiten Weg. HUD zeigt die Grenze mit der aktuellen Accuracy, das Ergebnis die erreichte
@@ -117,7 +120,8 @@ setzt bei Mania die Tastenzahl vor den Namen (`[4K] Easy`), in der .osu steht nu
 - Autoplay (Testflag) traegt nie in den echten Stand ein, nur in eine `--campaign-path`-Datei.
 - Harness Ansicht: `res://scenes/campaign.tscn --shot-campaign=<Praefix> [--maps-dir=<Ordner>]`
   speichert `_path.png`, `_path_locked.png`, `_stage.png`, `_locked.png`, `_trial.png`,
-  `_result.png`, `_result_trial.png`, `_result_trial_fail.png`, `_placement.png`, `_placement_trial.png`
+  `_result.png`, `_result_trial.png`, `_result_trial_fail.png`, `_path_skipped.png`, `_skipped.png`,
+  `_placement.png`, `_placement_trial.png`
   (Demo-Stand, nichts wird gespeichert).
 - Harness echter Stufenlauf (`--autoplay` vor einem `--`, sonst spielt niemand): `res://scenes/campaign.tscn --autoplay --shot-campaign-run=<Praefix>
   [--shot-campaign-stage=<Stufe>] [--shot-campaign-trial] --campaign-path=<Testdatei>` startet die Stufe, spielt sie,
