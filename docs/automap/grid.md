@@ -6,27 +6,80 @@ Tests und Messung: `tests/run_am_grid_tests.gd`.
 ## Ablauf
 
 1. `envelope()`: Onset-Fluss in drei Baendern (5-ms-Frames), Bass-Fluss, Bass-Nulldurchgaenge.
+   `decimate()`: Signal auf ~2756 Hz (zweimal Tiefpass 1000 Hz) fuer die Harmonie-Merkmale.
 2. Autokorrelation in 4-s-Bloecken: grober Puls, Fenster mit fremdem Tempo werden eigene Segmente.
 3. Mehrere Puls-Kandidaten (staerkste lokale Maxima der Kamm-Autokorrelation, `n_pulses`), jeder mit
    seiner Tempo-Familie (x2, x0,5, x1,5, x0,667, x3, x0,333, x0,75, x1,333). Jede Hypothese wird ueber
    die Taktstruktur bewertet: Phasen-Kohaerenz auf Schlag, Halbe, Viertel und Drittel des Schlags,
-   Fuellung der Schlaege, Tempo-Vorwissen (Log-Normal um `prior_bpm`).
+   Fuellung der Schlaege, Tempo-Vorwissen (Log-Normal um `prior_bpm`). Folgesegmente pruefen nur
+   die Oktaven ihres eigenen Pulses (sonst gewinnt ueber x0,75 / x1,333 wieder das Haupttempo).
 4. Periode: Regression Zeit = Offset + k * Periode ueber das ganze Segment; gegen den Scan
    gewinnt die Periode mit der hoeheren Kohaerenz. Ganzzahlige BPM, wenn sie innerhalb der
    Messgenauigkeit liegen oder (bis 0,15 % Abstand) mindestens 92 % der Kohaerenz erreichen.
-5. Phase: Maximum des gefalteten Onset-Profils, Viertel des Schlags mit dem staerksten Akzent.
-6. Taktart (4 oder 3) und Taktanfang: Statistik je Schlagposition im Takt (Bass-Akzent,
-   Harmoniewechsel ueber Bass-Nulldurchgaenge, Energiewechsel ueber 4 und 16 Schlaege) plus
-   Bonus fuer den Schlag des ersten deutlichen Bass-Anschlags (Songs beginnen meist auf der Eins).
-7. Vertrauen aus Abstand zur zweitbesten Hypothese und Kohaerenz; Alternativen mit Faktor und
+5. Phase: Maximum des gefalteten Onset-Profils, dann das Viertel des Schlags mit dem hoechsten
+   Log-Akzent; das Viertel des ersten deutlichen Anschlags (ab Median-Staerke) bekommt
+   `phase_first_w` = 0,1 Bonus (Songs beginnen meist auf einem Schlag; entscheidet die Faelle, in
+   denen Schlag und Gegenschlag gleich laut sind).
+6. Taktart (4 oder 3): Statistik je Schlagposition im Takt (Bass-Akzent, Bass-Nulldurchgaenge,
+   Energiewechsel ueber 4 und 16 Schlaege, erster Bass-Anschlag), Gewichte `db_w_*`.
+7. Taktanfang mit Harmonie (`db2_w_*`): je Schlag Chroma ab Schlag + 20 ms per Goertzel auf dem
+   dezimierten Signal (Noten 130-1050 Hz, 512 Werte = 186 ms; Bass 41-123 Hz auf halber Rate,
+   256 Werte), daraus Akkordwechsel Schlag gegen Vorschlag, Akkordwechsel 2 gegen 2 Schlaege und
+   Bass-Grundton-Wechsel; dazu Bass-Akzent, Energiewechsel ueber 4 Schlaege und Bonus fuer den
+   Schlag des ersten deutlichen Bass-Anschlags. Je Merkmal z-Wert der Position im Takt, gewichtete
+   Summe, bestes Position gewinnt. Bei mehr als `chroma_max_beats` Schlaegen nur gleichmaessig
+   verteilte Bloecke zu 32 Schlaegen (Rechenzeit). Ohne dezimiertes Signal die alten Gewichte.
+8. Vertrauen aus Abstand zur zweitbesten Hypothese und Kohaerenz; Alternativen mit Faktor und
    relativem Score.
 
 Alle Stellgroessen stehen in `AmGrid.DEFAULTS` und lassen sich ueber `params` bzw.
-`data/automap/params.json` (Abschnitt `grid`) ueberschreiben. Abgestimmt wurden sie auf den
-Dump der Messung (Python nur zur Auswertung im Scratchpad, nicht im Spiel): Tempo-Gewichte per
-Gittersuche mit Kontrolle Haelfte A gegen Haelfte B (Messlauf mit 206 Sets: auf A abgestimmt trifft B 89 von 103),
-Taktanfang-Gewichte ebenso (beste Gewichte erreichen auf den Daten rund 77 %, mehr geben die
-Merkmale nicht her).
+`data/automap/params.json` (Abschnitt `grid`) ueberschreiben. Abgestimmt auf die Maps in `maps/`
+(Python nur zur Auswertung im Scratchpad, nicht im Spiel), immer mit Kontrolle Haelfte A gegen
+Haelfte B: Gewichte auf A gelernt und auf B geprueft und umgekehrt.
+
+## Runde 2: Vorher / Nachher je Haelfte
+
+Ein Messprozess, Varianten ueber `--variants` (gleiche Sets, gleiche Wahrheit). Sets mit einem
+Tempo; Haelfte A/B = gerade/ungerade Nummer in `maps/`. "Vorher" = Stand abd54ba.
+
+| Kennzahl | Ziel | vorher A | vorher B | nachher A | nachher B |
+|---|---|---|---|---|---|
+| Tempo exakt | ≥ 95 % | 88,6 % | 89,4 % | 88,2 % | 89,4 % |
+| Offset 95. Perzentil (richtiges Tempo) | ≤ 12 ms | 51,2 ms | 66,4 ms | 40,5 ms | 20,4 ms |
+| Offset Median | ≤ 4 ms | 3,7 ms | 3,0 ms | 3,6 ms | 2,9 ms |
+| Taktanfang (Taktart und Eins richtig) | ≥ 85 % | 75,0 % | 76,9 % | 87,5 % | 86,8 % |
+| Sets mit einem Tempo faelschlich geteilt | 0 | 0 | 0 | 0 | 0 |
+
+(Zaehlung je Haelfte aus den Dump-Dateien; "Taktanfang" dort ohne die ±1/4-Schlag-Grenze der
+Gesamtzeile, daher wenige Sets Abweichung zur Tabelle unten.)
+
+Je Aenderung einzeln (Variante ohne die Aenderung gegen mit, beide Haelften):
+
+- Phasen-Bonus erster Anschlag: Offset p95 A 134 -> 40,5 ms, B 66,4 -> 20,4 ms; halber/viertel
+  Versatz 10 -> 8 Songs. Uebernommen.
+- Harmonie-Merkmale fuer den Taktanfang: A 76,0 -> 87,5 %, B 75,8 -> 86,8 %. Uebernommen.
+  In Python mit Kreuzvalidierung (A->B, B->A) 90,5 %; die alten Merkmale allein kamen auf 76 %.
+- Fremd-Fenster nur ueber Oktaven (`foreign_family` = [1, 2, 0,5]): findet den 140-Teil in
+  "Charade" (als 141,5), gewinnt aber keinen Tempowechsel-Set und teilt 5 Sets mit einem Tempo.
+  Verworfen (Parameter bleibt, Standard die volle Familie).
+- Tempo-Oktave nach Anschlagsdichte je Schlag (Gewicht auf |log2(Dichte / D0)|, D0 und Staerke
+  per Gittersuche): auf A abgestimmt A +1, B -1; auf B abgestimmt B 0, A -1. Bei den x2-Fehlern
+  liegt die Dichte der Map-BPM bei 7,5-11 Anschlaegen je Schlag (ueber dem 90. Perzentil der
+  richtigen Sets), die Mapper waehlen dort also gegen die Dichte. Nicht uebernommen.
+- Lokale Phasenverfolgung (Phasen-Rest je 16-Schlag-Fenster gegen das Hauptraster, stueckweise
+  lineare Segmentierung per dynamischer Programmierung, Strafe nach Rauschen): bei jeder Strafe,
+  die einen echten Wechsel (134 -> 132, 162 -> 160) findet, werden 36-95 von 209 Sets mit einem
+  Tempo geteilt; die Phasensumme in 16 Schlaegen streut zu stark. Nicht uebernommen.
+
+## Kennzahl Tempowechsel (Oktav-Abschnitte)
+
+Folgen zwei Map-Abschnitte im Verhaeltnis 2 oder 0,5 aufeinander und liegt der zweite auf dem
+Raster des ersten (z. B. 77 -> 154, 140 -> 280 -> 140), bilden sie eine Gruppe. Begruendung: der Puls
+im Audio bleibt gleich, der Mapper verdoppelt nur die Notendichte; das ist eine Entscheidung des
+Charts (Dichte je Abschnitt), nicht des Taktgitters, und `scaled()` bzw. die Teilung `div` von
+`snap()` deckt sie ab. In einer Gruppe zaehlt jeder Abschnitt als richtig, wenn das erkannte Tempo
+eines der Gruppen-Tempi trifft; Grenzen innerhalb der Gruppe muessen nicht getroffen werden.
+Nicht-Oktav-Verhaeltnisse (165 -> 77,5, 138 -> 298) bleiben echte Wechsel.
 
 ## OSU_LEAD_MS
 
@@ -38,41 +91,43 @@ Anstieg statt am Maximum (`phase_mode = "half"`) streut staerker und wurde verwo
 ## Messung
 
 Wahrheit: rote Timing-Points der Diff mit den meisten Objekten je .osz in `maps/`.
-Audio per `OszImporter`, Dekodierung wie `AudioMapper` (ffmpeg), nur im Test.
+Audio per `OszImporter`, Dekodierung wie `AudioMapper` (ffmpeg), nur im Test; das dezimierte
+Signal liegt im Cache neben dem Onset-Fluss (`--aud` liest vorhandenes PCM).
 
 <!-- MESSUNG:BEGIN -->
-Gemessen mit `tests/run_am_grid_tests.gd -- --measure` in einem Prozess: 249 Sets ausgewertet (von 254 .osz, 5 uebersprungen). Wahrheit: rote Timing-Points der Diff mit den meisten Objekten.
-Sets mit einem Tempo: 209 · mit Tempowechsel: 19 · mit absichtlich wechselndem Timing (>= 30 rote Linien oder >= 10 Abschnitte, getrennt gewertet): 21.
+Gemessen mit `tests/run_am_grid_tests.gd -- --measure` in einem Prozess: 254 Sets ausgewertet (von 259 .osz, 5 uebersprungen). Wahrheit: rote Timing-Points der Diff mit den meisten Objekten.
+Sets mit einem Tempo: 214 · mit Tempowechsel: 19 · mit absichtlich wechselndem Timing (>= 30 rote Linien oder >= 10 Abschnitte, getrennt gewertet): 21.
 
 | Kennzahl (Spec, Zeile Takt) | Ziel | Ist |
 |---|---|---|
-| Tempo exakt (±0,5 %) gegen die rote Linie, Sets mit einem Tempo | ≥ 95 % | 89.0 % (186 von 209) |
-| Tempo exakt oder gemeldete Alternative (x2, x0,5, x1,5, x0,667) trifft | ≥ 99 % | 99.0 % (207 von 209) |
-| Offset-Fehler (Betrag, nur richtiges Tempo), Median / 95. Perzentil | ≤ 4 ms / ≤ 12 ms | 3.4 ms / 63.5 ms (n = 186) |
-| Drift ueber den Song (letzter gegen ersten Schlag) | ≤ 10 ms | 96.8 % (180 von 186) der Songs ≤ 10 ms; Median 0.0 ms, 95. Perzentil 2.2 ms, Maximum 252.5 ms |
-| Tempowechsel: jede Segmentgrenze auf ±1 Schlag und Tempo je Segment exakt | ≥ 80 % | 10.5 % (2 von 19) |
-| Taktanfang (Downbeat) stimmt mit der Map (richtiges Tempo, Map in 4/4 oder 3/4) | ≥ 85 % | 73.8 % (135 von 183) |
+| Tempo exakt (±0,5 %) gegen die rote Linie, Sets mit einem Tempo | ≥ 95 % | 88.8 % (190 von 214) |
+| Tempo exakt oder gemeldete Alternative (x2, x0,5, x1,5, x0,667) trifft | ≥ 99 % | 98.6 % (211 von 214) |
+| Offset-Fehler (Betrag, nur richtiges Tempo), Median / 95. Perzentil | ≤ 4 ms / ≤ 12 ms | 3.2 ms / 39.8 ms (n = 190) |
+| Drift ueber den Song (letzter gegen ersten Schlag) | ≤ 10 ms | 96.8 % (184 von 190) der Songs ≤ 10 ms; Median 0.0 ms, 95. Perzentil 2.2 ms, Maximum 135.5 ms |
+| Tempowechsel: jede Segmentgrenze auf ±1 Schlag und Tempo je Segment exakt (Oktav-Abschnitte als ein Segment, siehe unten) | ≥ 80 % | 21.1 % (4 von 19) |
+| Taktanfang (Downbeat) stimmt mit der Map (richtiges Tempo, Map in 4/4 oder 3/4) | ≥ 85 % | 86.1 % (161 von 187) |
 
 Zusatzwerte:
 
 | Wert | Ist |
 |---|---|
-| Tempo exakt, Haelfte A (gerade Nummer) / Haelfte B (ungerade) | 88.0 % (88 von 100) / 89.9 % (98 von 109) |
-| exakt oder die erste gemeldete Alternative trifft | 96.7 % (202 von 209) |
-| exakt oder irgendeine gemeldete Alternative trifft (auch x3, x0,333, x0,75, x1,333) | 99.0 % (207 von 209) |
-| Offset-Fehler mit Vorzeichen (erkannt minus Map), Median | 0.6 ms (0 = OSU_LEAD_MS stimmt) |
-| Streuung um diesen Median, Median / 95. Perzentil (Phase am Maximum) | 3.3 ms / 62.9 ms |
-| dasselbe mit Phase am halben Anstieg: Median Vorzeichen, Streuung Median / 95. Perzentil | -3.5 ms, 3.1 ms / 64.2 ms |
-| Sets mit einem Tempo, die faelschlich in mehrere Segmente geteilt wurden | 0.0 % (0 von 209) |
-| Tempowechsel: Tempo je Map-Segment exakt / Grenze auf ±1 Schlag | 45.5 % (20 von 44) / 0.0 % (0 von 25) |
+| Tempo exakt, Haelfte A (gerade Nummer) / Haelfte B (ungerade) | 88.6 % (93 von 105) / 89.0 % (97 von 109) |
+| exakt oder die erste gemeldete Alternative trifft | 96.3 % (206 von 214) |
+| exakt oder irgendeine gemeldete Alternative trifft (auch x3, x0,333, x0,75, x1,333) | 99.1 % (212 von 214) |
+| Offset-Fehler mit Vorzeichen (erkannt minus Map), Median | 0.2 ms (0 = OSU_LEAD_MS stimmt) |
+| Streuung um diesen Median, Median / 95. Perzentil (Phase am Maximum) | 3.2 ms / 39.6 ms |
+| dasselbe mit Phase am halben Anstieg: Median Vorzeichen, Streuung Median / 95. Perzentil | -3.9 ms, 3.2 ms / 40.5 ms |
+| Sets mit einem Tempo, die faelschlich in mehrere Segmente geteilt wurden | 0.0 % (0 von 214) |
+| Tempowechsel: Tempo je Map-Segment exakt / Grenze auf ±1 Schlag | 50.0 % (22 von 44) / 0.0 % (0 von 22) |
 | 3/4-Maps (richtiges Tempo): Taktart 3 erkannt | 0.0 % (0 von 1) |
 | Maps mit anderer Taktart als 3 oder 4 (nicht in der Downbeat-Zeile) | 3 |
-| Falscher Taktanfang bei richtiger Taktart | 2 Schlaege daneben: 19 · 0 Schlaege daneben: 4 · 3 Schlaege daneben: 14 · 1 Schlaege daneben: 9 ·  |
-| Vertrauen im Mittel: richtiges Tempo / falsches Tempo | 0.82 / 0.64 |
+| Falscher Taktanfang bei richtiger Taktart | 2 Schlaege daneben: 13 · 1 Schlaege daneben: 6 · 3 Schlaege daneben: 3 · 0 Schlaege daneben: 2 ·  |
+| Vertrauen im Mittel: richtiges Tempo / falsches Tempo | 0.82 / 0.62 |
 | Sets mit absichtlich wechselndem Timing: Tempo des laengsten Abschnitts exakt | 57.1 % (12 von 21) |
-| Rechenzeit track ohne Onset-Fluss, Median / Maximum je Song; je Minute Audio im Median | 768 ms / 3000 ms; 319 ms |
+| Rechenzeit track ohne Onset-Fluss, Median / Maximum je Song; je Minute Audio im Median | 925 ms / 2383 ms; 402 ms |
+| Rechenzeit track() komplett (Onset-Fluss, Dezimierung, Chroma) fuer 4 min Audio, ein Lauf | 2204 ms |
 
-### Sets mit einem Tempo und falschem Tempo (23)
+### Sets mit einem Tempo und falschem Tempo (24)
 
 | Set | Map-BPM | erkannt | Verhaeltnis | Alternative trifft | Vertrauen |
 |---|---|---|---|---|---|
@@ -98,6 +153,7 @@ Zusatzwerte:
 | mirror_2588413 | 200.00 | 100.00 | x0,5 (Oktave) | ja (Platz 2) | 0.67 |
 | mirror_2591197 | 260.00 | 130.00 | x0,5 (Oktave) | ja (Platz 1) | 0.70 |
 | mirror_283841 | 200.00 | 100.00 | x0,5 (Oktave) | ja (Platz 1) | 0.26 |
+| mirror_349208 | 256.00 | 111.52 | kein einfaches Verhaeltnis (x0.436) | ja (Platz 10) | 0.25 |
 | mirror_476691 | 100.00 | 200.00 | x2 (Oktave) | ja (Platz 1) | 0.73 |
 
 ### Sets mit Tempowechsel (19)
@@ -109,7 +165,7 @@ Zusatzwerte:
 | 2299919 Sasuke Haraguchi feat. Choten-chan - Cub | 7 | 1 | 1 | 0 von 0 | 1 | ja |
 | 347453 Igorrr & Ruby My Dear - Figue Folle | 3 | 3 | 2 | 0 von 2 | 1 | nein |
 | mirror_1178589 | 4 | 3 | 2 | 0 von 2 | 1 | nein |
-| mirror_1294997 | 2 | 2 | 1 | 0 von 1 | 1 | nein |
+| mirror_1294997 | 2 | 2 | 2 | 0 von 0 | 1 | ja |
 | mirror_2446560 | 6 | 2 | 0 | 0 von 1 | 1 | nein |
 | mirror_2486779 | 7 | 2 | 1 | 0 von 1 | 1 | nein |
 | mirror_2511692 | 3 | 2 | 1 | 0 von 1 | 1 | nein |
@@ -119,7 +175,7 @@ Zusatzwerte:
 | mirror_2559592 | 6 | 3 | 2 | 0 von 2 | 3 | nein |
 | mirror_2559688 | 4 | 1 | 0 | 0 von 0 | 1 | nein |
 | mirror_2563805 | 3 | 2 | 2 | 0 von 1 | 1 | nein |
-| mirror_2576239 | 4 | 3 | 2 | 0 von 2 | 1 | nein |
+| mirror_2576239 | 4 | 3 | 3 | 0 von 0 | 1 | ja |
 | mirror_2584545 | 3 | 2 | 1 | 0 von 1 | 1 | nein |
 | mirror_2643833 | 2 | 2 | 1 | 0 von 1 | 1 | nein |
 | mirror_332623 | 4 | 3 | 0 | 0 von 2 | 1 | nein |
@@ -155,23 +211,28 @@ Uebersprungen: mirror_2538892.osz: nicht lesbar; mirror_2556039.osz: nicht lesba
 
 ## Was nicht erreicht ist und warum
 
-- **Tempo exakt 89 % statt 95 %**: Die Fehler sind fast nur Oktaven (x2 / x0,5) und einzelne 3:2.
-  Bei diesen Songs ist die Wahl des Mappers musikalisch mehrdeutig (Halbtempo-Feel, 8tel-Hi-Hats
-  so stark wie der Schlag); die Merkmale (Kohaerenz je Teilung, Fuellung, Vorwissen) trennen sie
-  nicht, auch die beste Gittersuche ueber alle Gewichte kommt nicht ueber rund 89 %. Die richtige
-  Antwort steht dann fast immer als erste Alternative (Ziel "exakt oder Alternative" ist erreicht);
-  `scaled(grid, factor)` setzt sie um.
-- **Offset 95. Perzentil**: Der Median ist im Ziel. Das Perzentil kommt von 10 der 186 Songs mit richtigem Tempo (5 %),
-  bei denen das Gitter um eine halbe (selten eine viertel) Schlaglaenge versetzt liegt: der vom
-  Mapper gewaehlte Schlag hat dort weniger Akzent und Bass als der Gegenschlag. Ohne diese 10 Songs
-  liegt es bei 14,8 ms (Median 3,0 ms, n = 176); der Rest ist Streuung der Mapper-Offsets (5-20 ms).
+- **Tempo exakt 88,8 % statt 95 %**: Fehler fast nur Oktaven (x2 / x0,5), einzelne 3:2. Bei diesen
+  Songs ist die Wahl des Mappers musikalisch mehrdeutig (Halbtempo-Feel, 8tel so stark wie der
+  Schlag). Weder die Taktstruktur-Merkmale noch die Anschlagsdichte je Schlag trennen sie (siehe
+  Runde 2: die Mapper der x2-Faelle waehlen gegen die Dichte). Die richtige Antwort steht fast
+  immer als erste Alternative; `scaled(grid, factor)` setzt sie um.
+- **Offset 95. Perzentil 39,8 ms statt 12 ms**: 8 der 190 Songs (4 %) liegen noch um einen halben
+  Schlag versetzt (vorher 10); dort ist der Gegenschlag im Fluss, in allen vier Baendern
+  (Kick, Bass, Mitte, Hats) und im Bass-Akzent gleich stark oder staerker, und der erste deutliche
+  Anschlag liegt ebenfalls auf dem Gegenschlag. Ohne sie liegt das Perzentil bei 14,7 ms. Das ist
+  die Untergrenze dieses Onset-Masses: selbst mit der Periode und Phase der Map als Startwert
+  liegt das Maximum des gefalteten Profils bei p95 13,6 ms (Mittelband 12,0 ms) neben der roten
+  Linie, d. h. die Mapper-Offsets selbst streuen so stark.
+- **Tempowechsel 21,1 % (4 von 19) statt 80 %**: mit der fairen Zaehlung der Oktav-Abschnitte
+  sind 2 Sets dazugekommen. Der Rest: kleine Wechsel (134 -> 132, 162 -> 160, 192 -> 184, 186 <-> 187)
+  und kurze Teile (4-12 s mit 141, 199, 146,7 BPM). Die 4-s-Autokorrelation sieht sie nicht oder ordnet
+  sie ueber die Familie (x0,75) dem Haupttempo zu; mit Oktav-Familie werden Sets mit einem Tempo
+  geteilt, die lokale Phasenverfolgung ist zu verrauscht (Runde 2). Offen: Beat-Tracker mit
+  dynamischer Programmierung ueber einzelne Schlaege (Ellis) mit spektralem Onset je Band statt
+  Phasensummen ueber Fenster.
 - **Drift**: wenige Songs, deren Tempo leicht neben der Map liegt (0,03-0,4 %) und nicht auf eine
   ganze BPM gezogen wird, meist Maps mit Phasenspruengen oder krummen BPM.
-- **Tempowechsel** (weit unter Ziel): Die Wechsel-Erkennung ueber 4-s-ACF-Fenster findet fast keinen
-  Wechsel. Die Maps zeigen drei Arten: Oktav-Abschnitte (77 -> 154, 140 -> 280, 165 -> 77,5), die
-  im Audio derselbe Puls sind und nur ueber Notendichte zu trennen waeren; kleine Wechsel (134 -> 132,
-  162 -> 160, 1-2 %), fuer die eine lokale Phasen-Verfolgung fehlt; kurze Ritardandi am Songende.
-  Offen: lokale Phasen-/Tempoverfolgung je Fenster mit stueckweiser Regression.
-- **Taktanfang** (unter Ziel): Fehler sind meist eine halbe Taktlaenge (Eins gegen Drei). Ohne
-  Chroma/Harmonie-Merkmal (heute nur Bass-Nulldurchgaenge) ist die Eins von der Drei kaum zu
-  unterscheiden; bester Wert der vorhandenen Merkmale auf den Daten rund 77 %.
+- **3/4**: nur eine 3/4-Map in den Daten, nicht erkannt; zu wenig fuer eine Abstimmung.
+
+Rechenzeit: `track()` komplett (Onset-Fluss, Dezimierung, Chroma) fuer 4 min Audio 2,2 s
+(Budget 4 s); Zeile in der Tabelle oben.

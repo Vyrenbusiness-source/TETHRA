@@ -5,7 +5,9 @@ extends SceneTree
 ##   Godot..._console.exe --headless --audio-driver Dummy --path . --script res://tests/run_am_grid_tests.gd
 ## Messung gegen die roten Timing-Points echter Maps, ein Prozess fuer alle Sets:
 ##   ... --script res://tests/run_am_grid_tests.gd -- --measure <maps-ordner> <anzahl>
-##       [--cache <ordner>] [--out <grid.md>] [--dump <tsv>] [--params <json>]
+##       [--cache <ordner>] [--out <grid.md>] [--dump <tsv>] [--params <json>] [--aud <ordner>]
+## --aud: Ordner mit <md5(Name)>.raw (mono s16, 11025 Hz) fuer die Harmonie-Merkmale; ohne ihn
+##        dekodiert der Test das Audio selbst (ffmpeg) und legt es im Cache ab.
 ## --cache: Onset-Fluss je Set wird dort abgelegt (zweiter Lauf braucht kein ffmpeg).
 ## --out: Tabelle zwischen den Marken MESSUNG:BEGIN/END (Standard docs/automap/grid.md).
 
@@ -224,6 +226,31 @@ func _truth(bm: Beatmap) -> Dictionary:
 	return {"segs": segs, "reds": n_red, "last": last, "cat": cat}
 
 
+func _load_lo(feat: Dictionary, aud_dir: String, cache_dir: String, name: String, pcm: PackedFloat32Array) -> void:
+	var lf := cache_dir.path_join(name.md5_text() + ".lo")
+	if not pcm.is_empty():
+		var lo: PackedFloat32Array = G.decimate(pcm, RATE)
+		var fo := FileAccess.open(lf, FileAccess.WRITE)
+		fo.store_buffer(lo.to_byte_array())
+		fo.close()
+		feat["lo"] = lo
+	elif FileAccess.file_exists(lf):
+		feat["lo"] = FileAccess.get_file_as_bytes(lf).to_float32_array()
+	elif aud_dir != "" and FileAccess.file_exists(aud_dir.path_join(name.md5_text() + ".raw")):
+		var b := FileAccess.get_file_as_bytes(aud_dir.path_join(name.md5_text() + ".raw"))
+		var x := PackedFloat32Array()
+		x.resize(b.size() / 2)
+		for i in x.size():
+			x[i] = b.decode_s16(i * 2) / 32768.0
+		var lo2: PackedFloat32Array = G.decimate(x, 11025)
+		var fo2 := FileAccess.open(lf, FileAccess.WRITE)
+		fo2.store_buffer(lo2.to_byte_array())
+		fo2.close()
+		feat["lo"] = lo2
+	if feat.has("lo"):
+		feat["lo_rate"] = G.LO_RATE
+
+
 func _load_env(osz: String, bm: Beatmap, cache_dir: String, name: String) -> Dictionary:
 	var cf := cache_dir.path_join(name.md5_text() + ".env")
 	if FileAccess.file_exists(cf):
@@ -246,6 +273,7 @@ func _load_env(osz: String, bm: Beatmap, cache_dir: String, name: String) -> Dic
 	if pcm.size() < RATE * 4:
 		return {}
 	var feat2: Dictionary = G.envelope(pcm, RATE)
+	feat2["pcm"] = pcm
 	var fo := FileAccess.open(cf, FileAccess.WRITE)
 	fo.store_32(feat2.flux.size())
 	fo.store_float(feat2.hop_ms)
@@ -296,6 +324,8 @@ func _measure(maps_dir: String, count: int, args: PackedStringArray) -> void:
 	var out_path := _arg(args, "--out", ProjectSettings.globalize_path("res://docs/automap/grid.md"))
 	var dump_path := _arg(args, "--dump", "")
 	var only := _arg(args, "--only", "")
+	var aud_dir := _arg(args, "--aud", "")
+	var t_full := -1
 	var params := {"debug": true}
 	var pj := _arg(args, "--params", "")
 	if pj != "":
@@ -310,6 +340,15 @@ func _measure(maps_dir: String, count: int, args: PackedStringArray) -> void:
 	files.sort()
 	var step := maxf(1.0, float(files.size()) / maxi(count, 1))
 	var dump: FileAccess = FileAccess.open(dump_path, FileAccess.WRITE) if dump_path != "" else null
+	var variants: Array = []
+	var vj := _arg(args, "--variants", "")
+	if vj != "":
+		var pv = JSON.parse_string(FileAccess.get_file_as_string(vj))
+		if pv is Array:
+			variants = pv
+	var vdumps: Array = []
+	for vi in variants.size():
+		vdumps.append(FileAccess.open(dump_path.get_basename() + "_v%d.tsv" % vi, FileAccess.WRITE) if dump_path != "" else null)
 	var recs: Array = []
 	var skipped: Array = []
 	var pos := 0.0
@@ -339,6 +378,10 @@ func _measure(maps_dir: String, count: int, args: PackedStringArray) -> void:
 		if feat.is_empty():
 			skipped.append(name + ": Audio nicht dekodierbar")
 			continue
+		_load_lo(feat, aud_dir, cache_dir, name, feat.get("pcm", PackedFloat32Array()))
+		if t_full < 0 and feat.has("lo") and feat.flux.size() * float(feat.hop_ms) >= 200000.0:
+			t_full = _time_full(feat)
+		feat.erase("pcm")
 		t0 = Time.get_ticks_msec()
 		var grid: Dictionary = G.track_env(feat, params)
 		var t_trk := Time.get_ticks_msec() - t0
@@ -355,6 +398,14 @@ func _measure(maps_dir: String, count: int, args: PackedStringArray) -> void:
 				rec.off, rec.drift, str(rec.db_ok), rec.nseg, rec.conf, t_trk])
 		if dump != null:
 			_dump(dump, rec, grid, tr)
+		# Varianten (--variants <json-Liste von params>): je Variante eine eigene Dump-Datei,
+		# damit Vorher/Nachher in einem Prozess gemessen wird.
+		for vi in variants.size():
+			var pv := {"debug": true}
+			pv.merge(variants[vi], true)
+			var gv: Dictionary = G.track_env(feat, pv)
+			if gv.ok and vdumps[vi] != null:
+				_dump(vdumps[vi], _eval(name, idx, tr, gv), gv, tr)
 		if only != "" or rec.cat == "multi":
 			print("  map: ", tr.segs.map(func(s): return "%.2f@%.0f-%.0f m%d" % [60000.0 / float(s.bl), float(s.t), float(s.end), int(s.meter)]))
 			print("  det: ", grid.segments.map(func(s): return "%.3f@%.0f m%d db%.0f" % [s.bpm, s.start_ms, s.meter, s.downbeat_ms]))
@@ -367,9 +418,26 @@ func _measure(maps_dir: String, count: int, args: PackedStringArray) -> void:
 				print("  H %.3f f%.3f r1 %.3f r2 %.3f r4 %.3f r3 %.3f rl1 %.3f fill %.2f sc %.4f" % [h.bpm, float(h.bpm) / rec.bpm_map, h.r1, h.r2, h.r4, h.r3, h.rl1, h.fill, h.score])
 	if dump != null:
 		dump.close()
-	var md := _report(recs, skipped, files.size())
+	for d in vdumps:
+		if d != null:
+			d.close()
+	var md := _report(recs, skipped, files.size(), t_full)
 	print(md)
 	_write_out(out_path, md)
+
+
+## Laufzeit von track() mit Onset-Fluss fuer 4 min Audio (22050 Hz): Signal aus dem
+## dezimierten Signal hochgerechnet (nur fuer die Zeitmessung, Inhalt egal).
+func _time_full(feat: Dictionary) -> int:
+	var lo: PackedFloat32Array = feat.lo
+	var pcm := PackedFloat32Array()
+	pcm.resize(RATE * 240)
+	var fac := float(lo.size()) / pcm.size()
+	for i in pcm.size():
+		pcm[i] = lo[mini(lo.size() - 1, int(i * fac))]
+	var t0 := Time.get_ticks_msec()
+	G.track(pcm, RATE)
+	return Time.get_ticks_msec() - t0
 
 
 func _eval(name: String, idx: int, tr: Dictionary, grid: Dictionary) -> Dictionary:
@@ -412,12 +480,23 @@ func _eval(name: String, idx: int, tr: Dictionary, grid: Dictionary) -> Dictiona
 		rec.db_shift = posmod(int(round(dd / bl)), int(M.meter))
 		rec.db_ok = int(D.meter) == int(M.meter) and absf(dd) <= bl * 0.25
 	# Tempowechsel: Tempo-Segmente der Map (gleiche Tempi zusammengelegt, ab 2 s Laenge).
+	# Oktav-Abschnitte (Verhaeltnis 2 oder 0,5 auf demselben Raster, z. B. 77 -> 154) bilden eine
+	# Gruppe: der Puls im Audio bleibt, nur die Notendichte der Map wechselt. In einer Gruppe zaehlt
+	# jeder Abschnitt als richtig, wenn das erkannte Tempo eines der Gruppen-Tempi trifft; Grenzen
+	# innerhalb der Gruppe muessen nicht getroffen werden.
 	var ts: Array = []
 	for s in segs:
 		if not ts.is_empty() and absf(float(s.bl) / float(ts[ts.size() - 1].bl) - 1.0) <= 0.0005:
 			ts[ts.size() - 1].end = s.end
 		else:
-			ts.append({"t": s.t, "bl": s.bl, "end": s.end})
+			var grp := ts.size()
+			if not ts.is_empty():
+				var pv: Dictionary = ts[ts.size() - 1]
+				var q := float(pv.bl) / float(s.bl)
+				var fine := minf(float(pv.bl), float(s.bl))
+				if (absf(q / 2.0 - 1.0) <= 0.005 or absf(q * 2.0 - 1.0) <= 0.005) and absf(_wrap(float(s.t) - float(pv.t), fine)) <= 3.0:
+					grp = int(pv.grp)
+			ts.append({"t": s.t, "bl": s.bl, "end": s.end, "grp": grp})
 	var all_ok := true
 	for i in ts.size():
 		var s: Dictionary = ts[i]
@@ -426,11 +505,15 @@ func _eval(name: String, idx: int, tr: Dictionary, grid: Dictionary) -> Dictiona
 		rec.mseg_n += 1
 		var m2: float = float(s.t) + floorf((float(s.end) - float(s.t)) / float(s.bl) * 0.5) * float(s.bl)
 		var d2 := _seg_at(grid, m2)
-		if absf(float(s.bl) / float(d2.beat_ms) - 1.0) <= TOL:
+		var t_ok := false
+		for o in ts:
+			if int(o.grp) == int(s.grp) and absf(float(o.bl) / float(d2.beat_ms) - 1.0) <= TOL:
+				t_ok = true
+		if t_ok:
 			rec.mseg_tempo += 1
 		else:
 			all_ok = false
-		if i > 0:
+		if i > 0 and int(ts[i - 1].grp) != int(s.grp):
 			rec.mb_n += 1
 			var hit := false
 			for ds in grid.segments:
@@ -477,7 +560,7 @@ func _dump(f: FileAccess, rec: Dictionary, grid: Dictionary, _tr: Dictionary) ->
 	f.flush()
 
 
-func _report(recs: Array, skipped: Array, n_files: int) -> String:
+func _report(recs: Array, skipped: Array, n_files: int, t_full: int = -1) -> String:
 	var single: Array = []
 	var multi: Array = []
 	var wild: Array = []
@@ -581,7 +664,7 @@ func _report(recs: Array, skipped: Array, n_files: int) -> String:
 	L.append("| Tempo exakt oder gemeldete Alternative (x2, x0,5, x1,5, x0,667) trifft | ≥ 99 %% | %s |" % _pct(ex_alt, single.size()))
 	L.append("| Offset-Fehler (Betrag, nur richtiges Tempo), Median / 95. Perzentil | ≤ 4 ms / ≤ 12 ms | %.1f ms / %.1f ms (n = %d) |" % [_quant(offs, 0.5), _quant(offs, 0.95), offs.size()])
 	L.append("| Drift ueber den Song (letzter gegen ersten Schlag) | ≤ 10 ms | %s der Songs ≤ 10 ms; Median %.1f ms, 95. Perzentil %.1f ms, Maximum %.1f ms |" % [_pct(drift_ok, drifts.size()), _quant(drifts, 0.5), _quant(drifts, 0.95), _quant(drifts, 1.0)])
-	L.append("| Tempowechsel: jede Segmentgrenze auf ±1 Schlag und Tempo je Segment exakt | ≥ 80 %% | %s |" % _pct(m_ok, multi.size()))
+	L.append("| Tempowechsel: jede Segmentgrenze auf ±1 Schlag und Tempo je Segment exakt (Oktav-Abschnitte als ein Segment, siehe unten) | ≥ 80 %% | %s |" % _pct(m_ok, multi.size()))
 	L.append("| Taktanfang (Downbeat) stimmt mit der Map (richtiges Tempo, Map in 4/4 oder 3/4) | ≥ 85 %% | %s |" % _pct(db_ok, db_n))
 	L.append("")
 	L.append("Zusatzwerte:")
@@ -605,6 +688,7 @@ func _report(recs: Array, skipped: Array, n_files: int) -> String:
 	L.append("| Vertrauen im Mittel: richtiges Tempo / falsches Tempo | %.2f / %.2f |" % [_mean(conf_ok), _mean(conf_bad)])
 	L.append("| Sets mit absichtlich wechselndem Timing: Tempo des laengsten Abschnitts exakt | %s |" % _pct(w_ex, wild.size()))
 	L.append("| Rechenzeit track ohne Onset-Fluss, Median / Maximum je Song; je Minute Audio im Median | %d ms / %d ms; %d ms |" % [int(_quant(tms, 0.5)), int(_quant(tms, 1.0)), int(_quant(per_min, 0.5))])
+	L.append("| Rechenzeit track() komplett (Onset-Fluss, Dezimierung, Chroma) fuer 4 min Audio, ein Lauf | %s |" % ("%d ms" % t_full if t_full >= 0 else "nicht gemessen"))
 	L.append("")
 	L.append("### Sets mit einem Tempo und falschem Tempo (%d)" % wrong.size())
 	L.append("")
