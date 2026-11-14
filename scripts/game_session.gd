@@ -405,6 +405,10 @@ func _arm_test_watchdog() -> void:
 	# Live-QA (tests/live_qa.gd): mehrere Runden in einem Prozess, aussen timeout 150.
 	if all.has("--live-qa") or campaign_run_prefix() != "":
 		limit = 145.0
+	# Marathon-Pruefung (mehrere Maps am Stueck, aussen timeout): bis 15 min.
+	for a in all:
+		if a.begins_with("--marathon-harness="):
+			limit = 900.0
 	# Movie-Aufnahmen (--write-movie) begrenzt Godot selbst per --quit-after;
 	# die Watchdog-Zeit laeuft dort in Echtzeit und wuerde lange Aufnahmen kappen.
 	if limit <= 0.0 or all.has("--clip") or Engine.get_write_movie_path() != "":

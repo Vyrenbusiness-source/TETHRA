@@ -67,7 +67,7 @@ func setup(p_segs: Array, p_streams: Array, p_gains_db: Array) -> void:
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	process_priority = 100  # nach SyncClock/Spiel: Uhr steht fuer dieses Bild fest
-	var music := SyncClock.ensure_music_bus()
+	var music: int = _clock().ensure_music_bus()
 	for d in 2:
 		var bus_name := "%s%d" % [BUS_PREFIX, d]
 		var idx := AudioServer.get_bus_index(bus_name)
@@ -104,8 +104,13 @@ func _exit_tree() -> void:
 		AudioServer.remove_bus(idx)
 
 
+func _clock() -> Node:
+	return MarathonRun.autoload("SyncClock")
+
+
 func _master() -> AudioStreamPlayer:
-	return SyncClock.get("_player") as AudioStreamPlayer
+	var c := _clock()
+	return c.get("_player") as AudioStreamPlayer if c != null else null
 
 
 ## Deck-Index eines Segments (abwechselnd, hoechstens zwei klingen gleichzeitig).
@@ -123,10 +128,11 @@ func _process(delta: float) -> void:
 	var master := _master()
 	if master == null:
 		return
-	var running := master.playing and not master.stream_paused and not SyncClock.is_paused()
+	var clock := _clock()
+	var running: bool = master.playing and not master.stream_paused and not clock.is_paused()
 	if not running:
-		if _was_running or SyncClock.is_paused():
-			_hold_all(not SyncClock.is_playing())
+		if _was_running or clock.is_paused():
+			_hold_all(not clock.is_playing())
 		_was_running = false
 		return
 	_was_running = true

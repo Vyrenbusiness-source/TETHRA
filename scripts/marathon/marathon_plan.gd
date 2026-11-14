@@ -428,7 +428,11 @@ static func build_timeline(maps: Array, audio_ms: Array = []) -> Array:
 	# Segment 0: Intro gekuerzt auf INTRO_BARS Takte vor der ersten Note.
 	var bm0: Beatmap = maps[0]
 	var f0 := first_note_ms(bm0)
-	var s_in0 := maxf(0.0, downbeat_floor(reds_all[0], f0 - INTRO_BARS * bar_at(reds_all[0], f0)))
+	var s_in0 := downbeat_floor(reds_all[0], f0 - INTRO_BARS * bar_at(reds_all[0], f0))
+	if s_in0 < 0.0:
+		# Vor dem Songanfang: naechste Taktgrenze ab 0, solange noch ein Takt Anlauf bleibt.
+		var c0 := downbeat_ceil(reds_all[0], 0.0)
+		s_in0 = c0 if c0 <= f0 - bar_at(reds_all[0], f0) else 0.0
 	segs.append({
 		"s_in": s_in0, "g0": 0.0, "rho": 1.0, "r0": 0.0, "r1": 0.0,
 		"play_from": 0.0, "play_to": INF, "fade_in": [0.0, 120.0], "fade_out": [],

@@ -46,11 +46,44 @@ static func active_for_scene() -> bool:
 		var p := plan_from_cmdline()
 		if not p.is_empty():
 			begin(p)
+			var gs := _session()
+			if gs != null and _has_arg("--marathon-nf"):
+				gs.mods["NF"] = true
 	return current != null
+
+
+static func _has_arg(flag: String) -> bool:
+	return (OS.get_cmdline_args() + OS.get_cmdline_user_args()).has(flag)
+
+
+## Gespeichertes Replay ({meta, events}) als laufenden Marathon vorbereiten: Plan
+## mit Zeitachse aus dem Replay, Mods und Eingaben in die GameSession.
+static func start_replay(data: Dictionary) -> bool:
+	var meta: Dictionary = data.get("meta", {})
+	var p = meta.get("marathon", {})
+	if not (p is Dictionary) or (p as Dictionary).get("maps", []).is_empty():
+		return false
+	begin(p)
+	var gs := _session()
+	if gs != null:
+		gs.mods = gs.call("_replay_mods", data)
+		gs.is_replay = true
+		gs.replay_events = data.get("events", [])
+		gs.replay_mode = "mania"
+		gs.replay_end_ms = -1.0
+	return true
 
 
 static func plan_from_cmdline() -> Dictionary:
 	for a in OS.get_cmdline_args() + OS.get_cmdline_user_args():
+		if a.begins_with("--marathon-replay="):
+			# Gespeichertes Marathon-Replay abspielen (Harness/Tests).
+			var data := MarathonStore.load_replay(a.trim_prefix("--marathon-replay="))
+			if data.is_empty():
+				push_warning("Marathon: Replay fehlt: " + a)
+				return {}
+			start_replay(data)
+			return {}
 		if a.begins_with("--marathon-maps="):
 			var maps: Array = []
 			for part in a.trim_prefix("--marathon-maps=").split(";", false):
@@ -81,9 +114,15 @@ static func end() -> void:
 
 
 static func _session() -> Node:
+	return autoload("GameSession")
+
+
+## Autoload per Name (Marathon-Skripte nennen Autoloads nie direkt: so
+## kompilieren sie auch in Test-Laeufen ohne Autoloads).
+static func autoload(name: String) -> Node:
 	var ml := Engine.get_main_loop()
 	if ml is SceneTree:
-		return (ml as SceneTree).root.get_node_or_null("GameSession")
+		return (ml as SceneTree).root.get_node_or_null(name)
 	return null
 
 
@@ -139,23 +178,50 @@ func load_maps() -> bool:
 		segs = MarathonPlan.build_timeline(beatmaps, audio_ms)
 		plan["timeline"] = MarathonPlan.timeline_to_json(segs)
 	merged = MarathonPlan.merge(beatmaps, segs, "Marathon", note_ranges)
+	# Titelzeile im Spiel: "Marathon — 3 Maps · ★ 3,4".
+	merged.metadata["Artist"] = TranslationServer.translate("Marathon")
+	merged.metadata["Title"] = length_label()
+	merged.metadata["Version"] = "★ %s" % UiTheme.fmt_num(float(plan.get("target_stars", 0.0)), 2)
+	_reset_per_map()
+	return merged != null and not merged.hit_objects.is_empty()
+
+
+func _reset_per_map() -> void:
 	per_map.clear()
+	_last_score = 0
 	for i in beatmaps.size():
 		per_map.append({"n_max": 0, "n300": 0, "n200": 0, "n100": 0, "n50": 0, "n_miss": 0,
 			"score": 0, "combo": 0, "max_combo": 0, "judged": 0,
 			"notes": int(note_ranges[i][1]) - int(note_ranges[i][0])})
-	return merged != null and not merged.hit_objects.is_empty()
+
+
+## Fuer mania_3d._load_beatmap: Maps laden (einmal je Lauf, Neustart nutzt sie
+## weiter), Song-Uhr mit dem Vorlauf der Szene starten. null = Map fehlt.
+func scene_beatmap(is_2d: bool) -> Beatmap:
+	if merged == null and not load_maps():
+		return null
+	var root := (Engine.get_main_loop() as SceneTree).root
+	var settings := root.get_node_or_null("Settings")
+	var gs := _session()
+	var scroll := float(settings.get("mania_scroll")) if settings != null else 1.0
+	var run_mods: Dictionary = (gs.mods as Dictionary).duplicate() if gs != null else {}
+	if settings != null and gs != null and not bool(gs.is_replay):
+		run_mods.merge(settings.call("extra_mods", is_2d), true)
+	_reset_per_map()
+	start_audio(maxf(ManiaCore.start_lead_ms(merged, scroll, run_mods), 1.0))
+	return merged
 
 
 ## Song-Uhr starten: stumme Master-Spur ueber die ganze Laenge (Decks folgen ihr).
 func start_audio(lead_ms: float) -> void:
-	SyncClock.play(MarathonMixer.silent_master(MarathonPlan.timeline_end(segs) + 4000.0), lead_ms)
+	autoload("SyncClock").play(MarathonMixer.silent_master(MarathonPlan.timeline_end(segs) + 4000.0), lead_ms)
 
 
 ## Spielszene ist aufgebaut: Mixer, Anzeige, Wertung je Map anhaengen.
 func attach(host: Node, core: ManiaCore, hud_layer: CanvasLayer) -> void:
 	_core = core
 	_last_score = core.score
+	result_info = {}
 	mixer = MarathonMixer.new()
 	mixer.name = "MarathonMixer"
 	mixer.setup(segs, streams, gains_db)
@@ -232,6 +298,21 @@ static func length_text(length: String, n_maps: int = 0) -> String:
 
 
 # --- Ende: Wertung, Rangliste, Replay ------------------------------------------------
+
+## Haken aus mania_3d._show_results: entscheidet, ob gespeichert wird (nie bei
+## Replay/Tutorial/Autoplay; Harness mit --marathon-store speichert den Autoplay-
+## Lauf samt erzeugten Eingaben, damit das Replay geprueft werden kann).
+func finish_scene(s: Dictionary, is_fail: bool, recorded: Array, autoplay: bool) -> Dictionary:
+	var gs := _session()
+	var replay := gs != null and bool(gs.is_replay)
+	var tutorial := gs != null and bool(gs.tutorial)
+	var rec := recorded
+	var store := not replay and not tutorial and not autoplay
+	if autoplay and not replay and _has_arg("--marathon-store"):
+		rec = MarathonHarness.autoplay_events(merged)
+		store = true
+	return finish(s, is_fail, rec, store)
+
 
 ## Vom Spiel nach dem Lauf. Speichert (ausser Replay/Autoplay) Rangliste + Replay.
 ## Liefert Zusatzdaten fuer den ResultsScreen.
