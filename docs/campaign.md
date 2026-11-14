@@ -23,6 +23,32 @@ Alle Spieler spielen dieselben Maps, damit die Scores vergleichbar sind.
 - Die Kapitel-Welt ist nur Thema der Kampagnen-Ansicht (Kapitelbild, Name), im Spiel laeuft
   die Welt des Spielers.
 
+## Skip-Pruefung und Einstufung
+
+- Jedes Kapitel ausser dem letzten hat oben eine optionale Stufe "Skip-Pruefung": die Boss-Stufe
+  zwei Kapitel weiter, im letzten Drittel die des letzten Kapitels (`Campaign.trial_target`).
+  Modi mit nur einem Kapitel haben keine.
+- Bestanden mit mindestens 99 % Accuracy (`TRIAL_ACC`) in einem Lauf, ohne Fail und ohne Mods,
+  die die Wertung erleichtern (`EASY_MODS`: NF, CS/Konstant). Gilt fuer jeden Modus auf seine
+  eigene Accuracy. Ungewertete Laeufe (`unranked`, z. B. eigene AR in Orbit) zaehlen auch nicht;
+  Konstant kommt bei Mania aus `Settings.mod_constant`. Sonst passiert nichts; beliebig oft versuchbar, das Ergebnis nennt, was fehlte.
+- Bestanden: alle Kapitel bis einschliesslich des Pruefungs-Kapitels sind offen, ihre Stufen alle
+  spielbar. Weil der Lauf auch als Lauf der Boss-Stufe zaehlt, ist deren Hauptziel meist erfuellt
+  und damit nach der normalen Regel auch das Kapitel danach offen.
+- Sterne: Der Lauf zaehlt nur zur Boss-Stufe (keine doppelten). Uebersprungene Stufen haben keine
+  Sterne, bis man sie nachholt. Stand: `skips[modus] = {to, from, stage, accuracy}`; die
+  Gesamtzahl zaehlt nur echte Sterne. Ein spaeteres kleineres Bestehen senkt `to` nie.
+- Einstufung: Ist ein Modus leer (kein Stern, kein Sprung), bietet der Kapitelweg "Einstufen" an.
+  Pruefung von Kapitel 1, bestanden -> Pruefung des erreichten Kapitels usw.
+  (`Campaign.placement_next`, Folge `placement_chain`, bei Mania 5 Pruefungen: Kapitel 1, 3, 5,
+  7, 9), bis eine nicht bestanden ist oder das letzte Kapitel erreicht ist. Die Ansicht zeigt
+  "Einstufung n von m". Ergebnis: hoechstes offenes Kapitel (`highest_open`), im Ergebnis
+  "Einstufung beendet: Kapitel n". Abbrechen: Esc / Zur Kampagne (bestanden: zur neuen Front).
+- Anzeige: Kapitelweg nennt "Skip-Pruefung: 99 % Accuracy · bis Kapitel n", uebersprungene
+  Kapitel tragen "Uebersprungen" (ACCENT2, ruhiges Blaugrau); Sperrgrund nennt die Pruefung als
+  zweiten Weg. HUD zeigt die Grenze mit der aktuellen Accuracy, das Ergebnis die erreichte
+  Accuracy und welche Kapitel frei wurden.
+
 Mania-Kapitel (Band = osu!mania-Sternwert der 4K-Diff):
 
 | Nr | Welt | Band | Mod |
@@ -82,8 +108,9 @@ setzt bei Mania die Tastenzahl vor den Namen (`[4K] Easy`), in der .osu steht nu
     (`Mirror.fetch_cover`, `assets.ppy.sh/.../card@2x.jpg`), sonst Platzhalter in Kapitel-Farbe.
     Gewaehlte Stufe: `GameSession.preload_selection` (wie der Song-Browser), dann grosses Bild,
     weichgezeichneter Hintergrund und Vorschau des Songs (Bus Music, weich ein/aus).
-  - Bedienung: Pfeile waehlen, Enter oeffnet/startet, zweiter Klick auf die gewaehlte Stufe
-    startet, Esc zurueck.
+  - Bedienung: Maus waehlt, Start-Knopf startet; Pfeile waehlen, Enter oeffnet/startet, Esc
+    zurueck. Weltbilder entstehen im WorkerThreadPool. Nicht geladene Map: Vorhoeren ueber
+    `b.ppy.sh/preview/<set>.mp3` wie im Online-Browser.
 - `scripts/campaign/campaign_hud.gd` (`CampaignHud`): Ziele im Spiel, links unter den Werten der
   Szene, live gehalten/offen/verloren (`Campaign.goals_live`) mit aktuellem Wert. GameSession
   haengt es an jede Spielszene einer Stufe (auch Neustart); beim Ergebnis blendet es sich aus.
@@ -92,10 +119,12 @@ setzt bei Mania die Tastenzahl vor den Namen (`[4K] Easy`), in der .osu steht nu
 - Hauptmenue: Zeile "Kampagne" mit Sternestand.
 - Autoplay (Testflag) traegt nie in den echten Stand ein, nur in eine `--campaign-path`-Datei.
 - Harness Ansicht: `res://scenes/campaign.tscn --shot-campaign=<Praefix> [--maps-dir=<Ordner>]`
-  speichert `_path.png`, `_path_locked.png`, `_stage.png`, `_locked.png`, `_result.png`
+  speichert `_path.png`, `_path_locked.png`, `_stage.png`, `_locked.png`, `_trial.png`,
+  `_result.png`, `_result_trial.png`, `_result_trial_fail.png`, `_path_skipped.png`, `_skipped.png`,
+  `_placement.png`, `_placement_trial.png`
   (Demo-Stand, nichts wird gespeichert).
 - Harness echter Stufenlauf (`--autoplay` vor einem `--`, sonst spielt niemand): `res://scenes/campaign.tscn --autoplay --shot-campaign-run=<Praefix>
-  [--shot-campaign-stage=<Stufe>] --campaign-path=<Testdatei>` startet die Stufe, spielt sie,
+  [--shot-campaign-stage=<Stufe>] [--shot-campaign-trial] --campaign-path=<Testdatei>` startet die Stufe, spielt sie,
   traegt ein, speichert `<Praefix>_stage.png`, `_game.png`, `_result.png` und beendet sich
   (Watchdog 145 s, aussen `timeout 150`).
 

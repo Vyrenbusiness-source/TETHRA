@@ -77,3 +77,37 @@ Ohne Fail,Ohne Fail,No fail
 Genauigkeit ≥ %s,Genauigkeit ≥ %s,Accuracy ≥ %s
 Rang ≥ %s,Rang ≥ %s,Grade ≥ %s
 ≤ %d Misses,≤ %d Misses,≤ %d misses
+Skip-Prüfung,Skip-Prüfung,Skip trial
+Skip-Prüfung: %s Accuracy,Skip-Prüfung: %s Accuracy,Skip trial: %s accuracy
+Skip-Prüfung: %s Accuracy · bis Kapitel %d,Skip-Prüfung: %s Accuracy · bis Kapitel %d,Skip trial: %s accuracy · up to chapter %d
+erreicht %s,erreicht %s,reached %s
+Kapitel %d freigeschaltet,Kapitel %d freigeschaltet,Chapter %d unlocked
+Kapitel %d bis %d freigeschaltet,Kapitel %d bis %d freigeschaltet,Chapters %d to %d unlocked
+Bestanden,Bestanden,Passed
+Nicht bestanden: %s,Nicht bestanden: %s,Not passed: %s
+Einstufung,Einstufung,Placement
+Einstufen,Einstufen,Placement test
+Nächste Prüfung,Nächste Prüfung,Next trial
+Zum neuen Kapitel,Zum neuen Kapitel,To the new chapter
+Mod %s zählt nicht,Mod %s zählt nicht,Mod %s does not count
+%s fehlen,%s fehlen,%s short
+Boss von Kapitel %d schaffen oder Skip-Prüfung bestehen,Boss von Kapitel %d schaffen oder Skip-Prüfung bestehen,Beat the boss of chapter %d or pass a skip trial
+Boss oder Skip-Prüfung schaffen,Boss oder Skip-Prüfung schaffen,Beat the boss or a skip trial
+Übersprungen,Übersprungen,Skipped
+Springt bis Kapitel %d,Springt bis Kapitel %d,Skips to chapter %d
+Boss von Kapitel %d,Boss von Kapitel %d,Boss of chapter %d
+%s Accuracy in einem Lauf,%s Accuracy in einem Lauf,%s accuracy in one run
+"Ohne Fail, ohne No Fail und Konstant","Ohne Fail, ohne No Fail und Konstant","Without failing, No Fail or Constant"
+Schaltet Kapitel %d frei,Schaltet Kapitel %d frei,Unlocks chapter %d
+Schaltet Kapitel %d bis %d frei,Schaltet Kapitel %d bis %d frei,Unlocks chapters %d to %d
+Sterne zählen zur Boss-Stufe von Kapitel %d,Sterne zählen zur Boss-Stufe von Kapitel %d,Stars count for the boss stage of chapter %d
+Prüfung starten,Prüfung starten,Start trial
+Einstufung starten,Einstufung starten,Start placement
+Prüfungen mit %s Accuracy überspringen leichte Kapitel,Prüfungen mit %s Accuracy überspringen leichte Kapitel,Trials with %s accuracy skip easy chapters
+"Einstufung: weiter, solange %s kommen · Esc bricht ab","Einstufung: weiter, solange %s kommen · Esc bricht ab",Placement: goes on while you reach %s · Esc stops
+Konstant ist an und zählt nicht für die Prüfung,Konstant ist an und zählt nicht für die Prüfung,Constant is on and does not count for the trial
+Noch keine Scores · der erste Platz ist frei,Noch keine Scores · der erste Platz ist frei,No scores yet · first place is open
+Das Ziel schaltet %s frei,Das Ziel schaltet %s frei,The goal unlocks %s
+Ungewertet zählt nicht,Ungewertet zählt nicht,Unranked runs do not count
+Einstufung beendet: Kapitel %d,Einstufung beendet: Kapitel %d,Placement done: chapter %d
+Einstufung %d von %d,Einstufung %d von %d,Placement %d of %d

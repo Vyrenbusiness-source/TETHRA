@@ -962,7 +962,7 @@ func _build_results(is_fail: bool, s: Dictionary, new_best: bool) -> void:
 	rs.back_pressed.connect(_back_to_browser)
 	rs.replay_pressed.connect(_on_results_replay)
 	var data := {
-		"is_fail": is_fail, "fail_reason": "", "s": s, "pp": -1.0, "unranked": false,
+		"is_fail": is_fail, "fail_reason": RuleMods.fail_reason(core) if is_fail else "", "s": s, "pp": -1.0, "unranked": false,
 		"new_best": new_best, "title": _beatmap.title(), "artist": _beatmap.artist(),
 		"version": _beatmap.version_name(), "cover_path": "", "offsets": _hit_offsets,
 		"player": Settings.profile_name, "date": Time.get_datetime_string_from_system(),
